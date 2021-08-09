@@ -1,7 +1,8 @@
 /*
- * jidctint-neon.c - slow IDCT (Arm NEON)
+ * jidctint-neon.c - accurate integer IDCT (Arm Neon)
  *
- * Copyright 2019 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
+ * Copyright (C) 2020, D. R. Commander.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,15 +22,18 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../../jconfigint.h"
-#include "../../../jinclude.h"
-#include "../../../jpeglib.h"
-#include "../../../jsimd.h"
-#include "../../../jdct.h"
-#include "../../../jsimddct.h"
+#include "jconfigint.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
 #include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
+#include "../jsimd.h"
+#include "align.h"
+#include "neon-compat.h"
 
 #include <arm_neon.h>
+
 
 #define CONST_BITS  13
 #define PASS1_BITS  2
@@ -38,7 +42,7 @@
 #define DESCALE_P2  (CONST_BITS + PASS1_BITS + 3)
 
 /* The computation of the inverse DCT requires the use of constants known at
- * compile-time. Scaled integer constants are used to avoid floating-point
+ * compile time.  Scaled integer constants are used to avoid floating-point
  * arithmetic:
  *    0.298631336 =  2446 * 2^-13
  *    0.390180644 =  3196 * 2^-13
@@ -76,19 +80,21 @@
 #define F_2_053_MINUS_2_562  (F_2_053 - F_2_562)
 #define F_0_541_PLUS_0_765   (F_0_541 + F_0_765)
 
+
 ALIGN(16) static const int16_t jsimd_idct_islow_neon_consts[] = {
-                              F_0_899,             F_0_541,
-                              F_2_562,             F_0_298_MINUS_0_899,
-                              F_1_501_MINUS_0_899, F_2_053_MINUS_2_562,
-                              F_0_541_PLUS_0_765,  F_1_175,
-                              F_1_175_MINUS_0_390, F_0_541_MINUS_1_847,
-                              F_3_072_MINUS_2_562, F_1_175_MINUS_1_961,
-                              0, 0, 0, 0
-                            };
+  F_0_899,             F_0_541,
+  F_2_562,             F_0_298_MINUS_0_899,
+  F_1_501_MINUS_0_899, F_2_053_MINUS_2_562,
+  F_0_541_PLUS_0_765,  F_1_175,
+  F_1_175_MINUS_0_390, F_0_541_MINUS_1_847,
+  F_3_072_MINUS_2_562, F_1_175_MINUS_1_961,
+  0, 0, 0, 0
+};
 
-/* Forward declaration of regular and sparse IDCT helper functions. */
 
-static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
+/* Forward declaration of regular and sparse IDCT helper functions */
+
+static INLINE void jsimd_idct_islow_pass1_regular(int16x4_t row0,
                                                   int16x4_t row1,
                                                   int16x4_t row2,
                                                   int16x4_t row3,
@@ -107,7 +113,7 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
                                                   int16_t *workspace_1,
                                                   int16_t *workspace_2);
 
-static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
+static INLINE void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
                                                  int16x4_t row1,
                                                  int16x4_t row2,
                                                  int16x4_t row3,
@@ -118,32 +124,33 @@ static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
                                                  int16_t *workspace_1,
                                                  int16_t *workspace_2);
 
-static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
+static INLINE void jsimd_idct_islow_pass2_regular(int16_t *workspace,
                                                   JSAMPARRAY output_buf,
                                                   JDIMENSION output_col,
                                                   unsigned buf_offset);
 
-static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
+static INLINE void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
                                                  JSAMPARRAY output_buf,
                                                  JDIMENSION output_col,
                                                  unsigned buf_offset);
 
 
-/* Performs dequantization and inverse DCT on one block of coefficients. For
- * reference, the C implementation 'jpeg_idct_slow' can be found jidctint.c.
+/* Perform dequantization and inverse DCT on one block of coefficients.  For
+ * reference, the C implementation (jpeg_idct_slow()) can be found in
+ * jidctint.c.
  *
- * Optimization techniques used for data access:
+ * Optimization techniques used for fast data access:
  *
- * In each pass, the inverse DCT is computed on the left and right 4x8 halves
- * of the DCT block. This avoids spilling due to register pressure and the
- * increased granularity allows an optimized calculation depending on the
- * values of the DCT coefficients. Between passes, intermediate data is stored
+ * In each pass, the inverse DCT is computed for the left and right 4x8 halves
+ * of the DCT block.  This avoids spilling due to register pressure, and the
+ * increased granularity allows for an optimized calculation depending on the
+ * values of the DCT coefficients.  Between passes, intermediate data is stored
  * in 4x8 workspace buffers.
  *
  * Transposing the 8x8 DCT block after each pass can be achieved by transposing
- * each of the four 4x4 quadrants, and swapping quadrants 1 and 2 (in the
- * diagram below.) Swapping quadrants is cheap as the second pass can just load
- * from the other workspace buffer.
+ * each of the four 4x4 quadrants and swapping quadrants 1 and 2 (refer to the
+ * diagram below.)  Swapping quadrants is cheap, since the second pass can just
+ * swap the workspace buffer pointers.
  *
  *      +-------+-------+                   +-------+-------+
  *      |       |       |                   |       |       |
@@ -158,32 +165,30 @@ static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
  * Optimization techniques used to accelerate the inverse DCT calculation:
  *
  * In a DCT coefficient block, the coefficients are increasingly likely to be 0
- * moving diagonally from top left to bottom right. If whole rows of
- * coefficients are 0, the inverse DCT calculation can be simplified. In this
- * NEON implementation, on the first pass of the inverse DCT, we test for three
- * special cases before defaulting to a full 'regular' inverse DCT:
+ * as you move diagonally from top left to bottom right.  If whole rows of
+ * coefficients are 0, then the inverse DCT calculation can be simplified.  On
+ * the first pass of the inverse DCT, we test for three special cases before
+ * defaulting to a full "regular" inverse DCT:
  *
- * i)   AC and DC coefficients are all zero. (Only tested for the right 4x8
- *      half of the DCT coefficient block.) In this case the inverse DCT result
- *      is all zero. We do no work here, signalling that the 'sparse' case is
- *      required in the second pass.
- * ii)  AC coefficients (all but the top row) are zero. In this case, the value
- *      of the inverse DCT of the AC coefficients is just the DC coefficients.
- * iii) Coefficients of rows 4, 5, 6 and 7 are all zero. In this case we opt to
- *      execute a 'sparse' simplified inverse DCT.
+ * 1) Coefficients in rows 4-7 are all zero.  In this case, we perform a
+ *    "sparse" simplified inverse DCT on rows 0-3.
+ * 2) AC coefficients (rows 1-7) are all zero.  In this case, the inverse DCT
+ *    result is equal to the dequantized DC coefficients.
+ * 3) AC and DC coefficients are all zero.  In this case, the inverse DCT
+ *    result is all zero.  For the left 4x8 half, this is handled identically
+ *    to Case 2 above.  For the right 4x8 half, we do no work and signal that
+ *    the "sparse" algorithm is required for the second pass.
  *
- * In the second pass, only a single special case is tested: whether the the AC
- * and DC coefficients were all zero in the right 4x8 block in the first pass
- * (case 'i'). If this is the case, a 'sparse' variant of the second pass
- * inverse DCT is executed for both the left and right halves of the DCT block.
- * (The transposition after the first pass would have made the bottom half of
- * the block all zero.)
+ * In the second pass, only a single special case is tested: whether the AC and
+ * DC coefficients were all zero in the right 4x8 block during the first pass
+ * (refer to Case 3 above.)  If this is the case, then a "sparse" variant of
+ * the second pass is performed for both the left and right halves of the DCT
+ * block.  (The transposition after the first pass means that the right 4x8
+ * block during the first pass becomes rows 4-7 during the second pass.)
  */
 
-void jsimd_idct_islow_neon(void *dct_table,
-                           JCOEFPTR coef_block,
-                           JSAMPARRAY output_buf,
-                           JDIMENSION output_col)
+void jsimd_idct_islow_neon(void *dct_table, JCOEFPTR coef_block,
+                           JSAMPARRAY output_buf, JDIMENSION output_col)
 {
   ISLOW_MULT_TYPE *quantptr = dct_table;
 
@@ -191,6 +196,7 @@ void jsimd_idct_islow_neon(void *dct_table,
   int16_t workspace_r[8 * DCTSIZE / 2];
 
   /* Compute IDCT first pass on left 4x8 coefficient block. */
+
   /* Load DCT coefficients in left 4x8 block. */
   int16x4_t row0 = vld1_s16(coef_block + 0 * DCTSIZE);
   int16x4_t row1 = vld1_s16(coef_block + 1 * DCTSIZE);
@@ -225,7 +231,7 @@ void jsimd_idct_islow_neon(void *dct_table,
 
     if (left_ac_bitmap == 0) {
       int16x4_t dcval = vshl_n_s16(vmul_s16(row0, quant_row0), PASS1_BITS);
-      int16x4x4_t quadrant = { dcval, dcval, dcval, dcval };
+      int16x4x4_t quadrant = { { dcval, dcval, dcval, dcval } };
       /* Store 4x4 blocks to workspace, transposing in the process. */
       vst4_s16(workspace_l, quadrant);
       vst4_s16(workspace_r, quadrant);
@@ -242,8 +248,9 @@ void jsimd_idct_islow_neon(void *dct_table,
                                    workspace_l, workspace_r);
   }
 
-  /* Compute IDCT first pass on right 4x8 coefficient block.*/
-  /* Load DCT coefficients for right 4x8 block. */
+  /* Compute IDCT first pass on right 4x8 coefficient block. */
+
+  /* Load DCT coefficients in right 4x8 block. */
   row0 = vld1_s16(coef_block + 0 * DCTSIZE + 4);
   row1 = vld1_s16(coef_block + 1 * DCTSIZE + 4);
   row2 = vld1_s16(coef_block + 2 * DCTSIZE + 4);
@@ -273,7 +280,7 @@ void jsimd_idct_islow_neon(void *dct_table,
   bitmap = vorr_s16(bitmap, row1);
   int64_t right_ac_bitmap = vget_lane_s64(vreinterpret_s64_s16(bitmap), 0);
 
-  /* Initialise to non-zero value: defaults to regular second pass. */
+  /* If this remains non-zero, a "regular" second pass will be performed. */
   int64_t right_ac_dc_bitmap = 1;
 
   if (right_ac_bitmap == 0) {
@@ -282,7 +289,7 @@ void jsimd_idct_islow_neon(void *dct_table,
 
     if (right_ac_dc_bitmap != 0) {
       int16x4_t dcval = vshl_n_s16(vmul_s16(row0, quant_row0), PASS1_BITS);
-      int16x4x4_t quadrant = { dcval, dcval, dcval, dcval };
+      int16x4x4_t quadrant = { { dcval, dcval, dcval, dcval } };
       /* Store 4x4 blocks to workspace, transposing in the process. */
       vst4_s16(workspace_l + 4 * DCTSIZE / 2, quadrant);
       vst4_s16(workspace_r + 4 * DCTSIZE / 2, quadrant);
@@ -304,7 +311,8 @@ void jsimd_idct_islow_neon(void *dct_table,
   }
 
   /* Second pass: compute IDCT on rows in workspace. */
-  /* If all coefficients in right 4x8 block are 0, use 'sparse' second pass. */
+
+  /* If all coefficients in right 4x8 block are 0, use "sparse" second pass. */
   if (right_ac_dc_bitmap == 0) {
     jsimd_idct_islow_pass2_sparse(workspace_l, output_buf, output_col, 0);
     jsimd_idct_islow_pass2_sparse(workspace_r, output_buf, output_col, 4);
@@ -315,19 +323,19 @@ void jsimd_idct_islow_neon(void *dct_table,
 }
 
 
-/* Performs dequantization and the first pass of the slow-but-accurate inverse
- * DCT on a 4x8 block of coefficients. (To process the full 8x8 DCT block this
- * function - or some other optimized variant - needs to be called on both the
- * right and left 4x8 blocks.)
+/* Perform dequantization and the first pass of the accurate inverse DCT on a
+ * 4x8 block of coefficients.  (To process the full 8x8 DCT block, this
+ * function-- or some other optimized variant-- needs to be called for both the
+ * left and right 4x8 blocks.)
  *
- * This 'regular' version assumes that no optimization can be made to the IDCT
- * calculation since no useful set of AC coefficients are all 0.
+ * This "regular" version assumes that no optimization can be made to the IDCT
+ * calculation, since no useful set of AC coefficients is all 0.
  *
- * The original C implementation of the slow IDCT 'jpeg_idct_slow' can be found
- * in jidctint.c. Algorithmic changes made here are documented inline.
+ * The original C implementation of the accurate IDCT (jpeg_idct_slow()) can be
+ * found in jidctint.c.  Algorithmic changes made here are documented inline.
  */
 
-static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
+static INLINE void jsimd_idct_islow_pass1_regular(int16x4_t row0,
                                                   int16x4_t row1,
                                                   int16x4_t row2,
                                                   int16x4_t row3,
@@ -346,16 +354,17 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
                                                   int16_t *workspace_1,
                                                   int16_t *workspace_2)
 {
-  /* Load constants for IDCT calculation. */
-#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
+  /* Load constants for IDCT computation. */
+#ifdef HAVE_VLD1_S16_X3
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
 #else
-  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+  const int16x4_t consts1 = vld1_s16(jsimd_idct_islow_neon_consts);
+  const int16x4_t consts2 = vld1_s16(jsimd_idct_islow_neon_consts + 4);
+  const int16x4_t consts3 = vld1_s16(jsimd_idct_islow_neon_consts + 8);
+  const int16x4x3_t consts = { { consts1, consts2, consts3 } };
 #endif
 
-  /* Even part. */
+  /* Even part */
   int16x4_t z2_s16 = vmul_s16(row2, quant_row2);
   int16x4_t z3_s16 = vmul_s16(row6, quant_row6);
 
@@ -375,7 +384,7 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
   int32x4_t tmp11 = vaddq_s32(tmp1, tmp2);
   int32x4_t tmp12 = vsubq_s32(tmp1, tmp2);
 
-  /* Odd part. */
+  /* Odd part */
   int16x4_t tmp0_s16 = vmul_s16(row7, quant_row7);
   int16x4_t tmp1_s16 = vmul_s16(row5, quant_row5);
   int16x4_t tmp2_s16 = vmul_s16(row3, quant_row3);
@@ -384,7 +393,7 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
   z3_s16 = vadd_s16(tmp0_s16, tmp2_s16);
   int16x4_t z4_s16 = vadd_s16(tmp1_s16, tmp3_s16);
 
-  /* Implementation as per 'jpeg_idct_islow' in jidctint.c:
+  /* Implementation as per jpeg_idct_islow() in jidctint.c:
    *   z5 = (z3 + z4) * 1.175875602;
    *   z3 = z3 * -1.961570560;  z4 = z4 * -0.390180644;
    *   z3 += z5;  z4 += z5;
@@ -399,7 +408,7 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
   z3 = vmlal_lane_s16(z3, z4_s16, consts.val[1], 3);
   z4 = vmlal_lane_s16(z4, z4_s16, consts.val[2], 0);
 
-  /* Implementation as per 'jpeg_idct_islow' in jidctint.c:
+  /* Implementation as per jpeg_idct_islow() in jidctint.c:
    *   z1 = tmp0 + tmp3;  z2 = tmp1 + tmp2;
    *   tmp0 = tmp0 * 0.298631336;  tmp1 = tmp1 * 2.053119869;
    *   tmp2 = tmp2 * 3.072711026;  tmp3 = tmp3 * 1.501321110;
@@ -432,33 +441,36 @@ static inline void jsimd_idct_islow_pass1_regular(int16x4_t row0,
   tmp3 = vaddq_s32(tmp3, z4);
 
   /* Final output stage: descale and narrow to 16-bit. */
-  int16x4x4_t rows_0123 = { vrshrn_n_s32(vaddq_s32(tmp10, tmp3), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp11, tmp2), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp12, tmp1), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp13, tmp0), DESCALE_P1)
-                          };
-  int16x4x4_t rows_4567 = { vrshrn_n_s32(vsubq_s32(tmp13, tmp0), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp12, tmp1), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp11, tmp2), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp10, tmp3), DESCALE_P1)
-                          };
+  int16x4x4_t rows_0123 = { {
+    vrshrn_n_s32(vaddq_s32(tmp10, tmp3), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp11, tmp2), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp12, tmp1), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp13, tmp0), DESCALE_P1)
+  } };
+  int16x4x4_t rows_4567 = { {
+    vrshrn_n_s32(vsubq_s32(tmp13, tmp0), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp12, tmp1), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp11, tmp2), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp10, tmp3), DESCALE_P1)
+  } };
 
-  /* Store 4x4 blocks to the intermediate workspace ready for second pass. */
-  /* (VST4 transposes the blocks - we need to operate on rows in next pass.) */
+  /* Store 4x4 blocks to the intermediate workspace, ready for the second pass.
+   * (VST4 transposes the blocks.  We need to operate on rows in the next
+   * pass.)
+   */
   vst4_s16(workspace_1, rows_0123);
   vst4_s16(workspace_2, rows_4567);
 }
 
 
-/* Performs dequantization and the first pass of the slow-but-accurate inverse
- * DCT on a 4x8 block of coefficients.
+/* Perform dequantization and the first pass of the accurate inverse DCT on a
+ * 4x8 block of coefficients.
  *
- * This 'sparse' version assumes that the AC coefficients in rows 4, 5, 6 and 7
- * are all 0. This simplifies the IDCT calculation, accelerating overall
- * performance.
+ * This "sparse" version assumes that the AC coefficients in rows 4-7 are all
+ * 0.  This simplifies the IDCT calculation, accelerating overall performance.
  */
 
-static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
+static INLINE void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
                                                  int16x4_t row1,
                                                  int16x4_t row2,
                                                  int16x4_t row3,
@@ -470,17 +482,17 @@ static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
                                                  int16_t *workspace_2)
 {
   /* Load constants for IDCT computation. */
-#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
+#ifdef HAVE_VLD1_S16_X3
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
 #else
-  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+  const int16x4_t consts1 = vld1_s16(jsimd_idct_islow_neon_consts);
+  const int16x4_t consts2 = vld1_s16(jsimd_idct_islow_neon_consts + 4);
+  const int16x4_t consts3 = vld1_s16(jsimd_idct_islow_neon_consts + 8);
+  const int16x4x3_t consts = { { consts1, consts2, consts3 } };
 #endif
 
-  /* Even part. */
+  /* Even part (z3 is all 0) */
   int16x4_t z2_s16 = vmul_s16(row2, quant_row2);
-  /* z3 is all 0. */
 
   int32x4_t tmp2 = vmull_lane_s16(z2_s16, consts.val[0], 1);
   int32x4_t tmp3 = vmull_lane_s16(z2_s16, consts.val[1], 2);
@@ -494,8 +506,7 @@ static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
   int32x4_t tmp11 = vaddq_s32(tmp1, tmp2);
   int32x4_t tmp12 = vsubq_s32(tmp1, tmp2);
 
-  /* Odd part. */
-  /* tmp0 and tmp1 are both all 0. */
+  /* Odd part (tmp0 and tmp1 are both all 0) */
   int16x4_t tmp2_s16 = vmul_s16(row3, quant_row3);
   int16x4_t tmp3_s16 = vmul_s16(row1, quant_row1);
 
@@ -513,52 +524,58 @@ static inline void jsimd_idct_islow_pass1_sparse(int16x4_t row0,
   tmp3 = vmlal_lane_s16(z4, tmp3_s16, consts.val[1], 0);
 
   /* Final output stage: descale and narrow to 16-bit. */
-  int16x4x4_t rows_0123 = { vrshrn_n_s32(vaddq_s32(tmp10, tmp3), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp11, tmp2), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp12, tmp1), DESCALE_P1),
-                            vrshrn_n_s32(vaddq_s32(tmp13, tmp0), DESCALE_P1)
-                          };
-  int16x4x4_t rows_4567 = { vrshrn_n_s32(vsubq_s32(tmp13, tmp0), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp12, tmp1), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp11, tmp2), DESCALE_P1),
-                            vrshrn_n_s32(vsubq_s32(tmp10, tmp3), DESCALE_P1)
-                          };
+  int16x4x4_t rows_0123 = { {
+    vrshrn_n_s32(vaddq_s32(tmp10, tmp3), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp11, tmp2), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp12, tmp1), DESCALE_P1),
+    vrshrn_n_s32(vaddq_s32(tmp13, tmp0), DESCALE_P1)
+  } };
+  int16x4x4_t rows_4567 = { {
+    vrshrn_n_s32(vsubq_s32(tmp13, tmp0), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp12, tmp1), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp11, tmp2), DESCALE_P1),
+    vrshrn_n_s32(vsubq_s32(tmp10, tmp3), DESCALE_P1)
+  } };
 
-  /* Store 4x4 blocks to the intermediate workspace ready for second pass. */
-  /* (VST4 transposes the blocks - we need to operate on rows in next pass.) */
+  /* Store 4x4 blocks to the intermediate workspace, ready for the second pass.
+   * (VST4 transposes the blocks.  We need to operate on rows in the next
+   * pass.)
+   */
   vst4_s16(workspace_1, rows_0123);
   vst4_s16(workspace_2, rows_4567);
 }
 
 
-/* Performs the second pass of the slow-but-accurate inverse DCT on a 4x8 block
- * of coefficients. (To process the full 8x8 DCT block this function - or some
- * other optimized variant - needs to be called on both the right and left 4x8
+/* Perform the second pass of the accurate inverse DCT on a 4x8 block of
+ * coefficients.  (To process the full 8x8 DCT block, this function-- or some
+ * other optimized variant-- needs to be called for both the right and left 4x8
  * blocks.)
  *
- * This 'regular' version assumes that no optimization can be made to the IDCT
- * calculation since no useful set of coefficient values are all 0 after the
+ * This "regular" version assumes that no optimization can be made to the IDCT
+ * calculation, since no useful set of coefficient values are all 0 after the
  * first pass.
  *
- * Again, the original C implementation of the slow IDCT 'jpeg_idct_slow' can
- * be found in jidctint.c. Algorithmic changes made here are documented inline.
+ * Again, the original C implementation of the accurate IDCT (jpeg_idct_slow())
+ * can be found in jidctint.c.  Algorithmic changes made here are documented
+ * inline.
  */
 
-static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
+static INLINE void jsimd_idct_islow_pass2_regular(int16_t *workspace,
                                                   JSAMPARRAY output_buf,
                                                   JDIMENSION output_col,
                                                   unsigned buf_offset)
 {
   /* Load constants for IDCT computation. */
-#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
+#ifdef HAVE_VLD1_S16_X3
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
 #else
-  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+  const int16x4_t consts1 = vld1_s16(jsimd_idct_islow_neon_consts);
+  const int16x4_t consts2 = vld1_s16(jsimd_idct_islow_neon_consts + 4);
+  const int16x4_t consts3 = vld1_s16(jsimd_idct_islow_neon_consts + 8);
+  const int16x4x3_t consts = { { consts1, consts2, consts3 } };
 #endif
 
-  /* Even part. */
+  /* Even part */
   int16x4_t z2_s16 = vld1_s16(workspace + 2 * DCTSIZE / 2);
   int16x4_t z3_s16 = vld1_s16(workspace + 6 * DCTSIZE / 2);
 
@@ -578,7 +595,7 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
   int32x4_t tmp11 = vaddq_s32(tmp1, tmp2);
   int32x4_t tmp12 = vsubq_s32(tmp1, tmp2);
 
-  /* Odd part. */
+  /* Odd part */
   int16x4_t tmp0_s16 = vld1_s16(workspace + 7 * DCTSIZE / 2);
   int16x4_t tmp1_s16 = vld1_s16(workspace + 5 * DCTSIZE / 2);
   int16x4_t tmp2_s16 = vld1_s16(workspace + 3 * DCTSIZE / 2);
@@ -587,7 +604,7 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
   z3_s16 = vadd_s16(tmp0_s16, tmp2_s16);
   int16x4_t z4_s16 = vadd_s16(tmp1_s16, tmp3_s16);
 
-  /* Implementation as per 'jpeg_idct_islow' in jidctint.c:
+  /* Implementation as per jpeg_idct_islow() in jidctint.c:
    *   z5 = (z3 + z4) * 1.175875602;
    *   z3 = z3 * -1.961570560;  z4 = z4 * -0.390180644;
    *   z3 += z5;  z4 += z5;
@@ -602,7 +619,7 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
   z3 = vmlal_lane_s16(z3, z4_s16, consts.val[1], 3);
   z4 = vmlal_lane_s16(z4, z4_s16, consts.val[2], 0);
 
-  /* Implementation as per 'jpeg_idct_islow' in jidctint.c:
+  /* Implementation as per jpeg_idct_islow() in jidctint.c:
    *   z1 = tmp0 + tmp3;  z2 = tmp1 + tmp2;
    *   tmp0 = tmp0 * 0.298631336;  tmp1 = tmp1 * 2.053119869;
    *   tmp2 = tmp2 * 3.072711026;  tmp3 = tmp3 * 1.501321110;
@@ -658,15 +675,17 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
   uint8x8_t cols_57_u8 = vadd_u8(vreinterpret_u8_s8(cols_57_s8),
                                  vdup_n_u8(CENTERJSAMPLE));
 
-  /* Transpose 4x8 block and store to memory. */
-  /* Zipping adjacent columns together allows us to store 16-bit elements. */
+  /* Transpose 4x8 block and store to memory.  (Zipping adjacent columns
+   * together allows us to store 16-bit elements.)
+   */
   uint8x8x2_t cols_01_23 = vzip_u8(cols_02_u8, cols_13_u8);
   uint8x8x2_t cols_45_67 = vzip_u8(cols_46_u8, cols_57_u8);
-  uint16x4x4_t cols_01_23_45_67 = { vreinterpret_u16_u8(cols_01_23.val[0]),
-                                    vreinterpret_u16_u8(cols_01_23.val[1]),
-                                    vreinterpret_u16_u8(cols_45_67.val[0]),
-                                    vreinterpret_u16_u8(cols_45_67.val[1])
-                                  };
+  uint16x4x4_t cols_01_23_45_67 = { {
+    vreinterpret_u16_u8(cols_01_23.val[0]),
+    vreinterpret_u16_u8(cols_01_23.val[1]),
+    vreinterpret_u16_u8(cols_45_67.val[0]),
+    vreinterpret_u16_u8(cols_45_67.val[1])
+  } };
 
   JSAMPROW outptr0 = output_buf[buf_offset + 0] + output_col;
   JSAMPROW outptr1 = output_buf[buf_offset + 1] + output_col;
@@ -680,31 +699,31 @@ static inline void jsimd_idct_islow_pass2_regular(int16_t *workspace,
 }
 
 
-/* Performs the second pass of the slow-but-accurate inverse DCT on a 4x8 block
+/* Performs the second pass of the accurate inverse DCT on a 4x8 block
  * of coefficients.
  *
- * This 'sparse' version assumes that the coefficient values (after the first
- * pass) in rows 4, 5, 6 and 7 are all 0. This simplifies the IDCT calculation,
+ * This "sparse" version assumes that the coefficient values (after the first
+ * pass) in rows 4-7 are all 0.  This simplifies the IDCT calculation,
  * accelerating overall performance.
  */
 
-static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
+static INLINE void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
                                                  JSAMPARRAY output_buf,
                                                  JDIMENSION output_col,
                                                  unsigned buf_offset)
 {
   /* Load constants for IDCT computation. */
-#if defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64)
+#ifdef HAVE_VLD1_S16_X3
   const int16x4x3_t consts = vld1_s16_x3(jsimd_idct_islow_neon_consts);
 #else
-  const int16x4x3_t consts = { vld1_s16(jsimd_idct_islow_neon_consts),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 4),
-                               vld1_s16(jsimd_idct_islow_neon_consts + 8) };
+  const int16x4_t consts1 = vld1_s16(jsimd_idct_islow_neon_consts);
+  const int16x4_t consts2 = vld1_s16(jsimd_idct_islow_neon_consts + 4);
+  const int16x4_t consts3 = vld1_s16(jsimd_idct_islow_neon_consts + 8);
+  const int16x4x3_t consts = { { consts1, consts2, consts3 } };
 #endif
 
-  /* Even part. */
+  /* Even part (z3 is all 0) */
   int16x4_t z2_s16 = vld1_s16(workspace + 2 * DCTSIZE / 2);
-  /* z3 is all 0. */
 
   int32x4_t tmp2 = vmull_lane_s16(z2_s16, consts.val[0], 1);
   int32x4_t tmp3 = vmull_lane_s16(z2_s16, consts.val[1], 2);
@@ -718,8 +737,7 @@ static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
   int32x4_t tmp11 = vaddq_s32(tmp1, tmp2);
   int32x4_t tmp12 = vsubq_s32(tmp1, tmp2);
 
-  /* Odd part. */
-  /* tmp0 and tmp1 are both all 0. */
+  /* Odd part (tmp0 and tmp1 are both all 0) */
   int16x4_t tmp2_s16 = vld1_s16(workspace + 3 * DCTSIZE / 2);
   int16x4_t tmp3_s16 = vld1_s16(workspace + 1 * DCTSIZE / 2);
 
@@ -760,15 +778,17 @@ static inline void jsimd_idct_islow_pass2_sparse(int16_t *workspace,
   uint8x8_t cols_57_u8 = vadd_u8(vreinterpret_u8_s8(cols_57_s8),
                                  vdup_n_u8(CENTERJSAMPLE));
 
-  /* Transpose 4x8 block and store to memory. */
-  /* Zipping adjacent columns together allow us to store 16-bit elements. */
+  /* Transpose 4x8 block and store to memory.  (Zipping adjacent columns
+   * together allows us to store 16-bit elements.)
+   */
   uint8x8x2_t cols_01_23 = vzip_u8(cols_02_u8, cols_13_u8);
   uint8x8x2_t cols_45_67 = vzip_u8(cols_46_u8, cols_57_u8);
-  uint16x4x4_t cols_01_23_45_67 = { vreinterpret_u16_u8(cols_01_23.val[0]),
-                                    vreinterpret_u16_u8(cols_01_23.val[1]),
-                                    vreinterpret_u16_u8(cols_45_67.val[0]),
-                                    vreinterpret_u16_u8(cols_45_67.val[1])
-                                  };
+  uint16x4x4_t cols_01_23_45_67 = { {
+    vreinterpret_u16_u8(cols_01_23.val[0]),
+    vreinterpret_u16_u8(cols_01_23.val[1]),
+    vreinterpret_u16_u8(cols_45_67.val[0]),
+    vreinterpret_u16_u8(cols_45_67.val[1])
+  } };
 
   JSAMPROW outptr0 = output_buf[buf_offset + 0] + output_col;
   JSAMPROW outptr1 = output_buf[buf_offset + 1] + output_col;

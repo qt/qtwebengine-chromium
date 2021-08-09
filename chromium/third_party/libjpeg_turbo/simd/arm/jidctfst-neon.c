@@ -1,7 +1,7 @@
 /*
- * jidctfst-neon.c - fast IDCT (Arm NEON)
+ * jidctfst-neon.c - fast integer IDCT (Arm Neon)
  *
- * Copyright 2019 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,20 +21,21 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../../jinclude.h"
-#include "../../../jpeglib.h"
-#include "../../../jsimd.h"
-#include "../../../jdct.h"
-#include "../../../jsimddct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
 #include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
+#include "../jsimd.h"
+#include "align.h"
 
 #include <arm_neon.h>
 
-/*
- * 'jsimd_idct_ifast_neon' performs dequantization and a fast, not so accurate
- * inverse DCT (Discrete Cosine Transform) on one block of coefficients. It
+
+/* jsimd_idct_ifast_neon() performs dequantization and a fast, not so accurate
+ * inverse DCT (Discrete Cosine Transform) on one block of coefficients.  It
  * uses the same calculations and produces exactly the same output as IJG's
- * original 'jpeg_idct_ifast' function, which can be found in jidctfst.c.
+ * original jpeg_idct_ifast() function, which can be found in jidctfst.c.
  *
  * Scaled integer constants are used to avoid floating-point arithmetic:
  *    0.082392200 =  2688 * 2^-15
@@ -42,9 +43,9 @@
  *    0.847759065 = 27776 * 2^-15
  *    0.613125930 = 20096 * 2^-15
  *
- * See jidctfst.c for further details of the IDCT algorithm. Where possible,
- * the variable names and comments here in 'jsimd_idct_ifast_neon' match up
- * with those in 'jpeg_idct_ifast'.
+ * See jidctfst.c for further details of the IDCT algorithm.  Where possible,
+ * the variable names and comments here in jsimd_idct_ifast_neon() match up
+ * with those in jpeg_idct_ifast().
  */
 
 #define PASS1_BITS  2
@@ -54,10 +55,13 @@
 #define F_0_847  27776
 #define F_0_613  20096
 
-void jsimd_idct_ifast_neon(void *dct_table,
-                           JCOEFPTR coef_block,
-                           JSAMPARRAY output_buf,
-                           JDIMENSION output_col)
+
+ALIGN(16) static const int16_t jsimd_idct_ifast_neon_consts[] = {
+  F_0_082, F_0_414, F_0_847, F_0_613
+};
+
+void jsimd_idct_ifast_neon(void *dct_table, JCOEFPTR coef_block,
+                           JSAMPARRAY output_buf, JDIMENSION output_col)
 {
   IFAST_MULT_TYPE *quantptr = dct_table;
 
@@ -87,9 +91,13 @@ void jsimd_idct_ifast_neon(void *dct_table,
   int64_t left_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 0);
   int64_t right_ac_bitmap = vgetq_lane_s64(vreinterpretq_s64_s16(bitmap), 1);
 
+  /* Load IDCT conversion constants. */
+  const int16x4_t consts = vld1_s16(jsimd_idct_ifast_neon_consts);
+
   if (left_ac_bitmap == 0 && right_ac_bitmap == 0) {
-    /* All AC coefficients are zero. */
-    /* Compute DC values and duplicate into vectors. */
+    /* All AC coefficients are zero.
+     * Compute DC values and duplicate into vectors.
+     */
     int16x8_t dcval = row0;
     row1 = dcval;
     row2 = dcval;
@@ -99,12 +107,14 @@ void jsimd_idct_ifast_neon(void *dct_table,
     row6 = dcval;
     row7 = dcval;
   } else if (left_ac_bitmap == 0) {
-    /* AC coefficients are zero for columns 0, 1, 2 and 3. */
-    /* Use DC values for these columns. */
+    /* AC coefficients are zero for columns 0, 1, 2, and 3.
+     * Use DC values for these columns.
+     */
     int16x4_t dcval = vget_low_s16(row0);
 
-    /* Commence regular fast IDCT computation for columns 4, 5, 6 and 7. */
-    /* Load quantization table.*/
+    /* Commence regular fast IDCT computation for columns 4, 5, 6, and 7. */
+
+    /* Load quantization table. */
     int16x4_t quant_row1 = vld1_s16(quantptr + 1 * DCTSIZE + 4);
     int16x4_t quant_row2 = vld1_s16(quantptr + 2 * DCTSIZE + 4);
     int16x4_t quant_row3 = vld1_s16(quantptr + 3 * DCTSIZE + 4);
@@ -124,7 +134,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     int16x4_t tmp13 = vadd_s16(tmp1, tmp3);   /* phases 5-3 */
     int16x4_t tmp1_sub_tmp3 = vsub_s16(tmp1, tmp3);
-    int16x4_t tmp12 = vqdmulh_n_s16(tmp1_sub_tmp3, F_0_414);
+    int16x4_t tmp12 = vqdmulh_lane_s16(tmp1_sub_tmp3, consts, 1);
     tmp12 = vadd_s16(tmp12, tmp1_sub_tmp3);
     tmp12 = vsub_s16(tmp12, tmp13);
 
@@ -146,16 +156,16 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     tmp7 = vadd_s16(z11, z13);                /* phase 5 */
     int16x4_t z11_sub_z13 = vsub_s16(z11, z13);
-    tmp11 = vqdmulh_n_s16(z11_sub_z13, F_0_414);
+    tmp11 = vqdmulh_lane_s16(z11_sub_z13, consts, 1);
     tmp11 = vadd_s16(tmp11, z11_sub_z13);
 
     int16x4_t z10_add_z12 = vsub_s16(z12, neg_z10);
-    int16x4_t z5 = vqdmulh_n_s16(z10_add_z12, F_0_847);
+    int16x4_t z5 = vqdmulh_lane_s16(z10_add_z12, consts, 2);
     z5 = vadd_s16(z5, z10_add_z12);
-    tmp10 = vqdmulh_n_s16(z12, F_0_082);
+    tmp10 = vqdmulh_lane_s16(z12, consts, 0);
     tmp10 = vadd_s16(tmp10, z12);
     tmp10 = vsub_s16(tmp10, z5);
-    tmp12 = vqdmulh_n_s16(neg_z10, F_0_613);
+    tmp12 = vqdmulh_lane_s16(neg_z10, consts, 3);
     tmp12 = vadd_s16(tmp12, vadd_s16(neg_z10, neg_z10));
     tmp12 = vadd_s16(tmp12, z5);
 
@@ -172,12 +182,14 @@ void jsimd_idct_ifast_neon(void *dct_table,
     row4 = vcombine_s16(dcval, vadd_s16(tmp3, tmp4));
     row3 = vcombine_s16(dcval, vsub_s16(tmp3, tmp4));
   } else if (right_ac_bitmap == 0) {
-    /* AC coefficients are zero for columns 4, 5, 6 and 7. */
-    /* Use DC values for these columns. */
+    /* AC coefficients are zero for columns 4, 5, 6, and 7.
+     * Use DC values for these columns.
+     */
     int16x4_t dcval = vget_high_s16(row0);
 
-    /* Commence regular fast IDCT computation for columns 0, 1, 2 and 3. */
-    /* Load quantization table.*/
+    /* Commence regular fast IDCT computation for columns 0, 1, 2, and 3. */
+
+    /* Load quantization table. */
     int16x4_t quant_row1 = vld1_s16(quantptr + 1 * DCTSIZE);
     int16x4_t quant_row2 = vld1_s16(quantptr + 2 * DCTSIZE);
     int16x4_t quant_row3 = vld1_s16(quantptr + 3 * DCTSIZE);
@@ -197,7 +209,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     int16x4_t tmp13 = vadd_s16(tmp1, tmp3);   /* phases 5-3 */
     int16x4_t tmp1_sub_tmp3 = vsub_s16(tmp1, tmp3);
-    int16x4_t tmp12 = vqdmulh_n_s16(tmp1_sub_tmp3, F_0_414);
+    int16x4_t tmp12 = vqdmulh_lane_s16(tmp1_sub_tmp3, consts, 1);
     tmp12 = vadd_s16(tmp12, tmp1_sub_tmp3);
     tmp12 = vsub_s16(tmp12, tmp13);
 
@@ -219,16 +231,16 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     tmp7 = vadd_s16(z11, z13);                /* phase 5 */
     int16x4_t z11_sub_z13 = vsub_s16(z11, z13);
-    tmp11 = vqdmulh_n_s16(z11_sub_z13, F_0_414);
+    tmp11 = vqdmulh_lane_s16(z11_sub_z13, consts, 1);
     tmp11 = vadd_s16(tmp11, z11_sub_z13);
 
     int16x4_t z10_add_z12 = vsub_s16(z12, neg_z10);
-    int16x4_t z5 = vqdmulh_n_s16(z10_add_z12, F_0_847);
+    int16x4_t z5 = vqdmulh_lane_s16(z10_add_z12, consts, 2);
     z5 = vadd_s16(z5, z10_add_z12);
-    tmp10 = vqdmulh_n_s16(z12, F_0_082);
+    tmp10 = vqdmulh_lane_s16(z12, consts, 0);
     tmp10 = vadd_s16(tmp10, z12);
     tmp10 = vsub_s16(tmp10, z5);
-    tmp12 = vqdmulh_n_s16(neg_z10, F_0_613);
+    tmp12 = vqdmulh_lane_s16(neg_z10, consts, 3);
     tmp12 = vadd_s16(tmp12, vadd_s16(neg_z10, neg_z10));
     tmp12 = vadd_s16(tmp12, z5);
 
@@ -246,7 +258,8 @@ void jsimd_idct_ifast_neon(void *dct_table,
     row3 = vcombine_s16(vsub_s16(tmp3, tmp4), dcval);
   } else {
     /* Some AC coefficients are non-zero; full IDCT calculation required. */
-    /* Load quantization table.*/
+
+    /* Load quantization table. */
     int16x8_t quant_row1 = vld1q_s16(quantptr + 1 * DCTSIZE);
     int16x8_t quant_row2 = vld1q_s16(quantptr + 2 * DCTSIZE);
     int16x8_t quant_row3 = vld1q_s16(quantptr + 3 * DCTSIZE);
@@ -266,7 +279,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     int16x8_t tmp13 = vaddq_s16(tmp1, tmp3);   /* phases 5-3 */
     int16x8_t tmp1_sub_tmp3 = vsubq_s16(tmp1, tmp3);
-    int16x8_t tmp12 = vqdmulhq_n_s16(tmp1_sub_tmp3, F_0_414);
+    int16x8_t tmp12 = vqdmulhq_lane_s16(tmp1_sub_tmp3, consts, 1);
     tmp12 = vaddq_s16(tmp12, tmp1_sub_tmp3);
     tmp12 = vsubq_s16(tmp12, tmp13);
 
@@ -288,16 +301,16 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
     tmp7 = vaddq_s16(z11, z13);                /* phase 5 */
     int16x8_t z11_sub_z13 = vsubq_s16(z11, z13);
-    tmp11 = vqdmulhq_n_s16(z11_sub_z13, F_0_414);
+    tmp11 = vqdmulhq_lane_s16(z11_sub_z13, consts, 1);
     tmp11 = vaddq_s16(tmp11, z11_sub_z13);
 
     int16x8_t z10_add_z12 = vsubq_s16(z12, neg_z10);
-    int16x8_t z5 = vqdmulhq_n_s16(z10_add_z12, F_0_847);
+    int16x8_t z5 = vqdmulhq_lane_s16(z10_add_z12, consts, 2);
     z5 = vaddq_s16(z5, z10_add_z12);
-    tmp10 = vqdmulhq_n_s16(z12, F_0_082);
+    tmp10 = vqdmulhq_lane_s16(z12, consts, 0);
     tmp10 = vaddq_s16(tmp10, z12);
     tmp10 = vsubq_s16(tmp10, z5);
-    tmp12 = vqdmulhq_n_s16(neg_z10, F_0_613);
+    tmp12 = vqdmulhq_lane_s16(neg_z10, consts, 3);
     tmp12 = vaddq_s16(tmp12, vaddq_s16(neg_z10, neg_z10));
     tmp12 = vaddq_s16(tmp12, z5);
 
@@ -315,7 +328,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
     row3 = vsubq_s16(tmp3, tmp4);
   }
 
-  /* Tranpose rows to work on columns in pass 2. */
+  /* Transpose rows to work on columns in pass 2. */
   int16x8x2_t rows_01 = vtrnq_s16(row0, row1);
   int16x8x2_t rows_23 = vtrnq_s16(row2, row3);
   int16x8x2_t rows_45 = vtrnq_s16(row4, row5);
@@ -344,14 +357,15 @@ void jsimd_idct_ifast_neon(void *dct_table,
   int16x8_t col6 = vreinterpretq_s16_s32(cols_26.val[1]);
   int16x8_t col7 = vreinterpretq_s16_s32(cols_37.val[1]);
 
-  /* 1-D IDCT, pass 2. */
-  /* Even part. */
+  /* 1-D IDCT, pass 2 */
+
+  /* Even part */
   int16x8_t tmp10 = vaddq_s16(col0, col4);
   int16x8_t tmp11 = vsubq_s16(col0, col4);
 
   int16x8_t tmp13 = vaddq_s16(col2, col6);
   int16x8_t col2_sub_col6 = vsubq_s16(col2, col6);
-  int16x8_t tmp12 = vqdmulhq_n_s16(col2_sub_col6, F_0_414);
+  int16x8_t tmp12 = vqdmulhq_lane_s16(col2_sub_col6, consts, 1);
   tmp12 = vaddq_s16(tmp12, col2_sub_col6);
   tmp12 = vsubq_s16(tmp12, tmp13);
 
@@ -360,7 +374,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
   int16x8_t tmp1 = vaddq_s16(tmp11, tmp12);
   int16x8_t tmp2 = vsubq_s16(tmp11, tmp12);
 
-  /* Odd part. */
+  /* Odd part */
   int16x8_t z13 = vaddq_s16(col5, col3);
   int16x8_t neg_z10 = vsubq_s16(col3, col5);
   int16x8_t z11 = vaddq_s16(col1, col7);
@@ -368,16 +382,16 @@ void jsimd_idct_ifast_neon(void *dct_table,
 
   int16x8_t tmp7 = vaddq_s16(z11, z13);      /* phase 5 */
   int16x8_t z11_sub_z13 = vsubq_s16(z11, z13);
-  tmp11 = vqdmulhq_n_s16(z11_sub_z13, F_0_414);
+  tmp11 = vqdmulhq_lane_s16(z11_sub_z13, consts, 1);
   tmp11 = vaddq_s16(tmp11, z11_sub_z13);
 
   int16x8_t z10_add_z12 = vsubq_s16(z12, neg_z10);
-  int16x8_t z5 = vqdmulhq_n_s16(z10_add_z12, F_0_847);
+  int16x8_t z5 = vqdmulhq_lane_s16(z10_add_z12, consts, 2);
   z5 = vaddq_s16(z5, z10_add_z12);
-  tmp10 = vqdmulhq_n_s16(z12, F_0_082);
+  tmp10 = vqdmulhq_lane_s16(z12, consts, 0);
   tmp10 = vaddq_s16(tmp10, z12);
   tmp10 = vsubq_s16(tmp10, z5);
-  tmp12 = vqdmulhq_n_s16(neg_z10, F_0_613);
+  tmp12 = vqdmulhq_lane_s16(neg_z10, consts, 3);
   tmp12 = vaddq_s16(tmp12, vaddq_s16(neg_z10, neg_z10));
   tmp12 = vaddq_s16(tmp12, z5);
 
@@ -394,7 +408,7 @@ void jsimd_idct_ifast_neon(void *dct_table,
   col4 = vaddq_s16(tmp3, tmp4);
   col3 = vsubq_s16(tmp3, tmp4);
 
-  /* Scale down by factor of 8, narrowing to 8-bit. */
+  /* Scale down by a factor of 8, narrowing to 8-bit. */
   int8x16_t cols_01_s8 = vcombine_s8(vqshrn_n_s16(col0, PASS1_BITS + 3),
                                      vqshrn_n_s16(col1, PASS1_BITS + 3));
   int8x16_t cols_45_s8 = vcombine_s8(vqshrn_n_s16(col4, PASS1_BITS + 3),
@@ -404,16 +418,20 @@ void jsimd_idct_ifast_neon(void *dct_table,
   int8x16_t cols_67_s8 = vcombine_s8(vqshrn_n_s16(col6, PASS1_BITS + 3),
                                      vqshrn_n_s16(col7, PASS1_BITS + 3));
   /* Clamp to range [0-255]. */
-  uint8x16_t cols_01 = vreinterpretq_u8_s8(
-      vaddq_s8(cols_01_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
-  uint8x16_t cols_45 = vreinterpretq_u8_s8(
-      vaddq_s8(cols_45_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
-  uint8x16_t cols_23 = vreinterpretq_u8_s8(
-      vaddq_s8(cols_23_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
-  uint8x16_t cols_67 = vreinterpretq_u8_s8(
-      vaddq_s8(cols_67_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
+  uint8x16_t cols_01 =
+    vreinterpretq_u8_s8
+      (vaddq_s8(cols_01_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
+  uint8x16_t cols_45 =
+    vreinterpretq_u8_s8
+      (vaddq_s8(cols_45_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
+  uint8x16_t cols_23 =
+    vreinterpretq_u8_s8
+      (vaddq_s8(cols_23_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
+  uint8x16_t cols_67 =
+    vreinterpretq_u8_s8
+      (vaddq_s8(cols_67_s8, vreinterpretq_s8_u8(vdupq_n_u8(CENTERJSAMPLE))));
 
-  /* Transpose block ready for store. */
+  /* Transpose block to prepare for store. */
   uint32x4x2_t cols_0415 = vzipq_u32(vreinterpretq_u32_u8(cols_01),
                                      vreinterpretq_u32_u8(cols_45));
   uint32x4x2_t cols_2637 = vzipq_u32(vreinterpretq_u32_u8(cols_23),

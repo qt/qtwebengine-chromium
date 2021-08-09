@@ -1,7 +1,7 @@
 /*
- * jfdctfst-neon.c - fast DCT (Arm NEON)
+ * jfdctfst-neon.c - fast integer FDCT (Arm Neon)
  *
- * Copyright 2020 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,21 +21,21 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../../jconfigint.h"
-#include "../../../jinclude.h"
-#include "../../../jpeglib.h"
-#include "../../../jsimd.h"
-#include "../../../jdct.h"
-#include "../../../jsimddct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
 #include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
+#include "../jsimd.h"
+#include "align.h"
 
 #include <arm_neon.h>
 
-/*
- * 'jsimd_fdct_ifast_neon' performs a fast, not so accurate forward DCT
- * (Discrete Cosine Transform) on one block of samples. It uses the same
+
+/* jsimd_fdct_ifast_neon() performs a fast, not so accurate forward DCT
+ * (Discrete Cosine Transform) on one block of samples.  It uses the same
  * calculations and produces exactly the same output as IJG's original
- * 'jpeg_fdct_ifast' function, which can be found in jfdctfst.c.
+ * jpeg_fdct_ifast() function, which can be found in jfdctfst.c.
  *
  * Scaled integer constants are used to avoid floating-point arithmetic:
  *    0.382683433 = 12544 * 2^-15
@@ -43,9 +43,9 @@
  *    0.707106781 = 23168 * 2^-15
  *    0.306562965 =  9984 * 2^-15
  *
- * See jfdctfst.c for further details of the IDCT algorithm. Where possible,
- * the variable names and comments here in 'jsimd_fdct_ifast_neon' match up
- * with those in 'jpeg_fdct_ifast'.
+ * See jfdctfst.c for further details of the DCT algorithm.  Where possible,
+ * the variable names and comments here in jsimd_fdct_ifast_neon() match up
+ * with those in jpeg_fdct_ifast().
  */
 
 #define F_0_382  12544
@@ -53,16 +53,17 @@
 #define F_0_707  23168
 #define F_0_306  9984
 
+
 ALIGN(16) static const int16_t jsimd_fdct_ifast_neon_consts[] = {
   F_0_382, F_0_541, F_0_707, F_0_306
 };
 
 void jsimd_fdct_ifast_neon(DCTELEM *data)
 {
-  /* Load an 8x8 block of samples into Neon registers. De-interleaving loads */
-  /* are used followed by vuzp to transpose the block such that we have a */
-  /* column of samples per vector - allowing all rows to be processed at */
-  /* once. */
+  /* Load an 8x8 block of samples into Neon registers.  De-interleaving loads
+   * are used, followed by vuzp to transpose the block such that we have a
+   * column of samples per vector - allowing all rows to be processed at once.
+   */
   int16x8x4_t data1 = vld4q_s16(data);
   int16x8x4_t data2 = vld4q_s16(data + 4 * DCTSIZE);
 
@@ -80,10 +81,11 @@ void jsimd_fdct_ifast_neon(DCTELEM *data)
   int16x8_t col6 = cols_26.val[1];
   int16x8_t col7 = cols_37.val[1];
 
+  /* Pass 1: process rows. */
+
   /* Load DCT conversion constants. */
   const int16x4_t consts = vld1_s16(jsimd_fdct_ifast_neon_consts);
 
-  /* Pass 1: process rows. */
   int16x8_t tmp0 = vaddq_s16(col0, col7);
   int16x8_t tmp7 = vsubq_s16(col0, col7);
   int16x8_t tmp1 = vaddq_s16(col1, col6);
@@ -157,6 +159,7 @@ void jsimd_fdct_ifast_neon(DCTELEM *data)
   int16x8_t row7 = vreinterpretq_s16_s32(rows_37.val[1]);
 
   /* Pass 2: process columns. */
+
   tmp0 = vaddq_s16(row0, row7);
   tmp7 = vsubq_s16(row0, row7);
   tmp1 = vaddq_s16(row1, row6);

@@ -1,7 +1,7 @@
 /*
- * jcgryext-neon.c - grayscale colorspace conversion (Arm NEON)
+ * jcgryext-neon.c - grayscale colorspace conversion (Arm Neon)
  *
- * Copyright 2020 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -22,8 +22,8 @@
 
 /* This file is included by jcgray-neon.c */
 
-/*
- * RGB -> Grayscale conversion is defined by the following equation:
+
+/* RGB -> Grayscale conversion is defined by the following equation:
  *    Y  =  0.29900 * R + 0.58700 * G + 0.11400 * B
  *
  * Avoid floating point arithmetic by using shifted integer constants:
@@ -32,19 +32,17 @@
  *    0.11399841 =  7471 * 2^-16
  * These constants are defined in jcgray-neon.c
  *
- * We use rounding later to get correct values.
- *
  * This is the same computation as the RGB -> Y portion of RGB -> YCbCr.
  */
 
-void jsimd_rgb_gray_convert_neon(JDIMENSION image_width,
-                                 JSAMPARRAY input_buf,
-                                 JSAMPIMAGE output_buf,
-                                 JDIMENSION output_row,
+void jsimd_rgb_gray_convert_neon(JDIMENSION image_width, JSAMPARRAY input_buf,
+                                 JSAMPIMAGE output_buf, JDIMENSION output_row,
                                  int num_rows)
 {
   JSAMPROW inptr;
   JSAMPROW outptr;
+  /* Allocate temporary buffer for final (image_width % 16) pixels in row. */
+  ALIGN(16) uint8_t tmp_buf[16 * RGB_PIXELSIZE];
 
   while (--num_rows >= 0) {
     inptr = *input_buf++;
@@ -54,11 +52,11 @@ void jsimd_rgb_gray_convert_neon(JDIMENSION image_width,
     int cols_remaining = image_width;
     for (; cols_remaining > 0; cols_remaining -= 16) {
 
-      /* To prevent buffer overread by the vector load instructions, the */
-      /* last (image_width % 16) columns of data are first memcopied to a */
-      /* temporary buffer large enough to accommodate the vector load. */
+      /* To prevent buffer overread by the vector load instructions, the last
+       * (image_width % 16) columns of data are first memcopied to a temporary
+       * buffer large enough to accommodate the vector load.
+       */
       if (cols_remaining < 16) {
-        ALIGN(16) uint8_t tmp_buf[16 * RGB_PIXELSIZE];
         memcpy(tmp_buf, inptr, cols_remaining * RGB_PIXELSIZE);
         inptr = tmp_buf;
       }
@@ -95,8 +93,9 @@ void jsimd_rgb_gray_convert_neon(JDIMENSION image_width,
       uint16x8_t y_h = vcombine_u16(vrshrn_n_u32(y_hl, 16),
                                     vrshrn_n_u32(y_hh, 16));
 
-      /* Narrow Y values to 8-bit and store to memory. Buffer overwrite is */
-      /* permitted up to the next multiple of ALIGN_SIZE bytes. */
+      /* Narrow Y values to 8-bit and store to memory.  Buffer overwrite is
+       * permitted up to the next multiple of ALIGN_SIZE bytes.
+       */
       vst1q_u8(outptr, vcombine_u8(vmovn_u16(y_l), vmovn_u16(y_h)));
 
       /* Increment pointers. */

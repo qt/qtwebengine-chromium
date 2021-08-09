@@ -1,7 +1,8 @@
 /*
- * jdcolext-neon.c - colorspace conversion (Arm NEON)
+ * jdcolext-neon.c - colorspace conversion (Arm Neon)
  *
- * Copyright 2019 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
+ * Copyright (C) 2020, D. R. Commander.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -22,8 +23,8 @@
 
 /* This file is included by jdcolor-neon.c. */
 
-/*
- * YCbCr -> RGB conversion is defined by the following equations:
+
+/* YCbCr -> RGB conversion is defined by the following equations:
  *    R = Y                        + 1.40200 * (Cr - 128)
  *    G = Y - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128)
  *    B = Y + 1.77200 * (Cb - 128)
@@ -35,31 +36,29 @@
  *    1.7720337 = 29033 * 2^-14
  * These constants are defined in jdcolor-neon.c.
  *
- * Rounding is used when descaling to ensure correct results.
+ * To ensure correct results, rounding is used when descaling.
  */
 
-/*
- * Notes on safe memory access for YCbCr -> RGB conversion routines:
+/* Notes on safe memory access for YCbCr -> RGB conversion routines:
  *
  * Input memory buffers can be safely overread up to the next multiple of
- * ALIGN_SIZE bytes since they are always allocated by alloc_sarray() in
+ * ALIGN_SIZE bytes, since they are always allocated by alloc_sarray() in
  * jmemmgr.c.
  *
- * The output buffer cannot safely be written beyond output_width since the
- * TurboJPEG API permits it to be allocated with or without padding up to the
- * next multiple of ALIGN_SIZE bytes.
+ * The output buffer cannot safely be written beyond output_width, since
+ * output_buf points to a possibly unpadded row in the decompressed image
+ * buffer allocated by the calling program.
  */
 
-void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
-                                JSAMPIMAGE input_buf,
-                                JDIMENSION input_row,
-                                JSAMPARRAY output_buf,
+void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width, JSAMPIMAGE input_buf,
+                                JDIMENSION input_row, JSAMPARRAY output_buf,
                                 int num_rows)
 {
   JSAMPROW outptr;
-  /* Pointers to Y, Cb and Cr data. */
+  /* Pointers to Y, Cb, and Cr data */
   JSAMPROW inptr0, inptr1, inptr2;
 
+  const int16x4_t consts = vld1_s16(jsimd_ycc_rgb_convert_neon_consts);
   const int16x8_t neg_128 = vdupq_n_s16(-128);
 
   while (--num_rows >= 0) {
@@ -74,47 +73,67 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       uint8x16_t cb = vld1q_u8(inptr1);
       uint8x16_t cr = vld1q_u8(inptr2);
       /* Subtract 128 from Cb and Cr. */
-      int16x8_t cr_128_l = vreinterpretq_s16_u16(
-                  vaddw_u8(vreinterpretq_u16_s16(neg_128), vget_low_u8(cr)));
-      int16x8_t cr_128_h = vreinterpretq_s16_u16(
-                  vaddw_u8(vreinterpretq_u16_s16(neg_128), vget_high_u8(cr)));
-      int16x8_t cb_128_l = vreinterpretq_s16_u16(
-                  vaddw_u8(vreinterpretq_u16_s16(neg_128), vget_low_u8(cb)));
-      int16x8_t cb_128_h = vreinterpretq_s16_u16(
-                  vaddw_u8(vreinterpretq_u16_s16(neg_128), vget_high_u8(cb)));
+      int16x8_t cr_128_l =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128),
+                                       vget_low_u8(cr)));
+      int16x8_t cr_128_h =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128),
+                                       vget_high_u8(cr)));
+      int16x8_t cb_128_l =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128),
+                                       vget_low_u8(cb)));
+      int16x8_t cb_128_h =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128),
+                                       vget_high_u8(cb)));
       /* Compute G-Y: - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128) */
-      int32x4_t g_sub_y_ll = vmull_n_s16(vget_low_s16(cb_128_l), -F_0_344);
-      int32x4_t g_sub_y_lh = vmull_n_s16(vget_high_s16(cb_128_l), -F_0_344);
-      int32x4_t g_sub_y_hl = vmull_n_s16(vget_low_s16(cb_128_h), -F_0_344);
-      int32x4_t g_sub_y_hh = vmull_n_s16(vget_high_s16(cb_128_h), -F_0_344);
-      g_sub_y_ll = vmlsl_n_s16(g_sub_y_ll, vget_low_s16(cr_128_l), F_0_714);
-      g_sub_y_lh = vmlsl_n_s16(g_sub_y_lh, vget_high_s16(cr_128_l), F_0_714);
-      g_sub_y_hl = vmlsl_n_s16(g_sub_y_hl, vget_low_s16(cr_128_h), F_0_714);
-      g_sub_y_hh = vmlsl_n_s16(g_sub_y_hh, vget_high_s16(cr_128_h), F_0_714);
-      /* Descale G components: shift right 15, round and narrow to 16-bit. */
+      int32x4_t g_sub_y_ll = vmull_lane_s16(vget_low_s16(cb_128_l), consts, 0);
+      int32x4_t g_sub_y_lh = vmull_lane_s16(vget_high_s16(cb_128_l),
+                                            consts, 0);
+      int32x4_t g_sub_y_hl = vmull_lane_s16(vget_low_s16(cb_128_h), consts, 0);
+      int32x4_t g_sub_y_hh = vmull_lane_s16(vget_high_s16(cb_128_h),
+                                            consts, 0);
+      g_sub_y_ll = vmlsl_lane_s16(g_sub_y_ll, vget_low_s16(cr_128_l),
+                                  consts, 1);
+      g_sub_y_lh = vmlsl_lane_s16(g_sub_y_lh, vget_high_s16(cr_128_l),
+                                  consts, 1);
+      g_sub_y_hl = vmlsl_lane_s16(g_sub_y_hl, vget_low_s16(cr_128_h),
+                                  consts, 1);
+      g_sub_y_hh = vmlsl_lane_s16(g_sub_y_hh, vget_high_s16(cr_128_h),
+                                  consts, 1);
+      /* Descale G components: shift right 15, round, and narrow to 16-bit. */
       int16x8_t g_sub_y_l = vcombine_s16(vrshrn_n_s32(g_sub_y_ll, 15),
                                          vrshrn_n_s32(g_sub_y_lh, 15));
       int16x8_t g_sub_y_h = vcombine_s16(vrshrn_n_s32(g_sub_y_hl, 15),
                                          vrshrn_n_s32(g_sub_y_hh, 15));
       /* Compute R-Y: 1.40200 * (Cr - 128) */
-      int16x8_t r_sub_y_l = vqrdmulhq_n_s16(vshlq_n_s16(cr_128_l, 1), F_1_402);
-      int16x8_t r_sub_y_h = vqrdmulhq_n_s16(vshlq_n_s16(cr_128_h, 1), F_1_402);
+      int16x8_t r_sub_y_l = vqrdmulhq_lane_s16(vshlq_n_s16(cr_128_l, 1),
+                                               consts, 2);
+      int16x8_t r_sub_y_h = vqrdmulhq_lane_s16(vshlq_n_s16(cr_128_h, 1),
+                                               consts, 2);
       /* Compute B-Y: 1.77200 * (Cb - 128) */
-      int16x8_t b_sub_y_l = vqrdmulhq_n_s16(vshlq_n_s16(cb_128_l, 1), F_1_772);
-      int16x8_t b_sub_y_h = vqrdmulhq_n_s16(vshlq_n_s16(cb_128_h, 1), F_1_772);
+      int16x8_t b_sub_y_l = vqrdmulhq_lane_s16(vshlq_n_s16(cb_128_l, 1),
+                                               consts, 3);
+      int16x8_t b_sub_y_h = vqrdmulhq_lane_s16(vshlq_n_s16(cb_128_h, 1),
+                                               consts, 3);
       /* Add Y. */
-      int16x8_t r_l = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(r_sub_y_l), vget_low_u8(y)));
-      int16x8_t r_h = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(r_sub_y_h), vget_high_u8(y)));
-      int16x8_t b_l = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(b_sub_y_l), vget_low_u8(y)));
-      int16x8_t b_h = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(b_sub_y_h), vget_high_u8(y)));
-      int16x8_t g_l = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(g_sub_y_l), vget_low_u8(y)));
-      int16x8_t g_h = vreinterpretq_s16_u16(
-                vaddw_u8(vreinterpretq_u16_s16(g_sub_y_h), vget_high_u8(y)));
+      int16x8_t r_l =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(r_sub_y_l),
+                                       vget_low_u8(y)));
+      int16x8_t r_h =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(r_sub_y_h),
+                                       vget_high_u8(y)));
+      int16x8_t b_l =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(b_sub_y_l),
+                                       vget_low_u8(y)));
+      int16x8_t b_h =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(b_sub_y_h),
+                                       vget_high_u8(y)));
+      int16x8_t g_l =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(g_sub_y_l),
+                                       vget_low_u8(y)));
+      int16x8_t g_h =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(g_sub_y_h),
+                                       vget_high_u8(y)));
 
 #if RGB_PIXELSIZE == 4
       uint8x16x4_t rgba;
@@ -134,8 +153,8 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       rgb.val[RGB_BLUE] = vcombine_u8(vqmovun_s16(b_l), vqmovun_s16(b_h));
       /* Store RGB pixel data to memory. */
       vst3q_u8(outptr, rgb);
-#else /* RGB565 */
-      /* Pack R, G and B values in ratio 5:6:5. */
+#else
+      /* Pack R, G, and B values in ratio 5:6:5. */
       uint16x8_t rgb565_l = vqshluq_n_s16(r_l, 8);
       rgb565_l = vsriq_n_u16(rgb565_l, vqshluq_n_s16(g_l, 8), 5);
       rgb565_l = vsriq_n_u16(rgb565_l, vqshluq_n_s16(b_l, 8), 11);
@@ -145,7 +164,7 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       /* Store RGB pixel data to memory. */
       vst1q_u16((uint16_t *)outptr, rgb565_l);
       vst1q_u16(((uint16_t *)outptr) + 8, rgb565_h);
-#endif /* RGB565 */
+#endif
 
       /* Increment pointers. */
       inptr0 += 16;
@@ -159,29 +178,31 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       uint8x8_t cb = vld1_u8(inptr1);
       uint8x8_t cr = vld1_u8(inptr2);
       /* Subtract 128 from Cb and Cr. */
-      int16x8_t cr_128 = vreinterpretq_s16_u16(
-                              vaddw_u8(vreinterpretq_u16_s16(neg_128), cr));
-      int16x8_t cb_128 = vreinterpretq_s16_u16(
-                              vaddw_u8(vreinterpretq_u16_s16(neg_128), cb));
+      int16x8_t cr_128 =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128), cr));
+      int16x8_t cb_128 =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128), cb));
       /* Compute G-Y: - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128) */
-      int32x4_t g_sub_y_l = vmull_n_s16(vget_low_s16(cb_128), -F_0_344);
-      int32x4_t g_sub_y_h = vmull_n_s16(vget_high_s16(cb_128), -F_0_344);
-      g_sub_y_l = vmlsl_n_s16(g_sub_y_l, vget_low_s16(cr_128), F_0_714);
-      g_sub_y_h = vmlsl_n_s16(g_sub_y_h, vget_high_s16(cr_128), F_0_714);
-      /* Descale G components: shift right 15, round and narrow to 16-bit. */
+      int32x4_t g_sub_y_l = vmull_lane_s16(vget_low_s16(cb_128), consts, 0);
+      int32x4_t g_sub_y_h = vmull_lane_s16(vget_high_s16(cb_128), consts, 0);
+      g_sub_y_l = vmlsl_lane_s16(g_sub_y_l, vget_low_s16(cr_128), consts, 1);
+      g_sub_y_h = vmlsl_lane_s16(g_sub_y_h, vget_high_s16(cr_128), consts, 1);
+      /* Descale G components: shift right 15, round, and narrow to 16-bit. */
       int16x8_t g_sub_y = vcombine_s16(vrshrn_n_s32(g_sub_y_l, 15),
                                        vrshrn_n_s32(g_sub_y_h, 15));
       /* Compute R-Y: 1.40200 * (Cr - 128) */
-      int16x8_t r_sub_y = vqrdmulhq_n_s16(vshlq_n_s16(cr_128, 1), F_1_402);
+      int16x8_t r_sub_y = vqrdmulhq_lane_s16(vshlq_n_s16(cr_128, 1),
+                                             consts, 2);
       /* Compute B-Y: 1.77200 * (Cb - 128) */
-      int16x8_t b_sub_y = vqrdmulhq_n_s16(vshlq_n_s16(cb_128, 1), F_1_772);
+      int16x8_t b_sub_y = vqrdmulhq_lane_s16(vshlq_n_s16(cb_128, 1),
+                                             consts, 3);
       /* Add Y. */
-      int16x8_t r = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(r_sub_y), y));
-      int16x8_t b = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(b_sub_y), y));
-      int16x8_t g = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(g_sub_y), y));
+      int16x8_t r =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(r_sub_y), y));
+      int16x8_t b =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(b_sub_y), y));
+      int16x8_t g =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(g_sub_y), y));
 
 #if RGB_PIXELSIZE == 4
       uint8x8x4_t rgba;
@@ -201,14 +222,14 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       rgb.val[RGB_BLUE] = vqmovun_s16(b);
       /* Store RGB pixel data to memory. */
       vst3_u8(outptr, rgb);
-#else /* RGB565 */
-      /* Pack R, G and B values in ratio 5:6:5. */
+#else
+      /* Pack R, G, and B values in ratio 5:6:5. */
       uint16x8_t rgb565 = vqshluq_n_s16(r, 8);
       rgb565 = vsriq_n_u16(rgb565, vqshluq_n_s16(g, 8), 5);
       rgb565 = vsriq_n_u16(rgb565, vqshluq_n_s16(b, 8), 11);
       /* Store RGB pixel data to memory. */
       vst1q_u16((uint16_t *)outptr, rgb565);
-#endif /* RGB565 */
+#endif
 
       /* Increment pointers. */
       inptr0 += 8;
@@ -224,29 +245,31 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       uint8x8_t cb = vld1_u8(inptr1);
       uint8x8_t cr = vld1_u8(inptr2);
       /* Subtract 128 from Cb and Cr. */
-      int16x8_t cr_128 = vreinterpretq_s16_u16(
-                              vaddw_u8(vreinterpretq_u16_s16(neg_128), cr));
-      int16x8_t cb_128 = vreinterpretq_s16_u16(
-                              vaddw_u8(vreinterpretq_u16_s16(neg_128), cb));
+      int16x8_t cr_128 =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128), cr));
+      int16x8_t cb_128 =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(neg_128), cb));
       /* Compute G-Y: - 0.34414 * (Cb - 128) - 0.71414 * (Cr - 128) */
-      int32x4_t g_sub_y_l = vmull_n_s16(vget_low_s16(cb_128), -F_0_344);
-      int32x4_t g_sub_y_h = vmull_n_s16(vget_high_s16(cb_128), -F_0_344);
-      g_sub_y_l = vmlsl_n_s16(g_sub_y_l, vget_low_s16(cr_128), F_0_714);
-      g_sub_y_h = vmlsl_n_s16(g_sub_y_h, vget_high_s16(cr_128), F_0_714);
-      /* Descale G components: shift right 15, round and narrow to 16-bit. */
+      int32x4_t g_sub_y_l = vmull_lane_s16(vget_low_s16(cb_128), consts, 0);
+      int32x4_t g_sub_y_h = vmull_lane_s16(vget_high_s16(cb_128), consts, 0);
+      g_sub_y_l = vmlsl_lane_s16(g_sub_y_l, vget_low_s16(cr_128), consts, 1);
+      g_sub_y_h = vmlsl_lane_s16(g_sub_y_h, vget_high_s16(cr_128), consts, 1);
+      /* Descale G components: shift right 15, round, and narrow to 16-bit. */
       int16x8_t g_sub_y = vcombine_s16(vrshrn_n_s32(g_sub_y_l, 15),
                                        vrshrn_n_s32(g_sub_y_h, 15));
       /* Compute R-Y: 1.40200 * (Cr - 128) */
-      int16x8_t r_sub_y = vqrdmulhq_n_s16(vshlq_n_s16(cr_128, 1), F_1_402);
+      int16x8_t r_sub_y = vqrdmulhq_lane_s16(vshlq_n_s16(cr_128, 1),
+                                             consts, 2);
       /* Compute B-Y: 1.77200 * (Cb - 128) */
-      int16x8_t b_sub_y = vqrdmulhq_n_s16(vshlq_n_s16(cb_128, 1), F_1_772);
+      int16x8_t b_sub_y = vqrdmulhq_lane_s16(vshlq_n_s16(cb_128, 1),
+                                             consts, 3);
       /* Add Y. */
-      int16x8_t r = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(r_sub_y), y));
-      int16x8_t b = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(b_sub_y), y));
-      int16x8_t g = vreinterpretq_s16_u16(
-                                vaddw_u8(vreinterpretq_u16_s16(g_sub_y), y));
+      int16x8_t r =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(r_sub_y), y));
+      int16x8_t b =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(b_sub_y), y));
+      int16x8_t g =
+        vreinterpretq_s16_u16(vaddw_u8(vreinterpretq_u16_s16(g_sub_y), y));
 
 #if RGB_PIXELSIZE == 4
       uint8x8x4_t rgba;
@@ -258,20 +281,27 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       rgba.val[RGB_ALPHA] = vdup_n_u8(0xFF);
       /* Store RGBA pixel data to memory. */
       switch (cols_remaining) {
-      case 7 :
+      case 7:
         vst4_lane_u8(outptr + 6 * RGB_PIXELSIZE, rgba, 6);
-      case 6 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 6:
         vst4_lane_u8(outptr + 5 * RGB_PIXELSIZE, rgba, 5);
-      case 5 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 5:
         vst4_lane_u8(outptr + 4 * RGB_PIXELSIZE, rgba, 4);
-      case 4 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 4:
         vst4_lane_u8(outptr + 3 * RGB_PIXELSIZE, rgba, 3);
-      case 3 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 3:
         vst4_lane_u8(outptr + 2 * RGB_PIXELSIZE, rgba, 2);
-      case 2 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 2:
         vst4_lane_u8(outptr + RGB_PIXELSIZE, rgba, 1);
-      case 1 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 1:
         vst4_lane_u8(outptr, rgba, 0);
+        FALLTHROUGH             /*FALLTHROUGH*/
       default:
         break;
       }
@@ -283,48 +313,62 @@ void jsimd_ycc_rgb_convert_neon(JDIMENSION output_width,
       rgb.val[RGB_BLUE] = vqmovun_s16(b);
       /* Store RGB pixel data to memory. */
       switch (cols_remaining) {
-      case 7 :
+      case 7:
         vst3_lane_u8(outptr + 6 * RGB_PIXELSIZE, rgb, 6);
-      case 6 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 6:
         vst3_lane_u8(outptr + 5 * RGB_PIXELSIZE, rgb, 5);
-      case 5 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 5:
         vst3_lane_u8(outptr + 4 * RGB_PIXELSIZE, rgb, 4);
-      case 4 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 4:
         vst3_lane_u8(outptr + 3 * RGB_PIXELSIZE, rgb, 3);
-      case 3 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 3:
         vst3_lane_u8(outptr + 2 * RGB_PIXELSIZE, rgb, 2);
-      case 2 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 2:
         vst3_lane_u8(outptr + RGB_PIXELSIZE, rgb, 1);
-      case 1 :
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 1:
         vst3_lane_u8(outptr, rgb, 0);
+        FALLTHROUGH             /*FALLTHROUGH*/
       default:
         break;
       }
-#else /* RGB565 */
-      /* Pack R, G and B values in ratio 5:6:5. */
+#else
+      /* Pack R, G, and B values in ratio 5:6:5. */
       uint16x8_t rgb565 = vqshluq_n_s16(r, 8);
       rgb565 = vsriq_n_u16(rgb565, vqshluq_n_s16(g, 8), 5);
       rgb565 = vsriq_n_u16(rgb565, vqshluq_n_s16(b, 8), 11);
       /* Store RGB565 pixel data to memory. */
       switch (cols_remaining) {
-      case 7 :
-        vst1q_lane_u16(outptr + 6 * RGB_PIXELSIZE, rgb565, 6);
-      case 6 :
-        vst1q_lane_u16(outptr + 5 * RGB_PIXELSIZE, rgb565, 5);
-      case 5 :
-        vst1q_lane_u16(outptr + 4 * RGB_PIXELSIZE, rgb565, 4);
-      case 4 :
-        vst1q_lane_u16(outptr + 3 * RGB_PIXELSIZE, rgb565, 3);
-      case 3 :
-        vst1q_lane_u16(outptr + 2 * RGB_PIXELSIZE, rgb565, 2);
-      case 2 :
-        vst1q_lane_u16(outptr + RGB_PIXELSIZE, rgb565, 1);
-      case 1 :
-        vst1q_lane_u16(outptr, rgb565, 0);
+      case 7:
+        vst1q_lane_u16((uint16_t *)(outptr + 6 * RGB_PIXELSIZE), rgb565, 6);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 6:
+        vst1q_lane_u16((uint16_t *)(outptr + 5 * RGB_PIXELSIZE), rgb565, 5);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 5:
+        vst1q_lane_u16((uint16_t *)(outptr + 4 * RGB_PIXELSIZE), rgb565, 4);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 4:
+        vst1q_lane_u16((uint16_t *)(outptr + 3 * RGB_PIXELSIZE), rgb565, 3);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 3:
+        vst1q_lane_u16((uint16_t *)(outptr + 2 * RGB_PIXELSIZE), rgb565, 2);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 2:
+        vst1q_lane_u16((uint16_t *)(outptr + RGB_PIXELSIZE), rgb565, 1);
+        FALLTHROUGH             /*FALLTHROUGH*/
+      case 1:
+        vst1q_lane_u16((uint16_t *)outptr, rgb565, 0);
+        FALLTHROUGH             /*FALLTHROUGH*/
       default:
         break;
       }
-#endif /* RGB565 */
+#endif
     }
   }
 }

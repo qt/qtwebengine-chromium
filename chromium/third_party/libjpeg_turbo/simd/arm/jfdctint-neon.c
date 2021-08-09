@@ -1,7 +1,8 @@
 /*
- * jfdctint-neon.c - accurate DCT (Arm NEON)
+ * jfdctint-neon.c - accurate integer FDCT (Arm Neon)
  *
- * Copyright 2020 The Chromium Aruthors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
+ * Copyright (C) 2020, D. R. Commander.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,21 +22,22 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../../jconfigint.h"
-#include "../../../jinclude.h"
-#include "../../../jpeglib.h"
-#include "../../../jsimd.h"
-#include "../../../jdct.h"
-#include "../../../jsimddct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
 #include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
+#include "../jsimd.h"
+#include "align.h"
+#include "neon-compat.h"
 
 #include <arm_neon.h>
 
-/*
- * 'jsimd_fdct_islow_neon' performs a slow-but-accurate forward DCT (Discrete
- * Cosine Transform) on one block of samples. It uses the same calculations
- * and produces exactly the same output as IJG's original 'jpeg_fdct_islow'
- * function, which can be found in jfdctint.c.
+
+/* jsimd_fdct_islow_neon() performs a slower but more accurate forward DCT
+ * (Discrete Cosine Transform) on one block of samples.  It uses the same
+ * calculations and produces exactly the same output as IJG's original
+ * jpeg_fdct_islow() function, which can be found in jfdctint.c.
  *
  * Scaled integer constants are used to avoid floating-point arithmetic:
  *    0.298631336 =  2446 * 2^-13
@@ -51,9 +53,9 @@
  *    2.562915447 = 20995 * 2^-13
  *    3.072711026 = 25172 * 2^-13
  *
- * See jfdctint.c for further details of the DCT algorithm. Where possible,
- * the variable names and comments here in 'jsimd_fdct_islow_neon' match up
- * with those in 'jpeg_fdct_islow'.
+ * See jfdctint.c for further details of the DCT algorithm.  Where possible,
+ * the variable names and comments here in jsimd_fdct_islow_neon() match up
+ * with those in jpeg_fdct_islow().
  */
 
 #define CONST_BITS  13
@@ -75,6 +77,7 @@
 #define F_2_562  20995
 #define F_3_072  25172
 
+
 ALIGN(16) static const int16_t jsimd_fdct_islow_neon_consts[] = {
   F_0_298, -F_0_390,  F_0_541,  F_0_765,
  -F_0_899,  F_1_175,  F_1_501, -F_1_847,
@@ -84,20 +87,20 @@ ALIGN(16) static const int16_t jsimd_fdct_islow_neon_consts[] = {
 void jsimd_fdct_islow_neon(DCTELEM *data)
 {
   /* Load DCT constants. */
-#if defined(__clang__) || defined(_MSC_VER)
+#ifdef HAVE_VLD1_S16_X3
   const int16x4x3_t consts = vld1_s16_x3(jsimd_fdct_islow_neon_consts);
 #else
   /* GCC does not currently support the intrinsic vld1_<type>_x3(). */
   const int16x4_t consts1 = vld1_s16(jsimd_fdct_islow_neon_consts);
   const int16x4_t consts2 = vld1_s16(jsimd_fdct_islow_neon_consts + 4);
   const int16x4_t consts3 = vld1_s16(jsimd_fdct_islow_neon_consts + 8);
-  const int16x4x3_t consts = { consts1, consts2, consts3 };
+  const int16x4x3_t consts = { { consts1, consts2, consts3 } };
 #endif
 
-  /* Load an 8x8 block of samples into Neon registers. De-interleaving loads */
-  /* are used followed by vuzp to transpose the block such that we have a */
-  /* column of samples per vector - allowing all rows to be processed at */
-  /* once. */
+  /* Load an 8x8 block of samples into Neon registers.  De-interleaving loads
+   * are used, followed by vuzp to transpose the block such that we have a
+   * column of samples per vector - allowing all rows to be processed at once.
+   */
   int16x8x4_t s_rows_0123 = vld4q_s16(data);
   int16x8x4_t s_rows_4567 = vld4q_s16(data + 4 * DCTSIZE);
 
@@ -116,6 +119,7 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   int16x8_t col7 = cols_37.val[1];
 
   /* Pass 1: process rows. */
+
   int16x8_t tmp0 = vaddq_s16(col0, col7);
   int16x8_t tmp7 = vsubq_s16(col0, col7);
   int16x8_t tmp1 = vaddq_s16(col1, col6);
@@ -125,7 +129,7 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   int16x8_t tmp3 = vaddq_s16(col3, col4);
   int16x8_t tmp4 = vsubq_s16(col3, col4);
 
-  /* Even part. */
+  /* Even part */
   int16x8_t tmp10 = vaddq_s16(tmp0, tmp3);
   int16x8_t tmp13 = vsubq_s16(tmp0, tmp3);
   int16x8_t tmp11 = vaddq_s16(tmp1, tmp2);
@@ -135,26 +139,26 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   col4 = vshlq_n_s16(vsubq_s16(tmp10, tmp11), PASS1_BITS);
 
   int16x8_t tmp12_add_tmp13 = vaddq_s16(tmp12, tmp13);
-  int32x4_t z1_l = vmull_lane_s16(vget_low_s16(tmp12_add_tmp13),
-                                  consts.val[0], 2);
-  int32x4_t z1_h = vmull_lane_s16(vget_high_s16(tmp12_add_tmp13),
-                                  consts.val[0], 2);
+  int32x4_t z1_l =
+    vmull_lane_s16(vget_low_s16(tmp12_add_tmp13), consts.val[0], 2);
+  int32x4_t z1_h =
+    vmull_lane_s16(vget_high_s16(tmp12_add_tmp13), consts.val[0], 2);
 
-  int32x4_t col2_scaled_l = vmlal_lane_s16(z1_l, vget_low_s16(tmp13),
-                                           consts.val[0], 3);
-  int32x4_t col2_scaled_h = vmlal_lane_s16(z1_h, vget_high_s16(tmp13),
-                                           consts.val[0], 3);
+  int32x4_t col2_scaled_l =
+    vmlal_lane_s16(z1_l, vget_low_s16(tmp13), consts.val[0], 3);
+  int32x4_t col2_scaled_h =
+    vmlal_lane_s16(z1_h, vget_high_s16(tmp13), consts.val[0], 3);
   col2 = vcombine_s16(vrshrn_n_s32(col2_scaled_l, DESCALE_P1),
                       vrshrn_n_s32(col2_scaled_h, DESCALE_P1));
 
-  int32x4_t col6_scaled_l = vmlal_lane_s16(z1_l, vget_low_s16(tmp12),
-                                           consts.val[1], 3);
-  int32x4_t col6_scaled_h = vmlal_lane_s16(z1_h, vget_high_s16(tmp12),
-                                           consts.val[1], 3);
+  int32x4_t col6_scaled_l =
+    vmlal_lane_s16(z1_l, vget_low_s16(tmp12), consts.val[1], 3);
+  int32x4_t col6_scaled_h =
+    vmlal_lane_s16(z1_h, vget_high_s16(tmp12), consts.val[1], 3);
   col6 = vcombine_s16(vrshrn_n_s32(col6_scaled_l, DESCALE_P1),
                       vrshrn_n_s32(col6_scaled_h, DESCALE_P1));
 
-  /* Odd part. */
+  /* Odd part */
   int16x8_t z1 = vaddq_s16(tmp4, tmp7);
   int16x8_t z2 = vaddq_s16(tmp5, tmp6);
   int16x8_t z3 = vaddq_s16(tmp4, tmp6);
@@ -253,7 +257,8 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   int16x8_t row6 = vreinterpretq_s16_s32(rows_26.val[1]);
   int16x8_t row7 = vreinterpretq_s16_s32(rows_37.val[1]);
 
-  /* Pass 2. */
+  /* Pass 2: process columns. */
+
   tmp0 = vaddq_s16(row0, row7);
   tmp7 = vsubq_s16(row0, row7);
   tmp1 = vaddq_s16(row1, row6);
@@ -263,7 +268,7 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   tmp3 = vaddq_s16(row3, row4);
   tmp4 = vsubq_s16(row3, row4);
 
-  /* Even part. */
+  /* Even part */
   tmp10 = vaddq_s16(tmp0, tmp3);
   tmp13 = vsubq_s16(tmp0, tmp3);
   tmp11 = vaddq_s16(tmp1, tmp2);
@@ -276,21 +281,21 @@ void jsimd_fdct_islow_neon(DCTELEM *data)
   z1_l = vmull_lane_s16(vget_low_s16(tmp12_add_tmp13), consts.val[0], 2);
   z1_h = vmull_lane_s16(vget_high_s16(tmp12_add_tmp13), consts.val[0], 2);
 
-  int32x4_t row2_scaled_l = vmlal_lane_s16(z1_l, vget_low_s16(tmp13),
-                                           consts.val[0], 3);
-  int32x4_t row2_scaled_h = vmlal_lane_s16(z1_h, vget_high_s16(tmp13),
-                                           consts.val[0], 3);
+  int32x4_t row2_scaled_l =
+    vmlal_lane_s16(z1_l, vget_low_s16(tmp13), consts.val[0], 3);
+  int32x4_t row2_scaled_h =
+    vmlal_lane_s16(z1_h, vget_high_s16(tmp13), consts.val[0], 3);
   row2 = vcombine_s16(vrshrn_n_s32(row2_scaled_l, DESCALE_P2),
                       vrshrn_n_s32(row2_scaled_h, DESCALE_P2));
 
-  int32x4_t row6_scaled_l = vmlal_lane_s16(z1_l, vget_low_s16(tmp12),
-                                           consts.val[1], 3);
-  int32x4_t row6_scaled_h = vmlal_lane_s16(z1_h, vget_high_s16(tmp12),
-                                           consts.val[1], 3);
+  int32x4_t row6_scaled_l =
+    vmlal_lane_s16(z1_l, vget_low_s16(tmp12), consts.val[1], 3);
+  int32x4_t row6_scaled_h =
+    vmlal_lane_s16(z1_h, vget_high_s16(tmp12), consts.val[1], 3);
   row6 = vcombine_s16(vrshrn_n_s32(row6_scaled_l, DESCALE_P2),
                       vrshrn_n_s32(row6_scaled_h, DESCALE_P2));
 
-  /* Odd part. */
+  /* Odd part */
   z1 = vaddq_s16(tmp4, tmp7);
   z2 = vaddq_s16(tmp5, tmp6);
   z3 = vaddq_s16(tmp4, tmp6);

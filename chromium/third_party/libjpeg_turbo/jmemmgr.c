@@ -4,7 +4,7 @@
  * This file was part of the Independent JPEG Group's software:
  * Copyright (C) 1991-1997, Thomas G. Lane.
  * libjpeg-turbo Modifications:
- * Copyright (C) 2016, D. R. Commander.
+ * Copyright (C) 2016, 2021, D. R. Commander.
  * For conditions of distribution and use, see the accompanying README.ijg
  * file.
  *
@@ -92,19 +92,6 @@ round_up_pow2(size_t a, size_t b)
 #define ALIGN_SIZE  32 /* Most of the SIMD instructions we support require
                           16-byte (128-bit) alignment, but AVX2 requires
                           32-byte alignment. */
-#endif
-#endif
-
-#ifdef WITH_SIMD
-#if (ALIGN_SIZE % 16)
-  #error "ALIGN_SIZE is not a multiple of 16 bytes - required for SIMD instructions."
-#endif
-#if defined(__AVX2__) && (ALIGN_SIZE % 32)
-  #error "AVX2 requires 32-byte alignment. ALIGN_SIZE is not a multiple of 32 bytes."
-#elif defined(__ARM_NEON) && (ALIGN_SIZE % 32)
-  /* 32-byte alignment allows us to extract more performance from */
-  /* fancy-upsampling algorithms when using NEON. */
-  #error "NEON optimizations rely on 32-byte alignment. ALIGN_SIZE is not a multiple of 32 bytes."
 #endif
 #endif
 
@@ -1045,7 +1032,7 @@ free_pool(j_common_ptr cinfo, int pool_id)
     large_pool_ptr next_lhdr_ptr = lhdr_ptr->next;
     space_freed = lhdr_ptr->bytes_used +
                   lhdr_ptr->bytes_left +
-                  sizeof(large_pool_hdr);
+                  sizeof(large_pool_hdr) + ALIGN_SIZE - 1;
     jpeg_free_large(cinfo, (void *)lhdr_ptr, space_freed);
     mem->total_space_allocated -= space_freed;
     lhdr_ptr = next_lhdr_ptr;
@@ -1058,7 +1045,7 @@ free_pool(j_common_ptr cinfo, int pool_id)
   while (shdr_ptr != NULL) {
     small_pool_ptr next_shdr_ptr = shdr_ptr->next;
     space_freed = shdr_ptr->bytes_used + shdr_ptr->bytes_left +
-                  sizeof(small_pool_hdr);
+                  sizeof(small_pool_hdr) + ALIGN_SIZE - 1;
     jpeg_free_small(cinfo, (void *)shdr_ptr, space_freed);
     mem->total_space_allocated -= space_freed;
     shdr_ptr = next_shdr_ptr;

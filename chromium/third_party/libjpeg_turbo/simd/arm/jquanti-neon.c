@@ -1,7 +1,7 @@
 /*
- * jquanti-neon.c - sample conversion and integer quantization (Arm NEON)
+ * jquanti-neon.c - sample data conversion and quantization (Arm Neon)
  *
- * Copyright 2020 The Chromium Authors. All Rights Reserved.
+ * Copyright (C) 2020, Arm Limited.  All Rights Reserved.
  *
  * This software is provided 'as-is', without any express or implied
  * warranty.  In no event will the authors be held liable for any damages
@@ -21,28 +21,28 @@
  */
 
 #define JPEG_INTERNALS
-#include "../../../jinclude.h"
-#include "../../../jpeglib.h"
-#include "../../../jsimd.h"
-#include "../../../jdct.h"
-#include "../../../jsimddct.h"
+#include "../../jinclude.h"
+#include "../../jpeglib.h"
 #include "../../jsimd.h"
+#include "../../jdct.h"
+#include "../../jsimddct.h"
+#include "../jsimd.h"
 
 #include <arm_neon.h>
 
-/*
- * Pixel channel sample values have range [0,255]. The Discrete Cosine
- * Transform (DCT) operates on values centered around 0.
+
+/* After downsampling, the resulting sample values are in the range [0, 255],
+ * but the Discrete Cosine Transform (DCT) operates on values centered around
+ * 0.
  *
  * To prepare sample values for the DCT, load samples into a DCT workspace,
- * subtracting CENTREJSAMPLE (128). The samples, now in range [-128, 127],
+ * subtracting CENTERJSAMPLE (128).  The samples, now in the range [-128, 127],
  * are also widened from 8- to 16-bit.
  *
- * The equivalent scalar C function 'convsamp' can be found in jcdctmgr.c.
+ * The equivalent scalar C function convsamp() can be found in jcdctmgr.c.
  */
 
-void jsimd_convsamp_neon(JSAMPARRAY sample_data,
-                         JDIMENSION start_col,
+void jsimd_convsamp_neon(JSAMPARRAY sample_data, JDIMENSION start_col,
                          DCTELEM *workspace)
 {
   uint8x8_t samp_row0 = vld1_u8(sample_data[0] + start_col);
@@ -54,22 +54,22 @@ void jsimd_convsamp_neon(JSAMPARRAY sample_data,
   uint8x8_t samp_row6 = vld1_u8(sample_data[6] + start_col);
   uint8x8_t samp_row7 = vld1_u8(sample_data[7] + start_col);
 
-  int16x8_t row0 = vreinterpretq_s16_u16(vsubl_u8(samp_row0,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row1 = vreinterpretq_s16_u16(vsubl_u8(samp_row1,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row2 = vreinterpretq_s16_u16(vsubl_u8(samp_row2,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row3 = vreinterpretq_s16_u16(vsubl_u8(samp_row3,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row4 = vreinterpretq_s16_u16(vsubl_u8(samp_row4,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row5 = vreinterpretq_s16_u16(vsubl_u8(samp_row5,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row6 = vreinterpretq_s16_u16(vsubl_u8(samp_row6,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
-  int16x8_t row7 = vreinterpretq_s16_u16(vsubl_u8(samp_row7,
-                                                  vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row0 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row0, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row1 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row1, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row2 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row2, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row3 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row3, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row4 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row4, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row5 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row5, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row6 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row6, vdup_n_u8(CENTERJSAMPLE)));
+  int16x8_t row7 =
+    vreinterpretq_s16_u16(vsubl_u8(samp_row7, vdup_n_u8(CENTERJSAMPLE)));
 
   vst1q_s16(workspace + 0 * DCTSIZE, row0);
   vst1q_s16(workspace + 1 * DCTSIZE, row1);
@@ -82,26 +82,25 @@ void jsimd_convsamp_neon(JSAMPARRAY sample_data,
 }
 
 
-/*
- * After the DCT, the resulting coefficient values need to be divided by a
- * quantization value.
+/* After the DCT, the resulting array of coefficient values needs to be divided
+ * by an array of quantization values.
  *
  * To avoid a slow division operation, the DCT coefficients are multiplied by
- * the (scaled) reciprocal of the quantization values and then right-shifted.
+ * the (scaled) reciprocals of the quantization values and then right-shifted.
  *
- * The equivalent scalar C function 'quantize' can be found in jcdctmgr.c.
+ * The equivalent scalar C function quantize() can be found in jcdctmgr.c.
  */
 
-void jsimd_quantize_neon(JCOEFPTR coef_block,
-                         DCTELEM *divisors,
+void jsimd_quantize_neon(JCOEFPTR coef_block, DCTELEM *divisors,
                          DCTELEM *workspace)
 {
   JCOEFPTR out_ptr = coef_block;
   UDCTELEM *recip_ptr = (UDCTELEM *)divisors;
   UDCTELEM *corr_ptr = (UDCTELEM *)divisors + DCTSIZE2;
   DCTELEM *shift_ptr = divisors + 3 * DCTSIZE2;
+  int i;
 
-  for (int i = 0; i < DCTSIZE; i += DCTSIZE / 2) {
+  for (i = 0; i < DCTSIZE; i += DCTSIZE / 2) {
     /* Load DCT coefficients. */
     int16x8_t row0 = vld1q_s16(workspace + (i + 0) * DCTSIZE);
     int16x8_t row1 = vld1q_s16(workspace + (i + 1) * DCTSIZE);
@@ -137,7 +136,7 @@ void jsimd_quantize_neon(JCOEFPTR coef_block,
     abs_row2 = vaddq_u16(abs_row2, corr2);
     abs_row3 = vaddq_u16(abs_row3, corr3);
 
-    /* Multiply DCT coefficients by quantization reciprocal. */
+    /* Multiply DCT coefficients by quantization reciprocals. */
     int32x4_t row0_l = vreinterpretq_s32_u32(vmull_u16(vget_low_u16(abs_row0),
                                                        vget_low_u16(recip0)));
     int32x4_t row0_h = vreinterpretq_s32_u32(vmull_u16(vget_high_u16(abs_row0),
@@ -160,8 +159,9 @@ void jsimd_quantize_neon(JCOEFPTR coef_block,
     row2 = vcombine_s16(vshrn_n_s32(row2_l, 16), vshrn_n_s32(row2_h, 16));
     row3 = vcombine_s16(vshrn_n_s32(row3_l, 16), vshrn_n_s32(row3_h, 16));
 
-    /* Since VSHR only supports an immediate as its second argument, negate */
-    /* the shift value and shift left. */
+    /* Since VSHR only supports an immediate as its second argument, negate the
+     * shift value and shift left.
+     */
     row0 = vreinterpretq_s16_u16(vshlq_u16(vreinterpretq_u16_s16(row0),
                                            vnegq_s16(shift0)));
     row1 = vreinterpretq_s16_u16(vshlq_u16(vreinterpretq_u16_s16(row1),
