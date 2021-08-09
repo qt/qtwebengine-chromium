@@ -4,7 +4,7 @@
  * This file was part of the Independent JPEG Group's software:
  * Copyright (C) 1991-1997, Thomas G. Lane.
  * libjpeg-turbo Modifications:
- * Copyright (C) 2009-2011, 2014-2016, 2018-2020, D. R. Commander.
+ * Copyright (C) 2009-2011, 2014-2016, 2018-2021, D. R. Commander.
  * Copyright (C) 2015, Matthieu Darbois.
  * Copyright (C) 2018, Matthias Räncker.
  * Copyright (C) 2020, Arm Limited.
@@ -44,8 +44,9 @@
  * flags (this defines __thumb__).
  */
 
-#if defined(__arm__) || defined(__aarch64__) || defined(_M_ARM) || \
-    defined(_M_ARM64)
+/* NOTE: Both GCC and Clang define __GNUC__ */
+#if (defined(__GNUC__) && (defined(__arm__) || defined(__aarch64__))) || \
+    defined(_M_ARM) || defined(_M_ARM64)
 #if !defined(__thumb__) || defined(__thumb2__)
 #define USE_CLZ_INTRINSIC
 #endif
@@ -314,6 +315,7 @@ jpeg_make_c_derived_tbl(j_compress_ptr cinfo, boolean isDC, int tblno,
    * this lets us detect duplicate VAL entries here, and later
    * allows emit_bits to detect any attempt to emit such symbols.
    */
+  MEMZERO(dtbl->ehufco, sizeof(dtbl->ehufco));
   MEMZERO(dtbl->ehufsi, sizeof(dtbl->ehufsi));
 
   /* This is also a convenient place to check for out-of-range
