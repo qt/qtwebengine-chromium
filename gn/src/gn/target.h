@@ -199,6 +199,9 @@ class Target : public Item {
   std::string cmake_config() const { return cmake_config_; }
   void set_cmake_config(std::string config) { cmake_config_ = config; }
 
+  std::vector<std::string>& rsp_types() { return rsp_types_; }
+  const std::vector<std::string>& rsp_types() const { return rsp_types_; }
+
   OutputFile write_runtime_deps_output() const {
     return write_runtime_deps_output_;
   }
@@ -514,6 +517,7 @@ class Target : public Item {
   SourceDir rebase_;
   std::vector<std::string> data_keys_;
   std::vector<std::string> walk_keys_;
+  std::vector<std::string> rsp_types_;
 
   DISALLOW_COPY_AND_ASSIGN(Target);
 };

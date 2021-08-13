@@ -833,7 +833,7 @@ bool Target::FillOutputFiles(Err* err) {
       link_output_file_ = dependency_output_file_ =
           SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
               this, tool, tool->outputs().list()[0]);
-      if (!cmake_config().empty()) {
+      if (!cmake_config().empty() || !rsp_types().empty()) {
           dependency_output_file_ = OutputFile(label().name() + ".stamp");
       }
       break;
@@ -873,7 +873,7 @@ bool Target::FillOutputFiles(Err* err) {
             SubstitutionWriter::ApplyPatternToLinkerAsOutputFile(
                 this, tool, tool->outputs().list()[0]);
       }
-      if (!cmake_config().empty()) {
+      if (!cmake_config().empty() || !rsp_types().empty()) {
           dependency_output_file_ = OutputFile(label().name() + ".stamp");
       }
       break;

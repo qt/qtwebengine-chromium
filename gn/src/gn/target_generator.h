@@ -72,6 +72,7 @@ class TargetGenerator {
   bool FillMetadata();
   bool FillTestonly();
   bool FillCmakeConfig();
+  bool FillRspTypes();
   bool FillAssertNoDeps();
   bool FillWriteRuntimeDeps();
 
