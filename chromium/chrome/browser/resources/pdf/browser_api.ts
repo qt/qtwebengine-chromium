@@ -98,7 +98,8 @@ export class BrowserApi {
    * @param url The URL to navigate the tab to.
    */
   navigateInCurrentTab(url: string) {
-    const tabId = this.getStreamInfo().tabId;
+//     const tabId = this.getStreamInfo().tabId;
+    const tabId = 0;
     // We need to use the tabs API to navigate because
     // |window.location.href| cannot be used. This PDF extension is not loaded
     // in the top level frame (it's embedded using MimeHandlerView). Using
