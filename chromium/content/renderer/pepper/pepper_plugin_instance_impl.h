@@ -113,6 +113,11 @@ class PluginObject;
 class PPB_Graphics3D_Impl;
 class RenderFrameImpl;
 
+// Windows defines 'PostMessage', so we have to undef it.
+#ifdef PostMessage
+#undef PostMessage
+#endif
+
 // Represents one time a plugin appears on one web page.
 //
 // Note: to get from a PP_Instance to a PepperPluginInstance*, use the

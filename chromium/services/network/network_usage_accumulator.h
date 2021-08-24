@@ -36,7 +36,10 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) NetworkUsageAccumulator
   std::vector<mojom::NetworkUsagePtr> GetTotalNetworkUsages() const;
 
  private:
-  struct NetworkUsageParam;
+  struct NetworkUsageParam {
+    int64_t total_bytes_received = 0;
+    int64_t total_bytes_sent = 0;
+  };
 
   // Number of active processes is usually small, but could go as high as
   // |PhysicalMemoryMB / 80|.

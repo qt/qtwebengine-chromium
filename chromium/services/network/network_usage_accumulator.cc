@@ -6,11 +6,6 @@
 
 namespace network {
 
-struct NetworkUsageAccumulator::NetworkUsageParam {
-  int64_t total_bytes_received = 0;
-  int64_t total_bytes_sent = 0;
-};
-
 NetworkUsageAccumulator::NetworkUsageAccumulator() = default;
 
 NetworkUsageAccumulator::~NetworkUsageAccumulator() = default;
