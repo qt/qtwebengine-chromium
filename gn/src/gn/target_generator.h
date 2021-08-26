@@ -71,7 +71,6 @@ class TargetGenerator {
   bool FillDependencies();  // Includes data dependencies.
   bool FillMetadata();
   bool FillTestonly();
-  bool FillCmakeConfig();
   bool FillRspTypes();
   bool FillAssertNoDeps();
   bool FillWriteRuntimeDeps();

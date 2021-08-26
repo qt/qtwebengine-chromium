@@ -696,7 +696,7 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
 
   out_ << "build";
 
-  if (target_->cmake_config().empty() && target_->rsp_types().empty()) {
+  if (target_->rsp_types().empty()) {
     path_output_.WriteFiles(out_, output_files);
     out_ << ": " << rule_prefix_
          << Tool::GetToolTypeForTargetFinalOutput(target_);
@@ -802,7 +802,7 @@ void NinjaCBinaryTargetWriter::WriteLinkerStuff(
 
   // Append implicit dependencies collected above.
   if (!implicit_deps.empty()) {
-    if (target_->cmake_config().empty() && target_->rsp_types().empty()) {
+    if (target_->rsp_types().empty()) {
         out_ << " |";
     }
     path_output_.WriteFiles(out_, implicit_deps);

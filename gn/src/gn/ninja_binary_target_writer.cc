@@ -7,7 +7,6 @@
 #include <list>
 #include <sstream>
 #include "base/strings/string_util.h"
-#include "gn/cmake_link_writer.h"
 #include "gn/config_values_extractors.h"
 #include "gn/deps_iterator.h"
 #include "gn/filesystem_utils.h"
@@ -50,15 +49,6 @@ void NinjaBinaryTargetWriter::Run() {
 
   NinjaCBinaryTargetWriter writer(target_, out_);
   writer.Run();
-  if (!target_->cmake_config().empty()) {
-    base::FilePath cmake_file(target_->settings()->build_settings()->GetFullPath(
-    SourceFile(target_->settings()->build_settings()->build_dir().value() +
-               target_->label().name() + ".cmake")));
-    std::stringstream file;
-    CMakeLinkWriter cmake_writer(&writer, target_, file);
-    cmake_writer.Run();
-    WriteFileIfChanged(cmake_file, file.str(), nullptr);
-  }
 
   const std::vector<std::string> types = target_->rsp_types();
   if (!types.empty()) {

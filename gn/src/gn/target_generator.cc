@@ -58,9 +58,6 @@ void TargetGenerator::Run() {
   if (!FillTestonly())
     return;
 
-  if (!FillCmakeConfig())
-    return;
-
   if (!FillRspTypes())
     return;
 
@@ -313,16 +310,6 @@ bool TargetGenerator::FillTestonly() {
     if (!value->VerifyTypeIs(Value::BOOLEAN, err_))
       return false;
     target_->set_testonly(value->boolean_value());
-  }
-  return true;
-}
-
-bool TargetGenerator::FillCmakeConfig() {
-  const Value* value = scope_->GetValue(variables::kCmakeConfig, true);
-  if (value) {
-    if (!value->VerifyTypeIs(Value::STRING, err_))
-      return false;
-    target_->set_cmake_config(value->string_value());
   }
   return true;
 }

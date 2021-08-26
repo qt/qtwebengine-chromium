@@ -195,10 +195,6 @@ class Target : public Item {
   bool testonly() const { return testonly_; }
   void set_testonly(bool value) { testonly_ = value; }
 
-  // Wether to only create linking information for the target instead of linking
-  std::string cmake_config() const { return cmake_config_; }
-  void set_cmake_config(std::string config) { cmake_config_ = config; }
-
   std::vector<std::string>& rsp_types() { return rsp_types_; }
   const std::vector<std::string>& rsp_types() const { return rsp_types_; }
 
@@ -446,7 +442,6 @@ class Target : public Item {
   bool check_includes_ = true;
   bool complete_static_lib_ = false;
   bool testonly_ = false;
-  std::string cmake_config_;
   std::vector<std::string> data_;
   BundleData bundle_data_;
   OutputFile write_runtime_deps_output_;

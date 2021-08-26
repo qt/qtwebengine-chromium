@@ -2074,24 +2074,6 @@ Example
   }
 )";
 
-const char kCmakeConfig[] = "cmake_config";
-const char kCmakeConfig_HelpShort[] =
-    "cmake_config: [string] Cmake configuration for which declared target that creates cmake linker information.";
-const char kCmakeConfig_Help[] =
-    "create_config: Declares a target that instead of liking dumps the information to cmake file.\n"
-    "\n"
-    "  String. Defaults to empty.\n"
-    "\n"
-    "  When a target is marked \"cmake_config = <configuration> \" and is linkable, the linking step"
-    "  is skipped. Instead linking infomation is dumped as a cmake file containing cmake setup for given configuration.\n"
-    "\n"
-    "Example\n"
-    "\n"
-    "  static_library(\"test_support\") {\n"
-    "    cmake_config = \"Debug\"\n"
-    "    ...\n"
-    "  }\n";
-
 const char kRspTypes[] = "rsp_types";
 const char kRspTypes_HelpShort[] =
     "rsp_types: [string list] A list of rsp files to create wih linker "
