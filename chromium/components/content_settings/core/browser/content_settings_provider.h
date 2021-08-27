@@ -23,7 +23,7 @@ class RuleIterator;
 
 class ProviderInterface {
  public:
-  virtual ~ProviderInterface() {}
+  virtual ~ProviderInterface() = default;
 
   // Returns a |RuleIterator| over the content setting rules stored by this
   // provider. If |incognito| is true, the iterator returns only the content
@@ -33,6 +33,9 @@ class ProviderInterface {
   // (including |GetRuleIterator|) for the same provider until the
   // |RuleIterator| is destroyed.
   // Returns nullptr to indicate the RuleIterator is empty.
+  //
+  // This method needs to be thread-safe and continue to work after
+  // |ShutdownOnUIThread| has been called.
   virtual std::unique_ptr<RuleIterator> GetRuleIterator(
       ContentSettingsType content_type,
       bool incognito) const = 0;
