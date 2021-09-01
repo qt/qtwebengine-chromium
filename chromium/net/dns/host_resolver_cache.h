@@ -143,13 +143,19 @@ class NET_EXPORT HostResolverCache final {
     }
 
     bool operator()(const Key& lhs, const KeyRef& rhs) const {
-      return std::tie(lhs.domain_name, lhs.network_anonymization_key) <
-             std::tie(rhs.domain_name, *rhs.network_anonymization_key);
+      return lhs.domain_name < rhs.domain_name ||
+          (lhs.domain_name == rhs.domain_name &&
+              lhs.network_anonymization_key < *rhs.network_anonymization_key);
+      // return std::tie(lhs.domain_name, lhs.network_anonymization_key) <
+      //        std::tie(rhs.domain_name, *rhs.network_anonymization_key);
     }
 
     bool operator()(const KeyRef& lhs, const Key& rhs) const {
-      return std::tie(lhs.domain_name, *lhs.network_anonymization_key) <
-             std::tie(rhs.domain_name, rhs.network_anonymization_key);
+      return lhs.domain_name < rhs.domain_name ||
+          (lhs.domain_name == rhs.domain_name &&
+              *lhs.network_anonymization_key < rhs.network_anonymization_key);
+      // return std::tie(lhs.domain_name, *lhs.network_anonymization_key) <
+      //        std::tie(rhs.domain_name, rhs.network_anonymization_key);
     }
   };
 

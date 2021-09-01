@@ -65,7 +65,7 @@ namespace {
 //
 // Returns the V8 conversion of the in-use version of DirectFromSellerSignals,
 // or v8::Null() if both types of DirectFromSellerSignals are null.
-v8::Local<v8::Value> GetDirectFromSellerSignals(
+v8::Local<v8::Value> GetDirectFromSellerSignalsSW(
     const DirectFromSellerSignalsRequester::Result& subresource_bundle_result,
     const absl::optional<std::string>& header_result,
     AuctionV8Helper& v8_helper,
@@ -86,7 +86,7 @@ v8::Local<v8::Value> GetDirectFromSellerSignals(
 // TODO(crbug.com/1441988): Remove this code after rename. These functions allow
 // having multiple dictionary keys (e.g. renderUrl and renderURL) share the same
 // V8 value.
-bool SetDictMember(v8::Isolate* isolate,
+bool SetDictMemberSW(v8::Isolate* isolate,
                    v8::Local<v8::Object> object,
                    const std::string& key,
                    v8::Local<v8::Value> v8_value) {
@@ -95,15 +95,15 @@ bool SetDictMember(v8::Isolate* isolate,
   return !result.IsNothing() && result.FromJust();
 }
 
-bool SetRenderUrl(v8::Isolate* isolate,
+bool SetRenderUrlSW(v8::Isolate* isolate,
                   v8::Local<v8::Object> object,
                   const std::string& val) {
   v8::Local<v8::Value> v8_value;
   if (!gin::TryConvertToV8(isolate, val, &v8_value)) {
     return false;
   }
-  return SetDictMember(isolate, object, "renderURL", v8_value) &&
-         SetDictMember(isolate, object, "renderUrl", v8_value);
+  return SetDictMemberSW(isolate, object, "renderURL", v8_value) &&
+         SetDictMemberSW(isolate, object, "renderUrl", v8_value);
 }
 
 bool SetDecisionLogicUrl(v8::Isolate* isolate,
@@ -113,8 +113,8 @@ bool SetDecisionLogicUrl(v8::Isolate* isolate,
   if (!gin::TryConvertToV8(isolate, val, &v8_value)) {
     return false;
   }
-  return SetDictMember(isolate, object, "decisionLogicURL", v8_value) &&
-         SetDictMember(isolate, object, "decisionLogicUrl", v8_value);
+  return SetDictMemberSW(isolate, object, "decisionLogicURL", v8_value) &&
+         SetDictMemberSW(isolate, object, "decisionLogicUrl", v8_value);
 }
 
 bool SetTrustedScoringSignalsUrl(v8::Isolate* isolate,
@@ -124,11 +124,11 @@ bool SetTrustedScoringSignalsUrl(v8::Isolate* isolate,
   if (!gin::TryConvertToV8(isolate, val, &v8_value)) {
     return false;
   }
-  return SetDictMember(isolate, object, "trustedScoringSignalsURL", v8_value) &&
-         SetDictMember(isolate, object, "trustedScoringSignalsUrl", v8_value);
+  return SetDictMemberSW(isolate, object, "trustedScoringSignalsURL", v8_value) &&
+         SetDictMemberSW(isolate, object, "trustedScoringSignalsUrl", v8_value);
 }
 
-bool CanSetRequestedAdSize(
+bool CanSetRequestedAdSizeSW(
     const absl::optional<blink::AdSize>& requested_ad_size) {
   return requested_ad_size.has_value() &&
          blink::IsValidAdSize(requested_ad_size.value());
@@ -162,9 +162,9 @@ bool SetRequestedAdSize(v8::Isolate* isolate,
 
   v8::Local<v8::Object> size_object = v8::Object::New(isolate);
 
-  return SetDictMember(isolate, size_object, "width", v8_width) &&
-         SetDictMember(isolate, size_object, "height", v8_height) &&
-         SetDictMember(isolate, top_level_object, "requestedSize", size_object);
+  return SetDictMemberSW(isolate, size_object, "width", v8_width) &&
+         SetDictMemberSW(isolate, size_object, "height", v8_height) &&
+         SetDictMemberSW(isolate, top_level_object, "requestedSize", size_object);
 }
 
 bool InsertPrioritySignals(
@@ -460,7 +460,7 @@ bool AppendAuctionConfig(AuctionV8Helper* v8_helper,
                             static_cast<unsigned>(experiment_group_id.value()));
   }
 
-  if (CanSetRequestedAdSize(
+  if (CanSetRequestedAdSizeSW(
           auction_ad_config_non_shared_params.requested_size) &&
       !SetRequestedAdSize(
           isolate, auction_config_value,
@@ -973,7 +973,7 @@ void SellerWorklet::V8State::ScoreAd(
           "interestGroupOwner",
           browser_signal_interest_group_owner.Serialize()) ||
       // TODO(crbug.com/1441988): Remove deprecated `renderUrl` alias.
-      !SetRenderUrl(isolate, browser_signals,
+      !SetRenderUrlSW(isolate, browser_signals,
                     browser_signal_render_url.spec()) ||
       !browser_signals_dict.Set("biddingDurationMsec",
                                 browser_signal_bidding_duration_msecs) ||
@@ -1004,11 +1004,11 @@ void SellerWorklet::V8State::ScoreAd(
   gin::Dictionary direct_from_seller_signals_dict(isolate,
                                                   direct_from_seller_signals);
   std::vector<std::string> errors_out;
-  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_seller_signals,
       direct_from_seller_seller_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
-  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_auction_signals,
       direct_from_seller_auction_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
@@ -1413,7 +1413,7 @@ void SellerWorklet::V8State::ReportResult(
            "buyerAndSellerReportingId",
            *browser_signal_buyer_and_seller_reporting_id)) ||
       // TODO(crbug.com/1441988): Remove deprecated `renderUrl` alias.
-      !SetRenderUrl(isolate, browser_signals,
+      !SetRenderUrlSW(isolate, browser_signals,
                     browser_signal_render_url.spec()) ||
       !browser_signals_dict.Set("bid", browser_signal_bid) ||
       !browser_signals_dict.Set(
@@ -1465,11 +1465,11 @@ void SellerWorklet::V8State::ReportResult(
   v8::Local<v8::Object> direct_from_seller_signals = v8::Object::New(isolate);
   gin::Dictionary direct_from_seller_signals_dict(isolate,
                                                   direct_from_seller_signals);
-  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_seller_signals,
       direct_from_seller_seller_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
-  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_auction_signals,
       direct_from_seller_auction_signals_header_ad_slot, *v8_helper_, context,
       errors_out);

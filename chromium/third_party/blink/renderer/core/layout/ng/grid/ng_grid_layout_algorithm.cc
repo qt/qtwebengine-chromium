@@ -3452,7 +3452,9 @@ void NGGridLayoutAlgorithm::PlaceGridItems(
   DCHECK(out_row_break_between);
 
   const auto& container_space = ConstraintSpace();
-  const auto& [grid_items, layout_data, tree_size] = sizing_tree.TreeRootData();
+  const auto& [grid_items_l, layout_data_l, tree_size] = sizing_tree.TreeRootData();
+  const auto& grid_items = grid_items_l;
+  const auto& layout_data = layout_data_l;
 
   const auto* cached_layout_subtree = container_space.GridLayoutSubtree();
   const auto container_writing_direction =
@@ -3616,7 +3618,9 @@ void NGGridLayoutAlgorithm::PlaceGridItemsForFragmentation(
 
   // TODO(ikilpatrick): Update |SetHasSeenAllChildren| and early exit if true.
   const auto& constraint_space = ConstraintSpace();
-  const auto& [grid_items, layout_data, tree_size] = sizing_tree.TreeRootData();
+  const auto& [grid_items_l, layout_data_l, tree_size] = sizing_tree.TreeRootData();
+  const auto& grid_items = grid_items_l;
+  const auto& layout_data = layout_data_l;
 
   const auto* cached_layout_subtree = constraint_space.GridLayoutSubtree();
   const auto container_writing_direction =

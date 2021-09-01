@@ -11,7 +11,7 @@
 namespace blink {
 
 thread_local ThreadStateStorage* g_thread_specific_ CONSTINIT
-    __attribute__((tls_model(BLINK_HEAP_THREAD_LOCAL_MODEL))) = nullptr;
+    /*__attribute__((tls_model(BLINK_HEAP_THREAD_LOCAL_MODEL)))*/ = nullptr;
 
 // static
 ThreadStateStorage ThreadStateStorage::main_thread_state_storage_;

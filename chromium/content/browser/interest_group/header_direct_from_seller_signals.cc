@@ -187,7 +187,8 @@ void OnJsonDecoded(std::unique_ptr<const std::set<std::string>> responses,
 
 }  // namespace
 
-HeaderDirectFromSellerSignals::HeaderDirectFromSellerSignals() = default;
+HeaderDirectFromSellerSignals::HeaderDirectFromSellerSignals()
+  : seller_signals_(absl::nullopt), auction_signals_(absl::nullopt) {}
 
 HeaderDirectFromSellerSignals::~HeaderDirectFromSellerSignals() = default;
 

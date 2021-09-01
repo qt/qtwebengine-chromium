@@ -604,7 +604,7 @@ void OnTokenRequestParsed(
     if (response_error) {
       int error_code = response_error->FindInt(kErrorCodeKey).value_or(0);
       GURL error_url = ExtractUrl(*response_error, kErrorUrlKey);
-      token_result.error = TokenError(error_code, error_url);
+      token_result.error = TokenError{error_code, error_url};
     }
   }
 

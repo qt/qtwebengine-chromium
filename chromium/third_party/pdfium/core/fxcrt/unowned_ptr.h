@@ -68,6 +68,7 @@ using UnownedPtr = raw_ptr<T>;
 #else  // UNOWNED_PTR_IS_BASE_RAW_PTR
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <type_traits>
 #include <utility>
@@ -76,7 +77,6 @@ using UnownedPtr = raw_ptr<T>;
 #include "third_party/base/compiler_specific.h"
 
 #if defined(ADDRESS_SANITIZER)
-#include <cstdint>
 #define UNOWNED_PTR_DANGLING_CHECKS
 #endif
 
