@@ -24,7 +24,7 @@ const char* const kExtensionsIdentityAPIOAuthConsumerName =
 bool IsUnrestrictedOAuth2Scopes(const std::string& scope) {
   // clang-format off
 
-  static const base::NoDestructor<base::flat_set<std::string_view>> scopes(
+  base::flat_set<std::string> flat_set
     {
       GaiaConstants::kGoogleUserInfoEmail,
       GaiaConstants::kGoogleUserInfoProfile,
@@ -38,8 +38,11 @@ bool IsUnrestrictedOAuth2Scopes(const std::string& scope) {
 
       // Required by cloud policy.
       GaiaConstants::kDeviceManagementServiceOAuth,
-  });
+  };
   // clang-format on
+
+  static const base::NoDestructor<base::flat_set<std::string>> scopes(
+      std::move(flat_set));
 
   return scopes->contains(scope);
 }
@@ -49,7 +52,7 @@ bool IsUnrestrictedOAuth2Scopes(const std::string& scope) {
 // required.
 bool IsUnconsentedSignedInOAuth2Scopes(const std::string& scope) {
   // clang-format off
-  static const base::NoDestructor<base::flat_set<std::string_view>> scopes (
+  base::flat_set<std::string_view> flat_set
     {
       GaiaConstants::kFCMOAuthScope,
 
@@ -149,7 +152,9 @@ bool IsUnconsentedSignedInOAuth2Scopes(const std::string& scope) {
       GaiaConstants::kTachyonOAuthScope,
 #endif  // BUILDFLAG(IS_CHROMEOS)
       // clang-format on
-  });
+  };
+  static const base::NoDestructor<base::flat_set<std::string_view>> scopes(
+      std::move(flat_set));
 
   std::string plus_address_scope =
       plus_addresses::features::kEnterprisePlusAddressOAuthScope.Get();

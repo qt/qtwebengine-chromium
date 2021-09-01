@@ -137,7 +137,9 @@ struct ASCIILowerHashReader {
 
   ALWAYS_INLINE static uint64_t Read64(const uint8_t* ptr) {
     const CharType* p = reinterpret_cast<const CharType*>(ptr);
-#if defined(__SSE2__) || defined(__ARM_NEON__)
+#if (defined(__SSE2__) || defined(__ARM_NEON__))    \
+      && (!defined(_MSC_VER) || defined(__clang__)) \
+      && (!defined(__clang_major__) || (__clang_major__ >= 16))
     CharType b __attribute__((vector_size(8)));
     memcpy(&b, p, sizeof(b));
     b |= (b >= 'A' & b <= 'Z') & 0x20;
@@ -158,7 +160,9 @@ struct ASCIILowerHashReader {
   }
   ALWAYS_INLINE static uint64_t Read32(const uint8_t* ptr) {
     const CharType* p = reinterpret_cast<const CharType*>(ptr);
-#if defined(__SSE2__) || defined(__ARM_NEON__)
+#if (defined(__SSE2__) || defined(__ARM_NEON__))  \
+    && (!defined(_MSC_VER) || defined(__clang__)) \
+    && (!defined(__clang_major__) || (__clang_major__ >= 16))
     CharType b __attribute__((vector_size(4)));
     memcpy(&b, p, sizeof(b));
     b |= (b >= 'A' & b <= 'Z') & 0x20;

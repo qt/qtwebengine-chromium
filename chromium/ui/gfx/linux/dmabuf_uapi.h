@@ -28,7 +28,7 @@ constexpr unsigned long DMA_BUF_IOCTL_SYNC =
     _IOW(DMA_BUF_BASE, 0, struct dma_buf_sync);
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 0, 0)
+#ifndef DMA_BUF_IOCTL_EXPORT_SYNC_FILE
 struct dma_buf_export_sync_file {
   __u32 flags;
   __s32 fd;

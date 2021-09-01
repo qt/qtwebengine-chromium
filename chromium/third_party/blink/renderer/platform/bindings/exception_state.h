@@ -142,7 +142,7 @@ class PLATFORM_EXPORT ExceptionState {
   // Delegated constructor for DummyExceptionStateForTesting
   explicit ExceptionState(DummyExceptionStateForTesting& dummy_derived);
 
-  static constexpr ExceptionContext kEmptyContext{};
+  static const ExceptionContext kEmptyContext{};
 
  private:
   void SetExceptionInfo(ExceptionCode, const String&);
