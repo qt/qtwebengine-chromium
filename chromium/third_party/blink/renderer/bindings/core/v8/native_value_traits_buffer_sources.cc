@@ -102,7 +102,7 @@ auto NativeValueImpl(v8::Isolate* isolate,
     }
   }
 
-  if constexpr (IsSharedBuffer != nullptr) {
+  if (IsSharedBuffer != nullptr) {
     if (IsSharedBuffer(value)) {
       exception_state.ThrowTypeError(
           ExceptionMessages::SharedArrayBufferNotAllowed(
@@ -166,7 +166,7 @@ auto ArgumentValueImpl(v8::Isolate* isolate,
     }
   }
 
-  if constexpr (IsSharedBuffer != nullptr) {
+  if (IsSharedBuffer != nullptr) {
     if (IsSharedBuffer(value)) {
       exception_state.ThrowTypeError(
           ExceptionMessages::SharedArrayBufferNotAllowed(

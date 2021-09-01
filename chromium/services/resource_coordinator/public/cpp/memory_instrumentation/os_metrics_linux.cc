@@ -9,7 +9,9 @@
 
 #include <memory>
 
+#if defined(OS_ANDROID)
 #include "base/android/library_loader/anchor_functions.h"
+#endif
 #include "base/android/library_loader/anchor_functions_buildflags.h"
 #include "base/debug/elf_reader.h"
 #include "base/files/file_path.h"
