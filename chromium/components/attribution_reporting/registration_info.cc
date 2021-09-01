@@ -112,7 +112,7 @@ RegistrationInfo::ParseInfo(const net::structured_headers::Dictionary& dict,
         return RegistrationInfoError::kInvalidReportHeaderErrors;
       }));
 
-  return RegistrationInfo(preferred_platform, report_header_errors);
+  return RegistrationInfo{preferred_platform, report_header_errors};
 }
 
 void RecordRegistrationInfoError(RegistrationInfoError error) {

@@ -31,6 +31,8 @@
 // MinGW has these. clang-cl and MSVC, which use just the Windows SDK, don't.
 using uid_t = int;
 using pid_t = int;
+#else
+using uid_t = unsigned int;
 #endif  // !GCC
 
 #if defined(_WIN64)

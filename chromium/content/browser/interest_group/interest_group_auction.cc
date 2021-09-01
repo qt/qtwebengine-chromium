@@ -668,7 +668,7 @@ void UpdateDebugReportCooldown(
        blink::features::kFledgeDebugReportRestrictedCooldown.Get() !=
            base::Milliseconds(0))) {
     new_debug_report_lockout_and_cooldowns.debug_report_cooldown_map[origin] =
-        DebugReportCooldown(now_nearest_next_hour, cooldown_type);
+        DebugReportCooldown{now_nearest_next_hour, cooldown_type};
   }
 }
 

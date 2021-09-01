@@ -14,7 +14,6 @@
 
 #include <memory>
 
-#include "base/android/library_loader/anchor_functions.h"
 #include "base/android/library_loader/anchor_functions_buildflags.h"
 #include "base/debug/elf_reader.h"
 #include "base/files/file_path.h"
@@ -31,6 +30,10 @@
 #include "build/build_config.h"
 #include "services/resource_coordinator/public/cpp/memory_instrumentation/os_metrics.h"
 #include "third_party/abseil-cpp/absl/strings/ascii.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "base/android/library_loader/anchor_functions.h"
+#endif
 
 // Symbol with virtual address of the start of ELF header of the current binary.
 extern char __ehdr_start;

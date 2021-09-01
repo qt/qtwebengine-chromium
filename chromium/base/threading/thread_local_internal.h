@@ -30,7 +30,7 @@ class CheckedThreadLocalOwnedPointer {
  public:
   CheckedThreadLocalOwnedPointer() = default;
 
-  CheckedThreadLocalOwnedPointer(const CheckedThreadLocalOwnedPointer<T>&) =
+  CheckedThreadLocalOwnedPointer(const CheckedThreadLocalOwnedPointer&) =
       delete;
   CheckedThreadLocalOwnedPointer<T>& operator=(
       const CheckedThreadLocalOwnedPointer<T>&) = delete;

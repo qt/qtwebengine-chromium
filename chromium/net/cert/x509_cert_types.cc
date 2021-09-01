@@ -17,7 +17,15 @@ CertPrincipal::CertPrincipal(CertPrincipal&&) = default;
 
 CertPrincipal::~CertPrincipal() = default;
 
-bool CertPrincipal::operator==(const CertPrincipal& other) const = default;
+bool CertPrincipal::operator==(const CertPrincipal& other) const
+{
+  return common_name == other.common_name
+     && locality_name == other.locality_name
+     && state_or_province_name == other.state_or_province_name
+     && country_name == other.country_name
+     && organization_names == other.organization_names
+     && organization_unit_names == other.organization_unit_names;
+}
 
 bool CertPrincipal::EqualsForTesting(const CertPrincipal& other) const {
   return *this == other;

@@ -39,6 +39,7 @@ import("//build/config/sanitizers/sanitizers.gni")
 if (is_ios) {
   import("//ios/features.gni")
 }
+import("//build/config/features.gni")
 
 partition_alloc_enable_arc_config = "//build/config/compiler:enable_arc"
 
@@ -76,7 +77,7 @@ partition_alloc_remove_configs +=
 #   non-universal symbol wrapping), and has not been validated on others.
 # - Windows: debug CRT is not compatible, see below.
 _disable_partition_alloc_everywhere =
-    (!is_linux && is_component_build) || (is_win && is_debug)
+    (!is_linux && is_component_build) || (is_win && is_debug) || is_qtwebengine
 
 # - NaCl: No plans to support it.
 # - iOS: Depends on ios_partition_alloc_enabled.

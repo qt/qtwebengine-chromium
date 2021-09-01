@@ -802,8 +802,9 @@ void SavePackage::Finish() {
   if (download_) {
     std::vector<download::DownloadSaveItemData::ItemInfo> files;
     for (auto& item : saved_success_items_) {
-      files.emplace_back(item.second->full_path(), item.second->url(),
-                         item.second->referrer().url);
+      files.emplace_back(download::DownloadSaveItemData::ItemInfo{
+                            item.second->full_path(), item.second->url(),
+                            item.second->referrer().url});
     }
     download::DownloadSaveItemData::AttachItemData(download_, std::move(files));
   }

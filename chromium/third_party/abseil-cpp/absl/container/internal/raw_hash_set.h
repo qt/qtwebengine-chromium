@@ -4099,7 +4099,7 @@ class raw_hash_set {
   }
 
   static const PolicyFunctions& GetPolicyFunctions() {
-    static constexpr PolicyFunctions value = {
+    static const PolicyFunctions value = {
         sizeof(slot_type),
         // TODO(b/328722020): try to type erase
         // for standard layout and alignof(Hash) <= alignof(CommonFields).
