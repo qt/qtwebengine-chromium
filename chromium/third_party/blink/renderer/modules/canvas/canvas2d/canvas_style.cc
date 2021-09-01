@@ -96,12 +96,12 @@ void CanvasStyle::ApplyToFlags(cc::PaintFlags& flags,
     case kGradient:
       GetCanvasGradient()->GetGradient()->ApplyToFlags(flags, SkMatrix::I(),
                                                        ImageDrawOptions());
-      flags.setColor(SkColor4f(0.0f, 0.0f, 0.0f, global_alpha));
+      flags.setColor(SkColor4f{0.0f, 0.0f, 0.0f, global_alpha});
       break;
     case kImagePattern:
       GetCanvasPattern()->GetPattern()->ApplyToFlags(
           flags, AffineTransformToSkMatrix(GetCanvasPattern()->GetTransform()));
-      flags.setColor(SkColor4f(0.0f, 0.0f, 0.0f, global_alpha));
+      flags.setColor(SkColor4f{0.0f, 0.0f, 0.0f, global_alpha});
       break;
     default:
       NOTREACHED();

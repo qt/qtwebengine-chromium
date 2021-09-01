@@ -127,7 +127,10 @@ component("raw_ptr") {
   }
   if (use_partition_alloc) {
     public_deps = [ ":partition_alloc" ]
+  }  else {
+    public_deps = [ ":partition_alloc_buildflags" ]
   }
+
   deps = [ ":buildflags" ]
 
   # See also: `partition_alloc_base/component_export.h`

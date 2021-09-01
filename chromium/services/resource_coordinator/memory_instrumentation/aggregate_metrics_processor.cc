@@ -8,7 +8,9 @@
 #include <string>
 #include <vector>
 
+#if defined(OS_ANDROID)
 #include "base/android/library_loader/anchor_functions.h"
+#endif
 #include "base/android/library_loader/anchor_functions_buildflags.h"
 #include "base/bits.h"
 #include "base/command_line.h"

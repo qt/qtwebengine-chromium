@@ -774,6 +774,8 @@ bool BaseRtpStringExtension::Write(rtc::ArrayView<uint8_t> data,
   return true;
 }
 
+constexpr uint8_t BaseRtpStringExtension::kMaxValueSizeBytes;
+
 // An RTP Header Extension for Inband Comfort Noise
 //
 // The form of the audio level extension block:

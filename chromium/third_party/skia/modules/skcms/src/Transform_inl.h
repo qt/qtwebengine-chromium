@@ -152,6 +152,11 @@ SI U32 to_fixed(F f) {  return (U32)cast<I32>(f + 0.5f); }
                            (~cond & bit_pun<C>(e)) );
     }
 #endif
+// GCC needs the target on arm32
+#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
+#pragma GCC push_options
+#pragma GCC target ("fpu=neon-fp16")
+#endif
 
 #if defined(USING_NEON)
     SI F min_(F x, F y) { return (F)vminq_f32((float32x4_t)x, (float32x4_t)y); }
@@ -1513,6 +1518,10 @@ FINAL_STAGE(store_ffff, NoCtx) {
         }
     }
 
+#endif
+
+#if defined(__GNUC__) && defined(USING_NEON_F16C) && !(defined(__aarch64__) || defined(__ARM64__) || defined(_M_ARM64))
+#pragma GCC pop_options
 #endif
 
 // NOLINTNEXTLINE(misc-definitions-in-headers)

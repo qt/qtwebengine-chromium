@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_PHYSICAL_FRAGMENT_RARE_DATA_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_PHYSICAL_FRAGMENT_RARE_DATA_H_
 
+#include <bit>
 #include <climits>
 
 #include "third_party/blink/renderer/core/layout/geometry/logical_rect.h"

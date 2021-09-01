@@ -66,7 +66,7 @@ enum ObjectDataKind {
 
 namespace {
 
-bool Is64() { return kSystemPointerSize == 8; }
+constexpr bool Is64() { return kSystemPointerSize == 8; }
 
 }  // namespace
 

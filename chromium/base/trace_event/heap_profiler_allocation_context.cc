@@ -26,6 +26,7 @@ bool operator != (const StackFrame& lhs, const StackFrame& rhs) {
 }
 
 Backtrace::Backtrace() = default;
+Backtrace::Backtrace(const Backtrace &) = default;
 
 bool operator==(const Backtrace& lhs, const Backtrace& rhs) {
   if (lhs.frame_count != rhs.frame_count) return false;

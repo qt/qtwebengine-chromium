@@ -170,6 +170,19 @@ class BASE_EXPORT WeakReferenceOwner {
   scoped_refptr<WeakReference::Flag> flag_;
 };
 
+// This class can only be instantiated if the constructor argument inherits
+// from SupportsWeakPtr<T> in exactly one way.
+template <typename T>
+struct ExtractSinglyInheritedBase;
+template <typename T>
+struct ExtractSinglyInheritedBase<SupportsWeakPtr<T>> {
+  using Base = T;
+  explicit ExtractSinglyInheritedBase(SupportsWeakPtr<T>*);
+};
+template <typename T>
+ExtractSinglyInheritedBase(SupportsWeakPtr<T>*)
+  -> ExtractSinglyInheritedBase<SupportsWeakPtr<T>>;
+
 // This class provides a common implementation of common functions that would
 // otherwise get instantiated separately for each distinct instantiation of
 // SupportsWeakPtr<>.
@@ -192,20 +205,6 @@ class SupportsWeakPtrBase {
     return WeakPtr<Derived>(weak.CloneWeakReference(),
                             static_cast<Derived*>(weak.ptr_));
   }
-
- private:
-  // This class can only be instantiated if the constructor argument inherits
-  // from SupportsWeakPtr<T> in exactly one way.
-  template <typename T>
-  struct ExtractSinglyInheritedBase;
-  template <typename T>
-  struct ExtractSinglyInheritedBase<SupportsWeakPtr<T>> {
-    using Base = T;
-    explicit ExtractSinglyInheritedBase(SupportsWeakPtr<T>*);
-  };
-  template <typename T>
-  ExtractSinglyInheritedBase(SupportsWeakPtr<T>*)
-      -> ExtractSinglyInheritedBase<SupportsWeakPtr<T>>;
 };
 
 // Forward declaration from safe_ptr.h.

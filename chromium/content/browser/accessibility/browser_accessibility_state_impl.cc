@@ -178,8 +178,8 @@ BrowserAccessibilityStateImpl* BrowserAccessibilityStateImpl::GetInstance() {
 }
 
 // On Android, Mac, Lacros, and Windows there are platform-specific subclasses.
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC) && \
-    !BUILDFLAG(IS_CHROMEOS_LACROS)
+#if (!BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_MAC) && \
+    !BUILDFLAG(IS_CHROMEOS_LACROS)) || defined(TOOLKIT_QT)
 // static
 std::unique_ptr<BrowserAccessibilityStateImpl>
 BrowserAccessibilityStateImpl::Create() {

@@ -61,6 +61,7 @@ using UnownedPtr = raw_ptr<T>;
 #else  // defined(PDF_USE_PARTITION_ALLOC)
 
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <type_traits>
 #include <utility>
