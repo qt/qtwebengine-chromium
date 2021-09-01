@@ -1157,8 +1157,8 @@ ContextResult WebGPUDecoderImpl::Initialize(
   }
 
   if (use_webgpu_adapter_ == WebGPUAdapterName::kCompat) {
-    gl_surface_ = new gl::SurfacelessEGL(gl::GLSurfaceEGL::GetGLDisplayEGL(),
-                                         gfx::Size(1, 1));
+    gl_surface_ = gl::GLSurfaceEGL::createSurfaceless(gl::GLSurfaceEGL::GetGLDisplayEGL(),
+                                                      gfx::Size(1, 1));
     gl::GLContextAttribs attribs;
     attribs.client_major_es_version = 3;
     attribs.client_minor_es_version = 1;

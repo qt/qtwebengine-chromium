@@ -89,7 +89,7 @@ auto NativeValueImpl(v8::Isolate* isolate,
     buffer_source_type_name = ScriptWrappableOrBufferSourceTypeName::GetName();
   }
 
-  if constexpr (IsSharedBuffer != nullptr) {
+  if (IsSharedBuffer != nullptr) {
     if (IsSharedBuffer(value)) {
       exception_state.ThrowTypeError(
           ExceptionMessages::SharedArrayBufferNotAllowed(
@@ -142,7 +142,7 @@ auto ArgumentValueImpl(v8::Isolate* isolate,
     buffer_source_type_name = ScriptWrappableOrBufferSourceTypeName::GetName();
   }
 
-  if constexpr (IsSharedBuffer != nullptr) {
+  if (IsSharedBuffer != nullptr) {
     if (IsSharedBuffer(value)) {
       exception_state.ThrowTypeError(
           ExceptionMessages::SharedArrayBufferNotAllowed(

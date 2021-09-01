@@ -50,6 +50,8 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
 
   static GLDisplayEGL* GetGLDisplayEGL();
 
+  static GLSurface* createSurfaceless(GLDisplayEGL* display, const gfx::Size& size);
+
  protected:
   ~GLSurfaceEGL() override;
 
