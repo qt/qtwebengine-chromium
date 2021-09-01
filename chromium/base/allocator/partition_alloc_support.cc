@@ -110,6 +110,7 @@ class StatsReporterImpl final : public StatsReporter {
  private:
   static constexpr char kTraceCategory[] = "partition_alloc";
 };
+constexpr char StatsReporterImpl::kTraceCategory[];
 
 #endif  // defined(PA_ALLOW_PCSCAN)
 

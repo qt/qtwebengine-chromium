@@ -50,6 +50,8 @@ function_registration("api_registration") {
     deps = []
     deps = [
       "//chrome/common/extensions/api",
+      "//extensions/browser",
+      "//extensions/browser/api:api_implementations",
       "//extensions/common/api",
       "//qtwebengine/common:mojo_bindings",
       "//third_party/blink/public/mojom:mojom_platform",

@@ -24,7 +24,9 @@ if (enable_pdf) {
   config("strict") {
     configs = [ "//build/config/compiler:wexit_time_destructors" ]
   }
+}
 
+if (enable_pdf) {
   config("pdfium_includes") {
     include_dirs = [ "//third_party/pdfium" ]
   }
