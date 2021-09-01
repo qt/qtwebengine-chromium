@@ -361,6 +361,10 @@ GLDisplayEGL* GLSurfaceEGL::GetGLDisplayEGL() {
       GpuPreference::kDefault);
 }
 
+GLSurface* GLSurfaceEGL::createSurfaceless(GLDisplayEGL* display, const gfx::Size& size) {
+  return new SurfacelessEGL(display, size);
+}
+
 GLSurfaceEGL::~GLSurfaceEGL() = default;
 
 NativeViewGLSurfaceEGL::NativeViewGLSurfaceEGL(
