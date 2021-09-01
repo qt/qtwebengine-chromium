@@ -477,7 +477,7 @@ int PropertyTreeManager::EnsureCompositorTransformNode(
   }
 
   if (base::FeatureList::IsEnabled(
-          features::kDynamicSafeAreaInsetsSupportedByCC)) {
+          ::features::kDynamicSafeAreaInsetsSupportedByCC)) {
     if (transform_node.IsAffectedBySafeAreaBottom()) {
       compositor_node.moved_by_safe_area_bottom = true;
       transform_tree_.AddNodeAffectedBySafeAreaInsetBottom(id);

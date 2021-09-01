@@ -282,13 +282,13 @@ ClientSharedImageInterface::CreateSwapChain(viz::SharedImageFormat format,
   return ClientSharedImageInterface::SwapChainSharedImages(
       base::MakeRefCounted<ClientSharedImage>(
           mailboxes.front_buffer,
-          SharedImageMetadata(format, size, color_space, surface_origin,
-                              alpha_type, usage),
+          SharedImageMetadata{format, size, color_space, surface_origin,
+                             alpha_type, usage},
           sync_token, holder_, gfx::EMPTY_BUFFER),
       base::MakeRefCounted<ClientSharedImage>(
           mailboxes.back_buffer,
-          SharedImageMetadata(format, size, color_space, surface_origin,
-                              alpha_type, usage),
+          SharedImageMetadata{format, size, color_space, surface_origin,
+                              alpha_type, usage},
           sync_token, holder_, gfx::EMPTY_BUFFER));
 }
 
@@ -341,8 +341,8 @@ scoped_refptr<ClientSharedImage> ClientSharedImageInterface::NotifyMailboxAdded(
 
   return base::MakeRefCounted<ClientSharedImage>(
       mailbox,
-      SharedImageMetadata(format, size, color_space, surface_origin, alpha_type,
-                          usage),
+      SharedImageMetadata{format, size, color_space, surface_origin, alpha_type,
+                          usage},
       GenUnverifiedSyncToken(), holder_, gfx::EMPTY_BUFFER);
 }
 
@@ -360,8 +360,8 @@ scoped_refptr<ClientSharedImage> ClientSharedImageInterface::NotifyMailboxAdded(
 
   return base::WrapRefCounted<ClientSharedImage>(new ClientSharedImage(
       mailbox,
-      SharedImageMetadata(format, size, color_space, surface_origin, alpha_type,
-                          usage),
+      SharedImageMetadata{format, size, color_space, surface_origin, alpha_type,
+                          usage},
       GenUnverifiedSyncToken(), holder_, texture_target));
 }
 

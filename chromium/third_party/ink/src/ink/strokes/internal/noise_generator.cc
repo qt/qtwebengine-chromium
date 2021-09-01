@@ -66,7 +66,7 @@ void NoiseGenerator::AdvanceInputBy(float advance_by) {
 
     // Set `progress_` equal to its fractional part (i.e. `progress_` mod 1).
     float unused;
-    progress_ = std::modff(progress_, &unused);
+    progress_ = std::modf(progress_, &unused);
   }
 }
 

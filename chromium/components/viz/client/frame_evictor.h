@@ -19,6 +19,10 @@ class VIZ_CLIENT_EXPORT FrameEvictorClient {
     EvictIds();
     ~EvictIds();
 
+    EvictIds(std::vector<SurfaceId> embedded_ids, SurfaceId ui_compositor_id)
+        : embedded_ids(std::move(embedded_ids))
+        , ui_compositor_id(ui_compositor_id) {}
+
     EvictIds(const EvictIds&) = delete;
     EvictIds& operator=(const EvictIds&) = delete;
 

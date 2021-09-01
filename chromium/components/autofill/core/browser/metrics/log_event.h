@@ -54,8 +54,13 @@ bool AreCollapsible(const absl::monostate& event1,
 
 // Log the field that shows a dropdown list of suggestions for autofill.
 struct AskForValuesToFillFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   OptionalBoolean has_suggestion = internal::IsRequired();
   OptionalBoolean suggestion_is_shown = internal::IsRequired();
+#else
+  OptionalBoolean has_suggestion;
+  OptionalBoolean suggestion_is_shown;
+#endif
 };
 
 bool AreCollapsible(const AskForValuesToFillFieldLogEvent& event1,
@@ -64,6 +69,7 @@ bool AreCollapsible(const AskForValuesToFillFieldLogEvent& event1,
 // Log the field that triggers the suggestion that the user selects to fill.
 struct TriggerFillFieldLogEvent {
   FillEventId fill_event_id = GetNextFillEventId();
+#if defined(IS_REQUIRED_SUPPORTED)
   // The type of filled data for the Autofill event.
   FillDataType data_type = internal::IsRequired();
   // The country_code associated with the information filled. Only present for
@@ -71,6 +77,11 @@ struct TriggerFillFieldLogEvent {
   std::string associated_country_code = internal::IsRequired();
   // The time at which the event occurred.
   base::Time timestamp = internal::IsRequired();
+#else
+  FillDataType data_type;
+  std::string associated_country_code;
+  base::Time timestamp;
+#endif
 };
 
 bool AreCollapsible(const TriggerFillFieldLogEvent& event1,
@@ -78,6 +89,7 @@ bool AreCollapsible(const TriggerFillFieldLogEvent& event1,
 
 // Log the fields on the form that are autofilled.
 struct FillFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   // This refers to `TriggleFillFieldLogEvent::fill_event_id`.
   FillEventId fill_event_id = internal::IsRequired();
   OptionalBoolean had_value_before_filling = internal::IsRequired();
@@ -92,6 +104,13 @@ struct FillFieldLogEvent {
       internal::IsRequired();
   // Whether the field had a value after this fill operation.
   OptionalBoolean had_value_after_filling = internal::IsRequired();
+#else
+  FillEventId fill_event_id;
+  OptionalBoolean had_value_before_filling;
+  FieldFillingSkipReason autofill_skipped_status;
+  OptionalBoolean was_autofilled_before_security_policy;
+  OptionalBoolean had_value_after_filling;
+#endif
   // Records whether filling was ever prevented because of the cross c
   // autofill security policy that applies to credit cards.
   OptionalBoolean filling_prevented_by_iframe_security_policy =
@@ -106,7 +125,11 @@ bool AreCollapsible(const FillFieldLogEvent& event1,
 
 // Log the field that the user types in.
 struct TypingFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   OptionalBoolean has_value_after_typing = internal::IsRequired();
+#else
+  OptionalBoolean has_value_after_typing;
+#endif
 };
 
 bool AreCollapsible(const TypingFieldLogEvent& event1,
@@ -114,10 +137,17 @@ bool AreCollapsible(const TypingFieldLogEvent& event1,
 
 // Events recorded after local heuristic prediction happened.
 struct HeuristicPredictionFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   FieldType field_type = internal::IsRequired();
   HeuristicSource heuristic_source = internal::IsRequired();
   bool is_active_heuristic_source = internal::IsRequired();
   size_t rank_in_field_signature_group = internal::IsRequired();
+#else
+  FieldType field_type;
+  HeuristicSource heuristic_source;
+  bool is_active_heuristic_source;
+  size_t rank_in_field_signature_group;
+#endif
 };
 
 bool AreCollapsible(const HeuristicPredictionFieldLogEvent& event1,
@@ -125,9 +155,15 @@ bool AreCollapsible(const HeuristicPredictionFieldLogEvent& event1,
 
 // Events recorded after parsing autocomplete attribute.
 struct AutocompleteAttributeFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   HtmlFieldType html_type = internal::IsRequired();
   HtmlFieldMode html_mode = internal::IsRequired();
   size_t rank_in_field_signature_group = internal::IsRequired();
+#else
+  HtmlFieldType html_type;
+  HtmlFieldMode html_mode;
+  size_t rank_in_field_signature_group;
+#endif
 };
 
 bool AreCollapsible(const AutocompleteAttributeFieldLogEvent& event1,
@@ -135,6 +171,7 @@ bool AreCollapsible(const AutocompleteAttributeFieldLogEvent& event1,
 
 // Events recorded after autofill server prediction happened.
 struct ServerPredictionFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   std::optional<FieldType> server_type1 =
       static_cast<FieldType>(internal::IsRequired());
   FieldPrediction::Source prediction_source1 = internal::IsRequired();
@@ -143,6 +180,14 @@ struct ServerPredictionFieldLogEvent {
   FieldPrediction::Source prediction_source2 = internal::IsRequired();
   bool server_type_prediction_is_override = internal::IsRequired();
   size_t rank_in_field_signature_group = internal::IsRequired();
+#else
+  std::optional<FieldType> server_type1;
+  FieldPrediction::Source prediction_source1;
+  std::optional<FieldType> server_type2;
+  FieldPrediction::Source prediction_source2;
+  bool server_type_prediction_is_override;
+  size_t rank_in_field_signature_group;
+#endif
 };
 
 bool AreCollapsible(const ServerPredictionFieldLogEvent& event1,
@@ -150,18 +195,30 @@ bool AreCollapsible(const ServerPredictionFieldLogEvent& event1,
 
 // Events recorded after rationalization happened.
 struct RationalizationFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   FieldType field_type = internal::IsRequired();
   size_t section_id = internal::IsRequired();
   bool type_changed = internal::IsRequired();
+#else
+  FieldType field_type;
+  size_t section_id;
+  bool type_changed;
+#endif
 };
 
 bool AreCollapsible(const RationalizationFieldLogEvent& event1,
                     const RationalizationFieldLogEvent& event2);
 
 struct AblationFieldLogEvent {
+#if defined(IS_REQUIRED_SUPPORTED)
   AblationGroup ablation_group = internal::IsRequired();
   AblationGroup conditional_ablation_group = internal::IsRequired();
   int day_in_ablation_window = internal::IsRequired();
+#else
+  AblationGroup ablation_group;
+  AblationGroup conditional_ablation_group;
+  int day_in_ablation_window;
+#endif
 };
 
 bool AreCollapsible(const AblationFieldLogEvent& event1,

@@ -4413,7 +4413,8 @@ static avifResult avifParse(avifDecoder * decoder)
 #endif
     avifBool needsTmap = AVIF_FALSE;
     avifBool tmapSeen = AVIF_FALSE;
-    avifFileType ftyp = {};
+    avifFileType ftyp;
+    memset(&ftyp, 0, sizeof(avifFileType));
 
     for (;;) {
         // Read just enough to get the next box header (a max of 32 bytes)
