@@ -2737,7 +2737,7 @@ config("symbols") {
     configs += [ "//build/config:compress_debug_sections" ]
   }
 
-  if (is_clang && (!is_nacl || is_nacl_saigo) && current_os != "zos") {
+  if (is_clang && (!is_nacl || is_nacl_saigo) && current_os != "zos" && !is_qtwebengine) {
     if (is_apple) {
       # TODO(https://crbug.com/1050118): Investigate missing debug info on mac.
       # Make sure we don't use constructor homing on mac.
