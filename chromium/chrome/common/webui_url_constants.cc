@@ -860,7 +860,7 @@ const char* const kChromeInternalsPathURLs[] = {
 #endif
 };
 const size_t kNumberOfChromeInternalsPathURLs =
-    std::size(kChromeInternalsPathURLs);
+    sizeof(kChromeInternalsPathURLs) / sizeof(const char*);
 
 const char* const kChromeDebugURLs[] = {
     // TODO(crbug.com/40253037): make this list comprehensive

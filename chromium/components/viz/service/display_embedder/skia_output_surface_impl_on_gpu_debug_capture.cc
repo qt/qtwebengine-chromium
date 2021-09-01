@@ -168,6 +168,8 @@ namespace viz {
 void AttemptDebuggerBufferCapture(
     ImageContextImpl* context,
     gpu::SharedContextState* context_state,
-    gpu::SharedImageRepresentationFactory* representation_factory);
+    gpu::SharedImageRepresentationFactory* representation_factory)
+{
+}
 }  // namespace viz
 #endif  // VIZ_DEBUGGER_IS_ON()

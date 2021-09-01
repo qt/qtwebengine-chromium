@@ -225,6 +225,7 @@ class StatsReporterImpl final : public partition_alloc::StatsReporter {
  private:
   static constexpr char kTraceCategory[] = "partition_alloc";
 };
+constexpr char StatsReporterImpl::kTraceCategory[];
 
 #endif  // PA_BUILDFLAG(USE_STARSCAN)
 

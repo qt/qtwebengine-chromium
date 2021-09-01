@@ -124,7 +124,8 @@ def _GenerateH(basepath, fileroot, head, namespace, schema, description):
     f.write(u'#include <cstddef>\n')
     f.write(u'\n')
 
-    if system_headers := schema.get(u'system-headers', []):
+    system_headers = schema.get(u"system-headers", [])
+    if system_headers:
       for header in system_headers:
         f.write(u'#include <%s>\n' % header)
       f.write(u'\n')

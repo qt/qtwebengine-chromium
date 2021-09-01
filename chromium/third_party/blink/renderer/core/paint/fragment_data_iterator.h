@@ -22,7 +22,7 @@ class FragmentDataIteratorBase {
 
  public:
   explicit FragmentDataIteratorBase(Head& head) : fragment_head_(head) {}
-  explicit FragmentDataIteratorBase(nullptr_t) {}
+  explicit FragmentDataIteratorBase(std::nullptr_t) {}
 
   Data* GetFragmentData() const {
     return !IsDone() ? &fragment_head_.at(idx_) : nullptr;

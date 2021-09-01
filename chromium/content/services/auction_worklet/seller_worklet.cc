@@ -82,7 +82,7 @@ enum class ScoreAdInput {
 //
 // Returns the V8 conversion of the in-use version of DirectFromSellerSignals,
 // or v8::Null() if both types of DirectFromSellerSignals are null.
-v8::Local<v8::Value> GetDirectFromSellerSignals(
+v8::Local<v8::Value> GetDirectFromSellerSignalsSW(
     const DirectFromSellerSignalsRequester::Result& subresource_bundle_result,
     const std::optional<std::string>& header_result,
     AuctionV8Helper& v8_helper,
@@ -947,11 +947,11 @@ void SellerWorklet::V8State::ScoreAd(
   v8::Local<v8::Object> direct_from_seller_signals = v8::Object::New(isolate);
   gin::Dictionary direct_from_seller_signals_dict(isolate,
                                                   direct_from_seller_signals);
-  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_seller_signals,
       direct_from_seller_seller_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
-  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_auction_signals,
       direct_from_seller_auction_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
@@ -1484,11 +1484,11 @@ void SellerWorklet::V8State::ReportResult(
   v8::Local<v8::Object> direct_from_seller_signals = v8::Object::New(isolate);
   gin::Dictionary direct_from_seller_signals_dict(isolate,
                                                   direct_from_seller_signals);
-  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> seller_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_seller_signals,
       direct_from_seller_seller_signals_header_ad_slot, *v8_helper_, context,
       errors_out);
-  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignals(
+  v8::Local<v8::Value> auction_signals = GetDirectFromSellerSignalsSW(
       direct_from_seller_result_auction_signals,
       direct_from_seller_auction_signals_header_ad_slot, *v8_helper_, context,
       errors_out);

@@ -8946,7 +8946,7 @@ void RenderFrameHostImpl::SendFencedFrameReportingBeacon(
   for (const blink::FencedFrame::ReportingDestination& destination :
        destinations) {
     SendFencedFrameReportingBeaconInternal(
-        DestinationEnumEvent(event_type, event_data, cross_origin_exposed),
+        DestinationEnumEvent{event_type, event_data, cross_origin_exposed},
         destination);
   }
 }
@@ -8977,7 +8977,7 @@ void RenderFrameHostImpl::SendFencedFrameReportingBeaconToCustomURL(
   }
 
   SendFencedFrameReportingBeaconInternal(
-      DestinationURLEvent(destination_url, cross_origin_exposed),
+      DestinationURLEvent{destination_url, cross_origin_exposed},
       blink::FencedFrame::ReportingDestination::kBuyer);
 }
 
