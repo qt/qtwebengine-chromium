@@ -1259,6 +1259,10 @@ bool GLSurfaceEGL::IsANGLEExternalContextAndSurfaceSupported() {
   return g_egl_angle_external_context_and_surface_supported;
 }
 
+GLSurface* GLSurfaceEGL::createSurfaceless(const gfx::Size& size) {
+  return new SurfacelessEGL(size);
+}
+
 GLSurfaceEGL::~GLSurfaceEGL() = default;
 
 // InitializeDisplay is necessary because the static binding code

@@ -69,7 +69,7 @@ BrowserAccessibilityState* BrowserAccessibilityState::GetInstance() {
 }
 
 // On Android, Mac, and Windows there are platform-specific subclasses.
-#if !defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_MAC)
+#if (!defined(OS_ANDROID) && !defined(OS_WIN) && !defined(OS_MAC)) || defined(TOOLKIT_QT)
 // static
 BrowserAccessibilityStateImpl* BrowserAccessibilityStateImpl::GetInstance() {
   static base::NoDestructor<BrowserAccessibilityStateImpl> instance;

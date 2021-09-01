@@ -11,6 +11,8 @@
 namespace base {
 namespace internal {
 
+constexpr char StatsCollector::kTraceCategory[];
+
 StatsCollector::StatsCollector(const char* process_name,
                                size_t quarantine_last_size)
     : process_name_(process_name),

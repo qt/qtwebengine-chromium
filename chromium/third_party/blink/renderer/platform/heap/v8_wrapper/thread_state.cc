@@ -82,8 +82,7 @@ class BlinkRootsHandler final : public v8::EmbedderRootsHandler {
 
 }  // namespace
 
-thread_local ThreadState* g_thread_specific_ CONSTINIT
-    __attribute__((tls_model(BLINK_HEAP_THREAD_LOCAL_MODEL))) = nullptr;
+thread_local ThreadState* g_thread_specific_ = nullptr;
 
 // static
 alignas(ThreadState) uint8_t

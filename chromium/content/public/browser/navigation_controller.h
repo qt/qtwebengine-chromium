@@ -140,6 +140,8 @@ class NavigationController {
     explicit LoadURLParams(const OpenURLParams& open_url_params);
 
     ~LoadURLParams();
+    LoadURLParams(LoadURLParams &&) = default;
+    LoadURLParams& operator=(LoadURLParams &&) = default;
 
     // The url to load. This field is required.
     GURL url;

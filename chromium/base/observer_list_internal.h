@@ -11,7 +11,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list_types.h"
 
-#if DCHECK_IS_ON()
+#if DCHECK_IS_ON() || EXPENSIVE_DCHECKS_ARE_ON()
 #include "base/debug/stack_trace.h"
 #endif
 

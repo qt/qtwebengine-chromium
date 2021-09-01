@@ -129,6 +129,8 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
   static bool IsANGLEPowerPreferenceSupported();
   static bool IsANGLEExternalContextAndSurfaceSupported();
 
+  static GLSurface* createSurfaceless(const gfx::Size& size);
+
  protected:
   ~GLSurfaceEGL() override;
 

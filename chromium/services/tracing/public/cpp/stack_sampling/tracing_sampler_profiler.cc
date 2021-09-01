@@ -7,7 +7,9 @@
 #include <limits>
 #include <set>
 
+#if defined(OS_ANDROID)
 #include "base/android/library_loader/anchor_functions.h"
+#endif
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/debug/leak_annotations.h"

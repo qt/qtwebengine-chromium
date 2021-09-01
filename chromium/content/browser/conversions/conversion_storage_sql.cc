@@ -703,7 +703,7 @@ bool ConversionStorageSql::DeleteExpiredImpressions() {
 
   auto delete_impressions_from_paged_select =
       [this](sql::Statement& statement)
-          VALID_CONTEXT_REQUIRED(sequence_checker_) WARN_UNUSED_RESULT -> bool {
+          VALID_CONTEXT_REQUIRED(sequence_checker_) WARN_UNUSED_RESULT {
     while (true) {
       std::vector<int64_t> impression_ids;
       while (statement.Step()) {
@@ -720,6 +720,7 @@ bool ConversionStorageSql::DeleteExpiredImpressions() {
       // the same.
       statement.Reset(/*clear_bound_vars=*/false);
     }
+    return false;
   };
 
   // Delete all impressions that have no associated conversions and are past

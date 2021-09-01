@@ -653,7 +653,7 @@ const char* const kChromeInternalsPathURLs[] = {
 #endif
 };
 const size_t kNumberOfChromeInternalsPathURLs =
-    base::size(kChromeInternalsPathURLs);
+    sizeof(kChromeInternalsPathURLs) / sizeof(const char*);
 
 const char* const kChromeDebugURLs[] = {
     blink::kChromeUIBadCastCrashURL,

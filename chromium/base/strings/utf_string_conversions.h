@@ -80,6 +80,9 @@ std::u16string UTF8ToUTF16(const char (&str)[N]) {
   return std::u16string();
 }
 
+#ifndef TOOLKIT_QT
+// This doesn't even REMOTELY compile, as it is used thousands of places across Chromium,
+// no idea how Chrome managed to compile anything with this shit.
 template <size_t N>
 std::u16string ASCIIToUTF16(const char (&str)[N]) {
   static_assert(N == 0, "Error: Use the u\"...\" prefix instead.");
@@ -92,6 +95,7 @@ template <size_t N>
 std::u16string ASCIIToUTF16(char (&str)[N]) {
   return ASCIIToUTF16(StringPiece(str));
 }
+#endif
 
 }  // namespace base
 
