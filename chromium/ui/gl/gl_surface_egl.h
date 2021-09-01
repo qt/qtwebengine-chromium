@@ -146,6 +146,8 @@ class GL_EXPORT GLSurfaceEGL : public GLSurface {
   static bool IsANGLEVulkanImageSupported();
   static bool IsEGLQueryDeviceSupported();
 
+  static GLSurface* createSurfaceless(const gfx::Size& size);
+
  protected:
   ~GLSurfaceEGL() override;
 

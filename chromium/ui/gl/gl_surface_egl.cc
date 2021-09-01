@@ -1365,6 +1365,10 @@ bool GLSurfaceEGL::IsEGLQueryDeviceSupported() {
   return g_egl_ext_query_device_supported;
 }
 
+GLSurface* GLSurfaceEGL::createSurfaceless(const gfx::Size& size) {
+  return new SurfacelessEGL(size);
+}
+
 GLSurfaceEGL::~GLSurfaceEGL() = default;
 
 // InitializeDisplay is necessary because the static binding code

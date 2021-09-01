@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import("../../build/crashpad_buildconfig.gni")
+import("//build/config/features.gni")
 
 declare_args() {
   if (crashpad_is_fuchsia || crashpad_is_android) {
     crashpad_http_transport_impl = "socket"
-  } else if (crashpad_is_linux) {
+  } else if (crashpad_is_linux && !use_qt) {
     crashpad_http_transport_impl = "libcurl"
   } else {
     crashpad_http_transport_impl = ""
@@ -27,5 +28,5 @@ declare_args() {
   # was removed from the Fuchsia SDK. Re-enable it when we have a way to acquire
   # a BoringSSL lib again.
   crashpad_use_boringssl_for_http_transport_socket =
-      crashpad_is_in_fuchsia || (crashpad_is_linux && crashpad_is_in_chromium)
+      crashpad_is_in_fuchsia || (crashpad_is_linux && crashpad_is_in_chromium && !use_qt)
 }

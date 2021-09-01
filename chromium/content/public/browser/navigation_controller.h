@@ -143,6 +143,8 @@ class NavigationController {
     LoadURLParams(const LoadURLParams&) = delete;
     LoadURLParams& operator=(const LoadURLParams&) = delete;
     ~LoadURLParams();
+    LoadURLParams(LoadURLParams &&) = default;
+    LoadURLParams& operator=(LoadURLParams &&) = default;
 
     // The url to load. This field is required.
     GURL url;

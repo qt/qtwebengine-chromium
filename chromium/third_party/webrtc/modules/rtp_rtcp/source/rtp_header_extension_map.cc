@@ -28,11 +28,11 @@ struct ExtensionInfo {
 };
 
 template <typename Extension>
-constexpr ExtensionInfo CreateExtensionInfo() {
+ExtensionInfo CreateExtensionInfo() {
   return {Extension::kId, Extension::Uri()};
 }
 
-constexpr ExtensionInfo kExtensions[] = {
+ExtensionInfo kExtensions[] = {
     CreateExtensionInfo<TransmissionOffset>(),
     CreateExtensionInfo<AudioLevel>(),
     CreateExtensionInfo<CsrcAudioLevel>(),
