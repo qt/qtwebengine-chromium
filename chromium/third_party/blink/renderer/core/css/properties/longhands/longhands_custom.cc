@@ -277,8 +277,19 @@ const CSSValue* AnchorName::ParseSingleValue(
           css_parsing_utils::ConsumeIdent<CSSValueID::kNone>(stream)) {
     return value;
   }
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeDashedIdent, stream, context);
+
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeDashedIdent(stream, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
+  // return css_parsing_utils::ConsumeCommaSeparatedList(
+  //     css_parsing_utils::ConsumeDashedIdent, stream, context);
 }
 const CSSValue* AnchorName::CSSValueFromComputedStyleInternal(
     const ComputedStyle& style,
@@ -309,8 +320,18 @@ const CSSValue* AnchorScope::ParseSingleValue(
               stream)) {
     return value;
   }
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeDashedIdent, stream, context);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeDashedIdent(stream, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
+  // return css_parsing_utils::ConsumeCommaSeparatedList(
+  //     css_parsing_utils::ConsumeDashedIdent, stream, context);
 }
 
 const CSSValue* AnchorScope::CSSValueFromComputedStyleInternal(
@@ -10533,8 +10554,18 @@ const CSSValue* MaskImage::ParseSingleValue(
     CSSParserTokenStream& stream,
     const CSSParserContext& context,
     const CSSParserLocalContext&) const {
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeImageOrNone, stream, context);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeImageOrNone(stream, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
+  // return css_parsing_utils::ConsumeCommaSeparatedList(
+  //     css_parsing_utils::ConsumeImageOrNone, stream, context);
 }
 
 const CSSValue* MaskImage::CSSValueFromComputedStyleInternal(
@@ -10550,8 +10581,18 @@ const CSSValue* MaskImage::CSSValueFromComputedStyleInternal(
 const CSSValue* MaskMode::ParseSingleValue(CSSParserTokenStream& stream,
                                            const CSSParserContext&,
                                            const CSSParserLocalContext&) const {
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeMaskMode, stream);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeMaskMode(stream);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
+  // return css_parsing_utils::ConsumeCommaSeparatedList(
+  //     css_parsing_utils::ConsumeMaskMode, stream);
 }
 
 const CSSValue* MaskMode::CSSValueFromComputedStyleInternal(
@@ -10575,8 +10616,16 @@ const CSSValue* MaskOrigin::ParseSingleValue(
         css_parsing_utils::ConsumePrefixedBackgroundBox, stream,
         css_parsing_utils::AllowTextValue::kForbid);
   }
-  return css_parsing_utils::ConsumeCommaSeparatedList(
-      css_parsing_utils::ConsumeCoordBox, stream);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeCoordBox(stream);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
 }
 
 const CSSValue* MaskOrigin::CSSValueFromComputedStyleInternal(
@@ -11182,11 +11231,16 @@ const CSSValue* TimelineScope::ParseSingleValue(
   if (stream.Peek().Id() == CSSValueID::kNone) {
     return css_parsing_utils::ConsumeIdent(stream);
   }
-  using css_parsing_utils::ConsumeCommaSeparatedList;
-  using css_parsing_utils::ConsumeCustomIdent;
-  return ConsumeCommaSeparatedList<CSSCustomIdentValue*(
-      CSSParserTokenStream&, const CSSParserContext&)>(ConsumeCustomIdent,
-                                                       stream, context);
+  CSSValueList* list = CSSValueList::CreateCommaSeparated();
+  do {
+    CSSValue* value = css_parsing_utils::ConsumeCustomIdent(stream, context);
+    if (!value) {
+      return nullptr;
+    }
+    list->Append(*value);
+  } while (css_parsing_utils::ConsumeCommaIncludingWhitespace(stream));
+  DCHECK(list->length());
+  return list;
 }
 
 const CSSValue* TimelineScope::CSSValueFromComputedStyleInternal(

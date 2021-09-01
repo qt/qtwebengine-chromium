@@ -141,7 +141,7 @@ class COMPONENT_EXPORT(URL) GURL {
   }
 
   // Allows GURL to used as a key in STL (for example, a std::set or std::map).
-  constexpr friend auto operator<=>(const GURL& lhs, const GURL& rhs) {
+  friend auto operator<=>(const GURL& lhs, const GURL& rhs) {
     return lhs.spec_ <=> rhs.spec_;
   }
 

@@ -21,7 +21,7 @@
 
 namespace {
 
-constexpr std::array<pdfium::span<const uint8_t>,
+const std::array<pdfium::span<const uint8_t>,
                      CFX_FontMapper::kNumStandardFonts>
     kFoxitFonts = {{
         kFoxitFixedFontData,
@@ -40,8 +40,8 @@ constexpr std::array<pdfium::span<const uint8_t>,
         kFoxitDingbatsFontData,
     }};
 
-constexpr pdfium::span<const uint8_t> kGenericSansFont = kFoxitSansMMFontData;
-constexpr pdfium::span<const uint8_t> kGenericSerifFont = kFoxitSerifMMFontData;
+const pdfium::span<const uint8_t> kGenericSansFont = kFoxitSansMMFontData;
+const pdfium::span<const uint8_t> kGenericSerifFont = kFoxitSerifMMFontData;
 
 FXFT_LibraryRec* FTLibraryInitHelper() {
   FXFT_LibraryRec* pLibrary = nullptr;
