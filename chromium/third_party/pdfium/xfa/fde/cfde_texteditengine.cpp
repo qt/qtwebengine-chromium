@@ -881,7 +881,7 @@ WideString CFDE_TextEditEngine::Delete(size_t start_idx,
   AdjustGap(start_idx + length, 0);
 
   WideString ret(
-      WideStringView(pdfium::span(content_).subspan(start_idx, length)));
+      WideStringView(pdfium::span<WideString::CharType>(content_).subspan(start_idx, length)));
 
   if (add_operation == RecordOperation::kInsertRecord) {
     AddOperationRecord(std::make_unique<DeleteOperation>(this, start_idx, ret));

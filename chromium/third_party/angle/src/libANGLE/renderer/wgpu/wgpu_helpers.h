@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <webgpu/webgpu.h>
 #include <algorithm>
+#include <optional>
 
 #include "libANGLE/Error.h"
 #include "libANGLE/ImageIndex.h"

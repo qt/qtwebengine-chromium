@@ -29,6 +29,7 @@
 #include "device/gamepad/public/cpp/gamepads.h"
 #include "third_party/blink/public/mojom/frame/user_activation_notification_type.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_gamepad_haptic_effect_type.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gamepad_mapping_type.h"
 #include "third_party/blink/renderer/core/dom/events/event.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"

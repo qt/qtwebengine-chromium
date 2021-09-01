@@ -36,7 +36,7 @@ namespace {
 
 constexpr size_t kNonceLength = 96 / 8;  // AES_GCM_NONCE_LENGTH
 
-constexpr std::array<uint8_t, crypto::aes_cbc::kBlockSize> kFixedIvForAes128Cbc{
+constexpr uint8_t kFixedIvForAes128Cbc[crypto::aes_cbc::kBlockSize] = {
     ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
     ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ',
 };

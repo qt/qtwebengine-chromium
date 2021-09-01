@@ -642,7 +642,7 @@ class PA_TRIVIAL_ABI PA_GSL_POINTER raw_ptr {
     return EphemeralRawAddr(*this);
   }
 
-  PA_ALWAYS_INLINE constexpr explicit operator bool() const {
+  PA_ALWAYS_INLINE explicit operator bool() const {
     return !!wrapped_ptr_;
   }
 

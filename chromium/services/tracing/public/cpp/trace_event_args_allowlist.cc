@@ -102,7 +102,7 @@ constexpr auto kEventArgsAllowlist = std::to_array<AllowlistEntry>({
     {TRACE_DISABLED_BY_DEFAULT("v8.gc"), "*", kV8GCAllowedArgs},
 });
 
-constexpr auto kMetadataAllowlist = std::to_array<const char*>({
+const char* const kMetadataAllowlist[] = {
     "chrome-bitness",
     "chrome-dcheck-on",
     "chrome-library-name",
@@ -122,7 +122,8 @@ constexpr auto kMetadataAllowlist = std::to_array<const char*>({
     "scenario_name",
     "trace-config",
     "user-agent",
-});
+    nullptr,
+};
 
 }  // namespace
 

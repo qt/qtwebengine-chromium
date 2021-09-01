@@ -163,7 +163,7 @@ template <typename T, wtf_size_t inlineCapacity = 0>
 using HeapVector = BasicHeapVector<internal::HeapCollectionType::kDisallowNew,
                                    T,
                                    inlineCapacity>;
-static_assert(IsDisallowNew<HeapVector<int>>);
+// static_assert(IsDisallowNew<HeapVector<int>>);
 ASSERT_SIZE(Vector<int>, HeapVector<int>);
 
 // GCed version of Vector for referring to GarbageCollected objects.

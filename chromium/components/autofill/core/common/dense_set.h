@@ -386,8 +386,8 @@ class DenseSet {
     constexpr Iterator() = default;
 
     friend constexpr bool operator==(const Iterator& a, const Iterator& b) {
-      DCHECK(a.owner_);
-      DCHECK_EQ(a.owner_, b.owner_);
+      // DCHECK(a.owner_);
+      // DCHECK_EQ(a.owner_, b.owner_);
       return a.index_ == b.index_;
     }
 

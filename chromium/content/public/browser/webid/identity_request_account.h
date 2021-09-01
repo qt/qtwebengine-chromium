@@ -13,13 +13,12 @@
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "third_party/blink/public/common/webid/login_status_account.h"
+#include "third_party/blink/public/mojom/webid/federated_auth_request.mojom-forward.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
 namespace content {
-
-class IdentityProviderData;
 
 // A Java counterpart will be generated for this enum.
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.content.webid
@@ -30,6 +29,98 @@ enum class IdentityRequestDialogDisclosureField : int32_t {
   kPicture,
   kPhoneNumber,
   kUsername
+};
+
+// The client metadata that will be used to display a FedCM dialog. This data is
+// extracted from the client metadata endpoint from the FedCM API, where
+// 'client' is essentially the relying party which invoked the API.
+struct CONTENT_EXPORT ClientMetadata {
+  ClientMetadata(const GURL& terms_of_service_url,
+                 const GURL& privacy_policy_url,
+                 const GURL& brand_icon_url,
+                 const gfx::Image& brand_decoded_icon);
+  ClientMetadata(const ClientMetadata& other);
+  ~ClientMetadata();
+
+  GURL terms_of_service_url;
+  GURL privacy_policy_url;
+  GURL brand_icon_url;
+  // This will be an empty image if the fetching never happened or if it failed.
+  gfx::Image brand_decoded_icon;
+};
+
+// The information about an error that will be used to display a FedCM dialog.
+// This data is extracted from the error object returned by the identity
+// provider when the user attempts to login via the FedCM API and an error
+// occurs.
+struct CONTENT_EXPORT IdentityCredentialTokenError {
+  std::string code;
+  GURL url;
+};
+
+// The metadata about the identity provider that will be used to display a FedCM
+// dialog. This data is extracted from the config file which is fetched when the
+// FedCM API is invoked.
+struct CONTENT_EXPORT IdentityProviderMetadata {
+  IdentityProviderMetadata();
+  IdentityProviderMetadata(const IdentityProviderMetadata& other);
+  ~IdentityProviderMetadata();
+
+  std::optional<SkColor> brand_text_color;
+  std::optional<SkColor> brand_background_color;
+  GURL brand_icon_url;
+  GURL idp_login_url;
+  std::string requested_label;
+  // For registered IdPs, the type is used to only show the accounts when the
+  // RP is compatible.
+  std::vector<std::string> types;
+  // The token formats that are supported.
+  std::vector<std::string> formats;
+  // The URL of the configuration endpoint. This is stored in
+  // IdentityProviderMetadata so that the UI code can pass it along when an
+  // Account is selected by the user.
+  GURL config_url;
+  // Whether this IdP supports signing in to additional accounts.
+  bool supports_add_account{false};
+  // Whether this IdP has any filtered out account. This is reset to false each
+  // time the accounts dialog is shown and recomputed then.
+  bool has_filtered_out_account{false};
+  // This will be an empty image if fetching failed.
+  gfx::Image brand_decoded_icon;
+};
+
+// This class contains all of the data specific to an identity provider that is
+// going to be used to display a FedCM dialog. This data is gathered from
+// endpoints fetched when the FedCM API is invoked as well as from the
+// parameters provided by the relying party when the API is invoked.
+class CONTENT_EXPORT IdentityProviderData
+    : public base::RefCounted<IdentityProviderData> {
+ public:
+  IdentityProviderData(const std::string& idp_for_display,
+                       const IdentityProviderMetadata& idp_metadata,
+                       const ClientMetadata& client_metadata,
+                       blink::mojom::RpContext rp_context,
+                       std::optional<blink::mojom::Format> format,
+                       const std::vector<IdentityRequestDialogDisclosureField>&
+                           disclosure_fields,
+                       bool has_login_status_mismatch);
+
+  std::string idp_for_display;
+  IdentityProviderMetadata idp_metadata;
+  ClientMetadata client_metadata;
+  blink::mojom::RpContext rp_context;
+  std::optional<blink::mojom::Format> format;
+  // For which fields should the dialog request permission for (assuming
+  // this is for signup).
+  std::vector<IdentityRequestDialogDisclosureField> disclosure_fields;
+  // Whether there was some login status API mismatch when fetching the IDP's
+  // accounts.
+  bool has_login_status_mismatch;
+
+ private:
+  friend class base::RefCounted<IdentityProviderData>;
+
+  ~IdentityProviderData();
 };
 
 // Represents a federated user account which is used when displaying the FedCM

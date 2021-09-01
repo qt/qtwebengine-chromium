@@ -32,7 +32,7 @@ bool IsUnrestrictedOAuth2Scopes(const std::string& scope) {
 
   // clang-format off
 
-  static const base::NoDestructor<base::flat_set<std::string_view>> scopes(
+  base::flat_set<std::string> flat_set
     {
       GaiaConstants::kGoogleUserInfoEmail,
       GaiaConstants::kGoogleUserInfoProfile,
@@ -52,9 +52,11 @@ bool IsUnrestrictedOAuth2Scopes(const std::string& scope) {
       // On Android, cloud policies are fetched before sign in is completed.
       GaiaConstants::kDeviceManagementServiceOAuth,
 #endif // BUILDFLAG(IS_ANDROID)
-
-  });
+  };
   // clang-format on
+
+  static const base::NoDestructor<base::flat_set<std::string>> scopes(
+      std::move(flat_set));
 
   return scopes->contains(scope);
 }
