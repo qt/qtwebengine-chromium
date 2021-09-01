@@ -20,6 +20,7 @@
 #include "ui/base/ime/input_method.h"
 #include "ui/base/l10n/l10n_font_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/color/color_provider_manager.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/display/screen.h"
@@ -806,6 +807,17 @@ const ui::ThemeProvider* Widget::GetThemeProvider() const {
                                               : nullptr;
 }
 
+const ui::ColorProvider* Widget::GetColorProvider() const {
+  auto color_scheme = GetNativeTheme()->GetDefaultSystemColorScheme();
+  return ui::ColorProviderManager::Get().GetColorProviderFor(
+      {(color_scheme == ui::NativeTheme::ColorScheme::kDark)
+           ? ui::ColorProviderManager::ColorMode::kDark
+           : ui::ColorProviderManager::ColorMode::kLight,
+       (color_scheme == ui::NativeTheme::ColorScheme::kPlatformHighContrast)
+           ? ui::ColorProviderManager::ContrastMode::kHigh
+           : ui::ColorProviderManager::ContrastMode::kNormal});
+}
+
 FocusManager* Widget::GetFocusManager() {
   Widget* toplevel_widget = GetTopLevelWidget();
   return toplevel_widget ? toplevel_widget->focus_manager_.get() : nullptr;
@@ -893,7 +905,7 @@ void Widget::UpdateWindowTitle() {
 
   // Update the native frame's text. We do this regardless of whether or not
   // the native frame is being used, since this also updates the taskbar, etc.
-  base::string16 window_title = widget_delegate_->GetWindowTitle();
+  std::u16string window_title = widget_delegate_->GetWindowTitle();
   base::i18n::AdjustStringForLocaleDirection(&window_title);
   if (!native_widget_->SetWindowTitle(window_title))
     return;

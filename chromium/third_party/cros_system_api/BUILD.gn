@@ -37,6 +37,7 @@ group("all") {
     ":system_api-power_manager-goprotos",
     ":system_api-power_manager-protos",
     ":system_api-protos",
+    ":system_api-rmad-protos",
     ":system_api-runtime_probe-goprotos",
     ":system_api-runtime_probe-protos",
     ":system_api-seneschal-goprotos",
@@ -103,7 +104,7 @@ proto_library("system_api-power_manager-protos") {
 
 goproto_library("system_api-power_manager-goprotos") {
   proto_in_dir = "dbus/power_manager"
-  proto_out_dir = "go/src/chromiumos/system_api/power_manager_proto"
+  proto_out_dir = "go/src/"
   sources = [
     "${proto_in_dir}/backlight.proto",
     "${proto_in_dir}/idle.proto",
@@ -132,7 +133,7 @@ proto_library("system_api-cryptohome-protos") {
 
 goproto_library("system_api-cryptohome-goprotos") {
   proto_in_dir = "dbus/cryptohome"
-  proto_out_dir = "go/src/chromiumos/system_api/cryptohome_proto"
+  proto_out_dir = "go/src/"
   sources = [
     "${proto_in_dir}/fido.proto",
     "${proto_in_dir}/key.proto",
@@ -166,7 +167,7 @@ proto_library("system_api-kerberos-protos") {
 
 goproto_library("system_api-kerberos-goprotos") {
   proto_in_dir = "dbus/kerberos"
-  proto_out_dir = "go/src/chromiumos/system_api/kerberos_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/kerberos_service.proto" ]
 }
 
@@ -189,7 +190,7 @@ proto_library("system_api-login_manager-protos") {
 
 goproto_library("system_api-login_manager-goprotos") {
   proto_in_dir = "dbus/login_manager"
-  proto_out_dir = "go/src/chromiumos/system_api/login_manager_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/policy_descriptor.proto" ]
 }
 
@@ -202,7 +203,7 @@ proto_library("system_api-lorgnette-protos") {
 
 goproto_library("system_api-lorgnette-goprotos") {
   proto_in_dir = "dbus/lorgnette"
-  proto_out_dir = "go/src/chromiumos/system_api/lorgnette_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/lorgnette_service.proto" ]
 }
 
@@ -239,7 +240,7 @@ proto_library("system_api-attestation-protos") {
 
 goproto_library("system_api-attestation-goprotos") {
   proto_in_dir = "dbus/attestation"
-  proto_out_dir = "go/src/chromiumos/system_api/attestation_proto"
+  proto_out_dir = "go/src/"
   sources = [
     "${proto_in_dir}/attestation_ca.proto",
     "${proto_in_dir}/interface.proto",
@@ -260,7 +261,7 @@ proto_library("system_api-tpm_manager-protos") {
 
 goproto_library("system_api-tpm_manager-goprotos") {
   proto_in_dir = "dbus/tpm_manager"
-  proto_out_dir = "go/src/chromiumos/system_api/tpm_manager_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/tpm_manager.proto" ]
 }
 
@@ -273,7 +274,7 @@ proto_library("system_api-metrics_event-protos") {
 
 goproto_library("system_api-metrics_event-goprotos") {
   proto_in_dir = "dbus/metrics_event"
-  proto_out_dir = "go/src/chromiumos/system_api/metrics_event_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/metrics_event.proto" ]
 }
 
@@ -286,7 +287,7 @@ proto_library("system_api-plugin_vm_service-protos") {
 
 goproto_library("system_api-plugin_vm_service-goprotos") {
   proto_in_dir = "dbus/plugin_vm_service"
-  proto_out_dir = "go/src/chromiumos/system_api/plugin_vm_service_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/plugin_vm_service.proto" ]
 }
 
@@ -306,7 +307,7 @@ proto_library("system_api-vm_cicerone-protos") {
 
 goproto_library("system_api-vm_cicerone-goprotos") {
   proto_in_dir = "dbus/vm_cicerone"
-  proto_out_dir = "go/src/chromiumos/system_api/vm_cicerone_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/cicerone_service.proto" ]
 }
 
@@ -319,7 +320,7 @@ proto_library("system_api-vm_concierge-protos") {
 
 goproto_library("system_api-vm_concierge-goprotos") {
   proto_in_dir = "dbus/vm_concierge"
-  proto_out_dir = "go/src/chromiumos/system_api/vm_concierge_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/concierge_service.proto" ]
 }
 
@@ -339,7 +340,7 @@ proto_library("system_api-seneschal-protos") {
 
 goproto_library("system_api-seneschal-goprotos") {
   proto_in_dir = "dbus/seneschal"
-  proto_out_dir = "go/src/chromiumos/system_api/seneschal_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/seneschal_service.proto" ]
 }
 
@@ -359,7 +360,7 @@ proto_library("system_api-runtime_probe-protos") {
 
 goproto_library("system_api-runtime_probe-goprotos") {
   proto_in_dir = "dbus/runtime_probe"
-  proto_out_dir = "go/src/chromiumos/system_api/runtime_probe_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/runtime_probe.proto" ]
 }
 
@@ -376,7 +377,7 @@ proto_library("system_api-bootlockbox-protos") {
 
 goproto_library("system_api-bootlockbox-goprotos") {
   proto_in_dir = "dbus/bootlockbox"
-  proto_out_dir = "go/src/chromiumos/system_api/bootlockbox_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/boot_lockbox_rpc.proto" ]
 }
 
@@ -403,7 +404,7 @@ proto_library("system_api-vm_plugin_dispatcher-protos") {
 
 goproto_library("system_api-vm_plugin_dispatcher-goprotos") {
   proto_in_dir = "dbus/vm_plugin_dispatcher"
-  proto_out_dir = "go/src/chromiumos/system_api/vm_plugin_dispatcher_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/vm_plugin_dispatcher.proto" ]
 }
 
@@ -431,7 +432,7 @@ proto_library("system_api-patchpanel-protos") {
 
 goproto_library("system_api-patchpanel-goprotos") {
   proto_in_dir = "dbus/patchpanel"
-  proto_out_dir = "go/src/chromiumos/system_api/patchpanel_proto"
+  proto_out_dir = "go/src/"
   sources = [ "${proto_in_dir}/patchpanel_service.proto" ]
 }
 
@@ -467,5 +468,12 @@ proto_library("system_api-dlp-protos") {
   proto_in_dir = "dbus/dlp"
   proto_out_dir = "include/dlp/proto_bindings"
   sources = [ "${proto_in_dir}/dlp_service.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-rmad-protos") {
+  proto_in_dir = "dbus/rmad"
+  proto_out_dir = "include/rmad/proto_bindings"
+  sources = [ "${proto_in_dir}/rmad.proto" ]
   standalone = true
 }

@@ -28,11 +28,14 @@
 #include "ip_peripheral/dbus-constants.h"
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
+#include "missive/dbus-constants.h"
 #include "ocr/dbus-constants.h"
 #include "oobe_config/dbus-constants.h"
 #include "patchpanel/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
 #include "power_manager/dbus-constants.h"
+#include "resource_manager/dbus-constants.h"
+#include "rmad/dbus-constants.h"
 #include "runtime_probe/dbus-constants.h"
 #include "seneschal/dbus-constants.h"
 #include "shill/dbus-constants.h"
@@ -224,6 +227,8 @@ const char kChromeFeaturesServiceIsShillSandboxingEnabledMethod[] =
     "IsShillSandboxingEnabled";
 const char kChromeFeaturesServiceIsFsNosymfollowEnabledMethod[] =
     "IsFsNosymfollowEnabled";
+const char kChromeFeaturesServiceIsPeripheralDataAccessEnabledMethod[] =
+    "IsPeripheralDataAccessEnabled";
 
 const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
 const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
@@ -273,6 +278,14 @@ const char kVmPermissionServiceUnregisterVmMethod[] = "UnregisterVm";
 const char kVmPermissionServiceGetPermissionsMethod[] = "GetPermissions";
 const char kVmPermissionServiceSetPermissionsMethod[] = "SetPermissions";
 
+constexpr char kChromeReportingServiceInterface[] =
+    "org.chromium.ChromeReportingServiceInterface";
+constexpr char kChromeReportingServicePath[] =
+    "/org/chromium/ChromeReportingService";
+constexpr char kChromeReportingServiceName[] =
+    "org.chromium.ChromeReportingService";
+constexpr char kChromeReportingServiceUploadEncryptedRecordMethod[] =
+    "UploadEncryptedRecord";
 }  // namespace chromeos
 
 namespace media_perception {
@@ -532,17 +545,8 @@ constexpr char kMojoConnectionServiceInterface[] =
 // Methods
 constexpr char kBootstrapMojoConnectionForIioServiceMethod[] =
     "BootstrapMojoConnectionForIioService";
-// Token identifying the primordial Mojo pipe passed to
-// BootstrapMojoConnectionForIioService.
-constexpr char kBootstrapMojoConnectionForIioServiceChannelToken[] =
-    "sensors-iioservice-bootstrap";
-
 constexpr char kBootstrapMojoConnectionForSensorClientsMethod[] =
     "BootstrapMojoConnectionForSensorClients";
-// Token identifying the primordial Mojo pipe passed to
-// BootstrapMojoConnectionForSensorClients.
-constexpr char kBootstrapMojoConnectionForSensorClientsChannelToken[] =
-    "sensors-clients-bootstrap";
 }  // namespace mojo_connection_service
 
 namespace virtual_file_provider {
@@ -671,18 +675,5 @@ const char kLockToSingleUserServiceName[] = "org.chromium.LockToSingleUser";
 
 const char kNotifyVmStartingMethod[] = "NotifyVmStarting";
 }  // namespace lock_to_single_user
-
-namespace memory_pressure {
-const char kMemoryPressureInterface[] = "org.chromium.MemoryPressure";
-const char kMemoryPressureServicePath[] = "/org/chromium/MemoryPressure";
-const char kMemoryPressureServiceName[] = "org.chromium.MemoryPressure";
-// Method names.
-const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
-const char kGetMemoryMarginKBMethod[] = "GetMemoryMarginKB";
-const char kGetMemoryMarginsKBMethod[] = "GetMemoryMarginsKB";
-// Signals.
-const char kCriticalMemoryPressure[] = "CriticalMemoryPressure";
-const char kModerateMemoryPressure[] = "ModerateMemoryPressure";
-}  // namespace memory_pressure
 
 #endif  // SYSTEM_API_DBUS_SERVICE_CONSTANTS_H_

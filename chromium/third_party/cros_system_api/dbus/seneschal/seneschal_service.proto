@@ -8,7 +8,7 @@ option optimize_for = LITE_RUNTIME;
 // This file defines messages for starting, stopping, and managing 9p servers
 // with access to the user's home directory.
 package vm_tools.seneschal;
-option go_package = "seneschal_proto";
+option go_package = "chromiumos/system_api/seneschal_proto";
 
 // Defines a path to be shared with a 9p server.
 message SharedPath {

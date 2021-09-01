@@ -103,6 +103,7 @@ const char kUninitializedTechnologiesProperty[] = "UninitializedTechnologies";
 const char kWakeOnLanEnabledProperty[] = "WakeOnLanEnabled";
 const char kWifiGlobalFTEnabledProperty[] = "WiFi.GlobalFTEnabled";
 const char kDNSProxyIPv4AddressProperty[] = "DNSProxyIPv4Address";
+const char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 
 // Manager and DefaultProfile property names (the Manager properties that are
 // persisted by a DefaultProfile; these are always read-only for
@@ -158,6 +159,7 @@ const char kTetheringProperty[] = "Tethering";
 const char kTypeProperty[] = "Type";
 const char kUIDataProperty[] = "UIData";
 const char kVisibleProperty[] = "Visible";
+const char kONCSourceProperty[] = "ONCSource";
 
 // Cellular Service property names.
 const char kActivationStateProperty[] = "Cellular.ActivationState";
@@ -387,6 +389,8 @@ const char kMacAddressRandomizationEnabledProperty[] =
 const char kMacAddressRandomizationSupportedProperty[] =
     "MACAddressRandomizationSupported";
 const char kNetDetectScanPeriodSecondsProperty[] = "NetDetectScanPeriodSeconds";
+const char kWakeOnWiFiSupportedProperty[] = "WakeOnWiFiSupported";
+const char kWakeOnWiFiAllowedProperty[] = "WakeOnWiFiAllowed";
 const char kWakeOnWiFiFeaturesEnabledProperty[] = "WakeOnWiFiFeaturesEnabled";
 const char kWakeToScanPeriodSecondsProperty[] = "WakeToScanPeriodSeconds";
 const char kWifiSupportedFrequenciesProperty[] = "WiFi.SupportedFrequencies";
@@ -725,7 +729,6 @@ const char kWakeOnWiFiFeaturesEnabledDarkConnect[] = "darkconnect";
 const char kWakeOnWiFiFeaturesEnabledPacketDarkConnect[] =
     "packet_and_darkconnect";
 const char kWakeOnWiFiFeaturesEnabledNone[] = "none";
-const char kWakeOnWiFiFeaturesEnabledNotSupported[] = "not_supported";
 
 // kEapKeyMgmtProperty values.
 const char kKeyManagementIEEE8021X[] = "IEEE8021X";
@@ -738,6 +741,13 @@ const char kWakeOnIPIP[] = "IPIP";
 const char kWakeOnIGMP[] = "IGMP";
 const char kWakeOnICMP[] = "ICMP";
 const char kWakeOnIP[] = "IP";
+
+// ONC Source constants.
+static constexpr char kONCSourceUnknown[] = "Unknown";
+static constexpr char kONCSourceNone[] = "None";
+static constexpr char kONCSourceUserImport[] = "UserImport";
+static constexpr char kONCSourceDevicePolicy[] = "DevicePolicy";
+static constexpr char kONCSourceUserPolicy[] = "UserPolicy";
 
 // Cellular service carriers.
 const char kCarrierGenericUMTS[] = "Generic UMTS";
@@ -794,6 +804,25 @@ const char kReconnectParameterThirdPartyVpn[] = "reconnect";
 const char kObjectPathBase[] = "/thirdpartyvpn/";
 const char kNonIPDelimiter = ':';
 const char kIPDelimiter = ' ';
+
+// Always-on VPN modes for the kAlwaysOnVpnModeProperty Profile property.
+const char kAlwaysOnVpnModeOff[] = "off";
+const char kAlwaysOnVpnModeBestEffort[] = "best-effort";
+const char kAlwaysOnVpnModeStrict[] = "strict";
+
+// Possible traffic sources. Note that these sources should be kept in sync with
+// the sources defined in TrafficCounter::Source at:
+// src/platform2/system_api/dbus/patchpanel/patchpanel_service.proto
+const char kTrafficCounterSourceUnknown[] = "unknown";
+const char kTrafficCounterSourceChrome[] = "chrome";
+const char kTrafficCounterSourceUser[] = "user";
+const char kTrafficCounterSourceArc[] = "arc";
+const char kTrafficCounterSourceCrosvm[] = "crosvm";
+const char kTrafficCounterSourcePluginvm[] = "pluginvm";
+const char kTrafficCounterSourceUpdateEngine[] = "update_engine";
+const char kTrafficCounterSourceVpn[] = "vpn";
+const char kTrafficCounterSourceSystem[] = "system";
+
 }  // namespace shill
 
 #endif  // SYSTEM_API_DBUS_SHILL_DBUS_CONSTANTS_H_

@@ -104,6 +104,13 @@ static void syntax(void)
     printf("\n");
     if (avifCodecName(AVIF_CODEC_CHOICE_AOM, 0)) {
         printf("aom-specific advanced options:\n");
+        printf("    1. <key>=<value> applies to both the color sub-image and the alpha sub-image (if present).\n");
+        printf("    2. color:<key>=<value> or c:<key>=<value> applies only to the color sub-image.\n");
+        printf("    3. alpha:<key>=<value> or a:<key>=<value> applies only to the alpha sub-image (if present).\n");
+        printf("       Since the alpha sub-image is a monochrome image, the options that refer to the chrome planes, such as\n");
+        printf("       enable-chroma-deltaq=B, should not be used with the alpha sub-image. In addition, the film grain options\n");
+        printf("       are unlikely to make sense for the alpha sub-image.\n");
+        printf("\n");
         printf("    aq-mode=M                         : Adaptive quantization mode (0: off (default), 1: variance, 2: complexity, 3: cyclic refresh)\n");
         printf("    cq-level=Q                        : Constant/Constrained Quality level (0-63, end-usage must be set to cq or q)\n");
         printf("    enable-chroma-deltaq=B            : Enable delta quantization in chroma planes (0: disable (default), 1: enable)\n");
@@ -728,6 +735,18 @@ int main(int argc, char * argv[])
     image->yuvRange = requestedRange;
     image->alphaPremultiplied = premultiplyAlpha;
 
+    if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (input.requestedFormat != AVIF_PIXEL_FORMAT_YUV444)) {
+        // matrixCoefficients was likely set to AVIF_MATRIX_COEFFICIENTS_IDENTITY as a side effect
+        // of --lossless, and Identity is only valid with YUV444. Set this back to the default.
+        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
+
+        if (cicpExplicitlySet) {
+            // Only warn if someone explicitly asked for identity.
+            printf("WARNING: matrixCoefficients may not be set to identity (0) when subsampling. Resetting MC to defaults (%d).\n",
+                   image->matrixCoefficients);
+        }
+    }
+
     avifInputFile * firstFile = avifInputGetNextFile(&input);
     uint32_t sourceDepth = 0;
     avifAppSourceTiming firstSourceTiming;
@@ -738,6 +757,13 @@ int main(int argc, char * argv[])
         goto cleanup;
     }
     avifBool sourceWasRGB = (inputFormat != AVIF_APP_FILE_FORMAT_Y4M);
+
+    // Check again for y4m input (y4m input ignores input.requestedFormat and retains the format in file).
+    if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444)) {
+        fprintf(stderr, "matrixCoefficients may not be set to identity (0) when subsampling.\n");
+        returnCode = 1;
+        goto cleanup;
+    }
 
     printf("Successfully loaded: %s\n", firstFile->filename);
 
@@ -753,18 +779,6 @@ int main(int argc, char * argv[])
         }
         if (outputTiming.timescale == 0) {
             outputTiming.timescale = 30;
-        }
-    }
-
-    if ((image->matrixCoefficients == AVIF_MATRIX_COEFFICIENTS_IDENTITY) && (image->yuvFormat != AVIF_PIXEL_FORMAT_YUV444)) {
-        // matrixCoefficients was likely set to AVIF_MATRIX_COEFFICIENTS_IDENTITY as a side effect
-        // of --lossless, and Identity is only valid with YUV444. Set this back to the default.
-        image->matrixCoefficients = AVIF_MATRIX_COEFFICIENTS_BT601;
-
-        if (cicpExplicitlySet) {
-            // Only warn if someone explicitly asked for identity.
-            printf("WARNING: matrixCoefficients may not be set to identity (0) when subsampling. Resetting MC to defaults (%d).\n",
-                   image->matrixCoefficients);
         }
     }
 

@@ -60,6 +60,11 @@ message StartArcMiniContainerRequest {
   optional DalvikMemoryProfile dalvik_memory_profile = 9
       [default = MEMORY_PROFILE_DEFAULT];
 
+  // Option to disable download provider for tests that are sensetive to the
+  // external components installaton. Last causes the flakiness in tests like
+  // arc.CacheValidation.
+  optional bool disable_download_provider = 12 [default = false];
+
   // Option to disable media store maintenance task scheduling. Used in tests
   // to prevent unreliable performance measurements and CPU not idle failures.
   optional bool disable_media_store_maintenance = 10 [default = false];
@@ -68,7 +73,7 @@ message StartArcMiniContainerRequest {
   // rosters.
   optional bool arc_generate_pai = 11 [default = false];
 
-  // Next ID to use: 12
+  // Next ID to use: 13
 }
 
 // ARC upgrade options sent from Chrome to session manager. This message is used
@@ -107,8 +112,7 @@ message UpgradeArcContainerRequest {
   // managed.
   optional bool is_managed_adb_sideloading_allowed = 16;
 
-  // See description in StartArcMiniContainerRequest.
-  optional bool disable_ureadahead = 15 [default = false];
+  reserved 15;
 
   // Option to disable ACTION_BOOT_COMPLETED broadcast for 3rd party apps.
   optional bool skip_boot_completed_broadcast = 2 [default = false];

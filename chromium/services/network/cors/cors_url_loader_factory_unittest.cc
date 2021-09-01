@@ -90,7 +90,7 @@ class CorsURLLoaderFactoryTest : public testing::Test {
     test_cors_loader_clients_.emplace_back(
         std::make_unique<TestURLLoaderClient>());
     cors_url_loader_factory_->CreateLoaderAndStart(
-        url_loaders_.back().BindNewPipeAndPassReceiver(), kRouteId, kRequestId,
+        url_loaders_.back().BindNewPipeAndPassReceiver(), kRequestId,
         mojom::kURLLoadOptionNone, request,
         test_cors_loader_clients_.back()->CreateRemote(),
         net::MutableNetworkTrafficAnnotationTag(TRAFFIC_ANNOTATION_FOR_TESTS));

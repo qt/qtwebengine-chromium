@@ -69,6 +69,7 @@ const char kApplyAnsiblePlaybookProgressSignal[] =
 const char kUpgradeContainerProgressSignal[] = "UpgradeContainerProgress";
 const char kStartLxdProgressSignal[] = "StartLxdProgress";
 const char kFileWatchTriggeredSignal[] = "FileWatchTriggered";
+const char kLowDiskSpaceTriggeredSignal[] = "LowDiskSpaceTriggered";
 
 }  // namespace cicerone
 }  // namespace vm_tools

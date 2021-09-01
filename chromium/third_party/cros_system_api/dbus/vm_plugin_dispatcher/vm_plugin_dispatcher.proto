@@ -6,6 +6,7 @@ syntax = "proto3";
 option optimize_for = LITE_RUNTIME;
 
 package vm_tools.plugin_dispatcher;
+option go_package = "chromiumos/system_api/vm_plugin_dispatcher_proto";
 
 // Request to shut down the dispatcher service.
 message ShutdownDispatcherRequest {
@@ -77,19 +78,6 @@ enum VmErrorCode {
   VM_SUCCESS = 0;
   // Native Parallels error code is returned.
   VM_ERR_NATIVE_RESULT_CODE = 0x7FFFFFFF;
-  // Error codes below are no longer used.
-  // TODO(b/171056519): remove once Chrome stops using them.
-  // Unspecified error.
-  VM_ERR_UNKNOWN = 1;
-  // No valid license.
-  VM_ERR_LIC_NOT_VALID = 2;
-  // License is expired.
-  VM_ERR_LIC_EXPIRED = 3;
-  // Unable to access web portal for license activation procedures.
-  VM_ERR_LIC_WEB_PORTAL_UNAVAILABLE = 4;
-  // The dispatcher is in process of shutting down. Any currently
-  // running VMs will be suspended.
-  VM_ERR_SRV_SHUTDOWN_IN_PROGRESS = 5;
 }
 
 // Request to register VM residing at given path.

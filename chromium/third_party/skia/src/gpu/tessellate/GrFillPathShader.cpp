@@ -15,7 +15,7 @@
 class GrFillPathShader::Impl : public GrGLSLGeometryProcessor {
 public:
     void onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) override {
-        auto& shader = args.fGP.cast<GrFillPathShader>();
+        auto& shader = args.fGeomProc.cast<GrFillPathShader>();
 
         const char* viewMatrix;
         fViewMatrixUniform = args.fUniformHandler->addUniform(
@@ -33,20 +33,20 @@ public:
         fColorUniform = args.fUniformHandler->addUniform(
                 nullptr, kFragment_GrShaderFlag, kHalf4_GrSLType, "color", &color);
 
-        args.fFragBuilder->codeAppendf("%s = %s;", args.fOutputColor, color);
-        args.fFragBuilder->codeAppendf("%s = half4(1);", args.fOutputCoverage);
+        args.fFragBuilder->codeAppendf("half4 %s = %s;", args.fOutputColor, color);
+        args.fFragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputCoverage);
     }
 
     void setData(const GrGLSLProgramDataManager& pdman,
-                 const GrPrimitiveProcessor& primProc) override {
-        const GrFillPathShader& shader = primProc.cast<GrFillPathShader>();
+                 const GrGeometryProcessor& geomProc) override {
+        const GrFillPathShader& shader = geomProc.cast<GrFillPathShader>();
         pdman.setSkMatrix(fViewMatrixUniform, shader.viewMatrix());
 
         const SkPMColor4f& color = shader.fColor;
         pdman.set4f(fColorUniform, color.fR, color.fG, color.fB, color.fA);
 
         if (fPathBoundsUniform.isValid()) {
-            const SkRect& b = primProc.cast<GrFillBoundingBoxShader>().pathBounds();
+            const SkRect& b = geomProc.cast<GrFillBoundingBoxShader>().pathBounds();
             pdman.set4f(fPathBoundsUniform, b.left(), b.top(), b.right(), b.bottom());
         }
     }
@@ -56,7 +56,7 @@ public:
     GrGLSLUniformHandler::UniformHandle fPathBoundsUniform;
 };
 
-GrGLSLPrimitiveProcessor* GrFillPathShader::createGLSLInstance(const GrShaderCaps&) const {
+GrGLSLGeometryProcessor* GrFillPathShader::createGLSLInstance(const GrShaderCaps&) const {
     return new Impl;
 }
 
@@ -71,16 +71,20 @@ void GrFillCubicHullShader::emitVertexCode(Impl*, GrGLSLVertexBuilder* v, const 
                                            GrGLSLUniformHandler* uniformHandler) const {
     v->codeAppend(R"(
     float4x2 P = float4x2(input_points_0_1, input_points_2_3);
-    if (isinf(P[3].y)) {
-        // This curve is actually a conic. Convert the control points to a trapeziodal hull
-        // that circumcscribes the conic.
+    if (isinf(P[3].y)) {  // Is the curve a conic?
         float w = P[3].x;
-        float2 p1w = P[1] * w;
-        float T = .51;  // Bias outward a bit to ensure we cover the outermost samples.
-        float2 c1 = mix(P[0], p1w, T);
-        float2 c2 = mix(P[2], p1w, T);
-        float iw = 1 / mix(1, w, T);
-        P = float4x2(P[0], c1 * iw, c2 * iw, P[2]);
+        if (isinf(w)) {
+            // A conic with w=Inf is an exact triangle.
+            P = float4x2(P[0], P[1], P[2], P[2]);
+        } else {
+            // Convert the control points to a trapeziodal hull that circumcscribes the conic.
+            float2 p1w = P[1] * w;
+            float T = .51;  // Bias outward a bit to ensure we cover the outermost samples.
+            float2 c1 = mix(P[0], p1w, T);
+            float2 c2 = mix(P[2], p1w, T);
+            float iw = 1 / mix(1, w, T);
+            P = float4x2(P[0], c1 * iw, c2 * iw, P[2]);
+        }
     }
 
     // Translate the points to v0..3 where v0=0.

@@ -7,7 +7,7 @@ option optimize_for = LITE_RUNTIME;
 
 // This file defines messages used for starting, stopping, and managing VMs.
 package vm_tools.concierge;
-option go_package = "vm_concierge_proto";
+option go_package = "chromiumos/system_api/vm_concierge_proto";
 
 // Specification of the key components of a VM.
 //
@@ -165,6 +165,9 @@ message StartVmRequest {
   // Make the rootfs writable.
   bool writable_rootfs = 15;
 
+  // Kernel cmdline parameters that will be passed to crosvm.
+  repeated string kernel_params = 17;
+
   enum FdType {
     // Kernel image.
     KERNEL = 0;
@@ -174,6 +177,8 @@ message StartVmRequest {
     STORAGE = 2;
     // Initrd image.
     INITRD = 3;
+    // BIOS image.
+    BIOS = 4;
   }
   // For each FdType in fds a file descriptor must be passed along with the
   // message and that file descriptor will be used for the type's purpose.

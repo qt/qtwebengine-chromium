@@ -65,6 +65,19 @@ const char kUpdateStatusCleanupPreviousUpdate[] =
 // Feature names.
 const char kFeatureRepeatedUpdates[] = "feature-repeated-updates";
 
+// Action exit codes.
+// Reference common/error_code.h in update_engine repo for direct mappings and
+// future updates to this enum class. If new errors need to be added here, it
+// must be kept in sync with common/error_code.h in update_engine.
+enum class ErrorCode : int {
+  kSuccess = 0,
+  kError = 1,
+  kDownloadTransferError = 9,
+  kOmahaUpdateIgnoredPerPolicy = 35,
+  kOmahaErrorInHTTPResponse = 37,
+  kNoUpdate = 53,
+};
+
 }  // namespace update_engine
 
 #endif  // SYSTEM_API_DBUS_UPDATE_ENGINE_DBUS_CONSTANTS_H_

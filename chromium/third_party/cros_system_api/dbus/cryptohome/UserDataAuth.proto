@@ -85,6 +85,7 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_ERROR_FIDO_GET_ASSERTION_FAILED = 47;
   CRYPTOHOME_TOKEN_SERIALIZATION_FAILED = 48;
   CRYPTOHOME_INVALID_AUTH_SESSION_TOKEN = 49;
+  CRYPTOHOME_ADD_CREDENTIALS_FAILED = 50;
 }
 
 // This is used by MountRequest to store details about the mount to create
@@ -171,6 +172,8 @@ message MountRequest {
   bool public_mount = 7;
   // If set to true, the mount will be for a guest session.
   bool guest_mount = 8;
+  // Auth Session id will let mount derive credentials from AuthSessions.
+  bytes auth_session_id = 9;
 }
 
 // Output parameters for Mount()
@@ -513,9 +516,20 @@ message LowDiskSpace {
   uint64 disk_free_bytes = 1;
 }
 
+// These flags will define any requests from the caller for how to run an
+// AuthSession.
+enum AuthSessionFlags {
+  // Default Value
+  AUTH_SESSION_FLAGS_NONE = 0;
+  // Is the user a kiosk user?
+  AUTH_SESSION_FLAGS_KIOSK_USER = 1;
+}
+
 message StartAuthSessionRequest {
   // The account of the user whose home directory is requested for mounting.
   cryptohome.AccountIdentifier account_id = 1;
+  // AuthSessionFlags to define AuthSession behaviour.
+  uint32 flags = 2;
 }
 
 message StartAuthSessionReply {
@@ -523,6 +537,23 @@ message StartAuthSessionReply {
   CryptohomeErrorCode error = 1;
   // Token that would be used to conduct any auth-related operation.
   bytes auth_session_id = 2;
+  // True if the user that the Auth Session is created for exists or not.
+  bool user_exists = 3;
+}
+
+message AddCredentialsRequest {
+  // Serialized form of token that is used to identify Auth Session that needs
+  // to be authenticated.
+  bytes auth_session_id = 1;
+  // Authorization data from the user.
+  cryptohome.AuthorizationRequest authorization = 2;
+  // Adding a new credentials for an existing user?
+  bool add_more_credentials = 3;
+}
+
+message AddCredentialsReply {
+  // Error if any to add new credentials with the Auth Session.
+  CryptohomeErrorCode error = 1;
 }
 
 message AuthenticateAuthSessionRequest {

@@ -82,7 +82,7 @@ class HardwareDisplayPlaneManager {
     CrtcState(CrtcState&&);
 
     drmModeModeInfo mode = {};
-    std::vector<scoped_refptr<DrmFramebuffer>> modeset_framebuffers;
+    scoped_refptr<DrmFramebuffer> modeset_framebuffer;
 
     CrtcProperties properties = {};
 
@@ -187,7 +187,7 @@ class HardwareDisplayPlaneManager {
   // which resources needed to be tracked internally in
   // HardwareDisplayPlaneManager and which should be taken care of by the
   // caller.
-  void ResetModesetStateForCrtc(uint32_t crtc_id);
+  void ResetModesetBufferOfCrtc(uint32_t crtc_id);
 
  protected:
   struct ConnectorProperties {

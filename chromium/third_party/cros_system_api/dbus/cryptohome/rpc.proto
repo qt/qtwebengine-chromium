@@ -18,7 +18,7 @@ syntax = "proto2";
 option optimize_for = LITE_RUNTIME;
 
 package cryptohome;
-option go_package = "cryptohome_proto";
+option go_package = "chromiumos/system_api/cryptohome_proto";
 
 import "key.proto";
 
@@ -81,6 +81,7 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_ERROR_FIDO_GET_ASSERTION_FAILED = 47;
   CRYPTOHOME_TOKEN_SERIALIZATION_FAILED = 48;
   CRYPTOHOME_INVALID_AUTH_SESSION_TOKEN = 49;
+  CRYPTOHOME_ADD_CREDENTIALS_FAILED = 50;
 }
 
 message AccountIdentifier {
@@ -136,6 +137,8 @@ message MountRequest {
   // Performs a public mount, which is used for a Kiosk session. Credentials are
   // not needed in the request; they are synthesized by cryptohomed from id.
   optional bool public_mount = 5;
+  // Auth Session id will let mount derive credentials from AuthSessions.
+  optional bytes auth_session_id = 6;
 }
 
 // A BaseReply type is used for all cryptohomed responses. A shared base class
@@ -556,8 +559,20 @@ message StartFingerprintAuthSessionRequest {}
 // Ends fingerprint auth session by calling Biometrics Daemon.
 message EndFingerprintAuthSessionRequest {}
 
+// These flags will define any requests from the caller for how to run an
+// AuthSession.
+enum AuthSessionFlags {
+  // Default Value
+  AUTH_SESSION_FLAGS_NONE = 0;
+  // Is the user a kiosk user?
+  AUTH_SESSION_FLAGS_KIOSK_USER = 1;
+}
+
 // Starts AuthSession.
-message StartAuthSessionRequest {}
+message StartAuthSessionRequest {
+  // AuthSessionFlags to define AuthSession behaviour.
+  optional uint32 flags = 1;
+}
 
 // Reads the WebAuthn secret if it's available.
 message GetWebAuthnSecretRequest {}
@@ -572,6 +587,15 @@ message StartAuthSessionReply {
   extend BaseReply { optional StartAuthSessionReply reply = 1017; }
 
   optional bytes auth_session_id = 1;
+}
+
+message AddCredentialsRequest {
+  // Serialized form of token that is used to identify Auth Session.
+  optional bytes auth_session_id = 1;
+  // Authorization data for the users credentials that need to be created.
+  optional AuthorizationRequest authorization = 2;
+  // Are we adding more credentials for existing user?
+  optional bool add_more_credentials = 3;
 }
 
 message AuthenticateAuthSessionRequest {

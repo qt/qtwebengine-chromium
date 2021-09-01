@@ -108,6 +108,7 @@ class ScreenManager {
       const scoped_refptr<DrmDevice>& drm,
       uint32_t crtc);
 
+  bool TestModeset(const ControllerConfigsList& controllers_params);
   bool TestAndSetPreferredModifiers(
       const ControllerConfigsList& controllers_params);
   bool TestAndSetLinearModifier(
@@ -117,12 +118,8 @@ class ScreenManager {
   void SetPreferredModifiers(
       const ControllerConfigsList& controllers_params,
       const CrtcPreferredModifierMap& crtcs_preferred_modifier);
-  // The planes used for modesetting can have overlays beside the primary, test
-  // if we can modeset with them. If not, return false to indicate that we must
-  // only use the primary plane.
-  bool TestModesetWithOverlays(const ControllerConfigsList& controllers_params);
-  bool Modeset(const ControllerConfigsList& controllers_params,
-               bool can_modeset_with_overlays);
+
+  bool Modeset(const ControllerConfigsList& controllers_params);
 
   // Configures a display controller to be enabled. The display controller is
   // identified by (|crtc|, |connector|) and the controller is to be modeset
@@ -134,7 +131,7 @@ class ScreenManager {
       uint32_t connector,
       const gfx::Point& origin,
       const drmModeModeInfo& mode,
-      const DrmOverlayPlaneList& modeset_planes);
+      const DrmOverlayPlane& primary);
 
   // Configures a display controller to be disabled. The display controller is
   // identified by |crtc|. Controller modeset props are added into
@@ -166,21 +163,20 @@ class ScreenManager {
       const scoped_refptr<DrmDevice>& drm,
       const gfx::Rect& bounds);
 
-  DrmOverlayPlaneList GetModesetPlanes(HardwareDisplayController* controller,
-                                       const gfx::Rect& bounds,
-                                       const std::vector<uint64_t>& modifiers,
-                                       bool include_overlays,
-                                       bool is_testing);
+  DrmOverlayPlane GetModesetBuffer(HardwareDisplayController* controller,
+                                   const gfx::Rect& bounds,
+                                   const std::vector<uint64_t>& modifiers,
+                                   bool is_testing);
 
   // Gets props for modesetting the |controller| using |origin| and |mode|.
   void GetModesetControllerProps(CommitRequest* commit_request,
                                  HardwareDisplayController* controller,
                                  const gfx::Point& origin,
                                  const drmModeModeInfo& mode,
-                                 const DrmOverlayPlaneList& modeset_planes);
+                                 const DrmOverlayPlane& primary);
   void GetEnableControllerProps(CommitRequest* commit_request,
                                 HardwareDisplayController* controller,
-                                const DrmOverlayPlaneList& modeset_planes);
+                                const DrmOverlayPlane& primary);
 
   DrmWindow* FindWindowAt(const gfx::Rect& bounds) const;
 

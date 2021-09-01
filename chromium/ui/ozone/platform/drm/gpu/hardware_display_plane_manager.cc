@@ -459,10 +459,8 @@ void HardwareDisplayPlaneManager::UpdateCrtcAndPlaneStatesAfterModeset(
 
     if (is_enabled) {
       crtc_state.mode = crtc_request.mode();
-      crtc_state.modeset_framebuffers.clear();
-      for (const auto& overlay : crtc_request.overlays())
-        crtc_state.modeset_framebuffers.push_back(overlay.buffer);
-
+      crtc_state.modeset_framebuffer =
+          DrmOverlayPlane::GetPrimaryPlane(crtc_request.overlays())->buffer;
     } else {
       if (crtc_request.plane_list())
         disable_planes_lists.insert(crtc_request.plane_list());
@@ -485,9 +483,9 @@ void HardwareDisplayPlaneManager::UpdateCrtcAndPlaneStatesAfterModeset(
   }
 }
 
-void HardwareDisplayPlaneManager::ResetModesetStateForCrtc(uint32_t crtc_id) {
+void HardwareDisplayPlaneManager::ResetModesetBufferOfCrtc(uint32_t crtc_id) {
   CrtcState& crtc_state = CrtcStateForCrtcId(crtc_id);
-  crtc_state.modeset_framebuffers.clear();
+  crtc_state.modeset_framebuffer = nullptr;
 }
 
 }  // namespace ui

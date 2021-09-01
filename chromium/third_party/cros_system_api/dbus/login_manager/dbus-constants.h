@@ -87,6 +87,7 @@ const char kArcInstanceRunning[] = INTERFACE ".ArcInstanceRunning";
 const char kArcContainerNotFound[] = INTERFACE ".ArcContainerNotFound";
 const char kContainerStartupFail[] = INTERFACE ".ContainerStartupFail";
 const char kContainerShutdownFail[] = INTERFACE ".ContainerShutdownFail";
+const char kGetPeerCredsFailed[] = INTERFACE ".GetPeerCredsFailed";
 const char kDeleteFail[] = INTERFACE ".DeleteFail";
 const char kEmitFailed[] = INTERFACE ".EmitFailed";
 const char kGetServiceFail[] = INTERFACE ".kGetServiceFail";

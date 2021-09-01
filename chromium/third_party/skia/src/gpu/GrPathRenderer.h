@@ -84,9 +84,8 @@ public:
         const GrStyledShape*        fShape;
         const GrPaint*              fPaint;
         GrAAType                    fAAType;
-        bool                        fTargetIsWrappedVkSecondaryCB;
 
-        // This is only used by GrStencilAndCoverPathRenderer
+        // This is only used by GrTessellationPathRenderer
         bool                        fHasUserStencilSettings;
 
 #ifdef SK_DEBUG

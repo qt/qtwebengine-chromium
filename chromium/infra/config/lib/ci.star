@@ -98,9 +98,6 @@ def ci_builder(
     experiments.setdefault("chromium.resultdb.result_sink.junit_tests", 100)
     experiments.setdefault("chromium.resultdb.result_sink.gtests_local", 100)
 
-    # Migrate executable to bbagent incrementally.
-    experiments.setdefault("luci.buildbucket.use_bbagent", 100)
-
     # Define the builder first so that any validation of luci.builder arguments
     # (e.g. bucket) occurs before we try to use it
     builders.builder(
@@ -433,7 +430,7 @@ def fyi_ios_builder(
         name,
         executable = "recipe:chromium",
         goma_backend = builders.goma.backend.RBE_PROD,
-        os = builders.os.MAC_10_15_OR_11,
+        os = builders.os.MAC_11,
         xcode = builders.xcode.x12d4e,
         **kwargs):
     return fyi_builder(
@@ -634,7 +631,7 @@ def mac_ios_builder(
         name,
         executable = "recipe:chromium",
         goma_backend = builders.goma.backend.RBE_PROD,
-        os = builders.os.MAC_10_15_OR_11,
+        os = builders.os.MAC_11,
         xcode = builders.xcode.x12d4e,
         **kwargs):
     return mac_builder(

@@ -537,6 +537,10 @@ ci.android_builder(
     execution_timeout = 5 * time.hour,
     main_console_view = main_console_if_on_branch(),
     tree_closing = True,
+    experiments = {
+        # TODO(crbug.com/1143122): remove this.
+        "chromium.chromium_tests.use_rbe_cas": 50,
+    },
 )
 
 ci.android_builder(
@@ -582,7 +586,7 @@ ci.android_builder(
         short_name = "rel",
     ),
     executable = "recipe:swarming/deterministic_build",
-    execution_timeout = 6 * time.hour,
+    execution_timeout = 7 * time.hour,
     notifies = ["Deterministic Android"],
     tree_closing = True,
 )
@@ -903,6 +907,16 @@ ci.android_builder(
     triggered_by = ["ci/Android arm64 Builder (dbg)"],
 )
 
+# TODO(crbug/1182468) Remove android coverage bots after coverage is
+# running on CQ.
+ci.android_builder(
+    name = "android-pie-arm64-coverage-experimental-rel",
+    console_view_entry = consoles.console_view_entry(
+        category = "builder_tester|arm64",
+        short_name = "p-cov",
+    ),
+)
+
 ci.android_builder(
     name = "android-pie-arm64-rel",
     branch_selector = branches.STANDARD_MILESTONE,
@@ -916,12 +930,82 @@ ci.android_builder(
     os = os.LINUX_BIONIC_REMOVE,
 )
 
+ci.android_builder(
+    name = "android-weblayer-oreo-x86-rel-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "tester|weblayer",
+        short_name = "O",
+    ),
+    triggered_by = ["android-weblayer-x86-rel"],
+    notifies = ["weblayer-sheriff"],
+    os = os.LINUX_BIONIC_REMOVE,
+)
+
+ci.android_builder(
+    name = "android-weblayer-pie-x86-rel-tests",
+    console_view_entry = consoles.console_view_entry(
+        category = "tester|weblayer",
+        short_name = "P",
+    ),
+    triggered_by = ["android-weblayer-x86-rel"],
+    notifies = ["weblayer-sheriff"],
+    os = os.LINUX_BIONIC_REMOVE,
+)
+
+ci.android_builder(
+    name = "android-weblayer-x86-rel",
+    console_view_entry = consoles.console_view_entry(
+        category = "builder|weblayer",
+        short_name = "x86",
+    ),
+)
+
+ci.android_fyi_builder(
+    name = "Android arm64 Builder (dbg) (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "builder|arm",
+        short_name = "64",
+    ),
+    cq_mirrors_console_view = "mirrors",
+    goma_jobs = goma.jobs.MANY_JOBS_FOR_CI,
+    execution_timeout = 5 * time.hour,
+    main_console_view = main_console_if_on_branch(),
+    reclient_instance = "rbe-chromium-trusted",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_DEFAULT,
+)
+
+ci.android_fyi_builder(
+    name = "Android ASAN (dbg) (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "builder|arm",
+        short_name = "san",
+    ),
+    # Higher build timeout since dbg ASAN builds can take a while on a clobber
+    # build.
+    execution_timeout = 4 * time.hour,
+    reclient_instance = "rbe-chromium-trusted",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_DEFAULT,
+)
+
 ci.android_fyi_builder(
     name = "android-pie-arm64-wpt-rel-non-cq",
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|arm64",
         short_name = "P-WPT",
     ),
+)
+
+ci.android_fyi_builder(
+    name = "android-web-platform-pie-x86-fyi-rel",
+    console_view_entry = consoles.console_view_entry(
+        category = "builder_tester|web-platform",
+        short_name = "P",
+    ),
+    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.android_fyi_builder(
@@ -961,34 +1045,6 @@ ci.android_fyi_builder(
     ),
     triggered_by = ["android-weblayer-with-aosp-webview-x86-fyi-rel"],
     notifies = ["weblayer-sheriff"],
-)
-
-ci.android_fyi_builder(
-    name = "android-weblayer-oreo-x86-rel-tests",
-    console_view_entry = consoles.console_view_entry(
-        category = "tester|weblayer",
-        short_name = "O",
-    ),
-    triggered_by = ["android-weblayer-x86-fyi-rel"],
-    notifies = ["weblayer-sheriff"],
-)
-
-ci.android_fyi_builder(
-    name = "android-weblayer-pie-x86-rel-tests",
-    console_view_entry = consoles.console_view_entry(
-        category = "tester|weblayer",
-        short_name = "P",
-    ),
-    triggered_by = ["android-weblayer-x86-fyi-rel"],
-    notifies = ["weblayer-sheriff"],
-)
-
-ci.android_fyi_builder(
-    name = "android-weblayer-x86-fyi-rel",
-    console_view_entry = consoles.console_view_entry(
-        category = "builder|weblayer",
-        short_name = "x86",
-    ),
 )
 
 ci.android_fyi_builder(
@@ -1235,7 +1291,7 @@ ci.angle_thin_tester(
 
 ci.angle_mac_builder(
     name = "ios-angle-builder",
-    xcode = xcode.x12a7209,
+    xcode = xcode.x12d4e,
     console_view_entry = consoles.console_view_entry(
         category = "iOS|Builder|ANGLE",
         short_name = "x64",
@@ -1580,6 +1636,15 @@ ci.chromium_builder(
 )
 
 ci.chromiumos_builder(
+    name = "linux-ash-chromium-generator-rel",
+    console_view_entry = consoles.console_view_entry(
+        category = "default",
+    ),
+    tree_closing = False,
+    main_console_view = "main",
+)
+
+ci.chromiumos_builder(
     name = "Linux ChromiumOS Full",
     console_view_entry = consoles.console_view_entry(
         category = "default",
@@ -1778,7 +1843,7 @@ ci.cipd_3pp_builder(
         category = "3pp|linux",
         short_name = "amd64",
     ),
-    schedule = "0 7 * * 0 *",
+    schedule = "with 6h interval",
     triggered_by = [],
     properties = {
         "platform": "linux-amd64",
@@ -1998,6 +2063,22 @@ ci.clang_builder(
     ),
 )
 
+ci.clang_builder(
+    name = "ToTFuchsia x64",
+    console_view_entry = consoles.console_view_entry(
+        category = "ToT Fuchsia",
+        short_name = "x64",
+    ),
+)
+
+ci.clang_builder(
+    name = "ToTFuchsiaOfficial",
+    console_view_entry = consoles.console_view_entry(
+        category = "ToT Fuchsia",
+        short_name = "off",
+    ),
+)
+
 def clang_tot_linux_builder(short_name, category = "ToT Linux", **kwargs):
     ci.clang_builder(
         console_view_entry = consoles.console_view_entry(
@@ -2150,7 +2231,7 @@ ci.clang_builder(
         short_name = "sim",
     ),
     cores = None,
-    os = os.MAC_10_15_OR_11,
+    os = os.MAC_11,
     ssd = True,
     xcode = xcode.x12d4e,
 )
@@ -2163,7 +2244,7 @@ ci.clang_builder(
         short_name = "dev",
     ),
     cores = None,
-    os = os.MAC_10_15_OR_11,
+    os = os.MAC_11,
     ssd = True,
     xcode = xcode.x12d4e,
 )
@@ -2881,6 +2962,17 @@ ci.fyi_builder(
     notifies = ["chrome-memory-safety"],
 )
 
+# TODO(crbug.com/1189748): Remove this builder once flaky DCHECKs have been
+# resolved and DCHECKs are enabled on the CQ bot.
+ci.fyi_builder(
+    name = "chromeos-amd64-generic-rel-dchecks",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "chromeos|dcheck",
+        short_name = "cros",
+    ),
+)
+
 ci.fyi_builder(
     name = "fuchsia-fyi-arm64-dbg",
     console_view_entry = consoles.console_view_entry(
@@ -2895,15 +2987,6 @@ ci.fyi_builder(
     console_view_entry = consoles.console_view_entry(
         category = "fuchsia|a64",
         short_name = "rel",
-    ),
-    notifies = ["cr-fuchsia"],
-)
-
-ci.fyi_builder(
-    name = "fuchsia-fyi-arm64-size",
-    console_view_entry = consoles.console_view_entry(
-        category = "fuchsia|a64",
-        short_name = "size",
     ),
     notifies = ["cr-fuchsia"],
 )
@@ -3448,6 +3531,15 @@ ci.fyi_builder(
 )
 
 ci.fyi_builder(
+    name = "Linux Builder (goma cache silo)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux",
+        short_name = "lgc",
+    ),
+    os = os.LINUX_DEFAULT,
+)
+
+ci.fyi_builder(
     name = "Linux Builder (reclient)",
     console_view_entry = consoles.console_view_entry(
         category = "linux",
@@ -3492,6 +3584,42 @@ ci.fyi_builder(
 )
 
 ci.fyi_builder(
+    name = "TSAN Release (j-100) (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux tsan",
+        short_name = "rre",
+    ),
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 3,
+    ),
+    goma_backend = None,
+    reclient_instance = "rbe-chromium-trusted",
+    reclient_jobs = 100,
+    reclient_rewrapper_env = {"RBE_cache_silo": "Linux TSan Builder (reclient)"},
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_builder(
+    name = "TSAN Release (j-250) (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux tsan",
+        short_name = "rre",
+    ),
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 3,
+    ),
+    goma_backend = None,
+    reclient_instance = "rbe-chromium-trusted",
+    reclient_jobs = 250,
+    reclient_rewrapper_env = {"RBE_cache_silo": "Linux TSan Builder (reclient)"},
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_DEFAULT,
+)
+
+ci.fyi_builder(
     name = "TSAN Release (reclient)",
     console_view_entry = consoles.console_view_entry(
         category = "linux tsan",
@@ -3506,6 +3634,83 @@ ci.fyi_builder(
     configure_kitchen = True,
     kitchen_emulate_gce = True,
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_builder(
+    name = "TSAN Release (runsc-exp) (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux tsan",
+        short_name = "rre",
+    ),
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 3,
+    ),
+    goma_backend = None,
+    reclient_instance = "rbe-chromium-gvisor-shadow",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_builder(
+    name = "ASAN Debug (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux asan",
+        short_name = "dbg",
+    ),
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 4,
+    ),
+    goma_backend = None,
+    reclient_instance = "goma-rbe-chromium",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_builder(
+    name = "UBSan Release (reclient)",
+    console_view_entry = consoles.console_view_entry(
+        category = "linux UBSan",
+        short_name = "rel",
+    ),
+    triggering_policy = scheduler.greedy_batching(
+        max_concurrent_invocations = 4,
+    ),
+    goma_backend = None,
+    reclient_instance = "goma-rbe-chromium",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_builder(
+    name = "VR Linux (reclient)",
+    branch_selector = branches.STANDARD_MILESTONE,
+    console_view_entry = consoles.console_view_entry(
+        category = "linux",
+    ),
+    cq_mirrors_console_view = "mirrors",
+    main_console_view = main_console_if_on_branch(),
+    goma_backend = None,
+    reclient_instance = "goma-rbe-chromium",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+)
+
+ci.fyi_windows_builder(
+    name = "Win x64 Builder (reclient)",
+    builderless = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "win",
+        short_name = "re",
+    ),
+    goma_backend = None,
+    reclient_instance = "goma-rbe-chromium",
+    configure_kitchen = True,
+    kitchen_emulate_gce = True,
+    os = os.WINDOWS_DEFAULT,
 )
 
 ci.fyi_celab_builder(
@@ -3563,7 +3768,7 @@ ci.fyi_coverage_builder(
         short_name = "ios",
     ),
     cores = None,
-    os = os.MAC_10_15_OR_11,
+    os = os.MAC_11,
     use_clang_coverage = True,
     coverage_exclude_sources = "ios_test_files_and_test_utils",
     coverage_test_types = ["overall", "unit"],
@@ -3646,7 +3851,6 @@ ci.fyi_ios_builder(
     cq_mirrors_console_view = "mirrors",
     main_console_view = main_console_if_on_branch(),
     notifies = ["cronet"],
-    xcode = xcode.x11e146,
 )
 
 ci.fyi_ios_builder(
@@ -3745,16 +3949,6 @@ ci.fyi_mac_builder(
     ),
     cores = None,
     os = None,
-)
-
-ci.thin_tester(
-    name = "Mac11.0 Tests",
-    builder_group = "chromium.fyi",
-    console_view_entry = consoles.console_view_entry(
-        category = "mac",
-        short_name = "11.0",
-    ),
-    triggered_by = ["Mac Builder Next"],
 )
 
 ci.fyi_mac_builder(
@@ -4218,14 +4412,6 @@ ci.gpu_fyi_mac_builder(
     ),
 )
 
-ci.gpu_fyi_mac_builder(
-    name = "GPU FYI Mac dEQP Builder",
-    console_view_entry = consoles.console_view_entry(
-        category = "Mac|Builder",
-        short_name = "dqp",
-    ),
-)
-
 ci.gpu_fyi_thin_tester(
     name = "Lacros FYI x64 Release (AMD)",
     console_view_entry = consoles.console_view_entry(
@@ -4450,24 +4636,6 @@ ci.gpu_fyi_thin_tester(
 )
 
 ci.gpu_fyi_thin_tester(
-    name = "Mac FYI dEQP Release AMD",
-    console_view_entry = consoles.console_view_entry(
-        category = "Mac|AMD",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Mac dEQP Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
-    name = "Mac FYI dEQP Release Intel",
-    console_view_entry = consoles.console_view_entry(
-        category = "Mac|Intel",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Mac dEQP Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
     name = "Mac Pro FYI Release (AMD)",
     console_view_entry = consoles.console_view_entry(
         category = "Mac|AMD|Pro",
@@ -4577,24 +4745,6 @@ ci.gpu_fyi_windows_builder(
 )
 
 ci.gpu_fyi_thin_tester(
-    name = "Win10 FYI x64 dEQP Release (Intel HD 630)",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|10|x64|Intel",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Win x64 dEQP Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
-    name = "Win10 FYI x64 dEQP Release (NVIDIA)",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|10|x64|Nvidia",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Win x64 dEQP Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
     name = "Win10 FYI x86 Release (NVIDIA)",
     console_view_entry = consoles.console_view_entry(
         category = "Windows|10|x86|Nvidia",
@@ -4631,30 +4781,12 @@ ci.gpu_fyi_thin_tester(
 )
 
 ci.gpu_fyi_thin_tester(
-    name = "Win7 FYI dEQP Release (AMD)",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|7|x86|AMD",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Win dEQP Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
     name = "Win7 FYI x64 Release (NVIDIA)",
     console_view_entry = consoles.console_view_entry(
         category = "Windows|7|x64|Nvidia",
         short_name = "rel",
     ),
     triggered_by = ["GPU FYI Win x64 Builder"],
-)
-
-ci.gpu_fyi_thin_tester(
-    name = "Win7 FYI x64 dEQP Release (NVIDIA)",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|7|x64|Nvidia",
-        short_name = "dqp",
-    ),
-    triggered_by = ["GPU FYI Win x64 dEQP Builder"],
 )
 
 ci.gpu_fyi_windows_builder(
@@ -4674,14 +4806,6 @@ ci.gpu_fyi_windows_builder(
 )
 
 ci.gpu_fyi_windows_builder(
-    name = "GPU FYI Win dEQP Builder",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|Builder|dEQP",
-        short_name = "x86",
-    ),
-)
-
-ci.gpu_fyi_windows_builder(
     name = "GPU FYI Win x64 Builder",
     console_view_entry = consoles.console_view_entry(
         category = "Windows|Builder|Release",
@@ -4693,14 +4817,6 @@ ci.gpu_fyi_windows_builder(
     name = "GPU FYI Win x64 Builder (dbg)",
     console_view_entry = consoles.console_view_entry(
         category = "Windows|Builder|Debug",
-        short_name = "x64",
-    ),
-)
-
-ci.gpu_fyi_windows_builder(
-    name = "GPU FYI Win x64 dEQP Builder",
-    console_view_entry = consoles.console_view_entry(
-        category = "Windows|Builder|dEQP",
         short_name = "x64",
     ),
 )
@@ -4835,6 +4951,10 @@ ci.linux_builder(
     ),
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
+    experiments = {
+        # TODO(crbug.com/1143122): remove this.
+        "chromium.chromium_tests.use_rbe_cas": 20,
+    },
 )
 
 ci.linux_builder(
@@ -5089,6 +5209,10 @@ ci.mac_builder(
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
     os = os.MAC_10_15,
+    experiments = {
+        # TODO(crbug.com/1143122): remove this.
+        "chromium.chromium_tests.use_rbe_cas": 20,
+    },
 )
 
 ci.mac_builder(
@@ -5595,14 +5719,6 @@ ci.swangle_linux_builder(
 )
 
 ci.swangle_linux_builder(
-    name = "linux-swangle-tot-angle-x86",
-    console_view_entry = consoles.console_view_entry(
-        category = "ToT ANGLE|Linux",
-        short_name = "x86",
-    ),
-)
-
-ci.swangle_linux_builder(
     name = "linux-swangle-tot-swiftshader-x64",
     console_view_entry = consoles.console_view_entry(
         category = "ToT SwiftShader|Linux",
@@ -5611,27 +5727,10 @@ ci.swangle_linux_builder(
 )
 
 ci.swangle_linux_builder(
-    name = "linux-swangle-tot-swiftshader-x86",
-    console_view_entry = consoles.console_view_entry(
-        category = "ToT SwiftShader|Linux",
-        short_name = "x86",
-    ),
-)
-
-ci.swangle_linux_builder(
     name = "linux-swangle-x64",
     console_view_entry = consoles.console_view_entry(
         category = "DEPS|Linux",
         short_name = "x64",
-    ),
-    pinned = False,
-)
-
-ci.swangle_linux_builder(
-    name = "linux-swangle-x86",
-    console_view_entry = consoles.console_view_entry(
-        category = "DEPS|Linux",
-        short_name = "x86",
     ),
     pinned = False,
 )
@@ -5751,48 +5850,52 @@ ci.win_builder(
 
 ci.win_builder(
     name = "Win7 (32) Tests",
+    builderless = True,
     console_view_entry = consoles.console_view_entry(
         category = "release|tester",
         short_name = "32",
     ),
     main_console_view = "main",
-    os = os.WINDOWS_7,
+    os = os.WINDOWS_10,
     triggered_by = ["Win Builder"],
 )
 
 ci.win_builder(
     name = "Win7 Tests (1)",
+    builderless = True,
     console_view_entry = consoles.console_view_entry(
         category = "release|tester",
         short_name = "32",
     ),
     main_console_view = "main",
-    os = os.WINDOWS_7,
+    os = os.WINDOWS_10,
     triggered_by = ["Win Builder"],
 )
 
 ci.win_builder(
     name = "Win7 Tests (dbg)(1)",
+    builderless = True,
     branch_selector = branches.STANDARD_MILESTONE,
     console_view_entry = consoles.console_view_entry(
         category = "debug|tester",
         short_name = "7",
     ),
     cq_mirrors_console_view = "mirrors",
-    os = os.WINDOWS_7,
+    os = os.WINDOWS_10,
     main_console_view = "main",
     triggered_by = ["ci/Win Builder (dbg)"],
 )
 
 ci.win_builder(
     name = "Win 7 Tests x64 (1)",
+    builderless = True,
     branch_selector = branches.STANDARD_MILESTONE,
     console_view_entry = consoles.console_view_entry(
         category = "release|tester",
         short_name = "64",
     ),
     cq_mirrors_console_view = "mirrors",
-    os = os.WINDOWS_7,
+    os = os.WINDOWS_10,
     main_console_view = "main",
     triggered_by = ["ci/Win x64 Builder"],
 )
@@ -5821,6 +5924,10 @@ ci.win_builder(
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
     os = os.WINDOWS_ANY,
+    experiments = {
+        # TODO(crbug.com/1143122): remove this.
+        "chromium.chromium_tests.use_rbe_cas": 20,
+    },
 )
 
 ci.win_builder(
@@ -5842,7 +5949,7 @@ ci.win_builder(
         short_name = "det",
     ),
     executable = "recipe:swarming/deterministic_build",
-    execution_timeout = 7 * time.hour,
+    execution_timeout = 12 * time.hour,
     goma_jobs = goma.jobs.J150,
     main_console_view = "main",
 )
@@ -5863,7 +5970,7 @@ ci.cipd_builder(
         luci.notifier(
             name = "rts-model-packager-notifier",
             on_occurrence = ["FAILURE", "INFRA_FAILURE"],
-            notify_emails = ["nodir@google.com"],
+            notify_emails = ["guterman@google.com", "nodir@google.com"],
         ),
     ],
 )

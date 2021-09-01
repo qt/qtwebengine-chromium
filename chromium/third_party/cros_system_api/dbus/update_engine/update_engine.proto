@@ -30,6 +30,13 @@ enum Operation {
   ERROR = -1;
 }
 
+// Keep in sync with:
+// update_engine/client_library/include/update_engine/update_status.h
+enum UpdateUrgency {
+  REGULAR = 0;
+  CRITICAL = 1;
+}
+
 // This is the message transferred between update_engine and other processes
 // about the current status of the update_engine. It is used either in
 // |GetUpdateStatusAdvanced| DBus method or |StatusUpdateAdvanced| signal.
@@ -66,4 +73,15 @@ message StatusResult {
   // If true, the system will powerwash once the update is applied and the
   // system is rebooted. This value is reliable on |UPDATE_NEED_REBOOT|.
   bool will_powerwash_after_reboot = 9;
+
+  // The last update/install attempt error.
+  // Reference update_engine/dbus-constants.h for the errors that update_engine
+  // will propagate into this field.
+  int32 last_attempt_error = 10;
+
+  // If true, the update is critical. DEPRECATED.
+  // bool critical_update = 11;
+
+  // Indicates how important an update is.
+  UpdateUrgency update_urgency = 12;
 }

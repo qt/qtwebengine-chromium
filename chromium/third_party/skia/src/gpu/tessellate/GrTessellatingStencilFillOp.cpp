@@ -145,9 +145,10 @@ void GrTessellatingStencilFillOp::onPrepare(GrOpFlushState* flushState) {
         // middle-out topology.
         GrEagerDynamicVertexAllocator vertexAlloc(flushState, &fFanBuffer, &fFanBaseVertex);
         int maxFanTriangles = fPath.countVerbs() - 2;  // n - 2 triangles make an n-gon.
-        auto* triangleVertexData = vertexAlloc.lock<SkPoint>(maxFanTriangles * 3);
+        GrVertexWriter triangleVertexWriter = vertexAlloc.lock<SkPoint>(maxFanTriangles * 3);
         fFanVertexCount = GrMiddleOutPolygonTriangulator::WritePathInnerFan(
-                triangleVertexData, 3/*perTriangleVertexAdvance*/, fPath) * 3;
+                &triangleVertexWriter, GrMiddleOutPolygonTriangulator::OutputType::kTriangles,
+                fPath) * 3;
         SkASSERT(fFanVertexCount <= maxFanTriangles * 3);
         vertexAlloc.unlock(fFanVertexCount);
     }
@@ -177,7 +178,7 @@ void GrTessellatingStencilFillOp::onExecute(GrOpFlushState* flushState, const Sk
     // Fill in the bounding box (if not in stencil-only mode).
     if (fFillBBoxProgram) {
         flushState->bindPipelineAndScissorClip(*fFillBBoxProgram, this->bounds());
-        flushState->bindTextures(fFillBBoxProgram->primProc(), nullptr,
+        flushState->bindTextures(fFillBBoxProgram->geomProc(), nullptr,
                                  fFillBBoxProgram->pipeline());
         flushState->bindBuffers(nullptr, nullptr, nullptr);
         flushState->draw(4, 0);

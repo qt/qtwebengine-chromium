@@ -117,7 +117,7 @@ class WebContentsImplTest : public RenderViewHostImplTestHarness {
     if (IsIsolatedOriginRequiredToGuaranteeDedicatedProcess()) {
       // Isolate |isolated_cross_site_url()| so it cannot share a process
       // with another site.
-      ChildProcessSecurityPolicyImpl::GetInstance()->AddIsolatedOrigins(
+      ChildProcessSecurityPolicyImpl::GetInstance()->AddFutureIsolatedOrigins(
           {url::Origin::Create(isolated_cross_site_url())},
           ChildProcessSecurityPolicy::IsolatedOriginSource::TEST,
           browser_context());
@@ -321,7 +321,6 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   params->origin = url::Origin::Create(params->url);
   params->referrer = blink::mojom::Referrer::New();
   params->transition = ui::PAGE_TRANSITION_TYPED;
-  params->redirects = std::vector<GURL>();
   params->should_update_history = false;
   params->did_create_new_entry = true;
   params->gesture = NavigationGestureUser;
@@ -331,11 +330,10 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
   main_test_rfh()->SendNavigateWithParams(std::move(params),
                                           false /* was_within_same_document */);
 
-  contents()->UpdateTitle(main_test_rfh(),
-                          base::ASCIIToUTF16("    Lots O' Whitespace\n"),
+  contents()->UpdateTitle(main_test_rfh(), u"    Lots O' Whitespace\n",
                           base::i18n::LEFT_TO_RIGHT);
   // Make sure that title updates get stripped of whitespace.
-  EXPECT_EQ(base::ASCIIToUTF16("Lots O' Whitespace"), contents()->GetTitle());
+  EXPECT_EQ(u"Lots O' Whitespace", contents()->GetTitle());
   EXPECT_FALSE(contents()->IsWaitingForResponse());
   EXPECT_TRUE(fake_delegate.loading_state_changed_was_called());
 
@@ -344,7 +342,7 @@ TEST_F(WebContentsImplTest, UpdateTitle) {
 
 TEST_F(WebContentsImplTest, UpdateTitleBeforeFirstNavigation) {
   ASSERT_TRUE(controller().IsInitialNavigation());
-  const base::string16 title = base::ASCIIToUTF16("Initial Entry Title");
+  const std::u16string title = u"Initial Entry Title";
   contents()->UpdateTitle(main_test_rfh(), title, base::i18n::LEFT_TO_RIGHT);
   EXPECT_EQ(title, contents()->GetTitle());
 }
@@ -362,17 +360,17 @@ TEST_F(WebContentsImplTest, DontUseTitleFromPendingEntry) {
   const GURL kGURL(GetWebUIURL("blah"));
   controller().LoadURL(
       kGURL, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
-  EXPECT_EQ(base::string16(), contents()->GetTitle());
+  EXPECT_EQ(std::u16string(), contents()->GetTitle());
 
   // Also test setting title while the first navigation is still pending.
-  const base::string16 title = base::ASCIIToUTF16("Initial Entry Title");
+  const std::u16string title = u"Initial Entry Title";
   contents()->UpdateTitle(main_test_rfh(), title, base::i18n::LEFT_TO_RIGHT);
   EXPECT_EQ(title, contents()->GetTitle());
 }
 
 TEST_F(WebContentsImplTest, UseTitleFromPendingEntryIfSet) {
   const GURL kGURL(GetWebUIURL("blah"));
-  const base::string16 title = base::ASCIIToUTF16("My Title");
+  const std::u16string title = u"My Title";
   controller().LoadURL(
       kGURL, Referrer(), ui::PAGE_TRANSITION_TYPED, std::string());
 
@@ -1721,24 +1719,39 @@ TEST_F(WebContentsImplTest, CaptureHoldsWakeLock) {
     run_loop.Run();
   };
 
+  // Add capturer which doesn't care to stay awake.
+  auto handle1 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                         /*stay_awake=*/false);
+  EXPECT_TRUE(contents()->IsBeingCaptured());
+  ASSERT_FALSE(contents()->capture_wake_lock_);
+
   // Add capturer and ensure wake lock is held.
-  contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false);
+  auto handle2 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(contents()->IsBeingCaptured());
   ASSERT_TRUE(contents()->capture_wake_lock_);
   expect_wake_lock(true);
 
   // Add another capturer and ensure the wake lock is still held.
-  contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/true);
+  auto handle3 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/true,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(contents()->IsBeingCaptured());
   expect_wake_lock(true);
 
   // Remove one capturer, but one remains so wake lock should still be held.
-  contents()->DecrementCapturerCount(/*stay_hidden=*/true);
+  handle3.RunAndReset();
   EXPECT_TRUE(contents()->IsBeingCaptured());
   expect_wake_lock(true);
 
-  // Remove the last capturer and ensure the wake lock is released.
-  contents()->DecrementCapturerCount(/*stay_hidden=*/false);
+  // Remove the last stay_awake capturer and ensure the wake lock is released.
+  handle2.RunAndReset();
+  EXPECT_TRUE(contents()->IsBeingCaptured());
+  expect_wake_lock(false);
+
+  handle1.RunAndReset();
   EXPECT_FALSE(contents()->IsBeingCaptured());
   expect_wake_lock(false);
 }
@@ -1754,35 +1767,40 @@ TEST_F(WebContentsImplTest, CapturerOverridesPreferredSize) {
 
   // Increment capturer count, but without specifying a capture size.  Expect
   // a "not set" preferred size.
-  contents()->IncrementCapturerCount(gfx::Size(), /* stay_hidden */ false);
+  auto handle1 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(contents()->IsBeingCaptured());
   EXPECT_EQ(gfx::Size(), contents()->GetPreferredSize());
 
   // Increment capturer count again, but with an overriding capture size.
   // Expect preferred size to now be overridden to the capture size.
   const gfx::Size capture_size(1280, 720);
-  contents()->IncrementCapturerCount(capture_size, /* stay_hidden */ false);
+  auto handle2 =
+      contents()->IncrementCapturerCount(capture_size, /*stay_hidden=*/false,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(contents()->IsBeingCaptured());
   EXPECT_EQ(capture_size, contents()->GetPreferredSize());
 
   // Increment capturer count a third time, but the expect that the preferred
   // size is still the first capture size.
   const gfx::Size another_capture_size(720, 480);
-  contents()->IncrementCapturerCount(another_capture_size,
-                                     /* stay_hidden */ false);
+  auto handle3 = contents()->IncrementCapturerCount(another_capture_size,
+                                                    /*stay_hidden=*/false,
+                                                    /*stay_awake=*/true);
   EXPECT_TRUE(contents()->IsBeingCaptured());
   EXPECT_EQ(capture_size, contents()->GetPreferredSize());
 
   // Decrement capturer count twice, but expect the preferred size to still be
   // overridden.
-  contents()->DecrementCapturerCount(/* stay_hidden */ false);
-  contents()->DecrementCapturerCount(/* stay_hidden */ false);
+  handle1.RunAndReset();
+  handle2.RunAndReset();
   EXPECT_TRUE(contents()->IsBeingCaptured());
   EXPECT_EQ(capture_size, contents()->GetPreferredSize());
 
   // Decrement capturer count, and since the count has dropped to zero, the
   // original preferred size should be restored.
-  contents()->DecrementCapturerCount(/* stay_hidden */ false);
+  handle3.RunAndReset();
   EXPECT_FALSE(contents()->IsBeingCaptured());
   EXPECT_EQ(original_preferred_size, contents()->GetPreferredSize());
 }
@@ -1854,7 +1872,9 @@ void HideOrOccludeWithCapturerTest(WebContentsImpl* contents,
 
   // Add a capturer when the contents is visible and then hide the contents.
   // |view| should remain visible.
-  contents->IncrementCapturerCount(gfx::Size(), /* stay_hidden */ false);
+  auto handle1 =
+      contents->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                       /*stay_awake=*/true);
   contents->UpdateWebContentsVisibility(hidden_or_occluded);
   EXPECT_TRUE(view->is_showing());
   EXPECT_FALSE(view->is_occluded());
@@ -1862,7 +1882,7 @@ void HideOrOccludeWithCapturerTest(WebContentsImpl* contents,
 
   // Remove the capturer when the contents is hidden/occluded. |view| should be
   // hidden/occluded.
-  contents->DecrementCapturerCount(/* stay_hidden */ false);
+  handle1.RunAndReset();
   if (hidden_or_occluded == Visibility::HIDDEN) {
     EXPECT_FALSE(view->is_showing());
   } else {
@@ -1871,7 +1891,9 @@ void HideOrOccludeWithCapturerTest(WebContentsImpl* contents,
   }
 
   // Add a capturer when the contents is hidden. |view| should be unoccluded.
-  contents->IncrementCapturerCount(gfx::Size(), /* stay_hidden */ false);
+  auto handle2 =
+      contents->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                       /*stay_awake=*/true);
   EXPECT_FALSE(view->is_occluded());
 
   // Show the contents. The view should be visible.
@@ -1882,7 +1904,7 @@ void HideOrOccludeWithCapturerTest(WebContentsImpl* contents,
 
   // Remove the capturer when the contents is visible. The view should remain
   // visible.
-  contents->DecrementCapturerCount(/* stay_hidden */ false);
+  handle2.RunAndReset();
   EXPECT_TRUE(view->is_showing());
   EXPECT_FALSE(view->is_occluded());
 }
@@ -1905,16 +1927,20 @@ TEST_F(WebContentsImplTest, HiddenCapture) {
   contents()->UpdateWebContentsVisibility(Visibility::HIDDEN);
   EXPECT_EQ(Visibility::HIDDEN, contents()->GetVisibility());
 
-  contents()->IncrementCapturerCount(gfx::Size(), /* stay_hidden */ true);
+  auto handle1 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/true,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(rwhv->is_showing());
 
-  contents()->IncrementCapturerCount(gfx::Size(), /* stay_hidden */ false);
+  auto handle2 =
+      contents()->IncrementCapturerCount(gfx::Size(), /*stay_hidden=*/false,
+                                         /*stay_awake=*/true);
   EXPECT_TRUE(rwhv->is_showing());
 
-  contents()->DecrementCapturerCount(/* stay_hidden */ true);
+  handle1.RunAndReset();
   EXPECT_TRUE(rwhv->is_showing());
 
-  contents()->DecrementCapturerCount(/* stay_hidden */ false);
+  handle2.RunAndReset();
   EXPECT_FALSE(rwhv->is_showing());
 }
 
@@ -2525,8 +2551,8 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager {
   void RunJavaScriptDialog(WebContents* web_contents,
                            RenderFrameHost* render_frame_host,
                            JavaScriptDialogType dialog_type,
-                           const base::string16& message_text,
-                           const base::string16& default_prompt_text,
+                           const std::u16string& message_text,
+                           const std::u16string& default_prompt_text,
                            DialogClosedCallback callback,
                            bool* did_suppress_message) override {
     *did_suppress_message = true;
@@ -2539,7 +2565,7 @@ class TestJavaScriptDialogManager : public JavaScriptDialogManager {
 
   bool HandleJavaScriptDialog(WebContents* web_contents,
                               bool accept,
-                              const base::string16* prompt_override) override {
+                              const std::u16string* prompt_override) override {
     return true;
   }
 
@@ -2652,7 +2678,7 @@ TEST_F(WebContentsImplTest, HandleContextMenuDelegate) {
   MockWebContentsDelegate delegate;
   contents()->SetDelegate(&delegate);
 
-  RenderFrameHost* rfh = main_test_rfh();
+  TestRenderFrameHost* rfh = main_test_rfh();
   EXPECT_CALL(delegate, HandleContextMenu(rfh, ::testing::_))
       .WillOnce(::testing::Return(true));
 

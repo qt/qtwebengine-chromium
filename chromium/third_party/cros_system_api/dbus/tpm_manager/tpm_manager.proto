@@ -9,6 +9,7 @@
 syntax = "proto2";
 option optimize_for = LITE_RUNTIME;
 package tpm_manager;
+option go_package = "chromiumos/system_api/tpm_manager_proto";
 
 enum TpmManagerStatus {
   STATUS_SUCCESS = 0;
@@ -304,6 +305,9 @@ message GetDictionaryAttackInfoReply {
 }
 
 message ResetDictionaryAttackLockRequest {
+  // If it is `true`, the D-Bus call returns immediately w/o waiting for the
+  // result.
+  optional bool is_async = 1;
 }
 
 message ResetDictionaryAttackLockReply {

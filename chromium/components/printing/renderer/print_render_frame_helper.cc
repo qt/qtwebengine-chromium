@@ -51,7 +51,6 @@
 #include "third_party/blink/public/platform/scheduler/web_thread_scheduler.h"
 #include "third_party/blink/public/platform/web_data.h"
 #include "third_party/blink/public/platform/web_double_size.h"
-#include "third_party/blink/public/platform/web_size.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/public/web/web_console_message.h"
@@ -413,7 +412,7 @@ bool PDFShouldDisableScalingBasedOnPreset(
   if (ignore_page_size)
     return false;
 
-  blink::WebSize page_size(
+  gfx::Size page_size(
       ConvertUnit(params.page_size.width(), dpi, kPointsPerInch),
       ConvertUnit(params.page_size.height(), dpi, kPointsPerInch));
   return options.uniform_page_size == page_size;
@@ -662,16 +661,17 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   cc::PaintCanvasAutoRestore auto_restore(canvas, true);
   canvas->scale(1 / webkit_scale_factor, 1 / webkit_scale_factor);
 
-  blink::WebSize page_size(page_layout.margin_left + page_layout.margin_right +
-                               page_layout.content_width,
-                           page_layout.margin_top + page_layout.margin_bottom +
-                               page_layout.content_height);
+  gfx::Size page_size(page_layout.margin_left + page_layout.margin_right +
+                          page_layout.content_width,
+                      page_layout.margin_top + page_layout.margin_bottom +
+                          page_layout.content_height);
 
   blink::WebView* web_view = blink::WebView::Create(
       /*client=*/nullptr,
       /*is_hidden=*/false, /*is_inside_portal=*/false,
       /*compositing_enabled=*/false, /*opener=*/nullptr,
-      mojo::NullAssociatedReceiver(), *source_frame.GetAgentGroupScheduler());
+      mojo::NullAssociatedReceiver(), *source_frame.GetAgentGroupScheduler(),
+      /*session_storage_namespace_id=*/base::EmptyString());
   web_view->GetSettings()->SetJavaScriptEnabled(true);
 
   class HeaderAndFooterClient final : public blink::WebLocalFrameClient {
@@ -724,8 +724,8 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
 
   auto options = std::make_unique<base::DictionaryValue>();
   options->SetDoubleKey(kSettingHeaderFooterDate, base::Time::Now().ToJsTime());
-  options->SetDoubleKey("width", page_size.width);
-  options->SetDoubleKey("height", page_size.height);
+  options->SetDoubleKey("width", page_size.width());
+  options->SetDoubleKey("height", page_size.height());
   options->SetDoubleKey("topMargin", page_layout.margin_top);
   options->SetDoubleKey("bottomMargin", page_layout.margin_bottom);
   options->SetDoubleKey("leftMargin", page_layout.margin_left);
@@ -733,7 +733,7 @@ void PrintRenderFrameHelper::PrintHeaderAndFooter(
   options->SetIntKey("pageNumber", base::checked_cast<int>(page_number));
   options->SetIntKey("totalPages", base::checked_cast<int>(total_pages));
   options->SetStringKey("url", params.url);
-  base::string16 title = source_frame.GetDocument().Title().Utf16();
+  std::u16string title = source_frame.GetDocument().Title().Utf16();
   options->SetStringKey("title", title.empty() ? params.title : title);
   options->SetStringKey("headerTemplate", params.header_template);
   options->SetStringKey("footerTemplate", params.footer_template);
@@ -948,7 +948,8 @@ void PrepareFrameAndViewForPrint::CopySelection(
       /*is_inside_portal=*/false,
       /*compositing_enabled=*/false,
       /*opener=*/nullptr, mojo::NullAssociatedReceiver(),
-      agent_group_scheduler_);
+      agent_group_scheduler_,
+      /*session_storage_namespace_id=*/base::EmptyString());
   blink::WebView::ApplyWebPreferences(prefs, web_view);
   blink::WebLocalFrame* main_frame = blink::WebLocalFrame::CreateMainFrame(
       web_view, this, nullptr, blink::LocalFrameToken(), nullptr);
@@ -1771,13 +1772,14 @@ int PrintRenderFrameHelper::GetFitToPageScaleFactor(
 
   // Ensure we do not divide by 0 later.
   const auto& uniform_page_size = preset_options.uniform_page_size;
-  if (uniform_page_size.width == 0 || uniform_page_size.height == 0)
+  if (uniform_page_size.width() == 0 || uniform_page_size.height() == 0)
     return 0;
 
   // Figure out if the sizes have the same orientation
   bool is_printable_area_landscape =
       printable_area_in_points.width() > printable_area_in_points.height();
-  bool is_preset_landscape = uniform_page_size.width > uniform_page_size.height;
+  bool is_preset_landscape =
+      uniform_page_size.width() > uniform_page_size.height();
   bool rotate = is_printable_area_landscape != is_preset_landscape;
   // Match orientation for computing scaling
   double printable_width = rotate ? printable_area_in_points.height()
@@ -1786,9 +1788,9 @@ int PrintRenderFrameHelper::GetFitToPageScaleFactor(
                                    : printable_area_in_points.height();
 
   double scale_width =
-      printable_width / static_cast<double>(uniform_page_size.width);
+      printable_width / static_cast<double>(uniform_page_size.width());
   double scale_height =
-      printable_height / static_cast<double>(uniform_page_size.height);
+      printable_height / static_cast<double>(uniform_page_size.height());
   return static_cast<int>(100.0f * std::min(scale_width, scale_height));
 }
 #endif  // BUILDFLAG(ENABLE_PRINT_PREVIEW)

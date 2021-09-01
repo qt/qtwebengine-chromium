@@ -13,6 +13,8 @@ constexpr char kPciguardServicePath[] = "/org/chromium/pciguard";
 constexpr char kSetExternalPciDevicesPermissionMethod[] =
     "SetExternalPciDevicesPermission";
 
+constexpr char kPCIDeviceBlockedSignal[] = "PCIDeviceBlocked";
+
 }  // namespace pciguard
 
 #endif  // SYSTEM_API_DBUS_PCIGUARD_DBUS_CONSTANTS_H_

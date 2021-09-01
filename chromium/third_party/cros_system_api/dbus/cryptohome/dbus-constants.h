@@ -5,23 +5,92 @@
 #ifndef SYSTEM_API_DBUS_CRYPTOHOME_DBUS_CONSTANTS_H_
 #define SYSTEM_API_DBUS_CRYPTOHOME_DBUS_CONSTANTS_H_
 
-namespace cryptohome {
+namespace user_data_auth {
 
 // Interface exposed by the cryptohome daemon.
-
-const char kCryptohomeInterface[] = "org.chromium.CryptohomeInterface";
-const char kCryptohomeServicePath[] = "/org/chromium/Cryptohome";
-const char kCryptohomeServiceName[] = "org.chromium.Cryptohome";
-
 const char kUserDataAuthServiceName[] = "org.chromium.UserDataAuth";
 const char kUserDataAuthServicePath[] = "/org/chromium/UserDataAuth";
 
 const char kUserDataAuthInterface[] = "org.chromium.UserDataAuthInterface";
+const char kArcQuotaInterface[] = "org.chromium.ArcQuota";
 const char kCryptohomePkcs11Interface[] =
     "org.chromium.CryptohomePkcs11Interface";
 const char kInstallAttributesInterface[] =
     "org.chromium.InstallAttributesInterface";
 const char kCryptohomeMiscInterface[] = "org.chromium.CryptohomeMiscInterface";
+
+// Methods of the |kUserDataAuthInterface| interface:
+const char kIsMounted[] = "IsMounted";
+const char kUnmount[] = "Unmount";
+const char kMount[] = "Mount";
+const char kRemove[] = "Remove";
+const char kRename[] = "Rename";
+const char kListKeys[] = "ListKeys";
+const char kGetKeyData[] = "GetKeyData";
+const char kCheckKey[] = "CheckKey";
+const char kAddKey[] = "AddKey";
+const char kAddDataRestoreKey[] = "AddDataRestoreKey";
+const char kRemoveKey[] = "RemoveKey";
+const char kMassRemoveKeys[] = "MassRemoveKeys";
+const char kMigrateKey[] = "MigrateKey";
+const char kStartFingerprintAuthSession[] = "StartFingerprintAuthSession";
+const char kEndFingerprintAuthSession[] = "EndFingerprintAuthSession";
+const char kGetWebAuthnSecret[] = "GetWebAuthnSecret";
+const char kStartMigrateToDircrypto[] = "StartMigrateToDircrypto";
+const char kNeedsDircryptoMigration[] = "NeedsDircryptoMigration";
+const char kGetSupportedKeyPolicies[] = "GetSupportedKeyPolicies";
+const char kGetAccountDiskUsage[] = "GetAccountDiskUsage";
+const char kStartAuthSession[] = "StartAuthSession";
+const char kAuthenticateAuthSession[] = "AuthenticateAuthSession";
+
+// Methods of the |kArcQuotaInterface| interface:
+const char kGetArcDiskFeatures[] = "GetArcDiskFeatures";
+const char kGetCurrentSpaceForArcUid[] = "GetCurrentSpaceForArcUid";
+const char kGetCurrentSpaceForArcGid[] = "GetCurrentSpaceForArcGid";
+const char kGetCurrentSpaceForArcProjectId[] = "GetCurrentSpaceForArcProjectId";
+const char kSetProjectId[] = "SetProjectId";
+
+// Methods of the |kCryptohomePkcs11Interface| interface:
+const char kPkcs11IsTpmTokenReady[] = "Pkcs11IsTpmTokenReady";
+const char kPkcs11GetTpmTokenInfo[] = "Pkcs11GetTpmTokenInfo";
+const char kPkcs11Terminate[] = "Pkcs11Terminate";
+
+// Methods of the |kInstallAttributesInterface| interface:
+const char kInstallAttributesGet[] = "InstallAttributesGet";
+const char kInstallAttributesSet[] = "InstallAttributesSet";
+const char kInstallAttributesFinalize[] = "InstallAttributesFinalize";
+const char kInstallAttributesGetStatus[] = "InstallAttributesGetStatus";
+const char kGetFirmwareManagementParameters[] =
+    "GetFirmwareManagementParameters";
+const char kRemoveFirmwareManagementParameters[] =
+    "RemoveFirmwareManagementParameters";
+const char kSetFirmwareManagementParameters[] =
+    "SetFirmwareManagementParameters";
+
+// Methods of the |kCryptohomeMiscInterface| interface:
+const char kGetSystemSalt[] = "GetSystemSalt";
+const char kUpdateCurrentUserActivityTimestamp[] =
+    "UpdateCurrentUserActivityTimestamp";
+const char kGetSanitizedUsername[] = "GetSanitizedUsername";
+const char kGetLoginStatus[] = "GetLoginStatus";
+const char kGetStatusString[] = "GetStatusString";
+const char kLockToSingleUserMountUntilReboot[] =
+    "LockToSingleUserMountUntilReboot";
+const char kGetRsuDeviceId[] = "GetRsuDeviceId";
+const char kCheckHealth[] = "CheckHealth";
+
+// Signals of the |kUserDataAuthInterface| interface:
+const char kDircryptoMigrationProgress[] = "DircryptoMigrationProgress";
+const char kLowDiskSpace[] = "LowDiskSpace";
+
+}  // namespace user_data_auth
+
+namespace cryptohome {
+
+// Interface exposed by the cryptohome daemon.
+const char kCryptohomeInterface[] = "org.chromium.CryptohomeInterface";
+const char kCryptohomeServicePath[] = "/org/chromium/Cryptohome";
+const char kCryptohomeServiceName[] = "org.chromium.Cryptohome";
 
 // Methods of the |kCryptohomeInterface| interface:
 const char kCryptohomeMigrateKey[] = "MigrateKey";
@@ -37,7 +106,6 @@ const char kCryptohomeUnmountEx[] = "UnmountEx";
 const char kCryptohomeTpmIsReady[] = "TpmIsReady";
 const char kCryptohomeTpmIsEnabled[] = "TpmIsEnabled";
 const char kCryptohomeTpmIsOwned[] = "TpmIsOwned";
-const char kCryptohomeTpmIsBeingOwned[] = "TpmIsBeingOwned";
 const char kCryptohomeTpmGetPassword[] = "TpmGetPassword";
 const char kCryptohomeTpmCanAttemptOwnership[] = "TpmCanAttemptOwnership";
 const char kCryptohomeTpmClearStoredPassword[] = "TpmClearStoredPassword";

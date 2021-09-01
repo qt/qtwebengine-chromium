@@ -10,9 +10,6 @@
 namespace federated_learning {
 
 extern const base::Feature kFlocIdComputedEventLogging;
-
-extern const base::Feature kFlocIdSortingLshBasedComputation;
-
 extern const base::Feature
     kFlocPagesWithAdResourcesDefaultIncludedInFlocComputation;
 

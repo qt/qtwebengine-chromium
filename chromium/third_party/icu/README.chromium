@@ -312,9 +312,26 @@ D. Local Modifications
   - updatream PR:
     https://github.com/unicode-org/icu/pull/1577
 
-18. Patch locale to fix assign and assing move operators:
+18. Patch source/common/uposixdefs.h so it compiles on Fuchsia on Macs.
+    patches/fuchsia.patch
+    - context bug: https://bugs.chromium.org/p/chromium/issues/detail?id=1184527
+
+19. Patch locid.cpp to fix locale canoncalization due to overflow of strcmp return value
+    patches/locid_sort.patch
+  - upstream bug:
+    https://unicode-org.atlassian.net/browse/ICU-21521
+  - updatream PR:
+    https://github.com/unicode-org/icu/pull/1618
+
+20. Patch locale to fix assign and assing move operators:
     patches/locid_operators.patch
   - upstream bug:
     https://unicode-org.atlassian.net/browse/ICU-21587
   - upstream PR:
     https://github.com/unicode-org/icu/pull/1698
+
+21. Patch locid.cpp to fix invalid free by long locale name.
+  - upstream bug:
+    https://unicode-org.atlassian.net/browse/ICU-21537
+  - upstream PR:
+    https://github.com/unicode-org/icu/pull/1656

@@ -8,7 +8,7 @@ option optimize_for = LITE_RUNTIME;
 // This file defines messages used for interacting directly with containers
 // running inside of a VM.
 package vm_tools.cicerone;
-option go_package = "vm_cicerone_proto";
+option go_package = "chromiumos/system_api/vm_cicerone_proto";
 
 // Message sent to cicerone when a VM has started up. This is just for
 // tracking purposes by cicerone.
@@ -1548,6 +1548,21 @@ message FileWatchTriggeredSignal {
 
   // Path in container relative to $HOME that has changed.
   string path = 4;
+}
+
+// Sent by garcon to notify that a container is running low on disk space.
+message LowDiskSpaceTriggeredSignal {
+  // Name of the VM the container is in.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM and container.
+  string owner_id = 3;
+
+  // How much free space is left in bytes.
+  uint64 free_bytes = 4;
 }
 
 // Sent by vsh to register session information such as the container shell pid,

@@ -81,16 +81,15 @@ class DrmOverlayValidatorTest : public testing::Test {
   bool ModesetController(ui::HardwareDisplayController* controller) {
     ui::CommitRequest commit_request;
 
-    ui::DrmOverlayPlaneList modeset_planes;
-    modeset_planes.emplace_back(CreateBuffer(), nullptr);
+    ui::DrmOverlayPlane plane(CreateBuffer(), nullptr);
 
-    controller->GetModesetProps(&commit_request, modeset_planes, kDefaultMode);
+    controller->GetModesetProps(&commit_request, plane, kDefaultMode);
     ui::CommitRequest request_for_update = commit_request;
     bool status = drm_->plane_manager()->Commit(std::move(commit_request),
                                                 DRM_MODE_ATOMIC_ALLOW_MODESET);
-
-    for (const ui::CrtcCommitRequest& crtc_request : commit_request)
-      controller->UpdateState(crtc_request);
+    controller->UpdateState(
+        /*enable_requested=*/true,
+        ui::DrmOverlayPlane::GetPrimaryPlane(request_for_update[0].overlays()));
 
     return status;
   }

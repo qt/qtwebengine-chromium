@@ -254,7 +254,7 @@ UOBJECT_DEFINE_RTTI_IMPLEMENTATION(Locale)
 
 Locale::~Locale()
 {
-    if (baseName != fullName) {
+    if ((baseName != fullName) && (baseName != fullNameBuffer)) {
         uprv_free(baseName);
     }
     baseName = NULL;
@@ -466,7 +466,7 @@ Locale& Locale::operator=(const Locale& other) {
 }
 
 Locale& Locale::operator=(Locale&& other) U_NOEXCEPT {
-    if (baseName != fullName) uprv_free(baseName);
+    if ((baseName != fullName) && (baseName != fullNameBuffer)) uprv_free(baseName);
     if (fullName != fullNameBuffer) uprv_free(fullName);
 
     if (other.fullName == other.fullNameBuffer || other.baseName == other.fullNameBuffer) {
@@ -1579,8 +1579,12 @@ AliasReplacer::replaceTransformedExtensions(
             tkey = nextTKey;
         } while (tkey != nullptr);
         tfields.sort([](UElement e1, UElement e2) -> int8_t {
-            return uprv_strcmp(
+            // uprv_strcmp return int and in some platform, such as arm64-v8a,
+            // it may return positive values > 127 which cause the casted value
+            // of int8_t negative.
+            int res = uprv_strcmp(
                 (const char*)e1.pointer, (const char*)e2.pointer);
+            return (res == 0) ? 0 : ((res > 0) ? 1 : -1);
         }, status);
         for (int32_t i = 0; i < tfields.size(); i++) {
              if (output.length() > 0) {
@@ -1620,8 +1624,12 @@ AliasReplacer::outputToString(
           out.append(SEP_CHAR, status);
         }
         variants.sort([](UElement e1, UElement e2) -> int8_t {
-            return uprv_strcmp(
+            // uprv_strcmp return int and in some platform, such as arm64-v8a,
+            // it may return positive values > 127 which cause the casted value
+            // of int8_t negative.
+            int res = uprv_strcmp(
                 (const char*)e1.pointer, (const char*)e2.pointer);
+            return (res == 0) ? 0 : ((res > 0) ? 1 : -1);
         }, status);
         int32_t variantsStart = out.length();
         for (int32_t i = 0; i < variants.size(); i++) {
@@ -1682,8 +1690,12 @@ AliasReplacer::replace(const Locale& locale, CharString& out, UErrorCode& status
 
     // Sort the variants
     variants.sort([](UElement e1, UElement e2) -> int8_t {
-        return uprv_strcmp(
+        // uprv_strcmp return int and in some platform, such as arm64-v8a,
+        // it may return positive values > 127 which cause the casted value
+        // of int8_t negative.
+        int res = uprv_strcmp(
             (const char*)e1.pointer, (const char*)e2.pointer);
+        return (res == 0) ? 0 : ((res > 0) ? 1 : -1);
     }, status);
 
     // A changed count to assert when loop too many times.
@@ -1841,7 +1853,7 @@ Locale& Locale::init(const char* localeID, UBool canonicalize)
 {
     fIsBogus = FALSE;
     /* Free our current storage */
-    if (baseName != fullName) {
+    if ((baseName != fullName) && (baseName != fullNameBuffer)) {
         uprv_free(baseName);
     }
     baseName = NULL;
@@ -1877,6 +1889,7 @@ Locale& Locale::init(const char* localeID, UBool canonicalize)
             uloc_getName(localeID, fullName, sizeof(fullNameBuffer), &err);
 
         if(err == U_BUFFER_OVERFLOW_ERROR || length >= (int32_t)sizeof(fullNameBuffer)) {
+            U_ASSERT(baseName == nullptr);
             /*Go to heap for the fullName if necessary*/
             fullName = (char *)uprv_malloc(sizeof(char)*(length + 1));
             if(fullName == 0) {
@@ -2030,7 +2043,7 @@ Locale::hashCode() const
 void
 Locale::setToBogus() {
     /* Free our current storage */
-    if(baseName != fullName) {
+    if((baseName != fullName) && (baseName != fullNameBuffer)) {
         uprv_free(baseName);
     }
     baseName = NULL;

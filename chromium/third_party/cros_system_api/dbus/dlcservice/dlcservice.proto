@@ -52,6 +52,8 @@ message DlcState {
   double progress = 4;
 
   // The last error code happened on for this DLC.
+  // Should only be dlcservice error codes from
+  // system_api/dbus/dlcservice/dbus-constants.h file.
   string last_error_code = 5;
 
   // Indicates whether DLC is marked verified. Can be used to determine

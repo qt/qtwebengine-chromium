@@ -159,6 +159,7 @@ elseif(CMAKE_C_COMPILER_ID MATCHES "MSVC")
         /wd4820 # Disable: bytes padding added after data member
         /wd4996 # Disable: potentially unsafe stdlib methods
         /wd5045 # Disable: Compiler will insert Spectre mitigation for memory load if /Qspectre switch specified
+
         # This tells MSVC to read source code as UTF-8 and assume console can only use ASCII (minimal safe).
         # libavif uses ANSI API to print to console, which is not portable between systems using different
         # languages and results in mojibake unless we only use codes shared by every code page: ASCII.

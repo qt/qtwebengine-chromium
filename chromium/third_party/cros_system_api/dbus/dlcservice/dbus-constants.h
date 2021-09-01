@@ -29,6 +29,8 @@ constexpr char kErrorInvalidDlc[] =
     "org.chromium.DlcServiceInterface.INVALID_DLC";
 constexpr char kErrorAllocation[] =
     "org.chromium.DlcServiceInterface.ALLOCATION";
+constexpr char kErrorNoImageFound[] =
+    "org.chromium.DlcServiceInterface.NO_IMAGE_FOUND";
 
 }  // namespace dlcservice
 

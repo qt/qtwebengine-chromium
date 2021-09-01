@@ -24,6 +24,9 @@ constexpr char kTakeSnapshotMethod[] = "TakeSnapshot";
 constexpr char kLoadSnapshotMethod[] = "LoadSnapshot";
 constexpr char kUpdateMethod[] = "Update";
 
+// Signals:
+constexpr char kUiCancelled[] = "UiCancelled";
+
 }  // namespace data_snapshotd
 }  // namespace arc
 

@@ -11,6 +11,7 @@ option optimize_for = LITE_RUNTIME;
 // provides additional functionalities and abstracts the details of the wire
 // format. Access control for clients is defined in platform2/patchpanel/dbus.
 package patchpanel;
+option go_package = "chromiumos/system_api/patchpanel_proto";
 
 // Notification that the ARC++ container is starting up.
 // This is informational. The ARC boot and setup sequences do not require

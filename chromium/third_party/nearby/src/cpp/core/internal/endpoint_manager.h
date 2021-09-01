@@ -22,14 +22,13 @@
 #include "core/internal/endpoint_channel.h"
 #include "core/internal/endpoint_channel_manager.h"
 #include "core/listeners.h"
-#include "proto/connections/offline_wire_formats.pb.h"
 #include "platform/base/byte_array.h"
 #include "platform/base/runnable.h"
 #include "platform/public/count_down_latch.h"
 #include "platform/public/multi_thread_executor.h"
 #include "platform/public/single_thread_executor.h"
 #include "platform/public/system_clock.h"
-#include "proto/connections_enums.pb.h"
+#include "absl/base/thread_annotations.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/time/time.h"
@@ -172,7 +171,9 @@ class EndpointManager {
                                ClientProxy* client_proxy,
                                EndpointChannel* endpoint_channel);
 
-  ExceptionOr<bool> HandleKeepAlive(EndpointChannel* endpoint_channel);
+  ExceptionOr<bool> HandleKeepAlive(EndpointChannel* endpoint_channel,
+                                    absl::Duration keep_alive_interval,
+                                    absl::Duration keep_alive_timeout);
 
   // Waits for a given endpoint EndpointChannelLoopRunnable() workers to
   // terminate.
@@ -191,10 +192,6 @@ class EndpointManager {
   static void WaitForLatch(const std::string& method_name,
                            CountDownLatch* latch, std::int32_t timeout_millis);
 
-  static constexpr absl::Duration kKeepAliveWriteInterval =
-      absl::Milliseconds(5000);
-  static constexpr absl::Duration kKeepAliveReadTimeout =
-      absl::Milliseconds(30000);
   static constexpr absl::Duration kProcessEndpointDisconnectionTimeout =
       absl::Milliseconds(2000);
   static constexpr std::int32_t kMaxConcurrentEndpoints = 50;
@@ -211,6 +208,9 @@ class EndpointManager {
 
   void WaitForEndpointDisconnectionProcessing(ClientProxy* client,
                                               const std::string& endpoint_id);
+
+  CountDownLatch NotifyFrameProcessorsOnEndpointDisconnect(
+      ClientProxy* client, const std::string& endpoint_id);
 
   std::vector<std::string> SendTransferFrameBytes(
       const std::vector<std::string>& endpoint_ids,
@@ -230,12 +230,13 @@ class EndpointManager {
   void StartEndpointKeepAliveManager(Runnable runnable);
 
   // Executes all jobs sequentially, on a serial_executor_.
-  void RunOnEndpointManagerThread(Runnable runnable);
+  void RunOnEndpointManagerThread(const std::string& name, Runnable runnable);
 
   EndpointChannelManager* channel_manager_;
 
+  RecursiveMutex frame_processors_lock_;
   absl::flat_hash_map<V1Frame::FrameType, FrameProcessorWithMutex>
-      frame_processors_;
+      frame_processors_ ABSL_GUARDED_BY(frame_processors_lock_);
 
   // We keep track of all registered channel endpoints here.
   absl::flat_hash_map<std::string, EndpointState> endpoints_;

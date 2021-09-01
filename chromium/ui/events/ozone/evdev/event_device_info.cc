@@ -39,6 +39,7 @@ constexpr struct {
     {0x045e, 0x082f},  // Microsoft Bluetooth Mouse
     {0x045e, 0x0b05},  // Xbox One Elite Series 2 gamepad
     {0x046d, 0x4069},  // Logitech MX Master 2S (Unifying)
+    {0x046d, 0xb011},  // Logitech M558
     {0x046d, 0xb016},  // Logitech M535
     {0x046d, 0xb019},  // Logitech MX Master 2S (Bluetooth)
     {0x046d, 0xc093},  // Logitech M500s
@@ -62,6 +63,11 @@ constexpr struct {
 } kStylusButtonDevices[] = {
     {0x413c, 0x81d5},  // Dell Active Pen PN579X
 };
+
+// Note: this is not SteelSeries's actual VID; the Stratus Duo just reports it
+// incorrectly over Bluetooth.
+const uint16_t kSteelSeriesStratusDuoBluetoothVendorId = 0x0111;
+const uint16_t kSteelSeriesStratusDuoBluetoothProductId = 0x1431;
 
 bool GetEventBits(int fd,
                   const base::FilePath& path,
@@ -525,6 +531,13 @@ bool EventDeviceInfo::HasKeyboard() const {
 }
 
 bool EventDeviceInfo::HasMouse() const {
+  // The SteelSeries Stratus Duo claims to be a mouse over Bluetooth, preventing
+  // it from being set up as a gamepad correctly, so check for its vendor and
+  // product ID. (b/189491809)
+  if (input_id_.vendor == kSteelSeriesStratusDuoBluetoothVendorId &&
+      input_id_.product == kSteelSeriesStratusDuoBluetoothProductId) {
+    return false;
+  }
   return HasRelXY() && !HasProp(INPUT_PROP_POINTING_STICK);
 }
 
@@ -576,6 +589,8 @@ ui::InputDeviceType EventDeviceInfo::GetInputDeviceTypeFromId(input_id id) {
       {0x18d1, 0x503c},  // Google, Masterball PID (krane)
       {0x18d1, 0x503d},  // Google, Magnemite PID (kodama)
       {0x18d1, 0x5044},  // Google, Moonball PID (kakadu)
+      {0x18d1, 0x504c},  // Google, Zed PID (coachz)
+      {0x18d1, 0x5050},  // Google, Don PID (katsu)
       {0x1fd2, 0x8103},  // LG, Internal TouchScreen PID
   };
 

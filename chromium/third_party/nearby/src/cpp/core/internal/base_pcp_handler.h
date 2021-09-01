@@ -32,7 +32,6 @@
 #include "core/listeners.h"
 #include "core/options.h"
 #include "core/status.h"
-#include "proto/connections/offline_wire_formats.pb.h"
 #include "platform/base/byte_array.h"
 #include "platform/base/prng.h"
 #include "platform/public/atomic_boolean.h"
@@ -43,7 +42,6 @@
 #include "platform/public/scheduled_executor.h"
 #include "platform/public/single_thread_executor.h"
 #include "platform/public/system_clock.h"
-#include "proto/connections_enums.pb.h"
 #include "securegcm/d2d_connection_context_v1.h"
 #include "securegcm/ukey2_handshake.h"
 #include "absl/container/btree_map.h"
@@ -223,7 +221,7 @@ class BasePcpHandler : public PcpHandler,
     std::unique_ptr<EndpointChannel> endpoint_channel;
   };
 
-  void RunOnPcpHandlerThread(Runnable runnable);
+  void RunOnPcpHandlerThread(const std::string& name, Runnable runnable);
 
   BluetoothDevice GetRemoteBluetoothDevice(
       const std::string& remote_bluetooth_mac_address);
@@ -376,7 +374,9 @@ class BasePcpHandler : public PcpHandler,
   static Exception WriteConnectionRequestFrame(
       EndpointChannel* endpoint_channel, const std::string& local_endpoint_id,
       const ByteArray& local_endpoint_info, std::int32_t nonce,
-      const std::vector<proto::connections::Medium>& supported_mediums);
+      const std::vector<proto::connections::Medium>& supported_mediums,
+      std::int32_t keep_alive_interval_millis,
+      std::int32_t keep_alive_timeout_millis);
 
   static constexpr absl::Duration kConnectionRequestReadTimeout =
       absl::Seconds(2);
@@ -409,23 +409,6 @@ class BasePcpHandler : public PcpHandler,
   // call both preInit and preResult failures.
   void ProcessTieBreakLoss(ClientProxy* client, const std::string& endpoint_id,
                            PendingConnectionInfo* info);
-
-  // Called when an incoming connection has been accepted by both sides.
-  //
-  // @param client_proxy The client
-  // @param endpoint_id The id of the remote device
-  // @param supported_mediums The mediums supported by the remote device.
-  // Empty
-  //        for outgoing connections and older devices that don't report their
-  //        supported mediums.
-  void InitiateBandwidthUpgrade(
-      ClientProxy* client, const std::string& endpoint_id,
-      const std::vector<proto::connections::Medium>& supported_mediums);
-
-  // Returns the optimal medium supported by both devices.
-  proto::connections::Medium ChooseBestUpgradeMedium(
-      const std::vector<proto::connections::Medium>& supported_mediums,
-      const ConnectionOptions& local_advertising_options);
 
   // Returns true if the bluetooth endpoint based on remote bluetooth mac
   // address is created and appended into discovered_endpoints_ with key
@@ -480,6 +463,11 @@ class BasePcpHandler : public PcpHandler,
   // rotate endpoint id when the options is "low power" (3P) or "disable
   // Bluetooth classic" (1P).
   bool ShouldEnterHighVisibilityMode(const ConnectionOptions& options);
+
+  // Returns the intersection of supported mediums based on the mediums reported
+  // by the remote client and the local client's advertising options.
+  BooleanMediumSelector ComputeIntersectionOfSupportedMediums(
+      const PendingConnectionInfo& connection_info);
 
   ScheduledExecutor alarm_executor_;
   SingleThreadExecutor serial_executor_;

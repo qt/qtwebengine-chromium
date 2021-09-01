@@ -252,3 +252,11 @@ weston_desktop_api_set_xwayland_position(struct weston_desktop *desktop,
 		desktop->api.set_xwayland_position(surface, x, y,
 						   desktop->user_data);
 }
+
+void
+weston_desktop_api_get_desktop_surface_root_geometry(struct weston_desktop *desktop,
+						     struct weston_desktop_surface *surface,
+						     struct weston_geometry *geometry) {
+	if (desktop->api.get_desktop_surface_root_geometry != NULL)
+		desktop->api.get_desktop_surface_root_geometry(surface, geometry);
+}

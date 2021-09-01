@@ -7,6 +7,8 @@
 
 #include <stddef.h>
 #include <stdint.h>
+
+#include <memory>
 #include <utility>
 #include <vector>
 
@@ -65,6 +67,7 @@
 #include "content/test/content_browser_test_utils_internal.h"
 #include "content/test/fake_network_url_loader_factory.h"
 #include "content/test/test_content_browser_client.h"
+#include "net/base/features.h"
 #include "net/base/filename_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
@@ -78,6 +81,7 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
+#include "third_party/blink/public/common/switches.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -796,7 +800,7 @@ HandleRequestAndSendRedirectResponse(
     const net::test_server::HttpRequest& request) {
   std::unique_ptr<net::test_server::BasicHttpResponse> response;
   if (request.relative_url == relative_url) {
-    response.reset(new net::test_server::BasicHttpResponse);
+    response = std::make_unique<net::test_server::BasicHttpResponse>();
     response->set_code(net::HTTP_FOUND);
     response->AddCustomHeader("Location", target_url.spec());
   }
@@ -823,7 +827,7 @@ HandleRequestAndSendBasicResponse(
     const net::test_server::HttpRequest& request) {
   std::unique_ptr<net::test_server::BasicHttpResponse> response;
   if (request.relative_url == relative_url) {
-    response.reset(new net::test_server::BasicHttpResponse);
+    response = std::make_unique<net::test_server::BasicHttpResponse>();
     for (const auto& pair : headers)
       response->AddCustomHeader(pair.first, pair.second);
     response->set_content_type(content_type);
@@ -850,7 +854,7 @@ std::unique_ptr<net::test_server::HttpResponse> HandleRequestAndEchoCookies(
     const net::test_server::HttpRequest& request) {
   std::unique_ptr<net::test_server::BasicHttpResponse> response;
   if (request.relative_url == relative_url) {
-    response.reset(new net::test_server::BasicHttpResponse);
+    response = std::make_unique<net::test_server::BasicHttpResponse>();
     response->AddCustomHeader("Content-Disposition", "attachment");
     response->AddCustomHeader("Vary", "");
     response->AddCustomHeader("Cache-Control", "no-cache");
@@ -927,7 +931,7 @@ class DownloadContentTest : public ContentBrowserTest {
   void SetUpOnMainThread() override {
     ASSERT_TRUE(downloads_directory_.CreateUniqueTempDir());
 
-    test_delegate_.reset(new TestShellDownloadManagerDelegate());
+    test_delegate_ = std::make_unique<TestShellDownloadManagerDelegate>();
     test_delegate_->SetDownloadBehaviorForTesting(
         downloads_directory_.GetPath());
     DownloadManager* manager = DownloadManagerForShell(shell());
@@ -962,6 +966,9 @@ class DownloadContentTest : public ContentBrowserTest {
   void SetUpCommandLine(base::CommandLine* command_line) override {
     ContentBrowserTest::SetUpCommandLine(command_line);
     IsolateAllSitesForTesting(command_line);
+    // Some tests are flaky due to slower loading interacting with deferred
+    // commits so allow early input.
+    command_line->AppendSwitch(blink::switches::kAllowPreCommitInput);
   }
 
   TestShellDownloadManagerDelegate* GetDownloadManagerDelegate() {
@@ -3742,7 +3749,7 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest,
   origin_one.StartAcceptingConnections();
   origin_two.StartAcceptingConnections();
 
-  base::string16 expected_title(base::UTF8ToUTF16("hello"));
+  std::u16string expected_title(u"hello");
   TitleWatcher observer(shell()->web_contents(), expected_title);
   EXPECT_TRUE(
       NavigateToURL(shell(), referrer_url,
@@ -3983,7 +3990,25 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeBlobURL) {
                download->GetTargetFilePath().BaseName().value().c_str());
 }
 
-IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeSameSiteCookie) {
+class DownloadContentSameSiteCookieTest
+    : public DownloadContentTest,
+      public ::testing::WithParamInterface<bool> {
+ public:
+  DownloadContentSameSiteCookieTest() {
+    if (DoesCookieSameSiteConsiderRedirectChain()) {
+      inner_feature_list_.InitAndEnableFeature(
+          net::features::kCookieSameSiteConsidersRedirectChain);
+    }
+  }
+
+  bool DoesCookieSameSiteConsiderRedirectChain() { return GetParam(); }
+
+ private:
+  base::test::ScopedFeatureList inner_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_P(DownloadContentSameSiteCookieTest,
+                       DownloadAttributeSameSiteCookie) {
   base::ScopedAllowBlockingForTesting allow_blocking;
   net::EmbeddedTestServer test_server;
   ASSERT_TRUE(test_server.InitializeAndListen());
@@ -4041,9 +4066,12 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeSameSiteCookie) {
   // should be sent along with the request.
   EXPECT_STREQ("B=C", file_contents.c_str());
 
-  // OriginOne redirects through OriginTwo.
+  // OriginOne redirects through OriginTwo. Because the redirect chain contains
+  // a cross-site redirect, SameSite=Strict cookies are not sent (if redirect
+  // chains are considered).
   //
   //  Initiator origin: kOriginOne
+  //  Redirect chain contains: kOriginTwo
   //  Resource origin: kOriginOne
   //  First-party origin: kOriginOne
   GURL redirect_url = test_server.GetURL(kOriginTwo, "/server-redirect");
@@ -4055,8 +4083,16 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, DownloadAttributeSameSiteCookie) {
 
   ASSERT_TRUE(
       base::ReadFileToString(download->GetTargetFilePath(), &file_contents));
-  EXPECT_STREQ("A=B; B=C", file_contents.c_str());
+  if (DoesCookieSameSiteConsiderRedirectChain()) {
+    EXPECT_STREQ("B=C", file_contents.c_str());
+  } else {
+    EXPECT_STREQ("A=B; B=C", file_contents.c_str());
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(/* no label */,
+                         DownloadContentSameSiteCookieTest,
+                         ::testing::Bool());
 
 // The file empty.bin is served with a MIME type of application/octet-stream.
 // The content body is empty. Make sure this case is handled properly and we
@@ -4536,9 +4572,9 @@ IN_PROC_BROWSER_TEST_F(DownloadContentTest, FetchErrorResponseBodyResumption) {
   DownloadManager* download_manager = DownloadManagerForShell(shell());
 
   std::unique_ptr<DownloadTestObserver> observer;
-  observer.reset(new content::DownloadTestObserverInterrupted(
+  observer = std::make_unique<content::DownloadTestObserverInterrupted>(
       download_manager, 1,
-      content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL));
+      content::DownloadTestObserver::ON_DANGEROUS_DOWNLOAD_FAIL);
   download_manager->DownloadUrl(std::move(download_parameters));
   observer->WaitForFinished();
   std::vector<download::DownloadItem*> items;

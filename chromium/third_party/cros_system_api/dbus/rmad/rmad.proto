@@ -1,0 +1,35 @@
+// Copyright 2021 The Chromium Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+//
+// The messages in this file comprise the DBus/Protobuf interface for
+// rmad.
+syntax = "proto3";
+
+package rmad;
+option optimize_for = LITE_RUNTIME;
+
+// Defined error code.
+enum ErrorCode {
+  // 0 is the default value. It should never be used.
+  RMAD_ERROR_NOT_SET = 0;
+
+  // Not able to read the Rmad as DBus signature indicated.
+  RMAD_ERROR_REQUEST_INVALID = 1;
+}
+
+// Defined Rmad states.
+enum RmadState {
+  STATE_UNKNOWN = 0;
+  STATE_RMA_NOT_REQUIRED = 1;
+  STATE_WELCOME_SCREEN = 2;
+}
+
+// Request from client to get current state.
+message GetCurrentStateRequest {}
+
+// Reply from daemon.
+message GetCurrentStateReply {
+  ErrorCode error = 1;
+  RmadState state = 2;
+}

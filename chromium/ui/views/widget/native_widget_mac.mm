@@ -12,6 +12,7 @@
 
 #include "base/base64.h"
 #include "base/bind.h"
+#include "base/feature_list.h"
 #include "base/mac/scoped_nsobject.h"
 #include "base/no_destructor.h"
 #include "base/strings/sys_string_conversions.h"
@@ -35,6 +36,7 @@
 #import "ui/views/cocoa/drag_drop_client_mac.h"
 #import "ui/views/cocoa/native_widget_mac_ns_window_host.h"
 #include "ui/views/cocoa/text_input_host.h"
+#include "ui/views/views_features.h"
 #include "ui/views/widget/drop_helper.h"
 #include "ui/views/widget/widget_aura_utils.h"
 #include "ui/views/widget/widget_delegate.h"
@@ -383,7 +385,7 @@ void NativeWidgetMac::GetWindowPlacement(
     *show_state = ui::SHOW_STATE_NORMAL;
 }
 
-bool NativeWidgetMac::SetWindowTitle(const base::string16& title) {
+bool NativeWidgetMac::SetWindowTitle(const std::u16string& title) {
   if (!ns_window_host_)
     return false;
   return ns_window_host_->SetWindowTitle(title);
@@ -552,10 +554,15 @@ void NativeWidgetMac::Show(ui::WindowShowState show_state,
       break;
   }
   auto window_state = WindowVisibilityState::kShowAndActivateWindow;
-  if (show_state == ui::SHOW_STATE_INACTIVE)
+  if (show_state == ui::SHOW_STATE_INACTIVE) {
     window_state = WindowVisibilityState::kShowInactive;
-  else if (show_state == ui::SHOW_STATE_MINIMIZED)
+  } else if (show_state == ui::SHOW_STATE_MINIMIZED) {
     window_state = WindowVisibilityState::kHideWindow;
+  } else if (show_state == ui::SHOW_STATE_DEFAULT) {
+    window_state = delegate_->CanActivate()
+                       ? window_state
+                       : WindowVisibilityState::kShowInactive;
+  }
   GetNSWindowMojo()->SetVisibilityState(window_state);
 
   // Ignore the SetInitialFocus() result. BridgedContentView should get
@@ -743,12 +750,12 @@ Widget::MoveLoopResult NativeWidgetMac::RunMoveLoop(
     Widget::MoveLoopSource source,
     Widget::MoveLoopEscapeBehavior escape_behavior) {
   if (!GetInProcessNSWindowBridge())
-    return Widget::MOVE_LOOP_CANCELED;
+    return Widget::MoveLoopResult::kCanceled;
 
   ReleaseCapture();
   return GetInProcessNSWindowBridge()->RunMoveLoop(drag_offset)
-             ? Widget::MOVE_LOOP_SUCCESSFUL
-             : Widget::MOVE_LOOP_CANCELED;
+             ? Widget::MoveLoopResult::kSuccessful
+             : Widget::MoveLoopResult::kCanceled;
 }
 
 void NativeWidgetMac::EndMoveLoop() {
@@ -938,6 +945,12 @@ void Widget::CloseAllSecondaryWidgets() {
 }
 
 const ui::NativeTheme* Widget::GetNativeTheme() const {
+  if (base::FeatureList::IsEnabled(
+          features::kInheritNativeThemeFromParentWidget) &&
+      parent_) {
+    return parent_->GetNativeTheme();
+  }
+
   return ui::NativeTheme::GetInstanceForNativeUi();
 }
 
@@ -975,8 +988,11 @@ NativeWidgetPrivate* NativeWidgetPrivate::GetTopLevelNativeWidget(
       NativeWidgetMacNSWindowHost::GetFromNativeView(native_view);
   if (!window_host)
     return nullptr;
-  while (window_host->parent())
+  while (window_host->parent()) {
+    if (window_host->native_widget_mac()->GetWidget()->is_top_level())
+      break;
     window_host = window_host->parent();
+  }
   return window_host->native_widget_mac();
 }
 
