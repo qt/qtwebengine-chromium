@@ -43,6 +43,8 @@
         #include <immintrin.h>
     #elif SK_CPU_X64_LEVEL >= SK_CPU_X64_LEVEL_SSE41
         #include <smmintrin.h>
+    #elif SK_CPU_X64_LEVEL >= SK_CPU_X64_LEVEL_SSE2
+        #include <emmintrin.h>
     #elif SK_CPU_X64_LEVEL >= SK_CPU_X64_LEVEL_SSE1
         #include <emmintrin.h>
         #include <xmmintrin.h>

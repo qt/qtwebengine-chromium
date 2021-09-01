@@ -80,7 +80,7 @@ enum ObjectDataKind : uint8_t {
 
 namespace {
 
-bool Is64() { return kSystemPointerSize == 8; }
+constexpr bool Is64() { return kSystemPointerSize == 8; }
 
 }  // namespace
 

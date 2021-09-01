@@ -83,7 +83,7 @@ Address V8HeapCompressionSchemeImpl<Cage>::base() {
 
 // static
 template <typename Cage>
-Tagged_t V8HeapCompressionSchemeImpl<Cage>::CompressObject(Address tagged) {
+constexpr Tagged_t V8HeapCompressionSchemeImpl<Cage>::CompressObject(Address tagged) {
 #ifdef V8_COMPRESS_POINTERS
   // Ensure that we do not accidentally compress value from a different cage.
   // Cleared weak reference must be either pure (with empty upper part) or
@@ -286,8 +286,9 @@ constexpr Address V8HeapCompressionSchemeImpl<Cage>::GetPtrComprCageBaseAddress(
 
 // static
 template <typename Cage>
-Tagged_t V8HeapCompressionSchemeImpl<Cage>::CompressObject(Address tagged) {
+constexpr Tagged_t V8HeapCompressionSchemeImpl<Cage>::CompressObject(Address tagged) {
   UNREACHABLE();
+ return {};
 }
 
 // static

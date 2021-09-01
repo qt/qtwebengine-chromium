@@ -167,7 +167,7 @@ template <typename T, wtf_size_t inlineCapacity = 0>
 using HeapVector = BasicHeapVector<internal::HeapCollectionType::kDisallowNew,
                                    T,
                                    inlineCapacity>;
-static_assert(IsDisallowNew<HeapVector<int>>);
+// static_assert(IsDisallowNew<HeapVector<int>>);
 #if !BUILDFLAG(ENABLE_HEAP_VECTOR_ACTIVE_ITERATOR_CHECKS) && \
     !BUILDFLAG(ENABLE_VECTOR_ACTIVE_ITERATOR_CHECKS)
 ASSERT_SIZE(Vector<int>, HeapVector<int>);

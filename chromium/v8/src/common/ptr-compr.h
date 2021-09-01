@@ -33,7 +33,7 @@ class V8HeapCompressionSchemeImpl {
   // Must only be used for compressing object pointers since this function
   // assumes that we deal with a valid address inside the pointer compression
   // cage.
-  V8_INLINE static Tagged_t CompressObject(Address tagged);
+  V8_INLINE static constexpr Tagged_t CompressObject(Address tagged);
   // Compress a potentially invalid pointer.
   V8_INLINE static constexpr Tagged_t CompressAny(Address tagged);
 

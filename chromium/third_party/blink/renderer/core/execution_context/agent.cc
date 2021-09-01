@@ -92,6 +92,7 @@ bool Agent::IsCrossOriginIsolated() const {
     case AgentType::kCrossOriginIsolatedWorker:
       return true;
     default:
+      break;
   }
   NOTREACHED();
 }

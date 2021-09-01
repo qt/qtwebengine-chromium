@@ -18,7 +18,7 @@ static_assert(CFX_StandardFont::kLast + 1 ==
                   CFX_StandardFont::kNumStandardFonts,
               "StandardFont enum count mismatch");
 
-constexpr std::array<pdfium::span<const uint8_t>,
+const std::array<pdfium::span<const uint8_t>,
                      CFX_StandardFont::kNumStandardFonts>
     kFoxitFonts = {{
         kFoxitFixedFontData,
@@ -37,8 +37,8 @@ constexpr std::array<pdfium::span<const uint8_t>,
         kFoxitDingbatsFontData,
     }};
 
-constexpr pdfium::span<const uint8_t> kGenericSansFont = kFoxitSansMMFontData;
-constexpr pdfium::span<const uint8_t> kGenericSerifFont = kFoxitSerifMMFontData;
+const pdfium::span<const uint8_t> kGenericSansFont = kFoxitSansMMFontData;
+const pdfium::span<const uint8_t> kGenericSerifFont = kFoxitSerifMMFontData;
 
 constexpr std::array<const char*, CFX_StandardFont::kNumStandardFonts>
     kBase14FontNames = {{

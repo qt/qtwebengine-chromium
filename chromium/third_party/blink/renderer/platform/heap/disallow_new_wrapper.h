@@ -27,7 +27,7 @@ class DisallowNewWrapper final
   template <typename... Args>
   explicit DisallowNewWrapper(Args&&... args)
       : value_(std::forward<Args>(args)...) {
-    static_assert(IsDisallowNew<T>, "T needs to be a disallow new type");
+    // static_assert(IsDisallowNew<T>, "T needs to be a disallow new type");
     static_assert(IsTraceableV<T>, "T needs to be traceable");
   }
 

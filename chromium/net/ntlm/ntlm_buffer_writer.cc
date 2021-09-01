@@ -35,7 +35,7 @@ bool NtlmBufferWriter::CanWrite(size_t len) const {
 }
 
 bool NtlmBufferWriter::WriteUInt16(uint16_t value) {
-  base::SpanWriter writer(base::span(buffer_).subspan(cursor_));
+  base::SpanWriter writer(base::span<uint8_t>(buffer_).subspan(cursor_));
   if (writer.WriteU16LittleEndian(value)) {
     AdvanceCursor(sizeof(value));
     return true;
@@ -44,7 +44,7 @@ bool NtlmBufferWriter::WriteUInt16(uint16_t value) {
 }
 
 bool NtlmBufferWriter::WriteUInt32(uint32_t value) {
-  base::SpanWriter writer(base::span(buffer_).subspan(cursor_));
+  base::SpanWriter writer(base::span<uint8_t>(buffer_).subspan(cursor_));
   if (writer.WriteU32LittleEndian(value)) {
     AdvanceCursor(sizeof(value));
     return true;
@@ -53,7 +53,7 @@ bool NtlmBufferWriter::WriteUInt32(uint32_t value) {
 }
 
 bool NtlmBufferWriter::WriteUInt64(uint64_t value) {
-  base::SpanWriter writer(base::span(buffer_).subspan(cursor_));
+  base::SpanWriter writer(base::span<uint8_t>(buffer_).subspan(cursor_));
   if (writer.WriteU64LittleEndian(value)) {
     AdvanceCursor(sizeof(value));
     return true;

@@ -75,7 +75,7 @@ template <uint32_t expected_num_elements,
           bool element_is_nullable,
           ValidateEnumFunc* validate_enum_func>
 struct ArrayOfEnumsValidateParamsHolder {
-  static_assert(validate_enum_func);
+  // static_assert(validate_enum_func);
   static inline constexpr ContainerValidateParams kInstance = {
       .expected_num_elements = expected_num_elements,
       .element_is_nullable = element_is_nullable,
@@ -114,7 +114,7 @@ template <uint32_t expected_num_elements,
           bool element_is_nullable,
           ValidateEnumFunc* validate_enum_func>
 constexpr const ContainerValidateParams& GetArrayOfEnumsValidator() {
-  static_assert(validate_enum_func);
+//  static_assert(validate_enum_func);
   return ArrayOfEnumsValidateParamsHolder<expected_num_elements,
                                           element_is_nullable,
                                           validate_enum_func>::kInstance;

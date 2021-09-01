@@ -261,8 +261,6 @@ struct EVENTS_BASE_EXPORT GestureEventDetails {
   // Supports comparison over internal structures for testing.
   bool operator==(const GestureEventDetails& other) const;
 
- private:
-  EventType type_;
   union Details {
     Details();
     struct {  // SCROLL start details.
@@ -327,7 +325,11 @@ struct EVENTS_BASE_EXPORT GestureEventDetails {
     // Number of tap downs that have occurred in the current repeated tap
     // sequence. Should be set for EventType::kGestureTapDown events.
     int tap_down_count;
-  } data_;
+  };
+
+ private:
+  EventType type_;
+  Details data_;
 
   GestureDeviceType device_type_;
 

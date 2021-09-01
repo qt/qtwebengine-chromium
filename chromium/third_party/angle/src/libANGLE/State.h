@@ -1606,6 +1606,7 @@ class State : angle::NonCopyable
     {
         static constexpr DirtyObjectHandlerArray handlers = MakeDirtyObjectHandlers();
 
+#if defined(ANGLE_ENABLE_ASSERTS)
         // Fail with static_assert if any handler is missing.
         constexpr auto existEmptyHandler = []() constexpr {
             for (auto handler : handlers)
@@ -1618,7 +1619,9 @@ class State : angle::NonCopyable
             return false;
         };
 
-        static_assert(!existEmptyHandler(), "MakeDirtyObjectHandlers missing a handler");
+        //static_assert(!existEmptyHandler(), "MakeDirtyObjectHandlers missing a handler");
+        ASSERT(!existEmptyHandler());
+#endif
 
         return (this->*handlers[dirtyObject])(context, command);
     }

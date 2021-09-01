@@ -18,7 +18,7 @@ StyleScope::StyleScope(StyleRule* from, CSSSelectorList* to)
     : from_(from), to_(to) {}
 
 StyleScope::StyleScope(const StyleScope& other)
-    : from_(other.from_ ? To<StyleRule>(other.from_->Clone(
+    : from_(other.from_ ? blink::To<StyleRule>(other.from_->Clone(
                               /*new_parent=*/nullptr,
                               /*mixin_parameter_bindings=*/nullptr))
                         : nullptr),

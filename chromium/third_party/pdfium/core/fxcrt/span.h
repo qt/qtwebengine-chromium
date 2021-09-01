@@ -494,7 +494,7 @@ class GSL_POINTER span {
 
     // Non-zero `count` implies non-null `data_`. Use `SpanOrSize<T>` to
     // represent a size that might not be accompanied by the actual data.
-    DCHECK(count == 0 || !!data_);
+    // DCHECK(count == 0 || !!data_);
   }
 
   // Iterator + sentinel.

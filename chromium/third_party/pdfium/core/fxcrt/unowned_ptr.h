@@ -64,6 +64,7 @@ using UnownedPtr = raw_ptr<T>;
 
 #include <compare>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iterator>
 #include <memory>

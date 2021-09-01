@@ -39,6 +39,8 @@ using gid_t = int;
 using uid_t = int;
 using gid_t = int;
 using pid_t = int;
+#else
+using uid_t = unsigned int;
 #endif  // !GCC
 
 #if defined(_WIN64)

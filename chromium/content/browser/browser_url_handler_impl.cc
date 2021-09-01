@@ -177,10 +177,14 @@ bool BrowserURLHandlerImpl::ReverseURLRewrite(
 }
 
 void BrowserURLHandlerImpl::RemoveHandlerForTesting(URLHandler handler) {
-  const auto it =
-      std::ranges::find(url_handlers_, handler, &HandlerPair::first);
-  CHECK(url_handlers_.end() != it);
-  url_handlers_.erase(it);
+  auto it = url_handlers_.begin();
+  for (; it != url_handlers_.end(); ++it) {
+    if (it->first == handler) {
+      url_handlers_.erase(it);
+      return;
+    }
+  }
+  CHECK(false);
 }
 
 }  // namespace content

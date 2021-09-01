@@ -153,7 +153,7 @@ void ProxyMain::RecordBeginMainFrameMetrics(
     const BeginMainFrameReasons& begin_main_frame_reason,
     const base::ElapsedTimer& timer,
     std::string_view suffix) const {
-  constexpr size_t num_buckets = 1 << begin_main_frame_reason.size();
+  const size_t num_buckets = 1 << begin_main_frame_reason.size();
 
   base::UmaHistogramCustomMicrosecondsTimes(
       base::StrCat({"Compositing.BeginMainFrame.TimeUs", suffix}),
