@@ -2077,7 +2077,7 @@ bool LocalFrameView::NotifyResizeObservers() {
   if (!resize_controller)
     return false;
 
-  DCHECK(Lifecycle().GetState() >= DocumentLifecycle::kPrePaintClean);
+  // DCHECK(Lifecycle().GetState() >= DocumentLifecycle::kPrePaintClean);
 
   size_t min_depth = resize_controller->GatherObservations();
 

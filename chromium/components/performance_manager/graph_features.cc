@@ -62,7 +62,7 @@ void GraphFeatures::ConfigureGraph(Graph* graph) const {
     Install<resource_attribution::ResourceContextRegistryStorage>(graph);
   }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   if (flags_.site_data_recorder)
     Install<SiteDataRecorder>(graph);
 #endif
