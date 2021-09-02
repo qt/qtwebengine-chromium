@@ -1120,7 +1120,7 @@ void AttributionManagerImpl::SendReport(base::OnceClosure web_ui_callback,
     // If measurement is disallowed, just drop the report on the floor the same
     // way we do above.
     OnReportSent(std::move(web_ui_callback), std::move(report),
-                 SendResult(SendResult::Dropped()));
+                 SendResult{SendResult::Dropped()});
     return;
   }
 
@@ -1163,7 +1163,7 @@ void AttributionManagerImpl::SendReport(AttributionReport report,
       base::BindOnce(
           [](ReportSentCallback callback, const AttributionReport& report,
              SendResult::Sent sent) {
-            std::move(callback).Run(report, SendResult(std::move(sent)));
+            std::move(callback).Run(report, SendResult{std::move(sent)});
           },
           std::move(callback)));
 }
@@ -1272,7 +1272,7 @@ void AttributionManagerImpl::AssembleAggregatableReport(
         AssembleAggregatableReportStatus::kAggregationServiceUnavailable);
     std::move(callback).Run(
         std::move(report),
-        SendResult(SendResult::AssemblyFailure(/*transient=*/false)));
+        SendResult{SendResult::AssemblyFailure(/*transient=*/false)});
     return;
   }
 
@@ -1283,7 +1283,7 @@ void AttributionManagerImpl::AssembleAggregatableReport(
         AssembleAggregatableReportStatus::kCreateRequestFailed);
     std::move(callback).Run(
         std::move(report),
-        SendResult(SendResult::AssemblyFailure(/*transient=*/false)));
+        SendResult{SendResult::AssemblyFailure(/*transient=*/false)});
     return;
   }
 
@@ -1306,7 +1306,7 @@ void AttributionManagerImpl::OnAggregatableReportAssembled(
         AssembleAggregatableReportStatus::kAssembleReportFailed);
     std::move(callback).Run(
         std::move(report),
-        SendResult(SendResult::AssemblyFailure(/*transient=*/true)));
+        SendResult{SendResult::AssemblyFailure(/*transient=*/true)});
     return;
   }
 
@@ -1449,8 +1449,8 @@ void AttributionManagerImpl::OnAggregatableDebugReportAssembled(
 
             manager->NotifyAggregatableDebugReportSent(
                 report, report_body, process_result,
-                SendAggregatableDebugReportResult(
-                    SendAggregatableDebugReportResult::Sent(status)));
+                SendAggregatableDebugReportResult{
+                    SendAggregatableDebugReportResult::Sent(status)});
           },
           weak_factory_.GetWeakPtr(), result.result));
 }

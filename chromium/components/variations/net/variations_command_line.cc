@@ -20,7 +20,9 @@
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/variations/field_trial_config/field_trial_util.h"
+#endif
 #include "components/variations/net/variations_command_line.h"
 #include "components/variations/variations_switches.h"
 
@@ -194,11 +196,13 @@ VariationsCommandLine& VariationsCommandLine::operator=(
 
 VariationsCommandLine VariationsCommandLine::GetForCurrentProcess() {
   VariationsCommandLine result;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::FieldTrialList::AllStatesToString(&result.field_trial_states);
   result.field_trial_params =
       base::FieldTrialList::AllParamsToString(&EscapeValue);
   base::FeatureList::GetInstance()->GetFeatureOverrides(
       &result.enable_features, &result.disable_features);
+#endif
   return result;
 }
 
@@ -252,12 +256,14 @@ void VariationsCommandLine::ApplyToCommandLine(
 
 void VariationsCommandLine::ApplyToFeatureAndFieldTrialList(
     base::FeatureList* feature_list) const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!field_trial_params.empty()) {
     variations::AssociateParamsFromString(field_trial_params);
   }
   if (!field_trial_states.empty()) {
     base::FieldTrialList::CreateTrialsFromString(field_trial_states);
   }
+#endif
   feature_list->InitFromCommandLine(enable_features, disable_features);
 }
 

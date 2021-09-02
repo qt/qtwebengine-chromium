@@ -68,6 +68,7 @@ buildflag_header("media_buildflags") {
     "USE_PROPRIETARY_CODECS=$proprietary_codecs",
     "ENABLE_GPU_CHANNEL_MEDIA_CAPTURE=$enable_gpu_channel_media_capture",
     "USE_OPENSLES=$media_use_opensles",
+    "USE_SCK=$use_sck",
   ]
 
   if (use_linux_video_acceleration) {

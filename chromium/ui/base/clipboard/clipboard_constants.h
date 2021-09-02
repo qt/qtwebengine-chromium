@@ -64,7 +64,7 @@ inline constexpr char kMimeTypeSourceUrl[] = "chromium/x-source-url";
 
 // ----- EVERYTHING EXCEPT FOR APPLE MIME TYPES -----
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 
 // TODO(dcheng): This name is temporary. See https://crbug.com/40123727.
 inline constexpr char kMimeTypeDataTransferCustomData[] =
@@ -73,7 +73,8 @@ inline constexpr char16_t kMimeTypeDataTransferCustomData16[] =
     u"chromium/x-web-custom-data";
 inline constexpr char kMimeTypeWebkitSmartPaste[] = "chromium/x-webkit-paste";
 
-#else
+#endif
+#if BUILDFLAG(IS_APPLE)
 
 // ----- APPLE UNIFORM TYPES -----
 

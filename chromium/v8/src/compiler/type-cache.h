@@ -24,6 +24,7 @@ class V8_EXPORT_PRIVATE TypeCache final {
  public:
   static TypeCache const* Get();
 
+  using Type = v8::internal::compiler::Type;
   TypeCache() : zone_(&allocator, ZONE_NAME) {}
 
   Type const kInt8 = CreateRange<int8_t>();

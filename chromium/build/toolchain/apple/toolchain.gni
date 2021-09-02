@@ -233,8 +233,7 @@ template("single_apple_toolchain") {
     if (_enable_dsyms) {
       dsym_switch = " -Wcrl,dsym,{{root_out_dir}} "
       dsym_switch += "-Wcrl,dsymutilpath," +
-                     rebase_path("//tools/clang/dsymutil/bin/dsymutil",
-                                 root_build_dir) + " "
+                     "${prefix}dsymutil" + " "
 
       # All the toolchains are defined in the context of the default toolchain,
       # this means that the global variable `current_cpu` is not correct, it

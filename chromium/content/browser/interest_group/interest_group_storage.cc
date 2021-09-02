@@ -5321,8 +5321,8 @@ std::optional<DebugReportCooldown> DoGetDebugReportCooldownForOrigin(
     // When reading the table fails, treat it as there is an unexpired cooldown,
     // to cautiously avoid sending more fDO reports than allowed in case there
     // is a cooldown in the table.
-    return DebugReportCooldown(base::Time::Now(),
-                               DebugReportCooldownType::kRestrictedCooldown);
+    return DebugReportCooldown{base::Time::Now(),
+                               DebugReportCooldownType::kRestrictedCooldown};
   }
   // Reading the table succeeded but there was no row.
   return std::nullopt;

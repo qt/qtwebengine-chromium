@@ -107,7 +107,8 @@ TextRunLayoutUnit ShapeResultSpacing::NextExpansion() {
   justification_context_.is_after_opportunity = true;
 
   if (!--expansion_opportunity_count_) [[unlikely]] {
-    const TextRunLayoutUnit remaining = expansion_.To<TextRunLayoutUnit>();
+    const TextRunLayoutUnit remaining =
+        expansion_.template To<TextRunLayoutUnit>();
     expansion_ = InlineLayoutUnit();
     return remaining;
   }

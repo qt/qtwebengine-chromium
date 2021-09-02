@@ -433,7 +433,7 @@ blink::mojom::ServiceWorkerClientType ServiceWorkerClient::GetClientType()
     const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return std::visit(
-      absl::Overload(
+      absl::Overload{
           [](GlobalRenderFrameHostId render_frame_host_id) {
             return blink::mojom::ServiceWorkerClientType::kWindow;
           },
@@ -442,7 +442,7 @@ blink::mojom::ServiceWorkerClientType ServiceWorkerClient::GetClientType()
           },
           [](blink::SharedWorkerToken shared_worker_token) {
             return blink::mojom::ServiceWorkerClientType::kSharedWorker;
-          }),
+          }},
       client_info_);
 }
 

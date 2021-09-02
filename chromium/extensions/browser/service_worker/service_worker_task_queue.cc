@@ -247,8 +247,8 @@ bool ServiceWorkerTaskQueue::IsReadyToRunTasks(
     return false;
   }
 
-  const SequencedContextId context_id(
-      extension->id(), browser_context_->UniqueId(), *activation_token);
+  const SequencedContextId context_id{
+      extension->id(), browser_context_->UniqueId(), *activation_token};
   const ServiceWorkerState* worker_state = GetWorkerState(context_id);
 
   // If this feature is enabled, the worker state should be reliable

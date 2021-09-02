@@ -175,7 +175,7 @@ void WorkerWatcher::OnWorkerCreated(
   DCHECK(insertion_result.second);
 
   std::visit(
-      absl::Overload(
+      absl::Overload{
           [&,
            this](const content::GlobalRenderFrameHostId& render_frame_host_id) {
             AddFrameClientConnection(insertion_result.first->second.get(),
@@ -184,7 +184,7 @@ void WorkerWatcher::OnWorkerCreated(
           [&, this](blink::DedicatedWorkerToken dedicated_worker_token) {
             ConnectDedicatedWorkerClient(insertion_result.first->second.get(),
                                          dedicated_worker_token);
-          }),
+          }},
       creator);
 }
 
@@ -201,7 +201,7 @@ void WorkerWatcher::OnBeforeWorkerDestroyed(
   // First disconnect the creator's node from this worker node.
 
   std::visit(
-      absl::Overload(
+      absl::Overload{
           [&,
            this](const content::GlobalRenderFrameHostId& render_frame_host_id) {
             RemoveFrameClientConnection(worker_node.get(),
@@ -210,7 +210,7 @@ void WorkerWatcher::OnBeforeWorkerDestroyed(
           [&, this](blink::DedicatedWorkerToken dedicated_worker_token) {
             DisconnectDedicatedWorkerClient(worker_node.get(),
                                             dedicated_worker_token);
-          }),
+          }},
       creator);
 
   // Disconnect all child workers before destroying the node.
@@ -389,7 +389,7 @@ void WorkerWatcher::OnControlleeAdded(
     const std::string& client_uuid,
     const content::ServiceWorkerClientInfo& client_info) {
   std::visit(
-      absl::Overload(
+      absl::Overload{
           [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
             // For window clients, it is necessary to wait until the navigation
             // has committed to a RenderFrameHost.
@@ -427,7 +427,7 @@ void WorkerWatcher::OnControlleeAdded(
               ConnectSharedWorkerClient(service_worker_node,
                                         shared_worker_token);
             }
-          }),
+          }},
       client_info);
 }
 
@@ -467,7 +467,7 @@ void WorkerWatcher::OnControlleeRemoved(int64_t version_id,
     return;
 
   std::visit(
-      absl::Overload(
+      absl::Overload{
           [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
             RemoveFrameClientConnection(worker_node, render_frame_host_id);
           },
@@ -477,7 +477,7 @@ void WorkerWatcher::OnControlleeRemoved(int64_t version_id,
           },
           [&, this](blink::SharedWorkerToken shared_worker_token) {
             DisconnectSharedWorkerClient(worker_node, shared_worker_token);
-          }),
+          }},
       client);
 }
 
@@ -753,7 +753,7 @@ void WorkerWatcher::ConnectAllServiceWorkerClients(
 
   for (const auto& kv : it->second) {
     std::visit(
-        absl::Overload(
+        absl::Overload{
             [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
               AddFrameClientConnection(service_worker_node,
                                        render_frame_host_id);
@@ -765,7 +765,7 @@ void WorkerWatcher::ConnectAllServiceWorkerClients(
             [&, this](blink::SharedWorkerToken shared_worker_token) {
               ConnectSharedWorkerClient(service_worker_node,
                                         shared_worker_token);
-            }),
+            }},
         kv.second);
   }
 }
@@ -780,7 +780,7 @@ void WorkerWatcher::DisconnectAllServiceWorkerClients(
 
   for (const auto& kv : it->second) {
     std::visit(
-        absl::Overload(
+        absl::Overload{
             [&, this](
                 const content::GlobalRenderFrameHostId& render_frame_host_id) {
               RemoveFrameClientConnection(service_worker_node,
@@ -794,7 +794,7 @@ void WorkerWatcher::DisconnectAllServiceWorkerClients(
             [&, this](const blink::SharedWorkerToken& shared_worker_token) {
               DisconnectSharedWorkerClient(service_worker_node,
                                            shared_worker_token);
-            }),
+            }},
         kv.second);
   }
 }

@@ -356,7 +356,11 @@ __attribute__((target("avx2"))) ALWAYS_INLINE static __m256i MaskToAVX2(
 }
 
 template <class CharType>
+#if !defined(__clang_major__) || (__clang_major__ >= 16)
 __attribute__((target("avx2,pclmul"))) ALWAYS_INLINE static size_t
+#else
+__attribute__((target("avx2,pclmul"))) static size_t
+#endif
 FindLengthOfDeclarationListAVX2(base::span<const CharType> chars) {
   const CharType* begin = chars.data();
   const CharType* end = base::to_address(chars.end());

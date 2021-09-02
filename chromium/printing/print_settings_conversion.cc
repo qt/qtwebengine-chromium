@@ -372,13 +372,19 @@ base::DictValue PrintSettingsToJobSettingsDebug(const PrintSettings& settings) {
           .Set(kSettingPagesPerSheet, settings.pages_per_sheet());
 
   if (!settings.ranges().empty()) {
-    job_settings.Set(
-        kSettingPageRange,
-        base::ToValueList(settings.ranges(), [](const auto& range) {
-          return base::DictValue()
-              .Set(kSettingPageRangeFrom, static_cast<int>(range.from + 1))
-              .Set(kSettingPageRangeTo, static_cast<int>(range.to + 1));
-        }));
+    base::Value::List list;
+    for (auto&& range: settings.ranges())
+      list.Append(base::DictValue()
+                      .Set(kSettingPageRangeFrom, static_cast<int>(range.from + 1))
+                      .Set(kSettingPageRangeTo, static_cast<int>(range.to + 1)));
+    job_settings.Set(kSettingPageRange, std::move(list));
+    // job_settings.Set(
+    //     kSettingPageRange,
+    //     base::ToValueList(settings.ranges(), [](const auto& range) {
+    //       return base::DictValue()
+    //           .Set(kSettingPageRangeFrom, static_cast<int>(range.from + 1))
+    //           .Set(kSettingPageRangeTo, static_cast<int>(range.to + 1));
+    //     }));
   }
 
   // Following values are not read form JSON by InitSettings, so do not have
