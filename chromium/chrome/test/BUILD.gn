@@ -7308,7 +7308,7 @@ if (!is_fuchsia) {
       deps += [ "//chrome/browser/nearby_sharing/internal/icons:vector_icons" ]
     }
 
-    if (is_mac) {
+    if (is_mac && !is_qtwebengine) {
       sources += [
         "../../testing/gtest_mac_unittest.mm",
         "../app_shim/app_shim_controller_unittest.mm",

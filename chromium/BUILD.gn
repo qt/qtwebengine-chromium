@@ -626,7 +626,7 @@ group("gn_all") {
       }
     }
 
-    if (is_mac) {
+    if (is_mac && !is_qtwebengine) {
       deps += [
         "//third_party/breakpad:dump_syms",
 
