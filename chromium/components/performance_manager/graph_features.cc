@@ -82,7 +82,7 @@ void GraphFeatures::ConfigureGraph(Graph* graph) const {
     Install<resource_attribution::internal::QueryScheduler>(graph);
   }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
   if (flags_.site_data_recorder) {
     Install<SiteDataRecorder>(graph);
   }
