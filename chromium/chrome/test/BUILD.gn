@@ -6682,7 +6682,7 @@ test("unit_tests") {
     configs += [ "//build/config/compiler:enable_arc" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !is_qtwebengine) {
     sources += [
       "../../testing/gtest_mac_unittest.mm",
       "../browser/app_controller_mac_unittest.mm",

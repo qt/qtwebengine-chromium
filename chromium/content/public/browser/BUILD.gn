@@ -618,7 +618,7 @@ jumbo_source_set("browser_sources") {
     configs += [ "//build/config/compiler:enable_arc" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !is_qtwebengine) {
     sources += [
       "ax_inspect_factory_mac.mm",
       "native_event_processor_mac.h",
@@ -636,7 +636,7 @@ jumbo_source_set("browser_sources") {
     sources += [ "ax_inspect_factory_win.cc" ]
   }
 
-  if (use_atk) {
+  if (use_atk && !is_qtwebengine) {
     sources += [ "ax_inspect_factory_auralinux.cc" ]
     configs += [ "//build/config/linux/atspi2" ]
   }
