@@ -9,6 +9,7 @@
 
 #include "compiler/translator/tree_ops/vulkan/EarlyFragmentTestsOptimization.h"
 
+#ifdef ANGLE_ENABLE_VULKAN
 #include "compiler/translator/InfoSink.h"
 #include "compiler/translator/Symbol.h"
 #include "compiler/translator/tree_util/IntermNode_util.h"
@@ -77,3 +78,4 @@ bool CheckEarlyFragmentTestsFeasible(TCompiler *compiler, TIntermNode *root)
 }
 
 }  // namespace sh
+#endif // ANGLE_ENABLE_VULKAN

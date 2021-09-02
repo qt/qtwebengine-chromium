@@ -35,7 +35,7 @@ jumbo_component("clipboard_types") {
     sources += [ "clipboard_format_type_win.cc" ]
   }
 
-  if (use_aura) {
+  if (use_aura || use_qt) {
     if ((!is_chromecast && is_linux) || is_chromeos_lacros || !is_win || use_qt) {
       sources += [ "clipboard_format_type_aura.cc" ]
     }
