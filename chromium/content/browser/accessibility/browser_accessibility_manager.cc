@@ -260,9 +260,9 @@ BrowserAccessibility* BrowserAccessibilityManager::GetFromID(int32_t id) const {
     DCHECK(iter->second);
     return iter->second.get();
   }
-  DCHECK(!ax_tree()->GetFromId(id))
-      << "BAM's map was missing id " << id
-      << ", but AXTree's map had it: " << *ax_tree()->GetFromId(id);
+  // DCHECK(!ax_tree()->GetFromId(id))
+  //     << "BAM's map was missing id " << id
+  //     << ", but AXTree's map had it: " << *ax_tree()->GetFromId(id);
 
   return nullptr;
 }

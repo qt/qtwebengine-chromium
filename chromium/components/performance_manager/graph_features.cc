@@ -56,7 +56,7 @@ void GraphFeatures::ConfigureGraph(Graph* graph) const {
   if (flags_.process_hosted_content_types_aggregator)
     Install<ProcessHostedContentTypesAggregator>(graph);
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
   if (flags_.site_data_recorder)
     Install<SiteDataRecorder>(graph);
 #endif
