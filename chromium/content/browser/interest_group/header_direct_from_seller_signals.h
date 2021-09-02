@@ -128,6 +128,8 @@ class CONTENT_EXPORT HeaderDirectFromSellerSignals {
 
   // A single Ad-Auction-Signals response captured from `origin`.
   struct UnprocessedResponse {
+    UnprocessedResponse(const url::Origin& origin, const std::string str)
+                        :origin{origin},response_json{str}{};
     // The origin that served the Ad-Auction-Signals response `response`.
     url::Origin origin;
 

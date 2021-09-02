@@ -53,8 +53,11 @@
 #endif  // BUILDFLAG(ENABLE_WEBRTC)
 #endif  // !BUILDFLAG(IS_IOS)
 #if BUILDFLAG(IS_MAC)
+#include "base/mac/mac_util.h"
 #include "content/browser/media/capture/desktop_capture_device_mac.h"
+#if BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/screen_capture_kit_device_utils_mac.h"
+#endif // BUILDFLAG(USE_SCK)
 #include "content/browser/media/capture/views_widget_video_capture_device_mac.h"
 #endif
 #endif  // BUILDFLAG(ENABLE_SCREEN_CAPTURE)
@@ -194,6 +197,7 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
 
   // Prefer using ScreenCaptureKit. After that try DesktopCaptureDeviceMac, and
   // if both fail, use the generic DesktopCaptureDevice.
+#if BUILDFLAG(USE_SCK)
   if (desktop_id.type == DesktopMediaID::TYPE_WINDOW ||
       (desktop_id.type == DesktopMediaID::TYPE_SCREEN &&
        base::FeatureList::IsEnabled(kScreenCaptureKitMacScreen))) {
@@ -202,6 +206,7 @@ DesktopCaptureImplementation CreatePlatformDependentVideoCaptureDevice(
       return kScreenCaptureKitDeviceMac;
     }
   }
+#endif  // BUILDFLAG(USE_SCK)
   if ((device_out = CreateDesktopCaptureDeviceMac(desktop_id))) {
     return kDesktopCaptureDeviceMac;
   }

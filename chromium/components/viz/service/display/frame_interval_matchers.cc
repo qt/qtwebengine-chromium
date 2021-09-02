@@ -57,7 +57,7 @@ std::optional<FrameIntervalMatcher::Result> MatchContentIntervalType(
   }
 
   base::TimeDelta interval = std::visit(
-      absl::Overload(
+      absl::Overload{
           [&](const std::monostate& monostate) {
             // If no intervals settings are given, then just return the content
             // interval.
@@ -118,7 +118,7 @@ std::optional<FrameIntervalMatcher::Result> MatchContentIntervalType(
             // Content falls within the supported range and can be used
             // directly.
             return content_interval.value();
-          }),
+          }},
       matcher_inputs.settings->interval_settings);
   return FrameIntervalMatcher::ResultInterval{interval, interval_type};
 }
@@ -193,7 +193,7 @@ void FrameIntervalMatcher::Inputs::WriteIntoTrace(
 // static
 std::string FrameIntervalMatcher::ResultToString(const Result& result) {
   return std::visit(
-      absl::Overload(
+      absl::Overload{
           [](FrameIntervalClass frame_interval_class) -> std::string {
             switch (frame_interval_class) {
               case FrameIntervalClass::kBoost:
@@ -206,7 +206,7 @@ std::string FrameIntervalMatcher::ResultToString(const Result& result) {
             return base::StringPrintf("%" PRId64 "us type:%d",
                                       interval.interval.InMicroseconds(),
                                       static_cast<int>(interval.type));
-          }),
+          }},
       result);
 }
 
@@ -261,7 +261,7 @@ std::optional<FrameIntervalMatcher::Result> InputBoostMatcher::Match(
         (matcher_inputs.aggregated_frame_time - inputs.frame_time) <
             matcher_inputs.settings->ignore_frame_sink_timeout) {
       return std::visit(
-          absl::Overload(
+          absl::Overload{
               [](const std::monostate& monostate) -> Result {
                 return FrameIntervalClass::kBoost;
               },
@@ -275,7 +275,7 @@ std::optional<FrameIntervalMatcher::Result> InputBoostMatcher::Match(
                   -> Result {
                 return ResultInterval{continuous_range_settings.min_interval,
                                       ResultIntervalType::kAtLeast};
-              }),
+              }},
           matcher_inputs.settings->interval_settings);
     }
   }
@@ -331,7 +331,7 @@ std::optional<FrameIntervalMatcher::Result> VideoConferenceMatcher::Match(
   }
 
   base::TimeDelta interval = std::visit(
-      absl::Overload(
+      absl::Overload{
           [&](const std::monostate& monostate) { return min_interval.value(); },
           [&](const FixedIntervalSettings& fixed_interval_settings) {
             // Pick closest supported interval amongst discrete list.
@@ -355,7 +355,7 @@ std::optional<FrameIntervalMatcher::Result> VideoConferenceMatcher::Match(
             return std::clamp(min_interval.value(),
                               continuous_range_settings.min_interval,
                               continuous_range_settings.max_interval);
-          }),
+          }},
       matcher_inputs.settings->interval_settings);
   return ResultInterval{interval};
 }

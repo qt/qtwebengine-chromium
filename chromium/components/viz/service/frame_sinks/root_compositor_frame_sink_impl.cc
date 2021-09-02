@@ -760,7 +760,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
   decided_display_frame_rate_compat_ = compat;
 #else
   base::TimeDelta interval = std::visit(
-      absl::Overload(
+      absl::Overload{
           [](FrameIntervalDecider::FrameIntervalClass frame_interval_class) {
             switch (frame_interval_class) {
               case FrameIntervalDecider::FrameIntervalClass::kBoost:
@@ -771,7 +771,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
           },
           [](FrameIntervalDecider::ResultInterval interval) {
             return interval.interval;
-          }),
+          }},
       result);
 
   if (decided_display_interval_ == interval) {

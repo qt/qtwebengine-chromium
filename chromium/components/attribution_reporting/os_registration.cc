@@ -62,7 +62,10 @@ ParseOsSourceOrTriggerHeader(const net::structured_headers::List& list) {
       }
     }
 
-    items.emplace_back(std::move(url), debug_reporting);
+    items.emplace_back(OsRegistrationItem{
+        .url = std::move(url),
+        .debug_reporting = debug_reporting,
+    });
   }
 
   base::UmaHistogramCounts100("Conversions.OsRegistrationItemsPerHeader",

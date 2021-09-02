@@ -148,7 +148,7 @@ std::u16string GetPageObjectMarkName(FPDF_PAGEOBJECTMARK mark) {
 
   // Number of characters, including the NUL.
   const size_t expected_size = base::checked_cast<size_t>(buflen_bytes / 2);
-  PDFiumAPIStringBufferAdapter adapter(&name, expected_size,
+  PDFiumAPIStringBufferAdapter<std::u16string> adapter(&name, expected_size,
                                        /*check_expected_size=*/true);
   unsigned long actual_buflen_bytes = 0;  // NOLINT(runtime/int)
   bool result =
