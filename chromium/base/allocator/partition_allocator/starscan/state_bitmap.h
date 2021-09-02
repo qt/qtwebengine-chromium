@@ -387,7 +387,7 @@ template <size_t PageSize, size_t PageAlignment, size_t AllocationAlignment>
 template <typename Filter,
           typename CallbackForwarder,
           typename Callback,
-          bool Clear>
+          bool DoClear>
 inline void
 StateBitmap<PageSize, PageAlignment, AllocationAlignment>::IterateImpl(
     size_t epoch,
@@ -417,7 +417,7 @@ StateBitmap<PageSize, PageAlignment, AllocationAlignment>::IterateImpl(
 
       callback_forwarder(callback, object_address, bits);
 
-      if (Clear) {
+      if (DoClear) {
         // Clear the current bits.
         AsAtomicCell(cell_index)
             .fetch_and(clear_value_mask, std::memory_order_relaxed);

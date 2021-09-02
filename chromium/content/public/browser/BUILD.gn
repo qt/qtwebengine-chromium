@@ -559,7 +559,7 @@ jumbo_source_set("browser_sources") {
     sources += [ "context_factory.h" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     sources += [
       "ax_inspect_factory_mac.mm",
       "native_event_processor_mac.h",
@@ -573,11 +573,11 @@ jumbo_source_set("browser_sources") {
     sources += [ "ax_inspect_factory_fuchsia.cc" ]
   }
 
-  if (is_win) {
+  if (is_win && !use_qt) {
     sources += [ "ax_inspect_factory_win.cc" ]
   }
 
-  if (use_atk) {
+  if (use_atk && !use_qt) {
     sources += [ "ax_inspect_factory_auralinux.cc" ]
     configs += [ "//build/config/linux/atspi2" ]
   }
