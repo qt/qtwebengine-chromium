@@ -40,7 +40,7 @@ namespace viz {
 VideoCaptureOverlay::FrameSource::~FrameSource() = default;
 
 VideoCaptureOverlay::VideoCaptureOverlay(
-    FrameSource& frame_source,
+    FrameSource* frame_source,
     mojo::PendingReceiver<mojom::FrameSinkVideoCaptureOverlay> receiver)
     : frame_source_(frame_source), receiver_(this, std::move(receiver)) {
   receiver_.set_disconnect_handler(

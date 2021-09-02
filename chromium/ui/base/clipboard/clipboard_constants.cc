@@ -38,10 +38,10 @@ const char kMimeTypeSourceUrl[] = "chromium/x-source-url";
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
         // BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_ANDROID)
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 const char kMimeTypeDataTransferCustomData[] = "chromium/x-web-custom-data";
 const char kMimeTypeWebkitSmartPaste[] = "chromium/x-webkit-paste";
-#endif  // BUILDFLAG(IS_APPLE)
+#endif  // BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_IOS)
 const char kMimeTypeImageURI[] = "image-uri";
