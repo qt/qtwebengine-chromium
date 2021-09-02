@@ -2277,7 +2277,7 @@ jumbo_source_set("browser") {
     "worker_host/worker_script_loader_factory.h",
   ]
 
-  if (is_mac && !use_qt) {
+  if (is_mac && !is_qtwebengine) {
     sources += [
       "../app_shim_remote_cocoa/web_drag_source_mac.h",
       "../app_shim_remote_cocoa/web_drag_source_mac.mm",
