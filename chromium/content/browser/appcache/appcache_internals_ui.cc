@@ -162,7 +162,7 @@ void AppCacheInternalsHandler::Proxy::Initialize(
 }
 
 AppCacheInternalsHandler::Proxy::~Proxy() {
-  DCHECK(shutdown_called_);
+//  DCHECK(shutdown_called_);
 }
 
 void AppCacheInternalsHandler::Proxy::Shutdown() {
