@@ -4466,9 +4466,9 @@ std::optional<DebugReportCooldown> DoGetDebugReportCooldownForOrigin(
     return std::nullopt;
   }
 
-  return DebugReportCooldown(cooldown_debugging_only_report.ColumnTime(0),
+  return DebugReportCooldown{cooldown_debugging_only_report.ColumnTime(0),
                              static_cast<DebugReportCooldownType>(
-                                 cooldown_debugging_only_report.ColumnInt(1)));
+                                 cooldown_debugging_only_report.ColumnInt(1))};
 }
 
 void DoGetDebugReportCooldowns(

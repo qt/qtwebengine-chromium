@@ -92,8 +92,8 @@ void UnnecessaryDiscardMonitor::OnDiscard(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (current_reclaim_event_) {
     // Cache this kill event along with the time it took place.
-    current_reclaim_event_kills_.emplace_back(memory_freed_kb,
-                                              discard_complete_time);
+    current_reclaim_event_kills_.emplace_back(KillEvent({memory_freed_kb,
+                                              discard_complete_time}));
   }
 }
 
