@@ -65,7 +65,7 @@ void GraphFeatures::ConfigureGraph(Graph* graph) const {
   if (flags_.worker_node_impl_describer)
     Install<WorkerNodeImplDescriber>(graph);
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
   if (flags_.site_data_recorder)
     Install<SiteDataRecorder>(graph);
 #endif

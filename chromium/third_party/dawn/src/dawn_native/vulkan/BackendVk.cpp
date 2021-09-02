@@ -69,7 +69,7 @@ namespace dawn_native { namespace vulkan {
                              const VkDebugUtilsMessengerCallbackDataEXT* pCallbackData,
                              void* /* pUserData */) {
             dawn::WarningLog() << pCallbackData->pMessage;
-            ASSERT((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) == 0);
+//             ASSERT((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) == 0);
 
             return VK_FALSE;
         }

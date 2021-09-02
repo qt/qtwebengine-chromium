@@ -270,7 +270,7 @@ void VizMainImpl::CreateFrameSinkManagerInternal(
           gpu_service_->gpu_channel_manager()->default_offscreen_surface()) {
     format = offscreen_surface->GetFormat();
   } else {
-    DCHECK_EQ(gl::GetGLImplementation(), gl::kGLImplementationDisabled);
+//    DCHECK_EQ(gl::GetGLImplementation(), gl::kGLImplementationDisabled);
   }
 
   // When the host loses its connection to the viz process, it assumes the
