@@ -138,6 +138,10 @@ declare_args() {
   # and gpu process for a given platform.
   enable_gpu_channel_media_capture = is_linux || is_win || is_chromeos_ash ||
                                      is_apple || is_android || is_fuchsia
+
+  # Enable the use of ScreenCaptureKit framework on macOS. A stable ScreenCaptureKit is available
+  # from macOS 13.2. Enabled by default for all build.
+  use_sck = true
 }
 
 # Use another declare_args() to allow dependence on args defined above.

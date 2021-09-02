@@ -699,7 +699,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
     FrameIntervalMatcherType matcher_type) {
 #if BUILDFLAG(IS_ANDROID)
   base::TimeDelta interval = absl::visit(
-      base::Overloaded(
+      base::Overloaded{
           [](FrameIntervalDecider::FrameIntervalClass frame_interval_class) {
             switch (frame_interval_class) {
               case FrameIntervalDecider::FrameIntervalClass::kBoost:
@@ -712,7 +712,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
                 return base::Milliseconds(0);
             }
           },
-          [](base::TimeDelta interval) { return interval; }),
+          [](base::TimeDelta interval) { return interval; }},
       result);
 #else
   base::TimeDelta interval = absl::visit(
