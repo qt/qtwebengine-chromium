@@ -10984,7 +10984,7 @@ void RenderFrameHostImpl::MaybeSendFencedFrameAutomaticReportingBeacon(
       data = info->data;
     }
     initiator_rfh->SendFencedFrameReportingBeaconInternal(
-        AutomaticBeaconEvent(event_type, data), destination,
+        AutomaticBeaconEvent{event_type, data}, destination,
         navigation_request.GetNavigationId());
   }
 

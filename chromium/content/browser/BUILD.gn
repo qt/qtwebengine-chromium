@@ -2931,7 +2931,7 @@ source_set("browser") {
         "ScreenCaptureKit.framework",
       ]
 
-      if (is_qtwebengine) {
+      if (!use_sck) {
         sources -= [
           "media/capture/screen_capture_kit_device_mac.h",
           "media/capture/screen_capture_kit_device_mac.mm",

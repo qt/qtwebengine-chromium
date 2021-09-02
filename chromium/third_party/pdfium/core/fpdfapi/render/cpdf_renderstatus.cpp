@@ -559,7 +559,7 @@ void CPDF_RenderStatus::ProcessClipPath(const CPDF_ClipPath& ClipPath,
                                 CFX_FillRenderOptions::WindingOptions());
     } else {
       device_->SetClip_PathFill(*pPath, &mtObj2Device,
-                                CFX_FillRenderOptions(ClipPath.GetClipType(i)));
+                                CFX_FillRenderOptions{ClipPath.GetClipType(i)});
     }
   }
 

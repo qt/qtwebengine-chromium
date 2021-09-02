@@ -92,7 +92,7 @@ FrameIntervalDecider::~FrameIntervalDecider() = default;
 void FrameIntervalDecider::UpdateSettings(
     Settings settings,
     std::vector<std::unique_ptr<FrameIntervalMatcher>> matchers) {
-  std::visit(absl::Overload(
+  std::visit(absl::Overload{
                  [](const std::monostate& monostate) {},
                  [](const FixedIntervalSettings& fixed_interval_settings) {
                    CHECK(!fixed_interval_settings.supported_intervals.empty());
@@ -100,7 +100,7 @@ void FrameIntervalDecider::UpdateSettings(
                  [](const ContinuousRangeSettings& continuous_range_settings) {
                    CHECK_LE(continuous_range_settings.min_interval,
                             continuous_range_settings.max_interval);
-                 }),
+                 }},
              settings.interval_settings);
 
   settings_ = std::move(settings);
@@ -150,7 +150,7 @@ void FrameIntervalDecider::Decide(
   // If nothing matched, use the default.
   if (!match_result) {
     match_result = std::visit(
-        absl::Overload(
+        absl::Overload{
             [](const std::monostate& monostate) -> Result {
               return FrameIntervalClass::kDefault;
             },
@@ -160,7 +160,7 @@ void FrameIntervalDecider::Decide(
             [](const ContinuousRangeSettings& continuous_range_settings)
                 -> Result {
               return ResultInterval{continuous_range_settings.default_interval};
-            }),
+            }},
         settings_.interval_settings);
   }
 
@@ -212,7 +212,7 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
     return true;
   }
   return std::visit(
-      absl::Overload(
+      absl::Overload{
           [&](FrameIntervalClass from_frame_interval_class) {
             if (!std::holds_alternative<FrameIntervalClass>(to.value())) {
               return true;
@@ -228,7 +228,7 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
             }
             ResultInterval to_interval = std::get<ResultInterval>(to.value());
             return from_interval.interval > to_interval.interval;
-          }),
+          }},
       from.value());
 }
 

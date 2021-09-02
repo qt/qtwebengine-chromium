@@ -109,7 +109,7 @@ if (angle_enable_vulkan) {
       } else {
         public_deps = [ "$angle_vulkan_loader_dir:libvulkan" ]
       }
-      data_deps += [ "$angle_vulkan_tools_dir:VkICD_mock_icd" ]
+#      data_deps += [ "$angle_vulkan_tools_dir:VkICD_mock_icd" ]
     }
   }
 

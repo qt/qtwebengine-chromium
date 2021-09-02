@@ -14,6 +14,7 @@
 
 #include "base/containers/circular_deque.h"
 #include "base/containers/flat_map.h"
+#include "build/build_config.h"
 #include "mojo/public/cpp/bindings/lib/template_util.h"
 
 namespace mojo {
@@ -75,6 +76,18 @@ struct CloneTraits<base::circular_deque<T>> {
     return result;
   }
 };
+
+#if BUILDFLAG(IS_MAC)
+// Work around a libc++ issue where std::vector<bool>'s proxy references cause
+// it to be incorrectly reported as non-copyable, making mojo::Clone() fail.
+// Copy the vector as a workaround.
+template <>
+struct CloneTraits<std::vector<bool>> {
+  static std::vector<bool> Clone(const std::vector<bool>& input) {
+    return input;
+  }
+};
+#endif
 
 template <typename K, typename V>
 struct CloneTraits<base::flat_map<K, V>> {

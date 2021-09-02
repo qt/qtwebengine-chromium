@@ -261,8 +261,8 @@ bool ServiceWorkerTaskQueue::IsReadyToRunTasks(
     return false;
   }
 
-  const SequencedContextId context_id(
-      extension->id(), browser_context_->UniqueToken(), *activation_token);
+  const SequencedContextId context_id{
+      extension->id(), browser_context_->UniqueToken(), *activation_token};
   const ServiceWorkerState* worker_state = GetWorkerState(context_id);
 
   return worker_state && worker_state->IsReady();

@@ -84,7 +84,7 @@ class VIZ_SERVICE_EXPORT VideoCaptureOverlay
 
   // |frame_source| must outlive this instance.
   VideoCaptureOverlay(
-      FrameSource& frame_source,
+      FrameSource* frame_source,
       mojo::PendingReceiver<mojom::FrameSinkVideoCaptureOverlay> receiver);
 
   VideoCaptureOverlay(const VideoCaptureOverlay&) = delete;
@@ -216,7 +216,7 @@ class VIZ_SERVICE_EXPORT VideoCaptureOverlay
   // re-rendering the overlay.
   gfx::Rect ComputeSourceMutationRect() const;
 
-  const raw_ref<FrameSource> frame_source_;
+  const raw_ptr<FrameSource> frame_source_;
 
   mojo::Receiver<mojom::FrameSinkVideoCaptureOverlay> receiver_;
 

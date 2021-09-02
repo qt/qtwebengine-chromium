@@ -124,11 +124,11 @@ FormData Lift(ContentAutofillDriver& source, FormData form) {
 }
 
 FormGlobalId Lift(ContentAutofillDriver& source, FormRendererId id) {
-  return FormGlobalId(source.GetFrameToken(), id);
+  return FormGlobalId{source.GetFrameToken(), id};
 }
 
 FieldGlobalId Lift(ContentAutofillDriver& source, FieldRendererId id) {
-  return FieldGlobalId(source.GetFrameToken(), id);
+  return FieldGlobalId{source.GetFrameToken(), id};
 }
 
 JavaScriptFieldModification Lift(

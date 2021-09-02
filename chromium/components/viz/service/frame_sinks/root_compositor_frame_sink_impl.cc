@@ -217,14 +217,16 @@ RootCompositorFrameSinkImpl::Create(
                 restart_id, base::SingleThreadTaskRunner::GetCurrentDefault());
       }
 #elif BUILDFLAG(IS_MAC)
-      // ExternalBeginFrameSourceMac is utilized for both CVDisplayLink
-      // instances (originating in the GPU process) and CADisplayLink instances
-      // (originating in the Browser process).
-      external_begin_frame_source =
-          std::make_unique<ExternalBeginFrameSourceMac>(
-              restart_id, params->renderer_settings.display_id,
-              params->refresh_rate, output_surface.get());
-      created_external_begin_frame_source_mac = true;
+      if (params->renderer_settings.display_id != display::kInvalidDisplayId) {
+        // ExternalBeginFrameSourceMac is utilized for both CVDisplayLink
+        // instances (originating in the GPU process) and CADisplayLink instances
+        // (originating in the Browser process).
+        external_begin_frame_source =
+            std::make_unique<ExternalBeginFrameSourceMac>(
+                restart_id, params->renderer_settings.display_id,
+                params->refresh_rate, output_surface.get());
+        created_external_begin_frame_source_mac = true;
+      }
 #endif
       if (!external_begin_frame_source && !synthetic_begin_frame_source) {
         auto time_source = std::make_unique<DelayBasedTimeSource>(
@@ -794,7 +796,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
   decided_display_frame_rate_compat_ = compat;
 #else
   base::TimeDelta interval = std::visit(
-      absl::Overload(
+      absl::Overload{
           [](FrameIntervalDecider::FrameIntervalClass frame_interval_class) {
             switch (frame_interval_class) {
               case FrameIntervalDecider::FrameIntervalClass::kBoost:
@@ -805,7 +807,7 @@ void RootCompositorFrameSinkImpl::FrameIntervalDeciderResultCallback(
           },
           [](FrameIntervalDecider::ResultInterval interval) {
             return interval.interval;
-          }),
+          }},
       result);
 
   if (decided_display_interval_ == interval) {
