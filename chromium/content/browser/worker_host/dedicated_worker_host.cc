@@ -258,7 +258,7 @@ void DedicatedWorkerHost::StartScriptLoad(
   RenderFrameHostImpl* creator_render_frame_host = nullptr;
   DedicatedWorkerHost* creator_worker = nullptr;
 
-  absl::visit(base::Overloaded(
+  absl::visit(base::Overloaded{
                   [&](const GlobalRenderFrameHostId& render_frame_host_id) {
                     creator_render_frame_host =
                         RenderFrameHostImpl::FromID(render_frame_host_id);
@@ -266,7 +266,7 @@ void DedicatedWorkerHost::StartScriptLoad(
                   [&](blink::DedicatedWorkerToken dedicated_worker_token) {
                     creator_worker = service_->GetDedicatedWorkerHostFromToken(
                         dedicated_worker_token);
-                  }),
+                  }},
               creator_);
 
   if (!creator_render_frame_host && !creator_worker) {

@@ -40,7 +40,7 @@ component("clipboard_types") {
     sources += [ "clipboard_format_type_win.cc" ]
   }
 
-  if (use_aura && (!is_win || is_qtwebengine)) {
+  if ((use_aura && !is_win) || is_qtwebengine) {
     sources += [ "clipboard_format_type_aura.cc" ]
   }
 

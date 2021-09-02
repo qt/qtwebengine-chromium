@@ -9108,7 +9108,7 @@ void RenderFrameHostImpl::MaybeSendFencedFrameAutomaticReportingBeacon(
         data = info->data;
       }
       initiator_rfh->SendFencedFrameReportingBeaconInternal(
-          AutomaticBeaconEvent(event_type, data), destination,
+          AutomaticBeaconEvent{event_type, data}, destination,
           navigation_request.GetNavigationId());
     }
   } else {
@@ -9119,7 +9119,7 @@ void RenderFrameHostImpl::MaybeSendFencedFrameAutomaticReportingBeacon(
     for (blink::FencedFrame::ReportingDestination destination :
          info->destinations) {
       initiator_rfh->SendFencedFrameReportingBeaconInternal(
-          AutomaticBeaconEvent(event_type, info->data), destination,
+          AutomaticBeaconEvent{event_type, info->data}, destination,
           navigation_request.GetNavigationId());
     }
   }

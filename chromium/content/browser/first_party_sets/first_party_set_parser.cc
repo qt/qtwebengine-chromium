@@ -774,7 +774,7 @@ FirstPartySetParser::ParseSetsFromEnterprisePolicy(
                      context.GetPolicySetsFromList(
                          policy.FindList(kFirstPartySetPolicyAdditionsField),
                          PolicySetType::kAddition));
-    return ParsedPolicySetLists(std::move(replacements), std::move(additions));
+    return ParsedPolicySetLists{std::move(replacements), std::move(additions)};
   }();
 
   context.PostProcessSetLists(set_lists);

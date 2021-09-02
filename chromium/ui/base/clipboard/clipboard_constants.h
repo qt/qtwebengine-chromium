@@ -60,13 +60,15 @@ extern const char kMimeTypeLinuxText[];
 
 // ----- EVERYTHING EXCEPT FOR APPLE MIME TYPES -----
 
-#if !BUILDFLAG(IS_APPLE)
+#if !BUILDFLAG(IS_APPLE) || BUILDFLAG(IS_QTWEBENGINE)
 // TODO(dcheng): This name is temporary. See crbug.com/106449.
 COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebCustomData[];
 COMPONENT_EXPORT(UI_BASE_CLIPBOARD_TYPES)
 extern const char kMimeTypeWebkitSmartPaste[];
-#else
+#endif
+#if BUILDFLAG(IS_APPLE)
+// MacOS-specific Uniform Type Identifiers.
 
 // ----- APPLE UNIFORM TYPES -----
 

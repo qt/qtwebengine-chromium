@@ -233,9 +233,11 @@ FidoDiscoveryFactory::MaybeCreatePlatformDiscovery() const {
     ret.emplace_back(std::make_unique<fido::mac::FidoTouchIdDiscovery>(
         *mac_touch_id_config_));
   }
+#if CR_XCODE_VERSION >= 1500
   if (fido::icloud_keychain::IsSupported() && nswindow_ != 0) {
     ret.emplace_back(fido::icloud_keychain::NewDiscovery(nswindow_));
   }
+#endif
   return ret;
 }
 #endif
