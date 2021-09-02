@@ -3125,7 +3125,7 @@ bool RenderFrameHostImpl::AccessibilityIsRootFrame() const {
 
 WebContentsAccessibility*
 RenderFrameHostImpl::AccessibilityGetWebContentsAccessibility() {
-  DCHECK(AccessibilityIsRootFrame());
+//  DCHECK(AccessibilityIsRootFrame());
   auto* view = static_cast<RenderWidgetHostViewBase*>(GetView());
   if (!view)
     return nullptr;
