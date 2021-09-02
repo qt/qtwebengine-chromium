@@ -108,7 +108,7 @@ namespace dawn::native::vulkan {
                              void* /* pUserData */) {
             if (ShouldReportDebugMessage(pCallbackData->pMessageIdName, pCallbackData->pMessage)) {
                 dawn::WarningLog() << pCallbackData->pMessage;
-                ASSERT((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) == 0);
+//                 ASSERT((messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) == 0);
             }
             return VK_FALSE;
         }

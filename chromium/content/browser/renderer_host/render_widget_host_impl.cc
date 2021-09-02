@@ -1384,7 +1384,7 @@ void RenderWidgetHostImpl::LostCapture() {
 
 void RenderWidgetHostImpl::SetActive(bool active) {
   is_active_ = active;
-  if (blink_frame_widget_)
+  if (blink_frame_widget_ && blink_frame_widget_.is_bound())
     blink_frame_widget_->SetActive(active);
 }
 
