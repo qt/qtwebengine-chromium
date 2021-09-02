@@ -2103,9 +2103,9 @@ bool PropertyTrees::ElementIsAnimatingChanged(
             updated_transform = true;
           }
         } else {
-          DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
-                                needs_rebuild())
-              << "Attempting to animate non existent transform node";
+          // DCHECK_NODE_EXISTENCE(check_node_existence, state, property,
+          //                       needs_rebuild())
+          //     << "Attempting to animate non existent transform node";
         }
         break;
       case TargetProperty::OPACITY:
