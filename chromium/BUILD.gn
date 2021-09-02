@@ -655,7 +655,7 @@ group("gn_all") {
     deps += [ "//gpu/tools/compositor_model_bench" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     deps += [
       "//third_party/breakpad:crash_inspector",
       "//third_party/breakpad:dump_syms",
