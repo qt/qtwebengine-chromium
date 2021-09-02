@@ -84,9 +84,11 @@ void GraphFeatures::ConfigureGraph(Graph* graph) const {
     Install<resource_attribution::internal::QueryScheduler>(graph);
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (flags_.site_data_recorder) {
     Install<SiteDataRecorder>(graph);
   }
+#endif
 
   if (flags_.tab_page_decorator) {
     Install<TabPageDecorator>(graph);
