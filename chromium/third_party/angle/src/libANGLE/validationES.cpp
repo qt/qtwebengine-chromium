@@ -3044,6 +3044,12 @@ const char *ValidateDrawStates(const Context *context)
             {
                 return kVertexBufferBoundForTransformFeedback;
             }
+
+            // Validate that we are rendering with a linked program.
+            if (!program->isLinked())
+            {
+                return kProgramNotLinked;
+            }
         }
     }
 
