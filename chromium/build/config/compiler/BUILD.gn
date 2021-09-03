@@ -732,8 +732,11 @@ config("compiler") {
     # unless the architecture revision in .ARM.attributes is sufficiently new.
     # TODO(pcc): The contents of .ARM.attributes should be based on the
     # -march flag passed at compile time (see llvm.org/pr36291).
-    if (current_cpu == "arm") {
+    if (current_cpu == "arm" && arm_arch != "") {
       ldflags += [ "-march=$arm_arch" ]
+    }
+    if (current_cpu == "arm" && arm_cpu != "") {
+      ldflags += [ "-mcpu=$arm_cpu" ]
     }
   }
 
@@ -879,10 +882,13 @@ config("compiler_cpu_abi") {
         ldflags += [ "--target=arm-linux-gnueabihf" ]
       }
       if (!is_nacl) {
-        cflags += [
-          "-march=$arm_arch",
-          "-mfloat-abi=$arm_float_abi",
-        ]
+        cflags += ["-mfloat-abi=$arm_float_abi"]
+        if (arm_arch != "") {
+          cflags += [ "-march=$arm_arch"]
+        }
+        if (arm_cpu != "") {
+          cflags += [ "-mcpu=$arm_cpu"]
+        }
       }
       if (arm_tune != "") {
         cflags += [ "-mtune=$arm_tune" ]
