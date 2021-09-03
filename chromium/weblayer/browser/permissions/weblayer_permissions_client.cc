@@ -59,7 +59,8 @@ permissions::PermissionManager* WebLayerPermissionsClient::GetPermissionManager(
   return PermissionManagerFactory::GetForBrowserContext(browser_context);
 }
 
-permissions::ChooserContextBase* WebLayerPermissionsClient::GetChooserContext(
+permissions::ObjectPermissionContextBase*
+WebLayerPermissionsClient::GetChooserContext(
     content::BrowserContext* browser_context,
     ContentSettingsType type) {
   return nullptr;
@@ -71,6 +72,12 @@ bool WebLayerPermissionsClient::IsPermissionControlledByDse(
     ContentSettingsType type,
     const url::Origin& origin) {
   return weblayer::IsPermissionControlledByDse(type, origin);
+}
+
+bool WebLayerPermissionsClient::IsDseOrigin(
+    content::BrowserContext* browser_context,
+    const url::Origin& origin) {
+  return weblayer::IsDseOrigin(origin);
 }
 
 bool WebLayerPermissionsClient::ResetPermissionIfControlledByDse(

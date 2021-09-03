@@ -163,6 +163,13 @@ endif()
 option(INSTALL_TESTS "Install tests" OFF)
 option(BUILD_LAYERS "Build layers" ON)
 option(BUILD_LAYER_SUPPORT_FILES "Generate layer files" OFF) # For generating files when not building layers
+option(USE_ROBIN_HOOD_HASHING "Use robin-hood-hashing" ON)
+if (USE_ROBIN_HOOD_HASHING)
+    if(NOT ROBIN_HOOD_HASHING_INSTALL_DIR)
+	set(ROBIN_HOOD_HASHING_INSTALL_DIR $ENV{ROBIN_HOOD_HASHING_INSTALL_DIR} PATH "Path to robin-hood-hashing repository")
+    endif()
+    set(ROBIN_HOOD_HASHING_INCLUDE_DIR "${ROBIN_HOOD_HASHING_INSTALL_DIR}/src/include" PATH "Path to robin-hood-hashing/src/include")
+endif()
 
 if(BUILD_TESTS OR BUILD_LAYERS)
 
@@ -305,6 +312,11 @@ target_include_directories(VkLayer_utils
                                   ${CMAKE_CURRENT_BINARY_DIR}/layers
                                   ${PROJECT_BINARY_DIR}
                                   ${VulkanHeaders_INCLUDE_DIR})
+
+if (USE_ROBIN_HOOD_HASHING)
+    target_include_directories(VkLayer_utils PUBLIC ${ROBIN_HOOD_HASHING_INCLUDE_DIR})
+    target_compile_definitions(VkLayer_utils PUBLIC USE_ROBIN_HOOD_HASHING)
+endif()
 
 # uninstall target ---------------------------------------------------------------------------------------------------------------
 if(NOT TARGET uninstall)

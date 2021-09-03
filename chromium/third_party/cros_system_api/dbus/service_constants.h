@@ -22,15 +22,18 @@
 #include "cros_healthd/dbus-constants.h"
 #include "cryptohome/dbus-constants.h"
 #include "debugd/dbus-constants.h"
+#include "dlp/dbus-constants.h"
 #include "drivefs/dbus-constants.h"
 #include "hammerd/dbus-constants.h"
 #include "hermes/dbus-constants.h"
+#include "hps/dbus-constants.h"
 #include "ip_peripheral/dbus-constants.h"
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
 #include "missive/dbus-constants.h"
 #include "ocr/dbus-constants.h"
 #include "oobe_config/dbus-constants.h"
+#include "os_install_service/dbus-constants.h"
 #include "patchpanel/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
 #include "power_manager/dbus-constants.h"
@@ -46,7 +49,9 @@
 #include "vm_applications/dbus-constants.h"
 #include "vm_cicerone/dbus-constants.h"
 #include "vm_concierge/dbus-constants.h"
+#include "vm_disk_management/dbus-constants.h"
 #include "vm_plugin_dispatcher/dbus-constants.h"
+#include "vm_sk_forwarding/dbus-constants.h"
 #include "wilco_dtc_supportd/dbus-constants.h"
 
 namespace dbus {
@@ -130,6 +135,23 @@ const char kNetworkProxyServicePath[] = "/org/chromium/NetworkProxyService";
 const char kNetworkProxyServiceInterface[] =
     "org.chromium.NetworkProxyServiceInterface";
 const char kNetworkProxyServiceResolveProxyMethod[] = "ResolveProxy";
+
+// Options to override the default behaviour of system-proxy, a local daemon
+// which does proxy authentication to a remote web proxy, on behalf of Chrome OS
+// system services. The default behaviour is to return the address of
+// system-proxy as the first entry in the PAC-style list of resolved proxy only
+// if the device policy SystemProxySettings is enabled.
+enum SystemProxyOverride {
+  // Default behaviour. System-proxy will be appended to the list of returned
+  // proxies only if enabled by policy.
+  kDefault = 0,
+  // System-proxy will be appended to the list of returned proxies only if
+  // enabled by policy or feature flag SystemProxyForSystemServices.
+  kOptIn = 1,
+  // System-proxy will not be added to the list of returned proxies, even if
+  // enabled by policy.
+  kOptOut = 2,
+};
 
 const char kLivenessServiceName[] = "org.chromium.LivenessService";
 const char kLivenessServicePath[] = "/org/chromium/LivenessService";
@@ -229,6 +251,8 @@ const char kChromeFeaturesServiceIsFsNosymfollowEnabledMethod[] =
     "IsFsNosymfollowEnabled";
 const char kChromeFeaturesServiceIsPeripheralDataAccessEnabledMethod[] =
     "IsPeripheralDataAccessEnabled";
+const char kChromeFeaturesServiceIsDNSProxyEnabledMethod[] =
+    "IsDNSProxyEnabled";
 
 const char kUrlHandlerServiceName[] = "org.chromium.UrlHandlerService";
 const char kUrlHandlerServicePath[] = "/org/chromium/UrlHandlerService";
@@ -387,6 +411,7 @@ const char kCrasControlInterface[] = "org.chromium.cras.Control";
 const char kSetOutputVolume[] = "SetOutputVolume";
 const char kSetOutputNodeVolume[] = "SetOutputNodeVolume";
 const char kSwapLeftRight[] = "SwapLeftRight";
+const char kSetDisplayRotation[] = "SetDisplayRotation";
 const char kSetOutputMute[] = "SetOutputMute";
 const char kSetOutputUserMute[] = "SetOutputUserMute";
 const char kSetSuspendAudio[] = "SetSuspendAudio";
@@ -412,6 +437,8 @@ const char kIsAudioOutputActive[] = "IsAudioOutputActive";
 const char kSetGlobalOutputChannelRemix[] = "SetGlobalOutputChannelRemix";
 const char kGetSystemAecSupported[] = "GetSystemAecSupported";
 const char kGetSystemAecGroupId[] = "GetSystemAecGroupId";
+const char kGetSystemNsSupported[] = "GetSystemNsSupported";
+const char kGetSystemAgcSupported[] = "GetSystemAgcSupported";
 const char kSetPlayerPlaybackStatus[] = "SetPlayerPlaybackStatus";
 const char kSetPlayerIdentity[] = "SetPlayerIdentity";
 const char kSetPlayerPosition[] = "SetPlayerPosition";
@@ -420,8 +447,10 @@ const char kSetNextHandsfreeProfile[] = "SetNextHandsfreeProfile";
 const char kSetFixA2dpPacketSize[] = "SetFixA2dpPacketSize";
 const char kResendBluetoothBattery[] = "ResendBluetoothBattery";
 const char kGetDeprioritizeBtWbsMic[] = "GetDeprioritizeBtWbsMic";
+const char kSetNoiseCancellationEnabled[] = "SetNoiseCancellationEnabled";
+const char kIsNoiseCancellationSupported[] = "IsNoiseCancellationSupported";
 
-// Names of properties returned by GetNodes()
+// Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";
 const char kIdProperty[] = "Id";
 const char kTypeProperty[] = "Type";
@@ -432,7 +461,23 @@ const char kPluggedTimeProperty[] = "PluggedTime";
 const char kStableDeviceIdProperty[] = "StableDeviceId";
 const char kStableDeviceIdNewProperty[] = "StableDeviceIdNew";
 const char kMaxSupportedChannelsProperty[] = "MaxSupportedChannels";
-
+const char kAudioEffectProperty[] = "AudioEffect";
+const char kNodeVolumeProperty[] = "NodeVolume";
+// The following two properties are optional.
+const char kNumberOfUnderrunsProperty[] = "NumberOfUnderruns";
+const char kNumberOfSevereUnderrunsProperty[] = "NumberOfSevereUnderruns";
+enum AudioEffectType {
+  EFFECT_TYPE_NOISE_CANCELLATION = 1 << 0,
+};
+// Screen Rotation in clock-wise degrees.
+// This enum corresponds to enum Rotation in chromium ui/display/display.h
+enum class DisplayRotation {
+  ROTATE_0 = 0,
+  ROTATE_90,
+  ROTATE_180,
+  ROTATE_270,
+  NUM_DISPLAY_ROTATION,
+};
 // Names of properties returned by
 // * method - GetNumberOfInputStreamsWithPermission and
 // * signal - NumberOfInputStreamsWithPermissionChanged.

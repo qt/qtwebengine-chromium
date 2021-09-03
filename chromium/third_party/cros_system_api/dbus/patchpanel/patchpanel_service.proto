@@ -24,8 +24,7 @@ message ArcStartupRequest {
 
 // This is an intentionally empty mesage. ARC++ startup does not require
 // any information from networking to proceed.
-message ArcStartupResponse {
-}
+message ArcStartupResponse {}
 
 // Notification that the ARC++ container is shutting down.
 message ArcShutdownRequest {
@@ -37,8 +36,7 @@ message ArcShutdownRequest {
 
 // This is an intentionally empty message. ARC++ startup does not require
 // any information from networking to proceed.
-message ArcShutdownResponse {
-}
+message ArcShutdownResponse {}
 
 // Notification that the ARC VM is starting up.
 // Unlike in the container case, Concierge needs to know which TAP devices
@@ -114,8 +112,7 @@ message ArcVmShutdownRequest {
 }
 
 // Intentionally empty response.
-message ArcVmShutdownResponse {
-}
+message ArcVmShutdownResponse {}
 
 // Notification that a Termina VM is starting up.
 message TerminaVmStartupRequest {
@@ -143,8 +140,7 @@ message TerminaVmShutdownRequest {
 }
 
 // Intentionally empty response.
-message TerminaVmShutdownResponse {
-}
+message TerminaVmShutdownResponse {}
 
 // Notification that a Plugin VM is starting up.
 message PluginVmStartupRequest {
@@ -172,8 +168,7 @@ message PluginVmShutdownRequest {
 }
 
 // Intentionally empty response.
-message PluginVmShutdownResponse {
-}
+message PluginVmShutdownResponse {}
 
 // Request to set the VPN routing policy for a socket. The socket file
 // descriptor must be immediately appended to the DBUS message after the
@@ -212,7 +207,8 @@ message SetVpnIntentResponse {
 // trigger the teardown of the routing setup, the veth setup, and the release
 // of the IPv4 subnet assigned to the namespace.
 message ConnectNamespaceRequest {
-  // The pid of the client network namespace.
+  // The pid of the client network namespace. If set to -1, a new network
+  // namespace which is not associated with any process will be created.
   int32 pid = 1;
 
   // If the client sets this field to the name of a physical network device
@@ -259,6 +255,9 @@ message ConnectNamespaceResponse {
   // The IPv4 address in network order assigned to the interface in the host
   // namespace.
   uint32 host_ipv4_address = 5;
+
+  // Name of the netns attached or created.
+  string netns_name = 6;
 }
 
 // Represents the traffic usage ({tx, rx} x {packets, bytes}) between a source
@@ -286,6 +285,13 @@ message TrafficCounter {
     SYSTEM = 8;
   }
 
+  // Possible IP address family numbers.
+  enum IpFamily {
+    NONE = 0;
+    IPV4 = 1;
+    IPV6 = 2;
+  }
+
   // Counter values need to be 64bits as 32bits is not enough to account for
   // more than ~4GB of traffic.
   uint64 rx_bytes = 1;
@@ -293,10 +299,15 @@ message TrafficCounter {
   uint64 rx_packets = 3;
   uint64 tx_packets = 4;
 
+  // The source that originated the traffic.
   Source source = 5;
+
   // The shill device (interface) name (e.g., eth0) where the traffic leaves
   // from or comes in.
   string device = 6;
+
+  // The IP family of the traffic.
+  IpFamily ip_family = 7;
 }
 
 // Requests the traffic counters kept by patchpanel. |devices| is the set of
@@ -324,9 +335,9 @@ message ModifyPortRuleRequest {
 
   enum RuleType {
     INVALID_RULE_TYPE = 0;
-    ACCESS = 1;     // Equivalent of iptables 'ACCEPT'
-    LOCKDOWN = 2;   // Equivalent of iptables 'DROP'
-    FORWARDING = 3; // Equivalent of iptables 'DNAT'
+    ACCESS = 1;      // Equivalent of iptables 'ACCEPT'
+    LOCKDOWN = 2;    // Equivalent of iptables 'DROP'
+    FORWARDING = 3;  // Equivalent of iptables 'DNAT'
   }
 
   enum Protocol {
@@ -365,6 +376,18 @@ message ModifyPortRuleResponse {
   bool success = 1;
 }
 
+// Request to start or stop VPN lockdown. When VPN lockdown is enabled and no
+// VPN connection exists, any non-ARC traffic that would be routed to a VPN
+// connection is instead rejected. ARC traffic is ignored because Android
+// already implements VPN lockdown.
+message SetVpnLockdownRequest {
+  // true: start VPN lockdown. false: stop VPN lockdown.
+  bool enable_vpn_lockdown = 1;
+}
+
+// Intentionally empty response to a SetVpnIntentRequest.
+message SetVpnLockdownResponse {}
+
 // Signal that is emitted when a device managed by patchpanel is added or
 // removed.
 message NetworkDeviceChangedSignal {
@@ -389,19 +412,19 @@ message NeighborReachabilityEventSignal {
     GATEWAY_AND_DNS_SERVER = 3;
   };
 
-  // Possible event types. See the class comment of NeighborLinkMonitor for more
-  // details about how these events are generated.
+  // Possible event types. Two consecutive events for the same neighbor should
+  // have different types. Also see the class comment of NeighborLinkMonitor
+  // for more details about how these events are generated.
   enum EventType {
     INVALID_EVENT_TYPE = 0;
-    // Indicates a failure is detected for this neighbor. After this event, no
-    // more FAILED events will be generated for this neighbor until a RECOVERED
-    // event happens.
+    // Indicates a failure is detected for this neighbor. Note that the neighbor
+    // may still be unreachable even if this signal is not sent out. For
+    // example, sometimes we may lose track of a neighbor from the kernel. We
+    // will not send out a FAILED signal when that happens, since that does not
+    // always mean a link failure.
     FAILED = 1;
-    // Indicates this neighbor has recovered from the previous failure: the
-    // layer 2 bidirectional reachability has been confirmed for a while. Note
-    // that a new neighbor is considered as "reachable" so this event will not
-    // be generated when we start to monitor a new neighbor.
-    RECOVERED = 2;
+    // Indicates the bidirectional reachability has just been confirmed.
+    REACHABLE = 2;
   };
 
   // The interface index of the device that connects to this neighbor.
@@ -412,4 +435,42 @@ message NeighborReachabilityEventSignal {
   Role role = 3;
 
   EventType type = 4;
+}
+
+// Request to start DNS traffic redirection when DNS proxy is running. The rules
+// created depend on the type requested. The client must append a valid file
+// descriptor immediately after the serialized SetDnsRedirectionRuleRequest
+// proto. This file descriptor must remain valid for as long as the DNS traffic
+// need to be redirected. Invalidating the file descriptor explicitly by closing
+// it or implicitly when the client exits will trigger the teardown of the
+// redirection rules.
+message SetDnsRedirectionRuleRequest {
+  enum RuleType {
+    INVALID_RULE_TYPE = 0;
+    // Rules for traffic from guests that track the default network (e.g.
+    // Crostini, PluginVMs).
+    DEFAULT = 1;
+    // Rules for traffic from ARC interfaces (e.g. arc_eth0, arc_wlan0).
+    ARC = 2;
+    // Rule for traffic associated with user traffic (e.g. chronos, cups).
+    USER = 3;
+  }
+
+  RuleType type = 1;
+
+  // Identifies from which network interface the traffic originates.
+  // This field is required for ARC and DEFAULT type.
+  string input_ifname = 2;
+
+  // The IP address of the proxy. This field is required for ARC and
+  // USER type.
+  string proxy_address = 3;
+
+  // Nameservers are only necessary for Chrome redirect (USER type).
+  repeated string nameservers = 4;
+}
+
+// Response to a SetDnsRedirectionRuleRequest.
+message SetDnsRedirectionRuleResponse {
+  bool success = 1;
 }

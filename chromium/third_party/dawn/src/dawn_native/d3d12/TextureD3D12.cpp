@@ -422,12 +422,14 @@ namespace dawn_native { namespace d3d12 {
                                                              const TextureDescriptor* descriptor,
                                                              ComPtr<ID3D12Resource> d3d12Texture,
                                                              ExternalMutexSerial acquireMutexKey,
+                                                             ExternalMutexSerial releaseMutexKey,
                                                              bool isSwapChainTexture,
                                                              bool isInitialized) {
         Ref<Texture> dawnTexture =
             AcquireRef(new Texture(device, descriptor, TextureState::OwnedExternal));
         DAWN_TRY(dawnTexture->InitializeAsExternalTexture(descriptor, std::move(d3d12Texture),
-                                                          acquireMutexKey, isSwapChainTexture));
+                                                          acquireMutexKey, releaseMutexKey,
+                                                          isSwapChainTexture));
 
         // Importing a multi-planar format must be initialized. This is required because
         // a shared multi-planar format cannot be initialized by Dawn.
@@ -454,6 +456,7 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Texture::InitializeAsExternalTexture(const TextureDescriptor* descriptor,
                                                     ComPtr<ID3D12Resource> d3d12Texture,
                                                     ExternalMutexSerial acquireMutexKey,
+                                                    ExternalMutexSerial releaseMutexKey,
                                                     bool isSwapChainTexture) {
         Device* dawnDevice = ToBackend(GetDevice());
 
@@ -464,6 +467,7 @@ namespace dawn_native { namespace d3d12 {
                               "D3D12 acquiring shared mutex"));
 
         mAcquireMutexKey = acquireMutexKey;
+        mReleaseMutexKey = releaseMutexKey;
         mDxgiKeyedMutex = std::move(dxgiKeyedMutex);
         mSwapChainTexture = isSwapChainTexture;
 
@@ -529,10 +533,7 @@ namespace dawn_native { namespace d3d12 {
         // When creating the ResourceHeapAllocation, the resource heap is set to nullptr because the
         // texture is owned externally. The texture's owning entity must remain responsible for
         // memory management.
-        mResourceAllocation = { info, 0, std::move(d3d12Texture), nullptr };
-
-        SetIsSubresourceContentInitialized(true, GetAllSubresources());
-
+        mResourceAllocation = {info, 0, std::move(d3d12Texture), nullptr};
         return {};
     }
 
@@ -573,7 +574,7 @@ namespace dawn_native { namespace d3d12 {
         mSwapChainTexture = false;
 
         if (mDxgiKeyedMutex != nullptr) {
-            mDxgiKeyedMutex->ReleaseSync(uint64_t(mAcquireMutexKey) + 1);
+            mDxgiKeyedMutex->ReleaseSync(uint64_t(mReleaseMutexKey));
             device->ReleaseKeyedMutexForTexture(std::move(mDxgiKeyedMutex));
         }
     }
@@ -779,7 +780,7 @@ namespace dawn_native { namespace d3d12 {
     void Texture::TrackUsageAndGetResourceBarrierForPass(
         CommandRecordingContext* commandContext,
         std::vector<D3D12_RESOURCE_BARRIER>* barriers,
-        const PassTextureUsage& textureUsages) {
+        const TextureSubresourceUsage& textureUsages) {
         if (mResourceAllocation.GetInfo().mMethod != AllocationMethod::kExternal) {
             // Track the underlying heap to ensure residency.
             Heap* heap = ToBackend(mResourceAllocation.GetResourceHeap());
@@ -793,44 +794,56 @@ namespace dawn_native { namespace d3d12 {
         // This transitions assume it is a 2D texture
         ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
 
-        mSubresourceStateAndDecay.Merge(
-            textureUsages, [&](const SubresourceRange& mergeRange, StateAndDecay* state,
-                               wgpu::TextureUsage usage) {
-                // Skip if this subresource is not used during the current pass
-                if (usage == wgpu::TextureUsage::None) {
-                    return;
-                }
+        mSubresourceStateAndDecay.Merge(textureUsages, [&](const SubresourceRange& mergeRange,
+                                                           StateAndDecay* state,
+                                                           wgpu::TextureUsage usage) {
+            // Skip if this subresource is not used during the current pass
+            if (usage == wgpu::TextureUsage::None) {
+                return;
+            }
 
-                D3D12_RESOURCE_STATES newState = D3D12TextureUsage(usage, GetFormat());
-                TransitionSubresourceRange(barriers, mergeRange, state, newState,
-                                           pendingCommandSerial);
-            });
+            D3D12_RESOURCE_STATES newState = D3D12TextureUsage(usage, GetFormat());
+            TransitionSubresourceRange(barriers, mergeRange, state, newState, pendingCommandSerial);
+        });
     }
 
     D3D12_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(uint32_t mipLevel,
                                                             uint32_t baseArrayLayer,
                                                             uint32_t layerCount) const {
-        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
         D3D12_RENDER_TARGET_VIEW_DESC rtvDesc;
         rtvDesc.Format = GetD3D12Format();
         if (IsMultisampledTexture()) {
+            ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
             ASSERT(GetNumMipLevels() == 1);
             ASSERT(layerCount == 1);
             ASSERT(baseArrayLayer == 0);
             ASSERT(mipLevel == 0);
             rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
-        } else {
-            // Currently we always use D3D12_TEX2D_ARRAY_RTV because we cannot specify base array
-            // layer and layer count in D3D12_TEX2D_RTV. For 2D texture views, we treat them as
-            // 1-layer 2D array textures. (Just like how we treat SRVs)
-            // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_rtv
-            // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_array
-            // _rtv
-            rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-            rtvDesc.Texture2DArray.FirstArraySlice = baseArrayLayer;
-            rtvDesc.Texture2DArray.ArraySize = layerCount;
-            rtvDesc.Texture2DArray.MipSlice = mipLevel;
-            rtvDesc.Texture2DArray.PlaneSlice = 0;
+            return rtvDesc;
+        }
+        switch (GetDimension()) {
+            case wgpu::TextureDimension::e2D:
+                // Currently we always use D3D12_TEX2D_ARRAY_RTV because we cannot specify base
+                // array layer and layer count in D3D12_TEX2D_RTV. For 2D texture views, we treat
+                // them as 1-layer 2D array textures. (Just like how we treat SRVs)
+                // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_rtv
+                // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_array
+                // _rtv
+                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
+                rtvDesc.Texture2DArray.FirstArraySlice = baseArrayLayer;
+                rtvDesc.Texture2DArray.ArraySize = layerCount;
+                rtvDesc.Texture2DArray.MipSlice = mipLevel;
+                rtvDesc.Texture2DArray.PlaneSlice = 0;
+                break;
+            case wgpu::TextureDimension::e3D:
+                rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
+                rtvDesc.Texture3D.MipSlice = mipLevel;
+                rtvDesc.Texture3D.FirstWSlice = baseArrayLayer;
+                rtvDesc.Texture3D.WSize = layerCount;
+                break;
+            case wgpu::TextureDimension::e1D:
+                UNREACHABLE();
+                break;
         }
         return rtvDesc;
     }
@@ -861,7 +874,6 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Texture::ClearTexture(CommandRecordingContext* commandContext,
                                      const SubresourceRange& range,
                                      TextureBase::ClearValue clearValue) {
-
         ID3D12GraphicsCommandList* commandList = commandContext->GetCommandList();
 
         Device* device = ToBackend(GetDevice());
@@ -954,9 +966,13 @@ namespace dawn_native { namespace d3d12 {
             for (Aspect aspect : IterateEnumMask(range.aspects)) {
                 const TexelBlockInfo& blockInfo = GetFormat().GetAspectInfo(aspect).block;
 
-                uint32_t bytesPerRow = Align((GetWidth() / blockInfo.width) * blockInfo.byteSize,
-                                             kTextureBytesPerRowAlignment);
-                uint64_t bufferSize = bytesPerRow * (GetHeight() / blockInfo.height);
+                Extent3D largestMipSize = GetMipLevelPhysicalSize(range.baseMipLevel);
+
+                uint32_t bytesPerRow =
+                    Align((largestMipSize.width / blockInfo.width) * blockInfo.byteSize,
+                          kTextureBytesPerRowAlignment);
+                uint64_t bufferSize = bytesPerRow * (largestMipSize.height / blockInfo.height) *
+                                      largestMipSize.depthOrArrayLayers;
                 DynamicUploader* uploader = device->GetDynamicUploader();
                 UploadHandle uploadHandle;
                 DAWN_TRY_ASSIGN(uploadHandle,
@@ -969,8 +985,8 @@ namespace dawn_native { namespace d3d12 {
                     // compute d3d12 texture copy locations for texture and buffer
                     Extent3D copySize = GetMipLevelPhysicalSize(level);
 
-                    uint32_t rowsPerImage = GetHeight() / blockInfo.height;
-                    Texture2DCopySplit copySplit = ComputeTextureCopySplit(
+                    uint32_t rowsPerImage = copySize.height / blockInfo.height;
+                    TextureCopySubresource copySplit = ComputeTextureCopySubresource(
                         {0, 0, 0}, copySize, blockInfo, uploadHandle.startOffset, bytesPerRow,
                         rowsPerImage);
 

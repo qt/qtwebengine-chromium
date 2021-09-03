@@ -354,6 +354,12 @@ bool TryMatchAnyExtend(Arm64OperandGenerator* g, InstructionSelector* selector,
         return true;
       }
     }
+  } else if (nm.IsChangeInt32ToInt64()) {
+    // Use extended register form.
+    *opcode |= AddressingModeField::encode(kMode_Operand2_R_SXTW);
+    *left_op = g->UseRegister(left_node);
+    *right_op = g->UseRegister(right_node->InputAt(0));
+    return true;
   }
   return false;
 }
@@ -781,11 +787,19 @@ void InstructionSelector::VisitLoad(Node* node) {
       break;
     case MachineRepresentation::kBit:  // Fall through.
     case MachineRepresentation::kWord8:
-      opcode = load_rep.IsSigned() ? kArm64Ldrsb : kArm64Ldrb;
+      opcode = load_rep.IsUnsigned()
+                   ? kArm64Ldrb
+                   : load_rep.semantic() == MachineSemantic::kInt32
+                         ? kArm64LdrsbW
+                         : kArm64Ldrsb;
       immediate_mode = kLoadStoreImm8;
       break;
     case MachineRepresentation::kWord16:
-      opcode = load_rep.IsSigned() ? kArm64Ldrsh : kArm64Ldrh;
+      opcode = load_rep.IsUnsigned()
+                   ? kArm64Ldrh
+                   : load_rep.semantic() == MachineSemantic::kInt32
+                         ? kArm64LdrshW
+                         : kArm64Ldrsh;
       immediate_mode = kLoadStoreImm16;
       break;
     case MachineRepresentation::kWord32:
@@ -827,6 +841,7 @@ void InstructionSelector::VisitLoad(Node* node) {
       opcode = kArm64LdrQ;
       immediate_mode = kNoImmediate;
       break;
+    case MachineRepresentation::kMapWord:  // Fall through.
     case MachineRepresentation::kNone:
       UNREACHABLE();
   }
@@ -936,6 +951,7 @@ void InstructionSelector::VisitStore(Node* node) {
         opcode = kArm64StrQ;
         immediate_mode = kNoImmediate;
         break;
+      case MachineRepresentation::kMapWord:  // Fall through.
       case MachineRepresentation::kNone:
         UNREACHABLE();
     }
@@ -4038,6 +4054,12 @@ void InstructionSelector::VisitI8x16Popcnt(Node* node) {
   InstructionCode code = kArm64Cnt;
   code |= LaneSizeField::encode(8);
   VisitRR(this, code, node);
+}
+
+void InstructionSelector::AddOutputToSelectContinuation(OperandGenerator* g,
+                                                        int first_input_index,
+                                                        Node* node) {
+  continuation_outputs_.push_back(g->DefineAsRegister(node));
 }
 
 // static

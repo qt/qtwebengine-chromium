@@ -55,6 +55,8 @@ const char kSetSchedulerConfigurationV2[] = "SetSchedulerConfigurationV2";
 const char kSwapSetParameter[] = "SwapSetParameter";
 const char kBackupArcBugReport[] = "BackupArcBugReport";
 const char kDeleteArcBugReportBackup[] = "DeleteArcBugReportBackup";
+const char kKernelFeatureList[] = "KernelFeatureList";
+const char kKernelFeatureEnable[] = "KernelFeatureEnable";
 
 // Properties.
 const char kCrashSenderTestMode[] = "CrashSenderTestMode";

@@ -54,6 +54,7 @@ const char kSetProjectId[] = "SetProjectId";
 const char kPkcs11IsTpmTokenReady[] = "Pkcs11IsTpmTokenReady";
 const char kPkcs11GetTpmTokenInfo[] = "Pkcs11GetTpmTokenInfo";
 const char kPkcs11Terminate[] = "Pkcs11Terminate";
+const char kPkcs11RestoreTpmTokens[] = "Pkcs11RestoreTpmTokens";
 
 // Methods of the |kInstallAttributesInterface| interface:
 const char kInstallAttributesGet[] = "InstallAttributesGet";
@@ -234,6 +235,7 @@ const char kCryptohomeEndFingerprintAuthSession[] = "EndFingerprintAuthSession";
 const char kCryptohomeGetWebAuthnSecret[] = "GetWebAuthnSecret";
 const char kCryptohomeStartAuthSession[] = "StartAuthSession";
 const char kCryptohomeAuthenticateAuthSession[] = "AuthenticateAuthSession";
+const char kCryptohomeAddCredentials[] = "AddCredentials";
 
 // Signals of the |kCryptohomeInterface| interface:
 const char kSignalAsyncCallStatus[] = "AsyncCallStatus";

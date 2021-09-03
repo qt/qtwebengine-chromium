@@ -12,6 +12,18 @@ const char kRmadServiceName[] = "org.chromium.Rmad";
 
 // Methods
 const char kGetCurrentStateMethod[] = "GetCurrentState";
+const char kTransitionNextStateMethod[] = "TransitionNextState";
+const char kTransitionPreviousStateMethod[] = "TransitionPreviousState";
+const char kAbortRmaMethod[] = "AbortRma";
+const char kGetLogPathMethod[] = "GetLogPath";
+
+// Signals.
+const char kErrorSignal[] = "Error";
+const char kCalibrationProgressSignal[] = "CalibrationProgress";
+const char kProvisioningProgressSignal[] = "ProvisioningProgress";
+const char kHardwareWriteProtectionStateSignal[] =
+    "HardwareWriteProtectionState";
+const char kPowerCableStateSignal[] = "PowerCableState";
 
 }  // namespace rmad
 

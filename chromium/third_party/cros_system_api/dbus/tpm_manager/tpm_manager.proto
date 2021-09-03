@@ -80,6 +80,9 @@ enum NvramSpaceAttribute {
   // by spaces like FWMP, which are defined in userland but can be read
   // by firmware.
   NVRAM_PLATFORM_READ = 10;
+  // This space may be undefined with Platform Authorization but not with Owner
+  // Authorization.
+  NVRAM_PLATFORM_CREATE = 11;
 }
 
 enum NvramSpacePolicy {
@@ -315,6 +318,9 @@ message ResetDictionaryAttackLockReply {
 }
 
 message TakeOwnershipRequest {
+  // If it is `true`, the D-Bus call returns immediately w/o waiting for the
+  // result.
+  optional bool is_async = 1;
 }
 
 message TakeOwnershipReply {

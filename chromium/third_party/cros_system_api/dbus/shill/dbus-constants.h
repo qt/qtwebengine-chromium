@@ -111,7 +111,6 @@ const char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 const char kArpGatewayProperty[] = "ArpGateway";
 const char kCheckPortalListProperty[] = "CheckPortalList";
 const char kIgnoredDNSSearchPathsProperty[] = "IgnoredDNSSearchPaths";
-const char kLinkMonitorTechnologiesProperty[] = "LinkMonitorTechnologies";
 const char kNoAutoConnectTechnologiesProperty[] = "NoAutoConnectTechnologies";
 const char kProhibitedTechnologiesProperty[] = "ProhibitedTechnologies";
 
@@ -123,7 +122,6 @@ const char kDhcpPropertyVendorClassProperty[] = "DHCPProperty.VendorClass";
 const char kAutoConnectProperty[] = "AutoConnect";
 const char kCheckPortalProperty[] = "CheckPortal";
 const char kConnectableProperty[] = "Connectable";
-const char kConnectionIdProperty[] = "ConnectionId";
 const char kDeviceProperty[] = "Device";
 const char kDiagnosticsDisconnectsProperty[] = "Diagnostics.Disconnects";
 const char kDiagnosticsMisconnectsProperty[] = "Diagnostics.Misconnects";
@@ -297,6 +295,18 @@ const char kConfigurationNameProperty[] = "ConfigurationName";
 const char kExtensionNameProperty[] = "ExtensionName";
 const char kObjectPathSuffixProperty[] = "ObjectPathSuffix";
 
+// WireGuard Service property names.
+const char kWireguardPrivateKey[] = "Wireguard.PrivateKey";
+const char kWireguardPublicKey[] = "Wireguard.PublicKey";
+const char kWireguardAddress[] = "Wireguard.Address";
+const char kWireguardPeers[] = "Wireguard.Peers";
+// Property names of a peer in "Wireguard.Peers"
+const char kWireguardPeerPublicKey[] = "PublicKey";
+const char kWireguardPeerPresharedKey[] = "PresharedKey";
+const char kWireguardPeerEndPoint[] = "EndPoint";
+const char kWireguardPeerAllowedIPs[] = "AllowedIPs";
+const char kWireguardPeerPersistentKeepalive[] = "PersistentKeepalive";
+
 // IPConfig property names.
 const char kAcceptedHostnameProperty[] = "AcceptedHostname";
 // kAddressProperty: Defined below for Device.
@@ -331,7 +341,6 @@ const char kInhibitedProperty[] = "Inhibited";
 const char kIPConfigsProperty[] = "IPConfigs";
 const char kIPv6DisabledProperty[] = "IPv6Disabled";
 const char kInterfaceProperty[] = "Interface";  // Network interface name.
-const char kLinkMonitorResponseTimeProperty[] = "LinkMonitorResponseTime";
 // kNameProperty: Defined above for Service. DEPRECATED (crbug.com/1011136).
 const char kPoweredProperty[] = "Powered";
 const char kReceiveByteCountProperty[] = "ReceiveByteCount";
@@ -343,6 +352,8 @@ const char kTransmitByteCountProperty[] = "TransmitByteCount";
 
 // Cellular Device property names.
 const char kCellularAllowRoamingProperty[] = "Cellular.AllowRoaming";
+const char kCellularPolicyAllowRoamingProperty[] =
+    "Cellular.PolicyAllowRoaming";
 const char kDeviceIdProperty[] = "Cellular.DeviceID";
 const char kEidProperty[] = "Cellular.EID";
 const char kEquipmentIdProperty[] = "Cellular.EquipmentID";
@@ -383,6 +394,7 @@ const char kBgscanMethodProperty[] = "BgscanMethod";
 const char kBgscanShortIntervalProperty[] = "BgscanShortInterval";
 const char kBgscanSignalThresholdProperty[] = "BgscanSignalThreshold";
 const char kForceWakeToScanTimerProperty[] = "ForceWakeToScanTimer";
+const char kLastWakeReasonProperty[] = "LastWakeReason";
 const char kLinkStatisticsProperty[] = "LinkStatistics";
 const char kMacAddressRandomizationEnabledProperty[] =
     "MACAddressRandomizationEnabled";
@@ -592,6 +604,7 @@ const char kTypeDHCP[] = "dhcp";
 const char kTypeBOOTP[] = "bootp";
 const char kTypeZeroConf[] = "zeroconf";
 const char kTypeDHCP6[] = "dhcp6";
+// kTypeVPN[] = "vpn" is defined above in device type session.
 
 // Flimflam error options.
 const char kErrorAaaFailed[] = "aaa-failed";
@@ -615,6 +628,8 @@ const char kErrorOtaspFailed[] = "otasp-failed";
 const char kErrorOutOfRange[] = "out-of-range";
 const char kErrorPinMissing[] = "pin-missing";
 const char kErrorPppAuthFailed[] = "ppp-auth-failed";
+const char kErrorSimLocked[] = "sim-locked";
+const char kErrorNotRegistered[] = "not-registered";
 const char kErrorTooManySTAs[] = "too-many-stas";
 const char kErrorDisconnect[] = "disconnect-failure";
 const char kErrorUnknownFailure[] = "unknown-failure";
@@ -729,6 +744,15 @@ const char kWakeOnWiFiFeaturesEnabledDarkConnect[] = "darkconnect";
 const char kWakeOnWiFiFeaturesEnabledPacketDarkConnect[] =
     "packet_and_darkconnect";
 const char kWakeOnWiFiFeaturesEnabledNone[] = "none";
+
+// Wake on WiFi wake reasons.
+// These (except Unknown) will also be sent to powerd via
+// RecordDarkResumeWakeReason, to tell it the reason of the current dark
+// resume.
+const char kWakeOnWiFiReasonDisconnect[] = "WiFi.Disconnect";
+const char kWakeOnWiFiReasonPattern[] = "WiFi.Pattern";
+const char kWakeOnWiFiReasonSSID[] = "WiFi.SSID";
+const char kWakeOnWiFiReasonUnknown[] = "Unknown";
 
 // kEapKeyMgmtProperty values.
 const char kKeyManagementIEEE8021X[] = "IEEE8021X";

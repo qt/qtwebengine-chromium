@@ -168,6 +168,9 @@ message StartVmRequest {
   // Kernel cmdline parameters that will be passed to crosvm.
   repeated string kernel_params = 17;
 
+  // Enable Vulkan in the started Vm.
+  bool enable_vulkan = 18;
+
   enum FdType {
     // Kernel image.
     KERNEL = 0;
@@ -260,6 +263,9 @@ message StartArcVmRequest {
 
   // Whether rt-vcpus are enabled.
   bool enable_rt_vcpu = 10;
+
+  // Whether Huge Pages should be used.
+  bool use_hugepages = 11;
 }
 
 enum VmStatus {
@@ -310,6 +316,10 @@ message StartVmResponse {
   }
 
   MountResult mount_result = 5;
+
+  // The amount of free space on the stateful partition in bytes. -1 if unable
+  // to calculate the amount of free space (e.g. error mounting the partition).
+  int64 free_bytes = 6;
 }
 
 // Message used in the signal for when a VM has started.
@@ -346,6 +356,23 @@ message StopVmResponse {
   string failure_reason = 2;
 }
 
+enum VmStopReason {
+  // VM exited.
+  VM_EXITED = 0;
+
+  // StopVm() was requested.
+  STOP_VM_REQUESTED = 1;
+
+  // StopAllVms() was requested.
+  STOP_ALL_VMS_REQUESTED = 2;
+
+  // DestroyDiskImage() was requested.
+  DESTROY_DISK_IMAGE_REQUESTED = 3;
+
+  // The service process is shutting down.
+  SERVICE_SHUTDOWN = 4;
+}
+
 // Message used in the signal for when a VM has stopped.
 message VmStoppedSignal {
   // The name of the VM which has stopped.
@@ -356,6 +383,9 @@ message VmStoppedSignal {
 
   // The virtual socket context id assigned to the VM that was stopped.
   int64 cid = 3;
+
+  // Why the VM has stopped.
+  VmStopReason reason = 4;
 }
 
 // Information that must be included with every SuspendVm dbus message.
@@ -707,6 +737,9 @@ message VmDiskInfo {
 
   // The absolute path to the disk.
   string path = 7;
+
+  // The available space on the disk, or 0 if unknown.
+  uint64 available_space = 8;
 }
 
 // Response to ListVmDisks {
@@ -1049,4 +1082,22 @@ message VmIdChangedSignal {
 
   // The virtual socket context id assigned to the VM which has changed.
   int64 cid = 4;
+}
+
+// Request to reclaim memory of a given VM.
+message ReclaimVmMemoryRequest {
+  // An identifier for this VM.
+  string name = 1;
+
+  // The current cyptohome id of this VM.
+  string owner_id = 2;
+}
+
+// Response to a ReclaimVmMemoryRequest.
+message ReclaimVmMemoryResponse {
+  // If true, the memory of the VM was successfully reclaimed.
+  bool success = 1;
+
+  // If the attempt to reclaim memory failed, the reason for failure.
+  string failure_reason = 2;
 }

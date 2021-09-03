@@ -20,7 +20,7 @@ except ImportError:
 
 
 def read_file(filename):
-    with open(path.normpath(filename), 'rt') as input:
+    with open(path.normpath(filename), 'rt', encoding='utf-8') as input:
         return input.read()
 
 
@@ -30,7 +30,7 @@ def write_file(filename, content):
     directory = path.dirname(filename)
     if not path.exists(directory):
         os.makedirs(directory)
-    with open(filename, 'wt') as output:
+    with open(filename, 'wt', encoding='utf-8') as output:
         output.write(content)
 
 
@@ -59,7 +59,7 @@ class Descriptors:
 
     def application_json(self):
         result = dict()
-        result['modules'] = self.application.values()
+        result['modules'] = list(self.application.values())
         return json.dumps(result)
 
     def module_resources(self, name):
@@ -70,7 +70,10 @@ class Descriptors:
             return self._cached_sorted_modules
 
         result = []
-        unvisited_modules = set(self.modules)
+
+        # Use dict instead of set for deterministic iteration order.
+        unvisited_modules = {module: None for module in self.modules}
+
         temp_modules = set()
 
         def visit(parent, name):
@@ -87,7 +90,7 @@ class Descriptors:
                     bad_dep = visit(name, dep_name)
                     if bad_dep:
                         return bad_dep
-            unvisited_modules.remove(name)
+            del unvisited_modules[name]
             temp_modules.remove(name)
             result.append(name)
             return None
@@ -146,7 +149,9 @@ class DescriptorLoader:
 
     def _load_application(self, application_descriptor_name, all_module_descriptors):
         module_descriptors = {}
-        application_descriptor_filename = path.join(self.application_dir, application_descriptor_name + '.json')
+        application_descriptor_filename = path.join(
+            self.application_dir, 'entrypoints', application_descriptor_name,
+            application_descriptor_name + '.json')
         descriptor_json = load_and_parse_json(application_descriptor_filename)
         application_descriptor = {desc['name']: desc for desc in descriptor_json['modules']}
         extends = descriptor_json['extends'] if 'extends' in descriptor_json else None

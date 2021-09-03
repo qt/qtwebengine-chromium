@@ -25,6 +25,8 @@ const char kConnectNamespaceMethod[] = "ConnectNamespace";
 const char kGetTrafficCountersMethod[] = "GetTrafficCounters";
 const char kModifyPortRuleMethod[] = "ModifyPortRule";
 const char kGetDevicesMethod[] = "GetDevices";
+const char kSetVpnLockdown[] = "SetVpnLockdown";
+const char kSetDnsRedirectionRuleMethod[] = "SetDnsRedirectionRule";
 
 // Signals.
 const char kNetworkDeviceChangedSignal[] = "NetworkDeviceChanged";

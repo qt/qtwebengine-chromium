@@ -51,7 +51,7 @@ class UtilDescriptorSetManager {
     };
     VkDevice device;
     uint32_t numBindingsInSet;
-    std::unordered_map<VkDescriptorPool, struct PoolTracker> desc_pool_map_;
+    layer_data::unordered_map<VkDescriptorPool, struct PoolTracker> desc_pool_map_;
 };
 
 // Implementation for Descriptor Set Manager class
@@ -102,9 +102,7 @@ VkResult UtilDescriptorSetManager::GetDescriptorSets(uint32_t count, VkDescripto
             VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
             pool_count * numBindingsInSet,
         };
-        VkDescriptorPoolCreateInfo desc_pool_info = {};
-        desc_pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        desc_pool_info.pNext = NULL;
+        auto desc_pool_info = LvlInitStruct<VkDescriptorPoolCreateInfo>();
         desc_pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         desc_pool_info.maxSets = pool_count;
         desc_pool_info.poolSizeCount = 1;
@@ -503,7 +501,7 @@ void UtilGenerateSourceMessages(const std::vector<unsigned int> &pgm, const uint
     uint32_t reported_line_number = 0;
     uint32_t reported_column_number = 0;
     if (shader.words.size() > 0) {
-        for (auto insn : shader) {
+        for (const auto &insn : shader) {
             if (insn.opcode() == spv::OpLine) {
                 reported_file_id = insn.word(1);
                 reported_line_number = insn.word(2);
@@ -528,7 +526,7 @@ void UtilGenerateSourceMessages(const std::vector<unsigned int> &pgm, const uint
         } else {
             prefix = "Shader validation error occurred ";
         }
-        for (auto insn : shader) {
+        for (const auto &insn : shader) {
             if ((insn.opcode() == spv::OpString) && (insn.len() >= 3) && (insn.word(1) == reported_file_id)) {
                 found_opstring = true;
                 reported_filename = (char *)&insn.word(2);

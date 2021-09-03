@@ -91,7 +91,7 @@ message UpgradeArcContainerRequest {
     SKIP_SETUP_COPY_ON_INIT = 2;
   }
 
-  enum SupervisionTransition {
+  enum ManagementTransition {
     // No transition necessary.
     NONE = 0;
     // Child user is transitioning to regular account, need to lift supervision.
@@ -99,6 +99,9 @@ message UpgradeArcContainerRequest {
     // Regular user is transitioning to child account, need to enable
     // supervision.
     REGULAR_TO_CHILD = 2;
+    // Unmanaged user is transitioning to managed state, need to enable
+    // management.
+    UNMANAGED_TO_MANAGED = 3;
   }
 
   // Account ID of the user to start ARC for. This must be the same as the
@@ -142,9 +145,9 @@ message UpgradeArcContainerRequest {
   // Preferred languages to set in Android container during the boot.
   repeated string preferred_languages = 8;
 
-  // Option to notify ARC that it should transition from a supervised state to
-  // a non-supervised state, and vice-versa.
-  optional SupervisionTransition supervision_transition = 11;
+  // Option to notify ARC that it should transition from a managed state to an
+  // unmanaged state, and vice-versa.
+  optional ManagementTransition management_transition = 11;
 
   // Next ID to use: 17
 }

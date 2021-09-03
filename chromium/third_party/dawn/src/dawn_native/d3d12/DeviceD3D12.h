@@ -65,9 +65,9 @@ namespace dawn_native { namespace d3d12 {
 
         const PlatformFunctions* GetFunctions() const;
         ComPtr<IDXGIFactory4> GetFactory() const;
-        ResultOrError<IDxcLibrary*> GetOrCreateDxcLibrary() const;
-        ResultOrError<IDxcCompiler*> GetOrCreateDxcCompiler() const;
-        ResultOrError<IDxcValidator*> GetOrCreateDxcValidator() const;
+        ComPtr<IDxcLibrary> GetDxcLibrary() const;
+        ComPtr<IDxcCompiler> GetDxcCompiler() const;
+        ComPtr<IDxcValidator> GetDxcValidator() const;
 
         ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
 
@@ -125,6 +125,7 @@ namespace dawn_native { namespace d3d12 {
         Ref<TextureBase> CreateExternalTexture(const TextureDescriptor* descriptor,
                                                ComPtr<ID3D12Resource> d3d12Texture,
                                                ExternalMutexSerial acquireMutexKey,
+                                               ExternalMutexSerial releaseMutexKey,
                                                bool isSwapChainTexture,
                                                bool isInitialized);
         ResultOrError<ComPtr<IDXGIKeyedMutex>> CreateKeyedMutexForTexture(
@@ -177,7 +178,7 @@ namespace dawn_native { namespace d3d12 {
 
         MaybeError CheckDebugLayerAndGenerateErrors();
 
-        void ApplyUseDxcToggle();
+        MaybeError ApplyUseDxcToggle();
 
         ComPtr<ID3D12Fence> mFence;
         HANDLE mFenceEvent = nullptr;

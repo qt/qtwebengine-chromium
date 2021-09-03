@@ -12,6 +12,7 @@ const char kRuntimeProbeServiceName[] = "org.chromium.RuntimeProbe";
 
 // Methods
 const char kProbeCategoriesMethod[] = "ProbeCategories";
+const char kGetKnownComponentsMethod[] = "GetKnownComponents";
 
 // Constants
 const auto kTypeWireless = "wireless";

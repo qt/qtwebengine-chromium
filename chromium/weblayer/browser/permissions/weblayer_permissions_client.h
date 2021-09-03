@@ -30,13 +30,15 @@ class WebLayerPermissionsClient : public permissions::PermissionsClient {
       content::BrowserContext* browser_context) override;
   permissions::PermissionManager* GetPermissionManager(
       content::BrowserContext* browser_context) override;
-  permissions::ChooserContextBase* GetChooserContext(
+  permissions::ObjectPermissionContextBase* GetChooserContext(
       content::BrowserContext* browser_context,
       ContentSettingsType type) override;
 #if defined(OS_ANDROID)
   bool IsPermissionControlledByDse(content::BrowserContext* browser_context,
                                    ContentSettingsType type,
                                    const url::Origin& origin) override;
+  bool IsDseOrigin(content::BrowserContext* browser_context,
+                   const url::Origin& origin) override;
   bool ResetPermissionIfControlledByDse(
       content::BrowserContext* browser_context,
       ContentSettingsType type,

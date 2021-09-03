@@ -20,8 +20,35 @@ const char kGetGameModeMethod[] = "GetGameMode";
 const char kSetGameModeMethod[] = "SetGameMode";
 
 // Signals.
-const char kCriticalMemoryPressure[] = "CriticalMemoryPressure";
-const char kModerateMemoryPressure[] = "ModerateMemoryPressure";
+
+// MemoryPressureChrome signal contains 2 arguments:
+//   1. pressure_level, BYTE
+//     0: no memory pressure level
+//     1: moderate memory pressure level
+//     2: critical memory pressure level
+//   2. delta, UINT64, memory amount to free in KB to leave the current
+//   pressure level.
+//   E.g. argument (0, 10000): Chrome should free 10000 KB to leave the critical
+//   memory pressure level (to moderate pressure level).
+const char kMemoryPressureChrome[] = "MemoryPressureChrome";
+
+// Values.
+enum GameMode {
+  // Game mode is off.
+  OFF = 0,
+  // Game mode is on, borealis is the foreground subsystem.
+  BOREALIS = 1,
+};
+
+enum PressureLevelChrome {
+  // There is enough memory to use.
+  NONE = 0,
+  // Chrome is advised to free buffers that are cheap to re-allocate and not
+  // immediately needed.
+  MODERATE = 1,
+  // Chrome is advised to free all possible memory.
+  CRITICAL = 2,
+};
 
 }  // namespace resource_manager
 

@@ -61,3 +61,25 @@ message AddFileResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
 }
+
+message IsRestrictedRequest {
+  // URL from where the file was downloaded.
+  optional string source_url = 1;
+  // URL where the file is going to be uploaded.
+  optional string destination_url = 2;
+}
+
+message IsRestrictedResponse {
+  // Whether the operation should be allowed or not.
+  optional bool restricted = 1;
+}
+
+message IsDlpPolicyMatchedRequest {
+  // URL from where the file was downloaded.
+  optional string source_url = 1;
+}
+
+message IsDlpPolicyMatchedResponse {
+  // Whether a DLP rule exists that might prevent operation on the file.
+  optional bool restricted = 1;
+}

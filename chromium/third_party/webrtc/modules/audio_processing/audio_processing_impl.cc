@@ -271,7 +271,8 @@ AudioProcessingImpl::AudioProcessingImpl(
                  !field_trial::IsEnabled(
                      "WebRTC-ApmExperimentalMultiChannelCaptureKillSwitch"),
                  EnforceSplitBandHpf(),
-                 MinimizeProcessingForUnusedOutput()),
+                 MinimizeProcessingForUnusedOutput(),
+                 field_trial::IsEnabled("WebRTC-TransientSuppressorForcedOff")),
       capture_(),
       capture_nonlocked_() {
   RTC_LOG(LS_INFO) << "Injected APM submodules:"
@@ -290,8 +291,7 @@ AudioProcessingImpl::AudioProcessingImpl(
 
   // If no echo detector is injected, use the ResidualEchoDetector.
   if (!submodules_.echo_detector) {
-    submodules_.echo_detector =
-        new rtc::RefCountedObject<ResidualEchoDetector>();
+    submodules_.echo_detector = rtc::make_ref_counted<ResidualEchoDetector>();
   }
 
 #if !(defined(WEBRTC_ANDROID) || defined(WEBRTC_IOS))
@@ -1733,7 +1733,8 @@ bool AudioProcessingImpl::UpdateActiveSubmoduleStates() {
 }
 
 void AudioProcessingImpl::InitializeTransientSuppressor() {
-  if (config_.transient_suppression.enabled) {
+  if (config_.transient_suppression.enabled &&
+      !constants_.transient_suppressor_forced_off) {
     // Attempt to create a transient suppressor, if one is not already created.
     if (!submodules_.transient_suppressor) {
       submodules_.transient_suppressor =
@@ -1917,7 +1918,11 @@ void AudioProcessingImpl::InitializeGainController1() {
         config_.gain_controller1.analog_gain_controller.clipped_level_min,
         !config_.gain_controller1.analog_gain_controller
              .enable_digital_adaptive,
-        capture_nonlocked_.split_rate));
+        capture_nonlocked_.split_rate,
+        config_.gain_controller1.analog_gain_controller.clipped_level_step,
+        config_.gain_controller1.analog_gain_controller.clipped_ratio_threshold,
+        config_.gain_controller1.analog_gain_controller.clipped_wait_frames,
+        config_.gain_controller1.analog_gain_controller.clipping_predictor));
     if (re_creation) {
       submodules_.agc_manager->set_stream_analog_level(stream_analog_level);
     }
@@ -1937,7 +1942,8 @@ void AudioProcessingImpl::InitializeGainController2() {
       submodules_.gain_controller2.reset(new GainController2());
     }
 
-    submodules_.gain_controller2->Initialize(proc_fullband_sample_rate_hz());
+    submodules_.gain_controller2->Initialize(proc_fullband_sample_rate_hz(),
+                                             num_input_channels());
     submodules_.gain_controller2->ApplyConfig(config_.gain_controller2);
   } else {
     submodules_.gain_controller2.reset();

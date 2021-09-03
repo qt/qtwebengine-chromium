@@ -49,6 +49,7 @@ namespace profile {
 // Profile methods.
 const char kEnable[] = "Enable";
 const char kDisable[] = "Disable";
+const char kRename[] = "Rename";
 
 // Profile properties.
 const char kActivationCodeProperty[] = "ActivationCode";

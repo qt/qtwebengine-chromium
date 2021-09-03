@@ -47,7 +47,7 @@ bool BestPractices::VendorCheckEnabled(BPVendorFlags vendors) const {
 
 const char* VendorSpecificTag(BPVendorFlags vendors) {
     // Cache built vendor tags in a map
-    static std::unordered_map<BPVendorFlags, std::string> tag_map;
+    static layer_data::unordered_map<BPVendorFlags, std::string> tag_map;
 
     auto res = tag_map.find(vendors);
     if (res == tag_map.end()) {
@@ -301,7 +301,8 @@ bool BestPractices::PreCallValidateCreateSwapchainKHR(VkDevice device, const VkS
                                "vkGetPhysicalDeviceSurfaceCapabilitiesKHR().");
         }
 
-        if (bp_pd_state->vkGetPhysicalDeviceSurfacePresentModesKHRState != QUERY_DETAILS) {
+        if ((pCreateInfo->presentMode != VK_PRESENT_MODE_FIFO_KHR) &&
+            (bp_pd_state->vkGetPhysicalDeviceSurfacePresentModesKHRState != QUERY_DETAILS)) {
             skip |= LogWarning(device, kVUID_BestPractices_Swapchain_GetSurfaceNotCalled,
                                "vkCreateSwapchainKHR() called before getting surface present mode(s) from "
                                "vkGetPhysicalDeviceSurfacePresentModesKHR().");
@@ -531,7 +532,7 @@ void BestPractices::PostCallRecordFreeDescriptorSets(VkDevice device, VkDescript
         // we want to track frees because we're interested in suggesting re-use
         auto iter = descriptor_pool_freed_count.find(descriptorPool);
         if (iter == descriptor_pool_freed_count.end()) {
-            descriptor_pool_freed_count.insert(std::make_pair(descriptorPool, descriptorSetCount));
+            descriptor_pool_freed_count.emplace(descriptorPool, descriptorSetCount);
         } else {
             iter->second += descriptorSetCount;
         }
@@ -550,8 +551,8 @@ bool BestPractices::PreCallValidateAllocateMemory(VkDevice device, const VkMemor
     if (pAllocateInfo->allocationSize < kMinDeviceAllocationSize) {
         skip |= LogPerformanceWarning(
             device, kVUID_BestPractices_AllocateMemory_SmallAllocation,
-            "vkAllocateMemory(): Allocating a VkDeviceMemory of size %llu. This is a very small allocation (current "
-            "threshold is %llu bytes). "
+            "vkAllocateMemory(): Allocating a VkDeviceMemory of size %" PRIu64 ". This is a very small allocation (current "
+            "threshold is %" PRIu64 " bytes). "
             "You should make large allocations and sub-allocate from one large VkDeviceMemory.",
             pAllocateInfo->allocationSize, kMinDeviceAllocationSize);
     }
@@ -569,7 +570,7 @@ void BestPractices::ManualPostCallRecordAllocateMemory(VkDevice device, const Vk
                                                     VK_ERROR_TOO_MANY_OBJECTS, VK_ERROR_INVALID_EXTERNAL_HANDLE,
                                                     VK_ERROR_INVALID_OPAQUE_CAPTURE_ADDRESS};
         static std::vector<VkResult> success_codes = {};
-        ValidateReturnCodes("vkReleaseFullScreenExclusiveModeEXT", result, error_codes, success_codes);
+        ValidateReturnCodes("vkAllocateMemory", result, error_codes, success_codes);
         return;
     }
     num_mem_objects++;
@@ -604,12 +605,13 @@ bool BestPractices::PreCallValidateFreeMemory(VkDevice device, VkDeviceMemory me
 
     const DEVICE_MEMORY_STATE* mem_info = ValidationStateTracker::GetDevMemState(memory);
 
-    for (auto& obj : mem_info->obj_bindings) {
+    for (const auto& node: mem_info->ObjectBindings()) {
+        const auto& obj = node->Handle();
         LogObjectList objlist(device);
         objlist.add(obj);
-        objlist.add(mem_info->mem);
+        objlist.add(mem_info->mem());
         skip |= LogWarning(objlist, layer_name.c_str(), "VK Object %s still has a reference to mem obj %s.",
-                           report_data->FormatHandle(obj).c_str(), report_data->FormatHandle(mem_info->mem).c_str());
+                           report_data->FormatHandle(obj).c_str(), report_data->FormatHandle(mem_info->mem()).c_str());
     }
 
     return skip;
@@ -639,8 +641,8 @@ bool BestPractices::ValidateBindBufferMemory(VkBuffer buffer, VkDeviceMemory mem
         skip |= LogPerformanceWarning(
             device, kVUID_BestPractices_SmallDedicatedAllocation,
             "%s: Trying to bind %s to a memory block which is fully consumed by the buffer. "
-            "The required size of the allocation is %llu, but smaller buffers like this should be sub-allocated from "
-            "larger memory blocks. (Current threshold is %llu bytes.)",
+            "The required size of the allocation is %" PRIu64 ", but smaller buffers like this should be sub-allocated from "
+            "larger memory blocks. (Current threshold is %" PRIu64 " bytes.)",
             api_name, report_data->FormatHandle(buffer).c_str(), mem_state->alloc_info.allocationSize, kMinDedicatedAllocationSize);
     }
 
@@ -705,8 +707,8 @@ bool BestPractices::ValidateBindImageMemory(VkImage image, VkDeviceMemory memory
         skip |= LogPerformanceWarning(
             device, kVUID_BestPractices_SmallDedicatedAllocation,
             "%s: Trying to bind %s to a memory block which is fully consumed by the image. "
-            "The required size of the allocation is %llu, but smaller images like this should be sub-allocated from "
-            "larger memory blocks. (Current threshold is %llu bytes.)",
+            "The required size of the allocation is %" PRIu64 ", but smaller images like this should be sub-allocated from "
+            "larger memory blocks. (Current threshold is %" PRIu64 " bytes.)",
             api_name, report_data->FormatHandle(image).c_str(), mem_state->alloc_info.allocationSize, kMinDedicatedAllocationSize);
     }
 
@@ -733,9 +735,9 @@ bool BestPractices::ValidateBindImageMemory(VkImage image, VkDeviceMemory memory
         if (supports_lazy && (allocated_properties & VK_MEMORY_PROPERTY_LAZILY_ALLOCATED_BIT) == 0) {
             skip |= LogPerformanceWarning(
                 device, kVUID_BestPractices_NonLazyTransientImage,
-                "%s: Attempting to bind memory type % u to VkImage which was created with TRANSIENT_ATTACHMENT_BIT,"
+                "%s: Attempting to bind memory type %u to VkImage which was created with TRANSIENT_ATTACHMENT_BIT,"
                 "but this memory type is not LAZILY_ALLOCATED_BIT. You should use memory type %u here instead to save "
-                "%llu bytes of physical memory.",
+                "%" PRIu64 " bytes of physical memory.",
                 api_name, mem_state->alloc_info.memoryTypeIndex, suggested_type, image_state->requirements.size);
         }
     }
@@ -901,7 +903,7 @@ void BestPractices::ManualPostCallRecordCreateGraphicsPipelines(VkDevice device,
 
         // add the tracking state if it doesn't exist
         if (gp_cis == graphicsPipelineCIs.end()) {
-            auto result = graphicsPipelineCIs.emplace(std::make_pair(pipeline_handle, GraphicsPipelineCIs{}));
+            auto result = graphicsPipelineCIs.emplace(pipeline_handle, GraphicsPipelineCIs{});
 
             if (!result.second) continue;
 
@@ -945,9 +947,12 @@ bool BestPractices::PreCallValidateCreateComputePipelines(VkDevice device, VkPip
 bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCreateInfo& createInfo) const {
     bool skip = false;
     auto* module = GetShaderModuleState(createInfo.stage.module);
+    // Generate warnings about work group sizes based on active resources.
+    auto entrypoint = module->FindEntrypoint(createInfo.stage.pName, createInfo.stage.stage);
+    if (entrypoint == module->end()) return false;
 
     uint32_t x = 1, y = 1, z = 1;
-    FindLocalSize(module, x, y, z);
+    module->FindLocalSize(entrypoint, x, y, z);
 
     uint32_t thread_count = x * y * z;
 
@@ -974,15 +979,11 @@ bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCrea
                                       kThreadGroupDispatchCountAlignmentArm);
     }
 
-    // Generate warnings about work group sizes based on active resources.
-    auto entrypoint = FindEntrypoint(module, createInfo.stage.pName, createInfo.stage.stage);
-    if (entrypoint == module->end()) return false;
-
     bool has_writeable_descriptors = false;
     bool has_atomic_descriptors = false;
-    auto accessible_ids = MarkAccessibleIds(module, entrypoint);
+    auto accessible_ids = module->MarkAccessibleIds(entrypoint);
     auto descriptor_uses =
-        CollectInterfaceByDescriptorSlot(module, accessible_ids, &has_writeable_descriptors, &has_atomic_descriptors);
+        module->CollectInterfaceByDescriptorSlot(accessible_ids, &has_writeable_descriptors, &has_atomic_descriptors);
 
     unsigned dimensions = 0;
     if (x > 1) dimensions++;
@@ -996,7 +997,7 @@ bool BestPractices::ValidateCreateComputePipelineArm(const VkComputePipelineCrea
     // or we may have a linearly tiled image, but these cases are quite unlikely in practice.
     bool accesses_2d = false;
     for (const auto& usage : descriptor_uses) {
-        auto dim = GetShaderResourceDimensionality(module, usage.second);
+        auto dim = module->GetShaderResourceDimensionality(usage.second);
         if (dim < 0) continue;
         auto spvdim = spv::Dim(dim);
         if (spvdim != spv::Dim1D && spvdim != spv::DimBuffer) accesses_2d = true;
@@ -1230,7 +1231,7 @@ void BestPractices::PostCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer,
         if (gp_cis != graphicsPipelineCIs.end()) {
             auto prepass_state = cbDepthPrePassStates.find(commandBuffer);
             if (prepass_state == cbDepthPrePassStates.end()) {
-                auto result = cbDepthPrePassStates.emplace(std::make_pair(commandBuffer, DepthPrePassState{}));
+                auto result = cbDepthPrePassStates.emplace(commandBuffer, DepthPrePassState{});
 
                 if (!result.second) return;
 
@@ -1266,7 +1267,7 @@ void BestPractices::PostCallRecordCmdBindPipeline(VkCommandBuffer commandBuffer,
             }
         } else {
             // reset depth pre-pass tracking
-            cbDepthPrePassStates.emplace(std::make_pair(commandBuffer, DepthPrePassState{}));
+            cbDepthPrePassStates.emplace(commandBuffer, DepthPrePassState{});
         }
     }
 }
@@ -1378,7 +1379,7 @@ void BestPractices::RecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, Rend
 
     // add the tracking state if it doesn't exist
     if (prepass_state == cbDepthPrePassStates.end()) {
-        auto result = cbDepthPrePassStates.emplace(std::make_pair(commandBuffer, DepthPrePassState{}));
+        auto result = cbDepthPrePassStates.emplace(commandBuffer, DepthPrePassState{});
 
         if (!result.second) return;
 
@@ -1431,10 +1432,10 @@ bool BestPractices::ValidateCmdDrawType(VkCommandBuffer cmd_buffer, const char* 
         // Verify vertex binding
         if (pipeline_state->vertex_binding_descriptions_.size() <= 0) {
             if ((!current_vtx_bfr_binding_info.empty()) && (!cb_state->vertex_buffer_used)) {
-                skip |= LogPerformanceWarning(cb_state->commandBuffer, kVUID_BestPractices_DrawState_VtxIndexOutOfBounds,
+                skip |= LogPerformanceWarning(cb_state->commandBuffer(), kVUID_BestPractices_DrawState_VtxIndexOutOfBounds,
                                               "Vertex buffers are bound to %s but no vertex buffers are attached to %s.",
-                                              report_data->FormatHandle(cb_state->commandBuffer).c_str(),
-                                              report_data->FormatHandle(pipeline_state->pipeline).c_str());
+                                              report_data->FormatHandle(cb_state->commandBuffer()).c_str(),
+                                              report_data->FormatHandle(pipeline_state->pipeline()).c_str());
             }
         }
     }
@@ -1492,7 +1493,7 @@ bool BestPractices::PreCallValidateCmdDrawIndexed(VkCommandBuffer commandBuffer,
         (cmd_state->small_indexed_draw_call_count == kMaxSmallIndexedDrawcalls - 1)) {
         skip |= VendorCheckEnabled(kBPVendorArm) &&
                 LogPerformanceWarning(device, kVUID_BestPractices_CmdDrawIndexed_ManySmallIndexedDrawcalls,
-                                      "The command buffer contains many small indexed drawcalls "
+                                      "%s: The command buffer contains many small indexed drawcalls "
                                       "(at least %u drawcalls with less than %u indices each). This may cause pipeline bubbles. "
                                       "You can try batching drawcalls or instancing when applicable.",
                                       VendorSpecificTag(kBPVendorArm), kMaxSmallIndexedDrawcalls, kSmallIndexedDrawcallIndices);
@@ -1514,7 +1515,7 @@ bool BestPractices::ValidateIndexBufferArm(VkCommandBuffer commandBuffer, uint32
     if (cmd_state == nullptr) return skip;
 
     const auto* ib_state = cmd_state->index_buffer_binding.buffer_state.get();
-    if (ib_state == nullptr || cmd_state->index_buffer_binding.buffer_state->destroyed) return skip;
+    if (ib_state == nullptr || cmd_state->index_buffer_binding.buffer_state->Destroyed()) return skip;
 
     const VkIndexType ib_type = cmd_state->index_buffer_binding.index_type;
     const auto& ib_mem_state = *ib_state->binding.mem_state;
@@ -1967,10 +1968,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
     for (uint32_t bind_idx = 0; bind_idx < bindInfoCount; bind_idx++) {
         const VkBindSparseInfo& bind_info = pBindInfo[bind_idx];
         // Store sparse binding image_state and after binding is complete make sure that any requiring metadata have it bound
-        std::unordered_set<const IMAGE_STATE*> sparse_images;
+        layer_data::unordered_set<const IMAGE_STATE*> sparse_images;
         // Track images getting metadata bound by this call in a set, it'll be recorded into the image_state
         // in RecordQueueBindSparse.
-        std::unordered_set<const IMAGE_STATE*> sparse_images_with_metadata;
+        layer_data::unordered_set<const IMAGE_STATE*> sparse_images_with_metadata;
         // If we're binding sparse image memory make sure reqs were queried and note if metadata is required and bound
         for (uint32_t i = 0; i < bind_info.imageBindCount; ++i) {
             const auto& image_bind = bind_info.pImageBinds[i];
@@ -1982,18 +1983,18 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (image_state->createInfo.flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) {
                 if (!image_state->get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
                     // For now just warning if sparse image binding occurs without calling to get reqs first
-                    skip |= LogWarning(image_state->image, kVUID_Core_MemTrack_InvalidState,
+                    skip |= LogWarning(image_state->image(), kVUID_Core_MemTrack_InvalidState,
                                        "vkQueueBindSparse(): Binding sparse memory to %s without first calling "
                                        "vkGetImageSparseMemoryRequirements[2KHR]() to retrieve requirements.",
-                                       report_data->FormatHandle(image_state->image).c_str());
+                                       report_data->FormatHandle(image_state->image()).c_str());
                 }
             }
             if (!image_state->memory_requirements_checked) {
                 // For now just warning if sparse image binding occurs without calling to get reqs first
-                skip |= LogWarning(image_state->image, kVUID_Core_MemTrack_InvalidState,
+                skip |= LogWarning(image_state->image(), kVUID_Core_MemTrack_InvalidState,
                                    "vkQueueBindSparse(): Binding sparse memory to %s without first calling "
                                    "vkGetImageMemoryRequirements() to retrieve requirements.",
-                                   report_data->FormatHandle(image_state->image).c_str());
+                                   report_data->FormatHandle(image_state->image()).c_str());
             }
         }
         for (uint32_t i = 0; i < bind_info.imageOpaqueBindCount; ++i) {
@@ -2006,18 +2007,18 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (image_state->createInfo.flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) {
                 if (!image_state->get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
                     // For now just warning if sparse image binding occurs without calling to get reqs first
-                    skip |= LogWarning(image_state->image, kVUID_Core_MemTrack_InvalidState,
+                    skip |= LogWarning(image_state->image(), kVUID_Core_MemTrack_InvalidState,
                                        "vkQueueBindSparse(): Binding opaque sparse memory to %s without first calling "
                                        "vkGetImageSparseMemoryRequirements[2KHR]() to retrieve requirements.",
-                                       report_data->FormatHandle(image_state->image).c_str());
+                                       report_data->FormatHandle(image_state->image()).c_str());
                 }
             }
             if (!image_state->memory_requirements_checked) {
                 // For now just warning if sparse image binding occurs without calling to get reqs first
-                skip |= LogWarning(image_state->image, kVUID_Core_MemTrack_InvalidState,
+                skip |= LogWarning(image_state->image(), kVUID_Core_MemTrack_InvalidState,
                                    "vkQueueBindSparse(): Binding opaque sparse memory to %s without first calling "
                                    "vkGetImageMemoryRequirements() to retrieve requirements.",
-                                   report_data->FormatHandle(image_state->image).c_str());
+                                   report_data->FormatHandle(image_state->image()).c_str());
             }
             for (uint32_t j = 0; j < image_opaque_bind.bindCount; ++j) {
                 if (image_opaque_bind.pBinds[j].flags & VK_SPARSE_MEMORY_BIND_METADATA_BIT) {
@@ -2029,10 +2030,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (sparse_image_state->sparse_metadata_required && !sparse_image_state->sparse_metadata_bound &&
                 sparse_images_with_metadata.find(sparse_image_state) == sparse_images_with_metadata.end()) {
                 // Warn if sparse image binding metadata required for image with sparse binding, but metadata not bound
-                skip |= LogWarning(sparse_image_state->image, kVUID_Core_MemTrack_InvalidState,
+                skip |= LogWarning(sparse_image_state->image(), kVUID_Core_MemTrack_InvalidState,
                                    "vkQueueBindSparse(): Binding sparse memory to %s which requires a metadata aspect but no "
                                    "binding with VK_SPARSE_MEMORY_BIND_METADATA_BIT set was made.",
-                                   report_data->FormatHandle(sparse_image_state->image).c_str());
+                                   report_data->FormatHandle(sparse_image_state->image()).c_str());
             }
         }
     }
@@ -2181,7 +2182,7 @@ bool BestPractices::PreCallValidateCreateSampler(VkDevice device, const VkSample
                 "%s Creating a sampler object with wrapping modes which do not match (U = %u, V = %u, W = %u). "
                 "This may cause reduced performance even if only U (1D image) or U/V wrapping modes (2D "
                 "image) are actually used. If you need different wrapping modes, disregard this warning.",
-                VendorSpecificTag(kBPVendorArm));
+                VendorSpecificTag(kBPVendorArm), pCreateInfo->addressModeU, pCreateInfo->addressModeV, pCreateInfo->addressModeW);
         }
 
         if ((pCreateInfo->minLod != 0.0f) || (pCreateInfo->maxLod < VK_LOD_CLAMP_NONE)) {

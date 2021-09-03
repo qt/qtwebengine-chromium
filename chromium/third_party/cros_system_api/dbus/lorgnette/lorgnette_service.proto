@@ -97,6 +97,15 @@ message ScanRegion {
   double bottom_right_y = 4;
 }
 
+// The image formats that scanned images can be returned as.
+enum ImageFormat {
+  // PNG. To preserve backwards-compatibility, unset ImageFormat fields will
+  // return PNGs.
+  IMAGE_FORMAT_PNG = 0;
+  // JPEG.
+  IMAGE_FORMAT_JPEG = 1;
+}
+
 // Settings for how lorgnette should perform a scan.
 message ScanSettings {
   // The resolution, in DPI, to use for the scan.
@@ -113,6 +122,9 @@ message ScanSettings {
   //
   // The region to be scanned.
   ScanRegion scan_region = 5;
+
+  // The image format scanned images will be returned as.
+  ImageFormat image_format = 6;
 }
 
 // The status of a scan job.

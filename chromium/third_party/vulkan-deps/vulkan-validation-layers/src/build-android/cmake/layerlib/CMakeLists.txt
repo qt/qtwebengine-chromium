@@ -68,8 +68,10 @@ add_library(VkLayer_khronos_validation SHARED
         ${SRC_DIR}/layers/convert_to_renderpass2.cpp
         ${SRC_DIR}/layers/descriptor_sets.cpp
         ${SRC_DIR}/layers/buffer_validation.cpp
+        ${SRC_DIR}/layers/shader_module.cpp
         ${SRC_DIR}/layers/shader_validation.cpp
         ${SRC_DIR}/layers/generated/spirv_validation_helper.cpp
+        ${SRC_DIR}/layers/generated/command_validation.cpp
         ${SRC_DIR}/layers/gpu_validation.cpp
         ${SRC_DIR}/layers/gpu_utils.cpp
         ${SRC_DIR}/layers/debug_printf.cpp
@@ -94,7 +96,8 @@ target_include_directories(VkLayer_khronos_validation PRIVATE
         ${SRC_DIR}/layers
         ${COMMON_DIR}/include
         ${EXTERNAL_DIR}/glslang
-        ${EXTERNAL_DIR}/spirv-tools/include)
+        ${EXTERNAL_DIR}/spirv-tools/include
+        ${EXTERNAL_DIR}/robin-hood-hashing/src/include)
 target_link_libraries(VkLayer_khronos_validation PRIVATE
         log layer_utils SPIRV-Tools-prebuilt)
 if (NOT BUILD_IN_NDK)

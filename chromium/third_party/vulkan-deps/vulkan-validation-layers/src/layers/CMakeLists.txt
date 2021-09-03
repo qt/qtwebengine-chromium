@@ -78,67 +78,28 @@ endif()
 set(TARGET_NAMES
     VkLayer_khronos_validation)
 
-if(BUILD_LAYERS)
-    # Install the layer json files
+# System-specific macro to create a library target.
+macro(AddVkLayer target LAYER_COMPILE_DEFINITIONS)
+    add_library(VkLayer_${target} SHARED ${ARGN})
+    set_target_properties(VkLayer_${target} PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
+    target_compile_definitions(VkLayer_${target} PUBLIC ${LAYER_COMPILE_DEFINITIONS})
+    target_link_libraries(VkLayer_${target} PRIVATE VkLayer_utils)
+
     if(WIN32)
-        if(CMAKE_GENERATOR MATCHES "^Visual Studio.*")
-            foreach(TARGET_NAME ${TARGET_NAMES})
-                install(FILES ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${TARGET_NAME}.json DESTINATION ${CMAKE_INSTALL_LIBDIR})
-            endforeach()
-        else()
-            foreach(TARGET_NAME ${TARGET_NAMES})
-                install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${TARGET_NAME}.json DESTINATION ${CMAKE_INSTALL_LIBDIR})
-            endforeach()
-        endif()
-    elseif(UNIX) # UNIX includes APPLE
-        foreach(TARGET_NAME ${TARGET_NAMES})
-            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${TARGET_NAME}.json
-                    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/vulkan/explicit_layer.d)
-        endforeach()
-    endif()
-endif()
-
-# System-specific macros to create a library target.
-if(WIN32)
-    macro(AddVkLayer target LAYER_COMPILE_DEFINITIONS)
-        file(TO_NATIVE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/VkLayer_${target}.def DEF_FILE)
-        add_custom_target(copy-${target}-def-file ALL
-                          COMMAND ${CMAKE_COMMAND} -E copy_if_different ${DEF_FILE} VkLayer_${target}.def
-                          VERBATIM)
-        set_target_properties(copy-${target}-def-file PROPERTIES FOLDER ${LAYERS_HELPER_FOLDER})
-
-        add_library(VkLayer_${target} SHARED ${ARGN} VkLayer_${target}.def)
-        set_target_properties(VkLayer_${target} PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
-        target_compile_definitions(VkLayer_${target} PUBLIC ${LAYER_COMPILE_DEFINITIONS} NOMINMAX)
-        target_link_libraries(VkLayer_${target} PRIVATE VkLayer_utils)
-        add_dependencies(VkLayer_${target} VkLayer_utils)
-        install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    endmacro()
-elseif(APPLE)
-    macro(AddVkLayer target LAYER_COMPILE_DEFINITIONS)
-        add_library(VkLayer_${target} SHARED ${ARGN})
-        set_target_properties(VkLayer_${target} PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
-        target_compile_definitions(VkLayer_${target} PUBLIC ${LAYER_COMPILE_DEFINITIONS})
-        target_link_libraries(VkLayer_${target} PRIVATE VkLayer_utils)
-        add_dependencies(VkLayer_${target} VkLayer_utils)
+        target_sources(VkLayer_${target} PRIVATE VkLayer_${target}.def)
+        target_compile_definitions(VkLayer_${target} PUBLIC NOMINMAX)
+    elseif(APPLE)
         set_target_properties(VkLayer_${target}
                               PROPERTIES LINK_FLAGS
                                          "-Wl"
                                          INSTALL_RPATH
                                          "@loader_path/")
-        install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-    endmacro()
-else(UNIX AND NOT APPLE) # i.e.: Linux
-    macro(AddVkLayer target LAYER_COMPILE_DEFINITIONS)
-        add_library(VkLayer_${target} SHARED ${ARGN})
-        set_target_properties(VkLayer_${target} PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
-        target_compile_definitions(VkLayer_${target} PUBLIC ${LAYER_COMPILE_DEFINITIONS})
-        target_link_libraries(VkLayer_${target} PRIVATE VkLayer_utils)
-        add_dependencies(VkLayer_${target} VkLayer_utils)
+    else(UNIX AND NOT APPLE) # i.e.: Linux
         set_target_properties(VkLayer_${target} PROPERTIES LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/libVkLayer_${target}.map,-Bsymbolic,--exclude-libs,ALL")
-        install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    endmacro()
-endif()
+    endif()
+
+    install(TARGETS VkLayer_${target} DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endmacro()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/generated ${VulkanHeaders_INCLUDE_DIR})
 
@@ -174,7 +135,6 @@ endif()
 set(CHASSIS_LIBRARY_FILES
     generated/chassis.cpp
     generated/layer_chassis_dispatch.cpp
-    generated/command_counter_helper.cpp
     generated/vk_safe_struct.cpp
     generated/vk_safe_struct.h
     layer_options.cpp
@@ -196,17 +156,21 @@ set(CORE_VALIDATION_LIBRARY_FILES
     core_error_location.h
     core_error_location.cpp
     core_validation_types.h
+    base_node.h
     drawdispatch.cpp
     convert_to_renderpass2.cpp
     descriptor_sets.cpp
     descriptor_sets.h
     buffer_validation.cpp
     buffer_validation.h
+    shader_module.cpp
+    shader_module.h
     shader_validation.cpp
     shader_validation.h
     sync_vuid_maps.cpp
     sync_vuid_maps.h
     generated/spirv_validation_helper.cpp
+    generated/command_validation.cpp
     generated/synchronization_validation_types.cpp
     gpu_validation.cpp
     generated/corechecks_optick_instrumentation.cpp
@@ -299,6 +263,10 @@ if(BUILD_LAYERS)
     # Note that CMake reduces inlining optimization levels for RelWithDebInfo builds.
     if(MSVC)
         target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:/Zi>")
+        if (USE_ROBIN_HOOD_HASHING)
+            # This warning produces what look like false positives in robin_hood.h with Visual Studio 2015
+            target_compile_options(VkLayer_khronos_validation PRIVATE "$<$<AND:$<CXX_COMPILER_ID:MSVC>,$<VERSION_LESS:$<CXX_COMPILER_VERSION>,19.1>>:/wd4996>")
+        endif()
         # Need to use this instead of target_link_options() for older versions of CMake.
         target_link_libraries(VkLayer_khronos_validation PRIVATE "$<$<CONFIG:Release>:-DEBUG:FULL>")
     endif()
@@ -309,6 +277,9 @@ if(BUILD_LAYERS)
     target_include_directories(VkLayer_khronos_validation PRIVATE ${SPIRV_HEADERS_INCLUDE_DIR})
     if(INSTRUMENT_OPTICK)
         target_include_directories(VkLayer_khronos_validation PRIVATE ${OPTICK_SOURCE_DIR})
+    endif()
+    if (USE_ROBIN_HOOD_HASHING)
+        target_include_directories(VkLayer_khronos_validation PRIVATE ${ROBIN_HOOD_HASHING_INCLUDE_DIR})
     endif()
     target_link_libraries(VkLayer_khronos_validation PRIVATE ${SPIRV_TOOLS_LIBRARIES})
 
@@ -323,7 +294,7 @@ if(BUILD_LAYERS)
     # Run each .json.in file through the generator We need to create the generator.cmake script so that the generator can be run at
     # compile time, instead of configure time Running at compile time lets us use cmake generator expressions (TARGET_FILE_NAME and
     # TARGET_FILE_DIR, specifically)
-    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake" "configure_file(\"\${INPUT_FILE}\" \"\${OUTPUT_FILE}\")")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake" "configure_file(\"\${INPUT_FILE}\" \"\${OUTPUT_FILE}\" @ONLY)")
     foreach(TARGET_NAME ${TARGET_NAMES})
         set(CONFIG_DEFINES -DINPUT_FILE="${CMAKE_CURRENT_SOURCE_DIR}/json/${TARGET_NAME}.json.in" -DVK_VERSION=1.2.${vk_header_version})
         # If this json file is not a metalayer, get the needed properties from that target
@@ -359,4 +330,15 @@ if(BUILD_LAYERS)
                               COMMAND ${CMAKE_COMMAND} ${INSTALL_DEFINES} -P "${CMAKE_CURRENT_BINARY_DIR}/generator.cmake")
         endforeach()
     endif()
+
+    # Install the layer json files
+    foreach(TARGET_NAME ${TARGET_NAMES})
+        if(WIN32)
+            install(FILES $<TARGET_FILE_DIR:${TARGET_NAME}>/${TARGET_NAME}.json
+                    DESTINATION ${CMAKE_INSTALL_LIBDIR})
+        elseif(UNIX)
+            install(FILES ${CMAKE_CURRENT_BINARY_DIR}/staging-json/${TARGET_NAME}.json
+                    DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/vulkan/explicit_layer.d)
+        endif()
+    endforeach()
 endif()

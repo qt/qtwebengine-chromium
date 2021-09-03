@@ -5,14 +5,27 @@
 #define SYSTEM_API_DBUS_DLP_DBUS_CONSTANTS_H_
 
 namespace dlp {
-// General
+// DLP Daemon:
 constexpr char kDlpInterface[] = "org.chromium.Dlp";
 constexpr char kDlpServicePath[] = "/org/chromium/Dlp";
 constexpr char kDlpServiceName[] = "org.chromium.Dlp";
 
-// Methods
+// DLP Daemon methods:
 constexpr char kSetDlpFilesPolicyMethod[] = "SetDlpFilesPolicy";
 constexpr char kAddFileMethod[] = "AddFile";
+
+// DLP service in Chrome:
+constexpr char kDlpFilesPolicyServiceName[] =
+    "org.chromium.DlpFilesPolicyService";
+constexpr char kDlpFilesPolicyServicePath[] =
+    "/org/chromium/DlpFilesPolicyService";
+constexpr char kDlpFilesPolicyServiceInterface[] =
+    "org.chromium.DlpFilesPolicyService";
+
+// DLP service in Chrome methods:
+constexpr char kDlpFilesPolicyServiceIsRestrictedMethod[] = "IsRestricted";
+constexpr char kDlpFilesPolicyServiceIsDlpPolicyMatchedMethod[] =
+    "IsDlpPolicyMatched";
 
 }  // namespace dlp
 #endif  // SYSTEM_API_DBUS_DLP_DBUS_CONSTANTS_H_

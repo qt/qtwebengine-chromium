@@ -9,27 +9,324 @@ syntax = "proto3";
 package rmad;
 option optimize_for = LITE_RUNTIME;
 
-// Defined error code.
-enum ErrorCode {
+// Defined error codes.
+enum RmadErrorCode {
   // 0 is the default value. It should never be used.
   RMAD_ERROR_NOT_SET = 0;
 
-  // Not able to read the Rmad as DBus signature indicated.
-  RMAD_ERROR_REQUEST_INVALID = 1;
+  // No error.
+  RMAD_ERROR_OK = 1;
+
+  // The device is not in RMA mode.
+  RMAD_ERROR_RMA_NOT_REQUIRED = 2;
+
+  // The request could not be processed (e.g. bad proto).
+  RMAD_ERROR_REQUEST_INVALID = 3;
+
+  // The request is missing mandatory arguments.
+  RMAD_ERROR_REQUEST_ARGS_MISSING = 4;
+
+  // The request arguments are violating some rules of the state.
+  RMAD_ERROR_REQUEST_ARGS_VIOLATION = 5;
+
+  // An expected component was not found.
+  RMAD_ERROR_MISSING_COMPONENT = 6;
+
+  // Cannot get the RSU challenge code.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_NO_CHALLENGE = 7;
+
+  // The RSU code was incorrect.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_CODE_INVALID = 8;
+
+  // The battery was not disconnected when WP disable was required.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_BATTERY_NOT_DISCONNECTED = 9;
+
+  // WP was not disabled when required.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_SIGNAL_NOT_DETECTED = 10;
+
+  // File could not be downloaded because a network connection was unavailable.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_NO_NETWORK = 11;
+
+  // File download did not complete because of a network error.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_NETWORK_ERROR = 12;
+
+  // The user cancelled the file download.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_CANCELLED = 13;
+
+  // No valid USB device with a Chrome OS image was found.
+  RMAD_ERROR_REIMAGING_USB_NOT_FOUND = 14;
+
+  // More than one USB device with a Chrome OS image was found.
+  RMAD_ERROR_REIMAGING_USB_TOO_MANY_FOUND = 15;
+
+  // The Chrome OS image found was corrupt.
+  RMAD_ERROR_REIMAGING_USB_INVALID_IMAGE = 16;
+
+  // The image could not be written.
+  RMAD_ERROR_REIMAGING_IMAGING_FAILED = 17;
+
+  // An unexpected failure prevented imaging from completing.
+  RMAD_ERROR_REIMAGING_UNKNOWN_FAILURE = 18;
+
+  // The device info is incorrect.
+  RMAD_ERROR_DEVICE_INFO_INVALID = 19;
+
+  // Calibration failed for a component.
+  RMAD_ERROR_CALIBRATION_FAILED = 20;
+
+  // Provisioning failed for the device.
+  RMAD_ERROR_PROVISIONING_FAILED = 21;
+
+  // Device could not be powerwashed.
+  RMAD_ERROR_POWERWASH_FAILED = 22;
+
+  // Device finalization failed.
+  RMAD_ERROR_FINALIZATION_FAILED = 23;
+
+  // Logs failed to upload because the server could not be reached.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CANNOT_CONNECT = 24;
+
+  // Logs failed to upload because the server refused the connection.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CONNECTION_REJECTED = 25;
+
+  // Logs failed to upload because the connection was interrupted.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_TRANSFER_FAILED = 26;
+
+  // It is not possible to cancel RMA finalization process at this point.
+  RMAD_ERROR_CANNOT_CANCEL_RMA = 27;
+
+  // It is not possible to transition state at this point.
+  RMAD_ERROR_TRANSITION_FAILED = 28;
+
+  // Failed to abort the RMA process.
+  RMAD_ERROR_ABORT_FAILED = 29;
 }
 
 // Defined Rmad states.
-enum RmadState {
-  STATE_UNKNOWN = 0;
-  STATE_RMA_NOT_REQUIRED = 1;
-  STATE_WELCOME_SCREEN = 2;
+
+// Confirm RMA is required.
+message WelcomeState {
+  enum FinalizeChoice {
+    RMAD_CHOICE_UNKNOWN = 0;
+    RMAD_CHOICE_FINALIZE_REPAIR = 1;
+    RMAD_CHOICE_CANCEL = 2;
+  }
+  FinalizeChoice choice = 1;
 }
 
-// Request from client to get current state.
-message GetCurrentStateRequest {}
+// Request for optional connection to Wifi when no network is connected.
+message SelectNetworkState {
+  // TODO(gavindodd): How does network connection work? Once the user logs in to
+  // wifi does some other system preserve the connection information?
+  enum Network {
+    RMAD_NETWORK_UNKNOWN = 0;
+    RMAD_NETWORK_USER_DECLINED = 1;
+    RMAD_NETWORK_CONNECTED = 2;
+  }
+  Network connection_state = 1;
+}
 
-// Reply from daemon.
-message GetCurrentStateReply {
-  ErrorCode error = 1;
-  RmadState state = 2;
+// Update Chrome
+message UpdateChromeState {
+  enum UpdateState {
+    RMAD_UPDATE_STATE_UNKNOWN = 0;
+    RMAD_UPDATE_STATE_COMPLETE = 1;
+    RMAD_UPDATE_STATE_UPDATE = 2;
+    RMAD_UPDATE_STATE_SKIP = 3;
+  }
+  UpdateState update = 1;
+}
+
+// Component data
+// TODO(gavindodd): Platform should query all components to check if they are
+// missing before they are selected as replacements.
+// This information can be displayed to the tech to validate expected hardware.
+message ComponentRepairState {
+  enum Component {
+    RMAD_COMPONENT_UNKNOWN = 0;
+    // NOTE: This is a special case.
+    RMAD_COMPONENT_MAINBOARD_REWORK = 1;
+    RMAD_COMPONENT_KEYBOARD = 2;
+    RMAD_COMPONENT_SCREEN = 3;
+    RMAD_COMPONENT_TRACKPAD = 4;
+    RMAD_COMPONENT_POWER_BUTTON = 5;
+    RMAD_COMPONENT_THUMB_READER = 6;
+  }
+  enum RepairState {
+    RMAD_REPAIR_UNKNOWN = 0;
+    RMAD_REPAIR_ORIGINAL = 1;
+    RMAD_REPAIR_REPLACED = 2;
+    RMAD_REPAIR_MISSING = 3;
+  }
+  Component name = 1;
+  RepairState repair_state = 2;
+}
+
+// Select components that have been repaired.
+message ComponentsRepairState {
+  repeated ComponentRepairState components = 1;
+}
+
+// Select whether the device is returning to original owner or being wiped for
+// a new owner.
+message DeviceDestinationState {
+  enum Destination {
+    RMAD_DESTINATION_UNKNOWN = 0;
+    RMAD_DESTINATION_SAME = 1;
+    RMAD_DESTINATION_DIFFERENT = 2;
+  }
+  Destination destination = 1;
+}
+
+// Select the method to use to disable hardware write protection (HWWP).
+// TODO(gavindodd): Implement signal that updates Chrome on the HWWP state.
+message WriteProtectDisableMethodState {
+  enum DisableMethod {
+    RMAD_WP_DISABLE_UNKNOWN = 0;
+    RMAD_WP_DISABLE_RSU = 1;
+    RMAD_WP_DISABLE_PHYSICAL = 2;
+  }
+  DisableMethod disable_method = 1;
+}
+
+// Disable HWWP with an RSU unlock code.
+message WriteProtectDisableRsuState {
+  string challenge_code = 1;
+  string unlock_code = 2;
+}
+
+// Wait for tech to physically disable HWWP.
+message WriteProtectDisablePhysicalState {
+  // No state. Waits for signal that write protection is disabled.
+}
+
+// Display confirmation that HWWP has been disabled.
+message WriteProtectDisableCompleteState {
+  // No state. Waits for user to click next?
+}
+
+// Select method to update firmware.
+message UpdateRoFirmwareState {
+  enum UpdateFirmware {
+    RMAD_UPDATE_FIRMWARE_UNKNOWN = 0;
+    RMAD_UPDATE_FIRMWARE_DOWNLOAD = 1;
+    RMAD_UPDATE_FIRMWARE_RECOVERY_UTILITY = 2;
+    RMAD_UPDATE_SKIP = 3;
+  }
+  bool optional = 1;  // If optional is set true by rmad then skip is allowed.
+  UpdateFirmware update = 2;
+}
+
+// Pause RMA for restock.
+// This state pauses the RMA flow and asks if the device is ready to complete
+// RMA.
+// When the main board is used in another device RMA can be completed.
+message RestockState {
+  enum RestockChoice {
+    RMAD_RESTOCK_UNKNOWN = 0;
+    RMAD_RESTOCK_SHUTDOWN_AND_RESTOCK = 1;
+    RMAD_RESTOCK_CONTINUE_RMA = 2;
+  }
+  RestockChoice choice = 1;
+}
+
+// Allow device info to be updated if necessary.
+message UpdateDeviceInfoState {
+  // Chosen serial number of device.
+  string serial_number = 1;
+  // Chosen region index for the current choice. See region_list below.
+  uint32 region_index = 2;
+  // Chosen SKU index of device. See sku_list below.
+  uint32 sku_index = 3;
+  // Read only data.
+  // List of all valid regions for this device.
+  repeated string region_list = 4;
+  // List of all valid skus for this device.
+  repeated string sku_list = 5;
+  // Serial number of device at beginning of RMA finalization.
+  string original_serial_number = 6;
+  // Region index of device at beginning of RMA finalization.
+  uint32 original_region_index = 7;
+  // SKU index of device at beginning of RMA finalization.
+  uint32 original_sku_index = 8;
+}
+
+// Calibrate devices such as accelerometer.
+message CalibrateComponentsState {
+  // Enum for CalibrationProgress signal.
+  enum CalibrationComponent {
+    RMAD_CALIBRATION_COMPONENT_UNKNOWN = 0;
+    RMAD_CALIBRATION_COMPONENT_ACCELEROMETER = 1;
+  }
+
+  // No state. Waits for signal that calibration is complete.
+}
+
+// Provision the device.
+message ProvisionDeviceState {
+  // Enum for ProvisioningProgress signal.
+  enum ProvisioningStep {
+    // TODO(gavindodd): Update with real provisioning steps.
+    RMAD_PROVISIONING_STEP_UNKNOWN = 0;
+    RMAD_PROVISIONING_STEP_IN_PROGRESS = 1;
+    RMAD_PROVISIONING_STEP_COMPLETE = 2;
+  }
+
+  // No state. Waits for signal that provisioning is complete.
+}
+
+// Allow the tech to re-enable HWWP after it was physically disabled.
+message WriteProtectEnablePhysicalState {
+  // No state. Waits for signal that write protection is re-enabled.
+}
+
+// RMA complete. Allow tech to choose how to shut down.
+message FinalizeState {
+  enum ShutdownMethod {
+    RMAD_FINALIZE_UNKNOWN = 0;
+    RMAD_FINALIZE_REBOOT = 1;
+    RMAD_FINALIZE_SHUTDOWN = 2;
+    RMAD_FINALIZE_BATERY_CUTOFF = 3;
+  }
+  ShutdownMethod shutdown = 1;
+  // TODO(gavindodd): The log (or path to log) could be stored in a field of
+  // this proto, or it could be a separate d-bus method.
+}
+
+message RmadState {
+  oneof state {
+    WelcomeState welcome = 1;
+    SelectNetworkState select_network = 2;
+    UpdateChromeState update_chrome = 3;
+    ComponentsRepairState components_repair = 4;
+    DeviceDestinationState device_destination = 5;
+    WriteProtectDisableMethodState wp_disable_method = 6;
+    WriteProtectDisableRsuState wp_disable_rsu = 7;
+    WriteProtectDisablePhysicalState wp_disable_physical = 8;
+    WriteProtectDisableCompleteState wp_disable_complete = 9;
+    UpdateRoFirmwareState update_ro_firmware = 10;
+    RestockState restock = 11;
+    UpdateDeviceInfoState update_device_info = 12;
+    CalibrateComponentsState calibrate_components = 13;
+    ProvisionDeviceState provision_device = 14;
+    WriteProtectEnablePhysicalState wp_enable_physical = 15;
+    FinalizeState finalize = 16;
+  }
+}
+
+// Request from client to get next state.
+message TransitionNextStateRequest {
+  RmadState state = 1;
+}
+
+// Reply for GetCurrentState, GetNextState, GetPreviousState.
+message GetStateReply {
+  RmadErrorCode error = 1;
+  bool can_go_back = 2;
+  RmadState state = 3;
+}
+
+// Reply for AbortRma.
+message AbortRmaReply {
+  RmadErrorCode error = 1;
 }
