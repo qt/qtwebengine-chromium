@@ -27,6 +27,9 @@ if (current_cpu == "arm" || v8_current_cpu == "arm") {
     # Thumb is a reduced instruction set available on some ARM processors that
     # has increased code density.
     arm_use_thumb = true
+
+    # arch + tune
+    arm_cpu = ""
   }
 
   if (current_os == "android" || target_os == "android") {
@@ -45,7 +48,7 @@ if (current_cpu == "arm" || v8_current_cpu == "arm") {
   if (arm_version == 6) {
     assert(false, "arm_version must be >= 7")
   } else if (arm_version == 7) {
-    if (arm_arch == "") {
+    if (arm_arch == "" && arm_cpu == "") {
       arm_arch = "armv7-a"
     }
 
@@ -58,7 +61,7 @@ if (current_cpu == "arm" || v8_current_cpu == "arm") {
       }
     }
   } else if (arm_version == 8) {
-    if (arm_arch == "") {
+    if (arm_arch == "" && arm_cpu == "") {
       arm_arch = "armv8-a"
     }
     if (arm_float_abi == "") {
