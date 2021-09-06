@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_CREDENTIALMANAGEMENT_CREDENTIALS_CONTAINER_H_
 
 #include "third_party/blink/renderer/bindings/modules/v8/v8_identity_request_options.h"
+#include "third_party/blink/renderer/core/frame/navigator.h"
 #include "third_party/blink/renderer/modules/credentialmanagement/web_identity_requester.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
