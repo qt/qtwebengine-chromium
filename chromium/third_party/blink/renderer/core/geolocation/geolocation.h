@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_position_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/frame/navigator.h"
 #include "third_party/blink/renderer/core/geolocation/geo_notifier.h"
 #include "third_party/blink/renderer/core/geolocation/geolocation_position_error.h"
 #include "third_party/blink/renderer/core/geolocation/geolocation_watchers.h"

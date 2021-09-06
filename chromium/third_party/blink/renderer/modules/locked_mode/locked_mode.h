@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_MODULES_LOCKED_MODE_LOCKED_MODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_MODULES_LOCKED_MODE_LOCKED_MODE_H_
 
+#include "third_party/blink/renderer/core/execution_context/navigator_base.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
 #include "third_party/blink/renderer/platform/heap/visitor.h"
