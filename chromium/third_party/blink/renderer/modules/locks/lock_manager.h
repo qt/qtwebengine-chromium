@@ -9,6 +9,7 @@
 #include "third_party/blink/public/mojom/feature_observer/feature_observer.mojom-blink.h"
 #include "third_party/blink/public/mojom/locks/lock_manager.mojom-blink-forward.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_lock_options.h"
+#include "third_party/blink/renderer/core/execution_context/navigator_base.h"
 #include "third_party/blink/renderer/modules/locks/lock.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"

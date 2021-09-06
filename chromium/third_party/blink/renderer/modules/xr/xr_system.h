@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
 #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
+#include "third_party/blink/renderer/core/frame/navigator.h"
 #include "third_party/blink/renderer/core/page/focus_changed_observer.h"
 #include "third_party/blink/renderer/modules/xr/xr_enter_fullscreen_observer.h"
 #include "third_party/blink/renderer/modules/xr/xr_exit_fullscreen_observer.h"
