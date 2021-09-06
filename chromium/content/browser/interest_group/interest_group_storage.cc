@@ -853,7 +853,7 @@ constexpr base::TimeDelta InterestGroupStorage::kIdlePeriod;
 
 InterestGroupStorage::InterestGroupStorage(const base::FilePath& path)
     : path_to_database_(DBPath(path)),
-      db_(std::make_unique<sql::Database>(sql::DatabaseOptions{})),
+      db_(std::make_unique<sql::Database>(sql::DatabaseOptions({}))),
       db_maintenance_timer_(FROM_HERE,
                             kIdlePeriod,
                             this,
@@ -883,7 +883,7 @@ bool InterestGroupStorage::EnsureDBInitialized() {
 bool InterestGroupStorage::InitializeDB() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions{});
+  db_ = std::make_unique<sql::Database>(sql::DatabaseOptions({}));
   db_->set_error_callback(base::BindRepeating(
       &InterestGroupStorage::DatabaseErrorCallback, base::Unretained(this)));
 
