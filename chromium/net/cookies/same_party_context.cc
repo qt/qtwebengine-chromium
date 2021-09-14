@@ -6,6 +6,8 @@
 
 #include <ostream>
 
+#include <tuple>
+
 namespace net {
 
 SamePartyContext::SamePartyContext(Type context_type)

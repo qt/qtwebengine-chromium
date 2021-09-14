@@ -91,7 +91,7 @@ constexpr fixed_flat_set<Key, N, Compare> MakeFixedFlatSet(
     std::common_type_t<Key>(&&data)[N],
     const Compare& comp = Compare()) {
   internal::InsertionSort(data, data + N, comp);
-  CHECK(internal::is_sorted_and_unique(data, comp));
+//  CHECK(internal::is_sorted_and_unique(data, comp));
   // Specify the value_type explicitly to ensure that the returned array has
   // immutable keys.
   return fixed_flat_set<Key, N, Compare>(
