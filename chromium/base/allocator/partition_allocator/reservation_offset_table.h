@@ -179,7 +179,7 @@ PA_ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(uintptr_t address) {
   if (*offset_ptr == kOffsetTagNormalBuckets)
     return 0;
   uintptr_t reservation_start = ComputeReservationStart(address, offset_ptr);
-#if BUILDFLAG(PA_DCHECK_IS_ON)
+#if BUILDFLAG(PA_DCHECK_IS_ON) && !defined(COMPILER_MSVC)
   // MSVC workaround: the preprocessor seems to choke on an `#if` embedded
   // inside another macro (PA_DCHECK).
 #if !defined(PA_HAS_64_BITS_POINTERS)

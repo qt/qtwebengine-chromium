@@ -155,7 +155,8 @@ bool IdentifiableTokenBuilder::IsAligned() const {
 
 IdentifiableTokenBuilder::ByteSpan IdentifiableTokenBuilder::GetPartialBlock()
     const {
-  return ByteSpan(partial_.begin(), position_);
+  return ByteSpan(partial_.data(),
+                  partial_.data() + (position_- partial_.begin()));
 }
 
 }  // namespace blink
