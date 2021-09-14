@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_delay_dsp_kernel.h"
 
 #include <cmath>
+#include <tuple>
 
 #include "base/notreached.h"
 #include "build/build_config.h"

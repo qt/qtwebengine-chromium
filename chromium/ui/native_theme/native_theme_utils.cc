@@ -17,8 +17,8 @@ base::StringPiece NativeThemeColorIdName(NativeTheme::ColorId color_id) {
           NATIVE_THEME_COLOR_IDS
 #undef OP
       });
-  auto* it = color_id_names.find(color_id);
-  DCHECK_NE(color_id_names.cend(), it);
+  auto it = color_id_names.find(color_id);
+//  DCHECK_NE(color_id_names.cend(), it);
   return it->second;
 }
 
@@ -67,7 +67,7 @@ NativeThemeColorIdToColorId(NativeTheme::ColorId native_theme_color_id) {
         {NTCID::kColorId_ThrobberWaitingColor, kColorThrobberPreconnect},
         {NTCID::kColorId_WindowBackground, kColorWindowBackground},
       });
-  auto* color_it = map.find(native_theme_color_id);
+  auto color_it = map.find(native_theme_color_id);
   if (color_it != map.cend()) {
     return color_it->second;
   }

@@ -8,6 +8,8 @@
 
 #include "net/cookies/cookie_constants.h"
 
+#include <tuple>
+
 namespace net {
 
 SamePartyContext::SamePartyContext(Type type)
