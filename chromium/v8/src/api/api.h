@@ -33,7 +33,7 @@ namespace debug {
 class AccessorPair;
 class GeneratorObject;
 class Script;
-class WeakMap;
+class EphemeronTable;
 }  // namespace debug
 
 // Constants used in the implementation of the API.  The most natural thing
@@ -126,7 +126,7 @@ class RegisteredExtension {
   V(Proxy, JSProxy)                            \
   V(debug::GeneratorObject, JSGeneratorObject) \
   V(debug::Script, Script)                     \
-  V(debug::WeakMap, JSWeakMap)                 \
+  V(debug::EphemeronTable, EphemeronHashTable) \
   V(debug::AccessorPair, AccessorPair)         \
   V(Promise, JSPromise)                        \
   V(Primitive, Object)                         \
