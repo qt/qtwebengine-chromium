@@ -159,7 +159,7 @@ struct EnumStringsMap;
   std::u16string ui::metadata::TypeConverter<T>::ToString(                   \
       ui::metadata::ArgType<T> source_value) {                               \
     const auto& map = EnumStringsMap<T>::Get();                              \
-    auto* it = map.find(source_value);                                       \
+    auto it = map.find(source_value);                                       \
     return it != map.end() ? std::u16string(it->second) : std::u16string();  \
   }                                                                          \
                                                                              \
