@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <limits>
 #include <ostream>
+#include <tuple>
 #include <type_traits>
 
 #include "base/check_op.h"

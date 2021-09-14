@@ -155,7 +155,7 @@ public:
     enum NaN_Constructor {
         kNaN_Constructor
     };
-    constexpr SkM44(NaN_Constructor)
+    SkM44(NaN_Constructor)
         : fMat{SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN,
                SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN,
                SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN, SK_ScalarNaN,

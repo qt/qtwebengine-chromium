@@ -211,7 +211,7 @@ SniffingResult MaybeSkipHtmlComment(StringPiece* data) {
 // support for this resource type.  And CORB also wants to protect
 // "application/pdf" even though Chrome happens to support this resource type.
 const auto& GetNeverSniffedMimeTypes() {
-  static constexpr auto kNeverSniffedMimeTypes = base::MakeFixedFlatSet<
+  static const auto kNeverSniffedMimeTypes = base::MakeFixedFlatSet<
       base::StringPiece>({
       // clang-format off
       // The types below (zip, protobuf, etc.) are based on most commonly used
