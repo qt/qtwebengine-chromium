@@ -348,7 +348,7 @@ std::string GetDNRNewRequestHeaderValue(net::HttpRequestHeaders* headers,
   bool has_header = headers->GetHeader(header_name, &existing_value);
 
   if (has_header && operation == dnr_api::HeaderOperation::kAppend) {
-    const auto* it = dnr::kDNRRequestHeaderAppendAllowList.find(header_name);
+    const auto it = dnr::kDNRRequestHeaderAppendAllowList.find(header_name);
     DCHECK(it != dnr::kDNRRequestHeaderAppendAllowList.end());
     return base::StrCat({existing_value, it->second, header_value});
   }

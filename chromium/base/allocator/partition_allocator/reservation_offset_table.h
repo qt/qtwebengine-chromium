@@ -195,7 +195,7 @@ PA_ALWAYS_INLINE uintptr_t GetDirectMapReservationStart(uintptr_t address) {
     return 0;
   }
   uintptr_t reservation_start = ComputeReservationStart(address, offset_ptr);
-#if BUILDFLAG(PA_DCHECK_IS_ON)
+#if BUILDFLAG(PA_DCHECK_IS_ON) && !defined(COMPILER_MSVC)
   // MSVC workaround: the preprocessor seems to choke on an `#if` embedded
   // inside another macro (PA_DCHECK).
 #if !BUILDFLAG(HAS_64_BIT_POINTERS)

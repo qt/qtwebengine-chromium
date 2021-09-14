@@ -102,7 +102,7 @@ constexpr fixed_flat_map<Key, Mapped, N, Compare> MakeFixedFlatMapSorted(
     const Compare& comp = Compare()) {
   using FixedFlatMap = fixed_flat_map<Key, Mapped, N, Compare>;
   typename FixedFlatMap::value_compare value_comp{comp};
-  CHECK(internal::is_sorted_and_unique(data, value_comp));
+  // CHECK(internal::is_sorted_and_unique(data, value_comp));
   // Specify the value_type explicitly to ensure that the returned array has
   // immutable keys.
   return FixedFlatMap(
