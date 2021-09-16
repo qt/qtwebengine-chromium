@@ -20,6 +20,7 @@
 #include "sandbox/linux/seccomp-bpf-helpers/syscall_sets.h"
 #include "sandbox/linux/seccomp-bpf/sandbox_bpf.h"
 #include "sandbox/linux/services/syscall_wrappers.h"
+#include "sandbox/linux/system_headers/linux_stat.h"
 #include "sandbox/linux/system_headers/linux_syscalls.h"
 
 #if !defined(SO_PEEK_OFF)
@@ -255,6 +256,13 @@ ResultExpr EvaluateSyscallImpl(int fs_denied_errno,
 
   if (SyscallSets::IsKill(sysno)) {
     return RestrictKillTarget(current_pid, sysno);
+  }
+
+  // The fstatat syscalls are file system syscalls, which will be denied below
+  // with fs_denied_errno. However some allowed fstat syscalls are rewritten by
+  // libc implementations to fstatat syscalls, and we need to rewrite them back.
+  if (sysno == __NR_fstatat_default) {
+    return RewriteFstatatSIGSYS(fs_denied_errno);
   }
 
   if (SyscallSets::IsFileSystem(sysno) ||
