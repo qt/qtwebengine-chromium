@@ -134,6 +134,33 @@
 
 namespace blink {
 
+class LocalDOMWindow::NetworkStateObserver final
+    : public GarbageCollected<LocalDOMWindow::NetworkStateObserver>,
+      public NetworkStateNotifier::NetworkStateObserver,
+      public ExecutionContextLifecycleObserver {
+ public:
+  explicit NetworkStateObserver(ExecutionContext* context)
+      : ExecutionContextLifecycleObserver(context) {}
+  void Initialize() {
+    online_observer_handle_ = GetNetworkStateNotifier().AddOnLineObserver(
+        this, GetExecutionContext()->GetTaskRunner(TaskType::kNetworking));
+  }
+  void OnLineStateChange(bool on_line) override {
+    AtomicString event_name =
+        on_line ? event_type_names::kOnline : event_type_names::kOffline;
+    auto* window = To<LocalDOMWindow>(GetExecutionContext());
+    window->DispatchEvent(*Event::Create(event_name));
+    probe::NetworkStateChanged(window->GetFrame(), on_line);
+  }
+  void ContextDestroyed() override { online_observer_handle_ = nullptr; }
+  void Trace(Visitor* visitor) const override {
+    ExecutionContextLifecycleObserver::Trace(visitor);
+  }
+ private:
+  std::unique_ptr<NetworkStateNotifier::NetworkStateObserverHandle>
+      online_observer_handle_;
+};
+
 LocalDOMWindow::LocalDOMWindow(LocalFrame& frame, WindowAgent* agent)
     : DOMWindow(frame),
       ExecutionContext(V8PerIsolateData::MainThreadIsolate(), agent),
@@ -151,7 +178,9 @@ LocalDOMWindow::LocalDOMWindow(LocalFrame& frame, WindowAgent* agent)
       isolated_world_csp_map_(
           MakeGarbageCollected<
               HeapHashMap<int, Member<ContentSecurityPolicy>>>()),
-      token_(LocalFrameToken(frame.GetFrameToken())) {}
+      token_(LocalFrameToken(frame.GetFrameToken())),
+      network_state_observer_(
+          MakeGarbageCollected<NetworkStateObserver>(this)) {}
 
 void LocalDOMWindow::BindContentSecurityPolicy() {
   DCHECK(!GetContentSecurityPolicy()->IsBound());
@@ -163,6 +192,7 @@ void LocalDOMWindow::Initialize() {
   GetAgent()->AttachContext(this);
   if (auto* agent_metrics = GetFrame()->GetPage()->GetAgentMetricsCollector())
     agent_metrics->DidAttachWindow(*this);
+  network_state_observer_->Initialize();
 }
 
 void LocalDOMWindow::ResetWindowAgent(WindowAgent* agent) {
@@ -2050,6 +2080,7 @@ void LocalDOMWindow::Trace(Visitor* visitor) const {
   visitor->Trace(spell_checker_);
   visitor->Trace(text_suggestion_controller_);
   visitor->Trace(isolated_world_csp_map_);
+  visitor->Trace(network_state_observer_);
   DOMWindow::Trace(visitor);
   ExecutionContext::Trace(visitor);
   Supplementable<LocalDOMWindow>::Trace(visitor);

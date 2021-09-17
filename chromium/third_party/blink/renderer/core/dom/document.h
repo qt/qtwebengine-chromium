@@ -1688,7 +1688,6 @@ class CORE_EXPORT Document : public ContainerNode,
                            BeforeMatchExpandedHiddenMatchableUkm);
   FRIEND_TEST_ALL_PREFIXES(TextFinderSimTest,
                            BeforeMatchExpandedHiddenMatchableUkmNoHandler);
-  class NetworkStateObserver;
 
   friend class AXContext;
   void AddAXContext(AXContext*);
@@ -2074,8 +2073,6 @@ class CORE_EXPORT Document : public ContainerNode,
   bool logged_field_edit_;
 
   TaskHandle sensitive_input_edited_task_;
-
-  Member<NetworkStateObserver> network_state_observer_;
 
   std::unique_ptr<DocumentOutliveTimeReporter> document_outlive_time_reporter_;
 
