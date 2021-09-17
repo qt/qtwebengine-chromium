@@ -1740,7 +1740,6 @@ class CORE_EXPORT Document : public ContainerNode,
                            BeforeMatchExpandedHiddenMatchableUkm);
   FRIEND_TEST_ALL_PREFIXES(TextFinderSimTest,
                            BeforeMatchExpandedHiddenMatchableUkmNoHandler);
-  class NetworkStateObserver;
 
   friend class AXContext;
   void AddAXContext(AXContext*);
@@ -2169,8 +2168,6 @@ class CORE_EXPORT Document : public ContainerNode,
   Member<SnapCoordinator> snap_coordinator_;
 
   Member<PropertyRegistry> property_registry_;
-
-  Member<NetworkStateObserver> network_state_observer_;
 
   // |ukm_recorder_| and |source_id_| will allow objects that are part of
   // the document to record UKM.
