@@ -2465,6 +2465,14 @@ void RenderFrameHostImpl::OnCreateChildFrame(
     bad_message::ReceivedBadMessage(
         GetProcess(), bad_message::RFH_CHILD_FRAME_NEEDS_OWNER_ELEMENT_TYPE);
   }
+  if (owner_type == blink::mojom::FrameOwnerElementType::kPortal) {
+    // Portals are not created through this child
+    // frame code path.
+    bad_message::ReceivedBadMessage(
+        GetProcess(),
+        bad_message::RFH_CHILD_FRAME_UNEXPECTED_OWNER_ELEMENT_TYPE);
+    return;
+  }
 
   // The RenderFrame corresponding to this host sent an IPC message to create a
   // child, but by the time we get here, it's possible for the RenderFrameHost
