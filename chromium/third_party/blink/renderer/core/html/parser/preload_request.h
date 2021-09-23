@@ -37,8 +37,6 @@ class CORE_EXPORT PreloadRequest {
     kRequestTypeLinkRelPreload
   };
 
-  enum ReferrerSource { kDocumentIsReferrer, kBaseUrlIsReferrer };
-
   static std::unique_ptr<PreloadRequest> CreateIfNeeded(
       const String& initiator_name,
       const TextPosition& initiator_position,
@@ -46,7 +44,6 @@ class CORE_EXPORT PreloadRequest {
       const KURL& base_url,
       ResourceType resource_type,
       const network::mojom::ReferrerPolicy referrer_policy,
-      ReferrerSource referrer_source,
       ResourceFetcher::IsImageSet is_image_set,
       const FetchParameters::ResourceWidth& resource_width =
           FetchParameters::ResourceWidth(),
@@ -123,7 +120,6 @@ class CORE_EXPORT PreloadRequest {
                  const ClientHintsPreferences& client_hints_preferences,
                  RequestType request_type,
                  const network::mojom::ReferrerPolicy referrer_policy,
-                 ReferrerSource referrer_source,
                  ResourceFetcher::IsImageSet is_image_set)
       : initiator_name_(initiator_name),
         initiator_position_(initiator_position),
@@ -138,7 +134,6 @@ class CORE_EXPORT PreloadRequest {
         client_hints_preferences_(client_hints_preferences),
         request_type_(request_type),
         referrer_policy_(referrer_policy),
-        referrer_source_(referrer_source),
         from_insertion_scanner_(false),
         is_image_set_(is_image_set),
         is_lazy_load_image_enabled_(false) {}
@@ -160,7 +155,6 @@ class CORE_EXPORT PreloadRequest {
   const ClientHintsPreferences client_hints_preferences_;
   const RequestType request_type_;
   const network::mojom::ReferrerPolicy referrer_policy_;
-  const ReferrerSource referrer_source_;
   IntegrityMetadataSet integrity_metadata_;
   bool from_insertion_scanner_;
   const ResourceFetcher::IsImageSet is_image_set_;
