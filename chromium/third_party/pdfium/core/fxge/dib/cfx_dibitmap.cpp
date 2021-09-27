@@ -225,8 +225,14 @@ bool CFX_DIBitmap::TransferWithUnequalFormats(
   if (m_bpp == 8)
     dest_format = FXDIB_8bppMask;
 
+  FX_SAFE_UINT32 offset = dest_left;
+  offset *= GetBPP();
+  offset /= 8;
+  if (!offset.IsValid())
+    return false;
+
   uint8_t* dest_buf =
-      m_pBuffer.Get() + dest_top * m_Pitch + dest_left * GetBPP() / 8;
+      m_pBuffer.Get() + dest_top * m_Pitch + offset.ValueOrDie();
   std::unique_ptr<uint32_t, FxFreeDeleter> d_plt;
   if (!ConvertBuffer(dest_format, dest_buf, m_Pitch, width, height, pSrcBitmap,
                      src_left, src_top, &d_plt)) {
@@ -539,7 +545,13 @@ uint32_t CFX_DIBitmap::GetPixel(int x, int y) const {
   if (!m_pBuffer)
     return 0;
 
-  uint8_t* pos = m_pBuffer.Get() + y * m_Pitch + x * GetBPP() / 8;
+  FX_SAFE_UINT32 offset = x;
+  offset *= GetBPP();
+  offset /= 8;
+  if (!offset.IsValid())
+    return 0;
+
+  uint8_t* pos = m_pBuffer.Get() + y * m_Pitch + offset.ValueOrDie();
   switch (GetFormat()) {
     case FXDIB_1bppMask: {
       if ((*pos) & (1 << (7 - x % 8))) {
@@ -579,7 +591,13 @@ void CFX_DIBitmap::SetPixel(int x, int y, uint32_t color) {
   if (x < 0 || x >= m_Width || y < 0 || y >= m_Height)
     return;
 
-  uint8_t* pos = m_pBuffer.Get() + y * m_Pitch + x * GetBPP() / 8;
+  FX_SAFE_UINT32 offset = x;
+  offset *= GetBPP();
+  offset /= 8;
+  if (!offset.IsValid())
+    return;
+
+  uint8_t* pos = m_pBuffer.Get() + y * m_Pitch + offset.ValueOrDie();
   switch (GetFormat()) {
     case FXDIB_1bppMask:
       if (color >> 24) {
