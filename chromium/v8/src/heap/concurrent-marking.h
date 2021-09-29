@@ -96,10 +96,12 @@ class V8_EXPORT_PRIVATE ConcurrentMarking {
 
   size_t TotalMarkedBytes();
 
-  void set_ephemeron_marked(bool ephemeron_marked) {
-    ephemeron_marked_.store(ephemeron_marked);
+  void set_another_ephemeron_iteration(bool another_ephemeron_iteration) {
+    another_ephemeron_iteration_.store(another_ephemeron_iteration);
   }
-  bool ephemeron_marked() { return ephemeron_marked_.load(); }
+  bool another_ephemeron_iteration() {
+    return another_ephemeron_iteration_.load();
+  }
 
  private:
   struct TaskState {
@@ -121,7 +123,7 @@ class V8_EXPORT_PRIVATE ConcurrentMarking {
   WeakObjects* const weak_objects_;
   TaskState task_state_[kMaxTasks + 1];
   std::atomic<size_t> total_marked_bytes_{0};
-  std::atomic<bool> ephemeron_marked_{false};
+  std::atomic<bool> another_ephemeron_iteration_{false};
   base::Mutex pending_lock_;
   base::ConditionVariable pending_condition_;
   int pending_task_count_ = 0;
