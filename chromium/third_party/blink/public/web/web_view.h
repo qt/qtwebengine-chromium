@@ -360,6 +360,8 @@ class WebView {
 
   // Custom colors -------------------------------------------------------
 
+  virtual void SetBaseBackgroundColorOverrideForInspector(absl::optional<SkColor>) {}
+
   virtual void SetDeviceColorSpaceForTesting(
       const gfx::ColorSpace& color_space) = 0;
 
