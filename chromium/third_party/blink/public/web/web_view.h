@@ -365,6 +365,8 @@ class BLINK_EXPORT WebView {
 
   // Custom colors -------------------------------------------------------
 
+  virtual void SetBaseBackgroundColorOverrideForInspector(std::optional<SkColor>) {}
+
   virtual void SetDeviceColorSpaceForTesting(
       const gfx::ColorSpace& color_space) = 0;
 
