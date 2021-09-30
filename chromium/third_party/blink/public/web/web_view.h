@@ -357,6 +357,7 @@ class WebView {
   // know a background colour. This can be overridden by the methods below as
   // well.
   virtual void SetBaseBackgroundColor(SkColor) {}
+  virtual void SetBaseBackgroundColorOverrideForInspector(absl::optional<SkColor>) {}
 
   virtual void SetDeviceColorSpaceForTesting(
       const gfx::ColorSpace& color_space) = 0;
