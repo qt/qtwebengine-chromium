@@ -261,7 +261,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void SetBackgroundColorOverrideForFullscreenController(
       std::optional<SkColor>);
   void SetBaseBackgroundColorOverrideTransparent(bool override_to_transparent);
-  void SetBaseBackgroundColorOverrideForInspector(std::optional<SkColor>);
+  void SetBaseBackgroundColorOverrideForInspector(std::optional<SkColor>) override;
 
   // Called when the text-scale meta tag is added or removed
   void OnTextScaleMetaTagPresentChanged();
