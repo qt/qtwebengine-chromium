@@ -271,7 +271,7 @@ class CORE_EXPORT WebViewImpl final : public WebView,
   void SetBackgroundColorOverrideForFullscreenController(
       std::optional<SkColor>);
   void SetBaseBackgroundColorOverrideTransparent(bool override_to_transparent);
-  void SetBaseBackgroundColorOverrideForInspector(std::optional<SkColor>);
+  void SetBaseBackgroundColorOverrideForInspector(std::optional<SkColor>) override;
 
   // Resize the WebView. You likely should be using
   // MainFrameWidget()->Resize instead.
