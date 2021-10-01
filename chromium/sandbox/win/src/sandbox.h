@@ -140,7 +140,7 @@ class BrokerServices {
 //   }
 //
 // For more information see the BrokerServices API documentation.
-class TargetServices {
+class [[clang::lto_visibility_public]] TargetServices {
  public:
   // Initializes the target. Must call this function before any other.
   // returns ALL_OK if successful. All other return values imply failure.
