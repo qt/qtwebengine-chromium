@@ -52,5 +52,6 @@ executable("transport_security_state_generator") {
     "//base",
     "//crypto",
     "//third_party/boringssl",
+    "//third_party/zlib",
   ]
 }
