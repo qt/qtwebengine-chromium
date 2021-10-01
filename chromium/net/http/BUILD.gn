@@ -11,7 +11,7 @@ compiled_action("generate_transport_security_state") {
 
   # Inputs in order expected by the command line of the tool.
   inputs = [
-    "transport_security_state_static.json",
+    "transport_security_state_static.json.gz",
     "transport_security_state_static.pins",
     "transport_security_state_static.template",
   ]
