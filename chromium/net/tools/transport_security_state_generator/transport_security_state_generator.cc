@@ -19,6 +19,7 @@
 #include "net/tools/transport_security_state_generator/pinsets.h"
 #include "net/tools/transport_security_state_generator/preloaded_state_generator.h"
 #include "net/tools/transport_security_state_generator/transport_security_state_entry.h"
+#include "third_party/zlib/zlib.h"
 
 using net::transport_security_state::TransportSecurityStateEntries;
 using net::transport_security_state::Pinsets;
@@ -235,6 +236,35 @@ int main(int argc, char* argv[]) {
     LOG(ERROR) << "Could not read input JSON file.";
     return 1;
   }
+//   if (json_filepath ends with .gz) {
+  do {
+    z_stream zs;
+    memset(&zs, 0, sizeof(z_stream));
+
+    if (inflateInit2(&zs, 15 + 32) != Z_OK) {
+      LOG(ERROR) << "Inflate failed to initialize.";
+      return 1;
+    }
+    zs.next_in = (Bytef*)json_input.data();
+    zs.avail_in = json_input.size();
+
+    std::string out;
+    int ret = Z_OK;
+    char buffer[32768];
+    while (ret == Z_OK) {
+        zs.next_out = (Bytef*)buffer;
+        zs.avail_out = sizeof(buffer);
+        ret = inflate(&zs, 0);
+        if (zs.total_out > out.size())
+            out.append(buffer, zs.total_out - out.size());
+    }
+    inflateEnd(&zs);
+    if (ret != Z_STREAM_END) {
+      LOG(ERROR) << "Inflate failed.";
+      break; // Assume uncompressed?
+    }
+    json_input = out;
+  } while(false);
 
   base::FilePath pins_filepath = base::FilePath::FromUTF8Unsafe(argv[2]);
   if (!base::PathExists(pins_filepath)) {
