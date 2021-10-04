@@ -965,6 +965,8 @@ base::Optional<CtapDeviceResponseCode> VirtualCtap2Device::OnMakeCredential(
   }
   CtapMakeCredentialRequest request = std::move(*opt_request);
 
+  mutable_state()->exclude_list_history.push_back(request.exclude_list);
+
   bool user_verified;
   const base::Optional<CtapDeviceResponseCode> uv_error = CheckUserVerification(
       /*is_make_credential=*/true, *device_info_, request.rp.id,
@@ -1222,7 +1224,7 @@ base::Optional<CtapDeviceResponseCode> VirtualCtap2Device::OnGetAssertion(
   }
   CtapGetAssertionRequest request = std::move(*opt_request);
 
-  mutable_state()->allow_list_sizes.push_back(request.allow_list.size());
+  mutable_state()->allow_list_history.push_back(request.allow_list);
 
   bool user_verified;
   const base::Optional<CtapDeviceResponseCode> uv_error = CheckUserVerification(

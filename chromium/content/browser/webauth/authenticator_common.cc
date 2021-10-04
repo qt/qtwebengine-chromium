@@ -901,6 +901,13 @@ void AuthenticatorCommon::MakeCredential(
     return;
   }
 
+  if (!security_checker_->DeduplicateCredentialDescriptorListAndValidateLength(
+          &options->exclude_credentials)) {
+    mojo::ReportBadMessage("invalid exclude_credentials length");
+    InvokeCallbackAndCleanup(std::move(callback), blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR);
+    return;
+  }
+
   request_delegate_ = CreateRequestDelegate();
   if (!request_delegate_) {
     InvokeCallbackAndCleanup(std::move(callback),
@@ -1159,6 +1166,13 @@ void AuthenticatorCommon::GetAssertion(
           &is_cross_origin);
   if (status != blink::mojom::AuthenticatorStatus::SUCCESS) {
     InvokeCallbackAndCleanup(std::move(callback), status);
+    return;
+  }
+
+  if (!security_checker_->DeduplicateCredentialDescriptorListAndValidateLength(
+          &options->allow_credentials)) {
+    mojo::ReportBadMessage("invalid allow_credentials length");
+    InvokeCallbackAndCleanup(std::move(callback), blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR);
     return;
   }
 

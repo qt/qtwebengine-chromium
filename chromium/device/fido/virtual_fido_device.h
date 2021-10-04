@@ -21,6 +21,7 @@
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_device.h"
 #include "device/fido/fido_parsing_utils.h"
+#include "device/fido/public_key_credential_descriptor.h"
 #include "device/fido/public_key_credential_rp_entity.h"
 #include "device/fido/public_key_credential_user_entity.h"
 #include "net/cert/x509_util.h"
@@ -225,10 +226,15 @@ class COMPONENT_EXPORT(DEVICE_FIDO) VirtualFidoDevice : public FidoDevice {
     // to return from a previous authenticatorCredentialManagement command.
     std::list<cbor::Value::MapValue> pending_registrations;
 
-    // allow_list_sizes contains the lengths of the allow_lists that have been
-    // seen in assertion requests. This is for tests to confirm that the
-    // expected sequence of requests was sent.
-    std::vector<size_t> allow_list_sizes;
+    // allow_list_history contains the allow_list values that have been seen in
+    // assertion requests. This is for tests to confirm that the expected
+    // sequence of requests was sent.
+    std::vector<std::vector<PublicKeyCredentialDescriptor>> allow_list_history;
+    // exclude_list_history contains the exclude_list values that have been seen
+    // in registration requests. This is for tests to confirm that the expected
+    // sequence of requests was sent.
+    std::vector<std::vector<PublicKeyCredentialDescriptor>>
+        exclude_list_history;
 
     // The large-blob array.
     std::vector<uint8_t> large_blob;
