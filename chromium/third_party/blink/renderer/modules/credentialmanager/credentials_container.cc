@@ -224,6 +224,11 @@ bool IsIconURLNullOrSecure(const KURL& url) {
          SecurityOrigin::Create(url)->IsPotentiallyTrustworthy();
 }
 
+bool IsCredentialDescriptorListBelowSizeLimit(
+    const HeapVector<Member<PublicKeyCredentialDescriptor>>& list) {
+  return list.size() <= mojom::blink::kPublicKeyCredentialDescriptorListMaxSize;
+}
+
 DOMException* CredentialManagerErrorToDOMException(
     CredentialManagerError reason) {
   switch (reason) {
@@ -792,6 +797,15 @@ ScriptPromise CredentialsContainer::get(
     }
 #endif
 
+    if (!IsCredentialDescriptorListBelowSizeLimit(
+            options->publicKey()->allowCredentials())) {
+      resolver->Reject(
+          DOMException::Create("The `allowCredentials` attribute exceeds the "
+                               "maximum allowed size (64).",
+                               "RangeError"));
+      return promise;
+    }
+
     if (options->publicKey()->hasExtensions()) {
       if (options->publicKey()->extensions()->hasAppid()) {
         const auto& appid = options->publicKey()->extensions()->appid();
@@ -1032,6 +1046,15 @@ ScriptPromise CredentialsContainer::create(
       UseCounter::Count(
           resolver->GetExecutionContext(),
           WebFeature::kCredentialManagerCreatePublicKeyCredential);
+    }
+
+    if (!IsCredentialDescriptorListBelowSizeLimit(
+            options->publicKey()->excludeCredentials())) {
+      resolver->Reject(
+          DOMException::Create("The `excludeCredentials` attribute exceeds the "
+                               "maximum allowed size (64).",
+                               "RangeError"));
+      return promise;
     }
 
     if (options->publicKey()->hasExtensions()) {
