@@ -125,7 +125,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
     return token_;
   }
 
-  LocalFrame* GetFrame() const { return To<LocalFrame>(DOMWindow::GetFrame()); }
+  LocalFrame* GetFrame() const;
 
   ScriptController& GetScriptController() const { return *script_controller_; }
 
