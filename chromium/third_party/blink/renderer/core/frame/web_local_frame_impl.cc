@@ -627,6 +627,10 @@ bool WebLocalFrameImpl::ConsumeTransientUserActivation(
   return LocalFrame::ConsumeTransientUserActivation(GetFrame(), update_source);
 }
 
+bool WebLocalFrameImpl::LastActivationWasRestricted() const {
+  return GetFrame()->LastActivationWasRestricted();
+}
+
 void WebLocalFrameImpl::SetOptimizationGuideHints(
     const WebOptimizationGuideHints& web_hints) {
   if (!GetFrame())
