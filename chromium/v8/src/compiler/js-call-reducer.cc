@@ -4513,30 +4513,24 @@ Reduction JSCallReducer::ReduceArrayPrototypePop(Node* node) {
     }
 
     // Compute the new {length}.
-    Node* new_length = graph()->NewNode(simplified()->NumberSubtract(),
-                                        length, jsgraph()->OneConstant());
-
-    // This extra check exists solely to break an exploitation technique
-    // that abuses typer mismatches.
-    new_length = efalse = graph()->NewNode(
-        simplified()->CheckBounds(p.feedback()),
-        new_length, length, efalse, if_false);
+    length = graph()->NewNode(simplified()->NumberSubtract(), length,
+                              jsgraph()->OneConstant());
 
     // Store the new {length} to the {receiver}.
     efalse = graph()->NewNode(
         simplified()->StoreField(AccessBuilder::ForJSArrayLength(kind)),
-        receiver, new_length, efalse, if_false);
+        receiver, length, efalse, if_false);
 
     // Load the last entry from the {elements}.
     vfalse = efalse = graph()->NewNode(
         simplified()->LoadElement(AccessBuilder::ForFixedArrayElement(kind)),
-        elements, new_length, efalse, if_false);
+        elements, length, efalse, if_false);
 
     // Store a hole to the element we just removed from the {receiver}.
     efalse = graph()->NewNode(
         simplified()->StoreElement(
             AccessBuilder::ForFixedArrayElement(GetHoleyElementsKind(kind))),
-        elements, new_length, jsgraph()->TheHoleConstant(), efalse, if_false);
+        elements, length, jsgraph()->TheHoleConstant(), efalse, if_false);
   }
 
   control = graph()->NewNode(common()->Merge(2), if_true, if_false);
@@ -4689,25 +4683,19 @@ Reduction JSCallReducer::ReduceArrayPrototypeShift(Node* node) {
       }
 
       // Compute the new {length}.
-      Node* new_length = graph()->NewNode(simplified()->NumberSubtract(),
-                                          length, jsgraph()->OneConstant());
-
-      // This extra check exists solely to break an exploitation technique
-      // that abuses typer mismatches.
-      new_length = etrue1 = graph()->NewNode(
-          simplified()->CheckBounds(p.feedback()),
-          new_length, length, etrue1, if_true1);
+      length = graph()->NewNode(simplified()->NumberSubtract(), length,
+                                jsgraph()->OneConstant());
 
       // Store the new {length} to the {receiver}.
       etrue1 = graph()->NewNode(
           simplified()->StoreField(AccessBuilder::ForJSArrayLength(kind)),
-          receiver, new_length, etrue1, if_true1);
+          receiver, length, etrue1, if_true1);
 
       // Store a hole to the element we just removed from the {receiver}.
       etrue1 = graph()->NewNode(
           simplified()->StoreElement(
               AccessBuilder::ForFixedArrayElement(GetHoleyElementsKind(kind))),
-          elements, new_length, jsgraph()->TheHoleConstant(), etrue1, if_true1);
+          elements, length, jsgraph()->TheHoleConstant(), etrue1, if_true1);
     }
 
     Node* if_false1 = graph()->NewNode(common()->IfFalse(), branch1);
