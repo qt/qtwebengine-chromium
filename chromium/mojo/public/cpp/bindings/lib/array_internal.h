@@ -284,8 +284,7 @@ class Array_Data {
     BufferWriter() = default;
 
     void Allocate(size_t num_elements, Buffer* buffer) {
-      if (num_elements > Traits::kMaxNumElements)
-        return;
+      CHECK_LE(num_elements, Traits::kMaxNumElements);
 
       uint32_t num_bytes =
           Traits::GetStorageSize(static_cast<uint32_t>(num_elements));
