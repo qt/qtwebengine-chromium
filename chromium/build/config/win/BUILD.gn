@@ -48,6 +48,8 @@ declare_args() {
   # This requires updated debugging and profiling tools which are not widely
   # distributed yet which is why it is currently opt-in.
   use_large_pdbs = false
+
+  qt_uses_static_runtime = false
 }
 
 # This is included by reference in the //build/config/compiler config that
@@ -458,7 +460,12 @@ config("default_crt") {
     # Component mode: dynamic CRT. Since the library is shared, it requires
     # exceptions or will give errors about things not matching, so keep
     # exceptions on.
-    configs = [ ":dynamic_crt" ]
+    if (qt_uses_static_runtime) {
+       # we always do is_shared, however qt can link final lib as static, with static runtime
+       configs = [ ":static_crt" ]
+    } else {
+       configs = [ ":dynamic_crt" ]
+    }
   } else {
     if (current_os == "winuwp") {
       # https://blogs.msdn.microsoft.com/vcblog/2014/06/10/the-great-c-runtime-crt-refactoring/
