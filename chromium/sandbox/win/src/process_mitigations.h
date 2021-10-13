@@ -12,21 +12,26 @@
 #include "sandbox/win/src/security_level.h"
 
 // This will be defined in an upcoming Windows SDK release
-#ifndef COMPONENT_KTM
+#ifndef PROC_THREAD_ATTRIBUTE_MACHINE_TYPE
 
+#ifndef COMPONENT_KTM
 #define COMPONENT_KTM 0x01
 #define COMPONENT_VALID_FLAGS (COMPONENT_KTM)
-#define ProcThreadAttributeComponentFilter 26
 
 typedef struct _COMPONENT_FILTER {
   ULONG ComponentFlags;
 } COMPONENT_FILTER, *PCOMPONENT_FILTER;
+#endif // COMPONENT_KTM
 
+#define ProcThreadAttributeComponentFilter 26
+#endif  // PROC_THREAD_ATTRIBUTE_MACHINE_TYPE
+
+// This seems to remain undefined in newer SDKs
+#ifndef PROC_THREAD_ATTRIBUTE_COMPONENT_FILTER
 #define PROC_THREAD_ATTRIBUTE_COMPONENT_FILTER                              \
   ProcThreadAttributeValue(ProcThreadAttributeComponentFilter, FALSE, TRUE, \
                            FALSE)
-
-#endif  // COMPONENT_KTM
+#endif
 
 namespace sandbox {
 
