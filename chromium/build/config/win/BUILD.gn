@@ -42,6 +42,8 @@ declare_args() {
   #  and with this switch, clang emits it like this:
   #    foo/bar.cc:12:34: error: something went wrong
   use_clang_diagnostics_format = false
+
+  qt_uses_static_runtime = false
 }
 
 # This is included by reference in the //build/config/compiler config that
@@ -469,7 +471,12 @@ config("default_crt") {
     # Component mode: dynamic CRT. Since the library is shared, it requires
     # exceptions or will give errors about things not matching, so keep
     # exceptions on.
-    configs = [ ":dynamic_crt" ]
+    if (qt_uses_static_runtime) {
+       # we always do is_shared, however qt can link final lib as static, with static runtime
+       configs = [ ":static_crt" ]
+    } else {
+       configs = [ ":dynamic_crt" ]
+    }
   } else {
     if (current_os == "winuwp") {
       # https://blogs.msdn.microsoft.com/vcblog/2014/06/10/the-great-c-runtime-crt-refactoring/
