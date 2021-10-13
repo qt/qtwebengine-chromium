@@ -16,6 +16,7 @@
 #include "media/gpu/codec_picture.h"
 #include "media/gpu/windows/d3d11_picture_buffer.h"
 
+#if !defined(NTDDI_WIN10_FE) // Windows 10.0.20348.0
 // These are from <dxva.h> in a newer SDK than the one Chrome ships with. They
 // should be deleted once Chrome switches to the updated SDK; they have been
 // copied from: https://www.microsoft.com/en-us/download/details.aspx?id=101577
@@ -280,6 +281,7 @@ typedef struct _DXVA_Tile_AV1 {
   UCHAR Reserved8Bits;
 } DXVA_Tile_AV1, *LPDXVA_Tile_AV1;
 #pragma pack(pop)
+#endif // !defined(NTDDI_WIN10_FE)
 
 namespace media {
 
