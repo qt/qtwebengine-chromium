@@ -146,4 +146,8 @@ void DevToolsProtocolTestBindings::AgentHostClosed(
   agent_host_ = nullptr;
 }
 
+bool DevToolsProtocolTestBindings::AllowUnsafeOperations() {
+  return true;
+}
+
 }  // namespace content
