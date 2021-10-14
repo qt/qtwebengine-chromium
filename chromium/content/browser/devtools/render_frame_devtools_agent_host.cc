@@ -300,7 +300,7 @@ bool RenderFrameDevToolsAgentHost::AttachSession(DevToolsSession* session,
   auto* browser_handler_ptr = browser_handler.get();
   session->AddHandler(std::move(browser_handler));
   session->AddHandler(std::make_unique<protocol::DOMHandler>(
-      session->GetClient()->MayReadLocalFiles()));
+      session->GetClient()->AllowUnsafeOperations()));
   session->AddHandler(std::move(emulation_handler));
   auto input_handler = std::make_unique<protocol::InputHandler>();
   input_handler->OnPageScaleFactorChanged(page_scale_factor_);

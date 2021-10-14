@@ -65,7 +65,7 @@ class PageHandler : public DevToolsDomainHandler,
  public:
   PageHandler(EmulationHandler* emulation_handler,
               BrowserHandler* browser_handler,
-              bool allow_file_access);
+              bool allow_unsafe_operations);
   ~PageHandler() override;
 
   static std::vector<PageHandler*> EnabledForWebContents(
@@ -173,6 +173,9 @@ class PageHandler : public DevToolsDomainHandler,
   void GetManifestIcons(
       std::unique_ptr<GetManifestIconsCallback> callback) override;
 
+  Response AddCompilationCache(const std::string& url,
+                               const Binary& data) override;
+
  private:
   enum EncodingFormat { PNG, JPEG };
 
@@ -208,6 +211,8 @@ class PageHandler : public DevToolsDomainHandler,
   // DownloadItem::Observer overrides
   void OnDownloadUpdated(download::DownloadItem* item) override;
   void OnDownloadDestroyed(download::DownloadItem* item) override;
+
+  const bool allow_unsafe_operations_;
 
   bool enabled_;
 
