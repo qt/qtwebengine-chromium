@@ -51,7 +51,8 @@ CSSImageValue::CSSImageValue(const AtomicString& raw_value,
       absolute_url_(url.GetString()),
       cached_image_(image),
       origin_clean_(origin_clean),
-      is_ad_related_(is_ad_related) {}
+      is_ad_related_(is_ad_related),
+      potentially_dangling_markup_(url.PotentiallyDanglingMarkup()) {}
 
 CSSImageValue::~CSSImageValue() = default;
 
@@ -62,7 +63,17 @@ StyleImage* CSSImageValue::CacheImage(
   if (!cached_image_) {
     if (absolute_url_.IsEmpty())
       ReResolveURL(document);
-    ResourceRequest resource_request(absolute_url_);
+    // The PotentiallyDanglingMarkup() flag is lost when storing the absolute url
+    // as a string from which the KURL is constructed here.
+    // The url passed into the constructor had the PotentiallyDanglingMarkup flag
+    // set. That information needs to be passed on to the fetch code to block such
+    // resources from loading.
+    KURL request_url = potentially_dangling_markup_
+                           ? document.CompleteURL(relative_url_)
+                           : KURL(absolute_url_);
+    SECURITY_CHECK(request_url.PotentiallyDanglingMarkup() ==
+                   potentially_dangling_markup_);
+    ResourceRequest resource_request(request_url);
     resource_request.SetReferrerPolicy(
         ReferrerUtils::MojoReferrerPolicyResolveDefault(
             referrer_.referrer_policy));
