@@ -21,11 +21,10 @@ void WrapGlobalMemoryDump(
 
 // static
 void MemoryInstrumentation::CreateInstance(
-    mojo::PendingRemote<memory_instrumentation::mojom::Coordinator> coordinator,
-    bool is_browser_process) {
+    mojo::PendingRemote<memory_instrumentation::mojom::Coordinator>
+        coordinator) {
   DCHECK(!g_instance);
-  g_instance =
-      new MemoryInstrumentation(std::move(coordinator), is_browser_process);
+  g_instance = new MemoryInstrumentation(std::move(coordinator));
 }
 
 // static
@@ -34,10 +33,8 @@ MemoryInstrumentation* MemoryInstrumentation::GetInstance() {
 }
 
 MemoryInstrumentation::MemoryInstrumentation(
-    mojo::PendingRemote<memory_instrumentation::mojom::Coordinator> coordinator,
-    bool is_browser_process)
-    : coordinator_(std::move(coordinator)),
-      is_browser_process_(is_browser_process) {}
+    mojo::PendingRemote<memory_instrumentation::mojom::Coordinator> coordinator)
+    : coordinator_(std::move(coordinator)) {}
 
 MemoryInstrumentation::~MemoryInstrumentation() {
   g_instance = nullptr;
@@ -46,7 +43,6 @@ MemoryInstrumentation::~MemoryInstrumentation() {
 void MemoryInstrumentation::RequestGlobalDump(
     const std::vector<std::string>& allocator_dump_names,
     RequestGlobalDumpCallback callback) {
-  CHECK(is_browser_process_);
   coordinator_->RequestGlobalMemoryDump(
       MemoryDumpType::SUMMARY_ONLY, MemoryDumpLevelOfDetail::BACKGROUND,
       MemoryDumpDeterminism::NONE, allocator_dump_names,
@@ -56,7 +52,6 @@ void MemoryInstrumentation::RequestGlobalDump(
 void MemoryInstrumentation::RequestPrivateMemoryFootprint(
     base::ProcessId pid,
     RequestGlobalDumpCallback callback) {
-  CHECK(is_browser_process_);
   coordinator_->RequestPrivateMemoryFootprint(
       pid, base::BindOnce(&WrapGlobalMemoryDump, std::move(callback)));
 }
@@ -65,7 +60,6 @@ void MemoryInstrumentation::RequestGlobalDumpForPid(
     base::ProcessId pid,
     const std::vector<std::string>& allocator_dump_names,
     RequestGlobalDumpCallback callback) {
-  CHECK(is_browser_process_);
   coordinator_->RequestGlobalMemoryDumpForPid(
       pid, allocator_dump_names,
       base::BindOnce(&WrapGlobalMemoryDump, std::move(callback)));
@@ -76,7 +70,6 @@ void MemoryInstrumentation::RequestGlobalDumpAndAppendToTrace(
     MemoryDumpLevelOfDetail level_of_detail,
     MemoryDumpDeterminism determinism,
     RequestGlobalMemoryDumpAndAppendToTraceCallback callback) {
-  CHECK(is_browser_process_);
   coordinator_->RequestGlobalMemoryDumpAndAppendToTrace(
       dump_type, level_of_detail, determinism, std::move(callback));
 }
