@@ -696,19 +696,11 @@ void InstructionSelector::VisitLoad(Node* node) {
       break;
     case MachineRepresentation::kBit:  // Fall through.
     case MachineRepresentation::kWord8:
-      opcode = load_rep.IsUnsigned()
-                   ? kArm64Ldrb
-                   : load_rep.semantic() == MachineSemantic::kInt32
-                         ? kArm64LdrsbW
-                         : kArm64Ldrsb;
+      opcode = load_rep.IsSigned() ? kArm64Ldrsb : kArm64Ldrb;
       immediate_mode = kLoadStoreImm8;
       break;
     case MachineRepresentation::kWord16:
-      opcode = load_rep.IsUnsigned()
-                   ? kArm64Ldrh
-                   : load_rep.semantic() == MachineSemantic::kInt32
-                         ? kArm64LdrshW
-                         : kArm64Ldrsh;
+      opcode = load_rep.IsSigned() ? kArm64Ldrsh : kArm64Ldrh;
       immediate_mode = kLoadStoreImm16;
       break;
     case MachineRepresentation::kWord32:
