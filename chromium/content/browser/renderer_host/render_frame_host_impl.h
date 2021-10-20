@@ -3000,6 +3000,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   // RFH.
   std::unique_ptr<PermissionServiceContext> permission_service_context_;
 
+  // Remotes must be reset in InvalidateMojoConnection().
   // Holder of Mojo connection with ImageDownloader service in Blink.
   mojo::Remote<blink::mojom::ImageDownloader> mojo_image_downloader_;
 
