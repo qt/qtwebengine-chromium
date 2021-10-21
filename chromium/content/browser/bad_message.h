@@ -262,6 +262,7 @@ enum BadMessageReason {
   MSDH_INVALID_STREAM_TYPE = 234,
   WCI_INVALID_DOWNLOAD_IMAGE_RESULT = 243,
   RFH_CHILD_FRAME_UNEXPECTED_OWNER_ELEMENT_TYPE = 244,
+  RFH_CREATE_CHILD_FRAME_SANDBOX_FLAGS = 254,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the

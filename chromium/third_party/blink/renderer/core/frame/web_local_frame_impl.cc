@@ -2009,6 +2009,17 @@ LocalFrame* WebLocalFrameImpl::CreateChildFrame(
       owner_element->MarginHeight(), owner_element->AllowFullscreen(),
       owner_element->AllowPaymentRequest(), owner_element->IsDisplayNone(),
       owner_element->GetColorScheme(), owner_element->RequiredCsp());
+
+  FramePolicy frame_policy = owner_element->GetFramePolicy();
+  // Documents create iframes, iframes host new documents. Both are associated
+  // with sandbox flags. They are required to be stricter or equal as we go
+  // down. The iframe owner element only returns the additional restrictions
+  // defined in the HTMLIFrameElement's sanbox attribute. It needs to be
+  // combined with the document's sandbox flags to get the frame's sandbox
+  // policy right.
+  frame_policy.sandbox_flags |=
+      GetFrame()->GetDocument()->GetExecutionContext()->GetSandboxFlags();
+
   // FIXME: Using subResourceAttributeName as fallback is not a perfect
   // solution. subResourceAttributeName returns just one attribute name. The
   // element might not have the attribute, and there might be other attributes
@@ -2017,8 +2028,7 @@ LocalFrame* WebLocalFrameImpl::CreateChildFrame(
       client_->CreateChildFrame(this, scope, name,
                                 owner_element->getAttribute(
                                     owner_element->SubResourceAttributeName()),
-                                owner_element->GetFramePolicy(),
-                                owner_properties, owner_element->OwnerType()));
+                                std::move(frame_policy), owner_properties, owner_element->OwnerType()));
   if (!webframe_child)
     return nullptr;
 

@@ -6488,6 +6488,7 @@ Called by update_bad_message_reasons.py.-->
   <int value="233" label="RWH_CLOSE_PORTAL"/>
   <int value="234" label="MSDH_INVALID_STREAM_TYPE"/>
   <int value="243" label="WCI_INVALID_DOWNLOAD_IMAGE_RESULT"/>
+  <int value="254" label="RFH_CREATE_CHILD_FRAME_SANDBOX_FLAGS"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">

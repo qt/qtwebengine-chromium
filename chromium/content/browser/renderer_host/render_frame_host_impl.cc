@@ -2474,6 +2474,16 @@ void RenderFrameHostImpl::OnCreateChildFrame(
     return;
   }
 
+  // Documents create iframes, iframes host new documents. Both are associated
+  // with sandbox flags. They are required to be stricter or equal to their
+  // owner when they are created, as we go down.
+  if (frame_policy.sandbox_flags !=
+      (frame_policy.sandbox_flags | active_sandbox_flags_)) {
+    bad_message::ReceivedBadMessage(
+        GetProcess(), bad_message::RFH_CREATE_CHILD_FRAME_SANDBOX_FLAGS);
+    return;
+  }
+
   // The RenderFrame corresponding to this host sent an IPC message to create a
   // child, but by the time we get here, it's possible for the RenderFrameHost
   // to become pending deletion, or for its process to have disconnected (maybe
