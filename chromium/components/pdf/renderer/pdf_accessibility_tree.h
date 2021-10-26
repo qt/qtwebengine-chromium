@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "base/memory/weak_ptr.h"
 #include "base/optional.h"
 #include "content/public/renderer/plugin_ax_tree_source.h"
 #include "ppapi/c/pp_instance.h"
@@ -163,6 +164,8 @@ class PdfAccessibilityTree : public content::PluginAXTreeSource {
   // object to which an action can be passed.
   std::map<int32_t, AnnotationInfo> node_id_to_annotation_info_;
   bool invalid_plugin_message_received_ = false;
+
+  base::WeakPtrFactory<PdfAccessibilityTree> weak_ptr_factory_{this};
 };
 
 }  // namespace pdf
