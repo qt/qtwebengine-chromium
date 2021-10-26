@@ -21,7 +21,7 @@ namespace {
 
 class MockAutofillClient : public TestAutofillClient {
  public:
-  MOCK_METHOD1(HideAutofillPopup, void(PopupHidingReason));
+  MOCK_METHOD(void, HideAutofillPopup, (PopupHidingReason), (override));
 };
 
 // Just a stub AutofillDriver implementation which announces its construction
@@ -170,7 +170,7 @@ TEST_F(AutofillDriverFactoryTest, DeleteForKey) {
 
 TEST_F(AutofillDriverFactoryTest, NavigationFinished) {
   EXPECT_CALL(client_, HideAutofillPopup(PopupHidingReason::kNavigation));
-  factory_.NavigationFinished();
+  factory_.NavigationFinished(AutofillDriverFactory::HideUi(true));
 }
 
 TEST_F(AutofillDriverFactoryTest, TabHidden) {

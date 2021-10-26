@@ -26,11 +26,12 @@ class ScanlineDecoder;
 }
 
 // Indexed by 8-bit char code, contains unicode code points.
-extern const uint16_t PDFDocEncoding[256];
+extern const uint16_t kPDFDocEncoding[256];
 
 bool ValidateDecoderPipeline(const CPDF_Array* pDecoders);
 
-ByteString PDF_EncodeString(const ByteString& src, bool bHex);
+ByteString PDF_EncodeString(const ByteString& src);
+ByteString PDF_HexEncodeString(const ByteString& src);
 WideString PDF_DecodeText(pdfium::span<const uint8_t> span);
 ByteString PDF_EncodeText(const WideString& str);
 

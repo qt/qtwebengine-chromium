@@ -17,7 +17,6 @@
 #include "base/callback_helpers.h"
 #include "base/macros.h"
 #include "base/message_loop/message_pump_type.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
@@ -129,11 +128,6 @@ dbus::ObjectPath UPowerObject::GetDisplayDevice() {
     reader.PopObjectPath(&display_device_path);
   }
   return display_device_path;
-}
-
-void UpdateNumberBatteriesHistogram(int count) {
-  UMA_HISTOGRAM_CUSTOM_COUNTS("BatteryStatus.NumberBatteriesLinux", count, 1, 5,
-                              6);
 }
 
 class BatteryProperties : public dbus::PropertySet {
@@ -444,8 +438,6 @@ class BatteryStatusManagerLinux::BatteryStatusNotificationThread
         }
         num_batteries++;
       }
-
-      UpdateNumberBatteriesHistogram(num_batteries);
     }
 
     if (!battery_) {
@@ -606,10 +598,10 @@ bool BatteryStatusManagerLinux::StartNotifierThreadIfNecessary() {
   if (notifier_thread_)
     return true;
 
-  base::Thread::Options thread_options(base::MessagePumpType::IO, 0);
   auto notifier_thread =
       std::make_unique<BatteryStatusNotificationThread>(callback_);
-  if (!notifier_thread->StartWithOptions(thread_options)) {
+  if (!notifier_thread->StartWithOptions(
+          base::Thread::Options(base::MessagePumpType::IO, 0))) {
     LOG(ERROR) << "Could not start the " << kBatteryNotifierThreadName
                << " thread";
     return false;

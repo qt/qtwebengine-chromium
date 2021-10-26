@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 257
+#define ANGLE_SH_VERSION 266
 
 enum ShShaderSpec
 {
@@ -74,6 +74,9 @@ enum ShShaderOutput
 
     // Output SPIR-V to be cross compiled to Metal.
     SH_SPIRV_METAL_OUTPUT = 0x8B4C,
+
+    // Output for MSL
+    SH_MSL_METAL_OUTPUT = 0x8B4D,
 };
 
 // Compile options.
@@ -120,10 +123,7 @@ const ShCompileOptions SH_ENFORCE_PACKING_RESTRICTIONS = UINT64_C(1) << 9;
 // This flag ensures all indirect (expression-based) array indexing
 // is clamped to the bounds of the array. This ensures, for example,
 // that you cannot read off the end of a uniform, whether an array
-// vec234, or mat234 type. The ShArrayIndexClampingStrategy enum,
-// specified in the ShBuiltInResources when constructing the
-// compiler, selects the strategy for the clamping implementation.
-// TODO(http://anglebug.com/4361): fix for compute shaders.
+// vec234, or mat234 type.
 const ShCompileOptions SH_CLAMP_INDIRECT_ARRAY_BOUNDS = UINT64_C(1) << 10;
 
 // This flag limits the complexity of an expression.
@@ -236,13 +236,7 @@ const ShCompileOptions SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER = UINT64_C(1) << 
 // ShBuiltInResources in vertex shaders.
 const ShCompileOptions SH_CLAMP_POINT_SIZE = UINT64_C(1) << 32;
 
-// Turn some arithmetic operations that operate on a float vector-scalar pair into vector-vector
-// operations. This is done recursively. Some scalar binary operations inside vector constructors
-// are also turned into vector operations.
-//
-// This is targeted to work around a bug in NVIDIA OpenGL drivers that was reproducible on NVIDIA
-// driver version 387.92. It works around the most common occurrences of the bug.
-const ShCompileOptions SH_REWRITE_VECTOR_SCALAR_ARITHMETIC = UINT64_C(1) << 33;
+// Bit 33 is available.
 
 // Don't use loops to initialize uninitialized variables. Only has an effect if some kind of
 // variable initialization is turned on.
@@ -337,15 +331,9 @@ const ShCompileOptions SH_ADD_VULKAN_XFB_EXTENSION_SUPPORT_CODE = UINT64_C(1) <<
 // gl_FragColor is not written.
 const ShCompileOptions SH_INIT_FRAGMENT_OUTPUT_VARIABLES = UINT64_C(1) << 57;
 
-// Defines alternate strategies for implementing array index clamping.
-enum ShArrayIndexClampingStrategy
-{
-    // Use the clamp intrinsic for array index clamping.
-    SH_CLAMP_WITH_CLAMP_INTRINSIC = 1,
-
-    // Use a user-defined function for array index clamping.
-    SH_CLAMP_WITH_USER_DEFINED_INT_CLAMP_FUNCTION
-};
+// Transitory flag to select between producing SPIR-V directly vs using glslang.  Ignored in
+// non-assert-enabled builds to avoid increasing ANGLE's binary size while both generators coexist.
+const ShCompileOptions SH_GENERATE_SPIRV_DIRECTLY = UINT64_C(1) << 58;
 
 // The 64 bits hash function. The first parameter is the input string; the
 // second parameter is the string length.
@@ -378,7 +366,6 @@ struct ShBuiltInResources
     int EXT_draw_buffers;
     int EXT_frag_depth;
     int EXT_shader_texture_lod;
-    int WEBGL_debug_shader_precision;
     int EXT_shader_framebuffer_fetch;
     int EXT_shader_framebuffer_fetch_non_coherent;
     int NV_shader_framebuffer_fetch;
@@ -390,6 +377,7 @@ struct ShBuiltInResources
     int EXT_multisampled_render_to_texture2;
     int EXT_YUV_target;
     int EXT_geometry_shader;
+    int OES_geometry_shader;
     int OES_shader_io_blocks;
     int EXT_shader_io_blocks;
     int EXT_gpu_shader5;
@@ -411,6 +399,7 @@ struct ShBuiltInResources
     int EXT_texture_buffer;
     int OES_sample_variables;
     int EXT_clip_cull_distance;
+    int EXT_primitive_bounding_box;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -444,10 +433,6 @@ struct ShBuiltInResources
     // Set a 64 bit hash function to enable user-defined name hashing.
     // Default is NULL.
     ShHashFunction64 HashFunction;
-
-    // Selects a strategy to use when implementing array index clamping.
-    // Default is SH_CLAMP_WITH_CLAMP_INTRINSIC.
-    ShArrayIndexClampingStrategy ArrayIndexClampingStrategy;
 
     // The maximum complexity an expression can be when SH_LIMIT_EXPRESSION_COMPLEXITY is turned on.
     int MaxExpressionComplexity;
@@ -583,6 +568,15 @@ struct ShBuiltInResources
     int MaxClipDistances;
     int MaxCullDistances;
     int MaxCombinedClipAndCullDistances;
+
+    // Direct-to-metal backend constants:
+
+    // Binding index for driver uniforms:
+    int DriverUniformsBindingIndex;
+    // Binding index for default uniforms:
+    int DefaultUniformsBindingIndex;
+    // Binding index for UBO's argument buffer
+    int UBOArgumentBufferBindingIndex;
 };
 
 //

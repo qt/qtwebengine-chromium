@@ -51,11 +51,11 @@ void CXFA_FFNotify::Trace(cppgc::Visitor* visitor) const {
   visitor->Trace(m_pDoc);
 }
 
-void CXFA_FFNotify::OnPageEvent(CXFA_ViewLayoutItem* pSender,
-                                uint32_t dwEvent) {
+void CXFA_FFNotify::OnPageViewEvent(CXFA_ViewLayoutItem* pSender,
+                                    CXFA_FFDoc::PageViewEvent eEvent) {
   CXFA_FFDocView* pDocView = m_pDoc->GetDocView(pSender->GetLayout());
   if (pDocView)
-    pDocView->OnPageEvent(pSender, dwEvent);
+    pDocView->OnPageViewEvent(pSender, eEvent);
 }
 
 void CXFA_FFNotify::OnWidgetListItemAdded(CXFA_Node* pSender,
@@ -249,7 +249,7 @@ void CXFA_FFNotify::AddCalcValidate(CXFA_Node* pNode) {
   pDocView->AddValidateNode(pNode);
 }
 
-IXFA_AppProvider* CXFA_FFNotify::GetAppProvider() {
+CXFA_FFApp::CallbackIface* CXFA_FFNotify::GetAppProvider() {
   return m_pDoc->GetApp()->GetAppProvider();
 }
 
@@ -344,7 +344,7 @@ void CXFA_FFNotify::OnNodeReady(CXFA_Node* pNode) {
       pDocView->AddBindItem(static_cast<CXFA_BindItems*>(pNode));
       break;
     case XFA_Element::Validate:
-      pNode->SetFlag(XFA_NodeFlag_NeedsInitApp);
+      pNode->SetFlag(XFA_NodeFlag::kNeedsInitApp);
       break;
     default:
       break;
@@ -470,7 +470,7 @@ void CXFA_FFNotify::OnChildRemoved() {
 void CXFA_FFNotify::OnLayoutItemAdded(CXFA_LayoutProcessor* pLayout,
                                       CXFA_LayoutItem* pSender,
                                       int32_t iPageIdx,
-                                      uint32_t dwStatus) {
+                                      Mask<XFA_WidgetStatus> dwStatus) {
   CXFA_FFDocView* pDocView = m_pDoc->GetDocView(pLayout);
   if (!pDocView)
     return;
@@ -480,18 +480,19 @@ void CXFA_FFNotify::OnLayoutItemAdded(CXFA_LayoutProcessor* pLayout,
     return;
 
   CXFA_FFPageView* pNewPageView = pDocView->GetPageView(iPageIdx);
-  uint32_t dwFilter = XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable |
-                      XFA_WidgetStatus_Printable;
-  pWidget->ModifyStatus(dwStatus, dwFilter);
+  constexpr Mask<XFA_WidgetStatus> kRemove{XFA_WidgetStatus::kVisible,
+                                           XFA_WidgetStatus::kViewable,
+                                           XFA_WidgetStatus::kPrintable};
+  pWidget->ModifyStatus(dwStatus, kRemove);
   CXFA_FFPageView* pPrePageView = pWidget->GetPageView();
   if (pPrePageView != pNewPageView ||
-      (dwStatus & (XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable)) ==
-          (XFA_WidgetStatus_Visible | XFA_WidgetStatus_Viewable)) {
+      dwStatus.TestAll(
+          {XFA_WidgetStatus::kVisible, XFA_WidgetStatus::kViewable})) {
     pWidget->SetPageView(pNewPageView);
     m_pDoc->WidgetPostAdd(pWidget);
   }
   if (pDocView->GetLayoutStatus() != XFA_DOCVIEW_LAYOUTSTATUS_End ||
-      !(dwStatus & XFA_WidgetStatus_Visible)) {
+      !(dwStatus & XFA_WidgetStatus::kVisible)) {
     return;
   }
   if (pWidget->IsLoaded()) {

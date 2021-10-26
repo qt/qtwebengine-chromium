@@ -21,6 +21,7 @@
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "media/base/bind_to_current_loop.h"
 #include "media/base/color_plane_layout.h"
@@ -78,6 +79,52 @@ const char* V4L2BufferTypeToString(const enum v4l2_buf_type buf_type) {
       return "CAPTURE_MPLANE";
     default:
       return "UNKNOWN";
+  }
+}
+
+int64_t V4L2BufferTimestampInMilliseconds(
+    const struct v4l2_buffer* v4l2_buffer) {
+  struct timespec ts;
+  TIMEVAL_TO_TIMESPEC(&v4l2_buffer->timestamp, &ts);
+
+  return base::TimeDelta::FromTimeSpec(ts).InMilliseconds();
+}
+
+// For decoding and encoding data to be processed is enqueued in the
+// V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE queue.  Once that data has been either
+// decompressed or compressed, the finished buffer is dequeued from the
+// V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE queue.  This occurs asynchronously so
+// there is no way to measure how long the hardware took to process the data.
+// We can use the length of time that a buffer is enqueued as a proxy for
+// how busy the hardware is.
+void V4L2ProcessingTrace(const struct v4l2_buffer* v4l2_buffer, bool start) {
+  constexpr char kTracingCategory[] = "media,gpu";
+  constexpr char kQueueBuffer[] = "V4L2 Queue Buffer";
+  constexpr char kDequeueBuffer[] = "V4L2 Dequeue Buffer";
+  constexpr char kVideoProcessing[] = "V4L2 Video Processing";
+
+  bool tracing_enabled = false;
+  TRACE_EVENT_CATEGORY_GROUP_ENABLED(kTracingCategory, &tracing_enabled);
+  if (!tracing_enabled)
+    return;
+
+  const char* name = start ? kQueueBuffer : kDequeueBuffer;
+  TRACE_EVENT_INSTANT1(kTracingCategory, name, TRACE_EVENT_SCOPE_THREAD, "type",
+                       v4l2_buffer->type);
+
+  const int64_t timestamp = V4L2BufferTimestampInMilliseconds(v4l2_buffer);
+  if (timestamp <= 0)
+    return;
+
+  if (start && v4l2_buffer->type == V4L2_BUF_TYPE_VIDEO_OUTPUT_MPLANE) {
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(kTracingCategory, kVideoProcessing,
+                                      TRACE_ID_LOCAL(timestamp), "timestamp",
+                                      timestamp);
+  } else if (!start &&
+             v4l2_buffer->type == V4L2_BUF_TYPE_VIDEO_CAPTURE_MPLANE) {
+    TRACE_EVENT_NESTABLE_ASYNC_END1(kTracingCategory, kVideoProcessing,
+                                    TRACE_ID_LOCAL(timestamp), "timestamp",
+                                    timestamp);
   }
 }
 
@@ -1050,7 +1097,7 @@ absl::optional<gfx::Rect> V4L2Queue::GetVisibleRect() {
 size_t V4L2Queue::AllocateBuffers(size_t count, enum v4l2_memory memory) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!free_buffers_);
-  DCHECK_EQ(queued_buffers_.size(), 0u);
+  DCHECK(queued_buffers_.empty());
 
   if (IsStreaming()) {
     VQLOGF(1) << "Cannot allocate buffers while streaming.";
@@ -1113,7 +1160,7 @@ size_t V4L2Queue::AllocateBuffers(size_t count, enum v4l2_memory memory) {
 
   DCHECK(free_buffers_);
   DCHECK_EQ(free_buffers_->size(), buffers_.size());
-  DCHECK_EQ(queued_buffers_.size(), 0u);
+  DCHECK(queued_buffers_.empty());
 
   return buffers_.size();
 }
@@ -1148,7 +1195,7 @@ bool V4L2Queue::DeallocateBuffers() {
   }
 
   DCHECK(!free_buffers_);
-  DCHECK_EQ(queued_buffers_.size(), 0u);
+  DCHECK(queued_buffers_.empty());
 
   return true;
 }
@@ -1234,15 +1281,17 @@ bool V4L2Queue::QueueBuffer(struct v4l2_buffer* v4l2_buffer,
                             scoped_refptr<VideoFrame> video_frame) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
+  V4L2ProcessingTrace(v4l2_buffer, /*start=*/true);
+
   int ret = device_->Ioctl(VIDIOC_QBUF, v4l2_buffer);
   if (ret) {
     VPQLOGF(1) << "VIDIOC_QBUF failed";
     return false;
   }
 
-  auto inserted =
+  const auto inserted =
       queued_buffers_.emplace(v4l2_buffer->index, std::move(video_frame));
-  DCHECK_EQ(inserted.second, true);
+  DCHECK(inserted.second);
 
   device_->SchedulePoll();
 
@@ -1293,6 +1342,8 @@ std::pair<bool, V4L2ReadableBufferRef> V4L2Queue::DequeueBuffer() {
   DCHECK(it != queued_buffers_.end());
   scoped_refptr<VideoFrame> queued_frame = std::move(it->second);
   queued_buffers_.erase(it);
+
+  V4L2ProcessingTrace(&v4l2_buffer, /*start=*/false);
 
   if (QueuedBuffersCount() > 0)
     device_->SchedulePoll();

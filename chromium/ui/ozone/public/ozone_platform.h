@@ -39,7 +39,6 @@ class PlatformGLEGLUtility;
 class PlatformGlobalShortcutListener;
 class PlatformGlobalShortcutListenerDelegate;
 class PlatformKeyboardHook;
-class PlatformUtils;
 class PlatformMenuUtils;
 class PlatformScreen;
 class PlatformUserInputMonitor;
@@ -109,10 +108,6 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // frame based on the currently-running window manager.
     bool custom_frame_pref_default = false;
 
-    // Determines whether switching between system and custom frames is
-    // supported.
-    bool use_system_title_bar = false;
-
     // Determines the type of message pump that should be used for GPU main
     // thread.
     base::MessagePumpType message_pump_type_for_gpu =
@@ -159,6 +154,12 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // Determines whether buffer formats should be fetched on GPU and passed
     // back via gpu extra info.
     bool fetch_buffer_formats_for_gmb_on_gpu = false;
+  };
+
+  // Groups platform properties that can only be known at run time.
+  struct PlatformRuntimeProperties {
+    // Indicates whether the platform supports server-side window decorations.
+    bool supports_server_side_window_decorations = true;
   };
 
   // Properties available in the host process after initialization.
@@ -224,7 +225,12 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
       PlatformWindowInitProperties properties) = 0;
   virtual std::unique_ptr<display::NativeDisplayDelegate>
   CreateNativeDisplayDelegate() = 0;
+  // Creates a new PlatformScreen subclass from the factory subclass.
   virtual std::unique_ptr<PlatformScreen> CreateScreen() = 0;
+  // This function must be called immediately after CreateScreen with the
+  // `screen` that was returned from CreateScreen.  They are separated to avoid
+  // observer recursion into display::Screen from inside CreateScreen.
+  virtual void InitScreen(PlatformScreen* screen) = 0;
   virtual PlatformClipboard* GetPlatformClipboard();
   virtual std::unique_ptr<InputMethod> CreateInputMethod(
       internal::InputMethodDelegate* delegate,
@@ -251,10 +257,20 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
   virtual bool IsNativePixmapConfigSupported(gfx::BufferFormat format,
                                              gfx::BufferUsage usage) const;
 
+  // Returns whether a custom frame should be used for windows.
+  // The default behaviour is returning what is suggested by the
+  // custom_frame_pref_default property of the platform: if the platform
+  // suggests using the custom frame, likely it lacks native decorations.
+  // See https://crbug.com/1212555
+  virtual bool ShouldUseCustomFrame();
+
   // Returns a struct that contains configuration and requirements for the
   // current platform implementation. This can be called from either host or GPU
   // process at any time.
   virtual const PlatformProperties& GetPlatformProperties();
+
+  // Returns runtime properties of the current platform implementation.
+  virtual const PlatformRuntimeProperties& GetPlatformRuntimeProperties();
 
   // Returns a struct that contains properties available in the host process
   // after InitializeForUI() runs.

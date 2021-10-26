@@ -103,8 +103,8 @@ const int kCurrentVersionNumber = 8;
 const int kCompatibleVersionNumber = 8;
 const int kDeprecatedVersionNumber = 6;  // and earlier.
 
-void FillIconMapping(const sql::Statement& statement,
-                     const GURL& page_url,
+void FillIconMapping(const GURL& page_url,
+                     sql::Statement& statement,
                      IconMapping* icon_mapping) {
   icon_mapping->mapping_id = statement.ColumnInt64(0);
   icon_mapping->icon_id = statement.ColumnInt64(1);
@@ -241,7 +241,7 @@ bool FaviconDatabase::IconMappingEnumerator::GetNextIconMapping(
     IconMapping* icon_mapping) {
   if (!statement_.Step())
     return false;
-  FillIconMapping(statement_, GURL(statement_.ColumnString(4)), icon_mapping);
+  FillIconMapping(GURL(statement_.ColumnString(4)), statement_, icon_mapping);
   return true;
 }
 
@@ -444,10 +444,11 @@ bool FaviconDatabase::GetFaviconBitmaps(
     favicon_bitmap.icon_id = icon_id;
     favicon_bitmap.last_updated = base::Time::FromDeltaSinceWindowsEpoch(
         base::TimeDelta::FromMicroseconds(statement.ColumnInt64(1)));
-    if (statement.ColumnByteLength(2) > 0) {
-      scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
-      statement.ColumnBlobAsVector(2, &data->data());
-      favicon_bitmap.bitmap_data = data;
+    std::vector<uint8_t> bitmap_data_blob;
+    statement.ColumnBlobAsVector(2, &bitmap_data_blob);
+    if (!bitmap_data_blob.empty()) {
+      favicon_bitmap.bitmap_data =
+          base::RefCountedBytes::TakeVector(&bitmap_data_blob);
     }
     favicon_bitmap.pixel_size =
         gfx::Size(statement.ColumnInt(3), statement.ColumnInt(4));
@@ -479,10 +480,11 @@ bool FaviconDatabase::GetFaviconBitmap(
         base::TimeDelta::FromMicroseconds(statement.ColumnInt64(0)));
   }
 
-  if (png_icon_data && statement.ColumnByteLength(1) > 0) {
-    scoped_refptr<base::RefCountedBytes> data(new base::RefCountedBytes());
-    statement.ColumnBlobAsVector(1, &data->data());
-    *png_icon_data = data;
+  if (png_icon_data) {
+    std::vector<uint8_t> png_data_blob;
+    statement.ColumnBlobAsVector(1, &png_data_blob);
+    if (!png_data_blob.empty())
+      *png_icon_data = base::RefCountedBytes::TakeVector(&png_data_blob);
   }
 
   if (pixel_size) {
@@ -512,8 +514,7 @@ FaviconBitmapID FaviconDatabase::AddFaviconBitmap(
 
   statement.BindInt64(0, icon_id);
   if (icon_data.get() && icon_data->size()) {
-    statement.BindBlob(1, icon_data->front(),
-                       static_cast<int>(icon_data->size()));
+    statement.BindBlob(1, *icon_data);
   } else {
     statement.BindNull(1);
   }
@@ -553,8 +554,7 @@ bool FaviconDatabase::SetFaviconBitmap(
                              "UPDATE favicon_bitmaps SET image_data=?, "
                              "last_updated=?, last_requested=? WHERE id=?"));
   if (bitmap_data.get() && bitmap_data->size()) {
-    statement.BindBlob(0, bitmap_data->front(),
-                       static_cast<int>(bitmap_data->size()));
+    statement.BindBlob(0, *bitmap_data);
   } else {
     statement.BindNull(0);
   }
@@ -780,7 +780,7 @@ bool FaviconDatabase::GetIconMappingsForPageURL(
       return result;
 
     IconMapping icon_mapping;
-    FillIconMapping(statement, page_url, &icon_mapping);
+    FillIconMapping(page_url, statement, &icon_mapping);
     mapping_data->push_back(icon_mapping);
   }
   return result;
@@ -1063,7 +1063,9 @@ sql::InitStatus FaviconDatabase::InitImpl(const base::FilePath& db_name) {
 
   // Clear databases which are too old to process.
   DCHECK_LT(kDeprecatedVersionNumber, kCurrentVersionNumber);
-  sql::MetaTable::RazeIfDeprecated(&db_, kDeprecatedVersionNumber);
+  sql::MetaTable::RazeIfIncompatible(
+      &db_, /*lowest_supported_version=*/kDeprecatedVersionNumber + 1,
+      kCurrentVersionNumber);
 
   // TODO(shess): Sqlite.Version.Thumbnail shows versions 22, 23, and
   // 25.  Future versions are not destroyed because that could lead to

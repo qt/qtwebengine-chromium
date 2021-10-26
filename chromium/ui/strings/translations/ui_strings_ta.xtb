@@ -8,11 +8,11 @@
 <translation id="1169783199079129864">{MINUTES,plural, =1{1நி}other{#நி}}</translation>
 <translation id="1181037720776840403">அகற்று</translation>
 <translation id="1201402288615127009">அடுத்து</translation>
-<translation id="1218444235442067213"><ph name="APP_NAME" />, Play ஸ்டோர் ஆப்ஸ்</translation>
+<translation id="1218444235442067213"><ph name="APP_NAME" />, Play Store ஆப்ஸ்</translation>
 <translation id="1243314992276662751">பதிவேற்று</translation>
 <translation id="1266864766717917324"><ph name="CONTENT_TYPE" />ஐப் பகிர முடியவில்லை</translation>
 <translation id="1269641567813814718">Win</translation>
-<translation id="1290982764014248209"><ph name="DRAGGED_APP" />ஐ <ph name="FOLDER_NAME" /> கோப்புறைக்கு நகர்த்தும்.</translation>
+<translation id="1290982764014248209"><ph name="DRAGGED_APP" />ஐ <ph name="FOLDER_NAME" /> ஃபோல்டருக்கு நகர்த்தும்.</translation>
 <translation id="1291104554099683393">சிறுசிறு பகுதிகளாக உரையைப் பகிர முயலவும்.</translation>
 <translation id="1293699935367580298">Esc</translation>
 <translation id="1306549533752902673">பரிந்துரைக்கப்படும் ஆப்ஸ்</translation>
@@ -58,6 +58,7 @@
 <translation id="2297836609126180313"><ph name="QUANTITY" /> டெ.பை/வி</translation>
 <translation id="2353636109065292463">உங்கள் இணைய இணைப்பைச் சரிபார்க்கிறது</translation>
 <translation id="2388990488038464401">உங்கள் மொபைலிலிருந்து இந்த எண்ணை அழைக்கவா?</translation>
+<translation id="2435457462613246316">கடவுச்சொல்லைக் காண்பி</translation>
 <translation id="24452542372838207">அறிவிப்பை விரிவாக்கு</translation>
 <translation id="2445449901874883781">அதிக அடர்த்தியைப் பயன்படுத்து</translation>
 <translation id="2482878487686419369">அறிவிப்புகள்</translation>
@@ -75,10 +76,11 @@
 <translation id="271033894570825754">புதிது</translation>
 <translation id="2743387203779672305">கிளிப்போர்டுக்கு நகலெடு</translation>
 <translation id="2749082172777216925"><ph name="APP_NAME_INFO" />, <ph name="PRICE" /></translation>
-<translation id="2803313416453193357">கோப்புறையைத் திற</translation>
+<translation id="2803313416453193357">ஃபோல்டரைத் திற</translation>
 <translation id="2824719307700604149">{YEARS,plural, =1{1 ஆண்டுக்கு முன்}other{# ஆண்டுகளுக்கு முன்}}</translation>
 <translation id="2878511608894704031">அனைத்தையும் நீக்கு</translation>
 <translation id="2907671656515444832">{DAYS,plural, =1{இன்னும் 1நா}other{இன்னும் #நா}}</translation>
+<translation id="2922712708897119705"><ph name="COLUMN_NAME" /> நெடுவரிசை இறங்குவரிசையில் வரிசைப்படுத்தப்பட்டது.</translation>
 <translation id="2931838996092594335">கிளிக் செய்க</translation>
 <translation id="2981684127883932071">பரிந்துரைகளைக் காட்டுகிறது</translation>
 <translation id="3036649622769666520">ஃபைல்களைத் திற</translation>
@@ -98,11 +100,11 @@
 <translation id="348799646910989694">ஷெல்ஃப் தானாகவே மறைக்கப்படும்</translation>
 <translation id="3554637740840164787"><ph name="ITEM_TITLE" /> ஷெல்ஃபில் நிலையாகப் பொருத்தப்பட்டது</translation>
 <translation id="3600566671520689681">{DAYS,plural, =1{1 நாள் உள்ளது}other{# நாட்கள் உள்ளன}}</translation>
-<translation id="3600969208114796418"><ph name="SAVEAS_EXTENSION_TYPE" /> கோப்பு</translation>
+<translation id="3600969208114796418"><ph name="SAVEAS_EXTENSION_TYPE" /> ஃபைல்</translation>
 <translation id="3608915363409716668"><ph name="MAXIMUM_VALUE" />+</translation>
 <translation id="3618849550573277856">“<ph name="LOOKUP_STRING" />” எனத் தேடு</translation>
 <translation id="3622035490309591977">கிளிப்போர்டு வரலாறு</translation>
-<translation id="364720409959344976">பதிவேற்றுவதற்குக் கோப்புறையைத் தேர்ந்தெடு</translation>
+<translation id="364720409959344976">பதிவேற்றுவதற்கு ஃபோல்டரைத் தேர்ந்தெடு</translation>
 <translation id="3660179305079774227">மேல்நோக்கிய அம்பு</translation>
 <translation id="3670030362669914947">எண்</translation>
 <translation id="3740362395218339114"><ph name="QUANTITY" /> ஜி.பை/வி</translation>
@@ -114,15 +116,17 @@
 <translation id="3897092660631435901">மெனு</translation>
 <translation id="3909791450649380159">வெட்&amp;டு</translation>
 <translation id="3990502903496589789">வலது விளிம்பு</translation>
+<translation id="3994749195054421561"><ph name="COLUMN_NAME" /> நெடுவரிசை ஏறுவரிசையில் வரிசைப்படுத்தப்பட்டது.</translation>
 <translation id="40579289237549812">{UNREAD_NOTIFICATIONS,plural, =1{1 படிக்காத அறிவிப்பு}other{# படிக்காத அறிவிப்புகள்}}</translation>
 <translation id="4202807286478387388">தாவு</translation>
 <translation id="4250229828105606438">ஸ்கிரீன்ஷாட்</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 மாதத்திற்கு முன்}other{# மாதங்களுக்கு முன்}}</translation>
 <translation id="4289300219472526559">பேச்சைத் தொடங்கு</translation>
-<translation id="430191667033048642"><ph name="FOLDER_NAME" /> கோப்புறைக்கு <ph name="MOVED_APP_NAME" /> ஆப்ஸ் நகர்த்தப்பட்டது.</translation>
+<translation id="430191667033048642"><ph name="FOLDER_NAME" /> ஃபோல்டருக்கு <ph name="MOVED_APP_NAME" /> ஆப்ஸ் நகர்த்தப்பட்டது.</translation>
 <translation id="4306392492252714209">கிளிப்போர்டிலிருந்து அகற்றும்.</translation>
 <translation id="4316910396681052118">எல்லாப் பயன்பாடுகளும்</translation>
 <translation id="4491109536499578614">படம்</translation>
+<translation id="4565377596337484307">கடவுச்சொல்லை மறைக்கும்</translation>
 <translation id="4588090240171750605">வலப்புறம் நகர்த்து</translation>
 <translation id="4631891353005174729"><ph name="APP_NAME_TYPE" />, நட்சத்திர மதிப்பீடு: <ph name="RATING_SCORE" /></translation>
 <translation id="4648249871170053485"><ph name="APP_NAME" />, ஆப்ஸ் பரிந்துரை</translation>
@@ -135,14 +139,14 @@
 <translation id="4971687151119236543">ஊடகத்தின் முந்தைய டிராக்</translation>
 <translation id="5046499563572181734">இங்கே தட்டவும்</translation>
 <translation id="5076340679995252485">&amp;ஒட்டு</translation>
-<translation id="5198715732953550718"><ph name="MOVED_APP_NAME" /> மற்றும் <ph name="IN_PLACE_APP" /> ஆப்ஸை ஒருங்கிணைத்து புதிய கோப்புறை உருவாக்கப்பட்டது.</translation>
+<translation id="5198715732953550718"><ph name="MOVED_APP_NAME" /> மற்றும் <ph name="IN_PLACE_APP" /> ஆப்ஸை ஒருங்கிணைத்து புதிய ஃபோல்டர் உருவாக்கப்பட்டது.</translation>
 <translation id="520299402983819650"><ph name="QUANTITY" /> பெ.பை</translation>
 <translation id="5266161281976477809">கூடுதல் உள்ளடக்கத்தைக் காட்டும் முக்கோணம்</translation>
 <translation id="5278860589123563674">அனுப்ப முடியவில்லை</translation>
 <translation id="5283099933536931082"><ph name="APP_ITEM_TITLE" /> ஆப்ஸில் புதிய அறிவிப்புகள் உள்ளன.</translation>
 <translation id="528468243742722775">நிறுத்து</translation>
 <translation id="5329858601952122676">&amp;நீக்கு</translation>
-<translation id="5395308026110844773"><ph name="IN_PLACE_APP" />ன் மேல் <ph name="DRAGGED_APP_NAME" />ஐ இழுத்துவிடுகிறீர்கள். கோப்புறையை உருவாக்க, விடுவிக்கவும்.</translation>
+<translation id="5395308026110844773"><ph name="IN_PLACE_APP" />ன் மேல் <ph name="DRAGGED_APP_NAME" />ஐ இழுத்துவிடுகிறீர்கள். ஃபோல்டரை உருவாக்க, விடுவிக்கவும்.</translation>
 <translation id="5463830097259460683">ஈமோஜி &amp;&amp; குறியீடுகள்</translation>
 <translation id="5476505524087279545">தேர்வு நீக்கு</translation>
 <translation id="547979256943495781">ஷெல்ஃப் வலப்புறம் உள்ளது</translation>
@@ -165,6 +169,7 @@
 <translation id="6012623610530968780"><ph name="TOTAL_PAGE_NUM" /> இல் <ph name="SELECTED_PAGE" />வது பக்கம்</translation>
 <translation id="6022924867608035986">தேடல்பெட்டியிலிருக்கும் உரையை அழிக்கும்</translation>
 <translation id="6040143037577758943">மூடு</translation>
+<translation id="6117103120090651229">மையத்தில் உள்ள பட்டன்</translation>
 <translation id="6119846243427417423">செயல்படுத்து</translation>
 <translation id="6129953537138746214">இடைவெளி</translation>
 <translation id="6134259848159370930">உங்கள் சாதனம், ஆப்ஸ், இணையம் ஆகியவற்றில் தேடவும்.</translation>
@@ -173,6 +178,7 @@
 <translation id="6156262341071374681">எல்லாப் பயன்பாடுகளையும் காட்டும் பட்டன்</translation>
 <translation id="6165508094623778733">மேலும் அறிக</translation>
 <translation id="6166852626429024716">உங்கள் சாதனம், ஆப்ஸ், அமைப்புகள், இணையம் ஆகியவற்றில் தேடுக...</translation>
+<translation id="6237461503717005873"><ph name="ROW_NAME" /> தேர்ந்தெடுக்கப்பட்டது.</translation>
 <translation id="6264365405983206840">அ&amp;னைத்தையும் தேர்ந்தெடு</translation>
 <translation id="6351032674660237738">பயன்பாட்டுப் பரிந்துரைகள்</translation>
 <translation id="6364916375976753737">இடப்புறம் நகர்த்து</translation>
@@ -191,9 +197,9 @@
 <translation id="6620110761915583480">ஃபைலைச் சேமி</translation>
 <translation id="6699343763173986273">ஊடகத்தின் அடுத்த டிராக்</translation>
 <translation id="6710213216561001401">முந்தையது</translation>
-<translation id="6786750046913594791">கோப்புறையை மூடு</translation>
+<translation id="6786750046913594791">ஃபோல்டரை மூடு</translation>
 <translation id="6808150112686056157">ஊடகத்தை நிறுத்து</translation>
-<translation id="6845383723252244143">கோப்புறையைத் தேர்ந்தெடு</translation>
+<translation id="6845383723252244143">ஃபோல்டரைத் தேர்ந்தெடு</translation>
 <translation id="6845533974506654842">அழுத்துக</translation>
 <translation id="6863590663815976734">{HOURS,plural, =1{1 மணிநேரம் உள்ளது}other{# மணிநேரம் உள்ளது}}</translation>
 <translation id="688711909580084195">தலைப்பிடாத வலைப்பக்கம்</translation>
@@ -213,6 +219,7 @@
 <translation id="7389409599945284130">- <ph name="MESSAGE" /></translation>
 <translation id="7410957453383678442">{MINUTES,plural, =1{1 நிமிடம் மீதமுள்ளது}other{# நிமிடங்கள் மீதமுள்ளன}}</translation>
 <translation id="7430878839542012341">இதுவரை தேடியவற்றிலிருந்து இந்தத் தேடலை நீக்கவா?</translation>
+<translation id="7437971918971306061"><ph name="COLUMN_NAME" /> நெடுவரிசை வரிசைப்படுத்தப்படவில்லை.</translation>
 <translation id="7460907917090416791"><ph name="QUANTITY" /> டெ.பை</translation>
 <translation id="7507604095951736240">ஈமோஜி</translation>
 <translation id="7620655452534002301">அகற்றப்பட்டது.</translation>
@@ -246,7 +253,7 @@
 <translation id="8393700583063109961">செய்தி அனுப்பு</translation>
 <translation id="8394908167088220973">ஊடகத்தை இயக்கு/இடைநிறுத்து</translation>
 <translation id="8458811141851741261">{YEARS,plural, =1{1ஆ}other{#ஆ}}</translation>
-<translation id="8602707065186045623"><ph name="SAVEAS_EXTENSION_TYPE" />கோப்பு(.<ph name="SAVEAS_EXTENSION_NAME" />)</translation>
+<translation id="8602707065186045623"><ph name="SAVEAS_EXTENSION_TYPE" />ஃபைல்(.<ph name="SAVEAS_EXTENSION_NAME" />)</translation>
 <translation id="8649597172973390955">ஷெல்ஃப் எப்போதும் காட்டப்படும்</translation>
 <translation id="8677655579646609597"><ph name="QUANTITY" /> கி.பை./வி</translation>
 <translation id="8685326675965865247">உங்கள் சாதனம், ஆப்ஸ், அமைப்புகள், இணையம் ஆகியவற்றில் தேடவும். ஆப்ஸுக்குச் செல்ல அம்புக்குறி விசைகளைப் பயன்படுத்தவும்.</translation>
@@ -254,7 +261,7 @@
 <translation id="8730621377337864115">முடிந்தது</translation>
 <translation id="8772073294905169192">{HOURS,plural, =1{1ம}other{#ம}}</translation>
 <translation id="8798099450830957504">இயல்புநிலை</translation>
-<translation id="8806053966018712535"><ph name="FOLDER_NAME" /> கோப்புறை</translation>
+<translation id="8806053966018712535"><ph name="FOLDER_NAME" /> ஃபோல்டர்</translation>
 <translation id="883911313571074303">படத்தைக் குறிப்பிடு</translation>
 <translation id="8841375032071747811">முந்தையது பொத்தான்</translation>
 <translation id="8867568208303837180">அனுப்புகிறது...</translation>

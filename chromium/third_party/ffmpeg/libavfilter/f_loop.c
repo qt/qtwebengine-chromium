@@ -19,7 +19,6 @@
  */
 
 #include "libavutil/audio_fifo.h"
-#include "libavutil/avassert.h"
 #include "libavutil/fifo.h"
 #include "libavutil/internal.h"
 #include "libavutil/opt.h"
@@ -281,7 +280,7 @@ static const AVFilterPad aoutputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_aloop = {
+const AVFilter ff_af_aloop = {
     .name          = "aloop",
     .description   = NULL_IF_CONFIG_SMALL("Loop audio samples."),
     .priv_size     = sizeof(LoopContext),
@@ -454,7 +453,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_loop = {
+const AVFilter ff_vf_loop = {
     .name        = "loop",
     .description = NULL_IF_CONFIG_SMALL("Loop video frames."),
     .priv_size   = sizeof(LoopContext),

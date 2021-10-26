@@ -1150,7 +1150,7 @@ std::string TemplateURLRef::HandleReplacements(
           // prefetch to allow the search server to treat the requests based on
           // source. "cs" represents Chrome Suggestions as the source. Adding a
           // new source should be supported by the Search engine.
-          HandleReplacement(std::string(), "pf=cs&", *i, &url);
+          HandleReplacement("pf", "cs", *i, &url);
         }
         break;
       }
@@ -1195,11 +1195,8 @@ std::string TemplateURLRef::HandleReplacements(
       }
 
       case GOOGLE_SUGGEST_CLIENT:
-        HandleReplacement(
-            std::string(),
-            search_terms_data.GetSuggestClient(
-                search_terms_args.request_source == NON_SEARCHBOX_NTP),
-            *i, &url);
+        HandleReplacement(std::string(), search_terms_data.GetSuggestClient(),
+                          *i, &url);
         break;
 
       case GOOGLE_SUGGEST_REQUEST_ID:

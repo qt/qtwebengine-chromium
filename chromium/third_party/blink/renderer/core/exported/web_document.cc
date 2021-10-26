@@ -59,9 +59,6 @@
 #include "third_party/blink/renderer/core/html/html_head_element.h"
 #include "third_party/blink/renderer/core/html/html_link_element.h"
 #include "third_party/blink/renderer/core/html/plugin_document.h"
-#include "third_party/blink/renderer/core/layout/layout_object.h"
-#include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -110,8 +107,8 @@ WebString WebDocument::GetReferrer() const {
   return ConstUnwrap<Document>()->referrer();
 }
 
-absl::optional<SkColor> WebDocument::ThemeColor() const {
-  absl::optional<Color> color = ConstUnwrap<Document>()->ThemeColor();
+absl::optional<SkColor> WebDocument::ThemeColor() {
+  absl::optional<Color> color = Unwrap<Document>()->ThemeColor();
   if (color)
     return color->Rgb();
   return absl::nullopt;
@@ -177,8 +174,9 @@ WebString WebDocument::ContentAsTextForTesting() const {
   return document_element->innerText();
 }
 
-WebElementCollection WebDocument::All() {
-  return WebElementCollection(Unwrap<Document>()->all());
+WebElementCollection WebDocument::All() const {
+  return WebElementCollection(
+      const_cast<Document*>(ConstUnwrap<Document>())->all());
 }
 
 WebVector<WebFormElement> WebDocument::Forms() const {
@@ -240,7 +238,8 @@ void WebDocument::WatchCSSSelectors(const WebVector<WebString>& web_selectors) {
   if (!watch && web_selectors.empty())
     return;
   Vector<String> selectors;
-  selectors.Append(web_selectors.Data(), web_selectors.size());
+  selectors.Append(web_selectors.Data(),
+                   base::checked_cast<wtf_size_t>(web_selectors.size()));
   CSSSelectorWatch::From(*document).WatchCSSSelectors(selectors);
 }
 
@@ -250,7 +249,7 @@ WebVector<WebDraggableRegion> WebDocument::DraggableRegions() const {
   if (document->HasAnnotatedRegions()) {
     const Vector<AnnotatedRegionValue>& regions = document->AnnotatedRegions();
     draggable_regions = WebVector<WebDraggableRegion>(regions.size());
-    for (size_t i = 0; i < regions.size(); i++) {
+    for (wtf_size_t i = 0; i < regions.size(); i++) {
       const AnnotatedRegionValue& value = regions[i];
       draggable_regions[i].draggable = value.draggable;
       draggable_regions[i].bounds = PixelSnappedIntRect(value.bounds);
@@ -289,6 +288,26 @@ uint64_t WebDocument::GetVisualViewportScrollingElementIdForTesting() {
 
 bool WebDocument::IsLoaded() {
   return !ConstUnwrap<Document>()->Parser();
+}
+
+bool WebDocument::IsPrerendering() {
+  return ConstUnwrap<Document>()->IsPrerendering();
+}
+
+bool WebDocument::IsAccessibilityEnabled() {
+  return ConstUnwrap<Document>()->IsAccessibilityEnabled();
+}
+
+void WebDocument::AddPostPrerenderingActivationStep(
+    base::OnceClosure callback) {
+  return Unwrap<Document>()->AddPostPrerenderingActivationStep(
+      std::move(callback));
+}
+
+void WebDocument::SetCookieManager(
+    CrossVariantMojoRemote<network::mojom::RestrictedCookieManagerInterfaceBase>
+        cookie_manager) {
+  Unwrap<Document>()->SetCookieManager(std::move(cookie_manager));
 }
 
 WebDocument::WebDocument(Document* elem) : WebNode(elem) {}

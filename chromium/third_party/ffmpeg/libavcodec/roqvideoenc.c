@@ -62,6 +62,7 @@
 #include "roqvideo.h"
 #include "bytestream.h"
 #include "elbg.h"
+#include "encode.h"
 #include "internal.h"
 #include "mathops.h"
 
@@ -1071,7 +1072,7 @@ static int roq_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     /* 138 bits max per 8x8 block +
      *     256 codebooks*(6 bytes 2x2 + 4 bytes 4x4) + 8 bytes frame header */
     size = ((roq->width * roq->height / 64) * 138 + 7) / 8 + 256 * (6 + 4) + 8;
-    if ((ret = ff_alloc_packet2(avctx, pkt, size, 0)) < 0)
+    if ((ret = ff_alloc_packet(avctx, pkt, size)) < 0)
         return ret;
     enc->out_buf = pkt->data;
 
@@ -1119,7 +1120,7 @@ static const AVClass roq_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_roq_encoder = {
+const AVCodec ff_roq_encoder = {
     .name                 = "roqvideo",
     .long_name            = NULL_IF_CONFIG_SMALL("id RoQ video"),
     .type                 = AVMEDIA_TYPE_VIDEO,
@@ -1131,5 +1132,5 @@ AVCodec ff_roq_encoder = {
     .pix_fmts             = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUVJ444P,
                                                         AV_PIX_FMT_NONE },
     .priv_class     = &roq_class,
-    .caps_internal        = FF_CODEC_CAP_INIT_CLEANUP,
+    .caps_internal        = FF_CODEC_CAP_INIT_THREADSAFE | FF_CODEC_CAP_INIT_CLEANUP,
 };

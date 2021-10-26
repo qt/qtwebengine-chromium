@@ -15,10 +15,10 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "cc/paint/paint_canvas.h"
@@ -47,6 +47,7 @@
 #include "services/network/public/mojom/cors.mojom.h"
 #include "third_party/blink/public/common/page/page_zoom.h"
 #include "third_party/blink/public/common/permissions/permission_utils.h"
+#include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
 #include "third_party/blink/public/mojom/app_banner/app_banner.mojom.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
@@ -1876,8 +1877,7 @@ void TestRunnerBindings::SetAnimationRequiresRaster(bool do_raster) {
 }
 
 static void GetManifestReply(BoundV8Callback callback,
-                             const blink::WebURL& manifest_url,
-                             const blink::Manifest& manifest) {
+                             const blink::WebURL& manifest_url) {
   std::move(callback).Run(NoV8Args());
 }
 
@@ -1924,12 +1924,14 @@ void TestRunnerBindings::CopyImageThen(int x,
   frame_->GetBrowserInterfaceBroker()->GetInterface(
       remote_clipboard.BindNewPipeAndPassReceiver());
 
-  uint64_t sequence_number_before = 0;
-  remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
-                                      &sequence_number_before);
+  blink::ClipboardSequenceNumberToken sequence_number_before;
+  CHECK(remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
+                                            &sequence_number_before));
   GetWebFrame()->CopyImageAtForTesting(gfx::Point(x, y));
-  uint64_t sequence_number_after = 0;
-  while (sequence_number_before == sequence_number_after) {
+  auto sequence_number_after = sequence_number_before;
+  while (sequence_number_before.value() == sequence_number_after.value()) {
+    // TODO(crbug.com/872076): Ideally we would CHECK here that the mojo call
+    // succeeded, but this crashes under some circumstances (crbug.com/1232810).
     remote_clipboard->GetSequenceNumber(ui::ClipboardBuffer::kCopyPaste,
                                         &sequence_number_after);
   }
@@ -2937,17 +2939,17 @@ void TestRunner::UseUnfortunateSynchronousResizeMode() {
 
 void TestRunner::SetMockScreenOrientation(blink::WebView* view,
                                           const std::string& orientation_str) {
-  blink::mojom::ScreenOrientation orientation;
+  display::mojom::ScreenOrientation orientation;
 
   if (orientation_str == "portrait-primary") {
-    orientation = blink::mojom::ScreenOrientation::kPortraitPrimary;
+    orientation = display::mojom::ScreenOrientation::kPortraitPrimary;
   } else if (orientation_str == "portrait-secondary") {
-    orientation = blink::mojom::ScreenOrientation::kPortraitSecondary;
+    orientation = display::mojom::ScreenOrientation::kPortraitSecondary;
   } else if (orientation_str == "landscape-primary") {
-    orientation = blink::mojom::ScreenOrientation::kLandscapePrimary;
+    orientation = display::mojom::ScreenOrientation::kLandscapePrimary;
   } else {
     DCHECK_EQ("landscape-secondary", orientation_str);
-    orientation = blink::mojom::ScreenOrientation::kLandscapeSecondary;
+    orientation = display::mojom::ScreenOrientation::kLandscapeSecondary;
   }
 
   bool changed =

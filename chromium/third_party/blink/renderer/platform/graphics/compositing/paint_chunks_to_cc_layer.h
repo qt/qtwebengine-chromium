@@ -19,14 +19,10 @@ class DisplayItemList;
 class Layer;
 }  // namespace cc
 
-namespace gfx {
-class Vector2dF;
-}  // namespace gfx
-
 namespace blink {
 
+class FloatPoint;
 class PaintChunkSubset;
-class PropertyTreeManager;
 class PropertyTreeState;
 class RasterInvalidationTracking;
 
@@ -61,7 +57,7 @@ class PLATFORM_EXPORT PaintChunksToCcLayer {
   // of layer_state.Transform().
   static void ConvertInto(const PaintChunkSubset&,
                           const PropertyTreeState& layer_state,
-                          const gfx::Vector2dF& layer_offset,
+                          const FloatPoint& layer_offset,
                           cc::DisplayItemList&);
 
   // Similar to ConvertInto(), but returns a finalized new list instead of
@@ -69,15 +65,17 @@ class PLATFORM_EXPORT PaintChunksToCcLayer {
   static scoped_refptr<cc::DisplayItemList> Convert(
       const PaintChunkSubset&,
       const PropertyTreeState& layer_state,
-      const gfx::Vector2dF& layer_offset,
+      const FloatPoint& layer_offset,
       cc::DisplayItemList::UsageHint,
       RasterUnderInvalidationCheckingParams* = nullptr);
 
+  static void UpdateLayerSelection(cc::Layer& layer,
+                                   const PropertyTreeState& layer_state,
+                                   const PaintChunkSubset&,
+                                   cc::LayerSelection& layer_selection);
   static void UpdateLayerProperties(cc::Layer& layer,
                                     const PropertyTreeState& layer_state,
-                                    const PaintChunkSubset&,
-                                    cc::LayerSelection& layer_selection,
-                                    PropertyTreeManager* = nullptr);
+                                    const PaintChunkSubset&);
 };
 
 }  // namespace blink

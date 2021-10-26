@@ -498,7 +498,8 @@ int main(int argc, char** argv) {
         { "angle_d3d11_es3", GrContextFactory::kANGLE_D3D11_ES3_ContextType },
         { "angle_gl_es2"   , GrContextFactory::kANGLE_GL_ES2_ContextType },
         { "angle_gl_es3"   , GrContextFactory::kANGLE_GL_ES3_ContextType },
-        { "commandbuffer"  , GrContextFactory::kCommandBuffer_ContextType },
+        { "cmdbuffer_es2"  , GrContextFactory::kCommandBuffer_ES2_ContextType },
+        { "cmdbuffer_es3"  , GrContextFactory::kCommandBuffer_ES3_ContextType },
         { "vk"             , GrContextFactory::kVulkan_ContextType },
         { "mtl"            , GrContextFactory::kMetal_ContextType },
         { "mock"           , GrContextFactory::kMock_ContextType },
@@ -635,8 +636,8 @@ int main(int argc, char** argv) {
                 }
 
                 SkMD5::Digest digest = hash.finish();
-                for (int i = 0; i < 16; i++) {
-                    md5.appendf("%02x", digest.data[i]);
+                for (int j = 0; j < 16; j++) {
+                    md5.appendf("%02x", digest.data[j]);
                 }
             }
 

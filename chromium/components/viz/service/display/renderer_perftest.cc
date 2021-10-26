@@ -32,7 +32,7 @@
 #include "components/viz/service/display/output_surface_client.h"
 #include "components/viz/service/display/overlay_processor_stub.h"
 #include "components/viz/service/display/skia_renderer.h"
-#include "components/viz/service/display/viz_perf_test.h"
+#include "components/viz/service/display/viz_perftest.h"
 #include "components/viz/service/display_embedder/gl_output_surface_offscreen.h"
 #include "components/viz/service/display_embedder/in_process_gpu_memory_buffer_manager.h"
 #include "components/viz/service/display_embedder/server_shared_bitmap_manager.h"
@@ -259,7 +259,6 @@ class RendererPerfTest : public VizPerfTest {
 #endif
 
     auto* gpu_service = TestGpuServiceHolder::GetInstance()->gpu_service();
-    auto* task_executor = TestGpuServiceHolder::GetInstance()->task_executor();
 
     gpu_memory_buffer_manager_ =
         std::make_unique<InProcessGpuMemoryBufferManager>(
@@ -286,7 +285,7 @@ class RendererPerfTest : public VizPerfTest {
         display_controller;
     if (renderer_settings_.use_skia_renderer) {
       auto skia_deps = std::make_unique<SkiaOutputSurfaceDependencyImpl>(
-          gpu_service, task_executor, gpu::kNullSurfaceHandle);
+          gpu_service, gpu::kNullSurfaceHandle);
       display_controller =
           std::make_unique<DisplayCompositorMemoryAndTaskController>(
               std::move(skia_deps));

@@ -14,44 +14,31 @@
 
 import '../tracks/all_frontend';
 
-import {applyPatches, Patch} from 'immer';
+import {applyPatches, Patch, produce} from 'immer';
 import * as m from 'mithril';
 
 import {defer} from '../base/deferred';
 import {assertExists, reportError, setErrorHandler} from '../base/logging';
 import {forwardRemoteCalls} from '../base/remote';
-import {Actions} from '../common/actions';
-import {AggregateData} from '../common/aggregation_data';
-import {ConversionJobStatusUpdate} from '../common/conversion_jobs';
-import {
-  LogBoundsKey,
-  LogEntriesKey,
-  LogExists,
-  LogExistsKey
-} from '../common/logs';
-import {MetricResult} from '../common/metric_data';
-import {CurrentSearchResults, SearchSummary} from '../common/search_data';
+import {Actions, DeferredAction, StateActions} from '../common/actions';
+import {tryGetTrace} from '../common/cache_manager';
+import {initializeImmerJs} from '../common/immer_init';
+import {createEmptyState, State} from '../common/state';
+import {initWasm} from '../common/wasm_engine_proxy';
+import {ControllerWorkerInitMessage} from '../common/worker_messages';
+import {initController} from '../controller/index';
 
 import {AnalyzePage} from './analyze_page';
 import {loadAndroidBugToolInfo} from './android_bug_tool';
 import {initCssConstants} from './css_constants';
 import {maybeShowErrorDialog} from './error_dialog';
 import {installFileDropHandler} from './file_drop_handler';
-import {
-  CounterDetails,
-  CpuProfileDetails,
-  Flow,
-  globals,
-  HeapProfileDetails,
-  QuantizedLoad,
-  SliceDetails,
-  ThreadDesc,
-  ThreadStateDetails
-} from './globals';
+import {FlagsPage} from './flags_page';
+import {globals} from './globals';
 import {HomePage} from './home_page';
-import {openBufferWithLegacyTraceViewer} from './legacy_trace_viewer';
 import {initLiveReloadIfLocalhost} from './live_reload';
 import {MetricsPage} from './metrics_page';
+import {PageAttrs} from './pages';
 import {postMessageHandler} from './post_message_handler';
 import {RecordPage, updateAvailableAdbDevices} from './record_page';
 import {Router} from './router';
@@ -70,7 +57,75 @@ function isLocalhostTraceUrl(url: string): boolean {
  * The API the main thread exposes to the controller.
  */
 class FrontendApi {
-  constructor(private router: Router) {}
+  private router: Router;
+  private port: MessagePort;
+  private state: State;
+
+  constructor(router: Router, port: MessagePort) {
+    this.router = router;
+    this.state = createEmptyState();
+    this.port = port;
+  }
+
+  dispatchMultiple(actions: DeferredAction[]) {
+    const oldState = this.state;
+    const patches: Patch[] = [];
+    for (const action of actions) {
+      const originalLength = patches.length;
+      const morePatches = this.applyAction(action);
+      patches.length += morePatches.length;
+      for (let i = 0; i < morePatches.length; ++i) {
+        patches[i + originalLength] = morePatches[i];
+      }
+    }
+
+    if (this.state === oldState) {
+      return;
+    }
+
+    // Update overall state.
+    globals.state = this.state;
+
+    // If the visible time in the global state has been updated more recently
+    // than the visible time handled by the frontend @ 60fps, update it. This
+    // typically happens when restoring the state from a permalink.
+    globals.frontendLocalState.mergeState(this.state.frontendLocalState);
+
+    // Only redraw if something other than the frontendLocalState changed.
+    for (const key in this.state) {
+      if (key !== 'frontendLocalState' && key !== 'visibleTracks' &&
+          oldState[key] !== this.state[key]) {
+        this.redraw();
+        break;
+      }
+    }
+
+    if (patches.length > 0) {
+      this.port.postMessage(patches);
+    }
+  }
+
+  private applyAction(action: DeferredAction): Patch[] {
+    const patches: Patch[] = [];
+
+    // 'produce' creates a immer proxy which wraps the current state turning
+    // all imperative mutations of the state done in the callback into
+    // immutable changes to the returned state.
+    this.state = produce(
+        this.state,
+        draft => {
+          // tslint:disable-next-line no-any
+          (StateActions as any)[action.type](draft, action.args);
+        },
+        (morePatches, _) => {
+          const originalLength = patches.length;
+          patches.length += morePatches.length;
+          for (let i = 0; i < morePatches.length; ++i) {
+            patches[i + originalLength] = morePatches[i];
+          }
+        });
+    return patches;
+  }
 
   patchState(patches: Patch[]) {
     const oldState = globals.state;
@@ -91,186 +146,14 @@ class FrontendApi {
     }
   }
 
-  // TODO: we can't have a publish method for each batch of data that we don't
-  // want to keep in the global state. Figure out a more generic and type-safe
-  // mechanism to achieve this.
-
-  publishOverviewData(data: {[key: string]: QuantizedLoad|QuantizedLoad[]}) {
-    for (const [key, value] of Object.entries(data)) {
-      if (!globals.overviewStore.has(key)) {
-        globals.overviewStore.set(key, []);
-      }
-      if (value instanceof Array) {
-        globals.overviewStore.get(key)!.push(...value);
-      } else {
-        globals.overviewStore.get(key)!.push(value);
-      }
-    }
-    globals.rafScheduler.scheduleRedraw();
-  }
-
-  publishTrackData(args: {id: string, data: {}}) {
-    globals.setTrackData(args.id, args.data);
-    if ([LogExistsKey, LogBoundsKey, LogEntriesKey].includes(args.id)) {
-      const data = globals.trackDataStore.get(LogExistsKey) as LogExists;
-      if (data && data.exists) globals.rafScheduler.scheduleFullRedraw();
-    } else {
-      globals.rafScheduler.scheduleRedraw();
-    }
-  }
-
-  publishQueryResult(args: {id: string, data: {}}) {
-    globals.queryResults.set(args.id, args.data);
-    this.redraw();
-  }
-
-  publishThreads(data: ThreadDesc[]) {
-    globals.threads.clear();
-    data.forEach(thread => {
-      globals.threads.set(thread.utid, thread);
-    });
-    this.redraw();
-  }
-
-  publishSliceDetails(click: SliceDetails) {
-    globals.sliceDetails = click;
-    this.redraw();
-  }
-
-  publishThreadStateDetails(click: ThreadStateDetails) {
-    globals.threadStateDetails = click;
-    this.redraw();
-  }
-
-  publishConnectedFlows(connectedFlows: Flow[]) {
-    globals.connectedFlows = connectedFlows;
-    // Call resetFlowFocus() each time connectedFlows is updated to correctly
-    // navigate using hotkeys.
-    this.resetFlowFocus();
-    this.redraw();
-  }
-
-  // If a chrome slice is selected and we have any flows in connectedFlows
-  // we will find the flows on the right and left of that slice to set a default
-  // focus. In all other cases the focusedFlowId(Left|Right) will be set to -1.
-  resetFlowFocus() {
-    globals.frontendLocalState.focusedFlowIdLeft = -1;
-    globals.frontendLocalState.focusedFlowIdRight = -1;
-    if (globals.state.currentSelection?.kind === 'CHROME_SLICE') {
-      const sliceId = globals.state.currentSelection.id;
-      for (const flow of globals.connectedFlows) {
-        if (flow.begin.sliceId === sliceId) {
-          globals.frontendLocalState.focusedFlowIdRight = flow.id;
-        }
-        if (flow.end.sliceId === sliceId) {
-          globals.frontendLocalState.focusedFlowIdLeft = flow.id;
-        }
-      }
-    }
-  }
-
-  publishSelectedFlows(selectedFlows: Flow[]) {
-    globals.selectedFlows = selectedFlows;
-    this.redraw();
-  }
-
-  publishCounterDetails(click: CounterDetails) {
-    globals.counterDetails = click;
-    this.redraw();
-  }
-
-  publishHeapProfileDetails(click: HeapProfileDetails) {
-    globals.heapProfileDetails = click;
-    this.redraw();
-  }
-
-  publishCpuProfileDetails(details: CpuProfileDetails) {
-    globals.cpuProfileDetails = details;
-    this.redraw();
-  }
-
-  publishHasFtrace(hasFtrace: boolean) {
-    globals.hasFtrace = hasFtrace;
-    this.redraw();
-  }
-
-  publishConversionJobStatusUpdate(job: ConversionJobStatusUpdate) {
-    globals.setConversionJobStatus(job.jobName, job.jobStatus);
-    this.redraw();
-  }
-
-  publishFileDownload(args: {file: File, name?: string}) {
-    const url = URL.createObjectURL(args.file);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = args.name !== undefined ? args.name : args.file.name;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }
-
-  publishLoading(numQueuedQueries: number) {
-    globals.numQueuedQueries = numQueuedQueries;
-    // TODO(hjd): Clean up loadingAnimation given that this now causes a full
-    // redraw anyways. Also this should probably just go via the global state.
-    globals.rafScheduler.scheduleFullRedraw();
-  }
-
-  // For opening JSON/HTML traces with the legacy catapult viewer.
-  publishLegacyTrace(args: {data: ArrayBuffer, size: number}) {
-    const arr = new Uint8Array(args.data, 0, args.size);
-    const str = (new TextDecoder('utf-8')).decode(arr);
-    openBufferWithLegacyTraceViewer('trace.json', str, 0);
-  }
-
-  publishBufferUsage(args: {percentage: number}) {
-    globals.setBufferUsage(args.percentage);
-    this.redraw();
-  }
-
-  publishSearch(args: SearchSummary) {
-    globals.searchSummary = args;
-    this.redraw();
-  }
-
-  publishSearchResult(args: CurrentSearchResults) {
-    globals.currentSearchResults = args;
-    this.redraw();
-  }
-
-  publishRecordingLog(args: {logs: string}) {
-    globals.setRecordingLog(args.logs);
-    this.redraw();
-  }
-
-  publishTraceErrors(numErrors: number) {
-    globals.setTraceErrors(numErrors);
-    this.redraw();
-  }
-
-  publishMetricError(error: string) {
-    globals.setMetricError(error);
-    globals.logging.logError(error, false);
-    this.redraw();
-  }
-
-  publishMetricResult(metricResult: MetricResult) {
-    globals.setMetricResult(metricResult);
-    this.redraw();
-  }
-
-  publishAggregateData(args: {data: AggregateData, kind: string}) {
-    globals.setAggregateData(args.kind, args.data);
-    this.redraw();
-  }
-
-  private redraw(): void {
+  redraw(): void {
+    const traceIdString =
+        globals.state.traceUuid ? `?trace_id=${globals.state.traceUuid}` : '';
     if (globals.state.route &&
-        globals.state.route !== this.router.getRouteFromHash()) {
-      this.router.setRouteOnHash(globals.state.route);
+        globals.state.route + traceIdString !==
+            this.router.getFullRouteFromHash()) {
+      this.router.setRouteOnHash(globals.state.route, traceIdString);
     }
-
     globals.rafScheduler.scheduleFullRedraw();
   }
 }
@@ -355,7 +238,6 @@ function main() {
   window.addEventListener('error', e => reportError(e));
   window.addEventListener('unhandledrejection', e => reportError(e));
 
-  const controller = new Worker(globals.root + 'controller_bundle.js');
   const frontendChannel = new MessageChannel();
   const controllerChannel = new MessageChannel();
   const extensionLocalChannel = new MessageChannel();
@@ -364,38 +246,37 @@ function main() {
   errorReportingChannel.port2.onmessage = (e) =>
       maybeShowErrorDialog(`${e.data}`);
 
-  controller.postMessage(
-      {
-        frontendPort: frontendChannel.port1,
-        controllerPort: controllerChannel.port1,
-        extensionPort: extensionLocalChannel.port1,
-        errorReportingPort: errorReportingChannel.port1,
-      },
-      [
-        frontendChannel.port1,
-        controllerChannel.port1,
-        extensionLocalChannel.port1,
-        errorReportingChannel.port1,
-      ]);
+  const msg: ControllerWorkerInitMessage = {
+    frontendPort: frontendChannel.port1,
+    controllerPort: controllerChannel.port1,
+    extensionPort: extensionLocalChannel.port1,
+    errorReportingPort: errorReportingChannel.port1,
+  };
 
-  const dispatch =
-      controllerChannel.port2.postMessage.bind(controllerChannel.port2);
-  globals.initialize(dispatch, controller);
+  initWasm(globals.root);
+  initializeImmerJs();
+
+  initController(msg);
+
+  const dispatch = (action: DeferredAction) => {
+    frontendApi.dispatchMultiple([action]);
+  };
+
+  globals.initialize(dispatch);
   globals.serviceWorkerController.install();
 
-  const router = new Router(
-      '/',
-      {
-        '/': HomePage,
-        '/viewer': ViewerPage,
-        '/record': RecordPage,
-        '/query': AnalyzePage,
-        '/metrics': MetricsPage,
-        '/info': TraceInfoPage,
-      },
-      dispatch,
-      globals.logging);
-  forwardRemoteCalls(frontendChannel.port2, new FrontendApi(router));
+  const routes = new Map<string, m.Component<PageAttrs>>();
+  routes.set('/', HomePage);
+  routes.set('/viewer', ViewerPage);
+  routes.set('/record', RecordPage);
+  routes.set('/query', AnalyzePage);
+  routes.set('/flags', FlagsPage);
+  routes.set('/metrics', MetricsPage);
+  routes.set('/info', TraceInfoPage);
+  const router = new Router('/', routes, dispatch, globals.logging);
+  const frontendApi = new FrontendApi(router, controllerChannel.port2);
+  globals.publishRedraw = () => frontendApi.redraw();
+  forwardRemoteCalls(frontendChannel.port2, frontendApi);
 
   // We proxy messages between the extension and the controller because the
   // controller's worker can't access chrome.runtime.
@@ -434,6 +315,10 @@ function main() {
   }, {passive: false});
 
   cssLoadPromise.then(() => onCssLoaded(router));
+
+  if (globals.testing) {
+    document.body.classList.add('testing');
+  }
 }
 
 function onCssLoaded(router: Router) {
@@ -442,13 +327,25 @@ function onCssLoaded(router: Router) {
   // And replace it with the root <main> element which will be used by mithril.
   document.body.innerHTML = '<main></main>';
   const main = assertExists(document.body.querySelector('main'));
-  globals.rafScheduler.domRedraw = () =>
-      m.render(main, m(router.resolve(globals.state.route)));
+  globals.rafScheduler.domRedraw = () => {
+    m.render(main, router.resolve(globals.state.route));
+  };
+
+  /**
+   * Start of hack for backwards compatibility:
+   * There are some old URLs in the form of 'record?p=power'. We want these
+   * to keep opening the desired page(see b/191255021#comment2).
+   */
+  if (window.location.hash.startsWith('#!/record?p=')) {
+    window.location.hash = window.location.hash.replace('?p=', '/');
+  }
+  // end of hack for backwards compatibility
 
   router.navigateToCurrentHash();
 
   // /?s=xxxx for permalinks.
   const stateHash = Router.param('s');
+  const traceUuid = Router.param('trace_id');
   const urlHash = Router.param('url');
   const androidBugTool = Router.param('openFromAndroidBugTool');
   if (typeof stateHash === 'string' && stateHash) {
@@ -489,6 +386,8 @@ function onCssLoaded(router: Router) {
         .catch(e => {
           console.error(e);
         });
+  } else if (traceUuid) {
+    maybeLoadCachedTrace(traceUuid);
   }
 
   // Add support for opening traces from postMessage().
@@ -510,6 +409,12 @@ function onCssLoaded(router: Router) {
     console.error('WebUSB API not supported');
   }
   installFileDropHandler();
+}
+
+async function maybeLoadCachedTrace(traceUuid: string) {
+  const trace = await tryGetTrace(traceUuid);
+  if (trace === undefined) return;
+  globals.dispatch(Actions.openTraceFromBuffer(trace));
 }
 
 main();

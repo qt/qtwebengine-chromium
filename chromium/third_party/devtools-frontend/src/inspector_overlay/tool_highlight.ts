@@ -39,6 +39,8 @@ import {drawLayoutFlexContainerHighlight, drawLayoutFlexItemHighlight} from './h
 import type {GridHighlight} from './highlight_grid_common.js';
 import {drawLayoutGridHighlight} from './highlight_grid_common.js';
 import type {ScrollSnapHighlight} from './highlight_scroll_snap.js';
+import type {ContainerQueryHighlight} from './highlight_container_query.js';
+import {drawContainerQueryHighlight} from './highlight_container_query.js';
 import {PersistentOverlay} from './tool_persistent.js';
 
 interface Path {
@@ -82,6 +84,7 @@ interface Highlight {
   gridInfo: GridHighlight[];
   flexInfo: FlexContainerHighlight[];
   flexItemInfo: FlexItemHighlight[];
+  containerQueryInfo: ContainerQueryHighlight[];
 }
 
 export class HighlightOverlay extends Overlay {
@@ -194,6 +197,12 @@ export class HighlightOverlay extends Overlay {
       }
     }
 
+    if (highlight.containerQueryInfo) {
+      for (const containerQuery of highlight.containerQueryInfo) {
+        drawContainerQueryHighlight(containerQuery, this.context, this.emulationScaleFactor);
+      }
+    }
+
     // Draw the highlight for flex item only if the element isn't also a flex container that already has some highlight
     // config.
     const isVisibleFlexContainer = highlight.flexInfo?.length && highlight.flexInfo.some(config => {
@@ -230,6 +239,10 @@ export class HighlightOverlay extends Overlay {
 
   drawScrollSnapHighlight(highlight: ScrollSnapHighlight) {
     this.persistentOverlay?.drawScrollSnapHighlight(highlight);
+  }
+
+  drawContainerQueryHighlight(highlight: ContainerQueryHighlight) {
+    this.persistentOverlay?.drawContainerQueryHighlight(highlight);
   }
 
   private drawAxis(context: CanvasRenderingContext2D, rulerAtRight: boolean, rulerAtBottom: boolean) {

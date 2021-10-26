@@ -1,5 +1,6 @@
 /*
  * Copyright 2015-2021 Arm Limited
+ * SPDX-License-Identifier: Apache-2.0 OR MIT
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +19,6 @@
  * At your option, you may choose to accept this material under either:
  *  1. The Apache License, Version 2.0, found at <http://www.apache.org/licenses/LICENSE-2.0>, or
  *  2. The MIT License, found at <http://opensource.org/licenses/MIT>.
- * SPDX-License-Identifier: Apache-2.0 OR MIT.
  */
 
 #include "spirv_glsl.hpp"
@@ -359,10 +359,26 @@ void CompilerGLSL::remap_pls_variables()
 	}
 }
 
-void CompilerGLSL::remap_ext_framebuffer_fetch(uint32_t input_attachment_index, uint32_t color_location)
+void CompilerGLSL::remap_ext_framebuffer_fetch(uint32_t input_attachment_index, uint32_t color_location, bool coherent)
 {
 	subpass_to_framebuffer_fetch_attachment.push_back({ input_attachment_index, color_location });
-	inout_color_attachments.insert(color_location);
+	inout_color_attachments.push_back({ color_location, coherent });
+}
+
+bool CompilerGLSL::location_is_framebuffer_fetch(uint32_t location) const
+{
+	return std::find_if(begin(inout_color_attachments), end(inout_color_attachments),
+	                    [&](const std::pair<uint32_t, bool> &elem) {
+		                    return elem.first == location;
+	                    }) != end(inout_color_attachments);
+}
+
+bool CompilerGLSL::location_is_non_coherent_framebuffer_fetch(uint32_t location) const
+{
+	return std::find_if(begin(inout_color_attachments), end(inout_color_attachments),
+	                    [&](const std::pair<uint32_t, bool> &elem) {
+		                    return elem.first == location && !elem.second;
+	                    }) != end(inout_color_attachments);
 }
 
 void CompilerGLSL::find_static_extensions()
@@ -449,7 +465,8 @@ void CompilerGLSL::find_static_extensions()
 		// Need to figure out if we should target KHR or NV extension based on capabilities.
 		for (auto &cap : ir.declared_capabilities)
 		{
-			if (cap == CapabilityRayTracingKHR || cap == CapabilityRayQueryKHR)
+			if (cap == CapabilityRayTracingKHR || cap == CapabilityRayQueryKHR ||
+			    cap == CapabilityRayTraversalPrimitiveCullingKHR)
 			{
 				ray_tracing_is_khr = true;
 				break;
@@ -484,7 +501,22 @@ void CompilerGLSL::find_static_extensions()
 			SPIRV_CROSS_THROW("Can only use GL_EXT_shader_framebuffer_fetch in fragment shaders.");
 		if (options.vulkan_semantics)
 			SPIRV_CROSS_THROW("Cannot use EXT_shader_framebuffer_fetch in Vulkan GLSL.");
-		require_extension_internal("GL_EXT_shader_framebuffer_fetch");
+
+		bool has_coherent = false;
+		bool has_incoherent = false;
+
+		for (auto &att : inout_color_attachments)
+		{
+			if (att.second)
+				has_coherent = true;
+			else
+				has_incoherent = true;
+		}
+
+		if (has_coherent)
+			require_extension_internal("GL_EXT_shader_framebuffer_fetch");
+		if (has_incoherent)
+			require_extension_internal("GL_EXT_shader_framebuffer_fetch_non_coherent");
 	}
 
 	if (options.separate_shader_objects && !options.es && options.version < 410)
@@ -535,9 +567,45 @@ void CompilerGLSL::find_static_extensions()
 		case CapabilityVariablePointersStorageBuffer:
 			SPIRV_CROSS_THROW("VariablePointers capability is not supported in GLSL.");
 
+		case CapabilityMultiView:
+			if (options.vulkan_semantics)
+				require_extension_internal("GL_EXT_multiview");
+			else
+			{
+				require_extension_internal("GL_OVR_multiview2");
+				if (options.ovr_multiview_view_count == 0)
+					SPIRV_CROSS_THROW("ovr_multiview_view_count must be non-zero when using GL_OVR_multiview2.");
+				if (get_execution_model() != ExecutionModelVertex)
+					SPIRV_CROSS_THROW("OVR_multiview2 can only be used with Vertex shaders.");
+			}
+			break;
+
+		case CapabilityRayQueryKHR:
+			if (options.es || options.version < 460 || !options.vulkan_semantics)
+				SPIRV_CROSS_THROW("RayQuery requires Vulkan GLSL 460.");
+			require_extension_internal("GL_EXT_ray_query");
+			ray_tracing_is_khr = true;
+			break;
+
+		case CapabilityRayTraversalPrimitiveCullingKHR:
+			if (options.es || options.version < 460 || !options.vulkan_semantics)
+				SPIRV_CROSS_THROW("RayQuery requires Vulkan GLSL 460.");
+			require_extension_internal("GL_EXT_ray_flags_primitive_culling");
+			ray_tracing_is_khr = true;
+			break;
+
 		default:
 			break;
 		}
+	}
+
+	if (options.ovr_multiview_view_count)
+	{
+		if (options.vulkan_semantics)
+			SPIRV_CROSS_THROW("OVR_multiview2 cannot be used with Vulkan semantics.");
+		if (get_execution_model() != ExecutionModelVertex)
+			SPIRV_CROSS_THROW("OVR_multiview2 can only be used with Vertex shaders.");
+		require_extension_internal("GL_OVR_multiview2");
 	}
 }
 
@@ -792,6 +860,22 @@ void CompilerGLSL::emit_header()
 			statement("#extension ", ext, " : enable");
 			statement("#endif");
 		}
+		else if (ext == "GL_EXT_control_flow_attributes")
+		{
+			// These are just hints so we can conditionally enable and fallback in the shader.
+			statement("#if defined(GL_EXT_control_flow_attributes)");
+			statement("#extension GL_EXT_control_flow_attributes : require");
+			statement("#define SPIRV_CROSS_FLATTEN [[flatten]]");
+			statement("#define SPIRV_CROSS_BRANCH [[dont_flatten]]");
+			statement("#define SPIRV_CROSS_UNROLL [[unroll]]");
+			statement("#define SPIRV_CROSS_LOOP [[dont_unroll]]");
+			statement("#else");
+			statement("#define SPIRV_CROSS_FLATTEN");
+			statement("#define SPIRV_CROSS_BRANCH");
+			statement("#define SPIRV_CROSS_UNROLL");
+			statement("#define SPIRV_CROSS_LOOP");
+			statement("#endif");
+		}
 		else
 			statement("#extension ", ext, " : require");
 	}
@@ -843,6 +927,10 @@ void CompilerGLSL::emit_header()
 
 	switch (execution.model)
 	{
+	case ExecutionModelVertex:
+		if (options.ovr_multiview_view_count)
+			inputs.push_back(join("num_views = ", options.ovr_multiview_view_count));
+		break;
 	case ExecutionModelGeometry:
 		if ((execution.flags.get(ExecutionModeInvocations)) && execution.invocations != 1)
 			inputs.push_back(join("invocations = ", execution.invocations));
@@ -988,6 +1076,10 @@ void CompilerGLSL::emit_header()
 		break;
 	}
 
+	for (auto &cap : ir.declared_capabilities)
+		if (cap == CapabilityRayTraversalPrimitiveCullingKHR)
+			statement("layout(primitive_culling);");
+
 	if (!inputs.empty())
 		statement("layout(", merge(inputs), ") in;");
 	if (!outputs.empty())
@@ -1063,8 +1155,22 @@ string CompilerGLSL::to_interpolation_qualifiers(const Bitset &flags)
 		res += "sample ";
 	if (flags.get(DecorationInvariant))
 		res += "invariant ";
+
 	if (flags.get(DecorationExplicitInterpAMD))
+	{
+		require_extension_internal("GL_AMD_shader_explicit_vertex_parameter");
 		res += "__explicitInterpAMD ";
+	}
+
+	if (flags.get(DecorationPerVertexNV))
+	{
+		if (options.es && options.version < 320)
+			SPIRV_CROSS_THROW("pervertexNV requires ESSL 320.");
+		else if (!options.es && options.version < 450)
+			SPIRV_CROSS_THROW("pervertexNV requires GLSL 450.");
+		require_extension_internal("GL_NV_fragment_shader_barycentric");
+		res += "pervertexNV ";
+	}
 
 	return res;
 }
@@ -1074,8 +1180,7 @@ string CompilerGLSL::layout_for_member(const SPIRType &type, uint32_t index)
 	if (is_legacy())
 		return "";
 
-	bool is_block = ir.meta[type.self].decoration.decoration_flags.get(DecorationBlock) ||
-	                ir.meta[type.self].decoration.decoration_flags.get(DecorationBufferBlock);
+	bool is_block = has_decoration(type.self, DecorationBlock) || has_decoration(type.self, DecorationBufferBlock);
 	if (!is_block)
 		return "";
 
@@ -1693,6 +1798,12 @@ string CompilerGLSL::layout_for_variable(const SPIRVariable &var)
 			attr.push_back(join("location = ", get_decoration(var.self, DecorationLocation)));
 	}
 
+	if (get_execution_model() == ExecutionModelFragment && var.storage == StorageClassOutput &&
+	    location_is_non_coherent_framebuffer_fetch(get_decoration(var.self, DecorationLocation)))
+	{
+		attr.push_back("noncoherent");
+	}
+
 	// Transform feedback
 	bool uses_enhanced_layouts = false;
 	if (is_block && var.storage == StorageClassOutput)
@@ -2234,7 +2345,9 @@ const char *CompilerGLSL::to_storage_qualifiers_glsl(const SPIRVariable &var)
 			return "varying "; // Fragment outputs are renamed so they never hit this case.
 		else if (execution.model == ExecutionModelFragment && var.storage == StorageClassOutput)
 		{
-			if (inout_color_attachments.count(get_decoration(var.self, DecorationLocation)) != 0)
+			uint32_t loc = get_decoration(var.self, DecorationLocation);
+			bool is_inout = location_is_framebuffer_fetch(loc);
+			if (is_inout)
 				return "inout ";
 			else
 				return "out ";
@@ -3405,7 +3518,7 @@ void CompilerGLSL::emit_resources()
 
 		// Unused output I/O variables might still be required to implement framebuffer fetch.
 		if (var.storage == StorageClassOutput && !is_legacy() &&
-		    inout_color_attachments.count(get_decoration(var.self, DecorationLocation)) != 0)
+		    location_is_framebuffer_fetch(get_decoration(var.self, DecorationLocation)) != 0)
 		{
 			is_hidden = false;
 		}
@@ -4909,7 +5022,13 @@ string CompilerGLSL::convert_float_to_string(const SPIRConstant &c, uint32_t col
 
 			char print_buffer[32];
 			sprintf(print_buffer, "0x%xu", c.scalar(col, row));
-			res = join(bitcast_glsl_op(out_type, in_type), "(", print_buffer, ")");
+
+			const char *comment = "inf";
+			if (float_value == -numeric_limits<float>::infinity())
+				comment = "-inf";
+			else if (std::isnan(float_value))
+				comment = "nan";
+			res = join(bitcast_glsl_op(out_type, in_type), "(", print_buffer, " /* ", comment, " */)");
 		}
 		else
 		{
@@ -4976,7 +5095,13 @@ std::string CompilerGLSL::convert_double_to_string(const SPIRConstant &c, uint32
 			char print_buffer[64];
 			sprintf(print_buffer, "0x%llx%s", static_cast<unsigned long long>(u64_value),
 			        backend.long_long_literal_suffix ? "ull" : "ul");
-			res = join(bitcast_glsl_op(out_type, in_type), "(", print_buffer, ")");
+
+			const char *comment = "inf";
+			if (double_value == -numeric_limits<double>::infinity())
+				comment = "-inf";
+			else if (std::isnan(double_value))
+				comment = "nan";
+			res = join(bitcast_glsl_op(out_type, in_type), "(", print_buffer, " /* ", comment, " */)");
 		}
 		else
 		{
@@ -6124,44 +6249,57 @@ bool CompilerGLSL::to_trivial_mix_op(const SPIRType &type, string &op, uint32_t 
 	if (cleft->specialization || cright->specialization)
 		return false;
 
-	// We can only use trivial construction if we have a scalar
-	// (should be possible to do it for vectors as well, but that is overkill for now).
-	if (lerptype.basetype != SPIRType::Boolean || lerptype.vecsize > 1)
+	auto &value_type = get<SPIRType>(cleft->constant_type);
+
+	if (lerptype.basetype != SPIRType::Boolean)
+		return false;
+	if (value_type.basetype == SPIRType::Struct || is_array(value_type))
+		return false;
+	if (!backend.use_constructor_splatting && value_type.vecsize != lerptype.vecsize)
 		return false;
 
 	// If our bool selects between 0 and 1, we can cast from bool instead, making our trivial constructor.
-	bool ret = false;
-	switch (type.basetype)
+	bool ret = true;
+	for (uint32_t col = 0; col < value_type.columns; col++)
 	{
-	case SPIRType::Short:
-	case SPIRType::UShort:
-		ret = cleft->scalar_u16() == 0 && cright->scalar_u16() == 1;
-		break;
+		for (uint32_t row = 0; row < value_type.vecsize; row++)
+		{
+			switch (type.basetype)
+			{
+			case SPIRType::Short:
+			case SPIRType::UShort:
+				ret = cleft->scalar_u16(col, row) == 0 && cright->scalar_u16(col, row) == 1;
+				break;
 
-	case SPIRType::Int:
-	case SPIRType::UInt:
-		ret = cleft->scalar() == 0 && cright->scalar() == 1;
-		break;
+			case SPIRType::Int:
+			case SPIRType::UInt:
+				ret = cleft->scalar(col, row) == 0 && cright->scalar(col, row) == 1;
+				break;
 
-	case SPIRType::Half:
-		ret = cleft->scalar_f16() == 0.0f && cright->scalar_f16() == 1.0f;
-		break;
+			case SPIRType::Half:
+				ret = cleft->scalar_f16(col, row) == 0.0f && cright->scalar_f16(col, row) == 1.0f;
+				break;
 
-	case SPIRType::Float:
-		ret = cleft->scalar_f32() == 0.0f && cright->scalar_f32() == 1.0f;
-		break;
+			case SPIRType::Float:
+				ret = cleft->scalar_f32(col, row) == 0.0f && cright->scalar_f32(col, row) == 1.0f;
+				break;
 
-	case SPIRType::Double:
-		ret = cleft->scalar_f64() == 0.0 && cright->scalar_f64() == 1.0;
-		break;
+			case SPIRType::Double:
+				ret = cleft->scalar_f64(col, row) == 0.0 && cright->scalar_f64(col, row) == 1.0;
+				break;
 
-	case SPIRType::Int64:
-	case SPIRType::UInt64:
-		ret = cleft->scalar_u64() == 0 && cright->scalar_u64() == 1;
-		break;
+			case SPIRType::Int64:
+			case SPIRType::UInt64:
+				ret = cleft->scalar_u64(col, row) == 0 && cright->scalar_u64(col, row) == 1;
+				break;
 
-	default:
-		break;
+			default:
+				return false;
+			}
+		}
+
+		if (!ret)
+			break;
 	}
 
 	if (ret)
@@ -7057,7 +7195,11 @@ string CompilerGLSL::to_function_args(const TextureFunctionArguments &args, bool
 	{
 		forward = forward && should_forward(args.component);
 		farg_str += ", ";
-		farg_str += to_expression(args.component);
+		auto &component_type = expression_type(args.component);
+		if (component_type.basetype == SPIRType::Int)
+			farg_str += to_expression(args.component);
+		else
+			farg_str += join("int(", to_expression(args.component), ")");
 	}
 
 	*p_forward = forward;
@@ -8160,13 +8302,9 @@ string CompilerGLSL::builtin_to_glsl(BuiltIn builtin, StorageClass storage)
 			}
 			return "gl_BaseVertex";
 		}
-		else
-		{
-			// On regular GL, this is soft-enabled and we emit ifdefs in code.
-			require_extension_internal("GL_ARB_shader_draw_parameters");
-			return "SPIRV_Cross_BaseVertex";
-		}
-		break;
+		// On regular GL, this is soft-enabled and we emit ifdefs in code.
+		require_extension_internal("GL_ARB_shader_draw_parameters");
+		return "SPIRV_Cross_BaseVertex";
 
 	case BuiltInBaseInstance:
 		if (options.es)
@@ -8181,13 +8319,9 @@ string CompilerGLSL::builtin_to_glsl(BuiltIn builtin, StorageClass storage)
 			}
 			return "gl_BaseInstance";
 		}
-		else
-		{
-			// On regular GL, this is soft-enabled and we emit ifdefs in code.
-			require_extension_internal("GL_ARB_shader_draw_parameters");
-			return "SPIRV_Cross_BaseInstance";
-		}
-		break;
+		// On regular GL, this is soft-enabled and we emit ifdefs in code.
+		require_extension_internal("GL_ARB_shader_draw_parameters");
+		return "SPIRV_Cross_BaseInstance";
 
 	case BuiltInDrawIndex:
 		if (options.es)
@@ -8202,13 +8336,9 @@ string CompilerGLSL::builtin_to_glsl(BuiltIn builtin, StorageClass storage)
 			}
 			return "gl_DrawID";
 		}
-		else
-		{
-			// On regular GL, this is soft-enabled and we emit ifdefs in code.
-			require_extension_internal("GL_ARB_shader_draw_parameters");
-			return "gl_DrawIDARB";
-		}
-		break;
+		// On regular GL, this is soft-enabled and we emit ifdefs in code.
+		require_extension_internal("GL_ARB_shader_draw_parameters");
+		return "gl_DrawIDARB";
 
 	case BuiltInSampleId:
 		if (options.es && options.version < 320)
@@ -8237,15 +8367,9 @@ string CompilerGLSL::builtin_to_glsl(BuiltIn builtin, StorageClass storage)
 
 	case BuiltInViewIndex:
 		if (options.vulkan_semantics)
-		{
-			require_extension_internal("GL_EXT_multiview");
 			return "gl_ViewIndex";
-		}
 		else
-		{
-			require_extension_internal("GL_OVR_multiview2");
 			return "gl_ViewID_OVR";
-		}
 
 	case BuiltInNumSubgroups:
 		request_subgroup_feature(ShaderSubgroupSupportHelper::NumSubgroups);
@@ -12420,7 +12544,64 @@ void CompilerGLSL::emit_instruction(const Instruction &instruction)
 		flush_control_dependent_expressions(current_emitting_block->self);
 		break;
 
+		// Don't bother forwarding temporaries. Avoids having to test expression invalidation with ray query objects.
+	case OpRayQueryInitializeKHR:
+		flush_variable_declaration(ops[0]);
+		statement("rayQueryInitializeEXT(",
+		          to_expression(ops[0]), ", ", to_expression(ops[1]), ", ",
+		          to_expression(ops[2]), ", ", to_expression(ops[3]), ", ",
+		          to_expression(ops[4]), ", ", to_expression(ops[5]), ", ",
+		          to_expression(ops[6]), ", ", to_expression(ops[7]), ");");
+		break;
+	case OpRayQueryProceedKHR:
+		flush_variable_declaration(ops[0]);
+		emit_op(ops[0], ops[1], join("rayQueryProceedEXT(", to_expression(ops[2]), ")"), false);
+		break;
+	case OpRayQueryTerminateKHR:
+		flush_variable_declaration(ops[0]);
+		statement("rayQueryTerminateEXT(", to_expression(ops[0]), ");");
+		break;
+	case OpRayQueryGenerateIntersectionKHR:
+		flush_variable_declaration(ops[0]);
+		statement("rayQueryGenerateIntersectionEXT(", to_expression(ops[0]), ", ", to_expression(ops[1]), ");");
+		break;
+	case OpRayQueryConfirmIntersectionKHR:
+		flush_variable_declaration(ops[0]);
+		statement("rayQueryConfirmIntersectionEXT(", to_expression(ops[0]), ");");
+		break;
+#define GLSL_RAY_QUERY_GET_OP(op) \
+	case OpRayQueryGet##op##KHR: \
+		flush_variable_declaration(ops[2]); \
+		emit_op(ops[0], ops[1], join("rayQueryGet" #op "EXT(", to_expression(ops[2]), ")"), false); \
+		break
+#define GLSL_RAY_QUERY_GET_OP2(op) \
+	case OpRayQueryGet##op##KHR: \
+		flush_variable_declaration(ops[2]); \
+		emit_op(ops[0], ops[1], join("rayQueryGet" #op "EXT(", to_expression(ops[2]), ", ", "bool(", to_expression(ops[3]), "))"), false); \
+		break
+	GLSL_RAY_QUERY_GET_OP(RayTMin);
+	GLSL_RAY_QUERY_GET_OP(RayFlags);
+	GLSL_RAY_QUERY_GET_OP(WorldRayOrigin);
+	GLSL_RAY_QUERY_GET_OP(WorldRayDirection);
+	GLSL_RAY_QUERY_GET_OP(IntersectionCandidateAABBOpaque);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionType);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionT);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionInstanceCustomIndex);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionInstanceId);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionInstanceShaderBindingTableRecordOffset);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionGeometryIndex);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionPrimitiveIndex);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionBarycentrics);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionFrontFace);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionObjectRayDirection);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionObjectRayOrigin);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionObjectToWorld);
+	GLSL_RAY_QUERY_GET_OP2(IntersectionWorldToObject);
+#undef GLSL_RAY_QUERY_GET_OP
+#undef GLSL_RAY_QUERY_GET_OP2
+
 	case OpConvertUToAccelerationStructureKHR:
+		require_extension_internal("GL_EXT_ray_tracing");
 		GLSL_UFOP(accelerationStructureEXT);
 		break;
 
@@ -12740,16 +12921,19 @@ string CompilerGLSL::flags_to_qualifiers_glsl(const SPIRType &type, const Bitset
 	if (flags.get(DecorationRestrictPointerEXT))
 		return "restrict ";
 
-	// Structs do not have precision qualifiers, neither do doubles (desktop only anyways, so no mediump/highp).
-	if (type.basetype != SPIRType::Float && type.basetype != SPIRType::Int && type.basetype != SPIRType::UInt &&
-	    type.basetype != SPIRType::Image && type.basetype != SPIRType::SampledImage &&
-	    type.basetype != SPIRType::Sampler)
-		return "";
-
 	string qual;
 
-	if (flags.get(DecorationNoContraction) && backend.support_precise_qualifier)
+	if (type_is_floating_point(type) && flags.get(DecorationNoContraction) && backend.support_precise_qualifier)
 		qual = "precise ";
+
+	// Structs do not have precision qualifiers, neither do doubles (desktop only anyways, so no mediump/highp).
+	bool type_supports_precision =
+			type.basetype == SPIRType::Float || type.basetype == SPIRType::Int || type.basetype == SPIRType::UInt ||
+			type.basetype == SPIRType::Image || type.basetype == SPIRType::SampledImage ||
+			type.basetype == SPIRType::Sampler;
+
+	if (!type_supports_precision)
+		return qual;
 
 	if (options.es)
 	{
@@ -13240,6 +13424,9 @@ string CompilerGLSL::type_to_glsl(const SPIRType &type, uint32_t id)
 
 	case SPIRType::AccelerationStructure:
 		return ray_tracing_is_khr ? "accelerationStructureEXT" : "accelerationStructureNV";
+
+	case SPIRType::RayQuery:
+		return "rayQueryEXT";
 
 	case SPIRType::Void:
 		return "void";
@@ -13949,7 +14136,10 @@ void CompilerGLSL::branch(BlockID from, uint32_t cond, BlockID true_block, Block
 	if (!true_block_needs_code && !false_block_needs_code)
 		return;
 
-	emit_block_hints(get<SPIRBlock>(from));
+	// We might have a loop merge here. Only consider selection flattening constructs.
+	// Loop hints are handled explicitly elsewhere.
+	if (from_block.hint == SPIRBlock::HintFlatten || from_block.hint == SPIRBlock::HintDontFlatten)
+		emit_block_hints(from_block);
 
 	if (true_block_needs_code)
 	{
@@ -14455,6 +14645,7 @@ void CompilerGLSL::emit_block_chain(SPIRBlock &block)
 		// for (;;) { create-temporary; break; } consume-temporary;
 		// so force-declare temporaries here.
 		emit_hoisted_temporaries(block.potential_declare_temporary);
+		emit_block_hints(block);
 		statement("for (;;)");
 		begin_scope();
 
@@ -15321,8 +15512,32 @@ void CompilerGLSL::convert_non_uniform_expression(string &expr, uint32_t ptr_id)
 	            expr.substr(end_array_index, string::npos));
 }
 
-void CompilerGLSL::emit_block_hints(const SPIRBlock &)
+void CompilerGLSL::emit_block_hints(const SPIRBlock &block)
 {
+	if ((options.es && options.version < 310) || (!options.es && options.version < 140))
+		return;
+
+	switch (block.hint)
+	{
+	case SPIRBlock::HintFlatten:
+		require_extension_internal("GL_EXT_control_flow_attributes");
+		statement("SPIRV_CROSS_FLATTEN");
+		break;
+	case SPIRBlock::HintDontFlatten:
+		require_extension_internal("GL_EXT_control_flow_attributes");
+		statement("SPIRV_CROSS_BRANCH");
+		break;
+	case SPIRBlock::HintUnroll:
+		require_extension_internal("GL_EXT_control_flow_attributes");
+		statement("SPIRV_CROSS_UNROLL");
+		break;
+	case SPIRBlock::HintDontUnroll:
+		require_extension_internal("GL_EXT_control_flow_attributes");
+		statement("SPIRV_CROSS_LOOP");
+		break;
+	default:
+		break;
+	}
 }
 
 void CompilerGLSL::preserve_alias_on_reset(uint32_t id)

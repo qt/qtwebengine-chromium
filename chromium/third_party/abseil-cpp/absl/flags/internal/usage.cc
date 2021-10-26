@@ -17,6 +17,7 @@
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <functional>
 #include <map>
 #include <ostream>
@@ -245,7 +246,7 @@ void FlagsHelpImpl(std::ostream& out, PerFlagFilter filter_cb,
         << XMLElement("usage", program_usage_message) << '\n';
   }
 
-  // Map of package name to
+  // Ordered map of package name to
   //   map of file name to
   //     vector of flags in the file.
   // This map is used to output matching flags grouped by package and file
@@ -255,9 +256,6 @@ void FlagsHelpImpl(std::ostream& out, PerFlagFilter filter_cb,
       matching_flags;
 
   flags_internal::ForEachFlag([&](absl::CommandLineFlag& flag) {
-    // Ignore retired flags.
-    if (flag.IsRetired()) return;
-
     // If the flag has been stripped, pretend that it doesn't exist.
     if (flag.Help() == flags_internal::kStrippedFlagHelp) return;
 
@@ -273,19 +271,33 @@ void FlagsHelpImpl(std::ostream& out, PerFlagFilter filter_cb,
 
   absl::string_view package_separator;  // controls blank lines between packages
   absl::string_view file_separator;     // controls blank lines between files
-  for (const auto& package : matching_flags) {
+  for (auto& package : matching_flags) {
     if (format == HelpFormat::kHumanReadable) {
+      // Hide packages with only retired flags
+      bool all_package_flags_are_retired = true;
+      for (const auto& flags_in_file : package.second) {
+        for (const auto* flag : flags_in_file.second) {
+          all_package_flags_are_retired &= flag->IsRetired();
+        }
+      }
+      if (all_package_flags_are_retired) continue;
       out << package_separator;
       package_separator = "\n\n";
     }
 
     file_separator = "";
-    for (const auto& flags_in_file : package.second) {
+    for (auto& flags_in_file : package.second) {
       if (format == HelpFormat::kHumanReadable) {
         out << file_separator << "  Flags from " << flags_in_file.first
             << ":\n";
         file_separator = "\n";
       }
+
+      std::sort(std::begin(flags_in_file.second),
+                std::end(flags_in_file.second),
+                [](const CommandLineFlag* lhs, const CommandLineFlag* rhs) {
+                  return lhs->Name() < rhs->Name();
+                });
 
       for (const auto* flag : flags_in_file.second) {
         flags_internal::FlagHelp(out, *flag, format);
@@ -328,8 +340,11 @@ void FlagsHelpImpl(std::ostream& out,
 // Produces the help message describing specific flag.
 void FlagHelp(std::ostream& out, const CommandLineFlag& flag,
               HelpFormat format) {
-  if (format == HelpFormat::kHumanReadable)
+  if (format == HelpFormat::kHumanReadable) {
+    // Ignore retired flags
+    if (flag.IsRetired()) return;
     flags_internal::FlagHelpHumanReadable(flag, out);
+  }
 }
 
 // --------------------------------------------------------------------

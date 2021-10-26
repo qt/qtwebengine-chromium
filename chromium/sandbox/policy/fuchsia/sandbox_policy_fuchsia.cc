@@ -13,6 +13,7 @@
 #include <fuchsia/fonts/cpp/fidl.h>
 #include <fuchsia/intl/cpp/fidl.h>
 #include <fuchsia/logger/cpp/fidl.h>
+#include <fuchsia/media/cpp/fidl.h>
 #include <fuchsia/mediacodec/cpp/fidl.h>
 #include <fuchsia/memorypressure/cpp/fidl.h>
 #include <fuchsia/net/cpp/fidl.h>
@@ -66,6 +67,8 @@ struct SandboxConfig {
 
 constexpr SandboxConfig kGpuConfig = {
     base::make_span((const char* const[]){
+        // TODO(crbug.com/1224707): Use the fuchsia.scheduler API instead.
+        fuchsia::media::ProfileProvider::Name_,
         fuchsia::sysmem::Allocator::Name_,
         "fuchsia.vulkan.loader.Loader",
         fuchsia::ui::scenic::Scenic::Name_,
@@ -76,6 +79,7 @@ constexpr SandboxConfig kGpuConfig = {
 constexpr SandboxConfig kNetworkConfig = {
     base::make_span((const char* const[]){
         fuchsia::net::NameLookup::Name_,
+        "fuchsia.net.name.Lookup",
         fuchsia::net::interfaces::State::Name_,
         "fuchsia.posix.socket.Provider",
     }),
@@ -85,6 +89,8 @@ constexpr SandboxConfig kNetworkConfig = {
 constexpr SandboxConfig kRendererConfig = {
     base::make_span((const char* const[]){
         fuchsia::fonts::Provider::Name_,
+        // TODO(crbug.com/1224707): Use the fuchsia.scheduler API instead.
+        fuchsia::media::ProfileProvider::Name_,
         fuchsia::mediacodec::CodecFactory::Name_,
         fuchsia::memorypressure::Provider::Name_,
         fuchsia::sysmem::Allocator::Name_,
@@ -227,20 +233,20 @@ void SandboxPolicyFuchsia::UpdateLaunchOptionsForSandbox(
     options->paths_to_clone.push_back(base::FilePath("/config/ssl"));
 
   if (config->features & kProvideVulkanResources) {
-    // /dev/class/gpu and /config/vulkan/icd.d are to used configure and
-    // access the GPU.
-    options->paths_to_clone.push_back(base::FilePath("/dev/class/gpu"));
-    const auto vulkan_icd_path = base::FilePath("/config/vulkan/icd.d");
-    if (base::PathExists(vulkan_icd_path))
-      options->paths_to_clone.push_back(vulkan_icd_path);
-
-    // The following devices are used for Fuchsia Emulator.
-    options->paths_to_clone.insert(
-        options->paths_to_clone.end(),
-        {base::FilePath("/dev/class/goldfish-address-space"),
-         base::FilePath("/dev/class/goldfish-control"),
-         base::FilePath("/dev/class/goldfish-pipe"),
-         base::FilePath("/dev/class/goldfish-sync")});
+    static const char* const kPathsToCloneForVulkan[] = {
+        // Used configure and access the GPU.
+        "/dev/class/gpu", "/config/vulkan/icd.d",
+        // Used for Fuchsia Emulator.
+        "/dev/class/goldfish-address-space", "/dev/class/goldfish-control",
+        "/dev/class/goldfish-pipe", "/dev/class/goldfish-sync"};
+    for (const char* path_str : kPathsToCloneForVulkan) {
+      base::FilePath path(path_str);
+      // Vulkan paths aren't needed with newer Fuchsia versions, so they may not
+      // be available.
+      if (base::PathExists(path)) {
+        options->paths_to_clone.push_back(path);
+      }
+    }
   }
 
   // If the process needs access to any services then transfer the

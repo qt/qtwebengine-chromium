@@ -38,7 +38,6 @@
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "third_party/blink/public/common/action_after_pagehide.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
-#include "third_party/blink/public/common/widget/screen_info.h"
 #include "third_party/blink/public/mojom/permissions_policy/policy_disposition.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -132,10 +131,12 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/scheduler/public/dummy_schedulers.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
+#include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/timer.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+#include "ui/display/screen_info.h"
 #include "v8/include/v8.h"
 
 namespace blink {
@@ -258,6 +259,15 @@ bool LocalDOMWindow::IsCrossSiteSubframe() const {
       net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
 }
 
+bool LocalDOMWindow::IsCrossSiteSubframeIncludingScheme() const {
+  return GetFrame() && top()->GetFrame() &&
+         !top()
+              ->GetFrame()
+              ->GetSecurityContext()
+              ->GetSecurityOrigin()
+              ->IsSameSiteWith(GetSecurityContext().GetSecurityOrigin());
+}
+
 LocalDOMWindow* LocalDOMWindow::From(const ScriptState* script_state) {
   v8::HandleScope scope(script_state->GetIsolate());
   return blink::ToLocalDOMWindow(script_state->GetContext());
@@ -330,7 +340,7 @@ HttpsState LocalDOMWindow::GetHttpsState() const {
   return CalculateHttpsState(GetSecurityOrigin());
 }
 
-ResourceFetcher* LocalDOMWindow::Fetcher() const {
+ResourceFetcher* LocalDOMWindow::Fetcher() {
   return document()->Fetcher();
 }
 
@@ -437,6 +447,11 @@ void LocalDOMWindow::ReportPermissionsPolicyViolation(
     mojom::blink::PermissionsPolicyFeature feature,
     mojom::blink::PolicyDisposition disposition,
     const String& message) const {
+  if (disposition == mojom::blink::PolicyDisposition::kEnforce) {
+    const_cast<LocalDOMWindow*>(this)->CountPermissionsPolicyUsage(
+        feature, UseCounterImpl::PermissionsPolicyUsageType::kViolation);
+  }
+
   if (!RuntimeEnabledFeatures::FeaturePolicyReportingEnabled(this))
     return;
   if (!GetFrame())
@@ -463,8 +478,6 @@ void LocalDOMWindow::ReportPermissionsPolicyViolation(
     GetFrame()->Console().AddMessage(MakeGarbageCollected<ConsoleMessage>(
         mojom::blink::ConsoleMessageSource::kViolation,
         mojom::blink::ConsoleMessageLevel::kError, body->message()));
-
-    CountPermissionsPolicyViolation(feature);
   }
 }
 
@@ -598,13 +611,14 @@ void LocalDOMWindow::CountUse(mojom::WebFeature feature) {
     loader->CountUse(feature);
 }
 
-void LocalDOMWindow::CountPermissionsPolicyViolation(
-    mojom::blink::PermissionsPolicyFeature feature) const {
+void LocalDOMWindow::CountPermissionsPolicyUsage(
+    mojom::blink::PermissionsPolicyFeature feature,
+    UseCounterImpl::PermissionsPolicyUsageType type) {
   if (!GetFrame())
     return;
   if (auto* loader = GetFrame()->Loader().GetDocumentLoader()) {
-    loader->GetUseCounter().CountPermissionsPolicyViolation(feature,
-                                                            *GetFrame());
+    loader->GetUseCounter().CountPermissionsPolicyUsage(feature, type,
+                                                        *GetFrame());
   }
 }
 
@@ -616,17 +630,8 @@ void LocalDOMWindow::CountUseOnlyInCrossOriginIframe(
 
 void LocalDOMWindow::CountUseOnlyInCrossSiteIframe(
     mojom::blink::WebFeature feature) {
-  if (!GetFrame())
-    return;
-
-  if (top()->GetFrame() &&
-      !top()
-           ->GetFrame()
-           ->GetSecurityContext()
-           ->GetSecurityOrigin()
-           ->IsSameSiteWith(GetSecurityContext().GetSecurityOrigin())) {
+  if (IsCrossSiteSubframeIncludingScheme())
     CountUse(feature);
-  }
 }
 
 bool LocalDOMWindow::HasInsecureContextInAncestors() {
@@ -971,10 +976,9 @@ Navigator* LocalDOMWindow::navigator() {
   return navigator_.Get();
 }
 
-void LocalDOMWindow::SchedulePostMessage(
-    MessageEvent* event,
-    scoped_refptr<const SecurityOrigin> target,
-    LocalDOMWindow* source) {
+void LocalDOMWindow::SchedulePostMessage(PostedMessage* posted_message) {
+  LocalDOMWindow* source = posted_message->source;
+
   // Record UKM metrics for postMessage event.
   ukm::SourceId source_frame_ukm_source_id = source->UkmSourceID();
   if (ShouldRecordPostMessageIncomingFrameUkmEvent(
@@ -984,6 +988,14 @@ void LocalDOMWindow::SchedulePostMessage(
         .Record(UkmRecorder());
   }
 
+  // Convert the posted message to a MessageEvent so it can be unpacked for
+  // local dispatch.
+  MessageEvent* event = MessageEvent::Create(
+      std::move(posted_message->channels), std::move(posted_message->data),
+      posted_message->source_origin->ToString(), String(),
+      posted_message->source, posted_message->user_activation,
+      posted_message->delegate_payment_request);
+
   // Allowing unbounded amounts of messages to build up for a suspended context
   // is problematic; consider imposing a limit or other restriction if this
   // surfaces often as a problem (see crbug.com/587012).
@@ -992,7 +1004,8 @@ void LocalDOMWindow::SchedulePostMessage(
       ->PostTask(
           FROM_HERE,
           WTF::Bind(&LocalDOMWindow::DispatchPostMessage, WrapPersistent(this),
-                    WrapPersistent(event), std::move(target),
+                    WrapPersistent(event),
+                    std::move(posted_message->target_origin),
                     std::move(location), source->GetAgent()->cluster_id()));
   probe::AsyncTaskScheduled(this, "postMessage", event->async_task_id());
 }
@@ -1638,7 +1651,7 @@ void LocalDOMWindow::scrollTo(const ScrollToOptions* scroll_to_options) const {
 }
 
 void LocalDOMWindow::moveBy(int x, int y) const {
-  if (!GetFrame() || !GetFrame()->IsMainFrame())
+  if (!GetFrame() || !GetFrame()->IsMainFrame() || document()->IsPrerendering())
     return;
 
   LocalFrame* frame = GetFrame();
@@ -1654,7 +1667,7 @@ void LocalDOMWindow::moveBy(int x, int y) const {
 }
 
 void LocalDOMWindow::moveTo(int x, int y) const {
-  if (!GetFrame() || !GetFrame()->IsMainFrame())
+  if (!GetFrame() || !GetFrame()->IsMainFrame() || document()->IsPrerendering())
     return;
 
   LocalFrame* frame = GetFrame();
@@ -1670,7 +1683,7 @@ void LocalDOMWindow::moveTo(int x, int y) const {
 }
 
 void LocalDOMWindow::resizeBy(int x, int y) const {
-  if (!GetFrame() || !GetFrame()->IsMainFrame())
+  if (!GetFrame() || !GetFrame()->IsMainFrame() || document()->IsPrerendering())
     return;
 
   LocalFrame* frame = GetFrame();
@@ -1685,7 +1698,7 @@ void LocalDOMWindow::resizeBy(int x, int y) const {
 }
 
 void LocalDOMWindow::resizeTo(int width, int height) const {
-  if (!GetFrame() || !GetFrame()->IsMainFrame())
+  if (!GetFrame() || !GetFrame()->IsMainFrame() || document()->IsPrerendering())
     return;
 
   LocalFrame* frame = GetFrame();
@@ -2111,6 +2124,10 @@ ukm::UkmRecorder* LocalDOMWindow::UkmRecorder() {
 ukm::SourceId LocalDOMWindow::UkmSourceID() const {
   DCHECK(document_);
   return document_->UkmSourceID();
+}
+
+void LocalDOMWindow::SetStorageKey(const BlinkStorageKey& storage_key) {
+  storage_key_ = storage_key;
 }
 
 }  // namespace blink

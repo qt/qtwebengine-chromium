@@ -10,6 +10,7 @@
 #include "content/browser/devtools/protocol/network_handler.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "services/network/public/mojom/http_raw_headers.mojom.h"
 
 namespace content {
 
@@ -66,13 +67,15 @@ void NetworkServiceDevToolsObserver::OnRawResponse(
     const net::CookieAndLineAccessResultList& response_cookie_list,
     std::vector<network::mojom::HttpRawHeaderPairPtr> response_headers,
     const absl::optional<std::string>& response_headers_text,
-    network::mojom::IPAddressSpace resource_address_space) {
+    network::mojom::IPAddressSpace resource_address_space,
+    int32_t http_status_code) {
   auto* host = GetDevToolsAgentHost();
   if (!host)
     return;
   DispatchToAgents(host, &protocol::NetworkHandler::OnResponseReceivedExtraInfo,
                    devtools_request_id, response_cookie_list, response_headers,
-                   response_headers_text, resource_address_space);
+                   response_headers_text, resource_address_space,
+                   http_status_code);
 }
 
 void NetworkServiceDevToolsObserver::OnTrustTokenOperationDone(
@@ -137,7 +140,8 @@ void NetworkServiceDevToolsObserver::OnPrivateNetworkRequest(
 
 void NetworkServiceDevToolsObserver::OnCorsPreflightRequest(
     const base::UnguessableToken& devtools_request_id,
-    const network::ResourceRequest& request,
+    const net::HttpRequestHeaders& request_headers,
+    network::mojom::URLRequestDevToolsInfoPtr request_info,
     const GURL& initiator_url,
     const std::string& initiator_devtools_request_id) {
   auto* host = GetDevToolsAgentHost();
@@ -146,7 +150,7 @@ void NetworkServiceDevToolsObserver::OnCorsPreflightRequest(
   auto timestamp = base::TimeTicks::Now();
   auto id = devtools_request_id.ToString();
   DispatchToAgents(host, &protocol::NetworkHandler::RequestSent, id,
-                   /* loader_id=*/"", request,
+                   /* loader_id=*/"", request_headers, *request_info,
                    protocol::Network::Initiator::TypeEnum::Preflight,
                    initiator_url, initiator_devtools_request_id, timestamp);
 }
@@ -207,9 +211,58 @@ void NetworkServiceDevToolsObserver::OnCorsError(
   auto issue = protocol::Audits::InspectorIssue::Create()
                    .SetCode(protocol::Audits::InspectorIssueCodeEnum::CorsIssue)
                    .SetDetails(std::move(details))
+                   .SetIssueId(cors_error_status.issue_id.ToString())
                    .Build();
   devtools_instrumentation::ReportBrowserInitiatedIssue(
       ftn->current_frame_host(), issue.get());
+}
+
+void NetworkServiceDevToolsObserver::OnSubresourceWebBundleMetadata(
+    const std::string& devtools_request_id,
+    const std::vector<GURL>& urls) {
+  auto* host = GetDevToolsAgentHost();
+  if (!host)
+    return;
+  DispatchToAgents(host,
+                   &protocol::NetworkHandler::OnSubresourceWebBundleMetadata,
+                   devtools_request_id, urls);
+}
+
+void NetworkServiceDevToolsObserver::OnSubresourceWebBundleMetadataError(
+    const std::string& devtools_request_id,
+    const std::string& error_message) {
+  auto* host = GetDevToolsAgentHost();
+  if (!host)
+    return;
+  DispatchToAgents(
+      host, &protocol::NetworkHandler::OnSubresourceWebBundleMetadataError,
+      devtools_request_id, error_message);
+}
+
+void NetworkServiceDevToolsObserver::OnSubresourceWebBundleInnerResponse(
+    const std::string& inner_request_devtools_id,
+    const GURL& url,
+    const absl::optional<std::string>& bundle_request_devtools_id) {
+  auto* host = GetDevToolsAgentHost();
+  if (!host)
+    return;
+  DispatchToAgents(
+      host, &protocol::NetworkHandler::OnSubresourceWebBundleInnerResponse,
+      inner_request_devtools_id, url, bundle_request_devtools_id);
+}
+
+void NetworkServiceDevToolsObserver::OnSubresourceWebBundleInnerResponseError(
+    const std::string& inner_request_devtools_id,
+    const GURL& url,
+    const std::string& error_message,
+    const absl::optional<std::string>& bundle_request_devtools_id) {
+  auto* host = GetDevToolsAgentHost();
+  if (!host)
+    return;
+  DispatchToAgents(
+      host, &protocol::NetworkHandler::OnSubresourceWebBundleInnerResponseError,
+      inner_request_devtools_id, url, error_message,
+      bundle_request_devtools_id);
 }
 
 void NetworkServiceDevToolsObserver::Clone(

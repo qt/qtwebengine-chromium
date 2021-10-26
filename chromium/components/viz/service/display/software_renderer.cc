@@ -287,7 +287,7 @@ void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
     if (settings_->allow_antialiasing &&
         (settings_->force_antialiasing || all_four_edges_are_exterior))
       current_paint_.setAntiAlias(true);
-    current_paint_.setFilterQuality(kLow_SkFilterQuality);
+    current_sampling_ = SkSamplingOptions(SkFilterMode::kLinear);
   }
 
   if (quad->ShouldDrawWithBlending() ||
@@ -549,12 +549,10 @@ void SoftwareRenderer::DrawRenderPassQuad(
   SkMatrix content_mat = SkMatrix::RectToRect(content_rect, dest_rect);
 
   sk_sp<SkShader> shader;
-  SkSamplingOptions sampling(cc::PaintFlags::FilterQualityToSkSamplingOptions(
-      current_paint_.getFilterQuality()));
   if (!filter_image) {
-    shader = source_bitmap.makeShader(sampling, content_mat);
+    shader = source_bitmap.makeShader(current_sampling_, content_mat);
   } else {
-    shader = filter_image->makeShader(sampling, content_mat);
+    shader = filter_image->makeShader(current_sampling_, content_mat);
   }
 
   if (quad->mask_resource_id()) {
@@ -571,7 +569,7 @@ void SoftwareRenderer::DrawRenderPassQuad(
     SkMatrix mask_mat = SkMatrix::RectToRect(mask_rect, dest_rect);
 
     current_paint_.setMaskFilter(SkShaderMaskFilter::Make(
-        mask_lock.sk_image()->makeShader(sampling, mask_mat)));
+        mask_lock.sk_image()->makeShader(current_sampling_, mask_mat)));
   }
 
   // If we have a backdrop filter shader, render its results first.
@@ -653,20 +651,15 @@ void SoftwareRenderer::CopyDrawnRenderPass(
       return;
   }
 
-  // Deliver the result. SoftwareRenderer supports RGBA_BITMAP and I420_PLANES
-  // only. For legacy reasons, if a RGBA_TEXTURE request is being made, clients
-  // are prepared to accept RGBA_BITMAP results.
-  //
-  // TODO(crbug/754872): Get rid of the legacy behavior and send empty results
-  // for RGBA_TEXTURE requests once tab capture is moved into VIZ.
-  const CopyOutputResult::Format result_format =
-      (request->result_format() == CopyOutputResult::Format::RGBA_TEXTURE)
-          ? CopyOutputResult::Format::RGBA_BITMAP
-          : request->result_format();
-  // Note: The CopyOutputSkBitmapResult automatically provides I420 format
+  // Deliver the result. SoftwareRenderer supports system memory destinations
+  // only. For legacy reasons, if a RGBA texture request is being made, clients
+  // are prepared to accept system memory results.
+
+  // Note: The CopyOutputSkBitmapResult already implies that results are
+  // returned in system memory and automatically provides I420 format
   // conversion, if needed.
   request->SendResult(std::make_unique<CopyOutputSkBitmapResult>(
-      result_format, geometry.result_selection, std::move(bitmap)));
+      request->result_format(), geometry.result_selection, std::move(bitmap)));
 }
 
 void SoftwareRenderer::DidChangeVisibility() {

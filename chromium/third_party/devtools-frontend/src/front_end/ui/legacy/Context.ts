@@ -7,7 +7,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Root from '../../core/root/root.js';  // eslint-disable-line @typescript-eslint/no-unused-vars
 
-import type {ContextFlavorListener} from './ContextFlavorListener.js'; // eslint-disable-line no-unused-vars
+import type {ContextFlavorListener} from './ContextFlavorListener.js';
 
 let contextInstance: Context;
 
@@ -113,6 +113,6 @@ function getRegisteredListeners(): ContextFlavorListenerRegistration[] {
   return registeredListeners;
 }
 export interface ContextFlavorListenerRegistration {
-  contextTypes: () => Array<unknown>;
+  contextTypes: () => Array<Function>;
   loadListener: () => Promise<ContextFlavorListener>;
 }

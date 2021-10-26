@@ -50,6 +50,9 @@ enum {
 const char UserScript::kFileExtension[] = ".user.js";
 
 // static
+const char UserScript::kGeneratedIDPrefix = '_';
+
+// static
 std::string UserScript::GenerateUserScriptID() {
   // This could just as easily use a GUID. The actual value of the id is not
   // important as long a unique id is generated for each UserScript.
@@ -64,8 +67,8 @@ bool UserScript::IsURLUserScript(const GURL& url,
 }
 
 // static
-int UserScript::ValidUserScriptSchemes(bool canExecuteScriptEverywhere) {
-  if (canExecuteScriptEverywhere)
+int UserScript::ValidUserScriptSchemes(bool can_execute_script_everywhere) {
+  if (can_execute_script_everywhere)
     return URLPattern::SCHEME_ALL;
   int valid_schemes = kValidUserScriptSchemes;
   if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
@@ -73,6 +76,11 @@ int UserScript::ValidUserScriptSchemes(bool canExecuteScriptEverywhere) {
     valid_schemes &= ~URLPattern::SCHEME_CHROMEUI;
   }
   return valid_schemes;
+}
+
+// static
+bool UserScript::IsIDGenerated(const std::string& id) {
+  return !id.empty() && id[0] == kGeneratedIDPrefix;
 }
 
 UserScript::File::File(const base::FilePath& extension_root,
@@ -265,6 +273,11 @@ void UserScript::Unpickle(const base::Pickle& pickle,
   UnpickleURLPatternSet(pickle, iter, &exclude_url_set_);
   UnpickleScripts(pickle, iter, &js_scripts_);
   UnpickleScripts(pickle, iter, &css_scripts_);
+}
+
+bool UserScript::IsIDGenerated() const {
+  CHECK(!user_script_id_.empty());
+  return IsIDGenerated(user_script_id_);
 }
 
 void UserScript::UnpickleGlobs(const base::Pickle& pickle,

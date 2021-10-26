@@ -35,6 +35,7 @@
 #include "third_party/blink/renderer/platform/geometry/float_rect.h"
 #include "third_party/blink/renderer/platform/graphics/bitmap_image_metrics.h"
 #include "third_party/blink/renderer/platform/graphics/deferred_image_decoder.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/image_observer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_canvas.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_flags.h"
@@ -72,6 +73,7 @@ BitmapImage::BitmapImage(ImageObserver* observer, bool is_multipart)
           mojom::blink::ImageAnimationPolicy::kImageAnimationPolicyAllowed),
       all_data_received_(false),
       have_size_(false),
+      preferred_size_is_transposed_(false),
       size_available_(false),
       have_frame_count_(false),
       repetition_count_status_(kUnknown),
@@ -91,6 +93,15 @@ void BitmapImage::DestroyDecodedData() {
 
 scoped_refptr<SharedBuffer> BitmapImage::Data() {
   return decoder_ ? decoder_->Data() : nullptr;
+}
+
+bool BitmapImage::HasData() const {
+  return decoder_ ? decoder_->HasData() : false;
+}
+
+size_t BitmapImage::DataSize() const {
+  DCHECK(decoder_);
+  return decoder_->DataSize();
 }
 
 void BitmapImage::NotifyMemoryChanged() {
@@ -130,46 +141,28 @@ PaintImage BitmapImage::CreatePaintImage() {
 }
 
 void BitmapImage::UpdateSize() const {
-  if (!size_available_ || have_size_ || !decoder_)
+  if (have_size_ || !size_available_ || !decoder_)
     return;
-
   size_ = decoder_->FrameSizeAtIndex(0);
   density_corrected_size_ = decoder_->DensityCorrectedSizeAtIndex(0);
-  if (decoder_->OrientationAtIndex(0).UsesWidthAsHeight()) {
-    size_respecting_orientation_ = size_.TransposedSize();
-    density_corrected_size_respecting_orientation_ =
-        density_corrected_size_.TransposedSize();
-  } else {
-    size_respecting_orientation_ = size_;
-    density_corrected_size_respecting_orientation_ = density_corrected_size_;
-  }
+  preferred_size_is_transposed_ =
+      decoder_->OrientationAtIndex(0).UsesWidthAsHeight();
   have_size_ = true;
 }
 
-IntSize BitmapImage::Size() const {
+IntSize BitmapImage::SizeWithConfig(SizeConfig config) const {
   UpdateSize();
-  return size_;
-}
-
-IntSize BitmapImage::DensityCorrectedSize() const {
-  return density_corrected_size_.IsEmpty() ? Size() : density_corrected_size_;
+  IntSize size = size_;
+  if (config.apply_density && !density_corrected_size_.IsEmpty())
+    size = density_corrected_size_;
+  if (config.apply_orientation && preferred_size_is_transposed_)
+    return size.TransposedSize();
+  return size;
 }
 
 void BitmapImage::RecordDecodedImageType(UseCounter* use_counter) {
   BitmapImageMetrics::CountDecodedImageType(decoder_->FilenameExtension(),
                                             use_counter);
-}
-
-IntSize BitmapImage::PreferredDisplaySize() const {
-  UpdateSize();
-  if (!density_corrected_size_respecting_orientation_.IsEmpty())
-    return density_corrected_size_respecting_orientation_;
-  return size_respecting_orientation_;
-}
-
-bool BitmapImage::HasDefaultOrientation() const {
-  ImageOrientation orientation = CurrentFrameOrientation();
-  return orientation == ImageOrientationEnum::kDefault;
 }
 
 bool BitmapImage::GetHotSpot(IntPoint& hot_spot) const {
@@ -194,7 +187,7 @@ Image::SizeAvailability BitmapImage::SetData(scoped_refptr<SharedBuffer> data,
   if (!data)
     return kSizeAvailable;
 
-  int length = data->size();
+  size_t length = data->size();
   if (!length)
     return kSizeAvailable;
 
@@ -257,15 +250,13 @@ String BitmapImage::FilenameExtension() const {
   return decoder_ ? decoder_->FilenameExtension() : String();
 }
 
-void BitmapImage::Draw(
-    cc::PaintCanvas* canvas,
-    const PaintFlags& flags,
-    const FloatRect& dst_rect,
-    const FloatRect& src_rect,
-    const SkSamplingOptions& sampling,
-    RespectImageOrientationEnum should_respect_image_orientation,
-    ImageClampingMode clamp_mode,
-    ImageDecodingMode decode_mode) {
+void BitmapImage::Draw(cc::PaintCanvas* canvas,
+                       const PaintFlags& flags,
+                       const FloatRect& dst_rect,
+                       const FloatRect& src_rect,
+                       const ImageDrawOptions& draw_options,
+                       ImageClampingMode clamp_mode,
+                       ImageDecodingMode decode_mode) {
   TRACE_EVENT0("skia", "BitmapImage::draw");
 
   PaintImage image = PaintImageForCurrentFrame();
@@ -293,7 +284,7 @@ void BitmapImage::Draw(
     return;  // Nothing to draw.
 
   ImageOrientation orientation = ImageOrientationEnum::kDefault;
-  if (should_respect_image_orientation == kRespectImageOrientation)
+  if (draw_options.respect_image_orientation == kRespectImageOrientation)
     orientation = CurrentFrameOrientation();
 
   PaintCanvasAutoRestore auto_restore(canvas, false);
@@ -321,7 +312,7 @@ void BitmapImage::Draw(
   uint32_t stable_id = image.stable_id();
   bool is_lazy_generated = image.IsLazyGenerated();
   canvas->drawImageRect(std::move(image), adjusted_src_rect, adjusted_dst_rect,
-                        sampling, &flags,
+                        draw_options.sampling_options, &flags,
                         WebCoreClampingModeToSkiaRectConstraint(clamp_mode));
 
   if (is_lazy_generated) {
@@ -402,9 +393,7 @@ bool BitmapImage::CurrentFrameKnownToBeOpaque() {
 }
 
 bool BitmapImage::CurrentFrameIsComplete() {
-  return decoder_
-             ? decoder_->FrameIsReceivedAtIndex(PaintImage::kDefaultFrameIndex)
-             : false;
+  return decoder_ && decoder_->FrameIsReceivedAtIndex(0);
 }
 
 bool BitmapImage::CurrentFrameIsLazyDecoded() {
@@ -413,14 +402,8 @@ bool BitmapImage::CurrentFrameIsLazyDecoded() {
 }
 
 ImageOrientation BitmapImage::CurrentFrameOrientation() const {
-  return decoder_ ? decoder_->OrientationAtIndex(PaintImage::kDefaultFrameIndex)
+  return decoder_ ? decoder_->OrientationAtIndex(0)
                   : ImageOrientationEnum::kDefault;
-}
-
-IntSize BitmapImage::CurrentFrameDensityCorrectedSize() const {
-  return decoder_ ? decoder_->DensityCorrectedSizeAtIndex(
-                        PaintImage::kDefaultFrameIndex)
-                  : IntSize();
 }
 
 int BitmapImage::RepetitionCount() {

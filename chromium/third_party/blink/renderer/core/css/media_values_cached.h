@@ -5,9 +5,19 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_MEDIA_VALUES_CACHED_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_MEDIA_VALUES_CACHED_H_
 
+#include "services/device/public/mojom/device_posture_provider.mojom-blink.h"
+#include "third_party/blink/public/common/css/forced_colors.h"
+#include "third_party/blink/public/common/css/navigation_controls.h"
+#include "third_party/blink/public/mojom/css/preferred_color_scheme.mojom-blink.h"
+#include "third_party/blink/public/mojom/css/preferred_contrast.mojom-blink.h"
+#include "third_party/blink/public/mojom/manifest/display_mode.mojom-blink.h"
+#include "third_party/blink/public/mojom/webpreferences/web_preferences.mojom-blink.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/media_values.h"
+#include "third_party/blink/renderer/platform/graphics/color_space_gamut.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier.h"
+#include "ui/base/pointer/pointer_device.h"
 
 namespace blink {
 
@@ -17,32 +27,41 @@ class CORE_EXPORT MediaValuesCached final : public MediaValues {
     DISALLOW_NEW();
     // Members variables must be thread safe, since they're copied to the parser
     // thread
-    double viewport_width;
-    double viewport_height;
-    int device_width;
-    int device_height;
-    float device_pixel_ratio;
-    int color_bits_per_component;
-    int monochrome_bits_per_component;
-    mojom::blink::PointerType primary_pointer_type;
-    int available_pointer_types;
-    mojom::blink::HoverType primary_hover_type;
-    int available_hover_types;
-    int default_font_size;
-    bool three_d_enabled;
-    bool immersive_mode;
-    bool strict_mode;
+    double viewport_width = 0;
+    double viewport_height = 0;
+    int device_width = 0;
+    int device_height = 0;
+    float device_pixel_ratio = 1.0;
+    bool device_supports_hdr = false;
+    int color_bits_per_component = 24;
+    int monochrome_bits_per_component = 0;
+    mojom::blink::PointerType primary_pointer_type =
+        mojom::blink::PointerType::kPointerNone;
+    // Bitmask of |ui::PointerType|
+    int available_pointer_types = ui::POINTER_TYPE_NONE;
+    mojom::blink::HoverType primary_hover_type =
+        mojom::blink::HoverType::kHoverNone;
+    // Bitmask of |ui::HoverType|
+    int available_hover_types = ui::HOVER_TYPE_NONE;
+    int default_font_size = 16;
+    bool three_d_enabled = false;
+    bool immersive_mode = false;
+    bool strict_mode = true;
     String media_type;
-    blink::mojom::DisplayMode display_mode;
-    ColorSpaceGamut color_gamut;
-    mojom::blink::PreferredColorScheme preferred_color_scheme;
-    mojom::blink::PreferredContrast preferred_contrast;
-    bool prefers_reduced_motion;
+    mojom::blink::DisplayMode display_mode =
+        mojom::blink::DisplayMode::kBrowser;
+    ColorSpaceGamut color_gamut = ColorSpaceGamut::kUnknown;
+    mojom::blink::PreferredColorScheme preferred_color_scheme =
+        mojom::blink::PreferredColorScheme::kLight;
+    mojom::blink::PreferredContrast preferred_contrast =
+        mojom::blink::PreferredContrast::kNoPreference;
+    bool prefers_reduced_motion = false;
     bool prefers_reduced_data = false;
-    ForcedColors forced_colors;
-    NavigationControls navigation_controls;
-    ScreenSpanning screen_spanning;
-    DevicePosture device_posture;
+    ForcedColors forced_colors = ForcedColors::kNone;
+    NavigationControls navigation_controls = NavigationControls::kNone;
+    ScreenSpanning screen_spanning = ScreenSpanning::kNone;
+    device::mojom::blink::DevicePostureType device_posture =
+        device::mojom::blink::DevicePostureType::kContinuous;
 
     MediaValuesCachedData();
     explicit MediaValuesCachedData(Document&);
@@ -54,6 +73,7 @@ class CORE_EXPORT MediaValuesCached final : public MediaValues {
       data.device_width = device_width;
       data.device_height = device_height;
       data.device_pixel_ratio = device_pixel_ratio;
+      data.device_supports_hdr = device_supports_hdr;
       data.color_bits_per_component = color_bits_per_component;
       data.monochrome_bits_per_component = monochrome_bits_per_component;
       data.primary_pointer_type = primary_pointer_type;
@@ -80,8 +100,8 @@ class CORE_EXPORT MediaValuesCached final : public MediaValues {
   };
 
   MediaValuesCached();
-  MediaValuesCached(LocalFrame*);
-  MediaValuesCached(const MediaValuesCachedData&);
+  explicit MediaValuesCached(LocalFrame*);
+  explicit MediaValuesCached(const MediaValuesCachedData&);
 
   MediaValues* Copy() const override;
   bool ComputeLength(double value,
@@ -96,6 +116,7 @@ class CORE_EXPORT MediaValuesCached final : public MediaValues {
   int DeviceWidth() const override;
   int DeviceHeight() const override;
   float DevicePixelRatio() const override;
+  bool DeviceSupportsHDR() const override;
   int ColorBitsPerComponent() const override;
   int MonochromeBitsPerComponent() const override;
   mojom::blink::PointerType PrimaryPointerType() const override;
@@ -117,7 +138,7 @@ class CORE_EXPORT MediaValuesCached final : public MediaValues {
   ForcedColors GetForcedColors() const override;
   NavigationControls GetNavigationControls() const override;
   ScreenSpanning GetScreenSpanning() const override;
-  DevicePosture GetDevicePosture() const override;
+  device::mojom::blink::DevicePostureType GetDevicePosture() const override;
 
   void OverrideViewportDimensions(double width, double height) override;
 

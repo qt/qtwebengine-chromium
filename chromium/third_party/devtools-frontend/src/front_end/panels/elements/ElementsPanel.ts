@@ -40,16 +40,19 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Extensions from '../../models/extensions/extensions.js';
+import type * as Adorners from '../../ui/components/adorners/adorners.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {AccessibilityTreeView} from './AccessibilityTreeView.js';
 import * as ElementsComponents from './components/components.js';
 import {ComputedStyleWidget} from './ComputedStyleWidget.js';
-import type {ElementsTreeElement} from './ElementsTreeElement.js'; // eslint-disable-line no-unused-vars
+
+import type {ElementsTreeElement} from './ElementsTreeElement.js';
 import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.js';
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
-import type {MarkerDecorator} from './MarkerDecorator.js'; // eslint-disable-line no-unused-vars
+import type {MarkerDecorator} from './MarkerDecorator.js';
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
 import {Events as StylesSidebarPaneEvents, StylesSidebarPane} from './StylesSidebarPane.js';
 
@@ -125,26 +128,27 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ElementsPanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-const legacyNodeToNewBreadcrumbsNode = (node: SDK.DOMModel.DOMNode): ElementsComponents.ElementsBreadcrumbs.DOMNode => {
-  return {
-    parentNode: node.parentNode ? legacyNodeToNewBreadcrumbsNode(node.parentNode) : null,
-    id: (node.id as number),
-    nodeType: node.nodeType(),
-    pseudoType: node.pseudoType(),
-    shadowRootType: node.shadowRootType(),
-    nodeName: node.nodeName(),
-    nodeNameNicelyCased: node.nodeNameInCorrectCase(),
-    legacyDomNode: node,
-    highlightNode: (): void => node.highlight(),
-    clearHighlight: (): void => SDK.OverlayModel.OverlayModel.hideDOMNodeHighlight(),
-    getAttribute: node.getAttribute.bind(node),
-  };
+const createAccessibilityTreeToggleButton = (isActive: boolean): HTMLButtonElement => {
+  const button = document.createElement('button');
+  if (isActive) {
+    button.classList.add('axtree-button', 'axtree-button-active');
+  } else {
+    button.classList.add('axtree-button');
+  }
+  button.tabIndex = 0;
+  button.title =
+      isActive ? i18nString(UIStrings.switchToDomTreeView) : i18nString(UIStrings.switchToAccessibilityTreeView);
+  const icon = new IconButton.Icon.Icon();
+  const bgColor = isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)';
+  icon.data = {iconName: 'accessibility-icon', color: bgColor, width: '16px', height: '16px'};
+  button.appendChild(icon);
+  return button;
 };
 
 let elementsPanelInstance: ElementsPanel;
 
 export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.Searchable,
-                                                             SDK.SDKModel.SDKModelObserver<SDK.DOMModel.DOMModel>,
+                                                             SDK.TargetManager.SDKModelObserver<SDK.DOMModel.DOMModel>,
                                                              UI.View.ViewLocationResolver {
   _splitWidget: UI.SplitWidget.SplitWidget;
   _searchableView: UI.SearchableView.SearchableView;
@@ -157,7 +161,6 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   _metricsWidget: MetricsSidebarPane;
   _treeOutlines: Set<ElementsTreeOutline>;
   _treeOutlineHeaders: Map<ElementsTreeOutline, Element>;
-  _gridStyleTrackerByCSSModel: Map<SDK.CSSModel.CSSModel, SDK.CSSModel.CSSPropertyTracker>;
   _searchResults!: {
     domModel: SDK.DOMModel.DOMModel,
     index: number,
@@ -167,8 +170,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   _pendingNodeReveal: boolean;
   _adornerManager: ElementsComponents.AdornerManager.AdornerManager;
   _adornerSettingsPane: ElementsComponents.AdornerSettingsPane.AdornerSettingsPane|null;
-  _adornersByName: Map<string, Set<ElementsComponents.Adorner.Adorner>>;
-  _accessibilityTreeButton?: HTMLButtonElement;
+  _adornersByName: Map<string, Set<Adorners.Adorner.Adorner>>;
+  accessibilityTreeButton?: HTMLButtonElement;
   domTreeButton?: HTMLButtonElement;
   _selectedNodeOnReset?: SDK.DOMModel.DOMNode;
   _hasNonDefaultSelectedNode?: boolean;
@@ -178,9 +181,11 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   sidebarPaneView?: UI.View.TabbedViewLocation;
   _stylesViewToReveal?: UI.View.SimpleView;
 
+  private cssStyleTrackerByCSSModel: Map<SDK.CSSModel.CSSModel, SDK.CSSModel.CSSPropertyTracker>;
+
   constructor() {
     super('elements');
-    this.registerRequiredCSS('panels/elements/elementsPanel.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/elements/elementsPanel.css');
     this._splitWidget = new UI.SplitWidget.SplitWidget(true, true, 'elementsPanelSplitViewState', 325, 325);
     this._splitWidget.addEventListener(
         UI.SplitWidget.Events.SidebarSizeChanged, this._updateTreeOutlineVisibleWidth.bind(this));
@@ -216,7 +221,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       this._accessibilityTreeView = new AccessibilityTreeView(this.domTreeButton);
     }
     this._breadcrumbs = new ElementsComponents.ElementsBreadcrumbs.ElementsBreadcrumbs();
-    this._breadcrumbs.addEventListener('breadcrumbsnodeselected', (event: Common.EventTarget.EventTargetEvent) => {
+    this._breadcrumbs.addEventListener('breadcrumbsnodeselected', event => {
       this._crumbNodeSelected(event);
     });
 
@@ -233,14 +238,14 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     this._treeOutlines = new Set();
     this._treeOutlineHeaders = new Map();
-    this._gridStyleTrackerByCSSModel = new Map();
-    SDK.SDKModel.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this);
-    SDK.SDKModel.TargetManager.instance().addEventListener(
-        SDK.SDKModel.Events.NameChanged, event => this._targetNameChanged((event.data as SDK.SDKModel.Target)));
+    this.cssStyleTrackerByCSSModel = new Map();
+    SDK.TargetManager.TargetManager.instance().observeModels(SDK.DOMModel.DOMModel, this);
+    SDK.TargetManager.TargetManager.instance().addEventListener(
+        SDK.TargetManager.Events.NameChanged, event => this._targetNameChanged(event.data));
     Common.Settings.Settings.instance()
         .moduleSetting('showUAShadowDOM')
         .addChangeListener(this._showUAShadowDOMChanged.bind(this));
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DOMModel.DOMModel, SDK.DOMModel.Events.DocumentUpdated, this._documentUpdatedEvent, this);
     Extensions.ExtensionServer.ExtensionServer.instance().addEventListener(
         Extensions.ExtensionServer.Events.SidebarPaneAdded, this._extensionSidebarPaneAdded, this);
@@ -255,15 +260,13 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   _initializeFullAccessibilityTreeView(stackElement: UI.Widget.WidgetElement): void {
-    this._accessibilityTreeButton = document.createElement('button');
-    this._accessibilityTreeButton.textContent = i18nString(UIStrings.switchToAccessibilityTreeView);
-    this._accessibilityTreeButton.addEventListener('click', this._showAccessibilityTree.bind(this));
+    this.accessibilityTreeButton = createAccessibilityTreeToggleButton(false);
+    this.accessibilityTreeButton.addEventListener('click', this._showAccessibilityTree.bind(this));
 
-    this.domTreeButton = document.createElement('button');
-    this.domTreeButton.textContent = i18nString(UIStrings.switchToDomTreeView);
+    this.domTreeButton = createAccessibilityTreeToggleButton(true);
     this.domTreeButton.addEventListener('click', this._showDOMTree.bind(this));
 
-    stackElement.appendChild(this._accessibilityTreeButton);
+    stackElement.appendChild(this.accessibilityTreeButton);
   }
 
   _showAccessibilityTree(): void {
@@ -312,12 +315,10 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     // Different frames will have different DOMModels, we only want to add the accessibility model
     // for the top level frame, as the accessibility tree does not yet support exploring IFrames.
-    if (!parentModel && this._accessibilityTreeView) {
-      this._accessibilityTreeView.setAccessibilityModel(
-          domModel.target().model(SDK.AccessibilityModel.AccessibilityModel));
+    if (this._accessibilityTreeView) {
+      this._accessibilityTreeView.wireToDOMModel(domModel);
     }
-    let treeOutline: ElementsTreeOutline|(ElementsTreeOutline | null) =
-        parentModel ? ElementsTreeOutline.forDOMModel(parentModel) : null;
+    let treeOutline: ElementsTreeOutline|null = parentModel ? ElementsTreeOutline.forDOMModel(parentModel) : null;
     if (!treeOutline) {
       treeOutline = new ElementsTreeOutline(true, true);
       treeOutline.setWordWrap(Common.Settings.Settings.instance().moduleSetting('domWordWrap').get());
@@ -364,7 +365,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this._removeStyleTracking(domModel.cssModel());
   }
 
-  _targetNameChanged(target: SDK.SDKModel.Target): void {
+  _targetNameChanged(target: SDK.Target.Target): void {
     const domModel = target.model(SDK.DOMModel.DOMModel);
     if (!domModel) {
       return;
@@ -422,7 +423,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
     super.wasShown();
 
-    const domModels = SDK.SDKModel.TargetManager.instance().models(SDK.DOMModel.DOMModel);
+    const domModels = SDK.TargetManager.TargetManager.instance().models(SDK.DOMModel.DOMModel);
     for (const domModel of domModels) {
       if (domModel.parentModel()) {
         continue;
@@ -479,16 +480,16 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     if (selectedNode) {
-      const activeNode = legacyNodeToNewBreadcrumbsNode(selectedNode);
+      const activeNode = ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode);
       const crumbs = [activeNode];
 
       for (let current: (SDK.DOMModel.DOMNode|null) = selectedNode.parentNode; current; current = current.parentNode) {
-        crumbs.push(legacyNodeToNewBreadcrumbsNode(current));
+        crumbs.push(ElementsComponents.Helper.legacyNodeToElementsComponentsNode(current));
       }
 
       this._breadcrumbs.data = {
         crumbs,
-        selectedNode: legacyNodeToNewBreadcrumbsNode(selectedNode),
+        selectedNode: ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode),
       };
     } else {
       this._breadcrumbs.data = {crumbs: [], selectedNode: null};
@@ -518,8 +519,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
   }
 
-  _documentUpdatedEvent(event: Common.EventTarget.EventTargetEvent): void {
-    const domModel = (event.data as SDK.DOMModel.DOMModel);
+  _documentUpdatedEvent(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMModel>): void {
+    const domModel = event.data;
     this._documentUpdated(domModel);
     this._removeStyleTracking(domModel.cssModel());
     this._setupStyleTracking(domModel.cssModel());
@@ -614,7 +615,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this._searchConfig = searchConfig;
 
     const showUAShadowDOM = Common.Settings.Settings.instance().moduleSetting('showUAShadowDOM').get();
-    const domModels = SDK.SDKModel.TargetManager.instance().models(SDK.DOMModel.DOMModel);
+    const domModels = SDK.TargetManager.TargetManager.instance().models(SDK.DOMModel.DOMModel);
     const promises = domModels.map(domModel => domModel.performSearch(whitespaceTrimmedQuery, showUAShadowDOM));
     Promise.all(promises).then(resultCounts => {
       this._searchResults = [];
@@ -783,15 +784,15 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
      */
 
     // Get the current set of active crumbs
-    const activeNode = legacyNodeToNewBreadcrumbsNode(selectedNode);
+    const activeNode = ElementsComponents.Helper.legacyNodeToElementsComponentsNode(selectedNode);
     const existingCrumbs = [activeNode];
     for (let current: (SDK.DOMModel.DOMNode|null) = selectedNode.parentNode; current; current = current.parentNode) {
-      existingCrumbs.push(legacyNodeToNewBreadcrumbsNode(current));
+      existingCrumbs.push(ElementsComponents.Helper.legacyNodeToElementsComponentsNode(current));
     }
 
     /* Get the change nodes from the event & convert them to breadcrumb nodes */
-    const newNodes = nodes.map(legacyNodeToNewBreadcrumbsNode);
-    const nodesThatHaveChangedMap = new Map<number, ElementsComponents.ElementsBreadcrumbs.DOMNode>();
+    const newNodes = nodes.map(ElementsComponents.Helper.legacyNodeToElementsComponentsNode);
+    const nodesThatHaveChangedMap = new Map<number, ElementsComponents.Helper.DOMNode>();
     newNodes.forEach(crumb => nodesThatHaveChangedMap.set(crumb.id, crumb));
 
     /* Loop over our existing crumbs, and if any have an ID that matches an ID from the new nodes
@@ -808,9 +809,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     };
   }
 
-  _crumbNodeSelected(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
-    this.selectDOMNode(node, true);
+  _crumbNodeSelected(event: ElementsComponents.ElementsBreadcrumbs.NodeSelectedEvent): void {
+    this.selectDOMNode(event.data, true);
   }
 
   _treeOutlineForNode(node: SDK.DOMModel.DOMNode|null): ElementsTreeOutline|null {
@@ -1058,22 +1058,22 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   _setupStyleTracking(cssModel: SDK.CSSModel.CSSModel): void {
-    const gridStyleTracker = cssModel.createCSSPropertyTracker(TrackedCSSGridProperties);
-    gridStyleTracker.start();
-    this._gridStyleTrackerByCSSModel.set(cssModel, gridStyleTracker);
-    gridStyleTracker.addEventListener(
+    const cssPropertyTracker = cssModel.createCSSPropertyTracker(TrackedCSSProperties);
+    cssPropertyTracker.start();
+    this.cssStyleTrackerByCSSModel.set(cssModel, cssPropertyTracker);
+    cssPropertyTracker.addEventListener(
         SDK.CSSModel.CSSPropertyTrackerEvents.TrackedCSSPropertiesUpdated, this._trackedCSSPropertiesUpdated, this);
   }
 
   _removeStyleTracking(cssModel: SDK.CSSModel.CSSModel): void {
-    const gridStyleTracker = this._gridStyleTrackerByCSSModel.get(cssModel);
-    if (!gridStyleTracker) {
+    const cssPropertyTracker = this.cssStyleTrackerByCSSModel.get(cssModel);
+    if (!cssPropertyTracker) {
       return;
     }
 
-    gridStyleTracker.stop();
-    this._gridStyleTrackerByCSSModel.delete(cssModel);
-    gridStyleTracker.removeEventListener(
+    cssPropertyTracker.stop();
+    this.cssStyleTrackerByCSSModel.delete(cssModel);
+    cssPropertyTracker.removeEventListener(
         SDK.CSSModel.CSSPropertyTrackerEvents.TrackedCSSPropertiesUpdated, this._trackedCSSPropertiesUpdated, this);
   }
 
@@ -1121,7 +1121,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     return this._adornerManager.isAdornerEnabled(adornerText);
   }
 
-  registerAdorner(adorner: ElementsComponents.Adorner.Adorner): void {
+  registerAdorner(adorner: Adorners.Adorner.Adorner): void {
     let adornerSet = this._adornersByName.get(adorner.name);
     if (!adornerSet) {
       adornerSet = new Set();
@@ -1133,7 +1133,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
   }
 
-  deregisterAdorner(adorner: ElementsComponents.Adorner.Adorner): void {
+  deregisterAdorner(adorner: Adorners.Adorner.Adorner): void {
     const adornerSet = this._adornersByName.get(adorner.name);
     if (!adornerSet) {
       return;
@@ -1157,7 +1157,7 @@ export const enum _splitMode {
   Horizontal = 'Horizontal',
 }
 
-const TrackedCSSGridProperties = [
+const TrackedCSSProperties = [
   {
     name: 'display',
     value: 'grid',
@@ -1173,6 +1173,18 @@ const TrackedCSSGridProperties = [
   {
     name: 'display',
     value: 'inline-flex',
+  },
+  {
+    name: 'container-type',
+    value: 'inline-size',
+  },
+  {
+    name: 'container-type',
+    value: 'block-size',
+  },
+  {
+    name: 'container-type',
+    value: 'inline-size block-size',
   },
 ];
 

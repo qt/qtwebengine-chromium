@@ -290,6 +290,16 @@ message GetVersionInfoReply {
   optional bytes vendor_specific = 7;
 }
 
+message GetSupportedFeaturesRequest {}
+
+message GetSupportedFeaturesReply {
+  // The success or error code of the call GetSupportedFeatures.
+  optional TpmManagerStatus status = 1;
+
+  // Whether the u2f is supported or not.
+  optional bool support_u2f = 2;
+}
+
 message GetDictionaryAttackInfoRequest {
 }
 

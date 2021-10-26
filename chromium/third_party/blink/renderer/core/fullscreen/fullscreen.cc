@@ -29,7 +29,6 @@
 
 #include "third_party/blink/renderer/core/fullscreen/fullscreen.h"
 
-#include "base/macros.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
@@ -134,10 +133,10 @@ class MetaParams : public GarbageCollected<MetaParams> {
   MetaParams(FullscreenRequestType request_type,
              const FullscreenOptions* options)
       : request_type_(request_type), options_(options) {}
-  virtual ~MetaParams() = default;
-
   MetaParams(const MetaParams&) = delete;
   MetaParams& operator=(const MetaParams&) = delete;
+
+  virtual ~MetaParams() = default;
 
   virtual void Trace(Visitor* visitor) const { visitor->Trace(options_); }
 
@@ -277,7 +276,7 @@ bool AllowedToUseFullscreen(const Document& document,
       mojom::blink::PermissionsPolicyFeature::kFullscreen, report_on_failure);
 }
 
-bool AllowedToRequestFullscreen(Document& document) {
+bool AllowedToRequestFullscreen(Document& document, Element& element) {
   //  WebXR DOM Overlay integration, cf.
   //  https://immersive-web.github.io/dom-overlays/
   //
@@ -307,6 +306,12 @@ bool AllowedToRequestFullscreen(Document& document) {
              << ": rejecting change of fullscreen element for XR DOM overlay";
     return false;
   }
+
+  // If the element is already fullscreen, then it is allowed to repeat a
+  // request to fullscreen (possibly on another display) without requiring
+  // user activation.
+  if (element == Fullscreen::FullscreenElementFrom(document))
+    return true;
 
   // An algorithm is allowed to request fullscreen if one of the following is
   // true:
@@ -390,7 +395,7 @@ bool RequestFullscreenConditionsMet(Element& pending, Document& document) {
     return false;
 
   // This algorithm is allowed to request fullscreen.
-  if (!AllowedToRequestFullscreen(document))
+  if (!AllowedToRequestFullscreen(document, pending))
     return false;
 
   return true;
@@ -407,6 +412,8 @@ class RequestFullscreenScope {
     DCHECK(!running_request_fullscreen_);
     running_request_fullscreen_ = true;
   }
+  RequestFullscreenScope(const RequestFullscreenScope&) = delete;
+  RequestFullscreenScope& operator=(const RequestFullscreenScope&) = delete;
 
   ~RequestFullscreenScope() {
     DCHECK(running_request_fullscreen_);
@@ -417,7 +424,6 @@ class RequestFullscreenScope {
 
  private:
   static bool running_request_fullscreen_;
-  DISALLOW_COPY_AND_ASSIGN(RequestFullscreenScope);
 };
 
 bool RequestFullscreenScope::running_request_fullscreen_ = false;

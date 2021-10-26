@@ -28,6 +28,7 @@
 #import <AVFoundation/AVFoundation.h>
 #include <pthread.h>
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/opt.h"
 #include "libavutil/avstring.h"
@@ -85,8 +86,6 @@ typedef struct
 
     int             frames_captured;
     int             audio_frames_captured;
-    int64_t         first_pts;
-    int64_t         first_audio_pts;
     pthread_mutex_t frame_lock;
     id              avf_delegate;
     id              avf_audio_delegate;
@@ -766,8 +765,6 @@ static int avf_read_header(AVFormatContext *s)
     NSArray *devices_muxed = [AVCaptureDevice devicesWithMediaType:AVMediaTypeMuxed];
 
     ctx->num_video_devices = [devices count] + [devices_muxed count];
-    ctx->first_pts          = av_gettime();
-    ctx->first_audio_pts    = av_gettime();
 
     pthread_mutex_init(&ctx->frame_lock, NULL);
 
@@ -1214,7 +1211,7 @@ static const AVClass avf_class = {
     .category   = AV_CLASS_CATEGORY_DEVICE_VIDEO_INPUT,
 };
 
-AVInputFormat ff_avfoundation_demuxer = {
+const AVInputFormat ff_avfoundation_demuxer = {
     .name           = "avfoundation",
     .long_name      = NULL_IF_CONFIG_SMALL("AVFoundation input device"),
     .priv_data_size = sizeof(AVFContext),

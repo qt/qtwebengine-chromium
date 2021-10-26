@@ -52,13 +52,13 @@
 #include "ui/gfx/geometry/size.h"
 
 #if defined(OS_WIN)
-#include "components/crash/core/app/crash_switches.h"
+#include "components/crash/core/app/crash_switches.h"  // nogncheck
 #include "components/crash/core/app/run_as_crashpad_handler_win.h"
 #include "sandbox/win/src/sandbox_types.h"
 #endif
 
 #if defined(OS_MAC)
-#include "components/os_crypt/os_crypt_switches.h"
+#include "components/os_crypt/os_crypt_switches.h"  // nogncheck
 #endif
 
 #if defined(HEADLESS_USE_POLICY)
@@ -416,6 +416,11 @@ void HeadlessShell::FetchTimeout() {
   LOG(INFO) << "Timeout.";
   devtools_client_->GetPage()->GetExperimental()->StopLoading(
       page::StopLoadingParams::Builder().Build());
+  // After calling page.stopLoading() the page will not fire any
+  // life cycle events, so we have to proceed on our own.
+  browser_->BrowserMainThread()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&HeadlessShell::OnPageReady, weak_factory_.GetWeakPtr()));
 }
 
 void HeadlessShell::OnTargetCrashed(

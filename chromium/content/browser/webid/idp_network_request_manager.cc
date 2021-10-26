@@ -4,12 +4,14 @@
 
 #include "content/browser/webid/idp_network_request_manager.h"
 
-#include "base/base64url.h"
+#include "base/base64.h"
 #include "base/json/json_writer.h"
+#include "base/rand_util.h"
 #include "content/public/browser/identity_request_dialog_controller.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "net/base/escape.h"
 #include "net/base/isolation_info.h"
 #include "net/cookies/site_for_cookies.h"
 #include "net/http/http_request_headers.h"
@@ -18,6 +20,7 @@
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "services/network/public/cpp/simple_url_loader.h"
+#include "services/network/public/mojom/url_response_head.mojom.h"
 #include "url/origin.h"
 
 namespace content {
@@ -90,7 +93,13 @@ std::unique_ptr<network::ResourceRequest> CreateCredentialedResourceRequest(
   resource_request->site_for_cookies = site_for_cookies;
   resource_request->headers.SetHeader(net::HttpRequestHeaders::kAccept,
                                       kJSONMimeType);
-  resource_request->headers.SetHeader(kSecWebIdCsrfHeader, "");
+
+  // Using a random 64-bit header value. This is just to keep service
+  // implementations from assuming any particular static value.
+  const int kBytes = 64 / 8;
+  std::string webid_header_value;
+  base::Base64Encode(base::RandBytesAsString(kBytes), &webid_header_value);
+  resource_request->headers.SetHeader(kSecWebIdCsrfHeader, webid_header_value);
   resource_request->credentials_mode =
       network::mojom::CredentialsMode::kInclude;
   resource_request->trusted_params = network::ResourceRequest::TrustedParams();
@@ -115,7 +124,7 @@ absl::optional<content::IdentityRequestAccount> ParseAccount(
 
   return content::IdentityRequestAccount(*sub, *email, *name,
                                          given_name ? *given_name : "",
-                                         picture ? *picture : "");
+                                         picture ? GURL(*picture) : GURL());
 }
 
 // Parses accounts from given Value. Returns true if parse is successful and
@@ -220,16 +229,9 @@ void IdpNetworkRequestManager::SendSigninRequest(
 
   signin_request_callback_ = std::move(callback);
 
-  // TODO(kenrb): A straight URL encoding isn't right. Add proper parsing.
-  // https://crbug.com/1141125.
-  std::string encoded_request;
-  base::Base64UrlEncode(base::StringPiece(request),
-                        base::Base64UrlEncodePolicy::INCLUDE_PADDING,
-                        &encoded_request);
+  std::string escaped_request = net::EscapeUrlEncodedData(request, true);
 
-  // TODO: Should this be a POST, rather than a GET using query parameters?
-  // https://crbug.com/1141125.
-  GURL target_url = GURL(signin_url.spec() + "?" + encoded_request);
+  GURL target_url = GURL(signin_url.spec() + "?" + escaped_request);
   auto resource_request =
       CreateCredentialedResourceRequest(target_url, relying_party_origin_);
   auto traffic_annotation = CreateTrafficAnnotation();
@@ -414,10 +416,6 @@ void IdpNetworkRequestManager::OnWellKnownParsed(
 
 void IdpNetworkRequestManager::OnSigninRequestResponse(
     std::unique_ptr<std::string> response_body) {
-  int response_code = -1;
-  if (url_loader_->ResponseInfo() && url_loader_->ResponseInfo()->headers)
-    response_code = url_loader_->ResponseInfo()->headers->response_code();
-
   url_loader_.reset();
 
   if (!response_body) {
@@ -476,10 +474,6 @@ void IdpNetworkRequestManager::OnSigninRequestParsed(
 
 void IdpNetworkRequestManager::OnAccountsRequestResponse(
     std::unique_ptr<std::string> response_body) {
-  int response_code = -1;
-  if (url_loader_->ResponseInfo() && url_loader_->ResponseInfo()->headers)
-    response_code = url_loader_->ResponseInfo()->headers->response_code();
-
   url_loader_.reset();
 
   if (!response_body) {
@@ -520,15 +514,11 @@ void IdpNetworkRequestManager::OnAccountsRequestParsed(
     return;
   }
   std::move(accounts_request_callback_)
-      .Run(AccountsResponse::kSuccess, account_list);
+      .Run(AccountsResponse::kSuccess, std::move(account_list));
 }
 
 void IdpNetworkRequestManager::OnTokenRequestResponse(
     std::unique_ptr<std::string> response_body) {
-  int response_code = -1;
-  if (url_loader_->ResponseInfo() && url_loader_->ResponseInfo()->headers)
-    response_code = url_loader_->ResponseInfo()->headers->response_code();
-
   url_loader_.reset();
 
   if (!response_body) {
@@ -573,10 +563,6 @@ void IdpNetworkRequestManager::OnTokenRequestParsed(
 
 void IdpNetworkRequestManager::OnLogoutCompleted(
     std::unique_ptr<std::string> response_body) {
-  int response_code = -1;
-  if (url_loader_->ResponseInfo() && url_loader_->ResponseInfo()->headers)
-    response_code = url_loader_->ResponseInfo()->headers->response_code();
-
   url_loader_.reset();
 
   if (!response_body) {

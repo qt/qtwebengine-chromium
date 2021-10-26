@@ -23,7 +23,7 @@ class Clock;
 namespace content {
 class WebContents;
 class WebUI;
-}
+}  // namespace content
 
 class GURL;
 class ReadLaterUI;
@@ -43,9 +43,13 @@ class ReadLaterPageHandler : public read_later::mojom::PageHandler,
 
   // read_later::mojom::PageHandler:
   void GetReadLaterEntries(GetReadLaterEntriesCallback callback) override;
-  void OpenURL(const GURL& url, bool mark_as_read) override;
+  void OpenURL(const GURL& url,
+               bool mark_as_read,
+               ui::mojom::ClickModifiersPtr click_modifiers) override;
   void UpdateReadStatus(const GURL& url, bool read) override;
+  void AddCurrentTab() override;
   void RemoveEntry(const GURL& url) override;
+  void ShowContextMenuForURL(const GURL& url, int32_t x, int32_t y) override;
   void ShowUI() override;
   void CloseUI() override;
 
@@ -55,6 +59,9 @@ class ReadLaterPageHandler : public read_later::mojom::PageHandler,
       const ReadingListModel* model) override;
   void ReadingListModelBeingDeleted(const ReadingListModel* model) override;
   void ReadingListDidApplyChanges(ReadingListModel* model) override;
+
+  const absl::optional<GURL> GetActiveTabURL();
+  void SetActiveTabURL(const GURL& url);
 
   void set_web_contents_for_testing(content::WebContents* web_contents) {
     web_contents_ = web_contents;
@@ -75,12 +82,20 @@ class ReadLaterPageHandler : public read_later::mojom::PageHandler,
   // stored, to a localized representation as a delay (e.g. "5 minutes ago").
   std::string GetTimeSinceLastUpdate(int64_t last_update_time);
 
+  void UpdateCurrentPageActionButton();
+
   mojo::Receiver<read_later::mojom::PageHandler> receiver_;
   mojo::Remote<read_later::mojom::Page> page_;
   // ReadLaterPageHandler is owned by |read_later_ui_| and so we expect
   // |read_later_ui_| to remain valid for the lifetime of |this|.
   ReadLaterUI* const read_later_ui_;
+  content::WebUI* const web_ui_;
   content::WebContents* web_contents_;
+
+  absl::optional<GURL> active_tab_url_;
+  read_later::mojom::CurrentPageActionButtonState
+      current_page_action_button_state_ =
+          read_later::mojom::CurrentPageActionButtonState::kAdd;
 
   base::Clock* clock_;
 

@@ -18,6 +18,7 @@
 #include "common/GPUInfo.h"
 #include "common/NSRef.h"
 #include "common/Platform.h"
+#include "common/SystemUtils.h"
 #include "dawn_native/Instance.h"
 #include "dawn_native/MetalBackend.h"
 #include "dawn_native/metal/DeviceMTL.h"
@@ -152,8 +153,7 @@ namespace dawn_native { namespace metal {
 
         bool IsMetalSupported() {
             // Metal was first introduced in macOS 10.11
-            NSOperatingSystemVersion macOS10_11 = {10, 11, 0};
-            return [NSProcessInfo.processInfo isOperatingSystemAtLeastVersion:macOS10_11];
+            return IsMacOSVersionAtLeast(10, 11);
         }
 #elif defined(DAWN_PLATFORM_IOS)
         MaybeError GetDevicePCIInfo(id<MTLDevice> device, PCIIDs* ids) {
@@ -205,6 +205,12 @@ namespace dawn_native { namespace metal {
             InitializeSupportedExtensions();
         }
 
+        // AdapterBase Implementation
+        bool SupportsExternalImages() const override {
+            // Via dawn_native::metal::WrapIOSurface
+            return true;
+        }
+
       private:
         ResultOrError<DeviceBase*> CreateDeviceImpl(const DeviceDescriptor* descriptor) override {
             return Device::Create(this, mDevice, descriptor);
@@ -222,16 +228,23 @@ namespace dawn_native { namespace metal {
                     [*mDevice supportsFamily:MTLGPUFamilyApple5]) {
                     mSupportedExtensions.EnableExtension(Extension::PipelineStatisticsQuery);
 
-                    // TODO(hao.x.li@intel.com): Not enable timestamp query here becuase it's not
-                    // clear how to convert timestamps to nanoseconds on Metal.
-                    // See https://github.com/gpuweb/gpuweb/issues/1325
+                    // Disable timestamp query on macOS 10.15 on AMD GPU because WriteTimestamp
+                    // fails to call without any copy commands on MTLBlitCommandEncoder. This issue
+                    // has been fixed on macOS 11.0. See crbug.com/dawn/545
+                    BOOL enableTimestampQuery = !gpu_info::IsAMD(GetPCIInfo().vendorId);
+#if defined(DAWN_PLATFORM_MACOS)
+                    // TODO(crbug.com/dawn/940): Disable timestamp query on macOS 11.0+. Need to
+                    // figure out what to do with dstOffset alignment on that system.
+                    enableTimestampQuery &= !IsMacOSVersionAtLeast(11);
+#endif
+                    if (enableTimestampQuery) {
+                        mSupportedExtensions.EnableExtension(Extension::TimestampQuery);
+                    }
                 }
             }
             if (@available(macOS 10.11, iOS 11.0, *)) {
                 mSupportedExtensions.EnableExtension(Extension::DepthClamping);
             }
-
-            mSupportedExtensions.EnableExtension(Extension::ShaderFloat16);
         }
 
         NSPRef<id<MTLDevice>> mDevice;

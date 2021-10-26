@@ -48,7 +48,7 @@
 //
 // Serialization:
 //
-// Use the helpers in //base/util/values/values_util.h when serializing `Time`
+// Use the helpers in //base/json/values_util.h when serializing `Time`
 // or `TimeDelta` to/from `base::Value`.
 //
 // Otherwise:
@@ -71,7 +71,7 @@
 #include "base/base_export.h"
 #include "base/check_op.h"
 #include "base/compiler_specific.h"
-#include "base/numerics/safe_math.h"
+#include "base/numerics/clamped_math.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 
@@ -81,6 +81,7 @@
 
 #if defined(OS_APPLE)
 #include <CoreFoundation/CoreFoundation.h>
+#include <mach/mach_time.h>
 // Avoid Mac system header macro leak.
 #undef TYPE_BOOL
 #endif
@@ -165,13 +166,17 @@ class BASE_EXPORT TimeDelta {
   }
 
   // Returns the maximum time delta, which should be greater than any reasonable
-  // time delta we might compare it to. Adding or subtracting the maximum time
-  // delta to a time or another time delta has an undefined result.
+  // time delta we might compare it to. If converted to double with ToDouble()
+  // it becomes an IEEE double infinity. Use FiniteMax() if you want a very
+  // large number that doesn't do this. TimeDelta math saturates at the end
+  // points so adding to TimeDelta::Max() leaves the value unchanged.
+  // Subtracting should leave the value unchanged but currently changes it
+  // TODO(https://crbug.com/869387).
   static constexpr TimeDelta Max();
 
   // Returns the minimum time delta, which should be less than than any
-  // reasonable time delta we might compare it to. Adding or subtracting the
-  // minimum time delta to a time or another time delta has an undefined result.
+  // reasonable time delta we might compare it to. For more details see the
+  // comments for Max().
   static constexpr TimeDelta Min();
 
   // Returns the maximum time delta which is not equivalent to infinity. Only
@@ -454,7 +459,7 @@ class TimeBase {
   }
 
   // For legacy serialization only. When serializing to `base::Value`, prefer
-  // the helpers from //base/util/values/values_util.h instead. Otherwise, use
+  // the helpers from //base/json/values_util.h instead. Otherwise, use
   // `Time::ToDeltaSinceWindowsEpoch()` for `Time` and
   // `TimeDelta::InMiseconds()` for `TimeDelta`. See http://crbug.com/634507.
   constexpr int64_t ToInternalValue() const { return us_; }
@@ -617,7 +622,7 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
   // 00:00:00 UTC).
   //
   // For serialization, when handling `base::Value`, prefer the helpers in
-  // //base/util/values/values_util.h instead. Otherwise, use these methods for
+  // //base/json/values_util.h instead. Otherwise, use these methods for
   // opaque serialization and deserialization, e.g.
   //
   //   // Serialization:
@@ -791,7 +796,7 @@ class BASE_EXPORT Time : public time_internal::TimeBase<Time> {
   // because the integer type may be unclear from the perspective of a caller.
   //
   // DEPRECATED - Do not use in new code. When deserializing from `base::Value`,
-  // prefer the helpers from //base/util/values/values_util.h instead.
+  // prefer the helpers from //base/json/values_util.h instead.
   // Otherwise, use `Time::FromDeltaSinceWindowsEpoch()` for `Time` and
   // `TimeDelta::FromMiseconds()` for `TimeDelta`. http://crbug.com/634507
   static constexpr Time FromInternalValue(int64_t us) { return Time(us); }
@@ -1026,6 +1031,8 @@ class BASE_EXPORT TimeTicks : public time_internal::TimeBase<TimeTicks> {
 
 #if defined(OS_MAC)
   static TimeTicks FromMachAbsoluteTime(uint64_t mach_absolute_time);
+
+  static mach_timebase_info_data_t* MachTimebaseInfo();
 #endif  // defined(OS_MAC)
 
 #if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH)

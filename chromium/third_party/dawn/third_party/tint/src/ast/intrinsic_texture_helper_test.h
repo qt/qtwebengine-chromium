@@ -17,7 +17,7 @@
 
 #include <vector>
 
-#include "src/ast/access_control.h"
+#include "src/ast/access.h"
 #include "src/program_builder.h"
 #include "src/sem/storage_texture_type.h"
 
@@ -26,7 +26,13 @@ namespace ast {
 namespace intrinsic {
 namespace test {
 
-enum class TextureKind { kRegular, kDepth, kMultisampled, kStorage };
+enum class TextureKind {
+  kRegular,
+  kDepth,
+  kDepthMultisampled,
+  kMultisampled,
+  kStorage
+};
 enum class TextureDataType { kF32, kU32, kI32 };
 
 std::ostream& operator<<(std::ostream& out, const TextureKind& kind);
@@ -54,6 +60,7 @@ enum class ValidTextureOverload {
   kDimensionsDepthCubeLevel,
   kDimensionsDepthCubeArray,
   kDimensionsDepthCubeArrayLevel,
+  kDimensionsDepthMultisampled2d,
   kDimensionsStorageRO1d,
   kDimensionsStorageRO2d,
   kDimensionsStorageRO2dArray,
@@ -77,6 +84,7 @@ enum class ValidTextureOverload {
   kNumLevelsDepthCube,
   kNumLevelsDepthCubeArray,
   kNumSamplesMultisampled2d,
+  kNumSamplesDepthMultisampled2d,
   kSample1dF32,
   kSample2dF32,
   kSample2dOffsetF32,
@@ -128,6 +136,12 @@ enum class ValidTextureOverload {
   kSampleCompareDepth2dArrayOffsetF32,
   kSampleCompareDepthCubeF32,
   kSampleCompareDepthCubeArrayF32,
+  kSampleCompareLevelDepth2dF32,
+  kSampleCompareLevelDepth2dOffsetF32,
+  kSampleCompareLevelDepth2dArrayF32,
+  kSampleCompareLevelDepth2dArrayOffsetF32,
+  kSampleCompareLevelDepthCubeF32,
+  kSampleCompareLevelDepthCubeArrayF32,
   kLoad1dLevelF32,
   kLoad1dLevelU32,
   kLoad1dLevelI32,
@@ -145,6 +159,7 @@ enum class ValidTextureOverload {
   kLoadMultisampled2dI32,
   kLoadDepth2dLevelF32,
   kLoadDepth2dArrayLevelF32,
+  kLoadDepthMultisampled2dF32,
   kLoadStorageRO1dRgba32float,  // Not permutated for all texel formats
   kLoadStorageRO2dRgba8unorm,
   kLoadStorageRO2dRgba8snorm,
@@ -170,6 +185,10 @@ enum class ValidTextureOverload {
   kStoreWO3dRgba32float,             // Not permutated for all texel formats
 };
 
+/// @param texture_overload the ValidTextureOverload
+/// @returns true if the ValidTextureOverload intrinsic returns no value.
+bool ReturnsVoid(ValidTextureOverload texture_overload);
+
 /// Describes a texture intrinsic overload
 struct TextureOverloadCase {
   /// Constructor for textureSample...() functions
@@ -192,7 +211,7 @@ struct TextureOverloadCase {
   /// Constructor for textureLoad() with storage textures
   TextureOverloadCase(ValidTextureOverload,
                       const char*,
-                      AccessControl::Access,
+                      Access,
                       ast::ImageFormat,
                       ast::TextureDimension,
                       TextureDataType,
@@ -230,7 +249,7 @@ struct TextureOverloadCase {
   ast::SamplerKind const sampler_kind = ast::SamplerKind::kSampler;
   /// The access control for the storage texture
   /// Used only when texture_kind is kStorage
-  AccessControl::Access const access_control = AccessControl::kReadWrite;
+  Access const access = Access::kReadWrite;
   /// The image format for the storage texture
   /// Used only when texture_kind is kStorage
   ast::ImageFormat const image_format = ast::ImageFormat::kNone;

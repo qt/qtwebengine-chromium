@@ -15,10 +15,10 @@
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_capture_handle_config.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_stream_constraints.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/testing/null_execution_context.h"
-#include "third_party/blink/renderer/modules/mediastream/capture_handle_config.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/testing/testing_platform_support.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
@@ -49,12 +49,12 @@ String MaxLengthCaptureHandle() {
   return maxHandle;
 }
 
-class MockMediaDevicesDispatcherHost
+class MockMediaDevicesDispatcherHost final
     : public mojom::blink::MediaDevicesDispatcherHost {
  public:
   MockMediaDevicesDispatcherHost() {}
 
-  ~MockMediaDevicesDispatcherHost() final {
+  ~MockMediaDevicesDispatcherHost() override {
     EXPECT_FALSE(expected_capture_handle_config_);
   }
 
@@ -193,7 +193,7 @@ class MockMediaDevicesDispatcherHost
               expected_config->all_origins_permitted);
     ASSERT_EQ(config->permitted_origins.size(),
               expected_config->permitted_origins.size());
-    for (size_t i = 0; i < config->permitted_origins.size(); ++i) {
+    for (wtf_size_t i = 0; i < config->permitted_origins.size(); ++i) {
       EXPECT_TRUE(config->permitted_origins[i]->IsSameOriginWith(
           expected_config->permitted_origins[i].get()));
     }

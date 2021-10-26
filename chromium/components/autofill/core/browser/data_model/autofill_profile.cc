@@ -11,6 +11,7 @@
 #include <ostream>
 #include <set>
 
+#include "base/cxx17_backports.h"
 #include "base/guid.h"
 #include "base/hash/sha1.h"
 #include "base/i18n/case_conversion.h"
@@ -18,7 +19,6 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/ranges/algorithm.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversion_utils.h"
@@ -62,6 +62,16 @@ namespace autofill {
 using structured_address::VerificationStatus;
 
 namespace {
+
+// Stores the data types that are relevant for the structured address/name.
+const std::array<ServerFieldType, 7> kStructuredDataTypes = {
+    NAME_FIRST,
+    NAME_MIDDLE,
+    NAME_LAST,
+    NAME_LAST_FIRST,
+    NAME_LAST_SECOND,
+    ADDRESS_HOME_STREET_NAME,
+    ADDRESS_HOME_HOUSE_NUMBER};
 
 // Like |AutofillType::GetStorableType()|, but also returns |NAME_FULL| for
 // first, middle, and last name field types, and groups phone number types
@@ -455,6 +465,13 @@ int AutofillProfile::Compare(const AutofillProfile& profile) const {
   }
 
   for (ServerFieldType type : types) {
+    // If the value is empty, the verification status can be ambiguous because
+    // the value could be either build from its empty child nodes or parsed
+    // from its parent. Therefore, it should not be considered when evaluating
+    // the similarity of two profiles.
+    if (profile.GetRawInfo(type).empty())
+      continue;
+
     if (structured_address::IsLessSignificantVerificationStatus(
             GetVerificationStatus(type), profile.GetVerificationStatus(type))) {
       return -1;
@@ -485,6 +502,13 @@ int AutofillProfile::Compare(const AutofillProfile& profile) const {
     }
 
     for (ServerFieldType type : types) {
+      // If the value is empty, the verification status can be ambiguous because
+      // the value could be either build from its empty child nodes or parsed
+      // from its parent. Therefore, it should not be considered when evaluating
+      // the similarity of two profiles.
+      if (profile.GetRawInfo(type).empty())
+        continue;
+
       if (structured_address::IsLessSignificantVerificationStatus(
               GetVerificationStatus(type),
               profile.GetVerificationStatus(type))) {
@@ -1042,7 +1066,7 @@ bool AutofillProfile::IsAnInvalidPhoneNumber(ServerFieldType type) const {
     }
   }
 
-  for (const auto& cur_type : types) {
+  for (auto cur_type : types) {
     if (GetValidityState(cur_type, SERVER) == INVALID)
       return true;
   }
@@ -1087,7 +1111,8 @@ void AutofillProfile::UpdateServerValidityMap(
   server_validity_states_.clear();
   const auto& field_validity_states = validity_map.field_validity_states();
   for (const auto& current_pair : field_validity_states) {
-    const auto field_type = static_cast<ServerFieldType>(current_pair.first);
+    const auto field_type =
+        ToSafeServerFieldType(current_pair.first, UNKNOWN_TYPE);
     const auto field_validity = static_cast<ValidityState>(current_pair.second);
     server_validity_states_[field_type] = field_validity;
   }
@@ -1397,5 +1422,11 @@ bool AutofillProfile::FinalizeAfterImport() {
     success = false;
 
   return success;
+}
+
+bool AutofillProfile::HasStructuredData() {
+  return base::ranges::any_of(kStructuredDataTypes, [this](auto type) {
+    return !this->GetRawInfo(type).empty();
+  });
 }
 }  // namespace autofill

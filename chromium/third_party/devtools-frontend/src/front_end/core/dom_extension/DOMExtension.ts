@@ -36,8 +36,6 @@
 
 // @ts-nocheck This file is not checked by TypeScript Compiler as it has a lot of legacy code.
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Platform from '../platform/platform.js';
 
 export function rangeOfWord(
@@ -286,21 +284,15 @@ self.createTextNode = function(data: string|number): Text {
   return document.createTextNode(data);
 };
 
-Document.prototype.createElementWithClass = function(
-    elementName: string, className?: string, customElementType?: string): Element {
-  const element = this.createElement(elementName, {is: customElementType});
-  if (className) {
-    element.className = className;
-  }
-  return element;
-};
-
 self.createDocumentFragment = function(): DocumentFragment {
   return document.createDocumentFragment();
 };
 
 Element.prototype.createChild = function(elementName: string, className?: string, customElementType?: string): Element {
-  const element = this.ownerDocument.createElementWithClass(elementName, className, customElementType);
+  const element = document.createElement(elementName, {is: customElementType});
+  if (className) {
+    element.className = className;
+  }
   this.appendChild(element);
   return element;
 };

@@ -31,7 +31,7 @@ class COMPONENT_EXPORT(UI_BASE) SimpleMenuModel : public MenuModel {
 
   class COMPONENT_EXPORT(UI_BASE) Delegate : public AcceleratorProvider {
    public:
-    ~Delegate() override {}
+    ~Delegate() override = default;
 
     // Makes |command_id| appear toggled true if it's a "check" or "radio" type
     // menu item. This has no effect for menu items with no boolean state.
@@ -111,6 +111,10 @@ class COMPONENT_EXPORT(UI_BASE) SimpleMenuModel : public MenuModel {
                   const std::u16string& label,
                   MenuModel* model);
   void AddSubMenuWithStringId(int command_id, int string_id, MenuModel* model);
+  void AddSubMenuWithIcon(int command_id,
+                          const std::u16string& label,
+                          MenuModel* model,
+                          const ImageModel& icon);
   void AddSubMenuWithStringIdAndIcon(int command_id,
                                      int string_id,
                                      MenuModel* model,
@@ -170,6 +174,10 @@ class COMPONENT_EXPORT(UI_BASE) SimpleMenuModel : public MenuModel {
 
   // Sets whether the item at |index| is may have mnemonics.
   void SetMayHaveMnemonicsAt(int index, bool may_have_mnemonics);
+
+  // Sets the accessible name of item at |index|.
+  void SetAccessibleNameAt(int index, std::u16string accessible_name);
+
   // Sets an application-window unique identifier associated with this menu item
   // allowing it to be tracked without knowledge of menu-specific command IDs.
   void SetElementIdentifierAt(int index, ElementIdentifier unique_id);
@@ -201,6 +209,7 @@ class COMPONENT_EXPORT(UI_BASE) SimpleMenuModel : public MenuModel {
   bool IsAlertedAt(int index) const override;
   bool IsNewFeatureAt(int index) const override;
   bool MayHaveMnemonicsAt(int index) const override;
+  std::u16string GetAccessibleNameAt(int index) const override;
   ElementIdentifier GetElementIdentifierAt(int index) const override;
   void ActivatedAt(int index) override;
   void ActivatedAt(int index, int event_flags) override;
@@ -237,6 +246,7 @@ class COMPONENT_EXPORT(UI_BASE) SimpleMenuModel : public MenuModel {
     bool visible = true;
     bool is_new_feature = false;
     bool may_have_mnemonics = true;
+    std::u16string accessible_name;
     ElementIdentifier unique_id;
   };
 

@@ -24,7 +24,6 @@
 #include <stdarg.h>
 #include "avutil.h"
 #include "attributes.h"
-#include "version.h"
 
 typedef enum {
     AV_CLASS_CATEGORY_NA = 0,
@@ -111,19 +110,6 @@ typedef struct AVClass {
      * Return next AVOptions-enabled child or NULL
      */
     void* (*child_next)(void *obj, void *prev);
-
-#if FF_API_CHILD_CLASS_NEXT
-    /**
-     * Return an AVClass corresponding to the next potential
-     * AVOptions-enabled child.
-     *
-     * The difference between child_next and this is that
-     * child_next iterates over _already existing_ objects, while
-     * child_class_next iterates over _all possible_ children.
-     */
-    attribute_deprecated
-    const struct AVClass* (*child_class_next)(const struct AVClass *prev);
-#endif
 
     /**
      * Category used for visualization (like color)

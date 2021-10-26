@@ -24,6 +24,7 @@
 #include "src/gpu/GrResourceCache.h"
 #include "src/gpu/GrSemaphore.h"
 #include "src/gpu/GrTexture.h"
+#include "src/gpu/GrVertexWriter.h"
 #include "src/gpu/SkGr.h"
 
 const int GrResourceProvider::kMinScratchTextureSize = 16;
@@ -352,17 +353,51 @@ sk_sp<GrGpuResource> GrResourceProvider::findResourceByUniqueKey(const GrUniqueK
 
 sk_sp<const GrGpuBuffer> GrResourceProvider::findOrMakeStaticBuffer(GrGpuBufferType intendedType,
                                                                     size_t size,
-                                                                    const void* data,
+                                                                    const void* staticData,
                                                                     const GrUniqueKey& key) {
     if (auto buffer = this->findByUniqueKey<GrGpuBuffer>(key)) {
         return std::move(buffer);
     }
-    if (auto buffer = this->createBuffer(size, intendedType, kStatic_GrAccessPattern, data)) {
+    if (auto buffer = this->createBuffer(size, intendedType, kStatic_GrAccessPattern, staticData)) {
         // We shouldn't bin and/or cache static buffers.
         SkASSERT(buffer->size() == size);
         SkASSERT(!buffer->resourcePriv().getScratchKey().isValid());
         buffer->resourcePriv().setUniqueKey(key);
         return sk_sp<const GrGpuBuffer>(buffer);
+    }
+    return nullptr;
+}
+
+sk_sp<const GrGpuBuffer> GrResourceProvider::findOrMakeStaticBuffer(
+        GrGpuBufferType intendedType,
+        size_t size,
+        const GrUniqueKey& uniqueKey,
+        InitializeBufferFn initializeBufferFn) {
+    if (auto buffer = this->findByUniqueKey<GrGpuBuffer>(uniqueKey)) {
+        return std::move(buffer);
+    }
+    if (auto buffer = this->createBuffer(size, intendedType, kStatic_GrAccessPattern)) {
+        // We shouldn't bin and/or cache static buffers.
+        SkASSERT(buffer->size() == size);
+        SkASSERT(!buffer->resourcePriv().getScratchKey().isValid());
+        buffer->resourcePriv().setUniqueKey(uniqueKey);
+
+        // Map the buffer. Use a staging buffer on the heap if mapping isn't supported.
+        GrVertexWriter vertexWriter = buffer->map();
+        SkAutoTMalloc<char> stagingBuffer;
+        if (!vertexWriter) {
+            SkASSERT(!buffer->isMapped());
+            vertexWriter = stagingBuffer.reset(size);
+        }
+
+        initializeBufferFn(std::move(vertexWriter), size);
+
+        if (buffer->isMapped()) {
+            buffer->unmap();
+        } else {
+            buffer->updateData(stagingBuffer, size);
+        }
+        return std::move(buffer);
     }
     return nullptr;
 }
@@ -531,23 +566,24 @@ bool GrResourceProvider::attachStencilAttachment(GrRenderTarget* rt, bool useMSA
                 *this->caps(), stencilFormat, rt->dimensions(),
                 GrAttachment::UsageFlags::kStencilAttachment, numStencilSamples, GrMipmapped::kNo,
                 isProtected, &sbKey);
-        auto stencil = this->findByUniqueKey<GrAttachment>(sbKey);
-        if (!stencil) {
+        auto keyedStencil = this->findByUniqueKey<GrAttachment>(sbKey);
+        if (!keyedStencil) {
             // Need to try and create a new stencil
-            stencil = this->gpu()->makeStencilAttachment(rt->backendFormat(), rt->dimensions(),
-                                                         numStencilSamples);
-            if (!stencil) {
+            keyedStencil = this->gpu()->makeStencilAttachment(rt->backendFormat(), rt->dimensions(),
+                                                              numStencilSamples);
+            if (!keyedStencil) {
                 return false;
             }
-            this->assignUniqueKeyToResource(sbKey, stencil.get());
+            this->assignUniqueKeyToResource(sbKey, keyedStencil.get());
         }
-        rt->attachStencilAttachment(std::move(stencil), useMSAASurface);
+        rt->attachStencilAttachment(std::move(keyedStencil), useMSAASurface);
     }
     stencil = rt->getStencilAttachment(useMSAASurface);
     SkASSERT(!stencil ||
              stencil->numSamples() == num_stencil_samples(rt, useMSAASurface, *this->caps()));
     return stencil != nullptr;
 }
+
 sk_sp<GrAttachment> GrResourceProvider::getDiscardableMSAAAttachment(SkISize dimensions,
                                                                      const GrBackendFormat& format,
                                                                      int sampleCnt,
@@ -641,7 +677,7 @@ std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT GrResourceProvider::makeSemap
 
 std::unique_ptr<GrSemaphore> GrResourceProvider::wrapBackendSemaphore(
         const GrBackendSemaphore& semaphore,
-        SemaphoreWrapType wrapType,
+        GrSemaphoreWrapType wrapType,
         GrWrapOwnership ownership) {
     ASSERT_SINGLE_OWNER
     return this->isAbandoned() ? nullptr : fGpu->wrapBackendSemaphore(semaphore,
@@ -728,7 +764,11 @@ sk_sp<GrTexture> GrResourceProvider::writePixels(sk_sp<GrTexture> texture,
     if (tempColorType == GrColorType::kUnknown) {
         return nullptr;
     }
-    SkAssertResult(fGpu->writePixels(texture.get(), 0, 0, baseSize.fWidth, baseSize.fHeight,
-                                     colorType, tempColorType, tmpTexels.get(), mipLevelCount));
+    SkAssertResult(fGpu->writePixels(texture.get(),
+                                     SkIRect::MakeSize(baseSize),
+                                     colorType,
+                                     tempColorType,
+                                     tmpTexels.get(),
+                                     mipLevelCount));
     return texture;
 }

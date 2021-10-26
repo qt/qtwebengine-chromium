@@ -33,7 +33,6 @@
 #include "log.h"
 #include "pixfmt.h"
 #include "samplefmt.h"
-#include "version.h"
 
 /**
  * @defgroup avoptions AVOptions
@@ -647,19 +646,6 @@ const AVOption *av_opt_next(const void *obj, const AVOption *prev);
  * @return next AVOptions-enabled child or NULL
  */
 void *av_opt_child_next(void *obj, void *prev);
-
-#if FF_API_CHILD_CLASS_NEXT
-/**
- * Iterate over potential AVOptions-enabled children of parent.
- *
- * @param prev result of a previous call to this function or NULL
- * @return AVClass corresponding to next potential child or NULL
- *
- * @deprecated use av_opt_child_class_iterate
- */
-attribute_deprecated
-const AVClass *av_opt_child_class_next(const AVClass *parent, const AVClass *prev);
-#endif
 
 /**
  * Iterate over potential AVOptions-enabled children of parent.

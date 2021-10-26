@@ -317,11 +317,12 @@
       "chrome://sync-confirmation/*",
       "chrome://read-later.top-chrome/*",
       "chrome://tab-search.top-chrome/*",
-      "chrome://tab-strip/*",
+      "chrome://tab-strip.top-chrome/*",
       "chrome://welcome/*",
       "chrome://profile-picker/*",
       "chrome://file-manager/*",
-      "chrome://help-app/*"
+      "chrome://help-app/*",
+      "chrome://eche-app/*"
     ]
   }, {
     "channel": "stable",
@@ -557,8 +558,8 @@
     "contexts": ["blessed_extension", "unblessed_extension", "content_script"]
   },
   "storage.session": {
-    "channel": "canary"
-    // TODO(crbug.com/1185226): Restrict to Manifest V3.
+    "channel": "canary",
+    "min_manifest_version": 3
   },
   "system.cpu": {
     "dependencies": ["permission:system.cpu"],
@@ -566,8 +567,7 @@
   },
   "system.display": [{
     "dependencies": ["permission:system.display"],
-    "contexts": ["blessed_extension"],
-    "disallow_for_service_workers": true
+    "contexts": ["blessed_extension"]
   }, {
     "channel": "stable",
     "contexts": ["webui"],

@@ -59,4 +59,7 @@ message PeripheralBatteryStatus {
   // (even if the charge level is identical) does provide valid information
   // about the item.
   optional bool active_update = 5;
+
+  // If present, contains the serial number of the battery, as a text field.
+  optional string serial_number = 6;
 }

@@ -27,6 +27,7 @@
 #include "libavutil/opt.h"
 #include "avcodec.h"
 #include "audio_frame_queue.h"
+#include "encode.h"
 #include "internal.h"
 
 #if CONFIG_LIBOPENCORE_AMRNB_DECODER || CONFIG_LIBOPENCORE_AMRWB_DECODER
@@ -130,7 +131,7 @@ static int amr_nb_decode_frame(AVCodecContext *avctx, void *data,
     return packet_size;
 }
 
-AVCodec ff_libopencore_amrnb_decoder = {
+const AVCodec ff_libopencore_amrnb_decoder = {
     .name           = "libopencore_amrnb",
     .long_name      = NULL_IF_CONFIG_SMALL("OpenCORE AMR-NB (Adaptive Multi-Rate Narrow-Band)"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -243,7 +244,7 @@ static int amr_nb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
         s->enc_bitrate = avctx->bit_rate;
     }
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, 32, 0)) < 0)
+    if ((ret = ff_alloc_packet(avctx, avpkt, 32)) < 0)
         return ret;
 
     if (frame) {
@@ -285,7 +286,7 @@ static int amr_nb_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     return 0;
 }
 
-AVCodec ff_libopencore_amrnb_encoder = {
+const AVCodec ff_libopencore_amrnb_encoder = {
     .name           = "libopencore_amrnb",
     .long_name      = NULL_IF_CONFIG_SMALL("OpenCORE AMR-NB (Adaptive Multi-Rate Narrow-Band)"),
     .type           = AVMEDIA_TYPE_AUDIO,
@@ -370,7 +371,7 @@ static int amr_wb_decode_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_libopencore_amrwb_decoder = {
+const AVCodec ff_libopencore_amrwb_decoder = {
     .name           = "libopencore_amrwb",
     .long_name      = NULL_IF_CONFIG_SMALL("OpenCORE AMR-WB (Adaptive Multi-Rate Wide-Band)"),
     .type           = AVMEDIA_TYPE_AUDIO,

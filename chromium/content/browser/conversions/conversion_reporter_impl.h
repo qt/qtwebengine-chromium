@@ -10,12 +10,10 @@
 #include <queue>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
 #include "base/containers/flat_map.h"
 #include "base/timer/timer.h"
 #include "content/browser/conversions/conversion_manager_impl.h"
-#include "content/browser/conversions/conversion_report.h"
-#include "content/browser/conversions/sent_report_info.h"
 #include "content/common/content_export.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 
@@ -25,8 +23,10 @@ class Clock;
 
 namespace content {
 
-class StoragePartition;
 class StoragePartitionImpl;
+
+struct ConversionReport;
+struct SentReportInfo;
 
 // This class is responsible for managing the dispatch of conversion reports to
 // a ConversionReporterImpl::NetworkSender. It maintains a queue of reports and
@@ -46,23 +46,23 @@ class CONTENT_EXPORT ConversionReporterImpl
     using ReportSentCallback = base::OnceCallback<void(SentReportInfo)>;
 
     // Generates and sends a conversion report matching |report|. This should
-    // generate a secure POST quest with no-credentials. Does not persist the
-    // raw pointer.
-    virtual void SendReport(ConversionReport* report,
+    // generate a secure POST request with no-credentials.
+    virtual void SendReport(const ConversionReport& report,
                             ReportSentCallback sent_callback) = 0;
   };
 
-  ConversionReporterImpl(StoragePartition* storage_partition,
+  ConversionReporterImpl(StoragePartitionImpl* storage_partition,
                          const base::Clock* clock);
   ConversionReporterImpl(const ConversionReporterImpl&) = delete;
   ConversionReporterImpl& operator=(const ConversionReporterImpl&) = delete;
+  ConversionReporterImpl(ConversionReporterImpl&&) = delete;
+  ConversionReporterImpl& operator=(ConversionReporterImpl&&) = delete;
   ~ConversionReporterImpl() override;
 
   // ConversionManagerImpl::ConversionReporter:
-  void AddReportsToQueue(
-      std::vector<ConversionReport> reports,
-      base::RepeatingCallback<void(int64_t, absl::optional<SentReportInfo>)>
-          report_sent_callback) override;
+  void AddReportsToQueue(std::vector<ConversionReport> reports,
+                         base::RepeatingCallback<void(SentReportInfo)>
+                             report_sent_callback) override;
 
   void SetNetworkSenderForTesting(
       std::unique_ptr<NetworkSender> network_sender);
@@ -73,21 +73,18 @@ class CONTENT_EXPORT ConversionReporterImpl
 
   // Called when a conversion report sent via NetworkSender::SendReport() has
   // completed loading.
-  void OnReportSent(int64_t conversion_id, absl::optional<SentReportInfo> info);
-  // Adapter for use with |NetworkSender::SendReport()|.
-  void OnReportSentWithInfo(int64_t conversion_id, SentReportInfo info);
+  void OnReportSent(SentReportInfo info);
 
   // Comparator used to order ConversionReports by their report time, with the
   // smallest time at the top of |report_queue_|.
   struct ReportComparator {
-    bool operator()(const std::unique_ptr<ConversionReport>& a,
-                    const std::unique_ptr<ConversionReport>& b) const;
+    bool operator()(const ConversionReport& a, const ConversionReport& b) const;
   };
 
   // Priority queue which holds reports that are yet to be sent. Reports are
   // removed from the queue when they are delivered to the NetworkSender.
-  std::priority_queue<std::unique_ptr<ConversionReport>,
-                      std::vector<std::unique_ptr<ConversionReport>>,
+  std::priority_queue<ConversionReport,
+                      std::vector<ConversionReport>,
                       ReportComparator>
       report_queue_;
 
@@ -95,9 +92,7 @@ class CONTENT_EXPORT ConversionReporterImpl
   // sent by |network_sender_|, and their associated report sent callbacks. The
   // number of concurrent conversion reports being sent at any time is expected
   // to be small, so a flat_map is used.
-  base::flat_map<
-      int64_t,
-      base::OnceCallback<void(int64_t, absl::optional<SentReportInfo>)>>
+  base::flat_map<int64_t, base::OnceCallback<void(SentReportInfo)>>
       conversion_report_callbacks_;
 
   const base::Clock* clock_;

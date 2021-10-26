@@ -24,6 +24,7 @@
 #include "ui/ozone/platform/wayland/host/wayland_touch.h"
 #include "ui/ozone/platform/wayland/host/wayland_window_observer.h"
 #include "ui/ozone/platform/wayland/host/wayland_zwp_pointer_gestures.h"
+#include "ui/ozone/platform/wayland/host/wayland_zwp_relative_pointer_manager.h"
 
 struct wl_display;
 
@@ -33,6 +34,7 @@ class Vector2dF;
 
 namespace ui {
 
+class WaylandConnection;
 class WaylandWindow;
 class WaylandWindowManager;
 
@@ -48,11 +50,13 @@ class WaylandEventSource : public PlatformEventSource,
                            public WaylandKeyboard::Delegate,
                            public WaylandPointer::Delegate,
                            public WaylandTouch::Delegate,
-                           public WaylandZwpPointerGestures::Delegate {
+                           public WaylandZwpPointerGestures::Delegate,
+                           public WaylandZwpRelativePointerManager::Delegate {
  public:
   WaylandEventSource(wl_display* display,
                      wl_event_queue* event_queue,
-                     WaylandWindowManager* window_manager);
+                     WaylandWindowManager* window_manager,
+                     WaylandConnection* connection);
   WaylandEventSource(const WaylandEventSource&) = delete;
   WaylandEventSource& operator=(const WaylandEventSource&) = delete;
   ~WaylandEventSource() override;
@@ -120,6 +124,7 @@ class WaylandEventSource : public PlatformEventSource,
                           base::TimeTicks timestamp,
                           PointerId id) override;
   void OnTouchCancelEvent() override;
+  std::vector<PointerId> GetActiveTouchPointIds() override;
 
   // WaylandZwpPointerGesture::Delegate:
   void OnPinchEvent(EventType event_type,
@@ -127,6 +132,10 @@ class WaylandEventSource : public PlatformEventSource,
                     base::TimeTicks timestamp,
                     int device_id,
                     absl::optional<float> scale) override;
+
+  // WaylandZwpRelativePointerManager::Delegate:
+  void SetRelativePointerMotionEnabled(bool enabled) override;
+  void OnRelativePointerMotion(const gfx::Vector2dF& delta) override;
 
  private:
   struct PointerFrame {
@@ -154,8 +163,6 @@ class WaylandEventSource : public PlatformEventSource,
   void OnWindowRemoved(WaylandWindow* window) override;
 
   void UpdateKeyboardModifiers(int modifier, bool down);
-  void HandleKeyboardFocusChange(WaylandWindow* window, bool focused);
-  void HandlePointerFocusChange(WaylandWindow* window);
   void HandleTouchFocusChange(WaylandWindow* window,
                               bool focused,
                               absl::optional<PointerId> id = absl::nullopt);
@@ -165,6 +172,8 @@ class WaylandEventSource : public PlatformEventSource,
   gfx::Vector2dF ComputeFlingVelocity();
 
   WaylandWindowManager* const window_manager_;
+
+  WaylandConnection* const connection_;
 
   // Bitmask of EventFlags used to keep track of the the pointer state.
   int pointer_flags_ = 0;
@@ -178,6 +187,9 @@ class WaylandEventSource : public PlatformEventSource,
   // Last known pointer location.
   gfx::PointF pointer_location_;
 
+  // Last known relative pointer location (used for pointer lock).
+  absl::optional<gfx::PointF> relative_pointer_location_;
+
   // Current frame
   PointerFrame current_pointer_frame_;
 
@@ -187,9 +199,6 @@ class WaylandEventSource : public PlatformEventSource,
   // Recent pointer frames to compute fling scroll.
   // Front is newer, and back is older.
   std::deque<PointerFrame> recent_pointer_frames_;
-
-  // The window the pointer is over.
-  WaylandWindow* window_with_pointer_focus_ = nullptr;
 
   // Map that keeps track of the current touch points, associating touch IDs to
   // to the surface/location where they happened.

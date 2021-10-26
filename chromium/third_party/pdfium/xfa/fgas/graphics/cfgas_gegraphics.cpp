@@ -6,15 +6,17 @@
 
 #include "xfa/fgas/graphics/cfgas_gegraphics.h"
 
-#include <cmath>
+#include <math.h>
+
 #include <memory>
 
+#include "core/fxcrt/fx_system.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_renderdevice.h"
 #include "core/fxge/cfx_unicodeencoding.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "third_party/base/check.h"
-#include "third_party/base/stl_util.h"
+#include "third_party/base/cxx17_backports.h"
 #include "xfa/fgas/graphics/cfgas_gecolor.h"
 #include "xfa/fgas/graphics/cfgas_gepath.h"
 #include "xfa/fgas/graphics/cfgas_gepattern.h"
@@ -207,7 +209,7 @@ void CFGAS_GEGraphics::RenderDeviceStrokePath(const CFGAS_GEPath& path,
 
   CFX_Matrix m = m_info.CTM;
   m.Concat(matrix);
-  m_renderDevice->DrawPath(path.GetPathData(), &m, &m_info.graphState, 0x0,
+  m_renderDevice->DrawPath(path.GetPath(), &m, &m_info.graphState, 0x0,
                            m_info.strokeColor.GetArgb(),
                            CFX_FillRenderOptions());
 }
@@ -222,7 +224,7 @@ void CFGAS_GEGraphics::RenderDeviceFillPath(
   const CFX_FillRenderOptions fill_options(fill_type);
   switch (m_info.fillColor.GetType()) {
     case CFGAS_GEColor::Solid:
-      m_renderDevice->DrawPath(path.GetPathData(), &m, &m_info.graphState,
+      m_renderDevice->DrawPath(path.GetPath(), &m, &m_info.graphState,
                                m_info.fillColor.GetArgb(), 0x0, fill_options);
       return;
     case CFGAS_GEColor::Pattern:
@@ -256,7 +258,7 @@ void CFGAS_GEGraphics::FillPathWithPattern(
   mask->Create(data.width, data.height, FXDIB_Format::k1bppMask);
   memcpy(mask->GetBuffer(), data.maskBits, mask->GetPitch() * data.height);
   const CFX_FloatRect rectf =
-      matrix.TransformRect(path.GetPathData()->GetBoundingBox());
+      matrix.TransformRect(path.GetPath()->GetBoundingBox());
   const FX_RECT rect = rectf.ToRoundedFxRect();
 
   CFX_DefaultRenderDevice device;
@@ -269,7 +271,7 @@ void CFGAS_GEGraphics::FillPathWithPattern(
     }
   }
   CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
-  m_renderDevice->SetClip_PathFill(path.GetPathData(), &matrix, fill_options);
+  m_renderDevice->SetClip_PathFill(path.GetPath(), &matrix, fill_options);
   SetDIBitsWithMatrix(bmp, CFX_Matrix());
 }
 
@@ -304,7 +306,7 @@ void CFGAS_GEGraphics::FillPathWithShading(
             float x = static_cast<float>(column);
             scale = (((x - start_x) * x_span) + ((y - start_y) * y_span)) /
                     axis_len_square;
-            if (std::isnan(scale) || scale < 0.0f) {
+            if (isnan(scale) || scale < 0.0f) {
               if (!m_info.fillColor.GetShading()->IsExtendedBegin())
                 continue;
               scale = 0.0f;
@@ -365,7 +367,7 @@ void CFGAS_GEGraphics::FillPathWithShading(
               continue;
             }
           }
-          if (std::isnan(s) || s < 0.0f) {
+          if (isnan(s) || s < 0.0f) {
             if (!m_info.fillColor.GetShading()->IsExtendedBegin())
               continue;
             s = 0.0f;
@@ -389,7 +391,7 @@ void CFGAS_GEGraphics::FillPathWithShading(
   }
   if (result) {
     CFX_RenderDevice::StateRestorer restorer(m_renderDevice);
-    m_renderDevice->SetClip_PathFill(path.GetPathData(), &matrix, fill_options);
+    m_renderDevice->SetClip_PathFill(path.GetPath(), &matrix, fill_options);
     SetDIBitsWithMatrix(bmp, matrix);
   }
 }

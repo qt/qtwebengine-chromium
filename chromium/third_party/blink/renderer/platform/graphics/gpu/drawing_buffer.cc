@@ -118,7 +118,7 @@ scoped_refptr<DrawingBuffer> DrawingBuffer::Create(
     PreserveDrawingBuffer preserve,
     WebGLVersion webgl_version,
     ChromiumImageUsage chromium_image_usage,
-    SkFilterQuality filter_quality,
+    cc::PaintFlags::FilterQuality filter_quality,
     const CanvasColorParams& color_params,
     gl::GpuPreference gpu_preference) {
   if (g_should_fail_drawing_buffer_creation_for_testing) {
@@ -193,7 +193,7 @@ DrawingBuffer::DrawingBuffer(
     bool want_depth,
     bool want_stencil,
     ChromiumImageUsage chromium_image_usage,
-    SkFilterQuality filter_quality,
+    cc::PaintFlags::FilterQuality filter_quality,
     const CanvasColorParams& color_params,
     gl::GpuPreference gpu_preference)
     : client_(client),
@@ -290,11 +290,14 @@ void DrawingBuffer::SetIsInHiddenPage(bool hidden) {
   gl_->Flush();
 }
 
-void DrawingBuffer::SetFilterQuality(SkFilterQuality filter_quality) {
+void DrawingBuffer::SetFilterQuality(
+    cc::PaintFlags::FilterQuality filter_quality) {
   if (filter_quality_ != filter_quality) {
     filter_quality_ = filter_quality;
-    if (layer_)
-      layer_->SetNearestNeighbor(filter_quality == kNone_SkFilterQuality);
+    if (layer_) {
+      layer_->SetNearestNeighbor(filter_quality ==
+                                 cc::PaintFlags::FilterQuality::kNone);
+    }
   }
 }
 
@@ -316,7 +319,8 @@ DrawingBuffer::RegisteredBitmap DrawingBuffer::CreateOrRecycleBitmap(
                               return registered.bitmap->size() !=
                                      static_cast<gfx::Size>(size_);
                             });
-  recycled_bitmaps_.Shrink(it - recycled_bitmaps_.begin());
+  recycled_bitmaps_.Shrink(
+      static_cast<wtf_size_t>(it - recycled_bitmaps_.begin()));
 
   if (!recycled_bitmaps_.IsEmpty()) {
     RegisteredBitmap recycled = std::move(recycled_bitmaps_.back());
@@ -729,7 +733,8 @@ scoped_refptr<CanvasResource> DrawingBuffer::ExportLowLatencyCanvasResource(
   return ExternalCanvasResource::Create(
       canvas_resource_buffer->mailbox, viz::ReleaseCallback(), gpu::SyncToken(),
       canvas_resource_buffer->size, texture_target_, resource_params,
-      context_provider_->GetWeakPtr(), resource_provider, kLow_SkFilterQuality,
+      context_provider_->GetWeakPtr(), resource_provider,
+      cc::PaintFlags::FilterQuality::kLow,
       /*is_origin_top_left=*/opengl_flip_y_extension_,
       /*is_overlay_candidate=*/true);
 }
@@ -768,7 +773,7 @@ scoped_refptr<CanvasResource> DrawingBuffer::ExportCanvasResource() {
       out_resource.mailbox_holder.sync_token, IntSize(out_resource.size),
       out_resource.mailbox_holder.texture_target, resource_params,
       context_provider_->GetWeakPtr(), /*resource_provider=*/nullptr,
-      kLow_SkFilterQuality,
+      cc::PaintFlags::FilterQuality::kLow,
       /*is_origin_top_left=*/opengl_flip_y_extension_,
       out_resource.is_overlay_candidate);
 }
@@ -942,7 +947,8 @@ bool DrawingBuffer::Initialize(const IntSize& size, bool use_multisampling) {
       gl_->FramebufferParameteri(GL_FRAMEBUFFER, GL_FRAMEBUFFER_FLIP_Y_MESA, 1);
   }
   if (!ResizeFramebufferInternal(size)) {
-    DLOG(ERROR) << "Initialization failed to allocate backbuffer.";
+    DLOG(ERROR) << "Initialization failed to allocate backbuffer of size "
+                << size.Width() << " x " << size.Height() << ".";
     return false;
   }
 
@@ -1097,7 +1103,8 @@ cc::Layer* DrawingBuffer::CcLayer() {
     DCHECK(!(premultiplied_alpha_ && premultiplied_alpha_false_texture_));
     layer_->SetPremultipliedAlpha(premultiplied_alpha_ ||
                                   premultiplied_alpha_false_texture_);
-    layer_->SetNearestNeighbor(filter_quality_ == kNone_SkFilterQuality);
+    layer_->SetNearestNeighbor(filter_quality_ ==
+                               cc::PaintFlags::FilterQuality::kNone);
 
     if (opengl_flip_y_extension_)
       layer_->SetFlipped(false);
@@ -1532,7 +1539,7 @@ sk_sp<SkData> DrawingBuffer::PaintRenderingResultsToDataArray(
   // Readback in native GL byte order (RGBA).
   SkColorType color_type = kRGBA_8888_SkColorType;
   base::CheckedNumeric<size_t> row_bytes = 4;
-  if (RuntimeEnabledFeatures::CanvasColorManagementEnabled() &&
+  if (RuntimeEnabledFeatures::CanvasColorManagementV2Enabled() &&
       back_color_buffer_->format == viz::RGBA_F16) {
     color_type = kRGBA_F16_SkColorType;
     row_bytes *= 2;
@@ -1596,7 +1603,7 @@ void DrawingBuffer::ReadBackFramebuffer(base::span<uint8_t> pixels,
   expected_data_size *= Size().Width();
   expected_data_size *= Size().Height();
 
-  if (RuntimeEnabledFeatures::CanvasColorManagementEnabled() &&
+  if (RuntimeEnabledFeatures::CanvasColorManagementV2Enabled() &&
       color_type == kRGBA_F16_SkColorType) {
     data_type = (webgl_version_ > kWebGL1) ? GL_HALF_FLOAT : GL_HALF_FLOAT_OES;
     expected_data_size *= 2;
@@ -1735,15 +1742,22 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
       // the non-GMB CreateSharedImage with gpu::SHARED_IMAGE_USAGE_SCANOUT in
       // order to allocate the GMB service-side and avoid a synchronous
       // round-trip to the browser process here.
+      gfx::BufferUsage buffer_usage = gfx::BufferUsage::SCANOUT;
+      uint32_t additional_usage_flags = gpu::SHARED_IMAGE_USAGE_SCANOUT;
+      if (low_latency_enabled()) {
+        buffer_usage = gfx::BufferUsage::SCANOUT_FRONT_RENDERING;
+        additional_usage_flags = gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE;
+      }
+
       gpu_memory_buffer = gpu_memory_buffer_manager->CreateGpuMemoryBuffer(
-          gfx::Size(size), buffer_format, gfx::BufferUsage::SCANOUT,
-          gpu::kNullSurfaceHandle, nullptr);
+          gfx::Size(size), buffer_format, buffer_usage, gpu::kNullSurfaceHandle,
+          nullptr);
 
       if (gpu_memory_buffer) {
         back_buffer_mailbox = sii->CreateSharedImage(
             gpu_memory_buffer.get(), gpu_memory_buffer_manager,
             storage_color_space_, origin, kPremul_SkAlphaType,
-            usage | gpu::SHARED_IMAGE_USAGE_SCANOUT);
+            usage | additional_usage_flags);
       }
     }
 

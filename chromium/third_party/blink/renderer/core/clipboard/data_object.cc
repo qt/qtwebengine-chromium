@@ -30,7 +30,6 @@
 
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 
-#include "base/feature_list.h"
 #include "base/notreached.h"
 #include "third_party/blink/public/platform/file_path_conversion.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -42,7 +41,6 @@
 #include "third_party/blink/renderer/core/clipboard/system_clipboard.h"
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/wtf/hash_set.h"
-#include "ui/base/ui_base_features.h"
 
 namespace blink {
 
@@ -53,13 +51,13 @@ DataObject* DataObject::CreateFromClipboard(SystemClipboard* system_clipboard,
 #if DCHECK_IS_ON()
   HashSet<String> types_seen;
 #endif
-  uint64_t sequence_number = system_clipboard->SequenceNumber();
+  ClipboardSequenceNumberToken sequence_number =
+      system_clipboard->SequenceNumber();
   for (const String& type : system_clipboard->ReadAvailableTypes()) {
     if (paste_mode == PasteMode::kPlainTextOnly && type != kMimeTypeTextPlain)
       continue;
     mojom::blink::ClipboardFilesPtr files;
-    if (type == kMimeTypeTextURIList &&
-        base::FeatureList::IsEnabled(features::kClipboardFilenames)) {
+    if (type == kMimeTypeTextURIList) {
       files = system_clipboard->ReadFiles();
       // Ignore ReadFiles() result if clipboard sequence number has changed.
       if (system_clipboard->SequenceNumber() != sequence_number) {

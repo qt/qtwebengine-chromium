@@ -10,6 +10,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/contains.h"
 #include "base/files/file_path.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
@@ -256,12 +257,13 @@ GbmSurfaceless* GbmSurfaceFactory::GetSurface(
   return it->second;
 }
 
-std::vector<gl::GLImplementation>
+std::vector<gl::GLImplementationParts>
 GbmSurfaceFactory::GetAllowedGLImplementations() {
   DCHECK(thread_checker_.CalledOnValidThread());
-  return std::vector<gl::GLImplementation>{gl::kGLImplementationEGLGLES2,
-                                           gl::kGLImplementationEGLANGLE,
-                                           gl::kGLImplementationSwiftShaderGL};
+  return std::vector<gl::GLImplementationParts>{
+      gl::GLImplementationParts(gl::kGLImplementationEGLGLES2),
+      gl::GLImplementationParts(gl::kGLImplementationEGLANGLE),
+      gl::GLImplementationParts(gl::kGLImplementationSwiftShaderGL)};
 }
 
 GLOzone* GbmSurfaceFactory::GetGLOzone(
@@ -329,8 +331,8 @@ scoped_refptr<gfx::NativePixmap> GbmSurfaceFactory::CreateNativePixmapForVulkan(
       /* .format = */ vk_format,
       /* .extent = */
       {
-          /* .width = */ size.width(),
-          /* .height = */ size.height(),
+          /* .width = */ static_cast<uint32_t>(size.width()),
+          /* .height = */ static_cast<uint32_t>(size.height()),
           /* .depth = */ 1,
       },
       /* .strideInBytes = */ buffer->GetPlaneStride(0),

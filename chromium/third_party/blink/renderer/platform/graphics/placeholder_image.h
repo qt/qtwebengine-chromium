@@ -19,9 +19,7 @@
 
 namespace blink {
 
-class FloatPoint;
 class FloatRect;
-class FloatSize;
 class Font;
 class GraphicsContext;
 class ImageObserver;
@@ -40,14 +38,13 @@ class PLATFORM_EXPORT PlaceholderImage final : public Image {
 
   ~PlaceholderImage() override;
 
-  IntSize Size() const override;
+  IntSize SizeWithConfig(SizeConfig) const override;
 
   void Draw(cc::PaintCanvas*,
             const cc::PaintFlags&,
             const FloatRect& dest_rect,
             const FloatRect& src_rect,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override;
 
@@ -72,13 +69,10 @@ class PLATFORM_EXPORT PlaceholderImage final : public Image {
   bool CurrentFrameKnownToBeOpaque() override;
 
   void DrawPattern(GraphicsContext&,
-                   const FloatRect& src_rect,
-                   const FloatSize& scale,
-                   const FloatPoint& phase,
-                   SkBlendMode,
+                   const cc::PaintFlags&,
                    const FloatRect& dest_rect,
-                   const FloatSize& repeat_spacing,
-                   RespectImageOrientationEnum) override;
+                   const ImageTilingInfo& tiling_info,
+                   const ImageDrawOptions& draw_options) override;
 
   // SetData does nothing, and the passed in buffer is ignored.
   SizeAvailability SetData(scoped_refptr<SharedBuffer>, bool) override;

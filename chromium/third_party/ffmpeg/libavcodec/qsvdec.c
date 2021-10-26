@@ -46,6 +46,16 @@
 #include "qsv.h"
 #include "qsv_internal.h"
 
+static const AVRational mfx_tb = { 1, 90000 };
+
+#define PTS_TO_MFX_PTS(pts, pts_tb) ((pts) == AV_NOPTS_VALUE ? \
+    MFX_TIMESTAMP_UNKNOWN : pts_tb.num ? \
+    av_rescale_q(pts, pts_tb, mfx_tb) : pts)
+
+#define MFX_PTS_TO_PTS(mfx_pts, pts_tb) ((mfx_pts) == MFX_TIMESTAMP_UNKNOWN ? \
+    AV_NOPTS_VALUE : pts_tb.num ? \
+    av_rescale_q(mfx_pts, mfx_tb, pts_tb) : mfx_pts)
+
 typedef struct QSVContext {
     // the session used for decoding
     mfxSession session;
@@ -308,7 +318,7 @@ static int qsv_decode_header(AVCodecContext *avctx, QSVContext *q,
         bs.Data       = avpkt->data;
         bs.DataLength = avpkt->size;
         bs.MaxLength  = bs.DataLength;
-        bs.TimeStamp  = avpkt->pts;
+        bs.TimeStamp  = PTS_TO_MFX_PTS(avpkt->pts, avctx->pkt_timebase);
         if (avctx->field_order == AV_FIELD_PROGRESSIVE)
             bs.DataFlag   |= MFX_BITSTREAM_COMPLETE_FRAME;
     } else
@@ -456,7 +466,7 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
         bs.Data       = avpkt->data;
         bs.DataLength = avpkt->size;
         bs.MaxLength  = bs.DataLength;
-        bs.TimeStamp  = avpkt->pts;
+        bs.TimeStamp  = PTS_TO_MFX_PTS(avpkt->pts, avctx->pkt_timebase);
         if (avctx->field_order == AV_FIELD_PROGRESSIVE)
             bs.DataFlag   |= MFX_BITSTREAM_COMPLETE_FRAME;
     }
@@ -544,12 +554,7 @@ static int qsv_decode(AVCodecContext *avctx, QSVContext *q,
 
         outsurf = &out_frame->surface;
 
-#if FF_API_PKT_PTS
-FF_DISABLE_DEPRECATION_WARNINGS
-        frame->pkt_pts = outsurf->Data.TimeStamp;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-        frame->pts = outsurf->Data.TimeStamp;
+        frame->pts = MFX_PTS_TO_PTS(outsurf->Data.TimeStamp, avctx->pkt_timebase);
 
         frame->repeat_pict =
             outsurf->Info.PicStruct & MFX_PICSTRUCT_FRAME_TRIPLING ? 4 :
@@ -753,6 +758,9 @@ static av_cold int qsv_decode_init(AVCodecContext *avctx)
         goto fail;
     }
 
+    if (!avctx->pkt_timebase.num)
+        av_log(avctx, AV_LOG_WARNING, "Invalid pkt_timebase, passing timestamps as-is.\n");
+
     return 0;
 fail:
     qsv_decode_close(avctx);
@@ -834,7 +842,7 @@ static const AVClass x##_qsv_class = { \
     .option     = opt, \
     .version    = LIBAVUTIL_VERSION_INT, \
 }; \
-AVCodec ff_##x##_qsv_decoder = { \
+const AVCodec ff_##x##_qsv_decoder = { \
     .name           = #x "_qsv", \
     .long_name      = NULL_IF_CONFIG_SMALL(#X " video (Intel Quick Sync Video acceleration)"), \
     .priv_data_size = sizeof(QSVDecContext), \

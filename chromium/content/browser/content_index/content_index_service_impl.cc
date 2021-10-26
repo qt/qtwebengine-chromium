@@ -16,6 +16,8 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/service_worker_version_base_info.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -71,11 +73,11 @@ void ContentIndexServiceImpl::CreateForWorker(
   auto* storage_partition = static_cast<StoragePartitionImpl*>(
       render_process_host->GetStoragePartition());
 
-  mojo::MakeSelfOwnedReceiver(
-      std::make_unique<ContentIndexServiceImpl>(
-          info.origin, storage_partition->GetContentIndexContext(),
-          storage_partition->GetServiceWorkerContext()),
-      std::move(receiver));
+  mojo::MakeSelfOwnedReceiver(std::make_unique<ContentIndexServiceImpl>(
+                                  info.storage_key.origin(),
+                                  storage_partition->GetContentIndexContext(),
+                                  storage_partition->GetServiceWorkerContext()),
+                              std::move(receiver));
 }
 
 ContentIndexServiceImpl::ContentIndexServiceImpl(
@@ -105,7 +107,7 @@ void ContentIndexServiceImpl::CheckOfflineCapability(
   // TODO(rayankans): Figure out if we can check the service worker specified
   // by |service_worker_registration_id| rather than any service worker.
   service_worker_context_->CheckOfflineCapability(
-      launch_url,
+      launch_url, blink::StorageKey(url::Origin::Create(launch_url)),
       base::BindOnce(&DidCheckOfflineCapability, std::move(callback),
                      service_worker_registration_id));
 }
@@ -154,7 +156,7 @@ void ContentIndexServiceImpl::GetDescriptions(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   content_index_context_->database().GetDescriptions(
-      service_worker_registration_id, std::move(callback));
+      service_worker_registration_id, origin_, std::move(callback));
 }
 
 }  // namespace content

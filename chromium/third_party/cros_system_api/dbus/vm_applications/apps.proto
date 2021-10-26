@@ -116,3 +116,39 @@ message MimeTypes {
   // The owner of the VM and container.
   string owner_id = 4;
 }
+
+// Sent by the container to request that the host launches a SelectFile dialog.
+message SelectFileRequest {
+  // Name of the VM.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM.
+  string owner_id = 3;
+
+  // Token sent in request to match with response signal.
+  string select_file_token = 4;
+
+  // The type of file dialog to be shown.
+  // 'open-file': For opening files. Default.
+  // 'open-multi-file': Allow opening multiple files.
+  // 'saveas-file': For saving a file. Allows nonexistent file to be selected.
+  // 'folder': For selecting a folder. Allows nonexistent folder to be selected.
+  // 'upload-folder': For uploading a folder.
+  string type = 5;
+
+  // The title to be displayed in the dialog. If this string is empty, the
+  // default title is used.
+  string title = 6;
+
+  // The default path and suggested file name to be shown in the dialog. This
+  // only works for SELECT_SAVEAS_FILE and SELECT_OPEN_FILE.
+  // Can be an empty string to indicate the platform default.
+  string default_path = 7;
+
+  // Comma separated list of file extensions to filter which files are shown in
+  // the dialog. Leave empty to show all files. Do not include leading dot.
+  string allowed_extensions = 8;
+}

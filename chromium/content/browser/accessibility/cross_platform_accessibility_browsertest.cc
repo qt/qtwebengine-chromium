@@ -157,6 +157,26 @@ class CrossPlatformAccessibilityBrowserTest : public ContentBrowserTest {
     return nullptr;
   }
 
+  BrowserAccessibility* FindFirstNodeWithRole(ax::mojom::Role role_value) {
+    return FindFirstNodeWithRoleInSubtree(*GetManager()->GetRoot(), role_value);
+  }
+
+  BrowserAccessibility* FindFirstNodeWithRoleInSubtree(
+      BrowserAccessibility& node,
+      ax::mojom::Role role_value) {
+    if (node.GetRole() == role_value)
+      return &node;
+
+    for (unsigned int i = 0; i < node.PlatformChildCount(); ++i) {
+      BrowserAccessibility* result =
+          FindFirstNodeWithRoleInSubtree(*node.PlatformGetChild(i), role_value);
+      if (result)
+        return result;
+    }
+
+    return nullptr;
+  }
+
   std::string GetAttr(const ui::AXNode* node,
                       const ax::mojom::StringAttribute attr);
   int GetIntAttr(const ui::AXNode* node, const ax::mojom::IntAttribute attr);
@@ -667,6 +687,61 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
   EXPECT_TRUE(position->IsValid());
 }
 #endif  // !defined(OS_ANDROID)
+
+// Select controls behave differently on Mac/Android, this test doesn't apply.
+#if !defined(OS_ANDROID) && !defined(OS_MAC)
+IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
+                       SelectSizeChangeWithOpenedPopupDoesNotCrash) {
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(
+      <!DOCTYPE html>
+      <html>
+      <body>
+        <select aria-label="Select" id="select_node">
+          <option>Option 1</option>
+          <option>Option 2</option>
+          <option>Option 3</option>
+        </select>
+      </body>
+      </html>)HTML");
+
+  WaitForAccessibilityTreeToContainNodeWithName(shell()->web_contents(),
+                                                "Select");
+
+  const BrowserAccessibility* root = GetManager()->GetRoot();
+  ASSERT_NE(root, nullptr);
+  const BrowserAccessibility* body = root->PlatformGetChild(0);
+  ASSERT_NE(body, nullptr);
+
+  for (size_t attempts = 0; attempts < 10; ++attempts) {
+    BrowserAccessibility* select = FindNode("Select");
+    ASSERT_NE(select, nullptr);
+    // If there is a popup, expand it and wait for it to appear.
+    // If it's a list, it will simply click on the list.
+    {
+      AccessibilityNotificationWaiter waiter(
+          shell()->web_contents(), ui::kAXModeComplete,
+          ax::mojom::Event::kChildrenChanged);
+
+      ui::AXActionData action_data;
+      action_data.action = ax::mojom::Action::kDoDefault;
+      select->AccessibilityPerformAction(action_data);
+      waiter.WaitForNotification();
+    }
+
+    // Toggle whether 'size' is '2' or not present (effectively size=1),
+    // There can't be a popup when the size to 2, because it becomes a list box.
+    // This means the accessible object for the listbox needs to be cleanly
+    // removed, and the widget's accessible hierarchy is rebuilt.
+    ExecuteScript(
+        "var select = document.getElementById('select_node');"
+        "if (select.hasAttribute('size')) {"
+        "  select.removeAttribute('size');"
+        "} else {"
+        "  select.setAttribute('size', '2');"
+        "}");
+  }
+}
+#endif  // !defined(OS_ANDROID) && !defined(OS_MAC)
 
 IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
                        PlatformIterator) {
@@ -1738,5 +1813,284 @@ IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
     PressTabAndWaitForFocusChange();
   }
 }
+
+IN_PROC_BROWSER_TEST_F(
+    CrossPlatformAccessibilityBrowserTest,
+    SingleSelectionContainerSelectionFollowsFocusWithoutActiveDescendant) {
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(
+      <!DOCTYPE html>
+      <body>
+        <input role="combobox" type="search" aria-expanded="true"
+               aria-haspopup="true" aria-autocomplete="list" aria-owns="list">
+        <ul id="list" role="listbox">
+        <li id="option1" role="option" tabindex="-1">Apple</li>
+        <li id="option2" role="option" tabindex="-1">Orange</li>
+        </ul>
+      </body></html>)HTML");
+
+  BrowserAccessibilityManager* browser_accessibility_manager = GetManager();
+  BrowserAccessibility* root_browser_accessibility =
+      browser_accessibility_manager->GetRoot();
+  ASSERT_NE(root_browser_accessibility, nullptr);
+
+  BrowserAccessibility* input_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kTextFieldWithComboBox);
+  ASSERT_NE(input_browser_accessibility, nullptr);
+  BrowserAccessibility* list_box_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kListBox);
+  ASSERT_NE(list_box_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_1_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(0);
+  ASSERT_NE(list_option_1_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_2_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(1);
+  ASSERT_NE(list_option_2_browser_accessibility, nullptr);
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete,
+        ui::AXEventGenerator::Event::SELECTED_CHANGED);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = list_option_1_browser_accessibility->GetId();
+    list_option_1_browser_accessibility->AccessibilityPerformAction(
+        action_data);
+    waiter.WaitForNotification();
+  }
+
+  EXPECT_TRUE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_TRUE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete,
+        ui::AXEventGenerator::Event::SELECTED_CHANGED);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = list_option_2_browser_accessibility->GetId();
+    list_option_2_browser_accessibility->AccessibilityPerformAction(
+        action_data);
+    waiter.WaitForNotification();
+  }
+
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_TRUE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_TRUE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+}
+
+IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
+                       SingleSelectionContainerFocusSelectsActiveDescendant) {
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(
+      <!DOCTYPE html>
+      <body>
+        <input role="combobox" type="search" aria-expanded="true"
+               aria-haspopup="true" aria-autocomplete="list"
+               aria-activedescendant="option1" aria-owns="list">
+        <ul id="list" role="listbox">
+        <li id="option1" role="option">Apple</li>
+        <li id="option2" role="option">Orange</li>
+        </ul>
+        <button></button>
+      </body></html>)HTML");
+
+  BrowserAccessibilityManager* browser_accessibility_manager = GetManager();
+  BrowserAccessibility* root_browser_accessibility =
+      browser_accessibility_manager->GetRoot();
+  ASSERT_NE(root_browser_accessibility, nullptr);
+
+  BrowserAccessibility* input_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kTextFieldWithComboBox);
+  ASSERT_NE(input_browser_accessibility, nullptr);
+  BrowserAccessibility* list_box_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kListBox);
+  ASSERT_NE(list_box_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_1_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(0);
+  ASSERT_NE(list_option_1_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_2_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(1);
+  ASSERT_NE(list_option_2_browser_accessibility, nullptr);
+  BrowserAccessibility* button_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kButton);
+  ASSERT_NE(button_browser_accessibility, nullptr);
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete,
+        ui::AXEventGenerator::Event::SELECTED_CHANGED);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = input_browser_accessibility->GetId();
+    input_browser_accessibility->AccessibilityPerformAction(action_data);
+    waiter.WaitForNotification();
+  }
+
+  ui::AXNodeID active_descendant_id = ui::kInvalidAXNodeID;
+  EXPECT_TRUE(input_browser_accessibility->GetIntAttribute(
+      ax::mojom::IntAttribute::kActivedescendantId, &active_descendant_id));
+  EXPECT_EQ(active_descendant_id, list_option_1_browser_accessibility->GetId());
+  EXPECT_TRUE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_TRUE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete,
+        ui::AXEventGenerator::Event::SELECTED_CHANGED);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = button_browser_accessibility->GetId();
+    button_browser_accessibility->AccessibilityPerformAction(action_data);
+    waiter.WaitForNotification();
+  }
+
+  active_descendant_id = ui::kInvalidAXNodeID;
+  EXPECT_TRUE(input_browser_accessibility->GetIntAttribute(
+      ax::mojom::IntAttribute::kActivedescendantId, &active_descendant_id));
+  EXPECT_EQ(active_descendant_id, list_option_1_browser_accessibility->GetId());
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+}
+
+IN_PROC_BROWSER_TEST_F(
+    CrossPlatformAccessibilityBrowserTest,
+    SingleSelectionContainerSelectionFollowsFocusNotSupported) {
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(
+      <!DOCTYPE html>
+      <body>
+        <input role="combobox" type="search" aria-expanded="true"
+               aria-haspopup="true" aria-autocomplete="list"
+               aria-activedescendant="option1" aria-owns="list">
+        <ul id="list" role="listbox">
+        <li id="option1" role="row" tabindex="-1">Apple</li>
+        <li id="option2" role="row" tabindex="-1">Orange</li>
+        </ul>
+      </body></html>)HTML");
+
+  BrowserAccessibilityManager* browser_accessibility_manager = GetManager();
+  BrowserAccessibility* root_browser_accessibility =
+      browser_accessibility_manager->GetRoot();
+  ASSERT_NE(root_browser_accessibility, nullptr);
+
+  BrowserAccessibility* input_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kTextFieldWithComboBox);
+  ASSERT_NE(input_browser_accessibility, nullptr);
+  BrowserAccessibility* list_box_browser_accessibility =
+      FindFirstNodeWithRole(ax::mojom::Role::kListBox);
+  ASSERT_NE(list_box_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_1_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(0);
+  ASSERT_NE(list_option_1_browser_accessibility, nullptr);
+  BrowserAccessibility* list_option_2_browser_accessibility =
+      list_box_browser_accessibility->PlatformGetChild(1);
+  ASSERT_NE(list_option_2_browser_accessibility, nullptr);
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete, ax::mojom::Event::kFocus);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = list_option_1_browser_accessibility->GetId();
+    list_option_1_browser_accessibility->AccessibilityPerformAction(
+        action_data);
+    waiter.WaitForNotification();
+  }
+
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+
+  {
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::kAXModeComplete, ax::mojom::Event::kFocus);
+    ui::AXActionData action_data;
+    action_data.action = ax::mojom::Action::kFocus;
+    action_data.target_node_id = list_option_2_browser_accessibility->GetId();
+    list_option_2_browser_accessibility->AccessibilityPerformAction(
+        action_data);
+    waiter.WaitForNotification();
+  }
+
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_1_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelected));
+  EXPECT_FALSE(list_option_2_browser_accessibility->GetBoolAttribute(
+      ax::mojom::BoolAttribute::kSelectedFromFocus));
+}
+
+// We do not run this test on Android because only the Java code can change the
+// size of the web contents, instead see the associated test in
+// WebContentsAccessibilityTest#testBoundingBoxUpdatesOnWindowResize().
+#if !defined(OS_ANDROID)
+IN_PROC_BROWSER_TEST_F(CrossPlatformAccessibilityBrowserTest,
+                       FlexBoxBoundingBoxUpdatesOnWindowResize) {
+  // This is an edge case that was discovered on a mobile sign-in page.
+  // The size of the outer flexbox is tied to the vertical height of the
+  // window, so ensure that the bounding box of the button is correctly
+  // recomputed if the window is resized, causing the button to move up.
+  LoadInitialAccessibilityTreeFromHtml(R"HTML(
+      <div style="display: flex; min-height: 90vh;">
+        <div style="display: flex; flex-grow: 1; align-items: flex-end;">
+          <div>
+            <button style="display: inline-flex; will-change: transform;">
+              Next
+            </button>
+          </div>
+        </div>
+      </div>)HTML");
+
+  BrowserAccessibility* button =
+      FindFirstNodeWithRole(ax::mojom::Role::kButton);
+  gfx::Rect bounds0 = button->GetUnclippedRootFrameBoundsRect();
+
+  // Resize the viewport, making it half the height.
+  gfx::Rect view_bounds = shell()->web_contents()->GetViewBounds();
+  view_bounds.set_height(view_bounds.height() / 2);
+  shell()->web_contents()->Resize(view_bounds);
+
+  gfx::Rect bounds1;
+  do {
+    // Wait for any event
+    AccessibilityNotificationWaiter waiter(
+        shell()->web_contents(), ui::AXMode(), ax::mojom::Event::kNone);
+    waiter.WaitForNotification();
+    bounds1 = button->GetUnclippedRootFrameBoundsRect();
+  } while (bounds1.y() == bounds0.y());
+
+  // The top coordinate of the button should be less than half of its
+  // original top coordinate.
+  EXPECT_LT(bounds1.y(), bounds0.y() / 2);
+}
+#endif
 
 }  // namespace content

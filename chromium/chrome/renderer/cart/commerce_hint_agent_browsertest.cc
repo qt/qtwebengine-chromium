@@ -8,6 +8,8 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/cart/cart_db_content.pb.h"
 #include "chrome/browser/cart/cart_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service.h"
+#include "chrome/browser/optimization_guide/optimization_guide_keyed_service_factory.h"
 #include "chrome/browser/persisted_state_db/profile_proto_db.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
@@ -20,12 +22,14 @@
 #include "components/search/ntp_features.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
+#include "components/ukm/test_ukm_recorder.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
+#include "services/metrics/public/cpp/ukm_builders.h"
 
 #if defined(OS_ANDROID)
 #include "chrome/test/base/android/android_browser_test.h"
@@ -158,6 +162,8 @@ std::unique_ptr<net::test_server::HttpResponse> BasicResponse(
 // Tests CommerceHintAgent.
 class CommerceHintAgentTest : public PlatformBrowserTest {
  public:
+  using Entry = ukm::builders::Shopping_FormSubmitted;
+
   void SetUpInProcessBrowserTestFixture() override {
     scoped_feature_list_.InitWithFeaturesAndParameters(
         {{ntp_features::kNtpChromeCartModule,
@@ -188,6 +194,8 @@ class CommerceHintAgentTest : public PlatformBrowserTest {
     https_server_.RegisterRequestHandler(base::BindRepeating(&BasicResponse));
     ASSERT_TRUE(https_server_.InitializeAndListen());
     https_server_.StartAcceptingConnections();
+
+    ukm_recorder_ = std::make_unique<ukm::TestAutoSetUkmRecorder>();
   }
 
  protected:
@@ -250,6 +258,9 @@ class CommerceHintAgentTest : public PlatformBrowserTest {
                       .spec(),
                   expected[i].second.merchant_cart_url());
       }
+    } else {
+      VLOG(3) << "Found " << found.size() << " but expecting "
+              << expected.size();
     }
     std::move(closure).Run();
   }
@@ -344,9 +355,26 @@ class CommerceHintAgentTest : public PlatformBrowserTest {
     std::move(closure).Run();
   }
 
+  void ExpectUKM(const std::string& metric_name) {
+    auto entries = ukm_recorder()->GetEntriesByName(Entry::kEntryName);
+
+    ASSERT_FALSE(entries.empty());
+
+    for (const auto* const entry : entries) {
+      if (ukm_recorder()->GetEntryMetric(entry, metric_name)) {
+        SUCCEED();
+        return;
+      }
+    }
+    FAIL() << "Expected UKM \"" << metric_name << "\" was not recorded";
+  }
+
+  ukm::TestAutoSetUkmRecorder* ukm_recorder() { return ukm_recorder_.get(); }
+
   base::test::ScopedFeatureList scoped_feature_list_;
   CartService* service_;
   net::EmbeddedTestServer https_server_{net::EmbeddedTestServer::TYPE_HTTPS};
+  std::unique_ptr<ukm::TestAutoSetUkmRecorder> ukm_recorder_;
   bool satisfied_;
 };
 
@@ -402,7 +430,22 @@ IN_PROC_BROWSER_TEST_F(CommerceHintAgentTest, ExtractCart) {
   WaitForProductCount(kExpectedExampleWithProducts);
 }
 
-IN_PROC_BROWSER_TEST_F(CommerceHintAgentTest, CartPriority) {
+class CommerceHintNoRateControlTest : public CommerceHintAgentTest {
+ public:
+  void SetUpInProcessBrowserTestFixture() override {
+    scoped_feature_list_.InitWithFeaturesAndParameters(
+        {{ntp_features::kNtpChromeCartModule,
+          {{"cart-extraction-gap-time", "0s"}}}},
+        {optimization_guide::features::kOptimizationHints});
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+// TODO(crbug.com/1241582): Add the rate control back for this test after
+// figuring out why rate control makes this test flaky.
+IN_PROC_BROWSER_TEST_F(CommerceHintNoRateControlTest, CartPriority) {
   NavigateToURL("https://www.guitarcenter.com/");
   NavigateToURL("https://www.guitarcenter.com/add-to-cart?product=1");
   WaitForCartCount(kExpectedExampleFallbackCart);
@@ -445,6 +488,7 @@ IN_PROC_BROWSER_TEST_F(CommerceHintAgentTest, PurchaseByForm) {
   content::TestNavigationObserver load_observer(web_contents());
   load_observer.WaitForNavigationFinished();
   WaitForCartCount(kEmptyExpected);
+  ExpectUKM("IsTransaction");
 }
 
 // TODO(crbug.com/1180268): CrOS multi-profiles implementation is different from
@@ -517,21 +561,33 @@ class CommerceHintCacaoTest : public CommerceHintAgentTest {
         {});
   }
 
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    CommerceHintAgentTest::SetUpCommandLine(command_line);
-    // This bloom filter rejects "walmart.com" as a shopping site.
-    command_line->AppendSwitchASCII("optimization_guide_hints_override",
-                                    "Eg8IDxILCBsQJxoFiUzKeE4=");
-  }
-
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-// Flaky. crbug.com/1183852
-IN_PROC_BROWSER_TEST_F(CommerceHintCacaoTest, DISABLED_Rejected) {
-  NavigateToURL("https://www.walmart.com/");
+IN_PROC_BROWSER_TEST_F(CommerceHintCacaoTest, Passed) {
+  auto* optimization_guide_decider =
+      OptimizationGuideKeyedServiceFactory::GetForProfile(browser()->profile());
+  // Need the non-default port here.
+  optimization_guide_decider->AddHintForTesting(
+      https_server_.GetURL("www.guitarcenter.com", "/"),
+      optimization_guide::proto::SHOPPING_PAGE_PREDICTOR, absl::nullopt);
+  optimization_guide_decider->AddHintForTesting(
+      GURL("https://www.guitarcenter.com/cart"),
+      optimization_guide::proto::SHOPPING_PAGE_PREDICTOR, absl::nullopt);
+
+  NavigateToURL("https://www.guitarcenter.com/");
   SendXHR("/add-to-cart", "product: 123");
+  WaitForCartCount(kExpectedExampleFallbackCart);
+}
+
+// If command line argument "optimization_guide_hints_override" is not given,
+// nothing is specified in AddHintForTesting(), and the real hints are not
+// downloaded, all the URLs are considered non-shopping.
+IN_PROC_BROWSER_TEST_F(CommerceHintCacaoTest, Rejected) {
+  NavigateToURL("https://www.guitarcenter.com/");
+  SendXHR("/add-to-cart", "product: 123");
+  base::PlatformThread::Sleep(TestTimeouts::tiny_timeout() * 30);
   WaitForCartCount(kEmptyExpected);
 }
 

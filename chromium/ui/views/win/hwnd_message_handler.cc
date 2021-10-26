@@ -415,9 +415,7 @@ HWNDMessageHandler::HWNDMessageHandler(HWNDMessageHandlerDelegate* delegate,
       is_first_nccalc_(true),
       menu_depth_(0),
       id_generator_(0),
-      pen_processor_(
-          &id_generator_,
-          base::FeatureList::IsEnabled(::features::kDirectManipulationStylus)),
+      pen_processor_(&id_generator_, true),
       touch_down_contexts_(0),
       last_mouse_hwheel_time_(0),
       dwm_transition_desired_(false),
@@ -2929,12 +2927,8 @@ void HWNDMessageHandler::OnWindowPosChanging(WINDOWPOS* window_pos) {
     window_pos->flags &= ~SWP_SHOWWINDOW;
   }
 
-  if (window_pos->flags & SWP_SHOWWINDOW) {
-    delegate_->HandleVisibilityChanging(true);
-  } else if (window_pos->flags & SWP_HIDEWINDOW) {
+  if (window_pos->flags & SWP_HIDEWINDOW)
     SetDwmFrameExtension(DwmFrameState::kOff);
-    delegate_->HandleVisibilityChanging(false);
-  }
 
   SetMsgHandled(FALSE);
 }

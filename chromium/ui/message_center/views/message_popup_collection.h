@@ -13,6 +13,8 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/message_center/message_center_export.h"
 #include "ui/message_center/message_center_observer.h"
+#include "ui/message_center/notification_view_controller.h"
+#include "ui/message_center/views/message_view.h"
 #include "ui/views/widget/widget.h"
 
 namespace base {
@@ -36,7 +38,7 @@ class PopupAlignmentDelegate;
 // Container of notification popups usually shown at the right bottom of the
 // screen. Manages animation state and updates these popup widgets.
 class MESSAGE_CENTER_EXPORT MessagePopupCollection
-    : public MessageCenterObserver,
+    : public NotificationViewController,
       public gfx::AnimationDelegate {
  public:
   MessagePopupCollection();
@@ -55,7 +57,9 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
   // Notify the popup is closed. Called from MessagePopupView.
   virtual void NotifyPopupClosed(MessagePopupView* popup);
 
-  // MessageCenterObserver:
+  // NotificationViewController:
+  MessageView* GetMessageViewForNotificationId(
+      const std::string& notification_id) override;
   void OnNotificationAdded(const std::string& notification_id) override;
   void OnNotificationRemoved(const std::string& notification_id,
                              bool by_user) override;
@@ -126,8 +130,13 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
   // Called with |notification_id| when a popup is marked to be removed.
   virtual void NotifyPopupRemoved(const std::string& notification_id) {}
 
-  // virtual for testing.
+  // Called when popup animation is started/finished.
+  virtual void AnimationStarted() {}
+  virtual void AnimationFinished() {}
+
   virtual MessagePopupView* CreatePopup(const Notification& notification);
+
+  // virtual for testing.
   virtual void RestartPopupTimers();
   virtual void PausePopupTimers();
 
@@ -252,8 +261,8 @@ class MESSAGE_CENTER_EXPORT MessagePopupCollection
 
   // Return true if any popup is hovered by mouse.
   bool IsAnyPopupHovered() const;
-  // Return true if any popup is activated.
-  bool IsAnyPopupActive() const;
+  // Return true if any popup is focused.
+  bool IsAnyPopupFocused() const;
 
   // Returns the popup which is visually |index_from_top|-th from the top.
   // When |inverse_| is false, it's same as popup_items_[i].

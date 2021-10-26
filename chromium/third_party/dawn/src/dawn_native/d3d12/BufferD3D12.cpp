@@ -31,7 +31,7 @@ namespace dawn_native { namespace d3d12 {
         D3D12_RESOURCE_FLAGS D3D12ResourceFlags(wgpu::BufferUsage usage) {
             D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
 
-            if (usage & wgpu::BufferUsage::Storage) {
+            if (usage & (wgpu::BufferUsage::Storage | kInternalStorageBuffer)) {
                 flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
             }
 
@@ -53,7 +53,7 @@ namespace dawn_native { namespace d3d12 {
             if (usage & wgpu::BufferUsage::Index) {
                 resourceState |= D3D12_RESOURCE_STATE_INDEX_BUFFER;
             }
-            if (usage & wgpu::BufferUsage::Storage) {
+            if (usage & (wgpu::BufferUsage::Storage | kInternalStorageBuffer)) {
                 resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
             if (usage & kReadOnlyStorageBuffer) {
@@ -64,11 +64,7 @@ namespace dawn_native { namespace d3d12 {
                 resourceState |= D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
             }
             if (usage & wgpu::BufferUsage::QueryResolve) {
-                // D3D12_RESOURCE_STATE_COPY_DEST is required by ResolveQueryData but we also add
-                // D3D12_RESOURCE_STATE_UNORDERED_ACCESS because the queries will be post-processed
-                // by a compute shader and written to this buffer via a UAV.
-                resourceState |=
-                    (D3D12_RESOURCE_STATE_UNORDERED_ACCESS | D3D12_RESOURCE_STATE_COPY_DEST);
+                resourceState |= D3D12_RESOURCE_STATE_COPY_DEST;
             }
 
             return resourceState;
@@ -106,19 +102,25 @@ namespace dawn_native { namespace d3d12 {
     }
 
     MaybeError Buffer::Initialize(bool mappedAtCreation) {
-        D3D12_RESOURCE_DESC resourceDescriptor;
-        resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-        resourceDescriptor.Alignment = 0;
-        // TODO(cwallez@chromium.org): Have a global "zero" buffer that can do everything instead
-        // of creating a new 4-byte buffer?
         // D3D buffers are always resource size aligned to 64KB. However, D3D12's validation forbids
         // binding a CBV to an unaligned size. To prevent, one can always safely align the buffer
         // desc size to the CBV data alignment as other buffer usages ignore it (no size check).
         // The validation will still enforce bound checks with the unaligned size returned by
         // GetSize().
         // https://docs.microsoft.com/en-us/windows/win32/direct3d12/uploading-resources#buffer-alignment
-        resourceDescriptor.Width =
-            Align(std::max(GetSize(), uint64_t(4u)), D3D12BufferSizeAlignment(GetUsage()));
+        // Allocate at least 4 bytes so clamped accesses are always in bounds.
+        uint64_t size = std::max(GetSize(), uint64_t(4u));
+        size_t alignment = D3D12BufferSizeAlignment(GetUsage());
+        if (size > std::numeric_limits<uint64_t>::max() - alignment) {
+            // Alignment would overlow.
+            return DAWN_OUT_OF_MEMORY_ERROR("Buffer allocation is too large");
+        }
+        mAllocatedSize = Align(size, alignment);
+
+        D3D12_RESOURCE_DESC resourceDescriptor;
+        resourceDescriptor.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        resourceDescriptor.Alignment = 0;
+        resourceDescriptor.Width = mAllocatedSize;
         resourceDescriptor.Height = 1;
         resourceDescriptor.DepthOrArraySize = 1;
         resourceDescriptor.MipLevels = 1;
@@ -153,6 +155,8 @@ namespace dawn_native { namespace d3d12 {
             mResourceAllocation,
             ToBackend(GetDevice())->AllocateMemory(heapType, resourceDescriptor, bufferUsage));
 
+        DAWN_TRY(mResourceAllocation.SetDebugName("Dawn_Buffer"));
+
         // The buffers with mappedAtCreation == true will be initialized in
         // BufferBase::MapAtCreation().
         if (GetDevice()->IsToggleEnabled(Toggle::NonzeroClearResourcesOnCreationForTesting) &&
@@ -162,6 +166,21 @@ namespace dawn_native { namespace d3d12 {
                             ToBackend(GetDevice())->GetPendingCommandContext());
 
             DAWN_TRY(ClearBuffer(commandRecordingContext, uint8_t(1u)));
+        }
+
+        // Initialize the padding bytes to zero.
+        if (GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse) &&
+            !mappedAtCreation) {
+            uint32_t paddingBytes = GetAllocatedSize() - GetSize();
+            if (paddingBytes > 0) {
+                CommandRecordingContext* commandRecordingContext;
+                DAWN_TRY_ASSIGN(commandRecordingContext,
+                                ToBackend(GetDevice())->GetPendingCommandContext());
+
+                uint32_t clearSize = paddingBytes;
+                uint64_t clearOffset = GetSize();
+                DAWN_TRY(ClearBuffer(commandRecordingContext, 0, clearOffset, clearSize));
+            }
         }
 
         return {};
@@ -264,6 +283,13 @@ namespace dawn_native { namespace d3d12 {
             return false;
         }
 
+        // TODO(crbug.com/dawn/1024): The before and after states must be different. Remove this
+        // workaround and use D3D12 states instead of WebGPU usages to manage the tracking of
+        // barrier state.
+        if (lastState == newState) {
+            return false;
+        }
+
         barrier->Type = D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
         barrier->Flags = D3D12_RESOURCE_BARRIER_FLAG_NONE;
         barrier->Transition.pResource = GetD3D12Resource();
@@ -325,7 +351,7 @@ namespace dawn_native { namespace d3d12 {
 
         // The buffers with mappedAtCreation == true will be initialized in
         // BufferBase::MapAtCreation().
-        DAWN_TRY(MapInternal(true, 0, size_t(GetSize()), "D3D12 map at creation"));
+        DAWN_TRY(MapInternal(true, 0, size_t(GetAllocatedSize()), "D3D12 map at creation"));
 
         return {};
     }
@@ -424,7 +450,7 @@ namespace dawn_native { namespace d3d12 {
         ASSERT(GetDevice()->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse));
         ASSERT(!IsDataInitialized());
 
-        // TODO(jiawei.shao@intel.com): skip initializing the buffer when it is created on a heap
+        // TODO(crbug.com/dawn/484): skip initializing the buffer when it is created on a heap
         // that has already been zero initialized.
         DAWN_TRY(ClearBuffer(commandContext, uint8_t(0u)));
         SetIsDataInitialized();
@@ -433,28 +459,33 @@ namespace dawn_native { namespace d3d12 {
         return {};
     }
 
-    MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext, uint8_t clearValue) {
+    MaybeError Buffer::ClearBuffer(CommandRecordingContext* commandContext,
+                                   uint8_t clearValue,
+                                   uint64_t offset,
+                                   uint64_t size) {
         Device* device = ToBackend(GetDevice());
+        size = size > 0 ? size : GetAllocatedSize();
 
         // The state of the buffers on UPLOAD heap must always be GENERIC_READ and cannot be
         // changed away, so we can only clear such buffer with buffer mapping.
         if (D3D12HeapType(GetUsage()) == D3D12_HEAP_TYPE_UPLOAD) {
-            DAWN_TRY(MapInternal(true, 0, size_t(GetSize()), "D3D12 map at clear buffer"));
-            memset(mMappedData, clearValue, GetSize());
+            DAWN_TRY(MapInternal(true, static_cast<size_t>(offset), static_cast<size_t>(size),
+                                 "D3D12 map at clear buffer"));
+            memset(mMappedData, clearValue, size);
             UnmapImpl();
         } else {
-            // TODO(jiawei.shao@intel.com): use ClearUnorderedAccessView*() when the buffer usage
+            // TODO(crbug.com/dawn/852): use ClearUnorderedAccessView*() when the buffer usage
             // includes STORAGE.
             DynamicUploader* uploader = device->GetDynamicUploader();
             UploadHandle uploadHandle;
             DAWN_TRY_ASSIGN(uploadHandle,
-                            uploader->Allocate(GetSize(), device->GetPendingCommandSerial(),
+                            uploader->Allocate(size, device->GetPendingCommandSerial(),
                                                kCopyBufferToBufferOffsetAlignment));
 
-            memset(uploadHandle.mappedBuffer, clearValue, GetSize());
+            memset(uploadHandle.mappedBuffer, clearValue, size);
 
             device->CopyFromStagingToBufferImpl(commandContext, uploadHandle.stagingBuffer,
-                                                uploadHandle.startOffset, this, 0, GetSize());
+                                                uploadHandle.startOffset, this, offset, size);
         }
 
         return {};

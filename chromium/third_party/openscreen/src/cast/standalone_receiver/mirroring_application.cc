@@ -4,6 +4,8 @@
 
 #include "cast/standalone_receiver/mirroring_application.h"
 
+#include <utility>
+
 #include "cast/common/public/message_port.h"
 #include "cast/streaming/constants.h"
 #include "cast/streaming/environment.h"
@@ -53,9 +55,15 @@ bool MirroringApplication::Launch(const std::string& app_id,
       IPEndpoint{interface_address_, kDefaultCastStreamingPort});
   controller_ =
       std::make_unique<StreamingPlaybackController>(task_runner_, this);
-  current_session_ = std::make_unique<ReceiverSession>(
-      controller_.get(), environment_.get(), message_port,
-      ReceiverSession::Preferences{});
+
+  ReceiverSession::Preferences preferences;
+  preferences.video_codecs.insert(preferences.video_codecs.end(),
+                                  {VideoCodec::kVp9, VideoCodec::kAv1});
+  preferences.remoting =
+      std::make_unique<ReceiverSession::RemotingPreferences>();
+  current_session_ =
+      std::make_unique<ReceiverSession>(controller_.get(), environment_.get(),
+                                        message_port, std::move(preferences));
   return true;
 }
 

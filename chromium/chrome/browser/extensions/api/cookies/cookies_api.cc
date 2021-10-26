@@ -219,8 +219,8 @@ void CookiesEventRouter::DispatchEvent(
   EventRouter* router = context ? EventRouter::Get(context) : NULL;
   if (!router)
     return;
-  auto event = std::make_unique<Event>(histogram_value, event_name,
-                                       event_args->TakeList(), context);
+  auto event = std::make_unique<Event>(
+      histogram_value, event_name, std::move(*event_args).TakeList(), context);
   event->event_url = cookie_domain;
   router->BroadcastEvent(std::move(event));
 }
@@ -434,7 +434,8 @@ ExtensionFunction::ResponseAction CookiesSetFunction::Run() {
               false,
           same_site,
           net::COOKIE_PRIORITY_DEFAULT,
-          /*same_party=*/false));
+          /*same_party=*/false,
+          /*partition_key=*/absl::nullopt));
   // clang-format on
   if (!cc) {
     // Return error through callbacks so that the proper error message

@@ -13,7 +13,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/sparse_histogram.h"
 #include "base/numerics/safe_conversions.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/unguessable_token.h"
@@ -169,13 +168,6 @@ AutofillRandomizedValue_EncodingType GetEncodingType(const std::string& seed) {
           static_cast<int>(AutofillRandomizedValue_EncodingType_ALL_BITS);
       break;
   }
-
-  UMA_HISTOGRAM_BOOLEAN("Autofill.Upload.MetadataConfigIsValid",
-                        config_is_valid);
-  base::SparseHistogram::FactoryGet(
-      "Autofill.Upload.MetadataEncodingType",
-      base::HistogramBase::kUmaTargetedHistogramFlag)
-      ->Add(encoding_type_as_int);
 
   // Cast back to a valid encoding type value.
   DCHECK(AutofillRandomizedValue_EncodingType_IsValid(encoding_type_as_int));

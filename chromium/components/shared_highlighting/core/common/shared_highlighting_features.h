@@ -25,6 +25,12 @@ extern const base::Feature kSharedHighlightingUseBlocklist;
 // Enables the new UI features for highlighted text.
 extern const base::Feature kSharedHighlightingV2;
 
+// Enables shared highlighting for AMP viewers pages.
+extern const base::Feature kSharedHighlightingAmp;
+
+// Enable the fix for layout object crash in shared highlighting generator.
+extern const base::Feature kSharedHighlightingLayoutObjectFix;
+
 // Returns the pre-emptive link generation timeout length.
 int GetPreemptiveLinkGenTimeoutLengthMs();
 

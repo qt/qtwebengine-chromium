@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 /* eslint-disable rulesdir/no_underscored_properties */
+import webAudioStyles from './webAudio.css.js';
 import type * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -23,10 +24,9 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/web_audio/WebAudioView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-
 let webAudioViewInstance: WebAudioView;
 export class WebAudioView extends UI.ThrottledWidget.ThrottledWidget implements
-    SDK.SDKModel.SDKModelObserver<WebAudioModel> {
+    SDK.TargetManager.SDKModelObserver<WebAudioModel> {
   _contextSelector: AudioContextSelector;
   _contentContainer: HTMLElement;
   _detailViewContainer: HTMLElement;
@@ -36,7 +36,6 @@ export class WebAudioView extends UI.ThrottledWidget.ThrottledWidget implements
   constructor() {
     super(true, 1000);
     this.element.classList.add('web-audio-drawer');
-    this.registerRequiredCSS('panels/web_audio/webAudio.css', {enableLegacyPatching: false});
 
     // Creates the toolbar.
     const toolbarContainer = this.contentElement.createChild('div', 'web-audio-toolbar-container vbox');
@@ -74,7 +73,7 @@ export class WebAudioView extends UI.ThrottledWidget.ThrottledWidget implements
           this.doUpdate();
         });
 
-    SDK.SDKModel.TargetManager.instance().observeModels(WebAudioModel, this);
+    SDK.TargetManager.TargetManager.instance().observeModels(WebAudioModel, this);
   }
 
   static instance(opts = {forceNew: null}): WebAudioView {
@@ -88,13 +87,14 @@ export class WebAudioView extends UI.ThrottledWidget.ThrottledWidget implements
 
   wasShown(): void {
     super.wasShown();
-    for (const model of SDK.SDKModel.TargetManager.instance().models(WebAudioModel)) {
+    this.registerCSSFiles([webAudioStyles]);
+    for (const model of SDK.TargetManager.TargetManager.instance().models(WebAudioModel)) {
       this._addEventListeners(model);
     }
   }
 
   willHide(): void {
-    for (const model of SDK.SDKModel.TargetManager.instance().models(WebAudioModel)) {
+    for (const model of SDK.TargetManager.TargetManager.instance().models(WebAudioModel)) {
       this._removeEventListeners(model);
     }
   }
@@ -349,7 +349,7 @@ export class WebAudioView extends UI.ThrottledWidget.ThrottledWidget implements
       return;
     }
 
-    for (const model of SDK.SDKModel.TargetManager.instance().models(WebAudioModel)) {
+    for (const model of SDK.TargetManager.TargetManager.instance().models(WebAudioModel)) {
       // Display summary only for real-time context.
       if (context.contextType === 'realtime') {
         if (!this._graphManager.hasContext(context.contextId)) {

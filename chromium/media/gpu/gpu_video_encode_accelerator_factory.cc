@@ -5,6 +5,7 @@
 #include "media/gpu/gpu_video_encode_accelerator_factory.h"
 
 #include "base/bind.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "build/build_config.h"
@@ -114,7 +115,7 @@ std::vector<VEAFactoryFunction> GetVEAFactoryFunctions(
       &CreateMediaFoundationVEA,
       gpu_preferences.enable_media_foundation_vea_on_windows7,
       base::FeatureList::IsEnabled(kMediaFoundationAsyncH264Encoding) &&
-          !gpu_workarounds.disable_mediafoundation_async_h264_encoding));
+          !gpu_workarounds.disable_media_foundation_async_h264_encoding));
 #endif
   return vea_factory_functions;
 }
@@ -187,6 +188,13 @@ GpuVideoEncodeAcceleratorFactory::GetSupportedProfiles(
   if (gpu_workarounds.disable_accelerated_vp8_encode) {
     base::EraseIf(profiles, [](const auto& vea_profile) {
       return vea_profile.profile == VP8PROFILE_ANY;
+    });
+  }
+
+  if (gpu_workarounds.disable_accelerated_vp9_encode) {
+    base::EraseIf(profiles, [](const auto& vea_profile) {
+      return vea_profile.profile >= VP9PROFILE_PROFILE0 &&
+             vea_profile.profile <= VP9PROFILE_PROFILE3;
     });
   }
 

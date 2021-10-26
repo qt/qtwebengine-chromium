@@ -6,7 +6,7 @@
 
 The main interest in extended attributes are their _semantics_: Blink implements many more extended attributes than the Web IDL standard, to specify various behavior.
 
-The authoritative list of allowed extended attributes and values is [bindings/IDLExtendedAttributes.txt](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/bindings/IDLExtendedAttributes.txt). This is complete but not necessarily precise (there may be unused extended attributes or values), since validation is run on build, but coverage isn't checked.
+The authoritative list of allowed extended attributes and values is [bindings/IDLExtendedAttributes.txt](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/IDLExtendedAttributes.txt). This is complete but not necessarily precise (there may be unused extended attributes or values), since validation is run on build, but coverage isn't checked.
 
 Syntactically, Blink IDL extended attributes differ from standard Web IDL extended attributes in a few ways:
 
@@ -59,7 +59,7 @@ Extended attributes mostly work normally on overloaded methods, affecting only t
 While `[DeprecateAs]`, `[MeasureAs]` only affect callback for non-overloaded methods, the logging code is instead put in the method itself for overloaded methods, so these can be placed on the method to log in question.
 ***
 
-Extended attributes that affect the callback must be on the _last_ overloaded method, though it is safest to put them on all the overloaded methods, for consistency (and in case they are rearranged or deleted). The source is [bindings/templates/methods.cpp](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/bindings/templates/methods.cpp), and currently there are no extended attribute that affect the callback (even for overloaded methods).
+Extended attributes that affect the callback must be on the _last_ overloaded method, though it is safest to put them on all the overloaded methods, for consistency (and in case they are rearranged or deleted). The source is [bindings/templates/methods.cpp](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/templates/methods.cpp), and currently there are no extended attribute that affect the callback (even for overloaded methods).
 
 ### Special operations (methods)
 
@@ -126,7 +126,7 @@ Extended attributes on members of an interface mixin work as normal. However, on
 
 ### Inheritance
 
-Extended attributes are generally not inherited: only extended attributes on the interface itself are consulted. However, there are a handful of extended attributes that are inherited (applying them to an ancestor interface applies them to the descendants). These are extended attributes that affect memory management, and currently consists of `[ActiveScriptWrappable]`; the up-to-date list is [compute_dependencies.INHERITED_EXTENDED_ATTRIBUTES](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/bindings/scripts/compute_dependencies.py&q=INHERITED_EXTENDED_ATTRIBUTES).
+Extended attributes are generally not inherited: only extended attributes on the interface itself are consulted. However, there are a handful of extended attributes that are inherited (applying them to an ancestor interface applies them to the descendants). These are extended attributes that affect memory management, and currently consists of `[ActiveScriptWrappable]`; the up-to-date list is [compute_dependencies.INHERITED_EXTENDED_ATTRIBUTES](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/scripts/compute_interfaces_info_overall.py?q=INHERITED_EXTENDED_ATTRIBUTES&ss=chromium).
 
 ## Standard Web IDL Extended Attributes
 
@@ -221,7 +221,7 @@ Currently `[Constructor(...)]` does not yet support optional arguments w/o defau
 
 Standard: [CrossOriginIsolated](https://heycam.github.io/webidl/#CrossOriginIsolated)
 
-Summary: Interfaces and interface members with a `CrossOriginIsolated` attribute are exposed only inside contexts whose [cross-origin isolated capability](https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-cross-origin-isolated-capability) is enabled. 
+Summary: Interfaces and interface members with a `CrossOriginIsolated` attribute are exposed only inside contexts whose [cross-origin isolated capability](https://html.spec.whatwg.org/multipage/webappapis.html#concept-settings-object-cross-origin-isolated-capability) is enabled.
 
 Usage: The `[CrossOriginIsolated]` attribute may be specified on interfaces, attributes, and members:
 
@@ -977,7 +977,7 @@ v8::Local<v8::Value> V8XXX::CallAsFunctionCallback(const v8::Arguments& args) {
 Summary: Denotes an API that exposes data that folks on the internet find useful for fingerprinting.
 
 Attributes and methods marked as `[HighEntropy]` are known to be practically useful for [identifying particular clients](https://dev.chromium.org/Home/chromium-security/client-identification-mechanisms) on the web today.
-Both methods and attribute/constant getters annotated with this attribute are wired up to [`Dactyloscoper::Record`](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/core/frame/dactyloscoper.cc&q=Dactyloscoper::Record) for additional processing.
+Both methods and attribute/constant getters annotated with this attribute are wired up to [`Dactyloscoper::Record`](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/dactyloscoper.cc&q=Dactyloscoper::Record) for additional processing.
 
 This attribute must be accompanied by either `[Measure]` or `[MeasureAs]`.
 
@@ -1251,7 +1251,7 @@ Non-empty string values specified by `[ReflectOnly]` must be added to
 
 Summary: `[RuntimeEnabled]` wraps the generated code with `if (RuntimeEnabledFeatures::FeatureNameEnabled) { ...code... }`.
 
-Usage: `[RuntimeEnabled=FeatureName]`. FeatureName must be included in [runtime\_enabled\_features.json5](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/platform/runtime_enabled_features.json5).
+Usage: `[RuntimeEnabled=FeatureName]`. FeatureName must be included in [runtime\_enabled\_features.json5](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/runtime_enabled_features.json5).
 
 ```webidl
 [
@@ -1267,7 +1267,7 @@ foo(long x);
 [RuntimeEnabled=FeatureName] foo(long x, long y);
 ```
 
-For more information, see [RuntimeEnabledFeatures](https://code.google.com/p/chromium/codesearch#chromium/src/third_party/blink/renderer/platform/runtime_enabled_features.json5).
+For more information, see [RuntimeEnabledFeatures](https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/platform/runtime_enabled_features.json5).
 
 ### [SaveSameObject] _(a)_
 
@@ -1585,23 +1585,23 @@ V8PrivateProperty::GetHTMLFooBarCachedAccessor().Set(context, object, new_value)
 
 ### [Affects] _(m, a)_
 
-Summary: `[Affects=Nothing]` indicates that a function must not produce JS-observable side effects. Functions without this attribute are never invoked by V8 with throwOnSideEffect.
+Summary: `[Affects=Nothing]` indicates that a function must not produce JS-observable side effects, while `[Affects=Everything]` indicates that a function may produce JS-observable side effects. Functions which are not considered free of JS-observable side effects will never be invoked by V8 with throwOnSideEffect.
 
-Marked functions are allowed to be nondeterministic, throw exceptions, force layout, and recalculate style, but must not set values, cache objects, or schedule execution that will be observable after the function completes. If a marked function calls into V8, it must properly handle cases when the V8 call returns an MaybeHandle.
-
-All DOM constructors are assumed to have side effects. However, an exception can be explicitly indicated when calling constructors using the V8 API method Function::NewInstanceWithSideEffectType().
-
-There is not yet support for marking SymbolKeyedMethodConfigurations as side-effect free. This requires additional support in V8 to allow Intrinsics.
-
-Usage for attributes and operations: `[Affects=Nothing]` can be specified on an operation, or on an attribute to indicate that its getter callback is side effect free:
+Usage for attributes and operations: `[Affects=Nothing]` and `[Affects=Everything]` can be specified on an operation, or on an attribute to indicate that its getter callback is side effect free or side effecting:
 
 ```webidl
 interface HTMLFoo {
-    [Affects=Nothing] attribute Bar bar;
+    [Affects=Everything] attribute Bar bar;
     [Affects=Nothing] Bar baz();
     void removeItems();
 };
 ```
+
+When neither `[Affects=Nothing]` nor `[Affects=Everything]` is specified, the default for operations is `[Affects=Everything]`, while for attributes it's `[Affects=Nothing]`. Functions marked as side effect free are allowed to be nondeterministic, throw exceptions, force layout, and recalculate style, but must not set values, cache objects, or schedule execution that will be observable after the function completes. If a marked function calls into V8, it must properly handle cases when the V8 call returns an MaybeHandle.
+
+All DOM constructors are assumed to side effects. However, an exception can be explicitly indicated when calling constructors using the V8 API method Function::NewInstanceWithSideEffectType().
+
+There is not yet support for marking SymbolKeyedMethodConfigurations as side-effect free. This requires additional support in V8 to allow Intrinsics.
 
 
 ### [DefaultValue] _(p)_

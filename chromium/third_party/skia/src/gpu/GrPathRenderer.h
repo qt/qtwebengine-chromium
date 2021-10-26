@@ -17,7 +17,7 @@ class GrClip;
 class GrHardClip;
 class GrPaint;
 class GrRecordingContext;
-class GrSurfaceDrawContext;
+namespace skgpu { namespace v1 { class SurfaceDrawContext; }}
 class GrRenderTargetProxy;
 class GrStyledShape;
 class GrStyle;
@@ -113,21 +113,21 @@ public:
     }
 
     struct DrawPathArgs {
-        GrRecordingContext*          fContext;
-        GrPaint&&                    fPaint;
-        const GrUserStencilSettings* fUserStencilSettings;
-        GrSurfaceDrawContext*        fRenderTargetContext;
-        const GrClip*                fClip;
-        const SkIRect*               fClipConservativeBounds;
-        const SkMatrix*              fViewMatrix;
-        const GrStyledShape*         fShape;
-        GrAAType                     fAAType;
-        bool                         fGammaCorrect;
+        GrRecordingContext*            fContext;
+        GrPaint&&                      fPaint;
+        const GrUserStencilSettings*   fUserStencilSettings;
+        skgpu::v1::SurfaceDrawContext* fSurfaceDrawContext;
+        const GrClip*                  fClip;
+        const SkIRect*                 fClipConservativeBounds;
+        const SkMatrix*                fViewMatrix;
+        const GrStyledShape*           fShape;
+        GrAAType                       fAAType;
+        bool                           fGammaCorrect;
 #ifdef SK_DEBUG
         void validate() const {
             SkASSERT(fContext);
             SkASSERT(fUserStencilSettings);
-            SkASSERT(fRenderTargetContext);
+            SkASSERT(fSurfaceDrawContext);
             SkASSERT(fClipConservativeBounds);
             SkASSERT(fViewMatrix);
             SkASSERT(fShape);
@@ -146,13 +146,13 @@ public:
     struct StencilPathArgs {
         SkDEBUGCODE(StencilPathArgs() { memset(this, 0, sizeof(*this)); }) // For validation.
 
-        GrRecordingContext*    fContext;
-        GrSurfaceDrawContext*  fRenderTargetContext;
-        const GrHardClip*      fClip;
-        const SkIRect*         fClipConservativeBounds;
-        const SkMatrix*        fViewMatrix;
-        const GrStyledShape*   fShape;
-        GrAA                   fDoStencilMSAA;
+        GrRecordingContext*            fContext;
+        skgpu::v1::SurfaceDrawContext* fSurfaceDrawContext;
+        const GrHardClip*              fClip;
+        const SkIRect*                 fClipConservativeBounds;
+        const SkMatrix*                fViewMatrix;
+        const GrStyledShape*           fShape;
+        GrAA                           fDoStencilMSAA;
 
         SkDEBUGCODE(void validate() const);
     };
@@ -166,11 +166,6 @@ public:
         SkASSERT(kNoSupport_StencilSupport != this->getStencilSupport(*args.fShape));
         this->onStencilPath(args);
     }
-
-    // Helper for determining if we can treat a thin stroke as a hairline w/ coverage.
-    // If we can, we draw lots faster (raster device does this same test).
-    static bool IsStrokeHairlineOrEquivalent(const GrStyle&, const SkMatrix&,
-                                             SkScalar* outCoverage);
 
 protected:
     // Helper for getting the device bounds of a path. Inverse filled paths will have bounds set

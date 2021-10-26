@@ -57,7 +57,7 @@
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #include "chromeos/crosapi/mojom/crosapi.mojom.h"  // nogncheck
-#include "chromeos/lacros/lacros_chrome_service_impl.h"
+#include "chromeos/lacros/lacros_service.h"
 #endif
 
 // TODO(battre): move all static functions into an anonymous namespace at the
@@ -541,25 +541,28 @@ IgnoredAction::IgnoredAction(extensions::ExtensionId extension_id,
 IgnoredAction::IgnoredAction(IgnoredAction&& rhs) = default;
 
 bool ExtraInfoSpec::InitFromValue(content::BrowserContext* browser_context,
-                                  const base::ListValue& value,
+                                  const base::Value& value,
                                   int* extra_info_spec) {
   *extra_info_spec = 0;
-  for (size_t i = 0; i < value.GetSize(); ++i) {
-    std::string str;
-    if (!value.GetString(i, &str))
+  if (!value.is_list())
+    return false;
+  base::Value::ConstListView value_list = value.GetList();
+  for (size_t i = 0; i < value_list.size(); ++i) {
+    const std::string* str = value_list[i].GetIfString();
+    if (!str)
       return false;
 
-    if (str == "requestHeaders")
+    if (*str == "requestHeaders")
       *extra_info_spec |= REQUEST_HEADERS;
-    else if (str == "responseHeaders")
+    else if (*str == "responseHeaders")
       *extra_info_spec |= RESPONSE_HEADERS;
-    else if (str == "blocking")
+    else if (*str == "blocking")
       *extra_info_spec |= BLOCKING;
-    else if (str == "asyncBlocking")
+    else if (*str == "asyncBlocking")
       *extra_info_spec |= ASYNC_BLOCKING;
-    else if (str == "requestBody")
+    else if (*str == "requestBody")
       *extra_info_spec |= REQUEST_BODY;
-    else if (str == "extraHeaders")
+    else if (*str == "extraHeaders")
       *extra_info_spec |= EXTRA_HEADERS;
     else
       return false;
@@ -1751,10 +1754,9 @@ bool ArePublicSessionRestrictionsEnabled() {
     return chromeos::LoginState::Get()->ArePublicSessionRestrictionsEnabled();
   }
 #elif BUILDFLAG(IS_CHROMEOS_LACROS)
-  DCHECK(chromeos::LacrosChromeServiceImpl::Get());
-  return chromeos::LacrosChromeServiceImpl::Get()
-             ->init_params()
-             ->session_type == crosapi::mojom::SessionType::kPublicSession;
+  DCHECK(chromeos::LacrosService::Get());
+  return chromeos::LacrosService::Get()->init_params()->session_type ==
+         crosapi::mojom::SessionType::kPublicSession;
 #endif
   return false;
 }

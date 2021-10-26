@@ -183,7 +183,7 @@ MSG kFramebufferTextureInvalidMipLevel = "Mip level invalid for framebuffer text
 MSG kFramebufferTextureLayerIncorrectTextureType = "Texture is not a three-dimensional or two-dimensionsal array texture.";
 MSG kGenerateMipmapNotAllowed = "Texture format does not support mipmap generation.";
 MSG kGenerateMipmapZeroSize = "Cannot generate mipmaps for a zero-size texture in a WebGL context.";
-MSG kGeometryShaderExtensionNotEnabled = "GL_EXT_geometry_shader extension not enabled.";
+MSG kGeometryShaderExtensionNotEnabled = "GL_EXT_geometry_shader or GL_OES_geometry_shader extension not enabled.";
 MSG kGetImageExtensionNotEnabled = "GL_ANGLE_get_image extension not enabled.";
 MSG kGLES1Only = "GLES1-only function.";
 MSG kImageSizeMustBeZero = "imageSize must be 0 if no texture data is provided.";
@@ -527,6 +527,7 @@ MSG kTransfomFeedbackAlreadyActive = "Transform feedback is already active.";
 MSG kTransformFeedbackActiveDelete = "Attempt to delete an active transform feedback.";
 MSG kTransformFeedbackActiveDuringLink = "Cannot link program while program is associated with an active transform feedback object.";
 MSG kTransformFeedbackBufferDoubleBound = "A transform feedback buffer that would be written to is also bound to a non-transform-feedback target, which would cause undefined behavior.";
+MSG kTransformFeedbackBufferMissing = "Every binding point used in transform feedback mode must have a buffer object bound.";
 MSG kTransformFeedbackBufferMultipleOutputs = "Transform feedback has a buffer bound to multiple outputs.";
 MSG kTransformFeedbackBufferTooSmall = "Not enough space in bound transform feedback buffers.";
 MSG kTransformFeedbackDoesNotExist = "Transform feedback object that does not exist.";
@@ -565,7 +566,9 @@ MSG kUnrecognizedShaderStageBit = "Unrecognized shader stage bit.";
 MSG kProgramNotSeparable = "Program object was not linked with its PROGRAM_SEPARABLE status set.";
 MSG kProgramPipelineDoesNotExist = "Program pipeline does not exist.";
 MSG kNotAllStagesOfSeparableProgramUsed = "A program object is active for at least one, but not all of the shader stages that were present when the program was linked.";
+MSG kNoExecutableCodeInstalled = "There is no current program object specified by UseProgram, there is a current program pipeline object, and that object is empty (no executable code is installed for any stage).";
 MSG kProgramPipelineLinkFailed = "Program pipeline link failed";
+MSG kProtectedTexturesExtensionRequired = "GL_EXT_protected_textures not enabled.";
 
 // clang-format on
 

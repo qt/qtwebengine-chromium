@@ -14,6 +14,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/no_destructor.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -35,6 +36,7 @@
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/filter/source_stream.h"
+#include "net/http/http_request_headers.h"
 #include "net/http/http_status_code.h"
 #include "net/log/net_log_util.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
@@ -254,7 +256,7 @@ bool URLDataManagerBackend::IsValidNetworkErrorCode(int error_code) {
   base::Value error_codes = net::GetNetConstants();
   const base::DictionaryValue* net_error_codes_dict = nullptr;
 
-  for (const auto& item : error_codes.DictItems()) {
+  for (auto item : error_codes.DictItems()) {
     if (item.first == kNetworkErrorKey) {
       item.second.GetAsDictionary(&net_error_codes_dict);
       break;
@@ -272,11 +274,18 @@ bool URLDataManagerBackend::IsValidNetworkErrorCode(int error_code) {
 }
 
 std::vector<std::string> URLDataManagerBackend::GetWebUISchemes() {
-  std::vector<std::string> schemes;
-  schemes.push_back(kChromeUIScheme);
-  schemes.push_back(kChromeUIUntrustedScheme);
-  GetContentClient()->browser()->GetAdditionalWebUISchemes(&schemes);
-  return schemes;
+  // It's OK to cache this in a static because the class implementing
+  // GetAdditionalWebUISchemes() won't change while the application is
+  // running, and because those methods always add the same items.
+  static base::NoDestructor<std::vector<std::string>> webui_schemes([]() {
+    std::vector<std::string> schemes;
+    schemes.emplace_back(kChromeUIScheme);
+    schemes.emplace_back(kChromeUIUntrustedScheme);
+    GetContentClient()->browser()->GetAdditionalWebUISchemes(&schemes);
+    return schemes;
+  }());
+
+  return *webui_schemes;
 }
 
 }  // namespace content

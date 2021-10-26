@@ -80,11 +80,6 @@ def ci_builder(
         notifies = (notifies or []) + ["chromium-tree-closer", "chromium-tree-closer-email"]
 
     merged_resultdb_bigquery_exports = [
-        # TODO(crbug.com/1230801): Remove when all usages of this table have
-        # been migrated to `chrome-luci-data.chromium.ci_test_results`.
-        resultdb.export_test_results(
-            bq_table = "luci-resultdb.chromium.ci_test_results",
-        ),
         resultdb.export_test_results(
             bq_table = "chrome-luci-data.chromium.ci_test_results",
         ),
@@ -99,6 +94,14 @@ def ci_builder(
                 test_id_regexp = "ninja://(chrome/test:|content/test:fuchsia_)telemetry_gpu_integration_test[^/]*/.+",
             ),
         ),
+        resultdb.export_test_results(
+            bq_table = "chrome-luci-data.chromium.blink_web_tests_ci_test_results",
+            predicate = resultdb.test_result_predicate(
+                # Match the "blink_web_tests" target and all of its
+                # flag-specific versions, e.g. "vulkan_swiftshader_blink_web_tests".
+                test_id_regexp = "ninja://[^/]*blink_web_tests/.+",
+            ),
+        ),
     ]
     merged_resultdb_bigquery_exports.extend(resultdb_bigquery_exports or [])
 
@@ -109,11 +112,10 @@ def ci_builder(
         branches.value({branches.STANDARD_BRANCHES: "chrome_browser_release"}),
     )
 
-    # Enable "chromium.resultdb.result_sink" on ci builders.
     experiments = experiments or {}
-    experiments.setdefault("chromium.resultdb.result_sink", 100)
-    experiments.setdefault("chromium.resultdb.result_sink.junit_tests", 100)
-    experiments.setdefault("chromium.resultdb.result_sink.gtests_local", 100)
+
+    # TODO(crbug.com/1135718): Promote out of experiment for all builders.
+    experiments.setdefault("chromium.chromium_tests.use_rdb_results", 100)
 
     goma_enable_ats = defaults.get_value_from_kwargs("goma_enable_ats", kwargs)
     if goma_enable_ats == args.COMPUTE:
@@ -461,7 +463,7 @@ def fyi_ios_builder(
         executable = "recipe:chromium",
         goma_backend = builders.goma.backend.RBE_PROD,
         os = builders.os.MAC_11,
-        xcode = builders.xcode.x12d4e,
+        xcode = builders.xcode.x13main,
         **kwargs):
     return fyi_builder(
         name = name,
@@ -621,6 +623,20 @@ def gpu_windows_builder(*, name, **kwargs):
         **kwargs
     )
 
+def infra_builder(
+        *,
+        name,
+        goma_backend = builders.goma.backend.RBE_PROD,
+        os = builders.os.LINUX_BIONIC_REMOVE,
+        **kwargs):
+    return ci.builder(
+        name = name,
+        builder_group = "infra",
+        goma_backend = goma_backend,
+        os = os,
+        **kwargs
+    )
+
 def linux_builder(
         *,
         name,
@@ -668,7 +684,7 @@ def mac_ios_builder(
         executable = "recipe:chromium",
         goma_backend = builders.goma.backend.RBE_PROD,
         os = builders.os.MAC_11,
-        xcode = builders.xcode.x12d4e,
+        xcode = builders.xcode.x13main,
         **kwargs):
     return mac_builder(
         name = name,
@@ -824,6 +840,15 @@ def win_builder(
         **kwargs
     )
 
+def win_thin_tester(*, name, triggered_by, **kwargs):
+    return thin_tester(
+        name = name,
+        builder_group = "chromium.win",
+        sheriff_rotations = builders.sheriff_rotations.CHROMIUM,
+        triggered_by = triggered_by,
+        **kwargs
+    )
+
 ci = struct(
     # Module-level defaults for ci functions
     defaults = defaults,
@@ -864,6 +889,7 @@ ci = struct(
     gpu_mac_builder = gpu_mac_builder,
     gpu_thin_tester = gpu_thin_tester,
     gpu_windows_builder = gpu_windows_builder,
+    infra_builder = infra_builder,
     linux_builder = linux_builder,
     mac_builder = mac_builder,
     mac_ios_builder = mac_ios_builder,
@@ -876,4 +902,10 @@ ci = struct(
     thin_tester = thin_tester,
     updater_builder = updater_builder,
     win_builder = win_builder,
+    win_thin_tester = win_thin_tester,
+)
+
+rbe_instance = struct(
+    DEFAULT = "rbe-chromium-trusted",
+    GVISOR_SHADOW = "rbe-chromium-gvisor-shadow",
 )

@@ -30,8 +30,6 @@
 #include "spdy/core/spdy_header_block.h"
 #include "spdy/core/spdy_headers_handler_interface.h"
 #include "spdy/core/spdy_protocol.h"
-#include "spdy/platform/api/spdy_estimate_memory_usage.h"
-#include "spdy/platform/api/spdy_string_utils.h"
 
 using ::spdy::ExtensionVisitorInterface;
 using ::spdy::HpackDecoderAdapter;
@@ -40,7 +38,6 @@ using ::spdy::ParseErrorCode;
 using ::spdy::ParseFrameType;
 using ::spdy::SpdyAltSvcWireFormat;
 using ::spdy::SpdyErrorCode;
-using ::spdy::SpdyEstimateMemoryUsage;
 using ::spdy::SpdyFramerDebugVisitorInterface;
 using ::spdy::SpdyFramerVisitorInterface;
 using ::spdy::SpdyFrameType;
@@ -249,6 +246,8 @@ const char* Http2DecoderAdapter::SpdyFramerErrorToString(
       return "HPACK_FRAGMENT_TOO_LONG";
     case SPDY_HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT:
       return "HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT";
+    case SPDY_STOP_PROCESSING:
+      return "STOP_PROCESSING";
     case LAST_ERROR:
       return "UNKNOWN_ERROR";
   }
@@ -320,11 +319,9 @@ bool Http2DecoderAdapter::probable_http_response() const {
   return latched_probable_http_response_;
 }
 
-size_t Http2DecoderAdapter::EstimateMemoryUsage() const {
-  // Skip |frame_decoder_|, |frame_header_| and |hpack_first_frame_header_| as
-  // they don't allocate.
-  return SpdyEstimateMemoryUsage(alt_svc_origin_) +
-         SpdyEstimateMemoryUsage(alt_svc_value_);
+void Http2DecoderAdapter::StopProcessing() {
+  SetSpdyErrorAndNotify(SpdyFramerError::SPDY_STOP_PROCESSING,
+                        "Ignoring further events on this connection.");
 }
 
 // ===========================================================================
@@ -784,12 +781,12 @@ void Http2DecoderAdapter::OnFrameSizeError(const Http2FrameHeader& header) {
   QUICHE_DVLOG(1) << "OnFrameSizeError: " << header;
   size_t recv_limit = recv_frame_size_limit_;
   if (header.payload_length > recv_limit) {
-    SetSpdyErrorAndNotify(SpdyFramerError::SPDY_OVERSIZED_PAYLOAD, "");
-    return;
-  }
-  if (header.type != Http2FrameType::DATA &&
-      header.payload_length > recv_limit) {
-    SetSpdyErrorAndNotify(SpdyFramerError::SPDY_CONTROL_PAYLOAD_TOO_LARGE, "");
+    if (header.type == Http2FrameType::DATA) {
+      SetSpdyErrorAndNotify(SpdyFramerError::SPDY_OVERSIZED_PAYLOAD, "");
+    } else {
+      SetSpdyErrorAndNotify(SpdyFramerError::SPDY_CONTROL_PAYLOAD_TOO_LARGE,
+                            "");
+    }
     return;
   }
   switch (header.type) {

@@ -35,7 +35,7 @@
 #include "components/policy/core/common/cloud/realtime_reporting_job_configuration.h"
 #include "components/policy/core/common/cloud/user_cloud_policy_manager.h"
 #include "components/prefs/pref_service.h"
-#include "components/safe_browsing/content/web_ui/safe_browsing_ui.h"
+#include "components/safe_browsing/content/browser/web_ui/safe_browsing_ui.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "content/public/browser/browser_context.h"
@@ -45,10 +45,10 @@
 #include "url/gurl.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "chrome/browser/ash/policy/core/browser_policy_connector_ash.h"
+#include "chrome/browser/ash/policy/core/user_cloud_policy_manager_ash.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
-#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
-#include "chrome/browser/chromeos/policy/user_cloud_policy_manager_chromeos.h"
 #include "components/user_manager/user.h"
 #include "components/user_manager/user_manager.h"
 #else
@@ -853,7 +853,7 @@ SafeBrowsingPrivateEventRouter::InitBrowserReportingClient(
       policy_client_desc = kActiveDirectoryPolicyClientDescription;
     } else {
       policy_client_desc = kUserPolicyClientDescription;
-      auto* policy_manager = profile->GetUserCloudPolicyManagerChromeOS();
+      auto* policy_manager = profile->GetUserCloudPolicyManagerAsh();
       if (policy_manager)
         client = policy_manager->core()->client();
     }
@@ -979,23 +979,27 @@ void SafeBrowsingPrivateEventRouter::ReportRealtimeEvent(
       now_exploded.month, now_exploded.day_of_month, now_exploded.hour,
       now_exploded.minute, now_exploded.second, now_exploded.millisecond);
 
+  auto* client = settings.per_profile ? profile_client_ : browser_client_;
   base::Value wrapper(base::Value::Type::DICTIONARY);
   wrapper.SetStringKey("time", now_str);
   wrapper.SetKey(name, std::move(event));
 
   auto upload_callback = base::BindOnce(
-      [](base::Value wrapper, bool uploaded) {
+      [](base::Value wrapper, bool per_profile, std::string dm_token,
+         bool uploaded) {
         // Show the report on chrome://safe-browsing, if appropriate.
         wrapper.SetBoolKey("uploaded_successfully", uploaded);
+        wrapper.SetStringKey(
+            per_profile ? "profile_dm_token" : "browser_dm_token",
+            std::move(dm_token));
         safe_browsing::WebUIInfoSingleton::GetInstance()->AddToReportingEvents(
             wrapper);
       },
-      wrapper.Clone());
+      wrapper.Clone(), settings.per_profile, client->dm_token());
 
   base::Value event_list(base::Value::Type::LIST);
   event_list.Append(std::move(wrapper));
 
-  auto* client = settings.per_profile ? profile_client_ : browser_client_;
   client->UploadSecurityEventReport(
       context_,
       /* include_device_info */ !settings.per_profile,
@@ -1023,8 +1027,8 @@ bool SafeBrowsingPrivateEventRouter::IsRealtimeReportingAvailable() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   // The device must be managed.
   if (!g_browser_process->platform_part()
-           ->browser_policy_connector_chromeos()
-           ->IsEnterpriseManaged())
+           ->browser_policy_connector_ash()
+           ->IsDeviceEnterpriseManaged())
     return false;
 
   // The Chrome OS user must be affiliated with the device.

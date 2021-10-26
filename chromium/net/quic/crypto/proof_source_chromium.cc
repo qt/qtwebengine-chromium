@@ -33,7 +33,8 @@ bool ProofSourceChromium::Initialize(const base::FilePath& cert_path,
 
   CertificateList certs_in_file =
       X509Certificate::CreateCertificateListFromBytes(
-          cert_data.data(), cert_data.size(), X509Certificate::FORMAT_AUTO);
+          base::as_bytes(base::make_span(cert_data)),
+          X509Certificate::FORMAT_AUTO);
 
   if (certs_in_file.empty()) {
     DLOG(FATAL) << "No certificates.";
@@ -189,6 +190,12 @@ void ProofSourceChromium::ComputeTlsSignature(
   sig.resize(siglen);
 
   callback->Run(true, sig, nullptr);
+}
+
+absl::InlinedVector<uint16_t, 8>
+ProofSourceChromium::SupportedTlsSignatureAlgorithms() const {
+  // Allow all signature algorithms that BoringSSL allows.
+  return {};
 }
 
 quic::ProofSource::TicketCrypter* ProofSourceChromium::GetTicketCrypter() {

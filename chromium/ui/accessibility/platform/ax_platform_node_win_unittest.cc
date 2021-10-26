@@ -14,6 +14,8 @@
 #include "base/containers/contains.h"
 #include "base/json/json_reader.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util_win.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/task_environment.h"
 #include "base/win/atl.h"
@@ -316,12 +318,13 @@ ComPtr<IRawElementProviderSimple>
 AXPlatformNodeWinTest::GetIRawElementProviderSimpleFromChildIndex(
     int child_index) {
   if (!GetRootAsAXNode() || child_index < 0 ||
-      size_t{child_index} >= GetRootAsAXNode()->children().size()) {
+      static_cast<size_t>(child_index) >=
+          GetRootAsAXNode()->children().size()) {
     return ComPtr<IRawElementProviderSimple>();
   }
 
   return QueryInterfaceFromNode<IRawElementProviderSimple>(
-      GetRootAsAXNode()->children()[size_t{child_index}]);
+      GetRootAsAXNode()->children()[static_cast<size_t>(child_index)]);
 }
 
 Microsoft::WRL::ComPtr<IRawElementProviderSimple>
@@ -2834,7 +2837,8 @@ TEST_F(AXPlatformNodeWinTest, UnlabeledImageRoleDescription) {
   Init(tree);
   ComPtr<IAccessible> root_obj(GetRootIAccessible());
 
-  for (int child_index = 0; child_index < int{tree.nodes[0].child_ids.size()};
+  for (int child_index = 0;
+       child_index < static_cast<int>(tree.nodes[0].child_ids.size());
        ++child_index) {
     ComPtr<IDispatch> child_dispatch;
     ASSERT_HRESULT_SUCCEEDED(root_obj->get_accChild(
@@ -2870,7 +2874,8 @@ TEST_F(AXPlatformNodeWinTest, UnlabeledImageAttributes) {
   Init(tree);
   ComPtr<IAccessible> root_obj(GetRootIAccessible());
 
-  for (int child_index = 0; child_index < int{tree.nodes[0].child_ids.size()};
+  for (int child_index = 0;
+       child_index < static_cast<int>(tree.nodes[0].child_ids.size());
        ++child_index) {
     ComPtr<IDispatch> child_dispatch;
     ASSERT_HRESULT_SUCCEEDED(root_obj->get_accChild(
@@ -4747,7 +4752,7 @@ TEST_F(AXPlatformNodeWinTest, GetPropertyValue_IsControlElement) {
   update.nodes[12].AddState(ax::mojom::State::kEditable);
   update.nodes[12].AddState(ax::mojom::State::kRichlyEditable);
   update.nodes[12].AddBoolAttribute(
-      ax::mojom::BoolAttribute::kContentEditableRoot, true);
+      ax::mojom::BoolAttribute::kNonAtomicTextFieldRoot, true);
   update.nodes[13].id = 14;
   update.nodes[13].role = ax::mojom::Role::kGenericContainer;
   update.nodes[13].SetName("name");
@@ -6043,7 +6048,7 @@ TEST_F(AXPlatformNodeWinTest, GetPatternProviderSupportedPatterns) {
   Init(update);
 
   EXPECT_EQ(PatternSet({UIA_ScrollItemPatternId, UIA_TextEditPatternId,
-                        UIA_TextPatternId}),
+                        UIA_TextPatternId, UIA_ValuePatternId}),
             GetSupportedPatternsFromNodeId(root_id));
 
   EXPECT_EQ(PatternSet({UIA_ScrollItemPatternId, UIA_ValuePatternId,
@@ -7115,9 +7120,25 @@ TEST_F(AXPlatformNodeWinTest, IValueProvider_GetValue) {
                          static_cast<int>(ax::mojom::Restriction::kReadOnly));
   root.child_ids.push_back(child3.id);
 
-  Init(root, child1, child2, child3);
+  const char url[] = "https://localhost";
+  AXTreeUpdate update;
+  update.has_tree_data = true;
+  update.tree_data.url = url;
+  update.root_id = root.id;
+  update.nodes.push_back(root);
+  update.nodes.push_back(child1);
+  update.nodes.push_back(child2);
+  update.nodes.push_back(child3);
+  Init(update);
 
   ScopedBstr bstr_value;
+
+  EXPECT_HRESULT_SUCCEEDED(
+      QueryInterfaceFromNode<IValueProvider>(GetRootAsAXNode())
+          ->get_Value(bstr_value.Receive()));
+  EXPECT_STREQ(url,
+               base::UTF16ToASCII(base::as_u16cstr(bstr_value.Get())).c_str());
+  bstr_value.Reset();
 
   EXPECT_HRESULT_SUCCEEDED(
       QueryInterfaceFromNode<IValueProvider>(GetRootAsAXNode()->children()[0])
@@ -7188,7 +7209,16 @@ TEST_F(AXPlatformNodeWinTest, IValueProvider_SetValue) {
                          static_cast<int>(ax::mojom::Restriction::kReadOnly));
   root.child_ids.push_back(child3.id);
 
-  Init(root, child1, child2, child3);
+  const char url[] = "https://localhost";
+  AXTreeUpdate update;
+  update.has_tree_data = true;
+  update.tree_data.url = url;
+  update.root_id = root.id;
+  update.nodes.push_back(root);
+  update.nodes.push_back(child1);
+  update.nodes.push_back(child2);
+  update.nodes.push_back(child3);
+  Init(update);
 
   ComPtr<IValueProvider> root_provider =
       QueryInterfaceFromNode<IValueProvider>(GetRootAsAXNode());
@@ -7201,9 +7231,14 @@ TEST_F(AXPlatformNodeWinTest, IValueProvider_SetValue) {
 
   ScopedBstr bstr_value;
 
+  EXPECT_UIA_ELEMENTNOTENABLED(root_provider->SetValue(L"https://foo"));
+  EXPECT_HRESULT_SUCCEEDED(root_provider->get_Value(bstr_value.Receive()));
+  EXPECT_STREQ(url,
+               base::UTF16ToASCII(base::as_u16cstr(bstr_value.Get())).c_str());
+  bstr_value.Reset();
+
   // Note: TestAXNodeWrapper::AccessibilityPerformAction will
   // modify the value when the kSetValue action is fired.
-
   EXPECT_UIA_ELEMENTNOTENABLED(provider1->SetValue(L"2"));
   EXPECT_HRESULT_SUCCEEDED(provider1->get_Value(bstr_value.Receive()));
   EXPECT_STREQ(L"3", bstr_value.Get());
@@ -7255,6 +7290,11 @@ TEST_F(AXPlatformNodeWinTest, IValueProvider_IsReadOnly) {
   Init(root, child1, child2, child3, child4);
 
   BOOL is_readonly = false;
+
+  EXPECT_HRESULT_SUCCEEDED(
+      QueryInterfaceFromNode<IValueProvider>(GetRootAsAXNode())
+          ->get_IsReadOnly(&is_readonly));
+  EXPECT_TRUE(is_readonly);
 
   EXPECT_HRESULT_SUCCEEDED(
       QueryInterfaceFromNode<IValueProvider>(GetRootAsAXNode()->children()[0])

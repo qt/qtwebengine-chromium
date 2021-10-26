@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/layout/bidi_run_for_line.h"
 #include "third_party/blink/renderer/core/layout/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_ruby_run.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/line/breaking_context_inline_headers.h"
@@ -59,7 +60,8 @@ class ExpansionOpportunities {
     unsigned opportunities_in_run;
     if (text.Is8Bit()) {
       opportunities_in_run = Character::ExpansionOpportunityCount(
-          {text.Characters8() + run.start_, run.stop_ - run.start_},
+          {text.Characters8() + run.start_,
+           static_cast<size_t>(run.stop_ - run.start_)},
           run.box_->Direction(), is_after_expansion, text_justify);
     } else if (run.line_layout_item_.IsCombineText()) {
       // Justfication applies to before and after the combined text as if
@@ -69,7 +71,8 @@ class ExpansionOpportunities {
       is_after_expansion = true;
     } else {
       opportunities_in_run = Character::ExpansionOpportunityCount(
-          {text.Characters16() + run.start_, run.stop_ - run.start_},
+          {text.Characters16() + run.start_,
+           static_cast<size_t>(run.stop_ - run.start_)},
           run.box_->Direction(), is_after_expansion, text_justify);
     }
     runs_with_expansions_.push_back(opportunities_in_run);
@@ -84,8 +87,6 @@ class ExpansionOpportunities {
 
   unsigned Count() { return total_opportunities_; }
 
-  unsigned OpportunitiesInRun(size_t run) { return runs_with_expansions_[run]; }
-
   void ComputeExpansionsForJustifiedText(BidiRun* first_run,
                                          BidiRun* trailing_space_run,
                                          LayoutUnit& total_logical_width,
@@ -93,7 +94,7 @@ class ExpansionOpportunities {
     if (!total_opportunities_ || available_logical_width <= total_logical_width)
       return;
 
-    size_t i = 0;
+    wtf_size_t i = 0;
     for (BidiRun* r = first_run; r; r = r->Next()) {
       if (!r->box_ || r == trailing_space_run)
         continue;
@@ -498,14 +499,14 @@ void LayoutBlockFlow::SetMarginsForRubyRun(BidiRun* run,
   SetMarginEndForChild(*layout_ruby_run, LayoutUnit(-end_overhang));
 }
 
-static inline size_t FindWordMeasurement(
+static inline wtf_size_t FindWordMeasurement(
     LineLayoutText layout_text,
     int offset,
     const WordMeasurements& word_measurements,
-    size_t last_index) {
+    wtf_size_t last_index) {
   // In LTR, lastIndex should match since the order of BidiRun (visual) and
   // WordMeasurement (logical) are the same.
-  size_t size = word_measurements.size();
+  wtf_size_t size = word_measurements.size();
   if (last_index < size) {
     const WordMeasurement& word_measurement = word_measurements[last_index];
     if (word_measurement.layout_text == layout_text &&
@@ -514,7 +515,7 @@ static inline size_t FindWordMeasurement(
   }
 
   // In RTL, scan the whole array because they are not the same.
-  for (size_t i = 0; i < size; ++i) {
+  for (wtf_size_t i = 0; i < size; ++i) {
     const WordMeasurement& word_measurement = word_measurements[i];
     if (word_measurement.layout_text != layout_text)
       continue;
@@ -540,7 +541,7 @@ static inline void SetLogicalWidthForTextRun(
     GlyphOverflowAndFallbackFontsMap& text_box_data_map,
     VerticalPositionCache& vertical_position_cache,
     const WordMeasurements& word_measurements,
-    size_t& word_measurements_index) {
+    wtf_size_t& word_measurements_index) {
   HashSet<const SimpleFontData*> fallback_fonts;
   GlyphOverflow glyph_overflow;
 
@@ -569,9 +570,10 @@ static inline void SetLogicalWidthForTextRun(
 
   if (can_use_cached_word_measurements) {
     int last_end_offset = run->start_;
-    size_t i = FindWordMeasurement(layout_text, last_end_offset,
-                                   word_measurements, word_measurements_index);
-    for (size_t size = word_measurements.size();
+    wtf_size_t i =
+        FindWordMeasurement(layout_text, last_end_offset, word_measurements,
+                            word_measurements_index);
+    for (wtf_size_t size = word_measurements.size();
          i < size && last_end_offset < run->stop_; ++i) {
       const WordMeasurement& word_measurement = word_measurements[i];
       if (word_measurement.start_offset == word_measurement.end_offset)
@@ -737,7 +739,8 @@ bool LayoutBlockFlow::CanContainFirstFormattedLine() const {
   // line of an element. For example, the first line of an anonymous block
   // box is only affected if it is the first child of its parent element.
   // https://drafts.csswg.org/css-text-3/#text-indent-property
-  return !(IsAnonymousBlock() && PreviousSibling());
+  return !IsAnonymousBlock() || !PreviousSibling() ||
+         IsFlexItemIncludingDeprecatedAndNG() || IsGridItemIncludingNG();
 }
 
 static void UpdateLogicalInlinePositions(LayoutBlockFlow* block,
@@ -817,7 +820,7 @@ BidiRun* LayoutBlockFlow::ComputeInlineDirectionPositionsForSegment(
   TextJustify text_justify = StyleRef().GetTextJustify();
 
   BidiRun* r = first_run;
-  size_t word_measurements_index = 0;
+  wtf_size_t word_measurements_index = 0;
   for (; r; r = r->Next()) {
     if (!r->box_ || r->line_layout_item_.IsOutOfFlowPositioned() ||
         r->box_->IsLineBreak()) {
@@ -1449,11 +1452,11 @@ void LayoutBlockFlow::LinkToEndLineIfNeeded(LineLayoutState& layout_state) {
 void LayoutBlockFlow::MarkDirtyFloatsForPaintInvalidation(
     Vector<FloatWithRect>& floats) {
   NOT_DESTROYED();
-  size_t float_count = floats.size();
+  wtf_size_t float_count = floats.size();
   // Floats that did not have layout did not paint invalidations when we laid
   // them out. They would have painted by now if they had moved, but if they
   // stayed at (0, 0), they still need to be painted.
-  for (size_t i = 0; i < float_count; ++i) {
+  for (wtf_size_t i = 0; i < float_count; ++i) {
     LayoutBox* f = floats[i].object;
     if (!floats[i].ever_had_layout) {
       if (!f->Location().X() && !f->Location().Y())

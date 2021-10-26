@@ -23,7 +23,9 @@
 
 #include <stdint.h>
 
-#include "libavutil/bprint.h"
+#include "libavcodec/avcodec.h"
+#include "libavcodec/bsf.h"
+
 #include "avformat.h"
 #include "os_support.h"
 
@@ -38,6 +40,12 @@
 #else
 #    define hex_dump_debug(class, buf, size) do { if (0) av_hex_dump_log(class, AV_LOG_DEBUG, buf, size); } while(0)
 #endif
+
+/**
+ * For an AVInputFormat with this flag set read_close() needs to be called
+ * by the caller upon read_header() failure.
+ */
+#define FF_FMT_INIT_CLEANUP                             (1 << 0)
 
 typedef struct AVCodecTag {
     enum AVCodecID id;
@@ -73,8 +81,8 @@ struct AVFormatInternal {
      * not decoded, for example to get the codec parameters in MPEG
      * streams.
      */
-    struct AVPacketList *packet_buffer;
-    struct AVPacketList *packet_buffer_end;
+    struct PacketList *packet_buffer;
+    struct PacketList *packet_buffer_end;
 
     /* av_seek_frame() support */
     int64_t data_offset; /**< offset of the first packet */
@@ -85,13 +93,31 @@ struct AVFormatInternal {
      * be identified, as parsing cannot be done without knowing the
      * codec.
      */
-    struct AVPacketList *raw_packet_buffer;
-    struct AVPacketList *raw_packet_buffer_end;
+    struct PacketList *raw_packet_buffer;
+    struct PacketList *raw_packet_buffer_end;
     /**
      * Packets split by the parser get queued here.
      */
-    struct AVPacketList *parse_queue;
-    struct AVPacketList *parse_queue_end;
+    struct PacketList *parse_queue;
+    struct PacketList *parse_queue_end;
+    /**
+     * The generic code uses this as a temporary packet
+     * to parse packets; it may also be used for other means
+     * for short periods that are guaranteed not to overlap
+     * with calls to av_read_frame() (or ff_read_packet())
+     * or with each other.
+     * It may be used by demuxers as a replacement for
+     * stack packets (unless they call one of the aforementioned
+     * functions with their own AVFormatContext).
+     * Every user has to ensure that this packet is blank
+     * after using it.
+     */
+    AVPacket *parse_pkt;
+
+    /**
+     * Used to hold temporary packets.
+     */
+    AVPacket *pkt;
     /**
      * Remaining size available for raw_packet_buffer, in bytes.
      */
@@ -177,14 +203,11 @@ struct AVStreamInternal {
      */
     int avctx_inited;
 
-    enum AVCodecID orig_codec_id;
-
     /* the context for extracting extradata in find_stream_info()
      * inited=1/bsf=NULL signals that extracting is not possible (codec not
      * supported) */
     struct {
         AVBSFContext *bsf;
-        AVPacket     *pkt;
         int inited;
     } extract_extradata;
 
@@ -347,8 +370,45 @@ struct AVStreamInternal {
     /**
      * last packet in packet_buffer for this stream when muxing.
      */
-    struct AVPacketList *last_in_packet_buffer;
+    struct PacketList *last_in_packet_buffer;
+
+    int64_t last_IP_pts;
+    int last_IP_duration;
+
+    /**
+     * Number of packets to buffer for codec probing
+     */
+    int probe_packets;
+
+    /* av_read_frame() support */
+    enum AVStreamParseType need_parsing;
+    struct AVCodecParserContext *parser;
+
+    /**
+     * Number of frames that have been demuxed during avformat_find_stream_info()
+     */
+    int codec_info_nb_frames;
+
+    /**
+     * Stream Identifier
+     * This is the MPEG-TS stream identifier +1
+     * 0 means unknown
+     */
+    int stream_identifier;
+
+    // Timestamp generation support:
+    /**
+     * Timestamp corresponding to the last dts sync point.
+     *
+     * Initialized when AVCodecParserContext.dts_sync_point >= 0 and
+     * a DTS is received from the underlying container. Otherwise set to
+     * AV_NOPTS_VALUE by default.
+     */
+    int64_t first_dts;
+    int64_t cur_dts;
 };
+
+void avpriv_stream_set_need_parsing(AVStream *st, enum AVStreamParseType type);
 
 #ifdef __GNUC__
 #define dynarray_add(tab, nb_ptr, elem)\
@@ -410,6 +470,14 @@ uint64_t ff_ntp_time(void);
 uint64_t ff_get_formatted_ntp_time(uint64_t ntp_time_us);
 
 /**
+ * Parse the NTP time in micro seconds (since NTP epoch).
+ *
+ * @param ntp_ts NTP time stamp formatted as per the RFC-5905.
+ * @return the time in micro seconds (since NTP epoch)
+ */
+uint64_t ff_parse_ntp_time(uint64_t ntp_ts);
+
+/**
  * Append the media-specific SDP fragment for the media stream c
  * to the buffer buff.
  *
@@ -468,32 +536,6 @@ int ff_get_line(AVIOContext *s, char *buf, int maxlen);
  * @return the length of the string written in the buffer
  */
 int ff_get_chomp_line(AVIOContext *s, char *buf, int maxlen);
-
-/**
- * Read a whole line of text from AVIOContext to an AVBPrint buffer. Stop
- * reading after reaching a \\r, a \\n, a \\r\\n, a \\0 or EOF.  The line
- * ending characters are NOT included in the buffer, but they are skipped on
- * the input.
- *
- * @param s the read-only AVIOContext
- * @param bp the AVBPrint buffer
- * @return the length of the read line, not including the line endings,
- *         negative on error.
- */
-int64_t ff_read_line_to_bprint(AVIOContext *s, AVBPrint *bp);
-
-/**
- * Read a whole line of text from AVIOContext to an AVBPrint buffer overwriting
- * its contents. Stop reading after reaching a \\r, a \\n, a \\r\\n, a \\0 or
- * EOF. The line ending characters are NOT included in the buffer, but they
- * are skipped on the input.
- *
- * @param s the read-only AVIOContext
- * @param bp the AVBPrint buffer
- * @return the length of the read line not including the line endings,
- *         negative on error, or if the buffer becomes truncated.
- */
-int64_t ff_read_line_to_bprint_overwrite(AVIOContext *s, AVBPrint *bp);
 
 #define SPACE_CHARS " \t\r\n"
 
@@ -554,7 +596,7 @@ void ff_configure_buffers_for_index(AVFormatContext *s, int64_t time_tolerance);
  *
  * @return AVChapter or NULL on error
  */
-AVChapter *avpriv_new_chapter(AVFormatContext *s, int id, AVRational time_base,
+AVChapter *avpriv_new_chapter(AVFormatContext *s, int64_t id, AVRational time_base,
                               int64_t start, int64_t end, const char *title);
 
 /**
@@ -584,7 +626,7 @@ int ff_seek_frame_binary(AVFormatContext *s, int stream_index,
  * @param timestamp new dts expressed in time_base of param ref_st
  * @param ref_st reference stream giving time_base of param timestamp
  */
-void ff_update_cur_dts(AVFormatContext *s, AVStream *ref_st, int64_t timestamp);
+void avpriv_update_cur_dts(AVFormatContext *s, AVStream *ref_st, int64_t timestamp);
 
 int ff_find_last_ts(AVFormatContext *s, int stream_index, int64_t *ts, int64_t *pos,
                     int64_t (*read_timestamp)(struct AVFormatContext *, int , int64_t *, int64_t ));
@@ -639,6 +681,22 @@ int ff_framehash_write_header(AVFormatContext *s);
  * @return 0 if OK, AVERROR_xxx on error
  */
 int ff_read_packet(AVFormatContext *s, AVPacket *pkt);
+
+/**
+ * Add an attached pic to an AVStream.
+ *
+ * @param st   if set, the stream to add the attached pic to;
+ *             if unset, a new stream will be added to s.
+ * @param pb   AVIOContext to read data from if buf is unset.
+ * @param buf  if set, it contains the data and size information to be used
+ *             for the attached pic; if unset, data is read from pb.
+ * @param size the size of the data to read if buf is unset.
+ *
+ * @return 0 on success, < 0 on error. On error, this function removes
+ *         the stream it has added (if any).
+ */
+int ff_add_attached_pic(AVFormatContext *s, AVStream *st, AVIOContext *pb,
+                        AVBufferRef **buf, int size);
 
 /**
  * Interleave an AVPacket per dts so it can be muxed.
@@ -725,7 +783,7 @@ int ff_stream_add_bitstream_filter(AVStream *st, const char *name, const char *a
 int ff_stream_encode_params_copy(AVStream *dst, const AVStream *src);
 
 /**
- * Wrap avpriv_io_move and log if error happens.
+ * Wrap ffurl_move() and log if error happens.
  *
  * @param url_src source path
  * @param url_dst destination path
@@ -858,6 +916,7 @@ int ff_reshuffle_raw_rgb(AVFormatContext *s, AVPacket **ppkt, AVCodecParameters 
  */
 int ff_get_packet_palette(AVFormatContext *s, AVPacket *pkt, int ret, uint32_t *palette);
 
+struct AVBPrint;
 /**
  * Finalize buf into extradata and set its size appropriately.
  */

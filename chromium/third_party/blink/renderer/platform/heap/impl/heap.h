@@ -36,7 +36,6 @@
 #include <unordered_set>
 
 #include "base/dcheck_is_on.h"
-#include "base/macros.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/heap/impl/gc_info.h"
 #include "third_party/blink/renderer/platform/heap/impl/heap_page.h"
@@ -503,8 +502,8 @@ class GarbageCollected {
 
 // Used for passing custom sizes to MakeGarbageCollected.
 struct AdditionalBytes {
-  explicit AdditionalBytes(size_t bytes) : value(bytes) {}
-  const size_t value;
+  explicit AdditionalBytes(wtf_size_t bytes) : value(bytes) {}
+  const wtf_size_t value;
 };
 
 template <typename T>
@@ -709,6 +708,12 @@ class LivenessBrokerFactory final {
 };
 
 }  // namespace internal
+
+#if DCHECK_IS_ON()
+static constexpr bool kBlinkGCHasDebugChecks = true;
+#else
+static constexpr bool kBlinkGCHasDebugChecks = false;
+#endif  // DCHECK_IS_ON()
 
 }  // namespace blink
 

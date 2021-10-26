@@ -10,7 +10,7 @@
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
-#include "base/numerics/ranges.h"
+#include "base/cxx17_backports.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/string_util.h"
 #include "base/timer/timer.h"
@@ -264,6 +264,8 @@ MediaSessionAndroid* MediaSessionImpl::GetMediaSessionAndroid() {
 #endif
 
 void MediaSessionImpl::WebContentsDestroyed() {
+  delegate_->ReleaseRequestId();
+
   // This should only work for tests. In production, all the players should have
   // already been removed before WebContents is destroyed.
 
@@ -279,7 +281,7 @@ void MediaSessionImpl::WebContentsDestroyed() {
 }
 
 void MediaSessionImpl::RenderFrameDeleted(RenderFrameHost* rfh) {
-  const auto rfh_id = rfh->GetGlobalFrameRoutingId();
+  const auto rfh_id = rfh->GetGlobalId();
   if (services_.count(rfh_id))
     OnServiceDestroyed(services_[rfh_id]);
 }
@@ -294,14 +296,13 @@ void MediaSessionImpl::DidFinishNavigation(
   image_cache_.clear();
 
   auto new_origin = url::Origin::Create(navigation_handle->GetURL());
-  if (navigation_handle->IsInMainFrame() &&
+  if (navigation_handle->IsInPrimaryMainFrame() &&
       !new_origin.IsSameOriginWith(origin_)) {
     audio_device_id_for_origin_.reset();
     origin_ = new_origin;
   }
 
-  const auto rfh_id =
-      navigation_handle->GetRenderFrameHost()->GetGlobalFrameRoutingId();
+  const auto rfh_id = navigation_handle->GetRenderFrameHost()->GetGlobalId();
   if (services_.count(rfh_id))
     services_[rfh_id]->DidFinishNavigation();
 
@@ -544,6 +545,12 @@ void MediaSessionImpl::RebuildAndNotifyMediaPositionChanged() {
 
   position_ = position;
 
+  if (auto* pip_window_controller_ =
+          PictureInPictureWindowControllerImpl::FromWebContents(
+              web_contents())) {
+    pip_window_controller_->MediaSessionPositionChanged(position_);
+  }
+
   for (auto& observer : observers_)
     observer->MediaSessionPositionChanged(position_);
 }
@@ -685,7 +692,7 @@ bool MediaSessionImpl::IsControllable() const {
 }
 
 void MediaSessionImpl::SetDuckingVolumeMultiplier(double multiplier) {
-  ducking_volume_multiplier_ = base::ClampToRange(multiplier, 0.0, 1.0);
+  ducking_volume_multiplier_ = base::clamp(multiplier, 0.0, 1.0);
 }
 
 void MediaSessionImpl::SetAudioFocusGroupId(
@@ -1416,7 +1423,7 @@ void MediaSessionImpl::DidReceiveAction(
 }
 
 bool MediaSessionImpl::IsServiceActiveForRenderFrameHost(RenderFrameHost* rfh) {
-  return services_.find(rfh->GetGlobalFrameRoutingId()) != services_.end();
+  return services_.find(rfh->GetGlobalId()) != services_.end();
 }
 
 void MediaSessionImpl::UpdateRoutedService() {
@@ -1471,8 +1478,7 @@ MediaSessionServiceImpl* MediaSessionImpl::ComputeServiceForRouting() {
     min_depth = depth;
   }
 
-  return best_frame ? services_[best_frame->GetGlobalFrameRoutingId()]
-                    : nullptr;
+  return best_frame ? services_[best_frame->GetGlobalId()] : nullptr;
 }
 
 void MediaSessionImpl::OnPictureInPictureAvailabilityChanged() {
@@ -1576,17 +1582,29 @@ void MediaSessionImpl::RebuildAndNotifyMetadataChanged() {
   ContentClient* content_client = content::GetContentClient();
   const GURL& url = web_contents()->GetLastCommittedURL();
 
-  // If the url is a file then we should display a placeholder.
-  std::u16string formatted_origin =
-      url.SchemeIsFile()
-          ? content_client->GetLocalizedString(IDS_MEDIA_SESSION_FILE_SOURCE)
-          : url_formatter::FormatUrl(
-                url::Origin::Create(url).GetURL(),
-                url_formatter::kFormatUrlOmitDefaults |
-                    url_formatter::kFormatUrlOmitHTTPS |
-                    url_formatter::kFormatUrlOmitTrivialSubdomains,
-                net::UnescapeRule::SPACES, nullptr, nullptr, nullptr);
-  metadata.source_title = formatted_origin;
+  // If |url| wraps a chrome extension ID, we can display the extension
+  // name instead, which is more human-readable.
+  std::u16string source_title;
+  WebContentsDelegate* delegate = web_contents()->GetDelegate();
+  if (delegate) {
+    source_title =
+        base::UTF8ToUTF16(delegate->GetTitleForMediaControls(web_contents()));
+  }
+
+  if (source_title.empty()) {
+    // If the url is a file then we should display a placeholder.
+    source_title =
+        url.SchemeIsFile()
+            ? content_client->GetLocalizedString(IDS_MEDIA_SESSION_FILE_SOURCE)
+            : url_formatter::FormatUrl(
+                  url::Origin::Create(url).GetURL(),
+                  url_formatter::kFormatUrlOmitDefaults |
+                      url_formatter::kFormatUrlOmitHTTPS |
+                      url_formatter::kFormatUrlOmitTrivialSubdomains,
+                  net::UnescapeRule::SPACES, nullptr, nullptr, nullptr);
+  }
+
+  metadata.source_title = source_title;
 
   // If we have no artwork in |images_| or the arwork has changed then we should
   // update it with the latest artwork from the routed service.

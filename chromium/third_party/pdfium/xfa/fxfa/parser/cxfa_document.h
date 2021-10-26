@@ -7,11 +7,13 @@
 #ifndef XFA_FXFA_PARSER_CXFA_DOCUMENT_H_
 #define XFA_FXFA_PARSER_CXFA_DOCUMENT_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <map>
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fxjs/gc/heap.h"
 #include "third_party/base/optional.h"
@@ -21,6 +23,7 @@
 #include "v8/include/cppgc/persistent.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fxfa/fxfa.h"
+#include "xfa/fxfa/fxfa_basic.h"
 #include "xfa/fxfa/parser/cxfa_localemgr.h"
 #include "xfa/fxfa/parser/cxfa_nodeowner.h"
 

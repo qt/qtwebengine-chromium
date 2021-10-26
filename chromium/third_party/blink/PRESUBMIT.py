@@ -12,6 +12,8 @@ import inspect
 import os
 import re
 
+USE_PYTHON3 = True
+
 try:
     # pylint: disable=C0103
     audit_non_blink_usage = imp.load_source(
@@ -39,9 +41,10 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
         return input_api.FilterSourceFile(
             path,
             files_to_skip=[
-                r'third_party/blink/common/',
-                r'third_party/blink/public/common',
-                r'third_party/blink/renderer/platform/loader/fetch/url_loader',
+                r'.*_test\.(cc|h)$',
+                r'third_party[\\/]blink[\\/]common[\\/]',
+                r'third_party[\\/]blink[\\/]public[\\/]common[\\/]',
+                r'third_party[\\/]blink[\\/]renderer[\\/]platform[\\/]loader[\\/]fetch[\\/]url_loader[\\/]',
             ])
 
     pattern = input_api.re.compile(r'#include\s+[<"](.+)\.mojom(.*)\.h[>"]')
@@ -62,6 +65,7 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
     # the boundary between Blink and non-Blink.
     allowed_interfaces = (
         'services/network/public/mojom/cross_origin_embedder_policy',
+        'services/network/public/mojom/early_hints',
         'services/network/public/mojom/fetch_api',
         'services/network/public/mojom/load_timing_info',
         'services/network/public/mojom/url_loader',
@@ -73,6 +77,7 @@ def _CheckForWrongMojomIncludes(input_api, output_api):
         'third_party/blink/public/mojom/loader/resource_load_info_notifier',
         'third_party/blink/public/mojom/worker/subresource_loader_updater',
         'third_party/blink/public/mojom/loader/transferrable_url_loader',
+        'third_party/blink/public/mojom/loader/code_cache',
         'media/mojo/mojom/interface_factory', 'media/mojo/mojom/audio_decoder',
         'media/mojo/mojom/video_decoder',
         'media/mojo/mojom/media_metrics_provider')
@@ -226,12 +231,35 @@ def _CheckForForbiddenChromiumCode(input_api, output_api):
     return results
 
 
+def _CheckForDeprecatedFunctions(input_api, output_api):
+    """Checks that Blink does not use deprecated functions."""
+    # TODO(https://crbug.com/1058527) Remove this presubmit once we've finished
+    # the refactor and no callers of `WTF::HashMap::DeprecatedAtOrEmptyValue()` remain.
+    deprecated_re = input_api.re.compile(
+        r'[^/][^/].*\bDeprecatedAtOrEmptyValue\b')
+    errors = input_api.canned_checks._FindNewViolationsOfRule(
+        lambda _, x: not deprecated_re.search(x), input_api, None)
+    errors = ['  * %s' % violation for violation in errors]
+    if errors:
+        return [
+            output_api.PresubmitPromptOrNotify(
+                'WTF::HashMap::DeprecatedAtOrEmptyValue() is deprecated. Please use '
+                'at() moving forward. Note that at() will crash if the HashMap '
+                'does not contain the given key, so it is recommended to use '
+                'find() or Contains() if you are not sure. Please fix the '
+                'following occurrences before uploading:\n%s' %
+                '\n'.join(errors))
+        ]
+    return []
+
+
 def CheckChangeOnUpload(input_api, output_api):
     results = []
     results.extend(_CommonChecks(input_api, output_api))
     results.extend(_CheckStyle(input_api, output_api))
     results.extend(_CheckForPrintfDebugging(input_api, output_api))
     results.extend(_CheckForForbiddenChromiumCode(input_api, output_api))
+    results.extend(_CheckForDeprecatedFunctions(input_api, output_api))
     return results
 
 

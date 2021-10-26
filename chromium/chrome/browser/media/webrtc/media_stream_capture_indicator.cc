@@ -47,7 +47,7 @@
 #endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "chrome/browser/chromeos/policy/dlp/dlp_content_manager.h"
+#include "chrome/browser/ash/policy/dlp/dlp_content_manager.h"
 #endif
 
 using content::BrowserThread;
@@ -306,7 +306,7 @@ void MediaStreamCaptureIndicator::WebContentsDeviceUsage::RemoveDevices(
     }
   }
 
-  if (web_contents()) {
+  if (web_contents() && !web_contents()->IsBeingDestroyed()) {
     web_contents()->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_TAB);
     content_settings::UpdateLocationBarUiForWebContents(web_contents());
   }

@@ -9,7 +9,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import type {PerformanceModel} from './PerformanceModel.js'; // eslint-disable-line no-unused-vars
+import type {PerformanceModel} from './PerformanceModel.js';
 import {TimelineEventOverviewCPUActivity, TimelineEventOverviewFrames, TimelineEventOverviewNetwork, TimelineEventOverviewResponsiveness} from './TimelineEventOverview.js';
 
 const UIStrings = {
@@ -251,7 +251,8 @@ export class TimelineHistoryManager {
     nameSpan.textContent = title;
     UI.ARIAUtils.setAccessibleName(nameSpan, title);
     const tracingModel = performanceModel.tracingModel();
-    const duration = Number.millisToString(tracingModel.maximumRecordTime() - tracingModel.minimumRecordTime(), false);
+    const duration =
+        i18n.TimeUtilities.millisToString(tracingModel.maximumRecordTime() - tracingModel.minimumRecordTime(), false);
     const timeContainer = container.createChild('span', 'time');
     timeContainer.appendChild(document.createTextNode(duration));
     timeContainer.appendChild(timeElement);
@@ -332,9 +333,10 @@ export class DropDown implements UI.ListControl.ListDelegate<PerformanceModel> {
     this._glassPane.setAnchorBehavior(UI.GlassPane.AnchorBehavior.PreferBottom);
     this._glassPane.element.addEventListener('blur', () => this._close(null));
 
-    const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
-        this._glassPane.contentElement,
-        {cssFile: 'panels/timeline/timelineHistoryManager.css', enableLegacyPatching: true, delegatesFocus: undefined});
+    const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(this._glassPane.contentElement, {
+      cssFile: 'panels/timeline/timelineHistoryManager.css',
+      delegatesFocus: undefined,
+    });
     const contentElement = shadowRoot.createChild('div', 'drop-down');
 
     const listModel = new UI.ListModel.ListModel<PerformanceModel>();
@@ -457,7 +459,6 @@ export class DropDown implements UI.ListControl.ListDelegate<PerformanceModel> {
   static _instance: DropDown|null = null;
 }
 
-
 export class ToolbarButton extends UI.Toolbar.ToolbarItem {
   _contentElement: HTMLElement;
 
@@ -465,7 +466,7 @@ export class ToolbarButton extends UI.Toolbar.ToolbarItem {
     const element = document.createElement('button');
     element.classList.add('history-dropdown-button');
     super(element);
-    UI.Utils.appendStyle(this.element, 'panels/timeline/historyToolbarButton.css', {enableLegacyPatching: true});
+    UI.Utils.appendStyle(this.element, 'panels/timeline/historyToolbarButton.css');
     this._contentElement = this.element.createChild('span', 'content');
     const dropdownArrowIcon = UI.Icon.Icon.create('smallicon-triangle-down');
     this.element.appendChild(dropdownArrowIcon);

@@ -52,8 +52,14 @@ class TypedArrayBuiltinsAssembler : public CodeStubAssembler {
   void CallCMemmove(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
                     TNode<UintPtrT> byte_length);
 
+  void CallCRelaxedMemmove(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
+                           TNode<UintPtrT> byte_length);
+
   void CallCMemcpy(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
                    TNode<UintPtrT> byte_length);
+
+  void CallCRelaxedMemcpy(TNode<RawPtrT> dest_ptr, TNode<RawPtrT> src_ptr,
+                          TNode<UintPtrT> byte_length);
 
   void CallCMemset(TNode<RawPtrT> dest_ptr, TNode<IntPtrT> value,
                    TNode<UintPtrT> length);

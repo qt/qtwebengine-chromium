@@ -21,6 +21,10 @@ namespace password_manager {
 
 class PasswordStoreSync;
 
+// Returns sync_pb::PasswordSpecifics based on given |password_form|.
+sync_pb::PasswordSpecifics SpecificsFromPassword(
+    const PasswordForm& password_form);
+
 // Sync bridge implementation for PASSWORDS model type. Takes care of
 // propagating local passwords to other clients and vice versa.
 //
@@ -35,8 +39,7 @@ class PasswordSyncBridge : public syncer::ModelTypeSyncBridge {
   PasswordSyncBridge(
       std::unique_ptr<syncer::ModelTypeChangeProcessor> change_processor,
       PasswordStoreSync* password_store_sync,
-      const base::RepeatingClosure& sync_enabled_or_disabled_cb,
-      ForceInitialSyncCycle force_initial_sync = ForceInitialSyncCycle(false));
+      const base::RepeatingClosure& sync_enabled_or_disabled_cb);
   ~PasswordSyncBridge() override;
 
   // Notifies the bridge of changes to the password database. Callers are

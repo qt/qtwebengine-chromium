@@ -7,13 +7,14 @@
 #include <numeric>
 
 #include "base/callback_helpers.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/system/sys_info.h"
 #include "base/task/post_task.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
 #include "chrome/browser/ash/crostini/crostini_features.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_util.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chromeos/cryptohome/cryptohome_util.h"
 #include "chromeos/cryptohome/userdataauth_util.h"
@@ -178,7 +179,7 @@ void BrowsingDataSizeCalculator::PerformCalculation() {
         new browsing_data::AppCacheHelper(
             storage_partition->GetAppCacheService()),
         new browsing_data::IndexedDBHelper(storage_partition),
-        browsing_data::FileSystemHelper::Create(
+        base::MakeRefCounted<browsing_data::FileSystemHelper>(
             storage_partition->GetFileSystemContext(),
             browsing_data_file_system_util::GetAdditionalFileSystemTypes(),
             storage_partition->GetNativeIOContext()),

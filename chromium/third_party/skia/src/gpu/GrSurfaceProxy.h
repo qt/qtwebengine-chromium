@@ -22,7 +22,6 @@ class GrRecordingContext;
 class GrRenderTargetProxy;
 class GrRenderTask;
 class GrResourceProvider;
-class GrSurfaceContext;
 class GrSurfaceProxyPriv;
 class GrSurfaceProxyView;
 class GrTextureProxy;
@@ -145,6 +144,10 @@ public:
      */
     SkRect backingStoreBoundsRect() const {
         return SkRect::Make(this->backingStoreDimensions());
+    }
+
+    SkIRect backingStoreBoundsIRect() const {
+        return SkIRect::MakeSize(this->backingStoreDimensions());
     }
 
     const GrBackendFormat& backendFormat() const { return fFormat; }

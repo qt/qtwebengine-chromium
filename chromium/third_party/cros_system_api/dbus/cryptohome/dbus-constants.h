@@ -19,6 +19,10 @@ const char kInstallAttributesInterface[] =
     "org.chromium.InstallAttributesInterface";
 const char kCryptohomeMiscInterface[] = "org.chromium.CryptohomeMiscInterface";
 
+// 5 minutes timeout for all cryptohome calls.
+// This is a bit on the long side, but we want to be cautious.
+constexpr int kUserDataAuthServiceTimeoutInMs = 5 * 60 * 1000;
+
 // Methods of the |kUserDataAuthInterface| interface:
 const char kIsMounted[] = "IsMounted";
 const char kUnmount[] = "Unmount";

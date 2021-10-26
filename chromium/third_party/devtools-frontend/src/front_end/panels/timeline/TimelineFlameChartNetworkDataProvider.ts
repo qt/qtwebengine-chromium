@@ -8,13 +8,13 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
-import type * as TimelineModel from '../../models/timeline_model/timeline_model.js'; // eslint-disable-line no-unused-vars
+import type * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 import * as Protocol from '../../generated/protocol.js';
 
-import type {PerformanceModel} from './PerformanceModel.js'; // eslint-disable-line no-unused-vars
+import type {PerformanceModel} from './PerformanceModel.js';
 import {FlameChartStyle, Selection} from './TimelineFlameChartView.js';
 import {TimelineSelection} from './TimelinePanel.js';
 import {TimelineUIUtils} from './TimelineUIUtils.js';
@@ -294,14 +294,14 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
     const element = document.createElement('div');
     const root = UI.Utils.createShadowRootWithCoreStyles(element, {
       cssFile: 'panels/timeline/timelineFlamechartPopover.css',
-      enableLegacyPatching: true,
       delegatesFocus: undefined,
     });
     const contents = root.createChild('div', 'timeline-flamechart-popover');
     const startTime = request.getStartTime();
     const duration = request.endTime - startTime;
     if (startTime && isFinite(duration)) {
-      contents.createChild('span', 'timeline-info-network-time').textContent = Number.millisToString(duration, true);
+      contents.createChild('span', 'timeline-info-network-time').textContent =
+          i18n.TimeUtilities.millisToString(duration, true);
     }
     if (typeof request.priority === 'string') {
       const div = (contents.createChild('span') as HTMLElement);
@@ -387,7 +387,7 @@ export class TimelineFlameChartNetworkDataProvider implements PerfUI.FlameChart.
   }
 
   formatValue(value: number, precision?: number): string {
-    return Number.preciseMillisToString(value, precision);
+    return i18n.TimeUtilities.preciseMillisToString(value, precision);
   }
 
   canJumpToEntry(_entryIndex: number): boolean {

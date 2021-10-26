@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
@@ -891,7 +892,7 @@ fail:
     return size;
 }
 
-static void expand_timestamps(void *log, struct sbg_script *s)
+static int expand_timestamps(void *log, struct sbg_script *s)
 {
     int i, nb_rel = 0;
     int64_t now, cur_ts, delta = 0;
@@ -939,10 +940,13 @@ static void expand_timestamps(void *log, struct sbg_script *s)
                 AV_NOPTS_VALUE; /* may be overridden later by -E option */
     cur_ts = now;
     for (i = 0; i < s->nb_tseq; i++) {
+        if (av_sat_add64(s->tseq[i].ts.t, delta) != s->tseq[i].ts.t + (uint64_t)delta)
+            return AVERROR_INVALIDDATA;
         if (s->tseq[i].ts.t + delta < cur_ts)
             delta += DAY_TS;
         cur_ts = s->tseq[i].ts.t += delta;
     }
+    return 0;
 }
 
 static int expand_tseq(void *log, struct sbg_script *s, int *nb_ev_max,
@@ -995,7 +999,9 @@ static int expand_script(void *log, struct sbg_script *s)
 {
     int i, r, nb_events_max = 0;
 
-    expand_timestamps(log, s);
+    r = expand_timestamps(log, s);
+    if (r < 0)
+        return r;
     for (i = 0; i < s->nb_tseq; i++) {
         r = expand_tseq(log, s, &nb_events_max, 0, &s->tseq[i]);
         if (r < 0)
@@ -1433,13 +1439,13 @@ static av_cold int sbg_read_header(AVFormatContext *avf)
     st->codecpar->sample_rate    = sbg->sample_rate;
     st->codecpar->frame_size     = sbg->frame_size;
     avpriv_set_pts_info(st, 64, 1, st->codecpar->sample_rate);
-    st->probe_packets = 0;
+    st->internal->probe_packets = 0;
     st->start_time    = av_rescale(script.start_ts,
                                    sbg->sample_rate, AV_TIME_BASE);
     st->duration      = script.end_ts == AV_NOPTS_VALUE ? AV_NOPTS_VALUE :
                         av_rescale(script.end_ts - script.start_ts,
                                    sbg->sample_rate, AV_TIME_BASE);
-    st->cur_dts       = st->start_time;
+    st->internal->cur_dts       = st->start_time;
     r = encode_intervals(&script, st->codecpar, &inter);
     if (r < 0)
         goto fail;
@@ -1460,7 +1466,7 @@ static int sbg_read_packet(AVFormatContext *avf, AVPacket *packet)
     int64_t ts, end_ts;
     int ret;
 
-    ts = avf->streams[0]->cur_dts;
+    ts = avf->streams[0]->internal->cur_dts;
     end_ts = ts + avf->streams[0]->codecpar->frame_size;
     if (avf->streams[0]->duration != AV_NOPTS_VALUE)
         end_ts = FFMIN(avf->streams[0]->start_time + avf->streams[0]->duration,
@@ -1483,7 +1489,7 @@ static int sbg_read_seek2(AVFormatContext *avf, int stream_index,
         return AVERROR(EINVAL);
     if (stream_index < 0)
         ts = av_rescale_q(ts, AV_TIME_BASE_Q, avf->streams[0]->time_base);
-    avf->streams[0]->cur_dts = ts;
+    avf->streams[0]->internal->cur_dts = ts;
     return 0;
 }
 
@@ -1513,7 +1519,7 @@ static const AVClass sbg_demuxer_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVInputFormat ff_sbg_demuxer = {
+const AVInputFormat ff_sbg_demuxer = {
     .name           = "sbg",
     .long_name      = NULL_IF_CONFIG_SMALL("SBaGen binaural beats script"),
     .priv_data_size = sizeof(struct sbg_demuxer),

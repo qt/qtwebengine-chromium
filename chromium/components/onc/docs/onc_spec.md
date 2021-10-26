@@ -158,6 +158,12 @@ fetching new policy or logging in.
 A [Help Center article](https://support.google.com/chrome/a/answer/6326250)
 warns admins of the implications of mis-using this policy for Chrome OS.
 
+* **AllowOnlyPolicyCellularNetworks**
+    * (optional, defaults to false) - **boolean**
+    * When this field is present and set to true, only cellular networks present
+      in policy may be connected to. No new cellular networks may be added or
+      configured. This allows admins to ensure that only policy configured
+      cellular networks are accessible.
 
 * **AllowOnlyPolicyNetworksToAutoconnect**
     * (optional, defaults to false) - **boolean**
@@ -231,7 +237,9 @@ Field **NetworkConfigurations** is an array of
         * *DHCP*
         * *Static*
     * Determines whether the IP Address configuration is statically configured,
-      see **StaticIPConfig**, or automatically configured using DHCP.
+      see **StaticIPConfig**, or automatically configured. Note that *DHCP*
+      here includes the case of configuring through other dynamic IP allocating
+      protocols (e.g. SLAAC) as well.
 
 * **Metered**
     * (optional, defaults to "false") - **boolean**
@@ -246,7 +254,9 @@ Field **NetworkConfigurations** is an array of
         * *DHCP*
         * *Static*
     * Determines whether the NameServers configuration is statically configured,
-      see **StaticIPConfig**, or automatically configured using DHCP.
+      see **StaticIPConfig**, or automatically configured. Note that *DHCP*
+      here includes the case of configuration through other dynamic nameserver
+      configuring protocols (e.g. IPv6 RDNSS option) as well.
 
 * **IPConfigs**
     * (optional for connected networks, read-only) -
@@ -597,6 +607,13 @@ field **VPN** must be set to an object of type [VPN](#VPN-type).
     * If *Cert* is used, **ClientCertType** and *ServerCARefs* (or the
       deprecated *ServerCARef*) must be set.
 
+* **ClientCertProvisioningProfileId**
+    * (required if **ClientCertType** is *ProvisioningProfileId*, otherwise
+      ignored) - **string**
+    * Id of the client certificate to be used. On Chrome OS, this corresponds
+      to the "cert_profile_id" field in the RequiredClientCertificateForUser or
+      RequiredClientCertificateForDevice policy.
+
 * **ClientCertPKCS11Id**
     * (required if **ClientCertType** is *PKCS11Id*, otherwise ignored) -
     * PKCS#11 identifier in the format slot:key_id.
@@ -617,8 +634,9 @@ field **VPN** must be set to an object of type [VPN](#VPN-type).
       * *PKCS11Id*
       * *Pattern*
       * *Ref*
-    * *Ref* and *Pattern* indicate that the associated property should be used
-      to identify the client certificate.
+      * *ProvisioningProfileId*
+    * *Ref*, *Pattern* and *ProvisioningProfileId* indicate that the associated
+      property should be used to identify the client certificate.
     * *PKCS11Id* is used when representing a certificate in a local store and is
       only valid when describing a local configuration.
 
@@ -1022,6 +1040,48 @@ L2TP over IPsec with pre-shared key:
       See OpenVPN's documentation for "--verify-x509-name" for the meaning of
       each value. Defaults to OpenVPN's default if not specified.
 
+## WireGuard connections and types
+
+**VPN.Type** must be *WireGuard*.
+
+### WireGuard type
+
+* **PrivateKey**
+    * (optional) - **string**
+    * The base64 private key of the wireguard client peer. If not set, a random
+      one will be generated.
+
+* **Peers**
+    * (required) - **array of** [WireGuardPeer](#WireGuard-peer-type)
+    * The list of remote peers.
+
+### WireGuardPeer type
+
+* **PublicKey**
+    * (required) - **string**
+    * The base64 public key of the remote peer.
+
+* **PresharedKey**
+    * (optional) - **string**
+    * A base64 preshared key between client and remote peer for an additional
+      layer of symmetric-key cryptography.
+
+* **AllowedIPs**
+    * (required) - **string**
+    * A comma-separated list of IPv4 prefixes which controls the allowed
+      incoming traffic and set outgoing route for this peer.
+
+* **Endpoint**
+    * (required) - **string**
+    * The physical IP or hostname and port of the peer, separated by a colon.
+
+* **PersistentKeepalive**
+    * (optional, default to *0*) - **integer**
+    * A second interval between 1 and 65535 inclusive, of how often an
+      authenticated empty packet will be sent to the peer for the purpose of
+      keeping a stateful firewall or NAT mapping valid persistently. Set to *0*
+      will disable this feature.
+
 ## Third-party VPN provider based connections and types
 
 **VPN.Type** must be *ThirdPartyVPN*.
@@ -1283,6 +1343,14 @@ type exists to configure the authentication.
 	* WiFi only. A list of alternative subject names to be matched against the
     alternative subject name of an authentication server certificate.
 
+* **DomainSuffixMatch**
+    * (optional) - **array of string**
+    * WiFi only. A list of constraints for the server domain name. If set, the
+      entries will be used as suffix match requirements against the DNS name
+      element(s) of the alternative subject name of an authentication server
+      certificate. When multiple match strings are specified, a match with any one
+      of the values is considered a sufficient match for the server certificate.
+
 * **TLSVersionMax**
     * (optional) - **string**
     * Sets the maximum TLS protocol version used by the OS for EAP.
@@ -1498,6 +1566,11 @@ ONC configuration of of **Cellular** networks is not yet supported.
         or **NetworkTechnology**
         is *LTE*) - **boolean**
     * For GSM or LTE modems, indicates whether a SIM card is present or not.
+
+* **SMDPAddress**
+    * (optional, read-only) - **string**
+    * When set with the address of an SMDP+ server, indicates that eSIM profile
+      for this network should be downloaded and installed using this address.
 
 * **SupportNetworkScan**
     * (optional, read-only) - **boolean**
@@ -2181,7 +2254,7 @@ setting selected as the effective setting.
 ## Mojo format
 
 Chrome provides a mojo API for ONC properties:
-https://source.chromium.org/chromium/chromium/src/+/master:chromeos/services/network_config/public/mojom/cros_network_config.mojom
+https://source.chromium.org/chromium/chromium/src/+/main:chromeos/services/network_config/public/mojom/cros_network_config.mojom
 
 The mojo API uses a simplified structure for managed properties based on the
 following assumptions:
@@ -2196,7 +2269,7 @@ In this simplified format, a descriptive enum is used to describe the effective
 policy source and whether it is enforced or recommended.
 
 The conversion code can be found in cros_network_config.cc:GetManagedDictionary
-https://source.chromium.org/chromium/chromium/src/+/master:chromeos/services/network_config/cros_network_config.cc
+https://source.chromium.org/chromium/chromium/src/+/main:chromeos/services/network_config/cros_network_config.cc
 
 ```
 enum PolicySource {

@@ -6,7 +6,7 @@
 #include <stdint.h>
 
 #include "base/check_op.h"
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/values.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
@@ -716,7 +716,7 @@ TEST_F(WebCryptoRsaSsaTest, ImportRsaSsaPublicKeyBadUsage_JWK) {
 
   base::DictionaryValue dict;
   RestoreJwkRsaDictionary(&dict);
-  dict.Remove("use", nullptr);
+  dict.RemoveKey("use");
   dict.SetString("alg", "RS256");
 
   for (size_t i = 0; i < base::size(bad_usages); ++i) {
@@ -946,7 +946,7 @@ TEST_F(WebCryptoRsaSsaTest, ImportJwkRsaFailures) {
   const std::string kKtyParmName[] = {"n", "e"};
   for (size_t idx = 0; idx < base::size(kKtyParmName); ++idx) {
     // Fail on missing parameter.
-    dict.Remove(kKtyParmName[idx], nullptr);
+    dict.RemoveKey(kKtyParmName[idx]);
     EXPECT_NE(Status::Success(),
               ImportKeyJwkFromDict(dict, algorithm, false, usages, &key));
     RestoreJwkRsaDictionary(&dict);

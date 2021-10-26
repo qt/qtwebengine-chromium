@@ -101,6 +101,9 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
   void OnIntentHelperInstanceReady(
       mojo::PendingRemote<mojom::IntentHelperInstance> intent_helper_remote)
       override;
+  void OnKeyboardShortcutInstanceReady(
+      mojo::PendingRemote<mojom::KeyboardShortcutInstance>
+          keyboard_shortcut_remote) override;
   void OnKeymasterInstanceReady(
       mojo::PendingRemote<mojom::KeymasterInstance> keymaster_remote) override;
   void OnKioskInstanceReady(
@@ -110,10 +113,15 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
   void OnMediaSessionInstanceReady(
       mojo::PendingRemote<mojom::MediaSessionInstance> media_session_remote)
       override;
+  void OnMemoryInstanceReady(
+      mojo::PendingRemote<mojom::MemoryInstance> memory_remote) override;
   void OnMetricsInstanceReady(
       mojo::PendingRemote<mojom::MetricsInstance> metrics_remote) override;
   void OnMidisInstanceReady(
       mojo::PendingRemote<mojom::MidisInstance> midis_remote) override;
+  void OnNearbyShareInstanceReady(
+      mojo::PendingRemote<mojom::NearbyShareInstance> nearby_share_remote)
+      override;
   void OnNetInstanceReady(
       mojo::PendingRemote<mojom::NetInstance> net_remote) override;
   void OnNotificationsInstanceReady(
@@ -164,12 +172,6 @@ class ArcBridgeHostImpl : public mojom::ArcBridgeHost {
       mojo::PendingRemote<mojom::UsbHostInstance> usb_host_remote) override;
   void OnVideoInstanceReady(
       mojo::PendingRemote<mojom::VideoInstance> video_remote) override;
-  void OnVoiceInteractionArcHomeInstanceReady(
-      mojo::PendingRemote<mojom::VoiceInteractionArcHomeInstance> home_remote)
-      override;
-  void OnVoiceInteractionFrameworkInstanceReady(
-      mojo::PendingRemote<mojom::VoiceInteractionFrameworkInstance>
-          framework_remote) override;
   void OnVolumeMounterInstanceReady(
       mojo::PendingRemote<mojom::VolumeMounterInstance> volume_mounter_remote)
       override;

@@ -76,7 +76,7 @@ const ExecEventParaInfo* GetExecEventParaInfoByName(
   if (wsEventName.IsEmpty())
     return nullptr;
 
-  uint32_t uHash = FX_HashCode_GetW(wsEventName, false);
+  uint32_t uHash = FX_HashCode_GetW(wsEventName);
   auto* result = std::lower_bound(
       std::begin(kExecEventParaInfoTable), std::end(kExecEventParaInfoTable),
       uHash, [](const ExecEventParaInfo& iter, const uint16_t& hash) {
@@ -284,7 +284,7 @@ CJS_Result CJX_Node::loadXML(CFX_V8* runtime,
       CXFA_Node* pItem = pNewChild->GetNextSibling();
       pFakeRoot->RemoveChildAndNotify(pNewChild, true);
       GetXFANode()->InsertChildAndNotify(index++, pNewChild);
-      pNewChild->SetFlagAndNotify(XFA_NodeFlag_Initialized);
+      pNewChild->SetInitializedFlagAndNotify();
       pNewChild = pItem;
     }
 
@@ -312,7 +312,7 @@ CJS_Result CJX_Node::loadXML(CFX_V8* runtime,
       CXFA_Node* pItem = pChild->GetNextSibling();
       pFakeRoot->RemoveChildAndNotify(pChild, true);
       GetXFANode()->InsertChildAndNotify(pChild, nullptr);
-      pChild->SetFlagAndNotify(XFA_NodeFlag_Initialized);
+      pChild->SetInitializedFlagAndNotify();
       pChild = pItem;
     }
   }
@@ -320,7 +320,7 @@ CJS_Result CJX_Node::loadXML(CFX_V8* runtime,
   if (pFakeXMLRoot) {
     pFakeRoot->SetXMLMappingNode(std::move(pFakeXMLRoot));
   }
-  pFakeRoot->SetFlag(XFA_NodeFlag_HasRemovedChildren);
+  pFakeRoot->SetFlag(XFA_NodeFlag::kHasRemovedChildren);
 
   return CJS_Result::Success();
 }
@@ -460,7 +460,7 @@ void CJX_Node::oneOfChild(v8::Isolate* pIsolate,
   }
 
   std::vector<CXFA_Node*> properties =
-      GetXFANode()->GetNodeListWithFilter(XFA_NODEFILTER_OneOfProperty);
+      GetXFANode()->GetNodeListWithFilter(XFA_NodeFilter::kOneOfProperty);
   if (!properties.empty()) {
     *pValue = GetDocument()->GetScriptContext()->GetOrCreateJSBindingFromMap(
         properties.front());

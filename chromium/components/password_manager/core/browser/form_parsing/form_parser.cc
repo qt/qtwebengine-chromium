@@ -14,10 +14,10 @@
 #include <vector>
 
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/ranges/algorithm.h"
-#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "build/build_config.h"
@@ -321,12 +321,15 @@ void ParseUsingPredictions(std::vector<ProcessedField>* processed_fields,
         }
         break;
       case CredentialFieldType::kSingleUsername:
-        processed_field = FindField(processed_fields, prediction);
-        if (processed_field) {
-          result->username = processed_field->field;
-          result->is_single_username = true;
-          result->ClearAllPasswordFields();
-          return;
+        if (base::FeatureList::IsEnabled(
+                password_manager::features::kUsernameFirstFlowFilling)) {
+          processed_field = FindField(processed_fields, prediction);
+          if (processed_field) {
+            result->username = processed_field->field;
+            result->is_single_username = true;
+            result->ClearAllPasswordFields();
+            return;
+          }
         }
         break;
       case CredentialFieldType::kCurrentPassword:
@@ -509,6 +512,7 @@ bool IsLikelyPassword(const ProcessedField& field, size_t* ignored_readonly) {
 // (1) Passwords with Interactability below |best_interactability| are removed.
 // (2) If |mode| == |kSaving|, passwords with empty values are removed.
 // (3) Passwords for which IsLikelyPassword returns false are removed.
+// (4) Field parsed as username is removed.
 // If applying rules (1)-(3) results in a non-empty vector of password fields,
 // that vector is returned. Otherwise, only rules (1) and (2) are applied and
 // the result returned (even if it is empty).
@@ -522,7 +526,8 @@ std::vector<const FormFieldData*> GetRelevantPasswords(
     FormDataParser::Mode mode,
     Interactability best_interactability,
     FormDataParser::ReadonlyPasswordFields* readonly_status,
-    bool* is_fallback) {
+    bool* is_fallback,
+    const FormFieldData* username) {
   DCHECK(readonly_status);
   DCHECK(is_fallback);
 
@@ -562,6 +567,15 @@ std::vector<const FormFieldData*> GetRelevantPasswords(
                [&ignored_readonly](const ProcessedField* processed_field) {
                  return IsLikelyPassword(*processed_field, &ignored_readonly);
                });
+
+  // Step 4: remove the field parsed as username, if needed.
+  if (username && username->IsPasswordInputElement()) {
+    base::EraseIf(filtered, [username](const ProcessedField* processed_field) {
+      return processed_field->field->unique_renderer_id ==
+             username->unique_renderer_id;
+    });
+  }
+
   // Compute the readonly statistic for metrics.
   DCHECK_LE(ignored_readonly, all_passwords_seen);
   if (ignored_readonly == 0)
@@ -740,9 +754,9 @@ void ParseUsingBaseHeuristics(
 
     // Try to find password elements (current, new, confirmation) among those
     // with best interactability.
-    std::vector<const FormFieldData*> passwords =
-        GetRelevantPasswords(processed_fields, mode, password_max,
-                             readonly_status, &found_fields->is_fallback);
+    std::vector<const FormFieldData*> passwords = GetRelevantPasswords(
+        processed_fields, mode, password_max, readonly_status,
+        &found_fields->is_fallback, found_fields->username);
     if (passwords.empty())
       return;
     LocateSpecificPasswords(passwords, &found_fields->password,

@@ -9,8 +9,8 @@
 #include <string>
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "crypto/ec_private_key.h"
 #include "crypto/ec_signature_creator.h"
@@ -144,7 +144,6 @@ class SpdyHttpStreamTest : public TestWithTaskEnvironment {
 
  protected:
   void TearDown() override {
-    crypto::ECSignatureCreator::SetFactoryForTesting(nullptr);
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(sequenced_data_->AllReadDataConsumed());
     EXPECT_TRUE(sequenced_data_->AllWriteDataConsumed());
@@ -176,7 +175,6 @@ class SpdyHttpStreamTest : public TestWithTaskEnvironment {
   base::WeakPtr<SpdySession> session_;
 
  private:
-  MockECSignatureCreatorFactory ec_signature_creator_factory_;
   SSLSocketDataProvider ssl_;
 };
 

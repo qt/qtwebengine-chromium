@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/macros.h"
+#include "base/memory/singleton.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
@@ -59,6 +60,7 @@ class ArcMetricsService : public KeyedService,
    public:
     virtual void OnArcLowMemoryKill() = 0;
     virtual void OnArcOOMKillCount(unsigned long count) = 0;
+    virtual void OnArcMemoryPressureKill(int count, int estimated_freed_kb) = 0;
     virtual void OnArcMetricsServiceDestroyed() {}
   };
 
@@ -101,15 +103,27 @@ class ArcMetricsService : public KeyedService,
                           mojom::BootType boot_type) override;
   void ReportNativeBridge(mojom::NativeBridgeType native_bridge_type) override;
   void ReportCompanionLibApiUsage(mojom::CompanionLibApiId api_id) override;
+  void ReportDnsQueryResult(mojom::ArcDnsQuery query, bool success) override;
   void ReportAppKill(mojom::AppKillPtr app_kill) override;
   void ReportArcCorePriAbiMigEvent(
       mojom::ArcCorePriAbiMigEvent event_type) override;
   void ReportArcCorePriAbiMigFailedTries(uint32_t failed_attempts) override;
   void ReportArcCorePriAbiMigDowngradeDelay(base::TimeDelta delay) override;
   void ReportArcCorePriAbiMigBootTime(base::TimeDelta duration) override;
+  void ReportArcSystemHealthUpgrade(base::TimeDelta duration,
+                                    bool packages_deleted) override;
   void ReportClipboardDragDropEvent(
       mojom::ArcClipboardDragDropEvent event_type) override;
   void ReportAnr(mojom::AnrPtr anr) override;
+  void ReportLowLatencyStylusLibApiUsage(
+      mojom::LowLatencyStylusLibApiId api_id) override;
+  void ReportLowLatencyStylusLibPredictionTarget(
+      mojom::LowLatencyStylusLibPredictionTargetPtr prediction_target) override;
+  void ReportEntireFixupMetrics(base::TimeDelta duration,
+                                uint32_t number_of_directories,
+                                uint32_t number_of_failures) override;
+  void ReportPerAppFixupMetrics(base::TimeDelta duration,
+                                uint32_t number_of_directories) override;
 
   // wm::ActivationChangeObserver overrides.
   // Records to UMA when a user has interacted with an ARC app window.
@@ -140,6 +154,10 @@ class ArcMetricsService : public KeyedService,
   // purposes.
   absl::optional<base::TimeTicks> GetArcStartTimeFromEvents(
       std::vector<mojom::BootProgressEventPtr>& events);
+
+  // Forwards reports of app kills resulting from a MemoryPressureArcvm signal
+  // to MemoryKillsMonitor via ArcMetricsServiceProxy.
+  void ReportMemoryPressureArcVmKills(int count, int estimated_freed_kb);
 
  private:
   // Adapter to be able to also observe ProcessInstance events.

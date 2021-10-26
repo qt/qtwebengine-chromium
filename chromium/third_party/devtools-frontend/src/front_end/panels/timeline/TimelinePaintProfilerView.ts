@@ -4,7 +4,7 @@
 
 /* eslint-disable rulesdir/no_underscored_properties */
 
-import type * as SDK from '../../core/sdk/sdk.js'; // eslint-disable-line no-unused-vars
+import type * as SDK from '../../core/sdk/sdk.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as LayerViewer from '../layer_viewer/layer_viewer.js';
@@ -156,7 +156,7 @@ export class TimelinePaintImageView extends UI.Widget.Widget {
   _maskRectangle?: Protocol.DOM.Rect|null;
   constructor() {
     super(true);
-    this.registerRequiredCSS('panels/timeline/timelinePaintProfiler.css', {enableLegacyPatching: true});
+    this.registerRequiredCSS('panels/timeline/timelinePaintProfiler.css');
     this.contentElement.classList.add('fill', 'paint-profiler-image-view');
     this._imageContainer = this.contentElement.createChild('div', 'paint-profiler-image-container');
     this._imageElement = (this._imageContainer.createChild('img') as HTMLImageElement);

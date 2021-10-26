@@ -34,7 +34,7 @@
 #include "threshold.h"
 
 #define OFFSET(x) offsetof(ThresholdContext, x)
-#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM
+#define FLAGS AV_OPT_FLAG_VIDEO_PARAM|AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_RUNTIME_PARAM
 
 static const AVOption threshold_options[] = {
     { "planes", "set planes to filter", OFFSET(planes), AV_OPT_TYPE_INT,  {.i64=15}, 0, 15, FLAGS},
@@ -354,7 +354,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_threshold = {
+const AVFilter ff_vf_threshold = {
     .name          = "threshold",
     .description   = NULL_IF_CONFIG_SMALL("Threshold first video stream using other video streams."),
     .priv_size     = sizeof(ThresholdContext),
@@ -365,4 +365,5 @@ AVFilter ff_vf_threshold = {
     .inputs        = inputs,
     .outputs       = outputs,
     .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_INTERNAL | AVFILTER_FLAG_SLICE_THREADS,
+    .process_command = ff_filter_process_command,
 };

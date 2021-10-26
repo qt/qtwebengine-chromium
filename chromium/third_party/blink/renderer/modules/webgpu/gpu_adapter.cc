@@ -11,8 +11,10 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_gpu_request_adapter_options.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_device.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_supported_features.h"
+#include "third_party/blink/renderer/modules/webgpu/gpu_supported_limits.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
 
 namespace blink {
@@ -21,7 +23,7 @@ namespace {
 WGPUDeviceProperties AsDawnType(const GPUDeviceDescriptor* descriptor) {
   DCHECK_NE(nullptr, descriptor);
 
-  auto&& feature_names = descriptor->nonGuaranteedFeatures();
+  auto&& feature_names = descriptor->requiredFeatures();
 
   HashSet<String> feature_set;
   for (auto& feature : feature_names)
@@ -43,9 +45,11 @@ WGPUDeviceProperties AsDawnType(const GPUDeviceDescriptor* descriptor) {
 
   return requested_device_properties;
 }
+
 }  // anonymous namespace
 
 GPUAdapter::GPUAdapter(
+    GPU* gpu,
     const String& name,
     uint32_t adapter_service_id,
     const WGPUDeviceProperties& properties,
@@ -53,7 +57,9 @@ GPUAdapter::GPUAdapter(
     : DawnObjectBase(dawn_control_client),
       name_(name),
       adapter_service_id_(adapter_service_id),
-      adapter_properties_(properties) {
+      adapter_properties_(properties),
+      gpu_(gpu),
+      limits_(MakeGarbageCollected<GPUSupportedLimits>()) {
   InitializeFeatureNameList();
 }
 
@@ -85,11 +91,12 @@ GPUSupportedFeatures* GPUAdapter::features() const {
   return features_;
 }
 
-void GPUAdapter::OnRequestDeviceCallback(ScriptPromiseResolver* resolver,
+void GPUAdapter::OnRequestDeviceCallback(ScriptState* script_state,
+                                         ScriptPromiseResolver* resolver,
                                          const GPUDeviceDescriptor* descriptor,
                                          WGPUDevice dawn_device) {
   if (dawn_device) {
-    ExecutionContext* execution_context = resolver->GetExecutionContext();
+    ExecutionContext* execution_context = ExecutionContext::From(script_state);
     auto* device = MakeGarbageCollected<GPUDevice>(execution_context,
                                                    GetDawnControlClient(), this,
                                                    dawn_device, descriptor);
@@ -129,18 +136,66 @@ ScriptPromise GPUAdapter::requestDevice(ScriptState* script_state,
   auto* resolver = MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
 
+  // Normalize the device descriptor to avoid using the deprecated fields.
+  if (descriptor->nonGuaranteedFeatures().size() > 0) {
+    AddConsoleWarning(
+        resolver->GetExecutionContext(),
+        "nonGuaranteedFeatures is deprecated. Use requiredFeatures instead.");
+    descriptor->setRequiredFeatures(descriptor->nonGuaranteedFeatures());
+  }
+  if (descriptor->hasNonGuaranteedLimits()) {
+    AddConsoleWarning(
+        resolver->GetExecutionContext(),
+        "nonGuaranteedLimits is deprecated. Use requiredLimits instead.");
+    descriptor->setRequiredLimits(descriptor->nonGuaranteedLimits());
+  }
+
+  // Validation of the limits could happen in Dawn, but until that's
+  // implemented we can do it here to preserve the spec behavior.
+  if (descriptor->hasRequiredLimits()) {
+    for (const auto& key_value_pair : descriptor->requiredLimits()) {
+      switch (
+          limits_->ValidateLimit(key_value_pair.first, key_value_pair.second)) {
+        case GPUSupportedLimits::ValidationResult::Valid:
+          break;
+        case GPUSupportedLimits::ValidationResult::BadName: {
+          resolver->Reject(MakeGarbageCollected<DOMException>(
+              DOMExceptionCode::kOperationError, "The limit name \"" +
+                                                     key_value_pair.first +
+                                                     "\" is not recognized."));
+          return promise;
+        }
+        case GPUSupportedLimits::ValidationResult::BadValue: {
+          resolver->Reject(MakeGarbageCollected<DOMException>(
+              DOMExceptionCode::kOperationError,
+              "The limit requested for \"" + key_value_pair.first +
+                  "\" exceeds the adapter's supported limit."));
+          return promise;
+        }
+      }
+    }
+  }
+
   WGPUDeviceProperties requested_device_properties = AsDawnType(descriptor);
 
-  GetInterface()->RequestDeviceAsync(
-      adapter_service_id_, requested_device_properties,
-      WTF::Bind(&GPUAdapter::OnRequestDeviceCallback, WrapPersistent(this),
-                WrapPersistent(resolver), WrapPersistent(descriptor)));
+  if (auto context_provider = GetContextProviderWeakPtr()) {
+    context_provider->ContextProvider()->WebGPUInterface()->RequestDeviceAsync(
+        adapter_service_id_, requested_device_properties,
+        WTF::Bind(&GPUAdapter::OnRequestDeviceCallback, WrapPersistent(this),
+                  WrapPersistent(script_state), WrapPersistent(resolver),
+                  WrapPersistent(descriptor)));
+  } else {
+    resolver->Reject(MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kOperationError, "WebGPU context lost"));
+  }
 
   return promise;
 }
 
 void GPUAdapter::Trace(Visitor* visitor) const {
+  visitor->Trace(gpu_);
   visitor->Trace(features_);
+  visitor->Trace(limits_);
   ScriptWrappable::Trace(visitor);
 }
 

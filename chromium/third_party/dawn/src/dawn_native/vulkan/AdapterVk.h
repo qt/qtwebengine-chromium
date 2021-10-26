@@ -29,6 +29,9 @@ namespace dawn_native { namespace vulkan {
         Adapter(Backend* backend, VkPhysicalDevice physicalDevice);
         ~Adapter() override = default;
 
+        // AdapterBase Implementation
+        bool SupportsExternalImages() const override;
+
         const VulkanDeviceInfo& GetDeviceInfo() const;
         VkPhysicalDevice GetPhysicalDevice() const;
         Backend* GetBackend() const;
@@ -37,6 +40,7 @@ namespace dawn_native { namespace vulkan {
 
       private:
         ResultOrError<DeviceBase*> CreateDeviceImpl(const DeviceDescriptor* descriptor) override;
+        MaybeError CheckCoreWebGPUSupport();
         void InitializeSupportedExtensions();
 
         VkPhysicalDevice mPhysicalDevice;

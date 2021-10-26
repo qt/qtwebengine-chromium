@@ -12,8 +12,8 @@
 #include "base/single_thread_task_runner.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
-#include "components/autofill_assistant/browser/actions/action_delegate_util.h"
 #include "components/autofill_assistant/browser/script_executor_delegate.h"
+#include "components/autofill_assistant/browser/web/element_action_util.h"
 #include "components/autofill_assistant/browser/web/web_controller.h"
 
 namespace autofill_assistant {
@@ -100,9 +100,9 @@ void ElementArea::Update() {
     return;
 
   // If anything is still pending, skip the update.
-  if (visual_viewport_pending_update_)
+  if (visual_viewport_pending_update_) {
     return;
-
+  }
   for (auto& rectangle : rectangles_) {
     if (rectangle.IsPending())
       return;
@@ -132,7 +132,7 @@ void ElementArea::Update() {
       delegate_->GetWebController()->FindElement(
           position.selector, /* strict= */ true,
           base::BindOnce(
-              &action_delegate_util::TakeElementAndGetProperty<RectF>,
+              &element_action_util::TakeElementAndGetProperty<RectF>,
               base::BindOnce(&WebController::GetElementRect,
                              delegate_->GetWebController()->GetWeakPtr()),
               base::BindOnce(&ElementArea::OnGetElementRect,
@@ -146,7 +146,7 @@ void ElementArea::GetTouchableRectangles(std::vector<RectF>* area) {
   for (auto& rectangle : rectangles_) {
     if (!rectangle.restricted) {
       area->emplace_back();
-      rectangle.FillRect(&area->back(), visual_viewport_);
+      rectangle.FillRect(&area->back());
     }
   }
 }
@@ -155,7 +155,7 @@ void ElementArea::GetRestrictedRectangles(std::vector<RectF>* area) {
   for (auto& rectangle : rectangles_) {
     if (rectangle.restricted) {
       area->emplace_back();
-      rectangle.FillRect(&area->back(), visual_viewport_);
+      rectangle.FillRect(&area->back());
     }
   }
 }
@@ -186,8 +186,7 @@ bool ElementArea::Rectangle::IsPending() const {
   return false;
 }
 
-void ElementArea::Rectangle::FillRect(RectF* rect,
-                                      const RectF& visual_viewport) const {
+void ElementArea::Rectangle::FillRect(RectF* rect) const {
   bool has_first_rect = false;
   for (const auto& position : positions) {
     if (position.rect.empty()) {
@@ -204,10 +203,7 @@ void ElementArea::Rectangle::FillRect(RectF* rect,
     rect->left = std::min(rect->left, position.rect.left);
     rect->right = std::max(rect->right, position.rect.right);
   }
-  if (has_first_rect && full_width) {
-    rect->left = visual_viewport.left;
-    rect->right = visual_viewport.right;
-  }
+  rect->full_width = full_width;
   return;
 }
 

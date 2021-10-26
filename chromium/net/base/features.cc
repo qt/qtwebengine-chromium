@@ -6,6 +6,7 @@
 
 #include <vector>
 
+#include "base/feature_list.h"
 #include "build/build_config.h"
 
 namespace net {
@@ -16,6 +17,9 @@ const base::Feature kAcceptLanguageHeader{"AcceptLanguageHeader",
 
 const base::Feature kAlpsForHttp2{"AlpsForHttp2",
                                   base::FEATURE_ENABLED_BY_DEFAULT};
+
+const base::Feature kAvoidH2Reprioritization{"AvoidH2Reprioritization",
+                                             base::FEATURE_DISABLED_BY_DEFAULT};
 
 const base::Feature kCapReferrerToOriginOnCrossOrigin{
     "CapReferrerToOriginOnCrossOrigin", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -57,15 +61,30 @@ const base::FeatureParam<std::string> kDnsHttpssvcControlDomains{
 const base::FeatureParam<bool> kDnsHttpssvcControlDomainWildcard{
     &kDnsHttpssvc, "DnsHttpssvcControlDomainWildcard", false};
 
-const base::Feature kAvoidH2Reprioritization{"AvoidH2Reprioritization",
-                                             base::FEATURE_DISABLED_BY_DEFAULT};
-
 namespace dns_httpssvc_experiment {
 base::TimeDelta GetExtraTimeAbsolute() {
   DCHECK(base::FeatureList::IsEnabled(features::kDnsHttpssvc));
   return base::TimeDelta::FromMilliseconds(kDnsHttpssvcExtraTimeMs.Get());
 }
 }  // namespace dns_httpssvc_experiment
+
+const base::Feature kUseDnsHttpsSvcb{"UseDnsHttpsSvcb",
+                                     base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::FeatureParam<bool> kUseDnsHttpsSvcbHttpUpgrade{
+    &kUseDnsHttpsSvcb, "UseDnsHttpsSvcbHttpUpgrade", false};
+
+const base::FeatureParam<bool> kUseDnsHttpsSvcbEnforceSecureResponse{
+    &kUseDnsHttpsSvcb, "UseDnsHttpsSvcbEnforceSecureResponse", false};
+
+const base::FeatureParam<bool> kUseDnsHttpsSvcbEnableInsecure{
+    &kUseDnsHttpsSvcb, "UseDnsHttpsSvcbEnableInsecure", false};
+
+const base::FeatureParam<base::TimeDelta> kUseDnsHttpsSvcbExtraTimeAbsolute{
+    &kUseDnsHttpsSvcb, "UseDnsHttpsSvcbExtraTimeAbsolute", base::TimeDelta()};
+
+const base::FeatureParam<int> kUseDnsHttpsSvcbExtraTimePercent{
+    &kUseDnsHttpsSvcb, "UseDnsHttpsSvcbExtraTimePercent", 0};
 
 const base::Feature kEnableTLS13EarlyData{"EnableTLS13EarlyData",
                                           base::FEATURE_DISABLED_BY_DEFAULT};
@@ -130,12 +149,6 @@ const base::FeatureParam<std::string>
 const base::Feature kNetUnusedIdleSocketTimeout{
     "NetUnusedIdleSocketTimeout", base::FEATURE_DISABLED_BY_DEFAULT};
 
-const base::Feature kSameSiteByDefaultCookies{"SameSiteByDefaultCookies",
-                                              base::FEATURE_ENABLED_BY_DEFAULT};
-
-const base::Feature kCookiesWithoutSameSiteMustBeSecure{
-    "CookiesWithoutSameSiteMustBeSecure", base::FEATURE_ENABLED_BY_DEFAULT};
-
 const base::Feature kShortLaxAllowUnsafeThreshold{
     "ShortLaxAllowUnsafeThreshold", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -165,6 +178,11 @@ const base::FeatureParam<int> kCertDualVerificationTrialCacheSize{
     &kCertDualVerificationTrialFeature, "cachesize", 0};
 #endif /* defined(OS_MAC) */
 #endif
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+const base::Feature kChromeRootStoreUsed{"ChromeRootStoreUsed",
+                                         base::FEATURE_DISABLED_BY_DEFAULT};
+#endif /* BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED) */
 
 const base::Feature kTurnOffStreamingMediaCachingOnBattery{
     "TurnOffStreamingMediaCachingOnBattery", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -222,12 +240,6 @@ constexpr base::Feature kFirstPartySets{"FirstPartySets",
 const base::FeatureParam<bool> kFirstPartySetsIsDogfooder{
     &kFirstPartySets, "FirstPartySetsIsDogfooder", false};
 
-const base::Feature kSameSiteCookiesBugfix1166211{
-    "SameSiteCookiesBugfix1166211", base::FEATURE_ENABLED_BY_DEFAULT};
-
-const base::Feature kNoCookieChangeNotificationOnLoad{
-    "NoCookieChangeNotificationOnLoad", base::FEATURE_ENABLED_BY_DEFAULT};
-
 #if BUILDFLAG(ENABLE_REPORTING)
 const base::Feature kDocumentReporting{"DocumentReporting",
                                        base::FEATURE_DISABLED_BY_DEFAULT};
@@ -236,11 +248,17 @@ const base::Feature kDocumentReporting{"DocumentReporting",
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
 const base::Feature kUdpSocketPosixAlwaysUpdateBytesReceived{
     "UdpSocketPosixAlwaysUpdateBytesReceived",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    base::FEATURE_ENABLED_BY_DEFAULT};
 #endif  // defined(OS_POSIX) || defined(OS_FUCHSIA)
 
 const base::Feature kCookieSameSiteConsidersRedirectChain{
     "CookieSameSiteConsidersRedirectChain", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kSamePartyCookiesConsideredFirstParty{
+    "SamePartyCookiesConsideredFirstParty", base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kPartitionedCookies{"PartitionedCookies",
+                                        base::FEATURE_DISABLED_BY_DEFAULT};
 
 }  // namespace features
 }  // namespace net

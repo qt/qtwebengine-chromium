@@ -18,7 +18,9 @@ message Model {
   oneof model {
     DecisionTree decision_tree = 1;
     Ensemble ensemble = 2;
-    // The URL that the model can be downloaded from.
+    // When passed from the server, this is the URL that the model can be
+    // downloaded from. When used internally within Chrome, this contains the
+    // absolute file path where the model file is saved on disk.
     string download_url = 5;
   }
   // The tag number is high to allow models to be added and an uncommon number
@@ -197,7 +199,16 @@ message PredictionModel {
   optional Model model = 2;
 }
 
-//  Metadata for a prediction model for a specific optimization target.
+message AdditionalModelFile {
+  // When sent by the server, this contains the basenames of the additional
+  // files that should be kept and sent to this model's consumers. When used
+  // only locally within Chrome, the full path is given.
+  optional string file_path = 1;
+}
+
+// Metadata for a prediction model for a specific optimization target.
+//
+// Next ID: 8
 message ModelInfo {
   reserved 3;
 
@@ -211,6 +222,14 @@ message ModelInfo {
   //
   // Note that this should only be populated if part of the response.
   repeated string supported_host_model_features = 5;
+  // Additional files required by this model version.
+  //
+  // If populated, these files are included in the downloaded archive for this
+  // model and should be passed along to the consumer.
+  //
+  // This does not need to be sent to the server in the request for an update to
+  // this model. The server will ignore this if sent.
+  repeated AdditionalModelFile additional_files = 7;
   // Mechanism used for model owners to attach metadata to the request or
   // response.
   //
@@ -236,6 +255,10 @@ enum OptimizationTarget {
   OPTIMIZATION_TARGET_SEGMENTATION_SHARE = 5;
   // Target for segmentation: Voice user.
   OPTIMIZATION_TARGET_SEGMENTATION_VOICE = 6;
+  // Target for model validation.
+  OPTIMIZATION_TARGET_MODEL_VALIDATION = 7;
+  // Target for determining entities present on a page.
+  OPTIMIZATION_TARGET_PAGE_ENTITIES = 8;
 }
 
 // The types of models that can be evaluated.

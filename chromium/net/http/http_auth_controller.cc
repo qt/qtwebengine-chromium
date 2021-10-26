@@ -341,7 +341,7 @@ int HttpAuthController::HandleAuthChallenge(
         // We are establishing a tunnel, we can't show the error page because an
         // active network attacker could control its contents.  Instead, we just
         // fail to establish the tunnel.
-        DCHECK(target_ == HttpAuth::AUTH_PROXY);
+        DCHECK_EQ(target_, HttpAuth::AUTH_PROXY);
         net_log_.EndEventWithNetErrorCode(
             NetLogEventType::AUTH_HANDLE_CHALLENGE, ERR_PROXY_AUTH_UNSUPPORTED);
         return ERR_PROXY_AUTH_UNSUPPORTED;

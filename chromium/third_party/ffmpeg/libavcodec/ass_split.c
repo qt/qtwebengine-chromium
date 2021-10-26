@@ -19,7 +19,9 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "avcodec.h"
+#include "libavutil/common.h"
+#include "libavutil/error.h"
+#include "libavutil/mem.h"
 #include "ass_split.h"
 
 typedef enum {
@@ -376,7 +378,7 @@ ASSSplitContext *ff_ass_split(const char *buf)
     ASSSplitContext *ctx = av_mallocz(sizeof(*ctx));
     if (!ctx)
         return NULL;
-    if (buf && !memcmp(buf, "\xef\xbb\xbf", 3)) // Skip UTF-8 BOM header
+    if (buf && !strncmp(buf, "\xef\xbb\xbf", 3)) // Skip UTF-8 BOM header
         buf += 3;
     ctx->current_section = -1;
     if (ass_split(ctx, buf) < 0) {

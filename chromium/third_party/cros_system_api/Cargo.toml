@@ -3,7 +3,6 @@ name = "system_api"
 version = "0.24.53"
 authors = ["The Chromium OS Authors"]
 edition = "2018"
-exclude = ["*"]
 include = ["Cargo.toml", "build.rs", "src/*", "src/bindings/*"]
 
 [build-dependencies]

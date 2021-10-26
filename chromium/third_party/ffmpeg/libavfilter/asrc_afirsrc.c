@@ -18,6 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/eval.h"
 #include "libavutil/opt.h"
 #include "libavutil/tx.h"
@@ -317,7 +318,7 @@ static const AVFilterPad afirsrc_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_asrc_afirsrc = {
+const AVFilter ff_asrc_afirsrc = {
     .name          = "afirsrc",
     .description   = NULL_IF_CONFIG_SMALL("Generate a FIR coefficients audio stream."),
     .query_formats = query_formats,

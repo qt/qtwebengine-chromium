@@ -13,11 +13,14 @@
 #include "storage/browser/file_system/isolated_context.h"
 #include "storage/browser/file_system/obfuscated_file_util.h"
 #include "storage/browser/file_system/plugin_private_file_system_backend.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/test_file_system_context.h"
 #include "storage/browser/test/test_file_system_options.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
 #include "url/origin.h"
 
 using url::Origin;
@@ -39,13 +42,16 @@ class PluginPrivateFileSystemBackendTest : public testing::Test {
   void SetUp() override {
     ASSERT_TRUE(data_dir_.CreateUniqueTempDir());
     context_ = CreateFileSystemContextForTesting(
-        nullptr /* quota_manager_proxy */, data_dir_.GetPath());
+        /*quota_manager_proxy=*/nullptr, data_dir_.GetPath());
   }
 
+  // TODO(https://crbug.com/1231162): determine whether EME/CDM/plugin private
+  // file system will be partitioned and use the appropriate StorageKey
   FileSystemURL CreateURL(const GURL& root_url, const std::string& relative) {
-    FileSystemURL root = context_->CrackURL(root_url);
+    FileSystemURL root = context_->CrackURL(
+        root_url, blink::StorageKey(url::Origin::Create(root_url)));
     return context_->CreateCrackedFileSystemURL(
-        root.origin(), root.mount_type(),
+        root.storage_key(), root.mount_type(),
         root.virtual_path().AppendASCII(relative));
   }
 

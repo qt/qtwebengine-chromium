@@ -187,6 +187,8 @@ CSSValue* ConsumeDescriptor(StyleRule::RuleType rule_type,
     case StyleRule::kPage:
     case StyleRule::kKeyframes:
     case StyleRule::kKeyframe:
+    case StyleRule::kLayerBlock:
+    case StyleRule::kLayerStatement:
     case StyleRule::kNamespace:
     case StyleRule::kSupports:
     case StyleRule::kViewport:
@@ -198,35 +200,12 @@ CSSValue* ConsumeDescriptor(StyleRule::RuleType rule_type,
 
 CSSValue* ConsumeFontMetricOverride(CSSParserTokenRange& range,
                                     const CSSParserContext& context) {
-  if (!RuntimeEnabledFeatures::CSSFontMetricsOverrideEnabled())
-    return nullptr;
   if (CSSIdentifierValue* normal =
           css_parsing_utils::ConsumeIdent<CSSValueID::kNormal>(range)) {
     return normal;
   }
   return css_parsing_utils::ConsumePercent(range, context,
                                            kValueRangeNonNegative);
-}
-
-CSSValue* ConsumeAdvanceOverride(CSSParserTokenRange& range,
-                                 const CSSParserContext& context) {
-  if (!RuntimeEnabledFeatures::CSSFontFaceAdvanceOverrideEnabled())
-    return nullptr;
-  if (CSSIdentifierValue* normal =
-          css_parsing_utils::ConsumeIdent<CSSValueID::kNormal>(range)) {
-    return normal;
-  }
-  CSSValue* override_horizontal =
-      css_parsing_utils::ConsumePercent(range, context, kValueRangeNonNegative);
-  if (!override_horizontal)
-    return nullptr;
-  CSSValue* override_vertical_upright =
-      css_parsing_utils::ConsumePercent(range, context, kValueRangeNonNegative);
-  if (!override_vertical_upright)
-    override_vertical_upright = override_horizontal;
-  return MakeGarbageCollected<CSSValuePair>(override_horizontal,
-                                            override_vertical_upright,
-                                            CSSValuePair::kDropIdenticalValues);
 }
 
 }  // namespace
@@ -283,9 +262,6 @@ CSSValue* AtRuleDescriptorParser::ParseFontFaceDescriptor(
     case AtRuleDescriptorID::LineGapOverride:
       parsed_value = ConsumeFontMetricOverride(range, context);
       break;
-    case AtRuleDescriptorID::AdvanceOverride:
-      parsed_value = ConsumeAdvanceOverride(range, context);
-      break;
     case AtRuleDescriptorID::SizeAdjust:
       if (RuntimeEnabledFeatures::CSSFontFaceSizeAdjustEnabled()) {
         parsed_value = css_parsing_utils::ConsumePercent(
@@ -339,8 +315,7 @@ CSSValue* AtRuleDescriptorParser::ParseAtPropertyDescriptor(
     case AtRuleDescriptorID::InitialValue: {
       // Note that we must retain leading whitespace here.
       return CSSVariableParser::ParseDeclarationValue(
-          g_null_atom, tokenized_value, false /* is_animation_tainted */,
-          context);
+          tokenized_value, false /* is_animation_tainted */, context);
     }
     case AtRuleDescriptorID::Inherits:
       range.ConsumeWhitespace();
@@ -405,6 +380,7 @@ bool AtRuleDescriptorParser::ParseAtRule(
   CSSPropertyID equivalent_property_id = AtRuleDescriptorIDAsCSSPropertyID(id);
   parsed_descriptors.push_back(
       CSSPropertyValue(CSSPropertyName(equivalent_property_id), *result));
+  context.Count(context.Mode(), equivalent_property_id);
   return true;
 }
 

@@ -86,6 +86,7 @@ source_set("recent_tabs_ui") {
     "//ios/chrome/browser/metrics:metrics_internal",
     "//ios/chrome/browser/sessions",
     "//ios/chrome/browser/sessions:serialisation",
+    "//ios/chrome/browser/signin",
     "//ios/chrome/browser/sync",
     "//ios/chrome/browser/ui:feature_flags",
     "//ios/chrome/browser/ui/alert_coordinator",
@@ -94,6 +95,7 @@ source_set("recent_tabs_ui") {
     "//ios/chrome/browser/ui/authentication/signin:signin_headers",
     "//ios/chrome/browser/ui/commands",
     "//ios/chrome/browser/ui/settings/sync/utils",
+    "//ios/chrome/browser/ui/signin:signin_presenter",
     "//ios/chrome/browser/ui/table_view",
     "//ios/chrome/browser/ui/table_view:presentation",
     "//ios/chrome/browser/ui/table_view:styler",
@@ -106,8 +108,7 @@ source_set("recent_tabs_ui") {
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/favicon",
     "//ios/public/provider/chrome/browser",
-    "//ios/public/provider/chrome/browser/modals",
-    "//ios/public/provider/chrome/browser/signin",
+    "//ios/public/provider/chrome/browser/modals:modals_api",
     "//ui/base",
   ]
   public_deps = [ "//components/sync_sessions" ]
@@ -131,6 +132,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/main:test_support",
     "//ios/chrome/browser/sessions",
     "//ios/chrome/browser/signin",
+    "//ios/chrome/browser/signin:test_support",
     "//ios/chrome/browser/sync",
     "//ios/chrome/browser/sync:test_support",
     "//ios/chrome/browser/ui:feature_flags",

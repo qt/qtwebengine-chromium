@@ -36,9 +36,11 @@ import collections
 import json
 import logging
 import optparse
+import os
 import re
 import sys
 import tempfile
+from collections import defaultdict
 
 import six
 from six.moves import zip_longest
@@ -141,15 +143,18 @@ class Port(object):
         ('mac11.0', 'x86'),
         ('mac-arm11.0', 'arm64'),
         ('win7', 'x86'),
-        ('win10', 'x86'),
+        ('win10.1909', 'x86'),
+        ('win10.20h2', 'x86'),
         ('trusty', 'x86_64'),
         ('fuchsia', 'x86_64'),
     )
 
     CONFIGURATION_SPECIFIER_MACROS = {
-        'mac': ['mac10.12', 'mac10.13', 'mac10.14', 'mac10.15', 'mac11.0',
-                'mac-arm11.0'],
-        'win': ['win7', 'win10'],
+        'mac': [
+            'mac10.12', 'mac10.13', 'mac10.14', 'mac10.15', 'mac11.0',
+            'mac-arm11.0'
+        ],
+        'win': ['win7', 'win10.1909', 'win10.20h2'],
         'linux': ['trusty'],
         'fuchsia': ['fuchsia'],
     }
@@ -248,6 +253,7 @@ class Port(object):
         self._test_configuration = None
         self._results_directory = None
         self._virtual_test_suites = None
+        self._used_expectation_files = None
 
     def __str__(self):
         return 'Port{name=%s, version=%s, architecture=%s, test_configuration=%s}' % (
@@ -263,7 +269,7 @@ class Port(object):
         ])
 
     @memoized
-    def _flag_specific_config_name(self):
+    def flag_specific_config_name(self):
         """Returns the name of the flag-specific configuration which best matches
            self._specified_additional_driver_flags(), or the first specified flag
            with leading '-'s stripped if no match in the configuration is found.
@@ -314,7 +320,7 @@ class Port(object):
             if name in configs:
                 raise ValueError('{} contains duplicated name {}.'.format(
                     config_file, name))
-            if args in configs.itervalues():
+            if args in configs.values():
                 raise ValueError(
                     '{}: name "{}" has the same args as another entry.'.format(
                         config_file, name))
@@ -361,8 +367,10 @@ class Port(object):
         # increases test run time by 2-5X, but provides more consistent results
         # [less state leaks between tests].
         if (self.get_option('reset_shell_between_tests')
-                or self.get_option('repeat_each') > 1
-                or self.get_option('iterations') > 1):
+                or (self.get_option('repeat_each')
+                    and self.get_option('repeat_each') > 1)
+                or (self.get_option('iterations')
+                    and self.get_option('iterations') > 1)):
             flags += ['--reset-shell-between-tests']
         return flags
 
@@ -913,14 +921,33 @@ class Port(object):
                     or any('external' in path for path in paths)):
                 tests.extend(self._wpt_test_urls_matching_paths(paths))
         else:
-            tests.extend(self._all_virtual_tests())
             # '/' is used instead of filesystem.sep as the WPT manifest always
             # uses '/' for paths (it is not OS dependent).
-            tests.extend([
+            wpt_tests = [
                 wpt_path + '/' + test for wpt_path in self.WPT_DIRS
                 for test in self.wpt_manifest(wpt_path).all_urls()
-            ])
+            ]
+            tests_by_dir = defaultdict(list)
+            for test in tests + wpt_tests:
+                dirname = os.path.dirname(test) + '/'
+                tests_by_dir[dirname].append(test)
+
+            tests.extend(self._all_virtual_tests(tests_by_dir))
+            tests.extend(wpt_tests)
         return tests
+
+    def real_tests_from_dict(self, paths, tests_by_dir):
+        """Find all real tests in paths, using results saved in dict."""
+        files = []
+        for path in paths:
+            if self._has_supported_extension_for_all(path):
+                files.append(path)
+                continue
+            path = path + '/' if path[-1] != '/' else path
+            for key, value in tests_by_dir.items():
+                if key.startswith(path):
+                    files.extend(value)
+        return files
 
     def real_tests(self, paths):
         """Find all real tests in paths except WPT."""
@@ -964,6 +991,14 @@ class Port(object):
         '.pdf',
     ])
 
+    def _has_supported_extension_for_all(self, filename):
+        extension = self._filesystem.splitext(filename)[1]
+        if 'inspector-protocol' in filename and extension == '.js':
+            return True
+        if 'devtools' in filename and extension == '.js':
+            return True
+        return extension in self.supported_file_extensions
+
     def _has_supported_extension(self, filename):
         """Returns True if filename is one of the file extensions we want to run a test on."""
         extension = self._filesystem.splitext(filename)[1]
@@ -995,7 +1030,7 @@ class Port(object):
         manifest_path = self._filesystem.join(self.web_tests_dir(), path,
                                               MANIFEST_NAME)
         if not self._filesystem.exists(manifest_path) or self.get_option(
-                'manifest_update', True):
+                'manifest_update', False):
             _log.debug('Generating MANIFEST.json for %s...', path)
             WPTManifest.ensure_manifest(self, path)
         return WPTManifest(self.host, manifest_path)
@@ -1608,14 +1643,14 @@ class Port(object):
         return test_configurations
 
     def _flag_specific_expectations_path(self):
-        config_name = self._flag_specific_config_name()
+        config_name = self.flag_specific_config_name()
         if config_name:
             return self._filesystem.join(self.web_tests_dir(),
                                          self.FLAG_EXPECTATIONS_PREFIX,
                                          config_name)
 
     def _flag_specific_baseline_search_path(self):
-        config_name = self._flag_specific_config_name()
+        config_name = self.flag_specific_config_name()
         if not config_name:
             return []
         flag_dir = self._filesystem.join(self.web_tests_dir(), 'flag-specific',
@@ -1643,24 +1678,29 @@ class Port(object):
         # updated to know about the ordered dict.
         expectations = collections.OrderedDict()
 
-        if not self.get_option('ignore_default_expectations', False):
-            for path in self.expectations_files():
-                if self._filesystem.exists(path):
+        default_expectations_files = set(self.default_expectations_files())
+        ignore_default = self.get_option('ignore_default_expectations', False)
+        for path in self.used_expectations_files():
+            is_default = path in default_expectations_files
+            if ignore_default and is_default:
+                continue
+            path_exists = self._filesystem.exists(path)
+            if is_default:
+                if path_exists:
                     expectations[path] = self._filesystem.read_text_file(path)
-
-        for path in self.get_option('additional_expectations', []):
-            expanded_path = self._filesystem.expanduser(path)
-            if self._filesystem.exists(expanded_path):
-                _log.debug("reading additional_expectations from path '%s'",
-                           path)
-                expectations[path] = self._filesystem.read_text_file(
-                    expanded_path)
             else:
-                # TODO(rmhasan): Fix additional expectation paths for
-                # not_site_per_process_blink_web_tests, then change this back
-                # to raising exceptions for incorrect expectation paths.
-                _log.warning(
-                    "additional_expectations path '%s' does not exist", path)
+                if path_exists:
+                    _log.debug(
+                        "reading additional_expectations from path '%s'", path)
+                    expectations[path] = self._filesystem.read_text_file(path)
+                else:
+                    # TODO(rmhasan): Fix additional expectation paths for
+                    # not_site_per_process_blink_web_tests, then change this
+                    # back to raising exceptions for incorrect expectation
+                    # paths.
+                    _log.warning(
+                        "additional_expectations path '%s' does not exist",
+                        path)
         return expectations
 
     def all_expectations_dict(self):
@@ -1712,7 +1752,7 @@ class Port(object):
         _log.warning("Unexpected ignore mode: '%s'.", ignore_mode)
         return {}
 
-    def expectations_files(self):
+    def default_expectations_files(self):
         """Returns a list of paths to expectations files that apply by default.
 
         There are other "test expectations" files that may be applied if
@@ -1725,9 +1765,20 @@ class Port(object):
             self._filesystem.join(self.web_tests_dir(), 'NeverFixTests'),
             self._filesystem.join(self.web_tests_dir(),
                                   'StaleTestExpectations'),
-            self._filesystem.join(self.web_tests_dir(), 'SlowTests'),
-            self._flag_specific_expectations_path()
+            self._filesystem.join(self.web_tests_dir(), 'SlowTests')
         ])
+
+    def used_expectations_files(self):
+        """Returns a list of paths to expectation files that are used."""
+        if self._used_expectation_files is None:
+            self._used_expectation_files = self.default_expectations_files()
+            flag_specific = self._flag_specific_expectations_path()
+            if flag_specific:
+                self._used_expectation_files.append(flag_specific)
+            for path in self.get_option('additional_expectations', []):
+                expanded_path = self._filesystem.expanduser(path)
+                self._used_expectation_files.append(expanded_path)
+        return self._used_expectation_files
 
     def extra_expectations_files(self):
         """Returns a list of paths to test expectations not loaded by default.
@@ -1941,30 +1992,13 @@ class Port(object):
                     path_to_virtual_test_suites, error))
         return self._virtual_test_suites
 
-    def _all_virtual_tests(self):
+    def _all_virtual_tests(self, tests_by_dir):
         tests = []
 
-        # The set of paths to find tests for each virtual test suite.
-        suite_paths = []
-        # For each path, a map functor that converts the test path to be under
-        # the virtual test suite.
-        suite_prefixes = []
         for suite in self.virtual_test_suites():
-            for b in suite.bases:
-                suite_paths.append(b)
-                suite_prefixes.append(suite.full_prefix)
-
-            # TODO(crbug.com/982208): If we can pass in the set of paths and
-            # maps then this could be more efficient.
             if suite.bases:
-                tests.extend(
-                    map(lambda x: suite.full_prefix + x,
-                        self.real_tests(suite.bases)))
-
-        if suite_paths:
-            tests.extend(
-                self._wpt_test_urls_matching_paths(suite_paths,
-                                                   suite_prefixes))
+                tests.extend(map(lambda x: suite.full_prefix + x,
+                             self.real_tests_from_dict(suite.bases, tests_by_dir)))
         return tests
 
     def _get_bases_for_suite_with_paths(self, suite, paths):
@@ -2056,9 +2090,6 @@ class Port(object):
         # slow.
         wpts = [(wpt_path, self.wpt_manifest(wpt_path))
                 for wpt_path in self.WPT_DIRS]
-
-        _log.debug("Finding WPT tests that match %d path prefixes",
-                   len(filter_paths))
 
         tests = []
         # This walks through the set of paths where we should look for tests.

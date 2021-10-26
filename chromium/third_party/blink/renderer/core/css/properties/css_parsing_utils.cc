@@ -810,6 +810,15 @@ CSSPrimitiveValue* ConsumeLength(CSSParserTokenRange& range,
       case CSSPrimitiveValue::UnitType::kViewportMin:
       case CSSPrimitiveValue::UnitType::kViewportMax:
         break;
+      case CSSPrimitiveValue::UnitType::kContainerWidth:
+      case CSSPrimitiveValue::UnitType::kContainerHeight:
+      case CSSPrimitiveValue::UnitType::kContainerInlineSize:
+      case CSSPrimitiveValue::UnitType::kContainerBlockSize:
+      case CSSPrimitiveValue::UnitType::kContainerMin:
+      case CSSPrimitiveValue::UnitType::kContainerMax:
+        if (!RuntimeEnabledFeatures::CSSContainerRelativeUnitsEnabled())
+          return nullptr;
+        break;
       default:
         return nullptr;
     }
@@ -2226,6 +2235,7 @@ static CSSValue* ConsumeImageSet(CSSParserTokenRange& range,
   } while (ConsumeCommaIncludingWhitespace(args));
   if (!args.AtEnd())
     return nullptr;
+  context.Count(WebFeature::kWebkitImageSet);
   range = range_copy;
   return image_set;
 }
@@ -3975,7 +3985,7 @@ bool ConsumeGridTrackRepeatFunction(CSSParserTokenRange& range,
   CSSParserTokenRange args = ConsumeFunction(range);
   // The number of repetitions for <auto-repeat> is not important at parsing
   // level because it will be computed later, let's set it to 1.
-  size_t repetitions = 1;
+  wtf_size_t repetitions = 1;
   is_auto_repeat = IdentMatches<CSSValueID::kAutoFill, CSSValueID::kAutoFit>(
       args.Peek().Id());
   CSSValueList* repeated_values;
@@ -3988,7 +3998,7 @@ bool ConsumeGridTrackRepeatFunction(CSSParserTokenRange& range,
     if (!repetition)
       return false;
     repetitions =
-        clampTo<size_t>(repetition->GetDoubleValue(), 0, kGridMaxTracks);
+        clampTo<wtf_size_t>(repetition->GetDoubleValue(), 0, kGridMaxTracks);
     repeated_values = CSSValueList::CreateSpaceSeparated();
   }
   if (!ConsumeCommaIncludingWhitespace(args))
@@ -3997,7 +4007,7 @@ bool ConsumeGridTrackRepeatFunction(CSSParserTokenRange& range,
   if (line_names)
     repeated_values->Append(*line_names);
 
-  size_t number_of_tracks = 0;
+  wtf_size_t number_of_tracks = 0;
   while (!args.AtEnd()) {
     CSSValue* track_size = ConsumeGridTrackSize(args, context);
     if (!track_size)
@@ -4023,7 +4033,7 @@ bool ConsumeGridTrackRepeatFunction(CSSParserTokenRange& range,
     repetitions = std::min(repetitions, kGridMaxTracks / number_of_tracks);
     auto* integer_repeated_values =
         MakeGarbageCollected<cssvalue::CSSGridIntegerRepeatValue>(repetitions);
-    for (size_t i = 0; i < repeated_values->length(); ++i)
+    for (wtf_size_t i = 0; i < repeated_values->length(); ++i)
       integer_repeated_values->Append(repeated_values->Item(i));
     list.Append(*integer_repeated_values);
   }
@@ -4042,8 +4052,8 @@ bool ConsumeGridTemplateRowsAndAreasAndColumns(bool important,
   DCHECK(!template_areas);
 
   NamedGridAreaMap grid_area_map;
-  size_t row_count = 0;
-  size_t column_count = 0;
+  wtf_size_t row_count = 0;
+  wtf_size_t column_count = 0;
   CSSValueList* template_rows_value_list = CSSValueList::CreateSpaceSeparated();
 
   // Persists between loop iterations so we can use the same value for
@@ -4198,8 +4208,8 @@ CSSValue* ConsumeGridTrackList(CSSParserTokenRange& range,
 
 bool ParseGridTemplateAreasRow(const String& grid_row_names,
                                NamedGridAreaMap& grid_area_map,
-                               const size_t row_count,
-                               size_t& column_count) {
+                               const wtf_size_t row_count,
+                               wtf_size_t& column_count) {
   if (grid_row_names.ContainsOnlyWhitespaceOrEmpty())
     return false;
 
@@ -4215,7 +4225,7 @@ bool ParseGridTemplateAreasRow(const String& grid_row_names,
     return false;
   }
 
-  for (size_t current_column = 0; current_column < column_count;
+  for (wtf_size_t current_column = 0; current_column < column_count;
        ++current_column) {
     const String& grid_area_name = column_names[current_column];
 
@@ -4223,7 +4233,7 @@ bool ParseGridTemplateAreasRow(const String& grid_row_names,
     if (grid_area_name == ".")
       continue;
 
-    size_t look_ahead_column = current_column + 1;
+    wtf_size_t look_ahead_column = current_column + 1;
     while (look_ahead_column < column_count &&
            column_names[look_ahead_column] == grid_area_name)
       look_ahead_column++;
@@ -4870,6 +4880,43 @@ CSSValue* ParseSpacing(CSSParserTokenRange& range,
   return ConsumeLength(range, context, kValueRangeAll, UnitlessQuirk::kAllow);
 }
 
+CSSValue* ConsumeContainerName(CSSParserTokenRange& range,
+                               const CSSParserContext& context) {
+  if (CSSValue* value = ConsumeIdent<CSSValueID::kNone>(range))
+    return value;
+  // TODO(crbug.com/1066390): ConsumeCustomIdent should not allow "default".
+  if (range.Peek().Id() == CSSValueID::kDefault)
+    return nullptr;
+  return ConsumeCustomIdent(range, context);
+}
+
+CSSValue* ConsumeContainerType(CSSParserTokenRange& range) {
+  if (CSSValue* value = ConsumeIdent<CSSValueID::kNone>(range))
+    return value;
+
+  CSSIdentifierValue* inline_size = nullptr;
+  CSSIdentifierValue* block_size = nullptr;
+
+  while (range.Peek().GetType() == kIdentToken) {
+    CSSValueID id = range.Peek().Id();
+    if (id == CSSValueID::kInlineSize && !inline_size) {
+      inline_size = ConsumeIdent(range);
+    } else if (id == CSSValueID::kBlockSize && !block_size) {
+      block_size = ConsumeIdent(range);
+    } else {
+      return nullptr;
+    }
+  }
+
+  CSSValueList* list = CSSValueList::CreateSpaceSeparated();
+
+  if (inline_size)
+    list->Append(*inline_size);
+  if (block_size)
+    list->Append(*block_size);
+
+  return list;
+}
 CSSValue* ConsumeSVGPaint(CSSParserTokenRange& range,
                           const CSSParserContext& context) {
   if (range.Peek().Id() == CSSValueID::kNone)
@@ -4902,8 +4949,6 @@ UnitlessQuirk UnitlessUnlessShorthand(
 
 bool ShouldLowerCaseCounterStyleNameOnParse(const AtomicString& name,
                                             const CSSParserContext& context) {
-  DCHECK(RuntimeEnabledFeatures::CSSAtRuleCounterStyleEnabled());
-
   if (context.Mode() == kUASheetMode) {
     // Names in UA sheet should be already in lower case.
     DCHECK_EQ(name, name.LowerASCII());
@@ -4915,8 +4960,6 @@ bool ShouldLowerCaseCounterStyleNameOnParse(const AtomicString& name,
 
 CSSCustomIdentValue* ConsumeCounterStyleName(CSSParserTokenRange& range,
                                              const CSSParserContext& context) {
-  DCHECK(RuntimeEnabledFeatures::CSSAtRuleCounterStyleEnabled());
-
   CSSParserTokenRange original_range = range;
 
   // <counter-style-name> is a <custom-ident> that is not an ASCII
@@ -4946,7 +4989,11 @@ AtomicString ConsumeCounterStyleNameInPrelude(CSSParserTokenRange& prelude,
 
   if (context.Mode() != kUASheetMode) {
     if (name_token.Id() == CSSValueID::kDecimal ||
-        name_token.Id() == CSSValueID::kDisc)
+        name_token.Id() == CSSValueID::kDisc ||
+        name_token.Id() == CSSValueID::kCircle ||
+        name_token.Id() == CSSValueID::kSquare ||
+        name_token.Id() == CSSValueID::kDisclosureOpen ||
+        name_token.Id() == CSSValueID::kDisclosureClosed)
       return g_null_atom;
   }
 

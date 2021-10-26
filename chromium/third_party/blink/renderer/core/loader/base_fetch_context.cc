@@ -137,7 +137,7 @@ void BaseFetchContext::AddClientHintsIfNecessary(
   // One exception, however, is that a custom UA is sometimes set without
   // specifying accomponying client hints, in which case we disable sending
   // them.
-  if (ClientHintsPreferences::UserAgentClientHintEnabled() && ua) {
+  if (RuntimeEnabledFeatures::UserAgentClientHintEnabled() && ua) {
     // ShouldSendClientHint is called to make sure UA is controlled by
     // Permissions Policy.
     if (ShouldSendClientHint(ClientHintsMode::kStandard, policy,
@@ -285,7 +285,7 @@ void BaseFetchContext::AddClientHintsIfNecessary(
   }
 
   // Only send User Agent hints if the info is available
-  if (ClientHintsPreferences::UserAgentClientHintEnabled() && ua) {
+  if (RuntimeEnabledFeatures::UserAgentClientHintEnabled() && ua) {
     if (ShouldSendClientHint(ClientHintsMode::kStandard, policy,
                              resource_origin, is_1p_origin,
                              network::mojom::blink::WebClientHintsType::kUAArch,
@@ -334,6 +334,16 @@ void BaseFetchContext::AddClientHintsIfNecessary(
           blink::kClientHintsHeaderMapping[static_cast<size_t>(
               network::mojom::blink::WebClientHintsType::kUAFullVersion)],
           SerializeHeaderString(ua->full_version));
+    }
+
+    if (ShouldSendClientHint(
+            ClientHintsMode::kStandard, policy, resource_origin, is_1p_origin,
+            network::mojom::blink::WebClientHintsType::kUABitness,
+            hints_preferences)) {
+      request.SetHttpHeaderField(
+          blink::kClientHintsHeaderMapping[static_cast<size_t>(
+              network::mojom::blink::WebClientHintsType::kUABitness)],
+          SerializeHeaderString(ua->bitness));
     }
   }
 
@@ -401,8 +411,9 @@ BaseFetchContext::CheckCSPForRequestInternal(
     return absl::nullopt;
   }
 
-  if (ShouldDisableCSPCheckForSubresourceRedirectOrigin(request_context,
-                                                        redirect_status, url)) {
+  if (ShouldDisableCSPCheckForLitePageSubresourceRedirectOrigin(
+          GetResourceFetcherProperties().GetLitePageSubresourceRedirectOrigin(),
+          request_context, redirect_status, url)) {
     return absl::nullopt;
   }
 

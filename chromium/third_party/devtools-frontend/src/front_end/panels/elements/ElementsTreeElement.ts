@@ -40,19 +40,19 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
-import * as TextEditor from '../../ui/legacy/components/text_editor/text_editor.js';  // eslint-disable-line no-unused-vars
+import * as Adorners from '../../ui/components/adorners/adorners.js';
+import * as TextEditor from '../../ui/legacy/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Emulation from '../emulation/emulation.js';
 import * as ElementsComponents from './components/components.js';
-
 import {canGetJSPath, cssPath, jsPath, xPath} from './DOMPath.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import type {ElementsTreeOutline, UpdateRecord} from './ElementsTreeOutline.js';
-import {MappedCharToEntity} from './ElementsTreeOutline.js';  // eslint-disable-line no-unused-vars
+import {MappedCharToEntity} from './ElementsTreeOutline.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
 import type {MarkerDecorator, MarkerDecoratorRegistration} from './MarkerDecorator.js';
-import {getRegisteredDecorators} from './MarkerDecorator.js';  // eslint-disable-line no-unused-vars
+import {getRegisteredDecorators} from './MarkerDecorator.js';
 
 const UIStrings = {
   /**
@@ -93,9 +93,17 @@ const UIStrings = {
   */
   editAsHtml: 'Edit as HTML',
   /**
-  *@description Text for copying
+  *@description Text to cut an element, cut should be used as a verb
+  */
+  cut: 'Cut',
+  /**
+  *@description Text for copying, copy should be used as a verb
   */
   copy: 'Copy',
+  /**
+  *@description Text to paste an element, paste should be used as a verb
+  */
+  paste: 'Paste',
   /**
   *@description Text in Elements Tree Element of the Elements panel, copy should be used as a verb
   */
@@ -121,17 +129,9 @@ const UIStrings = {
   */
   copyFullXpath: 'Copy full XPath',
   /**
-  *@description Text in Elements Tree Element of the Elements panel
-  */
-  cutElement: 'Cut element',
-  /**
   *@description Text in Elements Tree Element of the Elements panel, copy should be used as a verb
   */
   copyElement: 'Copy element',
-  /**
-  *@description Text in Elements Tree Element of the Elements panel
-  */
-  pasteElement: 'Paste element',
   /**
   *@description A context menu item in the Elements Tree Element of the Elements panel
   */
@@ -215,10 +215,10 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   _adornerContainer: HTMLElement|undefined;
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // @ts-expect-error
-  _adorners: ElementsComponents.Adorner.Adorner[];
+  _adorners: Adorners.Adorner.Adorner[];
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // @ts-expect-error
-  _styleAdorners: ElementsComponents.Adorner.Adorner[];
+  _styleAdorners: Adorners.Adorner.Adorner[];
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
   // @ts-expect-error
   _adornersThrottler: Common.Throttler.Throttler;
@@ -265,7 +265,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       this.updateStyleAdorners();
 
       if (node.isAdFrameNode()) {
-        const adorner = this.adorn(ElementsComponents.AdornerManager.AdornerRegistry.AD);
+        const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+            ElementsComponents.AdornerManager.RegisteredAdorners.AD);
+        const adorner = this.adorn(config);
         UI.Tooltip.Tooltip.install(adorner, i18nString(UIStrings.thisFrameWasIdentifiedAsAnAd));
       }
     }
@@ -657,8 +659,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
     const isShadowRoot = this._node.isShadowRoot();
 
-    // Place it here so that all "Copy"-ing items stick together.
-    const copyMenu = contextMenu.clipboardSection().appendSubMenuItem(i18nString(UIStrings.copy));
     const createShortcut = UI.KeyboardShortcut.KeyboardShortcut.shortcutToString.bind(null);
     const modifier = UI.KeyboardShortcut.Modifiers.CtrlOrMeta;
     const treeOutline = this.treeOutline;
@@ -666,6 +666,14 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       return;
     }
     let menuItem;
+
+    menuItem = contextMenu.clipboardSection().appendItem(
+        i18nString(UIStrings.cut), treeOutline.performCopyOrCut.bind(treeOutline, true, this._node),
+        !this.hasEditableNode());
+    menuItem.setShortcut(createShortcut('X', modifier));
+
+    // Place it here so that all "Copy"-ing items stick together.
+    const copyMenu = contextMenu.clipboardSection().appendSubMenuItem(i18nString(UIStrings.copy));
     const section = copyMenu.section();
     if (!isShadowRoot) {
       menuItem = section.appendItem(
@@ -684,16 +692,8 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     if (!isShadowRoot) {
       menuItem = copyMenu.clipboardSection().appendItem(
-          i18nString(UIStrings.cutElement), treeOutline.performCopyOrCut.bind(treeOutline, true, this._node),
-          !this.hasEditableNode());
-      menuItem.setShortcut(createShortcut('X', modifier));
-      menuItem = copyMenu.clipboardSection().appendItem(
           i18nString(UIStrings.copyElement), treeOutline.performCopyOrCut.bind(treeOutline, false, this._node));
       menuItem.setShortcut(createShortcut('C', modifier));
-      menuItem = copyMenu.clipboardSection().appendItem(
-          i18nString(UIStrings.pasteElement), treeOutline.pasteNode.bind(treeOutline, this._node),
-          !treeOutline.canPaste(this._node));
-      menuItem.setShortcut(createShortcut('V', modifier));
 
       // Duplicate element, disabled on root element and ShadowDOM.
       const isRootElement = !this._node.parentNode || this._node.parentNode.nodeName() === '#document';
@@ -701,6 +701,11 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           i18nString(UIStrings.duplicateElement), treeOutline.duplicateNode.bind(treeOutline, this._node),
           (this._node.isInShadowTree() || isRootElement));
     }
+
+    menuItem = contextMenu.clipboardSection().appendItem(
+        i18nString(UIStrings.paste), treeOutline.pasteNode.bind(treeOutline, this._node),
+        !treeOutline.canPaste(this._node));
+    menuItem.setShortcut(createShortcut('V', modifier));
 
     menuItem = contextMenu.debugSection().appendCheckboxItem(
         i18nString(UIStrings.hideElement), treeOutline.toggleHideElement.bind(treeOutline, this._node),
@@ -970,7 +975,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     const initialValue = this._convertWhitespaceToEntities(maybeInitialValue).text;
-    this._htmlEditElement = (document.createElement('div') as HTMLElement);
+    this._htmlEditElement = document.createElement('div');
     this._htmlEditElement.className = 'source-code elements-tree-editor';
 
     // Hide header items.
@@ -1074,12 +1079,14 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     function keydown(this: ElementsTreeElement, event: Event): void {
       const keyboardEvent = (event as KeyboardEvent);
-      const isMetaOrCtrl = UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlOrMeta(keyboardEvent) &&
+      const isMetaOrCtrl = UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlEquivalentKey(keyboardEvent) &&
           !keyboardEvent.altKey && !keyboardEvent.shiftKey;
       if (keyboardEvent.key === 'Enter' && (isMetaOrCtrl || keyboardEvent.isMetaOrCtrlForTest)) {
         keyboardEvent.consume(true);
         this._editing && this._editing.commit();
-      } else if (keyboardEvent.keyCode === UI.KeyboardShortcut.Keys.Esc.code || keyboardEvent.key === 'Escape') {
+      } else if (
+          keyboardEvent.keyCode === UI.KeyboardShortcut.Keys.Esc.code ||
+          keyboardEvent.key === Platform.KeyboardUtilities.ESCAPE_KEY) {
         keyboardEvent.consume(true);
         this._editing && this._editing.cancel();
       }
@@ -1408,7 +1415,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       if (!this.expanded) {
         processColors.call(this, descendantColors, 'elements-gutter-decoration elements-has-decorated-children');
       }
-      UI.Tooltip.Tooltip.install(this._decorationsElement, titles);
+      UI.Tooltip.Tooltip.install(this._decorationsElement, titles.textContent);
       UI.ARIAUtils.setAccessibleName(this._decorationsElement, titles.textContent || '');
 
       function processColors(this: ElementsTreeElement, colors: Set<string>, className: string): void {
@@ -1583,8 +1590,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const tagNameElement =
         tagElement.createChild('span', isClosingTag ? 'webkit-html-close-tag-name' : 'webkit-html-tag-name');
     tagNameElement.textContent = (isClosingTag ? '/' : '') + tagName;
-    // Force screen readers to consider the tagname as one label, this avoids announcing <div id> as one word "divid".
-    UI.ARIAUtils.setAccessibleName(tagNameElement, tagName);
     if (!isClosingTag) {
       if (node.hasAttributes()) {
         const attributes = node.attributes();
@@ -1605,6 +1610,9 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     UI.UIUtils.createTextChild(tagElement, '>');
     UI.UIUtils.createTextChild(parentElement, '\u200B');
+    if (tagElement.textContent) {
+      UI.ARIAUtils.setAccessibleName(tagElement, tagElement.textContent);
+    }
   }
 
   _convertWhitespaceToEntities(text: string): {
@@ -1904,14 +1912,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
   }
 
   // TODO: add unit tests for adorner-related methods after component and TypeScript works are done
-  adorn({name, category}: ElementsComponents.Adorner.AdornerDefinition): ElementsComponents.Adorner.Adorner {
-    const adornerContent = (document.createElement('span') as HTMLElement);
+  adorn({name}: {name: string}): Adorners.Adorner.Adorner {
+    const adornerContent = document.createElement('span');
     adornerContent.textContent = name;
-    const adorner = new ElementsComponents.Adorner.Adorner();
+    const adorner = new Adorners.Adorner.Adorner();
     adorner.data = {
       name,
       content: adornerContent,
-      category,
     };
     this._adorners.push(adorner);
     ElementsPanel.instance().registerAdorner(adorner);
@@ -1919,7 +1926,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return adorner;
   }
 
-  removeAdorner(adornerToRemove: ElementsComponents.Adorner.Adorner): void {
+  removeAdorner(adornerToRemove: Adorners.Adorner.Adorner): void {
     const adorners = this._adorners;
     ElementsPanel.instance().deregisterAdorner(adornerToRemove);
     adornerToRemove.remove();
@@ -1992,7 +1999,12 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const isGrid = display === 'grid' || display === 'inline-grid';
     const isFlex = display === 'flex' || display === 'inline-flex';
 
-    const appendAdorner = (adorner?: ElementsComponents.Adorner.Adorner|null): void => {
+    const containerType = styles.get('container-type');
+    const contain = styles.get('contain');
+    const isContainer =
+        SDK.CSSContainerQuery.getQueryAxis(`${containerType} ${contain}`) !== SDK.CSSContainerQuery.QueryAxis.None;
+
+    const appendAdorner = (adorner?: Adorners.Adorner.Adorner|null): void => {
       if (adorner) {
         this._styleAdorners.push(adorner);
       }
@@ -2006,16 +2018,21 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     if (styles.get('scroll-snap-type') && styles.get('scroll-snap-type') !== 'none') {
       appendAdorner(this.createScrollSnapAdorner());
     }
+    if (isContainer) {
+      appendAdorner(this.createContainerAdorner());
+    }
   }
 
-  createGridAdorner(): ElementsComponents.Adorner.Adorner|null {
+  createGridAdorner(): Adorners.Adorner.Adorner|null {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
       return null;
     }
 
-    const adorner = this.adorn(ElementsComponents.AdornerManager.AdornerRegistry.GRID);
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.GRID);
+    const adorner = this.adorn(config);
     adorner.classList.add('grid');
 
     const onClick = (((): void => {
@@ -2044,13 +2061,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return adorner;
   }
 
-  createScrollSnapAdorner(): ElementsComponents.Adorner.Adorner|null {
+  createScrollSnapAdorner(): Adorners.Adorner.Adorner|null {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
       return null;
     }
-    const adorner = this.adorn(ElementsComponents.AdornerManager.AdornerRegistry.SCROLL_SNAP);
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.SCROLL_SNAP);
+    const adorner = this.adorn(config);
     adorner.classList.add('scroll-snap');
 
     const onClick = (((): void => {
@@ -2081,13 +2100,15 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     return adorner;
   }
 
-  createFlexAdorner(): ElementsComponents.Adorner.Adorner|null {
+  createFlexAdorner(): Adorners.Adorner.Adorner|null {
     const node = this.node();
     const nodeId = node.id;
     if (!nodeId) {
       return null;
     }
-    const adorner = this.adorn(ElementsComponents.AdornerManager.AdornerRegistry.FLEX);
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.FLEX);
+    const adorner = this.adorn(config);
     adorner.classList.add('flex');
 
     const onClick = (((): void => {
@@ -2117,6 +2138,45 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
 
     return adorner;
   }
+
+  createContainerAdorner(): Adorners.Adorner.Adorner|null {
+    const node = this.node();
+    const nodeId = node.id;
+    if (!nodeId) {
+      return null;
+    }
+    const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
+        ElementsComponents.AdornerManager.RegisteredAdorners.CONTAINER);
+    const adorner = this.adorn(config);
+    adorner.classList.add('container');
+
+    const onClick = (((): void => {
+                       const model = node.domModel().overlayModel();
+                       if (adorner.isActive()) {
+                         model.highlightContainerQueryInPersistentOverlay(nodeId);
+                       } else {
+                         model.hideContainerQueryInPersistentOverlay(nodeId);
+                       }
+                     }) as EventListener);
+
+    adorner.addInteraction(onClick, {
+      isToggle: true,
+      shouldPropagateOnKeydown: false,
+      ariaLabelDefault: i18nString(UIStrings.enableScrollSnap),
+      ariaLabelActive: i18nString(UIStrings.disableScrollSnap),
+    });
+
+    node.domModel().overlayModel().addEventListener(
+        SDK.OverlayModel.Events.PersistentContainerQueryOverlayStateChanged, event => {
+          const {nodeId: eventNodeId, enabled} = event.data;
+          if (eventNodeId !== nodeId) {
+            return;
+          }
+          adorner.toggle(enabled);
+        });
+
+    return adorner;
+  }
 }
 
 export const InitialChildrenLimit = 500;
@@ -2131,22 +2191,13 @@ export const ForbiddenClosingTagElements = new Set<string>([
 // These tags we do not allow editing their tag name.
 export const EditTagBlocklist = new Set<string>(['html', 'head', 'body']);
 
-const OrderedAdornerCategories = [
-  ElementsComponents.AdornerManager.AdornerCategories.SECURITY,
-  ElementsComponents.AdornerManager.AdornerCategories.LAYOUT,
-  ElementsComponents.AdornerManager.AdornerCategories.DEFAULT,
-];
-// Use idx + 1 for the order to avoid JavaScript's 0 == false issue
-const AdornerCategoryOrder = new Map(OrderedAdornerCategories.map((category, idx) => [category, idx + 1]));
-
-function adornerComparator(
-    adornerA: ElementsComponents.Adorner.Adorner, adornerB: ElementsComponents.Adorner.Adorner): number {
-  const orderA = AdornerCategoryOrder.get(adornerA.category) || Number.POSITIVE_INFINITY;
-  const orderB = AdornerCategoryOrder.get(adornerB.category) || Number.POSITIVE_INFINITY;
-  if (orderA === orderB) {
+export function adornerComparator(adornerA: Adorners.Adorner.Adorner, adornerB: Adorners.Adorner.Adorner): number {
+  const compareCategories =
+      ElementsComponents.AdornerManager.compareAdornerNamesByCategory(adornerB.name, adornerB.name);
+  if (compareCategories === 0) {
     return adornerA.name.localeCompare(adornerB.name);
   }
-  return orderA - orderB;
+  return compareCategories;
 }
 export interface EditorHandles {
   commit: () => void;

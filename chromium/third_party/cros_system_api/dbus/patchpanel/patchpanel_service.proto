@@ -75,10 +75,15 @@ message NetworkDevice {
   // logical or physical networks.
   string phys_ifname = 5;
 
-  // The assigned IPv4 address in network order.
+  // The IPv4 address assigned to the guest, in network order.
   uint32 ipv4_addr = 2;
 
-  // The subnet allocated for this device
+  // The IPv4 address assigned to the host device interface, in network order.
+  // This corresponds to the next hop IPv4 address for the guest and should be
+  // used for the default IPv4 route of the guest.
+  uint32 host_ipv4_addr = 6;
+
+  // The IPv4 subnet allocated for this device.
   IPv4Subnet ipv4_subnet = 3;
 
   // The guest to which the device is bound, if applicable.

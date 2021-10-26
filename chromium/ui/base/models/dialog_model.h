@@ -10,7 +10,6 @@
 
 #include "base/callback.h"
 #include "base/component_export.h"
-#include "base/containers/flat_map.h"
 #include "base/types/pass_key.h"
 #include "ui/base/models/dialog_model_field.h"
 #include "ui/base/models/dialog_model_host.h"
@@ -78,7 +77,7 @@ class COMPONENT_EXPORT(UI_BASE) DialogModelDelegate {
 //     std::make_unique<views::BubbleDialogModelHost>(std::move(dialog_model));
 // bubble->SetAnchorView(anchor_view);
 // views::Widget* const widget =
-//     views::BubbleDialogDelegateView::CreateBubble(bubble.release());
+//     views::BubbleDialogDelegate::CreateBubble(std::move(bubble));
 // widget->Show();
 class COMPONENT_EXPORT(UI_BASE) DialogModel final {
  public:
@@ -119,6 +118,11 @@ class COMPONENT_EXPORT(UI_BASE) DialogModel final {
     // then remove OverrideShowCloseButton().
     Builder& OverrideShowCloseButton(bool show_close_button) {
       model_->override_show_close_button_ = show_close_button;
+      return *this;
+    }
+
+    Builder& SetInternalName(std::string internal_name) {
+      model_->internal_name_ = std::move(internal_name);
       return *this;
     }
 
@@ -289,6 +293,10 @@ class COMPONENT_EXPORT(UI_BASE) DialogModel final {
     return override_show_close_button_;
   }
 
+  const std::string& internal_name(base::PassKey<DialogModelHost>) const {
+    return internal_name_;
+  }
+
   const std::u16string& title(base::PassKey<DialogModelHost>) const {
     return title_;
   }
@@ -340,6 +348,7 @@ class COMPONENT_EXPORT(UI_BASE) DialogModel final {
 
   absl::optional<bool> override_show_close_button_;
   bool close_on_deactivate_ = true;
+  std::string internal_name_;
   std::u16string title_;
   ImageModel icon_;
 

@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/macros.h"
+#include "components/download/public/background_service/background_download_service.h"
 #include "components/download/public/background_service/clients.h"
-#include "components/download/public/background_service/download_service.h"
 #include "components/download/public/task/download_task_types.h"
 
 namespace download {
@@ -17,33 +17,8 @@ namespace download {
 struct DownloadParams;
 struct SchedulingParams;
 
-// The type of completion when the download entry transits to complete state.
-// TODO(xingliu): Implement timeout and unknown failure types.
-enum class CompletionType {
-  // The download is successfully finished.
-  SUCCEED = 0,
-  // The download is interrupted and failed.
-  FAIL = 1,
-  // The download is aborted by the client.
-  ABORT = 2,
-  // The download is timed out and the connection is closed.
-  TIMEOUT = 3,
-  // The download is failed for unknown reasons.
-  UNKNOWN = 4,
-  // The download is cancelled by the client.
-  CANCEL = 5,
-  // The download expended it's number of expensive retries.
-  OUT_OF_RETRIES = 6,
-  // The download expended it's number of 'free' retries.
-  OUT_OF_RESUMPTIONS = 7,
-  // The upload was timed out due to unresponsive client.
-  UPLOAD_TIMEOUT = 8,
-  // The count of entries for the enum.
-  COUNT = 9,
-};
-
-// The core Controller responsible for gluing various DownloadService components
-// together to manage the active downloads.
+// The core Controller responsible for gluing various BackgroundDownloadService
+// components together to manage the active downloads.
 class Controller {
  public:
   enum class State {
@@ -100,11 +75,11 @@ class Controller {
   // Otherwise returns DownloadClient::INVALID for an unowned entry.
   virtual DownloadClient GetOwnerOfDownload(const std::string& guid) = 0;
 
-  // See DownloadService::OnStartScheduledTask.
+  // See BackgroundDownloadService::OnStartScheduledTask.
   virtual void OnStartScheduledTask(DownloadTaskType task_type,
                                     TaskFinishedCallback callback) = 0;
 
-  // See DownloadService::OnStopScheduledTask.
+  // See BackgroundDownloadService::OnStopScheduledTask.
   virtual bool OnStopScheduledTask(DownloadTaskType task_type) = 0;
 
  private:

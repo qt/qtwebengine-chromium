@@ -28,14 +28,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+
+import settingsScreenStyles from './settingsScreen.css.js';
 
 import type {KeybindsSettingsTab} from './KeybindsSettingsTab.js';
 
@@ -86,6 +87,10 @@ const UIStrings = {
   * list of experiments, but no experiments match the filter.
   */
   noResults: 'No experiments match the filter',
+  /**
+  *@description Text that is usually a hyperlink to more documentation
+  */
+  learnMore: 'Learn more',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/settings/SettingsScreen.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -93,13 +98,12 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let settingsScreenInstance: SettingsScreen;
 
 export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocationResolver {
-  _tabbedLocation: UI.View.TabbedViewLocation;
-  _keybindsTab?: KeybindsSettingsTab;
-  _reportTabOnReveal: boolean;
+  private readonly tabbedLocation: UI.View.TabbedViewLocation;
+  private keybindsTab?: KeybindsSettingsTab;
+  private reportTabOnReveal: boolean;
 
   private constructor() {
     super(true);
-    this.registerRequiredCSS('panels/settings/settingsScreen.css', {enableLegacyPatching: false});
 
     this.contentElement.classList.add('settings-window-main');
     this.contentElement.classList.add('vbox');
@@ -108,29 +112,28 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     const settingsTitleElement =
         UI.Utils
             .createShadowRootWithCoreStyles(
-                settingsLabelElement,
-                {cssFile: 'panels/settings/settingsScreen.css', enableLegacyPatching: false, delegatesFocus: undefined})
+                settingsLabelElement, {cssFile: [settingsScreenStyles], delegatesFocus: undefined})
             .createChild('div', 'settings-window-title');
 
     UI.ARIAUtils.markAsHeading(settingsTitleElement, 1);
     settingsTitleElement.textContent = i18nString(UIStrings.settings);
 
-    this._tabbedLocation = UI.ViewManager.ViewManager.instance().createTabbedLocation(
-        () => SettingsScreen._revealSettingsScreen(), 'settings-view');
-    const tabbedPane = this._tabbedLocation.tabbedPane();
+    this.tabbedLocation = UI.ViewManager.ViewManager.instance().createTabbedLocation(
+        () => SettingsScreen.revealSettingsScreen(), 'settings-view');
+    const tabbedPane = this.tabbedLocation.tabbedPane();
     tabbedPane.leftToolbar().appendToolbarItem(new UI.Toolbar.ToolbarItem(settingsLabelElement));
     tabbedPane.setShrinkableTabs(false);
     tabbedPane.makeVerticalTabLayout();
     const keyBindsView = UI.ViewManager.ViewManager.instance().view('keybinds');
     if (keyBindsView) {
       keyBindsView.widget().then(widget => {
-        this._keybindsTab = widget as KeybindsSettingsTab;
+        this.keybindsTab = widget as KeybindsSettingsTab;
       });
     }
     tabbedPane.show(this.contentElement);
     tabbedPane.selectTab('preferences');
-    tabbedPane.addEventListener(UI.TabbedPane.Events.TabInvoked, this._tabInvoked, this);
-    this._reportTabOnReveal = false;
+    tabbedPane.addEventListener(UI.TabbedPane.Events.TabInvoked, this.tabInvoked, this);
+    this.reportTabOnReveal = false;
   }
 
   static instance(opts: {forceNew: boolean|null} = {forceNew: null}): SettingsScreen {
@@ -142,13 +145,13 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     return settingsScreenInstance;
   }
 
-  static _revealSettingsScreen(): SettingsScreen {
+  private static revealSettingsScreen(): SettingsScreen {
     const settingsScreen = SettingsScreen.instance();
     if (settingsScreen.isShowing()) {
       return settingsScreen;
     }
 
-    settingsScreen._reportTabOnReveal = true;
+    settingsScreen.reportTabOnReveal = true;
     const dialog = new UI.Dialog.Dialog();
     dialog.contentElement.tabIndex = -1;
     dialog.addCloseButton();
@@ -156,8 +159,8 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     dialog.setPointerEventsBehavior(UI.GlassPane.PointerEventsBehavior.PierceGlassPane);
     dialog.setOutsideTabIndexBehavior(UI.Dialog.OutsideTabIndexBehavior.PreserveMainViewTabIndex);
     settingsScreen.show(dialog.contentElement);
-    dialog.setEscapeKeyCallback(settingsScreen._onEscapeKeyPressed.bind(settingsScreen));
-
+    dialog.setEscapeKeyCallback(settingsScreen.onEscapeKeyPressed.bind(settingsScreen));
+    dialog.setMarginBehavior(UI.GlassPane.MarginBehavior.NoMargin);
     // UI.Dialog extends GlassPane and overrides the `show` method with a wider
     // accepted type. However, TypeScript uses the supertype declaration to
     // determine the full type, which requires a `!Document`.
@@ -167,13 +170,13 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     return settingsScreen;
   }
 
-  static async _showSettingsScreen(
+  static async showSettingsScreen(
       options: ShowSettingsScreenOptions|undefined = {name: undefined, focusTabHeader: undefined}): Promise<void> {
     const {name, focusTabHeader} = options;
-    const settingsScreen = SettingsScreen._revealSettingsScreen();
+    const settingsScreen = SettingsScreen.revealSettingsScreen();
 
-    settingsScreen._selectTab(name || 'preferences');
-    const tabbedPane = settingsScreen._tabbedLocation.tabbedPane();
+    settingsScreen.selectTab(name || 'preferences');
+    const tabbedPane = settingsScreen.tabbedLocation.tabbedPane();
     await tabbedPane.waitForTabElementUpdate();
     if (focusTabHeader) {
       tabbedPane.focusSelectedTabHeader();
@@ -183,14 +186,14 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
   }
 
   resolveLocation(_locationName: string): UI.View.ViewLocation|null {
-    return this._tabbedLocation;
+    return this.tabbedLocation;
   }
 
-  _selectTab(name: string): void {
-    this._tabbedLocation.tabbedPane().selectTab(name, /* userGesture */ true);
+  private selectTab(name: string): void {
+    this.tabbedLocation.tabbedPane().selectTab(name, /* userGesture */ true);
   }
 
-  _tabInvoked(event: Common.EventTarget.EventTargetEvent): void {
+  private tabInvoked(event: Common.EventTarget.EventTargetEvent): void {
     const eventData = event.data as UI.TabbedPane.EventData;
     if (!eventData.isUserGesture) {
       return;
@@ -198,15 +201,15 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
 
     const prevTabId = eventData.prevTabId;
     const tabId = eventData.tabId;
-    if (!this._reportTabOnReveal && prevTabId && prevTabId === tabId) {
+    if (!this.reportTabOnReveal && prevTabId && prevTabId === tabId) {
       return;
     }
 
-    this._reportTabOnReveal = false;
-    this._reportSettingsPanelShown(tabId);
+    this.reportTabOnReveal = false;
+    this.reportSettingsPanelShown(tabId);
   }
 
-  _reportSettingsPanelShown(tabId: string): void {
+  private reportSettingsPanelShown(tabId: string): void {
     if (tabId === i18nString(UIStrings.shortcuts)) {
       Host.userMetrics.settingsPanelShown('shortcuts');
       return;
@@ -215,10 +218,14 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     Host.userMetrics.settingsPanelShown(tabId);
   }
 
-  _onEscapeKeyPressed(event: Event): void {
-    if (this._tabbedLocation.tabbedPane().selectedTabId === 'keybinds' && this._keybindsTab) {
-      this._keybindsTab.onEscapeKeyPressed(event);
+  private onEscapeKeyPressed(event: Event): void {
+    if (this.tabbedLocation.tabbedPane().selectedTabId === 'keybinds' && this.keybindsTab) {
+      this.keybindsTab.onEscapeKeyPressed(event);
     }
+  }
+  wasShown(): void {
+    super.wasShown();
+    this.registerCSSFiles([settingsScreenStyles]);
   }
 }
 
@@ -236,7 +243,7 @@ class SettingsTab extends UI.Widget.VBox {
                                 .createChild('div', 'settings-tab settings-content settings-container');
   }
 
-  _appendSection(name?: string): HTMLElement {
+  protected appendSection(name?: string): HTMLElement {
     const block = this.containerElement.createChild('div', 'settings-block');
     if (name) {
       UI.ARIAUtils.markAsGroup(block);
@@ -250,7 +257,6 @@ class SettingsTab extends UI.Widget.VBox {
 }
 
 let genericSettingsTabInstance: GenericSettingsTab;
-
 
 export class GenericSettingsTab extends SettingsTab {
   private categoryToSection = new Map<Common.Settings.SettingCategory, Element>();
@@ -297,7 +303,7 @@ export class GenericSettingsTab extends SettingsTab {
     });
 
     for (const sectionName of visibleSections) {
-      this._createSectionElement(sectionName);
+      this.createSectionElement(sectionName);
     }
 
     for (const settingRegistration of preRegisteredSettings) {
@@ -308,7 +314,7 @@ export class GenericSettingsTab extends SettingsTab {
       if (!extensionCategory) {
         continue;
       }
-      const sectionElement = this._sectionElement(extensionCategory);
+      const sectionElement = this.sectionElement(extensionCategory);
       if (!sectionElement) {
         continue;
       }
@@ -318,9 +324,9 @@ export class GenericSettingsTab extends SettingsTab {
         sectionElement.appendChild(settingControl);
       }
     }
-    this._addSettingUI();
+    this.addSettingUI();
 
-    this._appendSection().appendChild(
+    this.appendSection().appendChild(
         UI.UIUtils.createTextButton(i18nString(UIStrings.restoreDefaultsAndReload), restoreAndReload));
 
     function restoreAndReload(): void {
@@ -345,31 +351,30 @@ export class GenericSettingsTab extends SettingsTab {
     return Boolean(title && setting.category);
   }
 
-  _addSettingUI(): void {
+  private addSettingUI(): void {
     const sectionName = Common.Settings.SettingCategory.EXTENSIONS;
     const settingUI = Components.Linkifier.LinkHandlerSettingUI.instance() as UI.SettingsUI.SettingUI;
     const element = settingUI.settingElement();
     if (element) {
-      let sectionElement = this._sectionElement(sectionName);
+      let sectionElement = this.sectionElement(sectionName);
       if (!sectionElement) {
-        sectionElement = this._createSectionElement(sectionName);
+        sectionElement = this.createSectionElement(sectionName);
       }
       sectionElement.appendChild(element);
     }
   }
 
-  _createSectionElement(category: Common.Settings.SettingCategory): Element {
+  private createSectionElement(category: Common.Settings.SettingCategory): Element {
     const uiSectionName = Common.Settings.getLocalizedSettingsCategory(category);
-    const sectionElement = this._appendSection(uiSectionName);
+    const sectionElement = this.appendSection(uiSectionName);
     this.categoryToSection.set(category, sectionElement);
     return sectionElement;
   }
 
-  _sectionElement(category: Common.Settings.SettingCategory): Element|null {
+  private sectionElement(category: Common.Settings.SettingCategory): Element|null {
     return this.categoryToSection.get(category) || null;
   }
 }
-
 
 let experimentsSettingsTabInstance: ExperimentsSettingsTab;
 
@@ -379,7 +384,7 @@ export class ExperimentsSettingsTab extends SettingsTab {
 
   constructor() {
     super(i18nString(UIStrings.experiments), 'experiments-tab-content');
-    const filterSection = this._appendSection();
+    const filterSection = this.appendSection();
     filterSection.style.paddingTop = '1px';
 
     const labelElement = filterSection.createChild('label');
@@ -403,26 +408,26 @@ export class ExperimentsSettingsTab extends SettingsTab {
     const unstableExperiments = experiments.filter(e => e.unstable && e.title.toLowerCase().includes(filterText));
     const stableExperiments = experiments.filter(e => !e.unstable && e.title.toLowerCase().includes(filterText));
     if (stableExperiments.length) {
-      this.experimentsSection = this._appendSection();
+      this.experimentsSection = this.appendSection();
       const warningMessage = i18nString(UIStrings.theseExperimentsCouldBeUnstable);
-      this.experimentsSection.appendChild(this._createExperimentsWarningSubsection(warningMessage));
+      this.experimentsSection.appendChild(this.createExperimentsWarningSubsection(warningMessage));
       for (const experiment of stableExperiments) {
-        this.experimentsSection.appendChild(this._createExperimentCheckbox(experiment));
+        this.experimentsSection.appendChild(this.createExperimentCheckbox(experiment));
       }
     }
     if (unstableExperiments.length) {
-      this.unstableExperimentsSection = this._appendSection();
+      this.unstableExperimentsSection = this.appendSection();
       const warningMessage = i18nString(UIStrings.theseExperimentsAreParticularly);
-      this.unstableExperimentsSection.appendChild(this._createExperimentsWarningSubsection(warningMessage));
+      this.unstableExperimentsSection.appendChild(this.createExperimentsWarningSubsection(warningMessage));
       for (const experiment of unstableExperiments) {
         // TODO(crbug.com/1161439): remove experiment duplication
         if (experiment.name !== 'blackboxJSFramesOnTimeline') {
-          this.unstableExperimentsSection.appendChild(this._createExperimentCheckbox(experiment));
+          this.unstableExperimentsSection.appendChild(this.createExperimentCheckbox(experiment));
         }
       }
     }
     if (!stableExperiments.length && !unstableExperiments.length) {
-      this.experimentsSection = this._appendSection();
+      this.experimentsSection = this.appendSection();
       const warning = this.experimentsSection.createChild('span');
       warning.textContent = i18nString(UIStrings.noResults);
     }
@@ -437,8 +442,7 @@ export class ExperimentsSettingsTab extends SettingsTab {
     return experimentsSettingsTabInstance;
   }
 
-
-  _createExperimentsWarningSubsection(warningMessage: string): Element {
+  private createExperimentsWarningSubsection(warningMessage: string): Element {
     const subsection = document.createElement('div');
     const warning = subsection.createChild('span', 'settings-experiments-warning-subsection-warning');
     warning.textContent = i18nString(UIStrings.warning);
@@ -448,8 +452,8 @@ export class ExperimentsSettingsTab extends SettingsTab {
     return subsection;
   }
 
-  _createExperimentCheckbox(experiment: Root.Runtime.Experiment): HTMLParagraphElement {
-    const label = UI.UIUtils.CheckboxLabel.create(i18nString(experiment.title), experiment.isEnabled());
+  private createExperimentCheckbox(experiment: Root.Runtime.Experiment): HTMLParagraphElement {
+    const label = UI.UIUtils.CheckboxLabel.create(experiment.title, experiment.isEnabled());
     const input = label.checkboxElement;
     input.name = experiment.name;
     function listener(): void {
@@ -465,8 +469,25 @@ export class ExperimentsSettingsTab extends SettingsTab {
     input.addEventListener('click', listener, false);
 
     const p = document.createElement('p');
-    p.className = experiment.unstable && !experiment.isEnabled() ? 'settings-experiment-unstable' : '';
+    p.classList.add('settings-experiment');
+    if (experiment.unstable && !experiment.isEnabled()) {
+      p.classList.add('settings-experiment-unstable');
+    }
     p.appendChild(label);
+
+    if (experiment.docLink) {
+      const link = UI.XLink.XLink.create(experiment.docLink);
+      link.textContent = '';
+      link.setAttribute('aria-label', i18nString(UIStrings.learnMore));
+
+      const linkIcon = new IconButton.Icon.Icon();
+      linkIcon.data = {iconName: 'ic_help_16x16', color: 'var(--color-text-secondary)', width: '16px', height: '16px'};
+      linkIcon.classList.add('link-icon');
+      link.prepend(linkIcon);
+
+      p.appendChild(link);
+    }
+
     return p;
   }
 }
@@ -485,14 +506,14 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
   handleAction(context: UI.Context.Context, actionId: string): boolean {
     switch (actionId) {
       case 'settings.show':
-        SettingsScreen._showSettingsScreen({focusTabHeader: true} as ShowSettingsScreenOptions);
+        SettingsScreen.showSettingsScreen({focusTabHeader: true} as ShowSettingsScreenOptions);
         return true;
       case 'settings.documentation':
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
             UI.UIUtils.addReferrerToURL('https://developer.chrome.com/docs/devtools/'));
         return true;
       case 'settings.shortcuts':
-        SettingsScreen._showSettingsScreen({name: 'keybinds', focusTabHeader: true});
+        SettingsScreen.showSettingsScreen({name: 'keybinds', focusTabHeader: true});
         return true;
     }
     return false;
@@ -520,7 +541,7 @@ export class Revealer implements Common.Revealer.Revealer {
       }
       if (settingRegistration.settingName === setting.name) {
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
-        SettingsScreen._showSettingsScreen();
+        SettingsScreen.showSettingsScreen();
         success = true;
       }
     }
@@ -535,7 +556,7 @@ export class Revealer implements Common.Revealer.Revealer {
       const settings = view.settings();
       if (settings && settings.indexOf(setting.name) !== -1) {
         Host.InspectorFrontendHost.InspectorFrontendHostInstance.bringToFront();
-        SettingsScreen._showSettingsScreen({name: id} as ShowSettingsScreenOptions);
+        SettingsScreen.showSettingsScreen({name: id} as ShowSettingsScreenOptions);
         success = true;
       }
     }

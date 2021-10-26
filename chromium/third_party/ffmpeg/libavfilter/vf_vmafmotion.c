@@ -238,6 +238,9 @@ int ff_vmafmotion_init(VMAFMotionData *s,
     int i;
     const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(fmt);
 
+    if (w < 3 || h < 3)
+        return AVERROR(EINVAL);
+
     s->width = w;
     s->height = h;
     s->stride = FFALIGN(w * sizeof(uint16_t), 32);
@@ -355,7 +358,7 @@ static const AVFilterPad vmafmotion_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_vmafmotion = {
+const AVFilter ff_vf_vmafmotion = {
     .name          = "vmafmotion",
     .description   = NULL_IF_CONFIG_SMALL("Calculate the VMAF Motion score."),
     .init          = init,

@@ -8,8 +8,8 @@
 #include <vector>
 
 #include "base/containers/flat_map.h"
+#include "base/cxx17_backports.h"
 #include "base/no_destructor.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
@@ -33,7 +33,9 @@ const char* const kClientHintsNameMapping[] = {"device-memory",
                                                "sec-ch-ua-mobile",
                                                "sec-ch-ua-full-version",
                                                "sec-ch-ua-platform-version",
-                                               "sec-ch-prefers-color-scheme"};
+                                               "sec-ch-prefers-color-scheme",
+                                               "sec-ch-ua-bitness",
+                                               "sec-ch-ua-reduced"};
 
 const size_t kClientHintsMappingsCount = base::size(kClientHintsNameMapping);
 

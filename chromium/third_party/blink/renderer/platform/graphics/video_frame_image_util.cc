@@ -174,7 +174,8 @@ scoped_refptr<StaticBitmapImage> CreateImageFromVideoFrame(
 
     return AcceleratedStaticBitmapImage::CreateFromCanvasMailbox(
         frame->mailbox_holder(0).mailbox, frame->mailbox_holder(0).sync_token,
-        0u, sk_image_info, frame->mailbox_holder(0).texture_target, true,
+        0u, sk_image_info, frame->mailbox_holder(0).texture_target,
+        frame->metadata().texture_origin_is_top_left,
         // Pass nullptr for |context_provider_wrapper|, because we don't
         // know which context the mailbox came from. It is used only to
         // detect when the mailbox is invalid due to context loss, and is
@@ -268,7 +269,7 @@ bool DrawVideoFrameIntoResourceProvider(
 
   cc::PaintFlags media_flags;
   media_flags.setAlpha(0xFF);
-  media_flags.setFilterQuality(kLow_SkFilterQuality);
+  media_flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
   media_flags.setBlendMode(SkBlendMode::kSrc);
 
   std::unique_ptr<media::PaintCanvasVideoRenderer> local_video_renderer;
@@ -299,12 +300,12 @@ std::unique_ptr<CanvasResourceProvider> CreateResourceProviderForVideoFrame(
     viz::RasterContextProvider* raster_context_provider) {
   if (!ShouldCreateAcceleratedImages(raster_context_provider)) {
     return CanvasResourceProvider::CreateBitmapProvider(
-        size, kLow_SkFilterQuality, CanvasResourceParams(),
+        size, cc::PaintFlags::FilterQuality::kLow, CanvasResourceParams(),
         CanvasResourceProvider::ShouldInitialize::kNo);
   }
 
   return CanvasResourceProvider::CreateSharedImageProvider(
-      size, kLow_SkFilterQuality, CanvasResourceParams(),
+      size, cc::PaintFlags::FilterQuality::kLow, CanvasResourceParams(),
       CanvasResourceProvider::ShouldInitialize::kNo,
       SharedGpuContext::ContextProviderWrapper(), RasterMode::kGPU,
       false,  // Origin of GL texture is bottom left on screen

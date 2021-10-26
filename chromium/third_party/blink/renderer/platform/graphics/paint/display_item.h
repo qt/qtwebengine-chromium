@@ -8,9 +8,12 @@
 #include "base/dcheck_is_on.h"
 #include "third_party/blink/renderer/platform/geometry/int_rect.h"
 #include "third_party/blink/renderer/platform/graphics/paint/display_item_client.h"
+#include "third_party/blink/renderer/platform/graphics/paint_invalidation_reason.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/assertions.h"
+#include "third_party/blink/renderer/platform/wtf/hash_functions.h"
+#include "third_party/blink/renderer/platform/wtf/hash_traits.h"
 
 #if DCHECK_IS_ON()
 #include "third_party/blink/renderer/platform/json/json_values.h"
@@ -152,6 +155,9 @@ class PLATFORM_EXPORT DisplayItem {
     kTypeLast = kScrollbarVertical,
   };
 
+  static_assert(kTypeLast < (1 << 8),
+                "DisplayItem::Type should fit in uint8_t");
+
   DisplayItem(const DisplayItem&) = delete;
   DisplayItem(DisplayItem&&) = delete;
   DisplayItem& operator=(const DisplayItem&) = delete;
@@ -170,6 +176,22 @@ class PLATFORM_EXPORT DisplayItem {
     const DisplayItemClient& client;
     const Type type;
     const wtf_size_t fragment;
+
+    struct HashKey {
+      HashKey() = default;
+      explicit HashKey(const DisplayItem::Id& id)
+          : client(&id.client), type(id.type), fragment(id.fragment) {}
+      bool operator==(const HashKey& other) const {
+        return client == other.client && type == other.type &&
+               fragment == other.fragment;
+      }
+
+      const DisplayItemClient* client = nullptr;
+      DisplayItem::Type type = static_cast<DisplayItem::Type>(0);
+      wtf_size_t fragment = 0;
+    };
+
+    HashKey AsHashKey() const { return HashKey(*this); }
   };
 
   Id GetId() const { return Id(*client_, GetType(), fragment_); }
@@ -226,8 +248,16 @@ class PLATFORM_EXPORT DisplayItem {
     return type_ == kScrollbarHorizontal || type_ == kScrollbarVertical;
   }
 
-  bool IsCacheable() const { return is_cacheable_; }
-  void SetUncacheable() { is_cacheable_ = false; }
+  PaintInvalidationReason GetPaintInvalidationReason() const {
+    return static_cast<PaintInvalidationReason>(paint_invalidation_reason_);
+  }
+  void SetPaintInvalidationReason(PaintInvalidationReason reason) {
+    paint_invalidation_reason_ = static_cast<unsigned>(reason);
+  }
+  bool IsCacheable() const {
+    return static_cast<PaintInvalidationReason>(paint_invalidation_reason_) !=
+           PaintInvalidationReason::kUncacheable;
+  }
 
   bool EqualsForUnderInvalidation(const DisplayItem& other) const;
 
@@ -253,18 +283,19 @@ class PLATFORM_EXPORT DisplayItem {
   DisplayItem(const DisplayItemClient& client,
               Type type,
               const IntRect& visual_rect,
+              PaintInvalidationReason paint_invalidation_reason,
               bool draws_content = false)
       : client_(&client),
         visual_rect_(visual_rect),
         fragment_(0),
+        paint_invalidation_reason_(
+            static_cast<unsigned>(paint_invalidation_reason)),
         type_(type),
         raster_effect_outset_(
             static_cast<unsigned>(client.VisualRectOutsetForRasterEffects())),
         draws_content_(draws_content),
-        is_cacheable_(client.IsCacheable()),
         is_not_tombstone_(true),
-        known_to_be_opaque_is_set_(false),
-        known_to_be_opaque_(false) {
+        opaqueness_(0) {
     DCHECK_EQ(client.VisualRectOutsetForRasterEffects(),
               GetRasterEffectOutset());
   }
@@ -291,20 +322,20 @@ class PLATFORM_EXPORT DisplayItem {
   const DisplayItemClient* client_;
   IntRect visual_rect_;
   wtf_size_t fragment_;
-  static_assert(kTypeLast < (1 << 8),
-                "DisplayItem::Type should fit in uint8_t");
+  // paint_invalidation_reason_ is set during construction (or, in the case of a
+  // DisplayItem copied from the cache, shortly thereafter). Once set, it is
+  // never modified. It is used to inform raster invalidation.
+  unsigned paint_invalidation_reason_ : 8;
   unsigned type_ : 8;
   unsigned raster_effect_outset_ : 2;
   unsigned draws_content_ : 1;
-  unsigned is_cacheable_ : 1;
   // This is not |is_tombstone_| to allow memset(0) to clear a display item to
   // be a tombstone.
   unsigned is_not_tombstone_ : 1;
 
  protected:
-  // These are for DrawingDisplayItem to save memory.
-  mutable unsigned known_to_be_opaque_is_set_ : 1;
-  mutable unsigned known_to_be_opaque_ : 1;
+  // For DrawingDisplayItem to save memory.
+  mutable unsigned opaqueness_ : 2;
 };
 
 inline bool operator==(const DisplayItem::Id& a, const DisplayItem::Id& b) {
@@ -320,5 +351,36 @@ PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const DisplayItem::Id&);
 PLATFORM_EXPORT std::ostream& operator<<(std::ostream&, const DisplayItem&);
 
 }  // namespace blink
+
+namespace WTF {
+
+template <>
+struct HashTraits<blink::DisplayItem::Id::HashKey>
+    : GenericHashTraits<blink::DisplayItem::Id::HashKey> {
+  using Key = blink::DisplayItem::Id::HashKey;
+  static void ConstructDeletedValue(Key& slot, bool) {
+    const_cast<wtf_size_t&>(slot.fragment) = kNotFound;
+  }
+  static bool IsDeletedValue(const Key& id) { return id.fragment == kNotFound; }
+};
+
+template <>
+struct DefaultHash<blink::DisplayItem::Id::HashKey> {
+  struct Hash {
+    STATIC_ONLY(Hash);
+    using Key = blink::DisplayItem::Id::HashKey;
+    static unsigned GetHash(const Key& id) {
+      unsigned hash =
+          PtrHash<const blink::DisplayItemClient>::GetHash(id.client);
+      WTF::AddIntToHash(hash, id.type);
+      WTF::AddIntToHash(hash, id.fragment);
+      return hash;
+    }
+    static bool Equal(const Key& a, const Key& b) { return a == b; }
+    static const bool safe_to_compare_to_empty_or_deleted = false;
+  };
+};
+
+}  // namespace WTF
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_GRAPHICS_PAINT_DISPLAY_ITEM_H_

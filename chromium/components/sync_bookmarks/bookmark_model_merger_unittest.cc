@@ -15,6 +15,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/bookmarks/browser/bookmark_model.h"
+#include "components/bookmarks/browser/bookmark_node.h"
 #include "components/bookmarks/test/test_bookmark_client.h"
 #include "components/favicon/core/test/mock_favicon_service.h"
 #include "components/sync/base/unique_position.h"
@@ -87,19 +88,20 @@ class UpdateResponseDataBuilder {
                             const syncer::UniquePosition& unique_position) {
     data_.id = server_id;
     data_.parent_id = parent_id;
-    data_.unique_position = unique_position;
-    data_.is_folder = true;
 
     sync_pb::BookmarkSpecifics* bookmark_specifics =
         data_.specifics.mutable_bookmark();
     bookmark_specifics->set_legacy_canonicalized_title(title);
     bookmark_specifics->set_full_title(title);
+    bookmark_specifics->set_type(sync_pb::BookmarkSpecifics::FOLDER);
+    *bookmark_specifics->mutable_unique_position() = unique_position.ToProto();
 
     SetGuid(base::GUID::GenerateRandomV4());
   }
 
   UpdateResponseDataBuilder& SetUrl(const GURL& url) {
-    data_.is_folder = false;
+    data_.specifics.mutable_bookmark()->set_type(
+        sync_pb::BookmarkSpecifics::URL);
     data_.specifics.mutable_bookmark()->set_url(url.spec());
     return *this;
   }
@@ -958,10 +960,10 @@ TEST(BookmarkModelMergerTest, ShouldMergeFolderByGUIDAndNotSemantics) {
       bookmark_model->bookmark_bar_node();
   const bookmarks::BookmarkNode* folder1 = bookmark_model->AddFolder(
       /*parent=*/bookmark_bar_node, /*index=*/0, base::UTF8ToUTF16(kTitle1),
-      /*meta_info=*/nullptr, kGuid1);
+      /*meta_info=*/nullptr, /*creation_time=*/base::Time::Now(), kGuid1);
   const bookmarks::BookmarkNode* folder2 = bookmark_model->AddFolder(
       /*parent=*/folder1, /*index=*/0, base::UTF8ToUTF16(kTitle2),
-      /*meta_info=*/nullptr, kGuid2);
+      /*meta_info=*/nullptr, /*creation_time=*/base::Time::Now(), kGuid2);
   ASSERT_TRUE(folder1);
   ASSERT_TRUE(folder2);
   ASSERT_THAT(bookmark_bar_node->children(), ElementRawPointersAre(folder1));
@@ -1083,7 +1085,8 @@ TEST(
       bookmark_model->bookmark_bar_node();
   const bookmarks::BookmarkNode* folder = bookmark_model->AddFolder(
       /*parent=*/bookmark_bar_node, /*index=*/0,
-      base::UTF8ToUTF16(kOriginalTitle), /*meta_info=*/nullptr, kGuid1);
+      base::UTF8ToUTF16(kOriginalTitle), /*meta_info=*/nullptr,
+      /*creation_time=*/base::Time::Now(), kGuid1);
   const bookmarks::BookmarkNode* bookmark = bookmark_model->AddURL(
       /*parent=*/folder, /*index=*/0, u"Bookmark Title",
       GURL("http://foo.com/"));
@@ -1165,7 +1168,8 @@ TEST(BookmarkModelMergerTest,
       bookmark_model->bookmark_bar_node();
   const bookmarks::BookmarkNode* folder = bookmark_model->AddFolder(
       /*parent=*/bookmark_bar_node, /*index=*/0,
-      base::UTF8ToUTF16(kOriginalTitle), /*meta_info=*/nullptr, kGuid1);
+      base::UTF8ToUTF16(kOriginalTitle), /*meta_info=*/nullptr,
+      /*creation_time=*/base::Time::Now(), kGuid1);
   const bookmarks::BookmarkNode* bookmark = bookmark_model->AddURL(
       /*parent=*/folder, /*index=*/0, u"Bookmark Title",
       GURL("http://foo.com/"));
@@ -1339,10 +1343,10 @@ TEST(BookmarkModelMergerTest,
       bookmark_model->bookmark_bar_node();
   const bookmarks::BookmarkNode* folder = bookmark_model->AddFolder(
       /*parent=*/bookmark_bar_node, /*index=*/0, u"Folder Title",
-      /*meta_info=*/nullptr, kGuid1);
+      /*meta_info=*/nullptr, /*creation_time=*/base::Time::Now(), kGuid1);
   const bookmarks::BookmarkNode* bookmark = bookmark_model->AddURL(
       /*parent=*/folder, /*index=*/0, u"Foo's title", GURL("http://foo.com"),
-      /*meta_info=*/nullptr, base::Time::Now(), kGuid2);
+      /*meta_info=*/nullptr, /*creation_time=*/base::Time::Now(), kGuid2);
   ASSERT_TRUE(folder);
   ASSERT_TRUE(bookmark);
   ASSERT_THAT(bookmark_bar_node->children(), ElementRawPointersAre(folder));
@@ -2093,10 +2097,9 @@ TEST(BookmarkModelMergerTest, ShouldEnsureLimitDepthOfTree) {
               Eq(kMaxBookmarkTreeDepth + 2));
 }
 
-TEST(BookmarkModelMergerTest, ShouldReuploadBookmarkOnEmptyGuid) {
+TEST(BookmarkModelMergerTest, ShouldReuploadBookmarkOnEmptyUniquePosition) {
   base::test::ScopedFeatureList override_features;
-  override_features.InitAndEnableFeature(
-      switches::kSyncReuploadBookmarkFullTitles);
+  override_features.InitAndEnableFeature(switches::kSyncReuploadBookmarks);
 
   const std::string kFolder1Title = "folder1";
   const std::string kFolder2Title = "folder2";
@@ -2122,9 +2125,10 @@ TEST(BookmarkModelMergerTest, ShouldReuploadBookmarkOnEmptyGuid) {
       /*is_folder=*/true, /*unique_position=*/posFolder1,
       base::GUID::GenerateRandomV4()));
 
-  // Mimic that the entity didn't have GUID in specifics. This entity should be
-  // reuploaded later.
-  updates.back().entity.is_bookmark_guid_in_specifics_preprocessed = true;
+  // Mimic that the entity didn't have |unique_position| in specifics. This
+  // entity should be reuploaded later.
+  updates.back().entity.is_bookmark_unique_position_in_specifics_preprocessed =
+      true;
 
   updates.push_back(CreateUpdateResponseData(
       /*server_id=*/kFolder2Id, /*parent_id=*/kBookmarkBarId, kFolder2Title,

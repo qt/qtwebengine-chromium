@@ -63,6 +63,7 @@
  */
 
 #include "libavutil/avassert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/ffmath.h"
 #include "libavutil/opt.h"
 #include "audio.h"
@@ -877,7 +878,7 @@ static av_cold int name_##_init(AVFilterContext *ctx)                   \
     return 0;                                                           \
 }                                                                       \
                                                          \
-AVFilter ff_af_##name_ = {                               \
+const AVFilter ff_af_##name_ = {                               \
     .name          = #name_,                             \
     .description   = NULL_IF_CONFIG_SMALL(description_), \
     .priv_size     = sizeof(BiquadsContext),             \

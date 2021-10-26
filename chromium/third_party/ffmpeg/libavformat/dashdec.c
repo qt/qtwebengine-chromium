@@ -20,6 +20,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 #include <libxml/parser.h>
+#include "libavutil/bprint.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "libavutil/time.h"
@@ -1445,7 +1446,7 @@ static int64_t calc_max_seg_no(struct representation *pls, DASHContext *c)
     } else if (c->is_live && pls->fragment_duration) {
         num = pls->first_seq_no + (((get_current_time_in_sec() - c->availability_start_time)) * pls->fragment_timescale)  / pls->fragment_duration;
     } else if (pls->fragment_duration) {
-        num = pls->first_seq_no + (c->media_presentation_duration * pls->fragment_timescale) / pls->fragment_duration;
+        num = pls->first_seq_no + av_rescale_rnd(1, c->media_presentation_duration * pls->fragment_timescale, pls->fragment_duration, AV_ROUND_UP);
     }
 
     return num;
@@ -1879,7 +1880,7 @@ static void close_demux_for_component(struct representation *pls)
 static int reopen_demux_for_component(AVFormatContext *s, struct representation *pls)
 {
     DASHContext *c = s->priv_data;
-    ff_const59 AVInputFormat *in_fmt = NULL;
+    const AVInputFormat *in_fmt = NULL;
     AVDictionary  *in_fmt_opts = NULL;
     uint8_t *avio_ctx_buffer  = NULL;
     int ret = 0, i;
@@ -2037,8 +2038,6 @@ static int copy_init_section(struct representation *rep_dest, struct representat
     return 0;
 }
 
-static int dash_close(AVFormatContext *s);
-
 static void move_metadata(AVStream *st, const char *key, char **value)
 {
     if (*value) {
@@ -2059,10 +2058,10 @@ static int dash_read_header(AVFormatContext *s)
     c->interrupt_callback = &s->interrupt_callback;
 
     if ((ret = save_avio_options(s)) < 0)
-        goto fail;
+        return ret;
 
     if ((ret = parse_manifest(s, s->url, s->pb)) < 0)
-        goto fail;
+        return ret;
 
     /* If this isn't a live stream, fill the total duration of the
      * stream. */
@@ -2081,12 +2080,12 @@ static int dash_read_header(AVFormatContext *s)
         if (i > 0 && c->is_init_section_common_video) {
             ret = copy_init_section(rep, c->videos[0]);
             if (ret < 0)
-                goto fail;
+                return ret;
         }
         ret = open_demux_for_component(s, rep);
 
         if (ret)
-            goto fail;
+            return ret;
         rep->stream_index = stream_index;
         ++stream_index;
     }
@@ -2099,12 +2098,12 @@ static int dash_read_header(AVFormatContext *s)
         if (i > 0 && c->is_init_section_common_audio) {
             ret = copy_init_section(rep, c->audios[0]);
             if (ret < 0)
-                goto fail;
+                return ret;
         }
         ret = open_demux_for_component(s, rep);
 
         if (ret)
-            goto fail;
+            return ret;
         rep->stream_index = stream_index;
         ++stream_index;
     }
@@ -2117,27 +2116,23 @@ static int dash_read_header(AVFormatContext *s)
         if (i > 0 && c->is_init_section_common_subtitle) {
             ret = copy_init_section(rep, c->subtitles[0]);
             if (ret < 0)
-                goto fail;
+                return ret;
         }
         ret = open_demux_for_component(s, rep);
 
         if (ret)
-            goto fail;
+            return ret;
         rep->stream_index = stream_index;
         ++stream_index;
     }
 
-    if (!stream_index) {
-        ret = AVERROR_INVALIDDATA;
-        goto fail;
-    }
+    if (!stream_index)
+        return AVERROR_INVALIDDATA;
 
     /* Create a program */
     program = av_new_program(s, 0);
-    if (!program) {
-        ret = AVERROR(ENOMEM);
-        goto fail;
-    }
+    if (!program)
+        return AVERROR(ENOMEM);
 
     for (i = 0; i < c->n_videos; i++) {
         rep = c->videos[i];
@@ -2165,9 +2160,6 @@ static int dash_read_header(AVFormatContext *s)
     }
 
     return 0;
-fail:
-    dash_close(s);
-    return ret;
 }
 
 static void recheck_discard_flags(AVFormatContext *s, struct representation **p, int n)
@@ -2397,11 +2389,12 @@ static const AVClass dash_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVInputFormat ff_dash_demuxer = {
+const AVInputFormat ff_dash_demuxer = {
     .name           = "dash",
     .long_name      = NULL_IF_CONFIG_SMALL("Dynamic Adaptive Streaming over HTTP"),
     .priv_class     = &dash_class,
     .priv_data_size = sizeof(DASHContext),
+    .flags_internal = FF_FMT_INIT_CLEANUP,
     .read_probe     = dash_probe,
     .read_header    = dash_read_header,
     .read_packet    = dash_read_packet,

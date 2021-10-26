@@ -12,8 +12,8 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
-#include "base/bit_cast.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
 #include "base/memory/shared_memory_mapping.h"
 #include "base/memory/unsafe_shared_memory_region.h"
@@ -65,23 +65,32 @@ VideoFrameResourceType ExternalResourceTypeForHardwarePlanes(
     GLuint target,
     int num_textures,
     gfx::BufferFormat buffer_formats[VideoFrame::kMaxPlanes],
-    bool use_stream_video_draw_quad) {
+    bool use_stream_video_draw_quad,
+    bool dcomp_surface) {
   switch (format) {
     case PIXEL_FORMAT_ARGB:
     case PIXEL_FORMAT_XRGB:
     case PIXEL_FORMAT_ABGR:
+    case PIXEL_FORMAT_XBGR:
     case PIXEL_FORMAT_BGRA:
       DCHECK_EQ(num_textures, 1);
       // This maps VideoPixelFormat back to GMB BufferFormat
       // NOTE: ABGR == RGBA and ARGB == BGRA, they differ only byte order
       // See: VideoFormat function in gpu_memory_buffer_video_frame_pool
       // https://cs.chromium.org/chromium/src/media/video/gpu_memory_buffer_video_frame_pool.cc?type=cs&g=0&l=281
-      buffer_formats[0] = (format == PIXEL_FORMAT_ABGR)
-                              ? gfx::BufferFormat::RGBA_8888
-                              : gfx::BufferFormat::BGRA_8888;
+      buffer_formats[0] =
+          (format == PIXEL_FORMAT_ABGR || format == PIXEL_FORMAT_XBGR)
+              ? gfx::BufferFormat::RGBA_8888
+              : gfx::BufferFormat::BGRA_8888;
+
       switch (target) {
         case GL_TEXTURE_EXTERNAL_OES:
-          if (use_stream_video_draw_quad)
+          // `use_stream_video_draw_quad` is set on Android and `dcomp_surface`
+          // is used on Windows.
+          // TODO(sunnyps): It's odd to reuse the Android path on Windows. There
+          // could be other unknown assumptions in other parts of the rendering
+          // stack about stream video quads. Investigate alternative solutions.
+          if (use_stream_video_draw_quad || dcomp_surface)
             return VideoFrameResourceType::STREAM_TEXTURE;
           FALLTHROUGH;
         case GL_TEXTURE_2D:
@@ -160,7 +169,6 @@ VideoFrameResourceType ExternalResourceTypeForHardwarePlanes(
     case PIXEL_FORMAT_YUV422P12:
     case PIXEL_FORMAT_YUV444P12:
     case PIXEL_FORMAT_Y16:
-    case PIXEL_FORMAT_XBGR:
     case PIXEL_FORMAT_UNKNOWN:
       break;
   }
@@ -226,14 +234,11 @@ void GenerateCompositorSyncToken(gpu::gles2::GLES2Interface* gl,
 gfx::Size SoftwarePlaneDimension(VideoFrame* input_frame,
                                  bool software_compositor,
                                  size_t plane_index) {
-  gfx::Size coded_size = input_frame->coded_size();
   if (software_compositor)
-    return coded_size;
+    return input_frame->coded_size();
 
-  int plane_width = VideoFrame::Columns(plane_index, input_frame->format(),
-                                        coded_size.width());
-  int plane_height =
-      VideoFrame::Rows(plane_index, input_frame->format(), coded_size.height());
+  int plane_width = input_frame->columns(plane_index);
+  int plane_height = input_frame->rows(plane_index);
   return gfx::Size(plane_width, plane_height);
 }
 
@@ -581,10 +586,8 @@ void VideoResourceUpdater::AppendQuads(
     case VideoFrameResourceType::YUV: {
       const gfx::Size ya_tex_size = coded_size;
 
-      int u_width = VideoFrame::Columns(VideoFrame::kUPlane, frame->format(),
-                                        coded_size.width());
-      int u_height = VideoFrame::Rows(VideoFrame::kUPlane, frame->format(),
-                                      coded_size.height());
+      int u_width = frame->columns(VideoFrame::kUPlane);
+      int u_height = frame->rows(VideoFrame::kUPlane);
       gfx::Size uv_tex_size(u_width, u_height);
 
       DCHECK_EQ(frame_resources_.size(),
@@ -647,7 +650,7 @@ void VideoResourceUpdater::AppendQuads(
           frame_resource_type_ == VideoFrameResourceType::RGBA_PREMULTIPLIED;
 
       float opacity[] = {1.0f, 1.0f, 1.0f, 1.0f};
-      bool flipped = false;
+      bool flipped = !frame->metadata().texture_origin_is_top_left;
       bool nearest_neighbor = false;
       gfx::ProtectedVideoType protected_video_type =
           gfx::ProtectedVideoType::kClear;
@@ -863,7 +866,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
   gfx::BufferFormat buffer_formats[VideoFrame::kMaxPlanes];
   external_resources.type = ExternalResourceTypeForHardwarePlanes(
       video_frame->format(), target, video_frame->NumTextures(), buffer_formats,
-      use_stream_video_draw_quad_);
+      use_stream_video_draw_quad_, video_frame->metadata().dcomp_surface);
 
   if (external_resources.type == VideoFrameResourceType::NONE) {
     DLOG(ERROR) << "Unsupported Texture format"
@@ -900,11 +903,8 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForHardwarePlanes(
         sync_token = video_frame->UpdateReleaseSyncToken(&client);
       }
 
-      const gfx::Size& coded_size = video_frame->coded_size();
-      const size_t width =
-          VideoFrame::Columns(i, video_frame->format(), coded_size.width());
-      const size_t height =
-          VideoFrame::Rows(i, video_frame->format(), coded_size.height());
+      const size_t width = video_frame->columns(i);
+      const size_t height = video_frame->rows(i);
       const gfx::Size plane_size(width, height);
       auto transfer_resource = viz::TransferableResource::MakeGL(
           mailbox, GL_LINEAR, mailbox_holder.texture_target, sync_token,
@@ -966,6 +966,8 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
     output_resource_format = viz::BGRX_8888;
   } else if (input_frame_format == PIXEL_FORMAT_ABGR) {
     output_resource_format = viz::RGBA_8888;
+  } else if (input_frame_format == PIXEL_FORMAT_XBGR) {
+    output_resource_format = viz::RGBX_8888;
   } else if (input_frame_format == PIXEL_FORMAT_ARGB) {
     output_resource_format = viz::BGRA_8888;
   } else if (input_frame_format == PIXEL_FORMAT_Y16) {
@@ -1072,7 +1074,7 @@ VideoFrameExternalResources VideoResourceUpdater::CreateForSoftwarePlanes(
         cc::SkiaPaintCanvas canvas(sk_bitmap);
         cc::PaintFlags flags;
         flags.setBlendMode(SkBlendMode::kSrc);
-        flags.setFilterQuality(kLow_SkFilterQuality);
+        flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
 
         // Note that PaintCanvasVideoRenderer::Copy would copy to the origin,
         // not |video_frame->visible_rect|, so call Paint instead.

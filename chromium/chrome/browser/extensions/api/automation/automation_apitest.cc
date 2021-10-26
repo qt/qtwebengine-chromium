@@ -49,7 +49,7 @@
 #include "chrome/browser/ui/aura/accessibility/automation_manager_aura.h"
 #include "ui/display/manager/display_manager.h"
 #include "ui/display/screen.h"
-#include "ui/display/test/display_manager_test_api.h"
+#include "ui/display/test/display_manager_test_api.h"  // nogncheck
 #endif
 
 namespace extensions {
@@ -224,14 +224,29 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, TableProperties) {
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationBooleanPermissions) {
+// Flaky on Mac: crbug.com/1235249
+#if defined(OS_MAC)
+#define MAYBE_TabsAutomationBooleanPermissions \
+  DISABLED_TabsAutomationBooleanPermissions
+#else
+#define MAYBE_TabsAutomationBooleanPermissions TabsAutomationBooleanPermissions
+#endif
+IN_PROC_BROWSER_TEST_F(AutomationApiTest,
+                       MAYBE_TabsAutomationBooleanPermissions) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionTest("automation/tests/tabs_automation_boolean",
                                {.page_url = "permissions.html"}))
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, TabsAutomationBooleanActions) {
+// Flaky on Mac: crbug.com/1235249
+#if defined(OS_MAC)
+#define MAYBE_TabsAutomationBooleanActions \
+  DISABLED_TabsAutomationBooleanActions
+#else
+#define MAYBE_TabsAutomationBooleanActions TabsAutomationBooleanActions
+#endif
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_TabsAutomationBooleanActions) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(RunExtensionTest("automation/tests/tabs_automation_boolean",
                                {.page_url = "actions.html"}))
@@ -253,7 +268,13 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest,
       << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, CloseTab) {
+// Flaky on Mac: crbug.com/1235249
+#if defined(OS_MAC)
+#define MAYBE_CloseTab DISABLED_CloseTab
+#else
+#define MAYBE_CloseTab CloseTab
+#endif
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_CloseTab) {
   StartEmbeddedTestServer();
   ASSERT_TRUE(
       RunExtensionTest("automation/tests/tabs", {.page_url = "close_tab.html"}))
@@ -370,8 +391,8 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, Intents) {
 
 IN_PROC_BROWSER_TEST_F(AutomationApiTest, EnumValidity) {
   StartEmbeddedTestServer();
-  ASSERT_TRUE(RunExtensionTest(
-      {.name = "automation/tests/tabs", .page_url = "enum_validity.html"}))
+  ASSERT_TRUE(RunExtensionTest("automation/tests/tabs",
+                               {.page_url = "enum_validity.html"}))
       << message_;
 }
 
@@ -632,10 +653,17 @@ IN_PROC_BROWSER_TEST_F(AutomationApiTest, DISABLED_TextareaAppendPerf) {
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
-IN_PROC_BROWSER_TEST_F(AutomationApiTest, HitTestMultipleWindows) {
+// TODO(crbug.com/1209766) Flaky on lacros
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+#define MAYBE_HitTestMultipleWindows DISABLED_HitTestMultipleWindows
+#else
+#define MAYBE_HitTestMultipleWindows HitTestMultipleWindows
+#endif
+
+IN_PROC_BROWSER_TEST_F(AutomationApiTest, MAYBE_HitTestMultipleWindows) {
   StartEmbeddedTestServer();
-  ASSERT_TRUE(RunExtensionTest({.name = "automation/tests/desktop",
-                                .page_url = "hit_test_multiple_windows.html"}))
+  ASSERT_TRUE(RunExtensionTest("automation/tests/desktop",
+                               {.page_url = "hit_test_multiple_windows.html"}))
       << message_;
 }
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)

@@ -71,6 +71,11 @@ class VisitRow {
            bool floc_allowed);
   ~VisitRow();
 
+  // Compares two visits based on dates, for sorting.
+  bool operator<(const VisitRow& other) const {
+    return visit_time < other.visit_time;
+  }
+
   // ID of this row (visit ID, used a a referrer for other visits).
   VisitID visit_id = 0;
 
@@ -98,11 +103,6 @@ class VisitRow {
 
   // Records whether the visit incremented the omnibox typed score.
   bool incremented_omnibox_typed_score = false;
-
-  // Compares two visits based on dates, for sorting.
-  bool operator<(const VisitRow& other) const {
-    return visit_time < other.visit_time;
-  }
 
   // We allow the implicit copy constructor and operator=.
 };
@@ -215,6 +215,11 @@ class QueryResults {
 
 struct QueryOptions {
   QueryOptions();
+  QueryOptions(const QueryOptions&);
+  QueryOptions(QueryOptions&&) noexcept;
+  QueryOptions& operator=(const QueryOptions&);
+  QueryOptions& operator=(QueryOptions&&) noexcept;
+  ~QueryOptions();
 
   // The time range to search for matches in. The beginning is inclusive and
   // the ending is exclusive. Either one (or both) may be null.
@@ -254,8 +259,14 @@ struct QueryOptions {
   DuplicateHandling duplicate_policy = REMOVE_ALL_DUPLICATES;
 
   // Allows the caller to specify the matching algorithm for text queries.
-  query_parser::MatchingAlgorithm matching_algorithm =
-      query_parser::MatchingAlgorithm::DEFAULT;
+  // query_parser::MatchingAlgorithm matching_algorithm =
+  // query_parser::MatchingAlgorithm::DEFAULT;
+  absl::optional<query_parser::MatchingAlgorithm> matching_algorithm =
+      absl::nullopt;
+
+  // Whether the history query should only search through hostnames.
+  // When this is true, the matching_algorithm field is ignored.
+  bool host_only = false;
 
   // Helpers to get the effective parameters values, since a value of 0 means
   // "unspecified".
@@ -645,23 +656,6 @@ class DomainVisit {
   base::Time visit_time_;
 };
 
-enum class UrlsModifiedReason {
-  // The title was changed.
-  kTitleChanged,
-
-  // Modified because of Sync.
-  kSync,
-
-  // Some number of visits were removed because they were old.
-  kExpired,
-
-  // The user deleted some of the visits.
-  kUserDeleted,
-
-  // Notification is the result of AndroidProviderBackend.
-  kAndroidDb,
-};
-
 // Clusters --------------------------------------------------------------------
 
 // Context annotations about a page visit collected during the page lifetime.
@@ -721,17 +715,27 @@ struct AnnotatedVisit {
   AnnotatedVisit(URLRow url_row,
                  VisitRow visit_row,
                  VisitContextAnnotations context_annotations,
-                 VisitContentAnnotations content_annotations);
+                 VisitContentAnnotations content_annotations,
+                 VisitID referring_visit_of_redirect_chain_start);
   AnnotatedVisit(const AnnotatedVisit&);
+  AnnotatedVisit& operator=(const AnnotatedVisit&);
   ~AnnotatedVisit();
 
   URLRow url_row;
   VisitRow visit_row;
   VisitContextAnnotations context_annotations;
   VisitContentAnnotations content_annotations;
+  // The `VisitRow::referring_visit` of the 1st visit in the redirect chain that
+  // includes this visit. If this visit is not part of a redirect chain or is
+  // the 1st visit in a redirect chain, then it will be
+  // `visit_row.referring_visit`. Using the collapsed referring visit is
+  // important because redirect visits are omitted from AnnotatedVisits, so
+  // the uncollapsed referring visit could refer to an omitted visit.
+  VisitID referring_visit_of_redirect_chain_start = 0;
 };
 
-// The DB representation of `AnnotatedVisit`.
+// A minimal representation of `AnnotationVisit` used when retrieving them from
+// `VisitAnnotationsDatabase`.
 struct AnnotatedVisitRow {
   AnnotatedVisitRow() = default;
   AnnotatedVisitRow(const VisitID visit_id,
@@ -743,15 +747,60 @@ struct AnnotatedVisitRow {
 
   VisitID visit_id;
   VisitContextAnnotations context_annotations;
+  // TODO(manukh): retrieve and persist `content_annotations`; currently, only
+  //  `context_annotations` are being retrieved and persisted.
   VisitContentAnnotations content_annotations;
 };
 
+// An `AnnotatedVisit` associated with a score.
+struct ScoredAnnotatedVisit {
+  AnnotatedVisit annotated_visit;
+  float score;
+};
+
+// A cluster of `ScoredAnnotatedVisit`s with associated `keywords`.
 struct Cluster {
   Cluster();
+  Cluster(int64_t cluster_id,
+          const std::vector<ScoredAnnotatedVisit>& scored_annotated_visits,
+          const std::vector<std::u16string>& keywords);
   Cluster(const Cluster&);
+  Cluster& operator=(const Cluster&);
   ~Cluster();
 
+  int64_t cluster_id;
+  std::vector<ScoredAnnotatedVisit> scored_annotated_visits;
+  // TODO(manukh): retrieve and persist `keywords`.
   std::vector<std::u16string> keywords;
+};
+
+// A minimal representation of `Cluster` used when retrieving them from
+// `VisitAnnotationsDatabase`.
+// TODO(manukh): Also use this representation when inserting them into the DB,
+//  since the additional information in a `Cluster` isn't necessary.
+struct ClusterRow {
+  ClusterRow();
+  explicit ClusterRow(int64_t cluster_id);
+  ClusterRow(const ClusterRow&);
+  ClusterRow& operator=(const ClusterRow&);
+  ~ClusterRow();
+
+  int64_t cluster_id;
+  std::vector<VisitID> visit_ids;
+};
+
+// Sets of `Cluster` IDs and `AnnotatedVisit`s. This is convenient in that,
+// unlike a vector of `Cluster`s, it contains a flat vector of unique
+// `AnnotatedVisit`s.
+struct ClusterIdsAndAnnotatedVisitsResult {
+  ClusterIdsAndAnnotatedVisitsResult();
+  ClusterIdsAndAnnotatedVisitsResult(
+      std::vector<int64_t> cluster_ids,
+      std::vector<AnnotatedVisit> annotated_visits);
+  ClusterIdsAndAnnotatedVisitsResult(const ClusterIdsAndAnnotatedVisitsResult&);
+  ~ClusterIdsAndAnnotatedVisitsResult();
+
+  std::vector<int64_t> cluster_ids;
   std::vector<AnnotatedVisit> annotated_visits;
 };
 

@@ -7,13 +7,13 @@
 
 #include <string>
 
+#include "base/values.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/global_routing_id.h"
 #include "mojo/public/cpp/bindings/unique_receiver_set.h"
 #include "net/base/network_isolation_key.h"
 #include "services/network/public/mojom/cross_origin_opener_policy.mojom.h"
 #include "services/network/public/mojom/source_location.mojom-forward.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace content {
@@ -37,6 +37,7 @@ class CONTENT_EXPORT CrossOriginOpenerPolicyReporter {
       const GURL& context_url,
       const GURL& context_referrer_url,
       const network::CrossOriginOpenerPolicy& coop,
+      const base::UnguessableToken& reporting_source,
       const net::NetworkIsolationKey& network_isolation_key);
   ~CrossOriginOpenerPolicyReporter();
   CrossOriginOpenerPolicyReporter(const CrossOriginOpenerPolicyReporter&) =
@@ -85,10 +86,11 @@ class CONTENT_EXPORT CrossOriginOpenerPolicyReporter {
   // See the class comment.
   StoragePartition* storage_partition_;
   GURL source_url_;
-  GlobalFrameRoutingId source_routing_id_;
+  GlobalRenderFrameHostId source_routing_id_;
   const GURL context_url_;
   const std::string context_referrer_url_;
   const network::CrossOriginOpenerPolicy coop_;
+  const base::UnguessableToken reporting_source_;
   const net::NetworkIsolationKey network_isolation_key_;
 
   mojo::UniqueReceiverSet<network::mojom::CrossOriginOpenerPolicyReporter>

@@ -54,15 +54,15 @@ class SecurityOrigin;
 // LocalStorage namespace with no (or an empty) namespace_id. The LocalStorage
 // version of the StorageNamespace lives in the StorageController.
 // InspectorDOMStorageAgents that are registered on this object are notified
-// through |DidDispatchStorageEvent|.
+// through `DidDispatchStorageEvent`.
 //
 // With the kOnionSoupDOMStorage flag off:
 // The StorageNamespace basically delegates calls to GetWebStorageArea to the
-// internal WebStorageNamespace. |GetWebStorageArea| is used to get the storage
+// internal WebStorageNamespace. `GetWebStorageArea` is used to get the storage
 // area for an origin.
 //
 // With the kOnionSoupDOMStorage flag on:
-// The StorageNamespace for SessioStorage supplement the Page. |GetCachedArea|
+// The StorageNamespace for SessionStorage supplement the Page. `GetCachedArea`
 // is used to get the storage area for an origin.
 class MODULES_EXPORT StorageNamespace final
     : public GarbageCollected<StorageNamespace>,
@@ -82,12 +82,18 @@ class MODULES_EXPORT StorageNamespace final
   // Creates a namespace for SessionStorage.
   StorageNamespace(StorageController*, const String& namespace_id);
 
-  scoped_refptr<CachedStorageArea> GetCachedArea(const SecurityOrigin* origin);
+  // |storage_area| is ignored here if a cached namespace already exists.
+  scoped_refptr<CachedStorageArea> GetCachedArea(
+      const SecurityOrigin* origin,
+      mojo::PendingRemote<mojom::blink::StorageArea> storage_area = {});
 
   scoped_refptr<CachedStorageArea> CreateCachedAreaForPrerender(
-      const SecurityOrigin* origin);
+      const SecurityOrigin* origin,
+      mojo::PendingRemote<mojom::blink::StorageArea> storage_area = {});
 
-  // Only valid to call this if |this| and |target| are session storage
+  void EvictSessionStorageCachedData();
+
+  // Only valid to call this if `this` and `target` are session storage
   // namespaces.
   void CloneTo(const String& target);
 
@@ -104,13 +110,13 @@ class MODULES_EXPORT StorageNamespace final
   void Trace(Visitor* visitor) const override;
 
   // Iterates all of the inspector agents and calls
-  // |DidDispatchDOMStorageEvent|.
+  // `DidDispatchDOMStorageEvent`.
   void DidDispatchStorageEvent(const SecurityOrigin* origin,
                                const String& key,
                                const String& old_value,
                                const String& new_value);
 
-  // Called by areas in |cached_areas_| to bind/rebind their StorageArea
+  // Called by areas in `cached_areas_` to bind/rebind their StorageArea
   // interface.
   void BindStorageArea(
       const scoped_refptr<const SecurityOrigin>& origin,
@@ -129,8 +135,8 @@ class MODULES_EXPORT StorageNamespace final
   // Lives globally.
   StorageController* controller_;
   String namespace_id_;
-  // |StorageNamespace| is a per-Page object and doesn't have any
-  // |ExecutionContext|.
+  // `StorageNamespace` is a per-Page object and doesn't have any
+  // `ExecutionContext`.
   HeapMojoRemote<mojom::blink::SessionStorageNamespace> namespace_{nullptr};
   HashMap<scoped_refptr<const SecurityOrigin>,
           scoped_refptr<CachedStorageArea>,

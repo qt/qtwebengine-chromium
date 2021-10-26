@@ -18,7 +18,7 @@ class CompilationDependency : public ZoneObject {
  public:
   virtual bool IsValid() const = 0;
   virtual void PrepareInstall() const {}
-  virtual void Install(const MaybeObjectHandle& code) const = 0;
+  virtual void Install(Handle<Code> code) const = 0;
 
 #ifdef DEBUG
   virtual bool IsPretenureModeDependency() const { return false; }
@@ -26,6 +26,7 @@ class CompilationDependency : public ZoneObject {
       Handle<Map> const& receiver_map) const {
     return false;
   }
+  virtual bool IsConsistentJSFunctionViewDependency() const { return false; }
 #endif
 };
 

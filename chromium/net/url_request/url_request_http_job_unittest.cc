@@ -20,12 +20,16 @@
 #include "base/strings/string_split.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "build/build_config.h"
 #include "net/base/auth.h"
+#include "net/base/features.h"
 #include "net/base/isolation_info.h"
 #include "net/base/network_isolation_key.h"
 #include "net/base/request_priority.h"
 #include "net/cert/ct_policy_status.h"
+#include "net/cookies/canonical_cookie_test_helpers.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store_test_callbacks.h"
 #include "net/cookies/cookie_store_test_helpers.h"
@@ -65,7 +69,9 @@ namespace net {
 
 namespace {
 
+using ::testing::_;
 using ::testing::Return;
+using ::testing::UnorderedElementsAre;
 
 const char kSimpleGetMockWrite[] =
     "GET / HTTP/1.1\r\n"
@@ -1374,7 +1380,7 @@ class URLRequestHttpJobWithBrotliSupportTest : public TestWithTaskEnvironment {
  protected:
   URLRequestHttpJobWithBrotliSupportTest()
       : context_(new TestURLRequestContext(true)) {
-    auto params = std::make_unique<HttpNetworkSession::Params>();
+    auto params = std::make_unique<HttpNetworkSessionParams>();
     context_->set_enable_brotli(true);
     context_->set_http_network_session_params(std::move(params));
     context_->set_client_socket_factory(&socket_factory_);
@@ -1660,8 +1666,9 @@ bool SetAllCookies(CookieMonster* cm, const CookieList& list) {
 bool CreateAndSetCookie(CookieStore* cs,
                         const GURL& url,
                         const std::string& cookie_line) {
-  auto cookie = CanonicalCookie::Create(url, cookie_line, base::Time::Now(),
-                                        absl::nullopt);
+  auto cookie = CanonicalCookie::Create(
+      url, cookie_line, base::Time::Now(), absl::nullopt /* server_time */,
+      absl::nullopt /* cookie_partition_key */);
   if (!cookie)
     return false;
   DCHECK(cs);
@@ -1710,7 +1717,8 @@ TEST_F(URLRequestHttpJobTest, CookieSchemeRequestSchemeHistogram) {
   // would normally only happen during an existing cookie DB version upgrade.
   std::unique_ptr<CanonicalCookie> unset_cookie1 = CanonicalCookie::Create(
       secure_url_for_unset1, "NoSourceSchemeHttps=val", base::Time::Now(),
-      absl::nullopt /* server_time */);
+      absl::nullopt /* server_time */,
+      absl::nullopt /* cookie_partition_key */);
   unset_cookie1->SetSourceScheme(net::CookieSourceScheme::kUnset);
 
   CookieList list1 = {*unset_cookie1};
@@ -1730,7 +1738,8 @@ TEST_F(URLRequestHttpJobTest, CookieSchemeRequestSchemeHistogram) {
 
   std::unique_ptr<CanonicalCookie> unset_cookie2 = CanonicalCookie::Create(
       nonsecure_url_for_unset2, "NoSourceSchemeHttp=val", base::Time::Now(),
-      absl::nullopt /* server_time */);
+      absl::nullopt /* server_time */,
+      absl::nullopt /* cookie_partition_key */);
   unset_cookie2->SetSourceScheme(net::CookieSourceScheme::kUnset);
 
   CookieList list2 = {*unset_cookie2};
@@ -1773,6 +1782,203 @@ TEST_F(URLRequestHttpJobTest, CookieSchemeRequestSchemeHistogram) {
   histograms.ExpectBucketCount(
       test_histogram,
       URLRequestHttpJob::CookieRequestScheme::kNonsecureSetSecureRequest, 1);
+}
+
+// Test that cookies are annotated with the appropriate exclusion reason when
+// privacy mode is enabled.
+TEST_F(URLRequestHttpJobTest, PrivacyMode_ExclusionReason) {
+  HttpTestServer test_server;
+  ASSERT_TRUE(test_server.Start());
+
+  FilteringTestNetworkDelegate network_delegate;
+  CookieMonster cm(nullptr, nullptr);
+  TestURLRequestContext context(true);
+  context.set_cookie_store(&cm);
+  context.set_network_delegate(&network_delegate);
+  context.Init();
+
+  // Set cookies.
+  {
+    TestDelegate d;
+    GURL test_url = test_server.GetURL(
+        "/set-cookie?one=1&"
+        "two=2&"
+        "three=3");
+    std::unique_ptr<URLRequest> req(context.CreateFirstPartyRequest(
+        test_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    d.RunUntilComplete();
+  }
+
+  // Get cookies.
+  network_delegate.ResetAnnotateCookiesCalledCount();
+  ASSERT_EQ(0, network_delegate.annotate_cookies_called_count());
+  // We want to fetch cookies from the cookie store, so we use the
+  // NetworkDelegate to override the privacy mode (rather than setting it via
+  // `allow_credentials`, since that skips querying the cookie store).
+  network_delegate.set_force_privacy_mode(true);
+  TestDelegate d;
+  std::unique_ptr<URLRequest> req(context.CreateFirstPartyRequest(
+      test_server.GetURL("/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
+      TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ("None", d.data_received());
+  EXPECT_THAT(
+      req->maybe_sent_cookies(),
+      UnorderedElementsAre(
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("one"),
+              MatchesCookieAccessResult(
+                  HasExactlyExclusionReasonsForTesting(
+                      std::vector<CookieInclusionStatus::ExclusionReason>{
+                          CookieInclusionStatus::EXCLUDE_USER_PREFERENCES}),
+                  _, _, _)),
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("two"),
+              MatchesCookieAccessResult(
+                  HasExactlyExclusionReasonsForTesting(
+                      std::vector<CookieInclusionStatus::ExclusionReason>{
+                          CookieInclusionStatus::EXCLUDE_USER_PREFERENCES}),
+                  _, _, _)),
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("three"),
+              MatchesCookieAccessResult(
+                  HasExactlyExclusionReasonsForTesting(
+                      std::vector<CookieInclusionStatus::ExclusionReason>{
+                          CookieInclusionStatus::EXCLUDE_USER_PREFERENCES}),
+                  _, _, _))));
+
+  EXPECT_EQ(0, network_delegate.annotate_cookies_called_count());
+}
+
+// Test that cookies are allowed to be selectively blocked by the network
+// delegate.
+TEST_F(URLRequestHttpJobTest, IndividuallyBlockedCookies) {
+  HttpTestServer test_server;
+  ASSERT_TRUE(test_server.Start());
+
+  FilteringTestNetworkDelegate network_delegate;
+  network_delegate.set_block_get_cookies_by_name(true);
+  network_delegate.SetCookieFilter("blocked_");
+  CookieMonster cm(nullptr, nullptr);
+  TestURLRequestContext context(true);
+  context.set_cookie_store(&cm);
+  context.set_network_delegate(&network_delegate);
+  context.Init();
+
+  // Set cookies.
+  {
+    TestDelegate d;
+    GURL test_url = test_server.GetURL(
+        "/set-cookie?blocked_one=1;SameSite=Lax;Secure&"
+        "blocked_two=1;SameSite=Lax;Secure&"
+        "allowed=1;SameSite=Lax;Secure");
+    std::unique_ptr<URLRequest> req(context.CreateFirstPartyRequest(
+        test_url, DEFAULT_PRIORITY, &d, TRAFFIC_ANNOTATION_FOR_TESTS));
+    req->Start();
+    d.RunUntilComplete();
+  }
+
+  // Get cookies.
+  TestDelegate d;
+  std::unique_ptr<URLRequest> req(context.CreateFirstPartyRequest(
+      test_server.GetURL("/echoheader?Cookie"), DEFAULT_PRIORITY, &d,
+      TRAFFIC_ANNOTATION_FOR_TESTS));
+  req->Start();
+  d.RunUntilComplete();
+
+  EXPECT_EQ("allowed=1", d.data_received());
+  EXPECT_THAT(
+      req->maybe_sent_cookies(),
+      UnorderedElementsAre(
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("blocked_one"),
+              MatchesCookieAccessResult(
+                  HasExactlyExclusionReasonsForTesting(
+                      std::vector<CookieInclusionStatus::ExclusionReason>{
+                          CookieInclusionStatus::EXCLUDE_USER_PREFERENCES}),
+                  _, _, _)),
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("blocked_two"),
+              MatchesCookieAccessResult(
+                  HasExactlyExclusionReasonsForTesting(
+                      std::vector<CookieInclusionStatus::ExclusionReason>{
+                          CookieInclusionStatus::EXCLUDE_USER_PREFERENCES}),
+                  _, _, _)),
+          MatchesCookieWithAccessResult(
+              MatchesCookieWithName("allowed"),
+              MatchesCookieAccessResult(IsInclude(), _, _, _))));
+}
+
+class PartitionedCookiesURLRequestHttpJobTest
+    : public URLRequestHttpJobTest,
+      public testing::WithParamInterface<bool> {
+ protected:
+  // testing::Test
+  void SetUp() override {
+    if (PartitionedCookiesEnabled())
+      scoped_feature_list_.InitAndEnableFeature(features::kPartitionedCookies);
+    URLRequestHttpJobTest::SetUp();
+  }
+
+  bool PartitionedCookiesEnabled() { return GetParam(); }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+INSTANTIATE_TEST_SUITE_P(/* no label */,
+                         PartitionedCookiesURLRequestHttpJobTest,
+                         testing::Bool());
+
+TEST_P(PartitionedCookiesURLRequestHttpJobTest, SetPartitionedCookie) {
+  EmbeddedTestServer https_test(EmbeddedTestServer::TYPE_HTTPS);
+  const url::Origin kTopFrameOrigin =
+      url::Origin::Create(GURL("https://www.toplevelsite.com"));
+  const IsolationInfo kTestIsolationInfo =
+      IsolationInfo::CreateForInternalRequest(kTopFrameOrigin);
+
+  https_test.AddDefaultHandlers(base::FilePath());
+  ASSERT_TRUE(https_test.Start());
+  TestURLRequestContext context;
+
+  CookieMonster cookie_monster(nullptr, nullptr);
+  context.set_cookie_store(&cookie_monster);
+
+  GURL test_url = https_test.GetURL(
+      "/set-cookie?__Host-foo=bar;SameSite=None;Secure;Path=/;Partitioned;");
+
+  TestDelegate delegate;
+  std::unique_ptr<URLRequest> request = context.CreateRequest(
+      test_url, DEFAULT_PRIORITY, &delegate, TRAFFIC_ANNOTATION_FOR_TESTS);
+
+  request->set_isolation_info(kTestIsolationInfo);
+  request->Start();
+  ASSERT_TRUE(request->is_pending());
+  delegate.RunUntilComplete();
+
+  base::RunLoop run_loop;
+  bool partitioned_cookies_enabled = PartitionedCookiesEnabled();
+  cookie_monster.GetAllCookiesAsync(base::BindLambdaForTesting(
+      [&partitioned_cookies_enabled, &run_loop](const CookieList& cookies) {
+        EXPECT_EQ(1u, cookies.size());
+        EXPECT_EQ(partitioned_cookies_enabled, cookies[0].IsPartitioned());
+        if (partitioned_cookies_enabled) {
+          EXPECT_EQ(CookiePartitionKey::FromURLForTesting(
+                        GURL("https://toplevelsite.com")),
+                    cookies[0].PartitionKey().value());
+        } else {
+          EXPECT_FALSE(cookies[0].PartitionKey());
+        }
+        run_loop.Quit();
+      }));
+  run_loop.Run();
+
+  // TODO(crbug.com/1225444) Test that the cookie is available in a cross-site
+  // context on a different top-level site only when partitioned cookies are
+  // disabled.
 }
 
 }  // namespace net

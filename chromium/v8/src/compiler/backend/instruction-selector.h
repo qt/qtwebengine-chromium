@@ -64,20 +64,20 @@ class FlagsContinuation final {
   // Creates a new flags continuation for an eager deoptimization exit.
   static FlagsContinuation ForDeoptimize(
       FlagsCondition condition, DeoptimizeKind kind, DeoptimizeReason reason,
-      FeedbackSource const& feedback, Node* frame_state,
+      NodeId node_id, FeedbackSource const& feedback, Node* frame_state,
       InstructionOperand* extra_args = nullptr, int extra_args_count = 0) {
     return FlagsContinuation(kFlags_deoptimize, condition, kind, reason,
-                             feedback, frame_state, extra_args,
+                             node_id, feedback, frame_state, extra_args,
                              extra_args_count);
   }
 
   // Creates a new flags continuation for an eager deoptimization exit.
   static FlagsContinuation ForDeoptimizeAndPoison(
       FlagsCondition condition, DeoptimizeKind kind, DeoptimizeReason reason,
-      FeedbackSource const& feedback, Node* frame_state,
+      NodeId node_id, FeedbackSource const& feedback, Node* frame_state,
       InstructionOperand* extra_args = nullptr, int extra_args_count = 0) {
     return FlagsContinuation(kFlags_deoptimize_and_poison, condition, kind,
-                             reason, feedback, frame_state, extra_args,
+                             reason, node_id, feedback, frame_state, extra_args,
                              extra_args_count);
   }
 
@@ -122,6 +122,10 @@ class FlagsContinuation final {
   DeoptimizeReason reason() const {
     DCHECK(IsDeoptimize());
     return reason_;
+  }
+  NodeId node_id() const {
+    DCHECK(IsDeoptimize());
+    return node_id_;
   }
   FeedbackSource const& feedback() const {
     DCHECK(IsDeoptimize());
@@ -229,12 +233,14 @@ class FlagsContinuation final {
 
   FlagsContinuation(FlagsMode mode, FlagsCondition condition,
                     DeoptimizeKind kind, DeoptimizeReason reason,
-                    FeedbackSource const& feedback, Node* frame_state,
-                    InstructionOperand* extra_args, int extra_args_count)
+                    NodeId node_id, FeedbackSource const& feedback,
+                    Node* frame_state, InstructionOperand* extra_args,
+                    int extra_args_count)
       : mode_(mode),
         condition_(condition),
         kind_(kind),
         reason_(reason),
+        node_id_(node_id),
         feedback_(feedback),
         frame_state_or_result_(frame_state),
         extra_args_(extra_args),
@@ -258,8 +264,8 @@ class FlagsContinuation final {
     DCHECK_NOT_NULL(result);
   }
 
-  FlagsContinuation(FlagsCondition condition, Node* result,
-                    Node* true_value, Node* false_value)
+  FlagsContinuation(FlagsCondition condition, Node* result, Node* true_value,
+                    Node* false_value)
       : mode_(kFlags_select),
         condition_(condition),
         frame_state_or_result_(result),
@@ -274,6 +280,7 @@ class FlagsContinuation final {
   FlagsCondition condition_;
   DeoptimizeKind kind_;             // Only valid if mode_ == kFlags_deoptimize*
   DeoptimizeReason reason_;         // Only valid if mode_ == kFlags_deoptimize*
+  NodeId node_id_;                  // Only valid if mode_ == kFlags_deoptimize*
   FeedbackSource feedback_;         // Only valid if mode_ == kFlags_deoptimize*
   Node* frame_state_or_result_;     // Only valid if mode_ == kFlags_deoptimize*
                                     // or mode_ == kFlags_set.
@@ -446,6 +453,9 @@ class V8_EXPORT_PRIVATE InstructionSelector final {
   // Check if {node} can be covered while generating code for the current
   // instruction. A node can be covered if the {user} of the node has the only
   // edge and the two are in the same basic block.
+  // Before fusing two instructions a and b, it is useful to check that
+  // CanCover(a, b) holds. If this is not the case, code for b must still be
+  // generated for other users, and fusing is unlikely to improve performance.
   bool CanCover(Node* user, Node* node) const;
   // CanCover is not transitive.  The counter example are Nodes A,B,C such that
   // CanCover(A, B) and CanCover(B,C) and B is pure: The the effect level of A
@@ -521,7 +531,7 @@ class V8_EXPORT_PRIVATE InstructionSelector final {
 
   void AppendDeoptimizeArguments(InstructionOperandVector* args,
                                  DeoptimizeKind kind, DeoptimizeReason reason,
-                                 FeedbackSource const& feedback,
+                                 NodeId node_id, FeedbackSource const& feedback,
                                  FrameState frame_state);
 
   void EmitTableSwitch(const SwitchInfo& sw,
@@ -589,8 +599,7 @@ class V8_EXPORT_PRIVATE InstructionSelector final {
   // {call_code_immediate} to generate immediate operands to calls of code.
   // {call_address_immediate} to generate immediate operands to address calls.
   void InitializeCallBuffer(Node* call, CallBuffer* buffer,
-                            CallBufferFlags flags, bool is_tail_call,
-                            int stack_slot_delta = 0);
+                            CallBufferFlags flags, int stack_slot_delta = 0);
   bool IsTailCallAddressImmediate();
 
   void UpdateMaxPushedArgumentCount(size_t count);
@@ -658,7 +667,8 @@ class V8_EXPORT_PRIVATE InstructionSelector final {
   void VisitBranch(Node* input, BasicBlock* tbranch, BasicBlock* fbranch);
   void VisitSwitch(Node* node, const SwitchInfo& sw);
   void VisitDeoptimize(DeoptimizeKind kind, DeoptimizeReason reason,
-                       FeedbackSource const& feedback, FrameState frame_state);
+                       NodeId node_id, FeedbackSource const& feedback,
+                       FrameState frame_state);
   void VisitSelect(Node* node);
   void VisitReturn(Node* ret);
   void VisitThrow(Node* node);

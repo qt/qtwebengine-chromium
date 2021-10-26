@@ -8,7 +8,6 @@
 #include <memory>
 #include <vector>
 
-#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/unique_ptr_adapters.h"
 #include "base/macros.h"
@@ -19,6 +18,8 @@
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/net_errors.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/filter/source_stream.h"
+#include "services/network/public/mojom/devtools_observer.mojom-forward.h"
 #include "services/network/public/mojom/network_service.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -44,7 +45,6 @@ class DevToolsAgentHostImpl;
 class DevToolsIOContext;
 class DevToolsURLLoaderInterceptor;
 class RenderFrameHostImpl;
-class RenderProcessHost;
 class NavigationRequest;
 class SignedExchangeEnvelope;
 class StoragePartition;
@@ -169,7 +169,8 @@ class NetworkHandler : public DevToolsDomainHandler,
   // associated with the NetworkHandler itself (which is the token of the local
   // root frame).
   bool MaybeCreateProxyForInterception(
-      RenderProcessHost* rph,
+      int process_id,
+      StoragePartition* storage_partition,
       const base::UnguessableToken& frame_token,
       bool is_navigation,
       bool is_download,
@@ -185,7 +186,8 @@ class NetworkHandler : public DevToolsDomainHandler,
                                    base::TimeTicks timestamp);
   void RequestSent(const std::string& request_id,
                    const std::string& loader_id,
-                   const network::ResourceRequest& request,
+                   const net::HttpRequestHeaders& request_headers,
+                   const network::mojom::URLRequestDevToolsInfo& request_info,
                    const char* initiator_type,
                    const absl::optional<GURL>& initiator_url,
                    const std::string& initiator_devtools_request_id,
@@ -225,10 +227,25 @@ class NetworkHandler : public DevToolsDomainHandler,
       const net::CookieAndLineAccessResultList& response_cookie_list,
       const std::vector<network::mojom::HttpRawHeaderPairPtr>& response_headers,
       const absl::optional<std::string>& response_headers_text,
-      network::mojom::IPAddressSpace resource_address_space);
+      network::mojom::IPAddressSpace resource_address_space,
+      int32_t http_status_code);
   void OnTrustTokenOperationDone(
       const std::string& devtools_request_id,
       const network::mojom::TrustTokenOperationResult& result);
+  void OnSubresourceWebBundleMetadata(const std::string& devtools_request_id,
+                                      const std::vector<GURL>& urls);
+  void OnSubresourceWebBundleMetadataError(
+      const std::string& devtools_request_id,
+      const std::string& error_message);
+  void OnSubresourceWebBundleInnerResponse(
+      const std::string& inner_request_devtools_id,
+      const GURL& url,
+      const absl::optional<std::string>& bundle_request_devtools_id);
+  void OnSubresourceWebBundleInnerResponseError(
+      const std::string& inner_request_devtools_id,
+      const GURL& url,
+      const std::string& error_message,
+      const absl::optional<std::string>& bundle_request_devtools_id);
 
   bool enabled() const { return enabled_; }
 
@@ -240,7 +257,7 @@ class NetworkHandler : public DevToolsDomainHandler,
       const std::string& cookie_line);
 
   void LoadNetworkResource(
-      const String& frameId,
+      Maybe<content::protocol::String> frameId,
       const String& url,
       std::unique_ptr<protocol::Network::LoadNetworkResourceOptions> options,
       std::unique_ptr<LoadNetworkResourceCallback> callback) override;

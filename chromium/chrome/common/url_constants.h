@@ -37,6 +37,9 @@ extern const char kAutomaticSettingsResetLearnMoreURL[];
 // "Learn more" URL for Advanced Protection download warnings.
 extern const char kAdvancedProtectionDownloadLearnMoreURL[];
 
+// "Chrome Settings" URL for website notifications linked out from OSSettings.
+extern const char kAppNotificationsBrowserSettingsURL[];
+
 // The URL for providing help when the Bluetooth adapter is off.
 extern const char kBluetoothAdapterOffHelpURL[];
 
@@ -46,10 +49,6 @@ extern const char kCastCloudServicesHelpURL[];
 // The URL for the help center article to show when no Cast destination has been
 // found.
 extern const char kCastNoDestinationFoundURL[];
-
-// The URL for the Bluetooth Overview help center article in the Web Bluetooth
-// Chooser.
-extern const char kChooserBluetoothOverviewURL[];
 
 // The URL for the WebHID API help center article.
 extern const char kChooserHidOverviewUrl[];
@@ -244,6 +243,11 @@ extern const char kSyncGoogleDashboardURL[];
 
 // The URL for the "Learn more" page for sync setup on the personal stuff page.
 extern const char kSyncLearnMoreURL[];
+
+#if !defined(OS_ANDROID)
+// The URL for the trusted vault sync passphrase opt in.
+extern const char kSyncTrustedVaultOptInURL[];
+#endif
 
 extern const char kUpgradeHelpCenterBaseURL[];
 

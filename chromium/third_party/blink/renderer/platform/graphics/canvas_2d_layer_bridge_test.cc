@@ -94,9 +94,9 @@ class ImageTrackingDecodeCache : public cc::StubDecodeCache {
     bitmap.allocPixelsFlags(SkImageInfo::MakeN32Premul(10, 10),
                             SkBitmap::kZeroPixels_AllocFlag);
     sk_sp<SkImage> sk_image = SkImage::MakeFromBitmap(bitmap);
-    return cc::DecodedDrawImage(sk_image, nullptr, SkSize::Make(0, 0),
-                                SkSize::Make(1, 1), kLow_SkFilterQuality,
-                                !budget_exceeded_);
+    return cc::DecodedDrawImage(
+        sk_image, nullptr, SkSize::Make(0, 0), SkSize::Make(1, 1),
+        cc::PaintFlags::FilterQuality::kLow, !budget_exceeded_);
   }
 
   void set_budget_exceeded(bool exceeded) { budget_exceeded_ = exceeded; }
@@ -341,7 +341,7 @@ TEST_F(Canvas2DLayerBridgeTest, FallbackToSoftwareIfContextLost) {
 }
 
 void DrawSomething(Canvas2DLayerBridge* bridge) {
-  bridge->DidDraw(FloatRect(0, 0, 1, 1));
+  bridge->DidDraw();
   bridge->FinalizeFrame();
   // Grabbing an image forces a flush
   bridge->NewImageSnapshot();
@@ -820,11 +820,12 @@ TEST_F(Canvas2DLayerBridgeTest, EnsureCCImageCacheUse) {
   gfx::ColorSpace expected_color_space = gfx::ColorSpace::CreateSRGB();
   Vector<cc::DrawImage> images = {
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)), false,
-                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality, SkM44(), 0u,
+                    SkIRect::MakeWH(10, 10),
+                    cc::PaintFlags::FilterQuality::kNone, SkM44(), 0u,
                     expected_color_space),
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)), false,
-                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkM44(), 0u,
-                    expected_color_space)};
+                    SkIRect::MakeWH(5, 5), cc::PaintFlags::FilterQuality::kNone,
+                    SkM44(), 0u, expected_color_space)};
 
   bridge->GetPaintCanvas()->drawImage(images[0].paint_image(), 0u, 0u);
   bridge->GetPaintCanvas()->drawImageRect(
@@ -842,11 +843,12 @@ TEST_F(Canvas2DLayerBridgeTest, EnsureCCImageCacheUseWithColorConversion) {
       MakeBridge(IntSize(300, 300), RasterMode::kGPU, color_params);
   Vector<cc::DrawImage> images = {
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)), false,
-                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality, SkM44(), 0u,
+                    SkIRect::MakeWH(10, 10),
+                    cc::PaintFlags::FilterQuality::kNone, SkM44(), 0u,
                     color_params.GetStorageGfxColorSpace()),
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)), false,
-                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkM44(), 0u,
-                    color_params.GetStorageGfxColorSpace())};
+                    SkIRect::MakeWH(5, 5), cc::PaintFlags::FilterQuality::kNone,
+                    SkM44(), 0u, color_params.GetStorageGfxColorSpace())};
 
   bridge->GetPaintCanvas()->drawImage(images[0].paint_image(), 0u, 0u);
   bridge->GetPaintCanvas()->drawImageRect(
@@ -865,14 +867,15 @@ TEST_F(Canvas2DLayerBridgeTest, ImagesLockedUntilCacheLimit) {
 
   Vector<cc::DrawImage> images = {
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)), false,
-                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality, SkM44(), 0u,
+                    SkIRect::MakeWH(10, 10),
+                    cc::PaintFlags::FilterQuality::kNone, SkM44(), 0u,
                     color_params.GetStorageGfxColorSpace()),
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)), false,
-                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkM44(), 0u,
-                    color_params.GetStorageGfxColorSpace()),
+                    SkIRect::MakeWH(5, 5), cc::PaintFlags::FilterQuality::kNone,
+                    SkM44(), 0u, color_params.GetStorageGfxColorSpace()),
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)), false,
-                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkM44(), 0u,
-                    color_params.GetStorageGfxColorSpace())};
+                    SkIRect::MakeWH(5, 5), cc::PaintFlags::FilterQuality::kNone,
+                    SkM44(), 0u, color_params.GetStorageGfxColorSpace())};
 
   // First 2 images are budgeted, they should remain locked after the op.
   bridge->GetPaintCanvas()->drawImage(images[0].paint_image(), 0u, 0u);
@@ -898,10 +901,10 @@ TEST_F(Canvas2DLayerBridgeTest, QueuesCleanupTaskForLockedImages) {
   std::unique_ptr<Canvas2DLayerBridge> bridge =
       MakeBridge(IntSize(300, 300), RasterMode::kGPU, color_params);
 
-  auto image =
-      cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)), false,
-                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality, SkM44(), 0u,
-                    color_params.GetStorageGfxColorSpace());
+  auto image = cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)),
+                             false, SkIRect::MakeWH(10, 10),
+                             cc::PaintFlags::FilterQuality::kNone, SkM44(), 0u,
+                             color_params.GetStorageGfxColorSpace());
   bridge->GetPaintCanvas()->drawImage(image.paint_image(), 0u, 0u);
 
   bridge->GetOrCreateResourceProvider()->FlushCanvas();
@@ -918,11 +921,12 @@ TEST_F(Canvas2DLayerBridgeTest, ImageCacheOnContextLost) {
       MakeBridge(IntSize(300, 300), RasterMode::kGPU, color_params);
   Vector<cc::DrawImage> images = {
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(10, 10)), false,
-                    SkIRect::MakeWH(10, 10), kNone_SkFilterQuality, SkM44(), 0u,
+                    SkIRect::MakeWH(10, 10),
+                    cc::PaintFlags::FilterQuality::kNone, SkM44(), 0u,
                     color_params.GetStorageGfxColorSpace()),
       cc::DrawImage(cc::CreateDiscardablePaintImage(gfx::Size(20, 20)), false,
-                    SkIRect::MakeWH(5, 5), kNone_SkFilterQuality, SkM44(), 0u,
-                    color_params.GetStorageGfxColorSpace())};
+                    SkIRect::MakeWH(5, 5), cc::PaintFlags::FilterQuality::kNone,
+                    SkM44(), 0u, color_params.GetStorageGfxColorSpace())};
   bridge->GetPaintCanvas()->drawImage(images[0].paint_image(), 0u, 0u);
 
   // Lose the context and ensure that the image provider is not used.
@@ -979,7 +983,7 @@ TEST_F(Canvas2DLayerBridgeTest, WritePixelsRestoresClipStack) {
             5);
   // Drawline so WritePixels has something to flush
   bridge->GetPaintCanvas()->drawLine(0, 0, 2, 2, flags);
-  bridge->DidDraw(FloatRect(0, 0, 1, 1));
+  bridge->DidDraw();
 
   // WritePixels flushes recording. Post flush, a new drawing canvas is created
   // that should have the matrix restored onto it.

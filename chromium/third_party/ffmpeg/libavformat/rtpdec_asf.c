@@ -25,7 +25,6 @@
  * @author Ronald S. Bultje <rbultje@ronald.bitfreak.net>
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/base64.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
@@ -106,7 +105,7 @@ int ff_wms_parse_sdp_a_line(AVFormatContext *s, const char *p)
         AVDictionary *opts = NULL;
         int len = strlen(p) * 6 / 8;
         char *buf = av_mallocz(len);
-        ff_const59 AVInputFormat *iformat;
+        const AVInputFormat *iformat;
 
         if (!buf)
             return AVERROR(ENOMEM);
@@ -167,8 +166,8 @@ static int asfrtp_parse_sdp_line(AVFormatContext *s, int stream_index,
                 if (s->streams[stream_index]->id == rt->asf_ctx->streams[i]->id) {
                     avcodec_parameters_copy(s->streams[stream_index]->codecpar,
                                             rt->asf_ctx->streams[i]->codecpar);
-                    s->streams[stream_index]->need_parsing =
-                        rt->asf_ctx->streams[i]->need_parsing;
+                    s->streams[stream_index]->internal->need_parsing =
+                        rt->asf_ctx->streams[i]->internal->need_parsing;
                     avpriv_set_pts_info(s->streams[stream_index], 32, 1, 1000);
                 }
            }

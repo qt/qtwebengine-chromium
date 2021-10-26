@@ -13,7 +13,6 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/task_runner_util.h"
 #include "base/trace_event/trace_event.h"
 #include "gpu/command_buffer/service/abstract_texture.h"
@@ -100,8 +99,10 @@ VideoFrameFactoryImpl::VideoFrameFactoryImpl(
     const gpu::GpuPreferences& gpu_preferences,
     std::unique_ptr<SharedImageVideoProvider> image_provider,
     std::unique_ptr<MaybeRenderEarlyManager> mre_manager,
-    std::unique_ptr<FrameInfoHelper> frame_info_helper)
-    : image_provider_(std::move(image_provider)),
+    std::unique_ptr<FrameInfoHelper> frame_info_helper,
+    scoped_refptr<gpu::RefCountedLock> drdc_lock)
+    : gpu::RefCountedLockHelperDrDc(std::move(drdc_lock)),
+      image_provider_(std::move(image_provider)),
       gpu_task_runner_(std::move(gpu_task_runner)),
       copy_mode_(GetVideoFrameCopyMode(
           gpu_preferences.enable_threaded_texture_mailboxes)),
@@ -168,7 +169,7 @@ void VideoFrameFactoryImpl::CreateVideoFrame(
   gfx::Rect visible_rect(coded_size);
 
   auto output_buffer_renderer = std::make_unique<CodecOutputBufferRenderer>(
-      std::move(output_buffer), codec_buffer_wait_coordinator_);
+      std::move(output_buffer), codec_buffer_wait_coordinator_, GetDrDcLock());
 
   // The pixel format doesn't matter here as long as it's valid for texture
   // frames. But SkiaRenderer wants to ensure that the format of the resource

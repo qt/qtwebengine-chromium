@@ -34,8 +34,8 @@ import * as ARIAUtils from './ARIAUtils.js';
 import {GlassPane, PointerEventsBehavior} from './GlassPane.js';
 import {InspectorView} from './InspectorView.js';
 import {KeyboardShortcut, Keys} from './KeyboardShortcut.js';
-import type {SplitWidget} from './SplitWidget.js';     // eslint-disable-line no-unused-vars
-import type {DevToolsCloseButton} from './UIUtils.js'; // eslint-disable-line no-unused-vars
+import type {SplitWidget} from './SplitWidget.js';
+import type {DevToolsCloseButton} from './UIUtils.js';
 import type {WidgetElement} from './Widget.js';
 import {WidgetFocusRestorer} from './Widget.js';
 
@@ -50,7 +50,7 @@ export class Dialog extends GlassPane {
 
   constructor() {
     super();
-    this.registerRequiredCSS('ui/legacy/dialog.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('ui/legacy/dialog.css');
     this.contentElement.tabIndex = 0;
     this.contentElement.addEventListener('focus', () => this.widget().focus(), false);
     this.widget().setDefaultFocusedElement(this.contentElement);

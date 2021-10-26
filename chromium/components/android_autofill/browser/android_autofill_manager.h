@@ -42,6 +42,11 @@ class AndroidAutofillManager : public AutofillManager {
 
   bool has_server_prediction() const { return has_server_prediction_; }
 
+  // Send the |form| to the renderer for the specified |action|.
+  void FillOrPreviewForm(int query_id,
+                         mojom::RendererFormDataAction action,
+                         const FormData& form);
+
  protected:
   AndroidAutofillManager(
       AutofillDriver* driver,
@@ -61,11 +66,11 @@ class AndroidAutofillManager : public AutofillManager {
                                 const FormFieldData& field,
                                 const gfx::RectF& bounding_box) override;
 
-  void OnQueryFormFieldAutofillImpl(int query_id,
-                                    const FormData& form,
-                                    const FormFieldData& field,
-                                    const gfx::RectF& bounding_box,
-                                    bool autoselect_first_suggestion) override;
+  void OnAskForValuesToFillImpl(int query_id,
+                                const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& bounding_box,
+                                bool autoselect_first_suggestion) override;
 
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,

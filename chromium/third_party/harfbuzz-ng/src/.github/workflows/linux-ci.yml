@@ -2,9 +2,9 @@ name: linux-ci
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
   pull_request:
-    branches: [ master ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -23,7 +23,7 @@ jobs:
     - name: generate documentations
       run: ninja -Cbuild harfbuzz-doc
     - name: deploy documentations
-      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
       run: .ci/deploy-docs.sh
       env:
         GH_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -47,7 +47,7 @@ jobs:
     #     fail-on-alert: true
 
     - name: cov
-      run: ninja -Cbuild coverage
+      run: ninja -Cbuild coverage-xml
     - uses: codecov/codecov-action@v1
       with:
         file: build/meson-logs/coverage.xml

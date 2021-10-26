@@ -10,6 +10,7 @@
 
 #include <memory>
 
+#include "include/core/SkStringView.h"
 #include "include/private/SkSLProgramElement.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
@@ -30,12 +31,13 @@ class InterfaceBlock final : public ProgramElement {
 public:
     static constexpr Kind kProgramElementKind = Kind::kInterfaceBlock;
 
-    InterfaceBlock(int offset, const Variable* var, String typeName, String instanceName,
-                   int arraySize, std::shared_ptr<SymbolTable> typeOwner)
+    InterfaceBlock(int offset, const Variable* var, skstd::string_view typeName,
+                   skstd::string_view instanceName, int arraySize,
+                   std::shared_ptr<SymbolTable> typeOwner)
     : INHERITED(offset, kProgramElementKind)
     , fVariable(var)
-    , fTypeName(std::move(typeName))
-    , fInstanceName(std::move(instanceName))
+    , fTypeName(typeName)
+    , fInstanceName(instanceName)
     , fArraySize(arraySize)
     , fTypeOwner(std::move(typeOwner)) {}
 
@@ -47,11 +49,11 @@ public:
         fVariable = var;
     }
 
-    const String& typeName() const {
+    skstd::string_view typeName() const {
         return fTypeName;
     }
 
-    const String& instanceName() const {
+    skstd::string_view instanceName() const {
         return fInstanceName;
     }
 
@@ -92,8 +94,8 @@ public:
 
 private:
     const Variable* fVariable;
-    String fTypeName;
-    String fInstanceName;
+    skstd::string_view fTypeName;
+    skstd::string_view fInstanceName;
     int fArraySize;
     std::shared_ptr<SymbolTable> fTypeOwner;
 

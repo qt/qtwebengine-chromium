@@ -11,7 +11,6 @@
 #include <utility>
 #include <vector>
 
-#include "ash/public/cpp/login_constants.h"
 #include "ash/public/mojom/tray_action.mojom.h"
 #include "base/bind.h"
 #include "base/i18n/number_formatting.h"
@@ -44,18 +43,17 @@
 #include "chrome/browser/ash/login/users/chrome_user_manager_util.h"
 #include "chrome/browser/ash/login/users/multi_profile_user_controller.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
+#include "chrome/browser/ash/policy/handlers/minimum_version_policy_handler.h"
 #include "chrome/browser/ash/settings/cros_settings.h"
 #include "chrome/browser/ash/system/system_clock.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/language_preferences.h"
-#include "chrome/browser/chromeos/policy/device_local_account.h"
-#include "chrome/browser/chromeos/policy/minimum_version_policy_handler.h"
 #include "chrome/browser/lifetime/browser_shutdown.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_metrics.h"
-#include "chrome/browser/ui/ash/ime_controller_client.h"
+#include "chrome/browser/ui/ash/ime_controller_client_impl.h"
 #include "chrome/browser/ui/ash/session_controller_client_impl.h"
 #include "chrome/browser/ui/webui/chromeos/internet_detail_dialog.h"
 #include "chrome/browser/ui/webui/chromeos/login/core_oobe_handler.h"
@@ -215,8 +213,8 @@ SigninScreenHandler::SigninScreenHandler(
 
 SigninScreenHandler::~SigninScreenHandler() {
   // Ash maybe released before us.
-  if (ImeControllerClient::Get())  // Can be null in tests.
-    ImeControllerClient::Get()->SetImesManagedByPolicy(false);
+  if (ImeControllerClientImpl::Get())  // Can be null in tests.
+    ImeControllerClientImpl::Get()->SetImesManagedByPolicy(false);
   weak_factory_.InvalidateWeakPtrs();
   if (delegate_)
     delegate_->SetWebUIHandler(nullptr);
@@ -345,7 +343,7 @@ void SigninScreenHandler::RegisterMessages() {
   AddCallback("launchIncognito", &SigninScreenHandler::HandleLaunchIncognito);
   AddCallback("launchSAMLPublicSession",
               &SigninScreenHandler::HandleLaunchSAMLPublicSession);
-  AddRawCallback("offlineLogin", &SigninScreenHandler::HandleOfflineLogin);
+  AddCallback("offlineLogin", &SigninScreenHandler::HandleOfflineLogin);
   // TODO(crbug.com/1100910): migrate logic to dedicated test api.
   AddCallback("toggleEnrollmentScreen",
               &SigninScreenHandler::HandleToggleEnrollmentScreen);
@@ -685,17 +683,15 @@ void SigninScreenHandler::HandleLaunchSAMLPublicSession(
   delegate_->Login(context, SigninSpecifics());
 }
 
-void SigninScreenHandler::HandleOfflineLogin(const base::ListValue* args) {
+void SigninScreenHandler::HandleOfflineLogin() {
   if (!delegate_) {
     NOTREACHED();
     return;
   }
-  std::string email;
-  args->GetString(0, &email);
 
   auto* offline_login_screen =
       WizardController::default_controller()->GetScreen<OfflineLoginScreen>();
-  offline_login_screen->LoadOffline(email);
+  offline_login_screen->LoadOffline();
   HideOfflineMessage(NetworkStateInformer::OFFLINE,
                      NetworkError::ERROR_REASON_NONE);
   LoginDisplayHost::default_host()->StartWizard(OfflineLoginView::kScreenId);

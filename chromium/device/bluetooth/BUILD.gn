@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
+import("//device/bluetooth/cast_bluetooth.gni")
 
 if (is_android) {
   import("//build/config/android/rules.gni")  # For generate_jni().
@@ -142,6 +143,10 @@ component("bluetooth") {
     "bluetooth_local_gatt_descriptor.h",
     "bluetooth_local_gatt_service.cc",
     "bluetooth_local_gatt_service.h",
+    "bluetooth_low_energy_scan_filter.cc",
+    "bluetooth_low_energy_scan_filter.h",
+    "bluetooth_low_energy_scan_session.cc",
+    "bluetooth_low_energy_scan_session.h",
     "bluetooth_remote_gatt_characteristic.cc",
     "bluetooth_remote_gatt_characteristic.h",
     "bluetooth_remote_gatt_descriptor.cc",
@@ -305,6 +310,9 @@ component("bluetooth") {
 
   if (is_chromeos || is_linux) {
     if (use_dbus) {
+      if (!force_cast_bluetooth) {
+        sources += [ "bluetooth_adapter_chromeos.cc" ]
+      }
       sources += [
         "bluez/bluetooth_adapter_bluez.cc",
         "bluez/bluetooth_adapter_bluez.h",
@@ -328,6 +336,8 @@ component("bluetooth") {
         "bluez/bluetooth_local_gatt_descriptor_bluez.h",
         "bluez/bluetooth_local_gatt_service_bluez.cc",
         "bluez/bluetooth_local_gatt_service_bluez.h",
+        "bluez/bluetooth_low_energy_scan_session_bluez.cc",
+        "bluez/bluetooth_low_energy_scan_session_bluez.h",
         "bluez/bluetooth_pairing_bluez.cc",
         "bluez/bluetooth_pairing_bluez.h",
         "bluez/bluetooth_remote_gatt_characteristic_bluez.cc",
@@ -346,6 +356,16 @@ component("bluetooth") {
         "dbus/bluetooth_adapter_client.h",
         "dbus/bluetooth_admin_policy_client.cc",
         "dbus/bluetooth_admin_policy_client.h",
+        "dbus/bluetooth_advertisement_monitor_application_service_provider.cc",
+        "dbus/bluetooth_advertisement_monitor_application_service_provider.h",
+        "dbus/bluetooth_advertisement_monitor_application_service_provider_impl.cc",
+        "dbus/bluetooth_advertisement_monitor_application_service_provider_impl.h",
+        "dbus/bluetooth_advertisement_monitor_manager_client.cc",
+        "dbus/bluetooth_advertisement_monitor_manager_client.h",
+        "dbus/bluetooth_advertisement_monitor_service_provider.cc",
+        "dbus/bluetooth_advertisement_monitor_service_provider.h",
+        "dbus/bluetooth_advertisement_monitor_service_provider_impl.cc",
+        "dbus/bluetooth_advertisement_monitor_service_provider_impl.h",
         "dbus/bluetooth_agent_manager_client.cc",
         "dbus/bluetooth_agent_manager_client.h",
         "dbus/bluetooth_agent_service_provider.cc",
@@ -396,6 +416,8 @@ component("bluetooth") {
         "dbus/bluetooth_le_advertisement_service_provider.h",
         "dbus/bluetooth_le_advertising_manager_client.cc",
         "dbus/bluetooth_le_advertising_manager_client.h",
+        "dbus/bluetooth_metrics_helper.cc",
+        "dbus/bluetooth_metrics_helper.h",
         "dbus/bluetooth_profile_manager_client.cc",
         "dbus/bluetooth_profile_manager_client.h",
         "dbus/bluetooth_profile_service_provider.cc",
@@ -407,10 +429,26 @@ component("bluetooth") {
         "dbus/bluez_dbus_thread_manager.h",
         "dbus/dbus_bluez_manager_wrapper_linux.cc",
         "dbus/dbus_bluez_manager_wrapper_linux.h",
+        "floss/bluetooth_adapter_floss.cc",
+        "floss/bluetooth_adapter_floss.h",
+        "floss/bluetooth_device_floss.cc",
+        "floss/bluetooth_device_floss.h",
+        "floss/floss_adapter_client.cc",
+        "floss/floss_adapter_client.h",
+        "floss/floss_dbus_client.cc",
+        "floss/floss_dbus_client.h",
+        "floss/floss_dbus_manager.cc",
+        "floss/floss_dbus_manager.h",
+        "floss/floss_features.cc",
+        "floss/floss_features.h",
+        "floss/floss_manager_client.cc",
+        "floss/floss_manager_client.h",
       ]
       if (is_chromeos_ash) {
         configs += [ "//chromeos/dbus:use_real_dbus_clients_config" ]
         sources += [
+          "chromeos/bluetooth_connection_logger.cc",
+          "chromeos/bluetooth_connection_logger.h",
           "chromeos/bluetooth_utils.cc",
           "chromeos/bluetooth_utils.h",
         ]
@@ -422,6 +460,12 @@ component("bluetooth") {
           "dbus/fake_bluetooth_adapter_client.h",
           "dbus/fake_bluetooth_admin_policy_client.cc",
           "dbus/fake_bluetooth_admin_policy_client.h",
+          "dbus/fake_bluetooth_advertisement_monitor_application_service_provider.cc",
+          "dbus/fake_bluetooth_advertisement_monitor_application_service_provider.h",
+          "dbus/fake_bluetooth_advertisement_monitor_manager_client.cc",
+          "dbus/fake_bluetooth_advertisement_monitor_manager_client.h",
+          "dbus/fake_bluetooth_advertisement_monitor_service_provider.cc",
+          "dbus/fake_bluetooth_advertisement_monitor_service_provider.h",
           "dbus/fake_bluetooth_agent_manager_client.cc",
           "dbus/fake_bluetooth_agent_manager_client.h",
           "dbus/fake_bluetooth_agent_service_provider.cc",
@@ -462,6 +506,16 @@ component("bluetooth") {
       }
       deps += [ "//dbus" ]
     } else {  # !use_dbus
+      defines += [ "LINUX_WITHOUT_DBUS" ]
+      sources += [
+        "dbus/dbus_bluez_manager_wrapper_linux.h",
+        "dbus/dbus_bluez_manager_wrapper_stub_linux.cc",
+      ]
+    }
+
+    # force_cast_bluetooth is used to compile with both cast & BlueZ, by
+    # omitting the stubs that would otherwise be added in.
+    if (!use_dbus || force_cast_bluetooth) {
       if (is_chromecast && (is_linux || is_chromeos)) {
         sources += [
           "cast/bluetooth_adapter_cast.cc",
@@ -487,12 +541,6 @@ component("bluetooth") {
       } else {
         sources += [ "bluetooth_adapter_stub.cc" ]
       }
-
-      defines += [ "LINUX_WITHOUT_DBUS" ]
-      sources += [
-        "dbus/dbus_bluez_manager_wrapper_linux.h",
-        "dbus/dbus_bluez_manager_wrapper_stub_linux.cc",
-      ]
     }
   }
 }
@@ -519,6 +567,13 @@ static_library("mocks") {
     "test/mock_bluetooth_socket.cc",
     "test/mock_bluetooth_socket.h",
   ]
+
+  if (is_chromeos_ash) {
+    sources += [
+      "test/mock_bluetooth_low_energy_scan_session.cc",
+      "test/mock_bluetooth_low_energy_scan_session.h",
+    ]
+  }
 
   public_deps = [
     ":bluetooth",

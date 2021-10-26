@@ -794,15 +794,16 @@ void GetEGLInitDisplays(bool supports_angle_d3d,
                         bool supports_angle_metal,
                         const base::CommandLine* command_line,
                         std::vector<DisplayType>* init_displays) {
-  bool usingSoftwareGLForTests =
-      command_line->HasSwitch(switches::kOverrideUseSoftwareGLForTests);
+  bool usingSoftwareGL =
+      command_line->HasSwitch(switches::kOverrideUseSoftwareGLForTests) ||
+      command_line->HasSwitch(switches::kOverrideUseSoftwareGLForHeadless);
   bool isSwANGLE = GetGLImplementationParts() == GetSoftwareGLImplementation();
 
   // SwiftShader does not use the platform extensions
   // Note: Do not use SwiftShader if we've explicitly selected SwANGLE
   if (command_line->GetSwitchValueASCII(switches::kUseGL) ==
           kGLImplementationSwiftShaderForWebGLName &&
-      !(usingSoftwareGLForTests && isSwANGLE)) {
+      !(usingSoftwareGL && isSwANGLE)) {
     AddInitDisplay(init_displays, SWIFT_SHADER);
     return;
   }
@@ -1617,6 +1618,12 @@ void NativeViewGLSurfaceEGL::SetEnableSwapTimestamps() {
   DCHECK_GE(composition_start_index_, 0);
 
   use_egl_timestamps_ = !supported_egl_timestamps_.empty();
+
+  // Recreate the presentation helper here to make sure egl_timestamp_client_
+  // in |presentation_helper_| is initialized after |use_egl_timestamp_| is
+  // initialized.
+  presentation_helper_ =
+      std::make_unique<GLSurfacePresentationHelper>(GetVSyncProvider());
 }
 
 bool NativeViewGLSurfaceEGL::InitializeNativeWindow() {
@@ -2079,14 +2086,15 @@ bool NativeViewGLSurfaceEGL::ScheduleOverlayPlane(
     const gfx::Rect& bounds_rect,
     const gfx::RectF& crop_rect,
     bool enable_blend,
+    const gfx::Rect& damage_rect,
     std::unique_ptr<gfx::GpuFence> gpu_fence) {
 #if !defined(OS_ANDROID)
   NOTIMPLEMENTED();
   return false;
 #else
-  pending_overlays_.push_back(GLSurfaceOverlay(z_order, transform, image,
-                                               bounds_rect, crop_rect, true,
-                                               std::move(gpu_fence)));
+  pending_overlays_.push_back(
+      GLSurfaceOverlay(z_order, transform, image, bounds_rect, crop_rect, true,
+                       damage_rect, std::move(gpu_fence)));
   return true;
 #endif
 }

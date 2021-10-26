@@ -211,6 +211,13 @@
 #error Unknown target architecture endianness
 #endif
 
+// pthread_jit_write_protect is only available on arm64 Mac.
+#if defined(V8_OS_MACOSX) && !defined(V8_OS_IOS) && defined(V8_HOST_ARCH_ARM64)
+#define V8_HAS_PTHREAD_JIT_WRITE_PROTECT 1
+#else
+#define V8_HAS_PTHREAD_JIT_WRITE_PROTECT 0
+#endif
+
 #if defined(V8_TARGET_ARCH_IA32) || defined(V8_TARGET_ARCH_X64)
 #define V8_TARGET_ARCH_STORES_RETURN_ADDRESS_ON_STACK true
 #else
@@ -223,6 +230,12 @@ constexpr int kReturnAddressStackSlotCount =
 #if defined(V8_TARGET_ARCH_PPC) || defined(V8_TARGET_ARCH_PPC64)
 // PPC has large (64KB) physical pages.
 const int kPageSizeBits = 19;
+#elif defined(ENABLE_HUGEPAGE)
+// When enabling huge pages, adjust V8 page size to take up exactly one huge
+// page. This avoids huge-page-internal fragmentation for unused address ranges.
+const int kHugePageBits = 21;
+const int kHugePageSize = (1U) << kHugePageBits;
+const int kPageSizeBits = kHugePageBits;
 #else
 // Arm64 supports up to 64k OS pages on Linux, however 4k pages are more common
 // so we keep the V8 page size at 256k. Nonetheless, we need to make sure we

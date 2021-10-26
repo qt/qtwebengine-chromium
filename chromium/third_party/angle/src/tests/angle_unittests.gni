@@ -88,7 +88,6 @@ angle_unittests_compiler_tests_sources = [
   "compiler_tests/ConstantFoldingOverflow_test.cpp",
   "compiler_tests/ConstantFolding_test.cpp",
   "compiler_tests/ConstructCompiler_test.cpp",
-  "compiler_tests/DebugShaderPrecision_test.cpp",
   "compiler_tests/EXT_YUV_target_test.cpp",
   "compiler_tests/EXT_blend_func_extended_test.cpp",
   "compiler_tests/EXT_clip_cull_distance_test.cpp",
@@ -136,7 +135,6 @@ angle_unittests_compiler_tests_sources = [
   "compiler_tests/TypeTracking_test.cpp",
   "compiler_tests/Type_test.cpp",
   "compiler_tests/VariablePacker_test.cpp",
-  "compiler_tests/VectorizeVectorScalarArithmetic_test.cpp",
   "compiler_tests/WorkGroupSize_test.cpp",
   "test_utils/ConstantFoldingTest.cpp",
   "test_utils/ConstantFoldingTest.h",
@@ -157,6 +155,8 @@ angle_unittests_hlsl_sources = [
 
 angle_unittests_gl_sources =
     [ "../libANGLE/renderer/gl/DisplayGL_unittest.cpp" ]
+
+angle_unittests_msl_sources = [ "../tests/compiler_tests/MSLOutput_test.cpp" ]
 
 if (is_android) {
   angle_unittests_sources +=

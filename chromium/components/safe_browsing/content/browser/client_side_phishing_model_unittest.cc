@@ -17,9 +17,9 @@
 #include "base/test/scoped_command_line.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
-#include "components/safe_browsing/core/fbs/client_model_generated.h"
-#include "components/safe_browsing/core/features.h"
-#include "components/safe_browsing/core/proto/client_model.pb.h"
+#include "components/safe_browsing/core/common/fbs/client_model_generated.h"
+#include "components/safe_browsing/core/common/features.h"
+#include "components/safe_browsing/core/common/proto/client_model.pb.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -382,7 +382,9 @@ TEST(ClientSidePhishingModelTest, FlatbufferonFollowingUpdate) {
   // around. Death tests misbehave on Android, or the memory may be re-mapped.
   // See https://crbug.com/815537 and base/test/gtest_util.h.
   // Can remove this if flaky.
-#if defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID)
+  // Windows ASAN flake: crbug.com/1234652
+#if defined(GTEST_HAS_DEATH_TEST) && !defined(OS_ANDROID) && \
+    !(defined(OS_WIN) && defined(ADDRESS_SANITIZER))
   EXPECT_DEATH_IF_SUPPORTED(memset(memory_addr, 'G', 1), "");
 #endif
 }

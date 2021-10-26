@@ -7,7 +7,6 @@
 #include "base/bind.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/stl_util.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
@@ -105,12 +104,13 @@ void GoogleAppsHandler::RegisterMessages() {
 }
 
 void GoogleAppsHandler::HandleCacheGoogleAppIcon(const base::ListValue* args) {
-  int appId;
-  args->GetInteger(0, &appId);
+  const auto& list = args->GetList();
+  CHECK_GE(list.size(), 1u);
+  int app_id = list[0].GetInt();
 
   const BookmarkItem* selectedApp = nullptr;
   for (const auto& google_app : google_apps_) {
-    if (google_app.id == appId) {
+    if (google_app.id == app_id) {
       selectedApp = &google_app;
       break;
     }

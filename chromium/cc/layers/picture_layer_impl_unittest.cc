@@ -12,8 +12,8 @@
 #include <set>
 #include <utility>
 
+#include "base/cxx17_backports.h"
 #include "base/location.h"
-#include "base/stl_util.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "cc/animation/animation_host.h"
 #include "cc/base/math_util.h"
@@ -2145,7 +2145,6 @@ TEST_F(LegacySWPictureLayerImplTest, AppendQuadsDataForCheckerboard) {
   EXPECT_EQ(17500, data.checkerboarded_no_recording_content_area);
   EXPECT_EQ(22500, data.checkerboarded_needs_raster_content_area);
   EXPECT_TRUE(active_layer()->only_used_low_res_last_append_quads());
-  EXPECT_TRUE(active_layer()->DidCheckerboardQuad());
 }
 
 TEST_F(LegacySWPictureLayerImplTest, HighResRequiredWhenActiveAllReady) {

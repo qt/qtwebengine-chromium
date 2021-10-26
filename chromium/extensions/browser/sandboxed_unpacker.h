@@ -18,6 +18,7 @@
 #include "base/values.h"
 #include "extensions/browser/api/declarative_net_request/index_helper.h"
 #include "extensions/browser/api/declarative_net_request/ruleset_install_pref.h"
+#include "extensions/browser/content_verifier/content_verifier_key.h"
 #include "extensions/browser/crx_file_info.h"
 #include "extensions/browser/image_sanitizer.h"
 #include "extensions/browser/install/crx_install_error.h"
@@ -62,6 +63,12 @@ class SandboxedUnpackerClient
   virtual void ShouldComputeHashesForOffWebstoreExtension(
       scoped_refptr<const Extension> extension,
       base::OnceCallback<void(bool)> callback);
+
+  // Since data for content verification (verifier_contents.json) may be present
+  // in the CRX header, we need to verify it against public key. Normally it is
+  // Chrome Web Store public key, but may be overridden for tests.
+  virtual void GetContentVerifierKey(
+      base::OnceCallback<void(ContentVerifierKey)> callback);
 
   // temp_dir - A temporary directory containing the results of the extension
   // unpacking. The client is responsible for deleting this directory.
@@ -128,6 +135,9 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
     explicit ScopedVerifierFormatOverrideForTest(
         crx_file::VerifierFormat format);
     ~ScopedVerifierFormatOverrideForTest();
+
+   private:
+    THREAD_CHECKER(thread_checker_);
   };
 
   // Creates a SandboxedUnpacker that will do work to unpack an extension,
@@ -191,8 +201,10 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
 
   // Verifies the decompressed verified contents fetched from the header of CRX
   // and stores them if the verification of these contents is successful.
-  bool StoreVerifiedContentsInExtensionDir(
-      base::span<const uint8_t> verified_contents);
+  void StoreVerifiedContentsInExtensionDir(
+      const base::FilePath& unzip_dir,
+      base::span<const uint8_t> verified_contents,
+      ContentVerifierKey content_verifier_key);
 
   // Unpacks the extension in directory and returns the manifest.
   void Unpack(const base::FilePath& directory);
@@ -298,6 +310,9 @@ class SandboxedUnpacker : public base::RefCountedThreadSafe<SandboxedUnpacker> {
   // Creation flags to use for the extension. These flags will be used
   // when calling Extension::Create() by the CRX installer.
   int creation_flags_;
+
+  // Overridden value of VerifierFormat that is used from StartWithCrx().
+  absl::optional<crx_file::VerifierFormat> format_verifier_override_;
 
   // Sequenced task runner where file I/O operations will be performed.
   scoped_refptr<base::SequencedTaskRunner> unpacker_io_task_runner_;

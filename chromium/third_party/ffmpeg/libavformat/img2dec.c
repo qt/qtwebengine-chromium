@@ -209,7 +209,7 @@ int ff_img_read_header(AVFormatContext *s1)
         s->is_pipe = 0;
     else {
         s->is_pipe       = 1;
-        st->need_parsing = AVSTREAM_PARSE_FULL;
+        st->internal->need_parsing = AVSTREAM_PARSE_FULL;
     }
 
     if (s->ts_from_file == 2) {
@@ -222,7 +222,7 @@ int ff_img_read_header(AVFormatContext *s1)
         avpriv_set_pts_info(st, 64, 1, 1);
     else {
         avpriv_set_pts_info(st, 64, s->framerate.den, s->framerate.num);
-        st->avg_frame_rate = s->framerate;
+        st->avg_frame_rate = st->r_frame_rate = s->framerate;
     }
 
     if (s->width && s->height) {
@@ -381,9 +381,10 @@ int ff_img_read_header(AVFormatContext *s1)
  * as a dictionary, so it can be used by filters like 'drawtext'.
  */
 static int add_filename_as_pkt_side_data(char *filename, AVPacket *pkt) {
-    int metadata_len, ret;
     AVDictionary *d = NULL;
     char *packed_metadata = NULL;
+    size_t metadata_len;
+    int ret;
 
     av_dict_set(&d, "lavf.image2dec.source_path", filename, 0);
     av_dict_set(&d, "lavf.image2dec.source_basename", av_basename(filename), 0);
@@ -481,7 +482,7 @@ int ff_img_read_packet(AVFormatContext *s1, AVPacket *pkt)
             return AVERROR_EOF;
         if (s->frame_size > 0) {
             size[0] = s->frame_size;
-        } else if (!s1->streams[0]->parser) {
+        } else if (!s1->streams[0]->internal->parser) {
             size[0] = avio_size(s1->pb);
         } else {
             size[0] = 4096;
@@ -632,7 +633,7 @@ static const AVClass img2_class = {
     .option     = ff_img_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
-AVInputFormat ff_image2_demuxer = {
+const AVInputFormat ff_image2_demuxer = {
     .name           = "image2",
     .long_name      = NULL_IF_CONFIG_SMALL("image2 sequence"),
     .priv_data_size = sizeof(VideoDemuxData),
@@ -646,25 +647,25 @@ AVInputFormat ff_image2_demuxer = {
 };
 #endif
 
-const AVOption ff_img2pipe_options[] = {
+static const AVOption img2pipe_options[] = {
     { "frame_size", "force frame size in bytes", OFFSET(frame_size), AV_OPT_TYPE_INT, {.i64 = 0 }, 0, INT_MAX, DEC },
     COMMON_OPTIONS
 };
-
-#if CONFIG_IMAGE2PIPE_DEMUXER
-static const AVClass img2pipe_class = {
-    .class_name = "image2pipe demuxer",
+static const AVClass imagepipe_class = {
+    .class_name = "imagepipe demuxer",
     .item_name  = av_default_item_name,
-    .option     = ff_img2pipe_options,
+    .option     = img2pipe_options,
     .version    = LIBAVUTIL_VERSION_INT,
 };
-AVInputFormat ff_image2pipe_demuxer = {
+
+#if CONFIG_IMAGE2PIPE_DEMUXER
+const AVInputFormat ff_image2pipe_demuxer = {
     .name           = "image2pipe",
     .long_name      = NULL_IF_CONFIG_SMALL("piped image2 sequence"),
     .priv_data_size = sizeof(VideoDemuxData),
     .read_header    = ff_img_read_header,
     .read_packet    = ff_img_read_packet,
-    .priv_class     = &img2pipe_class,
+    .priv_class     = &imagepipe_class,
 };
 #endif
 
@@ -1105,20 +1106,14 @@ static int photocd_probe(const AVProbeData *p)
 }
 
 #define IMAGEAUTO_DEMUXER(imgname, codecid)\
-static const AVClass imgname ## _class = {\
-    .class_name = AV_STRINGIFY(imgname) " demuxer",\
-    .item_name  = av_default_item_name,\
-    .option     = ff_img2pipe_options,\
-    .version    = LIBAVUTIL_VERSION_INT,\
-};\
-AVInputFormat ff_image_ ## imgname ## _pipe_demuxer = {\
+const AVInputFormat ff_image_ ## imgname ## _pipe_demuxer = {\
     .name           = AV_STRINGIFY(imgname) "_pipe",\
     .long_name      = NULL_IF_CONFIG_SMALL("piped " AV_STRINGIFY(imgname) " sequence"),\
     .priv_data_size = sizeof(VideoDemuxData),\
     .read_probe     = imgname ## _probe,\
     .read_header    = ff_img_read_header,\
     .read_packet    = ff_img_read_packet,\
-    .priv_class     = & imgname ## _class,\
+    .priv_class     = &imagepipe_class,\
     .flags          = AVFMT_GENERIC_INDEX, \
     .raw_codec_id   = codecid,\
 };

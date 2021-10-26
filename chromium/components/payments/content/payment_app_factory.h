@@ -58,6 +58,9 @@ class PaymentAppFactory {
     // RenderFrameHost is being unloaded, for example.
     virtual content::RenderFrameHost* GetInitiatorRenderFrameHost() const = 0;
 
+    virtual content::GlobalRenderFrameHostId GetInitiatorRenderFrameHostId()
+        const = 0;
+
     virtual const std::vector<mojom::PaymentMethodDataPtr>& GetMethodData()
         const = 0;
     virtual std::unique_ptr<autofill::InternalAuthenticator>
@@ -83,8 +86,8 @@ class PaymentAppFactory {
     virtual const std::vector<autofill::AutofillProfile*>&
     GetBillingProfiles() = 0;
     virtual bool IsRequestedAutofillDataAvailable() = 0;
-    virtual ContentPaymentRequestDelegate* GetPaymentRequestDelegate()
-        const = 0;
+    virtual base::WeakPtr<ContentPaymentRequestDelegate>
+    GetPaymentRequestDelegate() const = 0;
 
     // Called when an app is created.
     virtual void OnPaymentAppCreated(std::unique_ptr<PaymentApp> app) = 0;

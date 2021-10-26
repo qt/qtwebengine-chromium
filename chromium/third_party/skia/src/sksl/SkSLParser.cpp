@@ -52,6 +52,9 @@ static int parse_modifier_token(Token::Kind token) {
         case Token::Kind::TK_HASSIDEEFFECTS: return Modifiers::kHasSideEffects_Flag;
         case Token::Kind::TK_INLINE:         return Modifiers::kInline_Flag;
         case Token::Kind::TK_NOINLINE:       return Modifiers::kNoInline_Flag;
+        case Token::Kind::TK_HIGHP:          return Modifiers::kHighp_Flag;
+        case Token::Kind::TK_MEDIUMP:        return Modifiers::kMediump_Flag;
+        case Token::Kind::TK_LOWP:           return Modifiers::kLowp_Flag;
         default:                             return 0;
     }
 }
@@ -105,28 +108,16 @@ void Parser::InitLayoutMap() {
     TOKEN(TRIANGLES_ADJACENCY,          "triangles_adjacency");
     TOKEN(MAX_VERTICES,                 "max_vertices");
     TOKEN(INVOCATIONS,                  "invocations");
-    TOKEN(WHEN,                         "when");
-    TOKEN(KEY,                          "key");
     TOKEN(SRGB_UNPREMUL,                "srgb_unpremul");
-    TOKEN(CTYPE,                        "ctype");
-    TOKEN(SKPMCOLOR4F,                  "SkPMColor4f");
-    TOKEN(SKV4,                         "SkV4");
-    TOKEN(SKRECT,                       "SkRect");
-    TOKEN(SKIRECT,                      "SkIRect");
-    TOKEN(SKPMCOLOR,                    "SkPMColor");
-    TOKEN(SKM44,                        "SkM44");
-    TOKEN(BOOL,                         "bool");
-    TOKEN(INT,                          "int");
-    TOKEN(FLOAT,                        "float");
     #undef TOKEN
 }
 
-Parser::Parser(const char* text, size_t length, SymbolTable& symbols, ErrorReporter& errors)
-: fText(text, length)
+Parser::Parser(skstd::string_view text, SymbolTable& symbols, ErrorReporter& errors)
+: fText(text)
 , fPushback(Token::Kind::TK_NONE, -1, -1)
 , fSymbols(symbols)
-, fErrors(errors) {
-    fLexer.start(text, length);
+, fErrors(&errors) {
+    fLexer.start(text);
     static const bool layoutMapInitialized = []{ return (void)InitLayoutMap(), true; }();
     (void) layoutMapInitialized;
 }
@@ -161,21 +152,11 @@ std::unique_ptr<ASTFile> Parser::compilationUnit() {
                 return std::move(fFile);
             case Token::Kind::TK_DIRECTIVE: {
                 ASTNode::ID dir = this->directive();
-                if (fErrors.errorCount()) {
+                if (fErrors->errorCount()) {
                     return nullptr;
                 }
                 if (dir) {
                     getNode(result).addChild(dir);
-                }
-                break;
-            }
-            case Token::Kind::TK_SECTION: {
-                ASTNode::ID section = this->section();
-                if (fErrors.errorCount()) {
-                    return nullptr;
-                }
-                if (section) {
-                    getNode(result).addChild(section);
                 }
                 break;
             }
@@ -185,7 +166,7 @@ std::unique_ptr<ASTFile> Parser::compilationUnit() {
             }
             default: {
                 ASTNode::ID decl = this->declaration();
-                if (fErrors.errorCount()) {
+                if (fErrors->errorCount()) {
                     return nullptr;
                 }
                 if (decl) {
@@ -270,8 +251,8 @@ bool Parser::expectIdentifier(Token* result) {
     return true;
 }
 
-StringFragment Parser::text(Token token) {
-    return StringFragment(fText.begin() + token.fOffset, token.fLength);
+skstd::string_view Parser::text(Token token) {
+    return skstd::string_view(fText.begin() + token.fOffset, token.fLength);
 }
 
 void Parser::error(Token token, String msg) {
@@ -279,10 +260,10 @@ void Parser::error(Token token, String msg) {
 }
 
 void Parser::error(int offset, String msg) {
-    fErrors.error(offset, msg);
+    fErrors->error(offset, msg);
 }
 
-bool Parser::isType(StringFragment name) {
+bool Parser::isType(skstd::string_view name) {
     const Symbol* s = fSymbols[name];
     return s && s->is<Type>();
 }
@@ -300,7 +281,7 @@ ASTNode::ID Parser::directive() {
     if (!this->expect(Token::Kind::TK_DIRECTIVE, "a directive", &start)) {
         return ASTNode::ID::Invalid();
     }
-    StringFragment text = this->text(start);
+    skstd::string_view text = this->text(start);
     if (text == "#extension") {
         Token name;
         if (!this->expectIdentifier(&name)) {
@@ -320,131 +301,11 @@ ASTNode::ID Parser::directive() {
     }
 }
 
-/* SECTION LBRACE (LPAREN IDENTIFIER RPAREN)? <any sequence of tokens with balanced braces>
-   RBRACE */
-ASTNode::ID Parser::section() {
-    Token start;
-    if (!this->expect(Token::Kind::TK_SECTION, "a section token", &start)) {
-        return ASTNode::ID::Invalid();
-    }
-    StringFragment argument;
-    if (this->peek().fKind == Token::Kind::TK_LPAREN) {
-        this->nextToken();
-        Token argToken;
-        if (!this->expectIdentifier(&argToken)) {
-            return ASTNode::ID::Invalid();
-        }
-        argument = this->text(argToken);
-        if (!this->expect(Token::Kind::TK_RPAREN, "')'")) {
-            return ASTNode::ID::Invalid();
-        }
-    }
-    if (!this->expect(Token::Kind::TK_LBRACE, "'{'")) {
-        return ASTNode::ID::Invalid();
-    }
-    StringFragment text;
-    Token codeStart = this->nextRawToken();
-    size_t startOffset = codeStart.fOffset;
-    this->pushback(codeStart);
-    text.fChars = fText.begin() + startOffset;
-    int level = 1;
-    for (;;) {
-        Token next = this->nextRawToken();
-        switch (next.fKind) {
-            case Token::Kind::TK_LBRACE:
-                ++level;
-                break;
-            case Token::Kind::TK_RBRACE:
-                --level;
-                break;
-            case Token::Kind::TK_END_OF_FILE:
-                this->error(start, "reached end of file while parsing section");
-                return ASTNode::ID::Invalid();
-            default:
-                break;
-        }
-        if (!level) {
-            text.fLength = next.fOffset - startOffset;
-            break;
-        }
-    }
-    StringFragment name = this->text(start);
-    ++name.fChars;
-    --name.fLength;
-    return this->createNode(start.fOffset, ASTNode::Kind::kSection,
-                            ASTNode::SectionData(name, argument, text));
-}
-
-/* ENUM CLASS IDENTIFIER LBRACE (IDENTIFIER (EQ expression)? (COMMA IDENTIFIER (EQ expression))*)?
-   RBRACE */
-ASTNode::ID Parser::enumDeclaration() {
-    Token start;
-    if (!this->expect(Token::Kind::TK_ENUM, "'enum'", &start)) {
-        return ASTNode::ID::Invalid();
-    }
-    if (!this->expect(Token::Kind::TK_CLASS, "'class'")) {
-        return ASTNode::ID::Invalid();
-    }
-    Token name;
-    if (!this->expectIdentifier(&name)) {
-        return ASTNode::ID::Invalid();
-    }
-    if (!this->expect(Token::Kind::TK_LBRACE, "'{'")) {
-        return ASTNode::ID::Invalid();
-    }
-    fSymbols.add(Type::MakeEnumType(this->text(name)));
-    ASTNode::ID result = this->createNode(name.fOffset, ASTNode::Kind::kEnum, this->text(name));
-    if (!this->checkNext(Token::Kind::TK_RBRACE)) {
-        Token id;
-        if (!this->expectIdentifier(&id)) {
-            return ASTNode::ID::Invalid();
-        }
-        if (this->checkNext(Token::Kind::TK_EQ)) {
-            ASTNode::ID value = this->assignmentExpression();
-            if (!value) {
-                return ASTNode::ID::Invalid();
-            }
-            ASTNode::ID child = this->addChild(
-                    result, this->createNode(id.fOffset, ASTNode::Kind::kEnumCase, this->text(id)));
-            getNode(child).addChild(value);
-        } else {
-            this->addChild(result,
-                           this->createNode(id.fOffset, ASTNode::Kind::kEnumCase, this->text(id)));
-        }
-        while (!this->checkNext(Token::Kind::TK_RBRACE)) {
-            if (!this->expect(Token::Kind::TK_COMMA, "','")) {
-                return ASTNode::ID::Invalid();
-            }
-            if (!this->expectIdentifier(&id)) {
-                return ASTNode::ID::Invalid();
-            }
-            if (this->checkNext(Token::Kind::TK_EQ)) {
-                ASTNode::ID value = this->assignmentExpression();
-                if (!value) {
-                    return ASTNode::ID::Invalid();
-                }
-                ASTNode::ID child = this->addChild(
-                        result,
-                        this->createNode(id.fOffset, ASTNode::Kind::kEnumCase, this->text(id)));
-                getNode(child).addChild(value);
-            } else {
-                this->addChild(
-                        result,
-                        this->createNode(id.fOffset, ASTNode::Kind::kEnumCase, this->text(id)));
-            }
-        }
-    }
-    this->expect(Token::Kind::TK_SEMICOLON, "';'");
-    return result;
-}
-
-/* enumDeclaration | modifiers (structVarDeclaration | type IDENTIFIER ((LPAREN parameter
-   (COMMA parameter)* RPAREN (block | SEMICOLON)) | SEMICOLON) | interfaceBlock) */
+/* modifiers (interfaceBlock | structVarDeclaration | SEMICOLON |
+   type IDENTIFIER (varDeclarationEnd | LPAREN functionDeclarationEnd))) */
 ASTNode::ID Parser::declaration() {
     Token lookahead = this->peek();
     switch (lookahead.fKind) {
-        case Token::Kind::TK_ENUM:
-            return this->enumDeclaration();
         case Token::Kind::TK_SEMICOLON:
             this->error(lookahead.fOffset, "expected a declaration, but found ';'");
             return ASTNode::ID::Invalid();
@@ -473,38 +334,51 @@ ASTNode::ID Parser::declaration() {
         return ASTNode::ID::Invalid();
     }
     if (this->checkNext(Token::Kind::TK_LPAREN)) {
-        ASTNode::ID result = this->createNode(name.fOffset, ASTNode::Kind::kFunction);
-        ASTNode::FunctionData fd(modifiers, this->text(name), 0);
-        getNode(result).addChild(type);
-        if (this->peek().fKind != Token::Kind::TK_RPAREN) {
-            for (;;) {
-                ASTNode::ID parameter = this->parameter();
-                if (!parameter) {
-                    return ASTNode::ID::Invalid();
-                }
-                ++fd.fParameterCount;
-                getNode(result).addChild(parameter);
-                if (!this->checkNext(Token::Kind::TK_COMMA)) {
-                    break;
-                }
-            }
-        }
-        getNode(result).setFunctionData(fd);
-        if (!this->expect(Token::Kind::TK_RPAREN, "')'")) {
-            return ASTNode::ID::Invalid();
-        }
-        ASTNode::ID body;
-        if (!this->checkNext(Token::Kind::TK_SEMICOLON)) {
-            body = this->block();
-            if (!body) {
-                return ASTNode::ID::Invalid();
-            }
-            getNode(result).addChild(body);
-        }
-        return result;
+        return this->functionDeclarationEnd(modifiers, type, name);
     } else {
         return this->varDeclarationEnd(modifiers, type, this->text(name));
     }
+}
+
+/* (RPAREN | VOID RPAREN | parameter (COMMA parameter)* RPAREN) (block | SEMICOLON) */
+ASTNode::ID Parser::functionDeclarationEnd(Modifiers modifiers,
+                                           ASTNode::ID type,
+                                           const Token& name) {
+    ASTNode::ID result = this->createNode(name.fOffset, ASTNode::Kind::kFunction);
+    ASTNode::FunctionData fd(modifiers, this->text(name), 0);
+    getNode(result).addChild(type);
+    Token lookahead = this->peek();
+    if (lookahead.fKind == Token::Kind::TK_RPAREN) {
+        // `()` means no parameters at all.
+    } else if (lookahead.fKind == Token::Kind::TK_IDENTIFIER && this->text(lookahead) == "void") {
+        // `(void)` also means no parameters at all.
+        this->nextToken();
+    } else {
+        for (;;) {
+            ASTNode::ID parameter = this->parameter();
+            if (!parameter) {
+                return ASTNode::ID::Invalid();
+            }
+            ++fd.fParameterCount;
+            getNode(result).addChild(parameter);
+            if (!this->checkNext(Token::Kind::TK_COMMA)) {
+                break;
+            }
+        }
+    }
+    getNode(result).setFunctionData(fd);
+    if (!this->expect(Token::Kind::TK_RPAREN, "')'")) {
+        return ASTNode::ID::Invalid();
+    }
+    ASTNode::ID body;
+    if (!this->checkNext(Token::Kind::TK_SEMICOLON)) {
+        body = this->block();
+        if (!body) {
+            return ASTNode::ID::Invalid();
+        }
+        getNode(result).addChild(body);
+    }
+    return result;
 }
 
 /* (varDeclarations | expressionStatement) */
@@ -516,13 +390,17 @@ ASTNode::ID Parser::varDeclarationsOrExpressionStatement() {
         return this->varDeclarations();
     }
 
-    if (this->isType(this->text(nextToken))) {
+    if (nextToken.fKind == Token::Kind::TK_HIGHP ||
+        nextToken.fKind == Token::Kind::TK_MEDIUMP ||
+        nextToken.fKind == Token::Kind::TK_LOWP ||
+        this->isType(this->text(nextToken))) {
         // Statements that begin with a typename are most often variable declarations, but
         // occasionally the type is part of a constructor, and these are actually expression-
         // statements in disguise. First, attempt the common case: parse it as a vardecl.
         Checkpoint checkpoint(this);
         VarDeclarationsPrefix prefix;
         if (this->varDeclarationsPrefix(&prefix)) {
+            checkpoint.accept();
             return this->varDeclarationEnd(prefix.modifiers, prefix.type, this->text(prefix.name));
         }
 
@@ -581,7 +459,7 @@ ASTNode::ID Parser::structDeclaration() {
                         "modifier '" + desc + "' is not permitted on a struct field");
         }
 
-        const Symbol* symbol = fSymbols[(declsNode.begin() + 1)->getString()];
+        const Symbol* symbol = fSymbols[(declsNode.begin() + 1)->getStringView()];
         SkASSERT(symbol);
         const Type* type = &symbol->as<Type>();
         if (type->isOpaque()) {
@@ -648,7 +526,7 @@ ASTNode::ID Parser::structVarDeclaration(Modifiers modifiers) {
 
 /* (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)? (COMMA IDENTIFER
    (LBRACKET expression? RBRACKET)* (EQ assignmentExpression)?)* SEMICOLON */
-ASTNode::ID Parser::varDeclarationEnd(Modifiers mods, ASTNode::ID type, StringFragment name) {
+ASTNode::ID Parser::varDeclarationEnd(Modifiers mods, ASTNode::ID type, skstd::string_view name) {
     int offset = this->peek().fOffset;
     ASTNode::ID result = this->createNode(offset, ASTNode::Kind::kVarDeclarations);
     this->addChild(result, this->createNode(offset, ASTNode::Kind::kModifiers, mods));
@@ -748,7 +626,7 @@ ASTNode::ID Parser::parameter() {
         if (!this->expect(Token::Kind::TK_INT_LITERAL, "a positive integer", &sizeToken)) {
             return ASTNode::ID::Invalid();
         }
-        StringFragment arraySizeFrag = this->text(sizeToken);
+        skstd::string_view arraySizeFrag = this->text(sizeToken);
         SKSL_INT arraySize;
         if (!SkSL::stoi(arraySizeFrag, &arraySize)) {
             this->error(sizeToken, "array size is too large: " + arraySizeFrag);
@@ -773,7 +651,7 @@ int Parser::layoutInt() {
     if (!this->expect(Token::Kind::TK_INT_LITERAL, "a non-negative integer", &resultToken)) {
         return -1;
     }
-    StringFragment resultFrag = this->text(resultToken);
+    skstd::string_view resultFrag = this->text(resultToken);
     SKSL_INT resultValue;
     if (!SkSL::stoi(resultFrag, &resultValue)) {
         this->error(resultToken, "value in layout is too large: " + resultFrag);
@@ -783,92 +661,15 @@ int Parser::layoutInt() {
 }
 
 /** EQ IDENTIFIER */
-StringFragment Parser::layoutIdentifier() {
+skstd::string_view Parser::layoutIdentifier() {
     if (!this->expect(Token::Kind::TK_EQ, "'='")) {
-        return StringFragment();
+        return skstd::string_view();
     }
     Token resultToken;
     if (!this->expectIdentifier(&resultToken)) {
-        return StringFragment();
+        return skstd::string_view();
     }
     return this->text(resultToken);
-}
-
-
-/** EQ <any sequence of tokens with balanced parentheses and no top-level comma> */
-StringFragment Parser::layoutCode() {
-    if (!this->expect(Token::Kind::TK_EQ, "'='")) {
-        return "";
-    }
-    Token start = this->nextRawToken();
-    this->pushback(start);
-    StringFragment code;
-    code.fChars = fText.begin() + start.fOffset;
-    int level = 1;
-    bool done = false;
-    while (!done) {
-        Token next = this->nextRawToken();
-        switch (next.fKind) {
-            case Token::Kind::TK_LPAREN:
-                ++level;
-                break;
-            case Token::Kind::TK_RPAREN:
-                --level;
-                break;
-            case Token::Kind::TK_COMMA:
-                if (level == 1) {
-                    done = true;
-                }
-                break;
-            case Token::Kind::TK_END_OF_FILE:
-                this->error(start, "reached end of file while parsing layout");
-                return "";
-            default:
-                break;
-        }
-        if (!level) {
-            done = true;
-        }
-        if (done) {
-            code.fLength = next.fOffset - start.fOffset;
-            this->pushback(std::move(next));
-        }
-    }
-    return code;
-}
-
-Layout::CType Parser::layoutCType() {
-    if (this->expect(Token::Kind::TK_EQ, "'='")) {
-        Token t = this->nextToken();
-        String text = this->text(t);
-        auto found = layoutTokens->find(text);
-        if (found != layoutTokens->end()) {
-            switch (found->second) {
-                case LayoutToken::SKPMCOLOR4F:
-                    return Layout::CType::kSkPMColor4f;
-                case LayoutToken::SKV4:
-                    return Layout::CType::kSkV4;
-                case LayoutToken::SKRECT:
-                    return Layout::CType::kSkRect;
-                case LayoutToken::SKIRECT:
-                    return Layout::CType::kSkIRect;
-                case LayoutToken::SKPMCOLOR:
-                    return Layout::CType::kSkPMColor;
-                case LayoutToken::BOOL:
-                    return Layout::CType::kBool;
-                case LayoutToken::INT:
-                    return Layout::CType::kInt32;
-                case LayoutToken::FLOAT:
-                    return Layout::CType::kFloat;
-                case LayoutToken::SKM44:
-                    return Layout::CType::kSkM44;
-                default:
-                    break;
-            }
-        }
-        this->error(t, "unsupported ctype");
-    }
-    return Layout::CType::kDefault;
 }
 
 /* LAYOUT LPAREN IDENTIFIER (EQ INT_LITERAL)? (COMMA IDENTIFIER (EQ INT_LITERAL)?)* RPAREN */
@@ -884,16 +685,14 @@ Layout Parser::layout() {
     Layout::Primitive primitive = Layout::kUnspecified_Primitive;
     int maxVertices = -1;
     int invocations = -1;
-    StringFragment when;
-    Layout::CType ctype = Layout::CType::kDefault;
     if (this->checkNext(Token::Kind::TK_LAYOUT)) {
         if (!this->expect(Token::Kind::TK_LPAREN, "'('")) {
             return Layout(flags, location, offset, binding, index, set, builtin,
-                          inputAttachmentIndex, primitive, maxVertices, invocations, when, ctype);
+                          inputAttachmentIndex, primitive, maxVertices, invocations);
         }
         for (;;) {
             Token t = this->nextToken();
-            String text = this->text(t);
+            String text(this->text(t));
             auto setFlag = [&](Layout::Flag f) {
                 if (flags & f) {
                     this->error(t, "layout qualifier '" + text + "' appears more than once");
@@ -922,9 +721,6 @@ Layout Parser::layout() {
                         break;
                     case LayoutToken::SRGB_UNPREMUL:
                         setFlag(Layout::kSRGBUnpremul_Flag);
-                        break;
-                    case LayoutToken::KEY:
-                        setFlag(Layout::kKey_Flag);
                         break;
                     case LayoutToken::LOCATION:
                         setFlag(Layout::kLocation_Flag);
@@ -983,14 +779,6 @@ Layout Parser::layout() {
                         setFlag(Layout::kInvocations_Flag);
                         invocations = this->layoutInt();
                         break;
-                    case LayoutToken::WHEN:
-                        setFlag(Layout::kWhen_Flag);
-                        when = this->layoutCode();
-                        break;
-                    case LayoutToken::CTYPE:
-                        setFlag(Layout::kCType_Flag);
-                        ctype = this->layoutCType();
-                        break;
                     default:
                         this->error(t, "'" + text + "' is not a valid layout qualifier");
                         break;
@@ -1007,7 +795,7 @@ Layout Parser::layout() {
         }
     }
     return Layout(flags, location, offset, binding, index, set, builtin, inputAttachmentIndex,
-                  primitive, maxVertices, invocations, when, ctype);
+                  primitive, maxVertices, invocations);
 }
 
 /* layout? (UNIFORM | CONST | IN | OUT | INOUT | FLAT | NOPERSPECTIVE | INLINE)* */
@@ -1068,6 +856,9 @@ ASTNode::ID Parser::statement() {
         case Token::Kind::TK_SEMICOLON:
             this->nextToken();
             return this->createNode(start.fOffset, ASTNode::Kind::kBlock);
+        case Token::Kind::TK_HIGHP:
+        case Token::Kind::TK_MEDIUMP:
+        case Token::Kind::TK_LOWP:
         case Token::Kind::TK_CONST:
         case Token::Kind::TK_IDENTIFIER:
             return this->varDeclarationsOrExpressionStatement();
@@ -1143,7 +934,7 @@ ASTNode::ID Parser::interfaceBlock(Modifiers mods) {
     }
     this->nextToken();
     std::vector<ASTNode> sizes;
-    StringFragment instanceName;
+    skstd::string_view instanceName;
     Token instanceNameToken;
     if (this->checkNext(Token::Kind::TK_IDENTIFIER, &instanceNameToken)) {
         id.fInstanceName = this->text(instanceNameToken);
@@ -1962,7 +1753,6 @@ ASTNode::ID Parser::postfixExpression() {
             case Token::Kind::TK_LPAREN:
             case Token::Kind::TK_PLUSPLUS:
             case Token::Kind::TK_MINUSMINUS:
-            case Token::Kind::TK_COLONCOLON:
                 if (!depth.increase()) {
                     return ASTNode::ID::Invalid();
                 }
@@ -1978,7 +1768,7 @@ ASTNode::ID Parser::postfixExpression() {
 }
 
 /* LBRACKET expression? RBRACKET | DOT IDENTIFIER | LPAREN parameters RPAREN |
-   PLUSPLUS | MINUSMINUS | COLONCOLON IDENTIFIER | FLOAT_LITERAL [IDENTIFIER] */
+   PLUSPLUS | MINUSMINUS | FLOAT_LITERAL [IDENTIFIER] */
 ASTNode::ID Parser::suffix(ASTNode::ID base) {
     SkASSERT(base);
     Token next = this->nextToken();
@@ -2003,20 +1793,9 @@ ASTNode::ID Parser::suffix(ASTNode::ID base) {
             getNode(result).addChild(e);
             return result;
         }
-        case Token::Kind::TK_COLONCOLON: {
-            int offset = this->peek().fOffset;
-            StringFragment text;
-            if (this->identifier(&text)) {
-                ASTNode::ID result = this->createNode(offset, ASTNode::Kind::kScope,
-                                                      std::move(text));
-                getNode(result).addChild(base);
-                return result;
-            }
-            return ASTNode::ID::Invalid();
-        }
         case Token::Kind::TK_DOT: {
             int offset = this->peek().fOffset;
-            StringFragment text;
+            skstd::string_view text;
             if (this->identifier(&text)) {
                 ASTNode::ID result = this->createNode(offset, ASTNode::Kind::kField,
                                                       std::move(text));
@@ -2028,12 +1807,11 @@ ASTNode::ID Parser::suffix(ASTNode::ID base) {
         case Token::Kind::TK_FLOAT_LITERAL: {
             // Swizzles that start with a constant number, e.g. '.000r', will be tokenized as
             // floating point literals, possibly followed by an identifier. Handle that here.
-            StringFragment field = this->text(next);
-            SkASSERT(field.fChars[0] == '.');
-            ++field.fChars;
-            --field.fLength;
-            for (size_t i = 0; i < field.fLength; ++i) {
-                if (field.fChars[i] != '0' && field.fChars[i] != '1') {
+            skstd::string_view field = this->text(next);
+            SkASSERT(field[0] == '.');
+            field.remove_prefix(1);
+            for (auto iter = field.begin(); iter != field.end(); ++iter) {
+                if (*iter != '0' && *iter != '1') {
                     this->error(next, "invalid swizzle");
                     return ASTNode::ID::Invalid();
                 }
@@ -2042,7 +1820,7 @@ ASTNode::ID Parser::suffix(ASTNode::ID base) {
             // identifiers that directly follow the float
             Token id = this->nextRawToken();
             if (id.fKind == Token::Kind::TK_IDENTIFIER) {
-                field.fLength += id.fLength;
+                field = skstd::string_view(field.data(), field.length() + id.fLength);
             } else {
                 this->pushback(id);
             }
@@ -2087,7 +1865,7 @@ ASTNode::ID Parser::term() {
     Token t = this->peek();
     switch (t.fKind) {
         case Token::Kind::TK_IDENTIFIER: {
-            StringFragment text;
+            skstd::string_view text;
             if (this->identifier(&text)) {
                 return this->createNode(t.fOffset, ASTNode::Kind::kIdentifier, std::move(text));
             }
@@ -2141,7 +1919,7 @@ bool Parser::intLiteral(SKSL_INT* dest) {
     if (!this->expect(Token::Kind::TK_INT_LITERAL, "integer literal", &t)) {
         return false;
     }
-    StringFragment s = this->text(t);
+    skstd::string_view s = this->text(t);
     if (!SkSL::stoi(s, dest)) {
         this->error(t, "integer is too large: " + s);
         return false;
@@ -2156,7 +1934,7 @@ bool Parser::floatLiteral(SKSL_FLOAT* dest) {
     if (!this->expect(Token::Kind::TK_FLOAT_LITERAL, "float literal", &t)) {
         return false;
     }
-    StringFragment s = this->text(t);
+    skstd::string_view s = this->text(t);
     if (!SkSL::stod(s, dest)) {
         this->error(t, "floating-point value is too large: " + s);
         return false;
@@ -2181,7 +1959,7 @@ bool Parser::boolLiteral(bool* dest) {
 }
 
 /* IDENTIFIER */
-bool Parser::identifier(StringFragment* dest) {
+bool Parser::identifier(skstd::string_view* dest) {
     Token t;
     if (this->expect(Token::Kind::TK_IDENTIFIER, "identifier", &t)) {
         *dest = this->text(t);

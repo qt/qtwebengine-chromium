@@ -11,6 +11,7 @@
 #include <stack>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 
 #include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
@@ -208,7 +209,7 @@ private:
 
     void writeProgramElement(const ProgramElement& pe, OutputStream& out);
 
-    SpvId writeInterfaceBlock(const InterfaceBlock& intf, bool appendRTHeight = true);
+    SpvId writeInterfaceBlock(const InterfaceBlock& intf, bool appendRTFlip = true);
 
     SpvId writeFunctionStart(const FunctionDeclaration& f, OutputStream& out);
 
@@ -236,6 +237,14 @@ private:
     void writeGLSLExtendedInstruction(const Type& type, SpvId id, SpvId floatInst,
                                       SpvId signedInst, SpvId unsignedInst,
                                       const std::vector<SpvId>& args, OutputStream& out);
+
+    /**
+     * Promotes an expression to a vector. If the expression is already a vector with vectorSize
+     * columns, returns it unmodified. If the expression is a scalar, either promotes it to a
+     * vector (if vectorSize > 1) or returns it unmodified (if vectorSize == 1). Asserts if the
+     * expression is already a vector and it does not have vectorSize columns.
+     */
+    SpvId vectorize(const Expression& expr, int vectorSize, OutputStream& out);
 
     /**
      * Given a list of potentially mixed scalars and vectors, promotes the scalars to match the
@@ -287,9 +296,8 @@ private:
      */
     SpvId writeMatrixCopy(SpvId src, const Type& srcType, const Type& dstType, OutputStream& out);
 
-    void addColumnEntry(SpvId columnType, Precision precision, std::vector<SpvId>* currentColumn,
-                        std::vector<SpvId>* columnIds, int* currentCount, int rows, SpvId entry,
-                        OutputStream& out);
+    void addColumnEntry(const Type& columnType, std::vector<SpvId>* currentColumn,
+                        std::vector<SpvId>* columnIds, int rows, SpvId entry, OutputStream& out);
 
     SpvId writeConstructorCompound(const ConstructorCompound& c, OutputStream& out);
 
@@ -397,19 +405,20 @@ private:
 
     void writeWord(int32_t word, OutputStream& out);
 
-    void writeString(const char* string, size_t length, OutputStream& out);
+    void writeString(skstd::string_view s, OutputStream& out);
 
     void writeLabel(SpvId id, OutputStream& out);
 
     void writeInstruction(SpvOp_ opCode, OutputStream& out);
 
-    void writeInstruction(SpvOp_ opCode, StringFragment string, OutputStream& out);
+    void writeInstruction(SpvOp_ opCode, skstd::string_view string, OutputStream& out);
 
     void writeInstruction(SpvOp_ opCode, int32_t word1, OutputStream& out);
 
-    void writeInstruction(SpvOp_ opCode, int32_t word1, StringFragment string, OutputStream& out);
+    void writeInstruction(SpvOp_ opCode, int32_t word1, skstd::string_view string,
+                          OutputStream& out);
 
-    void writeInstruction(SpvOp_ opCode, int32_t word1, int32_t word2, StringFragment string,
+    void writeInstruction(SpvOp_ opCode, int32_t word1, int32_t word2, skstd::string_view string,
                           OutputStream& out);
 
     void writeInstruction(SpvOp_ opCode, int32_t word1, int32_t word2, OutputStream& out);
@@ -435,6 +444,8 @@ private:
 
     void writeGeometryShaderExecutionMode(SpvId entryPoint, OutputStream& out);
 
+    bool isDead(const Variable& var) const;
+
     MemoryLayout memoryLayoutForVariable(const Variable&) const;
 
     struct EntrypointAdapter {
@@ -453,6 +464,8 @@ private:
     };
 
     void writeUniformBuffer(std::shared_ptr<SymbolTable> topLevelSymbolTable);
+
+    void addRTFlipUniform(int offset);
 
     const Context& fContext;
     const MemoryLayout fDefaultLayout;
@@ -484,9 +497,7 @@ private:
     SpvId fCurrentBlock;
     std::stack<SpvId> fBreakTarget;
     std::stack<SpvId> fContinueTarget;
-    SpvId fRTHeightStructId = (SpvId) -1;
-    SpvId fRTHeightFieldIndex = (SpvId) -1;
-    SpvStorageClass_ fRTHeightStorageClass;
+    bool fWroteRTFlip = false;
     // holds variables synthesized during output, for lifetime purposes
     SymbolTable fSynthetics;
     int fSkInCount = 1;
@@ -495,6 +506,7 @@ private:
     UniformBuffer fUniformBuffer;
     std::vector<const VarDeclaration*> fTopLevelUniforms;
     std::unordered_map<const Variable*, int> fTopLevelUniformMap; //<var, UniformBuffer field index>
+    std::unordered_set<const Variable*> fSPIRVBonusVariables;
     SpvId fUniformBufferId = -1;
 
     friend class PointerLValue;

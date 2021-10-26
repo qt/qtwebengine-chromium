@@ -173,11 +173,17 @@ DEF_TEST(Skottie_Properties, reporter) {
             fTransforms.push_back({SkString(node_name), lh()});
         }
 
-        void onEnterNode(const char node_name[]) override {
+        void onEnterNode(const char node_name[], PropertyObserver::NodeType node_type) override {
+            if (node_name == nullptr) {
+                return;
+            }
             fCurrentNode = fCurrentNode.empty() ? node_name : fCurrentNode + "." + node_name;
         }
 
-        void onLeavingNode(const char node_name[]) override {
+        void onLeavingNode(const char node_name[], PropertyObserver::NodeType node_type) override {
+            if (node_name == nullptr) {
+                return;
+            }
             auto length = strlen(node_name);
             fCurrentNode =
                     fCurrentNode.length() > length
@@ -203,9 +209,9 @@ DEF_TEST(Skottie_Properties, reporter) {
     };
 
     // Returns a single specified typeface for all requests.
-    class DummyFontMgr : public SkFontMgr {
+    class FakeFontMgr : public SkFontMgr {
      public:
-        DummyFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(test_font) {}
+        FakeFontMgr(sk_sp<SkTypeface> test_font) : fTestFont(test_font) {}
 
         int onCountFamilies() const override { return 1; }
         void onGetFamilyName(int index, SkString* familyName) const override {}
@@ -231,9 +237,6 @@ DEF_TEST(Skottie_Properties, reporter) {
                                                    const SkFontArguments&) const override {
             return fTestFont;
         }
-        sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
-            return fTestFont;
-        }
         sk_sp<SkTypeface> onMakeFromFile(const char path[], int ttcIndex) const override {
             return fTestFont;
         }
@@ -244,7 +247,7 @@ DEF_TEST(Skottie_Properties, reporter) {
         sk_sp<SkTypeface> fTestFont;
     };
 
-    sk_sp<DummyFontMgr> test_font_manager = sk_make_sp<DummyFontMgr>(test_typeface);
+    sk_sp<FakeFontMgr> test_font_manager = sk_make_sp<FakeFontMgr>(test_typeface);
     SkMemoryStream stream(json, strlen(json));
     auto observer = sk_make_sp<TestPropertyObserver>();
 
@@ -406,8 +409,6 @@ static SkRect ComputeBlobBounds(const sk_sp<SkTextBlob>& blob) {
     }
 
     SkAutoSTArray<16, SkRect> glyphBounds;
-
-    SkTextBlobRunIterator it(blob.get());
 
     for (SkTextBlobRunIterator it(blob.get()); !it.done(); it.next()) {
         glyphBounds.reset(SkToInt(it.glyphCount()));
@@ -653,9 +654,6 @@ DEF_TEST(Skottie_Shaper_ExplicitFontMgr, reporter) {
         }
         sk_sp<SkTypeface> onMakeFromStreamArgs(std::unique_ptr<SkStreamAsset>,
                                                const SkFontArguments&) const override {
-            return nullptr;
-        }
-        sk_sp<SkTypeface> onMakeFromFontData(std::unique_ptr<SkFontData>) const override {
             return nullptr;
         }
         sk_sp<SkTypeface> onMakeFromFile(const char[], int) const override {

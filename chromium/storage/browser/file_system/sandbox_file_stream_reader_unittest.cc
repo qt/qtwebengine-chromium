@@ -15,7 +15,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/test/task_environment.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
@@ -25,9 +24,11 @@
 #include "storage/browser/file_system/file_stream_test_utils.h"
 #include "storage/browser/file_system/file_system_context.h"
 #include "storage/browser/file_system/file_system_file_util.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -44,12 +45,12 @@ class SandboxFileStreamReaderTest : public FileStreamReaderTest {
   void SetUp() override {
     ASSERT_TRUE(dir_.CreateUniqueTempDir());
 
-    file_system_context_ =
-        CreateFileSystemContextForTesting(nullptr, dir_.GetPath());
+    file_system_context_ = CreateFileSystemContextForTesting(
+        /*quota_manager_proxy=*/nullptr, dir_.GetPath());
 
     file_system_context_->OpenFileSystem(
-        url::Origin::Create(GURL(kURLOrigin)), kFileSystemTypeTemporary,
-        OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
+        blink::StorageKey::CreateFromStringForTesting(kURLOrigin),
+        kFileSystemTypeTemporary, OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
         base::BindOnce([](const GURL& root_url, const std::string& name,
                           base::File::Error result) {
           ASSERT_EQ(base::File::FILE_OK, result);
@@ -101,8 +102,8 @@ class SandboxFileStreamReaderTest : public FileStreamReaderTest {
 
   FileSystemURL GetFileSystemURL(const std::string& file_name) {
     return file_system_context_->CreateCrackedFileSystemURL(
-        url::Origin::Create(GURL(kURLOrigin)), kFileSystemTypeTemporary,
-        base::FilePath().AppendASCII(file_name));
+        blink::StorageKey::CreateFromStringForTesting(kURLOrigin),
+        kFileSystemTypeTemporary, base::FilePath().AppendASCII(file_name));
   }
 
  private:

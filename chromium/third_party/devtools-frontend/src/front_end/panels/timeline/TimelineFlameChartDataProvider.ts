@@ -42,11 +42,11 @@ import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
-import type {PerformanceModel} from './PerformanceModel.js'; // eslint-disable-line no-unused-vars
+import type {PerformanceModel} from './PerformanceModel.js';
 import {FlameChartStyle, Selection, TimelineFlameChartMarker} from './TimelineFlameChartView.js';
 import {TimelineSelection} from './TimelinePanel.js';
 import type {TimelineCategory} from './TimelineUIUtils.js';
-import {TimelineUIUtils} from './TimelineUIUtils.js';  // eslint-disable-line no-unused-vars
+import {TimelineUIUtils} from './TimelineUIUtils.js';
 
 const UIStrings = {
   /**
@@ -769,9 +769,14 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
 
     const metricEvents: SDK.TracingModel.Event[] = [];
     const lcpEvents = [];
+    const layoutShifts = [];
     const timelineModel = this._performanceModel.timelineModel();
     for (const track of this._model.tracks()) {
       for (const event of track.events) {
+        if (timelineModel.isLayoutShiftEvent(event)) {
+          layoutShifts.push(event);
+        }
+
         if (!timelineModel.isMarkerEvent(event)) {
           continue;
         }
@@ -800,6 +805,41 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
       const latestEvents = latestCandidates.filter(e => timelineModel.isLCPCandidateEvent(e));
 
       metricEvents.push(...latestEvents);
+    }
+
+    if (layoutShifts.length) {
+      const gapTimeInMs = 1000;
+      const limitTimeInMs = 5000;
+      let firstTimestamp = Number.NEGATIVE_INFINITY;
+      let previousTimestamp = Number.NEGATIVE_INFINITY;
+      let maxScore = 0;
+      let currentClusterId = 1;
+      let currentClusterScore = 0;
+      let currentCluster = new Set<SDK.TracingModel.Event>();
+
+      for (const e of layoutShifts) {
+        if (e.args['data']['had_recent_input'] || e.args['data']['weighted_score_delta'] === undefined) {
+          continue;
+        }
+
+        if (e.startTime - firstTimestamp > limitTimeInMs || e.startTime - previousTimestamp > gapTimeInMs) {
+          firstTimestamp = e.startTime;
+
+          for (const layoutShift of currentCluster) {
+            layoutShift.args['data']['_current_cluster_score'] = currentClusterScore;
+            layoutShift.args['data']['_current_cluster_id'] = currentClusterId;
+          }
+
+          currentClusterId += 1;
+          currentClusterScore = 0;
+          currentCluster = new Set();
+        }
+
+        previousTimestamp = e.startTime;
+        currentClusterScore += e.args['data']['weighted_score_delta'];
+        currentCluster.add(e);
+        maxScore = Math.max(maxScore, currentClusterScore);
+      }
     }
 
     metricEvents.sort(SDK.TracingModel.Event.compareStartTime);
@@ -944,10 +984,11 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
       const eps = 1e-6;
       if (typeof totalTime === 'number') {
         time = Math.abs(totalTime - selfTime) > eps && selfTime > eps ?
-            i18nString(
-                UIStrings.sSelfS,
-                {PH1: Number.millisToString(totalTime, true), PH2: Number.millisToString(selfTime, true)}) :
-            Number.millisToString(totalTime, true);
+            i18nString(UIStrings.sSelfS, {
+              PH1: i18n.TimeUtilities.millisToString(totalTime, true),
+              PH2: i18n.TimeUtilities.millisToString(selfTime, true),
+            }) :
+            i18n.TimeUtilities.millisToString(totalTime, true);
       }
       if (this._performanceModel && this._performanceModel.timelineModel().isMarkerEvent(event)) {
         title = TimelineUIUtils.eventTitle(event);
@@ -974,7 +1015,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
       const frame = (this._entryData[entryIndex] as TimelineModel.TimelineFrameModel.TimelineFrame);
       time = i18nString(
           UIStrings.sFfps,
-          {PH1: Number.preciseMillisToString(frame.duration, 1), PH2: (1000 / frame.duration).toFixed(0)});
+          {PH1: i18n.TimeUtilities.preciseMillisToString(frame.duration, 1), PH2: (1000 / frame.duration).toFixed(0)});
 
       if (frame.idle) {
         title = i18nString(UIStrings.idleFrame);
@@ -996,7 +1037,6 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
     const element = document.createElement('div');
     const root = UI.Utils.createShadowRootWithCoreStyles(element, {
       cssFile: 'panels/timeline/timelineFlamechartPopover.css',
-      enableLegacyPatching: true,
       delegatesFocus: undefined,
     });
     const contents = root.createChild('div', 'timeline-flamechart-popover');
@@ -1082,7 +1122,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
         frame.idle ? 'white' : frame.dropped ? '#f0b7b1' : (frame.hasWarnings() ? '#fad1d1' : '#d7f0d1');
     context.fillRect(barX, barY, barWidth, barHeight);
 
-    const frameDurationText = Number.preciseMillisToString(frame.duration, 1);
+    const frameDurationText = i18n.TimeUtilities.preciseMillisToString(frame.duration, 1);
     const textWidth = context.measureText(frameDurationText).width;
     if (textWidth <= barWidth) {
       context.fillStyle = this.textColor(entryIndex);
@@ -1273,7 +1313,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
   _appendFrame(frame: TimelineModel.TimelineFrameModel.TimelineFrame): void {
     const index = this._entryData.length;
     this._entryData.push(frame);
-    this._entryIndexToTitle[index] = Number.millisToString(frame.duration, true);
+    this._entryIndexToTitle[index] = i18n.TimeUtilities.millisToString(frame.duration, true);
     if (!this._timelineData) {
       return;
     }
@@ -1298,7 +1338,7 @@ export class TimelineFlameChartDataProvider extends Common.ObjectWrapper.ObjectW
   }
 
   formatValue(value: number, precision?: number): string {
-    return Number.preciseMillisToString(value, precision);
+    return i18n.TimeUtilities.preciseMillisToString(value, precision);
   }
 
   canJumpToEntry(_entryIndex: number): boolean {

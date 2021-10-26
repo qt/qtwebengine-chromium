@@ -284,8 +284,8 @@ class CC_EXPORT LayerTreeImpl {
   gfx::ScrollOffset TotalMaxScrollOffset() const;
 
   void AddPresentationCallbacks(
-      std::vector<LayerTreeHost::PresentationTimeCallback> callbacks);
-  std::vector<LayerTreeHost::PresentationTimeCallback>
+      std::vector<PresentationTimeCallbackBuffer::MainCallback> callbacks);
+  std::vector<PresentationTimeCallbackBuffer::MainCallback>
   TakePresentationCallbacks();
   bool has_presentation_callbacks() const {
     return !presentation_callbacks_.empty();
@@ -303,6 +303,7 @@ class CC_EXPORT LayerTreeImpl {
         const_cast<const LayerTreeImpl*>(this)
             ->OverscrollElasticityTransformNode());
   }
+  ElementId OverscrollElasticityEffectElementId() const;
   const TransformNode* PageScaleTransformNode() const;
   TransformNode* PageScaleTransformNode() {
     return const_cast<TransformNode*>(
@@ -734,6 +735,10 @@ class CC_EXPORT LayerTreeImpl {
     return host_impl_->GetActivelyScrollingType();
   }
 
+  bool CurrentScrollDidCheckerboardLargeArea() {
+    return host_impl_->CurrentScrollDidCheckerboardLargeArea();
+  }
+
   // These functions are used for plumbing DelegatedInkMetadata from blink
   // through the compositor and into viz via a compositor frame. They should
   // only be called after the JS API |updateInkTrailStartPoint| has been
@@ -917,7 +922,8 @@ class CC_EXPORT LayerTreeImpl {
   // Display transform hint to tag frames generated from this tree.
   gfx::OverlayTransform display_transform_hint_ = gfx::OVERLAY_TRANSFORM_NONE;
 
-  std::vector<LayerTreeHost::PresentationTimeCallback> presentation_callbacks_;
+  std::vector<PresentationTimeCallbackBuffer::MainCallback>
+      presentation_callbacks_;
 
   // Event metrics that are reported back from the main thread.
   EventMetrics::List events_metrics_from_main_thread_;

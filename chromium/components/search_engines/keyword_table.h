@@ -36,7 +36,8 @@ class Statement;
 //   keyword
 //   favicon_url
 //   url
-//   safe_for_autoreplace
+//   safe_for_autoreplace   This is set to false for any entry that was manually
+//                          added or edited by the user.
 //   originating_url
 //   date_created           This column was added after we allowed keywords.
 //                          Keywords created before we started tracking
@@ -68,6 +69,8 @@ class Statement;
 //                          version 69.
 //   created_from_play_api  See TemplateURLData::created_from_play_api. This was
 //                          added in version 82.
+//   is_active              See TemplateURLData::is_active. This was added
+//                          in version 97.
 //
 // This class also manages some fields in the |meta| table:
 //
@@ -132,6 +135,7 @@ class KeywordTable : public WebDatabaseTable {
   bool MigrateToVersion76RemoveInstantColumns();
   bool MigrateToVersion77IncreaseTimePrecision();
   bool MigrateToVersion82AddCreatedFromPlayApiColumn();
+  bool MigrateToVersion97AddIsActiveColumn();
 
  private:
   friend class KeywordTableTest;
@@ -143,7 +147,7 @@ class KeywordTable : public WebDatabaseTable {
   // Fills |data| with the data in |s|.  Returns false if we couldn't fill
   // |data| for some reason, e.g. |s| tried to set one of the fields to an
   // illegal value.
-  static bool GetKeywordDataFromStatement(const sql::Statement& s,
+  static bool GetKeywordDataFromStatement(sql::Statement& s,
                                           TemplateURLData* data);
 
   // Adds a new keyword, updating the id field on success.

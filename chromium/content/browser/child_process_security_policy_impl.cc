@@ -11,6 +11,7 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
@@ -18,11 +19,9 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/stl_util.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/time/time.h"
 #include "build/build_config.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/isolated_origin_util.h"
@@ -175,9 +174,13 @@ void LogCanAccessDataForOriginCrashKeys(
 
 // static
 ProcessLock ProcessLock::CreateAllowAnySite(
+    const StoragePartitionConfig& storage_partition_config,
     const WebExposedIsolationInfo& web_exposed_isolation_info) {
   return ProcessLock(
-      SiteInfo(GURL(), GURL(), false, web_exposed_isolation_info));
+      SiteInfo(GURL(), GURL(), false, storage_partition_config,
+               web_exposed_isolation_info, /* is_guest */ false,
+               /* does_site_request_dedicated_process_for_coop */ false,
+               /* is_jit_disabled */ false));
 }
 
 // static
@@ -185,6 +188,7 @@ ProcessLock ProcessLock::Create(
     const IsolationContext& isolation_context,
     const UrlInfo& url_info,
     const WebExposedIsolationInfo& web_exposed_isolation_info) {
+  DCHECK(url_info.storage_partition_config.has_value());
   if (BrowserThread::CurrentlyOn(BrowserThread::UI))
     return ProcessLock(SiteInfo::Create(isolation_context, url_info,
                                         web_exposed_isolation_info));
@@ -279,6 +283,12 @@ std::string ProcessLock::ToString() const {
         ret += "-application";
       ret += " coi-origin='" +
              web_exposed_isolation_info().origin().GetDebugString() + "'";
+    }
+    if (!storage_partition_config().is_default()) {
+      ret += ", partition=" + storage_partition_config().partition_domain() +
+             "." + storage_partition_config().partition_name();
+      if (storage_partition_config().in_memory())
+        ret += ", in-memory";
     }
   } else {
     ret += " no-site-info";
@@ -797,8 +807,9 @@ bool ChildProcessSecurityPolicyImpl::IsolatedOriginEntry::
 // time is needed rather than leaving the interval open ended, so that we can
 // enforce a max delay here and in RenderProcessHost. https://crbug.com/1181838
 ChildProcessSecurityPolicyImpl::ChildProcessSecurityPolicyImpl()
-    : browsing_instance_cleanup_delay_in_seconds_(
-          RenderFrameHostImpl::kKeepAliveHandleFactoryTimeoutInSeconds + 2) {
+    : browsing_instance_cleanup_delay_(
+          RenderProcessHostImpl::kKeepAliveHandleFactoryTimeout +
+          base::TimeDelta::FromSeconds(2)) {
   // We know about these schemes and believe them to be safe.
   RegisterWebSafeScheme(url::kHttpScheme);
   RegisterWebSafeScheme(url::kHttpsScheme);
@@ -857,6 +868,7 @@ void ChildProcessSecurityPolicyImpl::AddForTesting(
   LockProcess(IsolationContext(BrowsingInstanceId(1), browser_context),
               child_id,
               ProcessLock::CreateAllowAnySite(
+                  StoragePartitionConfig::CreateDefault(browser_context),
                   WebExposedIsolationInfo::CreateNonIsolated()));
 }
 
@@ -1676,14 +1688,16 @@ bool ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin(
         // url.
         //
         // Since we are dealing with a valid ProcessLock at this point, we know
-        // the lock contains valid COOP/COEP information because that
-        // information must be provided when creating the locks.
+        // the lock contains a valid StoragePartitionConfig and COOP/COEP
+        // information because that information must be provided when creating
+        // the locks.
         //
         // At this point, any origin opt-in isolation requests should be
         // complete, so to avoid the possibility of opting something set
-        // |origin_isolation_request| to kNone below.  Note: We might need
-        // to revisit this if CanAccessDataForOrigin() needs to be called while
-        // a SiteInstance is being determined for a navigation, i.e. during
+        // |origin_isolation_request| to kNone below (this happens by default in
+        // UrlInfoInit's ctor).  Note: We might need to revisit this if
+        // CanAccessDataForOrigin() needs to be called while a SiteInstance is
+        // being determined for a navigation, i.e. during
         // GetSiteInstanceForNavigationRequest().  If this happens, we'd need
         // to plumb UrlInfo::origin_isolation_request value from the ongoing
         // NavigationRequest into here. Also, we would likely need to attach
@@ -1696,7 +1710,8 @@ bool ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin(
         // |actual_process_lock|.
         expected_process_lock = ProcessLock::Create(
             isolation_context,
-            UrlInfo(url, UrlInfo::OriginIsolationRequest::kNone),
+            UrlInfo(UrlInfoInit(url).WithStoragePartitionConfig(
+                actual_process_lock.storage_partition_config())),
             actual_process_lock.web_exposed_isolation_info());
 
         if (actual_process_lock.is_locked_to_site()) {
@@ -1780,8 +1795,7 @@ bool ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin(
           // See the ProcessLock::Create() call above regarding why we pass
           // kNone for |origin_isolation_request| below.
           SiteInfo site_info = SiteInfo::Create(
-              isolation_context,
-              UrlInfo(url, UrlInfo::OriginIsolationRequest::kNone),
+              isolation_context, UrlInfo(UrlInfoInit(url)),
               actual_process_lock.web_exposed_isolation_info());
 
           // A process that's not locked to any site can only access data from
@@ -2352,15 +2366,14 @@ void ChildProcessSecurityPolicyImpl::
         ChildProcessSecurityPolicyImpl::GetInstance();
     policy->RemoveOptInIsolatedOriginsForBrowsingInstanceInternal(id);
   };
-  if (browsing_instance_cleanup_delay_in_seconds_ > 0) {
+  if (browsing_instance_cleanup_delay_ > base::TimeDelta()) {
     // Do the actual state cleanup after posting a task to the IO thread, to
     // give a chance for any last unprocessed tasks to be handled. The cleanup
     // itself locks the data structures and can safely happen from either
     // thread.
     GetIOThreadTaskRunner({})->PostDelayedTask(
         FROM_HERE, base::BindOnce(task_closure, browsing_instance_id),
-        base::TimeDelta::FromSeconds(
-            browsing_instance_cleanup_delay_in_seconds_));
+        browsing_instance_cleanup_delay_);
   } else {
     // Since this is just used in tests, it's ok to do it on either thread.
     task_closure(browsing_instance_id);

@@ -19,7 +19,8 @@
  */
 #include "sync_vuid_maps.h"
 #include "core_error_location.h"
-#include "state_tracker.h"
+#include "device_state.h"
+#include "core_validation.h"
 #include <cassert>
 #include <algorithm>
 #include <array>
@@ -116,22 +117,22 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
      }},
     {VK_PIPELINE_STAGE_2_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR,
      {
-         {Key(Struct::VkBufferMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2KHR-dstStageMask-03936"},
-         {Key(Struct::VkBufferMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2KHR-srcStageMask-03936"},
+         {Key(Struct::VkBufferMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkBufferMemoryBarrier2KHR-dstStageMask-04956"},
+         {Key(Struct::VkBufferMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkBufferMemoryBarrier2KHR-srcStageMask-04956"},
          {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-04097"},
          {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-04097"},
-         {Key(Func::vkCmdResetEvent2KHR, Field::stageMask), "VUID-vkCmdResetEvent2KHR-stageMask-03936"},
+         {Key(Func::vkCmdResetEvent2KHR, Field::stageMask), "VUID-vkCmdResetEvent2KHR-stageMask-04956"},
          {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-04097"},
          {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-04097"},
          {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-04097"},
          {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-04097"},
-         {Key(Func::vkCmdWriteTimestamp2KHR, Field::stage), "VUID-vkCmdWriteTimestamp2KHR-stage-03936"},
+         {Key(Func::vkCmdWriteTimestamp2KHR, Field::stage), "VUID-vkCmdWriteTimestamp2KHR-stage-04956"},
          {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-04081"},
-         {Key(Struct::VkImageMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkImageMemoryBarrier2KHR-dstStageMask-03936"},
-         {Key(Struct::VkImageMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkImageMemoryBarrier2KHR-srcStageMask-03936"},
-         {Key(Struct::VkMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkMemoryBarrier2KHR-dstStageMask-03936"},
-         {Key(Struct::VkMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkMemoryBarrier2KHR-srcStageMask-03936"},
-         {Key(Struct::VkSemaphoreSubmitInfoKHR, Field::stageMask), "VUID-VkSemaphoreSubmitInfoKHR-stageMask-03936"},
+         {Key(Struct::VkImageMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkImageMemoryBarrier2KHR-dstStageMask-04956"},
+         {Key(Struct::VkImageMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkImageMemoryBarrier2KHR-srcStageMask-04956"},
+         {Key(Struct::VkMemoryBarrier2KHR, Field::dstStageMask), "VUID-VkMemoryBarrier2KHR-dstStageMask-04956"},
+         {Key(Struct::VkMemoryBarrier2KHR, Field::srcStageMask), "VUID-VkMemoryBarrier2KHR-srcStageMask-04956"},
+         {Key(Struct::VkSemaphoreSubmitInfoKHR, Field::stageMask), "VUID-VkSemaphoreSubmitInfoKHR-stageMask-04956"},
          {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "UNASSIGNED-CoreChecks-VkSubmitInfo-pWaitDstStageMask-shadingRate"},
          {Key(Struct::VkSubpassDependency, Field::srcStageMask),
           "UNASSIGNED-CoreChecks-VkSubpassDependency-srcStageMask-shadingRate"},
@@ -303,17 +304,12 @@ static const std::map<VkPipelineStageFlags2KHR, std::vector<Entry>> kStageMaskEr
          {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-03937"},
          {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-03937"},
          {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-03937"},
-         {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage),
-          "UNASSIGNED-CoreChecks-vkCmdWriteTimestamp-pipelineStage-noneStage"},
-         {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "UNASSIGNED-CoreChecks-VkSubmitInfo-pWaitDstStageMask-noneStage"},
-         {Key(Struct::VkSubpassDependency, Field::srcStageMask),
-          "UNASSIGNED-CoreChecks-VkSubpassDependency-srcStageMask-noneStage"},
-         {Key(Struct::VkSubpassDependency, Field::dstStageMask),
-          "UNASSIGNED-CoreChecks-VkSubpassDependency-dstStageMask-noneStage"},
-         {Key(Struct::VkSubpassDependency2, Field::srcStageMask),
-          "UNASSIGNED-CoreChecks-VkSubpassDependency2-srcStageMask-noneStage"},
-         {Key(Struct::VkSubpassDependency2, Field::dstStageMask),
-          "UNASSIGNED-CoreChecks-VkSubpassDependency2-dstStageMask-noneStage"},
+         {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-04074"},
+         {Key(Struct::VkSubmitInfo, Field::pWaitDstStageMask), "VUID-VkSubmitInfo-pWaitDstStageMask-requiredbitmask"},
+         {Key(Struct::VkSubpassDependency, Field::srcStageMask), "VUID-VkSubpassDependency-synchronization2-04984"},
+         {Key(Struct::VkSubpassDependency, Field::dstStageMask), "VUID-VkSubpassDependency-synchronization2-04985"},
+         {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-VkSubpassDependency2-synchronization2-04988"},
+         {Key(Struct::VkSubpassDependency2, Field::dstStageMask), "VUID-VkSubpassDependency2-synchronization2-04989"},
      }},
 };
 
@@ -631,12 +627,12 @@ static const std::vector<Entry> kQueueCapErrors{
     // src and dst use the same VUID string for 00901
     {Key(Struct::VkSubpassDependency, Field::srcStageMask), "VUID-vkCmdBeginRenderPass-srcStageMask-00901"},
     {Key(Struct::VkSubpassDependency, Field::dstStageMask), "VUID-vkCmdBeginRenderPass-srcStageMask-00901"},
-    {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-4098"},
-    {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-4098"},
-    {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-4098"},
-    {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-4098"},
-    {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-4098"},
-    {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-4098"},
+    {Key(Func::vkCmdSetEvent, Field::stageMask), "VUID-vkCmdSetEvent-stageMask-04098"},
+    {Key(Func::vkCmdResetEvent, Field::stageMask), "VUID-vkCmdResetEvent-stageMask-04098"},
+    {Key(Func::vkCmdWaitEvents, Field::srcStageMask), "VUID-vkCmdWaitEvents-srcStageMask-04098"},
+    {Key(Func::vkCmdWaitEvents, Field::dstStageMask), "VUID-vkCmdWaitEvents-dstStageMask-04098"},
+    {Key(Func::vkCmdPipelineBarrier, Field::srcStageMask), "VUID-vkCmdPipelineBarrier-srcStageMask-04098"},
+    {Key(Func::vkCmdPipelineBarrier, Field::dstStageMask), "VUID-vkCmdPipelineBarrier-dstStageMask-04098"},
     {Key(Func::vkCmdWriteTimestamp, Field::pipelineStage), "VUID-vkCmdWriteTimestamp-pipelineStage-04074"},
     // src and dst use the same VUID string for 03101
     {Key(Struct::VkSubpassDependency2, Field::srcStageMask), "VUID-vkCmdBeginRenderPass2-srcStageMask-03101"},

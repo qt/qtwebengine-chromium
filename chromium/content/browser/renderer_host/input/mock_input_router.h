@@ -41,12 +41,11 @@ class MockInputRouter : public InputRouter {
   void NotifySiteIsMobileOptimized(bool is_mobile_optimized) override {}
   bool HasPendingEvents() const override;
   void SetDeviceScaleFactor(float device_scale_factor) override {}
-  void SetFrameTreeNodeId(int frameTreeNodeId) override {}
   absl::optional<cc::TouchAction> AllowedTouchAction() override;
   absl::optional<cc::TouchAction> ActiveTouchAction() override;
   void SetForceEnableZoom(bool enabled) override {}
-  mojo::PendingRemote<blink::mojom::WidgetInputHandlerHost> BindNewHost()
-      override;
+  mojo::PendingRemote<blink::mojom::WidgetInputHandlerHost> BindNewHost(
+      scoped_refptr<base::SequencedTaskRunner> task_runner) override;
   void StopFling() override {}
   void ForceSetTouchActionAuto() override {}
   void OnHasTouchEventConsumers(

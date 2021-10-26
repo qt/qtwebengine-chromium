@@ -33,7 +33,7 @@ class SwapChainPresenter : public base::PowerStateObserver {
   ~SwapChainPresenter() override;
 
   // Present the given overlay to swap chain.  Returns true on success.
-  bool PresentToSwapChain(const ui::DCRendererLayerParams& overlay);
+  bool PresentToSwapChain(ui::DCRendererLayerParams& overlay);
 
   const Microsoft::WRL::ComPtr<IDXGISwapChain1>& swap_chain() const {
     return swap_chain_;
@@ -197,6 +197,15 @@ class SwapChainPresenter : public base::PowerStateObserver {
   // whichever is currently used.
   Microsoft::WRL::ComPtr<IDXGISwapChainMedia> GetSwapChainMedia() const;
 
+  // Present the Direct Compositon surface from MediaFoundationRenderer.
+  bool PresentDCOMPSurface(const ui::DCRendererLayerParams& overlay);
+
+  // Release resources related to `PresentDCOMPSurface()`.
+  void ReleaseDCOMPSurfaceResourcesIfNeeded();
+
+  // The Direct Composition surface handle from MediaFoundationRenderer.
+  HANDLE dcomp_surface_handle_ = INVALID_HANDLE_VALUE;
+
   // Layer tree instance that owns this swap chain presenter.
   DCLayerTree* layer_tree_ = nullptr;
 
@@ -229,10 +238,6 @@ class SwapChainPresenter : public base::PowerStateObserver {
   // Set to true when PresentToDecodeSwapChain fails for the first time after
   // which we won't attempt to use decode swap chain again.
   bool failed_to_present_decode_swapchain_ = false;
-
-  // Number of frames since we switched from YUV to BGRA swap chain, or
-  // vice-versa.
-  int frames_since_color_space_change_ = 0;
 
   // This struct is used to cache information about what visuals are currently
   // being presented so that properties that aren't changed aren't sent to

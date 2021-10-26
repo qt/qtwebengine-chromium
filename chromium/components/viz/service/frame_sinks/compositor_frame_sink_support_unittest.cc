@@ -7,7 +7,7 @@
 #include <utility>
 
 #include "base/bind.h"
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/test/simple_test_tick_clock.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -660,7 +660,8 @@ TEST_F(CompositorFrameSinkSupportTest, ProhibitsUnprivilegedCopyRequests) {
   bool did_receive_aborted_copy_result = false;
   base::RunLoop aborted_copy_run_loop;
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(
           [](bool* got_nothing, base::OnceClosure finished,
              std::unique_ptr<CopyOutputResult> result) {
@@ -828,7 +829,8 @@ TEST_F(CompositorFrameSinkSupportTest, CopyRequestOnSubtree) {
   bool called1 = false;
   base::RunLoop called1_run_loop;
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&CopyRequestTestCallback, &called1,
                      called1_run_loop.QuitClosure()));
   support_->RequestCopyOfOutput(
@@ -841,7 +843,8 @@ TEST_F(CompositorFrameSinkSupportTest, CopyRequestOnSubtree) {
   bool called2 = false;
   base::RunLoop called2_run_loop;
   request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&CopyRequestTestCallback, &called2,
                      called2_run_loop.QuitClosure()));
   support_->RequestCopyOfOutput(
@@ -875,7 +878,8 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   bool called1 = false;
   base::RunLoop called1_run_loop;
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&CopyRequestTestCallback, &called1,
                      called1_run_loop.QuitClosure()));
   request->set_source(kArbitrarySourceId1);
@@ -888,7 +892,8 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   bool called2 = false;
   base::RunLoop called2_run_loop;
   request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&CopyRequestTestCallback, &called2,
                      called2_run_loop.QuitClosure()));
   request->set_source(kArbitrarySourceId2);
@@ -903,7 +908,8 @@ TEST_F(CompositorFrameSinkSupportTest, DuplicateCopyRequest) {
   bool called3 = false;
   base::RunLoop called3_run_loop;
   request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&CopyRequestTestCallback, &called3,
                      called3_run_loop.QuitClosure()));
   request->set_source(kArbitrarySourceId1);
@@ -1042,11 +1048,19 @@ TEST_F(CompositorFrameSinkSupportTest, PassesOnBeginFrameAcks) {
   support_->SetNeedsBeginFrame(false);
 }
 
+#if defined(OS_MAC) && defined(ARCH_CPU_ARM64)
+// https://crbug.com/1223023
+#define MAYBE_NeedsBeginFrameResetAfterPresentationFeedback \
+  DISABLED_NeedsBeginFrameResetAfterPresentationFeedback
+#else
+#define MAYBE_NeedsBeginFrameResetAfterPresentationFeedback \
+  NeedsBeginFrameResetAfterPresentationFeedback
+#endif
 // Validates that if a client asked to stop receiving begin-frames, then it
 // stops receiving begin-frames after receiving the presentation-feedback from
 // the last submitted frame.
 TEST_F(CompositorFrameSinkSupportTest,
-       NeedsBeginFrameResetAfterPresentationFeedback) {
+       MAYBE_NeedsBeginFrameResetAfterPresentationFeedback) {
   // Request BeginFrames.
   support_->SetNeedsBeginFrame(true);
 
@@ -1133,7 +1147,8 @@ TEST_F(CompositorFrameSinkSupportTest,
 
   // Send a CopyOutputRequest.
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(StubResultCallback));
   support_->RequestCopyOfOutput(
       {local_surface_id1, SubtreeCaptureId(), std::move(request)});
@@ -1176,7 +1191,8 @@ TEST_F(CompositorFrameSinkSupportTest,
 
   // Send a CopyOutputRequest.
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(StubResultCallback));
   support_->RequestCopyOfOutput(
       {local_surface_id2, SubtreeCaptureId(), std::move(request)});
@@ -1218,7 +1234,8 @@ TEST_F(CompositorFrameSinkSupportTest,
   // Send a CopyOutputRequest. Note that the second surface doesn't even exist
   // yet.
   auto request = std::make_unique<CopyOutputRequest>(
-      CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      CopyOutputRequest::ResultFormat::RGBA,
+      CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(StubResultCallback));
   support_->RequestCopyOfOutput(
       {local_surface_id1, SubtreeCaptureId(), std::move(request)});
@@ -1612,6 +1629,58 @@ TEST_F(CompositorFrameSinkSupportTest, ForceFullFrameToActivateSurface) {
                                           testing::IsFalse()),
                            _));
   begin_frame_source.TestOnBeginFrame(args_animate_only);
+}
+
+TEST_F(CompositorFrameSinkSupportTest, GetCopyOutputRequestSize) {
+  // No surface with active frame.
+  EXPECT_EQ((gfx::Size{}),
+            support_->GetCopyOutputRequestSize(SubtreeCaptureId{}));
+
+  // Surface with active frame but no capture identifier.
+  ResourceId first_frame_ids[] = {ResourceId(1), ResourceId(2), ResourceId(3)};
+  SubmitCompositorFrameWithResources(first_frame_ids,
+                                     base::size(first_frame_ids));
+  EXPECT_EQ((gfx::Size{20, 20}),
+            support_->GetCopyOutputRequestSize(SubtreeCaptureId{}));
+
+  // Render pass with subtree size.
+  const SurfaceId surface_id(support_->frame_sink_id(), local_surface_id_);
+  constexpr SubtreeCaptureId kSubtreeId1(22);
+
+  auto frame = CompositorFrameBuilder()
+                   .AddDefaultRenderPass()
+                   .AddDefaultRenderPass()
+                   .SetReferencedSurfaces({SurfaceRange(surface_id)})
+                   .Build();
+  frame.render_pass_list.front()->subtree_capture_id = kSubtreeId1;
+  frame.render_pass_list.front()->subtree_size = gfx::Size{13, 37};
+  support_->SubmitCompositorFrame(local_surface_id_, std::move(frame));
+  EXPECT_EQ(surface_observer_.last_created_surface_id().local_surface_id(),
+            local_surface_id_);
+
+  EXPECT_EQ((gfx::Size{13, 37}),
+            support_->GetCopyOutputRequestSize(kSubtreeId1));
+
+  // Render pass but no subtree size.
+  constexpr SubtreeCaptureId kSubtreeId2(7);
+
+  auto frame_with_output_size =
+      CompositorFrameBuilder()
+          .AddDefaultRenderPass()
+          .AddDefaultRenderPass()
+          .SetReferencedSurfaces({SurfaceRange(surface_id)})
+          .Build();
+  frame_with_output_size.render_pass_list.front()->subtree_capture_id =
+      kSubtreeId2;
+  frame_with_output_size.render_pass_list.front()->output_rect =
+      gfx::Rect{0, 0, 640, 480};
+  support_->SubmitCompositorFrame(local_surface_id_,
+                                  std::move(frame_with_output_size));
+  EXPECT_EQ(surface_observer_.last_created_surface_id().local_surface_id(),
+            local_surface_id_);
+
+  EXPECT_EQ((gfx::Size{640, 480}),
+            support_->GetCopyOutputRequestSize(kSubtreeId2));
 }
 
 }  // namespace viz

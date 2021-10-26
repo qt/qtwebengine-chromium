@@ -38,6 +38,11 @@ namespace gpu {
 struct GpuPreferences;
 }
 
+namespace media {
+struct SupportedVideoDecoderConfig;
+using SupportedVideoDecoderConfigs = std::vector<SupportedVideoDecoderConfig>;
+}  // namespace media
+
 namespace content {
 
 class GpuDataManagerImplPrivate;
@@ -45,6 +50,18 @@ class GpuDataManagerImplPrivate;
 class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager,
                                           public display::DisplayObserver {
  public:
+  enum GpuInfoRequest {
+    kGpuInfoRequestDxDiag = 1 << 0,
+    kGpuInfoRequestDx12 = 1 << 1,
+    kGpuInfoRequestVulkan = 1 << 2,
+    kGpuInfoRequestDawnInfo = 1 << 3,
+    kGpuInfoRequestDx12Vulkan = kGpuInfoRequestVulkan | kGpuInfoRequestDx12,
+    kGpuInfoRequestVideo = 1 << 4,
+    kGpuInfoRequestAll = kGpuInfoRequestDxDiag | kGpuInfoRequestDx12 |
+                         kGpuInfoRequestVulkan | kGpuInfoRequestDawnInfo |
+                         kGpuInfoRequestVideo,
+  };
+
   // Getter for the singleton. This will return NULL on failure.
   static GpuDataManagerImpl* GetInstance();
 
@@ -56,8 +73,6 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager,
   gpu::GPUInfo GetGPUInfo() override;
   gpu::GpuFeatureStatus GetFeatureStatus(gpu::GpuFeatureType feature) override;
   bool GpuAccessAllowed(std::string* reason) override;
-  void RequestDxdiagDx12VulkanGpuInfoIfNeeded(GpuInfoRequest request,
-                                              bool delayed) override;
   bool IsEssentialGpuInfoAvailable() override;
   void RequestVideoMemoryUsageStatsUpdate(
       VideoMemoryUsageStatsCallback callback) override;
@@ -78,6 +93,11 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager,
   // not want surprise tasks being posted which can interfere with their ability
   // to measure what tasks are in the queue or to move mock time forward.
   void StartUmaTimer();
+
+  // Requests complete GPU info if it has not already been requested
+  void RequestDxdiagDx12VulkanVideoGpuInfoIfNeeded(
+      GpuDataManagerImpl::GpuInfoRequest request,
+      bool delayed);
 
   bool IsDx12VulkanVersionAvailable() const;
   bool IsGpuFeatureInfoAvailable() const;
@@ -103,12 +123,16 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager,
   void PostCreateThreads();
   void TerminateInfoCollectionGpuProcess();
 #endif
+  void UpdateDawnInfo(const std::vector<std::string>& dawn_info_list);
+
   // Update the GPU feature info. This updates the blocklist and enabled status
   // of GPU rasterization. In the future this will be used for more features.
   void UpdateGpuFeatureInfo(const gpu::GpuFeatureInfo& gpu_feature_info,
                             const absl::optional<gpu::GpuFeatureInfo>&
                                 gpu_feature_info_for_hardware_gpu);
   void UpdateGpuExtraInfo(const gfx::GpuExtraInfo& gpu_extra_info);
+  void UpdateMojoMediaVideoCapabilities(
+      const media::SupportedVideoDecoderConfigs& configs);
 
   gpu::GpuFeatureInfo GetGpuFeatureInfo() const;
 
@@ -117,6 +141,7 @@ class CONTENT_EXPORT GpuDataManagerImpl : public GpuDataManager,
   // Such info are displayed in about:gpu for diagostic purpose.
   gpu::GPUInfo GetGPUInfoForHardwareGpu() const;
   gpu::GpuFeatureInfo GetGpuFeatureInfoForHardwareGpu() const;
+  std::vector<std::string> GetDawnInfoList() const;
   bool GpuAccessAllowedForHardwareGpu(std::string* reason);
   bool IsGpuCompositingDisabledForHardwareGpu() const;
 

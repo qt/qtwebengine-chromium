@@ -46,6 +46,17 @@ class WebsiteLoginManager {
       const Login& login,
       base::OnceCallback<void(bool, std::string)> callback) = 0;
 
+  // Deletes the password for |login|.
+  virtual void DeletePasswordForLogin(
+      const Login& login,
+      base::OnceCallback<void(bool)> callback) = 0;
+
+  // Edits the password for |login|.
+  virtual void EditPasswordForLogin(
+      const Login& login,
+      const std::string& new_password,
+      base::OnceCallback<void(bool)> callback) = 0;
+
   // Generates new strong password. |form/field_signature| are used to fetch
   // password requirements. |max_length| is the "max_length" attribute of input
   // field that limits the length of value.
@@ -66,6 +77,21 @@ class WebsiteLoginManager {
 
   // Commits the presaved passwod to the store.
   virtual void CommitGeneratedPassword() = 0;
+
+  // Clears potentially submitted or pending forms in password manager. Used to
+  // make password manager "forget" about any previously processed form that
+  // is pending or submitted.
+  virtual void ResetPendingCredentials() = 0;
+
+  // Returns true if password manager has processed a password update submission
+  // on a 3rd party website and it is ready to commit the updated credential to
+  // the password store.
+  virtual bool ReadyToCommitSubmittedPassword() = 0;
+
+  // Saves the current submitted password to the disk. Returns true if a
+  // submitted password exist (E.g ReadyToCommitSubmittedPassword) and it is
+  // properly saved, false otherwise.
+  virtual bool SaveSubmittedPassword() = 0;
 
   DISALLOW_COPY_AND_ASSIGN(WebsiteLoginManager);
 };

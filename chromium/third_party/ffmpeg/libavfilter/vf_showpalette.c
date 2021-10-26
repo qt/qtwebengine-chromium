@@ -21,7 +21,6 @@
  * Display frame palette (AV_PIX_FMT_PAL8)
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
 #include "formats.h"
@@ -113,7 +112,7 @@ static const AVFilterPad showpalette_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_showpalette = {
+const AVFilter ff_vf_showpalette = {
     .name          = "showpalette",
     .description   = NULL_IF_CONFIG_SMALL("Display frame palette."),
     .priv_size     = sizeof(ShowPaletteContext),

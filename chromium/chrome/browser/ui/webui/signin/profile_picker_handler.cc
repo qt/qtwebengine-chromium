@@ -6,12 +6,13 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/feature_list.h"
+#include "base/json/values_util.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/util/values/values_util.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
@@ -174,7 +175,7 @@ void OpenOnSelectProfileTargetUrl(Browser* browser) {
 base::Value CreateProfileEntry(const ProfileAttributesEntry* entry,
                                int avatar_icon_size) {
   base::Value profile_entry(base::Value::Type::DICTIONARY);
-  profile_entry.SetKey("profilePath", util::FilePathToValue(entry->GetPath()));
+  profile_entry.SetKey("profilePath", base::FilePathToValue(entry->GetPath()));
   profile_entry.SetStringKey("localProfileName", entry->GetLocalProfileName());
   profile_entry.SetBoolKey(
       "isSyncing", entry->GetSigninState() ==
@@ -191,24 +192,14 @@ base::Value CreateProfileEntry(const ProfileAttributesEntry* entry,
                                    avatar_icon_size, avatar_icon_size);
   std::string icon_url = webui::GetBitmapDataUrl(icon.AsBitmap());
   profile_entry.SetStringKey("avatarIcon", icon_url);
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  profile_entry.SetBoolKey("isPrimaryLacrosProfile",
+                           Profile::IsMainProfilePath(entry->GetPath()));
+#else
+  profile_entry.SetBoolKey("isPrimaryLacrosProfile", false);
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
   return profile_entry;
 }
-
-#if BUILDFLAG(IS_CHROMEOS_LACROS)
-Profile* FindPrimaryProfile() {
-  const auto profiles =
-      g_browser_process->profile_manager()->GetLoadedProfiles();
-  const auto primary_profile_iter = std::find_if(
-      profiles.cbegin(), profiles.cend(),
-      [](const Profile* const profile) { return profile->IsMainProfile(); });
-
-  if (primary_profile_iter == profiles.cend()) {
-    return nullptr;
-  }
-
-  return *primary_profile_iter;
-}
-#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 
 }  // namespace
 
@@ -340,7 +331,7 @@ void ProfilePickerHandler::HandleLaunchSelectedProfile(
     return;
 
   absl::optional<base::FilePath> profile_path =
-      util::ValueToFilePath(*profile_path_value);
+      base::ValueToFilePath(*profile_path_value);
   if (!profile_path)
     return;
 
@@ -355,7 +346,7 @@ void ProfilePickerHandler::HandleLaunchSelectedProfile(
 
   if (entry->IsSigninRequired()) {
     DCHECK(signin_util::IsForceSigninEnabled());
-    if (entry->IsAuthenticated() &&
+    if (entry->CanBeManaged() &&
         base::FeatureList::IsEnabled(features::kForceSignInReauth)) {
       ProfilePickerForceSigninDialog::ShowReauthDialog(
           web_ui()->GetWebContents()->GetBrowserContext(),
@@ -382,8 +373,7 @@ void ProfilePickerHandler::HandleLaunchSelectedProfile(
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
   if (!profiles::AreSecondaryProfilesAllowed()) {
-    Profile* primary_profile = FindPrimaryProfile();
-    if (primary_profile && primary_profile->GetPath() != *profile_path) {
+    if (Profile::IsMainProfilePath(*profile_path)) {
       LoginUIServiceFactory::GetForProfile(
           Profile::FromWebUI(web_ui())->GetOriginalProfile())
           ->SetProfileBlockingErrorMessage();
@@ -521,7 +511,7 @@ void ProfilePickerHandler::HandleConfirmProfileSwitch(
     return;
 
   absl::optional<base::FilePath> profile_path =
-      util::ValueToFilePath(*profile_path_value);
+      base::ValueToFilePath(*profile_path_value);
   if (!profile_path)
     return;
 
@@ -557,14 +547,6 @@ void ProfilePickerHandler::OnProfileCreated(
       OnProfileCreationSuccess(profile_color, create_shortcut, profile);
       break;
     }
-    // User-initiated cancellation is handled in CancelProfileRegistration and
-    // does not call this callback.
-    case Profile::CREATE_STATUS_CANCELED:
-    case Profile::CREATE_STATUS_REMOTE_FAIL:
-    case Profile::MAX_CREATE_STATUS: {
-      NOTREACHED();
-      break;
-    }
   }
 
   FireWebUIListener("create-profile-finished", base::Value());
@@ -594,10 +576,8 @@ void ProfilePickerHandler::OnProfileCreationSuccess(
       shortcut_manager->CreateProfileShortcut(profile->GetPath());
   }
 
-  if (base::FeatureList::IsEnabled(features::kSignInProfileCreation)) {
-    // Skip the FRE for this profile if sign-in was offered as part of the flow.
-    profile->GetPrefs()->SetBoolean(prefs::kHasSeenWelcomePage, true);
-  }
+  // Skip the FRE for this profile as sign-in was offered as part of the flow.
+  profile->GetPrefs()->SetBoolean(prefs::kHasSeenWelcomePage, true);
 
   RecordNewProfileSpec(profile_color, create_shortcut);
   // Launch profile and close the picker.
@@ -622,7 +602,7 @@ void ProfilePickerHandler::HandleSetProfileName(const base::ListValue* args) {
   CHECK_EQ(2U, args->GetSize());
   const base::Value& profile_path_value = args->GetList()[0];
   absl::optional<base::FilePath> profile_path =
-      util::ValueToFilePath(profile_path_value);
+      base::ValueToFilePath(profile_path_value);
 
   if (!profile_path) {
     NOTREACHED();
@@ -644,12 +624,18 @@ void ProfilePickerHandler::HandleRemoveProfile(const base::ListValue* args) {
   CHECK_EQ(1U, args->GetSize());
   const base::Value& profile_path_value = args->GetList()[0];
   absl::optional<base::FilePath> profile_path =
-      util::ValueToFilePath(profile_path_value);
+      base::ValueToFilePath(profile_path_value);
 
   if (!profile_path) {
     NOTREACHED();
     return;
   }
+
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+  // On Lacros, the primary profile should never be deleted.
+  CHECK(!Profile::IsMainProfilePath(*profile_path));
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+
   RecordProfilePickerAction(ProfilePickerAction::kDeleteProfile);
   webui::DeleteProfileAtPath(*profile_path,
                              ProfileMetrics::DELETE_PROFILE_USER_MANAGER);
@@ -661,7 +647,7 @@ void ProfilePickerHandler::HandleGetProfileStatistics(
   CHECK_EQ(1U, args->GetSize());
   const base::Value& profile_path_value = args->GetList()[0];
   absl::optional<base::FilePath> profile_path =
-      util::ValueToFilePath(profile_path_value);
+      base::ValueToFilePath(profile_path_value);
   if (!profile_path)
     return;
 
@@ -692,7 +678,7 @@ void ProfilePickerHandler::OnProfileStatisticsReceived(
     base::FilePath profile_path,
     profiles::ProfileCategoryStats result) {
   base::Value dict(base::Value::Type::DICTIONARY);
-  dict.SetKey("profilePath", util::FilePathToValue(profile_path));
+  dict.SetKey("profilePath", base::FilePathToValue(profile_path));
   base::Value stats(base::Value::Type::DICTIONARY);
   // Categories are defined in |kProfileStatisticsCategories|
   // {"BrowsingHistory", "Passwords", "Bookmarks", "Autofill"}.
@@ -706,13 +692,10 @@ void ProfilePickerHandler::OnProfileStatisticsReceived(
 void ProfilePickerHandler::HandleLoadSignInProfileCreationFlow(
     const base::ListValue* args) {
   CHECK_EQ(1U, args->GetSize());
-  SkColor profile_color;
-  if (args->GetList()[0].is_int()) {
-    profile_color = args->GetList()[0].GetInt();
-  } else {
-    // The profile color must provided in `args` unless the force signin is
-    // enabled.
-    DCHECK(signin_util::IsForceSigninEnabled());
+  absl::optional<SkColor> profile_color = args->GetList()[0].GetIfInt();
+  if (signin_util::IsForceSigninEnabled()) {
+    // Force sign-in policy uses a separate flow that doesn't initialize the
+    // profile color. Generate a new profile color here.
     profile_color = GenerateNewProfileColor().color;
   }
   ProfilePicker::SwitchToSignIn(
@@ -753,7 +736,7 @@ void ProfilePickerHandler::OnSwitchToProfileComplete(
     return;
   }
 
-  if (profile->IsGuestSession() || profile->IsEphemeralGuestProfile()) {
+  if (profile->IsGuestSession()) {
     RecordProfilePickerAction(ProfilePickerAction::kLaunchGuestProfile);
   } else {
     RecordProfilePickerAction(
@@ -795,7 +778,7 @@ ProfilePickerHandler::GetProfileAttributes() {
           ->GetProfileAttributesStorage()
           .GetAllProfilesAttributesSortedByLocalProfilName();
   base::EraseIf(ordered_entries, [](const ProfileAttributesEntry* entry) {
-    return entry->IsGuest() || entry->IsOmitted();
+    return entry->IsOmitted();
   });
   size_t number_of_profiles = ordered_entries.size();
 
@@ -868,7 +851,7 @@ void ProfilePickerHandler::OnProfileAdded(const base::FilePath& profile_path) {
           ->GetProfileAttributesStorage()
           .GetProfileAttributesWithPath(profile_path);
   CHECK(entry);
-  if (entry->IsGuest() || entry->IsOmitted())
+  if (entry->IsOmitted())
     return;
   AddProfileToList(profile_path);
   PushProfilesList();
@@ -879,7 +862,7 @@ void ProfilePickerHandler::OnProfileWasRemoved(
     const std::u16string& profile_name) {
   DCHECK(IsJavascriptAllowed());
   if (RemoveProfileFromList(profile_path))
-    FireWebUIListener("profile-removed", util::FilePathToValue(profile_path));
+    FireWebUIListener("profile-removed", base::FilePathToValue(profile_path));
 }
 
 void ProfilePickerHandler::OnProfileIsOmittedChanged(

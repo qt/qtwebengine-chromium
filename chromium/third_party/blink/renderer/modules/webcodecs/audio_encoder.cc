@@ -17,13 +17,16 @@
 #include "media/base/mime_util.h"
 #include "media/base/offloading_audio_encoder.h"
 #include "third_party/blink/public/mojom/web_feature/web_feature.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_typedefs.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_data_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_decoder_config.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_encoder_config.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_encoder_support.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_encoded_audio_chunk_metadata.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
+#include "third_party/blink/renderer/modules/webcodecs/allow_shared_buffer_source_util.h"
 #include "third_party/blink/renderer/modules/webcodecs/encoded_audio_chunk.h"
+#include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 
 namespace blink {
@@ -304,19 +307,20 @@ void AudioEncoder::CallOutputCallback(
   DCHECK(active_config);
   if (!script_state_->ContextIsValid() || !output_callback_ ||
       state_.AsEnum() != V8CodecState::Enum::kConfigured ||
-      reset_count != reset_count_)
+      reset_count != reset_count_) {
     return;
+  }
 
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  auto timestamp = encoded_buffer.timestamp - base::TimeTicks();
-  auto deleter = [](void* data, size_t length, void*) {
-    delete[] static_cast<uint8_t*>(data);
-  };
-  ArrayBufferContents data(encoded_buffer.encoded_data.release(),
-                           encoded_buffer.encoded_data_size, deleter);
-  auto* dom_array = MakeGarbageCollected<DOMArrayBuffer>(std::move(data));
-  auto* chunk =
-      MakeGarbageCollected<EncodedAudioChunk>(timestamp, false, dom_array);
+
+  MarkCodecActive();
+
+  auto buffer = media::DecoderBuffer::FromArray(
+      std::move(encoded_buffer.encoded_data), encoded_buffer.encoded_data_size);
+  buffer->set_timestamp(encoded_buffer.timestamp - base::TimeTicks());
+  buffer->set_is_key_frame(true);
+  buffer->set_duration(encoded_buffer.duration);
+  auto* chunk = MakeGarbageCollected<EncodedAudioChunk>(std::move(buffer));
 
   auto* metadata = MakeGarbageCollected<EncodedAudioChunkMetadata>();
   if (first_output_after_configure_ || codec_desc.has_value()) {
@@ -329,7 +333,7 @@ void AudioEncoder::CallOutputCallback(
       auto* desc_array_buf = DOMArrayBuffer::Create(codec_desc.value().data(),
                                                     codec_desc.value().size());
       decoder_config->setDescription(
-          ArrayBufferOrArrayBufferView::FromArrayBuffer(desc_array_buf));
+          MakeGarbageCollected<AllowSharedBufferSource>(desc_array_buf));
     }
     metadata->setDecoderConfig(decoder_config);
   }

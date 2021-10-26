@@ -93,20 +93,18 @@ bool InstructionOperand::InterferesWith(const InstructionOperand& other) const {
     // FP register-register interference.
     return GetRegConfig()->AreAliases(rep, loc.register_code(), other_rep,
                                       other_loc.register_code());
-  } else {
-    // FP slot-slot interference. Slots of different FP reps can alias because
-    // the gap resolver may break a move into 2 or 4 equivalent smaller moves.
-    DCHECK_EQ(LocationOperand::STACK_SLOT, kind);
-    int index_hi = loc.index();
-    int index_lo =
-        index_hi - (1 << ElementSizeLog2Of(rep)) / kSystemPointerSize + 1;
-    int other_index_hi = other_loc.index();
-    int other_index_lo =
-        other_index_hi -
-        (1 << ElementSizeLog2Of(other_rep)) / kSystemPointerSize + 1;
-    return other_index_hi >= index_lo && index_hi >= other_index_lo;
   }
-  return false;
+  // FP slot-slot interference. Slots of different FP reps can alias because
+  // the gap resolver may break a move into 2 or 4 equivalent smaller moves.
+  DCHECK_EQ(LocationOperand::STACK_SLOT, kind);
+  int index_hi = loc.index();
+  int index_lo =
+      index_hi - (1 << ElementSizeLog2Of(rep)) / kSystemPointerSize + 1;
+  int other_index_hi = other_loc.index();
+  int other_index_lo =
+      other_index_hi -
+      (1 << ElementSizeLog2Of(other_rep)) / kSystemPointerSize + 1;
+  return other_index_hi >= index_lo && index_hi >= other_index_lo;
 }
 
 bool LocationOperand::IsCompatible(LocationOperand* op) {
@@ -607,7 +605,13 @@ InstructionBlock::InstructionBlock(Zone* zone, RpoNumber rpo_number,
       loop_end_(loop_end),
       dominator_(dominator),
       deferred_(deferred),
-      handler_(handler) {}
+      handler_(handler),
+      switch_target_(false),
+      code_target_alignment_(false),
+      loop_header_alignment_(false),
+      needs_frame_(false),
+      must_construct_frame_(false),
+      must_deconstruct_frame_(false) {}
 
 size_t InstructionBlock::PredecessorIndexOf(RpoNumber rpo_number) const {
   size_t j = 0;
@@ -799,14 +803,14 @@ void InstructionSequence::ComputeAssemblyOrder() {
           ao_blocks_->push_back(loop_end);
           // This block will be the new machine-level loop header, so align
           // this block instead of the loop header block.
-          loop_end->set_alignment(true);
+          loop_end->set_loop_header_alignment(true);
           header_align = false;
         }
       }
-      block->set_alignment(header_align);
+      block->set_loop_header_alignment(header_align);
     }
     if (block->loop_header().IsValid() && block->IsSwitchTarget()) {
-      block->set_alignment(true);
+      block->set_code_target_alignment(true);
     }
     block->set_ao_number(RpoNumber::FromInt(ao++));
     ao_blocks_->push_back(block);
@@ -949,10 +953,10 @@ void InstructionSequence::MarkAsRepresentation(MachineRepresentation rep,
 
 int InstructionSequence::AddDeoptimizationEntry(
     FrameStateDescriptor* descriptor, DeoptimizeKind kind,
-    DeoptimizeReason reason, FeedbackSource const& feedback) {
+    DeoptimizeReason reason, NodeId node_id, FeedbackSource const& feedback) {
   int deoptimization_id = static_cast<int>(deoptimization_entries_.size());
   deoptimization_entries_.push_back(
-      DeoptimizationEntry(descriptor, kind, reason, feedback));
+      DeoptimizationEntry(descriptor, kind, reason, node_id, feedback));
   return deoptimization_id;
 }
 

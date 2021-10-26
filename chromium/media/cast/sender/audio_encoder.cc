@@ -16,7 +16,6 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/sys_byteorder.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -65,7 +64,7 @@ class AudioEncoder::ImplBase
         callback_(std::move(callback)),
         operational_status_(STATUS_UNINITIALIZED),
         frame_duration_(base::TimeDelta::FromSecondsD(
-            double{samples_per_frame_} / sampling_rate)),
+            static_cast<double>(samples_per_frame_) / sampling_rate)),
         buffer_fill_end_(0),
         frame_id_(FrameId::first()),
         samples_dropped_from_buffer_(0) {
@@ -148,19 +147,19 @@ class AudioEncoder::ImplBase
       audio_frame->rtp_timestamp = frame_rtp_timestamp_;
       audio_frame->reference_time = frame_capture_time_;
 
-      TRACE_EVENT_ASYNC_BEGIN2("cast.stream", "Audio Encode", audio_frame.get(),
-                               "frame_id", frame_id_.lower_32_bits(),
-                               "rtp_timestamp",
-                               frame_rtp_timestamp_.lower_32_bits());
+      TRACE_EVENT_NESTABLE_ASYNC_BEGIN2(
+          "cast.stream", "Audio Encode", TRACE_ID_LOCAL(audio_frame.get()),
+          "frame_id", frame_id_.lower_32_bits(), "rtp_timestamp",
+          frame_rtp_timestamp_.lower_32_bits());
       if (EncodeFromFilledBuffer(&audio_frame->data)) {
         // Compute encoder utilization as the real-world time elapsed divided
         // by the signal duration.
         audio_frame->encoder_utilization =
             (base::TimeTicks::Now() - start_time) / frame_duration_;
 
-        TRACE_EVENT_ASYNC_END1("cast.stream", "Audio Encode", audio_frame.get(),
-                               "encoder_utilization",
-                               audio_frame->encoder_utilization);
+        TRACE_EVENT_NESTABLE_ASYNC_END1(
+            "cast.stream", "Audio Encode", TRACE_ID_LOCAL(audio_frame.get()),
+            "encoder_utilization", audio_frame->encoder_utilization);
 
         audio_frame->encode_completion_time =
             cast_environment_->Clock()->NowTicks();
@@ -331,7 +330,7 @@ class AudioEncoder::OpusImpl final : public AudioEncoder::ImplBase {
 #endif
 
 #if defined(OS_MAC)
-class AudioEncoder::AppleAacImpl : public AudioEncoder::ImplBase {
+class AudioEncoder::AppleAacImpl final : public AudioEncoder::ImplBase {
   // AAC-LC has two access unit sizes (960 and 1024). The Apple encoder only
   // supports the latter.
   static const int kAccessUnitSamples = 1024;
@@ -370,7 +369,7 @@ class AudioEncoder::AppleAacImpl : public AudioEncoder::ImplBase {
   }
 
  private:
-  ~AppleAacImpl() final { Teardown(); }
+  ~AppleAacImpl() override { Teardown(); }
 
   // Destroys the existing audio converter and file, if any.
   void Teardown() {

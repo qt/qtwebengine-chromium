@@ -4,9 +4,9 @@
 
 #include "media/video/vpx_video_encoder.h"
 
+#include "base/cxx17_backports.h"
 #include "base/logging.h"
 #include "base/numerics/checked_math.h"
-#include "base/numerics/ranges.h"
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "base/time/time.h"
@@ -108,11 +108,18 @@ Status SetUpVpxConfig(const VideoEncoder::Options& opts,
     config->kf_max_dist = opts.keyframe_interval.value();
   }
 
-  if (opts.bitrate.has_value() && opts.bitrate.value()) {
-    config->rc_end_usage = VPX_CBR;
-    config->rc_target_bitrate = opts.bitrate.value() / 1000;
+  if (opts.bitrate.has_value()) {
+    auto& bitrate = opts.bitrate.value();
+    config->rc_target_bitrate = bitrate.target() / 1000;
+    switch (bitrate.mode()) {
+      case Bitrate::Mode::kVariable:
+        config->rc_end_usage = VPX_VBR;
+        break;
+      case Bitrate::Mode::kConstant:
+        config->rc_end_usage = VPX_CBR;
+        break;
+    }
   } else {
-    config->rc_end_usage = VPX_VBR;
     config->rc_target_bitrate =
         double{opts.frame_size.GetCheckedArea().ValueOrDie()} / config->g_w /
         config->g_h * config->rc_target_bitrate;
@@ -180,8 +187,8 @@ Status ReallocateVpxImageIfNeeded(vpx_image_t* vpx_image,
                                   const vpx_img_fmt fmt,
                                   int width,
                                   int height) {
-  if (vpx_image->fmt != fmt || int{vpx_image->w} != width ||
-      int{vpx_image->h} != height) {
+  if (vpx_image->fmt != fmt || static_cast<int>(vpx_image->w) != width ||
+      static_cast<int>(vpx_image->h) != height) {
     vpx_img_free(vpx_image);
     if (vpx_image != vpx_img_alloc(vpx_image, fmt, width, height, 1)) {
       return Status(StatusCode::kEncoderFailedEncode,
@@ -456,8 +463,10 @@ void VpxVideoEncoder::Encode(scoped_refptr<VideoFrame> frame,
       break;
   }
 
+  // Use zero as a timestamp, so encoder will not use it for rate control.
+  // In absence of timestamp libvpx uses duration.
+  constexpr auto timestamp_us = 0;
   auto duration_us = GetFrameDuration(*frame).InMicroseconds();
-  auto timestamp_us = frame->timestamp().InMicroseconds();
   last_frame_timestamp_ = frame->timestamp();
   auto deadline = VPX_DL_REALTIME;
   vpx_codec_flags_t flags = key_frame ? VPX_EFLAG_FORCE_KF : 0;
@@ -495,7 +504,7 @@ void VpxVideoEncoder::Encode(scoped_refptr<VideoFrame> frame,
     return;
   }
 
-  DrainOutputs(temporal_id);
+  DrainOutputs(temporal_id, frame->timestamp());
   std::move(done_cb).Run(Status());
 }
 
@@ -590,7 +599,7 @@ base::TimeDelta VpxVideoEncoder::GetFrameDuration(const VideoFrame& frame) {
   constexpr auto min_duration = base::TimeDelta::FromSecondsD(1.0 / 60.0);
   constexpr auto max_duration = base::TimeDelta::FromSecondsD(1.0 / 24.0);
   auto duration = frame.timestamp() - last_frame_timestamp_;
-  return base::ClampToRange(duration, min_duration, max_duration);
+  return base::clamp(duration, min_duration, max_duration);
 }
 
 VpxVideoEncoder::~VpxVideoEncoder() {
@@ -621,11 +630,11 @@ void VpxVideoEncoder::Flush(StatusCB done_cb) {
     std::move(done_cb).Run(std::move(status));
     return;
   }
-  DrainOutputs(0);
+  DrainOutputs(0, base::TimeDelta());
   std::move(done_cb).Run(Status());
 }
 
-void VpxVideoEncoder::DrainOutputs(int temporal_id) {
+void VpxVideoEncoder::DrainOutputs(int temporal_id, base::TimeDelta ts) {
   vpx_codec_iter_t iter = nullptr;
   const vpx_codec_cx_pkt_t* pkt = nullptr;
   while ((pkt = vpx_codec_get_cx_data(codec_.get(), &iter))) {
@@ -642,7 +651,9 @@ void VpxVideoEncoder::DrainOutputs(int temporal_id) {
         result.temporal_id = temporal_id;
       }
 
-      result.timestamp = base::TimeDelta::FromMicroseconds(pkt->data.frame.pts);
+      // We don't given timestamps to vpx_codec_encode() that's why
+      // pkt->data.frame.pts can't be used here.
+      result.timestamp = ts;
       result.size = pkt->data.frame.sz;
       result.data.reset(new uint8_t[result.size]);
       memcpy(result.data.get(), pkt->data.frame.buf, result.size);

@@ -19,6 +19,9 @@ js_type_check("closure_compile") {
                     "js_module_root=" + rebase_path(
                             "$root_gen_dir/mojom-webui/chrome/browser/ui/webui/tab_search",
                             root_build_dir),
+                    "js_module_root=" + rebase_path(
+                            "$root_gen_dir/mojom-webui/components/tab_groups/public/mojom",
+                            root_build_dir),
                   ]
   deps = [
     ":bimap_test",
@@ -71,7 +74,7 @@ js_library("tab_search_app_focus_test") {
 
 js_library("test_tab_search_api_proxy") {
   deps = [
-    "..:test_browser_proxy.m",
+    "..:test_browser_proxy",
     "//chrome/browser/resources/tab_search:tab_search",
     "//chrome/browser/ui/webui/tab_search:mojo_bindings_js_library_for_compile",
   ]

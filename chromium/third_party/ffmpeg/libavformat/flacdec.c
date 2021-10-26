@@ -31,8 +31,7 @@
 #define SEEKPOINT_SIZE 18
 
 typedef struct FLACDecContext {
-    AVClass *class;
-    int raw_packet_size;
+    FFRawDemuxerContext rawctx;
     int found_seektable;
 } FLACDecContext;
 
@@ -56,7 +55,7 @@ static int flac_read_header(AVFormatContext *s)
         return AVERROR(ENOMEM);
     st->codecpar->codec_type = AVMEDIA_TYPE_AUDIO;
     st->codecpar->codec_id = AV_CODEC_ID_FLAC;
-    st->need_parsing = AVSTREAM_PARSE_FULL_RAW;
+    st->internal->need_parsing = AVSTREAM_PARSE_FULL_RAW;
     /* the parameters will be extracted from the compressed bitstream */
 
     /* if fLaC marker is not found, assume there is no header */
@@ -259,7 +258,7 @@ static int flac_probe(const AVProbeData *p)
 static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_index,
                                              int64_t *ppos, int64_t pos_limit)
 {
-    AVPacket pkt;
+    AVPacket *pkt = s->internal->parse_pkt;
     AVStream *st = s->streams[stream_index];
     AVCodecParserContext *parser;
     int ret;
@@ -268,7 +267,6 @@ static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_inde
     if (avio_seek(s->pb, *ppos, SEEK_SET) < 0)
         return AV_NOPTS_VALUE;
 
-    av_init_packet(&pkt);
     parser = av_parser_init(st->codecpar->codec_id);
     if (!parser){
         return AV_NOPTS_VALUE;
@@ -279,20 +277,20 @@ static av_unused int64_t flac_read_timestamp(AVFormatContext *s, int stream_inde
         uint8_t *data;
         int size;
 
-        ret = ff_raw_read_partial_packet(s, &pkt);
+        ret = ff_raw_read_partial_packet(s, pkt);
         if (ret < 0){
             if (ret == AVERROR(EAGAIN))
                 continue;
             else {
-                av_packet_unref(&pkt);
-                av_assert1(!pkt.size);
+                av_packet_unref(pkt);
+                av_assert1(!pkt->size);
             }
         }
         av_parser_parse2(parser, st->internal->avctx,
-                         &data, &size, pkt.data, pkt.size,
-                         pkt.pts, pkt.dts, *ppos);
+                         &data, &size, pkt->data, pkt->size,
+                         pkt->pts, pkt->dts, *ppos);
 
-        av_packet_unref(&pkt);
+        av_packet_unref(pkt);
         if (size) {
             if (parser->pts != AV_NOPTS_VALUE){
                 // seeking may not have started from beginning of a frame
@@ -330,8 +328,7 @@ static int flac_seek(AVFormatContext *s, int stream_index, int64_t timestamp, in
     return -1;
 }
 
-FF_RAW_DEMUXER_CLASS(flac)
-AVInputFormat ff_flac_demuxer = {
+const AVInputFormat ff_flac_demuxer = {
     .name           = "flac",
     .long_name      = NULL_IF_CONFIG_SMALL("raw FLAC"),
     .read_probe     = flac_probe,
@@ -343,5 +340,5 @@ AVInputFormat ff_flac_demuxer = {
     .extensions     = "flac",
     .raw_codec_id   = AV_CODEC_ID_FLAC,
     .priv_data_size = sizeof(FLACDecContext),
-    .priv_class     = &flac_demuxer_class,
+    .priv_class     = &ff_raw_demuxer_class,
 };

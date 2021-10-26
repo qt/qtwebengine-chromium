@@ -53,6 +53,7 @@ extern const char kAppsGalleryURL[];
 extern const char kAuthServerAllowlist[];
 extern const char kAutoOpenDevToolsForTabs[];
 extern const char kAutoSelectDesktopCaptureSource[];
+extern const char kAutoSelectTabCaptureSourceByTitle[];
 extern const char kCheckForUpdateIntervalSec[];
 extern const char kCipherSuiteBlacklist[];
 extern const char kCloudPrintFile[];
@@ -94,7 +95,6 @@ extern const char kEnableAudioDebugRecordingsFromExtension[];
 extern const char kEnableBookmarkUndo[];
 extern const char kEnableCloudPrintProxy[];
 extern const char kEnableCriticalPersistedTabData[];
-extern const char kEnableDeviceDiscoveryNotifications[];
 extern const char kEnableDomainReliability[];
 extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
@@ -122,7 +122,6 @@ extern const char kKioskMode[];
 extern const char kKioskModePrinting[];
 extern const char kLaunchInProcessSimpleBrowserSwitch[];
 extern const char kLaunchSimpleBrowserSwitch[];
-extern const char kLoadMediaRouterComponentExtension[];
 extern const char kMakeDefaultBrowser[];
 extern const char kMonitoringDestinationID[];
 extern const char kNativeMessagingConnectHost[];
@@ -139,8 +138,6 @@ extern const char kOnTheFlyMhtmlHashComputation[];
 extern const char kOpenInNewWindow[];
 extern const char kPackExtension[];
 extern const char kPackExtensionKey[];
-extern const char kPermissionRequestApiScope[];
-extern const char kPermissionRequestApiUrl[];
 extern const char kPredictionServiceMockLikelihood[];
 extern const char kPreinstalledWebAppsDir[];
 extern const char kPrivetIPv6Only[];
@@ -222,7 +219,6 @@ extern const char kWmClass[];
 extern const char kAppsKeepChromeAliveInTests[];
 extern const char kDisableHostedAppShimCreation[];
 extern const char kEnableUserMetrics[];
-extern const char kHostedAppQuitNotification[];
 extern const char kMetricsClientID[];
 extern const char kRelauncherProcess[];
 extern const char kRelauncherProcessDMGDevice[];
@@ -255,7 +251,7 @@ extern const char kAllowNaClSocketAPI[];
 #endif
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS) || defined(OS_MAC) || \
-    defined(OS_WIN)
+    defined(OS_WIN) || defined(OS_FUCHSIA)
 extern const char kEnableNewAppMenuIcon[];
 extern const char kGuest[];
 #endif

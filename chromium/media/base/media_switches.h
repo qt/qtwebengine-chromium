@@ -91,6 +91,12 @@ MEDIA_EXPORT extern const char kEnableLiveCaptionPrefForTesting[];
 MEDIA_EXPORT extern const char kEnableClearHevcForTesting[];
 #endif
 
+#if defined(OS_CHROMEOS)
+MEDIA_EXPORT extern const char kLacrosEnablePlatformEncryptedHevc[];
+MEDIA_EXPORT extern const char kLacrosEnablePlatformHevc[];
+MEDIA_EXPORT extern const char kLacrosUseChromeosProtectedMedia[];
+#endif  // defined(OS_CHROMEOS)
+
 namespace autoplay {
 
 MEDIA_EXPORT extern const char kDocumentUserActivationRequiredPolicy[];
@@ -98,6 +104,10 @@ MEDIA_EXPORT extern const char kNoUserGestureRequiredPolicy[];
 MEDIA_EXPORT extern const char kUserGestureRequiredPolicy[];
 
 }  // namespace autoplay
+
+#if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+MEDIA_EXPORT extern const char kHardwareVideoDecodeFrameRate[];
+#endif
 
 }  // namespace switches
 
@@ -145,6 +155,7 @@ MEDIA_EXPORT extern const base::Feature kKaleidoscope;
 MEDIA_EXPORT extern const base::Feature kKaleidoscopeInMenu;
 MEDIA_EXPORT extern const base::Feature
     kKaleidoscopeForceShowFirstRunExperience;
+MEDIA_EXPORT extern const base::Feature kKeyPressMonitoring;
 MEDIA_EXPORT extern const base::Feature kLiveCaption;
 MEDIA_EXPORT extern const base::Feature kLiveCaptionMultiLanguage;
 MEDIA_EXPORT extern const base::Feature kLiveCaptionSystemWideOnChromeOS;
@@ -161,6 +172,7 @@ MEDIA_EXPORT extern const base::Feature kMediaOptimizer;
 MEDIA_EXPORT extern const base::Feature kMediaPowerExperiment;
 MEDIA_EXPORT extern const base::Feature kMediaSessionWebRTC;
 MEDIA_EXPORT extern const base::Feature kMemoryPressureBasedSourceBufferGC;
+MEDIA_EXPORT extern const base::Feature kMultiPlaneVideoCaptureSharedImages;
 MEDIA_EXPORT extern const base::Feature kOverlayFullscreenVideo;
 MEDIA_EXPORT extern const base::Feature kPictureInPicture;
 MEDIA_EXPORT extern const base::Feature kPlaybackSpeedButton;
@@ -171,11 +183,12 @@ MEDIA_EXPORT extern const base::Feature kRecordMediaEngagementScores;
 MEDIA_EXPORT extern const base::Feature kRecordWebAudioEngagement;
 MEDIA_EXPORT extern const base::Feature kResumeBackgroundVideo;
 MEDIA_EXPORT extern const base::Feature kRevokeMediaSourceObjectURLOnAttach;
+MEDIA_EXPORT extern const base::Feature kSpeakerChangeDetection;
+MEDIA_EXPORT extern const base::Feature kSpecCompliantCanPlayThrough;
 MEDIA_EXPORT extern const base::Feature kSurfaceLayerForMediaStreams;
 MEDIA_EXPORT extern const base::Feature kSuspendMutedAudio;
-MEDIA_EXPORT extern const base::Feature kSpecCompliantCanPlayThrough;
 MEDIA_EXPORT extern const base::Feature kUnifiedAutoplay;
-MEDIA_EXPORT extern const base::Feature kUseAndroidOverlayAggressively;
+MEDIA_EXPORT extern const base::Feature kUseAndroidOverlayForSecureOnly;
 MEDIA_EXPORT extern const base::Feature kUseDecoderStreamForWebRTC;
 MEDIA_EXPORT extern const base::Feature kUseFakeDeviceForMediaStream;
 MEDIA_EXPORT extern const base::Feature kUseMediaHistoryStore;
@@ -191,15 +204,16 @@ MEDIA_EXPORT extern const base::Feature kVaapiEnforceVideoMinMaxResolution;
 MEDIA_EXPORT extern const base::Feature kVaapiVideoMinResolutionForPerformance;
 MEDIA_EXPORT extern const base::Feature kVaapiVP8Encoder;
 MEDIA_EXPORT extern const base::Feature kVaapiVP9Encoder;
+#if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS_ASH)
+MEDIA_EXPORT extern const base::Feature kVaapiVp9kSVCHWDecoding;
+MEDIA_EXPORT extern const base::Feature kVaapiVp9kSVCHWEncoding;
+#endif  // defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS_ASH)
 MEDIA_EXPORT extern const base::Feature kVideoBlitColorAccuracy;
 MEDIA_EXPORT extern const base::Feature kWakeLockOptimisationHiddenMuted;
 MEDIA_EXPORT extern const base::Feature kResolutionBasedDecoderPriority;
 MEDIA_EXPORT extern const base::Feature kForceHardwareVideoDecoders;
 MEDIA_EXPORT extern const base::Feature kForceHardwareAudioDecoders;
 
-#if defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS_ASH)
-MEDIA_EXPORT extern const base::Feature kVp9kSVCHWDecoding;
-#endif  // defined(ARCH_CPU_X86_FAMILY) && BUILDFLAG(IS_CHROMEOS_ASH)
 
 #if defined(OS_ANDROID)
 MEDIA_EXPORT extern const base::Feature kAllowNonSecureOverlays;
@@ -220,6 +234,10 @@ MEDIA_EXPORT extern const base::Feature kUseChromeOSDirectVideoDecoder;
 
 MEDIA_EXPORT extern const base::Feature kUseAlternateVideoDecoderImplementation;
 #endif  // defined(OS_CHROMEOS) && BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+
+#if defined(OS_MAC)
+MEDIA_EXPORT extern const base::Feature kMultiPlaneVideoToolboxSharedImages;
+#endif
 
 #if defined(OS_WIN)
 MEDIA_EXPORT extern const base::Feature kDelayCopyNV12Textures;

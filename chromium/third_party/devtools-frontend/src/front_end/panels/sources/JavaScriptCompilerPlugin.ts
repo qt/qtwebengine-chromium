@@ -7,7 +7,7 @@
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js'; // eslint-disable-line no-unused-vars
+import type * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Snippets from '../snippets/snippets.js';
 
@@ -45,7 +45,7 @@ export class JavaScriptCompilerPlugin extends Plugin {
     if (Snippets.ScriptSnippetFileSystem.isSnippetsUISourceCode(uiSourceCode)) {
       return true;
     }
-    for (const debuggerModel of SDK.SDKModel.TargetManager.instance().models(SDK.DebuggerModel.DebuggerModel)) {
+    for (const debuggerModel of SDK.TargetManager.TargetManager.instance().models(SDK.DebuggerModel.DebuggerModel)) {
       if (Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().scriptFile(
               uiSourceCode, debuggerModel)) {
         return true;
@@ -66,7 +66,7 @@ export class JavaScriptCompilerPlugin extends Plugin {
   }
 
   _findRuntimeModel(): SDK.RuntimeModel.RuntimeModel|null {
-    const debuggerModels = SDK.SDKModel.TargetManager.instance().models(SDK.DebuggerModel.DebuggerModel);
+    const debuggerModels = SDK.TargetManager.TargetManager.instance().models(SDK.DebuggerModel.DebuggerModel);
     for (let i = 0; i < debuggerModels.length; ++i) {
       const scriptFile = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().scriptFile(
           this._uiSourceCode, debuggerModels[i]);
@@ -74,7 +74,7 @@ export class JavaScriptCompilerPlugin extends Plugin {
         return debuggerModels[i].runtimeModel();
       }
     }
-    const mainTarget = SDK.SDKModel.TargetManager.instance().mainTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
     return mainTarget ? mainTarget.model(SDK.RuntimeModel.RuntimeModel) : null;
   }
 

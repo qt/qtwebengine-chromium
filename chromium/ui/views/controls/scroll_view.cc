@@ -8,10 +8,10 @@
 
 #include "base/bind.h"
 #include "base/check_op.h"
+#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/macros.h"
-#include "base/numerics/ranges.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_action_data.h"
 #include "ui/accessibility/ax_enums.mojom.h"
@@ -80,8 +80,7 @@ bool DoesDescendantHaveLayer(View* view) {
 // Returns the position for the view so that it isn't scrolled off the visible
 // region.
 int CheckScrollBounds(int viewport_size, int content_size, int current_pos) {
-  return base::ClampToRange(current_pos, 0,
-                            std::max(content_size - viewport_size, 0));
+  return base::clamp(current_pos, 0, std::max(content_size - viewport_size, 0));
 }
 
 // Make sure the content is not scrolled out of bounds
@@ -230,8 +229,8 @@ ScrollView::ScrollView(ScrollWithLayers scroll_with_layers)
     more_content_bottom_->SetPaintToLayer();
   }
 
-  focus_ring_ = FocusRing::Install(this);
-  focus_ring_->SetHasFocusPredicate([](View* view) -> bool {
+  FocusRing::Install(this);
+  views::FocusRing::Get(this)->SetHasFocusPredicate([](View* view) -> bool {
     auto* v = static_cast<ScrollView*>(view);
     return v->draw_focus_indicator_;
   });
@@ -260,28 +259,15 @@ ScrollView* ScrollView::GetScrollViewForContents(View* contents) {
 
 void ScrollView::SetContentsImpl(std::unique_ptr<View> a_view) {
   // Protect against clients passing a contents view that has its own Layer.
-  DCHECK(!a_view->layer());
-  if (ScrollsWithLayers()) {
-    bool fills_opaquely = true;
-    if (!a_view->background()) {
-      // Contents views may not be aware they need to fill their entire bounds -
-      // play it safe here to avoid graphical glitches
-      // (https://crbug.com/826472). If there's no solid background, mark the
-      // view as not filling its bounds opaquely.
-      if (GetBackgroundColor()) {
-        a_view->SetBackground(
-            CreateSolidBackground(GetBackgroundColor().value()));
-      } else {
-        fills_opaquely = false;
-      }
-    }
+  DCHECK(!a_view || !a_view->layer());
+  if (a_view && ScrollsWithLayers()) {
     a_view->SetPaintToLayer();
     a_view->layer()->SetDidScrollCallback(base::BindRepeating(
         &ScrollView::OnLayerScrolled, base::Unretained(this)));
     a_view->layer()->SetScrollable(contents_viewport_->bounds().size());
-    a_view->layer()->SetFillsBoundsOpaquely(fills_opaquely);
   }
   SetHeaderOrContents(contents_viewport_, std::move(a_view), &contents_);
+  UpdateBackground();
 }
 
 void ScrollView::SetContents(std::nullptr_t) {
@@ -449,7 +435,7 @@ void ScrollView::SetHasFocusIndicator(bool has_focus_indicator) {
     return;
   draw_focus_indicator_ = has_focus_indicator;
 
-  focus_ring_->SchedulePaint();
+  views::FocusRing::Get(this)->SchedulePaint();
   SchedulePaint();
   OnPropertyChanged(&draw_focus_indicator_, kPropertyEffectsPaint);
 }
@@ -481,7 +467,7 @@ int ScrollView::GetHeightForWidth(int width) const {
   width = std::max(0, width - insets.width());
   int height = contents_ ? contents_->GetHeightForWidth(width) + insets.height()
                          : insets.height();
-  return base::ClampToRange(height, min_height_, max_height_);
+  return base::clamp(height, min_height_, max_height_);
 }
 
 void ScrollView::Layout() {
@@ -498,8 +484,8 @@ void ScrollView::Layout() {
     DCHECK_EQ(horiz_sb_->OverlapsContent(), vert_sb_->OverlapsContent());
   }
 
-  if (focus_ring_)
-    focus_ring_->Layout();
+  if (views::FocusRing::Get(this))
+    views::FocusRing::Get(this)->Layout();
 
   gfx::Rect available_rect = GetContentsBounds();
   if (is_bounded()) {
@@ -825,7 +811,6 @@ bool ScrollView::HandleAccessibleAction(const ui::AXActionData& action_data) {
       return true;
     default:
       return View::HandleAccessibleAction(action_data);
-      break;
   }
 }
 
@@ -891,7 +876,8 @@ void ScrollView::UpdateViewportLayerForClipping() {
 void ScrollView::SetHeaderOrContents(View* parent,
                                      std::unique_ptr<View> new_view,
                                      View** member) {
-  delete *member;
+  if (*member)
+    parent->RemoveChildViewT(*member);
   if (new_view.get())
     *member = parent->AddChildViewAt(std::move(new_view), 0);
   else
@@ -911,8 +897,8 @@ void ScrollView::ScrollContentsRegionToBeVisible(const gfx::Rect& rect) {
   const int contents_max_y =
       std::max(contents_viewport_->height(), contents_->height());
 
-  int x = base::ClampToRange(rect.x(), 0, contents_max_x);
-  int y = base::ClampToRange(rect.y(), 0, contents_max_y);
+  int x = base::clamp(rect.x(), 0, contents_max_x);
+  int y = base::clamp(rect.y(), 0, contents_max_y);
 
   // Figure out how far and down the rectangle will go taking width
   // and height into account.  This will be "clipped" by the viewport.
@@ -1077,6 +1063,9 @@ void ScrollView::OnScrolled(const gfx::ScrollOffset& offset) {
 
   for (auto& observer : observers_)
     observer.OnContentsScrolled();
+
+  NotifyAccessibilityEvent(ax::mojom::Event::kScrollPositionChanged,
+                           /*send_native_event=*/true);
 }
 
 void ScrollView::ScrollHeader() {
@@ -1122,8 +1111,14 @@ void ScrollView::UpdateBackground() {
   // the viewport as well. This way if the viewport has a layer
   // SetFillsBoundsOpaquely() is honored.
   contents_viewport_->SetBackground(create_background());
-  if (contents_ && ScrollsWithLayers())
+  if (contents_ && ScrollsWithLayers()) {
     contents_->SetBackground(create_background());
+    // Contents views may not be aware they need to fill their entire bounds -
+    // play it safe here to avoid graphical glitches (https://crbug.com/826472).
+    // If there's no solid background, mark the contents view as not filling its
+    // bounds opaquely.
+    contents_->layer()->SetFillsBoundsOpaquely(!!background_color);
+  }
   if (contents_viewport_->layer()) {
     contents_viewport_->layer()->SetFillsBoundsOpaquely(!!background_color);
   }

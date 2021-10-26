@@ -37,9 +37,8 @@ def AreGnConfigsDone(cfg):
   #
   # So, if you're just editing ffmpeg sources to get tests to pass, then you
   # probably don't need to do this step again.
-  #
-  # TODO: Add a way to override this.  I guess just edit out the config
-  # commit with a rebase for now.
+  if cfg.force_gn_rebuild():
+    return False
   return robo_branch.IsCommitOnThisBranch(cfg, cfg.gn_commit_title())
 
 def BuildGnConfigsUnconditionally(robo_configuration):
@@ -85,6 +84,9 @@ steps = {
                                 "ensure_remote"]) },
 
   # TODO(liberato): consider moving the "if needed" to |req_fn|.
+  "erase_build_output":
+    { "desc": "Once, at the start of the merge, delete build_ffmpeg output.",
+      "do_fn": robo_build.ObliterateOldBuildOutputIfNeeded },
   "create_sushi_branch":
       { "desc": "Create a sushi-MDY branch if we're not on one",
         "do_fn": robo_branch.CreateAndCheckoutDatedSushiBranchIfNeeded },
@@ -128,7 +130,8 @@ steps = {
 
   # Roll-up for --auto-merge
   "auto-merge":
-      { "do_fn": lambda cfg : RunSteps(cfg, [ "create_sushi_branch",
+      { "do_fn": lambda cfg : RunSteps(cfg, [ "erase_build_output",
+                                              "create_sushi_branch",
                                               "merge_from_upstream",
                                               "push_merge_to_origin",
                                               "build_gn_configs",
@@ -151,7 +154,7 @@ def RunSteps(cfg, step_names):
     try:
       if "pre_fn" in step:
         raise Exception("pre_fn not supported yet")
-      if "skip_fn" in step:
+      if cfg.skip_allowed() and "skip_fn" in step:
         if step["skip_fn"](cfg):
           shell.log("Step %s not needed, skipping" % step_name)
           continue
@@ -179,10 +182,12 @@ def main(argv):
            "test",
            "build-gn",
            "patches",
+           "force-gn-rebuild",
            "auto-merge",
            "step=",
            "list",
            "dev-merge",
+           "no-skip",
           ])
 
   exec_steps = []
@@ -210,12 +215,16 @@ def main(argv):
       exec_steps = arg.split(",")
     elif opt == "--list":
       ListSteps()
+    elif opt == "--no-skip":
+      robo_configuration.set_skip_allowed(False)
     elif opt == "--dev-merge":
       # Use HEAD rather than origin/master, so that local robosushi changes
       # are part of the merge.  Only useful for testing those changes.
       new_merge_base = shell.output_or_error(["git", "log", "--format=%H", "-1"])
       shell.log(f"Using {new_merge_base} as new origin merge base for testing")
       robo_configuration.override_origin_merge_base(new_merge_base)
+    elif opt == "--force-gn-rebuild":
+      robo_configuration.set_force_gn_rebuild()
     else:
       raise Exception("Unknown option '%s'" % opt);
 

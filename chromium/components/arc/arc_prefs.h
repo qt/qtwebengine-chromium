@@ -27,6 +27,7 @@ ARC_EXPORT extern const char kArcFrameworkVersion[];
 ARC_EXPORT extern const char kArcHasAccessToRemovableMedia[];
 ARC_EXPORT extern const char kArcInitialSettingsPending[];
 ARC_EXPORT extern const char kArcLocationServiceEnabled[];
+ARC_EXPORT extern const char kArcManagementTransition[];
 ARC_EXPORT extern const char kArcPackages[];
 ARC_EXPORT extern const char kArcPaiStarted[];
 ARC_EXPORT extern const char kArcPolicyComplianceReported[];
@@ -34,15 +35,16 @@ ARC_EXPORT extern const char kArcProvisioningInitiatedFromOobe[];
 ARC_EXPORT extern const char kArcPushInstallAppsPending[];
 ARC_EXPORT extern const char kArcPushInstallAppsRequested[];
 ARC_EXPORT extern const char kArcSetNotificationsEnabledDeferred[];
+ARC_EXPORT extern const char kArcShowResizeLockSplashScreenLimits[];
 ARC_EXPORT extern const char kArcSignedIn[];
 ARC_EXPORT extern const char kArcSkippedReportingNotice[];
-ARC_EXPORT extern const char kArcSupervisionTransition[];
 ARC_EXPORT extern const char kArcTermsAccepted[];
 ARC_EXPORT extern const char kArcTermsShownInOobe[];
 ARC_EXPORT extern const char kArcVisibleExternalStorages[];
 ARC_EXPORT extern const char kArcIsManaged[];
 ARC_EXPORT extern const char kEcryptfsMigrationStrategy[];
 ARC_EXPORT extern const char kEngagementPrefsPrefix[];
+ARC_EXPORT extern const char kArcPlayStoreLaunchMetricCanBeRecorded[];
 
 // Local state prefs in lexicographical order.
 ARC_EXPORT extern const char kArcSerialNumberSalt[];

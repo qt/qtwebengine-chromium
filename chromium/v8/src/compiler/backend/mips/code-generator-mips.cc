@@ -158,6 +158,8 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
 #endif  // V8_ENABLE_WEBASSEMBLY
         must_save_lr_(!gen->frame_access_state()->has_frame()),
         zone_(gen->zone()) {
+    DCHECK(!AreAliased(object, index, scratch0, scratch1));
+    DCHECK(!AreAliased(value, index, scratch0, scratch1));
   }
 
   void Generate() final {
@@ -183,12 +185,13 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
       // A direct call to a wasm runtime stub defined in this module.
       // Just encode the stub index. This will be patched when the code
       // is added to the native module and copied into wasm code space.
-      __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
-                             save_fp_mode, wasm::WasmCode::kRecordWrite);
+      __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+                                          remembered_set_action, save_fp_mode,
+                                          StubCallMode::kCallWasmRuntimeStub);
 #endif  // V8_ENABLE_WEBASSEMBLY
     } else {
-      __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
-                             save_fp_mode);
+      __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+                                          remembered_set_action, save_fp_mode);
     }
     if (must_save_lr_) {
       __ Pop(ra);
@@ -778,7 +781,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       bool isWasmCapiFunction =
           linkage()->GetIncomingDescriptor()->IsWasmCapiFunction();
       // from start_call to return address.
-      int offset = __ root_array_available() ? 68 : 80;
+      int offset = __ root_array_available() ? 64 : 88;
 #endif  // V8_ENABLE_WEBASSEMBLY
 #if V8_HOST_ARCH_MIPS
       if (FLAG_debug_code) {
@@ -848,9 +851,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NONE);
-        __ Call(
-            isolate()->builtins()->builtin_handle(Builtins::kAbortCSAAssert),
-            RelocInfo::CODE_TARGET);
+        __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSAAssert),
+                RelocInfo::CODE_TARGET);
       }
       __ stop();
       break;
@@ -927,33 +929,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
           frame_access_state()->GetFrameOffset(i.InputInt32(0));
       Register base_reg = offset.from_stack_pointer() ? sp : fp;
       __ Addu(i.OutputRegister(), base_reg, Operand(offset.offset()));
-      int alignment = i.InputInt32(1);
-      DCHECK(alignment == 0 || alignment == 4 || alignment == 8 ||
-             alignment == 16);
-      if (FLAG_debug_code && alignment > 0) {
+      if (FLAG_debug_code > 0) {
         // Verify that the output_register is properly aligned
         __ And(kScratchReg, i.OutputRegister(),
                Operand(kSystemPointerSize - 1));
         __ Assert(eq, AbortReason::kAllocationIsNotDoubleAligned, kScratchReg,
                   Operand(zero_reg));
-      }
-
-      if (alignment == 2 * kSystemPointerSize) {
-        Label done;
-        __ Addu(kScratchReg, base_reg, Operand(offset.offset()));
-        __ And(kScratchReg, kScratchReg, Operand(alignment - 1));
-        __ BranchShort(&done, eq, kScratchReg, Operand(zero_reg));
-        __ Addu(i.OutputRegister(), i.OutputRegister(), kSystemPointerSize);
-        __ bind(&done);
-      } else if (alignment > 2 * kSystemPointerSize) {
-        Label done;
-        __ Addu(kScratchReg, base_reg, Operand(offset.offset()));
-        __ And(kScratchReg, kScratchReg, Operand(alignment - 1));
-        __ BranchShort(&done, eq, kScratchReg, Operand(zero_reg));
-        __ li(kScratchReg2, alignment);
-        __ Subu(kScratchReg2, kScratchReg2, Operand(kScratchReg));
-        __ Addu(i.OutputRegister(), i.OutputRegister(), kScratchReg2);
-        __ bind(&done);
       }
       break;
     }
@@ -4087,7 +4068,6 @@ void CodeGenerator::FinishFrame(Frame* frame) {
   const RegList saves = call_descriptor->CalleeSavedRegisters();
   if (saves != 0) {
     int count = base::bits::CountPopulation(saves);
-    DCHECK_EQ(kNumCalleeSaved, count + 1);
     frame->AllocateSavedCalleeRegisterSlots(count);
   }
 }
@@ -4159,7 +4139,7 @@ void CodeGenerator::AssembleConstructFrame() {
   if (required_slots > 0) {
     DCHECK(frame_access_state()->has_frame());
 #if V8_ENABLE_WEBASSEMBLY
-    if (info()->IsWasm() && required_slots > 128) {
+    if (info()->IsWasm() && required_slots * kSystemPointerSize > 4 * KB) {
       // For WebAssembly functions with big frames we have to do the stack
       // overflow check before we construct the frame. Otherwise we may not
       // have enough space on the stack to call the runtime for the stack
@@ -4169,7 +4149,7 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if ((required_slots * kSystemPointerSize) < (FLAG_stack_size * 1024)) {
+      if (required_slots * kSystemPointerSize < FLAG_stack_size * KB) {
         __ Lw(
              kScratchReg,
              FieldMemOperand(kWasmInstanceRegister,
@@ -4181,12 +4161,11 @@ void CodeGenerator::AssembleConstructFrame() {
       }
 
       __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
-      // We come from WebAssembly, there are no references for the GC.
+      // The call does not return, hence we can ignore any references and just
+      // define an empty safepoint.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
       RecordSafepoint(reference_map);
-      if (FLAG_debug_code) {
-        __ stop();
-      }
+      if (FLAG_debug_code) __ stop();
 
       __ bind(&done);
     }
@@ -4211,7 +4190,6 @@ void CodeGenerator::AssembleConstructFrame() {
   if (saves != 0) {
     // Save callee-saved registers.
     __ MultiPush(saves);
-    DCHECK_EQ(kNumCalleeSaved, base::bits::CountPopulation(saves) + 1);
   }
 
   if (returns != 0) {

@@ -8,8 +8,10 @@
 #include <utility>
 #include <vector>
 
+#include "base/feature_list.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/build_config.h"
+#include "components/viz/common/features.h"
 #include "components/viz/common/resources/resource_format_utils.h"
 #include "components/viz/service/display_embedder/skia_output_surface_dependency.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
@@ -262,6 +264,8 @@ void OutputPresenterGL::InitializeCapabilities(
   // Set resize_based_on_root_surface to omit platform proposed size.
   capabilities->resize_based_on_root_surface =
       gl_surface_->SupportsOverridePlatformSize();
+  capabilities->use_dynamic_frame_buffer_allocation =
+      base::FeatureList::IsEnabled(features::kDynamicBufferQueueAllocation);
 
   // TODO(https://crbug.com/1108406): only add supported formats base on
   // platform, driver, etc.
@@ -317,9 +321,9 @@ OutputPresenterGL::AllocateImages(gfx::ColorSpace color_space,
   return images;
 }
 
-std::unique_ptr<OutputPresenter::Image>
-OutputPresenterGL::AllocateBackgroundImage(gfx::ColorSpace color_space,
-                                           gfx::Size image_size) {
+std::unique_ptr<OutputPresenter::Image> OutputPresenterGL::AllocateSingleImage(
+    gfx::ColorSpace color_space,
+    gfx::Size image_size) {
   auto image = std::make_unique<PresenterImageGL>();
   if (!image->Initialize(shared_image_factory_,
                          shared_image_representation_factory_, image_size,
@@ -371,10 +375,14 @@ void OutputPresenterGL::SchedulePrimaryPlane(
 
   // Output surface is also z-order 0.
   constexpr int kPlaneZOrder = 0;
-  gl_surface_->ScheduleOverlayPlane(kPlaneZOrder, plane.transform, gl_image,
-                                    ToNearestRect(plane.display_rect),
-                                    plane.uv_rect, plane.enable_blending,
-                                    std::move(fence));
+  // TODO(edcourtney): We pass a full damage rect - actual damage is passed via
+  // PostSubBuffer. As part of unifying the handling of the primary plane and
+  // overlays, damage should be added to OutputSurfaceOverlayPlane and passed in
+  // here.
+  gl_surface_->ScheduleOverlayPlane(
+      kPlaneZOrder, plane.transform, gl_image,
+      ToNearestRect(plane.display_rect), plane.uv_rect, plane.enable_blending,
+      gfx::Rect(plane.resource_size), std::move(fence));
 }
 
 void OutputPresenterGL::ScheduleBackground(Image* image) {
@@ -390,7 +398,8 @@ void OutputPresenterGL::ScheduleBackground(Image* image) {
   gl_surface_->ScheduleOverlayPlane(
       kPlaneZOrder, gfx::OVERLAY_TRANSFORM_NONE, gl_image, gfx::Rect(),
       /*crop_rect=*/kUVRect,
-      /*enable_blend=*/false, /*gpu_fence=*/nullptr);
+      /*enable_blend=*/false, /*damage_rect=*/gfx::Rect(),
+      /*gpu_fence=*/nullptr);
 }
 
 void OutputPresenterGL::CommitOverlayPlanes(
@@ -424,7 +433,8 @@ void OutputPresenterGL::ScheduleOverlays(
       gl_surface_->ScheduleOverlayPlane(
           overlay.plane_z_order, overlay.transform, gl_image,
           ToNearestRect(overlay.display_rect), overlay.uv_rect,
-          !overlay.is_opaque, TakeGpuFence(accesses[i]->TakeAcquireFences()));
+          !overlay.is_opaque, ToEnclosingRect(overlay.damage_rect),
+          TakeGpuFence(accesses[i]->TakeAcquireFences()));
     }
 #elif defined(OS_APPLE)
     // For RenderPassDrawQuad the ddl is not nullptr, and the opacity is applied

@@ -143,6 +143,7 @@ class TextureState final : private angle::NonCopyable
     const SwizzleState &getSwizzleState() const { return mSwizzleState; }
     const SamplerState &getSamplerState() const { return mSamplerState; }
     GLenum getUsage() const { return mUsage; }
+    bool hasProtectedContent() const { return mHasProtectedContent; }
     GLenum getDepthStencilTextureMode() const { return mDepthStencilTextureMode; }
     bool isStencilMode() const { return mDepthStencilTextureMode == GL_STENCIL_INDEX; }
 
@@ -173,6 +174,8 @@ class TextureState final : private angle::NonCopyable
     InitState getInitState() const { return mInitState; }
 
     const OffsetBindingPointer<Buffer> &getBuffer() const { return mBuffer; }
+
+    const std::string &getLabel() const { return mLabel; }
 
   private:
     // Texture needs access to the ImageDesc functions.
@@ -222,6 +225,9 @@ class TextureState final : private angle::NonCopyable
     // From GL_ANGLE_texture_usage
     GLenum mUsage;
 
+    // GL_EXT_protected_textures
+    bool mHasProtectedContent;
+
     std::vector<ImageDesc> mImageDescs;
 
     // GLES1 emulation: Texture crop rectangle
@@ -239,6 +245,7 @@ class TextureState final : private angle::NonCopyable
     mutable SamplerFormat mCachedSamplerFormat;
     mutable GLenum mCachedSamplerCompareMode;
     mutable bool mCachedSamplerFormatValid;
+    std::string mLabel;
 };
 
 bool operator==(const TextureState &a, const TextureState &b);
@@ -324,6 +331,9 @@ class Texture final : public RefCountObject<TextureID>,
 
     void setUsage(const Context *context, GLenum usage);
     GLenum getUsage() const;
+
+    void setProtectedContent(Context *context, bool hasProtectedContent);
+    bool hasProtectedContent() const override;
 
     const TextureState &getState() const { return mState; }
 
@@ -462,7 +472,7 @@ class Texture final : public RefCountObject<TextureID>,
 
     angle::Result setStorageMultisample(Context *context,
                                         TextureType type,
-                                        GLsizei samples,
+                                        GLsizei samplesIn,
                                         GLint internalformat,
                                         const Extents &size,
                                         bool fixedSampleLocations);
@@ -643,8 +653,6 @@ class Texture final : public RefCountObject<TextureID>,
     angle::ObserverBinding mImplObserver;
     // For EXT_texture_buffer, observes buffer changes.
     angle::ObserverBinding mBufferObserver;
-
-    std::string mLabel;
 
     egl::Surface *mBoundSurface;
     egl::Stream *mBoundStream;

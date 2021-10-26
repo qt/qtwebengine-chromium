@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "components/pdf/browser/pdf_web_contents_helper_client.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
@@ -27,6 +28,19 @@ void PDFWebContentsHelper::CreateForWebContentsWithClient(
   contents->SetUserData(
       UserDataKey(),
       base::WrapUnique(new PDFWebContentsHelper(contents, std::move(client))));
+}
+
+// static
+void PDFWebContentsHelper::BindPdfService(
+    mojo::PendingAssociatedReceiver<mojom::PdfService> pdf_service,
+    content::RenderFrameHost* rfh) {
+  auto* web_contents = content::WebContents::FromRenderFrameHost(rfh);
+  if (!web_contents)
+    return;
+  auto* pdf_helper = PDFWebContentsHelper::FromWebContents(web_contents);
+  if (!pdf_helper)
+    return;
+  pdf_helper->pdf_service_receivers_.Bind(rfh, std::move(pdf_service));
 }
 
 PDFWebContentsHelper::PDFWebContentsHelper(
@@ -157,11 +171,17 @@ void PDFWebContentsHelper::SelectBetweenCoordinates(const gfx::PointF& base,
                                          ConvertFromRoot(extent));
 }
 
-void PDFWebContentsHelper::OnSelectionEvent(ui::SelectionEventType event) {}
+void PDFWebContentsHelper::OnSelectionEvent(ui::SelectionEventType event) {
+  // Should be handled by `TouchSelectionControllerClientAura`.
+  NOTREACHED();
+}
 
 void PDFWebContentsHelper::OnDragUpdate(
     const ui::TouchSelectionDraggable::Type type,
-    const gfx::PointF& position) {}
+    const gfx::PointF& position) {
+  // Should be handled by `TouchSelectionControllerClientAura`.
+  NOTREACHED();
+}
 
 std::unique_ptr<ui::TouchHandleDrawable>
 PDFWebContentsHelper::CreateDrawable() {
@@ -174,6 +194,10 @@ void PDFWebContentsHelper::OnManagerWillDestroy(
   DCHECK_EQ(touch_selection_controller_client_manager_, manager);
   manager->RemoveObserver(this);
   touch_selection_controller_client_manager_ = nullptr;
+}
+
+const char* PDFWebContentsHelper::GetType() {
+  return "PDFWebContentsHelper";
 }
 
 bool PDFWebContentsHelper::IsCommandIdEnabled(int command_id) const {
@@ -258,13 +282,16 @@ void PDFWebContentsHelper::HasUnsupportedFeature() {
 }
 
 void PDFWebContentsHelper::SaveUrlAs(const GURL& url,
-                                     blink::mojom::ReferrerPtr referrer) {
+                                     network::mojom::ReferrerPolicy policy) {
   client_->OnSaveURL(web_contents());
 
-  if (content::RenderFrameHost* rfh =
-          web_contents()->GetOuterWebContentsFrame()) {
-    web_contents()->SaveFrame(url, referrer.To<content::Referrer>(), rfh);
-  }
+  content::RenderFrameHost* rfh = web_contents()->GetOuterWebContentsFrame();
+  if (!rfh)
+    return;
+
+  content::Referrer referrer(url, policy);
+  referrer = content::Referrer::SanitizeForRequest(url, referrer);
+  web_contents()->SaveFrame(url, referrer, rfh);
 }
 
 void PDFWebContentsHelper::UpdateContentRestrictions(

@@ -8,12 +8,14 @@
 #include <iosfwd>
 #include <vector>
 
-#include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
+#include "components/password_manager/core/browser/fake_password_store_backend.h"
 #include "components/password_manager/core/browser/origin_credential_store.h"
 #include "components/password_manager/core/browser/password_form.h"
 #include "components/password_manager/core/browser/password_hash_data.h"
+#include "components/password_manager/core/browser/password_reuse_detector.h"
 #include "components/password_manager/core/browser/password_reuse_detector_consumer.h"
+#include "components/password_manager/core/browser/password_reuse_manager.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "url/gurl.h"
@@ -32,6 +34,13 @@ scoped_refptr<RefcountedKeyedService> BuildPasswordStore(Context* context) {
   return store;
 }
 
+template <class Context, class Store>
+scoped_refptr<RefcountedKeyedService> BuildPasswordStoreInterface(
+    Context* context) {
+  scoped_refptr<password_manager::PasswordStoreInterface> store(new Store);
+  return store;
+}
+
 // As above, but allows passing parameters to the to-be-created store. The
 // parameters are specified *before* context so that they can be bound (as in
 // base::BindRepeating(&BuildPasswordStoreWithArgs<...>, my_arg)), leaving
@@ -45,6 +54,17 @@ scoped_refptr<RefcountedKeyedService> BuildPasswordStoreWithArgs(
   if (!store->Init(nullptr))
     return nullptr;
   return store;
+}
+
+// Helper function that builds a real password store with a fake backend.
+// Context is the browser context prescribed by TestingFactory.
+template <class Context>
+scoped_refptr<RefcountedKeyedService> BuildPasswordStoreWithFakeBackend(
+    Context* context) {
+  return password_manager::BuildPasswordStoreWithArgs<
+      Context, password_manager::PasswordStore,
+      std::unique_ptr<password_manager::FakePasswordStoreBackend>>(
+      std::make_unique<password_manager::FakePasswordStoreBackend>(), context);
 }
 
 // Struct used for creation of PasswordForms from static arrays of data.
@@ -99,12 +119,21 @@ MATCHER_P(UnorderedPasswordFormElementsAre, expectations, "") {
                                              result_listener->stream());
 }
 
-class MockPasswordStoreObserver : public PasswordStore::Observer {
+class MockPasswordStoreObserver : public PasswordStoreInterface::Observer {
  public:
   MockPasswordStoreObserver();
   ~MockPasswordStoreObserver() override;
 
-  MOCK_METHOD1(OnLoginsChanged, void(const PasswordStoreChangeList& changes));
+  MOCK_METHOD((void),
+              OnLoginsChanged,
+              (PasswordStoreInterface * store,
+               const PasswordStoreChangeList& changes),
+              (override));
+  MOCK_METHOD((void),
+              OnLoginsRetained,
+              (PasswordStoreInterface * store,
+               const std::vector<PasswordForm>& retained_passwords),
+              (override));
 };
 
 class MockPasswordReuseDetectorConsumer : public PasswordReuseDetectorConsumer {
@@ -112,12 +141,14 @@ class MockPasswordReuseDetectorConsumer : public PasswordReuseDetectorConsumer {
   MockPasswordReuseDetectorConsumer();
   ~MockPasswordReuseDetectorConsumer() override;
 
-  MOCK_METHOD5(OnReuseCheckDone,
-               void(bool,
-                    size_t,
-                    absl::optional<PasswordHashData>,
-                    const std::vector<MatchingReusedCredential>&,
-                    int));
+  MOCK_METHOD((void),
+              OnReuseCheckDone,
+              (bool,
+               size_t,
+               absl::optional<PasswordHashData>,
+               const std::vector<MatchingReusedCredential>&,
+               int),
+              (override));
 };
 
 // Matcher class used to compare PasswordHashData in tests.

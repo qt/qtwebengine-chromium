@@ -10,10 +10,12 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import type * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import * as ConsoleComponents from './components/components.js';
 
 import type {LevelsMask} from './ConsoleFilter.js';
 import {ConsoleFilter, FilterType} from './ConsoleFilter.js';
 import type {ConsoleViewMessage} from './ConsoleViewMessage.js';
+import consoleSidebarStyles from './consoleSidebar.css.js';
 
 const UIStrings = {
   /**
@@ -61,8 +63,10 @@ export class ConsoleSidebar extends UI.Widget.VBox {
     this.setMinimumSize(125, 0);
 
     this._tree = new UI.TreeOutline.TreeOutlineInShadow();
-    this._tree.registerRequiredCSS('panels/console/consoleSidebar.css', {enableLegacyPatching: false});
     this._tree.addEventListener(UI.TreeOutline.Events.ElementSelected, this._selectionChanged.bind(this));
+
+    const deprecationWarning = new ConsoleComponents.SidebarDeprecation.SidebarDeprecation();
+    this.contentElement.appendChild(deprecationWarning);
     this.contentElement.appendChild(this._tree.element);
     this._selectedTreeElement = null;
     this._treeElements = [];
@@ -133,6 +137,11 @@ export class ConsoleSidebar extends UI.Widget.VBox {
     this._selectedTreeElement = (event.data as UI.TreeOutline.TreeElement);
     this.dispatchEventToListeners(Events.FilterSelected);
   }
+
+  wasShown(): void {
+    super.wasShown();
+    this._tree.registerCSSFiles([consoleSidebarStyles]);
+  }
 }
 
 export const enum Events {
@@ -200,7 +209,6 @@ export class FilterTreeElement extends ConsoleSidebarTreeElement {
     this._updateCounter();
   }
 
-
   clear(): void {
     this._urlTreeElements.clear();
     this.removeChildren();
@@ -224,6 +232,7 @@ export class FilterTreeElement extends ConsoleSidebarTreeElement {
 
   _updateGroupTitle(messageCount: number): string {
     if (this.uiStringForFilterCount) {
+      // eslint-disable-next-line rulesdir/l10n_i18nString_call_only_with_uistrings
       return i18nString(this.uiStringForFilterCount, {n: messageCount});
     }
     return '';

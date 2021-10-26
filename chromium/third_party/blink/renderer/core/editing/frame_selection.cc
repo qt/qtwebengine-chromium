@@ -145,7 +145,7 @@ Element* FrameSelection::RootEditableElementOrDocumentElement() const {
   return selection_root ? selection_root : GetDocument().documentElement();
 }
 
-size_t FrameSelection::CharacterIndexForPoint(const IntPoint& point) const {
+wtf_size_t FrameSelection::CharacterIndexForPoint(const IntPoint& point) const {
   const EphemeralRange range = GetFrame()->GetEditor().RangeForPoint(point);
   if (range.IsNull())
     return kNotFound;
@@ -158,6 +158,10 @@ VisibleSelection FrameSelection::ComputeVisibleSelectionInDOMTreeDeprecated()
     const {
   // TODO(editing-dev): Hoist UpdateStyleAndLayout
   // to caller. See http://crbug.com/590369 for more details.
+  DisplayLockUtilities::ScopedForcedUpdate base_scope(
+      GetSelectionInDOMTree().Base().AnchorNode());
+  DisplayLockUtilities::ScopedForcedUpdate extent_scope(
+      GetSelectionInDOMTree().Extent().AnchorNode());
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kSelection);
   return ComputeVisibleSelectionInDOMTree();
 }

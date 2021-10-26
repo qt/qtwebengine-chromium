@@ -20,8 +20,9 @@
 class GrAppliedClip;
 class GrProxyProvider;
 class GrRecordingContext;
-class GrSurfaceDrawContext;
+namespace skgpu { namespace v1 { class SurfaceDrawContext; }}
 class GrSWMaskHelper;
+class SkMatrixProvider;
 
 class GrClipStack final : public GrClip {
 public:
@@ -71,8 +72,7 @@ public:
     void replaceClip(const SkIRect& rect);
 
     // GrClip implementation
-    GrClip::Effect apply(GrRecordingContext*, GrSurfaceDrawContext*, GrAAType aa,
-                         bool hasUserStencilSettings,
+    GrClip::Effect apply(GrRecordingContext*, skgpu::v1::SurfaceDrawContext*, GrDrawOp*, GrAAType,
                          GrAppliedClip*, SkRect* bounds) const override;
     GrClip::PreClipResult preApply(const SkRect& drawBounds, GrAA aa) const override;
     SkIRect getConservativeBounds() const override;
@@ -117,8 +117,6 @@ private:
         const SkIRect&  innerBounds() const { return fInnerBounds; }
         GrAA            aa() const { return fAA; }
 
-        SkPath*         devicePath() const { return &fDevicePath; }
-
         ClipState       clipType() const;
 
         // As new elements are pushed on to the stack, they may make older elements redundant.
@@ -148,9 +146,6 @@ private:
         bool combine(const RawElement& other, const SaveRecord& current);
 
         SkMatrix fDeviceToLocal; // cached inverse of fLocalToDevice for contains() optimization
-        // TODO: This is only needed because CCPR tracks clip paths in device space; if we didn't
-        // cache this, every use of the path would be re-transformed and get its own atlas entry.
-        mutable SkPath fDevicePath;    // lazily initialized the first time it's needed
 
         // Device space bounds, rounded in or out to pixel boundaries and accounting for any
         // uncertainty around anti-aliasing and rasterization snapping.

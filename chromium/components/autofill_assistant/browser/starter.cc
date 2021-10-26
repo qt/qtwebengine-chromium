@@ -190,7 +190,10 @@ Starter::~Starter() = default;
 
 void Starter::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame()) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame()) {
     return;
   }
 
@@ -199,11 +202,15 @@ void Starter::DidFinishNavigation(
   // running (in which case, the trigger script will handle this event).
   if (IsStartupPending() && navigation_handle->HasCommitted() &&
       !trigger_script_coordinator_) {
-    bool navigated_to_target_domain = url_utils::IsSamePublicSuffixDomain(
-        navigation_handle->GetURL(),
+    const GURL& url_for_intent =
         StartupUtil()
             .ChooseStartupUrlForIntent(*GetPendingTriggerContext())
-            .value_or(GURL()));
+            .value_or(GURL());
+    bool navigated_to_target_domain =
+        url_utils::IsSamePublicSuffixDomain(url_for_intent,
+                                            navigation_handle->GetURL()) &&
+        url_utils::IsAllowedSchemaTransition(url_for_intent,
+                                             navigation_handle->GetURL());
 
     if (navigated_to_target_domain) {
       current_ukm_source_id_ =
@@ -570,7 +577,8 @@ void Starter::StartTriggerScript() {
                          .value();
   trigger_script_coordinator_ = std::make_unique<TriggerScriptCoordinator>(
       platform_delegate_, web_contents(),
-      WebController::CreateForWebContents(web_contents()),
+      WebController::CreateForWebContents(web_contents(),
+                                          /* user_data= */ nullptr),
       std::move(service_request_sender),
       url_fetcher.GetTriggerScriptsEndpoint(),
       std::make_unique<StaticTriggerConditions>(

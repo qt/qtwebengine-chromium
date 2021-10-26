@@ -9,12 +9,11 @@
 
 #include <jni.h>
 
-#include <vector>
 
 #include "base/android/jni_android.h"
 #include "base/macros.h"
 #include "components/safe_browsing/android/safe_browsing_api_handler.h"
-#include "components/safe_browsing/core/db/v4_protocol_manager_util.h"
+#include "components/safe_browsing/core/browser/db/v4_protocol_manager_util.h"
 #include "url/gurl.h"
 
 namespace safe_browsing {

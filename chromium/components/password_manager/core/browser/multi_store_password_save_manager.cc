@@ -92,14 +92,13 @@ PendingCredentialsState ResolvePendingCredentialsStates(
 }
 
 // Returns a PasswordForm that has all fields taken from |update| except
-// date_created, date_synced, times_used and moving_blocked_for_list that are
+// date_created, times_used and moving_blocked_for_list that are
 // taken from |original_form|.
 PasswordForm UpdateFormPreservingDifferentFieldsAcrossStores(
     const PasswordForm& original_form,
     const PasswordForm& update) {
   PasswordForm result(update);
   result.date_created = original_form.date_created;
-  result.date_synced = original_form.date_synced;
   result.times_used = original_form.times_used;
   result.moving_blocked_for_list = original_form.moving_blocked_for_list;
   return result;
@@ -221,7 +220,7 @@ void MultiStorePasswordSaveManager::SavePendingToStoreImpl(
 }
 
 void MultiStorePasswordSaveManager::Blocklist(
-    const PasswordStore::FormDigest& form_digest) {
+    const PasswordFormDigest& form_digest) {
   DCHECK(!client_->IsIncognito());
   if (IsOptedInForAccountStorage() && AccountStoreIsDefault()) {
     account_store_form_saver_->Blocklist(form_digest);
@@ -233,7 +232,7 @@ void MultiStorePasswordSaveManager::Blocklist(
 }
 
 void MultiStorePasswordSaveManager::Unblocklist(
-    const PasswordStore::FormDigest& form_digest) {
+    const PasswordFormDigest& form_digest) {
   // Try to unblocklist in both stores anyway because if credentials don't
   // exist, the unblocklist operation is no-op.
   form_saver_->Unblocklist(form_digest);

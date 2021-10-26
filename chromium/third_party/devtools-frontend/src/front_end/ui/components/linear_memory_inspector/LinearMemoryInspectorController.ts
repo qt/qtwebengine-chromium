@@ -49,7 +49,7 @@ export class RemoteArrayBufferWrapper implements LazyUint8Array {
 async function getBufferFromObject(obj: SDK.RemoteObject.RemoteObject): Promise<SDK.RemoteObject.RemoteArrayBuffer> {
   console.assert(obj.type === 'object');
   console.assert(obj.subtype !== undefined && ACCEPTED_MEMORY_TYPES.includes(obj.subtype));
-  const response = await obj.runtimeModel()._agent.invoke_callFunctionOn({
+  const response = await obj.runtimeModel().agent.invoke_callFunctionOn({
     objectId: obj.objectId,
     functionDeclaration:
         'function() { return this instanceof ArrayBuffer || (typeof SharedArrayBuffer !== \'undefined\' && this instanceof SharedArrayBuffer) ? this : this.buffer; }',
@@ -72,19 +72,19 @@ type SerializableSettings = {
   endianness: Endianness,
 };
 
-export class LinearMemoryInspectorController extends SDK.SDKModel.SDKModelObserver<SDK.RuntimeModel.RuntimeModel> {
+export class LinearMemoryInspectorController extends SDK.TargetManager.SDKModelObserver<SDK.RuntimeModel.RuntimeModel> {
   private paneInstance = LinearMemoryInspectorPaneImpl.instance();
   private bufferIdToRemoteObject: Map<string, SDK.RemoteObject.RemoteObject> = new Map();
   private settings: Common.Settings.Setting<SerializableSettings>;
 
   private constructor() {
     super();
-    SDK.SDKModel.TargetManager.instance().observeModels(SDK.RuntimeModel.RuntimeModel, this);
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().observeModels(SDK.RuntimeModel.RuntimeModel, this);
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.GlobalObjectCleared, this.onGlobalObjectClear, this);
     this.paneInstance.addEventListener('view-closed', this.viewClosed.bind(this));
 
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DebuggerModel.DebuggerModel, SDK.DebuggerModel.Events.DebuggerPaused, this.onDebuggerPause, this);
 
     const defaultValueTypeModes = getDefaultValueTypeMapping();
@@ -189,8 +189,8 @@ export class LinearMemoryInspectorController extends SDK.SDKModel.SDKModelObserv
     }
   }
 
-  private onDebuggerPause(event: Common.EventTarget.EventTargetEvent): void {
-    const debuggerModel = event.data as SDK.DebuggerModel.DebuggerModel;
+  private onDebuggerPause(event: Common.EventTarget.EventTargetEvent<SDK.DebuggerModel.DebuggerModel>): void {
+    const debuggerModel = event.data;
     for (const [bufferId, remoteObject] of this.bufferIdToRemoteObject) {
       if (debuggerModel.runtimeModel() === remoteObject.runtimeModel()) {
         this.paneInstance.refreshView(bufferId);
@@ -198,9 +198,8 @@ export class LinearMemoryInspectorController extends SDK.SDKModel.SDKModelObserv
     }
   }
 
-  private onGlobalObjectClear(event: Common.EventTarget.EventTargetEvent): void {
-    const debuggerModel = event.data as SDK.DebuggerModel.DebuggerModel;
-    this.modelRemoved(debuggerModel.runtimeModel());
+  private onGlobalObjectClear(event: Common.EventTarget.EventTargetEvent<SDK.DebuggerModel.DebuggerModel>): void {
+    this.modelRemoved(event.data.runtimeModel());
   }
 
   private viewClosed(event: Common.EventTarget.EventTargetEvent): void {

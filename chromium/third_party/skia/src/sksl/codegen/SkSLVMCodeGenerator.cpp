@@ -19,6 +19,7 @@
 #include "src/sksl/ir/SkSLBreakStatement.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArray.h"
+#include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
 #include "src/sksl/ir/SkSLConstructorSplat.h"
@@ -116,84 +117,15 @@ public:
                   SkSpan<skvm::Val> uniforms,
                   skvm::Coord device,
                   skvm::Coord local,
-                  skvm::Color inputColor,
-                  SampleChildFn sampleChild);
+                  SampleShaderFn sampleShader,
+                  SampleColorFilterFn sampleColorFilter,
+                  SampleBlenderFn sampleBlender);
 
     void writeFunction(const FunctionDefinition& function,
                        SkSpan<skvm::Val> arguments,
                        SkSpan<skvm::Val> outReturn);
 
 private:
-    enum class Intrinsic {
-        // sksl_public.sksl declares these intrinsics (and defines some other inline)
-
-        // Angle & Trigonometry
-        kRadians,
-        kDegrees,
-        kSin,
-        kCos,
-        kTan,
-
-        kASin,
-        kACos,
-        kATan,
-
-        // Exponential
-        kPow,
-        kExp,
-        kLog,
-        kExp2,
-        kLog2,
-
-        kSqrt,
-        kInverseSqrt,
-
-        // Common
-        kAbs,
-        kSign,
-        kFloor,
-        kCeil,
-        kFract,
-        kMod,
-
-        kMin,
-        kMax,
-        kClamp,
-        kSaturate,
-        kMix,
-        kStep,
-        kSmoothstep,
-
-        // Geometric
-        kLength,
-        kDistance,
-        kDot,
-        kCross,
-        kNormalize,
-        kFaceforward,
-        kReflect,
-        kRefract,
-
-        // Matrix
-        kMatrixCompMult,
-        kInverse,
-
-        // Vector Relational
-        kLessThan,
-        kLessThanEqual,
-        kGreaterThan,
-        kGreaterThanEqual,
-        kEqual,
-        kNotEqual,
-
-        kAny,
-        kAll,
-        kNot,
-
-        // SkSL
-        kSample,
-    };
-
     /**
      * In SkSL, a Variable represents a named, typed value (along with qualifiers, etc).
      * Every Variable is mapped to one (or several, contiguous) indices into our vector of
@@ -288,8 +220,9 @@ private:
     skvm::Builder* fBuilder;
 
     const skvm::Coord fLocalCoord;
-    const skvm::Color fInputColor;
-    const SampleChildFn fSampleChild;
+    const SampleShaderFn fSampleShader;
+    const SampleColorFilterFn fSampleColorFilter;
+    const SampleBlenderFn fSampleBlender;
 
     // [Variable, first slot in fSlots]
     std::unordered_map<const Variable*, size_t> fVariableMap;
@@ -346,13 +279,15 @@ SkVMGenerator::SkVMGenerator(const Program& program,
                              SkSpan<skvm::Val> uniforms,
                              skvm::Coord device,
                              skvm::Coord local,
-                             skvm::Color inputColor,
-                             SampleChildFn sampleChild)
+                             SampleShaderFn sampleShader,
+                             SampleColorFilterFn sampleColorFilter,
+                             SampleBlenderFn sampleBlender)
         : fProgram(program)
         , fBuilder(builder)
         , fLocalCoord(local)
-        , fInputColor(inputColor)
-        , fSampleChild(std::move(sampleChild)) {
+        , fSampleShader(std::move(sampleShader))
+        , fSampleColorFilter(std::move(sampleColorFilter))
+        , fSampleBlender(std::move(sampleBlender)) {
     fConditionMask = fLoopMask = fBuilder->splat(0xffff'ffff);
 
     // Now, add storage for each global variable (including uniforms) to fSlots, and entries in
@@ -367,7 +302,7 @@ SkVMGenerator::SkVMGenerator(const Program& program,
             SkASSERT(fVariableMap.find(&var) == fVariableMap.end());
 
             // For most variables, fVariableMap stores an index into fSlots, but for children,
-            // fVariableMap stores the index to pass to fSampleChild().
+            // fVariableMap stores the index to pass to fSample(Shader|ColorFilter|Blender)
             if (var.type().isEffectChild()) {
                 fVariableMap[&var] = fpCount++;
                 continue;
@@ -714,7 +649,7 @@ Value SkVMGenerator::writeTypeConversion(const Value& src,
         default:
             break;
     }
-    SkDEBUGFAILF("Unsupported type conversion: %d -> %d", srcKind, dstKind);
+    SkDEBUGFAILF("Unsupported type conversion: %d -> %d", (int)srcKind, (int)dstKind);
     return {};
 }
 
@@ -745,12 +680,12 @@ Value SkVMGenerator::writeConstructorSplat(const ConstructorSplat& c) {
     return dst;
 }
 
-Value SkVMGenerator::writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c) {
-    const Type& dstType = c.type();
+Value SkVMGenerator::writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& ctor) {
+    const Type& dstType = ctor.type();
     SkASSERT(dstType.isMatrix());
-    SkASSERT(c.argument()->type() == dstType.componentType());
+    SkASSERT(ctor.argument()->type() == dstType.componentType());
 
-    Value src = this->writeExpression(*c.argument());
+    Value src = this->writeExpression(*ctor.argument());
     Value dst(dstType.rows() * dstType.columns());
     size_t dstIndex = 0;
 
@@ -765,10 +700,10 @@ Value SkVMGenerator::writeConstructorDiagonalMatrix(const ConstructorDiagonalMat
     return dst;
 }
 
-Value SkVMGenerator::writeConstructorMatrixResize(const ConstructorMatrixResize& c) {
-    const Type& srcType = c.argument()->type();
-    const Type& dstType = c.type();
-    Value src = this->writeExpression(*c.argument());
+Value SkVMGenerator::writeConstructorMatrixResize(const ConstructorMatrixResize& ctor) {
+    const Type& srcType = ctor.argument()->type();
+    const Type& dstType = ctor.type();
+    Value src = this->writeExpression(*ctor.argument());
     Value dst(dstType.rows() * dstType.columns());
 
     // Matrix-from-matrix uses src where it overlaps, and fills in missing fields with identity.
@@ -937,9 +872,9 @@ Value SkVMGenerator::writeIntrinsicCall(const FunctionCall& c) {
     const size_t nargs = c.arguments().size();
 
     if (intrinsicKind == k_sample_IntrinsicKind) {
-        // Sample is very special, the first argument is a child (shader/colorFilter), which can't
-        // be evaluated
-        SkASSERT(nargs == 2);
+        // Sample is very special. The first argument is a child (shader/colorFilter/blender),
+        // which is opaque and can't be evaluated.
+        SkASSERT(nargs >= 2);
         const Expression* child = c.arguments()[0].get();
         SkASSERT(child->type().isEffectChild());
         SkASSERT(child->is<VariableReference>());
@@ -949,22 +884,49 @@ Value SkVMGenerator::writeIntrinsicCall(const FunctionCall& c) {
 
         // Shaders require a coordinate argument. Color filters require a color argument.
         // When we call sampleChild, the other value remains the incoming default.
-        skvm::Color inColor = fInputColor;
-        skvm::Coord coord = fLocalCoord;
         const Expression* arg = c.arguments()[1].get();
         Value argVal = this->writeExpression(*arg);
+        skvm::Color color;
 
-        if (child->type().typeKind() == Type::TypeKind::kShader) {
-            SkASSERT(arg->type() == *fProgram.fContext->fTypes.fFloat2);
-            coord = {f32(argVal[0]), f32(argVal[1])};
-        } else {
-            SkASSERT(child->type().typeKind() == Type::TypeKind::kColorFilter);
-            SkASSERT(arg->type() == *fProgram.fContext->fTypes.fHalf4 ||
-                     arg->type() == *fProgram.fContext->fTypes.fFloat4);
-            inColor = {f32(argVal[0]), f32(argVal[1]), f32(argVal[2]), f32(argVal[3])};
+        switch (child->type().typeKind()) {
+            case Type::TypeKind::kShader: {
+                SkASSERT(nargs == 2);
+                SkASSERT(arg->type() == *fProgram.fContext->fTypes.fFloat2);
+                skvm::Coord coord = {f32(argVal[0]), f32(argVal[1])};
+                color = fSampleShader(fp_it->second, coord);
+                break;
+            }
+            case Type::TypeKind::kColorFilter: {
+                SkASSERT(nargs == 2);
+                SkASSERT(arg->type() == *fProgram.fContext->fTypes.fHalf4 ||
+                         arg->type() == *fProgram.fContext->fTypes.fFloat4);
+                skvm::Color inColor = {f32(argVal[0]), f32(argVal[1]),
+                                       f32(argVal[2]), f32(argVal[3])};
+                color = fSampleColorFilter(fp_it->second, inColor);
+                break;
+            }
+            case Type::TypeKind::kBlender: {
+                SkASSERT(nargs == 3);
+                SkASSERT(arg->type() == *fProgram.fContext->fTypes.fHalf4 ||
+                         arg->type() == *fProgram.fContext->fTypes.fFloat4);
+                skvm::Color srcColor = {f32(argVal[0]), f32(argVal[1]),
+                                        f32(argVal[2]), f32(argVal[3])};
+
+                arg = c.arguments()[2].get();
+                argVal = this->writeExpression(*arg);
+                SkASSERT(arg->type() == *fProgram.fContext->fTypes.fHalf4 ||
+                         arg->type() == *fProgram.fContext->fTypes.fFloat4);
+                skvm::Color dstColor = {f32(argVal[0]), f32(argVal[1]),
+                                        f32(argVal[2]), f32(argVal[3])};
+
+                color = fSampleBlender(fp_it->second, srcColor, dstColor);
+                break;
+            }
+            default: {
+                SkDEBUGFAILF("cannot sample from type '%s'", child->type().description().c_str());
+            }
         }
 
-        skvm::Color color = fSampleChild(fp_it->second, coord, inColor);
         Value result(4);
         result[0] = color.r;
         result[1] = color.g;
@@ -1225,7 +1187,7 @@ Value SkVMGenerator::writeFunctionCall(const FunctionCall& f) {
     const std::unique_ptr<Expression>* argIter = f.arguments().begin();
     size_t valIdx = 0;
     for (const Variable* p : decl.parameters()) {
-        size_t nslots = p->type().slotCount();
+        nslots = p->type().slotCount();
         if (p->modifiers().fFlags & Modifiers::kOut_Flag) {
             Value v(nslots);
             for (size_t i = 0; i < nslots; ++i) {
@@ -1378,6 +1340,8 @@ Value SkVMGenerator::writeExpression(const Expression& e) {
         case Expression::Kind::kConstructorCompound:
         case Expression::Kind::kConstructorStruct:
             return this->writeAggregationConstructor(e.asAnyConstructor());
+        case Expression::Kind::kConstructorArrayCast:
+            return this->writeExpression(*e.as<ConstructorArrayCast>().argument());
         case Expression::Kind::kConstructorDiagonalMatrix:
             return this->writeConstructorDiagonalMatrix(e.as<ConstructorDiagonalMatrix>());
         case Expression::Kind::kConstructorMatrixResize:
@@ -1418,7 +1382,7 @@ Value SkVMGenerator::writeExpression(const Expression& e) {
 
 Value SkVMGenerator::writeStore(const Expression& lhs, const Value& rhs) {
     SkASSERTF(rhs.slots() == lhs.type().slotCount(),
-              "lhs=%s (%s)\nrhs=%d slot",
+              "lhs=%s (%s)\nrhs=%zu slot",
               lhs.type().description().c_str(), lhs.description().c_str(), rhs.slots());
 
     // We need to figure out the collection of slots that we're storing into. The l-value (lhs)
@@ -1616,25 +1580,38 @@ skvm::Color ProgramToSkVM(const Program& program,
                           skvm::Coord device,
                           skvm::Coord local,
                           skvm::Color inputColor,
-                          SampleChildFn sampleChild) {
+                          skvm::Color destColor,
+                          SampleShaderFn sampleShader,
+                          SampleColorFilterFn sampleColorFilter,
+                          SampleBlenderFn sampleBlender) {
     skvm::Val zero = builder->splat(0.0f).id;
     skvm::Val result[4] = {zero,zero,zero,zero};
 
-    skvm::Val args[6];  // At most 6 arguments (float2 coords, half4 inColor)
+    skvm::Val args[8];  // At most 8 arguments (half4 srcColor, half4 dstColor)
     size_t argSlots = 0;
     for (const SkSL::Variable* param : function.declaration().parameters()) {
         switch (param->modifiers().fLayout.fBuiltin) {
             case SK_MAIN_COORDS_BUILTIN:
                 SkASSERT(param->type().slotCount() == 2);
+                SkASSERT((argSlots + 2) <= SK_ARRAY_COUNT(args));
                 args[argSlots++] = local.x.id;
                 args[argSlots++] = local.y.id;
                 break;
             case SK_INPUT_COLOR_BUILTIN:
                 SkASSERT(param->type().slotCount() == 4);
+                SkASSERT((argSlots + 4) <= SK_ARRAY_COUNT(args));
                 args[argSlots++] = inputColor.r.id;
                 args[argSlots++] = inputColor.g.id;
                 args[argSlots++] = inputColor.b.id;
                 args[argSlots++] = inputColor.a.id;
+                break;
+            case SK_DEST_COLOR_BUILTIN:
+                SkASSERT(param->type().slotCount() == 4);
+                SkASSERT((argSlots + 4) <= SK_ARRAY_COUNT(args));
+                args[argSlots++] = destColor.r.id;
+                args[argSlots++] = destColor.g.id;
+                args[argSlots++] = destColor.b.id;
+                args[argSlots++] = destColor.a.id;
                 break;
             default:
                 SkDEBUGFAIL("Invalid parameter to main()");
@@ -1643,8 +1620,8 @@ skvm::Color ProgramToSkVM(const Program& program,
     }
     SkASSERT(argSlots <= SK_ARRAY_COUNT(args));
 
-    SkVMGenerator generator(
-            program, builder, uniforms, device, local, inputColor, std::move(sampleChild));
+    SkVMGenerator generator(program, builder, uniforms, device, local, std::move(sampleShader),
+                            std::move(sampleColorFilter), std::move(sampleBlender));
     generator.writeFunction(function, {args, argSlots}, SkMakeSpan(result));
 
     return skvm::Color{{builder, result[0]},
@@ -1684,9 +1661,9 @@ bool ProgramToSkVM(const Program& program,
 
     skvm::F32 zero = b->splat(0.0f);
     skvm::Coord zeroCoord = {zero, zero};
-    skvm::Color zeroColor = {zero, zero, zero, zero};
     SkVMGenerator generator(program, b, uniforms, /*device=*/zeroCoord, /*local=*/zeroCoord,
-                            /*inputColor=*/zeroColor, /*sampleChild=*/{});
+                            /*sampleShader=*/nullptr, /*sampleColorFilter=*/nullptr,
+                            /*sampleBlender=*/nullptr);
     generator.writeFunction(function, SkMakeSpan(argVals), SkMakeSpan(returnVals));
 
     // generateCode has updated the contents of 'argVals' for any 'out' or 'inout' parameters.
@@ -1755,7 +1732,7 @@ std::unique_ptr<UniformInfo> Program_GetUniformInfo(const Program& program) {
         const GlobalVarDeclaration& decl = e->as<GlobalVarDeclaration>();
         const Variable& var = decl.declaration()->as<VarDeclaration>().var();
         if (var.modifiers().fFlags & Modifiers::kUniform_Flag) {
-            gather_uniforms(info.get(), var.type(), var.name());
+            gather_uniforms(info.get(), var.type(), String(var.name()));
         }
     }
     return info;
@@ -1803,7 +1780,7 @@ bool testingOnly_ProgramToSkVMShader(const Program& program, skvm::Builder* buil
         children.push_back({uniforms.pushPtr(nullptr), builder->uniform32(uniforms.push(0))});
     }
 
-    auto sampleChild = [&](int i, skvm::Coord coord, skvm::Color) {
+    auto sampleShader = [&](int i, skvm::Coord coord) {
         skvm::PixelFormat pixelFormat = skvm::SkColorType_to_PixelFormat(kRGBA_F32_SkColorType);
         skvm::I32 index  = trunc(coord.x);
                   index += trunc(coord.y) * children[i].rowBytesAsPixels;
@@ -1816,9 +1793,12 @@ bool testingOnly_ProgramToSkVMShader(const Program& program, skvm::Builder* buil
     }
 
     skvm::Color inColor = builder->uniformColor(SkColors::kWhite, &uniforms);
+    skvm::Color destColor = builder->uniformColor(SkColors::kBlack, &uniforms);
 
-    skvm::Color result = SkSL::ProgramToSkVM(
-            program, *main, builder, SkMakeSpan(uniformVals), device, local, inColor, sampleChild);
+    skvm::Color result = SkSL::ProgramToSkVM(program, *main, builder, SkMakeSpan(uniformVals),
+                                             device, local, inColor, destColor, sampleShader,
+                                             /*sampleColorFilter=*/nullptr,
+                                             /*sampleBlender=*/nullptr);
 
     storeF(builder->varying<float>(), result.r);
     storeF(builder->varying<float>(), result.g);

@@ -18,7 +18,6 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -498,7 +497,20 @@ std::vector<LiveTab*> TabRestoreServiceHelper::RestoreEntryById(
             context = RestoreTab(tab, context, disposition, &restored_tab);
             live_tabs.push_back(restored_tab);
             DCHECK(ValidateWindow(window));
+            const absl::optional<tab_groups::TabGroupId> tab_group = tab.group;
             window.tabs.erase(window.tabs.begin() + tab_i);
+            if (tab_group.has_value()) {
+              bool group_is_referenced = false;
+              for (auto& grouped_tab : window.tabs) {
+                if (grouped_tab->group == tab_group) {
+                  group_is_referenced = true;
+                  break;
+                }
+              }
+              if (!group_is_referenced) {
+                window.tab_groups.erase(tab_group.value());
+              }
+            }
           }
           // If restoring the tab leaves the window with nothing else, delete it
           // as well.

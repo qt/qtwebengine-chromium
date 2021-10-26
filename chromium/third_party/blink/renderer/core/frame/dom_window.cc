@@ -10,6 +10,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "services/network/public/mojom/web_sandbox_flags.mojom-blink.h"
 #include "third_party/blink/public/common/action_after_pagehide.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/post_message_helper.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
@@ -25,6 +26,7 @@
 #include "third_party/blink/renderer/core/frame/frame.h"
 #include "third_party/blink/renderer/core/frame/frame_client.h"
 #include "third_party/blink/renderer/core/frame/frame_console.h"
+#include "third_party/blink/renderer/core/frame/frame_owner.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/location.h"
 #include "third_party/blink/renderer/core/frame/report.h"
@@ -131,6 +133,29 @@ DOMWindow* DOMWindow::top() const {
   if (!GetFrame())
     return nullptr;
 
+  // TODO(crbug.com/1123606): Remove this once we use MPArch as the underlying
+  // fenced frames implementation, instead of the
+  // `FencedFrameShadowDOMDelegate`. This is the version of `top()` specifically
+  // for fenced frames implemented with the ShadowDOM, because it provides
+  // top-most DOMWindow within the "fenced" frame tree. That is, the closest
+  // DOMWindow to this window that is marked as fenced, if one such frame
+  // exists (see the early-break below). See
+  // https://docs.google.com/document/d/1ijTZJT3DHQ1ljp4QQe4E4XCCRaYAxmInNzN1SzeJM8s/edit#heading=h.jztjmd6vstll.
+  if (RuntimeEnabledFeatures::FencedFramesEnabled(GetExecutionContext()) &&
+      features::kFencedFramesImplementationTypeParam.Get() ==
+          features::FencedFramesImplementationType::kShadowDOM) {
+    Frame* frame = GetFrame();
+    while (frame->Parent()) {
+      if (frame->Owner() && frame->Owner()->GetFramePolicy().is_fenced) {
+        break;
+      }
+      frame = frame->Parent();
+    }
+
+    DCHECK(frame);
+    return frame->DomWindow();
+  }
+
   return GetFrame()->Tree().Top().DomWindow();
 }
 
@@ -223,8 +248,6 @@ String DOMWindow::CrossDomainAccessErrorMessage(
   if (accessing_window_url.IsNull())
     return String();
 
-  // FIXME: This message, and other console messages, have extra newlines.
-  // Should remove them.
   const SecurityOrigin* active_origin = accessing_window->GetSecurityOrigin();
   const SecurityOrigin* target_origin =
       GetFrame()->GetSecurityContext()->GetSecurityOrigin();
@@ -284,7 +307,7 @@ String DOMWindow::CrossDomainAccessErrorMessage(
     return message + " The frame requesting access has a protocol of \"" +
            active_url.Protocol() +
            "\", the frame being accessed has a protocol of \"" +
-           target_url.Protocol() + "\". Protocols must match.\n";
+           target_url.Protocol() + "\". Protocols must match.";
 
   // 'document.domain' errors.
   if (target_origin->DomainWasSetInDOM() && active_origin->DomainWasSetInDOM())
@@ -683,18 +706,50 @@ void DOMWindow::DoPostMessage(scoped_refptr<SerializedScriptValue> message,
   if (RuntimeEnabledFeatures::CapabilityDelegationPaymentRequestEnabled(
           GetExecutionContext()) &&
       LocalFrame::HasTransientUserActivation(source_frame) &&
-      options->hasCreateToken()) {
+      options->hasDelegate()) {
     Vector<String> capability_list;
-    options->createToken().Split(' ', capability_list);
+    options->delegate().Split(' ', capability_list);
     delegate_payment_request = capability_list.Contains("paymentrequest");
   }
 
-  MessageEvent* event =
-      MessageEvent::Create(std::move(channels), std::move(message),
-                           source->GetSecurityOrigin()->ToString(), String(),
-                           source, user_activation, delegate_payment_request);
+  PostedMessage* posted_message = MakeGarbageCollected<PostedMessage>();
+  posted_message->source_origin = source->GetSecurityOrigin();
+  posted_message->target_origin = std::move(target);
+  posted_message->data = std::move(message);
+  posted_message->channels = std::move(channels);
+  posted_message->source = source;
+  posted_message->user_activation = user_activation;
+  posted_message->delegate_payment_request = delegate_payment_request;
+  SchedulePostMessage(posted_message);
+}
 
-  SchedulePostMessage(event, std::move(target), source);
+void DOMWindow::PostedMessage::Trace(Visitor* visitor) const {
+  visitor->Trace(source);
+  visitor->Trace(user_activation);
+}
+
+BlinkTransferableMessage
+DOMWindow::PostedMessage::ToBlinkTransferableMessage() && {
+  BlinkTransferableMessage result;
+
+  // Message data and cluster ID (optional).
+  result.message = std::move(data);
+  if (result.message->IsLockedToAgentCluster())
+    result.locked_agent_cluster_id = source->GetAgentClusterID();
+
+  // Ports
+  result.ports = std::move(channels);
+
+  // User activation
+  if (user_activation) {
+    result.user_activation = mojom::blink::UserActivationSnapshot::New(
+        user_activation->hasBeenActive(), user_activation->isActive());
+  }
+
+  // Capability delegation
+  result.delegate_payment_request = delegate_payment_request;
+
+  return result;
 }
 
 void DOMWindow::Trace(Visitor* visitor) const {

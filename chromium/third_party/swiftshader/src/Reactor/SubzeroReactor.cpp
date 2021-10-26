@@ -896,7 +896,6 @@ Nucleus::Nucleus()
 #endif
 	Flags.setOutFileType(Ice::FT_Elf);
 	Flags.setOptLevel(toIce(getDefaultConfig().getOptimization().getLevel()));
-	Flags.setApplicationBinaryInterface(Ice::ABI_Platform);
 	Flags.setVerbose(subzeroDumpEnabled ? Ice::IceV_Most : Ice::IceV_None);
 	Flags.setDisableHybridAssembly(true);
 
@@ -4281,13 +4280,14 @@ void Nucleus::createFence(std::memory_order memoryOrder)
 Value *Nucleus::createMaskedLoad(Value *ptr, Type *elTy, Value *mask, unsigned int alignment, bool zeroMaskedLanes)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	UNIMPLEMENTED_NO_BUG("Subzero createMaskedLoad()");
+	UNIMPLEMENTED("b/155867273 Subzero createMaskedLoad()");
 	return nullptr;
 }
+
 void Nucleus::createMaskedStore(Value *ptr, Value *val, Value *mask, unsigned int alignment)
 {
 	RR_DEBUG_INFO_UPDATE_LOC();
-	UNIMPLEMENTED_NO_BUG("Subzero createMaskedStore()");
+	UNIMPLEMENTED("b/155867273 Subzero createMaskedStore()");
 }
 
 RValue<Float4> Gather(RValue<Pointer<Float>> base, RValue<Int4> offsets, RValue<Int4> mask, unsigned int alignment, bool zeroMaskedLanes /* = false */)

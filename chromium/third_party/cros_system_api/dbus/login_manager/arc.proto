@@ -149,5 +149,8 @@ message UpgradeArcContainerRequest {
   // unmanaged state, and vice-versa.
   optional ManagementTransition management_transition = 11;
 
-  // Next ID to use: 17
+  // Option to enable Arc Nearby Share.
+  optional bool enable_arc_nearby_share = 17 [default = false];
+
+  // Next ID to use: 18
 }

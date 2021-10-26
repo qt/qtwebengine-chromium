@@ -158,8 +158,8 @@ class BrowserActionInteractiveTest : public ExtensionApiTest {
     if (!will_reply)
       listener = std::make_unique<ExtensionTestMessageListener>("ready", false);
     // Show first popup in first window and expect it to have loaded.
-    ASSERT_TRUE(RunExtensionTest({.name = "browser_action/open_popup",
-                                  .page_url = "open_popup_succeeds.html"}))
+    ASSERT_TRUE(RunExtensionTest("browser_action/open_popup",
+                                 {.page_url = "open_popup_succeeds.html"}))
         << message_;
     if (listener)
       EXPECT_TRUE(listener->WaitUntilSatisfied());
@@ -228,7 +228,8 @@ class BrowserActionInteractiveTest : public ExtensionApiTest {
 // Tests opening a popup using the chrome.browserAction.openPopup API. This test
 // opens a popup in the starting window, closes the popup, creates a new window
 // and opens a popup in the new window. Both popups should succeed in opening.
-IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, TestOpenPopup) {
+// TODO(crbug.com/1233996): Test flaking frequently.
+IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, DISABLED_TestOpenPopup) {
   auto browserActionBar = ExtensionActionTestHelper::Create(browser());
   // Setup extension message listener to wait for javascript to finish running.
   ExtensionTestMessageListener listener("ready", true);
@@ -277,10 +278,10 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest, TestOpenPopupIncognito) {
   content::WindowedNotificationObserver frame_observer(
       content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
       content::NotificationService::AllSources());
-  ASSERT_TRUE(RunExtensionTest({.name = "browser_action/open_popup",
-                                .page_url = "open_popup_succeeds.html",
-                                .open_in_incognito = true},
-                               {.allow_in_incognito = true}))
+  ASSERT_TRUE(RunExtensionTest(
+      "browser_action/open_popup",
+      {.page_url = "open_popup_succeeds.html", .open_in_incognito = true},
+      {.allow_in_incognito = true}))
       << message_;
   frame_observer.Wait();
   // Non-Aura Linux uses a singleton for the popup, so it looks like all windows
@@ -330,8 +331,8 @@ IN_PROC_BROWSER_TEST_F(BrowserActionInteractiveTest,
   ExtensionTestMessageListener listener("ready", true);
   // Load the test extension which will do nothing except notifyPass() to
   // return control here.
-  ASSERT_TRUE(RunExtensionTest({.name = "browser_action/open_popup",
-                                .page_url = "open_popup_fails.html"}))
+  ASSERT_TRUE(RunExtensionTest("browser_action/open_popup",
+                               {.page_url = "open_popup_fails.html"}))
       << message_;
   EXPECT_TRUE(listener.WaitUntilSatisfied());
 

@@ -570,10 +570,6 @@ class IdlType(WithExtendedAttributes, WithDebugInfo):
         return None
 
     @property
-    def new_union_definition_object(self):
-        return None
-
-    @property
     def union_definition_object(self):
         """
         Returns an object that represents an union or None.
@@ -608,8 +604,9 @@ class SimpleType(IdlType):
     _NUMERIC_TYPES = _FLOATING_POINT_NUMERIC_TYPES + _INTEGER_TYPES
     _STRING_TYPES = ('DOMString', 'ByteString', 'USVString')
     _TYPED_ARRAY_TYPES = ('Int8Array', 'Int16Array', 'Int32Array',
-                          'Uint8Array', 'Uint16Array', 'Uint32Array',
-                          'Uint8ClampedArray', 'Float32Array', 'Float64Array')
+                          'BigInt64Array', 'Uint8Array', 'Uint16Array',
+                          'Uint32Array', 'BigUint64Array', 'Uint8ClampedArray',
+                          'Float32Array', 'Float64Array')
     # ArrayBufferView is not defined as a buffer source type in Web IDL, it's
     # defined as an union type of all typed array types.  However, practically
     # it's much more convenient and reasonable for most of (if not all) use
@@ -1191,7 +1188,6 @@ class UnionType(IdlType):
             debug_info=debug_info,
             pass_key=pass_key)
         self._member_types = tuple(member_types)
-        self._new_union_definition_object = None
         self._union_definition_object = None
 
     def __eq__(self, other):
@@ -1264,17 +1260,6 @@ class UnionType(IdlType):
                 return [idl_type]
 
         return set(flatten(self))
-
-    @property
-    def new_union_definition_object(self):
-        return self._new_union_definition_object
-
-    def set_new_union_definition_object(self, union_definition_object):
-        # In Python2, we need to avoid circular imports.
-        from .union import NewUnion
-        assert isinstance(union_definition_object, NewUnion)
-        assert self._new_union_definition_object is None
-        self._new_union_definition_object = union_definition_object
 
     @property
     def union_definition_object(self):

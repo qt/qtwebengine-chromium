@@ -30,17 +30,15 @@ namespace dawn_native {
     class DeviceBase;
 
     MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
-                                                const RenderPipelineDescriptor2* descriptor);
+                                                const RenderPipelineDescriptor* descriptor);
 
-    std::vector<StageAndDescriptor> GetStages(const RenderPipelineDescriptor2* descriptor);
+    std::vector<StageAndDescriptor> GetStages(const RenderPipelineDescriptor* descriptor);
 
     size_t IndexFormatSize(wgpu::IndexFormat format);
 
     bool IsStripPrimitiveTopology(wgpu::PrimitiveTopology primitiveTopology);
 
     bool StencilTestEnabled(const DepthStencilState* mDepthStencil);
-
-    bool BlendEnabled(const ColorStateDescriptor* mColorState);
 
     struct VertexAttributeInfo {
         wgpu::VertexFormat format;
@@ -51,12 +49,13 @@ namespace dawn_native {
 
     struct VertexBufferInfo {
         uint64_t arrayStride;
-        wgpu::InputStepMode stepMode;
+        wgpu::VertexStepMode stepMode;
+        uint16_t usedBytesInStride;
     };
 
     class RenderPipelineBase : public PipelineBase {
       public:
-        RenderPipelineBase(DeviceBase* device, const RenderPipelineDescriptor2* descriptor);
+        RenderPipelineBase(DeviceBase* device, const RenderPipelineDescriptor* descriptor);
         ~RenderPipelineBase() override;
 
         static RenderPipelineBase* MakeError(DeviceBase* device);
@@ -65,6 +64,10 @@ namespace dawn_native {
         GetAttributeLocationsUsed() const;
         const VertexAttributeInfo& GetAttribute(VertexAttributeLocation location) const;
         const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>& GetVertexBufferSlotsUsed() const;
+        const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>&
+        GetVertexBufferSlotsUsedAsVertexBuffer() const;
+        const ityp::bitset<VertexBufferSlot, kMaxVertexBuffers>&
+        GetVertexBufferSlotsUsedAsInstanceBuffer() const;
         const VertexBufferInfo& GetVertexBuffer(VertexBufferSlot slot) const;
         uint32_t GetVertexBufferCount() const;
 
@@ -106,6 +109,8 @@ namespace dawn_native {
         ityp::array<VertexAttributeLocation, VertexAttributeInfo, kMaxVertexAttributes>
             mAttributeInfos;
         ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mVertexBufferSlotsUsed;
+        ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mVertexBufferSlotsUsedAsVertexBuffer;
+        ityp::bitset<VertexBufferSlot, kMaxVertexBuffers> mVertexBufferSlotsUsedAsInstanceBuffer;
         ityp::array<VertexBufferSlot, VertexBufferInfo, kMaxVertexBuffers> mVertexBufferInfos;
 
         // Attachments

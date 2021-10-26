@@ -22,13 +22,13 @@ class WebContents;
 
 // Adapts the UrlRequestRewrite FIDL API to be sent to the renderers over the
 // over the UrlRequestRewrite Mojo API.
-class WEB_ENGINE_EXPORT UrlRequestRewriteRulesManager
+class WEB_ENGINE_EXPORT UrlRequestRewriteRulesManager final
     : public content::WebContentsObserver {
  public:
   static std::unique_ptr<UrlRequestRewriteRulesManager> CreateForTesting();
 
   explicit UrlRequestRewriteRulesManager(content::WebContents* web_contents);
-  ~UrlRequestRewriteRulesManager() final;
+  ~UrlRequestRewriteRulesManager() override;
 
   // Signals |rules| have been updated. Actual implementation for
   // fuchsia.web.Frame/SetUrlRequestRewriteRules.
@@ -52,7 +52,7 @@ class WEB_ENGINE_EXPORT UrlRequestRewriteRulesManager
       cached_rules_;
 
   // Map of GlobalRoutingID to their current associated remote.
-  std::map<content::GlobalFrameRoutingId,
+  std::map<content::GlobalRenderFrameHostId,
            mojo::AssociatedRemote<mojom::UrlRequestRulesReceiver>>
       active_remotes_;
 

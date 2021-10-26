@@ -92,10 +92,10 @@ viz_component("service") {
     "display/overlay_processor_stub.h",
     "display/program_binding.cc",
     "display/program_binding.h",
-    "display/render_pass_id_remapper.cc",
-    "display/render_pass_id_remapper.h",
     "display/renderer_utils.cc",
     "display/renderer_utils.h",
+    "display/resolved_frame_data.cc",
+    "display/resolved_frame_data.h",
     "display/resource_fence.h",
     "display/scoped_gpu_memory_buffer_texture.cc",
     "display/scoped_gpu_memory_buffer_texture.h",
@@ -122,6 +122,8 @@ viz_component("service") {
     "display/texture_deleter.h",
     "display_embedder/buffer_queue.cc",
     "display_embedder/buffer_queue.h",
+    "display_embedder/compositor_gpu_thread.cc",
+    "display_embedder/compositor_gpu_thread.h",
     "display_embedder/gl_output_surface.cc",
     "display_embedder/gl_output_surface.h",
     "display_embedder/gl_output_surface_buffer_queue.cc",
@@ -149,6 +151,8 @@ viz_component("service") {
     "frame_sinks/compositor_frame_sink_support.h",
     "frame_sinks/external_begin_frame_source_mojo.cc",
     "frame_sinks/external_begin_frame_source_mojo.h",
+    "frame_sinks/frame_sink_bundle_impl.cc",
+    "frame_sinks/frame_sink_bundle_impl.h",
     "frame_sinks/frame_sink_manager_impl.cc",
     "frame_sinks/frame_sink_manager_impl.h",
     "frame_sinks/frame_sink_observer.h",
@@ -325,6 +329,8 @@ viz_component("service") {
 
   if (use_ozone) {
     sources += [
+      "display/overlay_processor_delegated.cc",
+      "display/overlay_processor_delegated.h",
       "display/overlay_processor_ozone.cc",
       "display/overlay_processor_ozone.h",
       "display_embedder/software_output_device_ozone.cc",
@@ -539,6 +545,7 @@ viz_source_set("unit_tests") {
     "display/frame_rate_decider_unittest.cc",
     "display/layer_quad_unittest.cc",
     "display/renderer_pixeltest.cc",
+    "display/resolved_frame_data_unittest.cc",
     "display/shader_unittest.cc",
     "display/skia_readback_pixeltest.cc",
     "display/software_renderer_unittest.cc",
@@ -556,6 +563,7 @@ viz_source_set("unit_tests") {
     "display_embedder/vsync_parameter_listener_unittest.cc",
     "frame_sinks/begin_frame_tracker_unittest.cc",
     "frame_sinks/compositor_frame_sink_support_unittest.cc",
+    "frame_sinks/frame_sink_bundle_impl_unittest.cc",
     "frame_sinks/frame_sink_manager_unittest.cc",
     "frame_sinks/surface_references_unittest.cc",
     "frame_sinks/surface_synchronization_unittest.cc",
@@ -585,10 +593,7 @@ viz_source_set("unit_tests") {
     sources -= [ "display_embedder/buffer_queue_unittest.cc" ]
   }
 
-  configs = [
-    "//build/config/compiler:no_size_t_to_int_warning",
-    "//third_party/khronos:khronos_headers",
-  ]
+  configs = [ "//third_party/khronos:khronos_headers" ]
 
   deps = [
     ":service",
@@ -676,8 +681,8 @@ viz_source_set("perf_tests") {
     "display/gl_renderer_copier_perftest.cc",
     "display/renderer_perftest.cc",
     "display/surface_aggregator_perftest.cc",
-    "display/viz_perf_test.cc",
-    "display/viz_perf_test.h",
+    "display/viz_perftest.cc",
+    "display/viz_perftest.h",
   ]
 
   deps = [
@@ -691,6 +696,7 @@ viz_source_set("perf_tests") {
     "//components/viz/test:test_support",
     "//testing/gtest",
     "//testing/perf",
+    "//third_party/zlib/google:zip",
   ]
 }
 

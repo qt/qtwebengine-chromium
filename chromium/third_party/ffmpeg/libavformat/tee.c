@@ -23,6 +23,7 @@
 #include "libavutil/avutil.h"
 #include "libavutil/avstring.h"
 #include "libavutil/opt.h"
+#include "libavcodec/bsf.h"
 #include "internal.h"
 #include "avformat.h"
 #include "avio_internal.h"
@@ -606,7 +607,7 @@ static int tee_write_packet(AVFormatContext *avf, AVPacket *pkt)
     return ret_all;
 }
 
-AVOutputFormat ff_tee_muxer = {
+const AVOutputFormat ff_tee_muxer = {
     .name              = "tee",
     .long_name         = NULL_IF_CONFIG_SMALL("Multiple muxer tee"),
     .priv_data_size    = sizeof(TeeContext),

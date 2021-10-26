@@ -130,6 +130,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionTabsTest, MAYBE_QueryLastFocusedWindowTabs) {
 class NonPersistentExtensionTabsTest
     : public ExtensionApiTest,
       public testing::WithParamInterface<ContextType> {
+ public:
+  NonPersistentExtensionTabsTest() = default;
+  ~NonPersistentExtensionTabsTest() override = default;
+  NonPersistentExtensionTabsTest(const NonPersistentExtensionTabsTest&) =
+      delete;
+  NonPersistentExtensionTabsTest& operator=(
+      const NonPersistentExtensionTabsTest&) = delete;
+
  protected:
   const Extension* LoadNonPersistentExtension(const char* relative_path) {
     return LoadExtension(
@@ -141,8 +149,8 @@ class NonPersistentExtensionTabsTest
 // Crashes on Lacros only. http://crbug.com/1150133
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
 #define MAYBE_TabCurrentWindow DISABLED_TabCurrentWindow
-// Flakes on Linux Tests (Release Only). http://crbug.com/1162432
-#elif defined(OS_LINUX) && !defined(OS_CHROMEOS) && defined(NDEBUG)
+// Flakes on Linux Tests. http://crbug.com/1162432
+#elif defined(OS_LINUX)
 #define MAYBE_TabCurrentWindow DISABLED_TabCurrentWindow
 #else
 #define MAYBE_TabCurrentWindow TabCurrentWindow
@@ -153,7 +161,7 @@ class NonPersistentExtensionTabsTest
 // param is ignored from Service Worker extension scripts.
 IN_PROC_BROWSER_TEST_P(NonPersistentExtensionTabsTest, MAYBE_TabCurrentWindow) {
   ASSERT_TRUE(RunExtensionTest(
-      {.name = "tabs/current_window"},
+      "tabs/current_window", {},
       {.load_as_service_worker = GetParam() == ContextType::kServiceWorker}))
       << message_;
 }
@@ -169,7 +177,7 @@ IN_PROC_BROWSER_TEST_P(NonPersistentExtensionTabsTest, MAYBE_TabCurrentWindow) {
 IN_PROC_BROWSER_TEST_P(NonPersistentExtensionTabsTest,
                        MAYBE_TabGetLastFocusedWindow) {
   ASSERT_TRUE(RunExtensionTest(
-      {.name = "tabs/last_focused_window"},
+      "tabs/last_focused_window", {},
       {.load_as_service_worker = GetParam() == ContextType::kServiceWorker}))
       << message_;
 }

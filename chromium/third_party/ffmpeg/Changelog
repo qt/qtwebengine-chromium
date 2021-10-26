@@ -2,6 +2,16 @@ Entries are sorted chronologically from oldest to youngest within each release,
 releases are sorted from youngest to oldest.
 
 version <next>:
+- ADPCM IMA Westwood encoder
+- Westwood AUD muxer
+- ADPCM IMA Acorn Replay decoder
+- Argonaut Games CVG demuxer
+- Argonaut Games CVG muxer
+- Concatf protocol
+- afwtdn audio filter
+
+
+version 4.4:
 - AudioToolbox output device
 - MacCaption demuxer
 - PGX decoder
@@ -81,6 +91,8 @@ version <next>:
 - TTML subtitle encoder and muxer
 - identity video filter
 - msad video filter
+- gophers protocol
+- RIST protocol via librist
 
 
 version 4.3:

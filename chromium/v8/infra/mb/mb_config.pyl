@@ -62,8 +62,12 @@
       'V8 Linux - verify csa': 'release_x86_verify_csa',
       # Linux64.
       'V8 Linux64 - builder': 'release_x64',
+      'V8 Linux64 - builder (goma cache silo)': 'release_x64',
+      'V8 Linux64 - builder (reclient)': 'release_x64_reclient',
+      'V8 Linux64 - builder (reclient compare)': 'release_x64_reclient',
       'V8 Linux64 - debug builder': 'debug_x64',
       'V8 Linux64 - dict tracking - debug - builder': 'debug_x64_dict_tracking_trybot',
+      'V8 Linux64 - external code space - debug - builder': 'debug_x64_external_code_space',
       'V8 Linux64 - custom snapshot - debug builder': 'debug_x64_custom',
       'V8 Linux64 - heap sandbox - debug - builder': 'debug_x64_heap_sandbox',
       'V8 Linux64 - internal snapshot': 'release_x64_internal',
@@ -102,6 +106,7 @@
       # FYI.
       'V8 iOS - sim': 'release_x64_ios_simulator',
       'V8 Linux64 - debug - perfetto - builder': 'debug_x64_perfetto',
+      'V8 Linux64 - disable runtime call stats': 'release_x64_disable_runtime_call_stats',
       'V8 Linux64 - debug - single generation - builder': 'debug_x64_single_generation',
       'V8 Linux64 - pointer compression': 'release_x64_pointer_compression',
       'V8 Linux64 - pointer compression without dchecks':
@@ -213,6 +218,8 @@
           'release_simulate_arm64_pointer_compression',
       'v8_linux64_dbg_ng': 'debug_x64_trybot',
       'v8_linux64_dict_tracking_dbg_ng': 'debug_x64_dict_tracking_trybot',
+      'v8_linux64_disable_runtime_call_stats_rel': 'release_x64_disable_runtime_call_stats',
+      'v8_linux64_external_code_space_dbg_ng': 'debug_x64_external_code_space',
       'v8_linux64_gc_stress_custom_snapshot_dbg_ng': 'debug_x64_trybot_custom',
       'v8_linux64_gcc_compile_dbg': 'debug_x64_gcc',
       'v8_linux64_gcov_coverage': 'release_x64_gcc_coverage',
@@ -251,7 +258,10 @@
       'v8_mac_arm64_rel_ng': 'release_arm64',
       'v8_mac_arm64_dbg_ng': 'debug_arm64',
       'v8_mac_arm64_full_dbg_ng': 'full_debug_arm64',
+      'v8_mac_arm64_compile_dbg': 'debug_arm64',
       'v8_mac_arm64_compile_rel': 'release_arm64',
+      'v8_mac_arm64_sim_compile_dbg': 'debug_simulate_arm64',
+      'v8_mac_arm64_sim_compile_rel': 'release_simulate_arm64',
       'v8_mac_arm64_sim_rel_ng': 'release_simulate_arm64_trybot',
       'v8_mac_arm64_sim_dbg_ng': 'debug_simulate_arm64',
       'v8_mac_arm64_sim_nodcheck_rel_ng': 'release_simulate_arm64',
@@ -475,12 +485,13 @@
       'release_bot', 'x64', 'cfi_clusterfuzz'],
     'release_x64_fuzzilli': [
       'release_bot', 'x64', 'dcheck_always_on', 'v8_enable_slow_dchecks',
-      'v8_verify_heap', 'v8_verify_csa', 'v8_enable_verify_predictable',
-      'fuzzilli'],
+      'v8_verify_heap', 'v8_verify_csa', 'fuzzilli'],
     'release_x64_msvc': [
       'release_bot_no_goma', 'x64', 'minimal_symbols', 'msvc'],
     'release_x64_correctness_fuzzer' : [
       'release_bot', 'x64', 'v8_correctness_fuzzer'],
+    'release_x64_disable_runtime_call_stats': [
+      'release_bot', 'x64', 'v8_disable_runtime_call_stats'],
     'release_x64_fuchsia': [
       'release_bot', 'x64', 'fuchsia'],
     'release_x64_fuchsia_trybot': [
@@ -499,6 +510,8 @@
       'v8_disable_pointer_compression'],
     'release_x64_pointer_compression_without_dchecks': [
       'release_bot', 'x64', 'v8_disable_pointer_compression'],
+    'release_x64_reclient': [
+      'release_bot_reclient', 'x64'],
     'release_x64_trybot': [
       'release_trybot', 'x64'],
     'release_x64_test_features_trybot': [
@@ -537,6 +550,8 @@
       'x64', 'asan'],
     'debug_x64_custom': [
       'debug_bot', 'x64', 'v8_snapshot_custom'],
+    'debug_x64_external_code_space': [
+      'debug_bot', 'x64', 'external_code_space'],
     'debug_x64_fuchsia': [
       'debug_bot', 'x64', 'fuchsia'],
     'debug_x64_gcc': [
@@ -692,6 +707,10 @@
       'gn_args': 'chrome_pgo_phase=0',
     },
 
+    'external_code_space': {
+      'gn_args': 'v8_enable_external_code_space=true',
+    },
+
     'fuchsia': {
       'gn_args': 'target_os="fuchsia"',
     },
@@ -764,8 +783,12 @@
       'gn_args': 'v8_use_perfetto=true',
     },
 
+    'reclient': {
+      'gn_args': 'use_rbe=true',
+    },
+
     'release': {
-      'gn_args': 'is_debug=false',
+      'gn_args': 'is_debug=false dcheck_always_on=false',
     },
 
     'release_bot': {
@@ -774,6 +797,10 @@
 
     'release_bot_no_goma': {
       'mixins': ['release', 'static', 'no_goma'],
+    },
+
+    'release_bot_reclient': {
+      'mixins': ['release', 'static', 'no_goma', 'reclient'],
     },
 
     'release_trybot': {
@@ -856,6 +883,10 @@
 
     'v8_control_flow_integrity' : {
       'gn_args': 'v8_control_flow_integrity=true',
+    },
+
+    'v8_disable_runtime_call_stats': {
+      'gn_args': 'v8_enable_runtime_call_stats=false',
     },
 
     'v8_enable_heap_sandbox': {

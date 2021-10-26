@@ -514,7 +514,7 @@ class CC_EXPORT GpuImageDecodeCache
               DecodedDataMode mode,
               size_t size,
               const gfx::ColorSpace& target_color_space,
-              SkFilterQuality quality,
+              PaintFlags::FilterQuality quality,
               int upload_scale_mip_level,
               bool needs_mips,
               bool is_bitmap_backed,
@@ -530,7 +530,7 @@ class CC_EXPORT GpuImageDecodeCache
     const DecodedDataMode mode;
     const size_t size;
     gfx::ColorSpace target_color_space;
-    SkFilterQuality quality;
+    PaintFlags::FilterQuality quality;
     int upload_scale_mip_level;
     bool needs_mips = false;
     bool is_bitmap_backed;
@@ -574,7 +574,7 @@ class CC_EXPORT GpuImageDecodeCache
 
     PaintImage::FrameKey frame_key;
     int upload_scale_mip_level;
-    SkFilterQuality filter_quality;
+    PaintFlags::FilterQuality filter_quality;
     gfx::ColorSpace target_color_space;
   };
   struct InUseCacheKeyHash {
@@ -641,8 +641,8 @@ class CC_EXPORT GpuImageDecodeCache
       const SkImage* uploaded_y_image,
       const SkImage* uploaded_u_image,
       const SkImage* uploaded_v_image,
-      const size_t image_width,
-      const size_t image_height,
+      const int image_width,
+      const int image_height,
       const SkYUVAInfo::PlaneConfig yuva_plane_config,
       const SkYUVAInfo::Subsampling yuva_subsampling,
       const SkYUVColorSpace yuva_color_space,

@@ -4,9 +4,11 @@
 
 #include "chrome/browser/ui/webui/realbox/realbox_handler.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_provider_client.h"
 #include "chrome/browser/autocomplete/chrome_autocomplete_scheme_classifier.h"
 #include "chrome/browser/bitmap_fetcher/bitmap_fetcher_service_factory.h"
@@ -35,6 +37,7 @@
 #include "components/omnibox/browser/omnibox_prefs.h"
 #include "components/omnibox/browser/search_suggestion_parser.h"
 #include "components/omnibox/browser/vector_icons.h"
+#include "components/omnibox/common/omnibox_features.h"
 #include "components/prefs/pref_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/search/ntp_features.h"
@@ -53,17 +56,29 @@
 
 namespace {
 
-constexpr char kGoogleGIconResourceName[] = "realbox/icons/google_g.png";
+constexpr char kGoogleGIconResourceName[] = "google_g.png";
+constexpr char kSearchIconResourceName[] = "search.svg";
+
+constexpr char kAnswerCurrencyIconResourceName[] = "realbox/icons/currency.svg";
+constexpr char kAnswerDefaultIconResourceName[] = "realbox/icons/default.svg";
+constexpr char kAnswerDictionaryIconResourceName[] =
+    "realbox/icons/definition.svg";
+constexpr char kAnswerFinanceIconResourceName[] = "realbox/icons/finance.svg";
+constexpr char kAnswerSunriseIconResourceName[] = "realbox/icons/sunrise.svg";
+constexpr char kAnswerTranslationIconResourceName[] =
+    "realbox/icons/translation.svg";
+constexpr char kAnswerWhenIsIconResourceName[] = "realbox/icons/when_is.svg";
 constexpr char kBookmarkIconResourceName[] =
     "chrome://resources/images/icon_bookmark.svg";
 constexpr char kCalculatorIconResourceName[] = "realbox/icons/calculator.svg";
-constexpr char kClockIconResourceName[] = "realbox/icons/clock.svg";
+constexpr char kClockIconResourceName[] =
+    "chrome://resources/images/icon_clock.svg";
 constexpr char kDriveDocsIconResourceName[] = "realbox/icons/drive_docs.svg";
 constexpr char kDriveFolderIconResourceName[] =
     "realbox/icons/drive_folder.svg";
 constexpr char kDriveFormIconResourceName[] = "realbox/icons/drive_form.svg";
 constexpr char kDriveImageIconResourceName[] = "realbox/icons/drive_image.svg";
-constexpr char kDriveLogoIconResourceName[] = "realbox/icons/drive_logo.svg";
+constexpr char kDriveLogoIconResourceName[] = "icons/drive_logo.svg";
 constexpr char kDrivePdfIconResourceName[] = "realbox/icons/drive_pdf.svg";
 constexpr char kDriveSheetsIconResourceName[] =
     "realbox/icons/drive_sheets.svg";
@@ -73,7 +88,6 @@ constexpr char kDriveVideoIconResourceName[] = "realbox/icons/drive_video.svg";
 constexpr char kExtensionAppIconResourceName[] =
     "realbox/icons/extension_app.svg";
 constexpr char kPageIconResourceName[] = "realbox/icons/page.svg";
-constexpr char kSearchIconResourceName[] = "realbox/icons/search.svg";
 constexpr char kTrendingUpIconResourceName[] = "realbox/icons/trending_up.svg";
 
 base::flat_map<int32_t, realbox::mojom::SuggestionGroupPtr>
@@ -91,6 +105,31 @@ CreateSuggestionGroupsMap(
     result_map.emplace(pair.first, std::move(suggestion_group));
   }
   return result_map;
+}
+
+absl::optional<std::u16string> GetAdditionalText(
+    const SuggestionAnswer::ImageLine& line) {
+  if (line.additional_text()) {
+    const auto additional_text = line.additional_text()->text();
+    if (!additional_text.empty())
+      return additional_text;
+  }
+  return absl::nullopt;
+}
+
+std::u16string ImageLineToString16(const SuggestionAnswer::ImageLine& line) {
+  std::vector<std::u16string> text;
+  for (const auto& text_field : line.text_fields()) {
+    text.push_back(text_field.text());
+  }
+  const auto& additional_text = GetAdditionalText(line);
+  if (additional_text) {
+    text.push_back(additional_text.value());
+  }
+  // TODO(crbug.com/1130372): Use placeholders or a l10n-friendly way to
+  // construct this string instead of concatenation. This currently only happens
+  // for stock ticker symbols.
+  return base::JoinString(text, u" ");
 }
 
 std::vector<realbox::mojom::AutocompleteMatchPtr> CreateAutocompleteMatches(
@@ -131,6 +170,22 @@ std::vector<realbox::mojom::AutocompleteMatchPtr> CreateAutocompleteMatches(
         match.swap_contents_and_description;
     mojom_match->type = AutocompleteMatchType::ToString(match.type);
     mojom_match->supports_deletion = match.SupportsDeletion();
+    if (match.answer.has_value() &&
+        base::FeatureList::IsEnabled(omnibox::kNtpRealboxSuggestionAnswers)) {
+      const auto& additional_text =
+          GetAdditionalText(match.answer->first_line());
+      mojom_match->answer = realbox::mojom::SuggestionAnswer::New(
+          additional_text ? base::JoinString(
+                                {match.contents, additional_text.value()}, u" ")
+                          : match.contents,
+          ImageLineToString16(match.answer->second_line()));
+      mojom_match->image_url = match.ImageUrl().spec();
+    }
+    mojom_match->is_rich_suggestion =
+        !mojom_match->image_url.empty() ||
+        match.type == AutocompleteMatchType::CALCULATOR ||
+        (match.answer.has_value() &&
+         base::FeatureList::IsEnabled(omnibox::kNtpRealboxSuggestionAnswers));
     matches.push_back(std::move(mojom_match));
   }
   return matches;
@@ -182,7 +237,30 @@ void RealboxHandler::SetupWebUIDataSource(content::WebUIDataSource* source) {
 // static
 std::string RealboxHandler::AutocompleteMatchVectorIconToResourceName(
     const gfx::VectorIcon& icon) {
-  if (icon.name == omnibox::kBlankIcon.name) {
+  std::string answerNames[] = {
+      omnibox::kAnswerCurrencyIcon.name,   omnibox::kAnswerDefaultIcon.name,
+      omnibox::kAnswerDictionaryIcon.name, omnibox::kAnswerFinanceIcon.name,
+      omnibox::kAnswerSunriseIcon.name,    omnibox::kAnswerTranslationIcon.name,
+      omnibox::kAnswerWhenIsIcon.name,     omnibox::kAnswerWhenIsIcon.name};
+
+  if (!base::FeatureList::IsEnabled(omnibox::kNtpRealboxSuggestionAnswers) &&
+      base::Contains(answerNames, icon.name)) {
+    return kSearchIconResourceName;
+  } else if (icon.name == omnibox::kAnswerCurrencyIcon.name) {
+    return kAnswerCurrencyIconResourceName;
+  } else if (icon.name == omnibox::kAnswerDefaultIcon.name) {
+    return kAnswerDefaultIconResourceName;
+  } else if (icon.name == omnibox::kAnswerDictionaryIcon.name) {
+    return kAnswerDictionaryIconResourceName;
+  } else if (icon.name == omnibox::kAnswerFinanceIcon.name) {
+    return kAnswerFinanceIconResourceName;
+  } else if (icon.name == omnibox::kAnswerSunriseIcon.name) {
+    return kAnswerSunriseIconResourceName;
+  } else if (icon.name == omnibox::kAnswerTranslationIcon.name) {
+    return kAnswerTranslationIconResourceName;
+  } else if (icon.name == omnibox::kAnswerWhenIsIcon.name) {
+    return kAnswerWhenIsIconResourceName;
+  } else if (icon.name == omnibox::kBlankIcon.name) {
     return "";  // An empty resource name is effectively a blank icon.
   } else if (icon.name == omnibox::kBookmarkIcon.name) {
     return kBookmarkIconResourceName;
@@ -478,12 +556,12 @@ void RealboxHandler::OnResultChanged(AutocompleteController* controller,
     match_index++;
 
     // Request bitmaps for matche images.
-    if (!match.image_url.is_empty()) {
+    if (!match.ImageUrl().is_empty()) {
       bitmap_request_ids_.push_back(bitmap_fetcher_service_->RequestImage(
-          match.image_url,
+          match.ImageUrl(),
           base::BindOnce(&RealboxHandler::OnRealboxBitmapFetched,
                          weak_ptr_factory_.GetWeakPtr(), match_index,
-                         match.image_url)));
+                         match.ImageUrl())));
     }
 
     // Request favicons for navigational matches.

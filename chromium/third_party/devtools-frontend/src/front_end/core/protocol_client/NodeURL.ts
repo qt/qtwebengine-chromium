@@ -2,23 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Common from '../common/common.js';
 import * as Host from '../host/host.js';
 
 export class NodeURL {
   static patch(object: {
-    url: string,
+    url?: string,
   }): void {
     process(object, '');
 
-    function process(
-        object: {
-          url: string,
-        },
-        path: string): void {
-      if (object.url && NodeURL._isPlatformPath(object.url, Host.Platform.isWin())) {
+    function process(object: {url?: string}, path: string): void {
+      if (object.url && NodeURL.isPlatformPath(object.url, Host.Platform.isWin())) {
         object.url = Common.ParsedURL.ParsedURL.platformPathToURL(object.url);
       }
       for (const entry of Object.entries(object)) {
@@ -36,7 +30,7 @@ export class NodeURL {
     }
   }
 
-  static _isPlatformPath(fileSystemPath: string, isWindows: boolean): boolean {
+  static isPlatformPath(fileSystemPath: string, isWindows: boolean): boolean {
     if (isWindows) {
       const re = /^([a-z]:[\/\\]|\\\\)/i;
       return re.test(fileSystemPath);

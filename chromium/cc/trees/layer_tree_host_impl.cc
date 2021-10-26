@@ -93,6 +93,7 @@
 #include "cc/trees/latency_info_swap_promise_monitor.h"
 #include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/layer_tree_impl.h"
+#include "cc/trees/mobile_optimized_viewport_util.h"
 #include "cc/trees/mutator_host.h"
 #include "cc/trees/presentation_time_callback_buffer.h"
 #include "cc/trees/render_frame_metadata.h"
@@ -142,10 +143,11 @@ using ScrollThread = cc::InputHandler::ScrollThread;
 namespace cc {
 namespace {
 
-// Used to accommodate finite precision when comparing scaled viewport and
-// content widths. While this value may seem large, width=device-width on an N7
-// V1 saw errors of ~0.065 between computed window and content widths.
-const float kMobileViewportWidthEpsilon = 0.15f;
+// The threshold which determines at what point during a scroll, should the
+// tree priority change from SMOOTHNESS_TAKES_PRIORITY to
+// NEW_CONTENT_TAKES_PRIORITY. The threshold represents visible checkerboarded
+// area.
+const float kVisibleCheckerboardedThresholdForPreferNewContent = 0.3f;
 
 // In BuildHitTestData we iterate all layers to find all layers that overlap
 // OOPIFs, but when the number of layers is greater than
@@ -161,25 +163,13 @@ static_assert(kContainsSrgbCacheSize ==
                   gfx::DisplayColorSpaces::kConfigCount / 2,
               "sRGB cache must match the size of DisplayColorSpaces");
 
-bool HasFixedPageScale(LayerTreeImpl* active_tree) {
-  return active_tree->min_page_scale_factor() ==
-         active_tree->max_page_scale_factor();
-}
-
-bool HasMobileViewport(LayerTreeImpl* active_tree) {
-  float window_width_dip = active_tree->current_page_scale_factor() *
-                           active_tree->ScrollableViewportSize().width();
-  float content_width_css = active_tree->ScrollableSize().width();
-  return content_width_css <= window_width_dip + kMobileViewportWidthEpsilon;
-}
-
 bool IsMobileOptimized(LayerTreeImpl* active_tree) {
-  bool has_mobile_viewport = HasMobileViewport(active_tree);
-  bool has_fixed_page_scale = HasFixedPageScale(active_tree);
-  return has_fixed_page_scale || has_mobile_viewport ||
-         (base::FeatureList::IsEnabled(
-              ::features::kRemoveMobileViewportDoubleTap) &&
-          active_tree->viewport_mobile_optimized());
+  return util::IsMobileOptimized(active_tree->min_page_scale_factor(),
+                                 active_tree->max_page_scale_factor(),
+                                 active_tree->current_page_scale_factor(),
+                                 active_tree->ScrollableViewportSize(),
+                                 active_tree->ScrollableSize(),
+                                 active_tree->viewport_mobile_optimized());
 }
 
 viz::ResourceFormat TileRasterBufferFormat(
@@ -244,16 +234,16 @@ void ApplyFirstScrollTracking(const ui::LatencyInfo* latency,
     return;
   }
 
-  // Construct a callback that, given presentation feedback, will report the
-  // time span between the scroll input-event creation and the
+  // Construct a callback that, given a successful presentation timestamp, will
+  // report the time span between the scroll input-event creation and the
   // presentation timestamp.
-  LayerTreeHost::PresentationTimeCallback presentation_callback =
+  PresentationTimeCallbackBuffer::CompositorCallback presentation_callback =
       base::BindOnce(
           [](base::TimeTicks event_creation,
              LayerTreeHostImpl* layer_tree_host_impl,
-             const gfx::PresentationFeedback& feedback) {
+             base::TimeTicks presentation_timestamp) {
             layer_tree_host_impl->DidObserveScrollDelay(
-                feedback.timestamp - event_creation, event_creation);
+                presentation_timestamp - event_creation, event_creation);
           },
           creation_timestamp, impl);
 
@@ -334,6 +324,7 @@ void LayerTreeHostImpl::DidStartScroll() {
 
 void LayerTreeHostImpl::DidEndScroll() {
   scroll_affects_scroll_handler_ = false;
+  current_scroll_did_checkerboard_large_area_ = false;
 }
 
 void LayerTreeHostImpl::DidMouseLeave() {
@@ -1026,9 +1017,9 @@ void LayerTreeHostImpl::FrameData::AsValueInto(
   }
   if (quads_enabled) {
     value->BeginArray("render_passes");
-    for (size_t i = 0; i < render_passes.size(); ++i) {
+    for (const auto& render_pass : render_passes) {
       value->BeginDictionary();
-      render_passes[i]->AsValueInto(value);
+      render_pass->AsValueInto(value);
       value->EndDictionary();
     }
     value->EndArray();
@@ -1290,6 +1281,9 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
                                                 layer->transform_tree_index(),
                                                 target_render_pass);
         }
+      } else {
+        if (settings_.enable_compositing_based_throttling)
+          throttle_decider_.ProcessLayerNotToDraw(layer);
       }
 
       rendering_stats_instrumentation_->AddVisibleContentArea(
@@ -1329,6 +1323,18 @@ DrawResult LayerTreeHostImpl::CalculateRenderPasses(FrameData* frame) {
     }
     frame->use_default_lower_bound_deadline |=
         append_quads_data.use_default_lower_bound_deadline;
+  }
+
+  if (total_visible_area > 0 &&
+      GetActivelyScrollingType() != ActivelyScrollingType::kNone) {
+    float visible_area_checkerboarded_ratio =
+        (checkerboarded_no_recording_content_area +
+         checkerboarded_needs_raster_content_area) /
+        total_visible_area;
+    if (visible_area_checkerboarded_ratio >
+        kVisibleCheckerboardedThresholdForPreferNewContent) {
+      SetCurrentScrollDidCheckerboardLargeArea();
+    }
   }
 
   // If CommitToActiveTree() is true, then we wait to draw until
@@ -1509,13 +1515,13 @@ DrawResult LayerTreeHostImpl::PrepareToDraw(FrameData* frame) {
 
     UMA_HISTOGRAM_CUSTOM_COUNTS(
         base::StringPrintf("Compositing.%s.NumActiveLayers", client_name),
-        base::saturated_cast<int>(active_tree_->NumLayers()), 1, 400, 20);
+        base::saturated_cast<int>(active_tree_->NumLayers()), 1, 1000, 20);
 
     UMA_HISTOGRAM_CUSTOM_COUNTS(
         base::StringPrintf("Compositing.%s.NumActivePictureLayers",
                            client_name),
         base::saturated_cast<int>(active_tree_->picture_layers().size()), 1,
-        400, 20);
+        1000, 20);
 
     // TODO(pdr): Instead of skipping empty picture layers, maybe we should
     // accumulate layer->GetRasterSource()->GetMemoryUsage() above and skip
@@ -1750,6 +1756,11 @@ void LayerTreeHostImpl::DidModifyTilePriorities() {
   tile_priorities_dirty_ = true;
   tile_manager_.DidModifyTilePriorities();
   client_->SetNeedsPrepareTilesOnImplThread();
+}
+
+void LayerTreeHostImpl::SetTargetLocalSurfaceId(
+    const viz::LocalSurfaceId& target_local_surface_id) {
+  target_local_surface_id_ = target_local_surface_id;
 }
 
 std::unique_ptr<RasterTilePriorityQueue> LayerTreeHostImpl::BuildRasterQueue(
@@ -2041,8 +2052,14 @@ void LayerTreeHostImpl::DidReceiveCompositorFrameAck() {
 void LayerTreeHostImpl::DidPresentCompositorFrame(
     uint32_t frame_token,
     const viz::FrameTimingDetails& details) {
+  // Presentation callbacks registered on the compositor thread are expected to
+  // be called on the first successful presentation. So, if the presentation is
+  // failed, we only pop main thread callbacks at this point and leave
+  // compositor thread callbacks alone until a successful presentation.
+  const bool main_callbacks_only = details.presentation_feedback.failed();
   PresentationTimeCallbackBuffer::PendingCallbacks activated_callbacks =
-      presentation_time_callbacks_.PopPendingCallbacks(frame_token);
+      presentation_time_callbacks_.PopPendingCallbacks(frame_token,
+                                                       main_callbacks_only);
 
   // Send all tasks to the client so that it can decide which tasks
   // should run on which thread.
@@ -2426,7 +2443,8 @@ bool LayerTreeHostImpl::DrawLayers(FrameData* frame) {
   active_tree_->ResetAllChangeTracking();
 
   active_tree_->set_has_ever_been_drawn(true);
-  devtools_instrumentation::DidDrawFrame(id_);
+  devtools_instrumentation::DidDrawFrame(
+      id_, frame->begin_frame_ack.frame_id.sequence_number);
   benchmark_instrumentation::IssueImplThreadRenderingStatsEvent(
       rendering_stats_instrumentation_->TakeImplThreadRenderingStats());
 
@@ -2811,20 +2829,20 @@ void LayerTreeHostImpl::UpdateTreeResourcesForGpuRasterizationIfNeeded() {
   SetRequiresHighResToDraw();
 }
 
-void LayerTreeHostImpl::RegisterMainThreadPresentationTimeCallback(
+void LayerTreeHostImpl::RegisterMainThreadPresentationTimeCallbackForTesting(
     uint32_t frame_token,
-    LayerTreeHost::PresentationTimeCallback callback) {
-  std::vector<LayerTreeHost::PresentationTimeCallback> as_vector;
-  as_vector.emplace_back(std::move(callback));
+    PresentationTimeCallbackBuffer::MainCallback callback) {
+  std::vector<PresentationTimeCallbackBuffer::MainCallback> as_vector;
+  as_vector.push_back(std::move(callback));
   presentation_time_callbacks_.RegisterMainThreadPresentationCallbacks(
       frame_token, std::move(as_vector));
 }
 
 void LayerTreeHostImpl::RegisterCompositorPresentationTimeCallback(
     uint32_t frame_token,
-    LayerTreeHost::PresentationTimeCallback callback) {
-  std::vector<LayerTreeHost::PresentationTimeCallback> as_vector;
-  as_vector.emplace_back(std::move(callback));
+    PresentationTimeCallbackBuffer::CompositorCallback callback) {
+  std::vector<PresentationTimeCallbackBuffer::CompositorCallback> as_vector;
+  as_vector.push_back(std::move(callback));
   presentation_time_callbacks_.RegisterCompositorPresentationCallbacks(
       frame_token, std::move(as_vector));
 }
@@ -2834,10 +2852,26 @@ bool LayerTreeHostImpl::WillBeginImplFrame(const viz::BeginFrameArgs& args) {
   current_begin_frame_tracker_.Start(args);
   frame_trackers_.NotifyBeginImplFrame(args);
   total_frame_counter_.OnBeginFrame(args);
-  devtools_instrumentation::DidBeginFrame(id_, args.frame_time);
+  devtools_instrumentation::DidBeginFrame(id_, args.frame_time,
+                                          args.frame_id.sequence_number);
 
   UMA_HISTOGRAM_CUSTOM_COUNTS("GPU.AcceleratedSurfaceRefreshRate",
                               1 / args.interval.InSecondsF(), 0, 121, 122);
+
+  // When there is a |target_local_surface_id_|, we do not wish to begin
+  // producing Impl Frames for an older viz::LocalSurfaceId, as it will never
+  // be displayed.
+  //
+  // Once the Main thread has finished adjusting to the new visual properties,
+  // it will push the updated viz::LocalSurfaceId. Begin Impl Frame production
+  // if it has already become activated, or is on the |pending_tree| to be
+  // activated during this frame's production.
+  const viz::LocalSurfaceId& upcoming_lsid =
+      pending_tree() ? pending_tree()->local_surface_id_from_parent()
+                     : active_tree()->local_surface_id_from_parent();
+  if (target_local_surface_id_.IsNewerThan(upcoming_lsid)) {
+    return false;
+  }
 
   if (is_likely_to_require_a_draw_) {
     // Optimistically schedule a draw. This will let us expect the tile manager
@@ -3139,8 +3173,9 @@ void LayerTreeHostImpl::CreatePendingTree() {
   pending_tree_fully_painted_ = false;
 
   client_->OnCanDrawStateChanged(CanDraw());
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("cc", "PendingTree:waiting",
-                                    TRACE_ID_LOCAL(pending_tree_.get()));
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1(
+      "cc", "PendingTree:waiting", TRACE_ID_LOCAL(pending_tree_.get()),
+      "active_lsid", active_tree()->local_surface_id_from_parent().ToString());
 }
 
 void LayerTreeHostImpl::PushScrollbarOpacitiesFromActiveToPending() {
@@ -3174,8 +3209,10 @@ void LayerTreeHostImpl::PushScrollbarOpacitiesFromActiveToPending() {
 void LayerTreeHostImpl::ActivateSyncTree() {
   TRACE_EVENT0("cc,benchmark", "LayerTreeHostImpl::ActivateSyncTree()");
   if (pending_tree_) {
-    TRACE_EVENT_NESTABLE_ASYNC_END0("cc", "PendingTree:waiting",
-                                    TRACE_ID_LOCAL(pending_tree_.get()));
+    TRACE_EVENT_NESTABLE_ASYNC_END1(
+        "cc", "PendingTree:waiting", TRACE_ID_LOCAL(pending_tree_.get()),
+        "pending_lsid",
+        pending_tree_->local_surface_id_from_parent().ToString());
     active_tree_->lifecycle().AdvanceTo(LayerTreeLifecycle::kBeginningSync);
 
     // In most cases, this will be reset in NotifyReadyToActivate, since we
@@ -3965,6 +4002,7 @@ float LayerTreeHostImpl::PageScaleFactor() const {
 void LayerTreeHostImpl::BindToInputHandler(
     std::unique_ptr<InputDelegateForCompositor> delegate) {
   input_delegate_ = std::move(delegate);
+  input_delegate_->SetPrefersReducedMotion(prefers_reduced_motion_);
 }
 
 void LayerTreeHostImpl::SetVisualDeviceViewportSize(
@@ -3974,6 +4012,15 @@ void LayerTreeHostImpl::SetVisualDeviceViewportSize(
 
 gfx::Size LayerTreeHostImpl::VisualDeviceViewportSize() const {
   return visual_device_viewport_size_;
+}
+
+void LayerTreeHostImpl::SetPrefersReducedMotion(bool prefers_reduced_motion) {
+  if (prefers_reduced_motion_ == prefers_reduced_motion)
+    return;
+
+  prefers_reduced_motion_ = prefers_reduced_motion;
+  if (input_delegate_)
+    input_delegate_->SetPrefersReducedMotion(prefers_reduced_motion_);
 }
 
 ScrollTree& LayerTreeHostImpl::GetScrollTree() const {
@@ -4944,13 +4991,12 @@ void LayerTreeHostImpl::SetUkmSmoothnessDestination(
 
 void LayerTreeHostImpl::NotifyDidPresentCompositorFrameOnImplThread(
     uint32_t frame_token,
-    std::vector<LayerTreeHost::PresentationTimeCallback> callbacks,
+    std::vector<PresentationTimeCallbackBuffer::CompositorCallback> callbacks,
     const viz::FrameTimingDetails& details) {
   frame_trackers_.NotifyFramePresented(frame_token,
                                        details.presentation_feedback);
-  for (LayerTreeHost::PresentationTimeCallback& callback : callbacks) {
-    std::move(callback).Run(details.presentation_feedback);
-  }
+  for (auto& callback : callbacks)
+    std::move(callback).Run(details.presentation_feedback.timestamp);
 }
 
 void LayerTreeHostImpl::AllocateLocalSurfaceId() {

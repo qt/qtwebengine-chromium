@@ -10,12 +10,16 @@
 #include <memory>
 #include <string>
 
-#include "base/callback.h"
-#include "content/browser/conversions/conversion_report.h"
+#include "base/callback_forward.h"
 #include "content/browser/conversions/conversion_reporter_impl.h"
 #include "content/common/content_export.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
-#include "url/gurl.h"
+
+class GURL;
+
+namespace net {
+class HttpResponseHeaders;
+}  // namespace net
 
 namespace network {
 class SimpleURLLoader;
@@ -24,6 +28,8 @@ class SimpleURLLoader;
 namespace content {
 
 class StoragePartition;
+
+struct ConversionReport;
 
 // Implemented a NetworkSender capable of issuing POST requests for complete
 // conversions. Maintains a set of all ongoing UrlLoaders used for posting
@@ -35,14 +41,17 @@ class CONTENT_EXPORT ConversionNetworkSenderImpl
   ConversionNetworkSenderImpl(const ConversionNetworkSenderImpl&) = delete;
   ConversionNetworkSenderImpl& operator=(const ConversionNetworkSenderImpl&) =
       delete;
+  ConversionNetworkSenderImpl(ConversionNetworkSenderImpl&&) = delete;
+  ConversionNetworkSenderImpl& operator=(ConversionNetworkSenderImpl&&) =
+      delete;
   ~ConversionNetworkSenderImpl() override;
 
   // Generates a resource request for |report| and creates a new UrlLoader to
   // send it. A report is only attempted to be sent once, with a timeout of 30
-  // seconds. |report| is destroyed after this call finishes.
+  // seconds.
   // |sent_callback| is run after the request finishes, whether or not it
   // succeeded,
-  void SendReport(ConversionReport* report,
+  void SendReport(const ConversionReport& report,
                   ReportSentCallback sent_callback) override;
 
   // Tests inject a TestURLLoaderFactory so they can mock the network response.
@@ -58,6 +67,8 @@ class CONTENT_EXPORT ConversionNetworkSenderImpl
                     GURL report_url,
                     std::string report_body,
                     ReportSentCallback sent_callback,
+                    int64_t conversion_id,
+                    base::Time original_report_time,
                     scoped_refptr<net::HttpResponseHeaders> headers);
 
   // Reports that are actively being sent.

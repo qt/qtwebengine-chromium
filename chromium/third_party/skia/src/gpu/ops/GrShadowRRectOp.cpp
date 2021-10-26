@@ -528,8 +528,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         GrGeometryProcessor* gp = GrRRectShadowGeoProc::Make(arena, fFalloffView);
@@ -546,7 +547,7 @@ private:
                                                                    &GrUserStencilSettings::kUnused);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         int instanceCount = fGeoData.count();
 
         sk_sp<const GrBuffer> vertexBuffer;
@@ -576,8 +577,8 @@ private:
 
                 const uint16_t* primIndices = circle_type_to_indices(isStroked);
                 const int primIndexCount = circle_type_to_index_count(isStroked);
-                for (int i = 0; i < primIndexCount; ++i) {
-                    *indices++ = primIndices[i] + currStartVertex;
+                for (int j = 0; j < primIndexCount; ++j) {
+                    *indices++ = primIndices[j] + currStartVertex;
                 }
 
                 currStartVertex += circle_type_to_vert_count(isStroked);
@@ -587,8 +588,8 @@ private:
 
                 const uint16_t* primIndices = rrect_type_to_indices(args.fType);
                 const int primIndexCount = rrect_type_to_index_count(args.fType);
-                for (int i = 0; i < primIndexCount; ++i) {
-                    *indices++ = primIndices[i] + currStartVertex;
+                for (int j = 0; j < primIndexCount; ++j) {
+                    *indices++ = primIndices[j] + currStartVertex;
                 }
 
                 currStartVertex += rrect_type_to_vert_count(args.fType);
@@ -639,7 +640,7 @@ private:
     }
 #endif
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         func(fFalloffView.proxy(), GrMipmapped(false));
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);

@@ -122,7 +122,7 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
   bool IsParsingAtLineNumber() const final;
   OrdinalNumber LineNumber() const final;
 
-  HTMLParserReentryPermit* ReentryPermit() { return reentry_permit_.get(); }
+  HTMLParserReentryPermit* ReentryPermit() { return reentry_permit_.Get(); }
 
   struct TokenizedChunk {
     USING_FAST_MALLOC(TokenizedChunk);
@@ -149,10 +149,6 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
   void AppendBytes(const char* bytes, size_t length) override;
   void Flush() final;
   void SetDecoder(std::unique_ptr<TextResourceDecoder>) final;
-
-  void SetMaxTokenizationBudgetForTesting(int budget) {
-    max_tokenization_budget_ = budget;
-  }
 
  protected:
   void insert(const String&) final;
@@ -202,7 +198,7 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
       std::unique_ptr<TokenizedChunk> last_chunk,
       std::unique_ptr<HTMLToken>,
       std::unique_ptr<HTMLTokenizer>);
-  size_t ProcessTokenizedChunkFromBackgroundParser(
+  wtf_size_t ProcessTokenizedChunkFromBackgroundParser(
       std::unique_ptr<TokenizedChunk>,
       bool*);
   void PumpPendingSpeculations();
@@ -250,7 +246,8 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
 
   HTMLParserOptions options_;
   HTMLInputStream input_;
-  scoped_refptr<HTMLParserReentryPermit> reentry_permit_;
+  Member<HTMLParserReentryPermit> reentry_permit_ =
+      MakeGarbageCollected<HTMLParserReentryPermit>();
 
   std::unique_ptr<HTMLToken> token_;
   std::unique_ptr<HTMLTokenizer> tokenizer_;
@@ -291,7 +288,6 @@ class CORE_EXPORT HTMLDocumentParser : public ScriptableDocumentParser,
   // would require keeping track of token positions of preload requests.
   CompactHTMLToken* pending_csp_meta_token_;
 
-  int max_tokenization_budget_;
   bool can_parse_asynchronously_;
   bool end_was_delayed_;
   bool have_background_parser_;

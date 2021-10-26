@@ -95,6 +95,10 @@ class QUICHE_EXPORT_PRIVATE Http2DecoderAdapter
     SPDY_HPACK_FRAGMENT_TOO_LONG,
     SPDY_HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT,
 
+    // Set if the visitor no longer wishes to receive events for this
+    // connection.
+    SPDY_STOP_PROCESSING,
+
     LAST_ERROR,  // Must be the last entry in the enum.
   };
 
@@ -153,12 +157,16 @@ class QUICHE_EXPORT_PRIVATE Http2DecoderAdapter
   // has responded with an HTTP/1.1 (or earlier) response.
   bool probable_http_response() const;
 
-  // Returns the estimate of dynamically allocated memory in bytes.
-  size_t EstimateMemoryUsage() const;
-
   spdy::HpackDecoderAdapter* GetHpackDecoder();
+  const spdy::HpackDecoderAdapter* GetHpackDecoder() const {
+    return hpack_decoder_.get();
+  }
 
   bool HasError() const;
+
+  // A visitor may call this method to indicate it no longer wishes to receive
+  // events for this connection.
+  void StopProcessing();
 
  private:
   bool OnFrameHeader(const Http2FrameHeader& header) override;

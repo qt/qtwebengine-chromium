@@ -15,7 +15,6 @@
 #include "base/single_thread_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "build/build_config.h"
-#include "components/ui_devtools/buildflags.h"
 #include "components/viz/common/features.h"
 #include "components/viz/service/debugger/viz_debugger.h"
 #include "gpu/command_buffer/common/activity_flags.h"
@@ -39,7 +38,7 @@ std::unique_ptr<base::Thread> CreateAndStartIOThread() {
   if (base::FeatureList::IsEnabled(features::kGpuUseDisplayThreadPriority))
     thread_options.priority = base::ThreadPriority::DISPLAY;
   auto io_thread = std::make_unique<base::Thread>("GpuIOThread");
-  CHECK(io_thread->StartWithOptions(thread_options));
+  CHECK(io_thread->StartWithOptions(std::move(thread_options)));
   return io_thread;
 }
 
@@ -262,12 +261,6 @@ void VizMainImpl::CreateFrameSinkManagerInternal(
       gpu_pipeline_.get());
 }
 
-void VizMainImpl::CreateVizDevTools(mojom::VizDevToolsParamsPtr params) {
-#if BUILDFLAG(USE_VIZ_DEVTOOLS)
-  viz_compositor_thread_runner_->CreateVizDevTools(std::move(params));
-#endif
-}
-
 #if BUILDFLAG(USE_VIZ_DEBUGGER)
 void VizMainImpl::FilterDebugStream(base::Value filter_data) {
   VizDebugger::GetInstance()->FilterDebugStream(std::move(filter_data));
@@ -284,10 +277,16 @@ void VizMainImpl::StopDebugStream() {
 #endif
 
 scoped_refptr<gpu::SharedContextState> VizMainImpl::GetSharedContextState() {
+  // This method should be only called for GLRenderer and not for SkiaRenderer.
+  // Hence adding DCHECK since DrDc only works with SkiaRenderer.
+  DCHECK(!features::IsDrDcEnabled());
   return gpu_service_->GetContextState();
 }
 
 scoped_refptr<gl::GLShareGroup> VizMainImpl::GetShareGroup() {
+  // This method should be only called for GLRenderer and not for SkiaRenderer.
+  // Hence adding DCHECK since DrDc only works with SkiaRenderer.
+  DCHECK(!features::IsDrDcEnabled());
   return gpu_service_->share_group();
 }
 
@@ -298,7 +297,6 @@ void VizMainImpl::ExitProcess(ExitCode immediate_exit_code) {
     // Atomically shut down GPU process to make it faster and simpler.
     base::Process::TerminateCurrentProcessImmediately(
         static_cast<int>(immediate_exit_code));
-    return;
   }
 
   // Close mojom::VizMain bindings first so the browser can't try to reconnect.

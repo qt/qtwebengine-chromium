@@ -8,7 +8,6 @@
 #include <cstdint>
 #include <memory>
 
-#include "base/macros.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_buffer.h"
 
@@ -17,6 +16,10 @@ namespace ui {
 class XClipboardHelper;
 
 class ClipboardX11 : public Clipboard {
+ public:
+  ClipboardX11(const ClipboardX11&) = delete;
+  ClipboardX11& operator=(const ClipboardX11&) = delete;
+
  private:
   friend class Clipboard;
 
@@ -26,7 +29,8 @@ class ClipboardX11 : public Clipboard {
   // Clipboard overrides:
   void OnPreShutdown() override;
   DataTransferEndpoint* GetSource(ClipboardBuffer buffer) const override;
-  uint64_t GetSequenceNumber(ClipboardBuffer buffer) const override;
+  const ClipboardSequenceNumberToken& GetSequenceNumber(
+      ClipboardBuffer buffer) const override;
   bool IsFormatAvailable(const ClipboardFormatType& format,
                          ClipboardBuffer buffer,
                          const DataTransferEndpoint* data_dst) const override;
@@ -77,12 +81,11 @@ class ClipboardX11 : public Clipboard {
 #if defined(USE_OZONE)
   bool IsSelectionBufferAvailable() const override;
 #endif  // defined(USE_OZONE)
-  void WritePortableRepresentations(
+  void WritePortableTextRepresentation(ClipboardBuffer buffer,
+                                       const ObjectMap& objects);
+  void WritePortableAndPlatformRepresentations(
       ClipboardBuffer buffer,
       const ObjectMap& objects,
-      std::unique_ptr<DataTransferEndpoint> data_src) override;
-  void WritePlatformRepresentations(
-      ClipboardBuffer buffer,
       std::vector<Clipboard::PlatformRepresentation> platform_representations,
       std::unique_ptr<DataTransferEndpoint> data_src) override;
   void WriteText(const char* text_data, size_t text_len) override;
@@ -103,18 +106,16 @@ class ClipboardX11 : public Clipboard {
                  const char* data_data,
                  size_t data_len) override;
 
-  SkBitmap ReadImageInternal(ClipboardBuffer buffer) const;
+  std::vector<uint8_t> ReadPngInternal(ClipboardBuffer buffer) const;
   void OnSelectionChanged(ClipboardBuffer buffer);
 
   std::unique_ptr<XClipboardHelper> x_clipboard_helper_;
 
-  uint64_t clipboard_sequence_number_ = 0;
-  uint64_t primary_sequence_number_ = 0;
+  ClipboardSequenceNumberToken clipboard_sequence_number_;
+  ClipboardSequenceNumberToken primary_sequence_number_;
 
   base::flat_map<ClipboardBuffer, std::unique_ptr<DataTransferEndpoint>>
       data_src_;
-
-  DISALLOW_COPY_AND_ASSIGN(ClipboardX11);
 };
 
 }  // namespace ui

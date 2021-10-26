@@ -183,7 +183,8 @@ ImageTransportSurfaceOverlayMacBase<BaseClass>::SwapBuffersInternal(
                 gfx::SwapResult::SWAP_ACK,
                 std::make_unique<gfx::CALayerParams>(params.ca_layer_params))));
   }
-  delegate_->DidSwapBuffersComplete(std::move(params));
+  delegate_->DidSwapBuffersComplete(std::move(params),
+                                    /*release_fence=*/gfx::GpuFenceHandle());
   constexpr int64_t kRefreshIntervalInMicroseconds =
       base::Time::kMicrosecondsPerSecond / 60;
   gfx::PresentationFeedback feedback(
@@ -301,6 +302,7 @@ bool ImageTransportSurfaceOverlayMacBase<BaseClass>::ScheduleOverlayPlane(
     const gfx::Rect& pixel_frame_rect,
     const gfx::RectF& crop_rect,
     bool enable_blend,
+    const gfx::Rect& damage_rect,
     std::unique_ptr<gfx::GpuFence> gpu_fence) {
   if (transform != gfx::OVERLAY_TRANSFORM_NONE) {
     DLOG(ERROR) << "Invalid overlay plane transform.";

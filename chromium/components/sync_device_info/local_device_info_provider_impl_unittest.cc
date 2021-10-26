@@ -7,7 +7,8 @@
 #include "base/memory/ptr_util.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/sync_util.h"
-#include "components/sync/protocol/sync.pb.h"
+#include "components/sync/protocol/device_info_specifics.pb.h"
+#include "components/sync/protocol/sync_enums.pb.h"
 #include "components/sync_device_info/device_info_sync_client.h"
 #include "components/version_info/version_string.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -293,7 +294,8 @@ TEST_F(LocalDeviceInfoProviderImplTest, ShouldKeepStoredInvalidationFields) {
   const DeviceInfo* local_device_info = provider_->GetLocalDeviceInfo();
   EXPECT_EQ(local_device_info->interested_data_types(), kInterestedDataTypes);
   EXPECT_EQ(local_device_info->fcm_registration_token(), kFCMRegistrationToken);
-  EXPECT_EQ(local_device_info->paask_info(), paask_info);
+  EXPECT_TRUE(
+      local_device_info->paask_info()->NonRotatingFieldsEqual(paask_info));
 }
 
 TEST_F(LocalDeviceInfoProviderImplTest, PhoneAsASecurityKeyInfo) {

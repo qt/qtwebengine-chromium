@@ -22,6 +22,7 @@
 #include "ui/events/ozone/events_ozone.h"
 #include "ui/events/platform/platform_event_source.h"
 #include "ui/ozone/platform/scenic/scenic_window_manager.h"
+#include "ui/platform_window/fuchsia/scenic_window_delegate.h"
 
 namespace ui {
 
@@ -30,16 +31,15 @@ ScenicWindow::ScenicWindow(ScenicWindowManager* window_manager,
                            PlatformWindowInitProperties properties)
     : manager_(window_manager),
       delegate_(delegate),
+      scenic_window_delegate_(properties.scenic_window_delegate),
       window_id_(manager_->AddWindow(this)),
       event_dispatcher_(this),
-      keyboard_service_(base::ComponentContextForProcess()
-                            ->svc()
-                            ->Connect<fuchsia::ui::input3::Keyboard>()),
       scenic_session_(manager_->GetScenic()),
       safe_presenter_(&scenic_session_),
       view_ref_(std::move(properties.view_ref_pair.view_ref)),
       view_(&scenic_session_,
-            std::move(std::move(properties.view_token)),
+            fuchsia::ui::views::ViewToken(
+                {zx::eventpair(std::move(properties.view_token))}),
             std::move(properties.view_ref_pair.control_ref),
             CloneViewRef(),
             "chromium window"),
@@ -64,11 +64,19 @@ ScenicWindow::ScenicWindow(ScenicWindowManager* window_manager,
 
   delegate_->OnAcceleratedWidgetAvailable(window_id_);
 
-  keyboard_service_.set_error_handler([](zx_status_t status) {
-    ZX_LOG(ERROR, status) << "input3.Keyboard service disconnected.";
-  });
-  keyboard_client_ = std::make_unique<KeyboardClient>(keyboard_service_.get(),
-                                                      CloneViewRef(), this);
+  if (properties.enable_keyboard) {
+    virtual_keyboard_enabled_ = properties.enable_virtual_keyboard;
+    keyboard_service_ = base::ComponentContextForProcess()
+                            ->svc()
+                            ->Connect<fuchsia::ui::input3::Keyboard>();
+    keyboard_service_.set_error_handler([](zx_status_t status) {
+      ZX_LOG(ERROR, status) << "input3.Keyboard service disconnected.";
+    });
+    keyboard_client_ = std::make_unique<KeyboardClient>(keyboard_service_.get(),
+                                                        CloneViewRef(), this);
+  } else {
+    DCHECK(!properties.enable_virtual_keyboard);
+  }
 }
 
 ScenicWindow::~ScenicWindow() {
@@ -105,7 +113,7 @@ void ScenicWindow::SetBounds(const gfx::Rect& bounds) {
 }
 
 void ScenicWindow::SetTitle(const std::u16string& title) {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::Show(bool inactive) {
@@ -144,7 +152,7 @@ bool ScenicWindow::IsVisible() const {
 }
 
 void ScenicWindow::PrepareForShutdown() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::SetCapture() {
@@ -161,23 +169,23 @@ bool ScenicWindow::HasCapture() const {
 }
 
 void ScenicWindow::ToggleFullscreen() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::Maximize() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::Minimize() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::Restore() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 PlatformWindowState ScenicWindow::GetPlatformWindowState() const {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
   return PlatformWindowState::kNormal;
 }
 
@@ -205,25 +213,25 @@ void ScenicWindow::MoveCursorTo(const gfx::Point& location) {
 }
 
 void ScenicWindow::ConfineCursorToBounds(const gfx::Rect& bounds) {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::SetRestoredBoundsInPixels(const gfx::Rect& bounds) {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 gfx::Rect ScenicWindow::GetRestoredBoundsInPixels() const {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
   return gfx::Rect();
 }
 
 void ScenicWindow::SetWindowIcons(const gfx::ImageSkia& window_icon,
                                   const gfx::ImageSkia& app_icon) {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::SizeConstraintsChanged() {
-  NOTIMPLEMENTED();
+  NOTIMPLEMENTED_LOG_ONCE();
 }
 
 void ScenicWindow::UpdateSize() {
@@ -335,6 +343,8 @@ void ScenicWindow::OnScenicEvents(
 
 void ScenicWindow::OnViewMetrics(const fuchsia::ui::gfx::Metrics& metrics) {
   device_pixel_ratio_ = std::max(metrics.scale_x, metrics.scale_y);
+  if (scenic_window_delegate_)
+    scenic_window_delegate_->OnScenicPixelScale(this, device_pixel_ratio_);
 
   if (view_properties_)
     UpdateSize();
@@ -348,9 +358,13 @@ void ScenicWindow::OnViewProperties(
 }
 
 void ScenicWindow::OnViewAttachedChanged(bool is_view_attached) {
-  delegate_->OnWindowStateChanged(is_view_attached
-                                      ? PlatformWindowState::kNormal
-                                      : PlatformWindowState::kMinimized);
+  if (is_view_attached) {
+    delegate_->OnWindowStateChanged(PlatformWindowState::kMinimized,
+                                    PlatformWindowState::kNormal);
+  } else {
+    delegate_->OnWindowStateChanged(PlatformWindowState::kNormal,
+                                    PlatformWindowState::kMinimized);
+  }
 }
 
 void ScenicWindow::OnInputEvent(const fuchsia::ui::input::InputEvent& event) {

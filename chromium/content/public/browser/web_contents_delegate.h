@@ -135,7 +135,8 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Allows the delegate to optionally cancel navigations that attempt to
   // transfer to a different process between the start of the network load and
   // commit.  Defaults to true.
-  virtual bool ShouldTransferNavigation(bool is_main_frame_navigation);
+  virtual bool ShouldAllowRendererInitiatedCrossProcessNavigation(
+      bool is_main_frame_navigation);
 
   // Called to inform the delegate that the WebContents's navigation state
   // changed. The |changed_flags| indicates the parts of the navigation state
@@ -200,9 +201,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // gestures.
   virtual bool CanOverscrollContent();
 
-  // Invoked prior to showing before unload handler confirmation dialog.
-  virtual void WillRunBeforeUnloadConfirm() {}
-
   // Returns true if javascript dialogs and unload alerts are suppressed.
   // Default is false.
   virtual bool ShouldSuppressDialogs(WebContents* source);
@@ -259,9 +257,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // this. Returns true if the delegate successfully handled it.
   virtual bool TakeFocus(WebContents* source,
                          bool reverse);
-
-  // Invoked when the page loses mouse capture.
-  virtual void LostCapture() {}
 
   // Asks the delegate if the given tab can download.
   // Invoking the |callback| synchronously is OK.
@@ -390,22 +385,23 @@ class CONTENT_EXPORT WebContentsDelegate {
   virtual void RendererResponsive(WebContents* source,
                                   RenderWidgetHost* render_widget_host) {}
 
-  // Invoked when a main fram navigation occurs.
-  virtual void DidNavigateMainFramePostCommit(WebContents* source) {}
+  // Invoked when a primary main frame navigation occurs.
+  virtual void DidNavigatePrimaryMainFramePostCommit(WebContents* source) {}
 
   // Returns a pointer to a service to manage JavaScript dialogs. May return
   // nullptr in which case dialogs aren't shown.
   virtual JavaScriptDialogManager* GetJavaScriptDialogManager(
       WebContents* source);
 
+#if defined(OS_ANDROID)
   // Called when color chooser should open. Returns the opened color chooser.
-  // Returns nullptr if we failed to open the color chooser (e.g. when there is
-  // a ColorChooserDialog already open on Windows). Ownership of the returned
-  // pointer is transferred to the caller.
-  virtual ColorChooser* OpenColorChooser(
+  // Returns nullptr if we failed to open the color chooser. The color chooser
+  // is only supported/required for Android.
+  virtual std::unique_ptr<ColorChooser> OpenColorChooser(
       WebContents* web_contents,
       SkColor color,
       const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions);
+#endif
 
   // Called when an eye dropper should open. Returns the eye dropper window.
   // The eye dropper is responsible for calling listener->ColorSelected() or
@@ -550,6 +546,13 @@ class CONTENT_EXPORT WebContentsDelegate {
       WebContents* web_contents,
       blink::mojom::MediaStreamType type);
 
+  // Returns the human-readable name for title in Media Controls.
+  // If the returned value is an empty string, it means that there is no
+  // human-readable name.
+  // For example, this returns an extension name for title instead of extension
+  // url.
+  virtual std::string GetTitleForMediaControls(WebContents* web_contents);
+
 #if defined(OS_ANDROID)
   // Returns true if the given media should be blocked to load.
   virtual bool ShouldBlockMediaRequest(const GURL& url);
@@ -689,6 +692,9 @@ class CONTENT_EXPORT WebContentsDelegate {
   // Return true if the back forward cache is supported. This is not an
   // indication that the cache will be used.
   virtual bool IsBackForwardCacheSupported();
+
+  // Returns true is prerender2 is supported.
+  virtual bool IsPrerender2Supported();
 
   // Requests the delegate to replace |predecessor_contents| with
   // |portal_contents| in the container that holds |predecessor_contents|. If

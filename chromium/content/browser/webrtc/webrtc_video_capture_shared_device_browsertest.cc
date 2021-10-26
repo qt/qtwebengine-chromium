@@ -17,9 +17,11 @@
 #include "media/base/media_switches.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/video_capture/public/cpp/mock_video_frame_handler.h"
 #include "services/video_capture/public/mojom/device.mojom.h"
 #include "services/video_capture/public/mojom/device_factory.mojom.h"
+#include "services/video_capture/public/mojom/video_capture_service.mojom.h"
 #include "services/video_capture/public/mojom/video_frame_handler.mojom.h"
 #include "services/video_capture/public/mojom/video_source.mojom.h"
 #include "services/video_capture/public/mojom/video_source_provider.mojom.h"
@@ -228,7 +230,7 @@ IN_PROC_BROWSER_TEST_P(
               int32_t, media::mojom::VideoBufferHandlePtr* buffer_handle) {
             ASSERT_EQ(expected_buffer_handle_tag, (*buffer_handle)->which());
           }));
-  EXPECT_CALL(*mock_video_frame_handler_, DoOnFrameReadyInBuffer(_, _, _, _))
+  EXPECT_CALL(*mock_video_frame_handler_, DoOnFrameReadyInBuffer(_, _, _))
       .WillOnce(InvokeWithoutArgs([&receive_frame_from_service_wait_loop]() {
         receive_frame_from_service_wait_loop.Quit();
       }))
@@ -260,7 +262,7 @@ IN_PROC_BROWSER_TEST_P(
               int32_t, media::mojom::VideoBufferHandlePtr* buffer_handle) {
             ASSERT_EQ(expected_buffer_handle_tag, (*buffer_handle)->which());
           }));
-  EXPECT_CALL(*mock_video_frame_handler_, DoOnFrameReadyInBuffer(_, _, _, _))
+  EXPECT_CALL(*mock_video_frame_handler_, DoOnFrameReadyInBuffer(_, _, _))
       .WillOnce(InvokeWithoutArgs([&receive_frame_from_service_wait_loop]() {
         receive_frame_from_service_wait_loop.Quit();
       }))

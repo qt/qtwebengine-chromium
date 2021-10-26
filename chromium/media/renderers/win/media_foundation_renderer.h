@@ -12,6 +12,7 @@
 
 #include "base/callback.h"
 #include "base/macros.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequenced_task_runner.h"
 #include "base/timer/timer.h"
@@ -40,8 +41,7 @@ class MEDIA_EXPORT MediaFoundationRenderer
   // Whether MediaFoundationRenderer() is supported on the current device.
   static bool IsSupported();
 
-  MediaFoundationRenderer(bool muted,
-                          scoped_refptr<base::SequencedTaskRunner> task_runner,
+  MediaFoundationRenderer(scoped_refptr<base::SequencedTaskRunner> task_runner,
                           bool force_dcomp_mode_for_testing = false);
 
   ~MediaFoundationRenderer() override;
@@ -62,7 +62,6 @@ class MEDIA_EXPORT MediaFoundationRenderer
   base::TimeDelta GetMediaTime() override;
 
   // MediaFoundationRendererExtension implementation.
-  void SetDCompMode(bool enabled, SetDCompModeCB callback) override;
   void GetDCompSurface(GetDCompSurfaceCB callback) override;
   void SetVideoStreamEnabled(bool enabled) override;
   void SetOutputParams(const gfx::Rect& output_rect) override;
@@ -86,16 +85,15 @@ class MEDIA_EXPORT MediaFoundationRenderer
   void OnVideoNaturalSizeChange();
   void OnTimeUpdate();
 
+  // Callback for `content_protection_manager_`.
+  void OnWaiting(WaitingReason reason);
+
   void OnCdmProxyReceived(scoped_refptr<MediaFoundationCdmProxy> cdm_proxy);
 
-  HRESULT SetDCompModeInternal(bool enabled);
+  HRESULT SetDCompModeInternal();
   HRESULT GetDCompSurfaceInternal(HANDLE* surface_handle);
   HRESULT SetSourceOnMediaEngine();
-  HRESULT SetOutputParamsInternal(const gfx::Rect& output_rect);
-
-  // TODO(crbug.com/1017943): Support Audio Indicator when using
-  // media::MojoRenderer. For now, keep |muted_| as const.
-  const bool muted_;
+  HRESULT UpdateVideoStream(const gfx::Rect& rect);
 
   // Renderer methods are running in the same sequence.
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
@@ -120,6 +118,9 @@ class MEDIA_EXPORT MediaFoundationRenderer
   // This is the same as "natural_size" in Chromium.
   gfx::Size native_video_size_;
 
+  // The actual output Rect for video.
+  gfx::Rect output_rect_;
+
   // Keep the last volume value being set.
   float volume_ = 1.0;
 
@@ -133,11 +134,10 @@ class MEDIA_EXPORT MediaFoundationRenderer
   // A fake window handle passed to MF-based rendering pipeline for OPM.
   HWND virtual_video_window_ = nullptr;
 
-  base::UnguessableToken surface_request_token_;
-  base::win::ScopedHandle dcomp_surface_handle_;
-
   bool waiting_for_mf_cdm_ = false;
   CdmContext* cdm_context_ = nullptr;
+  scoped_refptr<MediaFoundationCdmProxy> cdm_proxy_;
+
   Microsoft::WRL::ComPtr<MediaFoundationProtectionManager>
       content_protection_manager_;
 

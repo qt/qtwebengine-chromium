@@ -16,6 +16,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
@@ -24,8 +25,6 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
-#include "base/numerics/ranges.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
@@ -256,8 +255,6 @@ static const char* const kSwitchNames[] = {
     switches::kEnableDeJelly,
     switches::kDeJellyScreenWidth,
     switches::kDoubleBufferCompositing,
-    switches::kDrawPredictedInkPoint,
-    switches::kEnableVizDevTools,
     switches::kHeadless,
     switches::kLoggingLevel,
     switches::kEnableLowEndDeviceMode,
@@ -311,6 +308,14 @@ static const char* const kSwitchNames[] = {
 #if defined(OS_CHROMEOS)
     switches::kPlatformDisallowsChromeOSDirectVideoDecoder,
     switches::kSchedulerBoostUrgent,
+#endif
+#if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+    switches::kHardwareVideoDecodeFrameRate,
+#endif
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+    switches::kLacrosEnablePlatformEncryptedHevc,
+    switches::kLacrosEnablePlatformHevc,
+    switches::kLacrosUseChromeosProtectedMedia,
 #endif
 };
 
@@ -530,11 +535,14 @@ void BindDiscardableMemoryReceiverOnUI(
 bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
   // The Gpu process is invalid if it's not using SwiftShader, the card is
   // blocklisted, and we can kill it and start over.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kSingleProcess) ||
+  static bool is_single_process =
       base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kInProcessGPU) ||
-      host->valid_) {
+          switches::kSingleProcess);
+  static bool in_process_GPU =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kInProcessGPU);
+
+  if (is_single_process || in_process_GPU || host->valid_) {
     return true;
   }
 
@@ -746,12 +754,6 @@ GpuProcessHost::~GpuProcessHost() {
   }
 #endif
 
-  // In case we never started, clean up.
-  while (!queued_messages_.empty()) {
-    delete queued_messages_.front();
-    queued_messages_.pop();
-  }
-
   // This is only called on the IO thread so no race against the constructor
   // for another GpuProcessHost.
   if (g_gpu_process_hosts[kind_] == this)
@@ -778,7 +780,7 @@ GpuProcessHost::~GpuProcessHost() {
         // Windows always returns PROCESS_CRASHED on abnormal termination, as it
         // doesn't have a way to distinguish the two.
         base::UmaHistogramSparse("GPU.GPUProcessExitCode",
-                                 base::ClampToRange(info.exit_code, 0, 100));
+                                 base::clamp(info.exit_code, 0, 100));
       }
 
       message = "The GPU process ";
@@ -914,52 +916,11 @@ bool GpuProcessHost::Init() {
     OnProcessLaunched();
   }
 
-#if BUILDFLAG(USE_VIZ_DEVTOOLS)
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableVizDevTools)) {
-    // Start creating a socket for the Viz DevTools server. If it is created
-    // before the FrameSinkManager, the socket will be stashed.
-    devtools_connector_ = std::make_unique<VizDevToolsConnector>();
-    devtools_connector_->ConnectVizDevTools();
-  }
-#endif
-
 #if defined(OS_MAC)
   ca_transaction_gpu_coordinator_ = CATransactionGPUCoordinator::Create(this);
 #endif
 
   return true;
-}
-
-bool GpuProcessHost::Send(IPC::Message* msg) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  if (process_->GetHost()->IsChannelOpening()) {
-    queued_messages_.push(msg);
-    return true;
-  }
-
-  bool result = process_->Send(msg);
-  if (!result) {
-    // Channel is hosed, but we may not get destroyed for a while. Send
-    // outstanding channel creation failures now so that the caller can restart
-    // with a new process/channel without waiting.
-    SendOutstandingReplies();
-  }
-  return result;
-}
-
-bool GpuProcessHost::OnMessageReceived(const IPC::Message& message) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  return true;
-}
-
-void GpuProcessHost::OnChannelConnected(int32_t peer_pid) {
-  TRACE_EVENT0("gpu", "GpuProcessHost::OnChannelConnected");
-
-  while (!queued_messages_.empty()) {
-    Send(queued_messages_.front());
-    queued_messages_.pop();
-  }
 }
 
 void GpuProcessHost::OnProcessLaunched() {

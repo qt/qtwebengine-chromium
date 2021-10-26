@@ -82,7 +82,7 @@ class CORE_EXPORT NGBoxFragmentPainter : public BoxPainterBase {
       bool is_painting_scrolling_background) const override;
   bool IsPaintingScrollingBackground(const PaintInfo&) const override;
 
-  void PaintTextClipMask(GraphicsContext&,
+  void PaintTextClipMask(const PaintInfo&,
                          const IntRect& mask_rect,
                          const PhysicalOffset& paint_offset,
                          bool object_has_multiple_boxes) override;
@@ -115,11 +115,20 @@ class CORE_EXPORT NGBoxFragmentPainter : public BoxPainterBase {
                                             const PhysicalRect& paint_rect,
                                             const DisplayItemClient&);
 
+  void PaintBoxDecorationBackgroundForBlockInInline(
+      NGInlineCursor* children,
+      const PaintInfo&,
+      const PhysicalOffset& paint_offset);
+
   void PaintColumnRules(const PaintInfo&, const PhysicalOffset& paint_offset);
 
   void PaintInternal(const PaintInfo&);
   void PaintAllPhasesAtomically(const PaintInfo&);
   void PaintBlockChildren(const PaintInfo&, PhysicalOffset);
+  void PaintBlockChild(const NGLink& child,
+                       const PaintInfo& paint_info,
+                       const PaintInfo& paint_info_for_descendants,
+                       PhysicalOffset paint_offset);
   void PaintInlineItems(const PaintInfo&,
                         const PhysicalOffset& paint_offset,
                         const PhysicalOffset& parent_offset,
@@ -167,7 +176,9 @@ class CORE_EXPORT NGBoxFragmentPainter : public BoxPainterBase {
                        const PhysicalRect&,
                        const Color& background_color,
                        BackgroundBleedAvoidance = kBackgroundBleedNone);
-  void PaintCarets(const PaintInfo&, const PhysicalOffset& paint_offset);
+  void PaintCaretsIfNeeded(const ScopedPaintState&,
+                           const PaintInfo&,
+                           const PhysicalOffset& paint_offset);
 
   // This should be called in the background paint phase even if there is no
   // other painted content.
@@ -193,17 +204,21 @@ class CORE_EXPORT NGBoxFragmentPainter : public BoxPainterBase {
 
     // Add |node| to |HitTestResult|. Returns true if the hit-testing should
     // stop.
+    // T is PhysicalRect or FloatQuad.
+    template <typename T>
     bool AddNodeToResult(Node* node,
                          const NGPhysicalBoxFragment* box_fragment,
-                         const PhysicalRect& bounds_rect,
+                         const T& bounds_rect,
                          const PhysicalOffset& offset) const;
     // Same as |AddNodeToResult|, except that |offset| is in the content
     // coordinate system rather than the container coordinate system. They
     // differ when |container| is a scroll container.
+    // T is PhysicalRect or FloatQuad.
+    template <typename T>
     bool AddNodeToResultWithContentOffset(
         Node* node,
         const NGPhysicalBoxFragment& container,
-        const PhysicalRect& bounds_rect,
+        const T& bounds_rect,
         PhysicalOffset offset) const;
 
     HitTestAction action;
@@ -288,7 +303,7 @@ class CORE_EXPORT NGBoxFragmentPainter : public BoxPainterBase {
   const DisplayItemClient& GetDisplayItemClient() const {
     return display_item_client_;
   }
-  PhysicalRect SelfInkOverflow() const;
+  PhysicalRect InkOverflowIncludingFilters() const;
 
   const NGPhysicalBoxFragment& box_fragment_;
   const DisplayItemClient& display_item_client_;
@@ -315,8 +330,6 @@ inline NGBoxFragmentPainter::NGBoxFragmentPainter(
     DCHECK_EQ(inline_box_cursor_->Current().Item(), box_item_);
   if (box_item_)
     DCHECK_EQ(box_item_->BoxFragment(), &box);
-  DCHECK_EQ(box.IsInlineBox(), !!inline_box_cursor_);
-  DCHECK_EQ(box.IsInlineBox(), !!box_item_);
 #endif
 }
 
@@ -336,7 +349,6 @@ inline NGBoxFragmentPainter::NGBoxFragmentPainter(
                            &inline_box_cursor,
                            &item) {
   DCHECK_EQ(item.BoxFragment(), &fragment);
-  DCHECK(fragment.IsInlineBox());
 }
 
 }  // namespace blink

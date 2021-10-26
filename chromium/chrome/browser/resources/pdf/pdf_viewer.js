@@ -13,7 +13,6 @@ import 'chrome://resources/cr_elements/hidden_style_css.m.js';
 import 'chrome://resources/cr_elements/shared_vars_css.m.js';
 
 import {assert, assertNotReached} from 'chrome://resources/js/assert.m.js';
-import {FocusOutlineManager} from 'chrome://resources/js/cr/ui/focus_outline_manager.m.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.m.js';
 import {hasKeyModifiers, listenOnce} from 'chrome://resources/js/util.m.js';
 import {html} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
@@ -177,12 +176,6 @@ export class PDFViewerElement extends PDFViewerBaseElement {
       },
 
       /** @private */
-      documentPropertiesEnabled_: {
-        type: Boolean,
-        value: false,
-      },
-
-      /** @private */
       fileName_: String,
 
       /** @private */
@@ -223,12 +216,6 @@ export class PDFViewerElement extends PDFViewerBaseElement {
 
       /** @private */
       pdfAnnotationsEnabled_: {
-        type: Boolean,
-        value: false,
-      },
-
-      /** @private */
-      presentationModeEnabled_: {
         type: Boolean,
         value: false,
       },
@@ -313,8 +300,6 @@ export class PDFViewerElement extends PDFViewerBaseElement {
     /** @private {?InkController} */
     this.inkController_ = null;
     // </if>
-
-    FocusOutlineManager.forDocument(document);
   }
 
   /** @override */
@@ -600,8 +585,6 @@ export class PDFViewerElement extends PDFViewerBaseElement {
 
   /** @private */
   onPresentClick_() {
-    assert(this.presentationModeEnabled_);
-
     const onWheel = e => {
       e.deltaY > 0 ? this.viewport.goToNextPage() :
                      this.viewport.goToPreviousPage();
@@ -641,7 +624,6 @@ export class PDFViewerElement extends PDFViewerBaseElement {
 
   /** @private */
   onPropertiesClick_() {
-    assert(this.documentPropertiesEnabled_);
     assert(!this.showPropertiesDialog_);
     this.showPropertiesDialog_ = true;
   }
@@ -755,12 +737,8 @@ export class PDFViewerElement extends PDFViewerBaseElement {
   handleStrings(strings) {
     super.handleStrings(strings);
 
-    this.documentPropertiesEnabled_ =
-        loadTimeData.getBoolean('documentPropertiesEnabled');
     this.pdfAnnotationsEnabled_ =
         loadTimeData.getBoolean('pdfAnnotationsEnabled');
-    this.presentationModeEnabled_ =
-        loadTimeData.getBoolean('presentationModeEnabled');
     this.printingEnabled_ = loadTimeData.getBoolean('printingEnabled');
     const presetZoomFactors = this.viewport.presetZoomFactors;
     this.zoomBounds_.min = Math.round(presetZoomFactors[0] * 100);
@@ -1231,7 +1209,9 @@ export class PDFViewerElement extends PDFViewerBaseElement {
 const TOOLBAR_WINDOW_MIN_HEIGHT = 250;
 
 /**
- * The background color used for the regular viewer.
+ * The background color used for the regular viewer. Its decimal value in string
+ * format should match `kPdfViewerBackgroundColor` in
+ * components/pdf/browser/plugin_response_writer.cc.
  * @type {number}
  */
 const BACKGROUND_COLOR = 0xff525659;

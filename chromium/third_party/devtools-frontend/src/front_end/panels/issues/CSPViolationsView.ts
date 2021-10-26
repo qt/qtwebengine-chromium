@@ -28,7 +28,7 @@ export class CSPViolationsView extends UI.Widget.VBox {
    */
   constructor() {
     super(true);
-    this.registerRequiredCSS('panels/issues/cspViolationsView.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/issues/cspViolationsView.css');
     this.contentElement.classList.add('csp-violations-pane');
 
     const topToolbar = new UI.Toolbar.Toolbar('csp-violations-toolbar', this.contentElement);
@@ -73,9 +73,8 @@ export class CSPViolationsView extends UI.Widget.VBox {
     return cspViolationsViewInstance;
   }
 
-  private onIssueAdded(event: Common.EventTarget.EventTargetEvent): void {
-    const {issue} =
-        /** @type {!{issuesModel: !IssuesManager.IssuesModel.IssuesModel, issue: !SDK.Issue.Issue}} */ (event.data);
+  private onIssueAdded(event: Common.EventTarget.EventTargetEvent<IssuesManager.IssuesManager.IssueAddedEvent>): void {
+    const {issue} = event.data;
     if (issue instanceof IssuesManager.ContentSecurityPolicyIssue.ContentSecurityPolicyIssue) {
       this.listView.addIssue(issue);
     }

@@ -24,8 +24,11 @@
 #include "ui/resources/grit/webui_resources_map.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
+#include "ash/constants/ash_features.h"
+#include "base/feature_list.h"
 #include "chromeos/grit/chromeos_resources.h"
 #include "chromeos/grit/chromeos_resources_map.h"
+#include "ui/chromeos/styles/cros_styles.h"
 #endif
 
 namespace content {
@@ -34,10 +37,13 @@ namespace {
 
 const std::set<int> GetContentResourceIds() {
   return std::set<int>{
+      IDR_GEOMETRY_MOJOM_WEBUI_JS,
       IDR_ORIGIN_MOJO_HTML,
       IDR_ORIGIN_MOJO_JS,
       IDR_ORIGIN_MOJO_WEBUI_JS,
       IDR_TOKEN_MOJO_WEBUI_JS,
+      IDR_UI_WINDOW_OPEN_DISPOSITION_MOJO_JS,
+      IDR_UI_WINDOW_OPEN_DISPOSITION_MOJO_WEBUI_JS,
       IDR_UNGUESSABLE_TOKEN_MOJO_HTML,
       IDR_UNGUESSABLE_TOKEN_MOJO_JS,
       IDR_URL_MOJO_HTML,
@@ -51,26 +57,31 @@ const std::set<int> GetContentResourceIds() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 const std::set<int> GetChromeosMojoResourceIds() {
   return std::set<int>{
+      IDR_BLUETOOTH_CONFIG_MOJOM_LITE_JS,
       IDR_CELLULAR_SETUP_MOJOM_HTML,
       IDR_CELLULAR_SETUP_MOJOM_LITE_JS,
       IDR_ESIM_MANAGER_MOJOM_HTML,
       IDR_ESIM_MANAGER_MOJOM_LITE_JS,
+      IDR_IP_ADDRESS_MOJOM_HTML,
+      IDR_IP_ADDRESS_MOJOM_LITE_JS,
+      IDR_IP_ADDRESS_MOJOM_WEBUI_JS,
       IDR_MULTIDEVICE_DEVICE_SYNC_MOJOM_HTML,
       IDR_MULTIDEVICE_DEVICE_SYNC_MOJOM_LITE_JS,
       IDR_MULTIDEVICE_MULTIDEVICE_SETUP_MOJOM_HTML,
       IDR_MULTIDEVICE_MULTIDEVICE_SETUP_MOJOM_LITE_JS,
       IDR_MULTIDEVICE_MULTIDEVICE_TYPES_MOJOM_HTML,
       IDR_MULTIDEVICE_MULTIDEVICE_TYPES_MOJOM_LITE_JS,
+      IDR_NETWORK_CONFIG_CONSTANTS_MOJOM_WEBUI_JS,
       IDR_NETWORK_CONFIG_MOJOM_HTML,
       IDR_NETWORK_CONFIG_MOJOM_LITE_JS,
+      IDR_NETWORK_CONFIG_MOJOM_WEBUI_JS,
       IDR_NETWORK_CONFIG_TYPES_MOJOM_HTML,
       IDR_NETWORK_CONFIG_TYPES_MOJOM_LITE_JS,
-      IDR_IP_ADDRESS_MOJOM_HTML,
-      IDR_IP_ADDRESS_MOJOM_LITE_JS,
-      IDR_NETWORK_HEALTH_MOJOM_HTML,
-      IDR_NETWORK_HEALTH_MOJOM_LITE_JS,
+      IDR_NETWORK_CONFIG_TYPES_MOJOM_WEBUI_JS,
       IDR_NETWORK_DIAGNOSTICS_MOJOM_HTML,
       IDR_NETWORK_DIAGNOSTICS_MOJOM_LITE_JS,
+      IDR_NETWORK_HEALTH_MOJOM_HTML,
+      IDR_NETWORK_HEALTH_MOJOM_LITE_JS,
   };
 }
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
@@ -115,9 +126,14 @@ WebUIDataSource* CreateSharedResourcesDataSource() {
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   AddResources(GetChromeosMojoResourceIds(), kChromeosResources,
                kChromeosResourcesSize, source);
+
+  source->AddString(
+      "crosColorsDebugOverrides",
+      base::FeatureList::IsEnabled(ash::features::kSemanticColorsDebugOverride)
+          ? cros_styles::kDebugOverrideCssString
+          : "");
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 
-  source->AddString("textDirection", webui::GetTextDirection());
   source->AddString("fontFamily", webui::GetFontFamily());
   source->AddString("fontSize", webui::GetFontSize());
 

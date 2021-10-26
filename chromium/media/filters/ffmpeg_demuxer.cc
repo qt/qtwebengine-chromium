@@ -50,6 +50,7 @@
 #include "media/formats/webm/webm_crypto_helpers.h"
 #include "media/media_buildflags.h"
 #include "third_party/ffmpeg/ffmpeg_features.h"
+#include "third_party/ffmpeg/libavcodec/packet.h"
 
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 #include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
@@ -65,6 +66,11 @@ void SetAVStreamDiscard(AVStream* stream, AVDiscard discard) {
 }
 
 }  // namespace
+
+ScopedAVPacket MakeScopedAVPacket() {
+  ScopedAVPacket packet(av_packet_alloc());
+  return packet;
+}
 
 static base::Time ExtractTimelineOffset(
     container_names::MediaContainerName container,
@@ -100,39 +106,17 @@ static base::TimeDelta ExtractStartTime(AVStream* stream) {
 
   // Next try to use the first DTS value, for codecs where we know PTS == DTS
   // (excludes all H26x codecs). The start time must be returned in PTS.
-  if (stream->first_dts != kNoFFmpegTimestamp &&
+  if (av_stream_get_first_dts(stream) != kNoFFmpegTimestamp &&
       stream->codecpar->codec_id != AV_CODEC_ID_HEVC &&
       stream->codecpar->codec_id != AV_CODEC_ID_H264 &&
       stream->codecpar->codec_id != AV_CODEC_ID_MPEG4) {
     const base::TimeDelta first_pts =
-        ConvertFromTimeBase(stream->time_base, stream->first_dts);
+        ConvertFromTimeBase(stream->time_base, av_stream_get_first_dts(stream));
     if (first_pts < start_time)
       start_time = first_pts;
   }
 
   return start_time;
-}
-
-// Some videos just want to watch the world burn, with a height of 0; cap the
-// "infinite" aspect ratio resulting.
-const int kInfiniteRatio = 99999;
-
-// Common aspect ratios (multiplied by 100 and truncated) used for histogramming
-// video sizes.  These were taken on 20111103 from
-// http://wikipedia.org/wiki/Aspect_ratio_(image)#Previous_and_currently_used_aspect_ratios
-const int kCommonAspectRatios100[] = {
-    100, 115, 133, 137, 143, 150, 155, 160,  166,
-    175, 177, 185, 200, 210, 220, 221, 235,  237,
-    240, 255, 259, 266, 276, 293, 400, 1200, kInfiniteRatio,
-};
-
-template <class T>  // T has int width() & height() methods.
-static void UmaHistogramAspectRatio(const char* name, const T& size) {
-  UMA_HISTOGRAM_CUSTOM_ENUMERATION(
-      name,
-      // Intentionally use integer division to truncate the result.
-      size.height() ? (size.width() * 100) / size.height() : kInfiniteRatio,
-      base::CustomHistogram::ArrayToCustomEnumRanges(kCommonAspectRatios100));
 }
 
 // Record audio decoder config UMA stats corresponding to a src= playback.
@@ -421,11 +405,11 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
   scoped_refptr<DecoderBuffer> buffer;
 
   if (type() == DemuxerStream::TEXT) {
-    int id_size = 0;
+    size_t id_size = 0;
     uint8_t* id_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_WEBVTT_IDENTIFIER, &id_size);
 
-    int settings_size = 0;
+    size_t settings_size = 0;
     uint8_t* settings_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_WEBVTT_SETTINGS, &settings_size);
 
@@ -437,7 +421,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     buffer = DecoderBuffer::CopyFrom(packet->data, packet->size,
                                      side_data.data(), side_data.size());
   } else {
-    int side_data_size = 0;
+    size_t side_data_size = 0;
     uint8_t* side_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL, &side_data_size);
 
@@ -498,7 +482,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                                        packet->size - data_offset);
     }
 
-    int skip_samples_size = 0;
+    size_t skip_samples_size = 0;
     const uint32_t* skip_samples_ptr =
         reinterpret_cast<const uint32_t*>(av_packet_get_side_data(
             packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
@@ -1788,9 +1772,9 @@ void FFmpegDemuxer::ReadFrameIfNeeded() {
   }
 
   // Allocate and read an AVPacket from the media. Save |packet_ptr| since
-  // evaluation order of packet.get() and base::Passed(&packet) is
+  // evaluation order of packet.get() and std::move(&packet) is
   // undefined.
-  ScopedAVPacket packet(new AVPacket());
+  ScopedAVPacket packet = MakeScopedAVPacket();
   AVPacket* packet_ptr = packet.get();
 
   pending_read_ = true;

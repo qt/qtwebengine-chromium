@@ -8,6 +8,8 @@
 
 #include "libANGLE/queryutils.h"
 
+#include <algorithm>
+
 #include "common/utilities.h"
 
 #include "libANGLE/Buffer.h"
@@ -86,7 +88,6 @@ void ConvertFromColor(const ColorGeneric &color, GLfloat *outParams)
     }
     else
     {
-        ASSERT(color.type == ColorGeneric::Type::Float);
         color.colorF.writeData(outParams);
     }
 }
@@ -96,7 +97,6 @@ void ConvertFromColor(const ColorGeneric &color, GLint *outParams)
 {
     if (isPureInteger)
     {
-        ASSERT(color.type == ColorGeneric::Type::Int);
         outParams[0] = color.colorI.red;
         outParams[1] = color.colorI.green;
         outParams[2] = color.colorI.blue;
@@ -104,7 +104,6 @@ void ConvertFromColor(const ColorGeneric &color, GLint *outParams)
     }
     else
     {
-        ASSERT(color.type == ColorGeneric::Type::Float);
         outParams[0] = floatToNormalized<GLint>(color.colorF.red);
         outParams[1] = floatToNormalized<GLint>(color.colorF.green);
         outParams[2] = floatToNormalized<GLint>(color.colorF.blue);
@@ -117,11 +116,12 @@ void ConvertFromColor(const ColorGeneric &color, GLuint *outParams)
 {
     if (isPureInteger)
     {
-        ASSERT(color.type == ColorGeneric::Type::UInt);
-        outParams[0] = color.colorUI.red;
-        outParams[1] = color.colorUI.green;
-        outParams[2] = color.colorUI.blue;
-        outParams[3] = color.colorUI.alpha;
+        constexpr unsigned int kMinValue = 0;
+
+        outParams[0] = std::max(color.colorUI.red, kMinValue);
+        outParams[1] = std::max(color.colorUI.green, kMinValue);
+        outParams[2] = std::max(color.colorUI.blue, kMinValue);
+        outParams[3] = std::max(color.colorUI.alpha, kMinValue);
     }
     else
     {
@@ -369,6 +369,9 @@ void QueryTexParameterBase(const Context *context,
             *params = CastFromGLintStateValue<ParamType>(
                 pname, texture->getRequiredTextureImageUnits(context));
             break;
+        case GL_TEXTURE_PROTECTED_EXT:
+            *params = CastFromGLintStateValue<ParamType>(pname, texture->hasProtectedContent());
+            break;
         default:
             UNREACHABLE();
             break;
@@ -478,6 +481,9 @@ void SetTexParameterBase(Context *context, Texture *texture, GLenum pname, const
         case GL_RESOURCE_INITIALIZED_ANGLE:
             texture->setInitState(ConvertToBool(params[0]) ? InitState::Initialized
                                                            : InitState::MayNeedInit);
+            break;
+        case GL_TEXTURE_PROTECTED_EXT:
+            texture->setProtectedContent(context, (params[0] == GL_TRUE));
             break;
         default:
             UNREACHABLE();
@@ -2193,6 +2199,10 @@ angle::Result SetMemoryObjectParameteriv(const Context *context,
             ANGLE_TRY(memoryObject->setDedicatedMemory(context, ConvertToBool(params[0])));
             break;
 
+        case GL_PROTECTED_MEMORY_OBJECT_EXT:
+            ANGLE_TRY(memoryObject->setProtectedMemory(context, ConvertToBool(params[0])));
+            break;
+
         default:
             UNREACHABLE();
     }
@@ -2206,6 +2216,10 @@ void QueryMemoryObjectParameteriv(const MemoryObject *memoryObject, GLenum pname
     {
         case GL_DEDICATED_MEMORY_OBJECT_EXT:
             *params = memoryObject->isDedicatedMemory();
+            break;
+
+        case GL_PROTECTED_MEMORY_OBJECT_EXT:
+            *params = memoryObject->isProtectedMemory();
             break;
 
         default:
@@ -3292,6 +3306,14 @@ bool GetQueryParameterInfo(const State &glState,
             *type      = GL_INT;
             *numParams = 1;
             return true;
+        case GL_PRIMITIVE_BOUNDING_BOX:
+            if (!extensions.primitiveBoundingBoxEXT)
+            {
+                return false;
+            }
+            *type      = GL_FLOAT;
+            *numParams = 8;
+            return true;
     }
 
     if (glState.getClientType() == EGL_OPENGL_API)
@@ -3820,7 +3842,7 @@ bool GetQueryParameterInfo(const State &glState,
             return true;
     }
 
-    if (extensions.geometryShader)
+    if (extensions.geometryShaderAny())
     {
         switch (pname)
         {
@@ -4290,6 +4312,9 @@ void SetSurfaceAttrib(Surface *surface, EGLint attribute, EGLint value)
             break;
         case EGL_TIMESTAMPS_ANDROID:
             surface->setTimestampsEnabled(value != EGL_FALSE);
+            break;
+        case EGL_RENDER_BUFFER:
+            surface->setRenderBuffer(value);
             break;
         default:
             UNREACHABLE();

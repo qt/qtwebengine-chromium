@@ -8,21 +8,20 @@
 #include "http2/adapter/http2_visitor_interface.h"
 #include "http2/adapter/nghttp2_util.h"
 #include "third_party/nghttp2/src/lib/includes/nghttp2/nghttp2.h"
+#include "common/platform/api/quiche_export.h"
 
 namespace http2 {
 namespace adapter {
 
 // This visitor implementation accepts a set of nghttp2 callbacks and a "user
 // data" pointer, and invokes the callbacks according to HTTP/2 events received.
-class CallbackVisitor : public Http2VisitorInterface {
+class QUICHE_EXPORT_PRIVATE CallbackVisitor : public Http2VisitorInterface {
  public:
   explicit CallbackVisitor(Perspective perspective,
-                           nghttp2_session_callbacks_unique_ptr callbacks,
-                           void* user_data)
-      : perspective_(perspective),
-        callbacks_(std::move(callbacks)),
-        user_data_(user_data) {}
+                           const nghttp2_session_callbacks& callbacks,
+                           void* user_data);
 
+  ssize_t OnReadyToSend(absl::string_view serialized) override;
   void OnConnectionError() override;
   void OnFrameHeader(Http2StreamId stream_id,
                      size_t length,
@@ -32,10 +31,10 @@ class CallbackVisitor : public Http2VisitorInterface {
   void OnSetting(Http2Setting setting) override;
   void OnSettingsEnd() override;
   void OnSettingsAck() override;
-  void OnBeginHeadersForStream(Http2StreamId stream_id) override;
-  void OnHeaderForStream(Http2StreamId stream_id,
-                         absl::string_view name,
-                         absl::string_view value) override;
+  bool OnBeginHeadersForStream(Http2StreamId stream_id) override;
+  OnHeaderResult OnHeaderForStream(Http2StreamId stream_id,
+                                   absl::string_view name,
+                                   absl::string_view value) override;
   void OnEndHeadersForStream(Http2StreamId stream_id) override;
   void OnBeginDataForStream(Http2StreamId stream_id,
                             size_t payload_length) override;
@@ -56,11 +55,16 @@ class CallbackVisitor : public Http2VisitorInterface {
                 Http2ErrorCode error_code,
                 absl::string_view opaque_data) override;
   void OnWindowUpdate(Http2StreamId stream_id, int window_increment) override;
+  int OnBeforeFrameSent(uint8_t frame_type, Http2StreamId stream_id,
+                        size_t length, uint8_t flags) override;
+  int OnFrameSent(uint8_t frame_type, Http2StreamId stream_id, size_t length,
+                  uint8_t flags, uint32_t error_code) override;
   void OnReadyToSendDataForStream(Http2StreamId stream_id,
                                   char* destination_buffer,
                                   size_t length,
                                   ssize_t* written,
                                   bool* end_stream) override;
+  bool OnInvalidFrame(Http2StreamId stream_id, int error_code) override;
   void OnReadyToSendMetadataForStream(Http2StreamId stream_id,
                                       char* buffer,
                                       size_t length,
@@ -69,9 +73,25 @@ class CallbackVisitor : public Http2VisitorInterface {
                                 size_t payload_length) override;
   void OnMetadataForStream(Http2StreamId stream_id,
                            absl::string_view metadata) override;
-  void OnMetadataEndForStream(Http2StreamId stream_id) override;
+  bool OnMetadataEndForStream(Http2StreamId stream_id) override;
+  void OnErrorDebug(absl::string_view message) override;
 
  private:
+  struct QUICHE_EXPORT_PRIVATE StreamInfo {
+    bool before_sent_headers = false;
+    bool sent_headers = false;
+    bool received_headers = false;
+  };
+
+  using StreamInfoMap =
+      absl::flat_hash_map<Http2StreamId, std::unique_ptr<StreamInfo>>;
+
+  void PopulateFrame(nghttp2_frame& frame, uint8_t frame_type,
+                     Http2StreamId stream_id, size_t length, uint8_t flags,
+                     uint32_t error_code, bool sent_headers);
+  // Creates the StreamInfoMap entry if it doesn't exist.
+  StreamInfoMap::iterator GetStreamInfo(Http2StreamId stream_id);
+
   Perspective perspective_;
   nghttp2_session_callbacks_unique_ptr callbacks_;
   void* user_data_;
@@ -80,10 +100,7 @@ class CallbackVisitor : public Http2VisitorInterface {
   std::vector<nghttp2_settings_entry> settings_;
   size_t remaining_data_ = 0;
 
-  struct StreamInfo {
-    bool received_headers = false;
-  };
-  absl::flat_hash_map<Http2StreamId, std::unique_ptr<StreamInfo>> stream_map_;
+  StreamInfoMap stream_map_;
 };
 
 }  // namespace adapter

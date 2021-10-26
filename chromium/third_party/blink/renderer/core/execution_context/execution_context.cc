@@ -33,7 +33,9 @@
 #include "third_party/blink/public/mojom/devtools/inspector_issue.mojom-blink-forward.h"
 #include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/mojom/permissions_policy/policy_disposition.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions_policy/policy_value.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/public/web/web_local_frame.h"
 #include "third_party/blink/renderer/bindings/core/v8/source_location.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/core/dom/events/event_target.h"
@@ -42,12 +44,16 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_state_observer.h"
 #include "third_party/blink/renderer/core/fileapi/public_url_manager.h"
 #include "third_party/blink/renderer/core/frame/csp/execution_context_csp_delegate.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/inspector/console_message.h"
+#include "third_party/blink/renderer/core/loader/document_loader.h"
 #include "third_party/blink/renderer/core/origin_trials/origin_trial_context.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/script/fetch_client_settings_object_impl.h"
 #include "third_party/blink/renderer/core/workers/worker_global_scope.h"
 #include "third_party/blink/renderer/core/workers/worker_thread.h"
+#include "third_party/blink/renderer/core/workers/worklet_global_scope.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/context_lifecycle_notifier.h"
 #include "third_party/blink/renderer/platform/heap/heap.h"
@@ -119,6 +125,29 @@ ExecutionContext* ExecutionContext::ForRelevantRealm(
   return ToExecutionContext(ctx);
 }
 
+// static
+blink::mojom::CodeCacheHost* ExecutionContext::GetCodeCacheHostFromContext(
+    ExecutionContext* execution_context) {
+  DCHECK_NE(execution_context, nullptr);
+  if (execution_context->IsWindow()) {
+    auto* window = To<LocalDOMWindow>(execution_context);
+    if (!window->GetFrame() ||
+        !window->GetFrame()->Loader().GetDocumentLoader()) {
+      return nullptr;
+    }
+    return window->GetFrame()->Loader().GetDocumentLoader()->GetCodeCacheHost();
+  }
+
+  if (execution_context->IsWorkerGlobalScope()) {
+    auto* global_scope =
+        DynamicTo<WorkerOrWorkletGlobalScope>(execution_context);
+    return global_scope->GetCodeCacheHost();
+  }
+
+  DCHECK(execution_context->IsWorkletGlobalScope());
+  return nullptr;
+}
+
 void ExecutionContext::SetIsInBackForwardCache(bool value) {
   is_in_back_forward_cache_ = value;
 }
@@ -150,6 +179,10 @@ void ExecutionContext::SetLifecycleState(mojom::FrameLifecycleState state) {
 void ExecutionContext::NotifyContextDestroyed() {
   is_context_destroyed_ = true;
   ContextLifecycleNotifier::NotifyContextDestroyed();
+}
+
+void ExecutionContext::CountDeprecation(WebFeature feature) {
+  Deprecation::CountDeprecation(this, feature);
 }
 
 HeapObserverSet<ContextLifecycleObserver>&
@@ -186,6 +219,17 @@ bool ExecutionContext::SharedArrayBufferTransferAllowed() const {
           GetSecurityOrigin()->Protocol())) {
     return true;
   }
+
+  // Check if the SharedArrayBuffer is always allowed for this origin. For
+  // worklets use the origin of the main document (consistent with how origin is
+  // verified in origin trials).
+  const SecurityOrigin* origin;
+  if (auto* worklet_scope = DynamicTo<WorkletGlobalScope>(this))
+    origin = worklet_scope->DocumentSecurityOrigin();
+  else
+    origin = GetSecurityOrigin();
+  if (SecurityPolicy::IsSharedArrayBufferAlwaysAllowedForOrigin(origin))
+    return true;
 
 #if defined(OS_ANDROID)
   return false;
@@ -312,15 +356,15 @@ bool ExecutionContext::IsContextPaused() const {
   return lifecycle_state_ == mojom::blink::FrameLifecycleState::kPaused;
 }
 
-WebURLLoader::DeferType ExecutionContext::DeferType() const {
+LoaderFreezeMode ExecutionContext::GetLoaderFreezeMode() const {
   if (is_in_back_forward_cache_) {
     DCHECK_EQ(lifecycle_state_, mojom::blink::FrameLifecycleState::kFrozen);
-    return WebURLLoader::DeferType::kDeferredWithBackForwardCache;
+    return LoaderFreezeMode::kBufferIncoming;
   } else if (lifecycle_state_ == mojom::blink::FrameLifecycleState::kFrozen ||
              lifecycle_state_ == mojom::blink::FrameLifecycleState::kPaused) {
-    return WebURLLoader::DeferType::kDeferred;
+    return LoaderFreezeMode::kStrict;
   }
-  return WebURLLoader::DeferType::kNotDeferred;
+  return LoaderFreezeMode::kNone;
 }
 
 bool ExecutionContext::IsLoadDeferred() const {

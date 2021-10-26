@@ -6,7 +6,6 @@
 
 #include "quic/core/quic_utils.h"
 #include "quic/platform/api/quic_logging.h"
-#include "quic/platform/api/quic_map_util.h"
 #include "quic/test_tools/quic_test_utils.h"
 
 namespace quic {
@@ -40,7 +39,7 @@ QuicConsumedData SimpleSessionNotifier::WriteOrBufferData(
     QuicStreamId id,
     QuicByteCount data_length,
     StreamSendingState state) {
-  if (!QuicContainsKey(stream_map_, id)) {
+  if (!stream_map_.contains(id)) {
     stream_map_[id] = StreamState();
   }
   StreamState& stream_state = stream_map_.find(id)->second;
@@ -163,16 +162,14 @@ void SimpleSessionNotifier::NeuterUnencryptedData() {
 }
 
 void SimpleSessionNotifier::OnCanWrite() {
-  if (connection_->donot_write_mid_packet_processing()) {
-    if (connection_->framer().is_processing_packet()) {
-      // Do not write data in the middle of packet processing because rest
-      // frames in the packet may change the data to write. For example, lost
-      // data could be acknowledged. Also, connection is going to emit
-      // OnCanWrite signal post packet processing.
-      QUIC_BUG(simple_notifier_write_mid_packet_processing)
-          << "Try to write mid packet processing.";
-      return;
-    }
+  if (connection_->framer().is_processing_packet()) {
+    // Do not write data in the middle of packet processing because rest
+    // frames in the packet may change the data to write. For example, lost
+    // data could be acknowledged. Also, connection is going to emit
+    // OnCanWrite signal post packet processing.
+    QUIC_BUG(simple_notifier_write_mid_packet_processing)
+        << "Try to write mid packet processing.";
+    return;
   }
   if (!RetransmitLostCryptoData() || !RetransmitLostControlFrames() ||
       !RetransmitLostStreamData()) {
@@ -263,7 +260,7 @@ bool SimpleSessionNotifier::OnFrameAcked(const QuicFrame& frame,
   if (frame.type != STREAM_FRAME) {
     return OnControlFrameAcked(frame);
   }
-  if (!QuicContainsKey(stream_map_, frame.stream_frame.stream_id)) {
+  if (!stream_map_.contains(frame.stream_frame.stream_id)) {
     return false;
   }
   auto* state = &stream_map_.find(frame.stream_frame.stream_id)->second;
@@ -304,7 +301,7 @@ void SimpleSessionNotifier::OnFrameLost(const QuicFrame& frame) {
     OnControlFrameLost(frame);
     return;
   }
-  if (!QuicContainsKey(stream_map_, frame.stream_frame.stream_id)) {
+  if (!stream_map_.contains(frame.stream_frame.stream_id)) {
     return;
   }
   auto* state = &stream_map_.find(frame.stream_frame.stream_id)->second;
@@ -359,7 +356,7 @@ void SimpleSessionNotifier::RetransmitFrames(const QuicFrames& frames,
       }
       continue;
     }
-    if (!QuicContainsKey(stream_map_, frame.stream_frame.stream_id)) {
+    if (!stream_map_.contains(frame.stream_frame.stream_id)) {
       continue;
     }
     const auto& state = stream_map_.find(frame.stream_frame.stream_id)->second;
@@ -437,7 +434,7 @@ bool SimpleSessionNotifier::IsFrameOutstanding(const QuicFrame& frame) const {
   if (frame.type != STREAM_FRAME) {
     return IsControlFrameOutstanding(frame);
   }
-  if (!QuicContainsKey(stream_map_, frame.stream_frame.stream_id)) {
+  if (!stream_map_.contains(frame.stream_frame.stream_id)) {
     return false;
   }
   const auto& state = stream_map_.find(frame.stream_frame.stream_id)->second;
@@ -463,8 +460,8 @@ bool SimpleSessionNotifier::HasUnackedCryptoData() const {
     }
     return false;
   }
-  if (!QuicContainsKey(stream_map_, QuicUtils::GetCryptoStreamId(
-                                        connection_->transport_version()))) {
+  if (!stream_map_.contains(
+          QuicUtils::GetCryptoStreamId(connection_->transport_version()))) {
     return false;
   }
   const auto& state =
@@ -521,7 +518,7 @@ void SimpleSessionNotifier::OnControlFrameLost(const QuicFrame& frame) {
           kInvalidControlFrameId) {
     return;
   }
-  if (!QuicContainsKey(lost_control_frames_, id)) {
+  if (!lost_control_frames_.contains(id)) {
     lost_control_frames_[id] = true;
   }
 }
@@ -584,8 +581,8 @@ bool SimpleSessionNotifier::RetransmitLostCryptoData() {
     }
     return true;
   }
-  if (!QuicContainsKey(stream_map_, QuicUtils::GetCryptoStreamId(
-                                        connection_->transport_version()))) {
+  if (!stream_map_.contains(
+          QuicUtils::GetCryptoStreamId(connection_->transport_version()))) {
     return true;
   }
   auto& state =
@@ -701,7 +698,7 @@ bool SimpleSessionNotifier::HasBufferedStreamData() const {
 }
 
 bool SimpleSessionNotifier::StreamIsWaitingForAcks(QuicStreamId id) const {
-  if (!QuicContainsKey(stream_map_, id)) {
+  if (!stream_map_.contains(id)) {
     return false;
   }
   const StreamState& state = stream_map_.find(id)->second;
@@ -710,7 +707,7 @@ bool SimpleSessionNotifier::StreamIsWaitingForAcks(QuicStreamId id) const {
 }
 
 bool SimpleSessionNotifier::StreamHasBufferedData(QuicStreamId id) const {
-  if (!QuicContainsKey(stream_map_, id)) {
+  if (!stream_map_.contains(id)) {
     return false;
   }
   const StreamState& state = stream_map_.find(id)->second;

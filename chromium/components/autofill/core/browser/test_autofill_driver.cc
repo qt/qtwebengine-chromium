@@ -29,6 +29,10 @@ bool TestAutofillDriver::IsInMainFrame() const {
   return is_in_main_frame_;
 }
 
+bool TestAutofillDriver::IsPrerendering() const {
+  return false;
+}
+
 bool TestAutofillDriver::CanShowAutofillUi() const {
   return true;
 }
@@ -54,10 +58,12 @@ TestAutofillDriver::GetOrCreateCreditCardInternalAuthenticator() {
 }
 #endif
 
-void TestAutofillDriver::SendFormDataToRenderer(int query_id,
-                                                RendererFormDataAction action,
-                                                const FormData& form_data) {
-}
+void TestAutofillDriver::FillOrPreviewForm(
+    int query_id,
+    mojom::RendererFormDataAction action,
+    const FormData& form_data,
+    const url::Origin& triggered_origin,
+    const base::flat_map<FieldGlobalId, ServerFieldType>& field_type_map) {}
 
 void TestAutofillDriver::PropagateAutofillPredictions(
     const std::vector<FormStructure*>& forms) {
@@ -94,17 +100,12 @@ void TestAutofillDriver::RendererShouldSetSuggestionAvailability(
 void TestAutofillDriver::PopupHidden() {
 }
 
-gfx::RectF TestAutofillDriver::TransformBoundingBoxToViewportCoordinates(
-    const gfx::RectF& bounding_box) {
-  return bounding_box;
-}
-
 net::IsolationInfo TestAutofillDriver::IsolationInfo() {
   return isolation_info_;
 }
 
 void TestAutofillDriver::SendFieldsEligibleForManualFillingToRenderer(
-    const std::vector<FieldRendererId>& fields) {}
+    const std::vector<FieldGlobalId>& fields) {}
 
 void TestAutofillDriver::SetIsIncognito(bool is_incognito) {
   is_incognito_ = is_incognito;

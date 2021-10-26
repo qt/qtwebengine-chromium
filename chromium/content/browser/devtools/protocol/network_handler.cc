@@ -41,8 +41,6 @@
 #include "content/browser/url_loader_factory_params_helper.h"
 #include "content/browser/web_package/signed_exchange_envelope.h"
 #include "content/browser/web_package/signed_exchange_error.h"
-#include "content/common/navigation_params.h"
-#include "content/common/navigation_params.mojom.h"
 #include "content/common/web_package/signed_exchange_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -80,13 +78,15 @@
 #include "net/url_request/referrer_policy.h"
 #include "services/network/public/cpp/data_element.h"
 #include "services/network/public/cpp/features.h"
-#include "services/network/public/cpp/http_raw_request_response_info.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/url_loader_completion_status.h"
 #include "services/network/public/mojom/client_security_state.mojom-shared.h"
+#include "services/network/public/mojom/devtools_observer.mojom.h"
+#include "services/network/public/mojom/http_raw_headers.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "third_party/blink/public/common/loader/referrer_utils.h"
+#include "third_party/blink/public/mojom/navigation/navigation_params.mojom.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
 #include "url/third_party/mozilla/url_parse.h"
@@ -372,11 +372,12 @@ MakeCookieFromProtocolValues(const std::string& name,
   else if (priority == Network::CookiePriorityEnum::Low)
     cp = net::CookiePriority::COOKIE_PRIORITY_LOW;
 
+  // TODO(crbug.com/1225444) Add Partitioned to DevTools cookie structures.
   std::unique_ptr<net::CanonicalCookie> cookie =
       net::CanonicalCookie::CreateSanitizedCookie(
           url, name, value, normalized_domain, path, base::Time(),
-          expiration_date, base::Time(), secure, http_only, css, cp,
-          same_party);
+          expiration_date, base::Time(), secure, http_only, css, cp, same_party,
+          absl::nullopt);
 
   if (!cookie)
     return Response::InvalidParams("Sanitizing cookie failed");
@@ -1712,23 +1713,6 @@ std::unique_ptr<Network::Response> BuildResponse(
     response->SetCacheStorageCacheName(info.cache_storage_cache_name);
   }
 
-  auto* raw_info = info.raw_request_response_info.get();
-  if (raw_info) {
-    if (raw_info->http_status_code) {
-      response->SetStatus(raw_info->http_status_code);
-      response->SetStatusText(raw_info->http_status_text);
-    }
-    if (raw_info->request_headers.size()) {
-      response->SetRequestHeaders(GetRawHeaders(raw_info->request_headers));
-    }
-    if (!raw_info->request_headers_text.empty()) {
-      response->SetRequestHeadersText(raw_info->request_headers_text);
-    }
-    if (raw_info->response_headers.size())
-      response->SetHeaders(GetRawHeaders(raw_info->response_headers));
-    if (!raw_info->response_headers_text.empty())
-      response->SetHeadersText(raw_info->response_headers_text);
-  }
   response->SetProtocol(GetProtocol(url, info));
   response->SetRemoteIPAddress(
       net::HostPortPair::FromIPEndPoint(info.remote_endpoint).HostForURL());
@@ -1873,7 +1857,7 @@ void NetworkHandler::NavigationRequestWillBeSent(
   for (net::HttpRequestHeaders::Iterator it(headers); it.GetNext();)
     headers_dict->setString(it.name(), it.value());
 
-  const mojom::CommonNavigationParams& common_params =
+  const blink::mojom::CommonNavigationParams& common_params =
       nav_request.common_params();
   GURL referrer = common_params.referrer->url;
   // This is normally added down the stack, so we have to fake it here.
@@ -1881,7 +1865,7 @@ void NetworkHandler::NavigationRequestWillBeSent(
     headers_dict->setString(net::HttpRequestHeaders::kReferer, referrer.spec());
 
   std::unique_ptr<Network::Response> redirect_response;
-  const mojom::CommitNavigationParams& commit_params =
+  const blink::mojom::CommitNavigationParams& commit_params =
       nav_request.commit_params();
   if (!commit_params.redirect_response.empty()) {
     redirect_response = BuildResponse(commit_params.redirects.back(),
@@ -1934,12 +1918,21 @@ void NetworkHandler::NavigationRequestWillBeSent(
   std::string frame_token =
       nav_request.frame_tree_node()->devtools_frame_token().ToString();
 
-  const mojom::BeginNavigationParams& begin_params = nav_request.begin_params();
+  const blink::mojom::BeginNavigationParams& begin_params =
+      nav_request.begin_params();
   if (begin_params.trust_token_params) {
     request->SetTrustTokenParams(
         BuildTrustTokenParams(*begin_params.trust_token_params));
   }
 
+  if (host_) {
+    if (nav_request.frame_tree_node()->IsMainFrame()) {
+      request->SetIsSameSite(true);
+    } else {
+      request->SetIsSameSite(
+          host_->ComputeSiteForCookies().IsFirstParty(common_params.url));
+    }
+  }
   frontend_->RequestWillBeSent(
       id, id, url_without_fragment, std::move(request), current_ticks,
       current_wall_time, std::move(initiator), std::move(redirect_response),
@@ -1950,7 +1943,8 @@ void NetworkHandler::NavigationRequestWillBeSent(
 void NetworkHandler::RequestSent(
     const std::string& request_id,
     const std::string& loader_id,
-    const network::ResourceRequest& request,
+    const net::HttpRequestHeaders& request_headers,
+    const network::mojom::URLRequestDevToolsInfo& request_info,
     const char* initiator_type,
     const absl::optional<GURL>& initiator_url,
     const std::string& initiator_devtools_request_id,
@@ -1958,7 +1952,7 @@ void NetworkHandler::RequestSent(
   if (!enabled_)
     return;
   std::unique_ptr<DictionaryValue> headers_dict(DictionaryValue::create());
-  for (net::HttpRequestHeaders::Iterator it(request.headers); it.GetNext();)
+  for (net::HttpRequestHeaders::Iterator it(request_headers); it.GetNext();)
     headers_dict->setString(it.name(), it.value());
   std::unique_ptr<Network::Initiator> initiator =
       Network::Initiator::Create().SetType(initiator_type).Build();
@@ -1968,27 +1962,27 @@ void NetworkHandler::RequestSent(
     initiator->SetRequestId(initiator_devtools_request_id);
   std::string url_fragment;
   std::string url_without_fragment =
-      ExtractFragment(request.url, &url_fragment);
+      ExtractFragment(request_info.url, &url_fragment);
   auto request_object =
       Network::Request::Create()
           .SetUrl(url_without_fragment)
-          .SetMethod(request.method)
+          .SetMethod(request_info.method)
           .SetHeaders(Object::fromValue(headers_dict.get(), nullptr))
-          .SetInitialPriority(resourcePriority(request.priority))
-          .SetReferrerPolicy(referrerPolicy(request.referrer_policy))
+          .SetInitialPriority(resourcePriority(request_info.priority))
+          .SetReferrerPolicy(referrerPolicy(request_info.referrer_policy))
           .Build();
   if (!url_fragment.empty())
     request_object->SetUrlFragment(url_fragment);
-  if (request.trust_token_params.has_value()) {
+  if (request_info.trust_token_params) {
     request_object->SetTrustTokenParams(
-        BuildTrustTokenParams(request.trust_token_params.value()));
+        BuildTrustTokenParams(*request_info.trust_token_params));
   }
   frontend_->RequestWillBeSent(
       request_id, loader_id, url_without_fragment, std::move(request_object),
       timestamp.since_origin().InSecondsF(), base::Time::Now().ToDoubleT(),
       std::move(initiator), std::unique_ptr<Network::Response>(),
       std::string(Network::ResourceTypeEnum::Other),
-      Maybe<std::string>() /* frame_id */, request.has_user_gesture);
+      Maybe<std::string>() /* frame_id */, request_info.has_user_gesture);
 }
 
 namespace {
@@ -2444,15 +2438,16 @@ NetworkHandler::CreateRequestFromResourceRequest(
 }
 
 bool NetworkHandler::MaybeCreateProxyForInterception(
-    RenderProcessHost* rph,
+    int process_id,
+    StoragePartition* storage_partition,
     const base::UnguessableToken& frame_token,
     bool is_navigation,
     bool is_download,
     network::mojom::URLLoaderFactoryOverride* intercepting_factory) {
   return url_loader_interceptor_ &&
          url_loader_interceptor_->CreateProxyForInterception(
-             rph, frame_token, is_navigation, is_download,
-             intercepting_factory);
+             process_id, storage_partition, frame_token, is_navigation,
+             is_download, intercepting_factory);
 }
 
 void NetworkHandler::ApplyOverrides(
@@ -2552,7 +2547,7 @@ makeCrossOriginEmbedderPolicyValue(
       return protocol::Network::CrossOriginEmbedderPolicyValueEnum::None;
     case network::mojom::CrossOriginEmbedderPolicyValue::kCredentialless:
       return protocol::Network::CrossOriginEmbedderPolicyValueEnum::
-          CorsOrCredentialless;
+          Credentialless;
     case network::mojom::CrossOriginEmbedderPolicyValue::kRequireCorp:
       return protocol::Network::CrossOriginEmbedderPolicyValueEnum::RequireCorp;
   }
@@ -2633,14 +2628,15 @@ void NetworkHandler::OnResponseReceivedExtraInfo(
     const net::CookieAndLineAccessResultList& response_cookie_list,
     const std::vector<network::mojom::HttpRawHeaderPairPtr>& response_headers,
     const absl::optional<std::string>& response_headers_text,
-    network::mojom::IPAddressSpace resource_address_space) {
+    network::mojom::IPAddressSpace resource_address_space,
+    int32_t http_status_code) {
   if (!enabled_)
     return;
 
   frontend_->ResponseReceivedExtraInfo(
       devtools_request_id, BuildProtocolBlockedSetCookies(response_cookie_list),
       GetRawHeaders(response_headers),
-      BuildIpAddressSpace(resource_address_space),
+      BuildIpAddressSpace(resource_address_space), http_status_code,
       response_headers_text.has_value() ? response_headers_text.value()
                                         : Maybe<String>());
 }
@@ -2724,7 +2720,7 @@ CreateNetworkFactoryForDevTools(
 }  // namespace
 
 void NetworkHandler::LoadNetworkResource(
-    const String& frame_id,
+    Maybe<protocol::String> maybe_frame_id,
     const String& url,
     std::unique_ptr<protocol::Network::LoadNetworkResourceOptions> options,
     std::unique_ptr<LoadNetworkResourceCallback> callback) {
@@ -2750,8 +2746,13 @@ void NetworkHandler::LoadNetworkResource(
 
   mojo::Remote<network::mojom::URLLoaderFactory> url_loader_factory;
   if (host_) {
-    FrameTreeNode* node =
-        FrameTreeNodeFromDevToolsFrameToken(host_->frame_tree_node(), frame_id);
+    if (!maybe_frame_id.isJust()) {
+      callback->sendFailure(Response::InvalidParams(
+          "Parameter frameId must be provided for frame targets"));
+      return;
+    }
+    FrameTreeNode* node = FrameTreeNodeFromDevToolsFrameToken(
+        host_->frame_tree_node(), maybe_frame_id.fromJust());
     RenderFrameHostImpl* frame = node ? node->current_frame_host() : nullptr;
     if (!frame) {
       callback->sendFailure(Response::InvalidParams("Frame not found"));
@@ -2864,6 +2865,59 @@ void NetworkHandler::OnTrustTokenOperationDone(
       GetTrustTokenOperationType(result.type), devtools_request_id,
       std::move(top_level_origin), std::move(issuer),
       result.issued_token_count);
+}
+
+void NetworkHandler::OnSubresourceWebBundleMetadata(
+    const std::string& devtools_request_id,
+    const std::vector<GURL>& urls) {
+  if (!enabled_)
+    return;
+
+  auto new_urls = std::make_unique<protocol::Array<protocol::String>>();
+  for (const auto& url : urls) {
+    new_urls->push_back(url.spec());
+  }
+  frontend()->SubresourceWebBundleMetadataReceived(devtools_request_id,
+                                                   std::move(new_urls));
+}
+
+void NetworkHandler::OnSubresourceWebBundleMetadataError(
+    const std::string& devtools_request_id,
+    const std::string& error_message) {
+  if (!enabled_)
+    return;
+
+  frontend()->SubresourceWebBundleMetadataError(devtools_request_id,
+                                                error_message);
+}
+
+void NetworkHandler::OnSubresourceWebBundleInnerResponse(
+    const std::string& inner_request_devtools_id,
+    const GURL& url,
+    const absl::optional<std::string>& bundle_request_devtools_id) {
+  if (!enabled_)
+    return;
+
+  frontend()->SubresourceWebBundleInnerResponseParsed(
+      inner_request_devtools_id, url.spec(),
+      bundle_request_devtools_id.has_value()
+          ? Maybe<std::string>(*bundle_request_devtools_id)
+          : Maybe<std::string>());
+}
+
+void NetworkHandler::OnSubresourceWebBundleInnerResponseError(
+    const std::string& inner_request_devtools_id,
+    const GURL& url,
+    const std::string& error_message,
+    const absl::optional<std::string>& bundle_request_devtools_id) {
+  if (!enabled_)
+    return;
+
+  frontend()->SubresourceWebBundleInnerResponseError(
+      inner_request_devtools_id, url.spec(), error_message,
+      bundle_request_devtools_id.has_value()
+          ? Maybe<std::string>(*bundle_request_devtools_id)
+          : Maybe<std::string>());
 }
 
 String NetworkHandler::BuildPrivateNetworkRequestPolicy(

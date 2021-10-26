@@ -31,6 +31,8 @@ target_sources(dawn_native PRIVATE
     ${DAWN_NATIVE_UTILS_GEN_SOURCES}
     "Adapter.cpp"
     "Adapter.h"
+    "AsyncTask.cpp"
+    "AsyncTask.h"
     "AttachmentState.cpp"
     "AttachmentState.h"
     "BackendConnection.cpp"
@@ -96,8 +98,6 @@ target_sources(dawn_native PRIVATE
     "ExternalTexture.h"
     "ObjectContentHasher.cpp"
     "ObjectContentHasher.h"
-    "Fence.cpp"
-    "Fence.h"
     "Format.cpp"
     "Format.h"
     "Forward.h"
@@ -148,8 +148,6 @@ target_sources(dawn_native PRIVATE
     "Sampler.h"
     "ShaderModule.cpp"
     "ShaderModule.h"
-    "SpirvUtils.cpp"
-    "SpirvUtils.h"
     "StagingBuffer.cpp"
     "StagingBuffer.h"
     "Subresource.cpp"
@@ -166,6 +164,8 @@ target_sources(dawn_native PRIVATE
     "ToBackend.h"
     "Toggles.cpp"
     "Toggles.h"
+    "VertexFormat.cpp"
+    "VertexFormat.h"
     "dawn_platform.h"
 )
 target_link_libraries(dawn_native
@@ -191,8 +191,22 @@ if (DAWN_USE_X11)
     )
 endif()
 
-if (WIN32)
+# Only win32 app needs to link with user32.lib
+# In UWP, all availiable APIs are defined in WindowsApp.lib
+# and is automatically linked when WINDOWS_STORE set
+if (WIN32 AND NOT WINDOWS_STORE)
     target_link_libraries(dawn_native PRIVATE user32.lib)
+endif()
+
+# DXGIGetDebugInterface1 is defined in dxgi.lib
+# But this API is tagged as a development-only capability
+# which implies that linking to this function will cause
+# the application to fail Windows store certification
+# So we only link to it in debug build when compiling for UWP.
+# In win32 we load dxgi.dll using LoadLibrary
+# so no need for static linking.
+if (WINDOWS_STORE)
+    target_link_libraries(dawn_native PRIVATE debug dxgi.lib)
 endif()
 
 if (DAWN_ENABLE_D3D12)
@@ -338,6 +352,13 @@ if (DAWN_ENABLE_NULL)
     )
 endif()
 
+if (DAWN_ENABLE_OPENGL OR DAWN_ENABLE_VULKAN)
+    target_sources(dawn_native PRIVATE
+        "SpirvValidation.cpp"
+        "SpirvValidation.h"
+    )
+endif()
+
 if (DAWN_ENABLE_OPENGL)
     DawnGenerator(
         SCRIPT "${Dawn_SOURCE_DIR}/generator/opengl_loader_generator.py"
@@ -391,6 +412,8 @@ if (DAWN_ENABLE_OPENGL)
         "opengl/SamplerGL.h"
         "opengl/ShaderModuleGL.cpp"
         "opengl/ShaderModuleGL.h"
+        "opengl/SpirvUtils.cpp"
+        "opengl/SpirvUtils.h"
         "opengl/SwapChainGL.cpp"
         "opengl/SwapChainGL.h"
         "opengl/TextureGL.cpp"
@@ -475,7 +498,7 @@ if (DAWN_ENABLE_VULKAN)
     if (UNIX AND NOT APPLE)
         target_sources(dawn_native PRIVATE
             "vulkan/external_memory/MemoryServiceOpaqueFD.cpp"
-            "vulkan/external_semaphore/SemaphoreServiceOpaqueFD.cpp"
+            "vulkan/external_semaphore/SemaphoreServiceFD.cpp"
         )
     else()
         target_sources(dawn_native PRIVATE

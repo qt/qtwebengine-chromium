@@ -13,7 +13,6 @@
 #include "base/observer_list.h"
 #include "components/password_manager/core/browser/form_fetcher.h"
 #include "components/password_manager/core/browser/http_password_store_migrator.h"
-#include "components/password_manager/core/browser/insecure_credentials_consumer.h"
 #include "components/password_manager/core/browser/insecure_credentials_table.h"
 #include "components/password_manager/core/browser/password_store.h"
 #include "components/password_manager/core/browser/password_store_consumer.h"
@@ -27,12 +26,11 @@ class PasswordManagerClient;
 // update the Clone() method accordingly.
 class FormFetcherImpl : public FormFetcher,
                         public PasswordStoreConsumer,
-                        public InsecureCredentialsConsumer,
                         public HttpPasswordStoreMigrator::Consumer {
  public:
   // |form_digest| describes what credentials need to be retrieved and
   // |client| serves the PasswordStore, the logging information etc.
-  FormFetcherImpl(PasswordStore::FormDigest form_digest,
+  FormFetcherImpl(PasswordFormDigest form_digest,
                   const PasswordManagerClient* client,
                   bool should_migrate_http_passwords);
 
@@ -41,7 +39,7 @@ class FormFetcherImpl : public FormFetcher,
   // Returns a MultiStoreFormFetcher if  the password account storage feature is
   // enabled. Returns a FormFetcherImpl otherwise.
   static std::unique_ptr<FormFetcherImpl> CreateFormFetcherImpl(
-      PasswordStore::FormDigest form_digest,
+      PasswordFormDigest form_digest,
       const PasswordManagerClient* client,
       bool should_migrate_http_passwords);
 
@@ -65,12 +63,6 @@ class FormFetcherImpl : public FormFetcher,
   std::unique_ptr<FormFetcher> Clone() override;
 
  protected:
-  // Processes password form results and forwards them to the
-  // AffiliatedMatchHelper to inject branding information. Calls
-  // FindMatchesAndNotifyConsumers afterwards.
-  void ProcessPasswordStoreResults(
-      std::vector<std::unique_ptr<PasswordForm>> results);
-
   // Actually finds best matches and notifies consumers.
   void FindMatchesAndNotifyConsumers(
       std::vector<std::unique_ptr<PasswordForm>> results);
@@ -79,7 +71,7 @@ class FormFetcherImpl : public FormFetcher,
   virtual void SplitResults(std::vector<std::unique_ptr<PasswordForm>> results);
 
   // PasswordStore results will be fetched for this description.
-  const PasswordStore::FormDigest form_digest_;
+  const PasswordFormDigest form_digest_;
 
   // Client used to obtain a CredentialFilter.
   const PasswordManagerClient* const client_;
@@ -115,10 +107,6 @@ class FormFetcherImpl : public FormFetcher,
   // HttpPasswordStoreMigrator::Consumer:
   void ProcessMigratedForms(
       std::vector<std::unique_ptr<PasswordForm>> forms) override;
-
-  // InsecureCredentialsConsumer:
-  void OnGetInsecureCredentials(
-      std::vector<InsecureCredential> insecure_credentials) override;
 
   // Does the actual migration.
   std::unique_ptr<HttpPasswordStoreMigrator> http_migrator_;

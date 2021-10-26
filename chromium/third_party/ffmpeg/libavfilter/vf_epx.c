@@ -17,7 +17,6 @@
  */
 
 #include "libavutil/opt.h"
-#include "libavutil/avassert.h"
 #include "libavutil/pixdesc.h"
 #include "internal.h"
 
@@ -275,7 +274,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_epx = {
+const AVFilter ff_vf_epx = {
     .name          = "epx",
     .description   = NULL_IF_CONFIG_SMALL("Scale the input using EPX algorithm."),
     .inputs        = inputs,

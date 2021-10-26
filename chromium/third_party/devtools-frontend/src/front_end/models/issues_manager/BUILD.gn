@@ -18,7 +18,9 @@ devtools_module("issues_manager") {
     "DeprecationIssue.ts",
     "HeavyAdIssue.ts",
     "Issue.ts",
+    "IssueResolver.ts",
     "IssuesManager.ts",
+    "IssuesManagerEvents.ts",
     "LowTextContrastIssue.ts",
     "MarkdownIssueDescription.ts",
     "MixedContentIssue.ts",
@@ -28,20 +30,35 @@ devtools_module("issues_manager") {
     "SharedArrayBufferIssue.ts",
     "SourceFrameIssuesManager.ts",
     "TrustedWebActivityIssue.ts",
+    "WasmCrossOriginModuleSharingIssue.ts",
   ]
 
   deps = [
     "../../core/common:bundle",
+    "../../core/host:bundle",
     "../../core/i18n:bundle",
+    "../../core/protocol_client:bundle",
+    "../../core/root:bundle",
     "../../core/sdk:bundle",
     "../../generated:protocol",
     "../../models/bindings:bundle",
+    "../../models/text_utils:bundle",
     "../../models/workspace:bundle",
     "../../third_party/marked:bundle",
   ]
+
+  public_deps = [ ":descriptions" ]
 }
 
 devtools_issue_description_files = [
+  "arAttributionSourceUntrustworthyFrameOrigin.md",
+  "arAttributionSourceUntrustworthyOrigin.md",
+  "arAttributionUntrustworthyFrameOrigin.md",
+  "arAttributionUntrustworthyOrigin.md",
+  "arInvalidAttributionData.md",
+  "arInvalidAttributionSourceEventId.md",
+  "arMissingAttributionData.md",
+  "arPermissionPolicyDisabled.md",
   "CoepCoopSandboxedIframeCannotNavigateToCoopPage.md",
   "CoepCorpNotSameOrigin.md",
   "CoepCorpNotSameOriginAfterDefaultedToSameOriginByCoep.md",
@@ -73,6 +90,7 @@ devtools_issue_description_files = [
   "SameSiteExcludeContextDowngradeRead.md",
   "SameSiteExcludeContextDowngradeSet.md",
   "SameSiteExcludeNavigationContextDowngrade.md",
+  "SameSiteInvalidSameParty.md",
   "SameSiteNoneInsecureErrorRead.md",
   "SameSiteNoneInsecureErrorSet.md",
   "SameSiteNoneInsecureWarnRead.md",
@@ -88,6 +106,7 @@ devtools_issue_description_files = [
   "TwaDigitalAssetLinksFailed.md",
   "TwaHttpError.md",
   "TwaPageUnavailableOffline.md",
+  "wasmCrossOriginModuleSharing.md",
 ]
 
 devtools_pre_built("descriptions") {

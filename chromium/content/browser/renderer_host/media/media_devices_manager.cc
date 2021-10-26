@@ -15,9 +15,9 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/location.h"
 #include "base/sequence_checker.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/post_task.h"
 #include "base/task_runner_util.h"
@@ -1116,7 +1116,7 @@ void MediaDevicesManager::MaybeStopRemovedInputDevices(
   // matching either "default" or "communications".
   // NOTE: ChromeOS is able to seamlessly redirect streams to the new default
   // device, hence the event should not be triggered.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !BUILDFLAG(IS_CHROMEOS_LACROS)
   for (const auto& removed_audio_device : removed_audio_devices) {
     for (const auto& old_device_info :
          current_snapshot_[static_cast<size_t>(type)]) {

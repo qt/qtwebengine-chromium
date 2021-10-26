@@ -30,6 +30,8 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
       : store_factory_(store_factory),
         backend_type_(backend_type),
         task_runner_(task_runner) {}
+  Backend(const Backend&) = delete;
+  Backend& operator=(const Backend&) = delete;
 
   void Get(const std::string& key, ValueStoreFrontend::ReadCallback callback) {
     DCHECK(task_runner_->RunsTasksInCurrentSequence());
@@ -38,17 +40,21 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
 
     // Extract the value from the ReadResult and pass ownership of it to the
     // callback.
-    std::unique_ptr<base::Value> value;
+    absl::optional<base::Value> value;
     if (result.status().ok()) {
-      result.settings().RemoveWithoutPathExpansion(key, &value);
+      value = result.settings().ExtractKey(key);
     } else {
       LOG(WARNING) << "Reading " << key << " from " << db_path_.value()
                    << " failed: " << result.status().message;
     }
 
     content::GetUIThreadTaskRunner({})->PostTask(
-        FROM_HERE, base::BindOnce(&ValueStoreFrontend::Backend::RunCallback,
-                                  this, std::move(callback), std::move(value)));
+        FROM_HERE,
+        base::BindOnce(&ValueStoreFrontend::Backend::RunCallback, this,
+                       std::move(callback),
+                       value.has_value()
+                           ? base::Value::ToUniquePtrValue(std::move(*value))
+                           : nullptr));
   }
 
   void Set(const std::string& key, std::unique_ptr<base::Value> value) {
@@ -109,8 +115,6 @@ class ValueStoreFrontend::Backend : public base::RefCountedThreadSafe<Backend> {
   std::unique_ptr<ValueStore> storage_;
 
   base::FilePath db_path_;
-
-  DISALLOW_COPY_AND_ASSIGN(Backend);
 };
 
 ValueStoreFrontend::ValueStoreFrontend(

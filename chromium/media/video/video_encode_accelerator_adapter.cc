@@ -11,6 +11,7 @@
 #include "base/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/sequenced_task_runner.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/time/time.h"
@@ -40,25 +41,28 @@ VideoEncodeAccelerator::Config SetUpVeaConfig(
   if (opts.framerate.has_value())
     initial_framerate = static_cast<uint32_t>(opts.framerate.value());
 
-  auto config = VideoEncodeAccelerator::Config(
-      format, opts.frame_size, profile,
-      opts.bitrate.value_or(opts.frame_size.width() * opts.frame_size.height() *
-                            kVEADefaultBitratePerPixel),
-      initial_framerate, opts.keyframe_interval);
+  uint64_t default_bitrate = opts.frame_size.width() *
+                             opts.frame_size.height() *
+                             kVEADefaultBitratePerPixel;
+  Bitrate bitrate =
+      opts.bitrate.value_or(Bitrate::ConstantBitrate(default_bitrate));
+  auto config =
+      VideoEncodeAccelerator::Config(format, opts.frame_size, profile, bitrate,
+                                     initial_framerate, opts.keyframe_interval);
 
   if (opts.temporal_layers > 1) {
     VideoEncodeAccelerator::Config::SpatialLayer layer;
     layer.width = opts.frame_size.width();
     layer.height = opts.frame_size.height();
-    layer.bitrate_bps = config.initial_bitrate;
+    layer.bitrate_bps = config.bitrate.target();
     if (initial_framerate.has_value())
       layer.framerate = initial_framerate.value();
     layer.num_of_temporal_layers = opts.temporal_layers;
     config.spatial_layers.push_back(layer);
   }
 
-  // We don't mind if Mac encoding will have higher latency on low resolutions.
-  config.require_low_delay = false;
+  config.require_low_delay =
+      opts.latency_mode == VideoEncoder::LatencyMode::Realtime;
 
   const bool is_rgb =
       format == PIXEL_FORMAT_XBGR || format == PIXEL_FORMAT_XRGB ||
@@ -86,8 +90,6 @@ VideoEncodeAccelerator::Config SetUpVeaConfig(
 
 VideoEncodeAcceleratorAdapter::PendingOp::PendingOp() = default;
 VideoEncodeAcceleratorAdapter::PendingOp::~PendingOp() = default;
-VideoEncodeAcceleratorAdapter::PendingEncode::PendingEncode() = default;
-VideoEncodeAcceleratorAdapter::PendingEncode::~PendingEncode() = default;
 
 VideoEncodeAcceleratorAdapter::VideoEncodeAcceleratorAdapter(
     GpuVideoAcceleratorFactories* gpu_factories,
@@ -339,14 +341,14 @@ void VideoEncodeAcceleratorAdapter::ChangeOptionsOnAcceleratorThread(
     return;
   }
 
-  uint32_t bitrate =
-      std::min(options.bitrate.value_or(options.frame_size.width() *
-                                        options.frame_size.height() *
-                                        kVEADefaultBitratePerPixel),
-               uint64_t{std::numeric_limits<uint32_t>::max()});
+  uint32_t default_bitrate = options.frame_size.width() *
+                             options.frame_size.height() *
+                             kVEADefaultBitratePerPixel;
+  auto bitrate =
+      options.bitrate.value_or(Bitrate::ConstantBitrate(default_bitrate));
 
-  uint32_t framerate = uint32_t{std::round(
-      options.framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate))};
+  uint32_t framerate = base::ClampRound<uint32_t>(
+      options.framerate.value_or(VideoEncodeAccelerator::kDefaultFramerate));
 
   accelerator_->RequestEncodingParametersChange(bitrate, framerate);
 
@@ -446,7 +448,9 @@ void VideoEncodeAcceleratorAdapter::BitstreamBufferReady(
   result.key_frame = metadata.key_frame;
   result.timestamp = metadata.timestamp;
   result.size = metadata.payload_size_bytes;
-  if (metadata.vp9.has_value())
+  if (metadata.h264.has_value())
+    result.temporal_id = metadata.h264.value().temporal_idx;
+  else if (metadata.vp9.has_value())
     result.temporal_id = metadata.vp9.value().temporal_idx;
   else if (metadata.vp8.has_value())
     result.temporal_id = metadata.vp8.value().temporal_idx;

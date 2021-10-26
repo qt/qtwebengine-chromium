@@ -16,7 +16,7 @@
 #include "testing/embedder_test.h"
 #include "testing/fx_string_testhelpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/base/stl_util.h"
+#include "third_party/base/cxx17_backports.h"
 
 namespace {
 
@@ -1360,15 +1360,15 @@ TEST_F(FPDFTextEmbedderTest, GetCharAngle) {
                   FPDFText_GetCharAngle(text_page, kHelloGoodbyeTextSize + 1));
 
   // Test GetCharAngle for every quadrant
-  EXPECT_NEAR(FX_PI / 4.0, FPDFText_GetCharAngle(text_page, 0), 0.001);
-  EXPECT_NEAR(3 * FX_PI / 4.0,
+  EXPECT_NEAR(FXSYS_PI / 4.0, FPDFText_GetCharAngle(text_page, 0), 0.001);
+  EXPECT_NEAR(3 * FXSYS_PI / 4.0,
               FPDFText_GetCharAngle(text_page, kSubstringsSize[0]), 0.001);
   EXPECT_NEAR(
-      5 * FX_PI / 4.0,
+      5 * FXSYS_PI / 4.0,
       FPDFText_GetCharAngle(text_page, kSubstringsSize[0] + kSubstringsSize[1]),
       0.001);
   EXPECT_NEAR(
-      7 * FX_PI / 4.0,
+      7 * FXSYS_PI / 4.0,
       FPDFText_GetCharAngle(text_page, kSubstringsSize[0] + kSubstringsSize[1] +
                                            kSubstringsSize[2]),
       0.001);
@@ -1656,6 +1656,31 @@ TEST_F(FPDFTextEmbedderTest, SmallType3Glyph) {
     EXPECT_DOUBLE_EQ(101.36000061035156, right);
     EXPECT_DOUBLE_EQ(50.0, bottom);
     EXPECT_DOUBLE_EQ(61.520000457763672, top);
+  }
+
+  UnloadPage(page);
+}
+
+TEST_F(FPDFTextEmbedderTest, BigtableTextExtraction) {
+  constexpr char kExpectedText[] =
+      "{fay,jeff,sanjay,wilsonh,kerr,m3b,tushar,\x02k es,gruber}@google.com";
+  constexpr int kExpectedTextCount = pdfium::size(kExpectedText) - 1;
+
+  ASSERT_TRUE(OpenDocument("bigtable_mini.pdf"));
+  FPDF_PAGE page = LoadPage(0);
+  ASSERT_TRUE(page);
+
+  {
+    ScopedFPDFTextPage text_page(FPDFText_LoadPage(page));
+    ASSERT_TRUE(text_page);
+    int char_count = FPDFText_CountChars(text_page.get());
+    ASSERT_GE(char_count, 0);
+    ASSERT_EQ(kExpectedTextCount, char_count);
+
+    for (int i = 0; i < kExpectedTextCount; ++i) {
+      EXPECT_EQ(static_cast<uint32_t>(kExpectedText[i]),
+                FPDFText_GetUnicode(text_page.get(), i));
+    }
   }
 
   UnloadPage(page);

@@ -7,12 +7,13 @@
 
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
+#include "src/sksl/ir/SkSLSetting.h"
 
 namespace SkSL {
 
 std::unique_ptr<Expression> FieldAccess::Convert(const Context& context,
                                                  std::unique_ptr<Expression> base,
-                                                 StringFragment field) {
+                                                 skstd::string_view field) {
     const Type& baseType = base->type();
     if (baseType.isStruct()) {
         const std::vector<Type::Field>& fields = baseType.fields();
@@ -22,9 +23,12 @@ std::unique_ptr<Expression> FieldAccess::Convert(const Context& context,
             }
         }
     }
+    if (baseType == *context.fTypes.fSkCaps) {
+        return Setting::Convert(context, base->fOffset, field);
+    }
 
-    context.fErrors.error(base->fOffset, "type '" + baseType.displayName() +
-                                         "' does not have a field named '" + field + "'");
+    context.errors().error(base->fOffset, "type '" + baseType.displayName() +
+                                          "' does not have a field named '" + field + "'");
     return nullptr;
 }
 

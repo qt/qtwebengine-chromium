@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/pixdesc.h"
@@ -3490,7 +3489,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_waveform = {
+const AVFilter ff_vf_waveform = {
     .name          = "waveform",
     .description   = NULL_IF_CONFIG_SMALL("Video waveform monitor."),
     .priv_size     = sizeof(WaveformContext),

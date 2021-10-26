@@ -6,11 +6,16 @@
 
 #include <algorithm>
 
+#include "ash/constants/ash_constants.h"
+#include "ash/constants/ash_features.h"
 #include "ash/frame/non_client_frame_view_ash.h"
+#include "ash/public/cpp/ash_constants.h"
+#include "ash/public/cpp/rounded_corner_utils.h"
 #include "ash/public/cpp/shelf_types.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/shell.h"
+#include "ash/wm/desks/desks_controller.h"
 #include "ash/wm/desks/desks_util.h"
 #include "ash/wm/drag_window_resizer.h"
 #include "ash/wm/window_resizer.h"
@@ -68,15 +73,6 @@
 
 namespace exo {
 namespace {
-
-// Set aura::client::kSkipImeProcessing to all Surface descendants.
-void SetSkipImeProcessingToDescendentSurfaces(aura::Window* window,
-                                              bool value) {
-  if (Surface::AsSurface(window))
-    window->SetProperty(aura::client::kSkipImeProcessing, value);
-  for (aura::Window* child : window->children())
-    SetSkipImeProcessingToDescendentSurfaces(child, value);
-}
 
 // The accelerator keys used to close ShellSurfaces.
 const struct {
@@ -204,12 +200,8 @@ class CustomWindowTargeter : public aura::WindowTargeter {
   // Overridden from aura::WindowTargeter:
   bool EventLocationInsideBounds(aura::Window* window,
                                  const ui::LocatedEvent& event) const override {
-    gfx::Point local_point = event.location();
-
-    if (window->parent()) {
-      aura::Window::ConvertPointToTarget(window->parent(), window,
-                                         &local_point);
-    }
+    gfx::Point local_point =
+        ConvertEventLocationToWindowCoordinates(window, event);
 
     if (IsInResizeHandle(window, event, local_point))
       return true;
@@ -505,6 +497,53 @@ void ShellSurfaceBase::UnsetCanGoBack() {
     widget_->GetNativeWindow()->SetProperty(ash::kMinimizeOnBackKey, true);
 }
 
+void ShellSurfaceBase::SetPip() {
+  if (!widget_) {
+    pending_pip_ = true;
+    return;
+  }
+
+  // Set all the necessary window properties and window state.
+  auto* window = widget_->GetNativeWindow();
+  window->SetProperty(ash::kWindowPipTypeKey, true);
+  window->SetProperty(aura::client::kZOrderingKey,
+                      ui::ZOrderLevel::kFloatingWindow);
+
+  // Pip windows should start in the bottom right corner of the screen so move
+  // |window| to the bottom right of the work area and let the pip positioner
+  // move it within the work area.
+  auto display = display::Screen::GetScreen()->GetDisplayNearestWindow(window);
+  gfx::Size window_size = window->bounds().size();
+  window->SetBoundsInScreen(
+      gfx::Rect(display.work_area().bottom_right(), window_size), display);
+
+  pending_pip_ = false;
+}
+
+void ShellSurfaceBase::UnsetPip() {
+  if (!widget_) {
+    pending_pip_ = false;
+    return;
+  }
+
+  // Set all the necessary window properties and window state.
+  auto* window = widget_->GetNativeWindow();
+  window->SetProperty(ash::kWindowPipTypeKey, false);
+  window->SetProperty(aura::client::kZOrderingKey, ui::ZOrderLevel::kNormal);
+}
+
+void ShellSurfaceBase::MoveToDesk(int desk_index) {
+  if (widget_) {
+    ash::DesksController::Get()->SendToDeskAtIndex(widget_->GetNativeWindow(),
+                                                   desk_index);
+  }
+}
+
+void ShellSurfaceBase::SetVisibleOnAllWorkspaces() {
+  if (widget_)
+    widget_->SetVisibleOnAllWorkspaces(true);
+}
+
 void ShellSurfaceBase::SetChildAxTreeId(ui::AXTreeID child_ax_tree_id) {
   GetViewAccessibility().OverrideChildTreeID(child_ax_tree_id);
   this->NotifyAccessibilityEvent(ax::mojom::Event::kChildrenChanged, false);
@@ -550,7 +589,6 @@ void ShellSurfaceBase::SetContainer(int container) {
 void ShellSurfaceBase::SetMaximumSize(const gfx::Size& size) {
   TRACE_EVENT1("exo", "ShellSurfaceBase::SetMaximumSize", "size",
                size.ToString());
-
   pending_maximum_size_ = size;
 }
 
@@ -584,13 +622,16 @@ void ShellSurfaceBase::DisableMovement() {
     widget_->set_movement_disabled(true);
 }
 
-void ShellSurfaceBase::UpdateCanResize() {
-  if (overlay_widget_ && overlay_can_resize_.has_value()) {
-    SetCanResize(*overlay_can_resize_);
-    return;
-  }
-  SetCanResize(!movement_disabled_ &&
-               (minimum_size_.IsEmpty() || minimum_size_ != maximum_size_));
+void ShellSurfaceBase::UpdateResizability() {
+  SetCanResize(CalculateCanResize());
+  auto max_size = GetMaximumSize();
+
+  // Allow maximizeing if the max size is bigger than 32k resolution.
+  SetCanMaximize(CanResize() && !parent_ &&
+                 ash::desks_util::IsDeskContainerId(container_) &&
+                 (max_size.IsEmpty() ||
+                  (max_size.width() > ash::kAllowMaximizeThreshold &&
+                   max_size.height() > ash::kAllowMaximizeThreshold)));
 }
 
 void ShellSurfaceBase::RebindRootSurface(Surface* root_surface,
@@ -669,7 +710,7 @@ void ShellSurfaceBase::AddOverlay(OverlayParams&& overlay_params) {
   }
 
   UpdateWidgetBounds();
-  UpdateCanResize();
+  UpdateResizability();
 }
 
 void ShellSurfaceBase::RemoveOverlay() {
@@ -679,7 +720,7 @@ void ShellSurfaceBase::RemoveOverlay() {
     GetWidget()->GetNativeWindow()->SetProperty(
         aura::client::kSkipImeProcessing, true);
   }
-  UpdateCanResize();
+  UpdateResizability();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -974,12 +1015,20 @@ void ShellSurfaceBase::OnWindowPropertyChanged(aura::Window* window,
     } else if (key == chromeos::kFrameRestoreLookKey) {
       root_surface()->SetFrameLocked(
           window->GetProperty(chromeos::kFrameRestoreLookKey));
+    } else if (key == aura::client::kVisibleOnAllWorkspacesKey ||
+               key == aura::client::kWindowWorkspaceKey) {
+      root_surface()->OnDeskChanged(GetWindowDeskStateChanged(window));
     }
   }
 }
 
 void ShellSurfaceBase::OnWindowAddedToRootWindow(aura::Window* window) {
   UpdateDisplayOnTree();
+}
+
+void ShellSurfaceBase::OnWindowParentChanged(aura::Window* window,
+                                             aura::Window* parent) {
+  root_surface()->OnDeskChanged(GetWindowDeskStateChanged(window));
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -1141,6 +1190,13 @@ void ShellSurfaceBase::CreateShellSurfaceWidget(
 
   if (frame_type_ != SurfaceFrameType::NONE)
     OnSetFrame(frame_type_);
+
+  if (pending_pip_) {
+    SetPip();
+    pending_pip_ = false;
+  }
+
+  root_surface()->OnDeskChanged(GetWindowDeskStateChanged(window));
 }
 
 ShellSurfaceBase::OverlayParams::OverlayParams(
@@ -1233,10 +1289,26 @@ void ShellSurfaceBase::UpdateShadow() {
     // small style shadow for them.
     if (!CanActivate())
       shadow->SetElevation(wm::kShadowElevationMenuOrTooltip);
-    // We don't have rounded corners unless frame is enabled.
-    if (!frame_enabled())
-      shadow->SetRoundedCornerRadius(0);
+
+    UpdateCornerRadius();
   }
+}
+
+void ShellSurfaceBase::UpdateCornerRadius() {
+  if (!widget_)
+    return;
+  if (!ash::features::IsPipRoundedCornersEnabled())
+    return;
+
+  ash::WindowState* window_state =
+      ash::WindowState::Get(widget_->GetNativeWindow());
+  // The host window's transform scales by |1/GetScale()| but we do not want the
+  // rounded corners scaled that way. So we multiply the radius by |GetScale()|.
+  ash::SetCornerRadius(
+      window_state->window(), host_window()->layer(),
+      window_state->IsPip()
+          ? base::ClampRound(GetScale() * ash::kPipRoundedCornerRadius)
+          : 0);
 }
 
 void ShellSurfaceBase::UpdateFrameType() {
@@ -1329,10 +1401,16 @@ void ShellSurfaceBase::SetContainerInternal(int container) {
 void ShellSurfaceBase::SetParentInternal(aura::Window* parent) {
   parent_ = parent;
   WidgetDelegate::SetCanMinimize(!parent_ && can_minimize_);
-  WidgetDelegate::SetCanMaximize(
-      !parent_ && ash::desks_util::IsDeskContainerId(container_));
+  UpdateResizability();
   if (widget_)
     widget_->OnSizeConstraintsChanged();
+}
+
+bool ShellSurfaceBase::CalculateCanResize() const {
+  if (overlay_widget_ && overlay_can_resize_.has_value())
+    return *overlay_can_resize_;
+  return !movement_disabled_ &&
+         (minimum_size_.IsEmpty() || minimum_size_ != maximum_size_);
 }
 
 void ShellSurfaceBase::CommitWidget() {
@@ -1345,7 +1423,7 @@ void ShellSurfaceBase::CommitWidget() {
                                  maximum_size_ != pending_maximum_size_;
   minimum_size_ = pending_minimum_size_;
   maximum_size_ = pending_maximum_size_;
-  UpdateCanResize();
+  UpdateResizability();
 
   if (!widget_)
     return;

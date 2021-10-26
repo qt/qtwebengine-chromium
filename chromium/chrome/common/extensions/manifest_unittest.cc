@@ -47,6 +47,8 @@ class ManifestUnitTest : public testing::Test {
               manifest->is_shared_module());
     EXPECT_EQ(type == Manifest::TYPE_LOGIN_SCREEN_EXTENSION,
               manifest->is_login_screen_extension());
+    EXPECT_EQ(type == Manifest::TYPE_CHROMEOS_SYSTEM_EXTENSION,
+              manifest->is_chromeos_system_extension());
   }
 
   // Helper function that replaces the Manifest held by |manifest| with a copy
@@ -55,11 +57,12 @@ class ManifestUnitTest : public testing::Test {
   void MutateManifest(std::unique_ptr<Manifest>* manifest,
                       const std::string& key,
                       std::unique_ptr<base::Value> value) {
-    auto manifest_value = manifest->get()->value()->CreateDeepCopy();
+    auto manifest_value = base::DictionaryValue::From(
+        base::Value::ToUniquePtrValue(manifest->get()->value()->Clone()));
     if (value)
-      manifest_value->Set(key, std::move(value));
+      manifest_value->SetPath(key, std::move(*value));
     else
-      manifest_value->Remove(key, nullptr);
+      manifest_value->RemovePath(key);
     ExtensionId extension_id = manifest->get()->extension_id();
     *manifest = std::make_unique<Manifest>(
         ManifestLocation::kInternal, std::move(manifest_value), extension_id);
@@ -69,7 +72,8 @@ class ManifestUnitTest : public testing::Test {
   // and uses the |for_login_screen| during creation to determine its type.
   void MutateManifestForLoginScreen(std::unique_ptr<Manifest>* manifest,
                                     bool for_login_screen) {
-    auto manifest_value = manifest->get()->value()->CreateDeepCopy();
+    auto manifest_value = base::DictionaryValue::From(
+        base::Value::ToUniquePtrValue(manifest->get()->value()->Clone()));
     ExtensionId extension_id = manifest->get()->extension_id();
     if (for_login_screen) {
       *manifest = Manifest::CreateManifestForLoginScreen(
@@ -116,7 +120,9 @@ TEST_F(ManifestUnitTest, Extension) {
 
   // Test EqualsForTesting.
   auto manifest2 = std::make_unique<Manifest>(
-      ManifestLocation::kInternal, manifest->value()->CreateDeepCopy(),
+      ManifestLocation::kInternal,
+      base::DictionaryValue::From(
+          base::Value::ToUniquePtrValue(manifest->value()->Clone())),
       crx_file::id_util::GenerateId("extid"));
   EXPECT_TRUE(manifest->EqualsForTesting(*manifest2));
   EXPECT_TRUE(manifest2->EqualsForTesting(*manifest));
@@ -127,8 +133,8 @@ TEST_F(ManifestUnitTest, Extension) {
 // Verifies that key restriction based on type works.
 TEST_F(ManifestUnitTest, ExtensionTypes) {
   std::unique_ptr<base::DictionaryValue> value(new base::DictionaryValue());
-  value->SetString(keys::kName, "extension");
-  value->SetString(keys::kVersion, "1");
+  value->SetStringKey(keys::kName, "extension");
+  value->SetStringKey(keys::kVersion, "1");
 
   std::unique_ptr<Manifest> manifest(
       new Manifest(ManifestLocation::kInternal, std::move(value),

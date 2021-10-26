@@ -5,7 +5,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/client_hints_preferences.h"
 
 #include "base/command_line.h"
-#include "base/macros.h"
 #include "services/network/public/cpp/client_hints.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/blink/public/common/client_hints/client_hints.h"
@@ -47,12 +46,6 @@ void ClientHintsPreferences::CombineWith(
   }
 }
 
-bool ClientHintsPreferences::UserAgentClientHintEnabled() {
-  return RuntimeEnabledFeatures::UserAgentClientHintEnabled() &&
-         !base::CommandLine::ForCurrentProcess()->HasSwitch(
-             switches::kUserAgentClientHintDisable);
-}
-
 void ClientHintsPreferences::UpdateFromHttpEquivAcceptCH(
     const String& header_value,
     const KURL& url,
@@ -70,11 +63,7 @@ void ClientHintsPreferences::UpdateFromHttpEquivAcceptCH(
 
   // Note: .Ascii() would convert tab to ?, which is undesirable.
   absl::optional<std::vector<network::mojom::WebClientHintsType>> parsed_ch =
-      FilterAcceptCH(
-          network::ParseClientHintsHeader(header_value.Latin1()),
-          RuntimeEnabledFeatures::LangClientHintHeaderEnabled(),
-          UserAgentClientHintEnabled(),
-          RuntimeEnabledFeatures::PrefersColorSchemeClientHintHeaderEnabled());
+      network::ParseClientHintsHeader(header_value.Latin1());
   if (!parsed_ch.has_value())
     return;
 
@@ -101,8 +90,18 @@ bool ClientHintsPreferences::IsClientHintsAllowed(const KURL& url) {
          network::IsOriginPotentiallyTrustworthy(url::Origin::Create(url));
 }
 
-WebEnabledClientHints ClientHintsPreferences::GetWebEnabledClientHints() const {
+EnabledClientHints ClientHintsPreferences::GetEnabledClientHints() const {
   return enabled_hints_;
+}
+
+bool ClientHintsPreferences::ShouldSend(
+    network::mojom::WebClientHintsType type) const {
+  return enabled_hints_.IsEnabled(type);
+}
+
+void ClientHintsPreferences::SetShouldSend(
+    network::mojom::WebClientHintsType type) {
+  enabled_hints_.SetIsEnabled(type, true);
 }
 
 }  // namespace blink

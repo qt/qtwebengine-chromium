@@ -49,26 +49,20 @@
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
+#include "libavutil/thread.h"
 #include "libavutil/aarch64/cpu.h"
 #include "libavutil/ppc/cpu.h"
 #include "libavutil/x86/asm.h"
 #include "libavutil/x86/cpu.h"
 
-// We have to implement deprecated functions until they are removed, this is the
-// simplest way to prevent warnings
-#undef attribute_deprecated
-#define attribute_deprecated
-
 #include "rgb2rgb.h"
 #include "swscale.h"
 #include "swscale_internal.h"
 
-#if !FF_API_SWS_VECTOR
 static SwsVector *sws_getIdentityVec(void);
 static void sws_addVec(SwsVector *a, SwsVector *b);
 static void sws_shiftVec(SwsVector *a, int shift);
 static void sws_printVec2(SwsVector *a, AVClass *log_ctx, int log_level);
-#endif
 
 static void handle_formats(SwsContext *c);
 
@@ -1196,12 +1190,13 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
     int ret = 0;
     enum AVPixelFormat tmpFmt;
     static const float float_mult = 1.0f / 255.0f;
+    static AVOnce rgb2rgb_once = AV_ONCE_INIT;
 
     cpu_flags = av_get_cpu_flags();
     flags     = c->flags;
     emms_c();
-    if (!rgb15to16)
-        ff_sws_rgb2rgb_init();
+    if (ff_thread_once(&rgb2rgb_once, ff_sws_rgb2rgb_init) != 0)
+        return AVERROR_UNKNOWN;
 
     unscaled = (srcW == dstW && srcH == dstH);
 
@@ -1335,7 +1330,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         if (c->dither == SWS_DITHER_AUTO)
             c->dither = (flags & SWS_FULL_CHR_H_INT) ? SWS_DITHER_ED : SWS_DITHER_BAYER;
         if (!(flags & SWS_FULL_CHR_H_INT)) {
-            if (c->dither == SWS_DITHER_ED || c->dither == SWS_DITHER_A_DITHER || c->dither == SWS_DITHER_X_DITHER) {
+            if (c->dither == SWS_DITHER_ED || c->dither == SWS_DITHER_A_DITHER || c->dither == SWS_DITHER_X_DITHER || c->dither == SWS_DITHER_NONE) {
                 av_log(c, AV_LOG_DEBUG,
                     "Desired dithering only supported in full chroma interpolation for destination format '%s'\n",
                     av_get_pix_fmt_name(dstFormat));
@@ -1828,7 +1823,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         (c->srcRange == c->dstRange || isAnyRGB(dstFormat)) &&
         alphaless_fmt(srcFormat) == dstFormat
     ) {
-        c->swscale = ff_sws_alphablendaway;
+        c->convert_unscaled = ff_sws_alphablendaway;
 
         if (flags & SWS_PRINT_INFO)
             av_log(c, AV_LOG_INFO,
@@ -1843,7 +1838,7 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
          isFloat(srcFormat) || isFloat(dstFormat))){
         ff_get_unscaled_swscale(c);
 
-        if (c->swscale) {
+        if (c->convert_unscaled) {
             if (flags & SWS_PRINT_INFO)
                 av_log(c, AV_LOG_INFO,
                        "using unscaled %s -> %s special converter\n",
@@ -1852,7 +1847,8 @@ av_cold int sws_init_context(SwsContext *c, SwsFilter *srcFilter,
         }
     }
 
-    c->swscale = ff_getSwsFunc(c);
+    ff_sws_init_scale(c);
+
     return ff_init_filters(c);
 nomem:
     ret = AVERROR(ENOMEM);
@@ -2081,9 +2077,7 @@ SwsVector *sws_getGaussianVec(double variance, double quality)
  * Allocate and return a vector with length coefficients, all
  * with the same value c.
  */
-#if !FF_API_SWS_VECTOR
 static
-#endif
 SwsVector *sws_getConstVec(double c, int length)
 {
     int i;
@@ -2102,9 +2096,7 @@ SwsVector *sws_getConstVec(double c, int length)
  * Allocate and return a vector with just one coefficient, with
  * value 1.0.
  */
-#if !FF_API_SWS_VECTOR
 static
-#endif
 SwsVector *sws_getIdentityVec(void)
 {
     return sws_getConstVec(1.0, 1);
@@ -2134,26 +2126,6 @@ void sws_normalizeVec(SwsVector *a, double height)
     sws_scaleVec(a, height / sws_dcVec(a));
 }
 
-#if FF_API_SWS_VECTOR
-static SwsVector *sws_getConvVec(SwsVector *a, SwsVector *b)
-{
-    int length = a->length + b->length - 1;
-    int i, j;
-    SwsVector *vec = sws_getConstVec(0.0, length);
-
-    if (!vec)
-        return NULL;
-
-    for (i = 0; i < a->length; i++) {
-        for (j = 0; j < b->length; j++) {
-            vec->coeff[i + j] += a->coeff[i] * b->coeff[j];
-        }
-    }
-
-    return vec;
-}
-#endif
-
 static SwsVector *sws_sumVec(SwsVector *a, SwsVector *b)
 {
     int length = FFMAX(a->length, b->length);
@@ -2170,25 +2142,6 @@ static SwsVector *sws_sumVec(SwsVector *a, SwsVector *b)
 
     return vec;
 }
-
-#if FF_API_SWS_VECTOR
-static SwsVector *sws_diffVec(SwsVector *a, SwsVector *b)
-{
-    int length = FFMAX(a->length, b->length);
-    int i;
-    SwsVector *vec = sws_getConstVec(0.0, length);
-
-    if (!vec)
-        return NULL;
-
-    for (i = 0; i < a->length; i++)
-        vec->coeff[i + (length - 1) / 2 - (a->length - 1) / 2] += a->coeff[i];
-    for (i = 0; i < b->length; i++)
-        vec->coeff[i + (length - 1) / 2 - (b->length - 1) / 2] -= b->coeff[i];
-
-    return vec;
-}
-#endif
 
 /* shift left / or right if "shift" is negative */
 static SwsVector *sws_getShiftedVec(SwsVector *a, int shift)
@@ -2208,9 +2161,7 @@ static SwsVector *sws_getShiftedVec(SwsVector *a, int shift)
     return vec;
 }
 
-#if !FF_API_SWS_VECTOR
 static
-#endif
 void sws_shiftVec(SwsVector *a, int shift)
 {
     SwsVector *shifted = sws_getShiftedVec(a, shift);
@@ -2224,9 +2175,7 @@ void sws_shiftVec(SwsVector *a, int shift)
     av_free(shifted);
 }
 
-#if !FF_API_SWS_VECTOR
 static
-#endif
 void sws_addVec(SwsVector *a, SwsVector *b)
 {
     SwsVector *sum = sws_sumVec(a, b);
@@ -2240,53 +2189,11 @@ void sws_addVec(SwsVector *a, SwsVector *b)
     av_free(sum);
 }
 
-#if FF_API_SWS_VECTOR
-void sws_subVec(SwsVector *a, SwsVector *b)
-{
-    SwsVector *diff = sws_diffVec(a, b);
-    if (!diff) {
-        makenan_vec(a);
-        return;
-    }
-    av_free(a->coeff);
-    a->coeff  = diff->coeff;
-    a->length = diff->length;
-    av_free(diff);
-}
-
-void sws_convVec(SwsVector *a, SwsVector *b)
-{
-    SwsVector *conv = sws_getConvVec(a, b);
-    if (!conv) {
-        makenan_vec(a);
-        return;
-    }
-    av_free(a->coeff);
-    a->coeff  = conv->coeff;
-    a->length = conv->length;
-    av_free(conv);
-}
-
-SwsVector *sws_cloneVec(SwsVector *a)
-{
-    SwsVector *vec = sws_allocVec(a->length);
-
-    if (!vec)
-        return NULL;
-
-    memcpy(vec->coeff, a->coeff, a->length * sizeof(*a->coeff));
-
-    return vec;
-}
-#endif
-
 /**
  * Print with av_log() a textual representation of the vector a
  * if log_level <= av_log_level.
  */
-#if !FF_API_SWS_VECTOR
 static
-#endif
 void sws_printVec2(SwsVector *a, AVClass *log_ctx, int log_level)
 {
     int i;
@@ -2388,6 +2295,9 @@ void sws_freeContext(SwsContext *c)
 
     av_freep(&c->gamma);
     av_freep(&c->inv_gamma);
+
+    av_freep(&c->rgb0_scratch);
+    av_freep(&c->xyz_scratch);
 
     ff_free_filters(c);
 

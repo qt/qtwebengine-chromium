@@ -27,14 +27,16 @@
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
 #include "storage/browser/file_system/file_stream_reader.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/test_file_system_backend.h"
 #include "storage/browser/test/test_file_system_context.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
 
 using blink::mojom::FileSystemAccessStatus;
 using storage::FileSystemURL;
-using storage::IsolatedContext;
 
 using testing::_;
 using testing::AllOf;
@@ -116,27 +118,18 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
 
     file_system_context_ =
         storage::CreateFileSystemContextWithAdditionalProvidersForTesting(
-            base::ThreadTaskRunnerHandle::Get().get(),
-            base::ThreadTaskRunnerHandle::Get().get(),
+            base::ThreadTaskRunnerHandle::Get(),
+            base::ThreadTaskRunnerHandle::Get(),
             /*quota_manager_proxy=*/nullptr, std::move(additional_providers),
             dir_.GetPath());
 
-    auto* isolated_context = IsolatedContext::GetInstance();
-    std::string base_name;
-    IsolatedContext::ScopedFSHandle fs =
-        isolated_context->RegisterFileSystemForPath(
-            storage::kFileSystemTypeLocal, std::string(), dir_.GetPath(),
-            &base_name);
-    base::FilePath root_path =
-        isolated_context->CreateVirtualRootPath(fs.id()).AppendASCII(base_name);
-
     test_file_url_ = file_system_context_->CreateCrackedFileSystemURL(
-        kTestOrigin, storage::kFileSystemTypeIsolated,
-        root_path.AppendASCII("test"));
+        kTestStorageKey, storage::kFileSystemTypeLocal,
+        dir_.GetPath().AppendASCII("test"));
 
     test_swap_url_ = file_system_context_->CreateCrackedFileSystemURL(
-        kTestOrigin, storage::kFileSystemTypeIsolated,
-        root_path.AppendASCII("test.crswap"));
+        kTestStorageKey, storage::kFileSystemTypeLocal,
+        dir_.GetPath().AppendASCII("test.crswap"));
 
     ASSERT_EQ(base::File::FILE_OK,
               storage::AsyncFileTestHelper::CreateFile(
@@ -162,11 +155,11 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
         });
 
     handle_ = manager_->CreateFileWriter(
-        FileSystemAccessManagerImpl::BindingContext(kTestOrigin, kTestURL,
-                                                    kFrameId),
+        FileSystemAccessManagerImpl::BindingContext(kTestStorageKey.origin(),
+                                                    kTestURL, kFrameId),
         test_file_url_, test_swap_url_,
-        FileSystemAccessManagerImpl::SharedHandleState(
-            permission_grant_, permission_grant_, std::move(fs)),
+        FileSystemAccessManagerImpl::SharedHandleState(permission_grant_,
+                                                       permission_grant_),
         remote_.InitWithNewPipeAndPassReceiver(),
         /*has_transient_user_activation=*/false,
         /*auto_close=*/false, quarantine_callback_);
@@ -288,10 +281,11 @@ class FileSystemAccessFileWriterImplTest : public testing::Test {
 
  protected:
   const GURL kTestURL = GURL("https://example.com/test");
-  const url::Origin kTestOrigin = url::Origin::Create(kTestURL);
+  const blink::StorageKey kTestStorageKey =
+      blink::StorageKey::CreateFromStringForTesting("https://example.com/test");
   const int kProcessId = 1;
   const int kFrameRoutingId = 2;
-  const GlobalFrameRoutingId kFrameId{kProcessId, kFrameRoutingId};
+  const GlobalRenderFrameHostId kFrameId{kProcessId, kFrameRoutingId};
   BrowserTaskEnvironment task_environment_;
 
   base::ScopedTempDir dir_;
@@ -382,7 +376,7 @@ TEST_F(FileSystemAccessFileWriterImplTest, HashLargerFileOK) {
         EXPECT_EQ(
             "34A82D28CB1E0BA92CADC4BE8497DC9EEA9AC4F63B9C445A9E52D298990AC491",
             GetHexEncodedString(hash_value));
-        EXPECT_EQ(int64_t{target_size}, size);
+        EXPECT_EQ(static_cast<int64_t>(target_size), size);
         loop.Quit();
       }));
   loop.Run();
@@ -597,7 +591,7 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
   base::RunLoop loop;
   EXPECT_CALL(permission_context_, PerformAfterWriteChecks_)
       .WillOnce(testing::Invoke([&](FileSystemAccessWriteItem* item,
-                                    GlobalFrameRoutingId frame_id,
+                                    GlobalRenderFrameHostId frame_id,
                                     SBCallback& callback) {
         sb_callback = std::move(callback);
         loop.Quit();
@@ -639,7 +633,7 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
   base::RunLoop loop;
   EXPECT_CALL(permission_context_, PerformAfterWriteChecks_)
       .WillOnce(testing::Invoke([&](FileSystemAccessWriteItem* item,
-                                    GlobalFrameRoutingId frame_id,
+                                    GlobalRenderFrameHostId frame_id,
                                     SBCallback& callback) {
         sb_callback = std::move(callback);
         loop.Quit();
@@ -673,11 +667,11 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
   // This test uses kFileSystemTypeTest to be able to intercept file system
   // operations. As such, recreate urls and handle_.
   test_file_url_ = file_system_context_->CreateCrackedFileSystemURL(
-      kTestOrigin, storage::kFileSystemTypeTest,
+      kTestStorageKey, storage::kFileSystemTypeTest,
       base::FilePath::FromUTF8Unsafe("test2"));
 
   test_swap_url_ = file_system_context_->CreateCrackedFileSystemURL(
-      kTestOrigin, storage::kFileSystemTypeTest,
+      kTestStorageKey, storage::kFileSystemTypeTest,
       base::FilePath::FromUTF8Unsafe("test2.crswap"));
 
   ASSERT_EQ(base::File::FILE_OK,
@@ -689,15 +683,15 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
                                                      test_swap_url_));
 
   mojo::PendingRemote<blink::mojom::FileSystemAccessFileWriter> remote;
-  handle_ =
-      manager_->CreateFileWriter(FileSystemAccessManagerImpl::BindingContext(
-                                     kTestOrigin, kTestURL, kFrameId),
-                                 test_file_url_, test_swap_url_,
-                                 FileSystemAccessManagerImpl::SharedHandleState(
-                                     permission_grant_, permission_grant_, {}),
-                                 remote.InitWithNewPipeAndPassReceiver(),
-                                 /*has_transient_user_activation=*/false,
-                                 /*auto_close=*/false, quarantine_callback_);
+  handle_ = manager_->CreateFileWriter(
+      FileSystemAccessManagerImpl::BindingContext(kTestStorageKey.origin(),
+                                                  kTestURL, kFrameId),
+      test_file_url_, test_swap_url_,
+      FileSystemAccessManagerImpl::SharedHandleState(permission_grant_,
+                                                     permission_grant_),
+      remote.InitWithNewPipeAndPassReceiver(),
+      /*has_transient_user_activation=*/false,
+      /*auto_close=*/false, quarantine_callback_);
 
   uint64_t bytes_written;
   FileSystemAccessStatus result = WriteSync(0, "foo", &bytes_written);
@@ -710,7 +704,7 @@ TEST_F(FileSystemAccessFileWriterAfterWriteChecksTest,
   base::RunLoop sb_loop;
   EXPECT_CALL(permission_context_, PerformAfterWriteChecks_)
       .WillOnce(testing::Invoke([&](FileSystemAccessWriteItem* item,
-                                    GlobalFrameRoutingId frame_id,
+                                    GlobalRenderFrameHostId frame_id,
                                     SBCallback& callback) {
         sb_callback = std::move(callback);
         sb_loop.Quit();

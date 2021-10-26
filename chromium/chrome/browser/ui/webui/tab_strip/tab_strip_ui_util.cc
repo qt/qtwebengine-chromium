@@ -64,7 +64,8 @@ void MoveTabAcrossWindows(Browser* source_browser,
   bool was_pinned = source_browser->tab_strip_model()->IsTabPinned(from_index);
 
   std::unique_ptr<content::WebContents> detached_contents =
-      source_browser->tab_strip_model()->DetachWebContentsAt(from_index);
+      source_browser->tab_strip_model()->DetachWebContentsAtForInsertion(
+          from_index);
 
   int add_types = TabStripModel::ADD_NONE;
   if (was_active) {
@@ -80,7 +81,7 @@ void MoveTabAcrossWindows(Browser* source_browser,
 
 bool IsDraggedTab(const ui::OSExchangeData& drop_data) {
   base::Pickle pickle;
-  drop_data.GetPickledData(ui::ClipboardFormatType::GetWebCustomDataType(),
+  drop_data.GetPickledData(ui::ClipboardFormatType::WebCustomDataType(),
                            &pickle);
   base::PickleIterator iter(pickle);
 
@@ -105,7 +106,7 @@ bool IsDraggedTab(const ui::OSExchangeData& drop_data) {
 bool DropTabsInNewBrowser(Browser* new_browser,
                           const ui::OSExchangeData& drop_data) {
   base::Pickle pickle;
-  drop_data.GetPickledData(ui::ClipboardFormatType::GetWebCustomDataType(),
+  drop_data.GetPickledData(ui::ClipboardFormatType::WebCustomDataType(),
                            &pickle);
 
   std::u16string tab_id_str;

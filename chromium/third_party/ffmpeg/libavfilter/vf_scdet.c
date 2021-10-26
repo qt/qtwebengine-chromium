@@ -21,7 +21,6 @@
  * video scene change detection filter
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -211,7 +210,7 @@ static const AVFilterPad scdet_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_scdet = {
+const AVFilter ff_vf_scdet = {
     .name          = "scdet",
     .description   = NULL_IF_CONFIG_SMALL("Detect video scene change"),
     .priv_size     = sizeof(SCDetContext),

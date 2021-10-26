@@ -71,14 +71,14 @@ class AutofillAgent : public content::RenderFrameObserver,
   void BindPendingReceiver(
       mojo::PendingAssociatedReceiver<mojom::AutofillAgent> pending_receiver);
 
-  const mojo::AssociatedRemote<mojom::AutofillDriver>& GetAutofillDriver();
-
-  const mojo::AssociatedRemote<mojom::PasswordManagerDriver>&
-  GetPasswordManagerDriver();
+  mojom::AutofillDriver& GetAutofillDriver();
+  mojom::PasswordManagerDriver& GetPasswordManagerDriver();
 
   // mojom::AutofillAgent:
-  void FillForm(int32_t id, const FormData& form) override;
-  void PreviewForm(int32_t id, const FormData& form) override;
+  void TriggerReparse() override;
+  void FillOrPreviewForm(int32_t id,
+                         const FormData& form,
+                         mojom::RendererFormDataAction action) override;
   void FieldTypePredictionsAvailable(
       const std::vector<FormDataPredictions>& forms) override;
   void ClearSection() override;
@@ -108,8 +108,7 @@ class AutofillAgent : public content::RenderFrameObserver,
   void SetFieldsEligibleForManualFilling(
       const std::vector<FieldRendererId>& fields) override;
 
-  void FormControlElementClicked(const blink::WebFormControlElement& element,
-                                 bool was_focused);
+  void FormControlElementClicked(const blink::WebFormControlElement& element);
 
   base::WeakPtr<AutofillAgent> GetWeakPtr() {
     return weak_ptr_factory_.GetWeakPtr();
@@ -137,11 +136,14 @@ class AutofillAgent : public content::RenderFrameObserver,
 
   void SelectWasUpdated(const blink::WebFormControlElement& element);
 
+  bool IsPrerendering() const;
+
  protected:
   // blink::WebAutofillClient:
   void DidAssociateFormControlsDynamically() override;
 
  private:
+  class DeferringAutofillDriver;
   friend class FormControlClickDetectionTest;
 
   // Flags passed to ShowSuggestions.
@@ -307,9 +309,6 @@ class AutofillAgent : public content::RenderFrameObserver,
   // The elements that currently are being previewed.
   std::vector<blink::WebFormControlElement> previewed_elements_;
 
-  // The form element currently requesting an interactive autocomplete.
-  blink::WebFormElement in_flight_request_form_;
-
   // Last form which was interacted with by the user.
   blink::WebFormElement last_interacted_form_;
 
@@ -356,9 +355,7 @@ class AutofillAgent : public content::RenderFrameObserver,
   bool query_password_suggestion_ = false;
 
   bool focused_node_was_last_clicked_ = false;
-  bool was_focused_before_now_ = false;
-  blink::WebFormControlElement last_clicked_form_control_element_for_testing_;
-  bool last_clicked_form_control_element_was_focused_for_testing_ = false;
+  FieldRendererId last_clicked_form_control_element_for_testing_;
 
   FormTracker form_tracker_;
 
@@ -369,9 +366,14 @@ class AutofillAgent : public content::RenderFrameObserver,
 
   mojo::AssociatedRemote<mojom::AutofillDriver> autofill_driver_;
 
+  // For deferring messages to the browser process while prerendering.
+  std::unique_ptr<DeferringAutofillDriver> deferring_autofill_driver_;
+
   bool was_last_action_fill_ = false;
 
+  // Timers for throttling handling of frequent events.
   base::OneShotTimer on_select_update_timer_;
+  base::OneShotTimer reparse_timer_;
 
   // Will be set when accessibility mode changes, depending on what the new mode
   // is.

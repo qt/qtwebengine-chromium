@@ -7,8 +7,8 @@
 #include <ostream>
 
 #include "base/check_op.h"
+#include "base/cxx17_backports.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/khronos/GLES2/gl2ext.h"
 #include "ui/gfx/buffer_types.h"
@@ -373,8 +373,9 @@ unsigned int TextureStorageFormat(ResourceFormat format) {
     case RG16_EXT:
       return GL_RG16_EXT;
     case RGBX_8888:
-    case ETC1:
       return GL_RGB8_OES;
+    case ETC1:
+      return GL_ETC1_RGB8_OES;
     case P010:
     case RGBA_1010102:
     case BGRA_1010102:

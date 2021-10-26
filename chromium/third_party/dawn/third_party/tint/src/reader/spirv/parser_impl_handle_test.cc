@@ -90,6 +90,7 @@ std::string CommonBasicTypes() {
     %v4float = OpTypeVector %float 4
 
     %float_null = OpConstantNull %float
+    %float_0 = OpConstant %float 0
     %float_1 = OpConstant %float 1
     %float_2 = OpConstant %float 2
     %float_3 = OpConstant %float 3
@@ -259,6 +260,8 @@ TEST_F(SpvParserHandleTest,
   EXPECT_EQ(sampler, nullptr);
   EXPECT_EQ(image, nullptr);
   EXPECT_TRUE(p->error().empty());
+
+  p->DeliberatelyInvalidSpirv();  // WGSL does not have null pointers.
 }
 
 TEST_F(SpvParserHandleTest,
@@ -588,6 +591,8 @@ TEST_F(SpvParserHandleTest,
 
   ASSERT_TRUE(image != nullptr);
   EXPECT_EQ(image->result_id(), 20u);
+
+  p->SkipDumpingPending("crbug.com/tint/1039");
 }
 
 TEST_F(SpvParserHandleTest,
@@ -773,6 +778,8 @@ TEST_F(SpvParserHandleTest,
 
   ASSERT_TRUE(image != nullptr);
   EXPECT_EQ(image->result_id(), 20u);
+
+  p->SkipDumpingPending("crbug.com/tint/1039");
 }
 
 TEST_F(SpvParserHandleTest,
@@ -802,6 +809,8 @@ TEST_F(SpvParserHandleTest,
 
   ASSERT_TRUE(image != nullptr);
   EXPECT_EQ(image->result_id(), 20u);
+
+  p->SkipDumpingPending("crbug.com/tint/1039");
 }
 
 TEST_F(SpvParserHandleTest,
@@ -836,6 +845,8 @@ TEST_F(SpvParserHandleTest,
 
   ASSERT_TRUE(image != nullptr);
   EXPECT_EQ(image->result_id(), 20u);
+
+  p->SkipDumpingPending("crbug.com/tint/1039");
 }
 
 TEST_F(SpvParserHandleTest,
@@ -865,6 +876,8 @@ TEST_F(SpvParserHandleTest,
   const auto* image = p->GetMemoryObjectDeclarationForHandle(200, true);
   ASSERT_TRUE(image != nullptr);
   EXPECT_EQ(image->result_id(), 20u);
+
+  p->SkipDumpingPending("crbug.com/tint/1039");
 }
 
 // Test RegisterHandleUsage, sampled image cases
@@ -932,8 +945,6 @@ TEST_P(SpvParserHandleTest_RegisterHandleUsage_SampledImage, Variable) {
     p->DeliberatelyInvalidSpirv();
   }
   if (inst.find("ImageSampleDrefExplicitLod") != std::string::npos) {
-    // WGSL does not support querying image level of detail.
-    // So don't emit them as part of a "passing" corpus.
     p->SkipDumpingPending("crbug.com/tint/425");  // gpuweb issue #1319
   }
 }
@@ -1271,6 +1282,7 @@ INSTANTIATE_TEST_SUITE_P(Samplers,
     }
     x_10
     none
+    undefined
     __sampler_sampler
   })"}));
 
@@ -1289,6 +1301,7 @@ INSTANTIATE_TEST_SUITE_P(Images,
     }
     x_10
     none
+    undefined
     __sampled_texture_1d__f32
   })"},
                              DeclUnderspecifiedHandleCase{R"(
@@ -1305,7 +1318,8 @@ INSTANTIATE_TEST_SUITE_P(Images,
     }
     x_10
     none
-    __access_control_read_only__storage_texture_1d_rg32float
+    undefined
+    __storage_texture_1d_rg32float_read
   })"},
                              DeclUnderspecifiedHandleCase{R"(
          OpDecorate %10 NonReadable
@@ -1321,7 +1335,8 @@ INSTANTIATE_TEST_SUITE_P(Images,
     }
     x_10
     none
-    __access_control_write_only__storage_texture_1d_rg32float
+    undefined
+    __storage_texture_1d_rg32float_write
   })"}));
 
 // Test handle declaration or error, when there is an image access.
@@ -1454,6 +1469,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   }
 )"},
@@ -1640,6 +1656,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1649,6 +1666,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -1673,6 +1691,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1682,6 +1701,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -1717,6 +1737,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1726,6 +1747,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
             R"(
@@ -1756,6 +1778,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1765,6 +1788,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
             R"(
@@ -1804,6 +1828,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1813,6 +1838,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -1838,6 +1864,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1847,6 +1874,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -1883,6 +1911,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1892,6 +1921,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -1924,6 +1954,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1933,6 +1964,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -1966,6 +1998,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -1975,6 +2008,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2027,6 +2061,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2036,6 +2071,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   }
   Variable{
@@ -2045,6 +2081,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_30
     none
+    undefined
     __sampler_comparison
   })",
                         R"(
@@ -2052,6 +2089,7 @@ INSTANTIATE_TEST_SUITE_P(
       VariableConst{
         x_200
         none
+        undefined
         __vec_4__f32
         {
           TypeConstructor[not set]{
@@ -2075,6 +2113,7 @@ INSTANTIATE_TEST_SUITE_P(
       VariableConst{
         x_210
         none
+        undefined
         __f32
         {
           Call[not set]{
@@ -2106,6 +2145,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_comparison
   }
   Variable{
@@ -2115,6 +2155,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
                         R"(
@@ -2139,6 +2180,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_comparison
   }
   Variable{
@@ -2148,6 +2190,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d_array
   })",
                         R"(
@@ -2183,6 +2226,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_comparison
   }
   Variable{
@@ -2192,6 +2236,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
             R"(
@@ -2222,6 +2267,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_comparison
   }
   Variable{
@@ -2231,6 +2277,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d_array
   })",
             R"(
@@ -2260,6 +2307,265 @@ INSTANTIATE_TEST_SUITE_P(
           })"}));
 
 INSTANTIATE_TEST_SUITE_P(
+    ImageSampleDrefExplicitLod,
+    SpvParserHandleTest_SampledImageAccessTest,
+    // Lod must be float constant 0 due to a Metal constraint.
+    // Another test checks cases where the Lod is not float constant 0.
+    ::testing::Values(
+        // 2D
+        ImageAccessCase{"%float 2D 1 0 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod "
+                        "%float %sampled_image %coords12 %depth Lod %float_0",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_2d
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              Identifier[not set]{coords12}
+              ScalarConstructor[not set]{0.200000}
+            )
+          })"},
+        // 2D array
+        ImageAccessCase{"%float 2D 1 1 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod "
+                        "%float %sampled_image %coords123 %depth Lod %float_0",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_2d_array
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              MemberAccessor[not set]{
+                Identifier[not set]{coords123}
+                Identifier[not set]{xy}
+              }
+              TypeConstructor[not set]{
+                __i32
+                MemberAccessor[not set]{
+                  Identifier[not set]{coords123}
+                  Identifier[not set]{z}
+                }
+              }
+              ScalarConstructor[not set]{0.200000}
+            )
+          })"},
+        // 2D, ConstOffset
+        ImageAccessCase{"%float 2D 1 0 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod %float "
+                        "%sampled_image %coords12 %depth Lod|ConstOffset "
+                        "%float_0 %offsets2d",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_2d
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              Identifier[not set]{coords12}
+              ScalarConstructor[not set]{0.200000}
+              TypeConstructor[not set]{
+                __vec_2__i32
+                ScalarConstructor[not set]{3}
+                ScalarConstructor[not set]{4}
+              }
+            )
+          })"},
+        // 2D array, ConstOffset
+        ImageAccessCase{"%float 2D 1 1 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod %float "
+                        "%sampled_image %coords123 %depth Lod|ConstOffset "
+                        "%float_0 %offsets2d",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_2d_array
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              MemberAccessor[not set]{
+                Identifier[not set]{coords123}
+                Identifier[not set]{xy}
+              }
+              TypeConstructor[not set]{
+                __i32
+                MemberAccessor[not set]{
+                  Identifier[not set]{coords123}
+                  Identifier[not set]{z}
+                }
+              }
+              ScalarConstructor[not set]{0.200000}
+              TypeConstructor[not set]{
+                __vec_2__i32
+                ScalarConstructor[not set]{3}
+                ScalarConstructor[not set]{4}
+              }
+            )
+          })"},
+        // Cube
+        ImageAccessCase{"%float Cube 1 0 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod "
+                        "%float %sampled_image %coords123 %depth Lod %float_0",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_cube
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              Identifier[not set]{coords123}
+              ScalarConstructor[not set]{0.200000}
+            )
+          })"},
+        // Cube array
+        ImageAccessCase{"%float Cube 1 1 0 1 Unknown",
+                        "%result = OpImageSampleDrefExplicitLod "
+                        "%float %sampled_image %coords1234 %depth Lod %float_0",
+                        R"(
+  Variable{
+    Decorations{
+      GroupDecoration{0}
+      BindingDecoration{0}
+    }
+    x_10
+    none
+    undefined
+    __sampler_comparison
+  }
+  Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_texture_cube_array
+  })",
+                        R"(
+          Call[not set]{
+            Identifier[not set]{textureSampleCompareLevel}
+            (
+              Identifier[not set]{x_20}
+              Identifier[not set]{x_10}
+              MemberAccessor[not set]{
+                Identifier[not set]{coords1234}
+                Identifier[not set]{xyz}
+              }
+              TypeConstructor[not set]{
+                __i32
+                MemberAccessor[not set]{
+                  Identifier[not set]{coords1234}
+                  Identifier[not set]{w}
+                }
+              }
+              ScalarConstructor[not set]{0.200000}
+            )
+          })"}));
+
+INSTANTIATE_TEST_SUITE_P(
     ImageSampleExplicitLod_UsingLod,
     SpvParserHandleTest_SampledImageAccessTest,
     ::testing::Values(
@@ -2276,6 +2582,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2285,6 +2592,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2310,6 +2618,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2319,6 +2628,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2355,6 +2665,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2364,6 +2675,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2396,6 +2708,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2405,6 +2718,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2439,6 +2753,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2448,6 +2763,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2493,6 +2809,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2502,6 +2819,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2528,6 +2846,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2537,6 +2856,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2574,6 +2894,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2583,6 +2904,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2615,6 +2937,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2624,6 +2947,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                         R"(
@@ -2659,6 +2983,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2668,6 +2993,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2711,6 +3037,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2720,6 +3047,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
                         R"(
@@ -2774,6 +3102,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2783,6 +3112,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(
@@ -2807,6 +3137,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -2816,6 +3147,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
          R"(
@@ -2919,7 +3251,8 @@ INSTANTIATE_TEST_SUITE_P(ImageWrite_OptionalParams,
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_write
   })",
                               R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -2949,7 +3282,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32float
+    undefined
+    __storage_texture_2d_r32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -2975,7 +3309,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32float
+    undefined
+    __storage_texture_2d_r32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3000,7 +3335,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32float
+    undefined
+    __storage_texture_2d_r32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3024,7 +3360,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32float
+    undefined
+    __storage_texture_2d_r32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3044,7 +3381,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rg32float
+    undefined
+    __storage_texture_2d_rg32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3069,7 +3407,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rg32float
+    undefined
+    __storage_texture_2d_rg32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3093,7 +3432,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rg32float
+    undefined
+    __storage_texture_2d_rg32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3114,7 +3454,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3156,7 +3497,7 @@ TEST_F(SpvParserHandleTest, ImageWrite_TooFewSrcTexelComponents_1_vs_4) {
   EXPECT_FALSE(p->BuildAndParseInternalModule());
   EXPECT_THAT(p->error(),
               Eq("texel has too few components for storage texture: 1 provided "
-                 "but 4 required, in: OpImageWrite %53 %3 %2"))
+                 "but 4 required, in: OpImageWrite %54 %3 %2"))
       << p->error();
 }
 
@@ -3210,7 +3551,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32uint
+    undefined
+    __storage_texture_2d_rgba32uint_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3230,7 +3572,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32sint
+    undefined
+    __storage_texture_2d_rgba32sint_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3260,7 +3603,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_write
   })"},
         // Sampled type is float, texel is unsigned int
         {"%int 2D 0 0 0 2 Rgba32f", "OpImageWrite %im %vi12 %vu1234",
@@ -3275,7 +3619,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_write
   })"},
         // Sampled type is unsigned int, texel is float
         {"%uint 2D 0 0 0 2 Rgba32ui", "OpImageWrite %im %vi12 %vf1234",
@@ -3290,7 +3635,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32uint
+    undefined
+    __storage_texture_2d_rgba32uint_write
   })"},
         // Sampled type is signed int, texel is float
         {"%int 2D 0 0 0 2 Rgba32i", "OpImageWrite %im %vi12 %vf1234",
@@ -3305,7 +3651,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32sint
+    undefined
+    __storage_texture_2d_rgba32sint_write
   })"}}));
 
 INSTANTIATE_TEST_SUITE_P(
@@ -3327,7 +3674,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32uint
+    undefined
+    __storage_texture_2d_rgba32uint_write
   })"},
         // Sampled type is signed int, texel is unsigned int
         {"%int 2D 0 0 0 2 Rgba32i", "OpImageWrite %im %vi12 %vu1234",
@@ -3342,7 +3690,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_rgba32sint
+    undefined
+    __storage_texture_2d_rgba32sint_write
   })"}}));
 
 INSTANTIATE_TEST_SUITE_P(
@@ -3361,7 +3710,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32uint
+    undefined
+    __storage_texture_2d_r32uint_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3386,7 +3736,8 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_write_only__storage_texture_2d_r32sint
+    undefined
+    __storage_texture_2d_r32sint_write
   })",
          R"(Call[not set]{
       Identifier[not set]{textureStore}
@@ -3415,12 +3766,14 @@ INSTANTIATE_TEST_SUITE_P(ImageRead_OptionalParams,
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_read
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3448,12 +3801,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3477,12 +3832,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3506,12 +3863,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           TypeConstructor[not set]{
@@ -3541,12 +3900,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           TypeConstructor[not set]{
@@ -3584,12 +3945,14 @@ INSTANTIATE_TEST_SUITE_P(ImageFetch_Depth,
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           TypeConstructor[not set]{
@@ -3600,6 +3963,52 @@ INSTANTIATE_TEST_SUITE_P(ImageFetch_Depth,
                 Identifier[not set]{x_20}
                 Identifier[not set]{vi12}
                 ScalarConstructor[not set]{0}
+              )
+            }
+            ScalarConstructor[not set]{0.000000}
+            ScalarConstructor[not set]{0.000000}
+            ScalarConstructor[not set]{0.000000}
+          }
+        }
+      }
+    })"}}));
+
+INSTANTIATE_TEST_SUITE_P(
+    ImageFetch_DepthMultisampled,
+    // In SPIR-V OpImageFetch always yields a vector of 4
+    // elements, even for depth images.  But in WGSL,
+    // textureLoad on a depth image yields f32.
+    // crbug.com/tint/439
+    SpvParserHandleTest_ImageAccessTest,
+    ::testing::ValuesIn(std::vector<ImageAccessCase>{
+        // ImageFetch on multisampled depth image.
+        {"%float 2D 1 0 1 1 Unknown",
+         "%99 = OpImageFetch %v4float %im %vi12 Sample %i1",
+         R"(Variable{
+    Decorations{
+      GroupDecoration{2}
+      BindingDecoration{1}
+    }
+    x_20
+    none
+    undefined
+    __depth_multisampled_texture_2d
+  })",
+         R"(VariableDeclStatement{
+      VariableConst{
+        x_99
+        none
+        undefined
+        __vec_4__f32
+        {
+          TypeConstructor[not set]{
+            __vec_4__f32
+            Call[not set]{
+              Identifier[not set]{textureLoad}
+              (
+                Identifier[not set]{x_20}
+                Identifier[not set]{vi12}
+                Identifier[not set]{i1}
               )
             }
             ScalarConstructor[not set]{0.000000}
@@ -3630,12 +4039,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3663,12 +4074,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3713,12 +4126,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3741,12 +4156,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__u32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__u32
         {
           Call[not set]{
@@ -3774,12 +4191,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__i32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__i32
         {
           Call[not set]{
@@ -3811,12 +4230,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3838,12 +4259,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_rgba32uint
+    undefined
+    __storage_texture_2d_rgba32uint_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__u32
         {
           Call[not set]{
@@ -3871,12 +4294,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_rgba32sint
+    undefined
+    __storage_texture_2d_rgba32sint_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__i32
         {
           Call[not set]{
@@ -3912,6 +4337,7 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_10
     none
+    undefined
     __sampler_sampler
   }
   Variable{
@@ -3921,12 +4347,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_4__f32
         {
           Call[not set]{
@@ -3960,12 +4388,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_1d_rgba32float
+    undefined
+    __storage_texture_1d_rgba32float_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           TypeConstructor[not set]{
@@ -3992,12 +4422,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_rgba32float
+    undefined
+    __storage_texture_2d_rgba32float_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4024,12 +4456,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_3d_rgba32float
+    undefined
+    __storage_texture_3d_rgba32float_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4054,12 +4488,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4095,12 +4531,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
-    __access_control_read_only__storage_texture_2d_array_rgba32float
+    undefined
+    __storage_texture_2d_array_rgba32float_read
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4142,12 +4580,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __sampled_texture_1d__f32
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           TypeConstructor[not set]{
@@ -4174,12 +4614,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4206,12 +4648,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __sampled_texture_3d__f32
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4238,12 +4682,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __sampled_texture_cube__f32
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4273,12 +4719,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4305,12 +4753,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySizeLod_NonArrayed_SignedResult_SignedLevel,
     }
     x_20
     none
+    undefined
     __depth_texture_cube
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_2__i32
         {
           TypeConstructor[not set]{
@@ -4350,12 +4800,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4394,12 +4846,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_cube_array__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4435,12 +4889,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d_array
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4477,12 +4933,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_cube_array
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __vec_3__i32
         {
           TypeConstructor[not set]{
@@ -4525,12 +4983,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_1d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           TypeConstructor[not set]{
@@ -4568,12 +5028,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_1d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __u32
         {
           TypeConstructor[not set]{
@@ -4608,12 +5070,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4635,12 +5099,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d_array__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4662,12 +5128,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_3d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4689,12 +5157,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_cube__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4716,12 +5186,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_cube_array__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4743,12 +5215,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4770,12 +5244,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_2d_array
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4797,12 +5273,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_cube
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4824,12 +5302,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __depth_texture_cube_array
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4856,12 +5336,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __sampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __u32
         {
           TypeConstructor[not set]{
@@ -4890,12 +5372,14 @@ INSTANTIATE_TEST_SUITE_P(ImageQuerySamples_SignedResult,
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   })",
                               R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __i32
         {
           Call[not set]{
@@ -4926,12 +5410,14 @@ INSTANTIATE_TEST_SUITE_P(
     }
     x_20
     none
+    undefined
     __multisampled_texture_2d__f32
   })",
          R"(VariableDeclStatement{
       VariableConst{
         x_99
         none
+        undefined
         __u32
         {
           TypeConstructor[not set]{
@@ -5365,7 +5851,7 @@ INSTANTIATE_TEST_SUITE_P(
          {"Identifier[not set]{vf12}\n"}},
         {"%float 2D 1 0 0 1 Unknown",
          "%result = OpImageSampleDrefExplicitLod %float %sampled_image %vf12 "
-         "%depth Lod %f1",
+         "%depth Lod %float_0",
          "",
          {"Identifier[not set]{vf12}\n"}},
     }));
@@ -5434,7 +5920,7 @@ INSTANTIATE_TEST_SUITE_P(
 )"}},
         {"%float 2D 1 1 0 1 Unknown",
          "%result = OpImageSampleDrefExplicitLod %float %sampled_image "
-         "%vf123 %depth Lod %f1",
+         "%vf123 %depth Lod %float_0",
          "",
          {
              R"(MemberAccessor[not set]{
@@ -5668,7 +6154,7 @@ INSTANTIATE_TEST_SUITE_P(
         {"%float 1D 0 0 0 1 Unknown",
          "%50 = OpCopyObject %float %float_1",
          "internal error: couldn't find image for "
-         "%50 = OpCopyObject %18 %44",
+         "%50 = OpCopyObject %18 %45",
          {}},
         {"%float 1D 0 0 0 1 Unknown",
          "OpStore %float_var %float_1",
@@ -5687,29 +6173,29 @@ INSTANTIATE_TEST_SUITE_P(
          "%result = OpImageSampleImplicitLod "
          // bad type for coordinate: not a number
          "%v4float %sampled_image %float_var",
-         "bad or unsupported coordinate type for image access: %72 = "
-         "OpImageSampleImplicitLod %42 %71 %1",
+         "bad or unsupported coordinate type for image access: %73 = "
+         "OpImageSampleImplicitLod %42 %72 %1",
          {}},
         {"%float 2D 0 0 0 1 Unknown",  // 2D
          "%result = OpImageSampleImplicitLod "
          // 1 component, but need 2
          "%v4float %sampled_image %f1",
          "image access required 2 coordinate components, but only 1 provided, "
-         "in: %72 = OpImageSampleImplicitLod %42 %71 %12",
+         "in: %73 = OpImageSampleImplicitLod %42 %72 %12",
          {}},
         {"%float 2D 0 1 0 1 Unknown",  // 2DArray
          "%result = OpImageSampleImplicitLod "
          // 2 component, but need 3
          "%v4float %sampled_image %vf12",
          "image access required 3 coordinate components, but only 2 provided, "
-         "in: %72 = OpImageSampleImplicitLod %42 %71 %13",
+         "in: %73 = OpImageSampleImplicitLod %42 %72 %13",
          {}},
         {"%float 3D 0 0 0 1 Unknown",  // 3D
          "%result = OpImageSampleImplicitLod "
          // 2 components, but need 3
          "%v4float %sampled_image %vf12",
          "image access required 3 coordinate components, but only 2 provided, "
-         "in: %72 = OpImageSampleImplicitLod %42 %71 %13",
+         "in: %73 = OpImageSampleImplicitLod %42 %72 %13",
          {}},
     }));
 
@@ -5751,12 +6237,12 @@ INSTANTIATE_TEST_SUITE_P(
         // ImageSampleDrefExplicitLod
         {"%uint 2D 0 0 0 1 Unknown",
          "%result = OpImageSampleDrefExplicitLod %uint %sampled_image %vf12 "
-         "%f1 Lod %f1",
+         "%f1 Lod %float_0",
          "sampled image must have float component type",
          {}},
         {"%int 2D 0 0 0 1 Unknown",
          "%result = OpImageSampleDrefExplicitLod %int %sampled_image %vf12 "
-         "%f1 Lod %f1",
+         "%f1 Lod %float_0",
          "sampled image must have float component type",
          {}}}));
 
@@ -5843,6 +6329,43 @@ INSTANTIATE_TEST_SUITE_P(
          "%depth Lod|Grad %float_null %float_1  %float_2",
          "WGSL does not support depth-reference sampling with explicit "
          "gradient: ",
+         {}}}));
+
+INSTANTIATE_TEST_SUITE_P(
+    ImageSampleDrefExplicitLod_CheckForLod0,
+    // Metal requires comparison sampling with explicit Level-of-detail to use
+    // Lod 0.  The SPIR-V reader requires the operand to be parsed as a constant
+    // 0 value. SPIR-V validation requires the Lod parameter to be a floating
+    // point value for non-fetch operations. So only test float values.
+    SpvParserHandleTest_ImageCoordsTest,
+    ::testing::ValuesIn(std::vector<ImageCoordsCase>{
+        // float 0.0 works
+        {"%float 2D 1 0 0 1 Unknown",
+         "%result = OpImageSampleDrefExplicitLod %float %sampled_image %vf1234 "
+         "%depth Lod %float_0",
+         "",
+         {R"(MemberAccessor[not set]{
+  Identifier[not set]{vf1234}
+  Identifier[not set]{xy}
+}
+)"}},
+        // float null works
+        {"%float 2D 1 0 0 1 Unknown",
+         "%result = OpImageSampleDrefExplicitLod %float %sampled_image %vf1234 "
+         "%depth Lod %float_0",
+         "",
+         {R"(MemberAccessor[not set]{
+  Identifier[not set]{vf1234}
+  Identifier[not set]{xy}
+}
+)"}},
+        // float 1.0 fails.
+        {"%float 2D 1 0 0 1 Unknown",
+         "%result = OpImageSampleDrefExplicitLod %float %sampled_image %vf1234 "
+         "%depth Lod %float_1",
+         "WGSL comparison sampling without derivatives requires "
+         "level-of-detail "
+         "0.0",
          {}}}));
 
 TEST_F(SpvParserHandleTest, CombinedImageSampler_IsError) {
@@ -5948,6 +6471,7 @@ TEST_F(SpvParserHandleTest,
   Variable{
     var_1
     none
+    undefined
     __vec_4__f32
   }
 }
@@ -5955,6 +6479,7 @@ VariableDeclStatement{
   VariableConst{
     x_22
     none
+    undefined
     __vec_4__f32
     {
       Call[not set]{
@@ -5976,6 +6501,7 @@ VariableDeclStatement{
   VariableConst{
     x_26
     none
+    undefined
     __vec_4__f32
     {
       Call[not set]{

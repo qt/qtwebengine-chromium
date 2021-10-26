@@ -45,6 +45,7 @@ import * as HAR from '../../models/har/har.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as NetworkForward from '../../panels/network/forward/forward.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
@@ -52,14 +53,21 @@ import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
 import type {NetworkLogViewInterface, NetworkNode} from './NetworkDataGridNode.js';
-import {Events, NetworkGroupNode, NetworkRequestNode} from './NetworkDataGridNode.js';  // eslint-disable-line no-unused-vars
+import {Events, NetworkGroupNode, NetworkRequestNode} from './NetworkDataGridNode.js';
 import {NetworkFrameGrouper} from './NetworkFrameGrouper.js';
 import {NetworkLogViewColumns} from './NetworkLogViewColumns.js';
-import type {FilterOptions} from './NetworkPanel.js'; // eslint-disable-line no-unused-vars
 import type {NetworkTimeCalculator} from './NetworkTimeCalculator.js';
-import {NetworkTimeBoundary, NetworkTransferDurationCalculator, NetworkTransferTimeCalculator} from './NetworkTimeCalculator.js';  // eslint-disable-line no-unused-vars
+import {NetworkTimeBoundary, NetworkTransferDurationCalculator, NetworkTransferTimeCalculator} from './NetworkTimeCalculator.js';
 
 const UIStrings = {
+  /**
+  *@description Text in Network Log View of the Network panel
+  */
+  invertFilter: 'Invert',
+  /**
+  *@description Tooltip for the 'invert' checkbox in the Network panel.
+  */
+  invertsFilter: 'Inverts the search filter',
   /**
   *@description Text in Network Log View of the Network panel
   */
@@ -90,6 +98,14 @@ const UIStrings = {
   *@description Tooltip for a filter in the Network panel
   */
   onlyShowBlockedRequests: 'Only show blocked requests',
+  /**
+  *@description Label for a filter in the Network panel
+  */
+  thirdParty: '3rd-party requests',
+  /**
+  *@description Tooltip for a filter in the Network panel
+  */
+  onlyShowThirdPartyRequests: 'Shows only requests with origin different from page origin',
   /**
   *@description Text that appears when user drag and drop something (for example, a file) in Network Log View of the Network panel
   */
@@ -330,13 +346,13 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkLogView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class NetworkLogView extends UI.Widget.VBox implements
-    SDK.SDKModel.SDKModelObserver<SDK.NetworkManager.NetworkManager>, NetworkLogViewInterface {
+    SDK.TargetManager.SDKModelObserver<SDK.NetworkManager.NetworkManager>, NetworkLogViewInterface {
+  _networkInvertFilterSetting: Common.Settings.Setting<boolean>;
   _networkHideDataURLSetting: Common.Settings.Setting<boolean>;
   _networkShowIssuesOnlySetting: Common.Settings.Setting<boolean>;
   _networkOnlyBlockedRequestsSetting: Common.Settings.Setting<boolean>;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _networkResourceTypeFiltersSetting: Common.Settings.Setting<any>;
+  _networkOnlyThirdPartySetting: Common.Settings.Setting<boolean>;
+  _networkResourceTypeFiltersSetting: Common.Settings.Setting<{[key: string]: boolean}>;
   _rawRowHeight: number;
   _progressBarContainer: Element;
   _networkLogLargeRowsSetting: Common.Settings.Setting<boolean>;
@@ -348,9 +364,6 @@ export class NetworkLogView extends UI.Widget.VBox implements
   _staleRequests: Set<SDK.NetworkRequest.NetworkRequest>;
   _mainRequestLoadTime: number;
   _mainRequestDOMContentLoadedTime: number;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  _highlightedSubstringChanges: any;
   _filters: Filter[];
   _timeFilter: Filter|null;
   _hoveredNode: NetworkNode|null;
@@ -364,10 +377,12 @@ export class NetworkLogView extends UI.Widget.VBox implements
   _groupLookups: Map<string, GroupLookupInterface>;
   _activeGroupLookup: GroupLookupInterface|null;
   _textFilterUI: UI.FilterBar.TextFilterUI;
+  _invertFilterUI: UI.FilterBar.CheckboxFilterUI;
   _dataURLFilterUI: UI.FilterBar.CheckboxFilterUI;
   _resourceCategoryFilterUI: UI.FilterBar.NamedBitSetFilterUI;
   _onlyIssuesFilterUI: UI.FilterBar.CheckboxFilterUI;
   _onlyBlockedRequestsUI: UI.FilterBar.CheckboxFilterUI;
+  _onlyThirdPartyFilterUI: UI.FilterBar.CheckboxFilterUI;
   _filterParser: TextUtils.TextUtils.FilterParser;
   _suggestionBuilder: UI.FilterSuggestionBuilder.FilterSuggestionBuilder;
   _dataGrid: DataGrid.SortableDataGrid.SortableDataGrid<NetworkNode>;
@@ -380,16 +395,19 @@ export class NetworkLogView extends UI.Widget.VBox implements
       networkLogLargeRowsSetting: Common.Settings.Setting<boolean>) {
     super();
     this.setMinimumSize(50, 64);
-    this.registerRequiredCSS('panels/network/networkLogView.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/network/networkLogView.css');
 
     this.element.id = 'network-container';
     this.element.classList.add('no-node-selected');
 
+    this._networkInvertFilterSetting = Common.Settings.Settings.instance().createSetting('networkInvertFilter', false);
     this._networkHideDataURLSetting = Common.Settings.Settings.instance().createSetting('networkHideDataURL', false);
     this._networkShowIssuesOnlySetting =
         Common.Settings.Settings.instance().createSetting('networkShowIssuesOnly', false);
     this._networkOnlyBlockedRequestsSetting =
         Common.Settings.Settings.instance().createSetting('networkOnlyBlockedRequests', false);
+    this._networkOnlyThirdPartySetting =
+        Common.Settings.Settings.instance().createSetting('networkOnlyThirdPartySetting', false);
     this._networkResourceTypeFiltersSetting =
         Common.Settings.Settings.instance().createSetting('networkResourceTypeFilters', {});
 
@@ -411,15 +429,12 @@ export class NetworkLogView extends UI.Widget.VBox implements
     this._calculator = this._timeCalculator;
 
     this._columns =
-        // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-        // @ts-expect-error
         new NetworkLogViewColumns(this, this._timeCalculator, this._durationCalculator, networkLogLargeRowsSetting);
     this._columns.show(this.element);
 
     this._staleRequests = new Set();
     this._mainRequestLoadTime = -1;
     this._mainRequestDOMContentLoadedTime = -1;
-    this._highlightedSubstringChanges = [];
 
     this._filters = [];
     this._timeFilter = null;
@@ -441,13 +456,20 @@ export class NetworkLogView extends UI.Widget.VBox implements
     this._activeGroupLookup = null;
 
     this._textFilterUI = new UI.FilterBar.TextFilterUI();
-    this._textFilterUI.addEventListener(UI.FilterBar.FilterUI.Events.FilterChanged, this._filterChanged, this);
+    this._textFilterUI.addEventListener(UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged, this);
     filterBar.addFilter(this._textFilterUI);
+
+    this._invertFilterUI = new UI.FilterBar.CheckboxFilterUI(
+        'invert-filter', i18nString(UIStrings.invertFilter), true, this._networkInvertFilterSetting);
+    this._invertFilterUI.addEventListener(
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
+    UI.Tooltip.Tooltip.install(this._invertFilterUI.element(), i18nString(UIStrings.invertsFilter));
+    filterBar.addFilter(this._invertFilterUI);
 
     this._dataURLFilterUI = new UI.FilterBar.CheckboxFilterUI(
         'hide-data-url', i18nString(UIStrings.hideDataUrls), true, this._networkHideDataURLSetting);
     this._dataURLFilterUI.addEventListener(
-        UI.FilterBar.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
     UI.Tooltip.Tooltip.install(this._dataURLFilterUI.element(), i18nString(UIStrings.hidesDataAndBlobUrls));
     filterBar.addFilter(this._dataURLFilterUI);
 
@@ -461,13 +483,13 @@ export class NetworkLogView extends UI.Widget.VBox implements
     UI.ARIAUtils.setAccessibleName(
         this._resourceCategoryFilterUI.element(), i18nString(UIStrings.resourceTypesToInclude));
     this._resourceCategoryFilterUI.addEventListener(
-        UI.FilterBar.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
     filterBar.addFilter(this._resourceCategoryFilterUI);
 
     this._onlyIssuesFilterUI = new UI.FilterBar.CheckboxFilterUI(
         'only-show-issues', i18nString(UIStrings.hasBlockedCookies), true, this._networkShowIssuesOnlySetting);
     this._onlyIssuesFilterUI.addEventListener(
-        UI.FilterBar.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
     UI.Tooltip.Tooltip.install(this._onlyIssuesFilterUI.element(), i18nString(UIStrings.onlyShowRequestsWithBlocked));
     filterBar.addFilter(this._onlyIssuesFilterUI);
 
@@ -475,13 +497,21 @@ export class NetworkLogView extends UI.Widget.VBox implements
         'only-show-blocked-requests', i18nString(UIStrings.blockedRequests), true,
         this._networkOnlyBlockedRequestsSetting);
     this._onlyBlockedRequestsUI.addEventListener(
-        UI.FilterBar.FilterUI.Events.FilterChanged, this._filterChanged.bind(this), this);
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
     UI.Tooltip.Tooltip.install(this._onlyBlockedRequestsUI.element(), i18nString(UIStrings.onlyShowBlockedRequests));
     filterBar.addFilter(this._onlyBlockedRequestsUI);
 
-    this._filterParser = new TextUtils.TextUtils.FilterParser(_searchKeys);
+    this._onlyThirdPartyFilterUI = new UI.FilterBar.CheckboxFilterUI(
+        'only-show-third-party', i18nString(UIStrings.thirdParty), true, this._networkOnlyThirdPartySetting);
+    this._onlyThirdPartyFilterUI.addEventListener(
+        UI.FilterBar.FilterUIEvents.FilterChanged, this._filterChanged.bind(this), this);
+    UI.Tooltip.Tooltip.install(
+        this._onlyThirdPartyFilterUI.element(), i18nString(UIStrings.onlyShowThirdPartyRequests));
+    filterBar.addFilter(this._onlyThirdPartyFilterUI);
+
+    this._filterParser = new TextUtils.TextUtils.FilterParser(searchKeys);
     this._suggestionBuilder =
-        new UI.FilterSuggestionBuilder.FilterSuggestionBuilder(_searchKeys, NetworkLogView._sortSearchValues);
+        new UI.FilterSuggestionBuilder.FilterSuggestionBuilder(searchKeys, NetworkLogView._sortSearchValues);
     this._resetSuggestionBuilder();
 
     this._dataGrid = this._columns.dataGrid();
@@ -501,7 +531,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
         .moduleSetting('networkColorCodeResourceTypes')
         .addChangeListener(this._invalidateAllItems.bind(this, false), this);
 
-    SDK.SDKModel.TargetManager.instance().observeModels(SDK.NetworkManager.NetworkManager, this);
+    SDK.TargetManager.TargetManager.instance().observeModels(SDK.NetworkManager.NetworkManager, this);
     Logs.NetworkLog.NetworkLog.instance().addEventListener(
         Logs.NetworkLog.Events.RequestAdded, this._onRequestUpdated, this);
     Logs.NetworkLog.NetworkLog.instance().addEventListener(
@@ -527,7 +557,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
   }
 
   static _sortSearchValues(key: string, values: string[]): void {
-    if (key === FilterType.Priority) {
+    if (key === NetworkForward.UIFilter.FilterType.Priority) {
       values.sort((a, b) => {
         const aPriority = (PerfUI.NetworkPriorities.uiLabelToNetworkPriority(a) as Protocol.Network.ResourcePriority);
         const bPriority = (PerfUI.NetworkPriorities.uiLabelToNetworkPriority(b) as Protocol.Network.ResourcePriority);
@@ -590,6 +620,12 @@ export class NetworkLogView extends UI.Widget.VBox implements
     return request.responseHeaderValue(value) !== undefined;
   }
 
+  static _requestResponseHeaderSetCookieFilter(value: string, request: SDK.NetworkRequest.NetworkRequest): boolean {
+    // Multiple Set-Cookie headers in the request are concatenated via space. Only
+    // filter via `includes` instead of strict equality.
+    return Boolean(request.responseHeaderValue('Set-Cookie')?.includes(value));
+  }
+
   static _requestMethodFilter(value: string, request: SDK.NetworkRequest.NetworkRequest): boolean {
     return request.requestMethod === value;
   }
@@ -602,18 +638,18 @@ export class NetworkLogView extends UI.Widget.VBox implements
     return request.mimeType === value;
   }
 
-  static _requestMixedContentFilter(value: MixedContentFilterValues, request: SDK.NetworkRequest.NetworkRequest):
-      boolean {
-    if (value === MixedContentFilterValues.Displayed) {
+  static _requestMixedContentFilter(
+      value: NetworkForward.UIFilter.MixedContentFilterValues, request: SDK.NetworkRequest.NetworkRequest): boolean {
+    if (value === NetworkForward.UIFilter.MixedContentFilterValues.Displayed) {
       return request.mixedContentType === Protocol.Security.MixedContentType.OptionallyBlockable;
     }
-    if (value === MixedContentFilterValues.Blocked) {
+    if (value === NetworkForward.UIFilter.MixedContentFilterValues.Blocked) {
       return request.mixedContentType === Protocol.Security.MixedContentType.Blockable && request.wasBlocked();
     }
-    if (value === MixedContentFilterValues.BlockOverridden) {
+    if (value === NetworkForward.UIFilter.MixedContentFilterValues.BlockOverridden) {
       return request.mixedContentType === Protocol.Security.MixedContentType.Blockable && !request.wasBlocked();
     }
-    if (value === MixedContentFilterValues.All) {
+    if (value === NetworkForward.UIFilter.MixedContentFilterValues.All) {
       return request.mixedContentType !== Protocol.Security.MixedContentType.None;
     }
 
@@ -660,9 +696,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
     return (String(request.statusCode)) === value;
   }
 
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-  // eslint-disable-next-line @typescript-eslint/naming-convention
-  static HTTPRequestsFilter(request: SDK.NetworkRequest.NetworkRequest): boolean {
+  static getHTTPRequestsFilter(request: SDK.NetworkRequest.NetworkRequest): boolean {
     return request.parsedURL.isValid && (request.scheme in HTTPSchemas);
   }
 
@@ -725,9 +759,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
     if (!success) {
       const error = reader.error();
       if (error) {
-        // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        this._harLoadFailed((error as any).message);
+        this._harLoadFailed(error.message);
       }
       return;
     }
@@ -817,19 +849,23 @@ export class NetworkLogView extends UI.Widget.VBox implements
 
   _resetSuggestionBuilder(): void {
     this._suggestionBuilder.clear();
-    this._suggestionBuilder.addItem(FilterType.Is, IsFilterType.Running);
-    this._suggestionBuilder.addItem(FilterType.Is, IsFilterType.FromCache);
-    this._suggestionBuilder.addItem(FilterType.Is, IsFilterType.ServiceWorkerIntercepted);
-    this._suggestionBuilder.addItem(FilterType.Is, IsFilterType.ServiceWorkerInitiated);
-    this._suggestionBuilder.addItem(FilterType.LargerThan, '100');
-    this._suggestionBuilder.addItem(FilterType.LargerThan, '10k');
-    this._suggestionBuilder.addItem(FilterType.LargerThan, '1M');
+    this._suggestionBuilder.addItem(
+        NetworkForward.UIFilter.FilterType.Is, NetworkForward.UIFilter.IsFilterType.Running);
+    this._suggestionBuilder.addItem(
+        NetworkForward.UIFilter.FilterType.Is, NetworkForward.UIFilter.IsFilterType.FromCache);
+    this._suggestionBuilder.addItem(
+        NetworkForward.UIFilter.FilterType.Is, NetworkForward.UIFilter.IsFilterType.ServiceWorkerIntercepted);
+    this._suggestionBuilder.addItem(
+        NetworkForward.UIFilter.FilterType.Is, NetworkForward.UIFilter.IsFilterType.ServiceWorkerInitiated);
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.LargerThan, '100');
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.LargerThan, '10k');
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.LargerThan, '1M');
     this._textFilterUI.setSuggestionProvider(this._suggestionBuilder.completions.bind(this._suggestionBuilder));
   }
 
   _filterChanged(_event: Common.EventTarget.EventTargetEvent): void {
     this.removeAllNodeHighlights();
-    this._parseFilterQuery(this._textFilterUI.value());
+    this._parseFilterQuery(this._textFilterUI.value(), this._invertFilterUI.checked());
     this._filterRequests();
     this._textFilterSetting.set(this._textFilterUI.value());
   }
@@ -915,6 +951,12 @@ export class NetworkLogView extends UI.Widget.VBox implements
     this._dataGrid.element.addEventListener('mousemove', this._dataGridMouseMove.bind(this), true);
     this._dataGrid.element.addEventListener('mouseleave', () => this._setHoveredNode(null), true);
     this._dataGrid.element.addEventListener('keydown', event => {
+      if (event.key === 'ArrowRight' && this._dataGrid.selectedNode) {
+        const initiatorLink = this._dataGrid.selectedNode.element().querySelector('span.devtools-link');
+        if (initiatorLink) {
+          (initiatorLink as HTMLElement).focus();
+        }
+      }
       if (isEnterOrSpaceKey(event)) {
         this.dispatchEventToListeners(Events.RequestActivated, {showPanel: true, takeFocus: true});
         event.consume(true);
@@ -1036,18 +1078,18 @@ export class NetworkLogView extends UI.Widget.VBox implements
 
     if (baseTime !== -1 && maxTime !== -1) {
       this._summaryToolbar.appendSeparator();
-      appendChunk(i18nString(UIStrings.finishS, {PH1: Number.secondsToString(maxTime - baseTime)}));
+      appendChunk(i18nString(UIStrings.finishS, {PH1: i18n.TimeUtilities.secondsToString(maxTime - baseTime)}));
       if (this._mainRequestDOMContentLoadedTime !== -1 && this._mainRequestDOMContentLoadedTime > baseTime) {
         this._summaryToolbar.appendSeparator();
         const domContentLoadedText = i18nString(
             UIStrings.domcontentloadedS,
-            {PH1: Number.secondsToString(this._mainRequestDOMContentLoadedTime - baseTime)});
+            {PH1: i18n.TimeUtilities.secondsToString(this._mainRequestDOMContentLoadedTime - baseTime)});
         appendChunk(domContentLoadedText).style.color = NetworkLogView.getDCLEventColor();
       }
       if (this._mainRequestLoadTime !== -1) {
         this._summaryToolbar.appendSeparator();
-        const loadText =
-            i18nString(UIStrings.loadS, {PH1: Number.secondsToString(this._mainRequestLoadTime - baseTime)});
+        const loadText = i18nString(
+            UIStrings.loadS, {PH1: i18n.TimeUtilities.secondsToString(this._mainRequestLoadTime - baseTime)});
         appendChunk(loadText).style.color = NetworkLogView.getLoadEventColor();
       }
     }
@@ -1120,23 +1162,25 @@ export class NetworkLogView extends UI.Widget.VBox implements
     this._invalidateAllItems();
   }
 
-  _loadEventFired(event: Common.EventTarget.EventTargetEvent): void {
+  _loadEventFired(
+      event: Common.EventTarget
+          .EventTargetEvent<{resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel, loadTime: number}>): void {
     if (!this._recording) {
       return;
     }
 
-    const time = (event.data.loadTime as number);
+    const time = event.data.loadTime;
     if (time) {
       this._mainRequestLoadTime = time;
       this._columns.addEventDividers([time], 'network-load-divider');
     }
   }
 
-  _domContentLoadedEventFired(event: Common.EventTarget.EventTargetEvent): void {
+  _domContentLoadedEventFired(event: Common.EventTarget.EventTargetEvent<number>): void {
     if (!this._recording) {
       return;
     }
-    const data = (event.data as number);
+    const {data} = event;
     if (data) {
       this._mainRequestDOMContentLoadedTime = data;
       this._columns.addEventDividers([data], 'network-dcl-divider');
@@ -1361,50 +1405,56 @@ export class NetworkLogView extends UI.Widget.VBox implements
 
   _refreshRequest(request: SDK.NetworkRequest.NetworkRequest): void {
     NetworkLogView._subdomains(request.domain)
-        .forEach(this._suggestionBuilder.addItem.bind(this._suggestionBuilder, FilterType.Domain));
-    this._suggestionBuilder.addItem(FilterType.Method, request.requestMethod);
-    this._suggestionBuilder.addItem(FilterType.MimeType, request.mimeType);
-    this._suggestionBuilder.addItem(FilterType.Scheme, String(request.scheme));
-    this._suggestionBuilder.addItem(FilterType.StatusCode, String(request.statusCode));
-    this._suggestionBuilder.addItem(FilterType.ResourceType, request.resourceType().name());
-    this._suggestionBuilder.addItem(FilterType.Url, request.securityOrigin());
+        .forEach(
+            this._suggestionBuilder.addItem.bind(this._suggestionBuilder, NetworkForward.UIFilter.FilterType.Domain));
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.Method, request.requestMethod);
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.MimeType, request.mimeType);
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.Scheme, String(request.scheme));
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.StatusCode, String(request.statusCode));
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.ResourceType, request.resourceType().name());
+    this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.Url, request.securityOrigin());
 
     const priority = request.priority();
     if (priority) {
       this._suggestionBuilder.addItem(
-          FilterType.Priority, PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority));
+          NetworkForward.UIFilter.FilterType.Priority, PerfUI.NetworkPriorities.uiLabelForNetworkPriority(priority));
     }
 
     if (request.mixedContentType !== Protocol.Security.MixedContentType.None) {
-      this._suggestionBuilder.addItem(FilterType.MixedContent, MixedContentFilterValues.All);
+      this._suggestionBuilder.addItem(
+          NetworkForward.UIFilter.FilterType.MixedContent, NetworkForward.UIFilter.MixedContentFilterValues.All);
     }
 
     if (request.mixedContentType === Protocol.Security.MixedContentType.OptionallyBlockable) {
-      this._suggestionBuilder.addItem(FilterType.MixedContent, MixedContentFilterValues.Displayed);
+      this._suggestionBuilder.addItem(
+          NetworkForward.UIFilter.FilterType.MixedContent, NetworkForward.UIFilter.MixedContentFilterValues.Displayed);
     }
 
     if (request.mixedContentType === Protocol.Security.MixedContentType.Blockable) {
-      const suggestion =
-          request.wasBlocked() ? MixedContentFilterValues.Blocked : MixedContentFilterValues.BlockOverridden;
-      this._suggestionBuilder.addItem(FilterType.MixedContent, suggestion);
+      const suggestion = request.wasBlocked() ? NetworkForward.UIFilter.MixedContentFilterValues.Blocked :
+                                                NetworkForward.UIFilter.MixedContentFilterValues.BlockOverridden;
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.MixedContent, suggestion);
     }
 
     const responseHeaders = request.responseHeaders;
-    for (let i = 0, l = responseHeaders.length; i < l; ++i) {
-      this._suggestionBuilder.addItem(FilterType.HasResponseHeader, responseHeaders[i].name);
+    for (const responseHeader of responseHeaders) {
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.HasResponseHeader, responseHeader.name);
+      if (responseHeader.name === 'Set-Cookie') {
+        this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.ResponseHeaderValueSetCookie);
+      }
     }
 
     for (const cookie of request.responseCookies) {
-      this._suggestionBuilder.addItem(FilterType.SetCookieDomain, cookie.domain());
-      this._suggestionBuilder.addItem(FilterType.SetCookieName, cookie.name());
-      this._suggestionBuilder.addItem(FilterType.SetCookieValue, cookie.value());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.SetCookieDomain, cookie.domain());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.SetCookieName, cookie.name());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.SetCookieValue, cookie.value());
     }
 
     for (const cookie of request.allCookiesIncludingBlockedOnes()) {
-      this._suggestionBuilder.addItem(FilterType.CookieDomain, cookie.domain());
-      this._suggestionBuilder.addItem(FilterType.CookieName, cookie.name());
-      this._suggestionBuilder.addItem(FilterType.CookiePath, cookie.path());
-      this._suggestionBuilder.addItem(FilterType.CookieValue, cookie.value());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.CookieDomain, cookie.domain());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.CookieName, cookie.name());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.CookiePath, cookie.path());
+      this._suggestionBuilder.addItem(NetworkForward.UIFilter.FilterType.CookieValue, cookie.value());
     }
 
     this._staleRequests.add(request);
@@ -1548,7 +1598,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
   _harRequests(): SDK.NetworkRequest.NetworkRequest[] {
     return Logs.NetworkLog.NetworkLog.instance()
         .requests()
-        .filter(NetworkLogView.HTTPRequestsFilter)
+        .filter(NetworkLogView.getHTTPRequestsFilter)
         .filter(request => {
           return request.finished ||
               (request.resourceType() === Common.ResourceType.resourceTypes.WebSocket && request.responseReceivedTime);
@@ -1591,7 +1641,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
   }
 
   async exportAll(): Promise<void> {
-    const mainTarget = SDK.SDKModel.TargetManager.instance().mainTarget();
+    const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
     if (!mainTarget) {
       return;
     }
@@ -1625,10 +1675,6 @@ export class NetworkLogView extends UI.Widget.VBox implements
 
   _removeAllHighlights(): void {
     this.removeAllNodeHighlights();
-    for (let i = 0; i < this._highlightedSubstringChanges.length; ++i) {
-      UI.UIUtils.revertDomChanges(this._highlightedSubstringChanges[i]);
-    }
-    this._highlightedSubstringChanges = [];
   }
 
   _applyFilter(node: NetworkRequestNode): boolean {
@@ -1650,6 +1696,9 @@ export class NetworkLogView extends UI.Widget.VBox implements
     if (this._onlyBlockedRequestsUI.checked() && !request.wasBlocked() && !request.corsErrorStatus()) {
       return false;
     }
+    if (this._onlyThirdPartyFilterUI.checked() && request.isSameSite()) {
+      return false;
+    }
     for (let i = 0; i < this._filters.length; ++i) {
       if (!this._filters[i](request)) {
         return false;
@@ -1658,7 +1707,11 @@ export class NetworkLogView extends UI.Widget.VBox implements
     return true;
   }
 
-  _parseFilterQuery(query: string): void {
+  _parseFilterQuery(query: string, invert: boolean): void {
+    // A query string can have multiple filters, some of them regular
+    // expressions, some not. Each one of those filters can be negated with a
+    // "-" prefix, including the regular expressions. The top-level `invert`
+    // checkbox therefore inverts each one of those individual filters.
     const descriptors = this._filterParser.parse(query);
     this._filters = descriptors.map(descriptor => {
       const key = descriptor.key;
@@ -1667,7 +1720,7 @@ export class NetworkLogView extends UI.Widget.VBox implements
       let filter;
       if (key) {
         const defaultText = Platform.StringUtilities.escapeForRegExp(key + ':' + text);
-        filter = this._createSpecialFilter((key as FilterType), text) ||
+        filter = this._createSpecialFilter((key as NetworkForward.UIFilter.FilterType), text) ||
             NetworkLogView._requestPathFilter.bind(null, new RegExp(defaultText, 'i'));
       } else if (descriptor.regex) {
         filter = NetworkLogView._requestPathFilter.bind(null, (regex as RegExp));
@@ -1675,80 +1728,87 @@ export class NetworkLogView extends UI.Widget.VBox implements
         filter = NetworkLogView._requestPathFilter.bind(
             null, new RegExp(Platform.StringUtilities.escapeForRegExp(text), 'i'));
       }
-      return descriptor.negative ? NetworkLogView._negativeFilter.bind(null, filter) : filter;
+      if ((descriptor.negative && !invert) || (!descriptor.negative && invert)) {
+        return NetworkLogView._negativeFilter.bind(null, filter);
+      }
+      return filter;
     });
   }
 
-  _createSpecialFilter(type: FilterType, value: string): Filter|null {
+  _createSpecialFilter(type: NetworkForward.UIFilter.FilterType, value: string): Filter|null {
     switch (type) {
-      case FilterType.Domain:
+      case NetworkForward.UIFilter.FilterType.Domain:
         return NetworkLogView._createRequestDomainFilter(value);
 
-      case FilterType.HasResponseHeader:
+      case NetworkForward.UIFilter.FilterType.HasResponseHeader:
         return NetworkLogView._requestResponseHeaderFilter.bind(null, value);
 
-      case FilterType.Is:
-        if (value.toLowerCase() === IsFilterType.Running) {
+      case NetworkForward.UIFilter.FilterType.ResponseHeaderValueSetCookie:
+        return NetworkLogView._requestResponseHeaderSetCookieFilter.bind(null, value);
+
+      case NetworkForward.UIFilter.FilterType.Is:
+        if (value.toLowerCase() === NetworkForward.UIFilter.IsFilterType.Running) {
           return NetworkLogView._runningRequestFilter;
         }
-        if (value.toLowerCase() === IsFilterType.FromCache) {
+        if (value.toLowerCase() === NetworkForward.UIFilter.IsFilterType.FromCache) {
           return NetworkLogView._fromCacheRequestFilter;
         }
-        if (value.toLowerCase() === IsFilterType.ServiceWorkerIntercepted) {
+        if (value.toLowerCase() === NetworkForward.UIFilter.IsFilterType.ServiceWorkerIntercepted) {
           return NetworkLogView._interceptedByServiceWorkerFilter;
         }
-        if (value.toLowerCase() === IsFilterType.ServiceWorkerInitiated) {
+        if (value.toLowerCase() === NetworkForward.UIFilter.IsFilterType.ServiceWorkerInitiated) {
           return NetworkLogView._initiatedByServiceWorkerFilter;
         }
         break;
 
-      case FilterType.LargerThan:
+      case NetworkForward.UIFilter.FilterType.LargerThan:
         return this._createSizeFilter(value.toLowerCase());
 
-      case FilterType.Method:
+      case NetworkForward.UIFilter.FilterType.Method:
         return NetworkLogView._requestMethodFilter.bind(null, value);
 
-      case FilterType.MimeType:
+      case NetworkForward.UIFilter.FilterType.MimeType:
         return NetworkLogView._requestMimeTypeFilter.bind(null, value);
 
-      case FilterType.MixedContent:
-        return NetworkLogView._requestMixedContentFilter.bind(null, (value as MixedContentFilterValues));
+      case NetworkForward.UIFilter.FilterType.MixedContent:
+        return NetworkLogView._requestMixedContentFilter.bind(
+            null, (value as NetworkForward.UIFilter.MixedContentFilterValues));
 
-      case FilterType.Scheme:
+      case NetworkForward.UIFilter.FilterType.Scheme:
         return NetworkLogView._requestSchemeFilter.bind(null, value);
 
-      case FilterType.SetCookieDomain:
+      case NetworkForward.UIFilter.FilterType.SetCookieDomain:
         return NetworkLogView._requestSetCookieDomainFilter.bind(null, value);
 
-      case FilterType.SetCookieName:
+      case NetworkForward.UIFilter.FilterType.SetCookieName:
         return NetworkLogView._requestSetCookieNameFilter.bind(null, value);
 
-      case FilterType.SetCookieValue:
+      case NetworkForward.UIFilter.FilterType.SetCookieValue:
         return NetworkLogView._requestSetCookieValueFilter.bind(null, value);
 
-      case FilterType.CookieDomain:
+      case NetworkForward.UIFilter.FilterType.CookieDomain:
         return NetworkLogView._requestCookieDomainFilter.bind(null, value);
 
-      case FilterType.CookieName:
+      case NetworkForward.UIFilter.FilterType.CookieName:
         return NetworkLogView._requestCookieNameFilter.bind(null, value);
 
-      case FilterType.CookiePath:
+      case NetworkForward.UIFilter.FilterType.CookiePath:
         return NetworkLogView._requestCookiePathFilter.bind(null, value);
 
-      case FilterType.CookieValue:
+      case NetworkForward.UIFilter.FilterType.CookieValue:
         return NetworkLogView._requestCookieValueFilter.bind(null, value);
 
-      case FilterType.Priority:
+      case NetworkForward.UIFilter.FilterType.Priority:
         return NetworkLogView._requestPriorityFilter.bind(
             null, PerfUI.NetworkPriorities.uiLabelToNetworkPriority(value));
 
-      case FilterType.StatusCode:
+      case NetworkForward.UIFilter.FilterType.StatusCode:
         return NetworkLogView._statusCodeFilter.bind(null, value);
 
-      case FilterType.ResourceType:
+      case NetworkForward.UIFilter.FilterType.ResourceType:
         return NetworkLogView._resourceTypeFilter.bind(null, value);
 
-      case FilterType.Url:
+      case NetworkForward.UIFilter.FilterType.Url:
         return NetworkLogView._requestUrlFilter.bind(null, value);
     }
     return null;
@@ -1799,7 +1859,15 @@ export class NetworkLogView extends UI.Widget.VBox implements
     }
   }
 
-  selectRequest(request: SDK.NetworkRequest.NetworkRequest, options?: FilterOptions): void {
+  revealAndHighlightRequestWithId(requestId: NetworkForward.NetworkRequestId.NetworkRequestId): void {
+    const request = Logs.NetworkLog.NetworkLog.instance().requestByManagerAndId(requestId.manager, requestId.requestId);
+    if (request) {
+      this.revealAndHighlightRequest(request);
+    }
+  }
+
+  selectRequest(request: SDK.NetworkRequest.NetworkRequest, options?: NetworkForward.UIRequestLocation.FilterOptions):
+      void {
     const defaultOptions = {clearFilter: true};
     const {clearFilter} = options || defaultOptions;
     if (clearFilter) {
@@ -2047,18 +2115,59 @@ export class NetworkLogView extends UI.Widget.VBox implements
 
   async _generatePowerShellCommand(request: SDK.NetworkRequest.NetworkRequest): Promise<string> {
     const command = [];
-    const ignoredHeaders = new Set<string>(
-        ['host', 'connection', 'proxy-connection', 'content-length', 'expect', 'range', 'content-type']);
+    const ignoredHeaders = new Set<string>([
+      'host',
+      'connection',
+      'proxy-connection',
+      'content-length',
+      'expect',
+      'range',
+      'content-type',
+      'user-agent',
+      'cookie',
+    ]);
 
     function escapeString(str: string): string {
       return '"' +
           str.replace(/[`\$"]/g, '`$&').replace(/[^\x20-\x7E]/g, char => '$([char]' + char.charCodeAt(0) + ')') + '"';
     }
 
+    // Generate a WebRequestSession object with the UserAgent and Cookie header values.
+    // This is used to pass the user-agent and cookie headers to Invoke-WebRequest because the Invoke-WebRequest
+    // command does not allow setting these headers through the -Headers parameter. See docs at:
+    // https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/invoke-webrequest?view=powershell-7.1#parameters
+    function generatePowerShellSession(request: SDK.NetworkRequest.NetworkRequest): string|null {
+      const requestHeaders = request.requestHeaders();
+      const props = [];
+
+      const userAgentHeader = requestHeaders.find(({name}) => name.toLowerCase() === 'user-agent');
+      if (userAgentHeader) {
+        props.push(`$session.UserAgent = ${escapeString(userAgentHeader.value)}`);
+      }
+
+      for (const cookie of request.includedRequestCookies()) {
+        const name = escapeString(cookie.name());
+        const value = escapeString(cookie.value());
+        const domain = escapeString(cookie.domain());
+        props.push(`$session.Cookies.Add((New-Object System.Net.Cookie(${name}, ${value}, "/", ${domain})))`);
+      }
+
+      if (props.length) {
+        return '$session = New-Object Microsoft.PowerShell.Commands.WebRequestSession\n' + props.join('\n') + '\n';
+      }
+
+      return null;
+    }
+
     command.push('-Uri ' + escapeString(request.url()));
 
     if (request.requestMethod !== 'GET') {
       command.push('-Method ' + escapeString(request.requestMethod));
+    }
+
+    const session = generatePowerShellSession(request);
+    if (session) {
+      command.push('-WebSession $session');
     }
 
     const requestHeaders = request.requestHeaders();
@@ -2089,7 +2198,11 @@ export class NetworkLogView extends UI.Widget.VBox implements
       }
     }
 
-    return 'Invoke-WebRequest ' + command.join(command.length >= 3 ? ' `\n' : ' ');
+    // The -UseBasicParsing parameter prevents Invoke-WebRequest from using the IE engine for parsing. Basic
+    // parsing is the default behavior in PowerShell 6.0.0+ and the parameter is included here for backwards
+    // compatibility only.
+    const prelude = session || '';
+    return prelude + 'Invoke-WebRequest -UseBasicParsing ' + command.join(command.length >= 3 ? ' `\n' : ' ');
   }
 
   async _generateAllPowerShellCommand(requests: SDK.NetworkRequest.NetworkRequest[]): Promise<string> {
@@ -2137,51 +2250,7 @@ export const HTTPSchemas = {
   'wss': true,
 };
 
-// TODO(crbug.com/1167717): Make this a const enum again
-// eslint-disable-next-line rulesdir/const_enum
-export enum FilterType {
-  Domain = 'domain',
-  HasResponseHeader = 'has-response-header',
-  Is = 'is',
-  LargerThan = 'larger-than',
-  Method = 'method',
-  MimeType = 'mime-type',
-  MixedContent = 'mixed-content',
-  Priority = 'priority',
-  Scheme = 'scheme',
-  SetCookieDomain = 'set-cookie-domain',
-  SetCookieName = 'set-cookie-name',
-  SetCookieValue = 'set-cookie-value',
-  ResourceType = 'resource-type',
-  CookieDomain = 'cookie-domain',
-  CookieName = 'cookie-name',
-  CookiePath = 'cookie-path',
-  CookieValue = 'cookie-value',
-  StatusCode = 'status-code',
-  Url = 'url',
-}
-
-// TODO(crbug.com/1167717): Make this a const enum again
-// eslint-disable-next-line rulesdir/const_enum
-export enum MixedContentFilterValues {
-  All = 'all',
-  Displayed = 'displayed',
-  Blocked = 'blocked',
-  BlockOverridden = 'block-overridden',
-}
-
-// TODO(crbug.com/1167717): Make this a const enum again
-// eslint-disable-next-line rulesdir/const_enum
-export enum IsFilterType {
-  Running = 'running',
-  FromCache = 'from-cache',
-  ServiceWorkerIntercepted = 'service-worker-intercepted',
-  ServiceWorkerInitiated = 'service-worker-initiated',
-}
-
-// TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export const _searchKeys: string[] = Object.values(FilterType);
+const searchKeys: string[] = Object.values(NetworkForward.UIFilter.FilterType);
 
 export interface GroupLookupInterface {
   groupNodeForRequest(request: SDK.NetworkRequest.NetworkRequest): NetworkGroupNode|null;

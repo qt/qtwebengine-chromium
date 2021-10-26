@@ -27,7 +27,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SVG_GRAPHICS_SVG_IMAGE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SVG_GRAPHICS_SVG_IMAGE_H_
 
-#include "base/macros.h"
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/platform/geometry/layout_size.h"
@@ -73,7 +72,7 @@ class CORE_EXPORT SVGImage final : public Image {
   static bool IsInSVGImage(const Node*);
 
   bool IsSVGImage() const override { return true; }
-  IntSize Size() const override;
+  IntSize SizeWithConfig(SizeConfig) const override;
 
   void CheckLoaded() const;
   bool CurrentFrameHasSingleSecurityOrigin() const override;
@@ -142,29 +141,33 @@ class CORE_EXPORT SVGImage final : public Image {
     STACK_ALLOCATED();
 
    public:
-    DrawInfo(const FloatSize& container_size, float zoom, const KURL& url);
+    DrawInfo(const FloatSize& container_size,
+             float zoom,
+             const KURL& url,
+             bool is_dark_mode_enabled);
 
     FloatSize CalculateResidualScale() const;
     float Zoom() const { return zoom_; }
     const FloatSize& ContainerSize() const { return container_size_; }
-    const LayoutSize& RoundedContainerSize() const {
+    const IntSize& RoundedContainerSize() const {
       return rounded_container_size_;
     }
     const KURL& Url() const { return url_; }
+    bool IsDarkModeEnabled() const { return is_dark_mode_enabled_; }
 
    private:
     const FloatSize container_size_;
-    const LayoutSize rounded_container_size_;
+    const IntSize rounded_container_size_;
     const float zoom_;
     const KURL& url_;
+    const bool is_dark_mode_enabled_;
   };
 
   void Draw(cc::PaintCanvas*,
             const cc::PaintFlags&,
             const FloatRect& dst_rect,
             const FloatRect& src_rect,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override;
   void DrawForContainer(const DrawInfo&,
@@ -174,12 +177,9 @@ class CORE_EXPORT SVGImage final : public Image {
                         const FloatRect& src_rect);
   void DrawPatternForContainer(const DrawInfo&,
                                GraphicsContext&,
-                               const FloatRect& src_rect,
-                               const FloatSize& tile_scale,
-                               const FloatPoint& phase,
-                               SkBlendMode composite_op,
+                               const cc::PaintFlags&,
                                const FloatRect& dst_rect,
-                               const FloatSize& repeat_spacing);
+                               const ImageTilingInfo&);
   void PopulatePaintRecordForCurrentFrameForContainer(const DrawInfo&,
                                                       PaintImageBuilder&);
 
@@ -258,11 +258,13 @@ class ImageObserverDisabler {
     image_->SetImageObserverDisabled(true);
   }
 
+  ImageObserverDisabler(const ImageObserverDisabler&) = delete;
+  ImageObserverDisabler& operator=(const ImageObserverDisabler&) = delete;
+
   ~ImageObserverDisabler() { image_->SetImageObserverDisabled(false); }
 
  private:
   Image* image_;
-  DISALLOW_COPY_AND_ASSIGN(ImageObserverDisabler);
 };
 
 }  // namespace blink

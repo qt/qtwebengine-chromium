@@ -9,7 +9,10 @@
 #include "build/chromeos_buildflags.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
+#include "ui/platform_window/extensions/desk_extension.h"
 #include "ui/platform_window/extensions/wayland_extension.h"
+#include "ui/platform_window/extensions/workspace_extension.h"
+#include "ui/platform_window/extensions/workspace_extension_delegate.h"
 #include "ui/platform_window/wm/wm_move_loop_handler.h"
 #include "ui/platform_window/wm/wm_move_resize_handler.h"
 
@@ -21,7 +24,9 @@ class ShellToplevelWrapper;
 class WaylandToplevelWindow : public WaylandWindow,
                               public WmMoveResizeHandler,
                               public WmMoveLoopHandler,
-                              public WaylandExtension {
+                              public WaylandExtension,
+                              public WorkspaceExtension,
+                              public DeskExtension {
  public:
   WaylandToplevelWindow(PlatformWindowDelegate* delegate,
                         WaylandConnection* connection);
@@ -58,13 +63,18 @@ class WaylandToplevelWindow : public WaylandWindow,
   void SetUseNativeFrame(bool use_native_frame) override;
   bool ShouldUseNativeFrame() const override;
   bool ShouldUpdateWindowShape() const override;
+  bool CanSetDecorationInsets() const override;
+  void SetDecorationInsets(gfx::Insets insets_px) override;
+  void SetOpaqueRegion(std::vector<gfx::Rect> region_px) override;
+  void SetInputRegion(gfx::Rect region_px) override;
+  void SetAspectRatio(const gfx::SizeF& aspect_ratio) override;
 
   // WaylandWindow overrides:
   absl::optional<std::vector<gfx::Rect>> GetWindowShape() const override;
 
  private:
   // WaylandWindow overrides:
-  void UpdateBufferScale(bool update_bounds) override;
+  void UpdateWindowScale(bool update_bounds) override;
   void HandleToplevelConfigure(int32_t width,
                                int32_t height,
                                bool is_maximized,
@@ -74,10 +84,19 @@ class WaylandToplevelWindow : public WaylandWindow,
   void UpdateVisualSize(const gfx::Size& size_px) override;
   bool OnInitialize(PlatformWindowInitProperties properties) override;
   bool IsActive() const override;
+  bool IsSurfaceConfigured() override;
 
   // zaura_surface listeners
+  static void OcclusionChanged(void* data,
+                               zaura_surface* surface,
+                               wl_fixed_t occlusion_fraction,
+                               uint32_t occlusion_reason);
   static void LockFrame(void* data, zaura_surface* surface);
   static void UnlockFrame(void* data, zaura_surface* surface);
+  static void OcclusionStateChanged(void* data,
+                                    zaura_surface* surface,
+                                    uint32_t mode);
+  static void DeskChanged(void* data, zaura_surface* surface, int state);
 
   // Calls UpdateWindowShape, set_input_region and set_opaque_region
   // for this toplevel window.
@@ -95,6 +114,22 @@ class WaylandToplevelWindow : public WaylandWindow,
   void ShowSnapPreview(WaylandWindowSnapDirection snap) override;
   void CommitSnap(WaylandWindowSnapDirection snap) override;
   void SetCanGoBack(bool value) override;
+  void SetPip() override;
+  bool SupportsPointerLock() override;
+  void LockPointer(bool enabled) override;
+
+  // DeskExtension:
+  int GetNumberOfDesks() const override;
+  int GetActiveDeskIndex() const override;
+  std::u16string GetDeskName(int index) const override;
+  void SendToDeskAtIndex(int index) override;
+
+  // WorkspaceExtension:
+  std::string GetWorkspace() const override;
+  void SetVisibleOnAllWorkspaces(bool always_visible) override;
+  bool IsVisibleOnAllWorkspaces() const override;
+  void SetWorkspaceExtensionDelegate(
+      WorkspaceExtensionDelegate* delegate) override;
 
   void TriggerStateChanges();
   void SetWindowState(PlatformWindowState state);
@@ -119,6 +154,13 @@ class WaylandToplevelWindow : public WaylandWindow,
   // Called when frame is locked to normal state or unlocked from
   // previously locked state.
   void OnFrameLockingChanged(bool lock);
+
+  // Called when the occlusion state is updated.
+  void OnOcclusionStateChanged(PlatformWindowOcclusionState occlusion_state);
+
+  // Called when a window is moved to another desk or assigned to
+  // all desks state.
+  void OnDeskChanged(int state);
 
   // Wrappers around shell surface.
   std::unique_ptr<ShellToplevelWrapper> shell_toplevel_;
@@ -191,6 +233,12 @@ class WaylandToplevelWindow : public WaylandWindow,
   // (PlatformWindowDelegate) more than once, for the same window show state
   // change.
   uint32_t requested_window_show_state_count_ = 0;
+
+  // The desk index for the window.
+  // If |workspace_| is -1, window is visible on all workspaces.
+  absl::optional<int> workspace_ = absl::nullopt;
+
+  WorkspaceExtensionDelegate* workspace_extension_delegate_ = nullptr;
 };
 
 }  // namespace ui

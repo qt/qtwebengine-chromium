@@ -2590,6 +2590,8 @@ TEST(FormParserTest, ContradictingPasswordPredictionAndAutocomplete) {
 }
 
 TEST(FormParserTest, SingleUsernamePrediction) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(features::kUsernameFirstFlowFilling);
   CheckTestData({
       {
           .description_for_logging = "1 field",
@@ -2825,6 +2827,29 @@ TEST(FormParserTest, AutocompleteAttributesError) {
                     .form_control_type = "password"},
                },
        }});
+}
+
+// Tests that if the field is parsed as username based on server predictions,
+// than it cannot be picked as password based on local heuristics.
+TEST(FormParserTest, UsernameWithTypePasswordAndServerPredictions) {
+  CheckTestData({
+      {
+          .description_for_logging =
+              "Username with server predictions and type 'password'",
+          .fields =
+              {
+                  {.role = ElementRole::USERNAME,
+                   .value = u"testusername",
+                   .name = u"field1",
+                   .form_control_type = "password",
+                   .prediction = {.type = autofill::USERNAME}},
+                  {.role = ElementRole::CURRENT_PASSWORD,
+                   .value = u"testpass",
+                   .name = u"field2",
+                   .form_control_type = "password"},
+              },
+      },
+  });
 }
 
 }  // namespace

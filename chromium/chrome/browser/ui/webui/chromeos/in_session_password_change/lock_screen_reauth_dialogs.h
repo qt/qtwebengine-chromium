@@ -28,9 +28,13 @@ class LockScreenStartReauthDialog : public BaseLockDialog,
   void Show();
   void Dismiss();
   bool IsRunning();
+  int GetDialogWidth();
 
   void CloseLockScreenNetworkDialog();
   void ShowLockScreenNetworkDialog();
+  static gfx::Size CalculateLockScreenReauthDialogSize(
+      const gfx::Size& display_size,
+      bool is_new_layout_enabled);
 
  private:
   void OnProfileCreated(Profile* profile, Profile::CreateStatus status);
@@ -49,5 +53,11 @@ class LockScreenStartReauthDialog : public BaseLockDialog,
 };
 
 }  // namespace chromeos
+
+// TODO(https://crbug.com/1164001): remove after the //chrome/browser/chromeos
+// source migration is finished.
+namespace ash {
+using ::chromeos::LockScreenStartReauthDialog;
+}
 
 #endif  // CHROME_BROWSER_UI_WEBUI_CHROMEOS_IN_SESSION_PASSWORD_CHANGE_LOCK_SCREEN_REAUTH_DIALOGS_H_

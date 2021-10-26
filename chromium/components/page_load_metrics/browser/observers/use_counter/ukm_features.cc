@@ -193,7 +193,6 @@ UseCounterPageLoadMetricsObserver::GetAllowedUkmFeatures() {
           WebFeature::kWebPImage,
           WebFeature::kAVIFImage,
           WebFeature::kGetDisplayMedia,
-          WebFeature::kGetCurrentBrowsingContextMedia,
           WebFeature::kLaxAllowingUnsafeCookies,
           WebFeature::kOpenWebDatabaseThirdPartyContext,
           WebFeature::kOversrollBehaviorOnViewportBreaks,
@@ -202,6 +201,7 @@ UseCounterPageLoadMetricsObserver::GetAllowedUkmFeatures() {
           WebFeature::kPrefixedStorageInfoThirdPartyContext,
           WebFeature::
               kCrossBrowsingContextGroupMainFrameNulledNonEmptyNameAccessed,
+          WebFeature::kControlledWorkerWillBeUncontrolled,
           WebFeature::kUsbDeviceOpen,
           WebFeature::kWebBluetoothRemoteServerConnect,
           WebFeature::kSerialRequestPort,
@@ -209,6 +209,12 @@ UseCounterPageLoadMetricsObserver::GetAllowedUkmFeatures() {
           WebFeature::kHidRequestDevice,
           WebFeature::kHidDeviceOpen,
           WebFeature::kCrossOriginWasmModuleSharing,
+          WebFeature::kControlledNonBlobURLWorkerWillBeUncontrolled,
+          WebFeature::kSameSiteCookieInclusionChangedByCrossSiteRedirect,
+          WebFeature::
+              kBlobStoreAccessAcrossAgentClustersInResolveAsURLLoaderFactory,
+          WebFeature::kBlobStoreAccessAcrossAgentClustersInResolveForNavigation,
+          WebFeature::kReadOrWriteWebDatabaseThirdPartyContext,
       }));
   return *opt_in_features;
 }

@@ -7,6 +7,7 @@
 
 #include "src/gpu/d3d/GrD3DCommandList.h"
 
+#include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrScissorState.h"
 #include "src/gpu/d3d/GrD3DAttachment.h"
 #include "src/gpu/d3d/GrD3DBuffer.h"
@@ -67,11 +68,7 @@ void GrD3DCommandList::releaseResources() {
         return;
     }
     SkASSERT(!fIsActive);
-    for (int i = 0; i < fTrackedResources.count(); ++i) {
-        fTrackedResources[i]->notifyFinishedWithWorkOnGpu();
-    }
     for (int i = 0; i < fTrackedRecycledResources.count(); ++i) {
-        fTrackedRecycledResources[i]->notifyFinishedWithWorkOnGpu();
         auto resource = fTrackedRecycledResources[i].release();
         resource->recycle();
     }

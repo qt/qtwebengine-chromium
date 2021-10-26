@@ -222,7 +222,8 @@ NGFragmentItemsBuilder::AddPreviousItems(
 
   DCHECK(items_.IsEmpty());
   const NGFragmentItems::Span source_items = items.Items();
-  const wtf_size_t estimated_size = source_items.size();
+  const wtf_size_t estimated_size =
+      base::checked_cast<wtf_size_t>(source_items.size());
   items_.ReserveCapacity(estimated_size);
 
   // Convert offsets to logical. The logic is opposite to |ConvertToPhysical|.
@@ -384,8 +385,8 @@ void NGFragmentItemsBuilder::ToFragmentItems(const PhysicalSize& outer_size,
                                              void* data) {
   DCHECK(text_content_);
   ConvertToPhysical(outer_size);
-  if (node_.IsSVGText()) {
-    NGSVGTextLayoutAlgorithm(node_, GetWritingMode())
+  if (node_.IsSvgText()) {
+    NGSvgTextLayoutAlgorithm(node_, GetWritingMode())
         .Layout(TextContent(false), items_);
   }
   new (data) NGFragmentItems(this);

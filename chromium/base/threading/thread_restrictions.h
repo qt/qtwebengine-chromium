@@ -136,10 +136,13 @@ class WorkerThread;
 namespace scheduler {
 class WorkerThread;
 }
-}
+}  // namespace blink
 namespace cc {
 class CompletionEvent;
 class TileTaskManagerImpl;
+}
+namespace chromecast {
+class CrashUtil;
 }
 namespace chromeos {
 class BlockingMethodCaller;
@@ -173,6 +176,7 @@ class RenderWidgetHostViewMac;
 class SandboxHostLinux;
 class ScopedAllowWaitForDebugURL;
 class ServiceWorkerContextClient;
+class ShellPathProvider;
 class SoftwareOutputDeviceMus;
 class SynchronousCompositor;
 class SynchronousCompositorHost;
@@ -185,6 +189,9 @@ namespace cronet {
 class CronetPrefsManager;
 class CronetURLRequestContext;
 }  // namespace cronet
+namespace crosapi {
+class LacrosThreadPriorityDelegate;
+}  // namespace crosapi
 namespace dbus {
 class Bus;
 }
@@ -201,8 +208,8 @@ class ExecScriptScopedAllowBaseSyncPrimitives;
 namespace history_report {
 class HistoryReportJniBridge;
 }
-namespace gpu {
-class GpuChannelHost;
+namespace ios_web_view {
+class WebViewBrowserState;
 }
 namespace leveldb_env {
 class DBTracker;
@@ -245,6 +252,7 @@ class LocalPrinterHandlerDefault;
 #if defined(OS_MAC)
 class PrintBackendServiceImpl;
 #endif
+class PrintBackendServiceManager;
 class PrintJobWorker;
 class PrinterQuery;
 }
@@ -280,6 +288,10 @@ class AddressTrackerLinux;
 namespace proxy_resolver {
 class ScopedAllowThreadJoinForProxyResolverV8Tracing;
 }
+
+namespace remote_cocoa {
+class DroppedScreenShotCopierMac;
+}  // namespace remote_cocoa
 
 namespace remoting {
 class AutoThread;
@@ -405,14 +417,18 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class ash::MojoUtils;  // http://crbug.com/1055467
   friend class ash::BrowserDataMigrator;
   friend class blink::DiskDataAllocator;
+  friend class chromecast::CrashUtil;
   friend class content::BrowserProcessIOThread;
   friend class content::NetworkServiceInstancePrivate;
   friend class content::PepperPrintSettingsManagerImpl;
   friend class content::RenderProcessHostImpl;
   friend class content::RenderWidgetHostViewMac;  // http://crbug.com/121917
+  friend class content::ShellPathProvider;
   friend class content::WebContentsViewMac;
   friend class cronet::CronetPrefsManager;
   friend class cronet::CronetURLRequestContext;
+  friend class crosapi::LacrosThreadPriorityDelegate;
+  friend class ios_web_view::WebViewBrowserState;
   friend class memory_instrumentation::OSMetrics;
   friend class metrics::AndroidMetricsServiceClient;
   friend class module_installer::ScopedAllowModulePakLoad;
@@ -421,7 +437,10 @@ class BASE_EXPORT ScopedAllowBlocking {
 #if defined(OS_MAC)
   friend class printing::PrintBackendServiceImpl;
 #endif
+  friend class printing::PrintBackendServiceManager;
   friend class printing::PrintJobWorker;
+  friend class remote_cocoa::
+      DroppedScreenShotCopierMac;  // https://crbug.com/1148078
   friend class remoting::ScopedBypassIOThreadRestrictions;  // crbug.com/1144161
   friend class web::WebSubThread;
   friend class weblayer::BrowserContextImpl;
@@ -575,7 +594,6 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
   friend class dbus::Bus;                           // http://crbug.com/125222
   friend class disk_cache::BackendImpl;             // http://crbug.com/74623
   friend class disk_cache::InFlightIO;              // http://crbug.com/74623
-  friend class gpu::GpuChannelHost;                 // http://crbug.com/125264
   friend class remoting::protocol::
       ScopedAllowThreadJoinForWebRtcTransport;      // http://crbug.com/660081
   friend class midi::TaskService;                   // https://crbug.com/796830
@@ -600,11 +618,6 @@ class BASE_EXPORT ScopedAllowBaseSyncPrimitivesOutsideBlockingScope {
 #if DCHECK_IS_ON()
   std::unique_ptr<BooleanWithStack> was_disallowed_;
 #endif
-
-  // Since this object is used to indicate that sync primitives will be used to
-  // wait for an event ignore the current operation for hang watching purposes
-  // since the wait time duration is unknown.
-  base::IgnoreHangsInScope hang_watch_scope_disabled_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedAllowBaseSyncPrimitivesOutsideBlockingScope);
 };

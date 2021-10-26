@@ -25,10 +25,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "vulkan/vulkan.h"
+#include "base_node.h"
+#include "pipeline_state.h"
 #include <spirv/unified1/spirv.hpp>
 #include "spirv-tools/optimizer.hpp"
-#include "core_validation_types.h"
 
 // A forward iterator over spirv instructions. Provides easy access to len, opcode, and content words
 // without the caller needing to care too much about the physical SPIRV module layout.
@@ -100,18 +100,30 @@ struct decoration_set {
         binding_bit = 1 << 8,
         nonwritable_bit = 1 << 9,
         builtin_bit = 1 << 10,
+        nonreadable_bit = 1 << 11,
     };
+    static constexpr uint32_t kInvalidValue = std::numeric_limits<uint32_t>::max();
+
     uint32_t flags = 0;
-    uint32_t location = static_cast<uint32_t>(-1);
+    uint32_t location = kInvalidValue;
     uint32_t component = 0;
     uint32_t input_attachment_index = 0;
     uint32_t descriptor_set = 0;
     uint32_t binding = 0;
-    uint32_t builtin = static_cast<uint32_t>(-1);
+    uint32_t builtin = kInvalidValue;
+    uint32_t spec_const_id = kInvalidValue;
 
     void merge(decoration_set const &other);
 
     void add(uint32_t decoration, uint32_t value);
+};
+
+struct atomic_instruction {
+    uint32_t storage_class;
+    uint32_t bit_width;
+    uint32_t type;  // ex. OpTypeInt
+
+    atomic_instruction() : storage_class(0), bit_width(0), type(0) {}
 };
 
 struct function_set {
@@ -168,6 +180,8 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
     // trees, constant expressions, etc requires jumping all over the instruction stream.
     layer_data::unordered_map<unsigned, unsigned> def_index;
     layer_data::unordered_map<unsigned, decoration_set> decorations;
+    // <Specialization constant ID -> target ID> mapping
+    layer_data::unordered_map<uint32_t, uint32_t> spec_const_map;
     // Find all decoration instructions to prevent relooping module later - many checks need this info
     std::vector<spirv_inst_iter> decoration_inst;
     std::vector<spirv_inst_iter> member_decoration_inst;
@@ -189,6 +203,7 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
     bool has_valid_spirv;
     bool has_specialization_constants{false};
     uint32_t gpu_validation_shader_id;
+    std::unordered_map<uint32_t, atomic_instruction> atomic_inst;
 
     SHADER_MODULE_STATE(VkShaderModuleCreateInfo const *pCreateInfo, VkShaderModule shaderModule, spv_target_env env,
                         uint32_t unique_shader_id)
@@ -284,11 +299,20 @@ struct SHADER_MODULE_STATE : public BASE_NODE {
     std::vector<uint32_t> CollectBuiltinBlockMembers(spirv_inst_iter entrypoint, uint32_t storageClass) const;
     std::vector<std::pair<uint32_t, interface_var>> CollectInterfaceByInputAttachmentIndex(
         layer_data::unordered_set<uint32_t> const &accessible_ids) const;
+
+    // Get the image type from a variable id or load operation that reference an image
+    spirv_inst_iter GetImageFormatInst(uint32_t id) const;
+
+    uint32_t GetTypeBitsSize(const spirv_inst_iter &iter) const;
+    uint32_t GetTypeBytesSize(const spirv_inst_iter &iter) const;
+    uint32_t CalcComputeSharedMemory(VkShaderStageFlagBits stage,
+                                     const spirv_inst_iter &insn) const;
 };
 
 // TODO - Most things below are agnostic of even the shader module and more of pure SPIR-V utils
 //        Stuff like this could be part of a future auto-generated file from the spirv grammar json
 bool AtomicOperation(uint32_t opcode);
 bool GroupOperation(uint32_t opcode);
+char const *StorageClassName(unsigned sc);
 
 #endif  // VULKAN_SHADER_MODULE_H

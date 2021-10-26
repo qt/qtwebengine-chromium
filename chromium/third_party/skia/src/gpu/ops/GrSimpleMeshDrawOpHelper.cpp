@@ -5,13 +5,14 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
+
 #include "src/gpu/GrAppliedClip.h"
 #include "src/gpu/GrProcessorSet.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/GrUserStencilSettings.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/geometry/GrRect.h"
-#include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
 GrSimpleMeshDrawOpHelper::GrSimpleMeshDrawOpHelper(GrProcessorSet* processorSet,
                                                    GrAAType aaType,
@@ -88,7 +89,7 @@ GrProcessorSet::Analysis GrSimpleMeshDrawOpHelper::finalizeProcessors(
     if (fProcessors) {
         GrProcessorAnalysisCoverage coverage = geometryCoverage;
         if (GrProcessorAnalysisCoverage::kNone == coverage) {
-            coverage = clip->hasCoverageFragmentProcessor()
+            coverage = (clip && clip->hasCoverageFragmentProcessor())
                                ? GrProcessorAnalysisCoverage::kSingleChannel
                                : GrProcessorAnalysisCoverage::kNone;
         }
@@ -111,7 +112,7 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::CreatePipeline(
                                                 SkArenaAlloc* arena,
                                                 GrSwizzle writeViewSwizzle,
                                                 GrAppliedClip&& appliedClip,
-                                                const GrXferProcessor::DstProxyView& dstProxyView,
+                                                const GrDstProxyView& dstProxyView,
                                                 GrProcessorSet&& processorSet,
                                                 GrPipeline::InputFlags pipelineFlags) {
     GrPipeline::InitArgs pipelineArgs;
@@ -154,7 +155,7 @@ const GrPipeline* GrSimpleMeshDrawOpHelper::createPipeline(
         SkArenaAlloc* arena,
         GrSwizzle writeViewSwizzle,
         GrAppliedClip&& appliedClip,
-        const GrXferProcessor::DstProxyView& dstProxyView) {
+        const GrDstProxyView& dstProxyView) {
     return GrSimpleMeshDrawOpHelper::CreatePipeline(caps,
                                                     arena,
                                                     writeViewSwizzle,
@@ -169,7 +170,7 @@ GrProgramInfo* GrSimpleMeshDrawOpHelper::CreateProgramInfo(
             SkArenaAlloc* arena,
             const GrSurfaceProxyView& writeView,
             GrAppliedClip&& appliedClip,
-            const GrXferProcessor::DstProxyView& dstProxyView,
+            const GrDstProxyView& dstProxyView,
             GrGeometryProcessor* geometryProcessor,
             GrProcessorSet&& processorSet,
             GrPrimitiveType primitiveType,
@@ -213,7 +214,7 @@ GrProgramInfo* GrSimpleMeshDrawOpHelper::createProgramInfo(
                                             SkArenaAlloc* arena,
                                             const GrSurfaceProxyView& writeView,
                                             GrAppliedClip&& appliedClip,
-                                            const GrXferProcessor::DstProxyView& dstProxyView,
+                                            const GrDstProxyView& dstProxyView,
                                             GrGeometryProcessor* gp,
                                             GrPrimitiveType primType,
                                             GrXferBarrierFlags renderPassXferBarriers,

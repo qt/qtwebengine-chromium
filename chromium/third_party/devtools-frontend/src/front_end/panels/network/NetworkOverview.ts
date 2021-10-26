@@ -4,7 +4,7 @@
 
 /* eslint-disable rulesdir/no_underscored_properties */
 
-import type * as Common from '../../core/common/common.js'; // eslint-disable-line no-unused-vars
+import type * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
@@ -37,9 +37,9 @@ export class NetworkOverview extends PerfUI.TimelineOverviewPane.TimelineOvervie
     this._updateScheduled = false;
     this._highlightedRequest = null;
 
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.Load, this._loadEventFired, this);
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.DOMContentLoaded,
         this._domContentLoadedEventFired, this);
 
@@ -66,16 +66,18 @@ export class NetworkOverview extends PerfUI.TimelineOverviewPane.TimelineOvervie
     this.scheduleUpdate();
   }
 
-  _loadEventFired(event: Common.EventTarget.EventTargetEvent): void {
-    const time = (event.data.loadTime as number);
+  _loadEventFired(
+      event: Common.EventTarget
+          .EventTargetEvent<{resourceTreeModel: SDK.ResourceTreeModel.ResourceTreeModel, loadTime: number}>): void {
+    const time = event.data.loadTime;
     if (time) {
       this._loadEvents.push(time * 1000);
     }
     this.scheduleUpdate();
   }
 
-  _domContentLoadedEventFired(event: Common.EventTarget.EventTargetEvent): void {
-    const data = (event.data as number);
+  _domContentLoadedEventFired(event: Common.EventTarget.EventTargetEvent<number>): void {
+    const {data} = event;
     if (data) {
       this._domContentLoadedEvents.push(data * 1000);
     }
@@ -171,7 +173,7 @@ export class NetworkOverview extends PerfUI.TimelineOverviewPane.TimelineOvervie
       }
       const n = lines.length;
       context.beginPath();
-      context.strokeStyle = ThemeSupport.ThemeSupport.instance().getComputedValue('--neutral-layer-l4');
+      context.strokeStyle = ThemeSupport.ThemeSupport.instance().getComputedValue('--color-background-opacity-80');
       context.lineWidth = BORDER_WIDTH;
       context.fillStyle = ThemeSupport.ThemeSupport.instance().getComputedValue(RequestTimeRangeNameToColor[type]);
       for (let i = 0; i < n;) {

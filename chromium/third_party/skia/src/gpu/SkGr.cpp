@@ -19,6 +19,7 @@
 #include "include/private/SkTemplates.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkBlendModePriv.h"
+#include "src/core/SkBlenderBase.h"
 #include "src/core/SkColorFilterBase.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkImagePriv.h"
@@ -27,6 +28,7 @@
 #include "src/core/SkMipmap.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkResourceCache.h"
+#include "src/core/SkRuntimeEffectPriv.h"
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrColorInfo.h"
@@ -41,8 +43,8 @@
 #include "src/gpu/effects/GrBicubicEffect.h"
 #include "src/gpu/effects/GrBlendFragmentProcessor.h"
 #include "src/gpu/effects/GrPorterDuffXferProcessor.h"
-#include "src/gpu/effects/generated/GrClampFragmentProcessor.h"
-#include "src/gpu/effects/generated/GrDitherEffect.h"
+#include "src/gpu/effects/GrSkSLFP.h"
+#include "src/gpu/effects/GrTextureEffect.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkShaderBase.h"
 
@@ -322,6 +324,149 @@ static inline float dither_range_for_config(GrColorType dstColorType) {
     }
     SkUNREACHABLE;
 }
+
+#if !defined(SK_DISABLE_GPU_TABLE_DITHER)
+static SkBitmap make_dither_lut() {
+    static constexpr struct DitherTable {
+        constexpr DitherTable() : data() {
+            for (int x = 0; x < 8; ++x) {
+                for (int y = 0; y < 8; ++y) {
+                    // The computation of 'm' and 'value' is lifted from CPU backend.
+                    unsigned int m = (y & 1) << 5 | (x & 1) << 4 |
+                                     (y & 2) << 2 | (x & 2) << 1 |
+                                     (y & 4) >> 1 | (x & 4) >> 2;
+                    float value = float(m) * 1.0 / 64.0 - 63.0 / 128.0;
+                    // Bias by 0.5 to be in 0..1, mul by 255 and round to nearest int to make byte.
+                    data[y * 8 + x] = (uint8_t)((value + 0.5) * 255.f + 0.5f);
+                }
+            }
+        }
+        uint8_t data[64];
+    } gTable;
+    SkBitmap bmp;
+    bmp.setInfo(SkImageInfo::MakeA8(8, 8));
+    bmp.setPixels(const_cast<uint8_t*>(gTable.data));
+    bmp.setImmutable();
+    return bmp;
+}
+#endif
+
+static std::unique_ptr<GrFragmentProcessor> make_dither_effect(
+        GrRecordingContext* rContext,
+        std::unique_ptr<GrFragmentProcessor> inputFP,
+        float range,
+        const GrCaps* caps) {
+    if (range == 0 || inputFP == nullptr) {
+        return inputFP;
+    }
+
+    if (caps->avoidDithering()) {
+        return inputFP;
+    }
+
+#if !defined(SK_DISABLE_GPU_TABLE_DITHER)
+    // We used to use integer math on sk_FragCoord, when supported, and a fallback using floating
+    // point (on a 4x4 rather than 8x8 grid). Now we precompute a 8x8 table in a texture because
+    // it was shown to be significantly faster on several devices. Test was done with the following
+    // running in viewer with the stats layer enabled and looking at total frame time:
+    //      SkRandom r;
+    //      for (int i = 0; i < N; ++i) {
+    //          SkColor c[2] = {r.nextU(), c[1] = r.nextU()};
+    //          SkPoint pts[2] = {{r.nextRangeScalar(0, 500), r.nextRangeScalar(0, 500)},
+    //                            {r.nextRangeScalar(0, 500), r.nextRangeScalar(0, 500)}};
+    //          SkPaint p;
+    //          p.setDither(true);
+    //          p.setShader(SkGradientShader::MakeLinear(pts, c, nullptr, 2, SkTileMode::kRepeat));
+    //          canvas->drawPaint(p);
+    //      }
+    // Device            GPU             N      no dither    int math dither   table dither
+    // Linux desktop     QuadroP1000     5000   304ms        400ms (1.31x)     383ms (1.26x)
+    // TecnoSpark3Pro    PowerVRGE8320   200    299ms        820ms (2.74x)     592ms (1.98x)
+    // Pixel 4           Adreno640       500    110ms        221ms (2.01x)     214ms (1.95x)
+    // Galaxy S20 FE     Mali-G77 MP11   600    165ms        360ms (2.18x)     260ms (1.58x)
+    static const SkBitmap gLUT = make_dither_lut();
+    auto [tex, ct] = GrMakeCachedBitmapProxyView(rContext, gLUT, GrMipmapped::kNo);
+    if (!tex) {
+        return inputFP;
+    }
+    SkASSERT(ct == GrColorType::kAlpha_8);
+    GrSamplerState sampler(GrSamplerState::WrapMode::kRepeat, SkFilterMode::kNearest);
+    auto te = GrTextureEffect::Make(
+            std::move(tex), kPremul_SkAlphaType, SkMatrix::I(), sampler, *caps);
+    static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+        uniform half range;
+        uniform shader table;
+        half4 main(float2 xy, half4 color) {
+            half value = sample(table, sk_FragCoord.xy).a - 0.5; // undo the bias in the table
+            // For each color channel, add the random offset to the channel value and then clamp
+            // between 0 and alpha to keep the color premultiplied.
+            return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
+        }
+    )", SkRuntimeEffectPriv::ES3Options());
+    return GrSkSLFP::Make(effect,
+                          "Dither",
+                          std::move(inputFP),
+                          GrSkSLFP::OptFlags::kPreservesOpaqueInput,
+                          "range",
+                          range,
+                          "table",
+                          std::move(te));
+#else
+    if (caps->shaderCaps()->integerSupport()) {
+        // This ordered-dither code is lifted from the cpu backend.
+        static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            uniform half range;
+            half4 main(float2 xy, half4 color) {
+                uint x = uint(sk_FragCoord.x);
+                uint y = uint(sk_FragCoord.y) ^ x;
+                uint m = (y & 1) << 5 | (x & 1) << 4 |
+                         (y & 2) << 2 | (x & 2) << 1 |
+                         (y & 4) >> 1 | (x & 4) >> 2;
+                half value = half(m) * 1.0 / 64.0 - 63.0 / 128.0;
+
+                // For each color channel, add the random offset to the channel value and then clamp
+                // between 0 and alpha to keep the color premultiplied.
+                return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
+            }
+        )", SkRuntimeEffectPriv::ES3Options());
+        return GrSkSLFP::Make(effect, "Dither", std::move(inputFP),
+                              GrSkSLFP::OptFlags::kPreservesOpaqueInput,
+                              "range", range);
+    } else {
+        // Simulate the integer effect used above using step/mod/abs. For speed, simulates a 4x4
+        // dither pattern rather than an 8x8 one. Since it's 4x4, this is effectively computing:
+        // uint m = (y & 1) << 3 | (x & 1) << 2 |
+        //          (y & 2) << 0 | (x & 2) >> 1;
+        // where 'y' has already been XOR'ed with 'x' as in the integer-supported case.
+        static auto effect = SkMakeRuntimeEffect(SkRuntimeEffect::MakeForShader, R"(
+            uniform half range;
+            half4 main(float2 xy, half4 color) {
+                // To get the low bit of p.xy, we compute mod 2.0; for the high bit, we mod 4.0
+                half4 bits = mod(half4(sk_FragCoord.yxyx), half4(2.0, 2.0, 4.0, 4.0));
+                // Use step to convert the 0-3 value in bits.zw into a 0|1 value. bits.xy is
+                // already 0|1.
+                bits.zw = step(2.0, bits.zw);
+                // bits was constructed such that the p.x bits were already in the right place for
+                // interleaving (in bits.yw). We just need to update the other bits from p.y to
+                // (p.x ^ p.y). These are in bits.xz. Since the values are 0|1, we can simulate ^ as
+                // abs(y - x).
+                bits.xz = abs(bits.xz - bits.yw);
+
+                // Manual binary sum, divide by N^2, and offset
+                half value = dot(bits, half4(8.0 / 16.0, 4.0 / 16.0, 2.0 / 16.0, 1.0 / 16.0))
+                           - 15.0 / 32.0;
+
+                // For each color channel, add the random offset to the channel value and then clamp
+                // between 0 and alpha to keep the color premultiplied.
+                return half4(clamp(color.rgb + value * range, 0.0, color.a), color.a);
+            }
+        )");
+        return GrSkSLFP::Make(effect, "Dither", std::move(inputFP),
+                              GrSkSLFP::OptFlags::kPreservesOpaqueInput,
+                              "range", range);
+    }
+#endif
+}
 #endif
 
 static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
@@ -368,7 +513,8 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
 
             SkPMColor4f shaderInput = origColor.makeOpaque().premul();
             paintFP = GrFragmentProcessor::OverrideInput(std::move(paintFP), shaderInput);
-            paintFP = GrBlendFragmentProcessor::Make(std::move(paintFP), /*dst=*/nullptr,
+            paintFP = GrBlendFragmentProcessor::Make(std::move(paintFP),
+                                                     /*dst=*/nullptr,
                                                      *primColorMode);
 
             // We can ignore origColor here - alpha is unchanged by gamma
@@ -388,7 +534,8 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
             // the opaque paint color. The paint's alpha is applied to the post-blended color.
             SkPMColor4f opaqueColor = origColor.makeOpaque().premul();
             paintFP = GrFragmentProcessor::MakeColor(opaqueColor);
-            paintFP = GrBlendFragmentProcessor::Make(std::move(paintFP), /*dst=*/nullptr,
+            paintFP = GrBlendFragmentProcessor::Make(std::move(paintFP),
+                                                     /*dst=*/nullptr,
                                                      *primColorMode);
             grPaint->setColor4f(opaqueColor);
 
@@ -431,24 +578,35 @@ static inline bool skpaint_to_grpaint_impl(GrRecordingContext* context,
         }
     }
 
-    // When the xfermode is null on the SkPaint (meaning kSrcOver) we need the XPFactory field on
-    // the GrPaint to also be null (also kSrcOver).
-    SkASSERT(!grPaint->getXPFactory());
-    if (!skPaint.isSrcOver()) {
-        grPaint->setXPFactory(SkBlendMode_AsXPFactory(skPaint.getBlendMode()));
-    }
-
 #ifndef SK_IGNORE_GPU_DITHER
     GrColorType ct = dstColorInfo.colorType();
     if (SkPaintPriv::ShouldDither(skPaint, GrColorTypeToSkColorType(ct)) && paintFP != nullptr) {
         float ditherRange = dither_range_for_config(ct);
-        paintFP = GrDitherEffect::Make(std::move(paintFP), ditherRange);
+        paintFP = make_dither_effect(
+                context, std::move(paintFP), ditherRange, context->priv().caps());
     }
 #endif
 
+    if (auto bm = skPaint.asBlendMode()) {
+        // When the xfermode is null on the SkPaint (meaning kSrcOver) we need the XPFactory field
+        // on the GrPaint to also be null (also kSrcOver).
+        SkASSERT(!grPaint->getXPFactory());
+        if (bm.value() != SkBlendMode::kSrcOver) {
+            grPaint->setXPFactory(SkBlendMode_AsXPFactory(bm.value()));
+        }
+    } else {
+        // Apply a custom blend against the surface color, and force the XP to kSrc so that the
+        // computed result is applied directly to the canvas while still honoring the alpha.
+        paintFP = as_BB(skPaint.getBlender())->asFragmentProcessor(
+                std::move(paintFP),
+                GrFragmentProcessor::SurfaceColor(),
+                fpArgs);
+        grPaint->setXPFactory(SkBlendMode_AsXPFactory(SkBlendMode::kSrc));
+    }
+
     if (GrColorTypeClampType(dstColorInfo.colorType()) == GrClampType::kManual) {
         if (paintFP != nullptr) {
-            paintFP = GrClampFragmentProcessor::Make(std::move(paintFP), /*clampToPremul=*/false);
+            paintFP = GrFragmentProcessor::ClampOutput(std::move(paintFP));
         } else {
             auto color = grPaint->getColor4f();
             grPaint->setColor4f({SkTPin(color.fR, 0.f, 1.f),

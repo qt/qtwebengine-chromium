@@ -12,7 +12,6 @@
 
 #include "base/containers/span.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/test/task_environment.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
@@ -280,9 +279,8 @@ TEST_F(V8ValueConverterImplTest, BasicRoundTrip) {
       converter.ToV8Value(original_root.get(), context).As<v8::Object>();
   ASSERT_FALSE(v8_object.IsEmpty());
 
-  EXPECT_EQ(
-      static_cast<const base::DictionaryValue&>(*original_root).DictSize(),
-      v8_object->GetPropertyNames(context).ToLocalChecked()->Length());
+  EXPECT_EQ(original_root->DictSize(),
+            v8_object->GetPropertyNames(context).ToLocalChecked()->Length());
   EXPECT_TRUE(
       v8_object
           ->Get(context, v8::String::NewFromUtf8(
@@ -933,7 +931,7 @@ TEST_F(V8ValueConverterImplTest, DetectCycles) {
 
   // The first repetition should be trimmed and replaced by a null value.
   base::DictionaryValue expected_dictionary;
-  expected_dictionary.Set(key, std::make_unique<base::Value>());
+  expected_dictionary.SetKey(key, base::Value());
 
   // The actual result.
   std::unique_ptr<base::Value> actual_dictionary(

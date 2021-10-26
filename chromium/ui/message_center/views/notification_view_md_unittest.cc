@@ -11,6 +11,7 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/scoped_animation_duration_scale_mode.h"
 #include "ui/events/event_processor.h"
@@ -28,6 +29,7 @@
 #include "ui/message_center/views/padded_button.h"
 #include "ui/message_center/views/proportional_image_view.h"
 #include "ui/native_theme/native_theme.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/animation/ink_drop_observer.h"
 #include "ui/views/animation/test/ink_drop_impl_test_api.h"
@@ -48,6 +50,22 @@ namespace {
 static const SkColor kBitmapColor = SK_ColorGREEN;
 
 constexpr char kDefaultNotificationId[] = "notification id";
+
+SkBitmap CreateSolidColorBitmap(int width, int height, SkColor solid_color) {
+  SkBitmap bitmap;
+  bitmap.allocN32Pixels(width, height);
+  bitmap.eraseColor(solid_color);
+  return bitmap;
+}
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+// Returns the same value as AshColorProvider::Get()->
+// GetContentLayerColor(ContentLayerType::kIconColorPrimary).
+SkColor GetAshIconColorPrimary(bool is_dark_mode) {
+  return is_dark_mode ? SkColorSetRGB(0xE8, 0xEA, 0xED)
+                      : SkColorSetRGB(0x5F, 0x63, 0x68);
+}
+#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 class NotificationTestDelegate : public NotificationDelegate {
  public:
@@ -226,8 +244,8 @@ void NotificationViewMDTest::TearDown() {
   DCHECK(notification_view_ || delete_on_preferred_size_changed_ ||
          delete_on_notification_removed_);
   if (notification_view_) {
-    notification_view_->ink_drop()->SetMode(
-        views::InkDropHost::InkDropMode::OFF);
+    views::InkDrop::Get(notification_view_)
+        ->SetMode(views::InkDropHost::InkDropMode::OFF);
     static_cast<views::View*>(notification_view_)->RemoveObserver(this);
     notification_view_->GetWidget()->Close();
     notification_view_ = nullptr;
@@ -265,10 +283,7 @@ const gfx::Image NotificationViewMDTest::CreateTestImage(int width,
 
 const SkBitmap NotificationViewMDTest::CreateBitmap(int width,
                                                     int height) const {
-  SkBitmap bitmap;
-  bitmap.allocN32Pixels(width, height);
-  bitmap.eraseColor(kBitmapColor);
-  return bitmap;
+  return CreateSolidColorBitmap(width, height, kBitmapColor);
 }
 
 std::vector<ButtonInfo> NotificationViewMDTest::CreateButtons(int number) {
@@ -1276,14 +1291,14 @@ TEST_F(NotificationViewMDTest, InlineSettingsInkDropAnimation) {
   generator.ClickLeftButton();
   EXPECT_TRUE(notification_view()->settings_row_->GetVisible());
 
-  notification_view()->ink_drop()->GetInkDrop()->AddObserver(this);
+  views::InkDrop::Get(notification_view())->GetInkDrop()->AddObserver(this);
 
   // Resize the widget by 1px to simulate the expand animation.
   gfx::Rect size = notification_view()->GetWidget()->GetWindowBoundsInScreen();
   size.Inset(0, 0, 0, 1);
   notification_view()->GetWidget()->SetBounds(size);
 
-  notification_view()->ink_drop()->GetInkDrop()->RemoveObserver(this);
+  views::InkDrop::Get(notification_view())->GetInkDrop()->RemoveObserver(this);
 
   // The ink drop animation should still be running.
   EXPECT_FALSE(ink_drop_stopped());
@@ -1314,7 +1329,7 @@ TEST_F(NotificationViewMDTest, InkDropClipRect) {
   notification_view()->ToggleInlineSettings(DummyEvent());
 
   auto* ink_drop = static_cast<views::InkDropImpl*>(
-      notification_view()->ink_drop()->GetInkDrop());
+      views::InkDrop::Get(notification_view())->GetInkDrop());
   views::test::InkDropImplTestApi ink_drop_test_api(ink_drop);
   gfx::Rect clip_rect = ink_drop_test_api.GetRootLayer()->clip_rect();
 
@@ -1462,6 +1477,50 @@ TEST_F(NotificationViewMDTest, AppNameWebNotification) {
 
   EXPECT_EQ(u"example.com",
             notification_view()->header_row_->app_name_for_testing());
+}
+
+TEST_F(NotificationViewMDTest, AppNameWebAppNotification) {
+  const GURL web_app_url("http://example.com");
+
+  NotifierId notifier_id(web_app_url, /*title=*/u"web app title");
+
+  SkBitmap small_bitmap = CreateSolidColorBitmap(16, 16, SK_ColorYELLOW);
+  // Makes the center area transparent.
+  small_bitmap.eraseArea(SkIRect::MakeXYWH(4, 4, 8, 8), SK_ColorTRANSPARENT);
+
+  RichNotificationData data;
+  data.settings_button_handler = SettingsButtonHandler::INLINE;
+
+  std::unique_ptr<Notification> notification = std::make_unique<Notification>(
+      NOTIFICATION_TYPE_BASE_FORMAT, std::string(kDefaultNotificationId),
+      u"title", u"message", CreateTestImage(80, 80), u"display source", GURL(),
+      notifier_id, data, delegate_);
+  notification->set_small_image(gfx::Image::CreateFrom1xBitmap(small_bitmap));
+  notification->set_image(CreateTestImage(320, 240));
+
+  notification->set_origin_url(web_app_url);
+
+  UpdateNotificationViews(*notification);
+
+  EXPECT_EQ(u"web app title",
+            notification_view()->header_row_->app_name_for_testing());
+
+  const SkBitmap* app_icon_view = notification_view()
+                                      ->header_row_->app_icon_view_for_testing()
+                                      ->GetImage()
+                                      .bitmap();
+
+  EXPECT_EQ(color_utils::SkColorToRgbaString(SK_ColorTRANSPARENT),
+            color_utils::SkColorToRgbaString(app_icon_view->getColor(8, 8)));
+
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  EXPECT_EQ(color_utils::SkColorToRgbaString(
+                GetAshIconColorPrimary(/*is_dark_mode=*/false)),
+            color_utils::SkColorToRgbaString(app_icon_view->getColor(0, 0)));
+#else
+  EXPECT_EQ(color_utils::SkColorToRgbaString(SK_ColorYELLOW),
+            color_utils::SkColorToRgbaString(app_icon_view->getColor(0, 0)));
+#endif
 }
 
 TEST_F(NotificationViewMDTest, ShowProgress) {

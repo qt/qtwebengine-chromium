@@ -16,7 +16,6 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "components/services/storage/public/cpp/storage_key.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/service_worker_devtools_agent_host.h"
 #include "content/browser/devtools/service_worker_devtools_manager.h"
@@ -38,6 +37,7 @@
 #include "content/public/common/child_process_host.h"
 #include "content/public/common/url_constants.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_object.mojom.h"
 
 using base::DictionaryValue;
@@ -238,14 +238,6 @@ void DidGetRegistrations(
   }
 }
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-enum class ServiceWorkerInternalsLinkQuery {
-  kDevTools = 0,
-  kOther = 1,
-  kMaxValue = kOther,
-};
-
 }  // namespace
 
 class ServiceWorkerInternalsHandler::PartitionObserver
@@ -274,7 +266,8 @@ class ServiceWorkerInternalsHandler::PartitionObserver
                  const GURL& scope,
                  int process_id,
                  const GURL& script_url,
-                 const blink::ServiceWorkerToken& token) override {
+                 const blink::ServiceWorkerToken& token,
+                 const blink::StorageKey& key) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (handler_) {
       handler_->OnRunningStateChanged();
@@ -294,6 +287,7 @@ class ServiceWorkerInternalsHandler::PartitionObserver
   }
   void OnVersionStateChanged(int64_t version_id,
                              const GURL& scope,
+                             const blink::StorageKey& key,
                              ServiceWorkerVersion::Status) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (handler_) {
@@ -303,6 +297,7 @@ class ServiceWorkerInternalsHandler::PartitionObserver
   void OnErrorReported(
       int64_t version_id,
       const GURL& scope,
+      const blink::StorageKey& key,
       const ServiceWorkerContextObserver::ErrorInfo& info) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (!handler_) {
@@ -319,6 +314,7 @@ class ServiceWorkerInternalsHandler::PartitionObserver
   }
   void OnReportConsoleMessage(int64_t version_id,
                               const GURL& scope,
+                              const blink::StorageKey& key,
                               const ConsoleMessage& message) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (!handler_) {
@@ -334,14 +330,16 @@ class ServiceWorkerInternalsHandler::PartitionObserver
                            version_id, std::move(details));
   }
   void OnRegistrationCompleted(int64_t registration_id,
-                               const GURL& scope) override {
+                               const GURL& scope,
+                               const blink::StorageKey& key) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (handler_) {
       handler_->OnRegistrationEvent("registration-completed", scope);
     }
   }
   void OnRegistrationDeleted(int64_t registration_id,
-                             const GURL& scope) override {
+                             const GURL& scope,
+                             const blink::StorageKey& key) override {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     if (handler_) {
       handler_->OnRegistrationEvent("registration-deleted", scope);
@@ -356,14 +354,6 @@ class ServiceWorkerInternalsHandler::PartitionObserver
 
 ServiceWorkerInternalsUI::ServiceWorkerInternalsUI(WebUI* web_ui)
     : WebUIController(web_ui) {
-  std::string query = web_ui->GetWebContents()->GetURL().query();
-  ServiceWorkerInternalsLinkQuery query_type =
-      ServiceWorkerInternalsLinkQuery::kOther;
-  if (query == "devtools") {
-    query_type = ServiceWorkerInternalsLinkQuery::kDevTools;
-  }
-  base::UmaHistogramEnumeration("ServiceWorker.InternalsPageAccessed",
-                                query_type);
   WebUIDataSource* source =
       WebUIDataSource::Create(kChromeUIServiceWorkerInternalsHost);
   source->OverrideContentSecurityPolicy(
@@ -680,7 +670,7 @@ void ServiceWorkerInternalsHandler::HandleStartWorker(const ListValue* args) {
                      callback_id);
   context->StartActiveServiceWorker(
       GURL(scope_string),
-      storage::StorageKey(url::Origin::Create(GURL(scope_string))),
+      blink::StorageKey(url::Origin::Create(GURL(scope_string))),
       std::move(callback));
 }
 
@@ -737,7 +727,7 @@ void ServiceWorkerInternalsHandler::UnregisterWithScope(
   // TODO(crbug.com/1199077): Update this when ServiceWorkerInternalsHandler
   // implements StorageKey.
   context->context()->UnregisterServiceWorker(
-      scope, storage::StorageKey(url::Origin::Create(scope)),
+      scope, blink::StorageKey(url::Origin::Create(scope)),
       /*is_immediate=*/false, std::move(callback));
 }
 

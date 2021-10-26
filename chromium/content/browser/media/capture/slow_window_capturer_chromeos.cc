@@ -14,6 +14,7 @@
 #include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "media/base/limits.h"
 #include "media/base/video_util.h"
+#include "media/capture/mojom/video_capture_buffer.mojom.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
@@ -292,7 +293,8 @@ void SlowWindowCapturerChromeOS::CaptureNextFrame() {
   // Request a copy of the Layer associated with the |target_| aura::Window.
   auto request = std::make_unique<viz::CopyOutputRequest>(
       // Note: As of this writing, I420_PLANES is not supported external to VIZ.
-      viz::CopyOutputRequest::ResultFormat::RGBA_BITMAP,
+      viz::CopyOutputRequest::ResultFormat::RGBA,
+      viz::CopyOutputRequest::ResultDestination::kSystemMemory,
       base::BindOnce(&SlowWindowCapturerChromeOS::DidCopyFrame,
                      weak_factory_.GetWeakPtr(), std::move(in_flight_frame)));
   request->set_source(copy_request_source_);

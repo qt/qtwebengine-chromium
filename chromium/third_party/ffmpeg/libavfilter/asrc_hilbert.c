@@ -18,6 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "audio.h"
 #include "avfilter.h"
@@ -187,7 +188,7 @@ static const AVFilterPad hilbert_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_asrc_hilbert = {
+const AVFilter ff_asrc_hilbert = {
     .name          = "hilbert",
     .description   = NULL_IF_CONFIG_SMALL("Generate a Hilbert transform FIR coefficients."),
     .query_formats = query_formats,

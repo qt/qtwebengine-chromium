@@ -38,6 +38,8 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/test_web_ui.h"
+#include "extensions/browser/blocklist_extension_prefs.h"
+#include "extensions/browser/blocklist_state.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/extension_builder.h"
@@ -172,13 +174,17 @@ class TestPasswordsDelegate : public extensions::TestPasswordsPrivateDelegate {
         "test" + base::NumberToString(test_credential_counter_++));
     form.password_value = u"password";
     form.username_element = u"username_element";
+    // TODO(crbug.com/1223022): Once all places that operate changes on forms
+    // via UpdateLogin properly set |password_issues|, setting them to an empty
+    // map should be part of the default constructor.
+    form.password_issues =
+        base::flat_map<password_manager::InsecureType,
+                       password_manager::InsecurityMetadata>();
     store_->AddLogin(form);
-    base::RunLoop().RunUntilIdle();
-
-    store_->AddInsecureCredential(password_manager::InsecureCredential(
-        form.signon_realm, form.username_value, base::Time(),
-        password_manager::InsecureType::kLeaked,
-        password_manager::IsMuted(false)));
+    form.password_issues = {
+        {password_manager::InsecureType::kLeaked,
+         password_manager::InsecurityMetadata(
+             base::Time(), password_manager::IsMuted(false))}};
     base::RunLoop().RunUntilIdle();
   }
 
@@ -372,11 +378,9 @@ SafetyCheckHandlerTest::GetSafetyCheckStatusChangedWithDataIfExists(
     if (data.function_name() != "cr.webUIListenerCallback") {
       continue;
     }
-    std::string event;
-    if ((!data.arg1()->GetAsString(&event)) ||
-        event != "safety-check-" + component + "-status-changed") {
+    const std::string* event = data.arg1()->GetIfString();
+    if (!event || *event != "safety-check-" + component + "-status-changed")
       continue;
-    }
     const base::DictionaryValue* dictionary = nullptr;
     if (!data.arg2()->GetAsDictionary(&dictionary)) {
       continue;
@@ -1253,8 +1257,9 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_NoneBlocklisted) {
   test_extension_prefs_->OnExtensionInstalled(
       extension.get(), extensions::Extension::State::ENABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension_id, extensions::NOT_BLOCKLISTED);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension_id, extensions::BitMapBlocklistState::NOT_BLOCKLISTED,
+      test_extension_prefs_);
   safety_check_->PerformSafetyCheck();
   const base::DictionaryValue* event =
       GetSafetyCheckStatusChangedWithDataIfExists(
@@ -1276,8 +1281,9 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_BlocklistedAllDisabled) {
   test_extension_prefs_->OnExtensionInstalled(
       extension.get(), extensions::Extension::State::DISABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension_id, extensions::BLOCKLISTED_MALWARE);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension_id, extensions::BitMapBlocklistState::BLOCKLISTED_MALWARE,
+      test_extension_prefs_);
   test_extension_service_.AddExtensionState(extension_id, Enabled(false),
                                             UserCanDisable(false));
   safety_check_->PerformSafetyCheck();
@@ -1301,8 +1307,10 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_BlocklistedReenabledAllByUser) {
   test_extension_prefs_->OnExtensionInstalled(
       extension.get(), extensions::Extension::State::ENABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension_id, extensions::BLOCKLISTED_POTENTIALLY_UNWANTED);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension_id,
+      extensions::BitMapBlocklistState::BLOCKLISTED_POTENTIALLY_UNWANTED,
+      test_extension_prefs_);
   test_extension_service_.AddExtensionState(extension_id, Enabled(true),
                                             UserCanDisable(true));
   safety_check_->PerformSafetyCheck();
@@ -1325,8 +1333,10 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_BlocklistedReenabledAllByAdmin) {
   test_extension_prefs_->OnExtensionInstalled(
       extension.get(), extensions::Extension::State::ENABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension_id, extensions::BLOCKLISTED_POTENTIALLY_UNWANTED);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension_id,
+      extensions::BitMapBlocklistState::BLOCKLISTED_POTENTIALLY_UNWANTED,
+      test_extension_prefs_);
   test_extension_service_.AddExtensionState(extension_id, Enabled(true),
                                             UserCanDisable(false));
   safety_check_->PerformSafetyCheck();
@@ -1349,8 +1359,10 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_BlocklistedReenabledSomeByUser) {
   test_extension_prefs_->OnExtensionInstalled(
       extension.get(), extensions::Extension::State::ENABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension_id, extensions::BLOCKLISTED_POTENTIALLY_UNWANTED);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension_id,
+      extensions::BitMapBlocklistState::BLOCKLISTED_POTENTIALLY_UNWANTED,
+      test_extension_prefs_);
   test_extension_service_.AddExtensionState(extension_id, Enabled(true),
                                             UserCanDisable(true));
 
@@ -1360,8 +1372,10 @@ TEST_F(SafetyCheckHandlerTest, CheckExtensions_BlocklistedReenabledSomeByUser) {
   test_extension_prefs_->OnExtensionInstalled(
       extension2.get(), extensions::Extension::State::ENABLED,
       syncer::StringOrdinal(), "");
-  test_extension_prefs_->SetExtensionBlocklistState(
-      extension2_id, extensions::BLOCKLISTED_POTENTIALLY_UNWANTED);
+  extensions::blocklist_prefs::SetSafeBrowsingExtensionBlocklistState(
+      extension2_id,
+      extensions::BitMapBlocklistState::BLOCKLISTED_POTENTIALLY_UNWANTED,
+      test_extension_prefs_);
   test_extension_service_.AddExtensionState(extension2_id, Enabled(true),
                                             UserCanDisable(false));
 

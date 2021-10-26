@@ -13,13 +13,13 @@
 #include "base/feature_list.h"
 #include "base/macros.h"
 #include "base/strings/stringprintf.h"
+#include "chrome/browser/ash/input_method/assistive_window_properties.h"
+#include "chrome/browser/ash/input_method/input_host_helper.h"
+#include "chrome/browser/ash/input_method/input_method_engine.h"
+#include "chrome/browser/ash/input_method/native_input_method_engine.h"
 #include "chrome/browser/ash/login/lock/screen_locker.h"
 #include "chrome/browser/ash/login/session/user_session_manager.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
-#include "chrome/browser/chromeos/input_method/assistive_window_properties.h"
-#include "chrome/browser/chromeos/input_method/input_host_helper.h"
-#include "chrome/browser/chromeos/input_method/input_method_engine.h"
-#include "chrome/browser/chromeos/input_method/native_input_method_engine.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/common/extensions/api/input_ime.h"
@@ -32,6 +32,8 @@
 #include "ui/base/ime/chromeos/ime_engine_handler_interface.h"
 #include "ui/base/ime/chromeos/input_method_manager.h"
 #include "ui/base/ui_base_features.h"
+
+namespace {
 
 namespace input_ime = extensions::api::input_ime;
 namespace input_method_private = extensions::api::input_method_private;
@@ -59,11 +61,11 @@ namespace SetSelectionRange =
     extensions::api::input_method_private::SetSelectionRange;
 namespace FinishComposingText =
     extensions::api::input_method_private::FinishComposingText;
-using chromeos::InputMethodEngine;
-using chromeos::InputMethodEngineBase;
-using ui::IMEEngineHandlerInterface;
 
-namespace {
+using ::ash::input_method::InputMethodEngine;
+using ::ash::input_method::InputMethodEngineBase;
+using ::ui::IMEEngineHandlerInterface;
+
 const char kErrorEngineNotAvailable[] = "The engine is not available.";
 const char kErrorSetMenuItemsFail[] = "Could not create menu items.";
 const char kErrorUpdateMenuItemsFail[] = "Could not update menu items.";
@@ -87,16 +89,12 @@ void SetMenuItemToMenu(
             input.style);
   }
 
-  if (input.visible)
-    out->modified |= InputMethodEngine::MENU_ITEM_MODIFIED_VISIBLE;
   out->visible = input.visible ? *input.visible : true;
 
   if (input.checked)
     out->modified |= InputMethodEngine::MENU_ITEM_MODIFIED_CHECKED;
   out->checked = input.checked ? *input.checked : false;
 
-  if (input.enabled)
-    out->modified |= InputMethodEngine::MENU_ITEM_MODIFIED_ENABLED;
   out->enabled = input.enabled ? *input.enabled : true;
 }
 
@@ -133,6 +131,7 @@ input_ime::AssistiveWindowButton ConvertAssistiveWindowButton(
     case ui::ime::ButtonId::kSmartInputsSettingLink:
     case ui::ime::ButtonId::kSuggestion:
     case ui::ime::ButtonId::kLearnMore:
+    case ui::ime::ButtonId::kIgnoreSuggestion:
       return input_ime::ASSISTIVE_WINDOW_BUTTON_NONE;
     case ui::ime::ButtonId::kUndo:
       return input_ime::ASSISTIVE_WINDOW_BUTTON_UNDO;
@@ -147,6 +146,7 @@ input_ime::AssistiveWindowType ConvertAssistiveWindowType(
     case ui::ime::AssistiveWindowType::kNone:
     case ui::ime::AssistiveWindowType::kEmojiSuggestion:
     case ui::ime::AssistiveWindowType::kPersonalInfoSuggestion:
+    case ui::ime::AssistiveWindowType::kGrammarSuggestion:
       return input_ime::AssistiveWindowType::ASSISTIVE_WINDOW_TYPE_NONE;
     case ui::ime::AssistiveWindowType::kUndoWindow:
       return input_ime::AssistiveWindowType::ASSISTIVE_WINDOW_TYPE_UNDO;
@@ -281,8 +281,8 @@ class ImeObserverChromeOS : public ui::ImeObserver {
 
       // Populate app key for private OnFocus.
       // TODO(b/163645900): Add app type later.
-      chromeos::input_host_helper::InputAssociatedHost host;
-      chromeos::input_host_helper::PopulateInputHost(&host);
+      ash::input_method::InputAssociatedHost host;
+      ash::input_method::PopulateInputHost(&host);
       input_context.app_key = std::make_unique<std::string>(host.app_key);
 
       auto args(input_method_private::OnFocus::Create(input_context));
@@ -591,9 +591,10 @@ bool InputImeEventRouter::RegisterImeExtension(
   }
 
   auto observer = std::make_unique<ImeObserverChromeOS>(extension_id, profile);
-  auto engine = extension_id == "jkghodnilhceideoidjikpgommlajknk"
-                    ? std::make_unique<chromeos::NativeInputMethodEngine>()
-                    : std::make_unique<chromeos::InputMethodEngine>();
+  auto engine =
+      extension_id == "jkghodnilhceideoidjikpgommlajknk"
+          ? std::make_unique<ash::input_method::NativeInputMethodEngine>()
+          : std::make_unique<InputMethodEngine>();
   engine->Initialize(std::move(observer), extension_id.c_str(), profile);
   engine_map_[extension_id] = std::move(engine);
 
@@ -690,12 +691,13 @@ InputImeSetAssistiveWindowPropertiesFunction::Run() {
   const SetAssistiveWindowProperties::Params::Parameters& params =
       parent_params->parameters;
   const input_ime::AssistiveWindowProperties& window = params.properties;
-  chromeos::AssistiveWindowProperties assistive_window;
+  ash::input_method::AssistiveWindowProperties assistive_window;
 
   assistive_window.visible = window.visible;
   assistive_window.type = ConvertAssistiveWindowType(window.type);
   if (window.announce_string)
-    assistive_window.announce_string = *window.announce_string;
+    assistive_window.announce_string =
+        base::UTF8ToUTF16(*window.announce_string);
 
   engine->SetAssistiveWindowProperties(params.context_id, assistive_window,
                                        &error);
@@ -721,7 +723,7 @@ InputImeSetAssistiveWindowButtonHighlightedFunction::Run() {
   button.id = ConvertAssistiveWindowButtonId(params.button_id);
   button.window_type = ConvertAssistiveWindowType(params.window_type);
   if (params.announce_string)
-    button.announce_string = *params.announce_string;
+    button.announce_string = base::UTF8ToUTF16(*params.announce_string);
 
   engine->SetButtonHighlighted(params.context_id, button, params.highlighted,
                                &error);

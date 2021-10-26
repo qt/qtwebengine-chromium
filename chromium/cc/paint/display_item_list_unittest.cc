@@ -28,6 +28,7 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "third_party/skia/include/core/SkTextBlob.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/skia_util.h"
@@ -74,18 +75,13 @@ class DisplayItemListTest : public testing::Test {
   }
 };
 
-#define EXPECT_TRACED_RECT(x, y, width, height, rect_list) \
-  do {                                                     \
-    ASSERT_EQ(4u, rect_list->GetSize());                   \
-    double d;                                              \
-    EXPECT_TRUE((rect_list)->GetDouble(0, &d));            \
-    EXPECT_EQ(x, d);                                       \
-    EXPECT_TRUE((rect_list)->GetDouble(1, &d));            \
-    EXPECT_EQ(y, d);                                       \
-    EXPECT_TRUE((rect_list)->GetDouble(2, &d));            \
-    EXPECT_EQ(width, d);                                   \
-    EXPECT_TRUE((rect_list)->GetDouble(3, &d));            \
-    EXPECT_EQ(height, d);                                  \
+#define EXPECT_TRACED_RECT(x, y, width, height, rect_list)    \
+  do {                                                        \
+    ASSERT_EQ(4u, rect_list->GetList().size());               \
+    EXPECT_EQ(x, rect_list->GetList()[0].GetIfDouble());      \
+    EXPECT_EQ(y, rect_list->GetList()[1].GetIfDouble());      \
+    EXPECT_EQ(width, rect_list->GetList()[2].GetIfDouble());  \
+    EXPECT_EQ(height, rect_list->GetList()[3].GetIfDouble()); \
   } while (false)
 
 // AddToValue should not crash if there are different numbers of visual_rect
@@ -371,7 +367,7 @@ TEST_F(DisplayItemListTest, FilterPairedRange) {
   // below.
   SkRect rect = SkRect::MakeWH(source_image.width(), source_image.height());
   sk_sp<PaintFilter> image_filter = sk_make_sp<ImagePaintFilter>(
-      source_image, rect, rect, kHigh_SkFilterQuality);
+      source_image, rect, rect, PaintFlags::FilterQuality::kHigh);
   filters.Append(FilterOperation::CreateReferenceFilter(image_filter));
   filters.Append(FilterOperation::CreateBrightnessFilter(0.5f));
   gfx::RectF filter_bounds(10.f, 10.f, 50.f, 50.f);
@@ -1147,30 +1143,30 @@ TEST_F(DisplayItemListTest, AreaOfDrawText) {
   auto text_blob2_area = text_blob2_size.width() * text_blob2_size.height();
 
   sub_list->StartPaint();
-  sub_list->push<DrawTextBlobOp>(text_blob1, 0, 0, PaintFlags());
+  sub_list->push<DrawTextBlobOp>(text_blob1, 0.0f, 0.0f, PaintFlags());
   sub_list->EndPaintOfUnpaired(gfx::Rect());
   auto record = sub_list->ReleaseAsRecord();
 
   list->StartPaint();
   list->push<SaveOp>();
-  list->push<TranslateOp>(100, 100);
+  list->push<TranslateOp>(100.0f, 100.0f);
   list->push<DrawRecordOp>(record);
   list->push<RestoreOp>();
   list->EndPaintOfUnpaired(gfx::Rect(gfx::Point(100, 100), text_blob1_size));
 
   list->StartPaint();
   list->push<SaveOp>();
-  list->push<TranslateOp>(100, 400);
+  list->push<TranslateOp>(100.0f, 400.0f);
   list->push<DrawRecordOp>(record);
   list->push<RestoreOp>();
   list->EndPaintOfUnpaired(gfx::Rect(gfx::Point(100, 400), text_blob1_size));
 
   list->StartPaint();
-  list->push<DrawTextBlobOp>(text_blob2, 10, 20, PaintFlags());
+  list->push<DrawTextBlobOp>(text_blob2, 10.0f, 20.0f, PaintFlags());
   list->EndPaintOfUnpaired(gfx::Rect(text_blob2_size));
 
   list->StartPaint();
-  list->push<DrawTextBlobOp>(text_blob2, 400, 100, PaintFlags());
+  list->push<DrawTextBlobOp>(text_blob2, 400.0f, 100.0f, PaintFlags());
   list->EndPaintOfUnpaired(gfx::Rect(gfx::Point(400, 100), text_blob2_size));
 
   list->StartPaint();

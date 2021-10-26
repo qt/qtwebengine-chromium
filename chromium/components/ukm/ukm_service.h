@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 #include <memory>
-#include <vector>
 
 #include "base/feature_list.h"
 #include "base/gtest_prod_util.h"
@@ -80,14 +79,18 @@ class UkmService : public UkmRecorderImpl {
   void OnAppEnterForeground();
 #endif
 
-  // Records any collected data into logs, and writes to disk.
+  // Records all collected data into logs, and writes to disk.
   void Flush();
 
-  // Deletes any unsent local data.
+  // Deletes all unsent local data (Sources, Events, aggregate info for
+  // collected event metrics, etc.).
   void Purge();
 
-  // Deletes any unsent local data related to Chrome extensions.
-  void PurgeExtensions();
+  // Deletes all unsent local data related to Chrome extensions.
+  void PurgeExtensionsData();
+
+  // Deletes all unsent local data related to Apps.
+  void PurgeAppsData();
 
   // Resets the client prefs (client_id/session_id). |reason| should be passed
   // to provide the reason of the reset - this is only used for UMA logging.
@@ -134,6 +137,7 @@ class UkmService : public UkmRecorderImpl {
                            TestRegisterUkmProvidersWhenUKMFeatureEnabled);
   FRIEND_TEST_ALL_PREFIXES(UkmServiceTest,
                            PurgeExtensionDataFromUnsentLogStore);
+  FRIEND_TEST_ALL_PREFIXES(UkmServiceTest, PurgeAppDataFromUnsentLogStore);
 
   // Starts metrics client initialization.
   void StartInitTask();

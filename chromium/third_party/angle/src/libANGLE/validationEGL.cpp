@@ -1989,6 +1989,24 @@ bool ValidateCreateContext(const ValidationContext *val,
                     return false;
                 }
                 break;
+
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!display->getExtensions().protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
+                    return false;
+                }
+                break;
+
             default:
                 val->setError(EGL_BAD_ATTRIBUTE, "Unknown attribute.");
                 return false;
@@ -2052,7 +2070,6 @@ bool ValidateCreateContext(const ValidationContext *val,
         default:
             val->setError(EGL_BAD_ATTRIBUTE);
             return false;
-            break;
     }
 
     // Note: EGL_CONTEXT_OPENGL_FORWARD_COMPATIBLE_BIT_KHR does not apply to ES
@@ -2099,11 +2116,10 @@ bool ValidateCreateWindowSurface(const ValidationContext *val,
 
     const DisplayExtensions &displayExtensions = display->getExtensions();
 
-    for (AttributeMap::const_iterator attributeIter = attributes.begin();
-         attributeIter != attributes.end(); attributeIter++)
+    for (const auto &attributeIter : attributes)
     {
-        EGLAttrib attribute = attributeIter->first;
-        EGLAttrib value     = attributeIter->second;
+        EGLAttrib attribute = attributeIter.first;
+        EGLAttrib value     = attributeIter.second;
 
         switch (attribute)
         {
@@ -2215,10 +2231,35 @@ bool ValidateCreateWindowSurface(const ValidationContext *val,
                 }
                 break;
 
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!displayExtensions.protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
+                    return false;
+                }
+                break;
+
             default:
                 val->setError(EGL_BAD_ATTRIBUTE);
                 return false;
         }
+    }
+
+    if ((config->surfaceType & EGL_MUTABLE_RENDER_BUFFER_BIT_KHR) != 0 &&
+        !displayExtensions.mutableRenderBufferKHR)
+    {
+        val->setError(EGL_BAD_ATTRIBUTE,
+                      "EGL_MUTABLE_RENDER_BUFFER_BIT_KHR requires EGL_KHR_mutable_render_buffer.");
+        return false;
     }
 
     if (Display::hasExistingWindowSurface(window))
@@ -2239,11 +2280,10 @@ bool ValidateCreatePbufferSurface(const ValidationContext *val,
 
     const DisplayExtensions &displayExtensions = display->getExtensions();
 
-    for (AttributeMap::const_iterator attributeIter = attributes.begin();
-         attributeIter != attributes.end(); attributeIter++)
+    for (const auto &attributeIter : attributes)
     {
-        EGLAttrib attribute = attributeIter->first;
-        EGLAttrib value     = attributeIter->second;
+        EGLAttrib attribute = attributeIter.first;
+        EGLAttrib value     = attributeIter.second;
 
         switch (attribute)
         {
@@ -2309,7 +2349,7 @@ bool ValidateCreatePbufferSurface(const ValidationContext *val,
                 break;
 
             case EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE:
-                if (!display->getExtensions().robustResourceInitialization)
+                if (!displayExtensions.robustResourceInitialization)
                 {
                     val->setError(EGL_BAD_ATTRIBUTE,
                                   "Attribute EGL_ROBUST_RESOURCE_INITIALIZATION_ANGLE "
@@ -2325,13 +2365,30 @@ bool ValidateCreatePbufferSurface(const ValidationContext *val,
                 }
                 break;
 
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!displayExtensions.protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
+                    return false;
+                }
+                break;
+
             default:
                 val->setError(EGL_BAD_ATTRIBUTE);
                 return false;
         }
     }
 
-    if (!(config->surfaceType & EGL_PBUFFER_BIT))
+    if ((config->surfaceType & EGL_PBUFFER_BIT) == 0)
     {
         val->setError(EGL_BAD_MATCH);
         return false;
@@ -2573,6 +2630,23 @@ bool ValidateCreatePbufferFromClientBuffer(const ValidationContext *val,
                 }
                 break;
 
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!displayExtensions.protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
+                    return false;
+                }
+                break;
+
             default:
                 val->setError(EGL_BAD_ATTRIBUTE);
                 return false;
@@ -2735,6 +2809,23 @@ bool ValidateCreatePixmapSurface(const ValidationContext *val,
                 if (!displayExtensions.textureFromPixmapNOK)
                 {
                     val->setError(EGL_BAD_ATTRIBUTE, "EGL_NOK_texture_from_pixmap is not enabled.");
+                    return false;
+                }
+                break;
+
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!displayExtensions.protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
                     return false;
                 }
                 break;
@@ -3085,6 +3176,23 @@ bool ValidateCreateImage(const ValidationContext *val,
                 }
                 break;
 
+            case EGL_PROTECTED_CONTENT_EXT:
+                if (!displayExtensions.protectedContentEXT)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "Attribute EGL_PROTECTED_CONTEXT_EXT requires "
+                                  "extension EGL_EXT_protected_content.");
+                    return false;
+                }
+                if (value != EGL_TRUE && value != EGL_FALSE)
+                {
+                    val->setError(EGL_BAD_ATTRIBUTE,
+                                  "EGL_PROTECTED_CONTENT_EXT must "
+                                  "be either EGL_TRUE or EGL_FALSE.");
+                    return false;
+                }
+                break;
+
             default:
                 val->setError(EGL_BAD_PARAMETER, "invalid attribute: 0x%X", attribute);
                 return false;
@@ -3129,6 +3237,16 @@ bool ValidateCreateImage(const ValidationContext *val,
             {
                 val->setError(EGL_BAD_PARAMETER,
                               "target 2D texture does not have a valid size at specified level.");
+                return false;
+            }
+
+            bool protectedContentAttrib =
+                (attributes.getAsInt(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE) != EGL_FALSE);
+            if (protectedContentAttrib != texture->hasProtectedContent())
+            {
+                val->setError(EGL_BAD_PARAMETER,
+                              "EGL_PROTECTED_CONTENT_EXT attribute does not match protected state "
+                              "of target.");
                 return false;
             }
 
@@ -3193,6 +3311,16 @@ bool ValidateCreateImage(const ValidationContext *val,
                               "zero.");
                 return false;
             }
+
+            bool protectedContentAttrib =
+                (attributes.getAsInt(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE) != EGL_FALSE);
+            if (protectedContentAttrib != texture->hasProtectedContent())
+            {
+                val->setError(EGL_BAD_PARAMETER,
+                              "EGL_PROTECTED_CONTENT_EXT attribute does not match protected state "
+                              "of target.");
+                return false;
+            }
         }
         break;
 
@@ -3247,6 +3375,16 @@ bool ValidateCreateImage(const ValidationContext *val,
                 return false;
             }
 
+            bool protectedContentAttrib =
+                (attributes.getAsInt(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE) != EGL_FALSE);
+            if (protectedContentAttrib != texture->hasProtectedContent())
+            {
+                val->setError(EGL_BAD_PARAMETER,
+                              "EGL_PROTECTED_CONTENT_EXT attribute does not match protected state "
+                              "of target.");
+                return false;
+            }
+
             ANGLE_VALIDATION_TRY(ValidateCreateImageMipLevelCommon(val, context, texture, level));
         }
         break;
@@ -3286,6 +3424,16 @@ bool ValidateCreateImage(const ValidationContext *val,
             if (renderbuffer->getSamples() > 0)
             {
                 val->setError(EGL_BAD_PARAMETER, "target renderbuffer cannot be multisampled.");
+                return false;
+            }
+
+            bool protectedContentAttrib =
+                (attributes.getAsInt(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE) != EGL_FALSE);
+            if (protectedContentAttrib != renderbuffer->hasProtectedContent())
+            {
+                val->setError(EGL_BAD_ACCESS,
+                              "EGL_PROTECTED_CONTENT_EXT attribute does not match protected state "
+                              "of target.");
                 return false;
             }
         }
@@ -4889,6 +5037,31 @@ bool ValidateSurfaceAttrib(const ValidationContext *val,
                 default:
                     val->setError(EGL_BAD_ATTRIBUTE, "Invalid value.");
                     return false;
+            }
+            break;
+
+        case EGL_RENDER_BUFFER:
+            if (!display->getExtensions().mutableRenderBufferKHR)
+            {
+                val->setError(
+                    EGL_BAD_ATTRIBUTE,
+                    "Attribute EGL_RENDER_BUFFER requires EGL_KHR_mutable_render_buffer.");
+                return false;
+            }
+
+            if (value != EGL_BACK_BUFFER && value != EGL_SINGLE_BUFFER)
+            {
+                val->setError(EGL_BAD_ATTRIBUTE,
+                              "EGL_RENDER_BUFFER must be EGL_BACK_BUFFER or EGL_SINGLE_BUFFER.");
+                return false;
+            }
+
+            if ((surface->getConfig()->surfaceType & EGL_MUTABLE_RENDER_BUFFER_BIT_KHR) == 0)
+            {
+                val->setError(EGL_BAD_MATCH,
+                              "EGL_RENDER_BUFFER requires the surface type bit "
+                              "EGL_MUTABLE_RENDER_BUFFER_BIT_KHR.");
+                return false;
             }
             break;
 

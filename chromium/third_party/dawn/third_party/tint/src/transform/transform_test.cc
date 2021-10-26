@@ -32,7 +32,7 @@ struct CreateASTTypeForTest : public testing::Test, public Transform {
     auto* sem_type = create_sem_type(sem_type_builder);
     Program program(std::move(sem_type_builder));
     CloneContext ctx(&ast_type_builder, &program, false);
-    return CreateASTTypeFor(&ctx, sem_type);
+    return CreateASTTypeFor(ctx, sem_type);
   }
 
   ProgramBuilder ast_type_builder;
@@ -78,7 +78,7 @@ TEST_F(CreateASTTypeForTest, Vector) {
 
 TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
   auto* arr = create([](ProgramBuilder& b) {
-    return b.create<sem::Array>(b.create<sem::F32>(), 2, 4, 4, 32u, true);
+    return b.create<sem::Array>(b.create<sem::F32>(), 2, 4, 4, 32u, 32u);
   });
   ASSERT_TRUE(arr->Is<ast::Array>());
   ASSERT_TRUE(arr->As<ast::Array>()->type()->Is<ast::F32>());
@@ -88,7 +88,7 @@ TEST_F(CreateASTTypeForTest, ArrayImplicitStride) {
 
 TEST_F(CreateASTTypeForTest, ArrayNonImplicitStride) {
   auto* arr = create([](ProgramBuilder& b) {
-    return b.create<sem::Array>(b.create<sem::F32>(), 2, 4, 4, 32u, false);
+    return b.create<sem::Array>(b.create<sem::F32>(), 2, 4, 4, 64u, 32u);
   });
   ASSERT_TRUE(arr->Is<ast::Array>());
   ASSERT_TRUE(arr->As<ast::Array>()->type()->Is<ast::F32>());
@@ -100,14 +100,15 @@ TEST_F(CreateASTTypeForTest, ArrayNonImplicitStride) {
                 ->decorations()[0]
                 ->As<ast::StrideDecoration>()
                 ->stride(),
-            32u);
+            64u);
 }
 
 TEST_F(CreateASTTypeForTest, Struct) {
   auto* str = create([](ProgramBuilder& b) {
     auto* decl = b.Structure("S", {}, {});
-    return b.create<sem::Struct>(decl, sem::StructMemberList{}, 4 /* align */,
-                                 4 /* size */, 4 /* size_no_padding */);
+    return b.create<sem::Struct>(decl, decl->name(), sem::StructMemberList{},
+                                 4 /* align */, 4 /* size */,
+                                 4 /* size_no_padding */);
   });
   ASSERT_TRUE(str->Is<ast::TypeName>());
   EXPECT_EQ(

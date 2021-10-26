@@ -39,6 +39,7 @@
 #include <libavutil/opt.h>
 #include <libavutil/mathematics.h>
 #include <libavutil/timestamp.h>
+#include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
@@ -121,7 +122,7 @@ static int write_frame(AVFormatContext *fmt_ctx, AVCodecContext *c,
 
 /* Add an output stream. */
 static void add_stream(OutputStream *ost, AVFormatContext *oc,
-                       AVCodec **codec,
+                       const AVCodec **codec,
                        enum AVCodecID codec_id)
 {
     AVCodecContext *c;
@@ -242,7 +243,8 @@ static AVFrame *alloc_audio_frame(enum AVSampleFormat sample_fmt,
     return frame;
 }
 
-static void open_audio(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg)
+static void open_audio(AVFormatContext *oc, const AVCodec *codec,
+                       OutputStream *ost, AVDictionary *opt_arg)
 {
     AVCodecContext *c;
     int nb_samples;
@@ -405,7 +407,8 @@ static AVFrame *alloc_picture(enum AVPixelFormat pix_fmt, int width, int height)
     return picture;
 }
 
-static void open_video(AVFormatContext *oc, AVCodec *codec, OutputStream *ost, AVDictionary *opt_arg)
+static void open_video(AVFormatContext *oc, const AVCodec *codec,
+                       OutputStream *ost, AVDictionary *opt_arg)
 {
     int ret;
     AVCodecContext *c = ost->enc;
@@ -536,10 +539,10 @@ static void close_stream(AVFormatContext *oc, OutputStream *ost)
 int main(int argc, char **argv)
 {
     OutputStream video_st = { 0 }, audio_st = { 0 };
+    const AVOutputFormat *fmt;
     const char *filename;
-    AVOutputFormat *fmt;
     AVFormatContext *oc;
-    AVCodec *audio_codec, *video_codec;
+    const AVCodec *audio_codec, *video_codec;
     int ret;
     int have_video = 0, have_audio = 0;
     int encode_video = 0, encode_audio = 0;

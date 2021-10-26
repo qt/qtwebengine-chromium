@@ -21,8 +21,6 @@ namespace scheduler {
   MAIN_THREAD_LOAD_METRIC_NAME ".Extension"
 #define DURATION_PER_TASK_TYPE_METRIC_NAME \
   "RendererScheduler.TaskDurationPerTaskType2"
-#define COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT \
-  "RendererScheduler.TaskCountPerFrameType.HasSafePoint"
 #define QUEUEING_TIME_PER_QUEUE_TYPE_METRIC_NAME \
   "RendererScheduler.QueueingDurationPerQueueType"
 
@@ -91,10 +89,9 @@ MainThreadMetricsHelper::MainThreadMetricsHelper(
       total_task_time_reporter_(
           "Scheduler.Experimental.Renderer.TotalTime.Wall.MainThread.Positive",
           "Scheduler.Experimental.Renderer.TotalTime.Wall.MainThread.Negative"),
-      main_thread_task_load_state_(MainThreadTaskLoadState::kUnknown),
-      current_task_slice_start_time_(now),
-      safepoints_in_current_toplevel_task_count_(0) {
+      main_thread_task_load_state_(MainThreadTaskLoadState::kUnknown) {
   main_thread_load_tracker_.Resume(now);
+  random_generator_.Seed();
   if (renderer_backgrounded) {
     background_main_thread_load_tracker_.Resume(now);
   } else {
@@ -143,37 +140,6 @@ void MainThreadMetricsHelper::ResetForTest(base::TimeTicks now) {
       kThreadLoadTrackerReportingInterval);
 }
 
-void MainThreadMetricsHelper::OnSafepointEntered(base::TimeTicks now) {
-  current_task_slice_start_time_ = now;
-}
-
-void MainThreadMetricsHelper::OnSafepointExited(base::TimeTicks now) {
-  safepoints_in_current_toplevel_task_count_++;
-  RecordTaskSliceMetrics(now);
-}
-
-void MainThreadMetricsHelper::RecordTaskSliceMetrics(base::TimeTicks now) {
-  UMA_HISTOGRAM_TIMES("RendererScheduler.TasksWithSafepoints.TaskSliceTime",
-                      now - current_task_slice_start_time_);
-}
-
-void MainThreadMetricsHelper::RecordMetricsForTasksWithSafepoints(
-    const base::sequence_manager::TaskQueue::TaskTiming& task_timing) {
-  if (safepoints_in_current_toplevel_task_count_ == 0)
-    return;
-
-  RecordTaskSliceMetrics(task_timing.end_time());
-
-  UMA_HISTOGRAM_CUSTOM_MICROSECONDS_TIMES(
-      "RendererScheduler.TasksWithSafepoints.TaskTime",
-      task_timing.wall_duration(), base::TimeDelta::FromMicroseconds(1),
-      base::TimeDelta::FromSeconds(1), 50);
-  UMA_HISTOGRAM_COUNTS_100(
-      "RendererScheduler.TasksWithSafepoints.SafepointCount",
-      safepoints_in_current_toplevel_task_count_);
-  safepoints_in_current_toplevel_task_count_ = 0;
-}
-
 void MainThreadMetricsHelper::RecordTaskMetrics(
     MainThreadTaskQueue* queue,
     const base::sequence_manager::Task& task,
@@ -200,11 +166,6 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
 
   last_reported_task_ = task_timing.end_time();
 
-  UMA_HISTOGRAM_CUSTOM_COUNTS("RendererScheduler.TaskTime2",
-                              base::saturated_cast<base::HistogramBase::Sample>(
-                                  duration.InMicroseconds()),
-                              1, 1000 * 1000, 50);
-
   // We want to measure thread time here, but for efficiency reasons
   // we stick with wall time.
   main_thread_load_tracker_.RecordTaskTime(task_timing.start_time(),
@@ -213,44 +174,16 @@ void MainThreadMetricsHelper::RecordTaskMetrics(
                                                       task_timing.end_time());
   background_main_thread_load_tracker_.RecordTaskTime(task_timing.start_time(),
                                                       task_timing.end_time());
+  // WARNING: All code below must be compatible with down-sampling.
+  constexpr double kSamplingProbabily = .01;
+  bool should_sample = random_generator_.RandDouble() < kSamplingProbabily;
+  if (!should_sample)
+    return;
 
-  if (safepoints_in_current_toplevel_task_count_ > 0) {
-    FrameStatus frame_status =
-        GetFrameStatus(queue ? queue->GetFrameScheduler() : nullptr);
-
-    UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT,
-                              frame_status, FrameStatus::kCount);
-    if (duration >= base::TimeDelta::FromMilliseconds(16)) {
-      UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT
-                                ".LongerThan16ms",
-                                frame_status, FrameStatus::kCount);
-    }
-
-    if (duration >= base::TimeDelta::FromMilliseconds(50)) {
-      UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT
-                                ".LongerThan50ms",
-                                frame_status, FrameStatus::kCount);
-    }
-
-    if (duration >= base::TimeDelta::FromMilliseconds(100)) {
-      UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT
-                                ".LongerThan100ms",
-                                frame_status, FrameStatus::kCount);
-    }
-
-    if (duration >= base::TimeDelta::FromMilliseconds(150)) {
-      UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT
-                                ".LongerThan150ms",
-                                frame_status, FrameStatus::kCount);
-    }
-
-    if (duration >= base::TimeDelta::FromSeconds(1)) {
-      UMA_HISTOGRAM_ENUMERATION(COUNT_PER_FRAME_METRIC_NAME_WITH_SAFEPOINT
-                                ".LongerThan1s",
-                                frame_status, FrameStatus::kCount);
-    }
-    RecordMetricsForTasksWithSafepoints(task_timing);
-  }
+  UMA_HISTOGRAM_CUSTOM_COUNTS("RendererScheduler.TaskTime2",
+                              base::saturated_cast<base::HistogramBase::Sample>(
+                                  duration.InMicroseconds()),
+                              1, 1000 * 1000, 50);
 
   TaskType task_type = static_cast<TaskType>(task.task_type);
   UseCase use_case =

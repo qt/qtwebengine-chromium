@@ -20,11 +20,11 @@
 #include "base/callback.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -40,15 +40,15 @@
 #include "media/gpu/chromeos/platform_video_frame_utils.h"
 #include "media/gpu/macros.h"
 #include "media/gpu/v4l2/v4l2_decode_surface.h"
-#include "media/gpu/v4l2/v4l2_h264_accelerator.h"
-#include "media/gpu/v4l2/v4l2_h264_accelerator_legacy.h"
 #include "media/gpu/v4l2/v4l2_image_processor_backend.h"
 #include "media/gpu/v4l2/v4l2_utils.h"
 #include "media/gpu/v4l2/v4l2_vda_helpers.h"
-#include "media/gpu/v4l2/v4l2_vp8_accelerator.h"
-#include "media/gpu/v4l2/v4l2_vp8_accelerator_legacy.h"
-#include "media/gpu/v4l2/v4l2_vp9_accelerator_chromium.h"
-#include "media/gpu/v4l2/v4l2_vp9_accelerator_legacy.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_h264.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_h264_legacy.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_vp8.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_vp8_legacy.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_vp9_chromium.h"
+#include "media/gpu/v4l2/v4l2_video_decoder_delegate_vp9_legacy.h"
 #include "ui/gfx/native_pixmap_handle.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_image.h"
@@ -297,31 +297,35 @@ bool V4L2SliceVideoDecodeAccelerator::Initialize(const Config& config,
   if (video_profile_ >= H264PROFILE_MIN && video_profile_ <= H264PROFILE_MAX) {
     if (supports_requests_) {
       decoder_ = std::make_unique<H264Decoder>(
-          std::make_unique<V4L2H264Accelerator>(this, device_.get()),
+          std::make_unique<V4L2VideoDecoderDelegateH264>(this, device_.get()),
           video_profile_);
     } else {
       decoder_ = std::make_unique<H264Decoder>(
-          std::make_unique<V4L2LegacyH264Accelerator>(this, device_.get()),
+          std::make_unique<V4L2VideoDecoderDelegateH264Legacy>(this,
+                                                               device_.get()),
           video_profile_);
     }
   } else if (video_profile_ >= VP8PROFILE_MIN &&
              video_profile_ <= VP8PROFILE_MAX) {
     if (supports_requests_) {
       decoder_ = std::make_unique<VP8Decoder>(
-          std::make_unique<V4L2VP8Accelerator>(this, device_.get()));
+          std::make_unique<V4L2VideoDecoderDelegateVP8>(this, device_.get()));
     } else {
       decoder_ = std::make_unique<VP8Decoder>(
-          std::make_unique<V4L2LegacyVP8Accelerator>(this, device_.get()));
+          std::make_unique<V4L2VideoDecoderDelegateVP8Legacy>(this,
+                                                              device_.get()));
     }
   } else if (video_profile_ >= VP9PROFILE_MIN &&
              video_profile_ <= VP9PROFILE_MAX) {
     if (supports_requests_) {
       decoder_ = std::make_unique<VP9Decoder>(
-          std::make_unique<V4L2ChromiumVP9Accelerator>(this, device_.get()),
+          std::make_unique<V4L2VideoDecoderDelegateVP9Chromium>(this,
+                                                                device_.get()),
           video_profile_);
     } else {
       decoder_ = std::make_unique<VP9Decoder>(
-          std::make_unique<V4L2LegacyVP9Accelerator>(this, device_.get()),
+          std::make_unique<V4L2VideoDecoderDelegateVP9Legacy>(this,
+                                                              device_.get()),
           video_profile_);
     }
   } else {
@@ -1133,7 +1137,8 @@ void V4L2SliceVideoDecodeAccelerator::InitiateSurfaceSetChange() {
   VLOGF(2);
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
   DCHECK_EQ(state_, kDecoding);
-  TRACE_EVENT_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Resolution Change", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Resolution Change",
+                                    TRACE_ID_LOCAL(this));
   DCHECK(!surface_set_change_pending_);
   surface_set_change_pending_ = true;
   NewEventPending();
@@ -1193,7 +1198,8 @@ bool V4L2SliceVideoDecodeAccelerator::FinishSurfaceSetChange() {
 
   surface_set_change_pending_ = false;
   VLOGF(2) << "Surface set change finished";
-  TRACE_EVENT_ASYNC_END0("media,gpu", "V4L2SVDA Resolution Change", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2SVDA Resolution Change",
+                                  TRACE_ID_LOCAL(this));
   return true;
 }
 
@@ -1760,7 +1766,8 @@ void V4L2SliceVideoDecodeAccelerator::FlushTask() {
 void V4L2SliceVideoDecodeAccelerator::InitiateFlush() {
   VLOGF(2);
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
-  TRACE_EVENT_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Flush", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Flush",
+                                    TRACE_ID_LOCAL(this));
 
   // This will trigger output for all remaining surfaces in the decoder.
   // However, not all of them may be decoded yet (they would be queued
@@ -1821,7 +1828,8 @@ bool V4L2SliceVideoDecodeAccelerator::FinishFlush() {
   child_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&Client::NotifyFlushDone, client_));
 
-  TRACE_EVENT_ASYNC_END0("media,gpu", "V4L2SVDA Flush", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2SVDA Flush",
+                                  TRACE_ID_LOCAL(this));
   return true;
 }
 
@@ -1837,7 +1845,8 @@ void V4L2SliceVideoDecodeAccelerator::Reset() {
 void V4L2SliceVideoDecodeAccelerator::ResetTask() {
   VLOGF(2);
   DCHECK(decoder_thread_task_runner_->BelongsToCurrentThread());
-  TRACE_EVENT_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Reset", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("media,gpu", "V4L2SVDA Reset",
+                                    TRACE_ID_LOCAL(this));
 
   if (IsDestroyPending())
     return;
@@ -1900,7 +1909,8 @@ bool V4L2SliceVideoDecodeAccelerator::FinishReset() {
   child_task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&Client::NotifyResetDone, client_));
 
-  TRACE_EVENT_ASYNC_END0("media,gpu", "V4L2SVDA Reset", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2SVDA Reset",
+                                  TRACE_ID_LOCAL(this));
   return true;
 }
 

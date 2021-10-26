@@ -1,16 +1,7 @@
-// Copyright (c) the JPEG XL Project
+// Copyright (c) the JPEG XL Project Authors. All rights reserved.
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 #include <stdint.h>
 #include <stdio.h>
@@ -230,7 +221,27 @@ TEST(JxlTest, RoundtripResample2) {
   EXPECT_LE(Roundtrip(&io, cparams, dparams, pool, &io2), 15777);
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            13.5);
+            12.5);
+}
+TEST(JxlTest, RoundtripResample2MT) {
+  ThreadPoolInternal pool(4);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  // image has to be large enough to have multiple groups after downsampling
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+  CompressParams cparams;
+  cparams.resampling = 2;
+  DecompressParams dparams;
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 57000);
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, &pool),
+#if JXL_HIGH_PRECISION
+            4.5);
+#else
+            12.5);
+#endif
 }
 
 TEST(JxlTest, RoundtripResample4) {
@@ -705,7 +716,7 @@ TEST(JxlTest, RoundtripAlpha) {
   ASSERT_NE(io.xsize(), 0);
   ASSERT_TRUE(io.metadata.m.HasAlpha());
   ASSERT_TRUE(io.Main().HasAlpha());
-  io.ShrinkTo(128, 128);
+  io.ShrinkTo(300, 300);
 
   CompressParams cparams;
   cparams.butteraugli_distance = 1.0;
@@ -722,15 +733,49 @@ TEST(JxlTest, RoundtripAlpha) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 5500);
+  EXPECT_LE(compressed.size(), 10077);
 
-  // TODO(robryk): Fix the following line in presence of different alpha_bits in
-  // the two contexts.
-  // EXPECT_TRUE(SamePixels(io.Main().alpha(), io2.Main().alpha()));
-  // TODO(robryk): Fix the distance estimate used in the encoder.
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            6.3);
+            1.4);
+}
+
+TEST(JxlTest, RoundtripAlphaPremultiplied) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_alpha.png");
+  CodecInOut io, io_nopremul;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io_nopremul, pool));
+
+  ASSERT_NE(io.xsize(), 0);
+  ASSERT_TRUE(io.metadata.m.HasAlpha());
+  ASSERT_TRUE(io.Main().HasAlpha());
+  io.ShrinkTo(300, 300);
+  io_nopremul.ShrinkTo(300, 300);
+
+  CompressParams cparams;
+  cparams.butteraugli_distance = 1.0;
+  DecompressParams dparams;
+
+  io.PremultiplyAlpha();
+  EXPECT_TRUE(io.Main().AlphaIsPremultiplied());
+  PassesEncoderState enc_state;
+  AuxOut* aux_out = nullptr;
+  PaddedBytes compressed;
+  EXPECT_TRUE(EncodeFile(cparams, &io, &enc_state, &compressed, aux_out, pool));
+  CodecInOut io2;
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
+
+  EXPECT_LE(compressed.size(), 10000);
+
+  EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.4);
+  io2.Main().UnpremultiplyAlpha();
+  EXPECT_LE(ButteraugliDistance(io_nopremul, io2, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            1.8);
 }
 
 TEST(JxlTest, RoundtripAlphaResampling) {
@@ -787,11 +832,11 @@ TEST(JxlTest, RoundtripAlphaResamplingOnlyAlpha) {
   CodecInOut io2;
   EXPECT_TRUE(DecodeFile(dparams, compressed, &io2, pool));
 
-  EXPECT_LE(compressed.size(), 26000);
+  EXPECT_LE(compressed.size(), 31000);
 
   EXPECT_LE(ButteraugliDistance(io, io2, cparams.ba_params,
                                 /*distmap=*/nullptr, pool),
-            3.0);
+            1.5);
 }
 
 TEST(JxlTest, RoundtripAlphaNonMultipleOf8) {
@@ -921,7 +966,7 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLossless8)) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPath)) {
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathWP)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
@@ -929,12 +974,55 @@ TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPath)) {
   ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
 
   CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kFalcon;
   cparams.options.skip_encoder_fast_path = true;
   DecompressParams dparams;
 
   CodecInOut io2;
   EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 3500000);
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderFastPathGradient)) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kThunder;
+  cparams.options.skip_encoder_fast_path = true;
+  cparams.options.predictor = {Predictor::Gradient};
+  DecompressParams dparams;
+
+  CodecInOut io2;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 3500000);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
+TEST(JxlTest, JXL_SLOW_TEST(RoundtripLosslessNoEncoderVeryFastPathGradient)) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("wesaturate/500px/tmshre_riaphotographs_srgb8.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kLightning;
+  cparams.options.skip_encoder_fast_path = true;
+  cparams.options.predictor = {Predictor::Gradient};
+  DecompressParams dparams;
+
+  CodecInOut io2, io3;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io2), 3500000);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+  cparams.options.skip_encoder_fast_path = false;
+  EXPECT_LE(Roundtrip(&io, cparams, dparams, &pool, &io3), 3500000);
+  EXPECT_EQ(0.0, ButteraugliDistance(io, io3, cparams.ba_params,
                                      /*distmap=*/nullptr, &pool));
 }
 
@@ -1080,6 +1168,37 @@ TEST(JxlTest, RoundtripLossless16AlphaNotMisdetectedAs8Bit) {
   EXPECT_EQ(0.0, ButteraugliDistance(io, io2, cparams.ba_params,
                                      /*distmap=*/nullptr, pool));
   EXPECT_TRUE(SamePixels(*io.Main().alpha(), *io2.Main().alpha()));
+}
+
+TEST(JxlTest, RoundtripYCbCr420) {
+  ThreadPool* pool = nullptr;
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon.png");
+  CodecInOut io;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, pool));
+  const PaddedBytes yuv420 =
+      ReadTestData("imagecompression.info/flower_foveon.png.ffmpeg.y4m");
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(yuv420), &io2, pool));
+
+  CompressParams cparams = CParamsForLossless();
+  cparams.speed_tier = SpeedTier::kThunder;
+  DecompressParams dparams;
+
+  PassesEncoderState enc_state;
+  AuxOut* aux_out = nullptr;
+  PaddedBytes compressed;
+  EXPECT_TRUE(
+      EncodeFile(cparams, &io2, &enc_state, &compressed, aux_out, pool));
+  CodecInOut io3;
+  EXPECT_TRUE(DecodeFile(dparams, compressed, &io3, pool));
+
+  EXPECT_LE(compressed.size(), 1320000);
+
+  // we're comparing an original PNG with a YCbCr 4:2:0 version
+  EXPECT_LE(ButteraugliDistance(io, io3, cparams.ba_params,
+                                /*distmap=*/nullptr, pool),
+            2.5);
 }
 
 TEST(JxlTest, RoundtripDots) {
@@ -1289,7 +1408,7 @@ size_t RoundtripJpeg(const PaddedBytes& jpeg_in, ThreadPool* pool) {
   return compressed.size();
 }
 
-TEST(JxlTest, RoundtripJpegRecompression444) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1297,7 +1416,7 @@ TEST(JxlTest, RoundtripJpegRecompression444) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 256000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_444.jpg");
@@ -1322,7 +1441,7 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
@@ -1345,7 +1464,32 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels420) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionToPixels_asymmetric) {
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels420Mul16)) {
+  ThreadPoolInternal pool(8);
+  const PaddedBytes orig =
+      ReadTestData("imagecompression.info/flower_foveon_cropped.jpg");
+  CodecInOut io;
+  io.dec_target = jxl::DecodeTarget::kQuantizedCoeffs;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io, &pool));
+
+  CodecInOut io2;
+  ASSERT_TRUE(SetFromBytes(Span<const uint8_t>(orig), &io2, &pool));
+
+  CompressParams cparams;
+  cparams.color_transform = jxl::ColorTransform::kYCbCr;
+
+  DecompressParams dparams;
+
+  CodecInOut io3;
+  Roundtrip(&io, cparams, dparams, &pool, &io3);
+
+  EXPECT_GE(1.5, ButteraugliDistance(io2, io3, cparams.ba_params,
+                                     /*distmap=*/nullptr, &pool));
+}
+
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionToPixels_asymmetric)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_asymmetric.jpg");
@@ -1368,7 +1512,7 @@ TEST(JxlTest, RoundtripJpegRecompressionToPixels_asymmetric) {
                                      /*distmap=*/nullptr, &pool));
 }
 
-TEST(JxlTest, RoundtripJpegRecompressionGray) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompressionGray)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_gray.jpg");
@@ -1376,7 +1520,7 @@ TEST(JxlTest, RoundtripJpegRecompressionGray) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 140000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression420) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_420.jpg");
@@ -1384,7 +1528,8 @@ TEST(JxlTest, RoundtripJpegRecompression420) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 181050);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression_luma_subsample) {
+TEST(JxlTest,
+     JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_luma_subsample)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_luma_subsample.jpg");
@@ -1392,7 +1537,7 @@ TEST(JxlTest, RoundtripJpegRecompression_luma_subsample) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 181000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression444_12) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression444_12)) {
   // 444 JPEG that has an interesting sampling-factor (1x2, 1x2, 1x2).
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
@@ -1401,7 +1546,7 @@ TEST(JxlTest, RoundtripJpegRecompression444_12) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 256000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression422) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression422)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_422.jpg");
@@ -1409,7 +1554,7 @@ TEST(JxlTest, RoundtripJpegRecompression422) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression440) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression440)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig =
       ReadTestData("imagecompression.info/flower_foveon.png.im_q85_440.jpg");
@@ -1417,7 +1562,7 @@ TEST(JxlTest, RoundtripJpegRecompression440) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression_asymmetric) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression_asymmetric)) {
   // 2x vertical downsample of one chroma channel, 2x horizontal downsample of
   // the other.
   ThreadPoolInternal pool(8);
@@ -1427,7 +1572,7 @@ TEST(JxlTest, RoundtripJpegRecompression_asymmetric) {
   EXPECT_LE(RoundtripJpeg(orig, &pool), 209000);
 }
 
-TEST(JxlTest, RoundtripJpegRecompression420Progr) {
+TEST(JxlTest, JXL_TRANSCODE_JPEG_TEST(RoundtripJpegRecompression420Progr)) {
   ThreadPoolInternal pool(8);
   const PaddedBytes orig = ReadTestData(
       "imagecompression.info/flower_foveon.png.im_q85_420_progr.jpg");

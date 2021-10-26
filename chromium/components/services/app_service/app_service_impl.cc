@@ -201,16 +201,16 @@ void AppServiceImpl::Launch(apps::mojom::AppType app_type,
 }
 void AppServiceImpl::LaunchAppWithFiles(apps::mojom::AppType app_type,
                                         const std::string& app_id,
-                                        apps::mojom::LaunchContainer container,
                                         int32_t event_flags,
                                         apps::mojom::LaunchSource launch_source,
                                         apps::mojom::FilePathsPtr file_paths) {
+  CHECK(file_paths);
   auto iter = publishers_.find(app_type);
   if (iter == publishers_.end()) {
     return;
   }
-  iter->second->LaunchAppWithFiles(app_id, container, event_flags,
-                                   launch_source, std::move(file_paths));
+  iter->second->LaunchAppWithFiles(app_id, event_flags, launch_source,
+                                   std::move(file_paths));
 }
 
 void AppServiceImpl::LaunchAppWithIntent(
@@ -260,13 +260,13 @@ void AppServiceImpl::PauseApp(apps::mojom::AppType app_type,
   iter->second->PauseApp(app_id);
 }
 
-void AppServiceImpl::UnpauseApps(apps::mojom::AppType app_type,
-                                 const std::string& app_id) {
+void AppServiceImpl::UnpauseApp(apps::mojom::AppType app_type,
+                                const std::string& app_id) {
   auto iter = publishers_.find(app_type);
   if (iter == publishers_.end()) {
     return;
   }
-  iter->second->UnpauseApps(app_id);
+  iter->second->UnpauseApp(app_id);
 }
 
 void AppServiceImpl::StopApp(apps::mojom::AppType app_type,
@@ -415,6 +415,16 @@ void AppServiceImpl::SetResizeLocked(apps::mojom::AppType app_type,
     return;
   }
   iter->second->SetResizeLocked(app_id, locked);
+}
+
+void AppServiceImpl::SetWindowMode(apps::mojom::AppType app_type,
+                                   const std::string& app_id,
+                                   apps::mojom::WindowMode window_mode) {
+  auto iter = publishers_.find(app_type);
+  if (iter == publishers_.end()) {
+    return;
+  }
+  iter->second->SetWindowMode(app_id, window_mode);
 }
 
 PreferredAppsList& AppServiceImpl::GetPreferredAppsForTesting() {

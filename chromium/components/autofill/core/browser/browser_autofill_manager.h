@@ -40,7 +40,6 @@
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/signatures.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/abseil-cpp/absl/types/variant.h"
 
 namespace gfx {
@@ -51,6 +50,7 @@ namespace autofill {
 
 class AutofillField;
 class AutofillClient;
+class AutofillSuggestionGenerator;
 class BrowserAutofillManagerTestDelegate;
 class AutofillProfile;
 class AutofillType;
@@ -126,7 +126,9 @@ class BrowserAutofillManager
 #endif
 
   // Called from our external delegate so they cannot be private.
-  virtual void FillOrPreviewForm(AutofillDriver::RendererFormDataAction action,
+  // FillCreditCardForm() is also called by Autofill Assistant through
+  // ContentAutofillDriver::FillFormForAssistant().
+  virtual void FillOrPreviewForm(mojom::RendererFormDataAction action,
                                  int query_id,
                                  const FormData& form,
                                  const FormFieldData& field,
@@ -140,10 +142,18 @@ class BrowserAutofillManager
                           const FormData& form,
                           const FormFieldData& field);
 
-  // Called from autofill assistant.
+  // Called only from Autofill Assistant through
+  // ContentAutofillDriver::FillFormForAssistant().
   virtual void FillProfileForm(const autofill::AutofillProfile& profile,
                                const FormData& form,
                                const FormFieldData& field);
+
+  // Fetches the related virtual card information given the related actual card
+  // |guid| and fills the information into the form.
+  virtual void FillVirtualCardInformation(const std::string& guid,
+                                          int query_id,
+                                          const FormData& form,
+                                          const FormFieldData& field);
 
   // Returns true if the value/identifier is deletable. Fills out
   // |title| and |body| with relevant user-facing text.
@@ -350,11 +360,11 @@ class BrowserAutofillManager
   void OnTextFieldDidScrollImpl(const FormData& form,
                                 const FormFieldData& field,
                                 const gfx::RectF& bounding_box) override {}
-  void OnQueryFormFieldAutofillImpl(int query_id,
-                                    const FormData& form,
-                                    const FormFieldData& field,
-                                    const gfx::RectF& transformed_box,
-                                    bool autoselect_first_suggestion) override;
+  void OnAskForValuesToFillImpl(int query_id,
+                                const FormData& form,
+                                const FormFieldData& field,
+                                const gfx::RectF& transformed_box,
+                                bool autoselect_first_suggestion) override;
   void OnSelectControlDidChangeImpl(const FormData& form,
                                     const FormFieldData& field,
                                     const gfx::RectF& bounding_box) override;
@@ -461,7 +471,7 @@ class BrowserAutofillManager
 
   // CreditCardAccessManager::Accessor
   void OnCreditCardFetched(
-      bool did_succeed,
+      CreditCardFetchResult result,
       const CreditCard* credit_card = nullptr,
       const std::u16string& cvc = std::u16string()) override;
 
@@ -484,16 +494,15 @@ class BrowserAutofillManager
 
   // Fills or previews the credit card form.
   // Assumes the form and field are valid.
-  void FillOrPreviewCreditCardForm(
-      AutofillDriver::RendererFormDataAction action,
-      int query_id,
-      const FormData& form,
-      const FormFieldData& field,
-      const CreditCard* credit_card);
+  void FillOrPreviewCreditCardForm(mojom::RendererFormDataAction action,
+                                   int query_id,
+                                   const FormData& form,
+                                   const FormFieldData& field,
+                                   const CreditCard* credit_card);
 
   // Fills or previews the profile form.
   // Assumes the form and field are valid.
-  void FillOrPreviewProfileForm(AutofillDriver::RendererFormDataAction action,
+  void FillOrPreviewProfileForm(mojom::RendererFormDataAction action,
                                 int query_id,
                                 const FormData& form,
                                 const FormFieldData& field,
@@ -501,7 +510,7 @@ class BrowserAutofillManager
 
   // Fills or previews |data_model| in the |form|.
   void FillOrPreviewDataModelForm(
-      AutofillDriver::RendererFormDataAction action,
+      mojom::RendererFormDataAction action,
       int query_id,
       const FormData& form,
       const FormFieldData& field,
@@ -541,6 +550,7 @@ class BrowserAutofillManager
   // |should_display_gpay_logo| will be set to true if there is no credit card
   // suggestions or all suggestions come from Payments server.
   std::vector<Suggestion> GetCreditCardSuggestions(
+      const FormStructure& form_structure,
       const FormFieldData& field,
       const AutofillType& type,
       bool* should_display_gpay_logo) const;
@@ -593,6 +603,7 @@ class BrowserAutofillManager
       bool should_notify,
       const std::u16string& cvc,
       uint32_t profile_form_bitmask,
+      mojom::RendererFormDataAction action,
       std::string* failure_to_fill);
 
   // TODO(crbug/896689): Remove code duplication once experiment is finished.
@@ -705,9 +716,12 @@ class BrowserAutofillManager
   // |offer_manager_| is never null.
   AutofillOfferManager* offer_manager_;
 
+  // Helper class to generate Autofill suggestions.
+  std::unique_ptr<AutofillSuggestionGenerator> suggestion_generator_;
+
   // Collected information about the autofill form where a credit card will be
   // filled.
-  AutofillDriver::RendererFormDataAction credit_card_action_;
+  mojom::RendererFormDataAction credit_card_action_;
   int credit_card_query_id_ = -1;
   FormData credit_card_form_;
   FormFieldData credit_card_field_;

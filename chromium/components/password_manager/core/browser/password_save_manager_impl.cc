@@ -4,6 +4,7 @@
 
 #include "components/password_manager/core/browser/password_save_manager_impl.h"
 
+#include "base/containers/cxx20_erase.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "build/build_config.h"
@@ -110,15 +111,15 @@ void SanitizePossibleUsernames(PasswordForm* form) {
 std::unique_ptr<PasswordSaveManagerImpl>
 PasswordSaveManagerImpl::CreatePasswordSaveManagerImpl(
     const PasswordManagerClient* client) {
-  auto profile_form_saver =
-      std::make_unique<FormSaverImpl>(client->GetProfilePasswordStore());
+  auto profile_form_saver = std::make_unique<FormSaverImpl>(
+      client->GetProfilePasswordStoreInterface());
 
   return base::FeatureList::IsEnabled(
              password_manager::features::kEnablePasswordsAccountStorage)
              ? std::make_unique<MultiStorePasswordSaveManager>(
                    std::move(profile_form_saver),
                    std::make_unique<FormSaverImpl>(
-                       client->GetAccountPasswordStore()))
+                       client->GetAccountPasswordStoreInterface()))
              : std::make_unique<PasswordSaveManagerImpl>(
                    std::move(profile_form_saver));
 }
@@ -252,14 +253,13 @@ void PasswordSaveManagerImpl::Update(
   SavePendingToStore(observed_form, parsed_submitted_form);
 }
 
-void PasswordSaveManagerImpl::Blocklist(
-    const PasswordStore::FormDigest& form_digest) {
+void PasswordSaveManagerImpl::Blocklist(const PasswordFormDigest& form_digest) {
   DCHECK(!client_->IsIncognito());
   form_saver_->Blocklist(form_digest);
 }
 
 void PasswordSaveManagerImpl::Unblocklist(
-    const PasswordStore::FormDigest& form_digest) {
+    const PasswordFormDigest& form_digest) {
   form_saver_->Unblocklist(form_digest);
 }
 
@@ -362,7 +362,8 @@ PendingCredentialsState PasswordSaveManagerImpl::ComputePendingCredentialsState(
   // If the autofilled credentials were a PSL match, store a copy with the
   // current origin and signon realm. This ensures that on the next visit, a
   // precise match is found.
-  if (similar_saved_form->is_public_suffix_match)
+  if (password_manager_util::GetMatchType(*similar_saved_form) ==
+      password_manager_util::GetLoginMatchType::kPSL)
     return PendingCredentialsState::AUTOMATIC_SAVE;
 
   return PendingCredentialsState::EQUAL_TO_SAVED_MATCH;
@@ -497,6 +498,13 @@ void PasswordSaveManagerImpl::UploadVotesAndMetrics(
       parsed_submitted_form.submission_event);
   metrics_recorder_->SetSubmissionIndicatorEvent(
       parsed_submitted_form.submission_event);
+// It's not possible to edit username in a save/update prompt on Android.
+// TODO(crbug.com/959776): Get rid of this method, by passing
+// |pending_credentials_| directly to MaybeSendSingleUsernameVote.
+#if !defined(OS_ANDROID)
+  votes_uploader_->CalculateUsernamePromptEditState(
+      /*saved_username=*/pending_credentials_.username_value);
+#endif  // !defined(OS_ANDROID)
 
   if (IsNewLogin()) {
     metrics_util::LogNewlySavedPasswordIsGenerated(
@@ -529,11 +537,12 @@ void PasswordSaveManagerImpl::UploadVotesAndMetrics(
   // Do not send votes if there was no observed form. Furthermore, don't send
   // votes on change password forms, since they were already sent in Update()
   // method.
-  if (observed_form && !parsed_submitted_form.IsPossibleChangePasswordForm()) {
+  if (observed_form && !parsed_submitted_form.HasNewPasswordElement()) {
     votes_uploader_->SendVoteOnCredentialsReuse(
         *observed_form, parsed_submitted_form, &pending_credentials_);
   }
   if (IsPasswordUpdate()) {
+    votes_uploader_->MaybeSendSingleUsernameVote();
     votes_uploader_->UploadPasswordVote(
         parsed_submitted_form, parsed_submitted_form, autofill::NEW_PASSWORD,
         FormStructure(pending_credentials_.form_data).FormSignatureAsStr());

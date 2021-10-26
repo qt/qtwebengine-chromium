@@ -64,6 +64,8 @@ const char kSessionManagerStartContainer[] = "StartContainer";
 const char kSessionManagerStopContainer[] = "StopContainer";
 const char kSessionManagerEnableAdbSideload[] = "EnableAdbSideload";
 const char kSessionManagerQueryAdbSideload[] = "QueryAdbSideload";
+const char kSessionManagerStartBrowserDataMigration[] =
+    "StartBrowserDataMigration";
 // Signals
 const char kLoginPromptVisibleSignal[] = "LoginPromptVisible";
 const char kSessionStateChangedSignal[] = "SessionStateChanged";

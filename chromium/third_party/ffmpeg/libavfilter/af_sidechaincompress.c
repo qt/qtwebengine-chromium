@@ -25,7 +25,6 @@
  */
 
 #include "libavutil/audio_fifo.h"
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
@@ -387,7 +386,7 @@ static const AVFilterPad sidechaincompress_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_sidechaincompress = {
+const AVFilter ff_af_sidechaincompress = {
     .name           = "sidechaincompress",
     .description    = NULL_IF_CONFIG_SMALL("Sidechain compressor."),
     .priv_size      = sizeof(SidechainCompressContext),
@@ -483,7 +482,7 @@ static const AVFilterPad acompressor_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_acompressor = {
+const AVFilter ff_af_acompressor = {
     .name           = "acompressor",
     .description    = NULL_IF_CONFIG_SMALL("Audio compressor."),
     .priv_size      = sizeof(SidechainCompressContext),

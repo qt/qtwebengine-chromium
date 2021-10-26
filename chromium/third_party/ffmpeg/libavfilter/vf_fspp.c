@@ -35,7 +35,6 @@
  * project, and ported by Arwa Arif for FFmpeg.
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
@@ -668,7 +667,7 @@ static const AVFilterPad fspp_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_fspp = {
+const AVFilter ff_vf_fspp = {
     .name            = "fspp",
     .description     = NULL_IF_CONFIG_SMALL("Apply Fast Simple Post-processing filter."),
     .priv_size       = sizeof(FSPPContext),

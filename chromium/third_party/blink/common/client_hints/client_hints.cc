@@ -7,36 +7,35 @@
 #include <utility>
 #include <vector>
 
+#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_tokenizer.h"
 #include "base/strings/string_util.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/permissions_policy/permissions_policy.h"
 #include "url/origin.h"
 
 namespace blink {
 
-const char* const kClientHintsHeaderMapping[] = {
-    "device-memory",
-    "dpr",
-    "width",
-    "viewport-width",
-    "rtt",
-    "downlink",
-    "ect",
-    "sec-ch-lang",
-    "sec-ch-ua",
-    "sec-ch-ua-arch",
-    "sec-ch-ua-platform",
-    "sec-ch-ua-model",
-    "sec-ch-ua-mobile",
-    "sec-ch-ua-full-version",
-    "sec-ch-ua-platform-version",
-    "sec-ch-prefers-color-scheme",
-};
+const char* const kClientHintsHeaderMapping[] = {"device-memory",
+                                                 "dpr",
+                                                 "width",
+                                                 "viewport-width",
+                                                 "rtt",
+                                                 "downlink",
+                                                 "ect",
+                                                 "sec-ch-lang",
+                                                 "sec-ch-ua",
+                                                 "sec-ch-ua-arch",
+                                                 "sec-ch-ua-platform",
+                                                 "sec-ch-ua-model",
+                                                 "sec-ch-ua-mobile",
+                                                 "sec-ch-ua-full-version",
+                                                 "sec-ch-ua-platform-version",
+                                                 "sec-ch-prefers-color-scheme",
+                                                 "sec-ch-ua-bitness",
+                                                 "sec-ch-ua-reduced"};
 
 const unsigned kClientHintsNumberOfLegacyHints = 4;
 
@@ -60,6 +59,8 @@ const mojom::PermissionsPolicyFeature kClientHintsPermissionsPolicyMapping[] = {
     mojom::PermissionsPolicyFeature::kClientHintUAFullVersion,
     mojom::PermissionsPolicyFeature::kClientHintUAPlatformVersion,
     mojom::PermissionsPolicyFeature::kClientHintPrefersColorScheme,
+    mojom::PermissionsPolicyFeature::kClientHintUABitness,
+    mojom::PermissionsPolicyFeature::kClientHintUAReduced,
 };
 
 const size_t kClientHintsMappingsCount = base::size(kClientHintsHeaderMapping);
@@ -94,46 +95,17 @@ std::string SerializeLangClientHint(const std::string& raw_language_list) {
   return result;
 }
 
-absl::optional<std::vector<network::mojom::WebClientHintsType>> FilterAcceptCH(
-    absl::optional<std::vector<network::mojom::WebClientHintsType>> in,
-    bool permit_lang_hints,
-    bool permit_ua_hints,
-    bool permit_prefers_color_scheme_hints) {
-  if (!in.has_value())
-    return absl::nullopt;
-
-  std::vector<network::mojom::WebClientHintsType> result;
-  for (network::mojom::WebClientHintsType hint : in.value()) {
-    // Some hints are supported only conditionally.
-    switch (hint) {
-      case network::mojom::WebClientHintsType::kLang:
-        if (permit_lang_hints)
-          result.push_back(hint);
-        break;
-      case network::mojom::WebClientHintsType::kUA:
-      case network::mojom::WebClientHintsType::kUAArch:
-      case network::mojom::WebClientHintsType::kUAPlatform:
-      case network::mojom::WebClientHintsType::kUAPlatformVersion:
-      case network::mojom::WebClientHintsType::kUAModel:
-      case network::mojom::WebClientHintsType::kUAMobile:
-      case network::mojom::WebClientHintsType::kUAFullVersion:
-        if (permit_ua_hints)
-          result.push_back(hint);
-        break;
-      case network::mojom::WebClientHintsType::kPrefersColorScheme:
-        if (permit_prefers_color_scheme_hints)
-          result.push_back(hint);
-        break;
-      default:
-        result.push_back(hint);
-    }
-  }
-  return absl::make_optional(std::move(result));
-}
-
 bool IsClientHintSentByDefault(network::mojom::WebClientHintsType type) {
-  return (type == network::mojom::WebClientHintsType::kUA ||
-          type == network::mojom::WebClientHintsType::kUAMobile);
+  switch (type) {
+    case network::mojom::WebClientHintsType::kUA:
+    case network::mojom::WebClientHintsType::kUAMobile:
+      return true;
+    case network::mojom::WebClientHintsType::kUAPlatform:
+      return base::FeatureList::IsEnabled(
+          features::kUACHPlatformEnabledByDefault);
+    default:
+      return false;
+  }
 }
 
 // Add a list of Client Hints headers to be removed to the output vector, based

@@ -66,7 +66,7 @@
 #include "chrome/browser/ui/webui/help/version_updater_chromeos.h"
 #include "chrome/browser/ui/webui/webui_util.h"
 #include "chromeos/dbus/power/power_manager_client.h"
-#include "chromeos/dbus/update_engine_client.h"
+#include "chromeos/dbus/update_engine/update_engine_client.h"
 #include "chromeos/dbus/util/version_loader.h"
 #include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
@@ -378,12 +378,16 @@ void AboutHandler::OnDeviceAutoUpdatePolicyChanged(
     const base::Value* previous_policy,
     const base::Value* current_policy) {
   bool previous_auto_update_disabled = false;
-  if (previous_policy)
-    CHECK(previous_policy->GetAsBoolean(&previous_auto_update_disabled));
+  if (previous_policy) {
+    CHECK(previous_policy->is_bool());
+    previous_auto_update_disabled = previous_policy->GetBool();
+  }
 
   bool current_auto_update_disabled = false;
-  if (current_policy)
-    CHECK(current_policy->GetAsBoolean(&current_auto_update_disabled));
+  if (current_policy) {
+    CHECK(current_policy->is_bool());
+    current_auto_update_disabled = current_policy->GetBool();
+  }
 
   if (current_auto_update_disabled != previous_auto_update_disabled) {
     // Refresh the update status to refresh the status of the UI.

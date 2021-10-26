@@ -6,20 +6,18 @@
 #define CONTENT_PUBLIC_BROWSER_CLIENT_HINTS_CONTROLLER_DELEGATE_H_
 
 #include <memory>
-#include <string>
 
 #include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_context.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/blink/public/platform/web_client_hints_type.h"
+#include "third_party/blink/public/common/client_hints/enabled_client_hints.h"
 #include "url/origin.h"
 
 class GURL;
 
 namespace blink {
-struct WebEnabledClientHints;
+class EnabledClientHints;
 struct UserAgentMetadata;
 }  // namespace blink
 
@@ -38,11 +36,9 @@ class CONTENT_EXPORT ClientHintsControllerDelegate {
   // Get which client hints opt-ins were persisted on current origin.
   virtual void GetAllowedClientHintsFromSource(
       const GURL& url,
-      blink::WebEnabledClientHints* client_hints) = 0;
+      blink::EnabledClientHints* client_hints) = 0;
 
   virtual bool IsJavaScriptAllowed(const GURL& url) = 0;
-
-  virtual bool UserAgentClientHintEnabled() = 0;
 
   virtual blink::UserAgentMetadata GetUserAgentMetadata() = 0;
 
@@ -58,7 +54,7 @@ class CONTENT_EXPORT ClientHintsControllerDelegate {
   virtual void ResetForTesting() {}
 
   // Sets additional `hints` that this delegate should add to the
-  // blink::WebEnabledClientHints object affected by
+  // blink::EnabledClientHints object affected by
   // |GetAllowedClientHintsFromSource|. This is for when there are additional
   // client hints to be added to a request that are not in storage.
   virtual void SetAdditionalClientHints(

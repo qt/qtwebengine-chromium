@@ -46,6 +46,7 @@ class BuildFlags : public ContextualClass<BuildFlags> {
  public:
   BuildFlags() {
     build_flags_["V8_SFI_HAS_UNIQUE_ID"] = V8_SFI_HAS_UNIQUE_ID;
+    build_flags_["V8_EXTERNAL_CODE_SPACE"] = V8_EXTERNAL_CODE_SPACE_BOOL;
     build_flags_["TAGGED_SIZE_8_BYTES"] = TAGGED_SIZE_8_BYTES;
     build_flags_["TRUE_FOR_TESTING"] = true;
     build_flags_["FALSE_FOR_TESTING"] = false;
@@ -888,7 +889,7 @@ base::Optional<ParseResult> MakeClassDeclaration(
       child_results,
       {ANNOTATION_GENERATE_PRINT, ANNOTATION_NO_VERIFIER, ANNOTATION_ABSTRACT,
        ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT,
-       ANNOTATION_GENERATE_CPP_CLASS, ANNOTATION_CUSTOM_CPP_CLASS,
+       ANNOTATION_DO_NOT_GENERATE_CPP_CLASS, ANNOTATION_CUSTOM_CPP_CLASS,
        ANNOTATION_CUSTOM_MAP, ANNOTATION_GENERATE_BODY_DESCRIPTOR,
        ANNOTATION_EXPORT, ANNOTATION_DO_NOT_GENERATE_CAST,
        ANNOTATION_HIGHEST_INSTANCE_TYPE_WITHIN_PARENT,
@@ -906,9 +907,8 @@ base::Optional<ParseResult> MakeClassDeclaration(
   if (annotations.Contains(ANNOTATION_HAS_SAME_INSTANCE_TYPE_AS_PARENT)) {
     flags |= ClassFlag::kHasSameInstanceTypeAsParent;
   }
-  if (annotations.Contains(ANNOTATION_GENERATE_CPP_CLASS)) {
-    flags |= ClassFlag::kGenerateCppClassDefinitions;
-  }
+  bool do_not_generate_cpp_class =
+      annotations.Contains(ANNOTATION_DO_NOT_GENERATE_CPP_CLASS);
   if (annotations.Contains(ANNOTATION_CUSTOM_CPP_CLASS)) {
     flags |= ClassFlag::kCustomCppClass;
   }
@@ -961,6 +961,14 @@ base::Optional<ParseResult> MakeClassDeclaration(
     fields_raw = (*body)->fields;
   } else {
     flags |= ClassFlag::kUndefinedLayout;
+  }
+
+  if (is_extern && body.has_value()) {
+    if (!do_not_generate_cpp_class) {
+      flags |= ClassFlag::kGenerateCppClassDefinitions;
+    }
+  } else if (do_not_generate_cpp_class) {
+    Lint("Annotation @doNotGenerateCppClass has no effect");
   }
 
   // Filter to only include fields that should be present based on decoration.

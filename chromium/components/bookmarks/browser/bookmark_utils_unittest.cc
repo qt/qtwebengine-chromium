@@ -10,7 +10,7 @@
 #include <utility>
 #include <vector>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
@@ -403,7 +403,13 @@ TEST_F(BookmarkUtilsTest, MAYBE_CutToClipboard) {
   EXPECT_TRUE(CanPasteFromClipboard(model.get(), model->other_node()));
 }
 
-TEST_F(BookmarkUtilsTest, PasteNonEditableNodes) {
+// Test is flaky on Mac and LaCros: crbug.com/1236362
+#if defined(OS_MAC) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#define MAYBE_PasteNonEditableNodes DISABLED_PasteNonEditableNodes
+#else
+#define MAYBE_PasteNonEditableNodes PasteNonEditableNodes
+#endif
+TEST_F(BookmarkUtilsTest, MAYBE_PasteNonEditableNodes) {
   // Load a model with an managed node that is not editable.
   auto client = std::make_unique<TestBookmarkClient>();
   BookmarkNode* managed_node = client->EnableManagedNode();
@@ -434,7 +440,7 @@ TEST_F(BookmarkUtilsTest, GetParentForNewNodes) {
   // folder.
   std::vector<const BookmarkNode*> nodes;
   nodes.push_back(model->bookmark_bar_node());
-  size_t index = size_t{-1};
+  size_t index = static_cast<size_t>(-1);
   const BookmarkNode* real_parent =
       GetParentForNewNodes(model->bookmark_bar_node(), nodes, &index);
   EXPECT_EQ(real_parent, model->bookmark_bar_node());

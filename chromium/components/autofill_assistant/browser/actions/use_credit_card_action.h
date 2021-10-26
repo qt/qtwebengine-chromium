@@ -7,7 +7,6 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/macros.h"
@@ -44,6 +43,10 @@ class UseCreditCardAction : public Action {
   void OnGetFullCard(const ClientStatus& status,
                      std::unique_ptr<autofill::CreditCard> card,
                      const std::u16string& cvc);
+
+  void InitFallbackHandler(const autofill::CreditCard& card,
+                           const std::u16string& cvc,
+                           bool is_resolved);
 
   // Called when the form credit card has been filled.
   void ExecuteFallback(const ClientStatus& status);

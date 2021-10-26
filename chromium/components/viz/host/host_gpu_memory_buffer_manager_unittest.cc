@@ -52,8 +52,9 @@ bool MustSignalGmbConfigReadyForTest() {
   // X11 requires GPU process initialization to determine GMB support.
   DCHECK(!features::IsUsingOzonePlatform());
   return true;
-#endif
+#else
   return false;
+#endif
 }
 
 class TestGpuService : public mojom::GpuService {
@@ -114,6 +115,8 @@ class TestGpuService : public mojom::GpuService {
                            bool is_gpu_host,
                            bool cache_shaders_on_disk,
                            EstablishGpuChannelCallback callback) override {}
+  void SetChannelClientPid(int32_t client_id,
+                           base::ProcessId client_pid) override {}
 
   void CloseChannel(int32_t client_id) override {}
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -141,6 +144,14 @@ class TestGpuService : public mojom::GpuService {
       mojo::PendingReceiver<chromeos_camera::mojom::JpegEncodeAccelerator>
           jea_receiver) override {}
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+
+#if defined(OS_WIN)
+  void RegisterDCOMPSurfaceHandle(
+      mojo::PlatformHandle surface_handle,
+      RegisterDCOMPSurfaceHandleCallback callback) override {}
+  void UnregisterDCOMPSurfaceHandle(
+      const base::UnguessableToken& token) override {}
+#endif
 
   void CreateVideoEncodeAcceleratorProvider(
       mojo::PendingReceiver<media::mojom::VideoEncodeAcceleratorProvider>
@@ -215,6 +226,8 @@ class TestGpuService : public mojom::GpuService {
   void WriteClangProfilingProfile(
       WriteClangProfilingProfileCallback callback) override {}
 #endif
+
+  void GetDawnInfo(GetDawnInfoCallback callback) override {}
 
   void Crash() override {}
 

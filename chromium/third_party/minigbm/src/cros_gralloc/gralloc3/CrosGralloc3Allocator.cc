@@ -24,11 +24,9 @@ using android::hardware::graphics::mapper::V3_0::Error;
 using BufferDescriptorInfo =
         android::hardware::graphics::mapper::V3_0::IMapper::BufferDescriptorInfo;
 
-CrosGralloc3Allocator::CrosGralloc3Allocator() : mDriver(std::make_unique<cros_gralloc_driver>()) {
-    if (mDriver->init()) {
-        drv_log("Failed to initialize driver.\n");
-        mDriver = nullptr;
-    }
+Error CrosGralloc3Allocator::init() {
+    mDriver = cros_gralloc_driver::get_instance();
+    return mDriver ? Error::NONE : Error::NO_RESOURCES;
 }
 
 Error CrosGralloc3Allocator::allocate(const BufferDescriptorInfo& descriptor, uint32_t* outStride,

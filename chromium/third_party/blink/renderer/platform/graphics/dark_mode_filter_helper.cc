@@ -98,6 +98,16 @@ void DarkModeFilterHelper::ApplyToImageIfNeeded(GraphicsContext* context,
   if (!context->IsDarkModeEnabled())
     return;
 
+  // Gradient generated images should not be classified by SkPixmap
+  if (image->IsGradientGeneratedImage()) {
+    return;
+  }
+
+  // SVGImageForContainer invert the content automatically and do not need to
+  // use the image filter on the result.
+  if (image->IsSVGImageForContainer())
+    return;
+
   SkIRect rounded_src = src.roundOut();
   SkIRect rounded_dst = dst.roundOut();
 

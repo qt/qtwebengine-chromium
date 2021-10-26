@@ -325,6 +325,12 @@ static void getPhysicalDeviceDepthClipEnableFeaturesExt(T *features)
 	features->depthClipEnable = VK_TRUE;
 }
 
+static void getPhysicalDevicCustomBorderColorFeaturesExt(VkPhysicalDeviceCustomBorderColorFeaturesEXT *features)
+{
+	features->customBorderColors = VK_TRUE;
+	features->customBorderColorWithoutFormat = VK_TRUE;
+}
+
 void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 {
 	features->features = getFeatures();
@@ -414,6 +420,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
 			getPhysicalDeviceDepthClipEnableFeaturesExt(reinterpret_cast<VkPhysicalDeviceDepthClipEnableFeaturesEXT *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
+			getPhysicalDevicCustomBorderColorFeaturesExt(reinterpret_cast<VkPhysicalDeviceCustomBorderColorFeaturesEXT *>(curExtension));
+			break;
 		default:
 			LOG_TRAP("curExtension->pNext->sType = %s", vk::Stringify(curExtension->sType).c_str());
 			break;
@@ -422,12 +431,12 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 	}
 }
 
-VkSampleCountFlags PhysicalDevice::getSampleCounts() const
+VkSampleCountFlags PhysicalDevice::getSampleCounts()
 {
 	return VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_4_BIT;
 }
 
-const VkPhysicalDeviceLimits &PhysicalDevice::getLimits() const
+const VkPhysicalDeviceLimits &PhysicalDevice::getLimits()
 {
 	VkSampleCountFlags sampleCounts = getSampleCounts();
 
@@ -442,7 +451,7 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits() const
 		(1ul << 27),                                      // maxStorageBufferRange
 		vk::MAX_PUSH_CONSTANT_SIZE,                       // maxPushConstantsSize
 		4096,                                             // maxMemoryAllocationCount
-		4000,                                             // maxSamplerAllocationCount
+		vk::MAX_SAMPLER_ALLOCATION_COUNT,                 // maxSamplerAllocationCount
 		131072,                                           // bufferImageGranularity
 		0,                                                // sparseAddressSpaceSize (unsupported)
 		MAX_BOUND_DESCRIPTOR_SETS,                        // maxBoundDescriptorSets
@@ -482,11 +491,11 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits() const
 		sw::MAX_INTERFACE_COMPONENTS,                     // maxFragmentInputComponents
 		sw::RENDERTARGETS,                                // maxFragmentOutputAttachments
 		1,                                                // maxFragmentDualSrcAttachments
-		4,                                                // maxFragmentCombinedOutputResources
+		28,                                               // maxFragmentCombinedOutputResources
 		16384,                                            // maxComputeSharedMemorySize
 		{ 65535, 65535, 65535 },                          // maxComputeWorkGroupCount[3]
-		128,                                              // maxComputeWorkGroupInvocations
-		{ 128, 128, 64 },                                 // maxComputeWorkGroupSize[3]
+		256,                                              // maxComputeWorkGroupInvocations
+		{ 256, 256, 64 },                                 // maxComputeWorkGroupSize[3]
 		vk::SUBPIXEL_PRECISION_BITS,                      // subPixelPrecisionBits
 		4,                                                // subTexelPrecisionBits
 		4,                                                // mipmapPrecisionBits
@@ -495,8 +504,10 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits() const
 		vk::MAX_SAMPLER_LOD_BIAS,                         // maxSamplerLodBias
 		16,                                               // maxSamplerAnisotropy
 		16,                                               // maxViewports
-		{ 4096, 4096 },                                   // maxViewportDimensions[2]
-		{ -8192, 8191 },                                  // viewportBoundsRange[2]
+		{ sw::MAX_VIEWPORT_DIM,
+		  sw::MAX_VIEWPORT_DIM },                         // maxViewportDimensions[2]
+		{ -2 * sw::MAX_VIEWPORT_DIM,
+		   2 * sw::MAX_VIEWPORT_DIM - 1 },                // viewportBoundsRange[2]
 		0,                                                // viewportSubPixelBits
 		64,                                               // minMemoryMapAlignment
 		vk::MIN_TEXEL_BUFFER_OFFSET_ALIGNMENT,            // minTexelBufferOffsetAlignment
@@ -509,8 +520,8 @@ const VkPhysicalDeviceLimits &PhysicalDevice::getLimits() const
 		-0.5,                                             // minInterpolationOffset
 		0.5,                                              // maxInterpolationOffset
 		4,                                                // subPixelInterpolationOffsetBits
-		4096,                                             // maxFramebufferWidth
-		4096,                                             // maxFramebufferHeight
+		sw::MAX_FRAMEBUFFER_DIM,                          // maxFramebufferWidth
+		sw::MAX_FRAMEBUFFER_DIM,                          // maxFramebufferHeight
 		256,                                              // maxFramebufferLayers
 		sampleCounts,                                     // framebufferColorSampleCounts
 		sampleCounts,                                     // framebufferDepthSampleCounts
@@ -943,6 +954,10 @@ void PhysicalDevice::getProperties(VkPhysicalDeviceFloatControlsProperties *prop
 template<typename T>
 static void getDescriptorIndexingProperties(T *properties)
 {
+	// "The UpdateAfterBind descriptor limits must each be greater than or equal to
+	//  the corresponding non-UpdateAfterBind limit."
+	const VkPhysicalDeviceLimits &limits = PhysicalDevice::getLimits();
+
 	properties->maxUpdateAfterBindDescriptorsInAllPools = 0;
 	properties->shaderUniformBufferArrayNonUniformIndexingNative = VK_FALSE;
 	properties->shaderSampledImageArrayNonUniformIndexingNative = VK_FALSE;
@@ -951,21 +966,21 @@ static void getDescriptorIndexingProperties(T *properties)
 	properties->shaderInputAttachmentArrayNonUniformIndexingNative = VK_FALSE;
 	properties->robustBufferAccessUpdateAfterBind = VK_FALSE;
 	properties->quadDivergentImplicitLod = VK_FALSE;
-	properties->maxPerStageDescriptorUpdateAfterBindSamplers = 0;
-	properties->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 0;
-	properties->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 0;
-	properties->maxPerStageDescriptorUpdateAfterBindSampledImages = 0;
-	properties->maxPerStageDescriptorUpdateAfterBindStorageImages = 0;
-	properties->maxPerStageDescriptorUpdateAfterBindInputAttachments = 0;
-	properties->maxPerStageUpdateAfterBindResources = 0;
-	properties->maxDescriptorSetUpdateAfterBindSamplers = 0;
-	properties->maxDescriptorSetUpdateAfterBindUniformBuffers = 0;
-	properties->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = 0;
-	properties->maxDescriptorSetUpdateAfterBindStorageBuffers = 0;
-	properties->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = 0;
-	properties->maxDescriptorSetUpdateAfterBindSampledImages = 0;
-	properties->maxDescriptorSetUpdateAfterBindStorageImages = 0;
-	properties->maxDescriptorSetUpdateAfterBindInputAttachments = 0;
+	properties->maxPerStageDescriptorUpdateAfterBindSamplers = limits.maxPerStageDescriptorSamplers;
+	properties->maxPerStageDescriptorUpdateAfterBindUniformBuffers = limits.maxPerStageDescriptorUniformBuffers;
+	properties->maxPerStageDescriptorUpdateAfterBindStorageBuffers = limits.maxPerStageDescriptorStorageBuffers;
+	properties->maxPerStageDescriptorUpdateAfterBindSampledImages = limits.maxPerStageDescriptorSampledImages;
+	properties->maxPerStageDescriptorUpdateAfterBindStorageImages = limits.maxPerStageDescriptorStorageImages;
+	properties->maxPerStageDescriptorUpdateAfterBindInputAttachments = limits.maxPerStageDescriptorInputAttachments;
+	properties->maxPerStageUpdateAfterBindResources = limits.maxPerStageResources;
+	properties->maxDescriptorSetUpdateAfterBindSamplers = limits.maxDescriptorSetSamplers;
+	properties->maxDescriptorSetUpdateAfterBindUniformBuffers = limits.maxDescriptorSetUniformBuffers;
+	properties->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = limits.maxDescriptorSetUniformBuffersDynamic;
+	properties->maxDescriptorSetUpdateAfterBindStorageBuffers = limits.maxDescriptorSetStorageBuffers;
+	properties->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = limits.maxDescriptorSetStorageBuffersDynamic;
+	properties->maxDescriptorSetUpdateAfterBindSampledImages = limits.maxDescriptorSetSampledImages;
+	properties->maxDescriptorSetUpdateAfterBindStorageImages = limits.maxDescriptorSetStorageImages;
+	properties->maxDescriptorSetUpdateAfterBindInputAttachments = limits.maxDescriptorSetInputAttachments;
 }
 
 void PhysicalDevice::getProperties(VkPhysicalDeviceDescriptorIndexingProperties *properties) const
@@ -985,6 +1000,11 @@ static void getDepthStencilResolveProperties(T *properties)
 void PhysicalDevice::getProperties(VkPhysicalDeviceDepthStencilResolveProperties *properties) const
 {
 	getDepthStencilResolveProperties(properties);
+}
+
+void PhysicalDevice::getProperties(VkPhysicalDeviceCustomBorderColorPropertiesEXT *properties) const
+{
+	properties->maxCustomBorderColorSamplers = MAX_SAMPLER_ALLOCATION_COUNT;
 }
 
 template<typename T>

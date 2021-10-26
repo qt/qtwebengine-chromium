@@ -27,7 +27,7 @@
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_observer.h"
 #include "content/public/common/javascript_dialog_type.h"
-#include "third_party/blink/public/mojom/manifest/manifest_manager.mojom.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom-forward.h"
 #include "url/gurl.h"
 
 class SkBitmap;
@@ -46,6 +46,7 @@ struct DeviceEmulationParams;
 
 namespace content {
 
+class BackForwardCacheCanStoreDocumentResult;
 class DevToolsAgentHostImpl;
 class FrameTreeNode;
 class NavigationRequest;
@@ -97,8 +98,10 @@ class PageHandler : public DevToolsDomainHandler,
 
   WebContentsImpl* GetWebContents();
 
-  void BackForwardCacheNotUsed(const NavigationRequest* nav_request);
   bool ShouldBypassCSP();
+  void BackForwardCacheNotUsed(
+      const NavigationRequest* nav_request,
+      const BackForwardCacheCanStoreDocumentResult* result);
 
   Response Enable() override;
   Response Disable() override;
@@ -204,7 +207,7 @@ class PageHandler : public DevToolsDomainHandler,
 
   void GotManifest(std::unique_ptr<GetAppManifestCallback> callback,
                    const GURL& manifest_url,
-                   const ::blink::Manifest& parsed_manifest,
+                   ::blink::mojom::ManifestPtr parsed_manifest,
                    blink::mojom::ManifestDebugInfoPtr debug_info);
 
   // RenderWidgetHostObserver overrides.

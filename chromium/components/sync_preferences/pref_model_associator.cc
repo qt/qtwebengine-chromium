@@ -26,8 +26,8 @@
 #include "components/sync/model/sync_change.h"
 #include "components/sync/model/sync_change_processor.h"
 #include "components/sync/model/sync_error_factory.h"
+#include "components/sync/protocol/entity_specifics.pb.h"
 #include "components/sync/protocol/preference_specifics.pb.h"
-#include "components/sync/protocol/sync.pb.h"
 #include "components/sync_preferences/pref_model_associator_client.h"
 #include "components/sync_preferences/pref_service_syncable.h"
 
@@ -343,7 +343,7 @@ base::Value PrefModelAssociator::MergeDictionaryValues(
   DCHECK(to_value.is_dict());
   base::Value result = to_value.Clone();
 
-  for (const auto& it : from_value.DictItems()) {
+  for (auto it : from_value.DictItems()) {
     const base::Value* from_key_value = &it.second;
     base::Value* to_key_value = result.FindKey(it.first);
     if (to_key_value) {

@@ -21,6 +21,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/tx.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/mem_internal.h"
@@ -759,7 +760,7 @@ static av_cold int siren_close(AVCodecContext *avctx)
     return 0;
 }
 
-AVCodec ff_siren_decoder = {
+const AVCodec ff_siren_decoder = {
     .name           = "siren",
     .long_name      = NULL_IF_CONFIG_SMALL("Siren"),
     .priv_data_size = sizeof(SirenContext),

@@ -36,7 +36,7 @@ public:
 
     const char* name() const override { return "DrawAtlasOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -54,12 +54,13 @@ private:
     void onCreateProgramInfo(const GrCaps*,
                              SkArenaAlloc*,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&&,
-                             const GrXferProcessor::DstProxyView&,
+                             const GrDstProxyView&,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override;
 
-    void onPrepareDraws(Target*) override;
+    void onPrepareDraws(GrMeshDrawTarget*) override;
     void onExecute(GrOpFlushState*, const SkRect& chainBounds) override;
 #if GR_TEST_UTILS
     SkString onDumpInfo() const override;
@@ -143,11 +144,12 @@ DrawAtlasOp::DrawAtlasOp(GrProcessorSet* processorSet, const SkPMColor4f& color,
         // Copy colors if necessary
         if (colors) {
             // convert to GrColor
-            SkColor color = colors[spriteIndex];
+            SkColor spriteColor = colors[spriteIndex];
             if (paintAlpha != 255) {
-                color = SkColorSetA(color, SkMulDiv255Round(SkColorGetA(color), paintAlpha));
+                spriteColor = SkColorSetA(spriteColor,
+                                          SkMulDiv255Round(SkColorGetA(spriteColor), paintAlpha));
             }
-            GrColor grColor = SkColorToPremulGrColor(color);
+            GrColor grColor = SkColorToPremulGrColor(spriteColor);
 
             *(reinterpret_cast<GrColor*>(currVertex + sizeof(SkPoint))) = grColor;
             *(reinterpret_cast<GrColor*>(currVertex + vertexStride + sizeof(SkPoint))) = grColor;
@@ -201,8 +203,9 @@ SkString DrawAtlasOp::onDumpInfo() const {
 void DrawAtlasOp::onCreateProgramInfo(const GrCaps* caps,
                                       SkArenaAlloc* arena,
                                       const GrSurfaceProxyView& writeView,
+                                      bool usesMSAASurface,
                                       GrAppliedClip&& appliedClip,
-                                      const GrXferProcessor::DstProxyView& dstProxyView,
+                                      const GrDstProxyView& dstProxyView,
                                       GrXferBarrierFlags renderPassXferBarriers,
                                       GrLoadOp colorLoadOp) {
     // Setup geometry processor
@@ -216,7 +219,7 @@ void DrawAtlasOp::onCreateProgramInfo(const GrCaps* caps,
                                              renderPassXferBarriers, colorLoadOp);
 }
 
-void DrawAtlasOp::onPrepareDraws(Target* target) {
+void DrawAtlasOp::onPrepareDraws(GrMeshDrawTarget* target) {
     if (!fProgramInfo) {
         this->createProgramInfo(target);
     }

@@ -356,8 +356,9 @@ TEST_F(PropertyTreeBuilderTest, VisibleRectWithClippingAndFilters) {
 
   gfx::Transform vertical_flip;
   vertical_flip.Scale(1, -1);
-  sk_sp<PaintFilter> flip_filter = sk_make_sp<MatrixPaintFilter>(
-      SkMatrix(vertical_flip.matrix()), kLow_SkFilterQuality, nullptr);
+  sk_sp<PaintFilter> flip_filter =
+      sk_make_sp<MatrixPaintFilter>(SkMatrix(vertical_flip.matrix()),
+                                    PaintFlags::FilterQuality::kLow, nullptr);
   FilterOperations reflection_filter;
   reflection_filter.Append(
       FilterOperation::CreateReferenceFilter(sk_make_sp<XfermodePaintFilter>(
@@ -416,8 +417,9 @@ TEST_F(PropertyTreeBuilderTest, VisibleRectWithScalingClippingAndFilters) {
 
   gfx::Transform vertical_flip;
   vertical_flip.Scale(1, -1);
-  sk_sp<PaintFilter> flip_filter = sk_make_sp<MatrixPaintFilter>(
-      SkMatrix(vertical_flip.matrix()), kLow_SkFilterQuality, nullptr);
+  sk_sp<PaintFilter> flip_filter =
+      sk_make_sp<MatrixPaintFilter>(SkMatrix(vertical_flip.matrix()),
+                                    PaintFlags::FilterQuality::kLow, nullptr);
   FilterOperations reflection_filter;
   reflection_filter.Append(
       FilterOperation::CreateReferenceFilter(sk_make_sp<XfermodePaintFilter>(
@@ -1825,6 +1827,33 @@ TEST_F(PropertyTreeBuilderTest,
   EXPECT_EQ(actual_self_rrect_4.rect(), bounds_in_target_space);
   EXPECT_FLOAT_EQ(actual_self_rrect_4.GetSimpleRadius(),
                   kRoundedCorner4Radius * kDeviceScale);
+}
+
+TEST_F(PropertyTreeBuilderTest, SubtreeSize) {
+  constexpr viz::SubtreeCaptureId kCaptureId{42};
+
+  auto parent = Layer::Create();
+  host()->SetRootLayer(parent);
+  auto child = Layer::Create();
+  parent->AddChild(child);
+  child->SetSubtreeCaptureId(kCaptureId);
+
+  // Layer has empty bounds.
+  Commit(1.1f);
+  EffectNode* node = GetEffectNode(child.get());
+  EXPECT_EQ((gfx::Size{}), node->subtree_size);
+  EXPECT_EQ(kCaptureId, node->subtree_capture_id);
+
+  // Layer has bounds, scaling is 1.
+  child->SetBounds(gfx::Size{1280, 720});
+  Commit(1.0f);
+  node = GetEffectNode(child.get());
+  EXPECT_EQ((gfx::Size{1280, 720}), node->subtree_size);
+
+  // Layer has bounds, scaling is 2.
+  Commit(2.0f);
+  node = GetEffectNode(child.get());
+  EXPECT_EQ((gfx::Size{2560, 1440}), node->subtree_size);
 }
 
 }  // namespace

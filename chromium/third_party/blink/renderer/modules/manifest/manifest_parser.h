@@ -9,7 +9,6 @@
 
 #include "base/macros.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/blink/public/common/manifest/manifest.h"
 #include "third_party/blink/public/mojom/manifest/manifest.mojom-blink.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
@@ -105,6 +104,20 @@ class MODULES_EXPORT ManifestParser {
                 const KURL& base_url,
                 ParseURLRestrictions origin_restriction);
 
+  // Helper function to parse "enum" fields that accept a single value or a
+  // list of values to allow sites to be backwards compatible with browsers that
+  // don't support the latest spec.
+  // Example:
+  //  - Spec specifies valid field values are A, B and C.
+  //  - Browser supports only A and B.
+  //  - Site specifies "field": ["C", "B"].
+  //  - Browser will fail to parse C and fallback to B.
+  template <typename Enum>
+  Enum ParseFirstValidEnum(const JSONObject* object,
+                           const String& key,
+                           Enum (*parse_enum)(const std::string&),
+                           Enum invalid_value);
+
   // Parses the 'name' field of the manifest, as defined in:
   // https://w3c.github.io/manifest/#dfn-steps-for-processing-the-name-member
   // Returns the parsed string if any, a null string if the parsing failed.
@@ -119,6 +132,9 @@ class MODULES_EXPORT ManifestParser {
   // https://w3c.github.io/manifest/#description-member-0
   // Returns the parsed string if any, a null string if the parsing failed.
   String ParseDescription(const JSONObject* object);
+
+  // Parses the 'id' field of the manifest.
+  String ParseId(const JSONObject* object, const KURL& start_url);
 
   // Parses the 'scope' field of the manifest, as defined in:
   // https://w3c.github.io/manifest/#scope-member. Returns the parsed KURL if
@@ -399,6 +415,18 @@ class MODULES_EXPORT ManifestParser {
   // This specifies how navigations into the web app's scope should be captured.
   // https://github.com/WICG/sw-launch/blob/master/declarative_link_capturing.md#proposal
   mojom::blink::CaptureLinks ParseCaptureLinks(const JSONObject* object);
+
+  // Parses the 'isolated_storage' field of the manifest.
+  // This marks whether the application should be loaded in a dedicated storage
+  // partition.
+  // Returns true iff the field could be parsed as the boolean true.
+  bool ParseIsolatedStorage(const JSONObject* object);
+
+  // Parses the 'launch_handler' field of the manifest as defined in:
+  // https://github.com/WICG/sw-launch/blob/main/launch_handler.md
+  // Returns default values if parsing fails.
+  mojom::blink::ManifestLaunchHandlerPtr ParseLaunchHandler(
+      const JSONObject* object);
 
   void AddErrorInfo(const String& error_msg,
                     bool critical = false,

@@ -20,9 +20,10 @@
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/shadow_value.h"
 #include "ui/gfx/skia_paint_util.h"
+#include "ui/views/animation/ink_drop.h"
 #include "ui/views/animation/ink_drop_impl.h"
 #include "ui/views/animation/ink_drop_ripple.h"
-#include "ui/views/border.h"
+#include "ui/views/controls/focus_ring.h"
 #include "ui/views/controls/highlight_path_generator.h"
 #include "ui/views/painter.h"
 
@@ -131,35 +132,40 @@ ToggleButton::ToggleButton(PressedCallback callback)
   slide_animation_.SetSlideDuration(base::TimeDelta::FromMilliseconds(80));
   slide_animation_.SetTweenType(gfx::Tween::LINEAR);
   thumb_view_ = AddChildView(std::make_unique<ThumbView>());
-  ink_drop()->SetMode(views::InkDropHost::InkDropMode::ON);
+  InkDrop::Get(this)->SetMode(views::InkDropHost::InkDropMode::ON);
   // Do not set a clip, allow the ink drop to burst out.
   // TODO(pbos): Consider an explicit InkDrop API to not use a clip rect / mask.
   views::InstallEmptyHighlightPathGenerator(this);
-  SetHasInkDropActionOnClick(true);
-  views::InkDrop::UseInkDropForSquareRipple(ink_drop(),
-                                            /*highlight_on_hover=*/false);
-  ink_drop()->SetCreateRippleCallback(base::BindRepeating(
+  // InkDrop event triggering is handled in NotifyClick().
+  SetHasInkDropActionOnClick(false);
+  InkDrop::UseInkDropForSquareRipple(InkDrop::Get(this),
+                                     /*highlight_on_hover=*/false);
+  InkDrop::Get(this)->SetCreateRippleCallback(base::BindRepeating(
       [](ToggleButton* host) {
         gfx::Rect rect = host->thumb_view_->GetLocalBounds();
         rect.Inset(-ThumbView::GetShadowOutsets());
-        return host->ink_drop()->CreateSquareRipple(rect.CenterPoint());
+        return InkDrop::Get(host)->CreateSquareRipple(rect.CenterPoint());
       },
       this));
-  ink_drop()->SetBaseColorCallback(base::BindRepeating(
+  InkDrop::Get(this)->SetBaseColorCallback(base::BindRepeating(
       [](ToggleButton* host) {
         return host->GetTrackColor(host->GetIsOn() || host->HasFocus());
       },
       this));
 
+  // Even though ToggleButton doesn't paint anything, declare us as flipped in
+  // RTL mode so that FocusRing correctly flips as well.
+  SetFlipCanvasOnPaintForRTLUI(true);
   SetInstallFocusRingOnFocus(true);
-  focus_ring()->SetPathGenerator(
+  FocusRing::Get(this)->SetPathGenerator(
       std::make_unique<FocusRingHighlightPathGenerator>());
-  focus_ring()->SetShouldPaintFocusAura(true);
 }
 
 ToggleButton::~ToggleButton() {
-  // Destroying ink drop early allows ink drop layer to be properly removed,
-  ink_drop()->SetMode(views::InkDropHost::InkDropMode::OFF);
+  // TODO(pbos): Revisit explicit removal of InkDrop for classes that override
+  // Add/RemoveLayerBeneathView(). This is done so that the InkDrop doesn't
+  // access the non-override versions in ~View.
+  views::InkDrop::Remove(this);
 }
 
 void ToggleButton::AnimateIsOn(bool is_on) {
@@ -243,8 +249,7 @@ void ToggleButton::RemoveLayerBeneathView(ui::Layer* layer) {
 gfx::Size ToggleButton::CalculatePreferredSize() const {
   gfx::Rect rect(kTrackSize);
   rect.Inset(gfx::Insets(-kTrackVerticalMargin, -kTrackHorizontalMargin));
-  if (border())
-    rect.Inset(-border()->GetInsets());
+  rect.Inset(-GetInsets());
   return rect.size();
 }
 
@@ -269,11 +274,11 @@ gfx::Rect ToggleButton::GetThumbBounds() const {
 void ToggleButton::UpdateThumb() {
   thumb_view_->Update(GetThumbBounds(),
                       static_cast<float>(slide_animation_.GetCurrentValue()));
-  if (focus_ring()) {
+  if (FocusRing::Get(this)) {
     // Updating the thumb changes the result of GetFocusRingPath(), make sure
     // the focus ring gets updated to match this new state.
-    focus_ring()->InvalidateLayout();
-    focus_ring()->SchedulePaint();
+    FocusRing::Get(this)->InvalidateLayout();
+    FocusRing::Get(this)->SchedulePaint();
   }
 }
 
@@ -315,7 +320,8 @@ void ToggleButton::GetAccessibleNodeData(ui::AXNodeData* node_data) {
 
 void ToggleButton::OnFocus() {
   Button::OnFocus();
-  ink_drop()->AnimateToState(views::InkDropState::ACTION_PENDING, nullptr);
+  InkDrop::Get(this)->AnimateToState(views::InkDropState::ACTION_PENDING,
+                                     nullptr);
   SchedulePaint();
 }
 
@@ -323,9 +329,10 @@ void ToggleButton::OnBlur() {
   Button::OnBlur();
 
   // The ink drop may have already gone away if the user clicked after focusing.
-  if (ink_drop()->GetInkDrop()->GetTargetInkDropState() ==
+  if (InkDrop::Get(this)->GetInkDrop()->GetTargetInkDropState() ==
       views::InkDropState::ACTION_PENDING) {
-    ink_drop()->AnimateToState(views::InkDropState::ACTION_TRIGGERED, nullptr);
+    InkDrop::Get(this)->AnimateToState(views::InkDropState::ACTION_TRIGGERED,
+                                       nullptr);
   }
   SchedulePaint();
 }
@@ -333,11 +340,15 @@ void ToggleButton::OnBlur() {
 void ToggleButton::NotifyClick(const ui::Event& event) {
   AnimateIsOn(!GetIsOn());
 
-  // Skip over Button::NotifyClick, to customize the ink drop animation.
-  // Leave the ripple in place when the button is activated via the keyboard.
-  if (!event.IsKeyEvent()) {
-    ink_drop()->AnimateToState(InkDropState::ACTION_TRIGGERED,
-                               ui::LocatedEvent::FromIfValid(&event));
+  // Only trigger the action when we don't have focus. This lets the InkDrop
+  // remain and match the focus ring.
+  // TODO(pbos): Investigate triggering the ripple but returning back to the
+  // focused state correctly. This is set up to highlight on focus, but the
+  // highlight does not come back after the ripple is triggered. Then remove
+  // this and add back SetHasInkDropActionOnClick(true) in the constructor.
+  if (!HasFocus()) {
+    InkDrop::Get(this)->AnimateToState(InkDropState::ACTION_TRIGGERED,
+                                       ui::LocatedEvent::FromIfValid(&event));
   }
 
   Button::NotifyClick(event);

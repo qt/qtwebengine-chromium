@@ -5,8 +5,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "base/cxx17_backports.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -116,6 +116,7 @@ TEST(NotificationDatabaseConversionsTest, SerializeAndDeserializeData) {
       base::TimeDelta::FromMilliseconds(kTimeUntilCloseMillis);
   database_data.closed_reason = NotificationDatabaseData::ClosedReason::USER;
   database_data.has_triggered = kHasTriggered;
+  database_data.is_shown_by_browser = true;
   std::string serialized_data;
 
   // Serialize the data in |notification_data| to the string |serialized_data|.
@@ -147,6 +148,7 @@ TEST(NotificationDatabaseConversionsTest, SerializeAndDeserializeData) {
             copied_data.time_until_close_millis);
   EXPECT_EQ(database_data.closed_reason, copied_data.closed_reason);
   EXPECT_EQ(database_data.has_triggered, copied_data.has_triggered);
+  EXPECT_EQ(database_data.is_shown_by_browser, copied_data.is_shown_by_browser);
 
   const blink::PlatformNotificationData& copied_notification_data =
       copied_data.notification_data;

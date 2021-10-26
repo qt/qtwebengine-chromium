@@ -39,6 +39,8 @@ component("views_examples_lib") {
     "example_combobox_model.h",
     "examples_window.cc",
     "examples_window.h",
+    "fade_animation.cc",
+    "fade_animation.h",
     "flex_layout_example.cc",
     "flex_layout_example.h",
     "label_example.cc",
@@ -89,9 +91,6 @@ component("views_examples_lib") {
     "widget_example.cc",
     "widget_example.h",
   ]
-
-  # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-  configs += [ "//build/config/compiler:no_size_t_to_int_warning" ]
 
   defines = [
     "GFX_VECTOR_ICONS_UNSAFE",

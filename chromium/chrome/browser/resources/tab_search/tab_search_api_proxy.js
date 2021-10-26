@@ -11,6 +11,16 @@ import {PageCallbackRouter, PageHandlerFactory, PageHandlerRemote, ProfileData, 
  * See tools/metrics/histograms/enums.xml.
  * @enum {number}
  */
+export const RecentlyClosedItemOpenAction = {
+  WITHOUT_SEARCH: 0,
+  WITH_SEARCH: 1,
+};
+
+/**
+ * These values are persisted to logs and should not be renumbered or re-used.
+ * See tools/metrics/histograms/enums.xml.
+ * @enum {number}
+ */
 export const TabSwitchAction = {
   WITHOUT_SEARCH : 0,
   WITH_SEARCH : 1,
@@ -28,8 +38,12 @@ export class TabSearchApiProxy {
   /** @return {Promise<{profileData: ProfileData}>} */
   getProfileData() {}
 
-  /** @param {number} tabId */
-  openRecentlyClosedTab(tabId) {}
+  /**
+   * @param {number} id
+   * @param {boolean} withSearch
+   * @param {boolean} isTab
+   */
+  openRecentlyClosedEntry(id, withSearch, isTab) {}
 
   /**
    * @param {!SwitchToTabInfo} info
@@ -41,9 +55,10 @@ export class TabSearchApiProxy {
   /** @return {!PageCallbackRouter} */
   getCallbackRouter() {}
 
-  showUI() {}
+  /** @param {boolean} expanded */
+  saveRecentlyClosedExpandedPref(expanded) {}
 
-  closeUI() {}
+  showUI() {}
 }
 
 /** @implements {TabSearchApiProxy} */
@@ -76,8 +91,15 @@ export class TabSearchApiProxyImpl {
   }
 
   /** @override */
-  openRecentlyClosedTab(tabId) {
-    this.handler.openRecentlyClosedTab(tabId);
+  openRecentlyClosedEntry(id, withSearch, isTab) {
+    chrome.metricsPrivate.recordEnumerationValue(
+        isTab ? 'Tabs.TabSearch.WebUI.RecentlyClosedTabOpenAction' :
+                'Tabs.TabSearch.WebUI.RecentlyClosedGroupOpenAction',
+        withSearch ? RecentlyClosedItemOpenAction.WITH_SEARCH :
+                     RecentlyClosedItemOpenAction.WITHOUT_SEARCH,
+        Object.keys(RecentlyClosedItemOpenAction).length);
+
+    this.handler.openRecentlyClosedEntry(id);
   }
 
   /** @override */
@@ -101,13 +123,13 @@ export class TabSearchApiProxyImpl {
   }
 
   /** @override */
-  showUI() {
-    this.handler.showUI();
+  saveRecentlyClosedExpandedPref(expanded) {
+    this.handler.saveRecentlyClosedExpandedPref(expanded);
   }
 
   /** @override */
-  closeUI() {
-    this.handler.closeUI();
+  showUI() {
+    this.handler.showUI();
   }
 }
 

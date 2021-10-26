@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/containers/stack_container.h"
 #include "base/logging.h"
 #include "base/ranges/algorithm.h"
 #include "base/strings/stringprintf.h"
@@ -178,7 +179,6 @@ void TaskQueueImpl::UnregisterTaskQueue() {
     any_thread_.unregistered = true;
     any_thread_.time_domain = nullptr;
     immediate_incoming_queue.swap(any_thread_.immediate_incoming_queue);
-    any_thread_.task_queue_observer = nullptr;
   }
 
   if (main_thread_only().time_domain)
@@ -186,7 +186,7 @@ void TaskQueueImpl::UnregisterTaskQueue() {
 
   main_thread_only().on_task_completed_handler = OnTaskCompletedHandler();
   main_thread_only().time_domain = nullptr;
-  main_thread_only().task_queue_observer = nullptr;
+  main_thread_only().throttler = nullptr;
   empty_queues_to_reload_handle_.ReleaseAtomicFlag();
 
   // It is possible for a task to hold a scoped_refptr to this, which
@@ -448,9 +448,8 @@ void TaskQueueImpl::ReloadEmptyImmediateWorkQueue() {
   DCHECK(main_thread_only().immediate_work_queue->Empty());
   main_thread_only().immediate_work_queue->TakeImmediateIncomingQueueTasks();
 
-  if (main_thread_only().task_queue_observer && IsQueueEnabled()) {
-    main_thread_only().task_queue_observer->OnQueueNextWakeUpChanged(
-        TimeTicks());
+  if (main_thread_only().throttler && IsQueueEnabled()) {
+    main_thread_only().throttler->OnHasImmediateTask();
   }
 }
 
@@ -512,7 +511,7 @@ size_t TaskQueueImpl::GetNumberOfPendingTasks() const {
   return task_count;
 }
 
-bool TaskQueueImpl::HasTaskToRunImmediately() const {
+bool TaskQueueImpl::HasTaskToRunImmediatelyOrReadyDelayedTask() const {
   // Any work queue tasks count as immediate work.
   if (!main_thread_only().delayed_work_queue->Empty() ||
       !main_thread_only().immediate_work_queue->Empty()) {
@@ -532,7 +531,7 @@ bool TaskQueueImpl::HasTaskToRunImmediately() const {
   return !any_thread_.immediate_incoming_queue.empty();
 }
 
-absl::optional<DelayedWakeUp> TaskQueueImpl::GetNextScheduledWakeUpImpl() {
+absl::optional<DelayedWakeUp> TaskQueueImpl::GetNextDesiredWakeUp() {
   // Note we don't scheduled a wake-up for disabled queues.
   if (main_thread_only().delayed_incoming_queue.empty() || !IsQueueEnabled())
     return absl::nullopt;
@@ -547,15 +546,14 @@ absl::optional<DelayedWakeUp> TaskQueueImpl::GetNextScheduledWakeUpImpl() {
           : WakeUpResolution::kLow;
 
   const auto& top_task = main_thread_only().delayed_incoming_queue.top();
-  return DelayedWakeUp{top_task.delayed_run_time, top_task.sequence_num,
-                       resolution};
+  return DelayedWakeUp{top_task.delayed_run_time, resolution};
 }
 
-absl::optional<TimeTicks> TaskQueueImpl::GetNextScheduledWakeUp() {
-  absl::optional<DelayedWakeUp> wake_up = GetNextScheduledWakeUpImpl();
-  if (!wake_up)
-    return absl::nullopt;
-  return wake_up->time;
+void TaskQueueImpl::OnWakeUp(LazyNow* lazy_now) {
+  MoveReadyDelayedTasksToWorkQueue(lazy_now);
+  if (main_thread_only().throttler) {
+    main_thread_only().throttler->OnWakeUp(lazy_now);
+  }
 }
 
 void TaskQueueImpl::MoveReadyDelayedTasksToWorkQueue(LazyNow* lazy_now) {
@@ -957,6 +955,8 @@ void TaskQueueImpl::SetQueueEnabled(bool enabled) {
   }
 
   LazyNow lazy_now = main_thread_only().time_domain->CreateLazyNow();
+  // If there is a throttler, it will be notified of pending delayed and
+  // immediate tasks inside UpdateDelayedWakeUp().
   UpdateDelayedWakeUp(&lazy_now);
 
   bool has_pending_immediate_work = false;
@@ -964,7 +964,7 @@ void TaskQueueImpl::SetQueueEnabled(bool enabled) {
   {
     base::internal::CheckedAutoLock lock(any_thread_lock_);
     UpdateCrossThreadQueueStateLocked();
-    has_pending_immediate_work = HasPendingImmediateWorkLocked();
+    has_pending_immediate_work = HasTaskToRunImmediatelyLocked();
 
     // Copy over the task-reporting related state.
     any_thread_.tracing_only.is_enabled = enabled;
@@ -979,12 +979,6 @@ void TaskQueueImpl::SetQueueEnabled(bool enabled) {
 
   // Finally, enable or disable the queue with the selector.
   if (enabled) {
-    if (has_pending_immediate_work && main_thread_only().task_queue_observer) {
-      // Delayed work notification will be issued via time domain.
-      main_thread_only().task_queue_observer->OnQueueNextWakeUpChanged(
-          TimeTicks());
-    }
-
     // Note the selector calls SequenceManager::OnTaskQueueEnabled which posts
     // a DoWork if needed.
     sequence_manager_->main_thread_only().selector.EnableQueue(this);
@@ -1024,14 +1018,14 @@ void TaskQueueImpl::UpdateCrossThreadQueueStateLocked() {
   any_thread_.immediate_work_queue_empty =
       main_thread_only().immediate_work_queue->Empty();
 
-  if (main_thread_only().task_queue_observer) {
-    // If there's an observer we need a DoWork for the callback to be issued by
-    // ReloadEmptyImmediateWorkQueue. The callback isn't sent for disabled
-    // queues.
+  if (main_thread_only().throttler) {
+    // If there's a Throttler, always ScheduleWork() when immediate work is
+    // posted and the queue is enabled, to ensure that
+    // Throttler::OnHasImmediateTask() is invoked.
     any_thread_.post_immediate_task_should_schedule_work = IsQueueEnabled();
   } else {
-    // Otherwise we need PostImmediateTaskImpl to ScheduleWork unless the queue
-    // is blocked or disabled.
+    // Otherwise, ScheduleWork() only if the queue is enabled and there isn't a
+    // fence to prevent the task from being executed.
     any_thread_.post_immediate_task_should_schedule_work =
         IsQueueEnabled() && !main_thread_only().current_fence;
   }
@@ -1047,6 +1041,12 @@ void TaskQueueImpl::ReclaimMemory(TimeTicks now) {
     return;
   main_thread_only().delayed_incoming_queue.SweepCancelledTasks(
       sequence_manager_);
+
+  // If deleting one of the cancelled tasks shut down this queue, bail out. Note
+  // that in this scenario |this| is still valid, but some fields of the queue
+  // have been cleared out by |UnregisterTaskQueue|.
+  if (!main_thread_only().delayed_work_queue)
+    return;
 
   // Also consider shrinking the work queue if it's wasting memory.
   main_thread_only().delayed_work_queue->MaybeShrinkQueue();
@@ -1097,47 +1097,45 @@ void TaskQueueImpl::RequeueDeferredNonNestableTask(
   }
 }
 
-void TaskQueueImpl::SetObserver(TaskQueue::Observer* observer) {
-  if (observer) {
-    DCHECK(!main_thread_only().task_queue_observer)
-        << "Can't assign two different observers to "
-           "base::sequence_manager:TaskQueue";
-  }
+void TaskQueueImpl::SetThrottler(TaskQueue::Throttler* throttler) {
+  DCHECK(throttler);
+  DCHECK(!main_thread_only().throttler)
+      << "Can't assign two different throttlers to "
+         "base::sequence_manager:TaskQueue";
 
-  main_thread_only().task_queue_observer = observer;
+  main_thread_only().throttler = throttler;
+}
 
-  base::internal::CheckedAutoLock lock(any_thread_lock_);
-  any_thread_.task_queue_observer = observer;
+void TaskQueueImpl::ResetThrottler() {
+  main_thread_only().throttler = nullptr;
+  LazyNow lazy_now = main_thread_only().time_domain->CreateLazyNow();
+  // The current delayed wake up may have been determined by the Throttler.
+  // Update it now that there is no Throttler.
+  UpdateDelayedWakeUp(&lazy_now);
 }
 
 void TaskQueueImpl::UpdateDelayedWakeUp(LazyNow* lazy_now) {
-  return UpdateDelayedWakeUpImpl(lazy_now, GetNextScheduledWakeUpImpl());
+  absl::optional<DelayedWakeUp> wake_up = GetNextDesiredWakeUp();
+  if (main_thread_only().throttler && IsQueueEnabled()) {
+    // GetNextAllowedWakeUp() may return a non-null wake_up even if |wake_up| is
+    // nullopt, e.g. to throttle immediate tasks.
+    wake_up = main_thread_only().throttler->GetNextAllowedWakeUp(
+        lazy_now, wake_up, HasTaskToRunImmediatelyOrReadyDelayedTask());
+  }
+  SetNextDelayedWakeUp(lazy_now, wake_up);
 }
 
-void TaskQueueImpl::UpdateDelayedWakeUpImpl(
+void TaskQueueImpl::SetNextDelayedWakeUp(
     LazyNow* lazy_now,
     absl::optional<DelayedWakeUp> wake_up) {
   if (main_thread_only().scheduled_wake_up == wake_up)
     return;
   main_thread_only().scheduled_wake_up = wake_up;
-
-  if (wake_up && main_thread_only().task_queue_observer &&
-      !HasPendingImmediateWork()) {
-    main_thread_only().task_queue_observer->OnQueueNextWakeUpChanged(
-        wake_up->time);
-  }
-
   main_thread_only().time_domain->SetNextWakeUpForQueue(this, wake_up,
                                                         lazy_now);
 }
 
-void TaskQueueImpl::SetDelayedWakeUpForTesting(
-    absl::optional<DelayedWakeUp> wake_up) {
-  LazyNow lazy_now = main_thread_only().time_domain->CreateLazyNow();
-  UpdateDelayedWakeUpImpl(&lazy_now, wake_up);
-}
-
-bool TaskQueueImpl::HasPendingImmediateWork() {
+bool TaskQueueImpl::HasTaskToRunImmediately() const {
   // Any work queue tasks count as immediate work.
   if (!main_thread_only().delayed_work_queue->Empty() ||
       !main_thread_only().immediate_work_queue->Empty()) {
@@ -1149,7 +1147,7 @@ bool TaskQueueImpl::HasPendingImmediateWork() {
   return !any_thread_.immediate_incoming_queue.empty();
 }
 
-bool TaskQueueImpl::HasPendingImmediateWorkLocked() {
+bool TaskQueueImpl::HasTaskToRunImmediatelyLocked() const {
   return !main_thread_only().delayed_work_queue->Empty() ||
          !main_thread_only().immediate_work_queue->Empty() ||
          !any_thread_.immediate_incoming_queue.empty();
@@ -1294,7 +1292,8 @@ void TaskQueueImpl::MaybeReportIpcTaskQueuedFromAnyThreadUnlocked(
         ShouldReportIpcTaskQueuedFromAnyThreadLocked(&time_since_disabled);
   }
 
-  ReportIpcTaskQueued(pending_task, task_queue_name, time_since_disabled);
+  if (should_report)
+    ReportIpcTaskQueued(pending_task, task_queue_name, time_since_disabled);
 }
 
 void TaskQueueImpl::ReportIpcTaskQueued(
@@ -1385,15 +1384,16 @@ size_t TaskQueueImpl::DelayedIncomingQueue::PQueue::SweepCancelledTasks(
   // move all the cancelled tasks into a temporary container before deleting
   // them. This is to avoid |c| from changing while c.erase() is running.
   auto delete_start = std::stable_partition(c.begin(), c.end(), keep_task);
-  std::vector<Task> tasks_to_delete;
-  std::move(delete_start, c.end(), std::back_inserter(tasks_to_delete));
+  StackVector<Task, 8> tasks_to_delete;
+  std::move(delete_start, c.end(),
+            std::back_inserter(tasks_to_delete.container()));
   c.erase(delete_start, c.end());
 
   // stable_partition ensures order was not changed if there was nothing to
   // delete.
-  if (!tasks_to_delete.empty()) {
+  if (!tasks_to_delete->empty()) {
     ranges::make_heap(c, comp);
-    tasks_to_delete.clear();
+    tasks_to_delete->clear();
   }
   return num_high_res_tasks_swept;
 }

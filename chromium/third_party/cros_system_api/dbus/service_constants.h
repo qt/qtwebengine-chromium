@@ -241,8 +241,6 @@ const char
         "IsCryptohomeUserDataAuthKillswitchEnabled";
 const char kChromeFeaturesServiceIsPluginVmEnabledMethod[] =
     "IsPluginVmEnabled";
-const char kChromeFeaturesServiceIsUsbguardEnabledMethod[] =
-    "IsUsbguardEnabled";
 const char kChromeFeaturesServiceIsVmManagementCliAllowedMethod[] =
     "IsVmManagementCliAllowed";
 const char kChromeFeaturesServiceIsShillSandboxingEnabledMethod[] =
@@ -348,7 +346,13 @@ const char kModemManager1ModemInterface[] =
 const char kModemManager1MessagingInterface[] =
     "org.freedesktop.ModemManager1.Modem.Messaging";
 const char kModemManager1SmsInterface[] = "org.freedesktop.ModemManager1.Sms";
+const char kModemManager1SarInterface[] =
+    "org.freedesktop.ModemManager1.Modem.Sar";
+
 const char kSMSAddedSignal[] = "Added";
+const char kSarEnable[] = "Enable";
+const char kSarSetPowerLevel[] = "SetPowerLevel";
+
 }  // namespace modemmanager
 
 namespace mtpd {
@@ -449,6 +453,7 @@ const char kResendBluetoothBattery[] = "ResendBluetoothBattery";
 const char kGetDeprioritizeBtWbsMic[] = "GetDeprioritizeBtWbsMic";
 const char kSetNoiseCancellationEnabled[] = "SetNoiseCancellationEnabled";
 const char kIsNoiseCancellationSupported[] = "IsNoiseCancellationSupported";
+const char kSetFlossEnabled[] = "SetFlossEnabled";
 
 // Names of properties returned by GetNodes() and GetNodeInfos()
 const char kIsInputProperty[] = "IsInput";
@@ -463,6 +468,7 @@ const char kStableDeviceIdNewProperty[] = "StableDeviceIdNew";
 const char kMaxSupportedChannelsProperty[] = "MaxSupportedChannels";
 const char kAudioEffectProperty[] = "AudioEffect";
 const char kNodeVolumeProperty[] = "NodeVolume";
+const char kInputNodeGainProperty[] = "InputNodeGain";
 // The following two properties are optional.
 const char kNumberOfUnderrunsProperty[] = "NumberOfUnderruns";
 const char kNumberOfSevereUnderrunsProperty[] = "NumberOfSevereUnderruns";
@@ -564,6 +570,17 @@ constexpr char kMachineLearningInterfaceName[] = "org.chromium.MachineLearning";
 constexpr char kBootstrapMojoConnectionMethod[] = "BootstrapMojoConnection";
 // Token identifying the primordial Mojo pipe passed to BootstrapMojoConnection.
 constexpr char kBootstrapMojoConnectionChannelToken[] = "ml-service-bootstrap";
+
+constexpr char kMachineLearningAdaptiveChargingServiceName[] =
+    "org.chromium.MachineLearning.AdaptiveCharging";
+constexpr char kMachineLearningAdaptiveChargingServicePath[] =
+    "/org/chromium/MachineLearning/AdaptiveCharging";
+constexpr char kMachineLearningAdaptiveChargingInterfaceName[] =
+    "org.chromium.MachineLearning.AdaptiveCharging";
+// Methods
+constexpr char kRequestAdaptiveChargingDecisionMethod[] =
+    "RequestAdaptiveChargingDecision";
+
 }  // namespace ml
 
 namespace federated {
@@ -592,6 +609,8 @@ constexpr char kBootstrapMojoConnectionForIioServiceMethod[] =
     "BootstrapMojoConnectionForIioService";
 constexpr char kBootstrapMojoConnectionForSensorClientsMethod[] =
     "BootstrapMojoConnectionForSensorClients";
+constexpr char kBootstrapMojoConnectionForRollbackNetworkConfigMethod[] =
+    "BootstrapMojoConnectionForRollbackNetworkConfigService";
 }  // namespace mojo_connection_service
 
 namespace virtual_file_provider {

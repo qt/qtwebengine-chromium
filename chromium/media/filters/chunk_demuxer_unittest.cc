@@ -15,13 +15,14 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/task_environment.h"
+#include "build/build_config.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decrypt_config.h"
@@ -1358,6 +1359,16 @@ TEST_F(ChunkDemuxerTest, Init) {
   }
 }
 
+TEST_F(ChunkDemuxerTest, AddIdDuringOpenCallback) {
+  // Tests that users may call |ChunkDemuxer::AddId| (or really any method that
+  // acquires |ChunkDemuxer::lock_|) during the open callback.
+  EXPECT_CALL(*this, DemuxerOpened()).WillOnce([this]() { this->AddId(); });
+
+  CreateNewDemuxer();
+  demuxer_->Initialize(&host_, base::DoNothing());
+  ShutdownDemuxer();
+}
+
 TEST_F(ChunkDemuxerTest, AudioVideoTrackIdsChange) {
   // Test with 1 audio and 1 video stream. Send a second init segment in which
   // the audio and video track IDs change. Verify that appended buffers before
@@ -1614,21 +1625,46 @@ TEST_F(ChunkDemuxerTest, NonMonotonicButAboveClusterTimecode) {
       &timestamp_offset_map_[kSourceId]));
 }
 
-TEST_F(ChunkDemuxerTest, BackwardsAndBeforeClusterTimecode) {
+TEST_F(ChunkDemuxerTest, BeforeClusterTimecode) {
   ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
   ASSERT_TRUE(AppendCluster(kDefaultFirstCluster()));
 
   ClusterBuilder cb;
+  uint8_t data[] = {0x00};
+
+  // Test timecodes before the cluster timecode are allowed now. This next
+  // cluster mimics the blocks in kDefaultSecondCluster(), but with a cluster
+  // timecode in the future. The blocks will have relative timestamps that
+  // should make them appear as if they are precisely those in
+  // kDefaultSecondCluster().
+  cb.SetClusterTimecode(1000);  // In the future relative to the next blocks.
+  cb.AddSimpleBlock(kAudioTrackNum, 46, kWebMFlagKeyframe, data, sizeof(data));
+  cb.AddSimpleBlock(kVideoTrackNum, 66, kWebMFlagKeyframe, data, sizeof(data));
+  cb.AddSimpleBlock(kAudioTrackNum, 69, kWebMFlagKeyframe, data, sizeof(data));
+  cb.AddBlockGroup(kAudioTrackNum, 92, kAudioBlockDuration, kWebMFlagKeyframe,
+                   true, data, sizeof(data));
+  cb.AddBlockGroup(kVideoTrackNum, 99, kVideoBlockDuration, 0, false, data,
+                   sizeof(data));
+
+  ASSERT_TRUE(AppendCluster(cb.Finish()));
+  GenerateExpectedReads(0, 9);
+}
+
+TEST_F(ChunkDemuxerTest, NonMonotonicButBeforeClusterTimecode) {
+  ASSERT_TRUE(InitDemuxer(HAS_AUDIO | HAS_VIDEO));
+  ASSERT_TRUE(AppendCluster(kDefaultFirstCluster()));
+
+  ClusterBuilder cb;
+  uint8_t data[] = {0x00};
 
   // Test timecodes going backwards and including values less than the cluster
   // timecode.
-  cb.SetClusterTimecode(5);
-  AddSimpleBlock(&cb, kAudioTrackNum, 5);
-  AddSimpleBlock(&cb, kVideoTrackNum, 5);
-  AddSimpleBlock(&cb, kAudioTrackNum, 3);
-  AddSimpleBlock(&cb, kVideoTrackNum, 3);
+  cb.SetClusterTimecode(1000);
+  cb.AddSimpleBlock(kAudioTrackNum, 69, kWebMFlagKeyframe, data, sizeof(data));
+  cb.AddSimpleBlock(kVideoTrackNum, 99, kWebMFlagKeyframe, data, sizeof(data));
+  cb.AddSimpleBlock(kAudioTrackNum, 46, kWebMFlagKeyframe, data, sizeof(data));
 
-  EXPECT_MEDIA_LOG(WebMNegativeTimecodeOffset("-2"));
+  EXPECT_MEDIA_LOG(WebMOutOfOrderTimecode());
   EXPECT_MEDIA_LOG(StreamParsingFailed());
   EXPECT_CALL(host_, OnDemuxerError(CHUNK_DEMUXER_ERROR_APPEND_FAILED));
   ASSERT_FALSE(AppendCluster(cb.Finish()));

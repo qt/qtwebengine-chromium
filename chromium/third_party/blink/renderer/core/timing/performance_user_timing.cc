@@ -109,7 +109,8 @@ double UserTiming::FindExistingMarkStartTime(const AtomicString& mark_name,
   }
 
   PerformanceTiming::PerformanceTimingGetter timing_function =
-      PerformanceTiming::GetAttributeMapping().at(mark_name);
+      PerformanceTiming::GetAttributeMapping().DeprecatedAtOrEmptyValue(
+          mark_name);
   if (!timing_function) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kSyntaxError,
@@ -176,15 +177,8 @@ base::TimeTicks UserTiming::GetPerformanceMarkUnsafeTimeForTraces(
       return mark->UnsafeTimeForTraces();
     }
   }
-
-  // User timing events are stored as integer milliseconds from the start of
-  // navigation.
-  // GetTimeOrigin() returns seconds from the monotonic clock's origin..
-  // Trace events timestamps accept seconds (as a double) based on
-  // CurrentTime::monotonicallyIncreasingTime().
-  double start_time_in_seconds = start_time / 1000.0;
-  return trace_event::ToTraceTimestamp(performance_->GetTimeOrigin() +
-                                       start_time_in_seconds);
+  return performance_->GetTimeOriginInternal() +
+         base::TimeDelta::FromMillisecondsD(start_time);
 }
 
 PerformanceMeasure* UserTiming::Measure(ScriptState* script_state,

@@ -34,12 +34,8 @@ static const uint32_t render_formats[] = { DRM_FORMAT_ABGR16161616F };
 static const uint32_t texture_only_formats[] = { DRM_FORMAT_R8, DRM_FORMAT_NV12, DRM_FORMAT_P010,
 						 DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID };
 
-static const uint64_t gen_modifier_order[] = { I915_FORMAT_MOD_Y_TILED, I915_FORMAT_MOD_X_TILED,
-					       DRM_FORMAT_MOD_LINEAR };
-
-static const uint64_t gen11_modifier_order[] = { I915_FORMAT_MOD_Y_TILED_CCS,
-						 I915_FORMAT_MOD_Y_TILED, I915_FORMAT_MOD_X_TILED,
-						 DRM_FORMAT_MOD_LINEAR };
+static const uint64_t gen_modifier_order[] = { I915_FORMAT_MOD_Y_TILED_CCS, I915_FORMAT_MOD_Y_TILED,
+					       I915_FORMAT_MOD_X_TILED, DRM_FORMAT_MOD_LINEAR };
 
 struct modifier_support_t {
 	const uint64_t *order;
@@ -51,41 +47,49 @@ struct i915_device {
 	int32_t has_llc;
 	int32_t has_hw_protection;
 	struct modifier_support_t modifier;
+	int device_id;
+	bool is_adlp;
 };
 
-static uint32_t i915_get_gen(int device_id)
+static void i915_info_from_device_id(struct i915_device *i915)
 {
 	const uint16_t gen3_ids[] = { 0x2582, 0x2592, 0x2772, 0x27A2, 0x27AE,
 				      0x29C2, 0x29B2, 0x29D2, 0xA001, 0xA011 };
 	const uint16_t gen11_ids[] = { 0x4E71, 0x4E61, 0x4E51, 0x4E55, 0x4E57 };
 	const uint16_t gen12_ids[] = { 0x9A40, 0x9A49, 0x9A59, 0x9A60, 0x9A68, 0x9A70,
 				       0x9A78, 0x9AC0, 0x9AC9, 0x9AD9, 0x9AF8 };
+	const uint16_t adlp_ids[] = { 0x46A0, 0x46A1, 0x46A2, 0x46A3, 0x46A6, 0x46A8,
+				      0x46AA, 0x462A, 0x4626, 0x4628, 0x46B0, 0x46B1,
+				      0x46B2, 0x46B3, 0x46C0, 0x46C1, 0x46C2, 0x46C3 };
 	unsigned i;
+	i915->gen = 4;
+	i915->is_adlp = false;
+
 	for (i = 0; i < ARRAY_SIZE(gen3_ids); i++)
-		if (gen3_ids[i] == device_id)
-			return 3;
+		if (gen3_ids[i] == i915->device_id)
+			i915->gen = 3;
+
 	/* Gen 11 */
 	for (i = 0; i < ARRAY_SIZE(gen11_ids); i++)
-		if (gen11_ids[i] == device_id)
-			return 11;
+		if (gen11_ids[i] == i915->device_id)
+			i915->gen = 11;
 
 	/* Gen 12 */
 	for (i = 0; i < ARRAY_SIZE(gen12_ids); i++)
-		if (gen12_ids[i] == device_id)
-			return 12;
+		if (gen12_ids[i] == i915->device_id)
+			i915->gen = 12;
 
-	return 4;
+	for (i = 0; i < ARRAY_SIZE(adlp_ids); i++)
+		if (adlp_ids[i] == i915->device_id) {
+			i915->is_adlp = true;
+			i915->gen = 12;
+		}
 }
 
 static void i915_get_modifier_order(struct i915_device *i915)
 {
-	if (i915->gen == 11) {
-		i915->modifier.order = gen11_modifier_order;
-		i915->modifier.count = ARRAY_SIZE(gen11_modifier_order);
-	} else {
-		i915->modifier.order = gen_modifier_order;
-		i915->modifier.count = ARRAY_SIZE(gen_modifier_order);
-	}
+	i915->modifier.order = gen_modifier_order;
+	i915->modifier.count = ARRAY_SIZE(gen_modifier_order);
 }
 
 static uint64_t unset_flags(uint64_t current_flags, uint64_t mask)
@@ -96,85 +100,88 @@ static uint64_t unset_flags(uint64_t current_flags, uint64_t mask)
 
 static int i915_add_combinations(struct driver *drv)
 {
-	struct format_metadata metadata;
-	uint64_t render, scanout_and_render, texture_only, hw_protected;
 	struct i915_device *i915 = drv->priv;
 
-	scanout_and_render = BO_USE_RENDER_MASK | BO_USE_SCANOUT;
-	render = BO_USE_RENDER_MASK;
-	texture_only = BO_USE_TEXTURE_MASK;
+	const uint64_t scanout_and_render = BO_USE_RENDER_MASK | BO_USE_SCANOUT;
+	const uint64_t render = BO_USE_RENDER_MASK;
+	const uint64_t texture_only = BO_USE_TEXTURE_MASK;
 	// HW protected buffers also need to be scanned out.
-	hw_protected = i915->has_hw_protection ? (BO_USE_PROTECTED | BO_USE_SCANOUT) : 0;
+	const uint64_t hw_protected =
+	    i915->has_hw_protection ? (BO_USE_PROTECTED | BO_USE_SCANOUT) : 0;
 
-	uint64_t linear_mask =
-	    BO_USE_RENDERSCRIPT | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN;
+	const uint64_t linear_mask = BO_USE_RENDERSCRIPT | BO_USE_LINEAR | BO_USE_SW_READ_OFTEN |
+				     BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY |
+				     BO_USE_SW_WRITE_RARELY;
 
-	metadata.tiling = I915_TILING_NONE;
-	metadata.priority = 1;
-	metadata.modifier = DRM_FORMAT_MOD_LINEAR;
+	struct format_metadata metadata_linear = { .tiling = I915_TILING_NONE,
+						   .priority = 1,
+						   .modifier = DRM_FORMAT_MOD_LINEAR };
 
 	drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
-			     &metadata, scanout_and_render);
+			     &metadata_linear, scanout_and_render);
 
-	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata, render);
+	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata_linear,
+			     render);
 
-	drv_add_combinations(drv, texture_only_formats, ARRAY_SIZE(texture_only_formats), &metadata,
-			     texture_only);
+	drv_add_combinations(drv, texture_only_formats, ARRAY_SIZE(texture_only_formats),
+			     &metadata_linear, texture_only);
 
 	drv_modify_linear_combinations(drv);
 
 	/* NV12 format for camera, display, decoding and encoding. */
 	/* IPU3 camera ISP supports only NV12 output. */
-	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata,
+	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata_linear,
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SCANOUT |
 				   BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
 				   hw_protected);
 
 	/* Android CTS tests require this. */
-	drv_add_combination(drv, DRM_FORMAT_BGR888, &metadata, BO_USE_SW_MASK);
+	drv_add_combination(drv, DRM_FORMAT_BGR888, &metadata_linear, BO_USE_SW_MASK);
 
 	/*
 	 * R8 format is used for Android's HAL_PIXEL_FORMAT_BLOB and is used for JPEG snapshots
 	 * from camera and input/output from hardware decoder/encoder.
 	 */
-	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata,
+	drv_modify_combination(drv, DRM_FORMAT_R8, &metadata_linear,
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_HW_VIDEO_DECODER |
 				   BO_USE_HW_VIDEO_ENCODER);
 
-	render = unset_flags(render, linear_mask);
-	scanout_and_render = unset_flags(scanout_and_render, linear_mask);
+	const uint64_t render_not_linear = unset_flags(render, linear_mask);
+	const uint64_t scanout_and_render_not_linear = render_not_linear | BO_USE_SCANOUT;
 
-	metadata.tiling = I915_TILING_X;
-	metadata.priority = 2;
-	metadata.modifier = I915_FORMAT_MOD_X_TILED;
+	struct format_metadata metadata_x_tiled = { .tiling = I915_TILING_X,
+						    .priority = 2,
+						    .modifier = I915_FORMAT_MOD_X_TILED };
 
-	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata, render);
+	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata_x_tiled,
+			     render_not_linear);
 	drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
-			     &metadata, scanout_and_render);
+			     &metadata_x_tiled, scanout_and_render_not_linear);
 
-	metadata.tiling = I915_TILING_Y;
-	metadata.priority = 3;
-	metadata.modifier = I915_FORMAT_MOD_Y_TILED;
+	struct format_metadata metadata_y_tiled = { .tiling = I915_TILING_Y,
+						    .priority = 3,
+						    .modifier = I915_FORMAT_MOD_Y_TILED };
 
-	scanout_and_render =
-	    unset_flags(scanout_and_render, BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY);
 /* Support y-tiled NV12 and P010 for libva */
 #ifdef I915_SCANOUT_Y_TILED
-	uint64_t nv12_usage =
+	const uint64_t nv12_usage =
 	    BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | BO_USE_SCANOUT | hw_protected;
-	uint64_t p010_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | hw_protected;
+	const uint64_t p010_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER | hw_protected |
+				    (i915->gen >= 11 ? BO_USE_SCANOUT : 0);
 #else
-	uint64_t nv12_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER;
-	uint64_t p010_usage = nv12_usage;
+	const uint64_t nv12_usage = BO_USE_TEXTURE | BO_USE_HW_VIDEO_DECODER;
+	const uint64_t p010_usage = nv12_usage;
 #endif
-	drv_add_combination(drv, DRM_FORMAT_NV12, &metadata, nv12_usage);
-	drv_add_combination(drv, DRM_FORMAT_P010, &metadata, p010_usage);
+	drv_add_combination(drv, DRM_FORMAT_NV12, &metadata_y_tiled, nv12_usage);
+	drv_add_combination(drv, DRM_FORMAT_P010, &metadata_y_tiled, p010_usage);
 
-	scanout_and_render = unset_flags(scanout_and_render, BO_USE_SCANOUT);
+	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata_y_tiled,
+			     render_not_linear);
 
-	drv_add_combinations(drv, render_formats, ARRAY_SIZE(render_formats), &metadata, render);
+	// Y-tiled scanout isn't available on old platforms so we add
+	// |scanout_render_formats| without that USE flag.
 	drv_add_combinations(drv, scanout_render_formats, ARRAY_SIZE(scanout_render_formats),
-			     &metadata, scanout_and_render);
+			     &metadata_y_tiled, render_not_linear);
 	return 0;
 }
 
@@ -233,6 +240,10 @@ static int i915_align_dimensions(struct bo *bo, uint32_t tiling, uint32_t *strid
 		*stride = horizontal_alignment;
 	}
 
+	/* stride must be power-of-two aligned for ADL-P tiled buffers*/
+	if (i915->is_adlp && (*stride > 1) && (tiling != I915_TILING_NONE))
+		*stride = 1 << (32 - __builtin_clz(*stride - 1));
+
 	if (i915->gen <= 3 && *stride > 8192)
 		return -EINVAL;
 
@@ -254,7 +265,6 @@ static void i915_clflush(void *start, size_t size)
 static int i915_init(struct driver *drv)
 {
 	int ret;
-	int device_id;
 	struct i915_device *i915;
 	drm_i915_getparam_t get_param = { 0 };
 
@@ -263,15 +273,16 @@ static int i915_init(struct driver *drv)
 		return -ENOMEM;
 
 	get_param.param = I915_PARAM_CHIPSET_ID;
-	get_param.value = &device_id;
+	get_param.value = &(i915->device_id);
 	ret = drmIoctl(drv->fd, DRM_IOCTL_I915_GETPARAM, &get_param);
 	if (ret) {
 		drv_log("Failed to get I915_PARAM_CHIPSET_ID\n");
 		free(i915);
 		return -EINVAL;
 	}
+	/* must call before i915->gen is used anywhere else */
+	i915_info_from_device_id(i915);
 
-	i915->gen = i915_get_gen(device_id);
 	i915_get_modifier_order(i915);
 
 	memset(&get_param, 0, sizeof(get_param));
@@ -291,14 +302,33 @@ static int i915_init(struct driver *drv)
 	return i915_add_combinations(drv);
 }
 
+/*
+ * Returns true if the height of a buffer of the given format should be aligned
+ * to the largest coded unit (LCU) assuming that it will be used for video. This
+ * is based on gmmlib's GmmIsYUVFormatLCUAligned().
+ */
+static bool i915_format_needs_LCU_alignment(uint32_t format, size_t plane,
+					    const struct i915_device *i915)
+{
+	switch (format) {
+	case DRM_FORMAT_NV12:
+	case DRM_FORMAT_P010:
+	case DRM_FORMAT_P016:
+		return (i915->gen == 11 || i915->gen == 12) && plane == 1;
+	}
+	return false;
+}
+
 static int i915_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, uint32_t format)
 {
 	uint32_t offset;
 	size_t plane;
 	int ret, pagesize;
+	struct i915_device *i915 = bo->drv->priv;
 
 	offset = 0;
 	pagesize = getpagesize();
+
 	for (plane = 0; plane < drv_num_planes_from_format(format); plane++) {
 		uint32_t stride = drv_stride_from_format(format, width, plane);
 		uint32_t plane_height = drv_height_from_format(format, height, plane);
@@ -309,6 +339,15 @@ static int i915_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, u
 		ret = i915_align_dimensions(bo, bo->meta.tiling, &stride, &plane_height);
 		if (ret)
 			return ret;
+
+		if (i915_format_needs_LCU_alignment(format, plane, i915)) {
+			/*
+			 * Align the height of the V plane for certain formats to the
+			 * largest coded unit (assuming that this BO may be used for video)
+			 * to be consistent with gmmlib.
+			 */
+			plane_height = ALIGN(plane_height, 64);
+		}
 
 		bo->meta.strides[plane] = stride;
 		bo->meta.sizes[plane] = stride * plane_height;
@@ -384,7 +423,7 @@ static int i915_bo_compute_metadata(struct bo *bo, uint32_t width, uint32_t heig
 		break;
 	}
 
-	bo->meta.format_modifiers[0] = modifier;
+	bo->meta.format_modifier = modifier;
 
 	if (format == DRM_FORMAT_YVU420_ANDROID) {
 		/*
@@ -542,7 +581,7 @@ static void *i915_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint32_t 
 	int ret;
 	void *addr = MAP_FAILED;
 
-	if (bo->meta.format_modifiers[0] == I915_FORMAT_MOD_Y_TILED_CCS)
+	if (bo->meta.format_modifier == I915_FORMAT_MOD_Y_TILED_CCS)
 		return MAP_FAILED;
 
 	if (bo->meta.tiling == I915_TILING_NONE) {
@@ -633,31 +672,6 @@ static int i915_bo_flush(struct bo *bo, struct mapping *mapping)
 	return 0;
 }
 
-static uint32_t i915_resolve_format(struct driver *drv, uint32_t format, uint64_t use_flags)
-{
-	switch (format) {
-	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
-		/* KBL camera subsystem requires NV12. */
-		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
-			return DRM_FORMAT_NV12;
-		/*HACK: See b/28671744 */
-		return DRM_FORMAT_XBGR8888;
-	case DRM_FORMAT_FLEX_YCbCr_420_888:
-		/*
-		 * KBL camera subsystem requires NV12. Our other use cases
-		 * don't care:
-		 * - Hardware video supports NV12,
-		 * - USB Camera HALv3 supports NV12,
-		 * - USB Camera HALv1 doesn't use this format.
-		 * Moreover, NV12 is preferred for video, due to overlay
-		 * support on SKL+.
-		 */
-		return DRM_FORMAT_NV12;
-	default:
-		return format;
-	}
-}
-
 const struct backend backend_i915 = {
 	.name = "i915",
 	.init = i915_init,
@@ -670,7 +684,7 @@ const struct backend backend_i915 = {
 	.bo_unmap = drv_bo_munmap,
 	.bo_invalidate = i915_bo_invalidate,
 	.bo_flush = i915_bo_flush,
-	.resolve_format = i915_resolve_format,
+	.resolve_format = drv_resolve_format_helper,
 };
 
 #endif

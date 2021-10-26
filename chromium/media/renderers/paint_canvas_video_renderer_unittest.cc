@@ -265,7 +265,7 @@ PaintCanvasVideoRendererTest::~PaintCanvasVideoRendererTest() = default;
 
 void PaintCanvasVideoRendererTest::PaintWithoutFrame(cc::PaintCanvas* canvas) {
   cc::PaintFlags flags;
-  flags.setFilterQuality(kLow_SkFilterQuality);
+  flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
   renderer_.Paint(nullptr, canvas, kNaturalRect, flags, kNoTransformation,
                   nullptr);
 }
@@ -299,7 +299,7 @@ void PaintCanvasVideoRendererTest::PaintRotated(
   }
   cc::PaintFlags flags;
   flags.setBlendMode(mode);
-  flags.setFilterQuality(kLow_SkFilterQuality);
+  flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
   renderer_.Paint(std::move(video_frame), canvas, dest_rect, flags,
                   video_transformation, nullptr);
 }
@@ -666,7 +666,7 @@ TEST_F(PaintCanvasVideoRendererTest, Y16) {
 
   cc::SkiaPaintCanvas canvas(bitmap);
   cc::PaintFlags flags;
-  flags.setFilterQuality(kNone_SkFilterQuality);
+  flags.setFilterQuality(cc::PaintFlags::FilterQuality::kNone);
   renderer_.Paint(std::move(video_frame), &canvas,
                   gfx::RectF(bitmap.width(), bitmap.height()), flags,
                   kNoTransformation, nullptr);
@@ -674,6 +674,55 @@ TEST_F(PaintCanvasVideoRendererTest, Y16) {
     for (int i = 0; i < bitmap.width(); i++) {
       const int value = i + j * bitmap.width();
       EXPECT_EQ(SkColorSetRGB(value, value, value), bitmap.getColor(i, j));
+    }
+  }
+}
+
+// A reproducer test case for crbug.com/1230409 if run with ASAN enabled.
+TEST_F(PaintCanvasVideoRendererTest, Yuv420P12OddWidth) {
+  // Allocate the Y, U, V planes for a 3x3 12-bit YUV 4:2:0 image. Note that
+  // there are no padding bytes after each row.
+  constexpr int kWidth = 3;
+  constexpr int kHeight = 3;
+  constexpr int kUvWidth = (kWidth + 1) / 2;
+  constexpr int kUvHeight = (kHeight + 1) / 2;
+  std::unique_ptr<uint16_t[]> y_plane =
+      std::make_unique<uint16_t[]>(kWidth * kHeight);
+  std::unique_ptr<uint16_t[]> u_plane =
+      std::make_unique<uint16_t[]>(kUvWidth * kUvHeight);
+  std::unique_ptr<uint16_t[]> v_plane =
+      std::make_unique<uint16_t[]>(kUvWidth * kUvHeight);
+  // Set all pixels to white.
+  for (int i = 0; i < kHeight; ++i) {
+    for (int j = 0; j < kWidth; ++j) {
+      y_plane[i * kWidth + j] = 4095;
+    }
+  }
+  for (int i = 0; i < kUvHeight; ++i) {
+    for (int j = 0; j < kUvWidth; ++j) {
+      u_plane[i * kUvWidth + j] = 2048;
+      v_plane[i * kUvWidth + j] = 2048;
+    }
+  }
+  const int32_t y_stride = sizeof(uint16_t) * kWidth;
+  const int32_t uv_stride = sizeof(uint16_t) * kUvWidth;
+  uint8_t* const y_data = reinterpret_cast<uint8_t*>(y_plane.get());
+  uint8_t* const u_data = reinterpret_cast<uint8_t*>(u_plane.get());
+  uint8_t* const v_data = reinterpret_cast<uint8_t*>(v_plane.get());
+
+  auto size = gfx::Size(kWidth, kHeight);
+  scoped_refptr<VideoFrame> frame = VideoFrame::WrapExternalYuvData(
+      PIXEL_FORMAT_YUV420P12, size, gfx::Rect(size), size, y_stride, uv_stride,
+      uv_stride, y_data, u_data, v_data, base::TimeDelta());
+
+  std::unique_ptr<uint32_t[]> rgba =
+      std::make_unique<uint32_t[]>(kWidth * kHeight);
+  PaintCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
+      frame.get(), rgba.get(), frame->visible_rect().width() * 4,
+      /*premultiply_alpha=*/true);
+  for (int i = 0; i < kHeight; ++i) {
+    for (int j = 0; j < kWidth; ++j) {
+      EXPECT_EQ(rgba[i * kWidth + j], 0xffffffff);
     }
   }
 }
@@ -759,7 +808,7 @@ TEST_F(PaintCanvasVideoRendererTest, ContextLost) {
       gfx::Rect(size), size, kNoTimestamp);
 
   cc::PaintFlags flags;
-  flags.setFilterQuality(kLow_SkFilterQuality);
+  flags.setFilterQuality(cc::PaintFlags::FilterQuality::kLow);
   renderer_.Paint(std::move(video_frame), &canvas, kNaturalRect, flags,
                   kNoTransformation, context_provider.get());
 }

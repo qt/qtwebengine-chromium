@@ -6,7 +6,6 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
-#include "base/no_destructor.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -23,6 +22,7 @@
 #include "net/http/http_util.h"
 #include "net/url_request/redirect_info.h"
 #include "services/network/public/cpp/features.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/url_response_head.mojom.h"
 
 namespace content {
@@ -254,9 +254,9 @@ int MakeRequestID() {
   // uninitialized variables.) This way, we no longer have the unlikely (but
   // observed in the real world!) event where we have two requests with the same
   // request_id_.
-  static base::NoDestructor<std::atomic_int> request_id(-1);
+  static std::atomic_int request_id(-1);
 
-  return --*request_id;
+  return --request_id;
 }
 
 base::Time GetVerificationTime() {

@@ -37,12 +37,24 @@ class CordzInfo;
 
 // Default feature enable states for cord ring buffers
 enum CordFeatureDefaults {
+  kCordEnableBtreeDefault = false,
   kCordEnableRingBufferDefault = false,
   kCordShallowSubcordsDefault = false
 };
 
+extern std::atomic<bool> cord_btree_enabled;
 extern std::atomic<bool> cord_ring_buffer_enabled;
 extern std::atomic<bool> shallow_subcords_enabled;
+
+// `cord_btree_exhaustive_validation` can be set to force exhaustive validation
+// in debug assertions, and code that calls `IsValid()` explicitly. By default,
+// assertions should be relatively cheap and AssertValid() can easily lead to
+// O(n^2) complexity as recursive / full tree validation is O(n).
+extern std::atomic<bool> cord_btree_exhaustive_validation;
+
+inline void enable_cord_btree(bool enable) {
+  cord_btree_enabled.store(enable, std::memory_order_relaxed);
+}
 
 inline void enable_cord_ring_buffer(bool enable) {
   cord_ring_buffer_enabled.store(enable, std::memory_order_relaxed);
@@ -150,23 +162,36 @@ struct CordRepExternal;
 struct CordRepFlat;
 struct CordRepSubstring;
 class CordRepRing;
+class CordRepBtree;
 
 // Various representations that we allow
 enum CordRepKind {
   CONCAT = 0,
-  EXTERNAL = 1,
-  SUBSTRING = 2,
+  SUBSTRING = 1,
+  BTREE = 2,
   RING = 3,
+  EXTERNAL = 4,
 
   // We have different tags for different sized flat arrays,
-  // starting with FLAT, and limited to MAX_FLAT_TAG. The 224 value is based on
+  // starting with FLAT, and limited to MAX_FLAT_TAG. The 225 value is based on
   // the current 'size to tag' encoding of 8 / 32 bytes. If a new tag is needed
   // in the future, then 'FLAT' and 'MAX_FLAT_TAG' should be adjusted as well
   // as the Tag <---> Size logic so that FLAT stil represents the minimum flat
   // allocation size. (32 bytes as of now).
-  FLAT = 4,
-  MAX_FLAT_TAG = 224
+  FLAT = 5,
+  MAX_FLAT_TAG = 225
 };
+
+// There are various locations where we want to check if some rep is a 'plain'
+// data edge, i.e. an external or flat rep. By having FLAT == EXTERNAL + 1, we
+// can perform this check in a single branch as 'tag >= EXTERNAL'
+// Likewise, we have some locations where we check for 'ring or external/flat',
+// so likewise align RING to EXTERNAL.
+// Note that we can leave this optimization to the compiler. The compiler will
+// DTRT when it sees a condition like `tag == EXTERNAL || tag >= FLAT`.
+static_assert(RING == BTREE + 1, "BTREE and RING not consecutive");
+static_assert(EXTERNAL == RING + 1, "BTREE and EXTERNAL not consecutive");
+static_assert(FLAT == EXTERNAL + 1, "EXTERNAL and FLAT not consecutive");
 
 struct CordRep {
   CordRep() = default;
@@ -180,7 +205,24 @@ struct CordRep {
   // If tag < FLAT, it represents CordRepKind and indicates the type of node.
   // Otherwise, the node type is CordRepFlat and the tag is the encoded size.
   uint8_t tag;
-  char storage[1];  // Starting point for flat array: MUST BE LAST FIELD
+
+  // `storage` provides two main purposes:
+  // - the starting point for FlatCordRep.Data() [flexible-array-member]
+  // - 3 bytes of additional storage for use by derived classes.
+  // The latter is used by CordrepConcat and CordRepBtree. CordRepConcat stores
+  // a 'depth' value in storage[0], and the (future) CordRepBtree class stores
+  // `height`, `begin` and `end` in the 3 entries. Otherwise we would need to
+  // allocate room for these in the derived class, as not all compilers reuse
+  // padding space from the base class (clang and gcc do, MSVC does not, etc)
+  uint8_t storage[3];
+
+  // Returns true if this instance's tag matches the requested type.
+  constexpr bool IsRing() const { return tag == RING; }
+  constexpr bool IsConcat() const { return tag == CONCAT; }
+  constexpr bool IsSubstring() const { return tag == SUBSTRING; }
+  constexpr bool IsExternal() const { return tag == EXTERNAL; }
+  constexpr bool IsFlat() const { return tag >= FLAT; }
+  constexpr bool IsBtree() const { return tag == BTREE; }
 
   inline CordRepRing* ring();
   inline const CordRepRing* ring() const;
@@ -192,6 +234,8 @@ struct CordRep {
   inline const CordRepExternal* external() const;
   inline CordRepFlat* flat();
   inline const CordRepFlat* flat() const;
+  inline CordRepBtree* btree();
+  inline const CordRepBtree* btree() const;
 
   // --------------------------------------------------------------------
   // Memory management
@@ -212,8 +256,8 @@ struct CordRepConcat : public CordRep {
   CordRep* left;
   CordRep* right;
 
-  uint8_t depth() const { return static_cast<uint8_t>(storage[0]); }
-  void set_depth(uint8_t depth) { storage[0] = static_cast<char>(depth); }
+  uint8_t depth() const { return storage[0]; }
+  void set_depth(uint8_t depth) { storage[0] = depth; }
 };
 
 struct CordRepSubstring : public CordRep {
@@ -240,7 +284,7 @@ struct CordRepExternal : public CordRep {
   ExternalReleaserInvoker releaser_invoker;
 
   // Deletes (releases) the external rep.
-  // Requires rep != nullptr and rep->tag == EXTERNAL
+  // Requires rep != nullptr and rep->IsExternal()
   static void Delete(CordRep* rep);
 };
 
@@ -283,7 +327,7 @@ struct CordRepExternalImpl
 };
 
 inline void CordRepExternal::Delete(CordRep* rep) {
-  assert(rep != nullptr && rep->tag == EXTERNAL);
+  assert(rep != nullptr && rep->IsExternal());
   auto* rep_external = static_cast<CordRepExternal*>(rep);
   assert(rep_external->releaser_invoker != nullptr);
   rep_external->releaser_invoker(rep_external);
@@ -494,32 +538,32 @@ class InlineData {
 static_assert(sizeof(InlineData) == kMaxInline + 1, "");
 
 inline CordRepConcat* CordRep::concat() {
-  assert(tag == CONCAT);
+  assert(IsConcat());
   return static_cast<CordRepConcat*>(this);
 }
 
 inline const CordRepConcat* CordRep::concat() const {
-  assert(tag == CONCAT);
+  assert(IsConcat());
   return static_cast<const CordRepConcat*>(this);
 }
 
 inline CordRepSubstring* CordRep::substring() {
-  assert(tag == SUBSTRING);
+  assert(IsSubstring());
   return static_cast<CordRepSubstring*>(this);
 }
 
 inline const CordRepSubstring* CordRep::substring() const {
-  assert(tag == SUBSTRING);
+  assert(IsSubstring());
   return static_cast<const CordRepSubstring*>(this);
 }
 
 inline CordRepExternal* CordRep::external() {
-  assert(tag == EXTERNAL);
+  assert(IsExternal());
   return static_cast<CordRepExternal*>(this);
 }
 
 inline const CordRepExternal* CordRep::external() const {
-  assert(tag == EXTERNAL);
+  assert(IsExternal());
   return static_cast<const CordRepExternal*>(this);
 }
 

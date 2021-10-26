@@ -8,6 +8,7 @@
 #include "base/test/gtest_util.h"
 #include "media/base/media_content_type.h"
 #include "media/mojo/mojom/media_player.mojom-blink.h"
+#include "services/media_session/public/mojom/media_session.mojom-blink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/mojom/autoplay/autoplay.mojom-blink.h"
@@ -173,6 +174,11 @@ class TestMediaPlayerObserver final
 
   void OnAudioOutputSinkChanged(const WTF::String& hashed_device_id) override {}
 
+  void OnUseAudioServiceChanged(bool uses_audio_service) override {
+    received_uses_audio_service_ = uses_audio_service;
+    run_loop_->Quit();
+  }
+
   void OnAudioOutputSinkChangingDisabled() override {}
 
   void OnBufferUnderflow() override {
@@ -200,6 +206,10 @@ class TestMediaPlayerObserver final
 
   gfx::Size received_media_size() const { return received_media_size_; }
 
+  bool received_use_audio_service_changed(bool uses_audio_service) const {
+    return received_uses_audio_service_.value() == uses_audio_service;
+  }
+
   bool received_buffer_underflow() const { return received_buffer_underflow_; }
 
  private:
@@ -209,6 +219,7 @@ class TestMediaPlayerObserver final
   absl::optional<bool> received_muted_status_type_;
   absl::optional<OnMetadataChangedResult> received_metadata_changed_result_;
   gfx::Size received_media_size_{0, 0};
+  absl::optional<bool> received_uses_audio_service_;
   bool received_buffer_underflow_{false};
 };
 
@@ -327,6 +338,10 @@ class HTMLMediaElementTest : public testing::TestWithParam<MediaTestParam> {
 
   bool ControlsVisible() const { return Media()->ShouldShowControls(); }
 
+  bool MediaShouldShowAllControls() const {
+    return Media()->ShouldShowAllControls();
+  }
+
   ExecutionContext* GetExecutionContext() const {
     return dummy_page_holder_->GetFrame().DomWindow();
   }
@@ -385,6 +400,16 @@ class HTMLMediaElementTest : public testing::TestWithParam<MediaTestParam> {
 
   bool ReceivedMessageMediaSizeChange(const gfx::Size& size) {
     return media_player_observer().received_media_size() == size;
+  }
+
+  void NotifyUseAudioServiceChanged(bool uses_audio_service) {
+    media_->DidUseAudioServiceChange(uses_audio_service);
+    media_player_observer().WaitUntilReceivedMessage();
+  }
+
+  bool ReceivedMessageUseAudioServiceChanged(bool uses_audio_service) {
+    return media_player_observer().received_use_audio_service_changed(
+        uses_audio_service);
   }
 
   void NotifyBufferUnderflowEvent() {
@@ -1065,6 +1090,16 @@ TEST_P(HTMLMediaElementTest, SendMediaSizeChangeToObserver) {
   EXPECT_TRUE(ReceivedMessageMediaSizeChange(kTestMediaSizeChangedValue));
 }
 
+TEST_P(HTMLMediaElementTest, SendUseAudioServiceChangedToObserver) {
+  WaitForPlayer();
+
+  NotifyUseAudioServiceChanged(false);
+  EXPECT_TRUE(ReceivedMessageUseAudioServiceChanged(false));
+
+  NotifyUseAudioServiceChanged(true);
+  EXPECT_TRUE(ReceivedMessageUseAudioServiceChanged(true));
+}
+
 TEST_P(HTMLMediaElementTest, SendBufferOverflowToObserver) {
   WaitForPlayer();
 
@@ -1104,4 +1139,37 @@ TEST_P(HTMLMediaElementTest,
   EXPECT_FALSE(ControlsVisible());
 }
 
+TEST_P(HTMLMediaElementTest,
+       MediaShouldShowAllControlsDependsOnControlslistAttr) {
+  // Enable scripts to prevent controls being shown due to no scripts.
+  Media()->GetDocument().GetSettings()->SetScriptEnabled(true);
+
+  // Setting the controls attribute to true should show the controls.
+  Media()->SetBooleanAttribute(html_names::kControlsAttr, true);
+  EXPECT_TRUE(MediaShouldShowAllControls());
+
+  // Setting the controlsList attribute to a valid value should not show the
+  // controls.
+  Media()->setAttribute(blink::html_names::kControlslistAttr, "nofullscreen");
+  EXPECT_FALSE(MediaShouldShowAllControls());
+
+  // Removing the controlsList attribute should show the controls.
+  Media()->removeAttribute(blink::html_names::kControlslistAttr);
+  EXPECT_TRUE(MediaShouldShowAllControls());
+
+  // Setting the controlsList attribute to an invalid value should still show
+  // the controls.
+  Media()->setAttribute(blink::html_names::kControlslistAttr, "foo");
+  EXPECT_TRUE(MediaShouldShowAllControls());
+
+  // Setting the controlsList attribute to another valid value should not show
+  // the controls.
+  Media()->setAttribute(blink::html_names::kControlslistAttr, "noplaybackrate");
+  EXPECT_FALSE(MediaShouldShowAllControls());
+
+  // If the user explicitly shows them, that should override the controlsList
+  // attribute.
+  Media()->SetUserWantsControlsVisible(true);
+  EXPECT_TRUE(MediaShouldShowAllControls());
+}
 }  // namespace blink

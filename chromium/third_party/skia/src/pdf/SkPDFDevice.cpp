@@ -24,7 +24,6 @@
 #include "src/core/SkAdvancedTypefaceMetrics.h"
 #include "src/core/SkAnnotationKeys.h"
 #include "src/core/SkBitmapDevice.h"
-#include "src/core/SkClipOpPriv.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkDraw.h"
 #include "src/core/SkGlyphRun.h"
@@ -181,7 +180,7 @@ static SkTCopyOnFirstWrite<SkPaint> clean_paint(const SkPaint& srcPaint) {
     SkTCopyOnFirstWrite<SkPaint> paint(srcPaint);
     // If the paint will definitely draw opaquely, replace kSrc with
     // kSrcOver.  http://crbug.com/473572
-    if (SkBlendMode::kSrcOver != paint->getBlendMode() &&
+    if (!paint->isSrcOver() &&
         kSrcOver_SkXfermodeInterpretation == SkInterpretXfermode(*paint, false))
     {
         paint.writable()->setBlendMode(SkBlendMode::kSrcOver);
@@ -241,7 +240,7 @@ public:
             NOT_IMPLEMENTED(!matrix.hasPerspective(), false);
             return;
         }
-        fBlendMode = paint.getBlendMode();
+        fBlendMode = paint.getBlendMode_or(SkBlendMode::kSrcOver);
         fContentStream =
             fDevice->setUpContentEntry(clipStack, matrix, paint, textScale, &fDstFormXObject);
     }
@@ -1155,6 +1154,8 @@ static void populate_graphic_state_entry_from_paint(
     // PDF treats a shader as a color, so we only set one or the other.
     SkShader* shader = paint.getShader();
     if (shader) {
+        // note: we always present the alpha as 1 for the shader, knowing that it will be
+        //       accounted for when we create our newGraphicsState (below)
         if (SkShader::kColor_GradientType == shader->asAGradient(nullptr)) {
             // We don't have to set a shader just for a color.
             SkShader::GradientInfo gradientInfo;
@@ -1183,8 +1184,9 @@ static void populate_graphic_state_entry_from_paint(
             SkIRect bounds;
             clipStackBounds.roundOut(&bounds);
 
-            SkPDFIndirectReference pdfShader
-                = SkPDFMakeShader(doc, shader, transform, bounds, paint.getColor4f());
+            auto c = paint.getColor4f();
+            SkPDFIndirectReference pdfShader = SkPDFMakeShader(doc, shader, transform, bounds,
+                                                               {c.fR, c.fG, c.fB, 1.0f});
 
             if (pdfShader) {
                 // pdfShader has been canonicalized so we can directly compare pointers.
@@ -1211,7 +1213,7 @@ SkDynamicMemoryWStream* SkPDFDevice::setUpContentEntry(const SkClipStack* clipSt
                                                        SkScalar textScale,
                                                        SkPDFIndirectReference* dst) {
     SkASSERT(!*dst);
-    SkBlendMode blendMode = paint.getBlendMode();
+    SkBlendMode blendMode = paint.getBlendMode_or(SkBlendMode::kSrcOver);
 
     // Dst xfer mode doesn't draw source at all.
     if (blendMode == SkBlendMode::kDst) {
@@ -1472,7 +1474,7 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
     // If the image is opaque and the paint's alpha is too, replace
     // kSrc blendmode with kSrcOver.  http://crbug.com/473572
     SkTCopyOnFirstWrite<SkPaint> paint(srcPaint);
-    if (SkBlendMode::kSrcOver != paint->getBlendMode() &&
+    if (!paint->isSrcOver() &&
         imageSubset.image()->isOpaque() &&
         kSrcOver_SkXfermodeInterpretation == SkInterpretXfermode(*paint, false))
     {
@@ -1574,15 +1576,15 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
         SkPath perspectiveOutline = SkPath::Rect(imageBounds).makeTransform(transform);
 
         // Retrieve the bounds of the new shape.
-        SkRect bounds = perspectiveOutline.getBounds();
-        if (!bounds.intersect(SkRect::Make(this->devClipBounds()))) {
+        SkRect outlineBounds = perspectiveOutline.getBounds();
+        if (!outlineBounds.intersect(SkRect::Make(this->devClipBounds()))) {
             return;
         }
 
         // Transform the bitmap in the new space to the final space, to account for DPI
-        SkRect physicalBounds = fInitialTransform.mapRect(bounds);
-        SkScalar scaleX = physicalBounds.width() / bounds.width();
-        SkScalar scaleY = physicalBounds.height() / bounds.height();
+        SkRect physicalBounds = fInitialTransform.mapRect(outlineBounds);
+        SkScalar scaleX = physicalBounds.width() / outlineBounds.width();
+        SkScalar scaleY = physicalBounds.height() / outlineBounds.height();
 
         // TODO(edisonn): A better approach would be to use a bitmap shader
         // (in clamp mode) and draw a rect over the entire bounding box. Then
@@ -1600,8 +1602,8 @@ void SkPDFDevice::internalDrawImageRect(SkKeyedImage imageSubset,
         SkCanvas* canvas = surface->getCanvas();
         canvas->clear(SK_ColorTRANSPARENT);
 
-        SkScalar deltaX = bounds.left();
-        SkScalar deltaY = bounds.top();
+        SkScalar deltaX = outlineBounds.left();
+        SkScalar deltaY = outlineBounds.top();
 
         SkMatrix offsetMatrix = transform;
         offsetMatrix.postTranslate(-deltaX, -deltaY);

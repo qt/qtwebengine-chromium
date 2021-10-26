@@ -18,6 +18,10 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
 
+namespace base {
+class DictionaryValue;
+}
+
 namespace extensions {
 
 class WebViewGuest;
@@ -100,6 +104,10 @@ class WebViewPermissionHelper
   void CancelPendingPermissionRequest(int request_id);
 
   WebViewGuest* web_view_guest() { return web_view_guest_; }
+
+  WebViewPermissionHelperDelegate* delegate() {
+    return web_view_permission_helper_delegate_.get();
+  }
 
   void set_default_media_access_permission(bool allow_media_access) {
     default_media_access_permission_ = allow_media_access;

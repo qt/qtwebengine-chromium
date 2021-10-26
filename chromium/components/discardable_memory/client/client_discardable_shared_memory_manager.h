@@ -11,7 +11,6 @@
 #include <set>
 
 #include "base/callback_helpers.h"
-#include "base/feature_list.h"
 #include "base/memory/discardable_memory_allocator.h"
 #include "base/memory/ref_counted_delete_on_sequence.h"
 #include "base/memory/unsafe_shared_memory_region.h"
@@ -30,8 +29,6 @@ class SingleThreadTaskRunner;
 
 namespace discardable_memory {
 
-DISCARDABLE_MEMORY_EXPORT extern const base::Feature kSchedulePeriodicPurge;
-
 // Implementation of DiscardableMemoryAllocator that allocates
 // discardable memory segments through the browser process.
 class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
@@ -47,6 +44,13 @@ class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
   // Overridden from base::DiscardableMemoryAllocator:
   std::unique_ptr<base::DiscardableMemory> AllocateLockedDiscardableMemory(
       size_t size) override LOCKS_EXCLUDED(lock_);
+
+  // Overridden from base::DiscardableMemoryAllocator:
+  size_t GetBytesAllocated() const override LOCKS_EXCLUDED(lock_);
+
+  // Overridden from base::DiscardableMemoryAllocator:
+  // Release memory and associated resources that have been purged.
+  void ReleaseFreeMemory() override LOCKS_EXCLUDED(lock_);
 
   // Overridden from base::trace_event::MemoryDumpProvider:
   bool OnMemoryDump(const base::trace_event::MemoryDumpArgs& args,
@@ -65,27 +69,6 @@ class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
   void OnForegrounded();
   void OnBackgrounded();
 
-  // Release memory and associated resources that have been purged.
-  void ReleaseFreeMemory() override;
-
-  bool LockSpan(DiscardableSharedMemoryHeap::Span* span)
-      EXCLUSIVE_LOCKS_REQUIRED(lock_);
-  void UnlockSpan(DiscardableSharedMemoryHeap::Span* span)
-      EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
-  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
-      DiscardableSharedMemoryHeap::Span* span,
-      const char* name,
-      base::trace_event::ProcessMemoryDump* pmd) const
-      EXCLUSIVE_LOCKS_REQUIRED(lock_);
-
-  struct Statistics {
-    size_t total_size;
-    size_t freelist_size;
-  };
-
-  // Overridden from base::DiscardableMemoryAllocator:
-  size_t GetBytesAllocated() const override LOCKS_EXCLUDED(lock_);
   void SetBytesAllocatedLimitForTesting(size_t limit) {
     bytes_allocated_limit_for_testing_ = limit;
   }
@@ -155,6 +138,17 @@ class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
     base::TimeTicks last_locked_ GUARDED_BY(manager_->lock_);
   };
 
+  struct Statistics {
+    size_t total_size;
+    size_t freelist_size;
+  };
+
+  base::trace_event::MemoryAllocatorDump* CreateMemoryAllocatorDump(
+      DiscardableSharedMemoryHeap::Span* span,
+      const char* name,
+      base::trace_event::ProcessMemoryDump* pmd) const
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
   // Purge any unlocked memory from foreground that hasn't been touched in a
   // while.
   void ScheduledPurge() LOCKS_EXCLUDED(lock_);
@@ -177,13 +171,18 @@ class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
 
   // Releases all unlocked memory that was last locked at least |min_age| ago.
   void PurgeUnlockedMemory(base::TimeDelta min_age) LOCKS_EXCLUDED(lock_);
-  void ReleaseFreeMemoryImpl() LOCKS_EXCLUDED(lock_);
+
+  bool LockSpan(DiscardableSharedMemoryHeap::Span* span)
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
+  void UnlockSpan(DiscardableSharedMemoryHeap::Span* span)
+      EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void UnlockAndReleaseMemory(
       DiscardableMemoryImpl* memory,
       std::unique_ptr<DiscardableSharedMemoryHeap::Span> span)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
   void ReleaseSpan(std::unique_ptr<DiscardableSharedMemoryHeap::Span> span)
       EXCLUSIVE_LOCKS_REQUIRED(lock_);
+
   size_t GetBytesAllocatedLocked() const EXCLUSIVE_LOCKS_REQUIRED(lock_);
 
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
@@ -201,9 +200,6 @@ class DISCARDABLE_MEMORY_EXPORT ClientDiscardableSharedMemoryManager
   // we're in the foreground. This is parallel to what we do in
   // RenderThreadImpl.
   bool foregrounded_ = false;
-
-  // Whether the scheduled purge feature is enabled.
-  const bool may_schedule_periodic_purge_;
 
   THREAD_CHECKER(thread_checker_);
   DISALLOW_COPY_AND_ASSIGN(ClientDiscardableSharedMemoryManager);

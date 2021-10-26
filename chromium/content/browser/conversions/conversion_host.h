@@ -7,19 +7,21 @@
 
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/containers/flat_map.h"
 #include "base/gtest_prod_util.h"
 #include "content/browser/conversions/conversion_manager.h"
+#include "content/browser/conversions/storable_impression.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/render_frame_host_receiver_set.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "content/public/browser/web_contents_receiver_set.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/mojom/conversions/conversions.mojom.h"
 
 namespace content {
 
 class ConversionPageMetrics;
-class RenderFrameHost;
 class WebContents;
 
 // Class responsible for listening to conversion events originating from blink,
@@ -30,46 +32,52 @@ class CONTENT_EXPORT ConversionHost
       public WebContentsUserData<ConversionHost>,
       public blink::mojom::ConversionHost {
  public:
-  static std::unique_ptr<ConversionHost> CreateForTesting(
-      WebContents* web_contents,
-      std::unique_ptr<ConversionManager::Provider> conversion_manager_provider);
-
   explicit ConversionHost(WebContents* web_contents);
   ConversionHost(const ConversionHost& other) = delete;
   ConversionHost& operator=(const ConversionHost& other) = delete;
+  ConversionHost(ConversionHost&& other) = delete;
+  ConversionHost& operator=(ConversionHost&& other) = delete;
   ~ConversionHost() override;
 
- private:
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           ValidConversionInSubframe_NoBadMessage);
-  FRIEND_TEST_ALL_PREFIXES(
-      ConversionHostTest,
-      ConversionInSubframe_ConversionDestinationMatchesMainFrame);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           ConversionInSubframeOnInsecurePage_BadMessage);
-  FRIEND_TEST_ALL_PREFIXES(
-      ConversionHostTest,
-      ConversionInSubframe_EmbeddedDisabledContextOnMainFrame);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           ConversionOnInsecurePage_BadMessage);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           ConversionWithInsecureReportingOrigin_BadMessage);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest, ValidConversion_NoBadMessage);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           Conversion_AssociatedWithConversionSite);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest, PerPageConversionMetrics);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           NoManager_NoPerPageConversionMetrics);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           ValidConversionWithEmbedderDisable_NoConversion);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest,
-                           EmbedderDisabledContext_ConversionDisallowed);
-  FRIEND_TEST_ALL_PREFIXES(
-      ConversionHostTest,
-      ImpressionInSubframe_ImpressionOriginMatchesTopPageOrigin);
-  FRIEND_TEST_ALL_PREFIXES(ConversionHostTest, ValidImpression_NoBadMessage);
+  static void BindReceiver(
+      mojo::PendingAssociatedReceiver<blink::mojom::ConversionHost> receiver,
+      RenderFrameHost* rfh);
 
+  // Normally, Attributions should be reported at the start of a navigation.
+  // However, in some cases, like with speculative navigation on Android, the
+  // attribution parameters aren't available at the start of the navigation.
+  //
+  // This method allows Attributions to be reported for ongoing or already
+  // completed navigations, as long as the current navigation finishes on the
+  // destination URL for the Impression.
+  //
+  // TODO(crbug.com/1234529): Attributions for preloaded pages that perform
+  // javascript redirects may get dropped if the new navigation begins before
+  // the attribution data arrives.
+  void ReportAttributionForCurrentNavigation(
+      const url::Origin& impression_origin,
+      const blink::Impression& impression);
+
+  static absl::optional<blink::Impression> ParseImpressionFromApp(
+      const std::string& attribution_source_event_id,
+      const std::string& attribution_destination,
+      const std::string& attribution_report_to,
+      int64_t attribution_expiry) WARN_UNUSED_RESULT;
+
+  static blink::mojom::ImpressionPtr MojoImpressionFromImpression(
+      const blink::Impression& impression) WARN_UNUSED_RESULT;
+
+  // Overrides the target object to bind |receiver| to in BindReceiver().
+  static void SetReceiverImplForTesting(ConversionHost* impl);
+
+ private:
+  friend class ConversionHostTestPeer;
   friend class WebContentsUserData<ConversionHost>;
+
+  struct PendingAttribution {
+    url::Origin initiator_origin;
+    blink::Impression impression;
+  };
 
   ConversionHost(
       WebContents* web_contents,
@@ -85,9 +93,6 @@ class CONTENT_EXPORT ConversionHost
 
   // Notifies an impression for a navigation.
   void NotifyImpressionNavigationInitiatedByPage();
-
-  // Sets the target frame on |receiver_|.
-  void SetCurrentTargetFrameForTesting(RenderFrameHost* render_frame_host);
 
   // Stores the impression if conversion measurement is allowed for the
   // impression origin and reporting origin and the impressionorigin, reporting
@@ -121,7 +126,10 @@ class CONTENT_EXPORT ConversionHost
   // Excludes the initial about:blank document.
   std::unique_ptr<ConversionPageMetrics> conversion_page_metrics_;
 
-  WebContentsFrameReceiverSet<blink::mojom::ConversionHost> receiver_;
+  RenderFrameHostReceiverSet<blink::mojom::ConversionHost> receivers_;
+
+  absl::optional<PendingAttribution> pending_attribution_;
+  bool last_navigation_allows_attribution_ = false;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };

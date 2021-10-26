@@ -5,6 +5,7 @@
 #include "components/exo/shell_surface.h"
 
 #include "ash/accessibility/accessibility_delegate.h"
+#include "ash/constants/ash_constants.h"
 #include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/public/cpp/shell_window_ids.h"
 #include "ash/public/cpp/test/shell_test_api.h"
@@ -829,6 +830,45 @@ TEST_F(ShellSurfaceTest, ConfigureCallback) {
   EXPECT_TRUE(is_resizing);
 }
 
+TEST_F(ShellSurfaceTest, CreateMinimizedWindow) {
+  // Must be before shell_surface so it outlives it, for shell_surface's
+  // destructor calls Configure() referencing these 4 variables.
+  gfx::Size suggested_size;
+  chromeos::WindowStateType has_state_type = chromeos::WindowStateType::kNormal;
+  bool is_resizing = false;
+  bool is_active = false;
+
+  std::unique_ptr<Surface> surface(new Surface);
+  std::unique_ptr<ShellSurface> shell_surface(new ShellSurface(surface.get()));
+
+  shell_surface->set_configure_callback(base::BindRepeating(
+      &Configure, base::Unretained(&suggested_size),
+      base::Unretained(&has_state_type), base::Unretained(&is_resizing),
+      base::Unretained(&is_active)));
+
+  gfx::Rect geometry(0, 0, 1, 1);
+  shell_surface->SetGeometry(geometry);
+
+  // Commit without contents should result in a configure callback with empty
+  // suggested size as a mechanims to ask the client size itself.
+  surface->Commit();
+  EXPECT_TRUE(suggested_size.IsEmpty());
+
+  // Geometry should not be committed until surface has contents.
+  EXPECT_TRUE(shell_surface->CalculatePreferredSize().IsEmpty());
+
+  shell_surface->Minimize();
+  shell_surface->AcknowledgeConfigure(0);
+  // Commit without contents should result in a configure callback with empty
+  // suggested size as a mechanims to ask the client size itself.
+  surface->Commit();
+
+  EXPECT_TRUE(shell_surface->GetWidget());
+  EXPECT_TRUE(shell_surface->GetWidget()->IsMinimized());
+  EXPECT_TRUE(suggested_size.IsEmpty());
+  EXPECT_EQ(geometry.size(), shell_surface->CalculatePreferredSize());
+}
+
 TEST_F(ShellSurfaceTest, ToggleFullscreen) {
   gfx::Size buffer_size(256, 256);
   std::unique_ptr<Buffer> buffer(
@@ -902,7 +942,7 @@ TEST_F(ShellSurfaceTest, CycleSnap) {
   EXPECT_EQ(buffer_size,
             shell_surface->GetWidget()->GetWindowBoundsInScreen().size());
 
-  ash::WMEvent event(ash::WM_EVENT_CYCLE_SNAP_LEFT);
+  ash::WMEvent event(ash::WM_EVENT_CYCLE_SNAP_PRIMARY);
   aura::Window* window = shell_surface->GetWidget()->GetNativeWindow();
 
   // Enter snapped mode.
@@ -917,6 +957,39 @@ TEST_F(ShellSurfaceTest, CycleSnap) {
   // Commit shouldn't change widget bounds when snapped.
   EXPECT_EQ(GetContext()->bounds().width() / 2,
             shell_surface->GetWidget()->GetWindowBoundsInScreen().width());
+}
+
+TEST_F(ShellSurfaceTest, ShellSurfaceWithMaximumSize) {
+  std::unique_ptr<ShellSurface> shell_surface =
+      test::ShellSurfaceBuilder({256, 256})
+          .SetMaximumSize(gfx::Size(10, 10))
+          .BuildShellSurface();
+
+  auto* window_state =
+      ash::WindowState::Get(shell_surface->GetWidget()->GetNativeWindow());
+  EXPECT_FALSE(window_state->CanMaximize());
+  EXPECT_FALSE(window_state->CanSnap());
+
+  shell_surface->SetMaximumSize(gfx::Size(0, 0));
+  shell_surface->root_surface()->Commit();
+
+  EXPECT_TRUE(window_state->CanMaximize());
+  EXPECT_TRUE(window_state->CanSnap());
+
+  // If the max size is bigger than 16k resolution, allow max/snap state.
+  shell_surface->SetMaximumSize(
+      gfx::Size(ash::kAllowMaximizeThreshold, ash::kAllowMaximizeThreshold));
+  shell_surface->root_surface()->Commit();
+  EXPECT_FALSE(window_state->CanMaximize());
+  EXPECT_FALSE(window_state->CanSnap());
+
+  // If the max size is bigger than 32k resolution, allow max/snap state.
+  shell_surface->SetMaximumSize(gfx::Size(ash::kAllowMaximizeThreshold + 1,
+                                          ash::kAllowMaximizeThreshold + 1));
+  shell_surface->root_surface()->Commit();
+
+  EXPECT_TRUE(window_state->CanMaximize());
+  EXPECT_TRUE(window_state->CanSnap());
 }
 
 TEST_F(ShellSurfaceTest, Transient) {
@@ -1456,25 +1529,22 @@ TEST_F(ShellSurfaceTest, Overlay) {
                                      ->GetWindowBoundsInScreen()
                                      .size());
 
-  ui::test::EventGenerator* generator = GetEventGenerator();
-  generator->PressKey(ui::VKEY_X, 0);
-  generator->ReleaseKey(ui::VKEY_X, 0);
+  PressAndReleaseKey(ui::VKEY_X);
   EXPECT_EQ(textfield_ptr->GetText(), u"");
 
+  ui::test::EventGenerator* generator = GetEventGenerator();
   generator->MoveMouseToCenterOf(shell_surface->GetWidget()->GetNativeWindow());
   generator->ClickLeftButton();
 
   // Test normal key input, which should go through IME.
   EXPECT_EQ(shell_surface->GetWidget()->GetFocusManager()->GetFocusedView(),
             textfield_ptr);
-  generator->PressKey(ui::VKEY_X, 0);
-  generator->ReleaseKey(ui::VKEY_X, 0);
+  PressAndReleaseKey(ui::VKEY_X);
   EXPECT_EQ(textfield_ptr->GetText(), u"x");
   EXPECT_TRUE(textfield_ptr->GetSelectedText().empty());
 
   // Controls (Select all) should work.
-  generator->PressKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
-  generator->ReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
+  PressAndReleaseKey(ui::VKEY_A, ui::EF_CONTROL_DOWN);
 
   EXPECT_EQ(textfield_ptr->GetText(), u"x");
   EXPECT_EQ(textfield_ptr->GetSelectedText(), u"x");
@@ -1484,8 +1554,7 @@ TEST_F(ShellSurfaceTest, Overlay) {
                      .BuildOwnedByNativeWidget();
   ASSERT_TRUE(widget->IsActive());
 
-  generator->PressKey(ui::VKEY_Y, 0);
-  generator->ReleaseKey(ui::VKEY_Y, 0);
+  PressAndReleaseKey(ui::VKEY_Y);
 
   EXPECT_EQ(textfield_ptr->GetText(), u"x");
   EXPECT_EQ(textfield_ptr->GetSelectedText(), u"x");
@@ -1495,8 +1564,7 @@ TEST_F(ShellSurfaceTest, Overlay) {
   shell_surface->GetWidget()->Activate();
   // The current text will be replaced with new character because
   // the text is selected.
-  generator->PressKey(ui::VKEY_Y, 0);
-  generator->ReleaseKey(ui::VKEY_Y, 0);
+  PressAndReleaseKey(ui::VKEY_Y);
   EXPECT_EQ(textfield_ptr->GetText(), u"y");
   EXPECT_TRUE(textfield_ptr->GetSelectedText().empty());
 }

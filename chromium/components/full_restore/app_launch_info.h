@@ -47,6 +47,10 @@ struct COMPONENT_EXPORT(FULL_RESTORE) AppLaunchInfo {
                 int32_t arc_session_id,
                 int64_t display_id);
 
+  AppLaunchInfo(const std::string& app_id,
+                const std::string& handler_id,
+                std::vector<base::FilePath> launch_files);
+
   AppLaunchInfo(const AppLaunchInfo&) = delete;
   AppLaunchInfo& operator=(const AppLaunchInfo&) = delete;
 
@@ -59,9 +63,13 @@ struct COMPONENT_EXPORT(FULL_RESTORE) AppLaunchInfo {
   absl::optional<int32_t> disposition;
   absl::optional<int32_t> arc_session_id;
   absl::optional<int64_t> display_id;
-  absl::optional<GURL> url;
+  absl::optional<std::string> handler_id;
+  absl::optional<std::vector<GURL>> urls;
+  absl::optional<int32_t> active_tab_index;
   absl::optional<std::vector<base::FilePath>> file_paths;
   absl::optional<apps::mojom::IntentPtr> intent;
+  absl::optional<bool> app_type_browser;
+  absl::optional<std::string> app_name;
 };
 
 }  // namespace full_restore

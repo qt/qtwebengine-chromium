@@ -18,12 +18,10 @@
  * John Zulauf <jzulauf@lunarg.com>
  *
  */
-#ifdef SPARSE_CONTAINER_UNIT_TEST
 #include "image_layout_map.h"
-#else
-#include "core_validation_types.h"
-#include "chassis.h"
-#include "descriptor_sets.h"
+#ifndef SPARSE_CONTAINER_UNIT_TEST
+#include "image_state.h"
+#include "cmd_buffer_state.h"
 #endif
 
 namespace image_layout_map {
@@ -84,7 +82,7 @@ InitialLayoutState::InitialLayoutState(const CMD_BUFFER_STATE& cb_state_, const 
     : image_view(VK_NULL_HANDLE), aspect_mask(0), label(cb_state_.debug_label) {
     if (view_state_) {
         image_view = view_state_->image_view();
-        aspect_mask = view_state_->create_info.subresourceRange.aspectMask;
+        aspect_mask = view_state_->normalized_subresource_range.aspectMask;
     }
 }
 bool ImageSubresourceLayoutMap::SubresourceLayout::operator==(const ImageSubresourceLayoutMap::SubresourceLayout& rhs) const {

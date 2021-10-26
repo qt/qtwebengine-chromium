@@ -42,7 +42,7 @@ const char16_t kStreetNameRe[] =
     u"|calle";                  // es-MX
 const char16_t kHouseNumberRe[] =
     u"(house.?|street.?|^)number"              // en
-    u"|(haus|^)nummer"                         // de
+    u"|(haus|^)(nummer|nr\\.?)"                // de
     u"|^\\*?.?número(.?\\*?$| da residência)"  // pt-BR, pt-PT
     u"|дом|номер.?дома"                        // ru
     u"|exterior";                              // es-MX
@@ -121,7 +121,8 @@ const char16_t kCountryRe[] =
     u"|negara";                           // id
 const char16_t kCountryLocationRe[] = u"location";
 const char16_t kZipCodeRe[] =
-    u"zip|postal|post.*code|pcode"
+    u"((?<!\\.))zip"  // .zip indicates a file extension
+    u"|postal|post.*code|pcode"
     u"|pin.?code"                    // en-IN
     u"|postleitzahl"                 // de-DE
     u"|\\bcp\\b"                     // es
@@ -138,7 +139,8 @@ const char16_t kZipCodeRe[] =
     u"|우편.?번호"                   // ko-KR
     u"|kode.?pos";                   // id
 const char16_t kZip4Re[] =
-    u"zip|^-$|post2"
+    u"((?<!\\.))zip"  // .zip indicates a file extension
+    u"|^-$|post2"
     u"|codpos2";  // pt-BR, pt-PT
 const char16_t kDependentLocalityRe[] =
     u"neighbo(u)?rhood"  // en
@@ -314,7 +316,7 @@ const char16_t kEmailRe[] =
     u"|メールアドレス"               // ja-JP
     u"|Электронн(ая|ой).?Почт(а|ы)"  // ru
     u"|邮件|邮箱"                    // zh-CN
-    u"|電郵地址"                     // zh-TW
+    u"|電郵地址|電子信箱"            // zh-TW
     u"|ഇ-മെയില്‍|ഇലക്ട്രോണിക്.?"
     u"മെയിൽ"                                        // ml
     u"|ایمیل|پست.*الکترونیک"                        // fa
@@ -603,5 +605,13 @@ const char16_t kHiddenValueRe[] = u"^(\\W)\\1+$";
 /////////////////////////////////////////////////////////////////////////////
 const char16_t kMerchantPromoCodeRe[] =
     u"\\bpromo code\\b|\\bcoupon code\\b|\\bgift code\\b";
+
+/////////////////////////////////////////////////////////////////////////////
+// votes_uploader.cc
+/////////////////////////////////////////////////////////////////////////////
+const char16_t kEmailValueRe[] =
+    u"^[a-zA-Z0-9.!#$%&’*+/=?^_`{|}~-]+@[a-zA-Z0-9-]+(?:\\.[a-zA-Z0-9-]+)*$";
+const char16_t kPhoneValueRe[] = u"^[0-9()+-]{6,25}$";
+const char16_t kUsernameLikeValueRe[] = u"[A-Za-z0-9_\\-.]{7,30}";
 
 }  // namespace autofill

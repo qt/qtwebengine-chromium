@@ -1,4 +1,4 @@
-// Copyright (c) 2021 The Chromium Authors. All rights reserved.
+// Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,8 +17,7 @@
 #include "base/strings/string_piece.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
-#include "base/util/values/values_util.h"
-#include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom-forward.h"
+#include "content/services/auction_worklet/public/mojom/bidder_worklet.mojom.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "sql/database.h"
 #include "sql/error_delegate_util.h"
@@ -27,6 +26,7 @@
 #include "sql/statement.h"
 #include "sql/transaction.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "third_party/blink/public/common/interest_group/interest_group.h"
 #include "url/origin.h"
 
 namespace content {
@@ -36,13 +36,9 @@ namespace {
 using auction_worklet::mojom::BiddingBrowserSignalsPtr;
 using auction_worklet::mojom::BiddingInterestGroupPtr;
 using auction_worklet::mojom::PreviousWinPtr;
-using blink::mojom::InterestGroupAdPtr;
-using blink::mojom::InterestGroupPtr;
 
 const base::FilePath::CharType kDatabasePath[] =
     FILE_PATH_LITERAL("InterestGroups");
-
-constexpr base::TimeDelta kIdlePeriod = base::TimeDelta::FromSeconds(30);
 
 // Version number of the database.
 //
@@ -68,23 +64,16 @@ namespace {
 std::string Serialize(const base::Value& value) {
   std::string json_output;
   JSONStringValueSerializer serializer(&json_output);
-  if (!serializer.Serialize(value))
-    LOG(ERROR) << "Could not serialize value:   " << value.DebugString();
-
+  serializer.Serialize(value);
   return json_output;
 }
-std::unique_ptr<base::Value> DeserializeValue(std::string serialized_value) {
+std::unique_ptr<base::Value> DeserializeValue(
+    const std::string& serialized_value) {
   if (serialized_value.empty())
     return {};
-  JSONStringValueDeserializer deserializer{base::StringPiece(serialized_value)};
-  std::string error_message;
-  std::unique_ptr<base::Value> result =
-      deserializer.Deserialize(nullptr, &error_message);
-  if (!result) {
-    LOG(ERROR) << "Could not deserialize value `" << serialized_value
-               << "`:   " << error_message;
-  }
-  return result;
+  JSONStringValueDeserializer deserializer(serialized_value);
+  return deserializer.Deserialize(/*error_code=*/nullptr,
+                                  /*error_message=*/nullptr);
 }
 
 std::string Serialize(const url::Origin& origin) {
@@ -96,7 +85,7 @@ url::Origin DeserializeOrigin(const std::string& serialized_origin) {
 
 std::string Serialize(const absl::optional<GURL>& url) {
   if (!url)
-    return "";
+    return std::string();
   return url->spec();
 }
 absl::optional<GURL> DeserializeURL(const std::string& serialized_url) {
@@ -106,63 +95,58 @@ absl::optional<GURL> DeserializeURL(const std::string& serialized_url) {
   return result;
 }
 
-base::Value ToValue(const ::blink::mojom::InterestGroupAd& ad) {
+base::Value ToValue(const blink::InterestGroup::Ad& ad) {
   base::Value dict(base::Value::Type::DICTIONARY);
   dict.SetStringKey("url", ad.render_url.spec());
   if (ad.metadata)
     dict.SetStringKey("metadata", ad.metadata.value());
   return dict;
 }
-InterestGroupAdPtr FromInterestGroupAdPtrValue(const base::Value* value) {
-  InterestGroupAdPtr result = blink::mojom::InterestGroupAd::New();
-  if (!value) {
-    LOG(ERROR) << "converting InterestGroupAd from value";
-    return result;
-  }
+blink::InterestGroup::Ad FromInterestGroupAdValue(const base::Value* value) {
+  blink::InterestGroup::Ad result;
   const std::string* maybe_url = value->FindStringKey("url");
-  if (!maybe_url)
-    LOG(ERROR) << "url field not found in serialized InterestGroupAdPtrValue";
-  result->render_url = GURL(*maybe_url);
+  if (maybe_url)
+    result.render_url = GURL(*maybe_url);
   const std::string* maybe_metadata = value->FindStringKey("metadata");
   if (maybe_metadata)
-    result->metadata = *maybe_metadata;
+    result.metadata = *maybe_metadata;
   return result;
 }
 
 std::string Serialize(
-    const absl::optional<std::vector<InterestGroupAdPtr>>& ads) {
+    const absl::optional<std::vector<blink::InterestGroup::Ad>>& ads) {
   if (!ads)
-    return "";
+    return std::string();
   base::Value list(base::Value::Type::LIST);
   for (const auto& ad : ads.value()) {
-    list.Append(ToValue(*ad));
+    list.Append(ToValue(ad));
   }
   return Serialize(list);
 }
-absl::optional<std::vector<InterestGroupAdPtr>>
-DeserializeInterestGroupAdPtrVector(std::string serialized_ads) {
-  std::vector<InterestGroupAdPtr> result;
+absl::optional<std::vector<blink::InterestGroup::Ad>>
+DeserializeInterestGroupAdVector(const std::string& serialized_ads) {
   std::unique_ptr<base::Value> ads_value = DeserializeValue(serialized_ads);
-  if (!ads_value) {
+  if (!ads_value || !ads_value->is_list())
     return absl::nullopt;
+  std::vector<blink::InterestGroup::Ad> result;
+  for (const auto& ad_value : ads_value->GetList()) {
+    result.emplace_back(FromInterestGroupAdValue(&ad_value));
   }
-  for (const auto& ad_value : ads_value->GetList())
-    result.push_back(FromInterestGroupAdPtrValue(&ad_value));
   return result;
 }
 
-std::string Serialize(const absl::optional<std::vector<std::string>> strings) {
+std::string Serialize(const absl::optional<std::vector<std::string>>& strings) {
   if (!strings)
-    return "";
+    return std::string();
   base::Value list(base::Value::Type::LIST);
   for (const auto& s : strings.value())
     list.Append(s);
   return Serialize(list);
 }
 absl::optional<std::vector<std::string>> DeserializeStringVector(
-    std::string serialized_vector) {
+    const std::string& serialized_vector) {
   std::unique_ptr<base::Value> list = DeserializeValue(serialized_vector);
-  if (!list)
+  if (!list || !list->is_list())
     return absl::nullopt;
   std::vector<std::string> result;
   for (const auto& value : list->GetList())
@@ -275,7 +259,7 @@ bool CreateV1Schema(sql::Database& db) {
 }
 
 bool DoJoinInterestGroup(sql::Database& db,
-                         const InterestGroupPtr& data,
+                         const blink::InterestGroup& data,
                          base::Time last_updated) {
   sql::Transaction transaction(&db);
   if (!transaction.Begin())
@@ -301,20 +285,20 @@ bool DoJoinInterestGroup(sql::Database& db,
     return false;
 
   join_group.Reset(true);
-  join_group.BindTime(0, data->expiry);
+  join_group.BindTime(0, data.expiry);
   join_group.BindTime(1, last_updated);
-  join_group.BindString(2, Serialize(data->owner));
-  join_group.BindString(3, data->name);
-  join_group.BindString(4, Serialize(data->bidding_url));
-  join_group.BindString(5, Serialize(data->update_url));
-  join_group.BindString(6, Serialize(data->trusted_bidding_signals_url));
-  join_group.BindString(7, Serialize(data->trusted_bidding_signals_keys));
-  if (data->user_bidding_signals) {
-    join_group.BindString(8, data->user_bidding_signals.value());
+  join_group.BindString(2, Serialize(data.owner));
+  join_group.BindString(3, data.name);
+  join_group.BindString(4, Serialize(data.bidding_url));
+  join_group.BindString(5, Serialize(data.update_url));
+  join_group.BindString(6, Serialize(data.trusted_bidding_signals_url));
+  join_group.BindString(7, Serialize(data.trusted_bidding_signals_keys));
+  if (data.user_bidding_signals) {
+    join_group.BindString(8, data.user_bidding_signals.value());
   } else {
     join_group.BindNull(8);
   }
-  join_group.BindString(9, Serialize(data->ads));
+  join_group.BindString(9, Serialize(data.ads));
 
   if (!join_group.Run())
     return false;
@@ -330,8 +314,8 @@ bool DoJoinInterestGroup(sql::Database& db,
     return false;
 
   join_hist.Reset(true);
-  join_hist.BindString(0, Serialize(data->owner));
-  join_hist.BindString(1, data->name);
+  join_hist.BindString(0, Serialize(data.owner));
+  join_hist.BindString(1, data.name);
   join_hist.BindTime(2, last_updated);
 
   if (!join_hist.Run())
@@ -341,32 +325,55 @@ bool DoJoinInterestGroup(sql::Database& db,
 }
 
 bool DoUpdateInterestGroup(sql::Database& db,
-                           const InterestGroupPtr& data,
+                           const blink::InterestGroup& data,
                            base::Time now) {
-  // clang-format off
-  sql::Statement update_group(
-      db.GetCachedStatement(SQL_FROM_HERE,
-          "UPDATE interest_groups SET "
-            "last_updated=?,"
-            "bidding_url=?,"
-            "update_url=?,"
-            "trusted_bidding_signals_url=?,"
-            "trusted_bidding_signals_keys=?,"
-            "ads=? "
-          "WHERE owner=? AND name=?"));
-  // clang-format on
+  // Unlike Join() operations, for Update() operations, values that aren't
+  // specified in the JSON returned by servers (Serialize()'d below as empty
+  // strings) aren't modified in the database -- in this sense, new data is
+  // merged with old data.
+  //
+  // To accomplish this, the C++ code uses BindNull() for fields that aren't
+  // set. COALESCE() then picks its first non-NULL argument. So, if a field is
+  // null, COALESCE() will result in the current value of the field
+  // (bidding_url, update_url, etc.) getting written back to the field -- in
+  // other words, that field doesn't change.
+
+  sql::Statement update_group(db.GetCachedStatement(SQL_FROM_HERE, R"(
+UPDATE interest_groups SET
+  last_updated=?,
+  bidding_url=COALESCE(?,bidding_url),
+  trusted_bidding_signals_url=COALESCE(?,trusted_bidding_signals_url),
+  trusted_bidding_signals_keys=COALESCE(?,trusted_bidding_signals_keys),
+  ads=COALESCE(?,ads)
+WHERE owner=? AND name=?)"));
+
   if (!update_group.is_valid())
     return false;
 
   update_group.Reset(true);
   update_group.BindTime(0, now);
-  update_group.BindString(1, Serialize(data->bidding_url));
-  update_group.BindString(2, Serialize(data->update_url));
-  update_group.BindString(3, Serialize(data->trusted_bidding_signals_url));
-  update_group.BindString(4, Serialize(data->trusted_bidding_signals_keys));
-  update_group.BindString(5, Serialize(data->ads));
-  update_group.BindString(6, Serialize(data->owner));
-  update_group.BindString(7, data->name);
+  if (data.bidding_url) {
+    update_group.BindString(1, Serialize(data.bidding_url));
+  } else {
+    update_group.BindNull(1);
+  }
+  if (data.trusted_bidding_signals_url) {
+    update_group.BindString(2, Serialize(data.trusted_bidding_signals_url));
+  } else {
+    update_group.BindNull(2);
+  }
+  if (data.trusted_bidding_signals_keys) {
+    update_group.BindString(3, Serialize(data.trusted_bidding_signals_keys));
+  } else {
+    update_group.BindNull(3);
+  }
+  if (data.ads) {
+    update_group.BindString(4, Serialize(data.ads));
+  } else {
+    update_group.BindNull(4);
+  }
+  update_group.BindString(5, Serialize(data.owner));
+  update_group.BindString(6, data.name);
 
   return update_group.Run();
 }
@@ -605,11 +612,11 @@ bool GetBidCount(sql::Database& db,
   return bid_count.Succeeded();
 }
 
-absl::optional<std::vector<BiddingInterestGroupPtr>>
-DoGetInterestGroupsForOwner(sql::Database& db,
-                            const url::Origin& owner,
-                            base::Time now) {
-  std::vector<BiddingInterestGroupPtr> result;
+absl::optional<std::vector<BiddingInterestGroup>> DoGetInterestGroupsForOwner(
+    sql::Database& db,
+    const url::Origin& owner,
+    base::Time now) {
+  std::vector<BiddingInterestGroup> result;
   // TODO(crbug.com/1197209): Adjust the limits on this query in response to
   // usage.
   // clang-format off
@@ -647,8 +654,8 @@ DoGetInterestGroupsForOwner(sql::Database& db,
   while (load.Step()) {
     BiddingInterestGroupPtr bidding_interest_group =
         auction_worklet::mojom::BiddingInterestGroup::New();
-    InterestGroupPtr interest_group = blink::mojom::InterestGroup::New();
 
+    blink::InterestGroup* interest_group = &bidding_interest_group->group;
     interest_group->expiry = load.ColumnTime(0);
     interest_group->owner = DeserializeOrigin(load.ColumnString(2));
     interest_group->name = load.ColumnString(3);
@@ -661,12 +668,12 @@ DoGetInterestGroupsForOwner(sql::Database& db,
     if (load.GetColumnType(8) != sql::ColumnType::kNull)
       interest_group->user_bidding_signals = load.ColumnString(8);
     interest_group->ads =
-        DeserializeInterestGroupAdPtrVector(load.ColumnString(9));
-    bidding_interest_group->group = std::move(interest_group);
+        DeserializeInterestGroupAdVector(load.ColumnString(9));
 
     bidding_interest_group->signals =
         auction_worklet::mojom::BiddingBrowserSignals::New();
-    result.push_back(std::move(bidding_interest_group));
+    result.emplace_back(
+        BiddingInterestGroup(std::move(bidding_interest_group)));
   }
   if (!load.Succeeded())
     return absl::nullopt;
@@ -674,23 +681,23 @@ DoGetInterestGroupsForOwner(sql::Database& db,
   // These queries are in separate loops to improve locality of the database
   // access.
   for (auto& bidding_interest_group : result) {
-    if (!GetJoinCount(db, owner, bidding_interest_group->group->name,
+    if (!GetJoinCount(db, owner, bidding_interest_group.group->group.name,
                       now - InterestGroupStorage::kHistoryLength,
-                      bidding_interest_group)) {
+                      bidding_interest_group.group)) {
       return absl::nullopt;
     }
   }
   for (auto& bidding_interest_group : result) {
-    if (!GetBidCount(db, owner, bidding_interest_group->group->name,
+    if (!GetBidCount(db, owner, bidding_interest_group.group->group.name,
                      now - InterestGroupStorage::kHistoryLength,
-                     bidding_interest_group)) {
+                     bidding_interest_group.group)) {
       return absl::nullopt;
     }
   }
   for (auto& bidding_interest_group : result) {
-    if (!GetPreviousWins(db, owner, bidding_interest_group->group->name,
+    if (!GetPreviousWins(db, owner, bidding_interest_group.group->group.name,
                          now - InterestGroupStorage::kHistoryLength,
-                         bidding_interest_group)) {
+                         bidding_interest_group.group)) {
       return absl::nullopt;
     }
   }
@@ -720,13 +727,13 @@ bool DoDeleteInterestGroupData(
   }
 
   for (const auto& affected_origin : affected_origins) {
-    absl::optional<std::vector<BiddingInterestGroupPtr>> maybe_interest_groups =
+    absl::optional<std::vector<BiddingInterestGroup>> maybe_interest_groups =
         DoGetInterestGroupsForOwner(db, affected_origin, infinite_past);
     if (!maybe_interest_groups)
       return false;
     for (const auto& bidding_interest_group : maybe_interest_groups.value()) {
       if (!DoLeaveInterestGroup(db, affected_origin,
-                                bidding_interest_group->group->name))
+                                bidding_interest_group.group->group.name))
         return false;
     }
   }
@@ -817,7 +824,7 @@ bool ClearExpiredInterestGroups(sql::Database& db,
 }
 
 bool DoPerformDatabaseMaintenance(sql::Database& db, base::Time now) {
-  SCOPED_UMA_HISTOGRAM_SHORT_TIMER("Storage.InterestGroup.DBMaintenanceTime");
+  SCOPED_UMA_HISTOGRAM_TIMER_MICROS("Storage.InterestGroup.DBMaintenanceTime");
   sql::Transaction transaction(&db);
   if (!transaction.Begin())
     return false;
@@ -842,10 +849,15 @@ base::FilePath DBPath(const base::FilePath& base) {
 
 constexpr base::TimeDelta InterestGroupStorage::kHistoryLength;
 constexpr base::TimeDelta InterestGroupStorage::kMaintenanceInterval;
+constexpr base::TimeDelta InterestGroupStorage::kIdlePeriod;
 
 InterestGroupStorage::InterestGroupStorage(const base::FilePath& path)
-    : db_(std::make_unique<sql::Database>(sql::DatabaseOptions{})),
-      path_to_database_(DBPath(path)) {
+    : path_to_database_(DBPath(path)),
+      db_(std::make_unique<sql::Database>(sql::DatabaseOptions{})),
+      db_maintenance_timer_(FROM_HERE,
+                            kIdlePeriod,
+                            this,
+                            &InterestGroupStorage::PerformDBMaintenance) {
   DETACH_FROM_SEQUENCE(sequence_checker_);
 }
 
@@ -855,7 +867,14 @@ InterestGroupStorage::~InterestGroupStorage() {
 
 bool InterestGroupStorage::EnsureDBInitialized() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  last_access_time_ = base::Time::Now();
+  base::Time now = base::Time::Now();
+  if (now > last_maintenance_time_ + kMaintenanceInterval) {
+    // Schedule maintenance for next idle period. If maintenance already
+    // scheduled this delays it further (we're not idle).
+    db_maintenance_timer_.Reset();
+  }
+
+  last_access_time_ = now;
   if (db_ && db_->is_open())
     return true;
   return InitializeDB();
@@ -893,7 +912,6 @@ bool InterestGroupStorage::InitializeDB() {
     return false;
   }
 
-  PerformDBMaintenance();
   return true;
 }
 
@@ -948,7 +966,9 @@ bool InterestGroupStorage::InitializeSchema() {
   return true;
 }
 
-void InterestGroupStorage::JoinInterestGroup(const InterestGroupPtr group) {
+void InterestGroupStorage::JoinInterestGroup(
+    const blink::InterestGroup& group,
+    const GURL& main_frame_joining_url) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!EnsureDBInitialized())
     return;
@@ -965,7 +985,8 @@ void InterestGroupStorage::LeaveInterestGroup(const url::Origin& owner,
     DLOG(ERROR) << "Could not leave interest group: " << db_->GetErrorMessage();
 }
 
-void InterestGroupStorage::UpdateInterestGroup(const InterestGroupPtr group) {
+void InterestGroupStorage::UpdateInterestGroup(
+    const blink::InterestGroup group) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!EnsureDBInitialized())
     return;
@@ -1014,13 +1035,13 @@ std::vector<url::Origin> InterestGroupStorage::GetAllInterestGroupOwners() {
   return std::move(maybe_result.value());
 }
 
-std::vector<BiddingInterestGroupPtr>
+std::vector<BiddingInterestGroup>
 InterestGroupStorage::GetInterestGroupsForOwner(const url::Origin& owner) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   if (!EnsureDBInitialized())
     return {};
 
-  absl::optional<std::vector<BiddingInterestGroupPtr>> maybe_result =
+  absl::optional<std::vector<BiddingInterestGroup>> maybe_result =
       DoGetInterestGroupsForOwner(*db_, owner, base::Time::Now());
   if (!maybe_result)
     return {};
@@ -1043,47 +1064,34 @@ void InterestGroupStorage::DeleteInterestGroupData(
 
 void InterestGroupStorage::PerformDBMaintenance() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  // We can use base::Unretained(this) in the timer's closure because the timer
-  // takes ownership of the callback we create here. The timer is guaranteed to
-  // last the lifetime of this.
-  base::Time now = base::Time::Now();
-  if (now - last_access_time_ < kIdlePeriod) {
-    // We're probably still in use. Let's try again in a bit.
-    db_maintenance_timer_.Start(
-        FROM_HERE, kIdlePeriod,
-        base::BindOnce(&InterestGroupStorage::PerformDBMaintenance,
-                       base::Unretained(this)));
-    return;
-  }
-
-  // Schedule next run
-  db_maintenance_timer_.Start(
-      FROM_HERE, kMaintenanceInterval,
-      base::BindOnce(&InterestGroupStorage::PerformDBMaintenance,
-                     base::Unretained(this)));
-
+  last_maintenance_time_ = base::Time::Now();
   if (EnsureDBInitialized()) {
-    DoPerformDatabaseMaintenance(*db_, now);
+    DoPerformDatabaseMaintenance(*db_, last_maintenance_time_);
   }
 }
 
-std::vector<BiddingInterestGroupPtr>
+std::vector<BiddingInterestGroup>
 InterestGroupStorage::GetAllInterestGroupsUnfilteredForTesting() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   base::Time infinite_past = base::Time::Min();
-  std::vector<BiddingInterestGroupPtr> result;
+  std::vector<BiddingInterestGroup> result;
   absl::optional<std::vector<url::Origin>> maybe_owners =
       DoGetAllInterestGroupOwners(*db_, infinite_past);
   if (!maybe_owners)
     return {};
   for (const auto& owner : *maybe_owners) {
-    absl::optional<std::vector<BiddingInterestGroupPtr>> maybe_owner_results =
+    absl::optional<std::vector<BiddingInterestGroup>> maybe_owner_results =
         DoGetInterestGroupsForOwner(*db_, owner, infinite_past);
     DCHECK(maybe_owner_results);
     std::move(maybe_owner_results->begin(), maybe_owner_results->end(),
               std::back_inserter(result));
   }
   return result;
+}
+
+base::Time InterestGroupStorage::GetLastMaintenanceTimeForTesting() const {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  return last_maintenance_time_;
 }
 
 void InterestGroupStorage::DatabaseErrorCallback(int extended_error,

@@ -4,7 +4,7 @@
 
 #include "ui/message_center/views/message_popup_collection.h"
 
-#include "base/stl_util.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -153,6 +153,8 @@ class MockMessagePopupView : public MessagePopupView {
       OnMouseExited(exit_event);
     }
   }
+
+  void SimulateFocused() { OnDidChangeFocus(nullptr, children().front()); }
 
   void Activate() {
     SetCanActivate(true);
@@ -769,7 +771,10 @@ TEST_F(MessagePopupCollectionTest, HoverClose) {
   EXPECT_GT(first_popup_top, GetPopup(id1)->GetBoundsInScreen().y());
 }
 
-TEST_F(MessagePopupCollectionTest, ActivatedClose) {
+// Popup timers should be paused if a notification has focus.
+// Once the focus is lost or the notification is resumed, popup timers
+// should restart.
+TEST_F(MessagePopupCollectionTest, FocusedClose) {
   std::string id0 = AddNotification();
   AnimateToEnd();
   popup_collection()->set_new_popup_height(256);
@@ -782,6 +787,10 @@ TEST_F(MessagePopupCollectionTest, ActivatedClose) {
 
   EXPECT_TRUE(IsPopupTimerStarted());
   GetPopup(id0)->Activate();
+  // Activating a popup should not pause timers.
+  EXPECT_TRUE(IsPopupTimerStarted());
+  // If the popup gets keyboard focus the timers should pause.
+  GetPopup(id0)->SimulateFocused();
   EXPECT_FALSE(IsPopupTimerStarted());
 
   const int first_popup_top = GetPopup(id0)->GetBoundsInScreen().y();

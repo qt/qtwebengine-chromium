@@ -65,7 +65,6 @@
 #include "third_party/blink/renderer/platform/loader/cors/cors.h"
 #include "third_party/blink/renderer/platform/loader/cors/cors_error_string.h"
 #include "third_party/blink/renderer/platform/loader/fetch/back_forward_cache_loader_helper.h"
-#include "third_party/blink/renderer/platform/loader/fetch/cached_metadata_handler.h"
 #include "third_party/blink/renderer/platform/loader/fetch/console_logger.h"
 #include "third_party/blink/renderer/platform/loader/fetch/detachable_use_counter.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_context.h"
@@ -76,6 +75,7 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_observer.h"
 #include "third_party/blink/renderer/platform/loader/fetch/response_body_loader.h"
 #include "third_party/blink/renderer/platform/loader/fetch/shared_buffer_bytes_consumer.h"
+#include "third_party/blink/renderer/platform/loader/fetch/url_loader/cached_metadata_handler.h"
 #include "third_party/blink/renderer/platform/loader/fetch/url_loader/request_conversion.h"
 #include "third_party/blink/renderer/platform/loader/mixed_content_autoupgrade_status.h"
 #include "third_party/blink/renderer/platform/network/http_names.h"
@@ -227,11 +227,14 @@ class ResourceLoader::CodeCacheRequest {
  public:
   CodeCacheRequest(std::unique_ptr<WebCodeCacheLoader> code_cache_loader,
                    const KURL& url,
-                   WebURLLoader::DeferType defers_loading)
+                   LoaderFreezeMode freeze_mode)
       : status_(kNoRequestSent),
         code_cache_loader_(std::move(code_cache_loader)),
         url_(url),
-        defers_loading_(defers_loading) {
+        freeze_mode_(freeze_mode),
+        should_use_source_hash_(
+            SchemeRegistry::SchemeSupportsCodeCacheWithHashing(
+                url.Protocol())) {
     DCHECK(RuntimeEnabledFeatures::IsolatedCodeCacheEnabled());
   }
 
@@ -240,7 +243,6 @@ class ResourceLoader::CodeCacheRequest {
   // Request data from code cache.
   bool FetchFromCodeCache(WebURLLoader* url_loader,
                           ResourceLoader* resource_loader);
-  bool FetchFromCodeCacheSynchronously(ResourceLoader* resource_loader);
 
   // Notifies about the response from webURLLoader. Stores the
   // resource_response_time that is used to validate responses from
@@ -253,7 +255,7 @@ class ResourceLoader::CodeCacheRequest {
   // once fetching from code cache is finished. Returns true if the
   // request is handled here and hence need not be handled by the loader.
   // Returns false otherwise.
-  bool SetDefersLoading(WebURLLoader::DeferType defers);
+  bool SetDefersLoading(LoaderFreezeMode);
 
  private:
   enum CodeCacheRequestStatus {
@@ -281,12 +283,19 @@ class ResourceLoader::CodeCacheRequest {
   CodeCacheRequestStatus status_;
   std::unique_ptr<WebCodeCacheLoader> code_cache_loader_;
   const WebURL url_;
-  WebURLLoader::DeferType defers_loading_ =
-      WebURLLoader::DeferType::kNotDeferred;
+  LoaderFreezeMode freeze_mode_ = LoaderFreezeMode::kNone;
   mojo_base::BigBuffer cached_code_;
   base::Time cached_code_response_time_;
   base::Time resource_response_time_;
   bool use_isolated_code_cache_ = false;
+  bool resource_response_arrived_ = false;
+
+  // Whether this response should use a hash of the source text to check
+  // whether a code cache entry is valid, rather than relying on response time.
+  // This could be computed as-needed based on url_, but doing so would require
+  // converting url_ from WebURL to KURL each time.
+  const bool should_use_source_hash_;
+
   base::WeakPtrFactory<CodeCacheRequest> weak_ptr_factory_{this};
 };
 
@@ -302,7 +311,7 @@ bool ResourceLoader::CodeCacheRequest::FetchFromCodeCache(
   // ensure that the resource receives cached code before the response data.
   // This directly calls the WebURLLoader's SetDefersLoading without going
   // through ResourceLoader.
-  url_loader->SetDefersLoading(WebURLLoader::DeferType::kDeferred);
+  url_loader->Freeze(LoaderFreezeMode::kStrict);
 
   WebCodeCacheLoader::FetchCodeCacheCallback callback = base::BindOnce(
       &ResourceLoader::CodeCacheRequest::DidReceiveCachedCode,
@@ -312,27 +321,13 @@ bool ResourceLoader::CodeCacheRequest::FetchFromCodeCache(
   return true;
 }
 
-bool ResourceLoader::CodeCacheRequest::FetchFromCodeCacheSynchronously(
-    ResourceLoader* resource_loader) {
-  if (!code_cache_loader_)
-    return false;
-  DCHECK_EQ(status_, kNoRequestSent);
-  status_ = kPendingResponse;
-
-  base::Time response_time;
-  mojo_base::BigBuffer data;
-  code_cache_loader_->FetchFromCodeCacheSynchronously(url_, &response_time,
-                                                      &data);
-  ProcessCodeCacheResponse(response_time, std::move(data), resource_loader);
-  return true;
-}
-
 // This is called when a response is received from the WebURLLoader. We buffer
 // the response_time if the response from code cache is not available yet.
 void ResourceLoader::CodeCacheRequest::DidReceiveResponse(
     const base::Time& resource_response_time,
     bool use_isolated_code_cache,
     ResourceLoader* resource_loader) {
+  resource_response_arrived_ = true;
   resource_response_time_ = resource_response_time;
   use_isolated_code_cache_ = use_isolated_code_cache;
   MaybeSendCachedCode(std::move(cached_code_), resource_loader);
@@ -340,12 +335,11 @@ void ResourceLoader::CodeCacheRequest::DidReceiveResponse(
 
 // Returns true if |this| handles |defers| and therefore the callsite, i.e. the
 // loader, doesn't need to take care of it). Returns false otherwise.
-bool ResourceLoader::CodeCacheRequest::SetDefersLoading(
-    WebURLLoader::DeferType defers) {
-  defers_loading_ = defers;
+bool ResourceLoader::CodeCacheRequest::SetDefersLoading(LoaderFreezeMode mode) {
+  freeze_mode_ = mode;
   if (status_ == kPendingResponse) {
     // The flag doesn't need to be handled by the loader. The value is stored
-    // in |defers_loading_| and set once the response from the code cache is
+    // in |freeze_mode_| and set once the response from the code cache is
     // received.
     return true;
   }
@@ -362,7 +356,7 @@ void ResourceLoader::CodeCacheRequest::DidReceiveCachedCode(
   ProcessCodeCacheResponse(response_time, std::move(data), resource_loader);
   // Reset the deferred value to its original state.
   DCHECK(resource_loader);
-  resource_loader->SetDefersLoading(defers_loading_);
+  resource_loader->SetDefersLoading(freeze_mode_);
 }
 
 // This is called when a response is received from code cache. If the
@@ -375,7 +369,7 @@ void ResourceLoader::CodeCacheRequest::ProcessCodeCacheResponse(
   status_ = kReceivedResponse;
   cached_code_response_time_ = response_time;
 
-  if (resource_response_time_.is_null()) {
+  if (!resource_response_arrived_) {
     // Wait for the response before we can send the cached code.
     // TODO(crbug.com/866889): Pass this as a handle to avoid the overhead of
     // copying this data.
@@ -389,24 +383,43 @@ void ResourceLoader::CodeCacheRequest::ProcessCodeCacheResponse(
 void ResourceLoader::CodeCacheRequest::MaybeSendCachedCode(
     mojo_base::BigBuffer data,
     ResourceLoader* resource_loader) {
-  if (status_ != kReceivedResponse || cached_code_response_time_.is_null() ||
-      resource_response_time_.is_null()) {
+  // Wait until both responses have arrived; they can happen in either order.
+  if (status_ != kReceivedResponse || !resource_response_arrived_) {
     return;
   }
+
+  auto ClearCachedCodeIfPresent = [&]() {
+    if (data.size() != 0) {
+      resource_loader->ClearCachedCode();
+    }
+  };
 
   // If the resource was fetched for service worker script or was served from
   // CacheStorage via service worker then they maintain their own code cache.
   // We should not use the isolated cache.
   if (!use_isolated_code_cache_) {
-    resource_loader->ClearCachedCode();
+    ClearCachedCodeIfPresent();
     return;
   }
 
-  // If the timestamps don't match, the code cache data may be for a different
-  // response. See https://crbug.com/1099587.
-  if (resource_response_time_ != cached_code_response_time_) {
-    resource_loader->ClearCachedCode();
-    return;
+  if (should_use_source_hash_) {
+    // This resource should use a source text hash rather than a response time
+    // comparison.
+    if (!resource_loader->resource_->CodeCacheHashRequired()) {
+      // This kind of Resource doesn't support requiring a hash, so we can't
+      // send cached code to it.
+      ClearCachedCodeIfPresent();
+      return;
+    }
+  } else {
+    // If the timestamps don't match or are null, the code cache data may be for
+    // a different response. See https://crbug.com/1099587.
+    if (cached_code_response_time_.is_null() ||
+        resource_response_time_.is_null() ||
+        resource_response_time_ != cached_code_response_time_) {
+      ClearCachedCodeIfPresent();
+      return;
+    }
   }
 
   if (data.size() > 0) {
@@ -472,9 +485,21 @@ bool ResourceLoader::ShouldFetchCodeCache() {
   if (!RuntimeEnabledFeatures::IsolatedCodeCacheEnabled())
     return false;
 
-  const ResourceRequestHead& request = resource_->GetResourceRequest();
-  if (!request.Url().ProtocolIsInHTTPFamily())
+  // Since code cache requests use a per-frame interface, don't fetch cached
+  // code for keep-alive requests. These are only used for beaconing and we
+  // don't expect code cache to help there.
+  if (ShouldBeKeptAliveWhenDetached())
     return false;
+
+  const ResourceRequestHead& request = resource_->GetResourceRequest();
+  // Aside from http and https, the only other supported protocols are those
+  // listed in the SchemeRegistry as requiring a content equality check.
+  bool should_use_source_hash =
+      SchemeRegistry::SchemeSupportsCodeCacheWithHashing(
+          request.Url().Protocol());
+  if (!request.Url().ProtocolIsInHTTPFamily() && !should_use_source_hash) {
+    return false;
+  }
   // When loading the service worker scripts, we don't need to check the
   // GeneratedCodeCache. The code cache corresponding to these scripts is in
   // the service worker's "installed script storage" and would be fetched along
@@ -497,8 +522,13 @@ bool ResourceLoader::ShouldFetchCodeCache() {
   // These fetches should be cheap, however, requiring one additional IPC and
   // no browser process disk IO since the cache index is in memory and the
   // resource key should not be present.
+  //
+  // The only case where it's easy to skip a kRaw resource is when a content
+  // equality check is required, because only ScriptResource supports that
+  // requirement.
   return resource_->GetType() == ResourceType::kScript ||
-         resource_->GetType() == ResourceType::kRaw;
+         (resource_->GetType() == ResourceType::kRaw &&
+          !should_use_source_hash);
 }
 
 void ResourceLoader::Start() {
@@ -571,7 +601,7 @@ void ResourceLoader::Run() {
 }
 
 void ResourceLoader::DidReceiveData(base::span<const char> data) {
-  DidReceiveData(data.data(), data.size());
+  DidReceiveData(data.data(), base::checked_cast<int>(data.size()));
 }
 
 void ResourceLoader::DidFinishLoadingBody() {
@@ -601,7 +631,7 @@ void ResourceLoader::StartWith(const ResourceRequestHead& request) {
   DCHECK(loader_);
 
   if (resource_->Options().synchronous_policy == kRequestSynchronously &&
-      fetcher_->GetProperties().IsLoadDeferred()) {
+      fetcher_->GetProperties().FreezeMode() != LoaderFreezeMode::kNone) {
     // TODO(yuzus): Evict bfcache if necessary.
     Cancel();
     return;
@@ -609,12 +639,12 @@ void ResourceLoader::StartWith(const ResourceRequestHead& request) {
 
   is_downloading_to_blob_ = request.DownloadToBlob();
 
-  SetDefersLoading(fetcher_->GetProperties().DeferType());
+  SetDefersLoading(fetcher_->GetProperties().FreezeMode());
 
   if (ShouldFetchCodeCache()) {
     code_cache_request_ = std::make_unique<CodeCacheRequest>(
         fetcher_->CreateCodeCacheLoader(), request.Url(),
-        fetcher_->GetProperties().DeferType());
+        fetcher_->GetProperties().FreezeMode());
   }
 
   if (is_cache_aware_loading_activated_) {
@@ -651,30 +681,30 @@ void ResourceLoader::Restart(const ResourceRequestHead& request) {
   StartWith(request);
 }
 
-void ResourceLoader::SetDefersLoading(WebURLLoader::DeferType defers) {
+void ResourceLoader::SetDefersLoading(LoaderFreezeMode mode) {
   DCHECK(loader_);
-  defers_ = defers;
+  freeze_mode_ = mode;
   // If CodeCacheRequest handles this, then no need to handle here.
-  if (code_cache_request_ && code_cache_request_->SetDefersLoading(defers))
+  if (code_cache_request_ && code_cache_request_->SetDefersLoading(mode))
     return;
 
   if (response_body_loader_) {
-    if (defers != WebURLLoader::DeferType::kNotDeferred &&
+    if (mode != LoaderFreezeMode::kNone &&
         !response_body_loader_->IsSuspended()) {
-      response_body_loader_->Suspend(defers);
-      if (defers == WebURLLoader::DeferType::kDeferredWithBackForwardCache) {
+      response_body_loader_->Suspend(mode);
+      if (mode == LoaderFreezeMode::kBufferIncoming) {
         response_body_loader_
             ->EvictFromBackForwardCacheIfDrainedAsBytesConsumer();
       }
     }
-    if (defers == WebURLLoader::DeferType::kNotDeferred &&
+    if (mode == LoaderFreezeMode::kNone &&
         response_body_loader_->IsSuspended()) {
       response_body_loader_->Resume();
     }
   }
 
   if (defers_handling_data_url_) {
-    if (defers_ == WebURLLoader::DeferType::kNotDeferred) {
+    if (freeze_mode_ == LoaderFreezeMode::kNone) {
       defers_handling_data_url_ = false;
       GetLoadingTaskRunner()->PostTask(
           FROM_HERE,
@@ -682,8 +712,8 @@ void ResourceLoader::SetDefersLoading(WebURLLoader::DeferType defers) {
     }
   }
 
-  loader_->SetDefersLoading(defers);
-  if (defers != WebURLLoader::DeferType::kNotDeferred) {
+  loader_->Freeze(mode);
+  if (mode != LoaderFreezeMode::kNone) {
     resource_->VirtualTimePauser().UnpauseVirtualTime();
   } else {
     resource_->VirtualTimePauser().PauseVirtualTime();
@@ -746,12 +776,12 @@ bool ResourceLoader::WillFollowRedirect(
     network::mojom::ReferrerPolicy new_referrer_policy,
     const WebString& new_method,
     const WebURLResponse& passed_redirect_response,
-    bool& report_raw_headers,
+    bool& has_devtools_request_id,
     std::vector<std::string>* removed_headers) {
   DCHECK(!passed_redirect_response.IsNull());
 
   if (passed_redirect_response.HasAuthorizationCoveredByWildcardOnPreflight()) {
-    fetcher_->GetUseCounter().CountUse(
+    fetcher_->GetUseCounter().CountDeprecation(
         mojom::WebFeature::kAuthorizationCoveredByWildcard);
   }
 
@@ -884,7 +914,7 @@ bool ResourceLoader::WillFollowRedirect(
     return false;
   }
 
-  report_raw_headers = new_request->ReportRawHeaders();
+  has_devtools_request_id = new_request->GetDevToolsId().has_value();
   return true;
 }
 
@@ -934,7 +964,7 @@ void ResourceLoader::DidReceiveResponseInternal(
   const ResourceRequestHead& request = resource_->GetResourceRequest();
 
   if (response.HasAuthorizationCoveredByWildcardOnPreflight()) {
-    fetcher_->GetUseCounter().CountUse(
+    fetcher_->GetUseCounter().CountDeprecation(
         mojom::WebFeature::kAuthorizationCoveredByWildcard);
   }
 
@@ -1259,7 +1289,9 @@ void ResourceLoader::HandleError(const ResourceError& error) {
     Restart(resource_->GetResourceRequest());
     return;
   }
-  if (error.CorsErrorStatus()) {
+  if (error.CorsErrorStatus() &&
+      !base::FeatureList::IsEnabled(blink::features::kCORSErrorsIssueOnly)) {
+    // CORS issues are reported via network service instrumentation.
     fetcher_->GetConsoleLogger().AddConsoleMessage(
         mojom::ConsoleMessageSource::kJavaScript,
         mojom::ConsoleMessageLevel::kError,
@@ -1536,7 +1568,7 @@ ResourceLoader::CheckResponseNosniff(
 void ResourceLoader::HandleDataUrl() {
   if (!IsLoading())
     return;
-  if (defers_ != WebURLLoader::DeferType::kNotDeferred) {
+  if (freeze_mode_ != LoaderFreezeMode::kNone) {
     defers_handling_data_url_ = true;
     return;
   }

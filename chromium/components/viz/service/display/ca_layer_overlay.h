@@ -13,9 +13,8 @@
 #include "components/viz/common/quads/compositor_render_pass.h"
 #include "components/viz/service/viz_service_export.h"
 #include "gpu/command_buffer/common/mailbox.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
+#include "skia/ext/skia_matrix_44.h"
 #include "third_party/skia/include/core/SkColor.h"
-#include "third_party/skia/include/core/SkMatrix44.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/rrect_f.h"
@@ -46,7 +45,8 @@ class VIZ_SERVICE_EXPORT CALayerOverlaySharedState
   // The opacity property for the CAayer.
   float opacity = 1;
   // The transform to apply to the CALayer.
-  SkMatrix44 transform = SkMatrix44(SkMatrix44::kIdentity_Constructor);
+  skia::Matrix44 transform =
+      skia::Matrix44(skia::Matrix44::kIdentity_Constructor);
 
  private:
   friend class base::RefCountedThreadSafe<CALayerOverlaySharedState>;
@@ -100,7 +100,7 @@ class VIZ_SERVICE_EXPORT CALayerOverlayProcessor {
 
   bool AreClipSettingsValid(const CALayerOverlay& ca_layer_overlay,
                             CALayerOverlayList* ca_layer_overlay_list) const;
-  void PutForcedOverlayContentIntoOverlays(
+  void PutForcedOverlayContentIntoUnderlays(
       DisplayResourceProvider* resource_provider,
       AggregatedRenderPass* render_pass,
       const gfx::RectF& display_rect,

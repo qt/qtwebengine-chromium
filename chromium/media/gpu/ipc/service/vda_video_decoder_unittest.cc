@@ -7,10 +7,10 @@
 #include <stdint.h>
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/test/mock_callback.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
@@ -113,6 +113,8 @@ class VdaVideoDecoderTest : public testing::TestWithParam<bool> {
     client_ = vdavd;
   }
 
+  VdaVideoDecoderTest(const VdaVideoDecoderTest&) = delete;
+  VdaVideoDecoderTest& operator=(const VdaVideoDecoderTest&) = delete;
   ~VdaVideoDecoderTest() override {
     // Drop ownership of anything that may have an async destruction process,
     // then allow destruction to complete.
@@ -311,8 +313,6 @@ class VdaVideoDecoderTest : public testing::TestWithParam<bool> {
 
   VideoDecodeAccelerator::Client* client_;
   uint64_t next_release_count_ = 1;
-
-  DISALLOW_COPY_AND_ASSIGN(VdaVideoDecoderTest);
 };
 
 TEST_P(VdaVideoDecoderTest, CreateAndDestroy) {}

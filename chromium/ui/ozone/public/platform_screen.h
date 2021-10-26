@@ -84,6 +84,9 @@ class COMPONENT_EXPORT(OZONE_BASE) PlatformScreen {
       const gfx::Rect& match_rect) const = 0;
 
   // Suspends the platform-specific screensaver, if applicable.
+  // Can be called more than once with the same value for |suspend|, but those
+  // states should not stack: the first alternating value should toggle the
+  // state of the suspend.
   virtual void SetScreenSaverSuspended(bool suspend);
 
   // Returns whether the screensaver is currently running.
@@ -102,7 +105,7 @@ class COMPONENT_EXPORT(OZONE_BASE) PlatformScreen {
 
   // Returns human readable description of the window manager, desktop, and
   // other system properties related to the compositing.
-  virtual base::Value GetGpuExtraInfoAsListValue(
+  virtual std::vector<base::Value> GetGpuExtraInfo(
       const gfx::GpuExtraInfo& gpu_extra_info);
 
   // Sets device scale factor received from external sources such as toolkits.
@@ -110,8 +113,8 @@ class COMPONENT_EXPORT(OZONE_BASE) PlatformScreen {
   virtual void SetDeviceScaleFactor(float scale);
 
  protected:
-  void StorePlatformNameIntoListValue(base::Value& list_value,
-                                      const std::string& platform_name);
+  void StorePlatformNameIntoListOfValues(std::vector<base::Value>& values,
+                                         const std::string& platform_name);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PlatformScreen);

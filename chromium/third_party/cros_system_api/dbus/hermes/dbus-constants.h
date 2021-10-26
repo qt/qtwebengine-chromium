@@ -34,6 +34,13 @@ const char kInstallPendingProfile[] = "InstallPendingProfile";
 const char kRequestPendingProfiles[] = "RequestPendingProfiles";
 const char kRequestInstalledProfiles[] = "RequestInstalledProfiles";
 const char kUninstallProfile[] = "UninstallProfile";
+const char kResetMemory[] = "ResetMemory";
+
+// Argument when a ResetMemory call is made
+enum ResetOptions {
+  kDeleteOperationalProfiles = 1,
+  kDeleteFieldLoadedTestProfiles = 2,
+};
 
 // Euicc properties.
 const char kEidProperty[] = "Eid";

@@ -73,10 +73,6 @@ static AOM_INLINE void set_mb_mi(CommonModeInfoParams *mi_params, int width,
 
   assert(mi_size_wide[mi_params->mi_alloc_bsize] ==
          mi_size_high[mi_params->mi_alloc_bsize]);
-
-#if CONFIG_LPF_MASK
-  av1_alloc_loop_filter_mask(mi_params);
-#endif
 }
 
 static AOM_INLINE void enc_free_mi(CommonModeInfoParams *mi_params) {
@@ -858,7 +854,7 @@ static AOM_INLINE void highbd_set_var_fns(AV1_PRIMARY *const ppi) {
 #endif  // CONFIG_AV1_HIGHBITDEPTH
 
 static AOM_INLINE void copy_frame_prob_info(AV1_COMP *cpi) {
-  FrameProbInfo *const frame_probs = &cpi->frame_probs;
+  FrameProbInfo *const frame_probs = &cpi->ppi->frame_probs;
   if (cpi->sf.tx_sf.tx_type_search.prune_tx_type_using_stats) {
     av1_copy(frame_probs->tx_type_probs, default_tx_type_probs);
   }
@@ -893,7 +889,7 @@ static AOM_INLINE void restore_extra_coding_context(AV1_COMP *cpi) {
   cm->lf = cc->lf;
   restore_cdef_coding_context(&cm->cdef_info, &cc->cdef_info);
   cpi->rc = cc->rc;
-  cpi->mv_stats = cc->mv_stats;
+  cpi->ppi->mv_stats = cc->mv_stats;
 }
 
 static AOM_INLINE int equal_dimensions_and_border(const YV12_BUFFER_CONFIG *a,

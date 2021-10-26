@@ -8,7 +8,7 @@
 
 # pylint: disable=W0212
 
-from __future__ import absolute_import
+
 import collections
 import glob
 import logging
@@ -115,7 +115,7 @@ DEVICE_PERF_OUTPUT_DIR = (
 
 SCREENSHOTS_DIR = os.path.join(DIR_SOURCE_ROOT, 'out_screenshots')
 
-ANDROID_SDK_BUILD_TOOLS_VERSION = '30.0.1'
+ANDROID_SDK_BUILD_TOOLS_VERSION = '31.0.0'
 ANDROID_SDK_ROOT = os.path.join(DIR_SOURCE_ROOT, 'third_party', 'android_sdk',
                                 'public')
 ANDROID_SDK_TOOLS = os.path.join(ANDROID_SDK_ROOT,

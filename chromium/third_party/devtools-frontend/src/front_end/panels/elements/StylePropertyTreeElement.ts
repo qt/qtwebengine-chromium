@@ -20,7 +20,7 @@ import * as ElementsComponents from './components/components.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {StyleEditorWidget} from './StyleEditorWidget.js';
 import type {StylePropertiesSection} from './StylesSidebarPane.js';
-import {CSSPropertyPrompt, StylesSidebarPane, StylesSidebarPropertyRenderer} from './StylesSidebarPane.js';  // eslint-disable-line no-unused-vars
+import {CSSPropertyPrompt, StylesSidebarPane, StylesSidebarPropertyRenderer} from './StylesSidebarPane.js';
 
 const FlexboxEditor = ElementsComponents.StylePropertyEditor.FlexboxEditor;
 const GridEditor = ElementsComponents.StylePropertyEditor.GridEditor;
@@ -219,15 +219,13 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
     swatch.appendChild(valueChild);
 
-    const onFormatchanged = (event: Event): void => {
-      // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const {data} = (event as any);
+    const onFormatchanged = (event: InlineEditor.ColorSwatch.FormatChangedEvent): void => {
+      const {data} = event;
       swatch.firstElementChild && swatch.firstElementChild.remove();
       swatch.createChild('span').textContent = data.text;
     };
 
-    swatch.addEventListener('formatchanged', onFormatchanged);
+    swatch.addEventListener(InlineEditor.ColorSwatch.FormatChangedEvent.eventName, onFormatchanged);
 
     if (this._editable()) {
       this._addColorContrastInfo(swatch);
@@ -725,7 +723,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
         StylesSidebarPane.createExclamationMark(this.property, warnings.join(' ')), this.listItemElement.firstChild);
   }
 
-  _mouseUp(event: Event): void {
+  _mouseUp(event: MouseEvent): void {
     const activeTreeElement = parentMap.get(this._parentPane);
     parentMap.delete(this._parentPane);
     if (!activeTreeElement) {
@@ -745,8 +743,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
 
     const section = this.section();
-    if (UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlOrMeta((event as MouseEvent)) && section &&
-        section.navigable) {
+    if (UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlEquivalentKey(event) && section && section.navigable) {
       this._navigateToSource((event.target as Element));
       return;
     }
@@ -1027,7 +1024,9 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     let result;
     if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
       result = 'forward';
-    } else if (keyboardEvent.keyCode === UI.KeyboardShortcut.Keys.Esc.code || keyboardEvent.key === 'Escape') {
+    } else if (
+        keyboardEvent.keyCode === UI.KeyboardShortcut.Keys.Esc.code ||
+        keyboardEvent.key === Platform.KeyboardUtilities.ESCAPE_KEY) {
       result = 'cancel';
     } else if (
         !context.isEditingName && this._newProperty &&

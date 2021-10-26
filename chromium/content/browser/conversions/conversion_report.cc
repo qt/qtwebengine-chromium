@@ -4,35 +4,30 @@
 
 #include "content/browser/conversions/conversion_report.h"
 
-#include <tuple>
-
 namespace content {
 
-ConversionReport::ConversionReport(const StorableImpression& impression,
-                                   const std::string& conversion_data,
+ConversionReport::ConversionReport(StorableImpression impression,
+                                   uint64_t conversion_data,
                                    base::Time conversion_time,
                                    base::Time report_time,
-                                   const absl::optional<int64_t>& conversion_id)
-    : impression(impression),
+                                   absl::optional<int64_t> conversion_id)
+    : impression(std::move(impression)),
       conversion_data(conversion_data),
       conversion_time(conversion_time),
       report_time(report_time),
+      original_report_time(report_time),
       conversion_id(conversion_id) {}
 
 ConversionReport::ConversionReport(const ConversionReport& other) = default;
 
-ConversionReport::~ConversionReport() = default;
+ConversionReport& ConversionReport::operator=(const ConversionReport& other) =
+    default;
 
-std::ostream& operator<<(std::ostream& out, const ConversionReport& report) {
-  out << "impression_data: " << report.impression.impression_data()
-      << ", impression_origin: " << report.impression.impression_origin()
-      << ", conversion_origin: " << report.impression.conversion_origin()
-      << ", reporting_origin: " << report.impression.reporting_origin()
-      << ", conversion_data: " << report.conversion_data
-      << ", conversion_time: " << report.conversion_time
-      << ", report_time: " << report.report_time
-      << ", extra_delay: " << report.extra_delay;
-  return out;
-}
+ConversionReport::ConversionReport(ConversionReport&& other) = default;
+
+ConversionReport& ConversionReport::operator=(ConversionReport&& other) =
+    default;
+
+ConversionReport::~ConversionReport() = default;
 
 }  // namespace content

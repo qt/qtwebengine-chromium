@@ -103,7 +103,7 @@ enum {
     PRESET_LOW_LATENCY_DEFAULT ,
     PRESET_LOW_LATENCY_HQ ,
     PRESET_LOW_LATENCY_HP,
-    PRESET_LOSSLESS_DEFAULT, // lossless presets must be the last ones
+    PRESET_LOSSLESS_DEFAULT,
     PRESET_LOSSLESS_HP,
 #ifdef NVENC_HAVE_NEW_PRESETS
     PRESET_P1,
@@ -166,6 +166,9 @@ typedef struct NvencContext
     AVFifoBuffer *output_surface_ready_queue;
     AVFifoBuffer *timestamp_list;
 
+    NV_ENC_SEI_PAYLOAD *sei_data;
+    int sei_data_size;
+
     struct {
         void *ptr;
         int ptr_index;
@@ -219,6 +222,7 @@ typedef struct NvencContext
     int tuning_info;
     int multipass;
     int ldkfs;
+    int extra_sei;
 } NvencContext;
 
 int ff_nvenc_encode_init(AVCodecContext *avctx);

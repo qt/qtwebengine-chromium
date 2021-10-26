@@ -140,9 +140,9 @@ PUBLIC struct gbm_bo *gbm_bo_create(struct gbm_device *gbm, uint32_t width, uint
 		return NULL;
 
 	/*
-	 * HACK: This is for HAL_PIXEL_FORMAT_YV12 buffers allocated by arcvm.
-	 * None of our platforms can display YV12, so we can treat as a SW buffer.
-	 * Remove once this can be intelligently resolved in the guest.
+	 * HACK: This is for HAL_PIXEL_FORMAT_YV12 buffers allocated by arcvm. None of
+	 * our platforms can display YV12, so we can treat as a SW buffer. Remove once
+	 * this can be intelligently resolved in the guest. Also see compute_virgl_bind_flags.
 	 */
 	if (format == GBM_FORMAT_YVU420 && (usage & GBM_BO_USE_LINEAR))
 		format = DRM_FORMAT_YVU420_ANDROID;
@@ -209,9 +209,8 @@ PUBLIC struct gbm_bo *gbm_bo_import(struct gbm_device *gbm, uint32_t type, void 
 		drv_data.format = fd_data->format;
 		drv_data.fds[0] = fd_data->fd;
 		drv_data.strides[0] = fd_data->stride;
+		drv_data.format_modifier = DRM_FORMAT_MOD_INVALID;
 
-		for (i = 0; i < GBM_MAX_PLANES; ++i)
-			drv_data.format_modifiers[i] = DRM_FORMAT_MOD_INVALID;
 		break;
 	case GBM_BO_IMPORT_FD_MODIFIER:
 		gbm_format = fd_modifier_data->format;
@@ -226,6 +225,7 @@ PUBLIC struct gbm_bo *gbm_bo_import(struct gbm_device *gbm, uint32_t type, void 
 		if (!num_fds || num_fds > num_planes)
 			return NULL;
 
+		drv_data.format_modifier = fd_modifier_data->modifier;
 		for (i = 0; i < num_planes; i++) {
 			if (num_fds != num_planes)
 				drv_data.fds[i] = fd_modifier_data->fds[0];
@@ -233,7 +233,6 @@ PUBLIC struct gbm_bo *gbm_bo_import(struct gbm_device *gbm, uint32_t type, void 
 				drv_data.fds[i] = fd_modifier_data->fds[i];
 			drv_data.offsets[i] = fd_modifier_data->offsets[i];
 			drv_data.strides[i] = fd_modifier_data->strides[i];
-			drv_data.format_modifiers[i] = fd_modifier_data->modifier;
 		}
 
 		for (i = num_planes; i < GBM_MAX_PLANES; i++)
@@ -301,7 +300,7 @@ PUBLIC uint32_t gbm_bo_get_bpp(struct gbm_bo *bo)
 
 PUBLIC uint64_t gbm_bo_get_modifier(struct gbm_bo *bo)
 {
-	return drv_bo_get_plane_format_modifier(bo->bo, 0);
+	return drv_bo_get_format_modifier(bo->bo);
 }
 
 PUBLIC struct gbm_device *gbm_bo_get_device(struct gbm_bo *bo)
@@ -327,6 +326,11 @@ PUBLIC int gbm_bo_get_plane_count(struct gbm_bo *bo)
 PUBLIC union gbm_bo_handle gbm_bo_get_handle_for_plane(struct gbm_bo *bo, size_t plane)
 {
 	return (union gbm_bo_handle)drv_bo_get_plane_handle(bo->bo, (size_t)plane).u64;
+}
+
+PUBLIC int gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane)
+{
+	return drv_bo_get_plane_fd(bo->bo, plane);
 }
 
 PUBLIC uint32_t gbm_bo_get_offset(struct gbm_bo *bo, size_t plane)

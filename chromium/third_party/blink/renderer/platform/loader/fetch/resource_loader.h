@@ -43,6 +43,7 @@
 #include "third_party/blink/public/platform/web_url_loader_client.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/loader/fetch/data_pipe_bytes_consumer.h"
+#include "third_party/blink/renderer/platform/loader/fetch/loader_freeze_mode.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_scheduler.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
@@ -97,7 +98,7 @@ class PLATFORM_EXPORT ResourceLoader final
   void ScheduleCancel();
   void Cancel();
 
-  void SetDefersLoading(WebURLLoader::DeferType);
+  void SetDefersLoading(LoaderFreezeMode);
 
   void DidChangePriority(ResourceLoadPriority, int intra_priority_value);
 
@@ -132,7 +133,7 @@ class PLATFORM_EXPORT ResourceLoader final
                           network::mojom::ReferrerPolicy new_referrer_policy,
                           const WebString& new_method,
                           const WebURLResponse& passed_redirect_response,
-                          bool& report_raw_headers,
+                          bool& has_devtools_request_id,
                           std::vector<std::string>* removed_headers) override;
   void DidSendData(uint64_t bytes_sent,
                    uint64_t total_bytes_to_be_sent) override;
@@ -266,7 +267,7 @@ class PLATFORM_EXPORT ResourceLoader final
   absl::optional<DeferredFinishLoadingInfo> deferred_finish_loading_info_;
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_for_body_loader_;
 
-  WebURLLoader::DeferType defers_ = WebURLLoader::DeferType::kNotDeferred;
+  LoaderFreezeMode freeze_mode_ = LoaderFreezeMode::kNone;
   // True if the next call of SetDefersLoading(kNotDeferred) needs to invoke
   // HandleDataURL().
   bool defers_handling_data_url_ = false;

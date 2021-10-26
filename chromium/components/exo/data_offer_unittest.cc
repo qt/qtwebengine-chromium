@@ -84,9 +84,9 @@ class TestDataTransferPolicyController : ui::DataTransferPolicyController {
 
  private:
   // ui::DataTransferPolicyController:
-  bool IsClipboardReadAllowed(
-      const ui::DataTransferEndpoint* const data_src,
-      const ui::DataTransferEndpoint* const data_dst) override {
+  bool IsClipboardReadAllowed(const ui::DataTransferEndpoint* const data_src,
+                              const ui::DataTransferEndpoint* const data_dst,
+                              const absl::optional<size_t> size) override {
     if (data_src)
       last_src_type_ = data_src->type();
     last_dst_type_ = data_dst->type();
@@ -95,7 +95,8 @@ class TestDataTransferPolicyController : ui::DataTransferPolicyController {
 
   void PasteIfAllowed(const ui::DataTransferEndpoint* const data_src,
                       const ui::DataTransferEndpoint* const data_dst,
-                      content::WebContents* web_contents,
+                      const absl::optional<size_t> size,
+                      content::RenderFrameHost* web_contents,
                       base::OnceCallback<void(bool)> callback) override {}
 
   bool IsDragDropAllowed(const ui::DataTransferEndpoint* const data_src,
@@ -605,7 +606,7 @@ TEST_F(DataOfferTest, SetClipboardDataFilenames) {
   {
     ui::ScopedClipboardWriter writer(ui::ClipboardBuffer::kCopyPaste);
     writer.WritePickledData(pickle,
-                            ui::ClipboardFormatType::GetWebCustomDataType());
+                            ui::ClipboardFormatType::WebCustomDataType());
   }
 
   auto* window = CreateTestWindowInShellWithBounds(gfx::Rect());

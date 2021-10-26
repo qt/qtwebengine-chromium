@@ -9,6 +9,7 @@
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "media/base/media_switches.h"
 #include "media/base/media_track.h"
 #include "media/base/media_tracks.h"
@@ -190,17 +191,17 @@ void SourceBufferState::SetGroupStartTimestampIfInSequenceMode(
 }
 
 void SourceBufferState::SetTracksWatcher(
-    const Demuxer::MediaTracksUpdatedCB& tracks_updated_cb) {
+    Demuxer::MediaTracksUpdatedCB tracks_updated_cb) {
   DCHECK(!init_segment_received_cb_);
   DCHECK(tracks_updated_cb);
-  init_segment_received_cb_ = tracks_updated_cb;
+  init_segment_received_cb_ = std::move(tracks_updated_cb);
 }
 
 void SourceBufferState::SetParseWarningCallback(
     SourceBufferParseWarningCB parse_warning_cb) {
   // Give the callback to |frame_processor_|; none of these warnings are
   // currently emitted elsewhere.
-  frame_processor_->SetParseWarningCallback(parse_warning_cb);
+  frame_processor_->SetParseWarningCallback(std::move(parse_warning_cb));
 }
 
 bool SourceBufferState::Append(const uint8_t* data,
@@ -716,28 +717,34 @@ bool SourceBufferState::OnNewConfigs(
       DCHECK(video_config.IsValidConfig());
 
       if (video_config.codec() == kCodecHEVC) {
-#if BUILDFLAG(ENABLE_PLATFORM_HEVC)
-#if BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
-        // On ChromeOS, HEVC is only supported through EME, so require the
-        // config to be for an encrypted track if on ChromeOS. Even so,
-        // conditionally allow clear HEVC on ChromeOS if cmdline has test
-        // override.
+#if BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+        if (!base::CommandLine::ForCurrentProcess()->HasSwitch(
+                switches::kLacrosEnablePlatformEncryptedHevc)) {
+          NOTREACHED() << "MSE parser must not emit HEVC tracks on runtime "
+                          "configurations that do not support HEVC playback "
+                          "via platform.";
+          return false;
+        }
+#endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
+        // HEVC is only supported through EME under this build flag, so
+        // require the config to be for an encrypted track. Even so,
+        // conditionally allow clear HEVC if cmdline has test override.
         if (video_config.encryption_scheme() ==
                 EncryptionScheme::kUnencrypted &&
             !base::CommandLine::ForCurrentProcess()->HasSwitch(
                 switches::kEnableClearHevcForTesting)) {
           MEDIA_LOG(ERROR, media_log_)
-              << "MSE playback of HEVC on ChromeOS is only supported via "
-                 "platform decryptor, but the provided HEVC track is not "
-                 "encrypted.";
+              << "MSE playback of HEVC on is only supported via platform "
+                 "decryptor, but the provided HEVC "
+                 "track is not encrypted.";
           return false;
         }
-#endif  // BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
-#else
+#elif !BUILDFLAG(ENABLE_PLATFORM_HEVC)
         NOTREACHED()
             << "MSE parser must not emit HEVC tracks on build configurations "
                "that do not support HEVC playback via platform.";
-#endif  // BUILDFLAG(ENABLE_PLATFORM_HEVC)
+#endif  // BUILDFLAG(ENABLE_PLATFORM_ENCRYPTED_HEVC)
       }
 
       const auto& it = std::find(expected_vcodecs.begin(),

@@ -40,8 +40,8 @@
 #include "fxbarcode/qrcode/BC_QRCoderVersion.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
+#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/optional.h"
-#include "third_party/base/stl_util.h"
 
 using ModeStringPair = std::pair<CBC_QRCoderMode*, ByteString>;
 
@@ -55,7 +55,7 @@ struct QRCoderBlockPair {
 };
 
 // This is a mapping for an ASCII table, starting at an index of 32.
-const int8_t g_alphaNumericTable[] = {
+const int8_t kAlphaNumericTable[] = {
     36, -1, -1, -1, 37, 38, -1, -1, -1, -1, 39, 40, -1, 41, 42, 43,  // 32-47
     0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  44, -1, -1, -1, -1, -1,  // 48-63
     -1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,  // 64-79
@@ -65,9 +65,9 @@ int32_t GetAlphaNumericCode(int32_t code) {
   if (code < 32)
     return -1;
   size_t code_index = static_cast<size_t>(code - 32);
-  if (code_index >= pdfium::size(g_alphaNumericTable))
+  if (code_index >= pdfium::size(kAlphaNumericTable))
     return -1;
-  return g_alphaNumericTable[code_index];
+  return kAlphaNumericTable[code_index];
 }
 
 bool AppendNumericBytes(const ByteString& content, CBC_QRCoderBitVector* bits) {
@@ -263,7 +263,7 @@ Optional<int32_t> ChooseMaskPattern(
        maskPattern++) {
     if (!CBC_QRCoderMatrixUtil::BuildMatrix(bits, ecLevel, version, maskPattern,
                                             matrix)) {
-      return {};
+      return pdfium::nullopt;
     }
     int32_t penalty = CalculateMaskPenalty(matrix);
     if (penalty < minPenalty) {
@@ -455,10 +455,10 @@ bool CBC_QRCoderEncoder::Encode(WideStringView content,
       qrCode->GetMatrixWidth(), qrCode->GetMatrixWidth());
   Optional<int32_t> maskPattern = ChooseMaskPattern(
       &finalBits, qrCode->GetECLevel(), qrCode->GetVersion(), matrix.get());
-  if (!maskPattern)
+  if (!maskPattern.has_value())
     return false;
 
-  qrCode->SetMaskPattern(*maskPattern);
+  qrCode->SetMaskPattern(maskPattern.value());
   if (!CBC_QRCoderMatrixUtil::BuildMatrix(
           &finalBits, qrCode->GetECLevel(), qrCode->GetVersion(),
           qrCode->GetMaskPattern(), matrix.get())) {

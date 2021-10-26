@@ -44,7 +44,7 @@ class MockControllerObserver : public ControllerObserver {
                         configuration));
   MOCK_METHOD1(OnProgressBarErrorStateChanged, void(bool error));
   MOCK_METHOD3(OnTouchableAreaChanged,
-               void(const RectF&,
+               void(const RectF& visual_viewport,
                     const std::vector<RectF>& touchable_areas,
                     const std::vector<RectF>& restricted_areas));
   MOCK_CONST_METHOD0(Terminate, bool());

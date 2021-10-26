@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/render/cpdf_imagerenderer.h"
 
+#include <math.h>
+
 #include <algorithm>
 #include <memory>
 
@@ -30,14 +32,14 @@
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxge/cfx_defaultrenderdevice.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
-#include "core/fxge/cfx_pathdata.h"
+#include "core/fxge/cfx_path.h"
 #include "core/fxge/dib/cfx_dibbase.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
 #include "core/fxge/dib/cfx_imagetransformer.h"
 #include "third_party/base/check.h"
+#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/notreached.h"
-#include "third_party/base/stl_util.h"
 
 #if defined(_SKIA_SUPPORT_)
 #include "core/fxge/skia/fx_skia_device.h"
@@ -483,7 +485,7 @@ bool CPDF_ImageRenderer::StartDIBBase() {
 
 bool CPDF_ImageRenderer::StartBitmapAlpha() {
   if (m_pDIBBase->IsOpaqueImage()) {
-    CFX_PathData path;
+    CFX_Path path;
     path.AppendRect(0, 0, 1, 1);
     path.Transform(m_ImageMatrix);
     uint32_t fill_color =
@@ -607,7 +609,7 @@ Optional<FX_RECT> CPDF_ImageRenderer::GetUnitRect() const {
   CFX_FloatRect image_rect_f = m_ImageMatrix.GetUnitRect();
   FX_RECT image_rect = image_rect_f.GetOuterRect();
   if (!image_rect.Valid())
-    return {};
+    return pdfium::nullopt;
   return image_rect;
 }
 

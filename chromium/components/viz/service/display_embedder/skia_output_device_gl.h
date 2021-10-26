@@ -14,6 +14,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
 #include "components/viz/service/display_embedder/skia_output_device.h"
+#include "gpu/command_buffer/service/shared_image_representation.h"
 
 namespace gl {
 class GLImage;
@@ -65,6 +66,7 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
   void EnsureBackbuffer() override;
   void DiscardBackbuffer() override;
   SkSurface* BeginPaint(
+      bool allocate_frame_buffer,
       std::vector<GrBackendSemaphore>* end_semaphores) override;
   void EndPaint() override;
 
@@ -84,6 +86,12 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
 
   scoped_refptr<gl::GLImage> GetGLImageForMailbox(const gpu::Mailbox& mailbox);
 
+  // Mailboxes of overlays scheduled in the current frame.
+  base::flat_set<gpu::Mailbox> scheduled_overlay_mailboxes_;
+
+  // Holds references to overlay textures so they aren't destroyed while in use.
+  base::flat_map<gpu::Mailbox, OverlayData> overlays_;
+
   gpu::MailboxManager* const mailbox_manager_;
 
   gpu::SharedImageRepresentationFactory* const
@@ -94,12 +102,6 @@ class SkiaOutputDeviceGL final : public SkiaOutputDevice {
   const bool supports_async_swap_;
 
   sk_sp<SkSurface> sk_surface_;
-
-  // Mailboxes of overlays scheduled in the current frame.
-  base::flat_set<gpu::Mailbox> scheduled_overlay_mailboxes_;
-
-  // Holds references to overlay textures so they aren't destroyed while in use.
-  base::flat_map<gpu::Mailbox, OverlayData> overlays_;
 
   uint64_t backbuffer_estimated_size_ = 0;
 

@@ -25,7 +25,7 @@
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
 #include "chrome/browser/signin/test_signin_client_builder.h"
-#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/webui/signin/signin_ui_error.h"
 #include "chrome/test/base/fake_profile_manager.h"
 #include "chrome/test/base/scoped_testing_local_state.h"
@@ -90,7 +90,7 @@ class TestDiceTurnSyncOnHelperDelegate : public DiceTurnSyncOnHelper::Delegate {
       const std::string& new_email,
       DiceTurnSyncOnHelper::SigninChoiceCallback callback) override;
   void ShowEnterpriseAccountConfirmation(
-      const std::string& email,
+      const AccountInfo& account_info,
       DiceTurnSyncOnHelper::SigninChoiceCallback callback) override;
   void ShowSyncConfirmation(
       base::OnceCallback<void(LoginUIService::SyncConfirmationUIClosedResult)>
@@ -202,7 +202,7 @@ std::unique_ptr<TestingProfile> BuildTestingProfile(
   profile_builder.AddTestingFactory(
       ChromeSigninClientFactory::GetInstance(),
       base::BindRepeating(&signin::BuildTestSigninClient));
-  profile_builder.AddTestingFactory(ProfileSyncServiceFactory::GetInstance(),
+  profile_builder.AddTestingFactory(SyncServiceFactory::GetInstance(),
                                     base::BindRepeating(&BuildMockSyncService));
   profile_builder.AddTestingFactory(
       policy::UserPolicySigninServiceFactory::GetInstance(),
@@ -299,7 +299,7 @@ class DiceTurnSyncOnHelperTest : public testing::Test {
 
   syncer::MockSyncService* GetMockSyncService(Profile* profile) {
     return static_cast<syncer::MockSyncService*>(
-        ProfileSyncServiceFactory::GetForProfile(profile));
+        SyncServiceFactory::GetForProfile(profile));
   }
 
   DiceTurnSyncOnHelper* CreateDiceTurnOnSyncHelper(
@@ -317,12 +317,11 @@ class DiceTurnSyncOnHelperTest : public testing::Test {
     user_policy_signin_service_->set_account(account_id_, kEnterpriseEmail);
 
     // Update the account info to have a consistent hosted domain field.
-    absl::optional<AccountInfo> account_info =
-        identity_manager()->FindExtendedAccountInfoForAccountWithRefreshToken(
-            core_account_info);
-    EXPECT_TRUE(account_info);
-    account_info->hosted_domain = kEnterpriseHostedDomain;
-    signin::UpdateAccountInfoForAccount(identity_manager(), *account_info);
+    AccountInfo account_info =
+        identity_manager()->FindExtendedAccountInfo(core_account_info);
+    EXPECT_FALSE(account_info.IsEmpty());
+    account_info.hosted_domain = kEnterpriseHostedDomain;
+    signin::UpdateAccountInfoForAccount(identity_manager(), account_info);
   }
 
   void UseInvalidAccount() { account_id_ = CoreAccountId("invalid_account"); }
@@ -399,13 +398,13 @@ class DiceTurnSyncOnHelperTest : public testing::Test {
   }
 
   void OnShowEnterpriseAccountConfirmation(
-      const std::string& email,
+      const AccountInfo& account_info,
       DiceTurnSyncOnHelper::SigninChoiceCallback callback) {
     EXPECT_FALSE(sync_confirmation_shown_);
-    EXPECT_FALSE(email.empty());
+    EXPECT_FALSE(account_info.email.empty());
     EXPECT_TRUE(enterprise_confirmation_email_.empty())
         << "Enterprise confirmation should be shown only once.";
-    enterprise_confirmation_email_ = email;
+    enterprise_confirmation_email_ = account_info.email;
     if (run_delegate_callbacks_)
       std::move(callback).Run(enterprise_choice_);
   }
@@ -553,9 +552,9 @@ void TestDiceTurnSyncOnHelperDelegate::ShowMergeSyncDataConfirmation(
 }
 
 void TestDiceTurnSyncOnHelperDelegate::ShowEnterpriseAccountConfirmation(
-    const std::string& email,
+    const AccountInfo& account_info,
     DiceTurnSyncOnHelper::SigninChoiceCallback callback) {
-  test_fixture_->OnShowEnterpriseAccountConfirmation(email,
+  test_fixture_->OnShowEnterpriseAccountConfirmation(account_info,
                                                      std::move(callback));
 }
 

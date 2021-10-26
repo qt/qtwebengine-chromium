@@ -56,7 +56,6 @@ namespace blink {
 
 class ResourceResponse;
 class WebHTTPHeaderVisitor;
-class WebHTTPLoadInfo;
 class WebURL;
 
 class WebURLResponse {
@@ -178,8 +177,6 @@ class WebURLResponse {
 
   BLINK_PLATFORM_EXPORT void SetLoadTiming(
       const network::mojom::LoadTimingInfo&);
-
-  BLINK_PLATFORM_EXPORT void SetHTTPLoadInfo(const WebHTTPLoadInfo&);
 
   BLINK_PLATFORM_EXPORT base::Time ResponseTime() const;
   BLINK_PLATFORM_EXPORT void SetResponseTime(base::Time);
@@ -350,6 +347,14 @@ class WebURLResponse {
       const absl::optional<net::AuthChallengeInfo>&);
   BLINK_PLATFORM_EXPORT const absl::optional<net::AuthChallengeInfo>&
   AuthChallengeInfo() const;
+
+  // The request's |includeCredentials| value from the "HTTP-network fetch"
+  // algorithm.
+  // See: https://fetch.spec.whatwg.org/#concept-http-network-fetch
+  BLINK_PLATFORM_EXPORT void SetRequestIncludeCredentials(bool);
+  BLINK_PLATFORM_EXPORT bool RequestIncludeCredentials() const;
+
+  BLINK_PLATFORM_EXPORT void SetWasFetchedViaCache(bool);
 
 #if INSIDE_BLINK
  protected:

@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/page/cpdf_colorspace.h"
 
+#include <math.h>
+
 #include <algorithm>
 #include <limits>
 #include <memory>
@@ -34,14 +36,16 @@
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/maybe_owned.h"
 #include "core/fxcrt/scoped_set_insertion.h"
+#include "core/fxcrt/stl_util.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
+#include "third_party/base/containers/contains.h"
+#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/notreached.h"
-#include "third_party/base/stl_util.h"
 
 namespace {
 
-const uint8_t g_sRGBSamples1[] = {
+constexpr uint8_t kSRGBSamples1[] = {
     0,   3,   6,   10,  13,  15,  18,  20,  22,  23,  25,  27,  28,  30,  31,
     32,  34,  35,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,
     48,  49,  49,  50,  51,  52,  53,  53,  54,  55,  56,  56,  57,  58,  58,
@@ -57,7 +61,7 @@ const uint8_t g_sRGBSamples1[] = {
     116, 117, 117, 117, 118, 118, 118, 118, 119, 119, 119, 120,
 };
 
-const uint8_t g_sRGBSamples2[] = {
+constexpr uint8_t kSRGBSamples2[] = {
     120, 121, 122, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135,
     136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 148, 149,
     150, 151, 152, 153, 154, 155, 155, 156, 157, 158, 159, 159, 160, 161, 162,
@@ -293,10 +297,9 @@ class CPDF_SeparationCS final : public CPDF_ColorSpace {
                   std::set<const CPDF_Object*>* pVisited) override;
 
  private:
-  enum { None, All, Colorant } m_Type;
-
   explicit CPDF_SeparationCS(CPDF_Document* pDoc);
 
+  bool m_IsNoneType;
   RetainPtr<CPDF_ColorSpace> m_pAltCS;
   std::unique_ptr<const CPDF_Function> m_pFunc;
 };
@@ -401,8 +404,8 @@ float RGB_Conversion(float colorComponent) {
   colorComponent = pdfium::clamp(colorComponent, 0.0f, 1.0f);
   int scale = std::max(static_cast<int>(colorComponent * 1023), 0);
   if (scale < 192)
-    return g_sRGBSamples1[scale] / 255.0f;
-  return g_sRGBSamples2[scale / 4 - 48] / 255.0f;
+    return kSRGBSamples1[scale] / 255.0f;
+  return kSRGBSamples2[scale / 4 - 48] / 255.0f;
 }
 
 void XYZ_to_sRGB(float X, float Y, float Z, float* R, float* G, float* B) {
@@ -769,9 +772,9 @@ bool CPDF_CalRGB::GetRGB(pdfium::span<const float> pBuf,
   float B_ = pBuf[1];
   float C_ = pBuf[2];
   if (m_bHasGamma) {
-    A_ = FXSYS_pow(A_, m_Gamma[0]);
-    B_ = FXSYS_pow(B_, m_Gamma[1]);
-    C_ = FXSYS_pow(C_, m_Gamma[2]);
+    A_ = powf(A_, m_Gamma[0]);
+    B_ = powf(B_, m_Gamma[1]);
+    C_ = powf(C_, m_Gamma[2]);
   }
 
   float X;
@@ -826,17 +829,22 @@ void CPDF_LabCS::GetDefaultValue(int iComponent,
                                  float* value,
                                  float* min,
                                  float* max) const {
-  DCHECK(iComponent < 3);
-  if (iComponent == 0) {
-    *min = 0.0f;
-    *max = 100 * 1.0f;
-    *value = 0.0f;
-    return;
+  DCHECK_LT(iComponent, 3);
+
+  if (iComponent > 0) {
+    float range_min = m_Ranges[iComponent * 2 - 2];
+    float range_max = m_Ranges[iComponent * 2 - 1];
+    if (range_min <= range_max) {
+      *min = range_min;
+      *max = range_max;
+      *value = pdfium::clamp(0.0f, *min, *max);
+      return;
+    }
   }
 
-  *min = m_Ranges[iComponent * 2 - 2];
-  *max = m_Ranges[iComponent * 2 - 1];
-  *value = pdfium::clamp(0.0f, *min, *max);
+  *min = 0.0f;
+  *max = 100.0f;
+  *value = 0.0f;
 }
 
 uint32_t CPDF_LabCS::v_Load(CPDF_Document* pDoc,
@@ -1041,8 +1049,8 @@ void CPDF_ICCBasedCS::TranslateImageLine(uint8_t* pDestBuf,
 
   if (m_pCache.empty()) {
     m_pCache =
-        pdfium::Vector2D<uint8_t, FxAllocAllocator<uint8_t>>(nMaxColors, 3);
-    auto temp_src = pdfium::Vector2D<uint8_t, FxAllocAllocator<uint8_t>>(
+        fxcrt::Vector2D<uint8_t, FxAllocAllocator<uint8_t>>(nMaxColors, 3);
+    auto temp_src = fxcrt::Vector2D<uint8_t, FxAllocAllocator<uint8_t>>(
         nMaxColors, nComponents);
     size_t src_index = 0;
     for (int i = 0; i < nMaxColors; i++) {
@@ -1162,7 +1170,7 @@ uint32_t CPDF_IndexedCS::v_Load(CPDF_Document* pDoc,
     return 0;
 
   m_nBaseComponents = m_pBaseCS->CountComponents();
-  m_pCompMinMax = pdfium::Vector2D<float>(m_nBaseComponents, 2);
+  m_pCompMinMax = fxcrt::Vector2D<float>(m_nBaseComponents, 2);
   float defvalue;
   for (uint32_t i = 0; i < m_nBaseComponents; i++) {
     m_pBaseCS->GetDefaultValue(i, &defvalue, &m_pCompMinMax[i * 2],
@@ -1238,13 +1246,10 @@ void CPDF_SeparationCS::GetDefaultValue(int iComponent,
 uint32_t CPDF_SeparationCS::v_Load(CPDF_Document* pDoc,
                                    const CPDF_Array* pArray,
                                    std::set<const CPDF_Object*>* pVisited) {
-  ByteString name = pArray->GetStringAt(1);
-  if (name == "None") {
-    m_Type = None;
+  m_IsNoneType = pArray->GetStringAt(1) == "None";
+  if (m_IsNoneType)
     return 1;
-  }
 
-  m_Type = Colorant;
   const CPDF_Object* pAltCS = pArray->GetDirectObjectAt(2);
   if (pAltCS == m_pArray)
     return 0;
@@ -1269,7 +1274,7 @@ bool CPDF_SeparationCS::GetRGB(pdfium::span<const float> pBuf,
                                float* R,
                                float* G,
                                float* B) const {
-  if (m_Type == None)
+  if (m_IsNoneType)
     return false;
 
   if (!m_pFunc) {
@@ -1285,9 +1290,8 @@ bool CPDF_SeparationCS::GetRGB(pdfium::span<const float> pBuf,
 
   // Using at least 16 elements due to the call m_pAltCS->GetRGB() below.
   std::vector<float> results(std::max(m_pFunc->CountOutputs(), 16u));
-  int nresults = 0;
-  if (!m_pFunc->Call(pBuf.data(), 1, results.data(), &nresults) ||
-      nresults == 0)
+  uint32_t nresults = m_pFunc->Call(pBuf.first(1), results).value_or(0);
+  if (nresults == 0)
     return false;
 
   if (m_pAltCS)
@@ -1353,12 +1357,12 @@ bool CPDF_DeviceNCS::GetRGB(pdfium::span<const float> pBuf,
 
   // Using at least 16 elements due to the call m_pAltCS->GetRGB() below.
   std::vector<float> results(std::max(m_pFunc->CountOutputs(), 16u));
-  int nresults = 0;
-  if (!m_pFunc->Call(pBuf.data(), CountComponents(), results.data(),
-                     &nresults) ||
-      nresults == 0) {
+  uint32_t nresults =
+      m_pFunc->Call(pBuf.first(CountComponents()), pdfium::make_span(results))
+          .value_or(0);
+
+  if (nresults == 0)
     return false;
-  }
 
   return m_pAltCS->GetRGB(results, R, G, B);
 }

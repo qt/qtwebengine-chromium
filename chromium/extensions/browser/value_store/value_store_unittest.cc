@@ -92,27 +92,27 @@ testing::AssertionResult ChangesEq(
 
   std::set<std::string> keys_seen;
 
-  for (auto it = actual.cbegin(); it != actual.cend(); ++it) {
-    if (keys_seen.count(it->key())) {
-      return testing::AssertionFailure() <<
-          "Multiple changes seen for key: " << it->key();
+  for (const auto& it : actual) {
+    if (keys_seen.count(it.key())) {
+      return testing::AssertionFailure()
+             << "Multiple changes seen for key: " << it.key();
     }
-    keys_seen.insert(it->key());
+    keys_seen.insert(it.key());
 
-    if (!expected_as_map.count(it->key())) {
-      return testing::AssertionFailure() <<
-          "Actual has unexpected change for key: " << it->key();
+    if (!expected_as_map.count(it.key())) {
+      return testing::AssertionFailure()
+             << "Actual has unexpected change for key: " << it.key();
     }
 
-    const ValueStoreChange* expected_change = expected_as_map[it->key()];
+    const ValueStoreChange* expected_change = expected_as_map[it.key()];
     std::string error;
-    if (!ValuesEqual(expected_change->new_value(), it->new_value(), &error)) {
-      return testing::AssertionFailure() <<
-          "New value for " << it->key() << " was unexpected: " << error;
+    if (!ValuesEqual(expected_change->new_value(), it.new_value(), &error)) {
+      return testing::AssertionFailure()
+             << "New value for " << it.key() << " was unexpected: " << error;
     }
-    if (!ValuesEqual(expected_change->old_value(), it->old_value(), &error)) {
-      return testing::AssertionFailure() <<
-          "Old value for " << it->key() << " was unexpected: " << error;
+    if (!ValuesEqual(expected_change->old_value(), it.old_value(), &error)) {
+      return testing::AssertionFailure()
+             << "Old value for " << it.key() << " was unexpected: " << error;
     }
   }
 
@@ -159,7 +159,7 @@ ValueStoreTest::ValueStoreTest()
   dict123_->Set(key3_, val3_->CreateDeepCopy());
 }
 
-ValueStoreTest::~ValueStoreTest() {}
+ValueStoreTest::~ValueStoreTest() = default;
 
 void ValueStoreTest::SetUp() {
   ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
@@ -434,10 +434,10 @@ TEST_P(ValueStoreTest, ComplexChangedKeysScenarios) {
   }
   {
     base::DictionaryValue to_set;
-    to_set.Set(key1_, val2_->CreateDeepCopy());
-    to_set.Set(key2_, val2_->CreateDeepCopy());
-    to_set.Set("asdf", val1_->CreateDeepCopy());
-    to_set.Set("qwerty", val3_->CreateDeepCopy());
+    to_set.SetKey(key1_, val2_->Clone());
+    to_set.SetKey(key2_, val2_->Clone());
+    to_set.SetKey("asdf", val1_->Clone());
+    to_set.SetKey("qwerty", val3_->Clone());
 
     ValueStoreChangeList changes;
     changes.push_back(ValueStoreChange(key1_, val1_->Clone(), val2_->Clone()));

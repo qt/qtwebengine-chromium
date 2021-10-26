@@ -1052,6 +1052,8 @@ bool ValidatePrimitiveBoundingBoxEXT(const Context *context,
                                      GLfloat maxZ,
                                      GLfloat maxW);
 
+// GL_EXT_protected_textures
+
 // GL_EXT_read_format_bgra
 
 // GL_EXT_robustness
@@ -1077,6 +1079,8 @@ bool ValidateReadnPixelsEXT(const Context *context,
                             const void *data);
 
 // GL_EXT_sRGB
+
+// GL_EXT_sRGB_write_control
 
 // GL_EXT_semaphore
 bool ValidateDeleteSemaphoresEXT(const Context *context,
@@ -1664,6 +1668,13 @@ bool ValidateRenderbufferStorageOES(const Context *context,
                                     GLenum internalformat,
                                     GLsizei width,
                                     GLsizei height);
+
+// GL_OES_geometry_shader
+bool ValidateFramebufferTextureOES(const Context *context,
+                                   GLenum target,
+                                   GLenum attachment,
+                                   TextureID texturePacked,
+                                   GLint level);
 
 // GL_OES_get_program_binary
 bool ValidateGetProgramBinaryOES(const Context *context,

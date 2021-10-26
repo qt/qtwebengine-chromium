@@ -7,9 +7,11 @@
 #ifndef XFA_FXFA_CXFA_FFWIDGET_H_
 #define XFA_FXFA_CXFA_FFWIDGET_H_
 
+#include <stdint.h>
+
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fxcodec/fx_codec_def.h"
-#include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxge/cfx_graphstatedata.h"
 #include "fxjs/gc/heap.h"
@@ -19,7 +21,9 @@
 #include "xfa/fwl/cfwl_app.h"
 #include "xfa/fwl/cfwl_messagemouse.h"
 #include "xfa/fwl/cfwl_widget.h"
+#include "xfa/fwl/fwl_widgetdef.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/fxfa.h"
 #include "xfa/fxfa/layout/cxfa_contentlayoutitem.h"
 
@@ -33,6 +37,7 @@ class CXFA_FFField;
 class CXFA_FFPageView;
 class CXFA_FFWidgetHandler;
 class CXFA_Margin;
+class IFX_SeekableReadStream;
 enum class FWL_WidgetHit;
 
 inline float XFA_UnitPx2Pt(float fPx, float fDpi) {
@@ -66,6 +71,18 @@ class CXFA_FFWidget : public cppgc::GarbageCollected<CXFA_FFWidget>,
   enum FocusOption { kDoNotDrawFocus = 0, kDrawFocus };
   enum HighlightOption { kNoHighlight = 0, kHighlight };
 
+  class IteratorIface {
+   public:
+    virtual ~IteratorIface() = default;
+
+    virtual CXFA_FFWidget* MoveToFirst() = 0;
+    virtual CXFA_FFWidget* MoveToLast() = 0;
+    virtual CXFA_FFWidget* MoveToNext() = 0;
+    virtual CXFA_FFWidget* MoveToPrevious() = 0;
+    virtual CXFA_FFWidget* GetCurrentWidget() = 0;
+    virtual bool SetCurrentWidget(CXFA_FFWidget* hWidget) = 0;
+  };
+
   static CXFA_FFWidget* FromLayoutItem(CXFA_LayoutItem* pLayoutItem);
 
   CONSTRUCT_VIA_MAKE_GARBAGE_COLLECTED;
@@ -90,36 +107,39 @@ class CXFA_FFWidget : public cppgc::GarbageCollected<CXFA_FFWidget>,
   virtual bool UpdateFWLData();
   virtual void UpdateWidgetProperty();
   // |command| must be LeftButtonDown or RightButtonDown.
-  virtual bool AcceptsFocusOnButtonDown(uint32_t dwFlags,
-                                        const CFX_PointF& point,
-                                        FWL_MouseCommand command);
+  virtual bool AcceptsFocusOnButtonDown(
+      Mask<XFA_FWL_KeyFlag> dwFlags,
+      const CFX_PointF& point,
+      CFWL_MessageMouse::MouseCommand command);
 
   // Caution: Returning false from an On* method may mean |this| is destroyed.
   virtual bool OnMouseEnter() WARN_UNUSED_RESULT;
   virtual bool OnMouseExit() WARN_UNUSED_RESULT;
-  virtual bool OnLButtonDown(uint32_t dwFlags,
+  virtual bool OnLButtonDown(Mask<XFA_FWL_KeyFlag> dwFlags,
                              const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnLButtonUp(uint32_t dwFlags,
+  virtual bool OnLButtonUp(Mask<XFA_FWL_KeyFlag> dwFlags,
                            const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnLButtonDblClk(uint32_t dwFlags,
+  virtual bool OnLButtonDblClk(Mask<XFA_FWL_KeyFlag> dwFlags,
                                const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnMouseMove(uint32_t dwFlags,
+  virtual bool OnMouseMove(Mask<XFA_FWL_KeyFlag> dwFlags,
                            const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnMouseWheel(uint32_t dwFlags,
+  virtual bool OnMouseWheel(Mask<XFA_FWL_KeyFlag> dwFlags,
                             const CFX_PointF& point,
                             const CFX_Vector& delta) WARN_UNUSED_RESULT;
-  virtual bool OnRButtonDown(uint32_t dwFlags,
+  virtual bool OnRButtonDown(Mask<XFA_FWL_KeyFlag> dwFlags,
                              const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnRButtonUp(uint32_t dwFlags,
+  virtual bool OnRButtonUp(Mask<XFA_FWL_KeyFlag> dwFlags,
                            const CFX_PointF& point) WARN_UNUSED_RESULT;
-  virtual bool OnRButtonDblClk(uint32_t dwFlags,
+  virtual bool OnRButtonDblClk(Mask<XFA_FWL_KeyFlag> dwFlags,
                                const CFX_PointF& point) WARN_UNUSED_RESULT;
   virtual bool OnSetFocus(CXFA_FFWidget* pOldWidget) WARN_UNUSED_RESULT;
   virtual bool OnKillFocus(CXFA_FFWidget* pNewWidget) WARN_UNUSED_RESULT;
-  virtual bool OnKeyDown(uint32_t dwKeyCode,
-                         uint32_t dwFlags) WARN_UNUSED_RESULT;
-  virtual bool OnKeyUp(uint32_t dwKeyCode, uint32_t dwFlags) WARN_UNUSED_RESULT;
-  virtual bool OnChar(uint32_t dwChar, uint32_t dwFlags) WARN_UNUSED_RESULT;
+  virtual bool OnKeyDown(XFA_FWL_VKEYCODE dwKeyCode,
+                         Mask<XFA_FWL_KeyFlag> dwFlags) WARN_UNUSED_RESULT;
+  virtual bool OnKeyUp(XFA_FWL_VKEYCODE dwKeyCode,
+                       Mask<XFA_FWL_KeyFlag> dwFlags) WARN_UNUSED_RESULT;
+  virtual bool OnChar(uint32_t dwChar,
+                      Mask<XFA_FWL_KeyFlag> dwFlags) WARN_UNUSED_RESULT;
 
   virtual FWL_WidgetHit HitTest(const CFX_PointF& point);
   virtual bool CanUndo();
@@ -152,15 +172,16 @@ class CXFA_FFWidget : public cppgc::GarbageCollected<CXFA_FFWidget>,
   CXFA_FFWidget* GetNextFFWidget() const;
   const CFX_RectF& GetWidgetRect() const;
   const CFX_RectF& RecacheWidgetRect() const;
-  void ModifyStatus(uint32_t dwAdded, uint32_t dwRemoved);
+  void ModifyStatus(Mask<XFA_WidgetStatus> dwAdded,
+                    Mask<XFA_WidgetStatus> dwRemoved);
 
   CXFA_FFDoc* GetDoc();
   CXFA_FFApp* GetApp();
-  IXFA_AppProvider* GetAppProvider();
+  CXFA_FFApp::CallbackIface* GetAppProvider();
   CFWL_App* GetFWLApp() const;
   void InvalidateRect();
   bool IsFocused() const {
-    return GetLayoutItem()->TestStatusBits(XFA_WidgetStatus_Focused);
+    return GetLayoutItem()->TestStatusBits(XFA_WidgetStatus::kFocused);
   }
   CFX_PointF Rotate2Normal(const CFX_PointF& point);
   bool IsLayoutRectEmpty();

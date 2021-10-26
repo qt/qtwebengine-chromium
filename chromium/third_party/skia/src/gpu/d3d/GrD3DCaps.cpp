@@ -6,6 +6,7 @@
  */
 
 #include "include/gpu/GrBackendSurface.h"
+#include "include/gpu/GrContextOptions.h"
 #include "include/gpu/d3d/GrD3DBackendContext.h"
 #include "include/gpu/d3d/GrD3DTypes.h"
 
@@ -44,6 +45,7 @@ GrD3DCaps::GrD3DCaps(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
     // We always copy in/out of a transfer buffer so it's trivial to support row bytes.
     fReadPixelsRowBytesSupport = true;
     fWritePixelsRowBytesSupport = true;
+    fTransferPixelsToRowBytesSupport = true;
 
     fTransferFromBufferToTextureSupport = true;
     fTransferFromSurfaceToBufferSupport = true;
@@ -179,6 +181,7 @@ void GrD3DCaps::initGrCaps(const D3D12_FEATURE_DATA_D3D12_OPTIONS& optionsDesc,
     // Can use standard sample locations
     fSampleLocationsSupport = true;
 
+#if 0
     D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2Desc;
     if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &options2Desc,
                                               sizeof(options2Desc))) &&
@@ -187,6 +190,7 @@ void GrD3DCaps::initGrCaps(const D3D12_FEATURE_DATA_D3D12_OPTIONS& optionsDesc,
         // We "disable" multisample by colocating all samples at pixel center.
         fMultisampleDisableSupport = true;
     }
+#endif
 
     if (D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED !=
             optionsDesc.ConservativeRasterizationTier) {
@@ -242,6 +246,7 @@ void GrD3DCaps::initShaderCaps(int vendorID, const D3D12_FEATURE_DATA_D3D12_OPTI
 
     shaderCaps->fIntegerSupport = true;
     shaderCaps->fVertexIDSupport = true;
+    shaderCaps->fInfinitySupport = true;
     shaderCaps->fBitManipulationSupport = true;
 
     shaderCaps->fFloatIs32Bits = true;
@@ -980,7 +985,8 @@ GrSwizzle GrD3DCaps::onGetReadSwizzle(const GrBackendFormat& format, GrColorType
             return ctInfo.fReadSwizzle;
         }
     }
-    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, dxgiFormat);
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.",
+                 (int)colorType, (int)dxgiFormat);
     return {};
 }
 
@@ -994,7 +1000,8 @@ GrSwizzle GrD3DCaps::getWriteSwizzle(const GrBackendFormat& format, GrColorType 
             return ctInfo.fWriteSwizzle;
         }
     }
-    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.", colorType, dxgiFormat);
+    SkDEBUGFAILF("Illegal color type (%d) and format (%d) combination.",
+                 (int)colorType, (int)dxgiFormat);
     return {};
 }
 

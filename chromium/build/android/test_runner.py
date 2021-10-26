@@ -27,8 +27,6 @@ import unittest
 # See http://crbug.com/724524 and https://bugs.python.org/issue7980.
 import _strptime  # pylint: disable=unused-import
 
-# pylint: disable=redefined-builtin
-from six.moves import range  # Needed for python 3 compatibility.
 # pylint: disable=ungrouped-imports
 from pylib.constants import host_paths
 
@@ -44,7 +42,6 @@ from pylib.base import base_test_result
 from pylib.base import environment_factory
 from pylib.base import output_manager
 from pylib.base import output_manager_factory
-from pylib.base import result_sink
 from pylib.base import test_instance_factory
 from pylib.base import test_run_factory
 from pylib.results import json_results
@@ -56,6 +53,8 @@ from pylib.utils import logging_utils
 from pylib.utils import test_filter
 
 from py_utils import contextlib_ext
+
+from lib.results import result_sink  # pylint: disable=import-error
 
 _DEVIL_STATIC_CONFIG_FILE = os.path.abspath(os.path.join(
     host_paths.DIR_SOURCE_ROOT, 'build', 'android', 'devil_config.json'))
@@ -414,6 +413,12 @@ def AddGTestOptions(parser):
       '--coverage-dir',
       type=os.path.realpath,
       help='Directory in which to place all generated coverage files.')
+  parser.add_argument(
+      '--use-existing-test-data',
+      action='store_true',
+      help='Do not push new files to the device, instead using existing APK '
+      'and test data. Only use when running the same test for multiple '
+      'iterations.')
 
 
 def AddInstrumentationTestOptions(parser):
@@ -556,6 +561,13 @@ def AddInstrumentationTestOptions(parser):
   parser.add_argument(
       '--test-jar',
       help='Path of jar containing test java files.')
+  parser.add_argument(
+      '--test-launcher-batch-limit',
+      dest='test_launcher_batch_limit',
+      type=int,
+      help=('Not actually used for instrumentation tests, but can be used as '
+            'a proxy for determining if the current run is a retry without '
+            'patch.'))
   parser.add_argument(
       '--timeout-scale',
       type=float,
@@ -929,10 +941,13 @@ def RunTestsInPlatformMode(args, result_sink_client=None):
                   match.group(1)) if match else None
               # Some tests put in non utf-8 char as part of the test
               # which breaks uploads, so need to decode and re-encode.
-              result_sink_client.Post(
-                  r.GetName(), r.GetType(), r.GetDuration(),
-                  r.GetLog().decode('utf-8', 'replace').encode('utf-8'),
-                  test_file_name)
+              result_sink_client.Post(r.GetName(),
+                                      r.GetType(),
+                                      r.GetDuration(),
+                                      r.GetLog().decode(
+                                          'utf-8', 'replace').encode('utf-8'),
+                                      test_file_name,
+                                      failure_reason=r.GetFailureReason())
 
   @contextlib.contextmanager
   def upload_logcats_file():

@@ -57,6 +57,9 @@
 #include "third_party/blink/renderer/core/page/scoped_page_pauser.h"
 #include "third_party/blink/renderer/platform/language.h"
 
+// To avoid conflicts with the CreateWindow macro from the Windows SDK...
+#undef CreateWindow
+
 namespace blink {
 
 class ViewCreatingClient : public frame_test_helpers::TestWebViewClient {
@@ -178,8 +181,11 @@ class PagePopupSuppressionTest : public testing::Test {
     DateTimeChooserParameters params;
     params.locale = DefaultLanguage();
     params.type = input_type_names::kTime;
-    return !!chrome_client_impl_->OpenDateTimeChooser(
+    DateTimeChooser* chooser = chrome_client_impl_->OpenDateTimeChooser(
         frame, date_time_chooser_client_, params);
+    if (chooser)
+      chooser->EndChooser();
+    return !!chooser;
   }
 
   Settings* GetSettings() {

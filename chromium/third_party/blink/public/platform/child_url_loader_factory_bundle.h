@@ -15,7 +15,6 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "services/network/public/mojom/url_loader_factory.mojom-forward.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/loader/url_loader_factory_bundle.h"
 #include "third_party/blink/public/mojom/loader/transferrable_url_loader.mojom.h"
 #include "third_party/blink/public/platform/web_common.h"
@@ -46,6 +45,10 @@ class BLINK_PLATFORM_EXPORT ChildPendingURLLoaderFactoryBundle
       mojo::PendingRemote<network::mojom::URLLoaderFactory>
           pending_prefetch_loader_factory,
       bool bypass_redirect_checks);
+  ChildPendingURLLoaderFactoryBundle(
+      const ChildPendingURLLoaderFactoryBundle&) = delete;
+  ChildPendingURLLoaderFactoryBundle& operator=(
+      const ChildPendingURLLoaderFactoryBundle&) = delete;
   ~ChildPendingURLLoaderFactoryBundle() override;
 
   static std::unique_ptr<ChildPendingURLLoaderFactoryBundle>
@@ -74,8 +77,6 @@ class BLINK_PLATFORM_EXPORT ChildPendingURLLoaderFactoryBundle
 
   mojo::PendingRemote<network::mojom::URLLoaderFactory>
       pending_prefetch_loader_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ChildPendingURLLoaderFactoryBundle);
 };
 
 // This class extends URLLoaderFactoryBundle to support prefetch loader factory

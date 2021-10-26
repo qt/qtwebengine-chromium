@@ -15,10 +15,12 @@
 #include "core/fpdfapi/page/cpdf_page.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fxcrt/cfx_timer.h"
+#include "core/fxcrt/mask.h"
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "fpdfsdk/cpdfsdk_annot.h"
+#include "fpdfsdk/pwl/cpwl_wnd.h"
 #include "fpdfsdk/pwl/ipwl_systemhandler.h"
 #include "public/fpdf_formfill.h"
 
@@ -61,20 +63,20 @@ class CPDFSDK_FormFillEnvironment final : public CFX_Timer::HandlerIface,
   // IPWL_SystemHandler:
   void InvalidateRect(PerWindowData* pWidgetData,
                       const CFX_FloatRect& rect) override;
-  void OutputSelectedRect(CFFL_FormFiller* pFormFiller,
+  void OutputSelectedRect(CFFL_FormField* pFormField,
                           const CFX_FloatRect& rect) override;
   bool IsSelectionImplemented() const override;
   void SetCursor(CursorStyle nCursorType) override;
 
-  CPDFSDK_PageView* GetPageView(IPDF_Page* pUnderlyingPage, bool renew);
+  CPDFSDK_PageView* GetOrCreatePageView(IPDF_Page* pUnderlyingPage);
+  CPDFSDK_PageView* GetPageView(IPDF_Page* pUnderlyingPage);
   CPDFSDK_PageView* GetPageViewAtIndex(int nIndex);
-
   void RemovePageView(IPDF_Page* pUnderlyingPage);
   void UpdateAllViews(CPDFSDK_PageView* pSender, CPDFSDK_Annot* pAnnot);
 
   CPDFSDK_Annot* GetFocusAnnot() const { return m_pFocusAnnot.Get(); }
   bool SetFocusAnnot(ObservedPtr<CPDFSDK_Annot>* pAnnot);
-  bool KillFocusAnnot(uint32_t nFlag);
+  bool KillFocusAnnot(Mask<FWL_EVENTFLAG> nFlag);
   void ClearAllFocusedAnnots();
 
   int GetPageCount() const;
@@ -92,11 +94,11 @@ class CPDFSDK_FormFillEnvironment final : public CFX_Timer::HandlerIface,
   void Invalidate(IPDF_Page* page, const FX_RECT& rect);
 
   void OnChange();
-  void ExecuteNamedAction(const char* namedAction);
+  void ExecuteNamedAction(const ByteString& namedAction);
   void OnSetFieldInputFocus(FPDF_WIDESTRING focusText,
                             FPDF_DWORD nTextLen,
                             bool bFocus);
-  void DoURIAction(const char* bsURI, uint32_t modifiers);
+  void DoURIAction(const ByteString& bsURI, Mask<FWL_EVENTFLAG> modifiers);
   void DoGoToAction(int nPageIndex,
                     int zoomMode,
                     float* fPosArray,
@@ -218,7 +220,7 @@ class CPDFSDK_FormFillEnvironment final : public CFX_Timer::HandlerIface,
   CPDFSDK_InteractiveForm* GetInteractiveForm();  // Creates if not present.
 
  private:
-  IPDF_Page* GetPage(int nIndex);
+  IPDF_Page* GetPage(int nIndex) const;
   void SendOnFocusChange(ObservedPtr<CPDFSDK_Annot>* pAnnot);
 
   UnownedPtr<FPDF_FORMFILLINFO> const m_pInfo;
@@ -229,7 +231,7 @@ class CPDFSDK_FormFillEnvironment final : public CFX_Timer::HandlerIface,
   ObservedPtr<CPDFSDK_Annot> m_pFocusAnnot;
   UnownedPtr<CPDF_Document> const m_pCPDFDoc;
   std::unique_ptr<CPDFSDK_AnnotHandlerMgr> m_pAnnotHandlerMgr;
-  std::unique_ptr<CFFL_InteractiveFormFiller> m_pFormFiller;
+  std::unique_ptr<CFFL_InteractiveFormFiller> m_pInteractiveFormFiller;
   bool m_bChangeMask = false;
   bool m_bBeingDestroyed = false;
 

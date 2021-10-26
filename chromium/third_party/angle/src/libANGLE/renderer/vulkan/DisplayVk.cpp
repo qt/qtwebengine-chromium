@@ -221,9 +221,7 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
     outExtensions->imageNativeBuffer =
         getRenderer()->getFeatures().supportsAndroidHardwareBuffer.enabled;
     outExtensions->surfacelessContext = true;
-    outExtensions->glColorspace =
-        getRenderer()->getFeatures().supportsSwapchainColorspace.enabled &&
-        getRenderer()->getFeatures().supportsImageFormatList.enabled;
+    outExtensions->glColorspace = getRenderer()->getFeatures().supportsSwapchainColorspace.enabled;
     outExtensions->imageGlColorspace =
         outExtensions->glColorspace && getRenderer()->getFeatures().supportsImageFormatList.enabled;
 
@@ -247,6 +245,10 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
 #endif  // defined(ANGLE_PLATFORM_GGP)
 
     outExtensions->bufferAgeEXT = true;
+
+    outExtensions->protectedContentEXT =
+        (getRenderer()->getFeatures().supportsProtectedMemory.enabled &&
+         getRenderer()->getFeatures().supportsSurfaceProtectedSwapchains.enabled);
 }
 
 void DisplayVk::generateCaps(egl::Caps *outCaps) const
@@ -258,6 +260,11 @@ void DisplayVk::generateCaps(egl::Caps *outCaps) const
 const char *DisplayVk::getWSILayer() const
 {
     return nullptr;
+}
+
+bool DisplayVk::isUsingSwapchain() const
+{
+    return true;
 }
 
 bool DisplayVk::getScratchBuffer(size_t requstedSizeBytes,

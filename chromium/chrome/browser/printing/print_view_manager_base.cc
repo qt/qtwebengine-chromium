@@ -61,6 +61,7 @@
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW)
 #include "chrome/browser/printing/print_error_dialog.h"
 #include "chrome/browser/printing/print_view_manager.h"
+#include "components/prefs/pref_service.h"
 #endif
 
 #if defined(OS_WIN) && BUILDFLAG(GOOGLE_CHROME_BRANDING)
@@ -71,7 +72,7 @@
 #include "base/callback_helpers.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/grit/generated_resources.h"
-#include "chromeos/lacros/lacros_chrome_service_impl.h"
+#include "chromeos/lacros/lacros_service.h"
 #include "printing/print_settings.h"
 #include "printing/printing_utils.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -361,6 +362,10 @@ bool PrintViewManagerBase::PrintNow(content::RenderFrameHost* rfh) {
   // Don't print / print preview crashed tabs.
   if (IsCrashed())
     return false;
+
+  // TODO(crbug.com/809738)  Register with `PrintBackendServiceManager` when
+  // system print is enabled out-of-process.  A corresponding unregister should
+  // go in `ReleasePrintJob()`.
 
   SetPrintingRFH(rfh);
   GetPrintRenderFrame(rfh)->PrintRequestedPages();
@@ -669,6 +674,16 @@ void PrintViewManagerBase::UpdatePrintSettings(
     return;
   }
 
+  content::BrowserContext* context =
+      web_contents() ? web_contents()->GetBrowserContext() : nullptr;
+  PrefService* prefs =
+      context ? Profile::FromBrowserContext(context)->GetPrefs() : nullptr;
+  if (prefs && prefs->HasPrefPath(prefs::kPrintRasterizePdfDpi)) {
+    int value = prefs->GetInteger(prefs::kPrintRasterizePdfDpi);
+    if (value > 0)
+      job_settings.SetIntKey(kSettingRasterizePdfDpi, value);
+  }
+
   content::RenderFrameHost* render_frame_host = GetCurrentTargetFrame();
   auto callback_wrapper =
       base::BindOnce(&PrintViewManagerBase::UpdatePrintSettingsReply,
@@ -711,11 +726,6 @@ void PrintViewManagerBase::PrintingFailed(int32_t cookie) {
 #endif
 
   ReleasePrinterQuery();
-
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-      content::Source<content::WebContents>(web_contents()),
-      content::NotificationService::NoDetails());
 }
 
 void PrintViewManagerBase::ShowInvalidPrinterSettingsError() {
@@ -761,10 +771,6 @@ void PrintViewManagerBase::SystemDialogCancelled() {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
   ReleasePrinterQuery();
   TerminatePrintJob(true);
-  content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-      content::Source<content::WebContents>(web_contents()),
-      content::NotificationService::NoDetails());
 }
 #endif
 
@@ -781,34 +787,11 @@ void PrintViewManagerBase::OnNotifyPrintJobEvent(
   switch (event_details.type()) {
     case JobEventDetails::FAILED: {
       TerminatePrintJob(true);
-
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<content::WebContents>(web_contents()),
-          content::NotificationService::NoDetails());
-      break;
-    }
-    case JobEventDetails::USER_INIT_DONE:
-    case JobEventDetails::DEFAULT_INIT_DONE:
-    case JobEventDetails::USER_INIT_CANCELED: {
-      NOTREACHED();
-      break;
-    }
-    case JobEventDetails::ALL_PAGES_REQUESTED: {
-      ShouldQuitFromInnerMessageLoop();
-      break;
-    }
-#if defined(OS_WIN)
-    case JobEventDetails::PAGE_DONE:
-#endif
-    case JobEventDetails::NEW_DOC: {
-      // Don't care about the actual printing process.
       break;
     }
     case JobEventDetails::DOC_DONE: {
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
-      chromeos::LacrosChromeServiceImpl* service =
-          chromeos::LacrosChromeServiceImpl::Get();
+      chromeos::LacrosService* service = chromeos::LacrosService::Get();
       if (!service->IsAvailable<crosapi::mojom::LocalPrinter>()) {
         LOG(ERROR) << "Could not report print job queued";
       } else {
@@ -824,23 +807,15 @@ void PrintViewManagerBase::OnNotifyPrintJobEvent(
 #endif
       break;
     }
-    case JobEventDetails::JOB_DONE: {
+    case JobEventDetails::JOB_DONE:
       // Printing is done, we don't need it anymore.
       // print_job_->is_job_pending() may still be true, depending on the order
       // of object registration.
       printing_succeeded_ = true;
       ReleasePrintJob();
-
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_PRINT_JOB_RELEASED,
-          content::Source<content::WebContents>(web_contents()),
-          content::NotificationService::NoDetails());
       break;
-    }
-    default: {
-      NOTREACHED();
+    default:
       break;
-    }
   }
 }
 
@@ -868,11 +843,9 @@ bool PrintViewManagerBase::RenderAllMissingPagesNow() {
   // pages in an hurry if a print_job_ is still pending. No need to wait for it
   // to actually spool the pages, only to have the renderer generate them. Run
   // a message loop until we get our signal that the print job is satisfied.
-  // PrintJob will send a ALL_PAGES_REQUESTED after having received all the
-  // pages it needs. |quit_inner_loop_| will be called as soon as
-  // print_job_->document()->IsComplete() is true on either ALL_PAGES_REQUESTED
-  // or in DidPrintDocument(). The check is done in
-  // ShouldQuitFromInnerMessageLoop().
+  // |quit_inner_loop_| will be called as soon as
+  // print_job_->document()->IsComplete() is true in DidPrintDocument(). The
+  // check is done in ShouldQuitFromInnerMessageLoop().
   // BLOCKS until all the pages are received. (Need to enable recursive task)
   // WARNING: Do not do any work after RunInnerMessageLoop() returns, as `this`
   // may have gone away.
@@ -1067,6 +1040,18 @@ bool PrintViewManagerBase::PrintNowInternal(
 }
 
 void PrintViewManagerBase::SetPrintingRFH(content::RenderFrameHost* rfh) {
+  // Do not allow any print operation during prerendering.
+  if (rfh->GetLifecycleState() ==
+      content::RenderFrameHost::LifecycleState::kPrerendering) {
+    // If we come here during prerendering, it's because either:
+    // 1) Renderer did something unexpected (indicates a compromised renderer),
+    // or 2) Some plumbing in the browser side is wrong (wrong code).
+    // mojo::ReportBadMessage() below will let the renderer crash for 1), or
+    // will hit DCHECK for 2).
+    mojo::ReportBadMessage(
+        "The print's message shouldn't reach here during prerendering.");
+    return;
+  }
   DCHECK(!printing_rfh_);
   printing_rfh_ = rfh;
 }

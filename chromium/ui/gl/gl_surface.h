@@ -5,7 +5,6 @@
 #ifndef UI_GL_GL_SURFACE_H_
 #define UI_GL_GL_SURFACE_H_
 
-#include <string>
 #include <vector>
 
 #include "base/callback.h"
@@ -242,6 +241,7 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface>,
                                     const gfx::Rect& bounds_rect,
                                     const gfx::RectF& crop_rect,
                                     bool enable_blend,
+                                    const gfx::Rect& damage_rect,
                                     std::unique_ptr<gfx::GpuFence> gpu_fence);
 
   // Schedule a CALayer to be shown at swap time.
@@ -258,7 +258,8 @@ class GL_EXPORT GLSurface : public base::RefCounted<GLSurface>,
   virtual void ScheduleCALayerInUseQuery(
       std::vector<CALayerInUseQuery> queries);
 
-  virtual bool ScheduleDCLayer(const ui::DCRendererLayerParams& params);
+  virtual bool ScheduleDCLayer(
+      std::unique_ptr<ui::DCRendererLayerParams> params);
 
   // Enables or disables DC layers, returning success. If failed, it is possible
   // that the context is no longer current.
@@ -403,8 +404,10 @@ class GL_EXPORT GLSurfaceAdapter : public GLSurface {
                             const gfx::Rect& bounds_rect,
                             const gfx::RectF& crop_rect,
                             bool enable_blend,
+                            const gfx::Rect& damage_rect,
                             std::unique_ptr<gfx::GpuFence> gpu_fence) override;
-  bool ScheduleDCLayer(const ui::DCRendererLayerParams& params) override;
+  bool ScheduleDCLayer(
+      std::unique_ptr<ui::DCRendererLayerParams> params) override;
   bool SetEnableDCLayers(bool enable) override;
   bool IsSurfaceless() const override;
   bool SupportsViewporter() const override;

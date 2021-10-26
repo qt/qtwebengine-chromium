@@ -8,14 +8,11 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
 
-class CounterStyleTest : public PageTestBase,
-                         private ScopedCSSAtRuleCounterStyleForTest {
- public:
-  CounterStyleTest() : ScopedCSSAtRuleCounterStyleForTest(true) {}
-
+class CounterStyleTest : public PageTestBase {
  protected:
   const CounterStyle& GetCounterStyle(const AtomicString& name) {
     if (const CounterStyleMap* document_map =
@@ -506,6 +503,42 @@ TEST_F(CounterStyleTest, UpperArmenian) {
     String actual = upper_armenian_as_implemented.GenerateRepresentation(value);
     EXPECT_EQ(expected, actual);
   }
+}
+
+TEST_F(CounterStyleTest, ExtendArmenianRangeToIncludeZero) {
+  // 'lower-armenian' and 'upper-armenian' counter styles cannot represent 0.
+  // Even if we extend them to include 0 into the range, we still fall back.
+  const CounterStyle& extends_lower_armenian =
+      AddCounterStyle("extends-lower-armenian", R"CSS(
+    system: extends lower-armenian;
+    range: 0 infinity;
+  )CSS");
+  EXPECT_EQ("0", extends_lower_armenian.GenerateRepresentation(0));
+
+  const CounterStyle& extends_upper_armenian =
+      AddCounterStyle("extends-upper-armenian", R"CSS(
+    system: extends upper-armenian;
+    range: 0 infinity;
+  )CSS");
+  EXPECT_EQ("0", extends_upper_armenian.GenerateRepresentation(0));
+}
+
+TEST_F(CounterStyleTest, ExtendArmenianRangeToAuto) {
+  // 'lower-armenian' and 'upper-armenian' counter styles cannot represent 0,
+  // even if we extend their range to 'auto'.
+  const CounterStyle& extends_lower_armenian =
+      AddCounterStyle("extends-lower-armenian", R"CSS(
+    system: extends lower-armenian;
+    range: auto;
+  )CSS");
+  EXPECT_EQ("0", extends_lower_armenian.GenerateRepresentation(0));
+
+  const CounterStyle& extends_upper_armenian =
+      AddCounterStyle("extends-upper-armenian", R"CSS(
+    system: extends upper-armenian;
+    range: 0 auto;
+  )CSS");
+  EXPECT_EQ("0", extends_upper_armenian.GenerateRepresentation(0));
 }
 
 TEST_F(CounterStyleTest, KoreanHangulFormal) {

@@ -182,6 +182,8 @@ static const AVOption options[] = {
     { "ldkfs",        "Low delay key frame scale; Specifies the Scene Change frame size increase allowed in case of single frame VBV and CBR",
                                                             OFFSET(ldkfs),        AV_OPT_TYPE_INT,   { .i64 = 0 }, 0, UCHAR_MAX, VE },
 #endif
+    { "extra_sei",    "Pass on extra SEI data (e.g. a53 cc) to be included in the bitstream",
+                                                            OFFSET(extra_sei),    AV_OPT_TYPE_BOOL,  { .i64 = 1 }, 0, 1, VE },
     { NULL }
 };
 
@@ -198,75 +200,6 @@ static const AVCodecDefault defaults[] = {
     { NULL },
 };
 
-#if FF_API_NVENC_OLD_NAME
-
-static av_cold int nvenc_old_init(AVCodecContext *avctx)
-{
-    av_log(avctx, AV_LOG_WARNING, "This encoder is deprecated, use 'h264_nvenc' instead\n");
-    return ff_nvenc_encode_init(avctx);
-}
-
-#if CONFIG_NVENC_ENCODER
-static const AVClass nvenc_class = {
-    .class_name = "nvenc",
-    .item_name = av_default_item_name,
-    .option = options,
-    .version = LIBAVUTIL_VERSION_INT,
-};
-
-AVCodec ff_nvenc_encoder = {
-    .name           = "nvenc",
-    .long_name      = NULL_IF_CONFIG_SMALL("NVIDIA NVENC H.264 encoder"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_H264,
-    .init           = nvenc_old_init,
-    .receive_packet = ff_nvenc_receive_packet,
-    .close          = ff_nvenc_encode_close,
-    .flush          = ff_nvenc_encode_flush,
-    .priv_data_size = sizeof(NvencContext),
-    .priv_class     = &nvenc_class,
-    .defaults       = defaults,
-    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE |
-                      AV_CODEC_CAP_ENCODER_FLUSH,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
-    .pix_fmts       = ff_nvenc_pix_fmts,
-    .wrapper_name   = "nvenc",
-    .hw_configs     = ff_nvenc_hw_configs,
-};
-#endif
-
-/* Add an alias for nvenc_h264 */
-#if CONFIG_NVENC_H264_ENCODER
-static const AVClass nvenc_h264_class = {
-    .class_name = "nvenc_h264",
-    .item_name = av_default_item_name,
-    .option = options,
-    .version = LIBAVUTIL_VERSION_INT,
-};
-
-AVCodec ff_nvenc_h264_encoder = {
-    .name           = "nvenc_h264",
-    .long_name      = NULL_IF_CONFIG_SMALL("NVIDIA NVENC H.264 encoder"),
-    .type           = AVMEDIA_TYPE_VIDEO,
-    .id             = AV_CODEC_ID_H264,
-    .init           = nvenc_old_init,
-    .receive_packet = ff_nvenc_receive_packet,
-    .close          = ff_nvenc_encode_close,
-    .flush          = ff_nvenc_encode_flush,
-    .priv_data_size = sizeof(NvencContext),
-    .priv_class     = &nvenc_h264_class,
-    .defaults       = defaults,
-    .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE |
-                      AV_CODEC_CAP_ENCODER_FLUSH,
-    .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
-    .pix_fmts       = ff_nvenc_pix_fmts,
-    .wrapper_name   = "nvenc",
-    .hw_configs     = ff_nvenc_hw_configs,
-};
-#endif
-
-#endif
-
 static const AVClass h264_nvenc_class = {
     .class_name = "h264_nvenc",
     .item_name = av_default_item_name,
@@ -274,7 +207,7 @@ static const AVClass h264_nvenc_class = {
     .version = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_h264_nvenc_encoder = {
+const AVCodec ff_h264_nvenc_encoder = {
     .name           = "h264_nvenc",
     .long_name      = NULL_IF_CONFIG_SMALL("NVIDIA NVENC H.264 encoder"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -287,7 +220,7 @@ AVCodec ff_h264_nvenc_encoder = {
     .priv_class     = &h264_nvenc_class,
     .defaults       = defaults,
     .capabilities   = AV_CODEC_CAP_DELAY | AV_CODEC_CAP_HARDWARE |
-                      AV_CODEC_CAP_ENCODER_FLUSH,
+                      AV_CODEC_CAP_ENCODER_FLUSH | AV_CODEC_CAP_DR1,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .pix_fmts       = ff_nvenc_pix_fmts,
     .wrapper_name   = "nvenc",

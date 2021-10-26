@@ -10,11 +10,9 @@
 
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "base/base_export.h"
 #include "base/callback.h"
-#include "base/observer_list.h"
 #include "base/single_thread_task_runner.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/condition_variable.h"

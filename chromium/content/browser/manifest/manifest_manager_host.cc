@@ -8,10 +8,10 @@
 
 #include "base/bind.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
-#include "content/browser/web_contents/web_contents_impl.h"
 #include "services/service_manager/public/cpp/interface_provider.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
-#include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -66,7 +66,7 @@ void ManifestManagerHost::DispatchPendingCallbacks() {
   }
   callbacks_.Clear();
   for (auto& callback : callbacks)
-    std::move(callback).Run(GURL(), blink::Manifest());
+    std::move(callback).Run(GURL(), blink::mojom::Manifest::New());
 }
 
 void ManifestManagerHost::OnConnectionError() {
@@ -79,22 +79,14 @@ void ManifestManagerHost::OnConnectionError() {
 void ManifestManagerHost::OnRequestManifestResponse(
     int request_id,
     const GURL& url,
-    const blink::Manifest& manifest) {
+    blink::mojom::ManifestPtr manifest) {
   auto callback = std::move(*callbacks_.Lookup(request_id));
   callbacks_.Remove(request_id);
-  std::move(callback).Run(url, manifest);
+  std::move(callback).Run(url, std::move(manifest));
 }
 
-void ManifestManagerHost::ManifestUrlChanged(
-    const absl::optional<GURL>& manifest_url) {
-  if (!manifest_manager_frame_->IsCurrent())
-    return;
-
-  manifest_manager_frame_->UpdateManifestURL(manifest_url);
-  WebContents* web_contents =
-      WebContents::FromRenderFrameHost(manifest_manager_frame_);
-  static_cast<WebContentsImpl*>(web_contents)
-      ->NotifyManifestUrlChanged(manifest_manager_frame_, manifest_url);
+void ManifestManagerHost::ManifestUrlChanged(const GURL& manifest_url) {
+  manifest_manager_frame_->GetPage().UpdateManifestUrl(manifest_url);
 }
 
 RENDER_DOCUMENT_HOST_USER_DATA_KEY_IMPL(ManifestManagerHost)

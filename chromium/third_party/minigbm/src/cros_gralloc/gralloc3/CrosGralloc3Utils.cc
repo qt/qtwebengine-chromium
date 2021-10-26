@@ -157,6 +157,14 @@ std::string getUsageString(hidl_bitfield<BufferUsage> bufferUsage) {
         usage &= ~static_cast<Underlying>(BufferUsage::VIDEO_ENCODER);
         usages.push_back("BufferUsage::VIDEO_ENCODER");
     }
+    if (usage & BufferUsage::GPU_DATA_BUFFER) {
+        usage &= ~static_cast<Underlying>(BufferUsage::GPU_DATA_BUFFER);
+        usages.push_back("BufferUsage::GPU_DATA_BUFFER");
+    }
+    if (usage & BUFFER_USAGE_FRONT_RENDERING) {
+        usage &= ~static_cast<Underlying>(BUFFER_USAGE_FRONT_RENDERING);
+        usages.push_back("BUFFER_USAGE_FRONT_RENDERING");
+    }
 
     if (usage) {
         usages.push_back(android::base::StringPrintf("UnknownUsageBits-%" PRIu64, usage));
@@ -301,6 +309,12 @@ int convertToBufferUsage(uint64_t grallocUsage, uint64_t* outBufferUsage) {
     if (grallocUsage & BufferUsage::VIDEO_DECODER) {
         bufferUsage |= BO_USE_HW_VIDEO_DECODER;
     }
+    if (grallocUsage & BufferUsage::GPU_DATA_BUFFER) {
+        bufferUsage |= BO_USE_GPU_DATA_BUFFER;
+    }
+    if (grallocUsage & BUFFER_USAGE_FRONT_RENDERING) {
+        bufferUsage |= BO_USE_FRONT_RENDERING;
+    }
 
     *outBufferUsage = bufferUsage;
     return 0;
@@ -330,17 +344,17 @@ int convertToCrosDescriptor(const BufferDescriptorInfo& descriptor,
     if (descriptor.layerCount > 1) {
         drv_log("Failed to convert descriptor. Unsupported layerCount: %d\n",
                 descriptor.layerCount);
-        return -1;
+        return -EINVAL;
     }
     if (convertToDrmFormat(descriptor.format, &outCrosDescriptor->drm_format)) {
         std::string pixelFormatString = getPixelFormatString(descriptor.format);
         drv_log("Failed to convert descriptor. Unsupported format %s\n", pixelFormatString.c_str());
-        return -1;
+        return -EINVAL;
     }
     if (convertToBufferUsage(descriptor.usage, &outCrosDescriptor->use_flags)) {
         std::string usageString = getUsageString(descriptor.usage);
         drv_log("Failed to convert descriptor. Unsupported usage flags %s\n", usageString.c_str());
-        return -1;
+        return -EINVAL;
     }
     return 0;
 }

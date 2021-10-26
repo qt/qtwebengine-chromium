@@ -5,6 +5,7 @@
 #include <string>
 
 #include "base/check.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -465,7 +466,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest, TextareaSetValue) {
 #if !defined(OS_ANDROID)
   // Check that it really does contain two lines.
   BrowserAccessibility::AXPosition start_position =
-      target->CreatePositionAt(0, ax::mojom::TextAffinity::kDownstream);
+      target->CreateTextPositionAt(0);
   BrowserAccessibility::AXPosition end_of_line_1 =
       start_position->CreateNextLineEndPosition(
           ui::AXBoundaryBehavior::CrossBoundary);
@@ -499,7 +500,7 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest,
 #if !defined(OS_ANDROID)
   // Check that it really does contain two lines.
   BrowserAccessibility::AXPosition start_position =
-      target->CreatePositionAt(0, ax::mojom::TextAffinity::kDownstream);
+      target->CreateTextPositionAt(0);
   BrowserAccessibility::AXPosition end_of_line_1 =
       start_position->CreateNextLineEndPosition(
           ui::AXBoundaryBehavior::CrossBoundary);
@@ -519,8 +520,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest, ShowContextMenu) {
   // Create a ContextMenuInterceptor to intercept the ShowContextMenu event
   // before RenderFrameHost receives.
   auto context_menu_interceptor = std::make_unique<ContextMenuInterceptor>(
+      shell()->web_contents()->GetMainFrame(),
       ContextMenuInterceptor::ShowBehavior::kPreventShow);
-  context_menu_interceptor->Init(shell()->web_contents()->GetMainFrame());
 
   // Raise the ShowContextMenu event from the second link.
   ui::AXActionData context_menu_action;
@@ -549,8 +550,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest,
   // Create a ContextMenuInterceptor to intercept the ShowContextMenu event
   // before RenderFrameHost receives.
   auto context_menu_interceptor = std::make_unique<ContextMenuInterceptor>(
+      shell()->web_contents()->GetMainFrame(),
       ContextMenuInterceptor::ShowBehavior::kPreventShow);
-  context_menu_interceptor->Init(shell()->web_contents()->GetMainFrame());
 
   // Raise the ShowContextMenu event from the link.
   ui::AXActionData context_menu_action;
@@ -586,8 +587,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest,
   // Create a ContextMenuInterceptor to intercept the ShowContextMenu event
   // before RenderFrameHost receives.
   auto context_menu_interceptor = std::make_unique<ContextMenuInterceptor>(
+      shell()->web_contents()->GetMainFrame(),
       ContextMenuInterceptor::ShowBehavior::kPreventShow);
-  context_menu_interceptor->Init(shell()->web_contents()->GetMainFrame());
 
   // Raise the ShowContextMenu event from the link.
   ui::AXActionData context_menu_action;
@@ -620,8 +621,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest,
   // Create a ContextMenuInterceptor to intercept the ShowContextMenu event
   // before RenderFrameHost receives.
   auto context_menu_interceptor = std::make_unique<ContextMenuInterceptor>(
+      shell()->web_contents()->GetMainFrame(),
       ContextMenuInterceptor::ShowBehavior::kPreventShow);
-  context_menu_interceptor->Init(shell()->web_contents()->GetMainFrame());
 
   // Raise the ShowContextMenu event from the link.
   ui::AXActionData context_menu_action;
@@ -829,8 +830,8 @@ IN_PROC_BROWSER_TEST_F(AccessibilityActionBrowserTest, ScrollIntoView) {
   BrowserAccessibility* root = GetManager()->GetRoot();
   gfx::Rect doc_bounds = root->GetClippedScreenBoundsRect();
 
-  int one_third_doc_height = float{doc_bounds.height()} / 3.0;
-  int one_third_doc_width = float{doc_bounds.width()} / 3.0;
+  int one_third_doc_height = base::ClampRound(doc_bounds.height() / 3.0f);
+  int one_third_doc_width = base::ClampRound(doc_bounds.width() / 3.0f);
 
   gfx::Rect doc_top_third = doc_bounds;
   doc_top_third.set_height(one_third_doc_height);

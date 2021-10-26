@@ -10,8 +10,6 @@
 #include <string>
 #include <utility>
 
-#include "ash/components/account_manager/account_manager.h"
-#include "ash/components/account_manager/account_manager_ash.h"
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/files/scoped_temp_dir.h"
@@ -22,6 +20,8 @@
 #include "components/account_manager_core/account.h"
 #include "components/account_manager_core/account_manager_facade.h"
 #include "components/account_manager_core/account_manager_facade_impl.h"
+#include "components/account_manager_core/chromeos/account_manager.h"
+#include "components/account_manager_core/chromeos/account_manager_mojo_service.h"
 #include "components/signin/internal/identity_manager/account_tracker_service.h"
 #include "components/signin/internal/identity_manager/profile_oauth2_token_service_observer.h"
 #include "components/signin/public/base/signin_pref_names.h"
@@ -40,8 +40,8 @@ namespace signin {
 
 namespace {
 
+using ::account_manager::AccountManager;
 using ::account_manager::AccountManagerFacade;
-using ::ash::AccountManager;
 
 constexpr char kGaiaId[] = "gaia-id";
 constexpr char kGaiaToken[] = "gaia-token";
@@ -58,6 +58,10 @@ class AccessTokenConsumer : public OAuth2AccessTokenConsumer {
 
   void OnGetTokenFailure(const GoogleServiceAuthError& error) override {
     ++num_access_token_fetch_failure_;
+  }
+
+  std::string GetConsumerName() const override {
+    return "profile_oauth2_token_service_delegate_chromeos_unittest";
   }
 
   int num_access_token_fetch_success_ = 0;
@@ -219,10 +223,10 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
     account_manager_.SetPrefService(&pref_service_);
     task_environment_.RunUntilIdle();
 
-    account_manager_ash_ =
-        std::make_unique<crosapi::AccountManagerAsh>(&account_manager_);
+    account_manager_mojo_service_ =
+        std::make_unique<crosapi::AccountManagerMojoService>(&account_manager_);
     account_manager_facade_ =
-        CreateAccountManagerFacade(account_manager_ash_.get());
+        CreateAccountManagerFacade(account_manager_mojo_service_.get());
 
     account_tracker_service_.Initialize(&pref_service_, base::FilePath());
 
@@ -253,7 +257,6 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
     account_info.hosted_domain = "example.com";
     account_info.locale = "en";
     account_info.picture_url = "https://example.com";
-    account_info.is_child_account = false;
     account_info.account_id = account_tracker_service_.PickAccountIdForAccount(
         account_info.gaia, account_info.email);
 
@@ -343,10 +346,11 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
   }
 
   std::unique_ptr<AccountManagerFacade> CreateAccountManagerFacade(
-      crosapi::AccountManagerAsh* account_manager_ash) {
-    DCHECK(account_manager_ash);
+      crosapi::AccountManagerMojoService* account_manager_mojo_service) {
+    DCHECK(account_manager_mojo_service);
     mojo::Remote<crosapi::mojom::AccountManager> remote;
-    account_manager_ash->BindReceiver(remote.BindNewPipeAndPassReceiver());
+    account_manager_mojo_service->BindReceiver(
+        remote.BindNewPipeAndPassReceiver());
     return std::make_unique<account_manager::AccountManagerFacadeImpl>(
         std::move(remote),
         std::numeric_limits<uint32_t>::max() /* remote_version */);
@@ -360,7 +364,8 @@ class ProfileOAuth2TokenServiceDelegateChromeOSTest : public testing::Test {
   account_manager::AccountKey ad_account_key_;
   AccountTrackerService account_tracker_service_;
   AccountManager account_manager_;
-  std::unique_ptr<crosapi::AccountManagerAsh> account_manager_ash_;
+  std::unique_ptr<crosapi::AccountManagerMojoService>
+      account_manager_mojo_service_;
   std::unique_ptr<account_manager::AccountManagerFacade>
       account_manager_facade_;
   std::unique_ptr<ProfileOAuth2TokenServiceDelegateChromeOS> delegate_;
@@ -600,10 +605,10 @@ TEST_F(ProfileOAuth2TokenServiceDelegateChromeOSTest,
                              immediate_callback_runner_);
   account_manager.SetPrefService(&pref_service_);
 
-  auto account_manager_ash =
-      std::make_unique<crosapi::AccountManagerAsh>(&account_manager);
+  auto account_manager_mojo_service =
+      std::make_unique<crosapi::AccountManagerMojoService>(&account_manager);
   auto account_manager_facade =
-      CreateAccountManagerFacade(account_manager_ash.get());
+      CreateAccountManagerFacade(account_manager_mojo_service.get());
 
   // Register callbacks before AccountManager has been fully initialized.
   auto delegate = std::make_unique<ProfileOAuth2TokenServiceDelegateChromeOS>(

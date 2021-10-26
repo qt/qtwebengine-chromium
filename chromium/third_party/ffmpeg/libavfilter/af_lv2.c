@@ -28,7 +28,6 @@
 #include <lv2/lv2plug.in/ns/ext/atom/atom.h>
 #include <lv2/lv2plug.in/ns/ext/buf-size/buf-size.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
@@ -588,7 +587,7 @@ static const AVFilterPad lv2_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_lv2 = {
+const AVFilter ff_af_lv2 = {
     .name          = "lv2",
     .description   = NULL_IF_CONFIG_SMALL("Apply LV2 effect."),
     .priv_size     = sizeof(LV2Context),

@@ -313,8 +313,8 @@ static void close_file(AVFormatContext *s, OutputStream *os)
 static int hds_write_header(AVFormatContext *s)
 {
     HDSContext *c = s->priv_data;
+    const AVOutputFormat *oformat;
     int ret = 0, i;
-    ff_const59 AVOutputFormat *oformat;
 
     if (mkdir(s->url, 0777) == -1 && errno != EEXIST) {
         av_log(s, AV_LOG_ERROR , "Failed to create directory %s\n", s->url);
@@ -504,11 +504,11 @@ static int hds_write_packet(AVFormatContext *s, AVPacket *pkt)
     int64_t end_dts = os->fragment_index * (int64_t)c->min_frag_duration;
     int ret;
 
-    if (st->first_dts == AV_NOPTS_VALUE)
-        st->first_dts = pkt->dts;
+    if (st->internal->first_dts == AV_NOPTS_VALUE)
+        st->internal->first_dts = pkt->dts;
 
     if ((!os->has_video || st->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) &&
-        av_compare_ts(pkt->dts - st->first_dts, st->time_base,
+        av_compare_ts(pkt->dts - st->internal->first_dts, st->time_base,
                       end_dts, AV_TIME_BASE_Q) >= 0 &&
         pkt->flags & AV_PKT_FLAG_KEY && os->packets_written) {
 
@@ -566,7 +566,7 @@ static const AVClass hds_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVOutputFormat ff_hds_muxer = {
+const AVOutputFormat ff_hds_muxer = {
     .name           = "hds",
     .long_name      = NULL_IF_CONFIG_SMALL("HDS Muxer"),
     .priv_data_size = sizeof(HDSContext),

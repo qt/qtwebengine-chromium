@@ -4,7 +4,7 @@
 
 #include "extensions/common/constants.h"
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/strings/string_piece.h"
 #include "build/chromecast_buildflags.h"
 #include "build/chromeos_buildflags.h"
@@ -189,8 +189,5 @@ const char kPolicyBlockedScripting[] =
     "This page cannot be scripted due to an ExtensionsSettings policy.";
 
 const int kContentVerificationDefaultBlockSize = 4096;
-
-const char kCastExtensionIdRelease[] = "pkedcjkdefgpdelpbcmbmeomcjbeemfm";
-const char kCastExtensionIdDev[] = "enhhojjnijigcajfphajepfemndkmdlo";
 
 }  // namespace extension_misc

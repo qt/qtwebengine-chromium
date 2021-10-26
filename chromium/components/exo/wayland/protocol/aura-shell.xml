@@ -24,7 +24,7 @@
     DEALINGS IN THE SOFTWARE.
   </copyright>
 
-  <interface name="zaura_shell" version="19">
+  <interface name="zaura_shell" version="22">
     <description summary="aura_shell">
       The global interface exposing aura shell capabilities is used to
       instantiate an interface extension for a wl_surface object.
@@ -93,9 +93,24 @@
       </description>
       <arg name="id" type="uint" summary="ID of a single bug fix"/>
     </event>
+
+    <event name="desks_changed" since="22">
+      <description summary="sends names of desks">
+        Notifies when there is a change in global desks state. This is emitted on
+        desk name changes, desk addition/removal or desks are reordered.
+        "desk_names" argument contains the set of null terminated strings as names of desks.
+      </description>
+      <arg name="desk_names" type="array" summary="an array of existing desks' names"/>
+    </event>
+    <event name="desk_activation_changed" since="22">
+      <description summary="sends the index of the active desk">
+        Notifies when there is a change of the active desk.
+      </description>
+      <arg name="active_desk_index" type="int" summary="index of the active desk"/>
+    </event>
   </interface>
 
-  <interface name="zaura_surface" version="19">
+  <interface name="zaura_surface" version="22">
     <description summary="aura shell interface to a wl_surface">
       An additional interface to a wl_surface object, which allows the
       client to access aura shell specific functionality for surface.
@@ -351,6 +366,66 @@
       </description>
     </request>
 
+    <!-- Version 20 additions -->
+    <request name="set_pip" since="20">
+      <description summary="Set pip for the surface.">
+        Requests that the surface is set to Picture-in-Picture (PIP).
+      </description>
+    </request>
+
+    <request name="unset_pip" since="20">
+      <description summary="Unset pip for the surface.">
+        Requests that the surface is unset from Picture-in-Picture (PIP).
+      </description>
+    </request>
+
+    <request name="set_aspect_ratio" since="20">
+      <description summary="Set aspect ratio for the surface.">
+        Sets the aspect ratio of the surface.
+      </description>
+      <arg name="width" type="int"/>
+      <arg name="height" type="int"/>
+    </request>
+
+    <!-- Version 21 additions -->
+    <enum name="occlusion_state">
+      <description summary="surface occlusion state">
+	Describes the occlusion state of a surface.
+      </description>
+      <entry name="unknown" value="0" summary="The surface's occlusion state isn't tracked"/>
+      <entry name="visible" value="1" summary="The surface is visible"/>
+      <entry name="occluded" value="2" summary="The surface is occluded"/>
+      <entry name="hidden" value="3" summary="The surface is not visible"/>
+    </enum>
+
+    <event name="occlusion_state_changed" since="21">
+      <description summary="Notify the client that the occlusion state changed">
+	Notifies the client that the occlusion state of a window has changed. Clients
+	will only receive these messages if they previously request occlusion tracking
+  via set_occlusion_tracking for a particular surface.
+      </description>
+      <arg name="mode" type="uint" enum="occlusion_state"/>
+    </event>
+
+    <!-- Version 22 additions -->
+    <request name="move_to_desk" since="22">
+        <description summary="move to desk">
+        If |index| equals -1, requests that the server toggles whether client
+        is visible on all workspaces.
+        If |index| is not -1, requests that the server moves the client to the desk at
+        |index|.
+      </description>
+      <arg name="index" type="int"/>
+    </request>
+
+    <event name="desk_changed" since="22">
+      <description summary="window desk state changed">
+        Notifies when there is a change in the desk state of a window.
+        This is emitted when a window is moved to another desk or
+        when its assigned-to-all-desks state changes.
+      </description>
+      <arg name="state" type="int" summary="index of desk or -1 for a window assigned to all desks"/>
+    </event>
   </interface>
 
   <interface name="zaura_output" version="6">

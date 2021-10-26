@@ -9,15 +9,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <memory>
 #include <set>
 #include <utility>
-#include <vector>
 
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/build_time.h"
 #include "base/command_line.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/strings/pattern.h"
@@ -25,7 +24,6 @@
 #include "base/system/sys_info.h"
 #include "base/trace_event/trace_event.h"
 #include "base/version.h"
-#include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "components/language/core/browser/locale_util.h"
 #include "components/metrics/metrics_state_manager.h"
@@ -36,6 +34,7 @@
 #include "components/variations/proto/variations_seed.pb.h"
 #include "components/variations/service/buildflags.h"
 #include "components/variations/service/safe_seed_manager.h"
+#include "components/variations/service/variations_safe_mode_constants.h"
 #include "components/variations/service/variations_service.h"
 #include "components/variations/service/variations_service_client.h"
 #include "components/variations/variations_ids_provider.h"
@@ -51,13 +50,6 @@ namespace {
 
 // Maximum age permitted for a variations seed, in days.
 const int kMaxVariationsSeedAgeDays = 30;
-
-enum VariationsSeedExpiry {
-  VARIATIONS_SEED_EXPIRY_NOT_EXPIRED,
-  VARIATIONS_SEED_EXPIRY_FETCH_TIME_MISSING,
-  VARIATIONS_SEED_EXPIRY_EXPIRED,
-  VARIATIONS_SEED_EXPIRY_ENUM_SIZE,
-};
 
 // Returns the date that should be used by the VariationsSeedProcessor to do
 // expiry and start date checks.
@@ -91,14 +83,15 @@ Study::Channel ConvertProductChannelToStudyChannel(
   return Study::UNKNOWN;
 }
 
-// Records UMA histogram with the result of the variations seed expiry check.
-void RecordCreateTrialsSeedExpiry(VariationsSeedExpiry expiry_check_result) {
-  UMA_HISTOGRAM_ENUMERATION("Variations.CreateTrials.SeedExpiry",
-                            expiry_check_result,
-                            VARIATIONS_SEED_EXPIRY_ENUM_SIZE);
+// Records the loaded seed's expiry status.
+void RecordSeedExpiry(bool is_safe_seed, VariationsSeedExpiry seed_expiry) {
+  const std::string histogram_name =
+      is_safe_seed ? "Variations.SafeMode.CreateTrials.SeedExpiry"
+                   : "Variations.CreateTrials.SeedExpiry";
+  base::UmaHistogramEnumeration(histogram_name, seed_expiry);
 }
 
-// Records the loaded seed's age to an UMA histogram.
+// Records the loaded seed's age.
 void RecordSeedFreshness(base::TimeDelta seed_age) {
   UMA_HISTOGRAM_CUSTOM_COUNTS("Variations.SeedFreshness", seed_age.InMinutes(),
                               1, base::TimeDelta::FromDays(30).InMinutes(), 50);
@@ -149,7 +142,6 @@ Study::CpuArchitecture GetCurrentCpuArchitecture() {
 }  // namespace
 
 VariationsFieldTrialCreator::VariationsFieldTrialCreator(
-    PrefService* local_state,
     VariationsServiceClient* client,
     std::unique_ptr<VariationsSeedStore> seed_store,
     const UIStringOverrider& ui_string_overrider)
@@ -185,7 +177,13 @@ bool VariationsFieldTrialCreator::SetupFieldTrials(
     metrics::MetricsStateManager* metrics_state_manager,
     PlatformFieldTrials* platform_field_trials,
     SafeSeedManager* safe_seed_manager,
-    absl::optional<int> low_entropy_source_value) {
+    absl::optional<int> low_entropy_source_value,
+    bool extend_variations_safe_mode) {
+#if !defined(OS_ANDROID)
+  if (extend_variations_safe_mode)
+    MaybeExtendVariationsSafeMode(metrics_state_manager);
+#endif
+
   const base::CommandLine* command_line =
       base::CommandLine::ForCurrentProcess();
   if (command_line->HasSwitch(switches::kEnableBenchmarking) ||
@@ -355,7 +353,7 @@ std::string VariationsFieldTrialCreator::LoadPermanentConsistencyCountry(
   std::string stored_country;
 
   // Determine if the saved pref value is present and valid.
-  const bool is_pref_empty = list_value->empty();
+  const bool is_pref_empty = list_value->GetList().empty();
   const bool is_pref_valid = list_value->GetSize() == 2 &&
                              list_value->GetString(0, &stored_version_string) &&
                              list_value->GetString(1, &stored_country) &&
@@ -450,49 +448,34 @@ bool VariationsFieldTrialCreator::IsOverrideResourceMapEmpty() {
   return overridden_strings_map_.empty();
 }
 
-bool VariationsFieldTrialCreator::LoadSeed(VariationsSeed* seed,
-                                           std::string* seed_data,
-                                           std::string* base64_signature) {
-  if (!GetSeedStore()->LoadSeed(seed, seed_data, base64_signature))
-    return false;
+bool VariationsFieldTrialCreator::HasSeedExpired(bool is_safe_seed) {
+  const base::Time fetch_time = is_safe_seed
+                                    ? GetSeedStore()->GetSafeSeedFetchTime()
+                                    : GetSeedStore()->GetLastFetchTime();
 
-  const base::Time last_fetch_time = seed_store_->GetLastFetchTime();
-  if (last_fetch_time.is_null()) {
-    // If the last fetch time is missing and we have a seed, then this must be
-    // the first run of Chrome. Store the current time as the last fetch time.
-    seed_store_->RecordLastFetchTime(base::Time::Now());
-    RecordCreateTrialsSeedExpiry(VARIATIONS_SEED_EXPIRY_FETCH_TIME_MISSING);
-    return true;
-  }
-
-  // Reject the seed if it is more than 30 days old.
-  const base::TimeDelta seed_age = base::Time::Now() - last_fetch_time;
-  if (seed_age.InDays() > kMaxVariationsSeedAgeDays) {
-    RecordCreateTrialsSeedExpiry(VARIATIONS_SEED_EXPIRY_EXPIRED);
+  // If the fetch time is null, skip the expiry check. If the seed is a regular
+  // seed (i.e. not a safe seed) and the fetch time is missing, then this must
+  // be the first run of Chrome. If the seed is a safe seed, the fetch time may
+  // be missing because the pref was added about a milestone later than most of
+  // the other safe seed prefs.
+  if (fetch_time.is_null()) {
+    RecordSeedExpiry(is_safe_seed, VariationsSeedExpiry::kFetchTimeMissing);
+    if (!is_safe_seed) {
+      // Store the current time as the last fetch time for Chrome's first run.
+      GetSeedStore()->RecordLastFetchTime(base::Time::Now());
+    }
     return false;
   }
 
-  // Record that a suitably fresh seed was loaded.
-  RecordCreateTrialsSeedExpiry(VARIATIONS_SEED_EXPIRY_NOT_EXPIRED);
-  RecordSeedFreshness(seed_age);
-  return true;
-}
-
-bool VariationsFieldTrialCreator::LoadSafeSeed(
-    VariationsSeed* seed,
-    ClientFilterableState* client_state) {
-  base::Time safe_seed_fetch_time;
-  if (!GetSeedStore()->LoadSafeSeed(seed, client_state, &safe_seed_fetch_time))
-    return false;
-
-  // Record the safe seed's age. Note, however, that the safe seed fetch time
-  // pref was added about a milestone later than most of the other safe seed
-  // prefs, so it might be absent. If it's absent, don't attempt to guess what
-  // value to record; just skip recording the metric.
-  if (!safe_seed_fetch_time.is_null())
-    RecordSeedFreshness(base::Time::Now() - safe_seed_fetch_time);
-
-  return true;
+  const base::TimeDelta seed_age = base::Time::Now() - fetch_time;
+  bool has_seed_expired = seed_age.InDays() > kMaxVariationsSeedAgeDays &&
+                          GetBuildTime() > fetch_time;
+  if (!has_seed_expired)
+    RecordSeedFreshness(seed_age);
+  RecordSeedExpiry(is_safe_seed, has_seed_expired
+                                     ? VariationsSeedExpiry::kExpired
+                                     : VariationsSeedExpiry::kNotExpired);
+  return has_seed_expired;
 }
 
 bool VariationsFieldTrialCreator::CreateTrialsFromSeed(
@@ -518,13 +501,34 @@ bool VariationsFieldTrialCreator::CreateTrialsFromSeed(
                                 client_filterable_state->policy_restriction);
 
   VariationsSeed seed;
-  bool run_in_safe_mode = safe_seed_manager->ShouldRunInSafeMode() &&
-                          LoadSafeSeed(&seed, client_filterable_state.get());
+  bool run_in_safe_mode = safe_seed_manager->ShouldRunInSafeMode();
+  if (run_in_safe_mode) {
+    LoadSeedResult result =
+        GetSeedStore()->LoadSafeSeed(&seed, client_filterable_state.get());
+    if (result == LoadSeedResult::kSuccess &&
+        HasSeedExpired(/*is_safe_seed=*/true)) {
+      return false;
+    }
+    if (result != LoadSeedResult::kSuccess &&
+        result != LoadSeedResult::kEmpty) {
+      // If Chrome should run in safe mode but the safe seed is corrupted or has
+      // an invalid signature, then fall back to the client-side defaults.
+      return false;
+    }
+    if (result == LoadSeedResult::kEmpty) {
+      // If the safe seed is empty, attempt to run with the most recent seed
+      // instead of falling back to client-side defaults.
+      run_in_safe_mode = false;
+    }
+  }
 
   std::string seed_data;
   std::string base64_seed_signature;
-  if (!run_in_safe_mode && !LoadSeed(&seed, &seed_data, &base64_seed_signature))
+  if (!run_in_safe_mode &&
+      (!GetSeedStore()->LoadSeed(&seed, &seed_data, &base64_seed_signature) ||
+       HasSeedExpired(/*is_safe_seed=*/false))) {
     return false;
+  }
 
   UMA_HISTOGRAM_BOOLEAN("Variations.SafeMode.FellBackToSafeMode2",
                         run_in_safe_mode);
@@ -576,10 +580,53 @@ VariationsSeedStore* VariationsFieldTrialCreator::GetSeedStore() {
   return seed_store_.get();
 }
 
+base::Time VariationsFieldTrialCreator::GetBuildTime() const {
+  return base::GetBuildTime();
+}
+
 Study::Platform VariationsFieldTrialCreator::GetPlatform() {
   if (has_platform_override_)
     return platform_override_;
   return ClientFilterableState::GetCurrentPlatform();
 }
+
+#if !defined(OS_ANDROID)
+void VariationsFieldTrialCreator::MaybeExtendVariationsSafeMode(
+    metrics::MetricsStateManager* metrics_state_manager) const {
+  version_info::Channel channel = client_->GetChannelForVariations();
+  if (channel != version_info::Channel::CANARY &&
+      channel != version_info::Channel::DEV) {
+    return;
+  }
+
+  int default_group;
+  scoped_refptr<base::FieldTrial> trial(
+      base::FieldTrialList::FactoryGetFieldTrial(
+          kExtendedSafeModeTrial, 100, kDefaultGroup,
+          base::FieldTrial::ONE_TIME_RANDOMIZED, &default_group));
+
+  const int control_group = trial->AppendGroup(kControlGroup, 25);
+  const int write_only_group =
+      trial->AppendGroup(kWriteSynchronouslyViaPrefServiceGroup, 25);
+  trial->AppendGroup(kSignalAndWriteSynchronouslyViaPrefServiceGroup, 25);
+  trial->AppendGroup(kSignalAndWriteViaFileUtilGroup, 25);
+  const int assigned_group = trial->group();
+
+  DCHECK_NE(assigned_group, default_group);
+  if (assigned_group == control_group)
+    return;
+
+  // For clients in the SignalAndWrite* groups, the beacon is updated and a
+  // synchronous write is performed. Conversely, for clients in
+  // |write_only_group|, i.e. the WriteSynchronouslyViaPrefService group, prefs
+  // are written synchronously without updating the beacon, i.e. without
+  // signaling that Chrome should start watching for crashes.
+  bool update_beacon = assigned_group != write_only_group;
+
+  metrics_state_manager->LogHasSessionShutdownCleanly(
+      /*has_session_shutdown_cleanly=*/false, /*write_synchronously=*/true,
+      update_beacon);
+}
+#endif  // !defined(OS_ANDROID)
 
 }  // namespace variations

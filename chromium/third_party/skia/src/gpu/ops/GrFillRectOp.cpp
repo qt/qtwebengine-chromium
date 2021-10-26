@@ -11,6 +11,7 @@
 #include "include/core/SkRect.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrGeometryProcessor.h"
+#include "src/gpu/GrOpsTypes.h"
 #include "src/gpu/GrPaint.h"
 #include "src/gpu/GrProgramInfo.h"
 #include "src/gpu/SkGr.h"
@@ -18,11 +19,13 @@
 #include "src/gpu/geometry/GrQuadBuffer.h"
 #include "src/gpu/geometry/GrQuadUtils.h"
 #include "src/gpu/glsl/GrGLSLColorSpaceXformHelper.h"
-#include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLVarying.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrQuadPerEdgeAA.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelperWithStencil.h"
+#if SK_GPU_V1
+#include "src/gpu/v1/SurfaceDrawContext_v1.h"
+#endif
 
 namespace {
 
@@ -84,9 +87,9 @@ public:
             , fQuads(1, !fHelper.isTrivial()) {
         // Set bounds before clipping so we don't have to worry about unioning the bounds of
         // the two potential quads (GrQuad::bounds() is perspective-safe).
+        bool hairline = GrQuadUtils::WillUseHairline(quad->fDevice, aaType, quad->fEdgeFlags);
         this->setBounds(quad->fDevice.bounds(), HasAABloat(aaType == GrAAType::kCoverage),
-                        IsHairline::kNo);
-
+                        hairline ? IsHairline::kYes : IsHairline::kNo);
         DrawQuad extra;
         // Always crop to W>0 to remain consistent with GrQuad::bounds()
         int count = GrQuadUtils::ClipToW0(quad, &extra);
@@ -110,7 +113,7 @@ public:
 
     const char* name() const override { return "FillRectOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
         } else {
@@ -200,8 +203,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
         const VertexSpec vertexSpec = this->vertexSpec();
@@ -219,7 +223,7 @@ private:
     void onPrePrepareDraws(GrRecordingContext* rContext,
                            const GrSurfaceProxyView& writeView,
                            GrAppliedClip* clip,
-                           const GrXferProcessor::DstProxyView& dstProxyView,
+                           const GrDstProxyView& dstProxyView,
                            GrXferBarrierFlags renderPassXferBarriers,
                            GrLoadOp colorLoadOp) override {
         TRACE_EVENT0("skia.gpu", TRACE_FUNC);
@@ -256,7 +260,7 @@ private:
         }
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         TRACE_EVENT0("skia.gpu", TRACE_FUNC);
 
         const VertexSpec vertexSpec = this->vertexSpec();
@@ -478,7 +482,7 @@ GrOp::Owner GrFillRectOp::MakeOp(GrRecordingContext* context,
                                  GrPaint&& paint,
                                  GrAAType aaType,
                                  const SkMatrix& viewMatrix,
-                                 const GrSurfaceDrawContext::QuadSetEntry quads[],
+                                 const GrQuadSetEntry quads[],
                                  int cnt,
                                  const GrUserStencilSettings* stencilSettings,
                                  int* numConsumed) {
@@ -514,13 +518,14 @@ GrOp::Owner GrFillRectOp::MakeOp(GrRecordingContext* context,
     return op;
 }
 
-void GrFillRectOp::AddFillRectOps(GrSurfaceDrawContext* rtc,
+#if SK_GPU_V1
+void GrFillRectOp::AddFillRectOps(skgpu::v1::SurfaceDrawContext* sdc,
                                   const GrClip* clip,
                                   GrRecordingContext* context,
                                   GrPaint&& paint,
                                   GrAAType aaType,
                                   const SkMatrix& viewMatrix,
-                                  const GrSurfaceDrawContext::QuadSetEntry quads[],
+                                  const GrQuadSetEntry quads[],
                                   int cnt,
                                   const GrUserStencilSettings* stencilSettings) {
 
@@ -536,11 +541,12 @@ void GrFillRectOp::AddFillRectOps(GrSurfaceDrawContext* rtc,
         offset += numConsumed;
         numLeft -= numConsumed;
 
-        rtc->addDrawOp(clip, std::move(op));
+        sdc->addDrawOp(clip, std::move(op));
     }
 
     SkASSERT(offset == cnt);
 }
+#endif
 
 #if GR_TEST_UTILS
 

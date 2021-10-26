@@ -26,18 +26,15 @@ TEST_F(ParserImplTest, Empty) {
 
 TEST_F(ParserImplTest, Parses) {
   auto p = parser(R"(
-[[location(0)]] var<out> gl_FragColor : vec4<f32>;
-
-[[stage(vertex)]]
-fn main() {
-  gl_FragColor = vec4<f32>(.4, .2, .3, 1);
+[[stage(fragment)]]
+fn main() -> [[location(0)]] vec4<f32> {
+  return vec4<f32>(.4, .2, .3, 1);
 }
 )");
   ASSERT_TRUE(p->Parse()) << p->error();
 
   Program program = p->program();
   ASSERT_EQ(1u, program.AST().Functions().size());
-  ASSERT_EQ(1u, program.AST().GlobalVariables().size());
 }
 
 TEST_F(ParserImplTest, HandlesError) {
@@ -51,18 +48,38 @@ fn main() ->  {  // missing return type
   EXPECT_EQ(p->error(), "2:15: unable to determine function return type");
 }
 
+TEST_F(ParserImplTest, Comments) {
+  auto p = parser(R"(
+/**
+ * Here is my shader.
+ *
+ * /* I can nest /**/ comments. */
+ * // I can nest line comments too.
+ **/
+[[stage(fragment)]] // This is the stage
+fn main(/*
+no
+parameters
+*/) -> [[location(0)]] vec4<f32> {
+  return/*block_comments_delimit_tokens*/vec4<f32>(.4, .2, .3, 1);
+}/* unterminated block comments are OK at EOF...)");
+
+  ASSERT_TRUE(p->Parse()) << p->error();
+  ASSERT_EQ(1u, p->program().AST().Functions().size());
+}
+
 TEST_F(ParserImplTest, GetRegisteredType) {
   auto p = parser("");
-  p->register_constructed("my_alias", ty.i32());
+  auto* alias = create<ast::Alias>(Sym("my_alias"), ty.i32());
+  p->register_type("my_alias", alias);
 
-  auto* alias = p->get_constructed("my_alias");
-  ASSERT_NE(alias, nullptr);
-  EXPECT_TRUE(alias->Is<ast::I32>());
+  auto* got = p->get_type("my_alias");
+  EXPECT_EQ(got, alias);
 }
 
 TEST_F(ParserImplTest, GetUnregisteredType) {
   auto p = parser("");
-  auto* alias = p->get_constructed("my_alias");
+  auto* alias = p->get_type("my_alias");
   ASSERT_EQ(alias, nullptr);
 }
 

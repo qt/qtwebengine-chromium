@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/common.h"
 #include "libavutil/internal.h"
@@ -155,7 +154,7 @@ static const AVFilterPad freezeframes_outputs[] = {
     { NULL },
 };
 
-AVFilter ff_vf_freezeframes = {
+const AVFilter ff_vf_freezeframes = {
     .name          = "freezeframes",
     .description   = NULL_IF_CONFIG_SMALL("Freeze video frames."),
     .priv_size     = sizeof(FreezeFramesContext),

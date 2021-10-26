@@ -31,6 +31,10 @@ class CONTENT_EXPORT FileSystemAccessFileHandleImpl
                                  const BindingContext& context,
                                  const storage::FileSystemURL& url,
                                  const SharedHandleState& handle_state);
+  FileSystemAccessFileHandleImpl(const FileSystemAccessFileHandleImpl&) =
+      delete;
+  FileSystemAccessFileHandleImpl& operator=(
+      const FileSystemAccessFileHandleImpl&) = delete;
   ~FileSystemAccessFileHandleImpl() override;
 
   // blink::mojom::FileSystemAccessFileHandle:
@@ -42,6 +46,8 @@ class CONTENT_EXPORT FileSystemAccessFileHandleImpl
   void CreateFileWriter(bool keep_existing_data,
                         bool auto_close,
                         CreateFileWriterCallback callback) override;
+  void Remove(RemoveCallback callback) override;
+  void OpenAccessHandle(OpenAccessHandleCallback callback) override;
   void IsSameEntry(
       mojo::PendingRemote<blink::mojom::FileSystemAccessTransferToken> token,
       IsSameEntryCallback callback) override;
@@ -69,17 +75,32 @@ class CONTENT_EXPORT FileSystemAccessFileHandleImpl
   void DidCreateSwapFile(
       int count,
       const storage::FileSystemURL& swap_url,
-      storage::IsolatedContext::ScopedFSHandle swap_file_system,
       bool keep_existing_data,
       bool auto_close,
       CreateFileWriterCallback callback,
       base::File::Error result);
   void DidCopySwapFile(
       const storage::FileSystemURL& swap_url,
-      storage::IsolatedContext::ScopedFSHandle swap_file_system,
       bool auto_close,
       CreateFileWriterCallback callback,
       base::File::Error result);
+  void DoOpenIncognitoFile(
+      mojo::PendingRemote<blink::mojom::FileSystemAccessAccessHandleHost>
+          access_handle_host_remote,
+      mojo::PendingRemote<blink::mojom::FileSystemAccessFileDelegateHost>
+          file_delegate_host_remote,
+      OpenAccessHandleCallback callback);
+  void DoOpenFile(
+      mojo::PendingRemote<blink::mojom::FileSystemAccessAccessHandleHost>
+          access_handle_host_remote,
+      OpenAccessHandleCallback callback);
+
+  void DidOpenFile(
+      OpenAccessHandleCallback callback,
+      mojo::PendingRemote<blink::mojom::FileSystemAccessAccessHandleHost>
+          access_handle_host_remote,
+      base::File file,
+      base::OnceClosure on_close_callback);
 
   void IsSameEntryImpl(IsSameEntryCallback callback,
                        FileSystemAccessTransferTokenImpl* other);
@@ -93,7 +114,6 @@ class CONTENT_EXPORT FileSystemAccessFileHandleImpl
   base::WeakPtr<FileSystemAccessHandleBase> AsWeakPtr() override;
 
   base::WeakPtrFactory<FileSystemAccessFileHandleImpl> weak_factory_{this};
-  DISALLOW_COPY_AND_ASSIGN(FileSystemAccessFileHandleImpl);
 };
 
 }  // namespace content

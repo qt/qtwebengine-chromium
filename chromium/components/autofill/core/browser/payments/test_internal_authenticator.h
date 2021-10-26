@@ -5,7 +5,7 @@
 #ifndef COMPONENTS_AUTOFILL_CORE_BROWSER_PAYMENTS_TEST_INTERNAL_AUTHENTICATOR_H_
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_PAYMENTS_TEST_INTERNAL_AUTHENTICATOR_H_
 
-#include "components/autofill/core/browser/payments/internal_authenticator.h"
+#include "components/webauthn/core/browser/internal_authenticator.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom.h"
 #include "url/origin.h"
 
@@ -19,6 +19,7 @@ class TestInternalAuthenticator : public InternalAuthenticator {
 
   // InternalAuthenticator:
   void SetEffectiveOrigin(const url::Origin& origin) override {}
+  void SetPaymentOptions(blink::mojom::PaymentOptionsPtr payment) override {}
   void MakeCredential(
       blink::mojom::PublicKeyCredentialCreationOptionsPtr options,
       blink::mojom::Authenticator::MakeCredentialCallback callback) override {}

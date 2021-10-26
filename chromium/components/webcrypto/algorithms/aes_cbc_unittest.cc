@@ -9,7 +9,7 @@
 #include <memory>
 #include <utility>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/values.h"
 #include "components/webcrypto/algorithm_dispatch.h"
 #include "components/webcrypto/algorithms/test_helpers.h"
@@ -222,7 +222,7 @@ TEST_F(WebCryptoAesCbcTest, ImportKeyJwkEmptyKeyOps) {
   dict.SetString("kty", "oct");
   dict.SetBoolean("ext", false);
   dict.SetString("k", "GADWrMRHwQfoNaXU5fZvTg");
-  dict.Set("key_ops", std::make_unique<base::ListValue>());
+  dict.SetKey("key_ops", base::ListValue());
 
   // The JWK does not contain encrypt usages.
   EXPECT_EQ(Status::ErrorJwkKeyopsInconsistent(),
@@ -263,10 +263,10 @@ TEST_F(WebCryptoAesCbcTest, ImportKeyJwkKeyOpsEncryptDecrypt) {
   base::DictionaryValue dict;
   dict.SetString("kty", "oct");
   dict.SetString("k", "GADWrMRHwQfoNaXU5fZvTg");
-  base::ListValue* key_ops =
-      dict.SetList("key_ops", std::make_unique<base::ListValue>());
+  base::Value* key_ops =
+      dict.SetKey("key_ops", base::Value(base::Value::Type::LIST));
 
-  key_ops->AppendString("encrypt");
+  key_ops->Append("encrypt");
 
   EXPECT_EQ(Status::Success(),
             ImportKeyJwkFromDict(
@@ -275,7 +275,7 @@ TEST_F(WebCryptoAesCbcTest, ImportKeyJwkKeyOpsEncryptDecrypt) {
 
   EXPECT_EQ(blink::kWebCryptoKeyUsageEncrypt, key.Usages());
 
-  key_ops->AppendString("decrypt");
+  key_ops->Append("decrypt");
 
   EXPECT_EQ(Status::Success(),
             ImportKeyJwkFromDict(
@@ -301,9 +301,9 @@ TEST_F(WebCryptoAesCbcTest, ImportKeyJwkKeyOpsNotSuperset) {
   base::DictionaryValue dict;
   dict.SetString("kty", "oct");
   dict.SetString("k", "GADWrMRHwQfoNaXU5fZvTg");
-  auto key_ops = std::make_unique<base::ListValue>();
-  key_ops->AppendString("encrypt");
-  dict.Set("key_ops", std::move(key_ops));
+  base::ListValue key_ops;
+  key_ops.AppendString("encrypt");
+  dict.SetKey("key_ops", std::move(key_ops));
 
   EXPECT_EQ(
       Status::ErrorJwkKeyopsInconsistent(),
@@ -366,9 +366,9 @@ TEST_F(WebCryptoAesCbcTest, ImportJwkKeyOpsLacksUsages) {
   dict.SetString("kty", "oct");
   dict.SetString("k", "GADWrMRHwQfoNaXU5fZvTg");
 
-  auto key_ops = std::make_unique<base::ListValue>();
-  key_ops->AppendString("foo");
-  dict.Set("key_ops", std::move(key_ops));
+  base::ListValue key_ops;
+  key_ops.AppendString("foo");
+  dict.SetKey("key_ops", std::move(key_ops));
   EXPECT_EQ(Status::ErrorJwkKeyopsInconsistent(),
             ImportKeyJwkFromDict(
                 dict, CreateAlgorithm(blink::kWebCryptoAlgorithmIdAesCbc),

@@ -19,6 +19,7 @@
 #include "quic/platform/api/quic_flag_utils.h"
 #include "quic/platform/api/quic_flags.h"
 #include "quic/platform/api/quic_logging.h"
+#include "quic/platform/api/quic_mem_slice.h"
 
 using spdy::SpdyPriority;
 
@@ -630,23 +631,18 @@ void QuicStream::WriteOrBufferData(
     absl::string_view data,
     bool fin,
     QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
-  if (session()->use_write_or_buffer_data_at_level()) {
-    QUIC_BUG_IF(quic_bug_12570_4,
-                QuicUtils::IsCryptoStreamId(transport_version(), id_))
-        << ENDPOINT
-        << "WriteOrBufferData is used to send application data, use "
-           "WriteOrBufferDataAtLevel to send crypto data.";
-    return WriteOrBufferDataAtLevel(
-        data, fin, session()->GetEncryptionLevelToSendApplicationData(),
-        ack_listener);
-  }
-  return WriteOrBufferDataInner(data, fin, absl::nullopt, ack_listener);
+  QUIC_BUG_IF(quic_bug_12570_4,
+              QuicUtils::IsCryptoStreamId(transport_version(), id_))
+      << ENDPOINT
+      << "WriteOrBufferData is used to send application data, use "
+         "WriteOrBufferDataAtLevel to send crypto data.";
+  return WriteOrBufferDataAtLevel(
+      data, fin, session()->GetEncryptionLevelToSendApplicationData(),
+      ack_listener);
 }
 
-void QuicStream::WriteOrBufferDataInner(
-    absl::string_view data,
-    bool fin,
-    absl::optional<EncryptionLevel> level,
+void QuicStream::WriteOrBufferDataAtLevel(
+    absl::string_view data, bool fin, EncryptionLevel level,
     QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
   if (data.empty() && !fin) {
     QUIC_BUG(quic_bug_10586_2) << "data.empty() && !fin";
@@ -691,16 +687,6 @@ void QuicStream::WriteOrBufferDataInner(
   }
 }
 
-void QuicStream::WriteOrBufferDataAtLevel(
-    absl::string_view data,
-    bool fin,
-    EncryptionLevel level,
-    QuicReferenceCountedPointer<QuicAckListenerInterface> ack_listener) {
-  QUICHE_DCHECK(session()->use_write_or_buffer_data_at_level());
-  QUIC_RELOADABLE_FLAG_COUNT(quic_use_write_or_buffer_data_at_level);
-  return WriteOrBufferDataInner(data, fin, level, ack_listener);
-}
-
 void QuicStream::OnCanWrite() {
   if (HasDeadlinePassed()) {
     OnDeadlinePassed();
@@ -720,11 +706,7 @@ void QuicStream::OnCanWrite() {
     return;
   }
   if (HasBufferedData() || (fin_buffered_ && !fin_sent_)) {
-    absl::optional<EncryptionLevel> send_level = absl::nullopt;
-    if (session()->use_write_or_buffer_data_at_level()) {
-      send_level = session()->GetEncryptionLevelToSendApplicationData();
-    }
-    WriteBufferedData(send_level);
+    WriteBufferedData(session()->GetEncryptionLevelToSendApplicationData());
   }
   if (!fin_buffered_ && !fin_sent_ && CanWriteNewData()) {
     // Notify upper layer to write new data when buffered data size is below
@@ -759,6 +741,16 @@ void QuicStream::MaybeSendBlocked() {
 }
 
 QuicConsumedData QuicStream::WriteMemSlices(QuicMemSliceSpan span, bool fin) {
+  return WriteMemSlicesInner(MemSliceSpanWrapper(span), fin);
+}
+
+QuicConsumedData QuicStream::WriteMemSlices(absl::Span<QuicMemSlice> span,
+                                            bool fin) {
+  return WriteMemSlicesInner(MemSliceSpanWrapper(span), fin);
+}
+
+QuicConsumedData QuicStream::WriteMemSlicesInner(MemSliceSpanWrapper span,
+                                                 bool fin) {
   QuicConsumedData consumed_data(0, false);
   if (span.empty() && !fin) {
     QUIC_BUG(quic_bug_10586_6) << "span.empty() && !fin";
@@ -786,7 +778,7 @@ QuicConsumedData QuicStream::WriteMemSlices(QuicMemSliceSpan span, bool fin) {
     if (!span.empty()) {
       // Buffer all data if buffered data size is below limit.
       QuicStreamOffset offset = send_buffer_.stream_offset();
-      consumed_data.bytes_consumed = send_buffer_.SaveMemSliceSpan(span);
+      consumed_data.bytes_consumed = span.SaveTo(send_buffer_);
       if (offset > send_buffer_.stream_offset() ||
           kMaxStreamLength < send_buffer_.stream_offset()) {
         QUIC_BUG(quic_bug_10586_8) << "Write too many data via stream " << id_;
@@ -802,11 +794,7 @@ QuicConsumedData QuicStream::WriteMemSlices(QuicMemSliceSpan span, bool fin) {
 
   if (!had_buffered_data && (HasBufferedData() || fin_buffered_)) {
     // Write data if there is no buffered data before.
-    absl::optional<EncryptionLevel> send_level = absl::nullopt;
-    if (session()->use_write_or_buffer_data_at_level()) {
-      send_level = session()->GetEncryptionLevelToSendApplicationData();
-    }
-    WriteBufferedData(send_level);
+    WriteBufferedData(session()->GetEncryptionLevelToSendApplicationData());
   }
 
   return consumed_data;
@@ -1148,10 +1136,6 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
   if (retransmission.Empty() && !retransmit_fin) {
     return true;
   }
-  absl::optional<EncryptionLevel> send_level = absl::nullopt;
-  if (session()->use_write_or_buffer_data_at_level()) {
-    send_level = session()->GetEncryptionLevelToSendApplicationData();
-  }
   QuicConsumedData consumed(0, false);
   for (const auto& interval : retransmission) {
     QuicStreamOffset retransmission_offset = interval.min();
@@ -1161,7 +1145,8 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
                            stream_bytes_written());
     consumed = stream_delegate_->WritevData(
         id_, retransmission_length, retransmission_offset,
-        can_bundle_fin ? FIN : NO_FIN, type, send_level);
+        can_bundle_fin ? FIN : NO_FIN, type,
+        session()->GetEncryptionLevelToSendApplicationData());
     QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                   << " is forced to retransmit stream data ["
                   << retransmission_offset << ", "
@@ -1182,8 +1167,9 @@ bool QuicStream::RetransmitStreamData(QuicStreamOffset offset,
   if (retransmit_fin) {
     QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                   << " retransmits fin only frame.";
-    consumed = stream_delegate_->WritevData(id_, 0, stream_bytes_written(), FIN,
-                                            type, send_level);
+    consumed = stream_delegate_->WritevData(
+        id_, 0, stream_bytes_written(), FIN, type,
+        session()->GetEncryptionLevelToSendApplicationData());
     if (!consumed.fin_consumed) {
       return false;
     }
@@ -1209,7 +1195,7 @@ bool QuicStream::WriteStreamData(QuicStreamOffset offset,
   return send_buffer_.WriteStreamData(offset, data_length, writer);
 }
 
-void QuicStream::WriteBufferedData(absl::optional<EncryptionLevel> level) {
+void QuicStream::WriteBufferedData(EncryptionLevel level) {
   QUICHE_DCHECK(!write_side_closed_ && (HasBufferedData() || fin_buffered_));
 
   if (session_->ShouldYield(id())) {
@@ -1333,15 +1319,12 @@ void QuicStream::OnStreamDataConsumed(QuicByteCount bytes_consumed) {
 void QuicStream::WritePendingRetransmission() {
   while (HasPendingRetransmission()) {
     QuicConsumedData consumed(0, false);
-    absl::optional<EncryptionLevel> send_level = absl::nullopt;
-    if (session()->use_write_or_buffer_data_at_level()) {
-      send_level = session()->GetEncryptionLevelToSendApplicationData();
-    }
     if (!send_buffer_.HasPendingRetransmission()) {
       QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                     << " retransmits fin only frame.";
       consumed = stream_delegate_->WritevData(
-          id_, 0, stream_bytes_written(), FIN, LOSS_RETRANSMISSION, send_level);
+          id_, 0, stream_bytes_written(), FIN, LOSS_RETRANSMISSION,
+          session()->GetEncryptionLevelToSendApplicationData());
       fin_lost_ = !consumed.fin_consumed;
       if (fin_lost_) {
         // Connection is write blocked.
@@ -1356,7 +1339,8 @@ void QuicStream::WritePendingRetransmission() {
           (pending.offset + pending.length == stream_bytes_written());
       consumed = stream_delegate_->WritevData(
           id_, pending.length, pending.offset, can_bundle_fin ? FIN : NO_FIN,
-          LOSS_RETRANSMISSION, send_level);
+          LOSS_RETRANSMISSION,
+          session()->GetEncryptionLevelToSendApplicationData());
       QUIC_DVLOG(1) << ENDPOINT << "stream " << id_
                     << " tries to retransmit stream data [" << pending.offset
                     << ", " << pending.offset + pending.length

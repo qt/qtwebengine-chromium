@@ -6,14 +6,19 @@
 
 #include <utility>
 
+#include "base/metrics/histogram_functions.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_metric_builder.h"
 #include "third_party/blink/public/common/privacy_budget/identifiability_study_settings.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_surface.h"
+#include "third_party/blink/public/mojom/media/capture_handle_config.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions_policy/permissions_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
+#include "third_party/blink/public/platform/web_runtime_features.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/modules/v8/v8_capture_handle_config.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_stream_constraints.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_track_supported_constraints.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_domexception_overconstrainederror.h"
@@ -23,7 +28,7 @@
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/navigator.h"
-#include "third_party/blink/renderer/modules/mediastream/capture_handle_config.h"
+#include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/modules/mediastream/identifiability_metrics.h"
 #include "third_party/blink/renderer/modules/mediastream/input_device_info.h"
 #include "third_party/blink/renderer/modules/mediastream/media_error_state.h"
@@ -56,17 +61,10 @@ class PromiseResolverCallbacks final : public UserMediaRequest::Callbacks {
                  MediaStream* stream) override {
     resolver_->Resolve(stream);
   }
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
   void OnError(ScriptWrappable* callback_this_value,
                const V8MediaStreamError* error) override {
     resolver_->Reject(error);
   }
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-  void OnError(ScriptWrappable* callback_this_value,
-               DOMExceptionOrOverconstrainedError error) override {
-    resolver_->Reject(error);
-  }
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
   void Trace(Visitor* visitor) const override {
     visitor->Trace(resolver_);
@@ -75,6 +73,14 @@ class PromiseResolverCallbacks final : public UserMediaRequest::Callbacks {
 
  private:
   Member<ScriptPromiseResolver> resolver_;
+};
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class DisplayCapturePolicyResult {
+  kDisallowed = 0,
+  kAllowed = 1,
+  kMaxValue = kAllowed
 };
 
 }  // namespace
@@ -190,39 +196,39 @@ ScriptPromise MediaDevices::getDisplayMedia(
     ScriptState* script_state,
     const MediaStreamConstraints* options,
     ExceptionState& exception_state) {
-  return SendUserMediaRequest(script_state,
-                              UserMediaRequest::MediaType::kDisplayMedia,
-                              options, exception_state);
-}
-
-ScriptPromise MediaDevices::getCurrentBrowsingContextMedia(
-    ScriptState* script_state,
-    const MediaStreamConstraints* options,
-    ExceptionState& exception_state) {
   const ExecutionContext* const context = GetExecutionContext();
   if (!context) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
-        "The implementation did not support the requested type of object or "
-        "operation.");
+        "No media device controller available; is this a detached window?");
     return ScriptPromise();
   }
 
-  // This call should not be possible otherwise, as per the RuntimeEnabled
-  // in the IDL.
-  CHECK(RuntimeEnabledFeatures::GetCurrentBrowsingContextMediaEnabled(context));
+  // The kDisplayCapturePermissionsPolicyEnabled preference controls whether
+  // the display-capture permissions-policy is applied or skipped.
+  // The kDisplayCapturePermissionsPolicyEnabled preference is translated
+  // into DisplayCapturePermissionsPolicyEnabled RuntimeEnabledFeature.
+  if (RuntimeEnabledFeatures::DisplayCapturePermissionsPolicyEnabled()) {
+    const bool capture_allowed_by_permissions_policy =
+        context->IsFeatureEnabled(
+            mojom::blink::PermissionsPolicyFeature::kDisplayCapture,
+            ReportOptions::kReportOnFailure);
 
-  if (!context->IsFeatureEnabled(
-          mojom::blink::PermissionsPolicyFeature::kDisplayCapture,
-          ReportOptions::kReportOnFailure)) {
-    exception_state.ThrowSecurityError(kFeaturePolicyBlocked);
-    return ScriptPromise();
+    base::UmaHistogramEnumeration(
+        "Media.Ui.GetDisplayMedia.DisplayCapturePolicyResult",
+        capture_allowed_by_permissions_policy
+            ? DisplayCapturePolicyResult::kAllowed
+            : DisplayCapturePolicyResult::kDisallowed);
+
+    if (!capture_allowed_by_permissions_policy) {
+      exception_state.ThrowSecurityError(kFeaturePolicyBlocked);
+      return ScriptPromise();
+    }
   }
 
-  return SendUserMediaRequest(
-      script_state,
-      UserMediaRequest::MediaType::kGetCurrentBrowsingContextMedia, options,
-      exception_state);
+  return SendUserMediaRequest(script_state,
+                              UserMediaRequest::MediaType::kDisplayMedia,
+                              options, exception_state);
 }
 
 void MediaDevices::setCaptureHandleConfig(ScriptState* script_state,

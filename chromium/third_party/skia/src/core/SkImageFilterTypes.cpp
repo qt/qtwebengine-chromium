@@ -30,9 +30,16 @@ Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
                               const skif::ParameterSpace<SkPoint>& representativePoint) {
     SkMatrix remainder, layer;
     SkSize scale;
-    if (ctm.isScaleTranslate() || as_IFB(filter)->canHandleComplexCTM()) {
-        // It doesn't matter what type of matrix ctm is, we can have layer space be equivalent to
-        // device space.
+    using MatrixCapability = SkImageFilter_Base::MatrixCapability;
+    MatrixCapability capability =
+            filter ? as_IFB(filter)->getCTMCapability() : MatrixCapability::kComplex;
+    if (capability == MatrixCapability::kTranslate) {
+        // Apply the entire CTM post-filtering
+        remainder = ctm;
+        layer = SkMatrix::I();
+    } else if (ctm.isScaleTranslate() || capability == MatrixCapability::kComplex) {
+        // Either layer space can be anything (kComplex) - or - it can be scale+translate, and the
+        // ctm is. In both cases, the layer space can be equivalent to device space.
         remainder = SkMatrix::I();
         layer = ctm;
     } else if (ctm.decomposeScale(&scale, &remainder)) {
@@ -43,12 +50,13 @@ Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
         // Perspective, which has a non-uniform scaling effect on the filter. Pick a single scale
         // factor that best matches where the filter will be evaluated.
         SkScalar scale = SkMatrixPriv::DifferentialAreaScale(ctm, SkPoint(representativePoint));
-        if (SkScalarIsFinite(scale)) {
+        if (SkScalarIsFinite(scale) && !SkScalarNearlyZero(scale)) {
             // Now take the sqrt to go from an area scale factor to a scaling per X and Y
             // FIXME: It would be nice to be able to choose a non-uniform scale.
             scale = SkScalarSqrt(scale);
         } else {
             // The representative point was behind the W = 0 plane, so don't factor out any scale.
+            // NOTE: This makes remainder and layer the same as the MatrixCapability::Translate case
             scale = 1.f;
         }
 
@@ -56,18 +64,32 @@ Mapping Mapping::DecomposeCTM(const SkMatrix& ctm, const SkImageFilter* filter,
         remainder.preScale(SkScalarInvert(scale), SkScalarInvert(scale));
         layer = SkMatrix::Scale(scale, scale);
     }
+
     return Mapping(remainder, layer);
+}
+
+bool Mapping::adjustLayerSpace(const SkMatrix& layer) {
+    SkMatrix invLayer;
+    if (!layer.invert(&invLayer)) {
+        return false;
+    }
+    fParamToLayerMatrix.postConcat(layer);
+    fDevToLayerMatrix.postConcat(layer);
+    fLayerToDevMatrix.preConcat(invLayer);
+    return true;
 }
 
 // Instantiate map specializations for the 6 geometric types used during filtering
 template<>
-SkIRect Mapping::map<SkIRect>(const SkIRect& geom, const SkMatrix& matrix) {
-    return matrix.mapRect(SkRect::Make(geom)).roundOut();
+SkRect Mapping::map<SkRect>(const SkRect& geom, const SkMatrix& matrix) {
+    return matrix.mapRect(geom);
 }
 
 template<>
-SkRect Mapping::map<SkRect>(const SkRect& geom, const SkMatrix& matrix) {
-    return matrix.mapRect(geom);
+SkIRect Mapping::map<SkIRect>(const SkIRect& geom, const SkMatrix& matrix) {
+    SkRect mapped = matrix.mapRect(SkRect::Make(geom));
+    mapped.inset(1e-3f, 1e-3f);
+    return mapped.roundOut();
 }
 
 template<>

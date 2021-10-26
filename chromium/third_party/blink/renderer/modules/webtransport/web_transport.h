@@ -13,6 +13,7 @@
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "services/network/public/mojom/web_transport.mojom-blink.h"
+#include "third_party/blink/public/mojom/webtransport/web_transport_connector.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
@@ -22,6 +23,7 @@
 #include "third_party/blink/renderer/platform/heap/heap_allocator.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_receiver.h"
 #include "third_party/blink/renderer/platform/mojo/heap_mojo_remote.h"
+#include "third_party/blink/renderer/platform/scheduler/public/frame_scheduler.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 
@@ -30,7 +32,6 @@ namespace blink {
 class DatagramDuplexStream;
 class ExceptionState;
 class ReadableStream;
-class ReadableStreamDefaultControllerWithScriptScope;
 class ScriptPromise;
 class ScriptPromiseResolver;
 class ScriptState;
@@ -135,8 +136,7 @@ class MODULES_EXPORT WebTransport final
   Member<DatagramDuplexStream> datagrams_;
 
   Member<ReadableStream> received_datagrams_;
-  Member<ReadableStreamDefaultControllerWithScriptScope>
-      received_datagrams_controller_;
+  Member<DatagramUnderlyingSource> datagram_underlying_source_;
 
   // This corresponds to the [[SentDatagrams]] internal slot in the standard.
   Member<WritableStream> outgoing_datagrams_;
@@ -155,6 +155,7 @@ class MODULES_EXPORT WebTransport final
               WTF::UnsignedWithZeroKeyHashTraits<uint32_t>>
       stream_map_;
 
+  HeapMojoRemote<mojom::blink::WebTransportConnector> connector_;
   HeapMojoRemote<network::mojom::blink::WebTransport> transport_remote_;
   HeapMojoReceiver<network::mojom::blink::WebTransportHandshakeClient,
                    WebTransport>
@@ -180,6 +181,9 @@ class MODULES_EXPORT WebTransport final
       received_bidirectional_streams_underlying_source_;
 
   const uint64_t inspector_transport_id_;
+
+  FrameScheduler::SchedulingAffectingFeatureHandle
+      feature_handle_for_scheduler_;
 };
 
 }  // namespace blink

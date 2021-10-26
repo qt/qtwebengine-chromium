@@ -7,8 +7,10 @@
 
 #include <time.h>
 #include <memory>
+#include <string>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/time/time.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/events/event.h"
@@ -32,6 +34,7 @@ class WaylandProxy;
 namespace ui {
 
 class DeviceHotplugEventObserver;
+class OrgKdeKwinIdle;
 class WaylandBufferManagerHost;
 class WaylandCursor;
 class WaylandCursorBufferListener;
@@ -44,15 +47,37 @@ class WaylandShm;
 class WaylandTouch;
 class WaylandZAuraShell;
 class WaylandZcrCursorShapes;
+class WaylandZwpPointerConstraints;
 class WaylandZwpPointerGestures;
+class WaylandZwpRelativePointerManager;
 class WaylandZwpLinuxDmabuf;
 class WaylandDataDeviceManager;
 class WaylandCursorPosition;
 class WaylandWindowDragController;
 class GtkPrimarySelectionDeviceManager;
 class GtkShell1;
+class ZwpIdleInhibitManager;
 class ZwpPrimarySelectionDeviceManager;
 class XdgForeignWrapper;
+
+// These values are persisted to logs.  Entries should not be renumbered and
+// numeric values should never be reused.
+//
+// Append new shells before kMaxValue and update LinuxWaylandShell
+// in tools/metrics/histograms/enums.xml accordingly.
+//
+// See also tools/metrics/histograms/README.md#enum-histograms
+enum class UMALinuxWaylandShell {
+  kZauraShell = 0,
+  kGtkShell1 = 1,
+  kOrgKdePlasmaShell = 2,
+  kXdgWmBase = 3,
+  kXdgShellV6 = 4,
+  kZwlrLayerShellV1 = 5,
+  kMaxValue = kZwlrLayerShellV1,
+};
+
+void ReportShellUMA(UMALinuxWaylandShell shell);
 
 class WaylandConnection {
  public:
@@ -68,6 +93,9 @@ class WaylandConnection {
   ~WaylandConnection();
 
   bool Initialize();
+
+  void RegisterGlobalObjectFactory(const char* interface_name,
+                                   wl::GlobalObjectFactory factory);
 
   // Schedules a flush of the Wayland connection.
   void ScheduleFlush();
@@ -187,6 +215,8 @@ class WaylandConnection {
 
   GtkShell1* gtk_shell1() { return gtk_shell1_.get(); }
 
+  OrgKdeKwinIdle* org_kde_kwin_idle() { return org_kde_kwin_idle_.get(); }
+
   ZwpPrimarySelectionDeviceManager* zwp_primary_selection_device_manager()
       const {
     return zwp_primary_selection_device_manager_.get();
@@ -200,7 +230,20 @@ class WaylandConnection {
     return window_drag_controller_.get();
   }
 
+  WaylandZwpPointerConstraints* wayland_zwp_pointer_constraints() const {
+    return wayland_zwp_pointer_constraints_.get();
+  }
+
+  WaylandZwpRelativePointerManager* wayland_zwp_relative_pointer_manager()
+      const {
+    return wayland_zwp_relative_pointer_manager_.get();
+  }
+
   XdgForeignWrapper* xdg_foreign() const { return xdg_foreign_.get(); }
+
+  ZwpIdleInhibitManager* zwp_idle_inhibit_manager() const {
+    return zwp_idle_inhibit_manager_.get();
+  }
 
   // Returns true when dragging is entered or started.
   bool IsDragInProgress() const;
@@ -219,8 +262,36 @@ class WaylandConnection {
                                           uint32_t tv_sec_lo,
                                           uint32_t tv_nsec);
 
+  const std::vector<std::pair<std::string, uint32_t>>& available_globals()
+      const {
+    return available_globals_;
+  }
+
  private:
   friend class WaylandConnectionTestApi;
+
+  // All global Wayland objects are friends of the Wayland connection.
+  // Conceptually, this is correct: globals are owned by the connection and are
+  // accessed via it, so they are essentially parts of it.  Also this friendship
+  // makes it possible to avoid exposing setters for all those global objects:
+  // these setters would only be needed by the globals but would be visible to
+  // everyone.
+  friend class GtkPrimarySelectionDeviceManager;
+  friend class GtkShell1;
+  friend class OrgKdeKwinIdle;
+  friend class WaylandDataDeviceManager;
+  friend class WaylandDrm;
+  friend class WaylandOutput;
+  friend class WaylandShm;
+  friend class WaylandZAuraShell;
+  friend class WaylandZwpLinuxDmabuf;
+  friend class WaylandZwpPointerConstraints;
+  friend class WaylandZwpPointerGestures;
+  friend class WaylandZwpRelativePointerManager;
+  friend class WaylandZcrCursorShapes;
+  friend class XdgForeignWrapper;
+  friend class ZwpIdleInhibitManager;
+  friend class ZwpPrimarySelectionDeviceManager;
 
   void Flush();
   void UpdateInputDevices(wl_seat* seat, uint32_t capabilities);
@@ -256,6 +327,8 @@ class WaylandConnection {
   // xdg_wm_base_listener
   static void ClockId(void* data, wp_presentation* shell_v6, uint32_t clk_id);
 
+  base::flat_map<std::string, wl::GlobalObjectFactory> global_object_factories_;
+
   uint32_t compositor_version_ = 0;
   wl::Object<wl_display> display_;
   wl::Object<wl_proxy> wrapped_display_;
@@ -290,12 +363,17 @@ class WaylandConnection {
   std::unique_ptr<WaylandCursorPosition> wayland_cursor_position_;
   std::unique_ptr<WaylandZAuraShell> zaura_shell_;
   std::unique_ptr<WaylandZcrCursorShapes> zcr_cursor_shapes_;
+  std::unique_ptr<WaylandZwpPointerConstraints>
+      wayland_zwp_pointer_constraints_;
+  std::unique_ptr<WaylandZwpRelativePointerManager>
+      wayland_zwp_relative_pointer_manager_;
   std::unique_ptr<WaylandZwpPointerGestures> wayland_zwp_pointer_gestures_;
   std::unique_ptr<WaylandZwpLinuxDmabuf> zwp_dmabuf_;
   std::unique_ptr<WaylandDrm> drm_;
   std::unique_ptr<WaylandShm> shm_;
   std::unique_ptr<WaylandBufferManagerHost> buffer_manager_host_;
   std::unique_ptr<XdgForeignWrapper> xdg_foreign_;
+  std::unique_ptr<ZwpIdleInhibitManager> zwp_idle_inhibit_manager_;
 
   // Clipboard-related objects. |clipboard_| must be declared after all
   // DeviceManager instances it depends on, otherwise tests may crash with
@@ -307,6 +385,9 @@ class WaylandConnection {
   std::unique_ptr<WaylandClipboard> clipboard_;
 
   std::unique_ptr<GtkShell1> gtk_shell1_;
+
+  // Objects specific to KDE Plasma desktop environment.
+  std::unique_ptr<OrgKdeKwinIdle> org_kde_kwin_idle_;
 
   std::unique_ptr<WaylandDataDragController> data_drag_controller_;
   std::unique_ptr<WaylandWindowDragController> window_drag_controller_;
@@ -329,6 +410,10 @@ class WaylandConnection {
   EventSerial serial_;
 
   uint32_t pointer_enter_serial_ = 0;
+
+  // Global Wayland interfaces available in the current session, with their
+  // versions.
+  std::vector<std::pair<std::string, uint32_t>> available_globals_;
 };
 
 }  // namespace ui

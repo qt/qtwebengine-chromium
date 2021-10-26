@@ -13,6 +13,8 @@ namespace v8 {
 namespace internal {
 namespace third_party_heap {
 
+class Impl;
+
 class Heap {
  public:
   static std::unique_ptr<Heap> New(v8::internal::Isolate* isolate);
@@ -26,11 +28,11 @@ class Heap {
 
   const base::AddressRegion& GetCodeRange();
 
+  bool IsPendingAllocation(HeapObject object);
+
   static bool InSpace(Address address, AllocationSpace space);
 
   static bool InOldSpace(Address address);
-
-  static bool InCodeSpace(Address address);
 
   static bool InReadOnlySpace(Address address);
 
@@ -38,12 +40,21 @@ class Heap {
 
   static bool IsValidHeapObject(HeapObject object);
 
+  static bool IsImmovable(HeapObject object);
+
+  static bool IsValidCodeObject(HeapObject object);
+
   void ResetIterator();
   HeapObject NextObject();
 
   bool CollectGarbage();
 
   size_t Capacity();
+
+  V8_INLINE Impl* impl() { return impl_; }
+
+ private:
+  Impl* impl_ = nullptr;
 };
 
 }  // namespace third_party_heap

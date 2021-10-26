@@ -348,8 +348,9 @@ void DeviceEmulatorMessageHandler::HandleSetHasMouse(
 
 void DeviceEmulatorMessageHandler::UpdateBatteryPercent(
     const base::ListValue* args) {
-  int new_percent;
-  if (args->GetInteger(0, &new_percent)) {
+  const auto& list = args->GetList();
+  if (list.size() >= 1 && list[0].is_int()) {
+    int new_percent = list[0].GetInt();
     power_manager::PowerSupplyProperties props =
         *fake_power_manager_client_->GetLastStatus();
     props.set_battery_percent(new_percent);
@@ -359,8 +360,9 @@ void DeviceEmulatorMessageHandler::UpdateBatteryPercent(
 
 void DeviceEmulatorMessageHandler::UpdateBatteryState(
     const base::ListValue* args) {
-  int battery_state;
-  if (args->GetInteger(0, &battery_state)) {
+  const auto& list = args->GetList();
+  if (list.size() >= 1 && list[0].is_int()) {
+    int battery_state = list[0].GetInt();
     power_manager::PowerSupplyProperties props =
         *fake_power_manager_client_->GetLastStatus();
     props.set_battery_state(
@@ -372,8 +374,9 @@ void DeviceEmulatorMessageHandler::UpdateBatteryState(
 
 void DeviceEmulatorMessageHandler::UpdateTimeToEmpty(
     const base::ListValue* args) {
-  int new_time;
-  if (args->GetInteger(0, &new_time)) {
+  const auto& list = args->GetList();
+  if (list.size() >= 1 && list[0].is_int()) {
+    int new_time = list[0].GetInt();
     power_manager::PowerSupplyProperties props =
         *fake_power_manager_client_->GetLastStatus();
     props.set_battery_time_to_empty_sec(new_time);
@@ -383,8 +386,9 @@ void DeviceEmulatorMessageHandler::UpdateTimeToEmpty(
 
 void DeviceEmulatorMessageHandler::UpdateTimeToFull(
     const base::ListValue* args) {
-  int new_time;
-  if (args->GetInteger(0, &new_time)) {
+  const auto& list = args->GetList();
+  if (list.size() >= 1 && list[0].is_int()) {
+    int new_time = list[0].GetInt();
     power_manager::PowerSupplyProperties props =
         *fake_power_manager_client_->GetLastStatus();
     props.set_battery_time_to_full_sec(new_time);
@@ -394,8 +398,10 @@ void DeviceEmulatorMessageHandler::UpdateTimeToFull(
 
 void DeviceEmulatorMessageHandler::UpdatePowerSources(
     const base::ListValue* args) {
-  const base::ListValue* sources;
-  CHECK(args->GetList(0, &sources));
+  base::Value::ConstListView args_list = args->GetList();
+  CHECK(!args_list.empty() && args_list[0].is_list());
+  base::Value::ConstListView sources = args_list[0].GetList();
+
   power_manager::PowerSupplyProperties props =
       *fake_power_manager_client_->GetLastStatus();
 
@@ -407,30 +413,29 @@ void DeviceEmulatorMessageHandler::UpdatePowerSources(
   // Try to find the previously selected source in the list.
   const power_manager::PowerSupplyProperties_PowerSource* selected_source =
       nullptr;
-  for (const auto& val : sources->GetList()) {
-    const base::DictionaryValue* dict;
-    CHECK(val.GetAsDictionary(&dict));
+  for (const auto& val : sources) {
+    CHECK(val.is_dict());
     power_manager::PowerSupplyProperties_PowerSource* source =
         props.add_available_external_power_source();
-    std::string id;
-    CHECK(dict->GetString("id", &id));
-    source->set_id(id);
-    std::string device_type;
-    CHECK(dict->GetString("type", &device_type));
-    bool dual_role = device_type == "DualRoleUSB";
+    const std::string* id = val.FindStringKey("id");
+    CHECK(id);
+    source->set_id(*id);
+    const std::string* device_type = val.FindStringKey("type");
+    CHECK(device_type);
+    bool dual_role = *device_type == "DualRoleUSB";
     source->set_active_by_default(!dual_role);
     if (dual_role)
       props.set_supports_dual_role_devices(true);
-    int port;
-    CHECK(dict->GetInteger("port", &port));
+    absl::optional<int> port = val.FindIntKey("port");
+    CHECK(port.has_value());
     source->set_port(
         static_cast<power_manager::PowerSupplyProperties_PowerSource_Port>(
-            port));
-    std::string power_level;
-    CHECK(dict->GetString("power", &power_level));
-    source->set_max_power(power_level == "high" ? kPowerLevelHigh
-                                                : kPowerLevelLow);
-    if (id == selected_id)
+            port.value()));
+    const std::string* power_level = val.FindStringKey("power");
+    CHECK(power_level);
+    source->set_max_power(*power_level == "high" ? kPowerLevelHigh
+                                                 : kPowerLevelLow);
+    if (*id == selected_id)
       selected_source = source;
   }
 
@@ -452,8 +457,9 @@ void DeviceEmulatorMessageHandler::UpdatePowerSources(
 
 void DeviceEmulatorMessageHandler::UpdatePowerSourceId(
     const base::ListValue* args) {
-  std::string id;
-  CHECK(args->GetString(0, &id));
+  base::Value::ConstListView args_list = args->GetList();
+  CHECK(!args_list.empty() && args_list[0].is_string());
+  std::string id = args_list[0].GetString();
   fake_power_manager_client_->SetPowerSource(id);
 }
 
@@ -629,7 +635,7 @@ void DeviceEmulatorMessageHandler::ConnectToBluetoothDevice(
         device->IsConnected());
   } else {
     // Attempt to connect to the device.
-    device->Connect(nullptr, base::DoNothing(), base::DoNothing());
+    device->Connect(nullptr, base::DoNothing());
   }
 }
 

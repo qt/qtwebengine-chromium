@@ -67,6 +67,11 @@ namespace dawn_native {
                 if (mDisableBaseInstance && firstInstance != 0) {
                     return DAWN_VALIDATION_ERROR("Non-zero first instance not supported");
                 }
+
+                DAWN_TRY(mCommandBufferState.ValidateBufferInRangeForVertexBuffer(vertexCount,
+                                                                                  firstVertex));
+                DAWN_TRY(mCommandBufferState.ValidateBufferInRangeForInstanceBuffer(instanceCount,
+                                                                                    firstInstance));
             }
 
             DrawCmd* draw = allocator->Allocate<DrawCmd>(Command::Draw);
@@ -94,16 +99,17 @@ namespace dawn_native {
                 if (mDisableBaseVertex && baseVertex != 0) {
                     return DAWN_VALIDATION_ERROR("Non-zero base vertex not supported");
                 }
+
+                DAWN_TRY(mCommandBufferState.ValidateIndexBufferInRange(indexCount, firstIndex));
+
+                // Although we don't know actual vertex access range in CPU, we still call the
+                // ValidateBufferInRangeForVertexBuffer in order to deal with those vertex step mode
+                // vertex buffer with an array stride of zero.
+                DAWN_TRY(mCommandBufferState.ValidateBufferInRangeForVertexBuffer(0, 0));
+                DAWN_TRY(mCommandBufferState.ValidateBufferInRangeForInstanceBuffer(instanceCount,
+                                                                                    firstInstance));
             }
 
-            if (static_cast<uint64_t>(firstIndex) + indexCount >
-                mCommandBufferState.GetIndexBufferSize() /
-                    IndexFormatSize(mCommandBufferState.GetIndexFormat())) {
-                // Index range is out of bounds
-                // Treat as no-op and skip issuing draw call
-                dawn::WarningLog() << "Index range is out of bounds";
-                return {};
-            }
             DrawIndexedCmd* draw = allocator->Allocate<DrawIndexedCmd>(Command::DrawIndexed);
             draw->indexCount = indexCount;
             draw->instanceCount = instanceCount;
@@ -127,7 +133,7 @@ namespace dawn_native {
                 }
 
                 if (indirectOffset >= indirectBuffer->GetSize() ||
-                    indirectOffset + kDrawIndirectSize > indirectBuffer->GetSize()) {
+                    kDrawIndirectSize > indirectBuffer->GetSize() - indirectOffset) {
                     return DAWN_VALIDATION_ERROR("Indirect offset out of bounds");
                 }
             }
@@ -165,7 +171,7 @@ namespace dawn_native {
                 }
 
                 if ((indirectOffset >= indirectBuffer->GetSize() ||
-                     indirectOffset + kDrawIndexedIndirectSize > indirectBuffer->GetSize())) {
+                     kDrawIndexedIndirectSize > indirectBuffer->GetSize() - indirectOffset)) {
                     return DAWN_VALIDATION_ERROR("Indirect offset out of bounds");
                 }
             }
@@ -217,6 +223,11 @@ namespace dawn_native {
                     return DAWN_VALIDATION_ERROR("Index format must be specified");
                 }
 
+                if (offset % uint64_t(IndexFormatSize(format)) != 0) {
+                    return DAWN_VALIDATION_ERROR(
+                        "Offset must be a multiple of the index format size");
+                }
+
                 uint64_t bufferSize = buffer->GetSize();
                 if (offset > bufferSize) {
                     return DAWN_VALIDATION_ERROR("Offset larger than the buffer size");
@@ -264,6 +275,10 @@ namespace dawn_native {
                     return DAWN_VALIDATION_ERROR("Vertex buffer slot out of bounds");
                 }
 
+                if (offset % 4 != 0) {
+                    return DAWN_VALIDATION_ERROR("Offset must be a multiple of 4");
+                }
+
                 uint64_t bufferSize = buffer->GetSize();
                 if (offset > bufferSize) {
                     return DAWN_VALIDATION_ERROR("Offset larger than the buffer size");
@@ -283,7 +298,7 @@ namespace dawn_native {
                 }
             }
 
-            mCommandBufferState.SetVertexBuffer(VertexBufferSlot(uint8_t(slot)));
+            mCommandBufferState.SetVertexBuffer(VertexBufferSlot(uint8_t(slot)), size);
 
             SetVertexBufferCmd* cmd =
                 allocator->Allocate<SetVertexBufferCmd>(Command::SetVertexBuffer);

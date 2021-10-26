@@ -123,6 +123,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
         GL_COMPRESSED_RGB_S3TC_DXT1_EXT, GL_COMPRESSED_RGBA_S3TC_DXT1_EXT,
         GL_COMPRESSED_RGBA_S3TC_DXT3_EXT, GL_COMPRESSED_RGBA_S3TC_DXT5_EXT};
     std::vector<GLenum> optionalR8LinearFormats   = {GL_R8};
+    std::vector<GLenum> optionalRG8LinearFormats  = {GL_RG8};
     std::vector<GLenum> optionalBPTCLinearFormats = {GL_COMPRESSED_RGBA_BPTC_UNORM_EXT};
 
     if (!FormatReinterpretationSupported(optionalLinearFormats, rendererVk, kNonLinearColorspace))
@@ -130,7 +131,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
         return false;
     }
 
-    if (supportedExtensions.textureCompressionS3TCsRGB == true)
+    if (supportedExtensions.textureCompressionS3TCsRGB)
     {
         if (!FormatReinterpretationSupported(optionalS3TCLinearFormats, rendererVk,
                                              kNonLinearColorspace))
@@ -139,7 +140,7 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
         }
     }
 
-    if (supportedExtensions.sRGBR8EXT == true)
+    if (supportedExtensions.sRGBR8EXT)
     {
         if (!FormatReinterpretationSupported(optionalR8LinearFormats, rendererVk,
                                              kNonLinearColorspace))
@@ -148,9 +149,16 @@ bool GetTextureSRGBOverrideSupport(const RendererVk *rendererVk,
         }
     }
 
-    // TODO: http://anglebug.com/4932 check EXT_texture_sRGB_RG8
+    if (supportedExtensions.sRGBRG8EXT)
+    {
+        if (!FormatReinterpretationSupported(optionalRG8LinearFormats, rendererVk,
+                                             kNonLinearColorspace))
+        {
+            return false;
+        }
+    }
 
-    if (supportedExtensions.textureCompressionBPTC == true)
+    if (supportedExtensions.textureCompressionBPTC)
     {
         if (!FormatReinterpretationSupported(optionalBPTCLinearFormats, rendererVk,
                                              kNonLinearColorspace))
@@ -252,6 +260,28 @@ bool HasTextureBufferSupport(const RendererVk *rendererVk)
 
     return true;
 }
+
+bool CanSupportYuvInternalFormat(const RendererVk *rendererVk)
+{
+    // The following formats are not mandatory in Vulkan, even when VK_KHR_sampler_ycbcr_conversion
+    // is supported. GL_ANGLE_yuv_internal_format requires support for sampling only the
+    // 8-bit 2-plane YUV format (VK_FORMAT_G8_B8R8_2PLANE_420_UNORM), if the ICD supports that we
+    // can expose the extension.
+    //
+    // Various test cases need multiple YUV formats. It would be preferrable to have support for the
+    // 3 plane 8 bit YUV format (VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) as well.
+
+    const Format &twoPlane8bitYuvFormat = rendererVk->getFormat(GL_G8_B8R8_2PLANE_420_UNORM_ANGLE);
+    bool twoPlane8bitYuvFormatSupported = rendererVk->hasImageFormatFeatureBits(
+        twoPlane8bitYuvFormat.actualImageFormatID, VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+
+    const Format &threePlane8bitYuvFormat =
+        rendererVk->getFormat(GL_G8_B8_R8_3PLANE_420_UNORM_ANGLE);
+    bool threePlane8bitYuvFormatSupported = rendererVk->hasImageFormatFeatureBits(
+        threePlane8bitYuvFormat.actualImageFormatID, VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
+
+    return twoPlane8bitYuvFormatSupported && threePlane8bitYuvFormatSupported;
+}
 }  // namespace
 }  // namespace vk
 
@@ -264,19 +294,6 @@ GLint LimitToInt(const LargerInt physicalDeviceValue)
     // in floating point can cause the value to exceed INT_MAX.  This trips dEQP up.
     return static_cast<GLint>(std::min(
         physicalDeviceValue, static_cast<LargerInt>(std::numeric_limits<int32_t>::max() / 2)));
-}
-
-template <typename LargerInt>
-uint16_t LimitToDynamicScissorSentinelMinusOne(const LargerInt physicalDeviceValue)
-{
-    static_assert(sizeof(LargerInt) >= sizeof(int32_t),
-                  "Incorrect usage of LimitToDynamicScissorSentinelMinusOne");
-
-    // Limit to kDynamicScissorSentinel-1. This is used to pack drawable offset/dimension to
-    // uint16_t for space conservation. The UINT16_MAX is reserved for special value like
-    // kDynamicScissorSentinel.
-    return static_cast<uint16_t>(
-        std::min<int32_t>(physicalDeviceValue, vk::kDynamicScissorSentinel - 1));
 }
 
 void RendererVk::ensureCapsInitialized() const
@@ -310,13 +327,11 @@ void RendererVk::ensureCapsInitialized() const
     // Vulkan doesn't support ASTC 3D block textures, which are required by
     // GL_OES_texture_compression_astc.
     mNativeExtensions.textureCompressionASTCOES = false;
+    // Vulkan does not support sliced 3D ASTC textures either.
+    mNativeExtensions.textureCompressionSliced3dASTCKHR = false;
 
     // Vulkan doesn't guarantee HDR blocks decoding without VK_EXT_texture_compression_astc_hdr.
     mNativeExtensions.textureCompressionASTCHDRKHR = false;
-
-    // Vulkan supports sliced 3D ASTC texture uploads when ASTC is supported.
-    mNativeExtensions.textureCompressionSliced3dASTCKHR =
-        mNativeExtensions.textureCompressionASTCLDRKHR;
 
     // Enable EXT_compressed_ETC1_RGB8_sub_texture
     mNativeExtensions.compressedETC1RGB8SubTexture = mNativeExtensions.compressedETC1RGB8TextureOES;
@@ -329,6 +344,7 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.drawBuffers            = true;
     mNativeExtensions.fragDepth              = true;
     mNativeExtensions.framebufferBlitANGLE   = true;
+    mNativeExtensions.framebufferBlitNV      = true;
     mNativeExtensions.framebufferMultisample = true;
     mNativeExtensions.multisampledRenderToTexture =
         getFeatures().enableMultisampledRenderToTexture.enabled;
@@ -343,9 +359,9 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.robustness =
         !IsSwiftshader(mPhysicalDeviceProperties.vendorID, mPhysicalDeviceProperties.deviceID) &&
         !IsARM(mPhysicalDeviceProperties.vendorID);
-    mNativeExtensions.textureBorderClampOES = false;  // not implemented yet
     mNativeExtensions.discardFramebuffer    = true;
-
+    mNativeExtensions.textureBorderClampOES = getFeatures().supportsCustomBorderColorEXT.enabled;
+    mNativeExtensions.textureBorderClampEXT = getFeatures().supportsCustomBorderColorEXT.enabled;
     // Enable EXT_texture_type_2_10_10_10_REV
     mNativeExtensions.textureFormat2101010REV = true;
 
@@ -514,8 +530,15 @@ void RendererVk::ensureCapsInitialized() const
     // minInterpolationOffset, but its limit for maxInterpolationOffset is 0.5-(1/ULP).
     // OES_shader_multisample_interpolation is therefore only supported if
     // maxInterpolationOffset is at least 0.5.
+    //
+    // It's suspected that the GL spec is not as precise as Vulkan's in this regard and that the
+    // requirements really meant to match.  The extension is exposed as non-conformant either way to
+    // increase testing coverage).  Discussion with the GL working group ongoing at
+    // https://gitlab.khronos.org/opengl/API/-/issues/149
     mNativeExtensions.multisampleInterpolationOES =
-        mNativeExtensions.sampleVariablesOES && mNativeCaps.maxInterpolationOffset >= 0.5;
+        mNativeExtensions.sampleVariablesOES &&
+        (mNativeCaps.maxInterpolationOffset >= 0.5 ||
+         mFeatures.exposeNonConformantExtensionsAndVersions.enabled);
 
     // https://vulkan.lunarg.com/doc/view/1.0.30.0/linux/vkspec.chunked/ch31s02.html
     mNativeCaps.maxElementIndex  = std::numeric_limits<GLuint>::max() - 1;
@@ -536,16 +559,12 @@ void RendererVk::ensureCapsInitialized() const
 
     mNativeCaps.maxDrawBuffers =
         std::min(limitsVk.maxColorAttachments, limitsVk.maxFragmentOutputAttachments);
-    mNativeCaps.maxFramebufferWidth =
-        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxFramebufferWidth);
-    mNativeCaps.maxFramebufferHeight =
-        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxFramebufferHeight);
-    mNativeCaps.maxColorAttachments = LimitToInt(limitsVk.maxColorAttachments);
-    mNativeCaps.maxViewportWidth =
-        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxViewportDimensions[0]);
-    mNativeCaps.maxViewportHeight =
-        LimitToDynamicScissorSentinelMinusOne(limitsVk.maxViewportDimensions[1]);
-    mNativeCaps.maxSampleMaskWords = LimitToInt(limitsVk.maxSampleMaskWords);
+    mNativeCaps.maxFramebufferWidth  = LimitToInt(limitsVk.maxFramebufferWidth);
+    mNativeCaps.maxFramebufferHeight = LimitToInt(limitsVk.maxFramebufferHeight);
+    mNativeCaps.maxColorAttachments  = LimitToInt(limitsVk.maxColorAttachments);
+    mNativeCaps.maxViewportWidth     = LimitToInt(limitsVk.maxViewportDimensions[0]);
+    mNativeCaps.maxViewportHeight    = LimitToInt(limitsVk.maxViewportDimensions[1]);
+    mNativeCaps.maxSampleMaskWords   = LimitToInt(limitsVk.maxSampleMaskWords);
     mNativeCaps.maxColorTextureSamples =
         limitsVk.sampledImageColorSampleCounts & vk_gl::kSupportedSampleCounts;
     mNativeCaps.maxDepthTextureSamples =
@@ -934,10 +953,11 @@ void RendererVk::ensureCapsInitialized() const
     if (mPhysicalDeviceFeatures.geometryShader && !mFeatures.basicGLLineRasterization.enabled)
     {
         // TODO: geometry shader support is incomplete.  http://anglebug.com/3571
-        mNativeExtensions.geometryShader =
-            mFeatures.supportsTransformFeedbackExtension.enabled &&
-            mFeatures.exposeNonConformantExtensionsAndVersions.enabled;
-        mNativeCaps.maxFramebufferLayers = LimitToInt(limitsVk.maxFramebufferLayers);
+        bool geometryShader = mFeatures.supportsTransformFeedbackExtension.enabled &&
+                              mFeatures.exposeNonConformantExtensionsAndVersions.enabled;
+        mNativeExtensions.geometryShaderEXT = geometryShader;
+        mNativeExtensions.geometryShaderOES = geometryShader;
+        mNativeCaps.maxFramebufferLayers    = LimitToInt(limitsVk.maxFramebufferLayers);
 
         // If the provoking vertex feature is enabled, angle specifies to use
         // the "last" convention in order to match GL behavior. Otherwise, use
@@ -1039,6 +1059,26 @@ void RendererVk::ensureCapsInitialized() const
     // GL_EXT_blend_func_extended
     mNativeExtensions.blendFuncExtended        = (mPhysicalDeviceFeatures.dualSrcBlend == VK_TRUE);
     mNativeExtensions.maxDualSourceDrawBuffers = LimitToInt(limitsVk.maxFragmentDualSrcAttachments);
+
+    // GL_ANGLE_relaxed_vertex_attribute_type
+    mNativeExtensions.relaxedVertexAttributeTypeANGLE = true;
+
+    // GL_OVR_multiview*.  Bresenham line emulation does not work with multiview.  There's no
+    // limitation in Vulkan to restrict an application to multiview 1.
+    mNativeExtensions.multiview =
+        mMultiviewFeatures.multiview && mFeatures.bresenhamLineRasterization.enabled;
+    mNativeExtensions.multiview2 = mNativeExtensions.multiview;
+    mNativeExtensions.maxViews   = mMultiviewProperties.maxMultiviewViewCount;
+
+    // GL_ANGLE_yuv_internal_format
+    mNativeExtensions.yuvInternalFormatANGLE =
+        getFeatures().supportsYUVSamplerConversion.enabled && vk::CanSupportYuvInternalFormat(this);
+
+    // GL_EXT_primitive_bounding_box
+    mNativeExtensions.primitiveBoundingBoxEXT = true;
+
+    // GL_EXT_protected_textures
+    mNativeExtensions.protectedTexturesEXT = mFeatures.supportsProtectedMemory.enabled;
 }
 
 namespace vk

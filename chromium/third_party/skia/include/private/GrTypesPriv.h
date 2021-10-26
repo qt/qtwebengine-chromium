@@ -14,11 +14,11 @@
 #include "include/core/SkPath.h"
 #include "include/core/SkRefCnt.h"
 #include "include/gpu/GrTypes.h"
-#include "include/private/GrSharedEnums.h"
 #include "include/private/SkImageInfoPriv.h"
 
 class GrBackendFormat;
 class GrCaps;
+class GrSurfaceProxy;
 
 // The old libstdc++ uses the draft name "monotonic_clock" rather than "steady_clock". This might
 // not actually be monotonic, depending on how libstdc++ was built. However, this is only currently
@@ -147,14 +147,6 @@ enum class GrBudgetedType : uint8_t {
     kUnbudgetedCacheable,
 };
 
-/**
- * Clips are composed from these objects.
- */
-enum GrClipType {
-    kRect_ClipType,
-    kPath_ClipType
-};
-
 enum class GrScissorTest : bool {
     kDisabled = false,
     kEnabled = true
@@ -165,6 +157,11 @@ struct GrMipLevel {
     size_t fRowBytes = 0;
     // This may be used to keep fPixels from being freed while a GrMipLevel exists.
     sk_sp<SkData> fOptionalStorage;
+};
+
+enum class GrSemaphoreWrapType {
+    kWillSignal,
+    kWillWait,
 };
 
 /**
@@ -199,8 +196,8 @@ enum class GrFillRule : bool {
     kEvenOdd
 };
 
-inline GrFillRule GrFillRuleForSkPath(const SkPath& path) {
-    switch (path.getFillType()) {
+inline GrFillRule GrFillRuleForPathFillType(SkPathFillType fillType) {
+    switch (fillType) {
         case SkPathFillType::kWinding:
         case SkPathFillType::kInverseWinding:
             return GrFillRule::kNonzero;
@@ -209,6 +206,10 @@ inline GrFillRule GrFillRuleForSkPath(const SkPath& path) {
             return GrFillRule::kEvenOdd;
     }
     SkUNREACHABLE;
+}
+
+inline GrFillRule GrFillRuleForSkPath(const SkPath& path) {
+    return GrFillRuleForPathFillType(path.getFillType());
 }
 
 /** This enum indicates the type of antialiasing to be performed. */
@@ -697,23 +698,36 @@ static const int kGrVertexAttribTypeCount = kLast_GrVertexAttribType + 1;
 
 //////////////////////////////////////////////////////////////////////////////
 
+/**
+ * We have coverage effects that clip rendering to the edge of some geometric primitive.
+ * This enum specifies how that clipping is performed. Not all factories that take a
+ * GrClipEdgeType will succeed with all values and it is up to the caller to verify success.
+ */
+enum class GrClipEdgeType {
+    kFillBW,
+    kFillAA,
+    kInverseFillBW,
+    kInverseFillAA,
+
+    kLast = kInverseFillAA
+};
 static const int kGrClipEdgeTypeCnt = (int) GrClipEdgeType::kLast + 1;
 
-static constexpr bool GrProcessorEdgeTypeIsFill(const GrClipEdgeType edgeType) {
+static constexpr bool GrClipEdgeTypeIsFill(const GrClipEdgeType edgeType) {
     return (GrClipEdgeType::kFillAA == edgeType || GrClipEdgeType::kFillBW == edgeType);
 }
 
-static constexpr bool GrProcessorEdgeTypeIsInverseFill(const GrClipEdgeType edgeType) {
+static constexpr bool GrClipEdgeTypeIsInverseFill(const GrClipEdgeType edgeType) {
     return (GrClipEdgeType::kInverseFillAA == edgeType ||
             GrClipEdgeType::kInverseFillBW == edgeType);
 }
 
-static constexpr bool GrProcessorEdgeTypeIsAA(const GrClipEdgeType edgeType) {
+static constexpr bool GrClipEdgeTypeIsAA(const GrClipEdgeType edgeType) {
     return (GrClipEdgeType::kFillBW != edgeType &&
             GrClipEdgeType::kInverseFillBW != edgeType);
 }
 
-static inline GrClipEdgeType GrInvertProcessorEdgeType(const GrClipEdgeType edgeType) {
+static inline GrClipEdgeType GrInvertClipEdgeType(const GrClipEdgeType edgeType) {
     switch (edgeType) {
         case GrClipEdgeType::kFillBW:
             return GrClipEdgeType::kInverseFillBW;
@@ -842,14 +856,15 @@ typedef uint64_t GrFence;
 enum class GpuPathRenderers {
     kNone              =   0,  // Always use software masks and/or GrDefaultPathRenderer.
     kDashLine          =   1 << 0,
-    kTessellation      =   1 << 1,
-    kCoverageCounting  =   1 << 2,
-    kAAHairline        =   1 << 3,
-    kAAConvex          =   1 << 4,
-    kAALinearizing     =   1 << 5,
-    kSmall             =   1 << 6,
-    kTriangulating     =   1 << 7,
-    kDefault           = ((1 << 8) - 1)  // All path renderers.
+    kAtlas             =   1 << 1,
+    kTessellation      =   1 << 2,
+    kCoverageCounting  =   1 << 3,
+    kAAHairline        =   1 << 4,
+    kAAConvex          =   1 << 5,
+    kAALinearizing     =   1 << 6,
+    kSmall             =   1 << 7,
+    kTriangulating     =   1 << 8,
+    kDefault           = ((1 << 9) - 1)  // All path renderers.
 };
 
 /**
@@ -1307,39 +1322,14 @@ private:
     Context fReleaseCtx;
 };
 
-enum class GrDstSampleType {
-    kNone, // The dst value will not be sampled in the shader
-    kAsTextureCopy, // The dst value will be sampled from a copy of the dst
-    // The types below require a texture barrier
-    kAsSelfTexture, // The dst value is sampled directly from the dst itself as a texture.
-    kAsInputAttachment, // The dst value is sampled directly from the dst as an input attachment.
+enum class GrDstSampleFlags {
+    kNone = 0,
+    kRequiresTextureBarrier =   1 << 0,
+    kAsInputAttachment = 1 << 1,
 };
+GR_MAKE_BITFIELD_CLASS_OPS(GrDstSampleFlags)
 
-// Returns true if the sampling of the dst color in the shader is done by reading the dst directly.
-// Anything that directly reads the dst will need a barrier between draws.
-static constexpr bool GrDstSampleTypeDirectlySamplesDst(GrDstSampleType type) {
-    switch (type) {
-        case GrDstSampleType::kAsSelfTexture:  // fall through
-        case GrDstSampleType::kAsInputAttachment:
-            return true;
-        case GrDstSampleType::kNone:  // fall through
-        case GrDstSampleType::kAsTextureCopy:
-            return false;
-    }
-    SkUNREACHABLE;
-}
-
-static constexpr bool GrDstSampleTypeUsesTexture(GrDstSampleType type) {
-    switch (type) {
-        case GrDstSampleType::kAsSelfTexture:  // fall through
-        case GrDstSampleType::kAsTextureCopy:
-            return true;
-        case GrDstSampleType::kNone:  // fall through
-        case GrDstSampleType::kAsInputAttachment:
-            return false;
-    }
-    SkUNREACHABLE;
-}
+using GrVisitProxyFunc = std::function<void(GrSurfaceProxy*, GrMipmapped)>;
 
 #if defined(SK_DEBUG) || GR_TEST_UTILS || defined(SK_ENABLE_DUMP_GPU)
 static constexpr const char* GrBackendApiToStr(GrBackendApi api) {

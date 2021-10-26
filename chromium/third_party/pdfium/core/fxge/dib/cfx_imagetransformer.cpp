@@ -6,18 +6,20 @@
 
 #include "core/fxge/dib/cfx_imagetransformer.h"
 
-#include <cmath>
+#include <math.h>
+
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/fx_system.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/cfx_imagestretcher.h"
 #include "core/fxge/dib/fx_dib.h"
 #include "third_party/base/check.h"
 #include "third_party/base/compiler_specific.h"
+#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/notreached.h"
 #include "third_party/base/numerics/safe_conversions.h"
-#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -148,8 +150,8 @@ CFX_ImageTransformer::CFX_ImageTransformer(const RetainPtr<CFX_DIBBase>& pSrc,
     int dest_width = result_rect.Width();
     int dest_height = result_rect.Height();
     result_clip.Offset(-result_rect.left, -result_rect.top);
-    result_clip = FXDIB_SwapClipBox(result_clip, dest_width, dest_height,
-                                    m_matrix.c > 0, m_matrix.b < 0);
+    result_clip = result_clip.SwappedClipBox(dest_width, dest_height,
+                                             m_matrix.c > 0, m_matrix.b < 0);
     m_Stretcher = std::make_unique<CFX_ImageStretcher>(
         &m_Storer, m_pSrc, dest_height, dest_width, result_clip,
         m_ResampleOptions);

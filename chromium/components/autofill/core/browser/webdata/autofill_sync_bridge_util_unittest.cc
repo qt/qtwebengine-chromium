@@ -20,7 +20,9 @@
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/sync/base/client_tag_hash.h"
 #include "components/sync/engine/entity_data.h"
-#include "components/sync/protocol/sync.pb.h"
+#include "components/sync/protocol/autofill_offer_specifics.pb.h"
+#include "components/sync/protocol/autofill_specifics.pb.h"
+#include "components/sync/protocol/entity_specifics.pb.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace autofill {
@@ -271,10 +273,10 @@ TEST_F(AutofillSyncBridgeUtilTest, OfferSpecificsFromOfferData) {
   EXPECT_EQ(offer_specifics.offer_expiry_date(),
             (offer_data.expiry - base::Time::UnixEpoch()).InSeconds());
   EXPECT_EQ(offer_specifics.merchant_domain().size(),
-            (int)offer_data.merchant_domain.size());
+            (int)offer_data.merchant_origins.size());
   for (int i = 0; i < offer_specifics.merchant_domain().size(); i++) {
     EXPECT_EQ(offer_specifics.merchant_domain(i),
-              offer_data.merchant_domain[i].GetOrigin().spec());
+              offer_data.merchant_origins[i].spec());
   }
   EXPECT_EQ(offer_specifics.display_strings().value_prop_text(),
             offer_data.display_strings.value_prop_text);

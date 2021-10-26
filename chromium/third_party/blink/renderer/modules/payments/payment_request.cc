@@ -11,7 +11,6 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
@@ -1552,6 +1551,10 @@ void PaymentRequest::OnError(PaymentErrorReason error,
     case PaymentErrorReason::NOT_SUPPORTED_FOR_INVALID_ORIGIN_OR_SSL:
       exception_code = DOMExceptionCode::kNotSupportedError;
       not_supported_for_invalid_origin_or_ssl_error_ = error_message;
+      break;
+
+    case PaymentErrorReason::NOT_ALLOWED_ERROR:
+      exception_code = DOMExceptionCode::kNotAllowedError;
       break;
 
     case PaymentErrorReason::UNKNOWN:

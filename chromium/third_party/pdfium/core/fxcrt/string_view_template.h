@@ -7,8 +7,9 @@
 #ifndef CORE_FXCRT_STRING_VIEW_TEMPLATE_H_
 #define CORE_FXCRT_STRING_VIEW_TEMPLATE_H_
 
+#include <ctype.h>
+
 #include <algorithm>
-#include <cctype>
 #include <iterator>
 #include <type_traits>
 #include <vector>
@@ -214,14 +215,12 @@ class StringViewTemplate {
   }
 
   StringViewTemplate First(size_t count) const {
-    if (count == 0 || !IsValidLength(count))
-      return StringViewTemplate();
     return Substr(0, count);
   }
 
   StringViewTemplate Last(size_t count) const {
-    if (count == 0 || !IsValidLength(count))
-      return StringViewTemplate();
+    // Unsigned underflow is well-defined and out-of-range is handled by
+    // Substr().
     return Substr(GetLength() - count, count);
   }
 

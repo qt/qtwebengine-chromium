@@ -9,11 +9,17 @@ js_library("constants") {
   deps = [ "../../mojom:mojom_js_library_for_compile" ]
 }
 
+js_library("icons") {
+}
+
 js_library("iframe_api") {
   deps = [
     ":constants",
     "../../mojom:mojom_js_library_for_compile",
   ]
+}
+
+js_library("styles") {
 }
 
 js_library("utils") {
@@ -34,7 +40,11 @@ preprocess_if_expr("preprocess") {
   out_manifest = "$target_gen_dir/manifest.json"
   in_files = [
     "common/constants.js",
+    "common/base.css",
+    "common/icons.js",
     "common/iframe_api.js",
+    "common/no_images.svg",
+    "common/styles.js",
     "common/utils.js",
   ]
 }

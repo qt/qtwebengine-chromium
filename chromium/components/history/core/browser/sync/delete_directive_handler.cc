@@ -21,9 +21,9 @@
 #include "components/history/core/browser/history_db_task.h"
 #include "components/sync/model/sync_change.h"
 #include "components/sync/model/sync_error_factory.h"
+#include "components/sync/protocol/entity_specifics.pb.h"
 #include "components/sync/protocol/history_delete_directive_specifics.pb.h"
 #include "components/sync/protocol/proto_value_conversions.h"
-#include "components/sync/protocol/sync.pb.h"
 
 namespace {
 
@@ -38,7 +38,7 @@ std::string RandASCIIString(size_t length) {
 
 std::string DeleteDirectiveToString(
     const sync_pb::HistoryDeleteDirectiveSpecifics& delete_directive) {
-  std::unique_ptr<base::DictionaryValue> value(
+  std::unique_ptr<base::Value> value(
       syncer::HistoryDeleteDirectiveSpecificsToValue(delete_directive));
   std::string str;
   base::JSONWriter::Write(*value, &str);

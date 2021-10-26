@@ -7,16 +7,6 @@
 
 namespace extensions_features {
 
-// Controls whether we redirect the NTP to the chrome://extensions page or show
-// a middle slot promo, and which of the the three checkup banner messages
-// (performance focused, privacy focused or neutral) to show.
-const base::Feature kExtensionsCheckup{"ExtensionsCheckup",
-                                       base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Controls whether we disable extensions for malware.
-const base::Feature kDisableMalwareExtensionsRemotely{
-    "DisableMalwareExtensionsRemotely", base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Controls whether we disable extensions that are marked as policy violation
 // by the Omaha attribute.
 const base::Feature kDisablePolicyViolationExtensionsRemotely{
@@ -34,7 +24,7 @@ const base::Feature kDisablePotentiallyUwsExtensionsRemotely{
 // Safe Browsing CRX allowlist. This feature also controls if we show a warning
 // in 'chrome://extensions' for extensions not included in the allowlist.
 const base::Feature kSafeBrowsingCrxAllowlistShowWarnings{
-    "SafeBrowsingCrxAllowlistShowWarnings", base::FEATURE_DISABLED_BY_DEFAULT};
+    "SafeBrowsingCrxAllowlistShowWarnings", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Automatically disable extensions not included in the Safe Browsing CRX
 // allowlist if the user has turned on Enhanced Safe Browsing (ESB). The
@@ -42,23 +32,6 @@ const base::Feature kSafeBrowsingCrxAllowlistShowWarnings{
 // out of the allowlist.
 const base::Feature kSafeBrowsingCrxAllowlistAutoDisable{
     "SafeBrowsingCrxAllowlistAutoDisable", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Parameters for ExtensionsCheckup feature.
-const char kExtensionsCheckupEntryPointParameter[] = "entry_point";
-const char kExtensionsCheckupBannerMessageParameter[] = "banner_message_type";
-
-// Constants for ExtensionsCheckup parameters.
-// Indicates that the user should be shown the chrome://extensions page on
-// startup.
-const char kStartupEntryPoint[] = "startup";
-// Indicates that the user should be shown a promo on the NTP leading to the
-// chrome://extensions page.
-const char kNtpPromoEntryPoint[] = "promo";
-// Indicates the focus of the message shown on chrome://the extensions page
-// banner and the NTP promo.
-const char kPerformanceMessage[] = "0";
-const char kPrivacyMessage[] = "1";
-const char kNeutralMessage[] = "2";
 
 // Forces requests to go through WebRequestProxyingURLLoaderFactory.
 const base::Feature kForceWebRequestProxyForTest{
@@ -87,5 +60,11 @@ const base::Feature kReportKeepaliveUkm{"ReportKeepaliveUkm",
 // process sharing between extensions. See https://crbug.com/1209417.
 const base::Feature kStrictExtensionIsolation{
     "StrictExtensionIsolation", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// Whether extension contexts can use SharedArrayBuffers unconditionally (i.e.
+// without requiring cross origin isolation).
+// TODO(crbug.com/1184892): Flip this in M95.
+const base::Feature kAllowSharedArrayBuffersUnconditionally{
+    "AllowSharedArrayBuffersUnconditionally", base::FEATURE_ENABLED_BY_DEFAULT};
 
 }  // namespace extensions_features

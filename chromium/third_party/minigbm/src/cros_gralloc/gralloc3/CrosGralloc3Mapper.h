@@ -13,7 +13,7 @@
 
 class CrosGralloc3Mapper : public android::hardware::graphics::mapper::V3_0::IMapper {
   public:
-    CrosGralloc3Mapper();
+    CrosGralloc3Mapper() = default;
 
     android::hardware::Return<void> createDescriptor(const BufferDescriptorInfo& description,
                                                      createDescriptor_cb hidlCb) override;
@@ -58,7 +58,7 @@ class CrosGralloc3Mapper : public android::hardware::graphics::mapper::V3_0::IMa
                             const Rect& accessRegion,
                             const android::hardware::hidl_handle& acquireFence);
 
-    std::unique_ptr<cros_gralloc_driver> mDriver;
+    cros_gralloc_driver* mDriver = cros_gralloc_driver::get_instance();
 };
 
 extern "C" android::hardware::graphics::mapper::V3_0::IMapper* HIDL_FETCH_IMapper(const char* name);

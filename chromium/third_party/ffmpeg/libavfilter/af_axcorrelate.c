@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/audio_fifo.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
@@ -365,7 +364,7 @@ static const AVOption axcorrelate_options[] = {
 
 AVFILTER_DEFINE_CLASS(axcorrelate);
 
-AVFilter ff_af_axcorrelate = {
+const AVFilter ff_af_axcorrelate = {
     .name           = "axcorrelate",
     .description    = NULL_IF_CONFIG_SMALL("Cross-correlate two audio streams."),
     .priv_size      = sizeof(AudioXCorrelateContext),

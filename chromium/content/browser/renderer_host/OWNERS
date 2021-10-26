@@ -28,15 +28,14 @@ per-file *mac*=ccameron@chromium.org
 per-file *android*=boliu@chromium.org
 
 # Embedded Frame Sinks (eg. Offscreen Canvas).
-per-file embedded_frame_sink*.*=xlai@chromium.org
-per-file embedded_frame_sink*.*=junov@chromium.org
 per-file embedded_frame_sink*.*=kylechar@chromium.org
 
 # DirectWrite font code.
 per-file dwrite_*=drott@chromium.org
 
 # Clipboard
-per-file *clipboard_host_impl*=huangdarwin@chromium.org
+per-file *clipboard_host_impl*=mek@chromium.org
+per-file *clipboard_host_impl*=pwnall@chromium.org
 per-file *clipboard_host_impl*=dcheng@chromium.org
 
 # AgentSchedulingGroup (MBI)

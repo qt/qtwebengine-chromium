@@ -157,6 +157,9 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     // GL_EXT_clip_cull_distance
     mResources.EXT_clip_cull_distance = extensions.clipCullDistanceEXT;
 
+    // GL_EXT_primitive_bounding_box
+    mResources.EXT_primitive_bounding_box = extensions.primitiveBoundingBoxEXT;
+
     // GLSL ES 3.0 constants
     mResources.MaxVertexOutputVectors  = caps.maxVertexOutputComponents / 4;
     mResources.MaxFragmentInputVectors = caps.maxFragmentInputComponents / 4;
@@ -223,7 +226,8 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     }
 
     // Geometry Shader constants
-    mResources.EXT_geometry_shader          = extensions.geometryShader;
+    mResources.EXT_geometry_shader          = extensions.geometryShaderEXT;
+    mResources.OES_geometry_shader          = extensions.geometryShaderOES;
     mResources.MaxGeometryUniformComponents = caps.maxShaderUniformComponents[ShaderType::Geometry];
     mResources.MaxGeometryUniformBlocks     = caps.maxShaderUniformBlocks[ShaderType::Geometry];
     mResources.MaxGeometryInputComponents   = caps.maxGeometryInputComponents;
@@ -272,6 +276,11 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
 
     // Subpixel bits.
     mResources.SubPixelBits = static_cast<int>(caps.subPixelBits);
+
+    // Direct-to-metal constants:
+    mResources.DriverUniformsBindingIndex    = caps.driverUniformsBindingIndex;
+    mResources.DefaultUniformsBindingIndex   = caps.defaultUniformsBindingIndex;
+    mResources.UBOArgumentBufferBindingIndex = caps.UBOArgumentBufferBindingIndex;
 }
 
 Compiler::~Compiler() = default;

@@ -117,8 +117,12 @@ class TestPaintArtifact {
   TestPaintArtifact& DrawableBounds(const IntRect&);
 
   TestPaintArtifact& SetRasterEffectOutset(RasterEffectOutset);
-  TestPaintArtifact& KnownToBeOpaque();
+  TestPaintArtifact& RectKnownToBeOpaque(const IntRect&);
+  TestPaintArtifact& TextKnownToBeOnOpaqueBackground();
+  TestPaintArtifact& HasText();
+  TestPaintArtifact& EffectivelyInvisible();
   TestPaintArtifact& Uncacheable();
+  TestPaintArtifact& IsMovedFromCachedSubsequence();
 
   // Build the paint artifact. After that, if this object has automatically
   // created any display item client, the caller must retain this object when

@@ -26,6 +26,7 @@ TypeConverter<ui::ozone::mojom::WaylandOverlayConfigPtr,
   wayland_overlay_config->bounds_rect = input.display_bounds;
   wayland_overlay_config->crop_rect = input.crop_rect;
   wayland_overlay_config->enable_blend = input.enable_blend;
+  wayland_overlay_config->damage_region = input.damage_rect;
   wayland_overlay_config->access_fence_handle =
       !input.gpu_fence || input.gpu_fence->GetGpuFenceHandle().is_null()
           ? gfx::GpuFenceHandle()
@@ -166,11 +167,10 @@ void WaylandBufferManagerGpu::CreateDmabufBasedBuffer(
                      buffer_id));
 }
 
-void WaylandBufferManagerGpu::CreateShmBasedBuffer(
-    base::ScopedFD shm_fd,
-    size_t length,
-    gfx::Size size,
-    uint32_t buffer_id) {
+void WaylandBufferManagerGpu::CreateShmBasedBuffer(base::ScopedFD shm_fd,
+                                                   size_t length,
+                                                   gfx::Size size,
+                                                   uint32_t buffer_id) {
   if (!remote_host_) {
     LOG(ERROR) << "Interface is not bound. Can't request "
                   "WaylandBufferManagerHost to create/commit/destroy buffers.";

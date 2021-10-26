@@ -13,11 +13,14 @@
 #include "third_party/blink/renderer/core/editing/ime/input_method_controller.h"
 #include "third_party/blink/renderer/core/editing/ime/text_format_update_event.h"
 #include "third_party/blink/renderer/core/editing/ime/text_update_event.h"
+#include "third_party/blink/renderer/core/editing/state_machines/backward_grapheme_boundary_state_machine.h"
+#include "third_party/blink/renderer/core/editing/state_machines/forward_grapheme_boundary_state_machine.h"
 #include "third_party/blink/renderer/core/events/composition_event.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/platform/geometry/double_rect.h"
+#include "third_party/blink/renderer/platform/text/text_boundaries.h"
 #include "third_party/blink/renderer/platform/wtf/decimal.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "ui/base/ime/ime_text_span.h"
@@ -417,7 +420,7 @@ bool EditContext::SetComposition(
   selection_end_ = composition_range_start_ + selection_end;
   DispatchTextUpdateEvent(update_text, update_range_start, update_range_end,
                           selection_start_, selection_end_);
-  composition_range_end_ = composition_range_start_ + text.length();
+  composition_range_end_ = composition_range_start_ + update_text.length();
   DispatchTextFormatEvent(ime_text_spans);
   return true;
 }
@@ -463,12 +466,76 @@ bool EditContext::InsertText(const WebString& text) {
           text_.Substring(selection_end_);
   uint32_t update_range_start = selection_start_;
   uint32_t update_range_end = selection_end_;
-  selection_start_ = selection_start_ + text.length();
+  selection_start_ = selection_start_ + update_text.length();
   selection_end_ = selection_start_;
 
   DispatchTextUpdateEvent(update_text, update_range_start, update_range_end,
                           selection_start_, selection_end_);
   return true;
+}
+
+void EditContext::DeleteCurrentSelection() {
+  if (selection_start_ == selection_end_)
+    return;
+
+  StringBuilder stringBuilder;
+  stringBuilder.Append(StringView(text_, 0, selection_start_));
+  stringBuilder.Append(StringView(text_, selection_end_));
+  text_ = stringBuilder.ToString();
+
+  DispatchTextUpdateEvent(String(), selection_start_, selection_end_,
+                          selection_start_, selection_start_);
+
+  selection_end_ = selection_start_;
+}
+
+template <typename StateMachine>
+int FindNextBoundaryOffset(const String& str, int current);
+
+void EditContext::DeleteBackward() {
+  // If the current selection is collapsed, delete one grapheme, otherwise,
+  // delete whole selection.
+  if (selection_start_ == selection_end_) {
+    selection_start_ =
+        FindNextBoundaryOffset<BackwardGraphemeBoundaryStateMachine>(
+            text_, selection_start_);
+  }
+
+  DeleteCurrentSelection();
+}
+
+void EditContext::DeleteForward() {
+  if (selection_start_ == selection_end_) {
+    selection_end_ =
+        FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
+            text_, selection_start_);
+  }
+
+  DeleteCurrentSelection();
+}
+
+void EditContext::DeleteWordBackward() {
+  if (selection_start_ == selection_end_) {
+    String text16bit(text_);
+    text16bit.Ensure16Bit();
+    // TODO(shihken): implement platform behaviors when the spec is finalized.
+    selection_start_ = FindNextWordBackward(text16bit.Characters16(),
+                                            text16bit.length(), selection_end_);
+  }
+
+  DeleteCurrentSelection();
+}
+
+void EditContext::DeleteWordForward() {
+  if (selection_start_ == selection_end_) {
+    String text16bit(text_);
+    text16bit.Ensure16Bit();
+    // TODO(shihken): implement platform behaviors when the spec is finalized.
+    selection_end_ = FindNextWordForward(text16bit.Characters16(),
+                                         text16bit.length(), selection_start_);
+  }
+
+  DeleteCurrentSelection();
 }
 
 bool EditContext::CommitText(const WebString& text,
@@ -487,8 +554,8 @@ bool EditContext::CommitText(const WebString& text,
   if (has_composition_) {
     text_ = text_.Substring(0, composition_range_start_) + update_text +
             text_.Substring(composition_range_end_);
-    selection_start_ = composition_range_start_ + text.length();
-    selection_end_ = composition_range_start_ + text.length();
+    selection_start_ = composition_range_start_ + update_text.length();
+    selection_end_ = composition_range_start_ + update_text.length();
     update_range_start = composition_range_start_;
     update_range_end = composition_range_end_;
   } else {
@@ -496,8 +563,8 @@ bool EditContext::CommitText(const WebString& text,
             text_.Substring(selection_end_);
     update_range_start = selection_start_;
     update_range_end = selection_end_;
-    selection_start_ = selection_start_ + text.length();
-    selection_end_ = selection_end_ + text.length();
+    selection_start_ = selection_start_ + update_text.length();
+    selection_end_ = selection_end_ + update_text.length();
   }
   new_selection_start = selection_start_;
   new_selection_end = selection_end_;
@@ -515,7 +582,7 @@ bool EditContext::CommitText(const WebString& text,
 
 bool EditContext::FinishComposingText(
     ConfirmCompositionBehavior selection_behavior) {
-  WebString text;
+  String text;
   if (has_composition_) {
     text = text_.Substring(composition_range_start_, composition_range_end_);
     // Fire composition end event.

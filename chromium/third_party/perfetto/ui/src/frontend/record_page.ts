@@ -17,6 +17,7 @@ import {produce} from 'immer';
 import * as m from 'mithril';
 
 import {Actions} from '../common/actions';
+import {featureFlags} from '../common/feature_flags';
 import {MeminfoCounters, VmstatCounters} from '../common/protos';
 import {
   AdbRecordingTarget,
@@ -34,7 +35,7 @@ import {MAX_TIME, RecordMode} from '../common/state';
 import {AdbOverWebUsb} from '../controller/adb';
 
 import {globals} from './globals';
-import {createPage} from './pages';
+import {createPage, PageAttrs} from './pages';
 import {recordConfigStore} from './record_config';
 import {
   CodeSnippet,
@@ -49,9 +50,13 @@ import {
   Toggle,
   ToggleAttrs
 } from './record_widgets';
-import {Router} from './router';
 
-const LOCAL_STORAGE_SHOW_CONFIG = 'showConfigs';
+const PERSIST_CONFIG_FLAG = featureFlags.register({
+  id: 'persistConfigsUI',
+  name: 'Config persistence UI',
+  description: 'Show experimental config persistance UI on the record page.',
+  defaultValue: false,
+});
 
 const POLL_INTERVAL_MS = [250, 500, 1000, 2500, 5000, 30000, 60000];
 
@@ -748,8 +753,6 @@ function ChromeCategoriesSelection() {
 }
 
 function AdvancedSettings(cssClass: string) {
-  const S = (x: number) => x * 1000;
-  const M = (x: number) => x * 1000 * 60;
   return m(
       `.record-section${cssClass}`,
       m(Probe,
@@ -791,27 +794,7 @@ function AdvancedSettings(cssClass: string) {
               'kmem/*',
           set: (cfg, val) => cfg.ftraceExtraEvents = val,
           get: (cfg) => cfg.ftraceExtraEvents
-        } as TextareaAttrs)),
-      globals.state.videoEnabled ?
-          m(Probe,
-            {
-              title: 'Screen recording',
-              img: null,
-              descr: `Records the screen along with running a trace. Max
-                  time of recording is 3 minutes (180 seconds).`,
-              setEnabled: (cfg, val) => cfg.screenRecord = val,
-              isEnabled: (cfg) => cfg.screenRecord,
-            } as ProbeAttrs,
-            m(Slider, {
-              title: 'Max duration',
-              icon: 'timer',
-              values: [S(10), S(15), S(30), S(60), M(2), M(3)],
-              isTime: true,
-              unit: 'm:s',
-              set: (cfg, val) => cfg.durationMs = val,
-              get: (cfg) => cfg.durationMs,
-            } as SliderAttrs)) :
-          null);
+        } as TextareaAttrs)));
 }
 
 function RecordHeader() {
@@ -894,7 +877,7 @@ function Instructions(cssClass: string) {
   return m(
       `.record-section.instructions${cssClass}`,
       m('header', 'Recording command'),
-      localStorage.hasOwnProperty(LOCAL_STORAGE_SHOW_CONFIG) ?
+      PERSIST_CONFIG_FLAG.get() ?
           m('button.permalinkconfig',
             {
               onclick: () => {
@@ -1121,12 +1104,6 @@ function getRecordCommand(target: RecordingTarget) {
   const pbBase64 = data ? data.pbBase64 : '';
   const pbtx = data ? data.pbtxt : '';
   let cmd = '';
-  if (cfg.screenRecord) {
-    // Half-second delay to ensure Perfetto starts tracing before screenrecord
-    // starts recording
-    cmd += `(sleep 0.5 && adb shell screenrecord --time-limit ${time}`;
-    cmd += ' "/sdcard/tracescr.mp4") &\\\n';
-  }
   if (isAndroidP(target)) {
     cmd += `echo '${pbBase64}' | \n`;
     cmd += 'base64 --decode | \n';
@@ -1186,7 +1163,7 @@ function StopCancelButtons() {
 }
 
 function onStartRecordingPressed() {
-  location.href = '#!/record?p=instructions';
+  location.href = '#!/record/instructions';
   globals.rafScheduler.scheduleFullRedraw();
 
   const target = globals.state.recordingTarget;
@@ -1303,7 +1280,7 @@ function selectAndroidDeviceIfAvailable(
 function recordMenu(routePage: string) {
   const target = globals.state.recordingTarget;
   const chromeProbe =
-      m('a[href="#!/record?p=chrome"]',
+      m('a[href="#!/record/chrome"]',
         m(`li${routePage === 'chrome' ? '.active' : ''}`,
           m('i.material-icons', 'laptop_chromebook'),
           m('.title', 'Chrome'),
@@ -1318,18 +1295,18 @@ function recordMenu(routePage: string) {
       },
       m('header', 'Trace config'),
       m('ul',
-        m('a[href="#!/record?p=buffers"]',
+        m('a[href="#!/record/buffers"]',
           m(`li${routePage === 'buffers' ? '.active' : ''}`,
             m('i.material-icons', 'tune'),
             m('.title', 'Recording settings'),
             m('.sub', 'Buffer mode, size and duration'))),
-        m('a[href="#!/record?p=instructions"]',
+        m('a[href="#!/record/instructions"]',
           m(`li${routePage === 'instructions' ? '.active' : ''}`,
             m('i.material-icons.rec', 'fiber_manual_record'),
             m('.title', 'Recording command'),
             m('.sub', 'Manually record trace'))),
-        localStorage.hasOwnProperty(LOCAL_STORAGE_SHOW_CONFIG) ?
-            m('a[href="#!/record?p=config"]',
+        PERSIST_CONFIG_FLAG.get() ?
+            m('a[href="#!/record/config"]',
               {
                 onclick: () => {
                   recordConfigStore.reloadFromLocalStorage();
@@ -1343,33 +1320,33 @@ function recordMenu(routePage: string) {
       m('header', 'Probes'),
       m('ul',
         isChromeTarget(target) && !isCrOSTarget(target) ? [chromeProbe] : [
-          m('a[href="#!/record?p=cpu"]',
+          m('a[href="#!/record/cpu"]',
             m(`li${routePage === 'cpu' ? '.active' : ''}`,
               m('i.material-icons', 'subtitles'),
               m('.title', 'CPU'),
               m('.sub', 'CPU usage, scheduling, wakeups'))),
-          m('a[href="#!/record?p=gpu"]',
+          m('a[href="#!/record/gpu"]',
             m(`li${routePage === 'gpu' ? '.active' : ''}`,
               m('i.material-icons', 'aspect_ratio'),
               m('.title', 'GPU'),
               m('.sub', 'GPU frequency, memory'))),
-          m('a[href="#!/record?p=power"]',
+          m('a[href="#!/record/power"]',
             m(`li${routePage === 'power' ? '.active' : ''}`,
               m('i.material-icons', 'battery_charging_full'),
               m('.title', 'Power'),
               m('.sub', 'Battery and other energy counters'))),
-          m('a[href="#!/record?p=memory"]',
+          m('a[href="#!/record/memory"]',
             m(`li${routePage === 'memory' ? '.active' : ''}`,
               m('i.material-icons', 'memory'),
               m('.title', 'Memory'),
               m('.sub', 'Physical mem, VM, LMK'))),
-          m('a[href="#!/record?p=android"]',
+          m('a[href="#!/record/android"]',
             m(`li${routePage === 'android' ? '.active' : ''}`,
               m('i.material-icons', 'android'),
               m('.title', 'Android apps & svcs'),
               m('.sub', 'atrace and logcat'))),
           chromeProbe,
-          m('a[href="#!/record?p=advanced"]',
+          m('a[href="#!/record/advanced"]',
             m(`li${routePage === 'advanced' ? '.active' : ''}`,
               m('i.material-icons', 'settings'),
               m('.title', 'Advanced settings'),
@@ -1379,7 +1356,7 @@ function recordMenu(routePage: string) {
 
 
 export const RecordPage = createPage({
-  view() {
+  view({attrs}: m.Vnode<PageAttrs>) {
     const SECTIONS: {[property: string]: (cssClass: string) => m.Child} = {
       buffers: RecSettings,
       instructions: Instructions,
@@ -1394,8 +1371,8 @@ export const RecordPage = createPage({
     };
 
     const pages: m.Children = [];
-    const routePageParam = Router.param('p');
-    let routePage = typeof routePageParam === 'string' ? routePageParam : '';
+    // we need to remove the `/` character from the route
+    let routePage = attrs.subpage ? attrs.subpage.substr(1) : '';
     if (!Object.keys(SECTIONS).includes(routePage)) {
       routePage = 'buffers';
     }

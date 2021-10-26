@@ -94,7 +94,7 @@ class DiceTurnSyncOnHelper
     // sync being disabled even before fetching enterprise policies (e.g. sync
     // engine gets a 'disabled-by-enterprise' error from the server).
     virtual void ShowEnterpriseAccountConfirmation(
-        const std::string& email,
+        const AccountInfo& account_info,
         SigninChoiceCallback callback) = 0;
 
     // Shows a sync confirmation screen offering to open the Sync settings.
@@ -165,6 +165,10 @@ class DiceTurnSyncOnHelper
   // SyncStartupTracker::Observer:
   void SyncStartupCompleted() override;
   void SyncStartupFailed() override;
+
+  // Fakes that sync enabled for testing, but does not create a sync service.
+  static void SetShowSyncEnabledUiForTesting(
+      bool show_sync_enabled_ui_for_testing);
 
  private:
   friend class base::DeleteHelper<DiceTurnSyncOnHelper>;
@@ -274,6 +278,7 @@ class DiceTurnSyncOnHelper
   std::unique_ptr<SyncStartupTracker> sync_startup_tracker_;
   std::unique_ptr<DiceSignedInProfileCreator> dice_signed_in_profile_creator_;
   base::CallbackListSubscription shutdown_subscription_;
+  bool enterprise_account_confirmed_ = false;
 
   base::WeakPtrFactory<DiceTurnSyncOnHelper> weak_pointer_factory_{this};
   DISALLOW_COPY_AND_ASSIGN(DiceTurnSyncOnHelper);

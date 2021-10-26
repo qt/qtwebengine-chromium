@@ -97,6 +97,10 @@ class CORE_EXPORT NGInlineLayoutAlgorithm final
                                       const NGLineInfo&,
                                       NGInlineItemResult*,
                                       NGLogicalLineItems* line_box);
+  void PlaceBlockInInline(const NGInlineItem&,
+                          const NGLineInfo&,
+                          NGInlineItemResult*,
+                          NGLogicalLineItems* line_box);
   void PlaceLayoutResult(NGInlineItemResult*,
                          NGLogicalLineItems* line_box,
                          NGInlineBoxState*,
@@ -120,6 +124,10 @@ class CORE_EXPORT NGInlineLayoutAlgorithm final
   LayoutUnit ComputeContentSize(const NGLineInfo&,
                                 const NGExclusionSpace&,
                                 LayoutUnit line_height);
+
+  LayoutUnit SetAnnotationOverflow(const NGLineInfo& line_info,
+                                   const NGLogicalLineItems& line_box,
+                                   const FontHeight& line_box_metrics);
 
   NGInlineLayoutStateStack* box_states_;
   NGInlineChildLayoutContext* context_;

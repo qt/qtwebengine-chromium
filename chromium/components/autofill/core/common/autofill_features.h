@@ -39,6 +39,9 @@ COMPONENT_EXPORT(AUTOFILL)
 extern const base::FeatureParam<int>
     kAutofillAutoBlockUpdateAddressProfilePromptStrikeLimit;
 COMPONENT_EXPORT(AUTOFILL)
+extern const base::Feature
+    kAutofillAddressProfileSavePromptAddressVerificationSupport;
+COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillAddressProfileSavePromptNicknameSupport;
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillAllowDuplicateFormSubmissions;
@@ -132,6 +135,8 @@ extern const base::Feature kAutofillServerCommunication;
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillShowTypePredictions;
 COMPONENT_EXPORT(AUTOFILL)
+extern const base::Feature kAutofillSilentProfileUpdateForInsufficientImport;
+COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillSkipComparingInferredLabels;
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillStrictContextualCardNameConditions;
@@ -144,6 +149,11 @@ COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillUseImprovedLabelDisambiguation;
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillUseNewSectioningMethod;
+COMPONENT_EXPORT(AUTOFILL)
+extern const base::Feature kAutofillUseNewFormExtraction;
+COMPONENT_EXPORT(AUTOFILL)
+extern const base::Feature
+    kAutofillUseOnlyFormRendererIDForOldDuplicateFormRemoval;
 
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kAutofillEnableAblationStudy;
@@ -196,6 +206,11 @@ extern const base::Feature kAndroidAutofillQueryServerFieldTypes;
 COMPONENT_EXPORT(AUTOFILL)
 extern const base::Feature kWalletRequiresFirstSyncSetupComplete;
 #endif
+
+#if defined(OS_ANDROID)
+COMPONENT_EXPORT(AUTOFILL)
+bool IsAutofillManualFallbackEnabled();
+#endif  // OS_ANDROID
 
 }  // namespace features
 }  // namespace autofill

@@ -243,10 +243,15 @@ void GLSurfaceEGLSurfaceControl::CommitPendingTransaction(
   DCHECK_LE(pending_surfaces_count_, surface_list_.size());
   for (size_t i = pending_surfaces_count_; i < surface_list_.size(); ++i) {
     auto& surface_state = surface_list_[i];
-    pending_transaction_->SetBuffer(*surface_state.surface, nullptr,
-                                    base::ScopedFD());
-    pending_transaction_->SetVisibility(*surface_state.surface, false);
-    surface_state.visibility = false;
+    if (surface_state.hardware_buffer) {
+      pending_transaction_->SetBuffer(*surface_state.surface, nullptr,
+                                      base::ScopedFD());
+      surface_state.hardware_buffer = nullptr;
+    }
+    if (surface_state.visibility) {
+      pending_transaction_->SetVisibility(*surface_state.surface, false);
+      surface_state.visibility = false;
+    }
   }
 
   // TODO(khushalsagar): Consider using the SetDamageRect API for partial
@@ -308,6 +313,7 @@ bool GLSurfaceEGLSurfaceControl::ScheduleOverlayPlane(
     const gfx::Rect& bounds_rect,
     const gfx::RectF& crop_rect,
     bool enable_blend,
+    const gfx::Rect& damage_rect,
     std::unique_ptr<gfx::GpuFence> gpu_fence) {
   if (surface_lost_) {
     LOG(ERROR) << "ScheduleOverlayPlane failed because surface is lost";

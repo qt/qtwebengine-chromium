@@ -17,6 +17,7 @@
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/compositing/paint_layer_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/color.h"
+#include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/graphics_layer.h"
 #include "third_party/blink/renderer/platform/graphics/paint/drawing_recorder.h"
@@ -114,9 +115,10 @@ TEST_P(FrameOverlayTest, AcceleratedCompositing) {
     EXPECT_EQ(PropertyTreeState::Root(),
               graphics_layer->GetPropertyTreeState());
     Vector<PreCompositedLayerInfo> pre_composited_layers;
-    graphics_layer->PaintRecursively(builder.Context(), pre_composited_layers);
+    PaintController::CycleScope cycle_scope;
+    graphics_layer->PaintRecursively(builder.Context(), pre_composited_layers,
+                                     cycle_scope);
     ASSERT_EQ(1u, pre_composited_layers.size());
-    graphics_layer->GetPaintController().FinishCycle();
     SkiaPaintCanvas(&canvas).drawPicture(
         graphics_layer->GetPaintController().GetPaintArtifact().GetPaintRecord(
             PropertyTreeState::Root()));
@@ -170,9 +172,10 @@ TEST_P(FrameOverlayTest, DeviceEmulationScale) {
     EXPECT_FALSE(graphics_layer->IsHitTestable());
     EXPECT_EQ(state, graphics_layer->GetPropertyTreeState());
     Vector<PreCompositedLayerInfo> pre_composited_layers;
-    graphics_layer->PaintRecursively(context, pre_composited_layers);
+    PaintController::CycleScope cycle_scope;
+    graphics_layer->PaintRecursively(context, pre_composited_layers,
+                                     cycle_scope);
     check_paint_results(graphics_layer->GetPaintController());
-    graphics_layer->GetPaintController().FinishCycle();
   }
 }
 

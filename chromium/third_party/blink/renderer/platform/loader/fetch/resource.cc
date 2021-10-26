@@ -30,8 +30,8 @@
 #include <cassert>
 #include <memory>
 
+#include "base/cxx17_backports.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/time/default_clock.h"
 #include "build/build_config.h"
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
@@ -526,6 +526,10 @@ void Resource::ResponseReceived(const ResourceResponse& response) {
 void Resource::SetSerializedCachedMetadata(mojo_base::BigBuffer data) {
   DCHECK(!is_revalidating_);
   DCHECK(!GetResponse().IsNull());
+}
+
+bool Resource::CodeCacheHashRequired() const {
+  return false;
 }
 
 String Resource::ReasonNotDeletable() const {

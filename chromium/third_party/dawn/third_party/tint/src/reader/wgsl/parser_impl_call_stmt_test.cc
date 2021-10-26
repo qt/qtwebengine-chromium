@@ -28,12 +28,15 @@ TEST_F(ParserImplTest, Statement_Call) {
   EXPECT_TRUE(e.matched);
   EXPECT_FALSE(e.errored);
 
+  EXPECT_EQ(e->source().range.begin.line, 1u);
+  EXPECT_EQ(e->source().range.begin.column, 1u);
+  EXPECT_EQ(e->source().range.end.line, 1u);
+  EXPECT_EQ(e->source().range.end.column, 2u);
+
   ASSERT_TRUE(e->Is<ast::CallStatement>());
   auto* c = e->As<ast::CallStatement>()->expr();
 
-  ASSERT_TRUE(c->func()->Is<ast::IdentifierExpression>());
-  auto* ident = c->func()->As<ast::IdentifierExpression>();
-  EXPECT_EQ(ident->symbol(), p->builder().Symbols().Get("a"));
+  EXPECT_EQ(c->func()->symbol(), p->builder().Symbols().Get("a"));
 
   EXPECT_EQ(c->params().size(), 0u);
 }
@@ -49,9 +52,7 @@ TEST_F(ParserImplTest, Statement_Call_WithParams) {
   ASSERT_TRUE(e->Is<ast::CallStatement>());
   auto* c = e->As<ast::CallStatement>()->expr();
 
-  ASSERT_TRUE(c->func()->Is<ast::IdentifierExpression>());
-  auto* ident = c->func()->As<ast::IdentifierExpression>();
-  EXPECT_EQ(ident->symbol(), p->builder().Symbols().Get("a"));
+  EXPECT_EQ(c->func()->symbol(), p->builder().Symbols().Get("a"));
 
   EXPECT_EQ(c->params().size(), 3u);
   EXPECT_TRUE(c->params()[0]->Is<ast::ConstructorExpression>());
@@ -70,9 +71,7 @@ TEST_F(ParserImplTest, Statement_Call_WithParams_TrailingComma) {
   ASSERT_TRUE(e->Is<ast::CallStatement>());
   auto* c = e->As<ast::CallStatement>()->expr();
 
-  ASSERT_TRUE(c->func()->Is<ast::IdentifierExpression>());
-  auto* ident = c->func()->As<ast::IdentifierExpression>();
-  EXPECT_EQ(ident->symbol(), p->builder().Symbols().Get("a"));
+  EXPECT_EQ(c->func()->symbol(), p->builder().Symbols().Get("a"));
 
   EXPECT_EQ(c->params().size(), 2u);
   EXPECT_TRUE(c->params()[0]->Is<ast::ConstructorExpression>());

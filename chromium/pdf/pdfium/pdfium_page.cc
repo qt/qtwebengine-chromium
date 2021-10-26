@@ -14,8 +14,8 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/check_op.h"
+#include "base/cxx17_backports.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/notreached.h"
 #include "base/numerics/math_constants.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
@@ -28,7 +28,6 @@
 #include "pdf/pdfium/pdfium_unsupported_features.h"
 #include "pdf/ppapi_migration/geometry_conversions.h"
 #include "pdf/ui/thumbnail.h"
-#include "ppapi/c/private/ppb_pdf.h"
 #include "printing/units.h"
 #include "third_party/pdfium/public/cpp/fpdf_scopers.h"
 #include "third_party/pdfium/public/fpdf_annot.h"
@@ -262,6 +261,81 @@ bool CompareTextRuns(const T& a, const T& b) {
   return a.text_range.index < b.text_range.index;
 }
 
+// Set text run style information based on a character of the text run.
+AccessibilityTextStyleInfo CalculateTextRunStyleInfo(FPDF_TEXTPAGE text_page,
+                                                     int char_index) {
+  AccessibilityTextStyleInfo style_info;
+  style_info.font_size = FPDFText_GetFontSize(text_page, char_index);
+
+  int flags = 0;
+  size_t buffer_size =
+      FPDFText_GetFontInfo(text_page, char_index, nullptr, 0, &flags);
+  if (buffer_size > 0) {
+    PDFiumAPIStringBufferAdapter<std::string> api_string_adapter(
+        &style_info.font_name, buffer_size, true);
+    void* data = api_string_adapter.GetData();
+    size_t bytes_written =
+        FPDFText_GetFontInfo(text_page, char_index, data, buffer_size, nullptr);
+    // Trim the null character.
+    api_string_adapter.Close(bytes_written);
+  }
+
+  style_info.font_weight = FPDFText_GetFontWeight(text_page, char_index);
+  // As defined in PDF 1.7 table 5.20.
+  constexpr int kFlagItalic = (1 << 6);
+  // Bold text is considered bold when greater than or equal to 700.
+  constexpr int kStandardBoldValue = 700;
+  style_info.is_italic = (flags & kFlagItalic);
+  style_info.is_bold = style_info.font_weight >= kStandardBoldValue;
+  unsigned int fill_r;
+  unsigned int fill_g;
+  unsigned int fill_b;
+  unsigned int fill_a;
+  if (FPDFText_GetFillColor(text_page, char_index, &fill_r, &fill_g, &fill_b,
+                            &fill_a)) {
+    style_info.fill_color = MakeARGB(fill_a, fill_r, fill_g, fill_b);
+  } else {
+    style_info.fill_color = MakeARGB(0xff, 0, 0, 0);
+  }
+
+  unsigned int stroke_r;
+  unsigned int stroke_g;
+  unsigned int stroke_b;
+  unsigned int stroke_a;
+  if (FPDFText_GetStrokeColor(text_page, char_index, &stroke_r, &stroke_g,
+                              &stroke_b, &stroke_a)) {
+    style_info.stroke_color = MakeARGB(stroke_a, stroke_r, stroke_g, stroke_b);
+  } else {
+    style_info.stroke_color = MakeARGB(0xff, 0, 0, 0);
+  }
+
+  int render_mode = FPDFText_GetTextRenderMode(text_page, char_index);
+  DCHECK_GE(render_mode,
+            static_cast<int>(AccessibilityTextRenderMode::kUnknown));
+  DCHECK_LE(render_mode,
+            static_cast<int>(AccessibilityTextRenderMode::kMaxValue));
+  style_info.render_mode =
+      static_cast<AccessibilityTextRenderMode>(render_mode);
+  return style_info;
+}
+
+// Returns true if the character at index `char_index` in `text_page` has the
+// same text style as the text run.
+bool AreTextStyleEqual(FPDF_TEXTPAGE text_page,
+                       int char_index,
+                       const AccessibilityTextStyleInfo& style) {
+  AccessibilityTextStyleInfo char_style =
+      CalculateTextRunStyleInfo(text_page, char_index);
+  return char_style.font_name == style.font_name &&
+         char_style.font_weight == style.font_weight &&
+         char_style.render_mode == style.render_mode &&
+         FloatEquals(char_style.font_size, style.font_size) &&
+         char_style.fill_color == style.fill_color &&
+         char_style.stroke_color == style.stroke_color &&
+         char_style.is_italic == style.is_italic &&
+         char_style.is_bold == style.is_bold;
+}
+
 }  // namespace
 
 PDFiumPage::LinkTarget::LinkTarget() : page(-1) {}
@@ -354,77 +428,6 @@ void PDFiumPage::CalculatePageObjectTextRunBreaks() {
   }
 }
 
-void PDFiumPage::CalculateTextRunStyleInfo(
-    int char_index,
-    AccessibilityTextStyleInfo& style_info) {
-  FPDF_TEXTPAGE text_page = GetTextPage();
-  style_info.font_size = FPDFText_GetFontSize(text_page, char_index);
-
-  int flags = 0;
-  size_t buffer_size =
-      FPDFText_GetFontInfo(text_page, char_index, nullptr, 0, &flags);
-  if (buffer_size > 0) {
-    PDFiumAPIStringBufferAdapter<std::string> api_string_adapter(
-        &style_info.font_name, buffer_size, true);
-    void* data = api_string_adapter.GetData();
-    size_t bytes_written =
-        FPDFText_GetFontInfo(text_page, char_index, data, buffer_size, nullptr);
-    // Trim the null character.
-    api_string_adapter.Close(bytes_written);
-  }
-
-  style_info.font_weight = FPDFText_GetFontWeight(text_page, char_index);
-  // As defined in PDF 1.7 table 5.20.
-  constexpr int kFlagItalic = (1 << 6);
-  // Bold text is considered bold when greater than or equal to 700.
-  constexpr int kStandardBoldValue = 700;
-  style_info.is_italic = (flags & kFlagItalic);
-  style_info.is_bold = style_info.font_weight >= kStandardBoldValue;
-  unsigned int fill_r;
-  unsigned int fill_g;
-  unsigned int fill_b;
-  unsigned int fill_a;
-  if (FPDFText_GetFillColor(text_page, char_index, &fill_r, &fill_g, &fill_b,
-                            &fill_a)) {
-    style_info.fill_color = MakeARGB(fill_a, fill_r, fill_g, fill_b);
-  } else {
-    style_info.fill_color = MakeARGB(0xff, 0, 0, 0);
-  }
-
-  unsigned int stroke_r;
-  unsigned int stroke_g;
-  unsigned int stroke_b;
-  unsigned int stroke_a;
-  if (FPDFText_GetStrokeColor(text_page, char_index, &stroke_r, &stroke_g,
-                              &stroke_b, &stroke_a)) {
-    style_info.stroke_color = MakeARGB(stroke_a, stroke_r, stroke_g, stroke_b);
-  } else {
-    style_info.stroke_color = MakeARGB(0xff, 0, 0, 0);
-  }
-
-  int render_mode = FPDFText_GetTextRenderMode(text_page, char_index);
-  DCHECK_GE(render_mode,
-            static_cast<int>(AccessibilityTextRenderMode::kUnknown));
-  DCHECK_LE(render_mode,
-            static_cast<int>(AccessibilityTextRenderMode::kMaxValue));
-  style_info.render_mode =
-      static_cast<AccessibilityTextRenderMode>(render_mode);
-}
-
-bool PDFiumPage::AreTextStyleEqual(int char_index,
-                                   const AccessibilityTextStyleInfo& style) {
-  AccessibilityTextStyleInfo char_style;
-  CalculateTextRunStyleInfo(char_index, char_style);
-  return char_style.font_name == style.font_name &&
-         char_style.font_weight == style.font_weight &&
-         char_style.render_mode == style.render_mode &&
-         FloatEquals(char_style.font_size, style.font_size) &&
-         char_style.fill_color == style.fill_color &&
-         char_style.stroke_color == style.stroke_color &&
-         char_style.is_italic == style.is_italic &&
-         char_style.is_bold == style.is_bold;
-}
-
 void PDFiumPage::LogOverlappingAnnotations() {
   if (logged_overlapping_annotations_)
     return;
@@ -480,7 +483,7 @@ absl::optional<AccessibilityTextRunInfo> PDFiumPage::GetTextRunInfo(
 
   // Set text run's style info from the first character of the text run.
   AccessibilityTextRunInfo info;
-  CalculateTextRunStyleInfo(char_index, info.style);
+  info.style = CalculateTextRunStyleInfo(text_page, char_index);
 
   gfx::RectF start_char_rect =
       GetFloatCharRectInPixels(page, text_page, char_index);
@@ -534,7 +537,7 @@ absl::optional<AccessibilityTextRunInfo> PDFiumPage::GetTextRunInfo(
     if (!base::IsUnicodeWhitespace(character)) {
       // Heuristic: End the text run if the text style of the current character
       // is different from the text run's style.
-      if (!AreTextStyleEqual(char_index, info.style))
+      if (!AreTextStyleEqual(text_page, char_index, info.style))
         break;
 
       // Heuristic: End text run if character isn't going in the same direction.
@@ -849,8 +852,8 @@ PDFiumPage::Area PDFiumPage::FormTypeToArea(int form_type) {
 
 char16_t PDFiumPage::GetCharAtIndex(int index) {
   if (!available_)
-    return L'\0';
-  return char16_t{FPDFText_GetUnicode(GetTextPage(), index)};
+    return u'\0';
+  return static_cast<char16_t>(FPDFText_GetUnicode(GetTextPage(), index));
 }
 
 int PDFiumPage::GetCharCount() {
@@ -868,7 +871,7 @@ PDFiumPage::Area PDFiumPage::GetDestinationTarget(FPDF_DEST destination,
   if (!target)
     return NONSELECTABLE_AREA;
 
-  int page_index = FPDFDest_GetDestPageIndex(engine_->doc(), destination);
+  const int page_index = FPDFDest_GetDestPageIndex(engine_->doc(), destination);
   if (page_index < 0)
     return NONSELECTABLE_AREA;
 
@@ -878,11 +881,20 @@ PDFiumPage::Area PDFiumPage::GetDestinationTarget(FPDF_DEST destination,
   absl::optional<float> y;
   GetPageDestinationTarget(destination, &x, &y, &target->zoom);
 
+  // The page where a destination exists can be different from the page that it
+  // targets. Calculating the in-page coordinates should be based on the target
+  // page's size.
+  PDFiumPage* target_page = engine_->GetPage(target->page);
+  if (!target_page)
+    return NONSELECTABLE_AREA;
+
   if (x) {
-    target->x_in_pixels = PreProcessAndTransformInPageCoordX(x.value());
+    target->x_in_pixels =
+        target_page->PreProcessAndTransformInPageCoordX(x.value());
   }
   if (y) {
-    target->y_in_pixels = PreProcessAndTransformInPageCoordY(y.value());
+    target->y_in_pixels =
+        target_page->PreProcessAndTransformInPageCoordY(y.value());
   }
 
   return DOCLINK_AREA;
@@ -922,7 +934,7 @@ float PDFiumPage::PreProcessAndTransformInPageCoordX(float x) {
   // If `x` < 0, scroll to the left side of the page.
   // If `x` > page width, scroll to the right side of the page.
   return TransformPageToScreenX(
-      std::max(std::min(x, FPDF_GetPageWidthF(GetPage())), 0.0f));
+      base::clamp(x, 0.0f, FPDF_GetPageWidthF(GetPage())));
 }
 
 float PDFiumPage::PreProcessAndTransformInPageCoordY(float y) {
@@ -1627,8 +1639,9 @@ uint32_t PDFiumPage::CountLinkHighlightOverlaps(
 }
 
 int ToPDFiumRotation(PageOrientation orientation) {
-  // Could static_cast<int>(orientation), but using an exhaustive switch will
-  // trigger an error if we ever change the definition of PageOrientation.
+  // Could use static_cast<int>(orientation), but using an exhaustive switch
+  // will trigger an error if we ever change the definition of
+  // `PageOrientation`.
   switch (orientation) {
     case PageOrientation::kOriginal:
       return 0;
@@ -1639,8 +1652,6 @@ int ToPDFiumRotation(PageOrientation orientation) {
     case PageOrientation::kClockwise270:
       return 3;
   }
-  NOTREACHED();
-  return 0;
 }
 
 }  // namespace chrome_pdf

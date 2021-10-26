@@ -13,6 +13,8 @@
 #include "base/allocator/partition_allocator/partition_alloc_constants.h"
 #include "base/allocator/partition_allocator/partition_root.h"
 #include "base/base_export.h"
+#include "base/compiler_specific.h"
+#include "base/cxx17_backports.h"
 #include "base/dcheck_is_on.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/base_tracing.h"
@@ -29,6 +31,10 @@ ThreadCacheRegistry g_instance;
 }
 
 BASE_EXPORT PartitionTlsKey g_thread_cache_key;
+#if defined(PA_THREAD_CACHE_FAST_TLS)
+BASE_EXPORT
+thread_local ThreadCache* g_thread_cache;
+#endif
 
 namespace {
 // Since |g_thread_cache_key| is shared, make sure that no more than one
@@ -59,7 +65,7 @@ uint8_t ThreadCache::global_limits_[ThreadCache::kBucketCount];
 
 // Start with the normal size, not the maximum one.
 uint16_t ThreadCache::largest_active_bucket_index_ =
-    BucketIndexForSize(kDefaultSizeThreshold);
+    BucketIndexLookup::GetIndex(kDefaultSizeThreshold);
 
 // static
 ThreadCacheRegistry& ThreadCacheRegistry::Instance() {
@@ -163,6 +169,14 @@ void ThreadCacheRegistry::ForcePurgeAllThreadAfterForkUnsafe() {
     // Clear the guard to prevent this from crashing.
     tcache->is_in_thread_cache_ = false;
 #endif
+    // There is a PA_DCHECK() in code called from |Purge()| checking that thread
+    // cache memory accounting is correct. Since we are after fork() and the
+    // other threads got interrupted mid-flight, this guarantee does not hold,
+    // and we get inconsistent results.  Rather than giving up on checking this
+    // invariant in regular code, reset it here so that the PA_DCHECK()
+    // passes. See crbug.com/1216964.
+    tcache->cached_memory_ = tcache->CachedMemory();
+
     tcache->Purge();
     tcache = tcache->next_;
   }
@@ -290,6 +304,9 @@ void ThreadCache::EnsureThreadSpecificDataInitialized() {
 
 // static
 void ThreadCache::Init(PartitionRoot<ThreadSafe>* root) {
+#if defined(OS_NACL)
+  IMMEDIATE_CRASH();
+#endif
   PA_CHECK(root->buckets[kBucketCount - 1].slot_size == kLargeSizeThreshold);
   PA_CHECK(root->buckets[largest_active_bucket_index_].slot_size ==
            kDefaultSizeThreshold);
@@ -342,10 +359,11 @@ void ThreadCache::SetGlobalLimits(PartitionRoot<ThreadSafe>* root,
 
     // Bare minimum so that malloc() / free() in a loop will not hit the central
     // allocator each time.
-    constexpr uint8_t kMinLimit = 1;
+    constexpr size_t kMinLimit = 1;
     // |PutInBucket()| is called on a full bucket, which should not overflow.
-    constexpr uint8_t kMaxLimit = std::numeric_limits<uint8_t>::max() - 1;
-    global_limits_[index] = std::max(kMinLimit, {std::min(value, {kMaxLimit})});
+    constexpr size_t kMaxLimit = std::numeric_limits<uint8_t>::max() - 1;
+    global_limits_[index] =
+        static_cast<uint8_t>(base::clamp(value, kMinLimit, kMaxLimit));
     PA_DCHECK(global_limits_[index] >= kMinLimit);
     PA_DCHECK(global_limits_[index] <= kMaxLimit);
   }
@@ -384,6 +402,18 @@ ThreadCache* ThreadCache::Create(PartitionRoot<internal::ThreadSafe>* root) {
 
   // This may allocate.
   PartitionTlsSet(g_thread_cache_key, tcache);
+#if defined(PA_THREAD_CACHE_FAST_TLS)
+  // |thread_local| variables with destructors cause issues on some platforms.
+  // Since we need a destructor (to empty the thread cache), we cannot use it
+  // directly. However, TLS accesses with |thread_local| are typically faster,
+  // as it can turn into a fixed offset load from a register (GS/FS on Linux
+  // x86, for instance). On Windows, saving/restoring the last error increases
+  // cost as well.
+  //
+  // To still get good performance, use |thread_local| to store a raw pointer,
+  // and rely on the platform TLS to call the destructor.
+  g_thread_cache = tcache;
+#endif  // defined(PA_THREAD_CACHE_FAST_TLS)
 
   return tcache;
 }
@@ -426,6 +456,10 @@ ThreadCache::~ThreadCache() {
 // static
 void ThreadCache::Delete(void* tcache_ptr) {
   auto* tcache = reinterpret_cast<ThreadCache*>(tcache_ptr);
+#if defined(PA_THREAD_CACHE_FAST_TLS)
+  g_thread_cache = nullptr;
+#endif
+
   auto* root = tcache->root_;
   reinterpret_cast<ThreadCache*>(tcache_ptr)->~ThreadCache();
   root->RawFree(tcache_ptr);
@@ -436,7 +470,11 @@ void ThreadCache::Delete(void* tcache_ptr) {
   //
   // TODO(lizeb): Investigate whether this is needed on POSIX as well.
   PartitionTlsSet(g_thread_cache_key, reinterpret_cast<void*>(kTombstone));
+#if defined(PA_THREAD_CACHE_FAST_TLS)
+  g_thread_cache = reinterpret_cast<ThreadCache*>(kTombstone);
 #endif
+
+#endif  // defined(OS_WIN)
 }
 
 ThreadCache::Bucket::Bucket() {
@@ -528,9 +566,22 @@ void ThreadCache::ClearBucket(ThreadCache::Bucket& bucket, size_t limit) {
   if (!bucket.count || bucket.count <= limit)
     return;
 
+  // This serves two purposes: error checking and avoiding stalls when grabbing
+  // the lock:
+  // 1. Error checking: this is pretty clear. Since this path is taken
+  //    infrequently, and is going to walk the entire freelist anyway, its
+  //    incremental cost should be very small. Indeed, we free from the tail of
+  //    the list, so all calls here will end up walking the entire freelist, and
+  //    incurring the same amount of cache misses.
+  // 2. Avoiding stalls: If one of the freelist accesses in |FreeAfter()|
+  //    triggers a major page fault, and we are running on a low-priority
+  //    thread, we don't want the thread to be blocked while holding the lock,
+  //    causing a priority inversion.
+  bucket.freelist_head->CheckFreeList(bucket.slot_size);
+
   uint8_t count_before = bucket.count;
   if (limit == 0) {
-    FreeAfter(bucket.freelist_head);
+    FreeAfter(bucket.freelist_head, bucket.slot_size);
     bucket.freelist_head = nullptr;
   } else {
     // Free the *end* of the list, not the head, since the head contains the
@@ -538,10 +589,10 @@ void ThreadCache::ClearBucket(ThreadCache::Bucket& bucket, size_t limit) {
     auto* head = bucket.freelist_head;
     size_t items = 1;  // Cannot free the freelist head.
     while (items < limit) {
-      head = head->GetNext();
+      head = head->GetNext(bucket.slot_size);
       items++;
     }
-    FreeAfter(head->GetNext());
+    FreeAfter(head->GetNext(bucket.slot_size), bucket.slot_size);
     head->SetNext(nullptr);
   }
   bucket.count = limit;
@@ -553,14 +604,14 @@ void ThreadCache::ClearBucket(ThreadCache::Bucket& bucket, size_t limit) {
   PA_DCHECK(cached_memory_ == CachedMemory());
 }
 
-void ThreadCache::FreeAfter(PartitionFreelistEntry* head) {
+void ThreadCache::FreeAfter(PartitionFreelistEntry* head, size_t slot_size) {
   // Acquire the lock once. Deallocation from the same bucket are likely to be
   // hitting the same cache lines in the central allocator, and lock
   // acquisitions can be expensive.
   internal::ScopedGuard<internal::ThreadSafe> guard(root_->lock_);
   while (head) {
     void* ptr = head;
-    head = head->GetNext();
+    head = head->GetNext(slot_size);
     root_->RawFreeLocked(ptr);
   }
 }
@@ -611,7 +662,6 @@ void ThreadCache::AccumulateStats(ThreadCacheStats* stats) const {
 
 #if defined(PA_THREAD_CACHE_ALLOC_STATS)
   for (size_t i = 0; i < kNumBuckets + 1; i++) {
-    stats->bucket_size_[i] = root_->buckets[i].slot_size;
     stats->allocs_per_bucket_[i] += stats_.allocs_per_bucket_[i];
   }
 #endif  // defined(PA_THREAD_CACHE_ALLOC_STATS)

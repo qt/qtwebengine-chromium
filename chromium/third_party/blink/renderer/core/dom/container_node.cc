@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/line/inline_text_box.h"
 #include "third_party/blink/renderer/core/layout/line/root_inline_box.h"
+#include "third_party/blink/renderer/core/layout/ng/inline/layout_ng_text_combine.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
@@ -485,7 +486,9 @@ bool ContainerNode::CheckParserAcceptChild(const Node& new_child) const {
 
 void ContainerNode::ParserInsertBefore(Node* new_child, Node& next_child) {
   DCHECK(new_child);
-  DCHECK_EQ(next_child.parentNode(), this);
+  DCHECK(next_child.parentNode() == this ||
+         (DynamicTo<DocumentFragment>(this) &&
+          DynamicTo<DocumentFragment>(this)->IsTemplateContent()));
   DCHECK(!new_child->IsDocumentFragment());
   DCHECK(!IsA<HTMLTemplateElement>(this));
 
@@ -502,6 +505,9 @@ void ContainerNode::ParserInsertBefore(Node* new_child, Node& next_child) {
   while (ContainerNode* parent = new_child->parentNode())
     parent->ParserRemoveChild(*new_child);
 
+  // This can happen if foster parenting moves nodes into a template
+  // content document, but next_child is still a "direct" child of the
+  // template.
   if (next_child.parentNode() != this)
     return;
 
@@ -668,6 +674,36 @@ void ContainerNode::Trace(Visitor* visitor) const {
   Node::Trace(visitor);
 }
 
+static bool ShouldMergeCombinedTextAfterRemoval(const Node& old_child) {
+  DCHECK(!old_child.parentNode()->GetForceReattachLayoutTree());
+
+  auto* const layout_object = old_child.GetLayoutObject();
+  if (!layout_object)
+    return false;
+
+  // Request to merge previous and next |LayoutNGTextCombine| of |child|.
+  // See http:://crbug.com/1227066
+  auto* const previous_sibling = layout_object->PreviousSibling();
+  if (!previous_sibling)
+    return false;
+  auto* const next_sibling = layout_object->NextSibling();
+  if (!next_sibling)
+    return false;
+  if (UNLIKELY(IsA<LayoutNGTextCombine>(previous_sibling)) &&
+      UNLIKELY(IsA<LayoutNGTextCombine>(next_sibling)))
+    return true;
+
+  // Request to merge combined texts in anonymous block.
+  // See http://crbug.com/1233432
+  if (!previous_sibling->IsAnonymousBlock() ||
+      !next_sibling->IsAnonymousBlock())
+    return false;
+
+  return UNLIKELY(
+             IsA<LayoutNGTextCombine>(previous_sibling->SlowLastChild())) &&
+         UNLIKELY(IsA<LayoutNGTextCombine>(next_sibling->SlowFirstChild()));
+}
+
 Node* ContainerNode::RemoveChild(Node* old_child,
                                  ExceptionState& exception_state) {
   // NotFoundError: Raised if oldChild is not a child of this node.
@@ -712,6 +748,10 @@ Node* ContainerNode::RemoveChild(Node* old_child,
         "in response to a mutation?");
     return nullptr;
   }
+
+  if (!GetForceReattachLayoutTree() &&
+      UNLIKELY(ShouldMergeCombinedTextAfterRemoval(*child)))
+    SetForceReattachLayoutTree();
 
   {
     HTMLFrameOwnerElement::PluginDisposeSuspendScope suspend_plugin_dispose;

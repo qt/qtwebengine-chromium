@@ -32,6 +32,7 @@
 #include "storage/browser/file_system/file_system_context.h"
 #include "storage/browser/file_system/file_system_operation.h"
 #include "storage/browser/file_system/file_system_url.h"
+#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/quota/quota_manager.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/file_system_test_file_set.h"
@@ -42,6 +43,8 @@
 #include "storage/common/file_system/file_system_mount_option.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
 #include "url/origin.h"
 
 namespace storage {
@@ -178,7 +181,6 @@ class CopyOrMoveOperationTestHelper {
 
   ~CopyOrMoveOperationTestHelper() {
     file_system_context_ = nullptr;
-    quota_manager_proxy_->SimulateQuotaManagerDestroyed();
     quota_manager_ = nullptr;
     quota_manager_proxy_ = nullptr;
     task_environment_.RunUntilIdle();
@@ -205,7 +207,8 @@ class CopyOrMoveOperationTestHelper {
     FileSystemBackend* backend =
         file_system_context_->GetFileSystemBackend(src_type_);
     backend->ResolveURL(
-        FileSystemURL::CreateForTest(origin_, src_type_, base::FilePath()),
+        FileSystemURL::CreateForTest(blink::StorageKey(url::Origin(origin_)),
+                                     src_type_, base::FilePath()),
         OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT, base::BindOnce(&ExpectOk));
     backend = file_system_context_->GetFileSystemBackend(dest_type_);
     if (dest_type_ == kFileSystemTypeTest) {
@@ -219,15 +222,18 @@ class CopyOrMoveOperationTestHelper {
             std::move(factory));
     }
     backend->ResolveURL(
-        FileSystemURL::CreateForTest(origin_, dest_type_, base::FilePath()),
+        FileSystemURL::CreateForTest(blink::StorageKey(url::Origin(origin_)),
+                                     dest_type_, base::FilePath()),
         OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT, base::BindOnce(&ExpectOk));
     task_environment_.RunUntilIdle();
 
     // Grant relatively big quota initially.
-    quota_manager_->SetQuota(
-        origin_, FileSystemTypeToQuotaStorageType(src_type_), 1024 * 1024);
-    quota_manager_->SetQuota(
-        origin_, FileSystemTypeToQuotaStorageType(dest_type_), 1024 * 1024);
+    quota_manager_->SetQuota(blink::StorageKey(origin_),
+                             FileSystemTypeToQuotaStorageType(src_type_),
+                             1024 * 1024);
+    quota_manager_->SetQuota(blink::StorageKey(origin_),
+                             FileSystemTypeToQuotaStorageType(dest_type_),
+                             1024 * 1024);
   }
 
   int64_t GetSourceUsage() {
@@ -244,12 +250,14 @@ class CopyOrMoveOperationTestHelper {
 
   FileSystemURL SourceURL(const std::string& path) {
     return file_system_context_->CreateCrackedFileSystemURL(
-        origin_, src_type_, base::FilePath::FromUTF8Unsafe(path));
+        blink::StorageKey(origin_), src_type_,
+        base::FilePath::FromUTF8Unsafe(path));
   }
 
   FileSystemURL DestURL(const std::string& path) {
     return file_system_context_->CreateCrackedFileSystemURL(
-        origin_, dest_type_, base::FilePath::FromUTF8Unsafe(path));
+        blink::StorageKey(origin_), dest_type_,
+        base::FilePath::FromUTF8Unsafe(path));
   }
 
   base::File::Error Copy(const FileSystemURL& src, const FileSystemURL& dest) {
@@ -286,7 +294,7 @@ class CopyOrMoveOperationTestHelper {
     for (size_t i = 0; i < test_case_size; ++i) {
       const FileSystemTestCaseRecord& test_case = test_cases[i];
       FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
-          root.origin(), root.mount_type(),
+          root.storage_key(), root.mount_type(),
           root.virtual_path().Append(test_case.path));
       if (test_case.is_directory)
         result = CreateDirectory(url);
@@ -317,7 +325,7 @@ class CopyOrMoveOperationTestHelper {
       ASSERT_EQ(base::File::FILE_OK, ReadDirectory(dir, &entries));
       for (const filesystem::mojom::DirectoryEntry& entry : entries) {
         FileSystemURL url = file_system_context_->CreateCrackedFileSystemURL(
-            dir.origin(), dir.mount_type(),
+            dir.storage_key(), dir.mount_type(),
             dir.virtual_path().Append(entry.name));
         base::FilePath relative;
         root.virtual_path().AppendRelativePath(url.virtual_path(), &relative);

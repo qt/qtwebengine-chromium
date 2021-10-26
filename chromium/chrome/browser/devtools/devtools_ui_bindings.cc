@@ -81,6 +81,7 @@
 #include "net/base/url_util.h"
 #include "net/http/http_response_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/cpp/simple_url_loader.h"
 #include "services/network/public/cpp/simple_url_loader_stream_consumer.h"
 #include "services/network/public/cpp/wrapper_shared_url_loader_factory.h"
@@ -265,16 +266,16 @@ std::unique_ptr<base::DictionaryValue> BuildObjectForResponse(
   response->SetInteger("netError", net_error);
   response->SetString("netErrorName", net::ErrorToString(net_error));
 
-  auto headers = std::make_unique<base::DictionaryValue>();
+  base::DictionaryValue headers;
   size_t iterator = 0;
   std::string name;
   std::string value;
   // TODO(caseq): this probably needs to handle duplicate header names
   // correctly by folding them.
   while (rh && rh->EnumerateHeaderLines(&iterator, &name, &value))
-    headers->SetString(name, value);
+    headers.SetString(name, value);
 
-  response->Set("headers", std::move(headers));
+  response->SetKey("headers", std::move(headers));
   return response;
 }
 
@@ -521,7 +522,7 @@ class DevToolsUIBindings::NetworkResourceLoader
                       base::OnceClosure resume) override {
     base::Value chunkValue;
 
-    bool encoded = !base::IsStringUTF8(chunk);
+    bool encoded = !base::IsStringUTF8AllowingNoncharacters(chunk);
     if (encoded) {
       std::string encoded_string;
       base::Base64Encode(chunk, &encoded_string);
@@ -670,7 +671,11 @@ void DevToolsUIBindings::FrontendWebContentsObserver::
 
 void DevToolsUIBindings::FrontendWebContentsObserver::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (navigation_handle->IsInMainFrame() && navigation_handle->HasCommitted())
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (navigation_handle->IsInPrimaryMainFrame() &&
+      navigation_handle->HasCommitted())
     devtools_bindings_->DidNavigateMainFrame();
 }
 
@@ -745,13 +750,10 @@ void DevToolsUIBindings::HandleMessageFromDevToolsFrontend(
     LOG(ERROR) << "Invalid message was sent to embedder: " << message;
     return;
   }
-  base::Value empty_params(base::Value::Type::LIST);
-  if (!params) {
-    params = &empty_params;
-  }
   int id = message.FindIntKey(kFrontendHostId).value_or(0);
-  base::ListValue* params_list;
-  params->GetAsList(&params_list);
+  std::vector<base::Value> params_list;
+  if (params)
+    params_list = std::move(*params).TakeList();
   embedder_message_dispatcher_->Dispatch(
       base::BindOnce(&DevToolsUIBindings::SendMessageAck,
                      weak_factory_.GetWeakPtr(), id),
@@ -1140,36 +1142,31 @@ void DevToolsUIBindings::SetDevicesDiscoveryConfig(
 
 void DevToolsUIBindings::DevicesDiscoveryConfigUpdated() {
   base::DictionaryValue config;
-  config.Set(kConfigDiscoverUsbDevices,
-             base::Value::ToUniquePtrValue(
-                 profile_->GetPrefs()
-                     ->FindPreference(prefs::kDevToolsDiscoverUsbDevicesEnabled)
-                     ->GetValue()
-                     ->Clone()));
-  config.Set(kConfigPortForwardingEnabled,
-             base::Value::ToUniquePtrValue(
-                 profile_->GetPrefs()
-                     ->FindPreference(prefs::kDevToolsPortForwardingEnabled)
-                     ->GetValue()
-                     ->Clone()));
-  config.Set(kConfigPortForwardingConfig,
-             base::Value::ToUniquePtrValue(
-                 profile_->GetPrefs()
-                     ->FindPreference(prefs::kDevToolsPortForwardingConfig)
-                     ->GetValue()
-                     ->Clone()));
-  config.Set(kConfigNetworkDiscoveryEnabled,
-             base::Value::ToUniquePtrValue(
-                 profile_->GetPrefs()
-                     ->FindPreference(prefs::kDevToolsDiscoverTCPTargetsEnabled)
-                     ->GetValue()
-                     ->Clone()));
-  config.Set(kConfigNetworkDiscoveryConfig,
-             base::Value::ToUniquePtrValue(
-                 profile_->GetPrefs()
-                     ->FindPreference(prefs::kDevToolsTCPDiscoveryConfig)
-                     ->GetValue()
-                     ->Clone()));
+  config.SetKey(kConfigDiscoverUsbDevices,
+                profile_->GetPrefs()
+                    ->FindPreference(prefs::kDevToolsDiscoverUsbDevicesEnabled)
+                    ->GetValue()
+                    ->Clone());
+  config.SetKey(kConfigPortForwardingEnabled,
+                profile_->GetPrefs()
+                    ->FindPreference(prefs::kDevToolsPortForwardingEnabled)
+                    ->GetValue()
+                    ->Clone());
+  config.SetKey(kConfigPortForwardingConfig,
+                profile_->GetPrefs()
+                    ->FindPreference(prefs::kDevToolsPortForwardingConfig)
+                    ->GetValue()
+                    ->Clone());
+  config.SetKey(kConfigNetworkDiscoveryEnabled,
+                profile_->GetPrefs()
+                    ->FindPreference(prefs::kDevToolsDiscoverTCPTargetsEnabled)
+                    ->GetValue()
+                    ->Clone());
+  config.SetKey(kConfigNetworkDiscoveryConfig,
+                profile_->GetPrefs()
+                    ->FindPreference(prefs::kDevToolsTCPDiscoveryConfig)
+                    ->GetValue()
+                    ->Clone());
   CallClientMethod("DevToolsAPI", "devicesDiscoveryConfigChanged",
                    std::move(config));
 }
@@ -1448,15 +1445,15 @@ void DevToolsUIBindings::FilePathsChanged(
     int budget = kMaxPathsPerMessage;
     base::ListValue changed, added, removed;
     while (budget > 0 && changed_index < changed_paths.size()) {
-      changed.AppendString(changed_paths[changed_index++]);
+      changed.Append(changed_paths[changed_index++]);
       --budget;
     }
     while (budget > 0 && added_index < added_paths.size()) {
-      added.AppendString(added_paths[added_index++]);
+      added.Append(added_paths[added_index++]);
       --budget;
     }
     while (budget > 0 && removed_index < removed_paths.size()) {
-      removed.AppendString(removed_paths[removed_index++]);
+      removed.Append(removed_paths[removed_index++]);
       --budget;
     }
     CallClientMethod("DevToolsAPI", "fileSystemFilesChangedAddedRemoved",
@@ -1497,7 +1494,7 @@ void DevToolsUIBindings::SearchCompleted(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   base::ListValue file_paths_value;
   for (auto const& file_path : file_paths)
-    file_paths_value.AppendString(file_path);
+    file_paths_value.Append(file_path);
   CallClientMethod("DevToolsAPI", "searchCompleted", base::Value(request_id),
                    base::Value(file_system_path), std::move(file_paths_value));
 }
@@ -1647,7 +1644,10 @@ void DevToolsUIBindings::CallClientMethod(
 
 void DevToolsUIBindings::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (navigation_handle->IsInMainFrame()) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (navigation_handle->IsInPrimaryMainFrame()) {
     if (frontend_loaded_ && agent_host_.get()) {
       agent_host_->DetachClient(this);
       InnerAttach();

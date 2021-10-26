@@ -283,7 +283,7 @@ class OutOfLineTruncateDoubleToI final : public OutOfLineCode {
     if (false) {
 #endif  // V8_ENABLE_WEBASSEMBLY
     } else if (tasm()->options().inline_offheap_trampolines) {
-      __ CallBuiltin(Builtins::kDoubleToI);
+      __ CallBuiltin(Builtin::kDoubleToI);
     } else {
       __ Call(BUILTIN_CODE(isolate_, DoubleToI), RelocInfo::CODE_TARGET);
     }
@@ -317,6 +317,8 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
         stub_mode_(stub_mode),
 #endif  // V8_ENABLE_WEBASSEMBLY
         zone_(gen->zone()) {
+    DCHECK(!AreAliased(object, scratch0, scratch1));
+    DCHECK(!AreAliased(value, scratch0, scratch1));
   }
 
   void Generate() final {
@@ -337,12 +339,13 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
       // A direct call to a wasm runtime stub defined in this module.
       // Just encode the stub index. This will be patched when the code
       // is added to the native module and copied into wasm code space.
-      __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
-                             save_fp_mode, wasm::WasmCode::kRecordWrite);
+      __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+                                          remembered_set_action, save_fp_mode,
+                                          StubCallMode::kCallWasmRuntimeStub);
     } else {
 #endif  // V8_ENABLE_WEBASSEMBLY
-      __ CallRecordWriteStub(object_, scratch1_, remembered_set_action,
-                             save_fp_mode);
+      __ CallRecordWriteStubSaveRegisters(object_, scratch1_,
+                                          remembered_set_action, save_fp_mode);
     }
   }
 
@@ -925,9 +928,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NONE);
-        __ Call(
-            isolate()->builtins()->builtin_handle(Builtins::kAbortCSAAssert),
-            RelocInfo::CODE_TARGET);
+        __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSAAssert),
+                RelocInfo::CODE_TARGET);
       }
       __ int3();
       break;
@@ -2081,22 +2083,12 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kIA32I64x2ShrS: {
       XMMRegister dst = i.OutputSimd128Register();
       XMMRegister src = i.InputSimd128Register(0);
-      XMMRegister tmp = i.TempSimd128Register(0);
-      XMMRegister tmp2 = i.TempSimd128Register(1);
-      Operand shift = i.InputOperand(1);
-
-      // Take shift value modulo 64.
-      __ and_(shift, Immediate(63));
-      __ Movd(tmp, shift);
-
-      // Set up a mask [0x80000000,0,0x80000000,0].
-      __ Pcmpeqb(tmp2, tmp2);
-      __ Psllq(tmp2, tmp2, byte{63});
-
-      __ Psrlq(tmp2, tmp2, tmp);
-      __ Psrlq(dst, src, tmp);
-      __ Pxor(dst, tmp2);
-      __ Psubq(dst, tmp2);
+      if (HasImmediateInput(instr, 1)) {
+        __ I64x2ShrS(dst, src, i.InputInt6(1), kScratchDoubleReg);
+      } else {
+        __ I64x2ShrS(dst, src, i.InputRegister(1), kScratchDoubleReg,
+                     i.TempSimd128Register(0), i.TempRegister(1));
+      }
       break;
     }
     case kIA32I64x2Add: {
@@ -4535,7 +4527,7 @@ void CodeGenerator::AssembleConstructFrame() {
   if (required_slots > 0) {
     DCHECK(frame_access_state()->has_frame());
 #if V8_ENABLE_WEBASSEMBLY
-    if (info()->IsWasm() && required_slots > 128) {
+    if (info()->IsWasm() && required_slots * kSystemPointerSize > 4 * KB) {
       // For WebAssembly functions with big frames we have to do the stack
       // overflow check before we construct the frame. Otherwise we may not
       // have enough space on the stack to call the runtime for the stack
@@ -4545,7 +4537,7 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if (required_slots * kSystemPointerSize < FLAG_stack_size * 1024) {
+      if (required_slots * kSystemPointerSize < FLAG_stack_size * KB) {
         Register scratch = esi;
         __ push(scratch);
         __ mov(scratch,
@@ -4560,6 +4552,8 @@ void CodeGenerator::AssembleConstructFrame() {
 
       __ wasm_call(wasm::WasmCode::kWasmStackOverflow,
                    RelocInfo::WASM_STUB_CALL);
+      // The call does not return, hence we can ignore any references and just
+      // define an empty safepoint.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
       RecordSafepoint(reference_map);
       __ AssertUnreachable(AbortReason::kUnexpectedReturnFromWasmTrap);
@@ -4604,9 +4598,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     }
   }
 
-  // We might need ecx and edx for scratch.
-  DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & edx.bit());
-  DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & ecx.bit());
   IA32OperandConverter g(this, nullptr);
   int parameter_slots = static_cast<int>(call_descriptor->ParameterSlotCount());
 
@@ -4626,9 +4617,10 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   // If {parameter_slots} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
   // itself.
-  const bool drop_jsargs = frame_access_state()->has_frame() &&
-                           call_descriptor->IsJSFunctionCall() &&
-                           parameter_slots != 0;
+
+  const bool drop_jsargs = parameter_slots != 0 &&
+                           frame_access_state()->has_frame() &&
+                           call_descriptor->IsJSFunctionCall();
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
   } else if (frame_access_state()->has_frame()) {
@@ -4646,38 +4638,49 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     if (drop_jsargs) {
       // Get the actual argument count.
       __ mov(argc_reg, Operand(ebp, StandardFrameConstants::kArgCOffset));
+      DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
     }
     AssembleDeconstructFrame();
   }
 
   if (drop_jsargs) {
-    // We must pop all arguments from the stack (including the receiver). This
-    // number of arguments is given by max(1 + argc_reg, parameter_slots).
-    int parameter_slots_without_receiver =
-        parameter_slots - 1;  // Exclude the receiver to simplify the
-                              // computation. We'll account for it at the end.
+    // We must pop all arguments from the stack (including the receiver).
+    // The number of arguments without the receiver is
+    // max(argc_reg, parameter_slots-1), and the receiver is added in
+    // DropArguments().
+    int parameter_slots_without_receiver = parameter_slots - 1;
     Label mismatch_return;
     Register scratch_reg = edx;
     DCHECK_NE(argc_reg, scratch_reg);
+    DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
+    DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & scratch_reg.bit());
     __ cmp(argc_reg, Immediate(parameter_slots_without_receiver));
     __ j(greater, &mismatch_return, Label::kNear);
     __ Ret(parameter_slots * kSystemPointerSize, scratch_reg);
     __ bind(&mismatch_return);
-    __ PopReturnAddressTo(scratch_reg);
-    __ lea(esp, Operand(esp, argc_reg, times_system_pointer_size,
-                        kSystemPointerSize));  // Also pop the receiver.
+    __ DropArguments(argc_reg, scratch_reg, TurboAssembler::kCountIsInteger,
+                     TurboAssembler::kCountExcludesReceiver);
     // We use a return instead of a jump for better return address prediction.
-    __ PushReturnAddressFrom(scratch_reg);
     __ Ret();
   } else if (additional_pop_count->IsImmediate()) {
-    Register scratch_reg = ecx;
     int additional_count = g.ToConstant(additional_pop_count).ToInt32();
     size_t pop_size = (parameter_slots + additional_count) * kSystemPointerSize;
-    CHECK_LE(pop_size, static_cast<size_t>(std::numeric_limits<int>::max()));
-    __ Ret(static_cast<int>(pop_size), scratch_reg);
+    if (is_uint16(pop_size)) {
+      // Avoid the additional scratch register, it might clobber the
+      // CalleeSavedRegisters.
+      __ ret(static_cast<int>(pop_size));
+    } else {
+      Register scratch_reg = ecx;
+      DCHECK_EQ(0u,
+                call_descriptor->CalleeSavedRegisters() & scratch_reg.bit());
+      CHECK_LE(pop_size, static_cast<size_t>(std::numeric_limits<int>::max()));
+      __ Ret(static_cast<int>(pop_size), scratch_reg);
+    }
   } else {
     Register pop_reg = g.ToRegister(additional_pop_count);
     Register scratch_reg = pop_reg == ecx ? edx : ecx;
+    DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & scratch_reg.bit());
+    DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & pop_reg.bit());
     int pop_size = static_cast<int>(parameter_slots * kSystemPointerSize);
     __ PopReturnAddressTo(scratch_reg);
     __ lea(esp, Operand(esp, pop_reg, times_system_pointer_size,

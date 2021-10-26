@@ -26,8 +26,8 @@ cros_gralloc_buffer::~cros_gralloc_buffer()
 {
 	drv_bo_destroy(bo_);
 	if (hnd_) {
-		native_handle_close(&hnd_->base);
-		delete hnd_;
+		native_handle_close(hnd_);
+		native_handle_delete(hnd_);
 	}
 	if (reserved_region_addr_) {
 		munmap(reserved_region_addr_, reserved_region_size_);
@@ -116,9 +116,10 @@ int32_t cros_gralloc_buffer::unlock()
 }
 
 int32_t cros_gralloc_buffer::resource_info(uint32_t strides[DRV_MAX_PLANES],
-					   uint32_t offsets[DRV_MAX_PLANES])
+					   uint32_t offsets[DRV_MAX_PLANES],
+					   uint64_t *format_modifier)
 {
-	return drv_resource_info(bo_, strides, offsets);
+	return drv_resource_info(bo_, strides, offsets, format_modifier);
 }
 
 int32_t cros_gralloc_buffer::invalidate()
@@ -128,9 +129,8 @@ int32_t cros_gralloc_buffer::invalidate()
 		return -EINVAL;
 	}
 
-	if (lock_data_[0]) {
+	if (lock_data_[0])
 		return drv_bo_invalidate(bo_, lock_data_[0]);
-	}
 
 	return 0;
 }
@@ -142,9 +142,8 @@ int32_t cros_gralloc_buffer::flush()
 		return -EINVAL;
 	}
 
-	if (lock_data_[0]) {
+	if (lock_data_[0])
 		return drv_bo_flush(bo_, lock_data_[0]);
-	}
 
 	return 0;
 }

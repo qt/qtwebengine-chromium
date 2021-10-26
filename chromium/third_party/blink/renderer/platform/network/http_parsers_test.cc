@@ -4,7 +4,7 @@
 
 #include "third_party/blink/renderer/platform/network/http_parsers.h"
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "services/network/public/mojom/content_security_policy.mojom-blink-forward.h"
 #include "services/network/public/mojom/content_security_policy.mojom-blink.h"
 #include "services/network/public/mojom/parsed_headers.mojom-blink.h"
@@ -332,8 +332,8 @@ TEST(HTTPParsersTest, ParseMultipartHeaders) {
       "set-cookie: y=3\n"
       "\n";
   wtf_size_t end = 0;
-  bool result =
-      ParseMultipartHeadersFromBody(kData, strlen(kData), &response, &end);
+  bool result = ParseMultipartHeadersFromBody(
+      kData, static_cast<wtf_size_t>(strlen(kData)), &response, &end);
 
   EXPECT_TRUE(result);
   EXPECT_EQ(strlen(kData), end);
@@ -348,8 +348,8 @@ TEST(HTTPParsersTest, ParseMultipartHeadersContentCharset) {
   ResourceResponse response;
   const char kData[] = "content-type: text/html; charset=utf-8\n\n";
   wtf_size_t end = 0;
-  bool result =
-      ParseMultipartHeadersFromBody(kData, strlen(kData), &response, &end);
+  bool result = ParseMultipartHeadersFromBody(
+      kData, static_cast<wtf_size_t>(strlen(kData)), &response, &end);
 
   EXPECT_TRUE(result);
   EXPECT_EQ(strlen(kData), end);

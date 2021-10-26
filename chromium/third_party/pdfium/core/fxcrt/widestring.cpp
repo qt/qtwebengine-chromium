@@ -7,19 +7,19 @@
 #include "core/fxcrt/widestring.h"
 
 #include <stddef.h>
+#include <string.h>
 
 #include <algorithm>
-#include <cctype>
-#include <cwctype>
 
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
+#include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/string_pool_template.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
+#include "third_party/base/cxx17_backports.h"
 #include "third_party/base/numerics/safe_math.h"
-#include "third_party/base/stl_util.h"
 
 template class fxcrt::StringDataTemplate<wchar_t>;
 template class fxcrt::StringViewTemplate<wchar_t>;
@@ -254,7 +254,7 @@ Optional<WideString> TryVSWPrintf(size_t size,
                                   const wchar_t* pFormat,
                                   va_list argList) {
   if (!size)
-    return {};
+    return pdfium::nullopt;
 
   WideString str;
   {
@@ -272,10 +272,10 @@ Optional<WideString> TryVSWPrintf(size_t size,
 
     bool bSufficientBuffer = ret >= 0 || buffer[size - 1] == 0;
     if (!bSufficientBuffer)
-      return {};
+      return pdfium::nullopt;
   }
   str.ReleaseBuffer(str.GetStringLength());
-  return {str};
+  return str;
 }
 
 }  // namespace
@@ -307,9 +307,9 @@ WideString WideString::FormatV(const wchar_t* format, va_list argList) {
     Optional<WideString> ret =
         TryVSWPrintf(static_cast<size_t>(maxLen), format, argListCopy);
     va_end(argListCopy);
+    if (ret.has_value())
+      return ret.value();
 
-    if (ret)
-      return *ret;
     maxLen *= 2;
   }
   return WideString();
@@ -655,9 +655,8 @@ ByteString WideString::ToLatin1() const {
 }
 
 ByteString WideString::ToDefANSI() const {
-  int src_len = GetLength();
-  int dest_len = FXSYS_WideCharToMultiByte(
-      FX_CODEPAGE_DefANSI, 0, c_str(), src_len, nullptr, 0, nullptr, nullptr);
+  size_t dest_len =
+      FX_WideCharToMultiByte(FX_CodePage::kDefANSI, AsStringView(), {});
   if (!dest_len)
     return ByteString();
 
@@ -665,8 +664,7 @@ ByteString WideString::ToDefANSI() const {
   {
     // Span's lifetime must end before ReleaseBuffer() below.
     pdfium::span<char> dest_buf = bstr.GetBuffer(dest_len);
-    FXSYS_WideCharToMultiByte(FX_CODEPAGE_DefANSI, 0, c_str(), src_len,
-                              dest_buf.data(), dest_len, nullptr, nullptr);
+    FX_WideCharToMultiByte(FX_CodePage::kDefANSI, AsStringView(), dest_buf);
   }
   bstr.ReleaseBuffer(dest_len);
   return bstr;
@@ -728,14 +726,11 @@ WideString WideString::Substr(size_t first, size_t count) const {
 }
 
 WideString WideString::First(size_t count) const {
-  if (count == 0 || !IsValidLength(count))
-    return WideString();
   return Substr(0, count);
 }
 
 WideString WideString::Last(size_t count) const {
-  if (count == 0 || !IsValidLength(count))
-    return WideString();
+  // Unsigned underflow is well-defined and out-of-range is handled by Substr().
   return Substr(GetLength() - count, count);
 }
 
@@ -921,9 +916,7 @@ WideString WideString::FromLatin1(ByteStringView bstr) {
 
 // static
 WideString WideString::FromDefANSI(ByteStringView bstr) {
-  int src_len = bstr.GetLength();
-  int dest_len = FXSYS_MultiByteToWideChar(
-      FX_CODEPAGE_DefANSI, 0, bstr.unterminated_c_str(), src_len, nullptr, 0);
+  size_t dest_len = FX_MultiByteToWideChar(FX_CodePage::kDefANSI, bstr, {});
   if (!dest_len)
     return WideString();
 
@@ -931,8 +924,7 @@ WideString WideString::FromDefANSI(ByteStringView bstr) {
   {
     // Span's lifetime must end before ReleaseBuffer() below.
     pdfium::span<wchar_t> dest_buf = wstr.GetBuffer(dest_len);
-    FXSYS_MultiByteToWideChar(FX_CODEPAGE_DefANSI, 0, bstr.unterminated_c_str(),
-                              src_len, dest_buf.data(), dest_len);
+    FX_MultiByteToWideChar(FX_CodePage::kDefANSI, bstr, dest_buf);
   }
   wstr.ReleaseBuffer(dest_len);
   return wstr;
@@ -1122,14 +1114,16 @@ std::ostream& operator<<(std::ostream& os, WideStringView str) {
 
 }  // namespace fxcrt
 
-uint32_t FX_HashCode_GetW(WideStringView str, bool bIgnoreCase) {
+uint32_t FX_HashCode_GetW(WideStringView str) {
   uint32_t dwHashCode = 0;
-  if (bIgnoreCase) {
-    for (wchar_t c : str)  // match FXSYS_towlower() arg type.
-      dwHashCode = 1313 * dwHashCode + FXSYS_towlower(c);
-  } else {
-    for (WideStringView::UnsignedType c : str)
-      dwHashCode = 1313 * dwHashCode + c;
-  }
+  for (WideStringView::UnsignedType c : str)
+    dwHashCode = 1313 * dwHashCode + c;
+  return dwHashCode;
+}
+
+uint32_t FX_HashCode_GetLoweredW(WideStringView str) {
+  uint32_t dwHashCode = 0;
+  for (wchar_t c : str)  // match FXSYS_towlower() arg type.
+    dwHashCode = 1313 * dwHashCode + FXSYS_towlower(c);
   return dwHashCode;
 }

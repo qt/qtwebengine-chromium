@@ -182,8 +182,8 @@ void ScrambleTree(views::View* view) {
   size_t count = view->children().size();
   if (count > 1) {
     const uint64_t max = count - 1;
-    size_t a = size_t{base::RandGenerator(max)};
-    size_t b = size_t{base::RandGenerator(max)};
+    size_t a = static_cast<size_t>(base::RandGenerator(max));
+    size_t b = static_cast<size_t>(base::RandGenerator(max));
 
     if (a != b) {
       views::View* view_a = view->children()[a];
@@ -3499,7 +3499,7 @@ TEST_F(ViewTest, RemoveAllChildViews) {
   EXPECT_EQ(3u, foo->children().size());
 
   // Now remove all child views from root.
-  root.RemoveAllChildViews(true);
+  root.RemoveAllChildViews();
 
   EXPECT_TRUE(root.children().empty());
 }
@@ -5499,7 +5499,7 @@ TEST_F(ViewTest, RemoveAllChildViewsNullsFocusListPointers) {
   View* const second = parent.AddChildView(std::make_unique<View>());
   View* const last = parent.AddChildView(std::make_unique<View>());
 
-  parent.RemoveAllChildViews(false /* delete_children */);
+  parent.RemoveAllChildViewsWithoutDeleting();
 
   EXPECT_EQ(first->GetPreviousFocusableView(), nullptr);
   EXPECT_EQ(first->GetNextFocusableView(), nullptr);

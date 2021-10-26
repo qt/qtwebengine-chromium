@@ -5,11 +5,14 @@
 #include "components/payments/content/payment_method_manifest_table.h"
 
 #include <time.h>
+#include <string>
 
+#include "base/feature_list.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "components/payments/core/secure_payment_confirmation_instrument.h"
 #include "components/webdata/common/web_database.h"
+#include "content/public/common/content_features.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
 
@@ -64,6 +67,16 @@ bool PaymentMethodManifestTable::CreateTablesIfNecessary() {
     return false;
   }
 
+  if (!db_->DoesColumnExist("secure_payment_confirmation_instrument",
+                            "date_created")) {
+    if (!db_->Execute(
+            "ALTER TABLE secure_payment_confirmation_instrument ADD COLUMN "
+            "date_created INTEGER NOT NULL DEFAULT 0")) {
+      NOTREACHED();
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -83,6 +96,17 @@ void PaymentMethodManifestTable::RemoveExpiredData() {
       "DELETE FROM payment_method_manifest WHERE expire_date < ?"));
   s.BindInt64(0, now_date_in_seconds);
   s.Run();
+}
+
+bool PaymentMethodManifestTable::ClearSecurePaymentConfirmationInstruments(
+    base::Time begin,
+    base::Time end) {
+  sql::Statement s(db_->GetUniqueStatement(
+      "DELETE FROM secure_payment_confirmation_instrument WHERE (date_created "
+      ">= ? AND date_created < ?) OR (date_created = 0)"));
+  s.BindInt64(0, begin.ToDeltaSinceWindowsEpoch().InMicroseconds());
+  s.BindInt64(1, end.ToDeltaSinceWindowsEpoch().InMicroseconds());
+  return s.Run();
 }
 
 bool PaymentMethodManifestTable::AddManifest(
@@ -139,7 +163,8 @@ std::vector<std::string> PaymentMethodManifestTable::GetManifest(
 
 bool PaymentMethodManifestTable::AddSecurePaymentConfirmationInstrument(
     const SecurePaymentConfirmationInstrument& instrument) {
-  if (!instrument.IsValid())
+  if (!instrument.IsValid(base::FeatureList::IsEnabled(
+          features::kSecurePaymentConfirmationAPIV3)))
     return false;
 
   sql::Transaction transaction(db_);
@@ -154,13 +179,8 @@ bool PaymentMethodManifestTable::AddSecurePaymentConfirmationInstrument(
                                 "WHERE credential_id=? "
                                 "AND relying_party_id<>?"));
     int index = 0;
-    if (!s0.BindBlob(index++, instrument.credential_id.data(),
-                     instrument.credential_id.size()))
-      return false;
-
-    if (!s0.BindString(index++, instrument.relying_party_id))
-      return false;
-
+    s0.BindBlob(index++, instrument.credential_id);
+    s0.BindString(index++, instrument.relying_party_id);
     if (s0.Step())
       return false;
   }
@@ -169,9 +189,7 @@ bool PaymentMethodManifestTable::AddSecurePaymentConfirmationInstrument(
     sql::Statement s1(db_->GetUniqueStatement(
         "DELETE FROM secure_payment_confirmation_instrument "
         "WHERE credential_id=?"));
-    if (!s1.BindBlob(0, instrument.credential_id.data(),
-                     instrument.credential_id.size()))
-      return false;
+    s1.BindBlob(0, instrument.credential_id);
 
     if (!s1.Run())
       return false;
@@ -180,21 +198,15 @@ bool PaymentMethodManifestTable::AddSecurePaymentConfirmationInstrument(
   {
     sql::Statement s2(db_->GetUniqueStatement(
         "INSERT INTO secure_payment_confirmation_instrument "
-        "(credential_id, relying_party_id, label, icon) "
-        "VALUES (?, ?, ?, ?)"));
+        "(credential_id, relying_party_id, label, icon, date_created) "
+        "VALUES (?, ?, ?, ?, ?)"));
     int index = 0;
-    if (!s2.BindBlob(index++, instrument.credential_id.data(),
-                     instrument.credential_id.size()))
-      return false;
-
-    if (!s2.BindString(index++, instrument.relying_party_id))
-      return false;
-
-    if (!s2.BindString16(index++, instrument.label))
-      return false;
-
-    if (!s2.BindBlob(index++, instrument.icon.data(), instrument.icon.size()))
-      return false;
+    s2.BindBlob(index++, instrument.credential_id);
+    s2.BindString(index++, instrument.relying_party_id);
+    s2.BindString16(index++, instrument.label);
+    s2.BindBlob(index++, instrument.icon);
+    s2.BindInt64(index++,
+                 base::Time::Now().ToDeltaSinceWindowsEpoch().InMicroseconds());
 
     if (!s2.Run())
       return false;
@@ -221,8 +233,7 @@ PaymentMethodManifestTable::GetSecurePaymentConfirmationInstruments(
     if (credential_id.empty())
       continue;
 
-    if (!s.BindBlob(0, credential_id.data(), credential_id.size()))
-      continue;
+    s.BindBlob(0, credential_id);
 
     if (!s.Step())
       continue;
@@ -236,13 +247,28 @@ PaymentMethodManifestTable::GetSecurePaymentConfirmationInstruments(
     if (!s.ColumnBlobAsVector(index++, &instrument->icon))
       continue;
 
-    if (!instrument->IsValid())
+    if (!instrument->IsValid(base::FeatureList::IsEnabled(
+            features::kSecurePaymentConfirmationAPIV3)))
       continue;
 
     instruments.push_back(std::move(instrument));
   }
 
   return instruments;
+}
+
+bool PaymentMethodManifestTable::ExecuteForTest(const char* sql) {
+  return db_->Execute(sql);
+}
+
+bool PaymentMethodManifestTable::RazeForTest() {
+  return db_->Raze();
+}
+
+bool PaymentMethodManifestTable::DoesColumnExistForTest(
+    const char* table_name,
+    const char* column_name) {
+  return db_->DoesColumnExist(table_name, column_name);
 }
 
 }  // namespace payments

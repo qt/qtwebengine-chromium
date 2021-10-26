@@ -236,6 +236,13 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
       }
       break;
     }
+    case ui::AXEventGenerator::Event::LIVE_REGION_NODE_CHANGED: {
+      // This event is fired when an object appears in a live region.
+      // Speak its text.
+      std::u16string text = android_node->GetInnerText();
+      wcax->AnnounceLiveRegionText(text);
+      break;
+    }
     case ui::AXEventGenerator::Event::LOAD_COMPLETE:
       if (node->manager() == GetRootManager()) {
         auto* android_focused =
@@ -244,22 +251,24 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
           wcax->HandlePageLoaded(android_focused->unique_id());
       }
       break;
-    case ui::AXEventGenerator::Event::SCROLL_HORIZONTAL_POSITION_CHANGED:
-    case ui::AXEventGenerator::Event::SCROLL_VERTICAL_POSITION_CHANGED:
-      wcax->HandleScrollPositionChanged(android_node->unique_id());
-      break;
-    case ui::AXEventGenerator::Event::LIVE_REGION_NODE_CHANGED: {
-      // This event is fired when an object appears in a live region.
-      // Speak its text.
-      std::u16string text = android_node->GetInnerText();
-      wcax->AnnounceLiveRegionText(text);
-      break;
-    }
     case ui::AXEventGenerator::Event::RANGE_VALUE_CHANGED:
       DCHECK(android_node->GetData().IsRangeValueSupported());
       if (android_node->IsSlider())
         wcax->HandleSliderChanged(android_node->unique_id());
       break;
+    case ui::AXEventGenerator::Event::SCROLL_HORIZONTAL_POSITION_CHANGED:
+    case ui::AXEventGenerator::Event::SCROLL_VERTICAL_POSITION_CHANGED:
+      wcax->HandleScrollPositionChanged(android_node->unique_id());
+      break;
+    case ui::AXEventGenerator::Event::SUBTREE_CREATED: {
+      // When a dialog is shown, we will send a SUBTREE_CREATED event.
+      // When this happens, we want to generate a TYPE_WINDOW_STATE_CHANGED
+      // event and populate the node's paneTitle with the dialog description.
+      if (android_node->GetRole() == ax::mojom::Role::kDialog) {
+        wcax->HandleDialogModalOpened(android_node->unique_id());
+      }
+      break;
+    }
     case ui::AXEventGenerator::Event::VALUE_IN_TEXT_FIELD_CHANGED:
       DCHECK(android_node->IsTextField());
       if (GetFocus() == node)
@@ -274,10 +283,12 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
     case ui::AXEventGenerator::Event::ATOMIC_CHANGED:
     case ui::AXEventGenerator::Event::AUTO_COMPLETE_CHANGED:
     case ui::AXEventGenerator::Event::BUSY_CHANGED:
+    case ui::AXEventGenerator::Event::CHECKED_STATE_DESCRIPTION_CHANGED:
     case ui::AXEventGenerator::Event::CHILDREN_CHANGED:
     case ui::AXEventGenerator::Event::CLASS_NAME_CHANGED:
     case ui::AXEventGenerator::Event::COLLAPSED:
     case ui::AXEventGenerator::Event::CONTROLS_CHANGED:
+    case ui::AXEventGenerator::Event::DETAILS_CHANGED:
     case ui::AXEventGenerator::Event::DESCRIBED_BY_CHANGED:
     case ui::AXEventGenerator::Event::DESCRIPTION_CHANGED:
     case ui::AXEventGenerator::Event::DOCUMENT_TITLE_CHANGED:
@@ -329,7 +340,6 @@ void BrowserAccessibilityManagerAndroid::FireGeneratedEvent(
     case ui::AXEventGenerator::Event::SET_SIZE_CHANGED:
     case ui::AXEventGenerator::Event::SORT_CHANGED:
     case ui::AXEventGenerator::Event::STATE_CHANGED:
-    case ui::AXEventGenerator::Event::SUBTREE_CREATED:
     case ui::AXEventGenerator::Event::TEXT_ATTRIBUTE_CHANGED:
     case ui::AXEventGenerator::Event::WIN_IACCESSIBLE_STATE_CHANGED:
       break;
@@ -453,6 +463,11 @@ void BrowserAccessibilityManagerAndroid::ClearNodeInfoCacheForGivenId(
   if (!wcax)
     return;
 
+  // We do not need to clear a node more than once per atomic update.
+  if (nodes_already_cleared_.find(unique_id) != nodes_already_cleared_.end())
+    return;
+
+  nodes_already_cleared_.emplace(unique_id);
   wcax->ClearNodeInfoCacheForGivenId(unique_id);
 }
 
@@ -520,6 +535,9 @@ void BrowserAccessibilityManagerAndroid::OnAtomicUpdateFinished(
 
   // Reset content changed events counter every time we finish an atomic update.
   wcax->ResetContentChangedEventsCounter();
+
+  // Clear unordered_set of nodes cleared from the cache after atomic update.
+  nodes_already_cleared_.clear();
 
   if (root_changed) {
     wcax->HandleNavigate();

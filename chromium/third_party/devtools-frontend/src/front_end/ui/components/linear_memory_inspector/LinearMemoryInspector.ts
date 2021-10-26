@@ -5,6 +5,7 @@
 import * as Common from '../../../core/common/common.js';
 import * as LitHtml from '../../lit-html/lit-html.js';
 import * as ComponentHelpers from '../helpers/helpers.js';
+import linearMemoryInspectorStyles from './linearMemoryInspector.css.js';
 
 const {render, html} = LitHtml;
 
@@ -99,6 +100,7 @@ class AddressHistoryEntry implements Common.SimpleHistoryManager.HistoryEntry {
 }
 
 export class LinearMemoryInspector extends HTMLElement {
+  static readonly litTagName = LitHtml.literal`devtools-linear-memory-inspector-inspector`;
   private readonly shadow = this.attachShadow({mode: 'open'});
   private readonly history = new Common.SimpleHistoryManager.SimpleHistoryManager(10);
 
@@ -116,6 +118,10 @@ export class LinearMemoryInspector extends HTMLElement {
   private valueTypeModes = getDefaultValueTypeMapping();
   private valueTypes = new Set(this.valueTypeModes.keys());
   private endianness = Endianness.Little;
+
+  connectedCallback(): void {
+    this.shadow.adoptedStyleSheets = [linearMemoryInspectorStyles];
+  }
 
   set data(data: LinearMemoryInspectorData) {
     if (data.address < data.memoryOffset || data.address > data.memoryOffset + data.memory.length || data.address < 0) {
@@ -154,30 +160,6 @@ export class LinearMemoryInspector extends HTMLElement {
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     render(html`
-      <style>
-        :host {
-          flex: auto;
-          display: flex;
-        }
-
-        .view {
-          width: 100%;
-          display: flex;
-          flex: 1;
-          flex-direction: column;
-          font-family: var(--monospace-font-family);
-          font-size: var(--monospace-font-size);
-          padding: 9px 12px 9px 7px;
-        }
-
-        devtools-linear-memory-inspector-navigator + devtools-linear-memory-inspector-viewer {
-          margin-top: 12px;
-        }
-
-        .value-interpreter {
-          display: flex;
-        }
-      </style>
       <div class="view">
         <${LinearMemoryNavigator.litTagName}
           .data=${{address: navigatorAddressToShow, valid: navigatorAddressIsValid, mode: this.currentNavigatorMode, error: errorMsg, canGoBackInHistory, canGoForwardInHistory} as LinearMemoryNavigatorData}
@@ -342,8 +324,13 @@ export class LinearMemoryInspector extends HTMLElement {
 ComponentHelpers.CustomElements.defineComponent('devtools-linear-memory-inspector-inspector', LinearMemoryInspector);
 
 declare global {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface HTMLElementTagNameMap {
     'devtools-linear-memory-inspector-inspector': LinearMemoryInspector;
+  }
+
+  interface HTMLElementEventMap {
+    'memoryrequest': MemoryRequestEvent;
+    'addresschanged': AddressChangedEvent;
+    'settingschanged': SettingsChangedEvent;
   }
 }

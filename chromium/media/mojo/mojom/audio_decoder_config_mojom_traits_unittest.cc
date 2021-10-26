@@ -6,7 +6,7 @@
 
 #include <utility>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "media/base/audio_decoder_config.h"
 #include "media/base/media_util.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
@@ -59,7 +59,7 @@ TEST(AudioDecoderConfigStructTraitsTest, ConvertAudioDecoderConfig_Encrypted) {
 }
 
 TEST(AudioDecoderConfigStructTraitsTest,
-     ConvertAudioDecoderConfig_WithPorilfe) {
+     ConvertAudioDecoderConfig_WithProfile) {
   AudioDecoderConfig input;
   input.Initialize(kCodecAAC, kSampleFormatU8, CHANNEL_LAYOUT_SURROUND, 48000,
                    EmptyExtraData(), EncryptionScheme::kUnencrypted,
@@ -71,6 +71,38 @@ TEST(AudioDecoderConfigStructTraitsTest,
   EXPECT_TRUE(
       media::mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
   EXPECT_TRUE(output.Matches(input));
+}
+
+TEST(AudioDecoderConfigStructTraitsTest,
+     ConvertAudioDecoderConfig_DisableDiscardDecoderDelay) {
+  AudioDecoderConfig input;
+  input.Initialize(kCodecAAC, kSampleFormatU8, CHANNEL_LAYOUT_SURROUND, 48000,
+                   EmptyExtraData(), EncryptionScheme::kUnencrypted,
+                   base::TimeDelta(), 0);
+  input.disable_discard_decoder_delay();
+  std::vector<uint8_t> data =
+      media::mojom::AudioDecoderConfig::Serialize(&input);
+  AudioDecoderConfig output;
+  EXPECT_TRUE(
+      media::mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
+  EXPECT_TRUE(output.Matches(input));
+  EXPECT_FALSE(output.should_discard_decoder_delay());
+}
+
+TEST(AudioDecoderConfigStructTraitsTest,
+     ConvertAudioDecoderConfig_TargetOutputChannelLayout) {
+  AudioDecoderConfig input;
+  input.Initialize(kCodecAAC, kSampleFormatU8, CHANNEL_LAYOUT_SURROUND, 48000,
+                   EmptyExtraData(), EncryptionScheme::kUnencrypted,
+                   base::TimeDelta(), 0);
+  input.set_target_output_channel_layout(CHANNEL_LAYOUT_5_1);
+  std::vector<uint8_t> data =
+      media::mojom::AudioDecoderConfig::Serialize(&input);
+  AudioDecoderConfig output;
+  EXPECT_TRUE(
+      media::mojom::AudioDecoderConfig::Deserialize(std::move(data), &output));
+  EXPECT_TRUE(output.Matches(input));
+  EXPECT_EQ(output.target_output_channel_layout(), CHANNEL_LAYOUT_5_1);
 }
 
 }  // namespace media

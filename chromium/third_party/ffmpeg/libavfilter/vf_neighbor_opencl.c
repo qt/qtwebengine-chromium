@@ -20,7 +20,6 @@
 
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/avstring.h"
@@ -274,7 +273,7 @@ static const AVOption erosion_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(erosion_opencl);
 
-AVFilter ff_vf_erosion_opencl = {
+const AVFilter ff_vf_erosion_opencl = {
     .name           = "erosion_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply erosion effect"),
     .priv_size      = sizeof(NeighborOpenCLContext),
@@ -302,7 +301,7 @@ static const AVOption dilation_opencl_options[] = {
 
 AVFILTER_DEFINE_CLASS(dilation_opencl);
 
-AVFilter ff_vf_dilation_opencl = {
+const AVFilter ff_vf_dilation_opencl = {
     .name           = "dilation_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Apply dilation effect"),
     .priv_size      = sizeof(NeighborOpenCLContext),

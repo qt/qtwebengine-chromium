@@ -28,6 +28,7 @@
 
 #include "third_party/blink/renderer/platform/fonts/font_fallback_list.h"
 
+#include "base/timer/elapsed_timer.h"
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/alternate_font_family.h"
 #include "third_party/blink/renderer/platform/fonts/font_cache.h"
@@ -35,6 +36,7 @@
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_fallback_map.h"
 #include "third_party/blink/renderer/platform/fonts/font_family.h"
+#include "third_party/blink/renderer/platform/fonts/font_performance.h"
 #include "third_party/blink/renderer/platform/fonts/segmented_font_data.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 
@@ -92,6 +94,15 @@ bool FontFallbackList::ShouldSkipDrawing() const {
 }
 
 const SimpleFontData* FontFallbackList::DeterminePrimarySimpleFontData(
+    const FontDescription& font_description) {
+  base::ElapsedTimer timer;
+  const SimpleFontData* result =
+      DeterminePrimarySimpleFontDataCore(font_description);
+  FontPerformance::AddPrimaryFontTime(timer.Elapsed());
+  return result;
+}
+
+const SimpleFontData* FontFallbackList::DeterminePrimarySimpleFontDataCore(
     const FontDescription& font_description) {
   bool should_load_custom_font = true;
 
@@ -151,7 +162,7 @@ scoped_refptr<FontData> FontFallbackList::GetFontData(
 
   for (; curr_family; curr_family = curr_family->Next()) {
     family_index_++;
-    if (curr_family->Family().length()) {
+    if (!curr_family->Family().IsEmpty()) {
       scoped_refptr<FontData> result;
       if (GetFontSelector()) {
         result = GetFontSelector()->GetFontData(font_description,
@@ -203,7 +214,7 @@ FallbackListCompositeKey FontFallbackList::CompositeKey(
   FallbackListCompositeKey key(font_description);
   const FontFamily* current_family = &font_description.Family();
   while (current_family) {
-    if (current_family->Family().length()) {
+    if (!current_family->Family().IsEmpty()) {
       FontFaceCreationParams params(
           AdjustFamilyNameToAvoidUnsupportedFonts(current_family->Family()));
       scoped_refptr<FontData> result;
@@ -258,8 +269,6 @@ const FontData* FontFallbackList::FontDataAt(
       has_loading_fallback_ = true;
     if (result->IsCustomFont())
       has_custom_font_ = true;
-    if (result->HasAdvanceOverride())
-      has_advance_override_ = true;
   }
   return result.get();
 }

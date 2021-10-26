@@ -4,7 +4,9 @@
 
 module blink.mojom;
 
+import "components/payments/mojom/payment_request_data.mojom";
 import "mojo/public/mojom/base/time.mojom";
+import "third_party/blink/public/mojom/payments/payment_credential.mojom";
 import "url/mojom/url.mojom";
 
 // This file describes the communication between the WebAuthentication renderer
@@ -38,6 +40,7 @@ enum AuthenticatorStatus {
   BAD_RELYING_PARTY_ID,
   CANNOT_READ_AND_WRITE_LARGE_BLOB,
   INVALID_ALLOW_CREDENTIALS_FOR_LARGE_BLOB,
+  FAILED_TO_SAVE_CREDENTIAL_ID_FOR_PAYMENT_EXTENSION,
   UNKNOWN_ERROR,
 };
 
@@ -288,6 +291,15 @@ struct PRFValues {
   array<uint8, 32>? second;
 };
 
+// Payment parameters passed into calls to GetAssertion for Secure Payment
+// Confirmation.
+// TODO(https://crbug.com/1239249): Convert to a non-mojo struct, because this
+// is not used in any mojo interfaces.
+struct PaymentOptions {
+  payments.mojom.PaymentCurrencyAmount total;
+  payments.mojom.PaymentCredentialInstrument instrument;
+};
+
 // Parameters passed into calls to GetAssertion.
 struct PublicKeyCredentialRequestOptions {
   // If true, indicates that this request should prioritize showing a UI only if
@@ -485,6 +497,11 @@ struct PublicKeyCredentialCreationOptions {
   // If present, attempt the store the given value as a credblob.
   // https://fidoalliance.org/specs/fido-v2.1-rd-20201208/fido-client-to-authenticator-protocol-v2.1-rd-20201208.html#sctn-credBlob-extension
   array<uint8>? cred_blob;
+
+  // Whether a U2F-API-compatible should be made to support a U2F API
+  // migration.
+  // https://groups.google.com/a/chromium.org/g/blink-dev/c/xHC3AtU_65A
+  bool google_legacy_app_id_support = false;
 };
 
 enum PublicKeyCredentialType {

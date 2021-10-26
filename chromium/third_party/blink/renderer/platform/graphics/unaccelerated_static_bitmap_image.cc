@@ -8,6 +8,8 @@
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_context_3d_provider.h"
 #include "third_party/blink/renderer/platform/graphics/accelerated_static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/graphics/canvas_resource_provider.h"
+#include "third_party/blink/renderer/platform/graphics/graphics_context.h"
 #include "third_party/blink/renderer/platform/graphics/web_graphics_context_3d_provider_wrapper.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
@@ -65,7 +67,7 @@ UnacceleratedStaticBitmapImage::~UnacceleratedStaticBitmapImage() {
   }
 }
 
-IntSize UnacceleratedStaticBitmapImage::Size() const {
+IntSize UnacceleratedStaticBitmapImage::SizeInternal() const {
   return IntSize(paint_image_.width(), paint_image_.height());
 }
 
@@ -77,18 +79,17 @@ bool UnacceleratedStaticBitmapImage::CurrentFrameKnownToBeOpaque() {
   return paint_image_.IsOpaque();
 }
 
-void UnacceleratedStaticBitmapImage::Draw(
-    cc::PaintCanvas* canvas,
-    const cc::PaintFlags& flags,
-    const FloatRect& dst_rect,
-    const FloatRect& src_rect,
-    const SkSamplingOptions& sampling,
-    RespectImageOrientationEnum should_respect_image_orientation,
-    ImageClampingMode clamp_mode,
-    ImageDecodingMode) {
+void UnacceleratedStaticBitmapImage::Draw(cc::PaintCanvas* canvas,
+                                          const cc::PaintFlags& flags,
+                                          const FloatRect& dst_rect,
+                                          const FloatRect& src_rect,
+                                          const ImageDrawOptions& draw_options,
+                                          ImageClampingMode clamp_mode,
+                                          ImageDecodingMode) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  StaticBitmapImage::DrawHelper(canvas, flags, dst_rect, src_rect, sampling,
-                                clamp_mode, should_respect_image_orientation,
+  StaticBitmapImage::DrawHelper(canvas, flags, dst_rect, src_rect,
+                                draw_options.sampling_options, clamp_mode,
+                                draw_options.respect_image_orientation,
                                 PaintImageForCurrentFrame());
 }
 
@@ -118,6 +119,37 @@ UnacceleratedStaticBitmapImage::ConvertToColorSpace(
         skia_image->makeColorTypeAndColorSpace(color_type, color_space);
   }
   return UnacceleratedStaticBitmapImage::Create(skia_image, orientation_);
+}
+
+bool UnacceleratedStaticBitmapImage::CopyToResourceProvider(
+    CanvasResourceProvider* resource_provider) {
+  DCHECK(resource_provider);
+
+  sk_sp<SkImage> image = paint_image_.GetSwSkImage();
+  if (!image)
+    return false;
+
+  SkPixmap pixmap;
+  if (!image->peekPixels(&pixmap))
+    return false;
+
+  const void* pixels = pixmap.addr();
+  const size_t row_bytes = pixmap.rowBytes();
+  std::vector<uint8_t> flipped;
+  DCHECK(IsOriginTopLeft());
+  if (!resource_provider->IsOriginTopLeft()) {
+    const int height = pixmap.height();
+    flipped.resize(row_bytes * height);
+    for (int i = 0; i < height; ++i) {
+      memcpy(flipped.data() + i * row_bytes,
+             static_cast<const uint8_t*>(pixels) + (height - 1 - i) * row_bytes,
+             row_bytes);
+    }
+    pixels = flipped.data();
+  }
+
+  return resource_provider->WritePixels(pixmap.info(), pixels, row_bytes,
+                                        /*x=*/0, /*y=*/0);
 }
 
 }  // namespace blink

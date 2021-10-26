@@ -20,7 +20,6 @@
 
 #include <float.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
@@ -1577,7 +1576,7 @@ static const AVOption aiir_options[] = {
 
 AVFILTER_DEFINE_CLASS(aiir);
 
-AVFilter ff_af_aiir = {
+const AVFilter ff_af_aiir = {
     .name          = "aiir",
     .description   = NULL_IF_CONFIG_SMALL("Apply Infinite Impulse Response filter with supplied coefficients."),
     .priv_size     = sizeof(AudioIIRContext),

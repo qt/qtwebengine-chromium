@@ -949,7 +949,17 @@ void CaptureTexSubImage2DRobustANGLE_pixels(const State &glState,
                                             const void *pixels,
                                             ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    if (glState.getTargetBuffer(gl::BufferBinding::PixelUnpack))
+    {
+        return;
+    }
+
+    if (!pixels)
+    {
+        return;
+    }
+
+    CaptureMemory(pixels, bufSize, paramCapture);
 }
 
 void CaptureTexImage3DRobustANGLE_pixels(const State &glState,
@@ -2336,7 +2346,7 @@ void CaptureDiscardFramebufferEXT_attachments(const State &glState,
                                               const GLenum *attachments,
                                               ParamCapture *paramCapture)
 {
-    CaptureMemory(attachments, sizeof(GLenum) * numAttachments, paramCapture);
+    CaptureArray(attachments, numAttachments, paramCapture);
 }
 
 void CaptureDeleteQueriesEXT_idsPacked(const State &glState,
@@ -2345,7 +2355,7 @@ void CaptureDeleteQueriesEXT_idsPacked(const State &glState,
                                        const QueryID *ids,
                                        ParamCapture *paramCapture)
 {
-    CaptureMemory(ids, sizeof(QueryID) * n, paramCapture);
+    CaptureArray(ids, n, paramCapture);
 }
 
 void CaptureGenQueriesEXT_idsPacked(const State &glState,
@@ -2433,7 +2443,7 @@ void CaptureGetQueryivEXT_params(const State &glState,
                                  GLint *params,
                                  ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(params, sizeof(GLint), paramCapture);
 }
 
 void CaptureDrawBuffersEXT_bufs(const State &glState,
@@ -2473,7 +2483,7 @@ void CaptureDeleteMemoryObjectsEXT_memoryObjectsPacked(const State &glState,
                                                        const MemoryObjectID *memoryObjects,
                                                        ParamCapture *paramCapture)
 {
-    CaptureMemory(memoryObjects, sizeof(MemoryObjectID) * n, paramCapture);
+    CaptureArray(memoryObjects, n, paramCapture);
 }
 
 void CaptureGetMemoryObjectParameterivEXT_params(const State &glState,
@@ -2558,7 +2568,7 @@ void CaptureDeleteSemaphoresEXT_semaphoresPacked(const State &glState,
                                                  const SemaphoreID *semaphores,
                                                  ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(semaphores, n, paramCapture);
 }
 
 void CaptureGenSemaphoresEXT_semaphoresPacked(const State &glState,
@@ -2567,7 +2577,7 @@ void CaptureGenSemaphoresEXT_semaphoresPacked(const State &glState,
                                               SemaphoreID *semaphores,
                                               ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, semaphores, paramCapture);
 }
 
 void CaptureGetSemaphoreParameterui64vEXT_params(const State &glState,
@@ -2600,7 +2610,7 @@ void CaptureSignalSemaphoreEXT_buffersPacked(const State &glState,
                                              const GLenum *dstLayouts,
                                              ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(buffers, numBufferBarriers, paramCapture);
 }
 
 void CaptureSignalSemaphoreEXT_texturesPacked(const State &glState,
@@ -2613,7 +2623,7 @@ void CaptureSignalSemaphoreEXT_texturesPacked(const State &glState,
                                               const GLenum *dstLayouts,
                                               ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(textures, numTextureBarriers, paramCapture);
 }
 
 void CaptureSignalSemaphoreEXT_dstLayouts(const State &glState,
@@ -2626,7 +2636,8 @@ void CaptureSignalSemaphoreEXT_dstLayouts(const State &glState,
                                           const GLenum *dstLayouts,
                                           ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(dstLayouts, (numBufferBarriers + numTextureBarriers) * sizeof(GLenum),
+                 paramCapture);
 }
 
 void CaptureWaitSemaphoreEXT_buffersPacked(const State &glState,
@@ -2639,7 +2650,7 @@ void CaptureWaitSemaphoreEXT_buffersPacked(const State &glState,
                                            const GLenum *srcLayouts,
                                            ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(buffers, numBufferBarriers, paramCapture);
 }
 
 void CaptureWaitSemaphoreEXT_texturesPacked(const State &glState,
@@ -2652,7 +2663,7 @@ void CaptureWaitSemaphoreEXT_texturesPacked(const State &glState,
                                             const GLenum *srcLayouts,
                                             ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(textures, numTextureBarriers, paramCapture);
 }
 
 void CaptureWaitSemaphoreEXT_srcLayouts(const State &glState,
@@ -2665,7 +2676,7 @@ void CaptureWaitSemaphoreEXT_srcLayouts(const State &glState,
                                         const GLenum *srcLayouts,
                                         ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(srcLayouts, (numBufferBarriers + numTextureBarriers), paramCapture);
 }
 
 void CaptureGetSamplerParameterIivEXT_params(const State &glState,
@@ -3022,7 +3033,7 @@ void CaptureDeleteFencesNV_fencesPacked(const State &glState,
                                         const FenceNVID *fences,
                                         ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(fences, n * sizeof(FenceNVID), paramCapture);
 }
 
 void CaptureGenFencesNV_fencesPacked(const State &glState,
@@ -3031,7 +3042,7 @@ void CaptureGenFencesNV_fencesPacked(const State &glState,
                                      FenceNVID *fences,
                                      ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, fences, paramCapture);
 }
 
 void CaptureGetFenceivNV_params(const State &glState,
@@ -3041,7 +3052,7 @@ void CaptureGetFenceivNV_params(const State &glState,
                                 GLint *params,
                                 ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(params, sizeof(GLint), paramCapture);
 }
 
 void CaptureDrawTexfvOES_coords(const State &glState,
@@ -3082,7 +3093,7 @@ void CaptureDeleteFramebuffersOES_framebuffersPacked(const State &glState,
                                                      const FramebufferID *framebuffers,
                                                      ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(framebuffers, n, paramCapture);
 }
 
 void CaptureDeleteRenderbuffersOES_renderbuffersPacked(const State &glState,
@@ -3091,7 +3102,7 @@ void CaptureDeleteRenderbuffersOES_renderbuffersPacked(const State &glState,
                                                        const RenderbufferID *renderbuffers,
                                                        ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(renderbuffers, n, paramCapture);
 }
 
 void CaptureGenFramebuffersOES_framebuffersPacked(const State &glState,
@@ -3100,7 +3111,7 @@ void CaptureGenFramebuffersOES_framebuffersPacked(const State &glState,
                                                   FramebufferID *framebuffers,
                                                   ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, framebuffers, paramCapture);
 }
 
 void CaptureGenRenderbuffersOES_renderbuffersPacked(const State &glState,
@@ -3109,7 +3120,7 @@ void CaptureGenRenderbuffersOES_renderbuffersPacked(const State &glState,
                                                     RenderbufferID *renderbuffers,
                                                     ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, renderbuffers, paramCapture);
 }
 
 void CaptureGetFramebufferAttachmentParameterivOES_params(const State &glState,
@@ -3120,7 +3131,7 @@ void CaptureGetFramebufferAttachmentParameterivOES_params(const State &glState,
                                                           GLint *params,
                                                           ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(params, sizeof(GLint), paramCapture);
 }
 
 void CaptureGetRenderbufferParameterivOES_params(const State &glState,
@@ -3130,7 +3141,7 @@ void CaptureGetRenderbufferParameterivOES_params(const State &glState,
                                                  GLint *params,
                                                  ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureMemory(params, sizeof(GLint), paramCapture);
 }
 
 void CaptureGetProgramBinaryOES_length(const State &glState,

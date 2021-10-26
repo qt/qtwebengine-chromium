@@ -15,17 +15,18 @@
 #include <unordered_map>
 #include <utility>
 
+#include "base/cxx17_backports.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/pickle.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/escape.h"
 #include "net/base/parse_number.h"
@@ -150,6 +151,13 @@ struct HttpResponseHeaders::ParsedHeader {
   std::string::const_iterator name_end;
   std::string::const_iterator value_begin;
   std::string::const_iterator value_end;
+
+  // Write a representation of this object into a tracing proto.
+  void WriteIntoTrace(perfetto::TracedValue context) const {
+    auto dict = std::move(context).WriteDictionary();
+    dict.Add("name", base::MakeStringPiece(name_begin, name_end));
+    dict.Add("value", base::MakeStringPiece(value_begin, value_end));
+  }
 };
 
 //-----------------------------------------------------------------------------
@@ -753,24 +761,42 @@ size_t HttpResponseHeaders::FindHeader(size_t from,
 
 bool HttpResponseHeaders::GetCacheControlDirective(base::StringPiece directive,
                                                    TimeDelta* result) const {
-  base::StringPiece name("cache-control");
+  static constexpr base::StringPiece name("cache-control");
   std::string value;
 
   size_t directive_size = directive.size();
 
   size_t iter = 0;
   while (EnumerateHeader(&iter, name, &value)) {
-    if (value.size() > directive_size + 1 &&
-        base::StartsWith(value, directive,
-                         base::CompareCase::INSENSITIVE_ASCII) &&
-        value[directive_size] == '=') {
-      int64_t seconds;
-      base::StringToInt64(base::MakeStringPiece(
-                              value.begin() + directive_size + 1, value.end()),
-                          &seconds);
-      *result = TimeDelta::FromSeconds(seconds);
-      return true;
+    if (!base::StartsWith(value, directive,
+                          base::CompareCase::INSENSITIVE_ASCII)) {
+      continue;
     }
+    if (value.size() == directive_size || value[directive_size] != '=')
+      continue;
+    // 1*DIGIT with leading and trailing spaces, as described at
+    // https://datatracker.ietf.org/doc/html/rfc7234#section-1.2.1.
+    auto start = value.cbegin() + directive_size + 1;
+    auto end = value.cend();
+    while (start < end && *start == ' ') {
+      // leading spaces
+      ++start;
+    }
+    while (start < end - 1 && *(end - 1) == ' ') {
+      // trailing spaces
+      --end;
+    }
+    if (start == end ||
+        !std::all_of(start, end, [](char c) { return '0' <= c && c <= '9'; })) {
+      continue;
+    }
+    int64_t seconds = 0;
+    base::StringToInt64(base::MakeStringPiece(start, end), &seconds);
+    // We ignore the return value because we've already checked the input
+    // string. For the overflow case we use TimeDelta::FiniteMax().InSeconds().
+    seconds = std::min(seconds, base::TimeDelta::FiniteMax().InSeconds());
+    *result = TimeDelta::FromSeconds(seconds);
+    return true;
   }
 
   return false;
@@ -1362,6 +1388,12 @@ bool HttpResponseHeaders::IsCookieResponseHeader(base::StringPiece name) {
       return true;
   }
   return false;
+}
+
+void HttpResponseHeaders::WriteIntoTrace(perfetto::TracedValue context) const {
+  perfetto::TracedDictionary dict = std::move(context).WriteDictionary();
+  dict.Add("response_code", response_code_);
+  dict.Add("headers", parsed_);
 }
 
 }  // namespace net

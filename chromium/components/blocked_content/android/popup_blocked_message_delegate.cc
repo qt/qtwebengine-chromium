@@ -46,7 +46,8 @@ bool PopupBlockedMessageDelegate::ShowMessage(
 
   // Don't allow the user to configure the setting in the UI if the setting
   // is managed by policy.
-  int button_text_id = allow_settings_changes_ ? IDS_SHOW_CONTENT : IDS_OK;
+  int button_text_id =
+      allow_settings_changes_ ? IDS_POPUPS_BLOCKED_INFOBAR_BUTTON_SHOW : IDS_OK;
   message->SetPrimaryButtonText(l10n_util::GetStringUTF16(button_text_id));
   message->SetIconResourceId(
       resource_id_mapper.Run(IDR_ANDROID_INFOBAR_BLOCKED_POPUPS));
@@ -67,7 +68,7 @@ bool PopupBlockedMessageDelegate::ShowMessage(
 PopupBlockedMessageDelegate::~PopupBlockedMessageDelegate() {
   if (message_ != nullptr) {
     messages::MessageDispatcherBridge::Get()->DismissMessage(
-        message_.get(), web_contents_, messages::DismissReason::UNKNOWN);
+        message_.get(), messages::DismissReason::UNKNOWN);
   }
 }
 

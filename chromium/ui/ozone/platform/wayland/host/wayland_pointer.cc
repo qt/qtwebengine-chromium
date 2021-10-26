@@ -20,12 +20,9 @@ WaylandPointer::WaylandPointer(wl_pointer* pointer,
                                WaylandConnection* connection,
                                Delegate* delegate)
     : obj_(pointer), connection_(connection), delegate_(delegate) {
-  static const wl_pointer_listener listener = {
-      &WaylandPointer::Enter,       &WaylandPointer::Leave,
-      &WaylandPointer::Motion,      &WaylandPointer::Button,
-      &WaylandPointer::Axis,        &WaylandPointer::Frame,
-      &WaylandPointer::AxisSource,  &WaylandPointer::AxisStop,
-      &WaylandPointer::AxisDiscrete};
+  static constexpr wl_pointer_listener listener = {
+      &Enter, &Leave,      &Motion,   &Button,      &Axis,
+      &Frame, &AxisSource, &AxisStop, &AxisDiscrete};
 
   wl_pointer_add_listener(obj_.get(), &listener, this);
 }
@@ -50,8 +47,8 @@ void WaylandPointer::Enter(void* data,
   pointer->connection_->set_pointer_enter_serial(serial);
 
   WaylandWindow* window = wl::RootWindowFromWlSurface(surface);
-  gfx::PointF location{wl_fixed_to_double(surface_x),
-                       wl_fixed_to_double(surface_y)};
+  gfx::PointF location{static_cast<float>(wl_fixed_to_double(surface_x)),
+                       static_cast<float>(wl_fixed_to_double(surface_y))};
   pointer->delegate_->OnPointerFocusChanged(window, location);
 }
 

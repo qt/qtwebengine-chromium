@@ -591,12 +591,12 @@ TEST_F(V8DetailedMemoryDecoratorTest, MultipleIsolatesInRenderer) {
   auto page = CreateNode<PageNodeImpl>();
 
   blink::LocalFrameToken frame1_id = blink::LocalFrameToken();
-  auto frame1 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr, 1,
-                                          2, frame1_id);
+  auto frame1 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                          /*render_frame_id=*/1, frame1_id);
 
   blink::LocalFrameToken frame2_id = blink::LocalFrameToken();
-  auto frame2 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr, 3,
-                                          4, frame2_id);
+  auto frame2 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                          /*render_frame_id=*/2, frame2_id);
   {
     auto data = NewPerProcessV8MemoryUsage(2);
     AddIsolateMemoryUsage(frame1_id, 1001u, data->isolates[0].get());
@@ -646,12 +646,12 @@ TEST_F(V8DetailedMemoryDecoratorTest, DataIsDistributed) {
   auto page = CreateNode<PageNodeImpl>();
 
   blink::LocalFrameToken frame1_id = blink::LocalFrameToken();
-  auto frame1 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr, 1,
-                                          2, frame1_id);
+  auto frame1 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                          /*render_frame_id=*/1, frame1_id);
 
   blink::LocalFrameToken frame2_id = blink::LocalFrameToken();
-  auto frame2 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr, 3,
-                                          4, frame2_id);
+  auto frame2 = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                          /*render_frame_id=*/2, frame2_id);
   {
     auto data = NewPerProcessV8MemoryUsage(1);
     AddIsolateMemoryUsage(frame1_id, 1001u, data->isolates[0].get());
@@ -1346,13 +1346,7 @@ TEST_F(V8DetailedMemoryDecoratorTest, ObserverOutlivesDecorator) {
   memory_request.RemoveObserver(&observer);
 }
 
-// TODO(crbug.com/1203439) Sometimes timing out on Windows.
-#if defined(OS_WIN)
-#define MAYBE_SingleProcessRequest DISABLED_SingleProcessRequest
-#else
-#define MAYBE_SingleProcessRequest SingleProcessRequest
-#endif
-TEST_F(V8DetailedMemoryDecoratorTest, MAYBE_SingleProcessRequest) {
+TEST_F(V8DetailedMemoryDecoratorTest, SingleProcessRequest) {
   // Create 2 renderer processes. Create one request that measures both of
   // them, and one request that measures only one.
   constexpr RenderProcessHostId kProcessId1 = RenderProcessHostId(0xFAB);
@@ -1597,8 +1591,8 @@ TEST_F(V8DetailedMemoryRequestAnySeqTest, RequestIsSequenceSafe) {
   // Create some test data to return for a measurement request.
   constexpr uint64_t kAssociatedBytes = 0x123;
   const blink::LocalFrameToken frame_token(main_frame()->GetFrameToken());
-  const content::GlobalFrameRoutingId frame_id(main_process_id().value(),
-                                               main_frame()->GetRoutingID());
+  const content::GlobalRenderFrameHostId frame_id(main_process_id().value(),
+                                                  main_frame()->GetRoutingID());
 
   V8DetailedMemoryProcessData expected_process_data;
   expected_process_data.set_shared_v8_bytes_used(kSharedBytes);
@@ -1655,7 +1649,7 @@ TEST_F(V8DetailedMemoryRequestAnySeqTest, RequestIsSequenceSafe) {
         // thread.
         EXPECT_NE(nullptr, content::RenderProcessHost::FromID(
                                main_process_id().value()));
-        const content::GlobalFrameRoutingId frame_id =
+        const content::GlobalRenderFrameHostId frame_id =
             expected_frame_data.cbegin()->first;
         EXPECT_NE(nullptr, content::RenderFrameHost::FromID(frame_id));
       });
@@ -1696,7 +1690,13 @@ TEST_F(V8DetailedMemoryRequestAnySeqTest, RequestIsSequenceSafe) {
   run_loop2.Run();
 }
 
-TEST_F(V8DetailedMemoryRequestAnySeqTest, SingleProcessRequest) {
+// TODO(crbug.com/1203439) Sometimes timing out on Windows.
+#if defined(OS_WIN)
+#define MAYBE_SingleProcessRequest DISABLED_SingleProcessRequest
+#else
+#define MAYBE_SingleProcessRequest SingleProcessRequest
+#endif
+TEST_F(V8DetailedMemoryRequestAnySeqTest, MAYBE_SingleProcessRequest) {
   CreateCrossProcessChildFrame();
 
   V8DetailedMemoryProcessData expected_process_data1;
@@ -1978,8 +1978,8 @@ TEST_F(V8DetailedMemoryDecoratorTest, DedicatedWorkers) {
   auto page = CreateNode<PageNodeImpl>();
 
   blink::LocalFrameToken frame_id = blink::LocalFrameToken();
-  auto frame = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr, 1,
-                                         2, frame_id);
+  auto frame = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                         /*render_frame_id=*/1, frame_id);
 
   blink::DedicatedWorkerToken worker_id = blink::DedicatedWorkerToken();
   auto worker = CreateNode<WorkerNodeImpl>(
@@ -2007,6 +2007,43 @@ TEST_F(V8DetailedMemoryDecoratorTest, DedicatedWorkers) {
             V8DetailedMemoryExecutionContextData::ForWorkerNode(worker.get())
                 ->v8_bytes_used());
   worker->RemoveClientFrame(frame.get());
+}
+
+TEST_F(V8DetailedMemoryDecoratorTest, CanvasMemory) {
+  V8DetailedMemoryRequest memory_request(kMinTimeBetweenRequests, graph());
+
+  MockV8DetailedMemoryReporter reporter;
+
+  auto process = CreateNode<ProcessNodeImpl>(
+      content::PROCESS_TYPE_RENDERER,
+      RenderProcessHostProxy::CreateForTesting(kTestProcessID));
+
+  // Create a couple of frames with specified IDs.
+  auto page = CreateNode<PageNodeImpl>();
+
+  blink::LocalFrameToken frame_id = blink::LocalFrameToken();
+  auto frame = CreateNode<FrameNodeImpl>(process.get(), page.get(), nullptr,
+                                         /*render_frame_id=*/1, frame_id);
+
+  {
+    auto data = NewPerProcessV8MemoryUsage(1);
+    AddIsolateMemoryUsage(frame_id, 1001u, data->isolates[0].get());
+    AddIsolateCanvasMemoryUsage(frame_id, 2002u, data->isolates[0].get());
+
+    ExpectBindAndRespondToQuery(&reporter, std::move(data));
+  }
+
+  task_env().RunUntilIdle();
+  Mock::VerifyAndClearExpectations(&reporter);
+
+  ASSERT_TRUE(V8DetailedMemoryExecutionContextData::ForFrameNode(frame.get()));
+  EXPECT_EQ(1001u,
+            V8DetailedMemoryExecutionContextData::ForFrameNode(frame.get())
+                ->v8_bytes_used());
+  EXPECT_EQ(2002u,
+            V8DetailedMemoryExecutionContextData::ForFrameNode(frame.get())
+                ->canvas_bytes_used()
+                .value());
 }
 
 }  // namespace v8_memory

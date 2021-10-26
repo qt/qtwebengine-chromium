@@ -27,7 +27,6 @@
 class GURL;
 
 namespace autofill {
-class AutofillProfile;
 class CreditCard;
 struct FormData;
 struct FormFieldData;
@@ -57,7 +56,7 @@ class ActionDelegate {
 
   // Returns the current status message. Usually used to restore a message after
   // the action.
-  virtual std::string GetStatusMessage() = 0;
+  virtual std::string GetStatusMessage() const = 0;
 
   // Show a bubble / tooltip on the bottom bar. Dismisses the bubble if
   // |message| is empty.
@@ -65,7 +64,7 @@ class ActionDelegate {
 
   // Returns the current bubble / status message. Usually used to restore a
   // message after the action.
-  virtual std::string GetBubbleMessage() = 0;
+  virtual std::string GetBubbleMessage() const = 0;
 
   // Checks one or more elements.
   virtual void RunElementChecks(BatchElementChecker* checker) = 0;
@@ -185,21 +184,6 @@ class ActionDelegate {
   virtual void GetFullCard(const autofill::CreditCard* credit_card,
                            GetFullCardCallback callback) = 0;
 
-  // Fill the address form given by |selector| with the given address
-  // |profile|. |profile| cannot be nullptr.
-  virtual void FillAddressForm(
-      const autofill::AutofillProfile* profile,
-      const Selector& selector,
-      base::OnceCallback<void(const ClientStatus&)> callback) = 0;
-
-  // Fill the card form given by |selector| with the given |card| and its
-  // |cvc|. Return result asynchronously through |callback|.
-  virtual void FillCardForm(
-      std::unique_ptr<autofill::CreditCard> card,
-      const std::u16string& cvc,
-      const Selector& selector,
-      base::OnceCallback<void(const ClientStatus&)> callback) = 0;
-
   // Return |FormData| and |FormFieldData| for the element identified with
   // |selector|. The result is returned asynchronously through |callback|.
   virtual void RetrieveElementFormAndFieldData(
@@ -208,20 +192,9 @@ class ActionDelegate {
                               const autofill::FormData&,
                               const autofill::FormFieldData&)> callback) = 0;
 
-  // Scroll to an |element|'s position. |top_padding| specifies the padding
-  // between the focused element and the top.
-  // If |container| is specified, that container will be scrolled, if
-  // it's null the window will be scrolled.
-  // TODO(b/168107066): The selector is only used for storing the previously
-  // selected element and is not being used to resolve it. This is required for
-  // the current implementation of |ScriptExecutor| that repeats the focus
-  // after an interrupt. This dependency should be removed from the signature.
-  virtual void ScrollToElementPosition(
-      const Selector& selector,
-      const TopPadding& top_padding,
-      std::unique_ptr<ElementFinder::Result> container,
-      const ElementFinder::Result& element,
-      base::OnceCallback<void(const ClientStatus&)> callback) = 0;
+  // Store the element that is being scrolled to, such that it can be restored
+  // after an interrupt.
+  virtual void StoreScrolledToElement(const ElementFinder::Result& element) = 0;
 
   // Sets selector of areas that can be manipulated:
   // - after the end of the script and before the beginning of the next script.
@@ -281,13 +254,13 @@ class ActionDelegate {
   virtual void Close() = 0;
 
   // Get current personal data manager.
-  virtual autofill::PersonalDataManager* GetPersonalDataManager() = 0;
+  virtual autofill::PersonalDataManager* GetPersonalDataManager() const = 0;
 
   // Get current login fetcher.
   virtual WebsiteLoginManager* GetWebsiteLoginManager() const = 0;
 
   // Get associated web contents.
-  virtual content::WebContents* GetWebContents() = 0;
+  virtual content::WebContents* GetWebContents() const = 0;
 
   // Get the ElementStore.
   virtual ElementStore* GetElementStore() const = 0;
@@ -297,10 +270,10 @@ class ActionDelegate {
 
   // Returns the e-mail address that corresponds to the access token or an empty
   // string.
-  virtual std::string GetEmailAddressForAccessTokenAccount() = 0;
+  virtual std::string GetEmailAddressForAccessTokenAccount() const = 0;
 
   // Returns the locale for the current device or platform.
-  virtual std::string GetLocale() = 0;
+  virtual std::string GetLocale() const = 0;
 
   // Sets or updates contextual information.
   // Passing nullptr clears the contextual information.
@@ -344,13 +317,13 @@ class ActionDelegate {
   virtual void SetViewportMode(ViewportMode mode) = 0;
 
   // Get the current viewport mode.
-  virtual ViewportMode GetViewportMode() = 0;
+  virtual ViewportMode GetViewportMode() const = 0;
 
   // Set the peek mode.
   virtual void SetPeekMode(ConfigureBottomSheetProto::PeekMode peek_mode) = 0;
 
   // Checks the current peek mode.
-  virtual ConfigureBottomSheetProto::PeekMode GetPeekMode() = 0;
+  virtual ConfigureBottomSheetProto::PeekMode GetPeekMode() const = 0;
 
   // Expands the bottom sheet. This is the same as the user swiping up.
   virtual void ExpandBottomSheet() = 0;
@@ -385,7 +358,7 @@ class ActionDelegate {
   virtual const UserData* GetUserData() const = 0;
 
   // Access to the user model.
-  virtual UserModel* GetUserModel() = 0;
+  virtual UserModel* GetUserModel() const = 0;
 
   // Show |generic_ui| to the user and call |end_action_callback| when done.
   // Note that this callback needs to be tied to one or multiple interactions
@@ -428,10 +401,6 @@ class ActionDelegate {
   // Maybe shows a warning letting the user know that a slow connection was
   // detected, depending on the current settings.
   virtual void MaybeShowSlowConnectionWarning() = 0;
-
-  // Dispatches a custom JS event 'duplexweb' on document.
-  virtual void DispatchJsEvent(
-      base::OnceCallback<void(const ClientStatus&)> callback) const = 0;
 
   virtual base::WeakPtr<ActionDelegate> GetWeakPtr() const = 0;
 

@@ -17,9 +17,13 @@
 #include "base/files/file.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted_delete_on_sequence.h"
+#include "base/memory/scoped_refptr.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "base/threading/sequence_bound.h"
+#include "base/types/pass_key.h"
 #include "build/build_config.h"
+#include "components/services/storage/public/mojom/quota_client.mojom.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "storage/browser/file_system/file_system_url.h"
 #include "storage/browser/file_system/open_file_system_mode.h"
 #include "storage/browser/file_system/plugin_private_file_system_backend.h"
@@ -35,6 +39,10 @@ class FilePath;
 class SequencedTaskRunner;
 class SingleThreadTaskRunner;
 }  // namespace base
+
+namespace blink {
+class StorageKey;
+}
 
 namespace leveleb {
 class Env;
@@ -52,10 +60,12 @@ class FileSystemBackend;
 class FileSystemOperation;
 class FileSystemOperationRunner;
 class FileSystemOptions;
+class FileSystemQuotaClient;
 class FileSystemQuotaUtil;
 class FileSystemURL;
 class IsolatedFileSystemBackend;
 class MountPoints;
+class QuotaClientCallbackWrapper;
 class QuotaManagerProxy;
 class QuotaReservation;
 class SandboxFileSystemBackend;
@@ -87,6 +97,8 @@ using URLRequestAutoMountHandler = base::RepeatingCallback<bool(
 class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
     : public base::RefCountedDeleteOnSequence<FileSystemContext> {
  public:
+  REQUIRE_ADOPTION_FOR_REFCOUNTED_TYPE();
+
   // Returns file permission policy we should apply for the given |type|.
   // The return value must be bitwise-or'd of FilePermissionPolicy.
   //
@@ -116,16 +128,30 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   // |auto_mount_handlers| are used to resolve calls to
   // AttemptAutoMountForURLRequest. Only external filesystems are auto mounted
   // when a filesystem: URL request is made.
-  FileSystemContext(
-      base::SingleThreadTaskRunner* io_task_runner,
-      base::SequencedTaskRunner* file_task_runner,
-      ExternalMountPoints* external_mount_points,
-      SpecialStoragePolicy* special_storage_policy,
-      QuotaManagerProxy* quota_manager_proxy,
+  static scoped_refptr<FileSystemContext> Create(
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner,
+      scoped_refptr<ExternalMountPoints> external_mount_points,
+      scoped_refptr<SpecialStoragePolicy> special_storage_policy,
+      scoped_refptr<QuotaManagerProxy> quota_manager_proxy,
       std::vector<std::unique_ptr<FileSystemBackend>> additional_backends,
       const std::vector<URLRequestAutoMountHandler>& auto_mount_handlers,
       const base::FilePath& partition_path,
       const FileSystemOptions& options);
+
+  // Exposed for base::MakeRefCounted(). Instances should be obtained from the
+  // factory method Create().
+  FileSystemContext(
+      scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
+      scoped_refptr<base::SequencedTaskRunner> file_task_runner,
+      scoped_refptr<ExternalMountPoints> external_mount_points,
+      scoped_refptr<SpecialStoragePolicy> special_storage_policy,
+      scoped_refptr<QuotaManagerProxy> quota_manager_proxy,
+      std::vector<std::unique_ptr<FileSystemBackend>> additional_backends,
+      const std::vector<URLRequestAutoMountHandler>& auto_mount_handlers,
+      const base::FilePath& partition_path,
+      const FileSystemOptions& options,
+      base::PassKey<FileSystemContext>);
 
   bool DeleteDataForOriginOnFileTaskRunner(const url::Origin& origin);
 
@@ -208,12 +234,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   // Used for DeleteFileSystem and OpenPluginPrivateFileSystem.
   using StatusCallback = base::OnceCallback<void(base::File::Error result)>;
 
-  // Opens the filesystem for the given |origin_url| and |type|, and dispatches
-  // |callback| on completion.
-  // If |create| is true this may actually set up a filesystem instance
+  // Opens the filesystem for the given `storage_key` and `type`, and dispatches
+  // `callback` on completion.
+  // If `create` is true this may actually set up a filesystem instance
   // (e.g. by creating the root directory or initializing the database
   // entry etc).
-  void OpenFileSystem(const url::Origin& origin,
+  void OpenFileSystem(const blink::StorageKey& storage_key,
                       FileSystemType type,
                       OpenFileSystemMode mode,
                       OpenFileSystemCallback callback);
@@ -280,11 +306,21 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
 
   const base::FilePath& partition_path() const { return partition_path_; }
 
-  // Same as |CrackFileSystemURL|, but cracks FileSystemURL created from |url|.
-  FileSystemURL CrackURL(const GURL& url) const;
-  // Same as |CrackFileSystemURL|, but cracks FileSystemURL created from method
+  // Same as `CrackFileSystemURL`, but cracks FileSystemURL created from `url`
+  // and `storage_key`.
+  FileSystemURL CrackURL(const GURL& url,
+                         const blink::StorageKey& storage_key) const;
+
+  // Same as `CrackFileSystemURL`, but cracks FileSystemURL created from `url`
+  // and a blink::StorageKey it derives from `url`. Note: never use this
+  // function to crack URLs received from web contents. For all web-exposed
+  // URLs, use the CrackURL function above and pass in the StorageKey of the
+  // frame or worker that provided the URL.
+  FileSystemURL CrackURLInFirstPartyContext(const GURL& url) const;
+
+  // Same as `CrackFileSystemURL`, but cracks FileSystemURL created from method
   // arguments.
-  FileSystemURL CreateCrackedFileSystemURL(const url::Origin& origin,
+  FileSystemURL CreateCrackedFileSystemURL(const blink::StorageKey& storage_key,
                                            FileSystemType type,
                                            const base::FilePath& path) const;
 
@@ -318,10 +354,12 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   friend class PluginPrivateFileSystemBackendTest;
 
   // Deleters.
-  friend struct DefaultContextDeleter;
   friend class base::DeleteHelper<FileSystemContext>;
   friend class base::RefCountedDeleteOnSequence<FileSystemContext>;
   ~FileSystemContext();
+
+  // Must be called after creating the FileSystemContext.
+  void Initialize();
 
   // The list of quota-managed storage types covered by file system backends.
   //
@@ -371,20 +409,22 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   // Override the default leveldb Env with |env_override_| if set.
   std::unique_ptr<leveldb::Env> env_override_;
 
-  scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
-  scoped_refptr<base::SequencedTaskRunner> default_file_task_runner_;
+  const scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
+  const scoped_refptr<base::SequencedTaskRunner> default_file_task_runner_;
 
-  scoped_refptr<QuotaManagerProxy> quota_manager_proxy_;
+  const scoped_refptr<QuotaManagerProxy> quota_manager_proxy_;
+  std::unique_ptr<FileSystemQuotaClient> quota_client_;
+  std::unique_ptr<storage::QuotaClientCallbackWrapper> quota_client_wrapper_;
 
-  std::unique_ptr<SandboxFileSystemBackendDelegate> sandbox_delegate_;
+  const std::unique_ptr<SandboxFileSystemBackendDelegate> sandbox_delegate_;
 
   // Regular file system backends.
-  std::unique_ptr<SandboxFileSystemBackend> sandbox_backend_;
+  const std::unique_ptr<SandboxFileSystemBackend> sandbox_backend_;
   std::unique_ptr<IsolatedFileSystemBackend> isolated_backend_;
 
   // Additional file system backends.
-  std::unique_ptr<PluginPrivateFileSystemBackend> plugin_private_backend_;
-  std::vector<std::unique_ptr<FileSystemBackend>> additional_backends_;
+  const std::unique_ptr<PluginPrivateFileSystemBackend> plugin_private_backend_;
+  const std::vector<std::unique_ptr<FileSystemBackend>> additional_backends_;
 
   std::vector<URLRequestAutoMountHandler> auto_mount_handlers_;
 
@@ -398,7 +438,7 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
 
   // External mount points visible in the file system context (excluding system
   // external mount points).
-  scoped_refptr<ExternalMountPoints> external_mount_points_;
+  const scoped_refptr<ExternalMountPoints> external_mount_points_;
 
   // MountPoints used to crack FileSystemURLs. The MountPoints are ordered
   // in order they should try to crack a FileSystemURL.
@@ -407,9 +447,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   // The base path of the storage partition for this context.
   const base::FilePath partition_path_;
 
-  bool is_incognito_;
+  const bool is_incognito_;
 
-  std::unique_ptr<FileSystemOperationRunner> operation_runner_;
+  const std::unique_ptr<FileSystemOperationRunner> operation_runner_;
+
+  std::unique_ptr<mojo::Receiver<mojom::QuotaClient>> quota_client_receiver_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(FileSystemContext);
 };

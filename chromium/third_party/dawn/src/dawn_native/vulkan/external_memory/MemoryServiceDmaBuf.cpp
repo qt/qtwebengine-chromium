@@ -16,6 +16,7 @@
 #include "dawn_native/vulkan/AdapterVk.h"
 #include "dawn_native/vulkan/BackendVk.h"
 #include "dawn_native/vulkan/DeviceVk.h"
+#include "dawn_native/vulkan/ResourceMemoryAllocatorVk.h"
 #include "dawn_native/vulkan/VulkanError.h"
 #include "dawn_native/vulkan/external_memory/MemoryService.h"
 
@@ -59,14 +60,17 @@ namespace dawn_native { namespace vulkan { namespace external_memory {
 
     }  // anonymous namespace
 
-    Service::Service(Device* device) : mDevice(device) {
-        const VulkanDeviceInfo& deviceInfo = mDevice->GetDeviceInfo();
-
-        mSupported = deviceInfo.HasExt(DeviceExt::ExternalMemoryFD) &&
-                     deviceInfo.HasExt(DeviceExt::ImageDrmFormatModifier);
+    Service::Service(Device* device)
+        : mDevice(device), mSupported(CheckSupport(device->GetDeviceInfo())) {
     }
 
     Service::~Service() = default;
+
+    // static
+    bool Service::CheckSupport(const VulkanDeviceInfo& deviceInfo) {
+        return deviceInfo.HasExt(DeviceExt::ExternalMemoryFD) &&
+               deviceInfo.HasExt(DeviceExt::ImageDrmFormatModifier);
+    }
 
     bool Service::SupportsImportMemory(VkFormat format,
                                        VkImageType type,
@@ -171,8 +175,8 @@ namespace dawn_native { namespace vulkan { namespace external_memory {
         // Choose the best memory type that satisfies both the image's constraint and the import's
         // constraint.
         memoryRequirements.memoryTypeBits &= fdProperties.memoryTypeBits;
-        int memoryTypeIndex =
-            mDevice->FindBestMemoryTypeIndex(memoryRequirements, false /** mappable */);
+        int memoryTypeIndex = mDevice->GetResourceMemoryAllocator()->FindBestTypeIndex(
+            memoryRequirements, MemoryKind::Opaque);
         if (memoryTypeIndex == -1) {
             return DAWN_VALIDATION_ERROR("Unable to find appropriate memory type for import");
         }

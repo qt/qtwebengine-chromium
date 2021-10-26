@@ -268,10 +268,11 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
           config_.rtp.local_ssrc)),
       complete_frame_callback_(complete_frame_callback),
       keyframe_request_sender_(keyframe_request_sender),
-      // TODO(bugs.webrtc.org/10336): Let |rtcp_feedback_buffer_| communicate
-      // directly with |rtp_rtcp_|.
+      // TODO(bugs.webrtc.org/10336): Let `rtcp_feedback_buffer_` communicate
+      // directly with `rtp_rtcp_`.
       rtcp_feedback_buffer_(this, nack_sender, this),
       packet_buffer_(kPacketBufferStartSize, PacketBufferMaxSize()),
+      reference_finder_(std::make_unique<RtpFrameReferenceFinder>()),
       has_received_frame_(false),
       frames_decryptable_(false),
       absolute_capture_time_interpolator_(clock) {
@@ -320,8 +321,6 @@ RtpVideoStreamReceiver::RtpVideoStreamReceiver(
         clock_, &rtcp_feedback_buffer_, &rtcp_feedback_buffer_);
     process_thread_->RegisterModule(nack_module_.get(), RTC_FROM_HERE);
   }
-
-  reference_finder_ = std::make_unique<RtpFrameReferenceFinder>(this);
 
   // Only construct the encrypted receiver if frame encryption is enabled.
   if (config_.crypto_options.sframe.require_frame_encryption) {
@@ -863,7 +862,7 @@ void RtpVideoStreamReceiver::OnAssembledFrame(
   // In that case, request a key frame ASAP.
   if (!has_received_frame_) {
     if (frame->FrameType() != VideoFrameType::kVideoFrameKey) {
-      // |loss_notification_controller_|, if present, would have already
+      // `loss_notification_controller_`, if present, would have already
       // requested a key frame when the first packet for the non-key frame
       // had arrived, so no need to replicate the request.
       if (!loss_notification_controller_) {
@@ -874,19 +873,18 @@ void RtpVideoStreamReceiver::OnAssembledFrame(
   }
 
   MutexLock lock(&reference_finder_lock_);
-  // Reset |reference_finder_| if |frame| is new and the codec have changed.
+  // Reset `reference_finder_` if `frame` is new and the codec have changed.
   if (current_codec_) {
     bool frame_is_newer =
         AheadOf(frame->Timestamp(), last_assembled_frame_rtp_timestamp_);
 
     if (frame->codec_type() != current_codec_) {
       if (frame_is_newer) {
-        // When we reset the |reference_finder_| we don't want new picture ids
+        // When we reset the `reference_finder_` we don't want new picture ids
         // to overlap with old picture ids. To ensure that doesn't happen we
-        // start from the |last_completed_picture_id_| and add an offset in
+        // start from the `last_completed_picture_id_` and add an offset in
         // case of reordering.
         reference_finder_ = std::make_unique<RtpFrameReferenceFinder>(
-            this,
             last_completed_picture_id_ + std::numeric_limits<uint16_t>::max());
         current_codec_ = frame->codec_type();
       } else {
@@ -908,26 +906,30 @@ void RtpVideoStreamReceiver::OnAssembledFrame(
   } else if (frame_transformer_delegate_) {
     frame_transformer_delegate_->TransformFrame(std::move(frame));
   } else {
-    reference_finder_->ManageFrame(std::move(frame));
+    OnCompleteFrames(reference_finder_->ManageFrame(std::move(frame)));
   }
 }
 
-void RtpVideoStreamReceiver::OnCompleteFrame(
-    std::unique_ptr<EncodedFrame> frame) {
+void RtpVideoStreamReceiver::OnCompleteFrames(
+    RtpFrameReferenceFinder::ReturnVector frames) {
   {
     MutexLock lock(&last_seq_num_mutex_);
-    RtpFrameObject* rtp_frame = static_cast<RtpFrameObject*>(frame.get());
-    last_seq_num_for_pic_id_[rtp_frame->Id()] = rtp_frame->last_seq_num();
+    for (const auto& frame : frames) {
+      RtpFrameObject* rtp_frame = static_cast<RtpFrameObject*>(frame.get());
+      last_seq_num_for_pic_id_[rtp_frame->Id()] = rtp_frame->last_seq_num();
+    }
   }
-  last_completed_picture_id_ =
-      std::max(last_completed_picture_id_, frame->Id());
-  complete_frame_callback_->OnCompleteFrame(std::move(frame));
+  for (auto& frame : frames) {
+    last_completed_picture_id_ =
+        std::max(last_completed_picture_id_, frame->Id());
+    complete_frame_callback_->OnCompleteFrame(std::move(frame));
+  }
 }
 
 void RtpVideoStreamReceiver::OnDecryptedFrame(
     std::unique_ptr<RtpFrameObject> frame) {
   MutexLock lock(&reference_finder_lock_);
-  reference_finder_->ManageFrame(std::move(frame));
+  OnCompleteFrames(reference_finder_->ManageFrame(std::move(frame)));
 }
 
 void RtpVideoStreamReceiver::OnDecryptionStatusChange(
@@ -1003,7 +1005,7 @@ void RtpVideoStreamReceiver::RemoveSecondarySink(
 void RtpVideoStreamReceiver::ManageFrame(
     std::unique_ptr<RtpFrameObject> frame) {
   MutexLock lock(&reference_finder_lock_);
-  reference_finder_->ManageFrame(std::move(frame));
+  OnCompleteFrames(reference_finder_->ManageFrame(std::move(frame)));
 }
 
 void RtpVideoStreamReceiver::ReceivePacket(const RtpPacketReceived& packet) {
@@ -1058,7 +1060,7 @@ void RtpVideoStreamReceiver::ParseAndHandleEncapsulatingHeader(
 void RtpVideoStreamReceiver::NotifyReceiverOfEmptyPacket(uint16_t seq_num) {
   {
     MutexLock lock(&reference_finder_lock_);
-    reference_finder_->PaddingReceived(seq_num);
+    OnCompleteFrames(reference_finder_->PaddingReceived(seq_num));
   }
 
   video_coding::PacketBuffer::InsertResult insert_result;

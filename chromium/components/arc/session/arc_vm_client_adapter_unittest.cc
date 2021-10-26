@@ -4,6 +4,7 @@
 
 #include "components/arc/session/arc_vm_client_adapter.h"
 
+#include <inttypes.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
@@ -24,8 +25,10 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/posix/safe_strerror.h"
+#include "base/process/process_metrics.h"
 #include "base/run_loop.h"
 #include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/task/current_thread.h"
 #include "base/task/post_task.h"
 #include "base/test/bind.h"
@@ -40,9 +43,14 @@
 #include "chromeos/dbus/session_manager/fake_session_manager_client.h"
 #include "chromeos/dbus/upstart/fake_upstart_client.h"
 #include "components/arc/arc_features.h"
+#include "components/arc/arc_service_manager.h"
 #include "components/arc/arc_util.h"
+#include "components/arc/session/arc_bridge_service.h"
 #include "components/arc/session/arc_session.h"
 #include "components/arc/session/file_system_status.h"
+#include "components/arc/test/connection_holder_util.h"
+#include "components/arc/test/fake_app_host.h"
+#include "components/arc/test/fake_app_instance.h"
 #include "components/user_manager/user_names.h"
 #include "content/public/test/browser_task_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -84,7 +92,7 @@ UpgradeParams GetPopulatedUpgradeParams() {
   params.skip_boot_completed_broadcast = true;
   params.packages_cache_mode = UpgradeParams::PackageCacheMode::COPY_ON_INIT;
   params.skip_gms_core_cache = true;
-  params.supervision_transition = ArcSupervisionTransition::CHILD_TO_REGULAR;
+  params.management_transition = ArcManagementTransition::CHILD_TO_REGULAR;
   params.locale = "en-US";
   params.preferred_languages = {"en_US", "en", "ja"};
   params.is_demo_session = true;
@@ -229,11 +237,6 @@ class TestArcVmBootNotificationServer
     fd_.reset(-1);
   }
 
-  // Sets a callback to be run immediately after the next connection.
-  void SetConnectionCallback(base::OnceClosure callback) {
-    callback_ = std::move(callback);
-  }
-
   int connection_count() { return num_connections_; }
 
   std::string received_data() { return received_; }
@@ -255,9 +258,6 @@ class TestArcVmBootNotificationServer
       out.append(buf, len);
     }
     received_.append(out);
-
-    if (callback_)
-      std::move(callback_).Run();
   }
 
   void OnFileCanWriteWithoutBlocking(int fd) override {}
@@ -267,7 +267,6 @@ class TestArcVmBootNotificationServer
   std::unique_ptr<base::MessagePumpForUI::FdWatchController> controller_;
   int num_connections_ = 0;
   std::string received_;
-  base::OnceClosure callback_;
 };
 
 class FakeDemoModeDelegate : public ArcClientAdapter::DemoModeDelegate {
@@ -340,6 +339,8 @@ class ArcVmClientAdapterTest : public testing::Test,
     chromeos::SessionManagerClient::InitializeFake();
 
     adapter_->SetDemoModeDelegate(&demo_mode_delegate_);
+    app_host_ = std::make_unique<FakeAppHost>(arc_bridge_service()->app());
+    app_instance_ = std::make_unique<FakeAppInstance>(app_host_.get());
   }
 
   void TearDown() override {
@@ -584,6 +585,11 @@ class ArcVmClientAdapterTest : public testing::Test,
     system_image_ext_format_ = system_image_ext_format;
   }
 
+  ArcBridgeService* arc_bridge_service() {
+    return arc_service_manager_.arc_bridge_service();
+  }
+  FakeAppInstance* app_instance() { return app_instance_.get(); }
+
  private:
   void RewriteStatus(FileSystemStatus* status) {
     status->set_host_rootfs_writable_for_testing(host_rootfs_writable_);
@@ -596,6 +602,7 @@ class ArcVmClientAdapterTest : public testing::Test,
 
   content::BrowserTaskEnvironment browser_task_environment_;
   base::ScopedTempDir dir_;
+  ArcServiceManager arc_service_manager_;
 
   // Variables to override the value in FileSystemStatus.
   bool host_rootfs_writable_;
@@ -608,6 +615,8 @@ class ArcVmClientAdapterTest : public testing::Test,
   std::unique_ptr<TestArcVmBootNotificationServer> boot_server_;
 
   FakeDemoModeDelegate demo_mode_delegate_;
+  std::unique_ptr<FakeAppHost> app_host_;
+  std::unique_ptr<FakeAppInstance> app_instance_;
 
   DISALLOW_COPY_AND_ASSIGN(ArcVmClientAdapterTest);
 };
@@ -1195,7 +1204,7 @@ TEST_F(ArcVmClientAdapterTest, StartUpgradeArc_VariousParams2) {
   // Use slightly different params than StartUpgradeArc_VariousParams.
   params.packages_cache_mode =
       UpgradeParams::PackageCacheMode::SKIP_SETUP_COPY_ON_INIT;
-  params.supervision_transition = ArcSupervisionTransition::REGULAR_TO_CHILD;
+  params.management_transition = ArcManagementTransition::REGULAR_TO_CHILD;
   params.preferred_languages = {"en_US"};
 
   UpgradeArcWithParams(true, std::move(params));
@@ -1669,30 +1678,23 @@ TEST_F(ArcVmClientAdapterTest, TestGetArcVmUreadaheadModeDisabled) {
 // twice: once in StartMiniArc to check that it is listening, and the second
 // time in UpgradeArc to send props.
 TEST_F(ArcVmClientAdapterTest, TestConnectToBootNotificationServer) {
-  // Stop the RunLoop after a connection to the server.
-  boot_notification_server()->SetConnectionCallback(run_loop()->QuitClosure());
   SetValidUserInfo();
-  adapter()->StartMiniArc(
-      {}, base::BindOnce([](bool result) { EXPECT_TRUE(result); }));
-  run_loop()->Run();
-
+  StartMiniArc();
   EXPECT_EQ(boot_notification_server()->connection_count(), 1);
   EXPECT_TRUE(boot_notification_server()->received_data().empty());
 
-  RecreateRunLoop();
-  boot_notification_server()->SetConnectionCallback(run_loop()->QuitClosure());
-  adapter()->UpgradeArc(
-      GetPopulatedUpgradeParams(),
-      base::BindOnce([](bool result) { EXPECT_TRUE(result); }));
-  run_loop()->Run();
-
+  UpgradeArcWithParams(/*expect_success=*/true, GetPopulatedUpgradeParams());
   EXPECT_EQ(boot_notification_server()->connection_count(), 2);
   EXPECT_FALSE(boot_notification_server()->received_data().empty());
+
   // Compare received data to expected output
-  std::string expected_props = base::JoinString(
-      GenerateUpgradePropsForTesting(GetPopulatedUpgradeParams(), kSerialNumber,
-                                     "ro.boot"),
-      "\n");
+  std::string expected_props = base::StringPrintf(
+      "CID=%" PRId64 "\n%s", kCid,
+      base::JoinString(
+          GenerateUpgradePropsForTesting(GetPopulatedUpgradeParams(),
+                                         kSerialNumber, "ro.boot"),
+          "\n")
+          .c_str());
   EXPECT_EQ(boot_notification_server()->received_data(), expected_props);
 }
 
@@ -1853,6 +1855,193 @@ TEST_F(ArcVmClientAdapterTest, ArcVmUseHugePagesDisabled) {
   StartMiniArcWithParams(true, std::move(start_params));
   auto request = GetTestConciergeClient()->start_arc_vm_request();
   EXPECT_FALSE(request.use_hugepages());
+}
+
+// Test that StartArcVmRequest has no memory_mib field when kVmMemorySize is
+// disabled.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(kVmMemorySize);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.memory_mib(), 0u);
+}
+
+// Test that StartArcVmRequest has `memory_mib == system memory` when
+// kVmMemorySize is enabled with no maximum and shift_mib := 0.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledBig) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "0";
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  base::SystemMemoryInfoKB info;
+  ASSERT_TRUE(base::GetSystemMemoryInfo(&info));
+  const uint32_t total_mib = info.total / 1024;
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.memory_mib(), total_mib);
+}
+
+// Test that StartArcVmRequest has `memory_mib == system memory - 1024` when
+// kVmMemorySize is enabled with no maximum and shift_mib := -1024.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledSmall) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "-1024";
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  base::SystemMemoryInfoKB info;
+  ASSERT_TRUE(base::GetSystemMemoryInfo(&info));
+  const uint32_t total_mib = info.total / 1024;
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.memory_mib(), total_mib - 1024);
+}
+
+// Test that StartArcVmRequest has memory_mib unset when kVmMemorySize is
+// enabled, but the requested size is too low (due to max_mib being lower than
+// the 2048 safety minimum).
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledLow) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "0";
+  params["max_mib"] = "1024";
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  // The 1024 max_mib is below the 2048 MiB safety cut-off, so we expect
+  // memory_mib to be unset.
+  EXPECT_EQ(request.memory_mib(), 0u);
+}
+
+// Test that StartArcVmRequest has `memory_mib == 2049` when kVmMemorySize is
+// enabled with max_mib := 2049.
+// NOTE: requires that the test running system has more than 2049 MiB of RAM.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledMax) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "0";
+  params["max_mib"] = "2049";  // Above the 2048 minimum cut-off.
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.memory_mib(), 2049u);
+}
+
+// Test that StartArcVmRequest has no memory_mib field when getting system
+// memory info fails.
+TEST_F(ArcVmClientAdapterTest, ArcVmMemorySizeEnabledNoSystemMemoryInfo) {
+  // Inject the failure.
+  class TestDelegate : public ArcVmClientAdapterDelegate {
+    bool GetSystemMemoryInfo(base::SystemMemoryInfoKB* info) override {
+      return false;
+    }
+  };
+  SetArcVmClientAdapterDelegateForTesting(adapter(),
+                                          std::make_unique<TestDelegate>());
+
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["shift_mib"] = "0";
+  feature_list.InitAndEnableFeatureWithParameters(kVmMemorySize, params);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_EQ(request.memory_mib(), 0u);
+}
+
+// Test that the correct BalloonPolicyOptions are set on StartArcVmRequest when
+// kVmBalloonPolicy is enabled.
+TEST_F(ArcVmClientAdapterTest, ArcVmBalloonPolicyEnabled) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["moderate_kib"] = "1";
+  params["critical_kib"] = "2";
+  params["reclaim_kib"] = "3";
+  feature_list.InitAndEnableFeatureWithParameters(kVmBalloonPolicy, params);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_TRUE(request.has_balloon_policy());
+  const auto& policy = request.balloon_policy();
+  EXPECT_EQ(policy.moderate_target_cache(), 1024);
+  EXPECT_EQ(policy.critical_target_cache(), 2048);
+  EXPECT_EQ(policy.reclaim_target_cache(), 3072);
+}
+
+// Test that BalloonPolicyOptions are not set on StartArcVmRequest when
+// kVmBalloonPolicy is disabled.
+TEST_F(ArcVmClientAdapterTest, ArcVmBalloonPolicyDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(kVmBalloonPolicy);
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  auto request = GetTestConciergeClient()->start_arc_vm_request();
+  EXPECT_FALSE(request.has_balloon_policy());
+}
+
+// Tests that OnConnectionReady() calls the MakeRtVcpu call D-Bus method.
+TEST_F(ArcVmClientAdapterTest, OnConnectionReady) {
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  UpgradeArc(true);
+
+  // This calls ArcVmClientAdapter::OnConnectionReady().
+  arc_bridge_service()->app()->SetInstance(app_instance());
+  WaitForInstanceReady(arc_bridge_service()->app());
+
+  EXPECT_EQ(1, GetTestConciergeClient()->make_rt_vcpu_call_count());
+}
+
+// Tests that MakeRtVcpu failure won't crash the adapter.
+TEST_F(ArcVmClientAdapterTest, OnConnectionReady_MakeRtVcpuFailure) {
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  UpgradeArc(true);
+
+  // Inject the failure.
+  absl::optional<vm_tools::concierge::MakeRtVcpuResponse> response;
+  response.emplace();
+  response->set_success(false);
+  response->set_failure_reason("unknown failure");
+  GetTestConciergeClient()->set_make_rt_vcpu_response(response);
+
+  // This calls ArcVmClientAdapter::OnConnectionReady().
+  arc_bridge_service()->app()->SetInstance(app_instance());
+  WaitForInstanceReady(arc_bridge_service()->app());
+
+  EXPECT_EQ(1, GetTestConciergeClient()->make_rt_vcpu_call_count());
+}
+
+// Tests that null MakeRtVcpu reply won't crash the adapter.
+TEST_F(ArcVmClientAdapterTest, OnConnectionReady_MakeRtVcpuFailureNullReply) {
+  StartParams start_params(GetPopulatedStartParams());
+  SetValidUserInfo();
+  StartMiniArcWithParams(true, std::move(start_params));
+  UpgradeArc(true);
+
+  // Inject the failure.
+  GetTestConciergeClient()->set_make_rt_vcpu_response(absl::nullopt);
+
+  // This calls ArcVmClientAdapter::OnConnectionReady().
+  arc_bridge_service()->app()->SetInstance(app_instance());
+  WaitForInstanceReady(arc_bridge_service()->app());
+
+  EXPECT_EQ(1, GetTestConciergeClient()->make_rt_vcpu_call_count());
 }
 
 struct DalvikMemoryProfileTestParam {

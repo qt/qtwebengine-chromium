@@ -49,10 +49,10 @@
 #include "net/dcsctp/socket/state_cookie.h"
 #include "net/dcsctp/socket/transmission_control_block.h"
 #include "net/dcsctp/timer/timer.h"
-#include "net/dcsctp/tx/fcfs_send_queue.h"
 #include "net/dcsctp/tx/retransmission_error_counter.h"
 #include "net/dcsctp/tx/retransmission_queue.h"
 #include "net/dcsctp/tx/retransmission_timeout.h"
+#include "net/dcsctp/tx/rr_send_queue.h"
 
 namespace dcsctp {
 
@@ -93,6 +93,10 @@ class DcSctpSocket : public DcSctpSocketInterface {
   SocketState state() const override;
   const DcSctpOptions& options() const override { return options_; }
   void SetMaxMessageSize(size_t max_message_size) override;
+  size_t buffered_amount(StreamID stream_id) const override;
+  size_t buffered_amount_low_threshold(StreamID stream_id) const override;
+  void SetBufferedAmountLowThreshold(StreamID stream_id, size_t bytes) override;
+  Metrics GetMetrics() const override;
 
   // Returns this socket's verification tag, or zero if not yet connected.
   VerificationTag verification_tag() const {
@@ -146,8 +150,6 @@ class DcSctpSocket : public DcSctpSocketInterface {
   void MaybeSendShutdownOnPacketReceived(const SctpPacket& packet);
   // Sends a INIT chunk.
   void SendInit();
-  // Sends a CookieEcho chunk.
-  void SendCookieEcho();
   // Sends a SHUTDOWN chunk.
   void SendShutdown();
   // Sends a SHUTDOWN-ACK chunk.
@@ -245,6 +247,7 @@ class DcSctpSocket : public DcSctpSocketInterface {
 
   const std::string log_prefix_;
   const std::unique_ptr<PacketObserver> packet_observer_;
+  Metrics metrics_;
   DcSctpOptions options_;
 
   // Enqueues callbacks and dispatches them just before returning to the caller.
@@ -257,11 +260,7 @@ class DcSctpSocket : public DcSctpSocketInterface {
 
   // The actual SendQueue implementation. As data can be sent on a socket before
   // the connection is established, this component is not in the TCB.
-  FCFSSendQueue send_queue_;
-
-  // Only valid when state == State::kCookieEchoed
-  // A cached Cookie Echo Chunk, to be re-sent on timer expiry.
-  absl::optional<CookieEchoChunk> cookie_echo_chunk_ = absl::nullopt;
+  RRSendQueue send_queue_;
 
   // Contains verification tag and initial TSN between having sent the INIT
   // until the connection is established (there is no TCB at this point).

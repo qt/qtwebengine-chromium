@@ -152,6 +152,28 @@ void MaybeParserAppendChild(Element* parent, Element* child) {
     parent->ParserAppendChild(child);
 }
 
+bool ShouldShowPlaybackSpeedButton(HTMLMediaElement& media_element) {
+  // The page disabled the button via the controlsList attribute.
+  if (media_element.ControlsListInternal()->ShouldHidePlaybackRate() &&
+      !media_element.UserWantsControlsVisible()) {
+    UseCounter::Count(media_element.GetDocument(),
+                      WebFeature::kHTMLMediaElementControlsListNoPlaybackRate);
+    return false;
+  }
+
+  // A MediaStream is not seekable.
+  if (media_element.GetLoadType() == WebMediaPlayer::kLoadTypeMediaStream)
+    return false;
+
+  // Don't allow for live infinite streams.
+  if (media_element.duration() == std::numeric_limits<double>::infinity() &&
+      media_element.getReadyState() > HTMLMediaElement::kHaveNothing) {
+    return false;
+  }
+
+  return true;
+}
+
 bool ShouldShowPictureInPictureButton(HTMLMediaElement& media_element) {
   return media_element.SupportsPictureInPicture();
 }
@@ -172,7 +194,8 @@ bool ShouldShowCastButton(HTMLMediaElement& media_element) {
   }
 
   // The page disabled the button via the attribute.
-  if (media_element.ControlsListInternal()->ShouldHideRemotePlayback()) {
+  if (media_element.ControlsListInternal()->ShouldHideRemotePlayback() &&
+      !media_element.UserWantsControlsVisible()) {
     UseCounter::Count(
         media_element.GetDocument(),
         WebFeature::kHTMLMediaElementControlsListNoRemotePlayback);
@@ -567,6 +590,8 @@ void MediaControlsImpl::InitializeControls() {
   if (base::FeatureList::IsEnabled(media::kPlaybackSpeedButton)) {
     playback_speed_button_ =
         MakeGarbageCollected<MediaControlPlaybackSpeedButtonElement>(*this);
+    playback_speed_button_->SetIsWanted(
+        ShouldShowPlaybackSpeedButton(MediaElement()));
   }
   overflow_menu_ =
       MakeGarbageCollected<MediaControlOverflowMenuButtonElement>(*this);
@@ -927,6 +952,11 @@ void MediaControlsImpl::OnControlsListUpdated() {
 
   download_button_->SetIsWanted(
       download_button_->ShouldDisplayDownloadButton());
+
+  if (playback_speed_button_) {
+    playback_speed_button_->SetIsWanted(
+        ShouldShowPlaybackSpeedButton(MediaElement()));
+  }
 }
 
 LayoutObject* MediaControlsImpl::PanelLayoutObject() {
@@ -1834,11 +1864,13 @@ void MediaControlsImpl::OnPlay() {
 void MediaControlsImpl::OnPlaying() {
   StartHideMediaControlsTimer();
   UpdateCSSClassFromState();
+  timeline_->OnMediaPlaying();
 }
 
 void MediaControlsImpl::OnPause() {
   UpdatePlayState();
   UpdateTimeIndicators();
+  timeline_->OnMediaStoppedPlaying();
   MakeOpaque();
 
   StopHideMediaControlsTimer();
@@ -1963,7 +1995,7 @@ void MediaControlsImpl::ElementSizeChangedTimerFired(TimerBase*) {
 }
 
 void MediaControlsImpl::OnLoadingProgress() {
-  timeline_->RenderBarSegments();
+  timeline_->OnProgress();
 }
 
 void MediaControlsImpl::ComputeWhichControlsFit() {
@@ -2163,6 +2195,7 @@ MediaControlOverflowMenuButtonElement& MediaControlsImpl::OverflowButton() {
 }
 
 void MediaControlsImpl::OnWaiting() {
+  timeline_->OnMediaStoppedPlaying();
   UpdateCSSClassFromState();
 }
 

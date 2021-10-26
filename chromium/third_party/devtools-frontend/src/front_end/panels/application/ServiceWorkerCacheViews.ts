@@ -91,7 +91,7 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
   }>|null;
   constructor(model: SDK.ServiceWorkerCacheModel.ServiceWorkerCacheModel, cache: SDK.ServiceWorkerCacheModel.Cache) {
     super(i18nString(UIStrings.cache));
-    this.registerRequiredCSS('panels/application/serviceWorkerCacheViews.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/application/serviceWorkerCacheViews.css');
 
     this._model = model;
     this._entriesForTest = null;
@@ -279,9 +279,9 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
 
     const span = this._summaryBarElement.createChild('span');
     if (this._entryPathFilter) {
-      span.textContent = i18nString(UIStrings.matchingEntriesS, {PH1: this._returnCount});
+      span.textContent = i18nString(UIStrings.matchingEntriesS, {PH1: String(this._returnCount)});
     } else {
-      span.textContent = i18nString(UIStrings.totalEntriesS, {PH1: this._returnCount});
+      span.textContent = i18nString(UIStrings.totalEntriesS, {PH1: String(this._returnCount)});
     }
   }
 
@@ -356,9 +356,10 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
     this._updateData(true);
   }
 
-  _cacheContentUpdated(event: Common.EventTarget.EventTargetEvent): void {
-    const nameAndOrigin = event.data;
-    if (this._cache.securityOrigin !== nameAndOrigin.origin || this._cache.cacheName !== nameAndOrigin.cacheName) {
+  _cacheContentUpdated(
+      event: Common.EventTarget.EventTargetEvent<SDK.ServiceWorkerCacheModel.CacheStorageContentUpdatedEvent>): void {
+    const {cacheName, origin} = event.data;
+    if (this._cache.securityOrigin !== origin || this._cache.cacheName !== cacheName) {
       return;
     }
     this._refreshThrottler.schedule(() => Promise.resolve(this._updateData(true)), true);
@@ -378,8 +379,8 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
   }
 
   _createRequest(entry: Protocol.CacheStorage.DataEntry): SDK.NetworkRequest.NetworkRequest {
-    const request =
-        new SDK.NetworkRequest.NetworkRequest('cache-storage-' + entry.requestURL, entry.requestURL, '', '', '', null);
+    const request = SDK.NetworkRequest.NetworkRequest.createWithoutBackendRequest(
+        'cache-storage-' + entry.requestURL, entry.requestURL, '', null);
     request.requestMethod = entry.requestMethod;
     request.setRequestHeaders(entry.requestHeaders);
     request.statusCode = entry.responseStatus;
@@ -425,7 +426,6 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
 }
 
 const networkRequestToPreview = new WeakMap<SDK.NetworkRequest.NetworkRequest, RequestView>();
-
 
 export class DataGridNode extends DataGrid.DataGrid.DataGridNode<DataGridNode> {
   _number: number;

@@ -11,27 +11,6 @@ const char kResourceManagerInterface[] = "org.chromium.ResourceManager";
 const char kResourceManagerServicePath[] = "/org/chromium/ResourceManager";
 const char kResourceManagerServiceName[] = "org.chromium.ResourceManager";
 
-// Methods.
-const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
-const char kGetForegroundAvailableMemoryKBMethod[] =
-    "GetForegroundAvailableMemoryKB";
-const char kGetMemoryMarginsKBMethod[] = "GetMemoryMarginsKB";
-const char kGetGameModeMethod[] = "GetGameMode";
-const char kSetGameModeMethod[] = "SetGameMode";
-
-// Signals.
-
-// MemoryPressureChrome signal contains 2 arguments:
-//   1. pressure_level, BYTE
-//     0: no memory pressure level
-//     1: moderate memory pressure level
-//     2: critical memory pressure level
-//   2. delta, UINT64, memory amount to free in KB to leave the current
-//   pressure level.
-//   E.g. argument (0, 10000): Chrome should free 10000 KB to leave the critical
-//   memory pressure level (to moderate pressure level).
-const char kMemoryPressureChrome[] = "MemoryPressureChrome";
-
 // Values.
 enum GameMode {
   // Game mode is off.
@@ -49,6 +28,46 @@ enum PressureLevelChrome {
   // Chrome is advised to free all possible memory.
   CRITICAL = 2,
 };
+
+enum class PressureLevelArcvm {
+  // There is enough memory to use.
+  NONE = 0,
+  // ARCVM is advised to kill cached processes to free memory.
+  CACHED = 1,
+  // ARCVM is advised to kill perceptible processes to free memory.
+  PERCEPTIBLE = 2,
+  // ARCVM is advised to kill foreground processes to free memory.
+  FOREGROUND = 3,
+};
+
+// Methods.
+const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
+const char kGetForegroundAvailableMemoryKBMethod[] =
+    "GetForegroundAvailableMemoryKB";
+const char kGetMemoryMarginsKBMethod[] = "GetMemoryMarginsKB";
+const char kGetGameModeMethod[] = "GetGameMode";
+const char kSetGameModeMethod[] = "SetGameMode";
+
+// Signals.
+
+// MemoryPressureChrome signal contains 2 arguments:
+//   1. pressure_level, BYTE, see also enum PressureLevelChrome.
+//   2. reclaim_target_kb, UINT64, memory amount to free in KB to leave the
+//   current pressure level.
+//   E.g., argument (PressureLevelChrome::CRITICAL, 10000): Chrome should free
+//   10000 KB to leave the critical memory pressure level (to moderate pressure
+//   level).
+// TODO(vovoy): Consider serializing these parameters to protobuf.
+const char kMemoryPressureChrome[] = "MemoryPressureChrome";
+
+// MemoryPressureArcvm signal contains 2 arguments:
+//   1. pressure_level, BYTE, see also enum PressureLevelArcvm.
+//   2. delta, UINT64, memory amount to free in KB to leave the current
+//   pressure level.
+//   E.g. argument (PressureLevelArcvm::FOREGROUND, 10000): ARCVM should free
+//   10000 KB to leave the foreground memory pressure level (to perceptible
+//   pressure level).
+const char kMemoryPressureArcvm[] = "MemoryPressureArcvm";
 
 }  // namespace resource_manager
 

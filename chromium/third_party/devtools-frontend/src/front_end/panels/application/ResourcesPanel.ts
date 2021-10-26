@@ -4,18 +4,18 @@
 
 /* eslint-disable rulesdir/no_underscored_properties */
 
-import * as Common from '../../core/common/common.js';  // eslint-disable-line no-unused-vars
+import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as SourceFrame from '../../ui/legacy/components/source_frame/source_frame.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import type {CookieTreeElement} from './ApplicationPanelSidebar.js';
-import {ApplicationPanelSidebar, StorageCategoryView} from './ApplicationPanelSidebar.js';  // eslint-disable-line no-unused-vars
+import {ApplicationPanelSidebar, StorageCategoryView} from './ApplicationPanelSidebar.js';
 import {CookieItemsView} from './CookieItemsView.js';
 import {DatabaseQueryView} from './DatabaseQueryView.js';
 import {DatabaseTableView} from './DatabaseTableView.js';
 import {DOMStorageItemsView} from './DOMStorageItemsView.js';
-import type {DOMStorage} from './DOMStorageModel.js'; // eslint-disable-line no-unused-vars
+import type {DOMStorage} from './DOMStorageModel.js';
 import {StorageItemsView} from './StorageItemsView.js';
 
 let resourcesPanelInstance: ResourcesPanel;
@@ -34,7 +34,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
 
   private constructor() {
     super('resources');
-    this.registerRequiredCSS('panels/application/resourcesPanel.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/application/resourcesPanel.css');
 
     this._resourcesLastSelectedItemSetting =
         Common.Settings.Settings.instance().createSetting('resourcesLastSelectedElementPath', []);
@@ -167,7 +167,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     this.showView(this._domStorageView);
   }
 
-  showCookies(cookieFrameTarget: SDK.SDKModel.Target, cookieDomain: string): void {
+  showCookies(cookieFrameTarget: SDK.Target.Target, cookieDomain: string): void {
     const model = cookieFrameTarget.model(SDK.CookieModel.CookieModel);
     if (!model) {
       return;
@@ -180,7 +180,7 @@ export class ResourcesPanel extends UI.Panel.PanelWithSidebar {
     this.showView(this._cookieView);
   }
 
-  clearCookies(target: SDK.SDKModel.Target, cookieDomain: string): void {
+  clearCookies(target: SDK.Target.Target, cookieDomain: string): void {
     const model = (target.model(SDK.CookieModel.CookieModel) as SDK.CookieModel.CookieModel | null);
     if (!model) {
       return;

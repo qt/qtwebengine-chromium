@@ -6,8 +6,6 @@
 #define CONTENT_BROWSER_CONVERSIONS_CONVERSION_REPORT_H_
 
 #include <stdint.h>
-#include <string>
-#include <vector>
 
 #include "base/time/time.h"
 #include "content/browser/conversions/storable_impression.h"
@@ -21,40 +19,42 @@ namespace content {
 // impression.
 struct CONTENT_EXPORT ConversionReport {
   // The conversion_id may not be set for a conversion report.
-  ConversionReport(const StorableImpression& impression,
-                   const std::string& conversion_data,
+  ConversionReport(StorableImpression impression,
+                   uint64_t conversion_data,
                    base::Time conversion_time,
                    base::Time report_time,
-                   const absl::optional<int64_t>& conversion_id);
+                   absl::optional<int64_t> conversion_id);
   ConversionReport(const ConversionReport& other);
+  ConversionReport& operator=(const ConversionReport& other);
+  ConversionReport(ConversionReport&& other);
+  ConversionReport& operator=(ConversionReport&& other);
   ~ConversionReport();
 
   // Impression associated with this conversion report.
-  const StorableImpression impression;
+  StorableImpression impression;
 
-  // Data provided at reporting time by the reporting origin. String
-  // representing a valid hexadecimal number.
-  const std::string conversion_data;
+  // Data provided at reporting time by the reporting origin. Depending on the
+  // source type, this contains the associated data in the trigger redirect.
+  uint64_t conversion_data;
 
   // The time the conversion occurred.
-  const base::Time conversion_time;
+  base::Time conversion_time;
 
   // The time this conversion report should be sent.
   base::Time report_time;
 
-  // Tracks ephemeral increases to |report_time| for this conversion report, for
-  // the purposes of logging metrics.
-  base::TimeDelta extra_delay;
+  // The original report time assigned to this report when it was created,
+  // ignoring any ephemeral increases to |report_time| for this conversion
+  // report.
+  base::Time original_report_time;
 
   // Id assigned by storage to uniquely identify a completed conversion. If
   // null, an ID has not been assigned yet.
-  const absl::optional<int64_t> conversion_id;
-};
+  absl::optional<int64_t> conversion_id;
 
-// Only used for logging.
-CONTENT_EXPORT std::ostream& operator<<(
-    std::ostream& out,
-    const ConversionReport& ConversionReport);
+  // When adding new members, the corresponding `operator==()` definition in
+  // `conversion_test_utils.h` should also be updated.
+};
 
 }  // namespace content
 

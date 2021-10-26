@@ -57,7 +57,7 @@
 
 namespace rtc {
 namespace {
-// SRTP cipher suite table. |internal_name| is used to construct a
+// SRTP cipher suite table. `internal_name` is used to construct a
 // colon-separated profile strings which is needed by
 // SSL_CTX_set_tlsext_use_srtp().
 struct SrtpCipherMapEntry {
@@ -73,10 +73,10 @@ struct SslCipherMapEntry {
 
 // This isn't elegant, but it's better than an external reference
 constexpr SrtpCipherMapEntry kSrtpCipherMap[] = {
-    {"SRTP_AES128_CM_SHA1_80", SRTP_AES128_CM_SHA1_80},
-    {"SRTP_AES128_CM_SHA1_32", SRTP_AES128_CM_SHA1_32},
-    {"SRTP_AEAD_AES_128_GCM", SRTP_AEAD_AES_128_GCM},
-    {"SRTP_AEAD_AES_256_GCM", SRTP_AEAD_AES_256_GCM}};
+    {"SRTP_AES128_CM_SHA1_80", kSrtpAes128CmSha1_80},
+    {"SRTP_AES128_CM_SHA1_32", kSrtpAes128CmSha1_32},
+    {"SRTP_AEAD_AES_128_GCM", kSrtpAeadAes128Gcm},
+    {"SRTP_AEAD_AES_256_GCM", kSrtpAeadAes256Gcm}};
 
 #ifndef OPENSSL_IS_BORINGSSL
 // The "SSL_CIPHER_standard_name" function is only available in OpenSSL when
@@ -834,7 +834,12 @@ void OpenSSLStreamAdapter::SetTimeout(int delay_ms) {
         if (flag->alive()) {
           RTC_DLOG(LS_INFO) << "DTLS timeout expired";
           timeout_task_.Stop();
-          DTLSv1_handle_timeout(ssl_);
+          int res = DTLSv1_handle_timeout(ssl_);
+          if (res > 0) {
+            RTC_LOG(LS_INFO) << "DTLS retransmission";
+          } else if (res < 0) {
+            RTC_LOG(LS_INFO) << "DTLSv1_handle_timeout() return -1";
+          }
           ContinueSSL();
         } else {
           RTC_NOTREACHED();

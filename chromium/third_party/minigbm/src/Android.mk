@@ -21,7 +21,6 @@ MINIGBM_SRC := \
 	msm.c \
 	radeon.c \
 	rockchip.c \
-	tegra.c \
 	vc4.c \
 	virtio_gpu.c
 

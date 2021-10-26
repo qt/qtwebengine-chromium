@@ -8,6 +8,7 @@
 
 #include "base/containers/contains.h"
 #include "ui/accessibility/ax_enums.mojom.h"
+#include "ui/accessibility/ax_live_region_tracker.h"
 #include "ui/accessibility/ax_node.h"
 #include "ui/accessibility/ax_role_properties.h"
 
@@ -200,8 +201,10 @@ void swap(AXEventGenerator::Iterator& lhs, AXEventGenerator::Iterator& rhs) {
 AXEventGenerator::AXEventGenerator() = default;
 
 AXEventGenerator::AXEventGenerator(AXTree* tree) : tree_(tree) {
-  if (tree_)
+  if (tree_) {
     tree_event_observation_.Observe(tree_);
+    live_region_tracker_ = std::make_unique<AXLiveRegionTracker>(*tree_);
+  }
 }
 
 AXEventGenerator::~AXEventGenerator() = default;
@@ -210,10 +213,13 @@ void AXEventGenerator::SetTree(AXTree* new_tree) {
   if (tree_) {
     DCHECK(tree_event_observation_.IsObservingSource(tree_));
     tree_event_observation_.Reset();
+    live_region_tracker_.reset();
   }
   tree_ = new_tree;
-  if (tree_)
+  if (tree_) {
     tree_event_observation_.Observe(tree_);
+    live_region_tracker_ = std::make_unique<AXLiveRegionTracker>(*tree_);
+  }
 }
 
 void AXEventGenerator::ReleaseTree() {
@@ -379,6 +385,9 @@ void AXEventGenerator::OnStringAttributeChanged(AXTree* tree,
     case ax::mojom::StringAttribute::kAutoComplete:
       AddEvent(node, Event::AUTO_COMPLETE_CHANGED);
       break;
+    case ax::mojom::StringAttribute::kCheckedStateDescription:
+      AddEvent(node, Event::CHECKED_STATE_DESCRIPTION_CHANGED);
+      break;
     case ax::mojom::StringAttribute::kClassName:
       AddEvent(node, Event::CLASS_NAME_CHANGED);
       break;
@@ -405,11 +414,19 @@ void AXEventGenerator::OnStringAttributeChanged(AXTree* tree,
       AddEvent(node, Event::LIVE_STATUS_CHANGED);
 
       // Fire a LIVE_REGION_CREATED if the previous value was off, and the new
-      // value is not-off.
+      // value is not-off. According to the ARIA spec, "When the property is not
+      // set on an object that needs to send updates, the politeness level is
+      // the value of the nearest ancestor that sets the aria-live attribute."
+      // Example: A new chat message is added to the room with aria-live="off",
+      // then the author removes aria-live.
       if (!IsAlert(node->data().role)) {
-        bool old_state = !old_value.empty() && old_value != "off";
-        bool new_state = !new_value.empty() && new_value != "off";
-        if (!old_state && new_state)
+        bool was_off = !old_value.empty()
+                           ? old_value == "off"
+                           : !node->data().IsContainedInActiveLiveRegion();
+        bool is_off = !new_value.empty()
+                          ? new_value == "off"
+                          : !node->data().IsContainedInActiveLiveRegion();
+        if (was_off && !is_off)
           AddEvent(node, Event::LIVE_REGION_CREATED);
       }
       break;
@@ -420,7 +437,7 @@ void AXEventGenerator::OnStringAttributeChanged(AXTree* tree,
         AddEvent(node, Event::NAME_CHANGED);
 
       // If it's in a live region, fire live region events.
-      if (node->data().HasStringAttribute(
+      if (node->HasStringAttribute(
               ax::mojom::StringAttribute::kContainerLiveStatus)) {
         FireLiveRegionEvents(node);
       }
@@ -462,7 +479,7 @@ void AXEventGenerator::OnIntAttributeChanged(AXTree* tree,
     case ax::mojom::IntAttribute::kActivedescendantId:
       // Don't fire on invisible containers, as it confuses some screen readers,
       // such as NVDA.
-      if (!node->data().HasState(ax::mojom::State::kInvisible)) {
+      if (!node->data().IsInvisible()) {
         AddEvent(node, Event::ACTIVE_DESCENDANT_CHANGED);
         active_descendant_changed_.push_back(node);
       }
@@ -640,6 +657,9 @@ void AXEventGenerator::OnIntListAttributeChanged(
     case ax::mojom::IntListAttribute::kControlsIds:
       AddEvent(node, Event::CONTROLS_CHANGED);
       break;
+    case ax::mojom::IntListAttribute::kDetailsIds:
+      AddEvent(node, Event::DETAILS_CHANGED);
+      break;
     case ax::mojom::IntListAttribute::kDescribedbyIds:
       AddEvent(node, Event::DESCRIBED_BY_CHANGED);
       break;
@@ -716,6 +736,8 @@ void AXEventGenerator::OnTreeDataChanged(AXTree* tree,
 }
 
 void AXEventGenerator::OnNodeWillBeDeleted(AXTree* tree, AXNode* node) {
+  live_region_tracker_->OnNodeWillBeDeleted(*node);
+
   DCHECK_EQ(tree_, tree);
   tree_events_.erase(node);
 }
@@ -754,6 +776,15 @@ void AXEventGenerator::OnAtomicUpdateFinished(
 
   for (const auto& change : changes) {
     DCHECK(change.node);
+
+    if ((change.type == NODE_CREATED || change.type == SUBTREE_CREATED ||
+         change.type == NODE_REPARENTED || change.type == SUBTREE_REPARENTED)) {
+      if (change.node->data().HasStringAttribute(
+              ax::mojom::StringAttribute::kContainerLiveStatus)) {
+        live_region_tracker_->UpdateCachedLiveRootForNode(*change.node);
+      }
+    }
+
     if (change.type == SUBTREE_CREATED) {
       AddEvent(change.node, Event::SUBTREE_CREATED);
     } else if (change.type != NODE_CREATED) {
@@ -772,6 +803,22 @@ void AXEventGenerator::OnAtomicUpdateFinished(
 
   FireActiveDescendantEvents();
 
+  // If we queued any live region change events during node deletion, add them
+  // here. It's necessary to wait to add these events, because an update might
+  // destroy and recreate live region roots after OnNodeWillBeDeleted is called.
+  // TODO(mrobinson): Consider designing AXEventGenerator to have a more
+  // resilient way to queue up events for nodes that might be destroyed and
+  // recreated in a single update.
+  for (auto& id : live_region_tracker_->live_region_roots_with_changes()) {
+    // If node is null, the live region root with a change was deleted during
+    // the course of this update and we should not trigger an event.
+    if (AXNode* node = tree_->GetFromId(id)) {
+      AddEvent(node, Event::LIVE_REGION_CHANGED);
+    }
+  }
+
+  live_region_tracker_->OnAtomicUpdateFinished();
+
   PostprocessEvents();
 }
 
@@ -783,29 +830,28 @@ void AXEventGenerator::AddEventsForTesting(
 }
 
 void AXEventGenerator::FireLiveRegionEvents(AXNode* node) {
-  AXNode* live_root = node;
-  while (live_root && !live_root->data().HasStringAttribute(
-                          ax::mojom::StringAttribute::kLiveStatus))
-    live_root = live_root->parent();
+  AXNode* live_root = live_region_tracker_->GetLiveRootIfNotBusy(*node);
 
-  if (live_root &&
-      !live_root->data().GetBoolAttribute(ax::mojom::BoolAttribute::kBusy) &&
-      live_root->data().GetStringAttribute(
-          ax::mojom::StringAttribute::kLiveStatus) != "off") {
-    // Fire LIVE_REGION_NODE_CHANGED on each node that changed.
-    if (!node->data()
-             .GetStringAttribute(ax::mojom::StringAttribute::kName)
-             .empty())
-      AddEvent(node, Event::LIVE_REGION_NODE_CHANGED);
-    // Fire LIVE_REGION_NODE_CHANGED on the root of the live region.
-    AddEvent(live_root, Event::LIVE_REGION_CHANGED);
+  // Note that |live_root| might be nullptr if a live region was just added,
+  // or if it has aria-busy="true".
+  if (!live_root)
+    return;
+
+  // Fire LIVE_REGION_NODE_CHANGED on each node that changed.
+  if (!node->data()
+           .GetStringAttribute(ax::mojom::StringAttribute::kName)
+           .empty()) {
+    AddEvent(node, Event::LIVE_REGION_NODE_CHANGED);
   }
+
+  // Fire LIVE_REGION_CHANGED on the root of the live region.
+  AddEvent(live_root, Event::LIVE_REGION_CHANGED);
 }
 
 void AXEventGenerator::FireActiveDescendantEvents() {
   for (AXNode* node : active_descendant_changed_) {
-    AXNode* descendant = tree_->GetFromId(node->data().GetIntAttribute(
-        ax::mojom::IntAttribute::kActivedescendantId));
+    AXNode* descendant = tree_->GetFromId(
+        node->GetIntAttribute(ax::mojom::IntAttribute::kActivedescendantId));
     if (!descendant)
       continue;
     switch (descendant->data().role) {
@@ -1133,6 +1179,8 @@ const char* ToString(AXEventGenerator::Event event) {
       return "busyChanged";
     case AXEventGenerator::Event::CHECKED_STATE_CHANGED:
       return "checkedStateChanged";
+    case AXEventGenerator::Event::CHECKED_STATE_DESCRIPTION_CHANGED:
+      return "checkedStateDescriptionChanged";
     case AXEventGenerator::Event::CHILDREN_CHANGED:
       return "childrenChanged";
     case AXEventGenerator::Event::CLASS_NAME_CHANGED:
@@ -1141,6 +1189,8 @@ const char* ToString(AXEventGenerator::Event event) {
       return "collapsed";
     case AXEventGenerator::Event::CONTROLS_CHANGED:
       return "controlsChanged";
+    case AXEventGenerator::Event::DETAILS_CHANGED:
+      return "detailsChanged";
     case AXEventGenerator::Event::DESCRIBED_BY_CHANGED:
       return "describedByChanged";
     case AXEventGenerator::Event::DESCRIPTION_CHANGED:

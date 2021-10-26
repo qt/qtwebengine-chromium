@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/check.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -77,8 +78,10 @@ WaylandEventSource::PointerFrame& WaylandEventSource::PointerFrame::operator=(
 
 WaylandEventSource::WaylandEventSource(wl_display* display,
                                        wl_event_queue* event_queue,
-                                       WaylandWindowManager* window_manager)
+                                       WaylandWindowManager* window_manager,
+                                       WaylandConnection* connection)
     : window_manager_(window_manager),
+      connection_(connection),
       event_watcher_(
           std::make_unique<WaylandEventWatcher>(display, event_queue)) {
   DCHECK(window_manager_);
@@ -104,7 +107,11 @@ void WaylandEventSource::StopProcessingEvents() {
 void WaylandEventSource::OnKeyboardFocusChanged(WaylandWindow* window,
                                                 bool focused) {
   DCHECK(window);
-  HandleKeyboardFocusChange(window, focused);
+#if DCHECK_IS_ON()
+  if (!focused)
+    DCHECK_EQ(window, window_manager_->GetCurrentKeyboardFocusedWindow());
+#endif
+  window_manager_->SetKeyboardFocusedWindow(focused ? window : nullptr);
 }
 
 void WaylandEventSource::OnKeyboardModifiersChanged(int modifiers) {
@@ -134,7 +141,8 @@ uint32_t WaylandEventSource::OnKeyboardKeyEvent(
     UpdateKeyboardModifiers(flag, type == ET_KEY_PRESSED);
   }
 
-  KeyEvent event(type, key_code, dom_code, keyboard_modifiers_, dom_key,
+  KeyEvent event(type, key_code, dom_code,
+                 keyboard_modifiers_ | (repeat ? EF_IS_REPEAT : 0), dom_key,
                  timestamp);
   event.set_source_device_id(device_id);
   if (kind == WaylandKeyboard::KeyEventKind::kKey) {
@@ -154,7 +162,7 @@ void WaylandEventSource::OnPointerFocusChanged(WaylandWindow* window,
 
   bool focused = !!window;
   if (focused)
-    HandlePointerFocusChange(window);
+    window_manager_->SetPointerFocusedWindow(window);
 
   EventType type = focused ? ET_MOUSE_ENTERED : ET_MOUSE_EXITED;
   MouseEvent event(type, location, location, EventTimeForNow(), pointer_flags_,
@@ -162,7 +170,7 @@ void WaylandEventSource::OnPointerFocusChanged(WaylandWindow* window,
   DispatchEvent(&event);
 
   if (!focused)
-    HandlePointerFocusChange(nullptr);
+    window_manager_->SetPointerFocusedWindow(nullptr);
 }
 
 void WaylandEventSource::OnPointerButtonEvent(EventType type,
@@ -171,9 +179,10 @@ void WaylandEventSource::OnPointerButtonEvent(EventType type,
   DCHECK(type == ET_MOUSE_PRESSED || type == ET_MOUSE_RELEASED);
   DCHECK(HasAnyPointerButtonFlag(changed_button));
 
-  auto* prev_focused_window = window_with_pointer_focus_;
+  WaylandWindow* prev_focused_window =
+      window_manager_->GetCurrentPointerFocusedWindow();
   if (window)
-    HandlePointerFocusChange(window);
+    window_manager_->SetPointerFocusedWindow(window);
 
   pointer_flags_ = type == ET_MOUSE_PRESSED
                        ? (pointer_flags_ | changed_button)
@@ -186,7 +195,7 @@ void WaylandEventSource::OnPointerButtonEvent(EventType type,
   DispatchEvent(&event);
 
   if (window)
-    HandlePointerFocusChange(prev_focused_window);
+    window_manager_->SetPointerFocusedWindow(prev_focused_window);
 }
 
 void WaylandEventSource::OnPointerMotionEvent(const gfx::PointF& location) {
@@ -334,6 +343,13 @@ void WaylandEventSource::OnTouchMotionEvent(const gfx::PointF& location,
 }
 
 void WaylandEventSource::OnTouchCancelEvent() {
+  // Some compositors emit a TouchCancel event when a drag'n drop
+  // session is started on the server, eg Exo.
+  // On Chrome, this event would actually abort the whole drag'n drop
+  // session on the client side.
+  if (connection_->IsDragInProgress())
+    return;
+
   gfx::PointF location;
   base::TimeTicks timestamp = base::TimeTicks::Now();
   for (auto& touch_point : touch_points_) {
@@ -344,6 +360,13 @@ void WaylandEventSource::OnTouchCancelEvent() {
     HandleTouchFocusChange(touch_point.second->window, false);
   }
   touch_points_.clear();
+}
+
+std::vector<PointerId> WaylandEventSource::GetActiveTouchPointIds() {
+  std::vector<PointerId> pointer_ids;
+  for (auto& touch_point : touch_points_)
+    pointer_ids.push_back(touch_point.first);
+  return pointer_ids;
 }
 
 void WaylandEventSource::OnPinchEvent(EventType event_type,
@@ -361,6 +384,20 @@ void WaylandEventSource::OnPinchEvent(EventType event_type,
                      details);
   event.set_source_device_id(device_id);
   DispatchEvent(&event);
+}
+
+void WaylandEventSource::SetRelativePointerMotionEnabled(bool enabled) {
+  if (enabled)
+    relative_pointer_location_ = pointer_location_;
+  else
+    relative_pointer_location_.reset();
+}
+
+void WaylandEventSource::OnRelativePointerMotion(const gfx::Vector2dF& delta) {
+  DCHECK(relative_pointer_location_.has_value());
+
+  relative_pointer_location_ = *relative_pointer_location_ + delta;
+  OnPointerMotionEvent(*relative_pointer_location_);
 }
 
 bool WaylandEventSource::IsPointerButtonPressed(EventFlags button) const {
@@ -381,10 +418,6 @@ void WaylandEventSource::OnDispatcherListChanged() {
 }
 
 void WaylandEventSource::OnWindowRemoved(WaylandWindow* window) {
-  // Clear pointer-related data.
-  if (window == window_with_pointer_focus_)
-    window_with_pointer_focus_ = nullptr;
-
   // Clear touch-related data.
   base::EraseIf(touch_points_, [window](const auto& point) {
     return point.second->window == window;
@@ -408,24 +441,6 @@ void WaylandEventSource::UpdateKeyboardModifiers(int modifier, bool down) {
   }
   keyboard_modifiers_ = down ? (keyboard_modifiers_ | modifier)
                              : (keyboard_modifiers_ & ~modifier);
-}
-
-void WaylandEventSource::HandleKeyboardFocusChange(WaylandWindow* window,
-                                                   bool focused) {
-  DCHECK(window);
-  window->set_keyboard_focus(focused);
-}
-
-void WaylandEventSource::HandlePointerFocusChange(WaylandWindow* window) {
-  // Focused window might have been destroyed at this point (eg: context menus),
-  // in this case, |window| is null.
-  if (window_with_pointer_focus_)
-    window_with_pointer_focus_->SetPointerFocus(false);
-
-  window_with_pointer_focus_ = window;
-
-  if (window_with_pointer_focus_)
-    window_with_pointer_focus_->SetPointerFocus(true);
 }
 
 void WaylandEventSource::HandleTouchFocusChange(WaylandWindow* window,

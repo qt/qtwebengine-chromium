@@ -8,7 +8,7 @@
 #define FPDFSDK_FORMFILLER_CFFL_BUTTON_H_
 
 #include "core/fxcrt/fx_coordinates.h"
-#include "fpdfsdk/formfiller/cffl_formfiller.h"
+#include "fpdfsdk/formfiller/cffl_formfield.h"
 
 class CFX_RenderDevice;
 class CFX_Matrix;
@@ -17,25 +17,25 @@ class CPDFSDK_FormFillEnvironment;
 class CPDFSDK_PageView;
 class CPDFSDK_Widget;
 
-class CFFL_Button : public CFFL_FormFiller {
+class CFFL_Button : public CFFL_FormField {
  public:
   CFFL_Button(CPDFSDK_FormFillEnvironment* pFormFillEnv,
               CPDFSDK_Widget* pWidget);
   ~CFFL_Button() override;
 
-  // CFFL_FormFiller
+  // CFFL_FormField
   void OnMouseEnter(CPDFSDK_PageView* pPageView) override;
   void OnMouseExit(CPDFSDK_PageView* pPageView) override;
   bool OnLButtonDown(CPDFSDK_PageView* pPageView,
                      CPDFSDK_Annot* pAnnot,
-                     uint32_t nFlags,
+                     Mask<FWL_EVENTFLAG> nFlags,
                      const CFX_PointF& point) override;
   bool OnLButtonUp(CPDFSDK_PageView* pPageView,
                    CPDFSDK_Annot* pAnnot,
-                   uint32_t nFlags,
+                   Mask<FWL_EVENTFLAG> nFlags,
                    const CFX_PointF& point) override;
   bool OnMouseMove(CPDFSDK_PageView* pPageView,
-                   uint32_t nFlags,
+                   Mask<FWL_EVENTFLAG> nFlags,
                    const CFX_PointF& point) override;
   void OnDraw(CPDFSDK_PageView* pPageView,
               CPDFSDK_Annot* pAnnot,

@@ -13,6 +13,7 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_block.h"
 #include "base/macros.h"
+#include "cc/paint/paint_shader.h"
 #import "skia/ext/skia_utils_mac.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/base/ui_base_switches.h"
@@ -26,6 +27,7 @@
 #include "ui/gfx/skia_util.h"
 #include "ui/native_theme/common_theme.h"
 #include "ui/native_theme/native_theme_aura.h"
+#include "ui/native_theme/native_theme_features.h"
 
 namespace {
 
@@ -109,9 +111,7 @@ namespace ui {
 
 // static
 NativeTheme* NativeTheme::GetInstanceForWeb() {
-  if (features::IsFormControlsRefreshEnabled())
-    return NativeThemeAura::web_instance();
-  return NativeThemeMac::instance();
+  return NativeThemeMacWeb::instance();
 }
 
 // static
@@ -385,13 +385,16 @@ void NativeThemeMac::PaintScrollbarTrackInnerBorder(
   // Compute the rect for the border.
   gfx::Rect inner_border(rect);
   if (extra_params.orientation == ScrollbarOrientation::kVerticalOnLeft)
-    inner_border.set_x(rect.right() - ScrollbarTrackBorderWidth());
+    inner_border.set_x(rect.right() -
+                       ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
   if (is_corner ||
       extra_params.orientation == ScrollbarOrientation::kHorizontal)
-    inner_border.set_height(ScrollbarTrackBorderWidth());
+    inner_border.set_height(
+        ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
   if (is_corner ||
       extra_params.orientation != ScrollbarOrientation::kHorizontal)
-    inner_border.set_width(ScrollbarTrackBorderWidth());
+    inner_border.set_width(
+        ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
 
   // And draw.
   cc::PaintFlags flags;
@@ -421,8 +424,10 @@ void NativeThemeMac::PaintScrollbarTrackOuterBorder(
   if (is_corner ||
       extra_params.orientation == ScrollbarOrientation::kHorizontal) {
     gfx::Rect outer_border(rect);
-    outer_border.set_height(ScrollbarTrackBorderWidth());
-    outer_border.set_y(rect.bottom() - ScrollbarTrackBorderWidth());
+    outer_border.set_height(
+        ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
+    outer_border.set_y(rect.bottom() -
+                       ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
     paint_canvas.DrawRect(outer_border, flags);
   }
 
@@ -430,16 +435,18 @@ void NativeThemeMac::PaintScrollbarTrackOuterBorder(
   if (is_corner ||
       extra_params.orientation != ScrollbarOrientation::kHorizontal) {
     gfx::Rect outer_border(rect);
-    outer_border.set_width(ScrollbarTrackBorderWidth());
+    outer_border.set_width(
+        ScrollbarTrackBorderWidth(extra_params.scale_from_dip));
     if (extra_params.orientation == ScrollbarOrientation::kVerticalOnRight)
-      outer_border.set_x(rect.right() - ScrollbarTrackBorderWidth());
+      outer_border.set_x(rect.right() - ScrollbarTrackBorderWidth(
+                                            extra_params.scale_from_dip));
     paint_canvas.DrawRect(outer_border, flags);
   }
 }
 
-gfx::Size NativeThemeMac::GetThumbMinSize(bool vertical) const {
-  constexpr int kLength = 18;
-  constexpr int kGirth = 6;
+gfx::Size NativeThemeMac::GetThumbMinSize(bool vertical, float scale) const {
+  const int kLength = 18 * scale;
+  const int kGirth = 6 * scale;
 
   return vertical ? gfx::Size(kGirth, kLength) : gfx::Size(kLength, kGirth);
 }
@@ -458,15 +465,24 @@ void NativeThemeMac::PaintMacScrollbarThumb(
   gfx::Rect bounds(rect);
   {
     // Shrink the thumb evenly in length and girth to fit within the track.
-    gfx::Insets thumb_insets(GetScrollbarThumbInset(scroll_thumb.is_overlay));
+    gfx::Insets thumb_insets(GetScrollbarThumbInset(
+        scroll_thumb.is_overlay, scroll_thumb.scale_from_dip));
 
     // Also shrink the thumb in girth to not touch the border.
     if (scroll_thumb.orientation == ScrollbarOrientation::kHorizontal) {
-      thumb_insets.set_top(thumb_insets.top() + ScrollbarTrackBorderWidth());
-      ConstrainedInset(&bounds, GetThumbMinSize(false), thumb_insets);
+      thumb_insets.set_top(
+          thumb_insets.top() +
+          ScrollbarTrackBorderWidth(scroll_thumb.scale_from_dip));
+      ConstrainedInset(&bounds,
+                       GetThumbMinSize(false, scroll_thumb.scale_from_dip),
+                       thumb_insets);
     } else {
-      thumb_insets.set_left(thumb_insets.left() + ScrollbarTrackBorderWidth());
-      ConstrainedInset(&bounds, GetThumbMinSize(true), thumb_insets);
+      thumb_insets.set_left(
+          thumb_insets.left() +
+          ScrollbarTrackBorderWidth(scroll_thumb.scale_from_dip));
+      ConstrainedInset(&bounds,
+                       GetThumbMinSize(true, scroll_thumb.scale_from_dip),
+                       thumb_insets);
     }
   }
 
@@ -625,11 +641,7 @@ void NativeThemeMac::InitializeDarkModeStateAndObserver() {
 }
 
 void NativeThemeMac::ConfigureWebInstance() {
-  if (!features::IsFormControlsRefreshEnabled())
-    return;
-
-  // For FormControlsRefresh, NativeThemeAura is used as web instance so we need
-  // to initialize its state.
+  // NativeThemeAura is used as web instance so we need to initialize its state.
   NativeTheme* web_instance = NativeTheme::GetInstanceForWeb();
   web_instance->set_use_dark_colors(IsDarkMode());
   web_instance->set_preferred_color_scheme(CalculatePreferredColorScheme());
@@ -648,6 +660,32 @@ void NativeThemeMac::ConfigureWebInstance() {
       CaptionSettingsChangedNotificationCallback,
       kMACaptionAppearanceSettingsChangedNotification, 0,
       CFNotificationSuspensionBehaviorDeliverImmediately);
+}
+
+NativeThemeMacWeb::NativeThemeMacWeb()
+    : NativeThemeAura(IsOverlayScrollbarEnabled(), false) {}
+
+// static
+NativeThemeMacWeb* NativeThemeMacWeb::instance() {
+  static base::NoDestructor<NativeThemeMacWeb> s_native_theme;
+  return s_native_theme.get();
+}
+
+float NativeThemeMacWeb::AdjustBorderWidthByZoom(float border_width,
+                                                 float zoom_level) const {
+  float zoomed = floorf(border_width * zoom_level);
+  return std::max(1.0f, zoomed);
+}
+
+float NativeThemeMacWeb::AdjustBorderRadiusByZoom(Part part,
+                                                  float border_radius,
+                                                  float zoom_level) const {
+  if (part != kTextField && part != kPushButton) {
+    return NativeThemeAura::AdjustBorderRadiusByZoom(part, border_radius,
+                                                     zoom_level);
+  }
+  float zoomed = floorf(border_radius * zoom_level);
+  return std::max(1.0f, zoomed);
 }
 
 }  // namespace ui

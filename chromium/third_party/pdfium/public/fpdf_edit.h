@@ -247,6 +247,36 @@ FPDFPageObj_Transform(FPDF_PAGEOBJECT page_object,
                       double e,
                       double f);
 
+// Experimental API.
+// Get the transform matrix of a page object.
+//
+//   page_object - handle to a page object.
+//   matrix      - pointer to struct to receive the matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and used to scale, rotate, shear and translate the page object.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetMatrix(FPDF_PAGEOBJECT page_object, FS_MATRIX* matrix);
+
+// Experimental API.
+// Set the transform matrix of a page object.
+//
+//   page_object - handle to a page object.
+//   matrix      - pointer to struct with the matrix value.
+//
+// The matrix is composed as:
+//   |a c e|
+//   |b d f|
+// and can be used to scale, rotate, shear and translate the page object.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetMatrix(FPDF_PAGEOBJECT path, const FS_MATRIX* matrix);
+
 // Transform all annotations in |page|.
 //
 //   page - handle to a page.
@@ -558,32 +588,8 @@ FPDFImageObj_LoadJpegFileInline(FPDF_PAGE* pages,
                                 FPDF_PAGEOBJECT image_object,
                                 FPDF_FILEACCESS* file_access);
 
-// Experimental API.
-// Get the transform matrix of an image object.
+// TODO(thestig): Start deprecating this once FPDFPageObj_SetMatrix() is stable.
 //
-//   image_object - handle to an image object.
-//   a            - matrix value.
-//   b            - matrix value.
-//   c            - matrix value.
-//   d            - matrix value.
-//   e            - matrix value.
-//   f            - matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the image.
-//
-// Returns TRUE on success.
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FPDFImageObj_GetMatrix(FPDF_PAGEOBJECT image_object,
-                       double* a,
-                       double* b,
-                       double* c,
-                       double* d,
-                       double* e,
-                       double* f);
-
 // Set the transform matrix of |image_object|.
 //
 //   image_object - handle to an image object.
@@ -814,7 +820,6 @@ FPDFPageObj_GetStrokeColor(FPDF_PAGEOBJECT page_object,
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFPageObj_SetStrokeWidth(FPDF_PAGEOBJECT page_object, float width);
 
-// Experimental API.
 // Get the stroke width of a page object.
 //
 // path   - the handle to the page object.
@@ -895,6 +900,63 @@ FPDFPageObj_GetFillColor(FPDF_PAGEOBJECT page_object,
                          unsigned int* G,
                          unsigned int* B,
                          unsigned int* A);
+
+// Experimental API.
+// Get the line dash |phase| of |page_object|.
+//
+// page_object - handle to a page object.
+// phase - pointer where the dashing phase will be stored.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetDashPhase(FPDF_PAGEOBJECT page_object, float* phase);
+
+// Experimental API.
+// Set the line dash phase of |page_object|.
+//
+// page_object - handle to a page object.
+// phase - line dash phase.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetDashPhase(FPDF_PAGEOBJECT page_object, float phase);
+
+// Experimental API.
+// Get the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+//
+// Returns the line dash array size or -1 on failure.
+FPDF_EXPORT int FPDF_CALLCONV
+FPDFPageObj_GetDashCount(FPDF_PAGEOBJECT page_object);
+
+// Experimental API.
+// Get the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+// dash_array - pointer where the dashing array will be stored.
+// dash_count - number of elements in |dash_array|.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_GetDashArray(FPDF_PAGEOBJECT page_object,
+                         float* dash_array,
+                         size_t dash_count);
+
+// Experimental API.
+// Set the line dash array of |page_object|.
+//
+// page_object - handle to a page object.
+// dash_array - the dash array.
+// dash_count - number of elements in |dash_array|.
+// phase - the line dash phase.
+//
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFPageObj_SetDashArray(FPDF_PAGEOBJECT page_object,
+                         const float* dash_array,
+                         size_t dash_count,
+                         float phase);
 
 // Get number of segments inside |path|.
 //
@@ -1008,7 +1070,6 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_SetDrawMode(FPDF_PAGEOBJECT path,
                                                          int fillmode,
                                                          FPDF_BOOL stroke);
 
-// Experimental API.
 // Get the drawing mode of a path.
 //
 // path     - the handle to the path object.
@@ -1019,36 +1080,6 @@ FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_SetDrawMode(FPDF_PAGEOBJECT path,
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_GetDrawMode(FPDF_PAGEOBJECT path,
                                                          int* fillmode,
                                                          FPDF_BOOL* stroke);
-
-// Experimental API.
-// Get the transform matrix of a path.
-//
-//   path   - handle to a path.
-//   matrix - pointer to struct to receive the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the path.
-//
-// Returns TRUE on success.
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_GetMatrix(FPDF_PAGEOBJECT path,
-                                                       FS_MATRIX* matrix);
-
-// Experimental API.
-// Set the transform matrix of a path.
-//
-//   path   - handle to a path.
-//   matrix - pointer to struct with the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and can be used to scale, rotate, shear and translate the path.
-//
-// Returns TRUE on success.
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFPath_SetMatrix(FPDF_PAGEOBJECT path,
-                                                       const FS_MATRIX* matrix);
 
 // Create a new text object using one of the standard PDF fonts.
 //
@@ -1062,7 +1093,7 @@ FPDFPageObj_NewTextObj(FPDF_DOCUMENT document,
                        FPDF_BYTESTRING font,
                        float font_size);
 
-// Set the text for a textobject. If it had text, it will be replaced.
+// Set the text for a text object. If it had text, it will be replaced.
 //
 // text_object  - handle to the text object.
 // text         - the UTF-16LE encoded string containing the text to be added.
@@ -1070,6 +1101,20 @@ FPDFPageObj_NewTextObj(FPDF_DOCUMENT document,
 // Returns TRUE on success
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFText_SetText(FPDF_PAGEOBJECT text_object, FPDF_WIDESTRING text);
+
+// Experimental API.
+// Set the text using charcodes for a text object. If it had text, it will be
+// replaced.
+//
+// text_object  - handle to the text object.
+// charcodes    - pointer to an array of charcodes to be added.
+// count        - number of elements in |charcodes|.
+//
+// Returns TRUE on success
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFText_SetCharcodes(FPDF_PAGEOBJECT text_object,
+                      const uint32_t* charcodes,
+                      size_t count);
 
 // Returns a font object loaded from a stream of data. The font is loaded
 // into the document.
@@ -1104,29 +1149,15 @@ FPDF_EXPORT FPDF_FONT FPDF_CALLCONV FPDFText_LoadFont(FPDF_DOCUMENT document,
 FPDF_EXPORT FPDF_FONT FPDF_CALLCONV
 FPDFText_LoadStandardFont(FPDF_DOCUMENT document, FPDF_BYTESTRING font);
 
-// Experimental API.
-// Get the transform matrix of a text object.
-//
-//   text   - handle to a text.
-//   matrix - pointer to struct with the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the text.
-//
-// Returns TRUE on success.
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFTextObj_GetMatrix(FPDF_PAGEOBJECT text,
-                                                          FS_MATRIX* matrix);
-
-// Experimental API.
 // Get the font size of a text object.
 //
 //   text - handle to a text.
+//   size - pointer to the font size of the text object, measured in points
+//   (about 1/72 inch)
 //
-// Returns the font size of the text object, measured in points (about 1/72
-// inch) on success; 0 on failure.
-FPDF_EXPORT float FPDF_CALLCONV FPDFTextObj_GetFontSize(FPDF_PAGEOBJECT text);
+// Returns TRUE on success.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
+FPDFTextObj_GetFontSize(FPDF_PAGEOBJECT text, float* size);
 
 // Close a loaded PDF font.
 //
@@ -1145,7 +1176,6 @@ FPDFPageObj_CreateTextObj(FPDF_DOCUMENT document,
                           FPDF_FONT font,
                           float font_size);
 
-// Experimental API.
 // Get the text rendering mode of a text object.
 //
 // text     - the handle to the text object.
@@ -1182,10 +1212,9 @@ FPDFTextObj_SetTextRenderMode(FPDF_PAGEOBJECT text,
 // will not be modified.
 FPDF_EXPORT unsigned long FPDF_CALLCONV
 FPDFTextObj_GetFontName(FPDF_PAGEOBJECT text,
-                        void* buffer,
+                        char* buffer,
                         unsigned long length);
 
-// Experimental API.
 // Get the text of a text object.
 //
 // text_object      - the handle to the text object.
@@ -1202,10 +1231,9 @@ FPDFTextObj_GetFontName(FPDF_PAGEOBJECT text,
 FPDF_EXPORT unsigned long FPDF_CALLCONV
 FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
                     FPDF_TEXTPAGE text_page,
-                    void* buffer,
+                    FPDF_WCHAR* buffer,
                     unsigned long length);
 
-// Experimental API.
 // Get number of page objects inside |form_object|.
 //
 //   form_object - handle to a form object.
@@ -1214,7 +1242,6 @@ FPDFTextObj_GetText(FPDF_PAGEOBJECT text_object,
 FPDF_EXPORT int FPDF_CALLCONV
 FPDFFormObj_CountObjects(FPDF_PAGEOBJECT form_object);
 
-// Experimental API.
 // Get page object in |form_object| at |index|.
 //
 //   form_object - handle to a form object.
@@ -1223,21 +1250,6 @@ FPDFFormObj_CountObjects(FPDF_PAGEOBJECT form_object);
 // Returns the handle to the page object, or NULL on error.
 FPDF_EXPORT FPDF_PAGEOBJECT FPDF_CALLCONV
 FPDFFormObj_GetObject(FPDF_PAGEOBJECT form_object, unsigned long index);
-
-// Experimental API.
-// Get the transform matrix of a form object.
-//
-//   form_object - handle to a form.
-//   matrix      - pointer to struct to receive the matrix value.
-//
-// The matrix is composed as:
-//   |a c e|
-//   |b d f|
-// and used to scale, rotate, shear and translate the form object.
-//
-// Returns TRUE on success.
-FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
-FPDFFormObj_GetMatrix(FPDF_PAGEOBJECT form_object, FS_MATRIX* matrix);
 
 #ifdef __cplusplus
 }  // extern "C"

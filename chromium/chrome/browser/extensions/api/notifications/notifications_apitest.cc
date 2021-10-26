@@ -58,57 +58,6 @@ namespace utils = extension_function_test_utils;
 
 namespace {
 
-// A class that waits for a |chrome.test.sendMessage| call, ignores the message,
-// and writes down the user gesture status of the message.
-class UserGestureCatcher : public content::NotificationObserver {
- public:
-  UserGestureCatcher() : waiting_(false) {
-    registrar_.Add(this,
-                   extensions::NOTIFICATION_EXTENSION_TEST_MESSAGE,
-                   content::NotificationService::AllSources());
-  }
-
-  ~UserGestureCatcher() override {}
-
-  bool GetNextResult() {
-    if (results_.empty()) {
-      waiting_ = true;
-      content::RunMessageLoop();
-      waiting_ = false;
-    }
-
-    if (!results_.empty()) {
-      bool ret = results_.front();
-      results_.pop_front();
-      return ret;
-    }
-    NOTREACHED();
-    return false;
-  }
-
- private:
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) override {
-    results_.push_back(
-        static_cast<content::Source<extensions::TestSendMessageFunction> >(
-            source)
-            .ptr()
-            ->user_gesture());
-    if (waiting_)
-      base::RunLoop::QuitCurrentWhenIdleDeprecated();
-  }
-
-  content::NotificationRegistrar registrar_;
-
-  // A sequential list of user gesture notifications from the test extension(s).
-  base::circular_deque<bool> results_;
-
-  // True if we're in a nested run loop waiting for results from
-  // the extension.
-  bool waiting_;
-};
-
 enum class WindowState {
   FULLSCREEN,
   NORMAL
@@ -116,6 +65,11 @@ enum class WindowState {
 
 class NotificationsApiTest : public extensions::ExtensionApiTest {
  public:
+  NotificationsApiTest() = default;
+  ~NotificationsApiTest() override = default;
+  NotificationsApiTest(const NotificationsApiTest&) = delete;
+  NotificationsApiTest& operator=(const NotificationsApiTest&) = delete;
+
   const Extension* LoadExtensionAndWait(
       const std::string& test_name) {
     base::FilePath extdir = test_data_dir_.AppendASCII(test_name);
@@ -224,10 +178,18 @@ class NotificationsApiTest : public extensions::ExtensionApiTest {
 class NotificationsApiTestWithBackgroundType
     : public NotificationsApiTest,
       public testing::WithParamInterface<ContextType> {
+ public:
+  NotificationsApiTestWithBackgroundType() = default;
+  ~NotificationsApiTestWithBackgroundType() override = default;
+  NotificationsApiTestWithBackgroundType(
+      const NotificationsApiTestWithBackgroundType&) = delete;
+  NotificationsApiTestWithBackgroundType& operator=(
+      const NotificationsApiTestWithBackgroundType&) = delete;
+
  protected:
   bool RunTest(const char* name) {
     return RunExtensionTest(
-        {.name = name},
+        name, {},
         {.load_as_service_worker = GetParam() == ContextType::kServiceWorker});
   }
 };
@@ -336,9 +298,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
         extensions::api_test_utils::NONE));
 
     EXPECT_EQ(base::Value::Type::STRING, result->type());
-    std::string permission_level;
-    EXPECT_TRUE(result->GetAsString(&permission_level));
-    EXPECT_EQ("granted", permission_level);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_EQ("granted", result->GetString());
   }
 
   // Get permission level for the extension whose notifications are disabled.
@@ -359,9 +320,8 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestGetPermissionLevel) {
         extensions::api_test_utils::NONE));
 
     EXPECT_EQ(base::Value::Type::STRING, result->type());
-    std::string permission_level;
-    EXPECT_TRUE(result->GetAsString(&permission_level));
-    EXPECT_EQ("denied", permission_level);
+    EXPECT_TRUE(result->is_string());
+    EXPECT_EQ("denied", result->GetString());
   }
 }
 
@@ -405,26 +365,33 @@ IN_PROC_BROWSER_TEST_F(NotificationsApiTest, TestUserGesture) {
   ASSERT_TRUE(notification);
 
   {
-    UserGestureCatcher catcher;
-
+    ExtensionTestMessageListener listener(false);
     // Action button event.
     display_service_tester_->SimulateClick(
         NotificationHandler::Type::EXTENSION, notification->id(),
         0 /* action_index */, absl::nullopt /* reply */);
-    EXPECT_TRUE(catcher.GetNextResult());
+    ASSERT_TRUE(listener.WaitUntilSatisfied());
+    EXPECT_TRUE(listener.had_user_gesture());
+  }
 
+  {
+    ExtensionTestMessageListener listener(false);
     // Click event.
     display_service_tester_->SimulateClick(
         NotificationHandler::Type::EXTENSION, notification->id(),
         absl::nullopt /* action_index */, absl::nullopt /* reply */);
-    EXPECT_TRUE(catcher.GetNextResult());
+    ASSERT_TRUE(listener.WaitUntilSatisfied());
+    EXPECT_TRUE(listener.had_user_gesture());
+  }
 
+  {
+    ExtensionTestMessageListener listener(false);
     // Close event.
     display_service_tester_->RemoveNotification(
         NotificationHandler::Type::EXTENSION, notification->id(),
         true /* by_user */, false /* silent */);
-    EXPECT_TRUE(catcher.GetNextResult());
-
+    ASSERT_TRUE(listener.WaitUntilSatisfied());
+    EXPECT_TRUE(listener.had_user_gesture());
     // Note that |notification| no longer points to valid memory.
   }
 

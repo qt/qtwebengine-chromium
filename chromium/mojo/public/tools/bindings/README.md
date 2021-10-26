@@ -448,7 +448,22 @@ interesting attributes supported today.
   matching `value` in the list of `enabled_features`, the definition will be
   disabled. This is useful for mojom definitions that only make sense on one
   platform. Note that the `EnableIf` attribute can only be set once per
-  definition.
+  definition and cannot be set at the same time as `EnableIfNot`.
+
+* **`[EnableIfNot=value]`**:
+  The `EnableIfNot` attribute is used to conditionally enable definitions when
+  the mojom is parsed. If the `mojom` target in the GN file includes the
+  matching `value` in the list of `enabled_features`, the definition will be
+  disabled. This is useful for mojom definitions that only make sense on all but
+  one platform. Note that the `EnableIfNot` attribute can only be set once per
+  definition and cannot be set at the same time as `EnableIf`.
+
+* **`[ServiceSandbox=value]`**:
+  The `ServiceSandbox` attribute is used in Chromium to tag which sandbox a
+  service hosting an implementation of interface will be launched in. This only
+  applies to `C++` bindings. `value` should match a constant defined in an
+  imported `sandbox.mojom.Sandbox` enum (for Chromium this is
+  `//sandbox/policy/mojom/sandbox.mojom`), such as `kService`.
 
 ## Generated Code For Target Languages
 
@@ -550,10 +565,16 @@ See the documentation for
 
 *** note
 **NOTE:** You don't need to worry about versioning if you don't care about
-backwards compatibility. Specifically, all parts of Chrome are updated
-atomically today and there is not yet any possibility of any two Chrome
-processes communicating with two different versions of any given Mojom
-interface.
+backwards compatibility. Today, all parts of the Chrome browser are
+updated atomically and there is not yet any possibility of any two
+Chrome processes communicating with two different versions of any given Mojom
+interface. On Chrome OS, there are several places where versioning is required.
+For example,
+[ARC++](https://developer.android.com/chrome-os/intro)
+uses versioned mojo to send IPC to the Android container.
+Likewise, the
+[Lacros](/docs/lacros.md)
+browser uses versioned mojo to talk to the ash system UI.
 ***
 
 Services extend their interfaces to support new features over time, and clients
@@ -593,8 +614,8 @@ struct Employee {
 
 *** note
 **NOTE:** Mojo object or handle types added with a `MinVersion` **MUST** be
-optional (nullable). See [Primitive Types](#Primitive-Types) for details on
-nullable values.
+optional (nullable) or primitive. See [Primitive Types](#Primitive-Types) for
+details on nullable values.
 ***
 
 By default, fields belong to version 0. New fields must be appended to the

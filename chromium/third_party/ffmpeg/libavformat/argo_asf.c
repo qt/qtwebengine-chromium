@@ -19,8 +19,10 @@
  * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
+#include "libavutil/avstring.h"
 #include "avformat.h"
 #include "internal.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/avassert.h"
 #include "libavutil/opt.h"
@@ -109,12 +111,7 @@ int ff_argo_asf_fill_stream(AVFormatContext *s, AVStream *st, const ArgoASFFileH
 
     st->codecpar->bits_per_coded_sample     = 4;
 
-    if (ckhdr->flags & ASF_CF_BITS_PER_SAMPLE)
-        st->codecpar->bits_per_raw_sample   = 16;
-    else
-        st->codecpar->bits_per_raw_sample   = 8;
-
-    if (st->codecpar->bits_per_raw_sample != 16) {
+    if (!(ckhdr->flags & ASF_CF_BITS_PER_SAMPLE)) {
         /* The header allows for these, but I've never seen any files with them. */
         avpriv_request_sample(s, "Non 16-bit samples");
         return AVERROR_PATCHWELCOME;
@@ -271,7 +268,7 @@ static int argo_asf_seek(AVFormatContext *s, int stream_index,
  * - Argonaut Sound File?
  * - Audio Stream File?
  */
-AVInputFormat ff_argo_asf_demuxer = {
+const AVInputFormat ff_argo_asf_demuxer = {
     .name           = "argo_asf",
     .long_name      = NULL_IF_CONFIG_SMALL("Argonaut Games ASF"),
     .priv_data_size = sizeof(ArgoASFDemuxContext),
@@ -468,7 +465,7 @@ static const AVClass argo_asf_muxer_class = {
     .version    = LIBAVUTIL_VERSION_INT
 };
 
-AVOutputFormat ff_argo_asf_muxer = {
+const AVOutputFormat ff_argo_asf_muxer = {
     .name           = "argo_asf",
     .long_name      = NULL_IF_CONFIG_SMALL("Argonaut Games ASF"),
     /*

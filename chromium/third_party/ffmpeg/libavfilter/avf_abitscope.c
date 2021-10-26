@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
@@ -261,7 +260,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_avf_abitscope = {
+const AVFilter ff_avf_abitscope = {
     .name          = "abitscope",
     .description   = NULL_IF_CONFIG_SMALL("Convert input audio to audio bit scope video output."),
     .query_formats = query_formats,

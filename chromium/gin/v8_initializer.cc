@@ -9,6 +9,7 @@
 
 #include <memory>
 
+#include "base/allocator/partition_allocator/page_allocator.h"
 #include "base/check.h"
 #include "base/debug/alias.h"
 #include "base/debug/crash_logging.h"
@@ -17,6 +18,7 @@
 #include "base/files/file_path.h"
 #include "base/files/memory_mapped_file.h"
 #include "base/lazy_instance.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
@@ -26,6 +28,7 @@
 #include "base/system/sys_info.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
+#include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "gin/gin_features.h"
 
@@ -185,14 +188,6 @@ base::File OpenV8File(const char* file_name,
   return file;
 }
 
-enum LoadV8FileResult {
-  V8_LOAD_SUCCESS = 0,
-  V8_LOAD_FAILED_OPEN,
-  V8_LOAD_FAILED_MAP,
-  V8_LOAD_FAILED_VERIFY,  // Deprecated.
-  V8_LOAD_MAX_VALUE
-};
-
 #endif  // defined(V8_USE_EXTERNAL_STARTUP_DATA)
 
 template <int LENGTH>
@@ -210,7 +205,63 @@ void SetV8FlagsFormatted(const char* format, ...) {
     return;
   }
   v8::V8::SetFlagsFromString(buffer, length - 1);
-  ;
+}
+
+void RunArrayBufferCageReservationExperiment() {
+  // TODO(1218005) remove this function and windows_version.h include once the
+  // experiment has ended.
+#if defined(ARCH_CPU_64_BITS)
+  constexpr size_t kGigaBytes = 1024 * 1024 * 1024;
+  constexpr size_t kTeraBytes = 1024 * kGigaBytes;
+
+  constexpr size_t kCageMaxSize = 1 * kTeraBytes;
+  constexpr size_t kCageMinSize = 8 * kGigaBytes;
+
+#if defined(OS_WIN)
+  // Windows prior to Win10 (or possibly Win8/8.1) appears to create page table
+  // entries when reserving virtual memory, causing unacceptably high memory
+  // consumption (e.g. ~2GB when reserving 1TB). As such, the experiment is
+  // only enabled on Win10.
+  if (base::win::GetVersion() < base::win::Version::WIN10) {
+    return;
+  }
+#endif
+
+  void* reservation = nullptr;
+  size_t current_size = kCageMaxSize;
+  while (!reservation && current_size >= kCageMinSize) {
+    // The cage reservation will need to be 4GB aligned.
+    reservation = base::AllocPages(nullptr, current_size, 4 * kGigaBytes,
+                                   base::PageInaccessible, base::PageTag::kV8);
+    if (!reservation) {
+      current_size /= 2;
+    }
+  }
+
+  int result = current_size / kGigaBytes;
+  if (reservation) {
+    base::FreePages(reservation, current_size);
+  } else {
+    result = 0;
+  }
+
+  base::UmaHistogramSparse("V8.MaxArrayBufferCageReservationSize", result);
+#endif
+}
+
+template <size_t N, size_t M>
+void SetV8FlagsIfOverridden(const base::Feature& feature,
+                            const char (&enabling_flag)[N],
+                            const char (&disabling_flag)[M]) {
+  auto overridden_state = base::FeatureList::GetStateIfOverridden(feature);
+  if (!overridden_state.has_value()) {
+    return;
+  }
+  if (overridden_state.value()) {
+    SetV8Flags(enabling_flag);
+  } else {
+    SetV8Flags(disabling_flag);
+  }
 }
 
 }  // namespace
@@ -220,6 +271,11 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode) {
   static bool v8_is_initialized = false;
   if (v8_is_initialized)
     return;
+
+  if (base::FeatureList::IsEnabled(
+          features::kV8ArrayBufferCageReservationExperiment)) {
+    RunArrayBufferCageReservationExperiment();
+  }
 
   v8::V8::InitializePlatform(V8Platform::Get());
 
@@ -291,9 +347,8 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode) {
     SetV8Flags("--turboprop");
   }
 
-  if (base::FeatureList::IsEnabled(features::kV8Sparkplug)) {
-    SetV8Flags("--sparkplug");
-  }
+  SetV8FlagsIfOverridden(features::kV8Sparkplug, "--sparkplug",
+                         "--no-sparkplug");
 
   if (base::FeatureList::IsEnabled(
           features::kV8SparkplugNeedsShortBuiltinCalls)) {
@@ -326,6 +381,9 @@ void V8Initializer::Initialize(IsolateHolder::ScriptMode mode) {
     // it if the feature flag is on.
     SetV8Flags("--no-short-builtin-calls");
   }
+
+  SetV8FlagsIfOverridden(features::kV8SlowHistograms, "--slow-histograms",
+                         "--no-slow-histograms");
 
   if (IsolateHolder::kStrictMode == mode) {
     SetV8Flags("--use_strict");
@@ -384,8 +442,7 @@ void V8Initializer::LoadV8SnapshotFromFile(
     return;
 
   if (!snapshot_file.IsValid()) {
-    UMA_HISTOGRAM_ENUMERATION("V8.Initializer.LoadV8Snapshot.Result",
-                              V8_LOAD_FAILED_OPEN, V8_LOAD_MAX_VALUE);
+    LOG(FATAL) << "Error loading V8 startup snapshot file";
     return;
   }
 
@@ -395,11 +452,10 @@ void V8Initializer::LoadV8SnapshotFromFile(
     region = *snapshot_file_region;
   }
 
-  LoadV8FileResult result = V8_LOAD_SUCCESS;
-  if (!MapV8File(std::move(snapshot_file), region, &g_mapped_snapshot))
-    result = V8_LOAD_FAILED_MAP;
-  UMA_HISTOGRAM_ENUMERATION("V8.Initializer.LoadV8Snapshot.Result", result,
-                            V8_LOAD_MAX_VALUE);
+  if (!MapV8File(std::move(snapshot_file), region, &g_mapped_snapshot)) {
+    LOG(FATAL) << "Error mapping V8 startup snapshot file";
+    return;
+  }
 }
 
 #if defined(OS_ANDROID)

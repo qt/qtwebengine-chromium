@@ -204,7 +204,7 @@ void RemoteFontFaceSource::NotifyFinished(Resource* resource) {
         mojom::ConsoleMessageSource::kOther,
         mojom::ConsoleMessageLevel::kWarning,
         "Failed to decode downloaded font: " + font->Url().ElidedString()));
-    if (font->OtsParsingMessage().length() > 1) {
+    if (!font->OtsParsingMessage().IsEmpty()) {
       execution_context->AddConsoleMessage(MakeGarbageCollected<ConsoleMessage>(
           mojom::ConsoleMessageSource::kOther,
           mojom::ConsoleMessageLevel::kWarning,
@@ -421,6 +421,10 @@ void RemoteFontFaceSource::FontLoadHistograms::FallbackFontPainted(
 void RemoteFontFaceSource::FontLoadHistograms::LongLimitExceeded() {
   is_long_limit_exceeded_ = true;
   MaySetDataSource(kFromNetwork);
+}
+
+bool RemoteFontFaceSource::IsPendingDataUrl() const {
+  return GetResource() && GetResource()->Url().ProtocolIsData();
 }
 
 void RemoteFontFaceSource::FontLoadHistograms::RecordFallbackTime() {

@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 
+#include "base/containers/adapters.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_block_break_token.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment.h"
@@ -58,19 +59,33 @@ inline int FragmentainerBreakPrecedence(EBreakBetween break_value) {
 
 // Return layout overflow block-size that's not clipped (or simply the
 // block-size if it *is* clipped).
-LayoutUnit BlockAxisLayoutOverflow(const NGPhysicalFragment& fragment,
+LayoutUnit BlockAxisLayoutOverflow(const NGLayoutResult& result,
                                    WritingDirectionMode writing_direction) {
-  const auto* box = DynamicTo<NGPhysicalBoxFragment>(fragment);
-  if (box && box->HasNonVisibleOverflow()) {
-    OverflowClipAxes block_axis =
-        writing_direction.IsHorizontal() ? kOverflowClipY : kOverflowClipX;
-    if (box->GetOverflowClipAxes() & block_axis)
-      box = nullptr;
+  const NGPhysicalFragment& fragment = result.PhysicalFragment();
+  LayoutUnit block_size = NGFragment(writing_direction, fragment).BlockSize();
+  if (const auto* box = DynamicTo<NGPhysicalBoxFragment>(fragment)) {
+    if (box->HasNonVisibleOverflow()) {
+      OverflowClipAxes block_axis =
+          writing_direction.IsHorizontal() ? kOverflowClipY : kOverflowClipX;
+      if (box->GetOverflowClipAxes() & block_axis)
+        box = nullptr;
+    }
+    if (box) {
+      WritingModeConverter converter(writing_direction, fragment.Size());
+      block_size =
+          std::max(block_size,
+                   converter.ToLogical(box->LayoutOverflow()).BlockEndOffset());
+    }
+    return block_size;
   }
-  PhysicalRect rect = fragment.LocalRect();
-  if (box)
-    rect.UniteEvenIfEmpty(box->LayoutOverflow());
-  return writing_direction.IsHorizontal() ? rect.Bottom() : rect.Right();
+
+  // Ruby annotations do not take up space in the line box, so we need this to
+  // make sure that we don't let them cross the fragmentation line without
+  // noticing.
+  LayoutUnit annotation_overflow = result.AnnotationOverflow();
+  if (annotation_overflow > LayoutUnit())
+    block_size += annotation_overflow;
+  return block_size;
 }
 
 }  // anonymous namespace
@@ -482,6 +497,58 @@ NGBreakStatus FinishFragmentation(NGBlockNode node,
   return NGBreakStatus::kContinue;
 }
 
+NGBreakStatus FinishFragmentationForFragmentainer(
+    const NGConstraintSpace& space,
+    NGBoxFragmentBuilder* builder) {
+  DCHECK(builder->IsFragmentainerBoxType());
+  const NGBlockBreakToken* previous_break_token = builder->PreviousBreakToken();
+  LayoutUnit consumed_block_size =
+      previous_break_token ? previous_break_token->ConsumedBlockSize()
+                           : LayoutUnit();
+  if (space.HasKnownFragmentainerBlockSize()) {
+    // Just copy the block-size from the constraint space. Calculating the
+    // size the regular way would cause some problems with overflow. For one,
+    // we don't want to produce a break token if there's no child content that
+    // requires it. When we lay out, we use FragmentainerCapacity(), so this
+    // is what we need to add to consumed block-size for the next break
+    // token. The fragment block-size itself will be based directly on the
+    // fragmentainer size from the constraint space, though.
+    LayoutUnit block_size = space.FragmentainerBlockSize();
+    LayoutUnit fragmentainer_capacity = FragmentainerCapacity(space);
+    builder->SetFragmentBlockSize(block_size);
+    consumed_block_size += fragmentainer_capacity;
+    builder->SetConsumedBlockSize(consumed_block_size);
+
+    // We clamp the fragmentainer block size from 0 to 1 for legacy write-back
+    // if there is content that overflows the zero-height fragmentainer.
+    // Set the consumed block size adjustment for legacy if this results
+    // in a different consumed block size than is used for NG layout.
+    LayoutUnit consumed_block_size_for_legacy =
+        previous_break_token
+            ? previous_break_token->ConsumedBlockSizeForLegacy()
+            : LayoutUnit();
+    LayoutUnit legacy_fragmentainer_block_size =
+        (builder->IntrinsicBlockSize() > LayoutUnit()) ? fragmentainer_capacity
+                                                       : block_size;
+    LayoutUnit consumed_block_size_legacy_adjustment =
+        consumed_block_size_for_legacy + legacy_fragmentainer_block_size -
+        consumed_block_size;
+    builder->SetConsumedBlockSizeLegacyAdjustment(
+        consumed_block_size_legacy_adjustment);
+  } else {
+    // When we are in the initial column balancing pass, use the block-size
+    // calculated by the algorithm. Since any previously consumed block-size
+    // is already baked in (in order to correctly honor specified block-size
+    // (which makes sense to everyone but fragmentainers)), we need to extract
+    // it again now.
+    LayoutUnit fragments_total_block_size = builder->FragmentsTotalBlockSize();
+    builder->SetFragmentBlockSize(fragments_total_block_size -
+                                  consumed_block_size);
+    builder->SetConsumedBlockSize(fragments_total_block_size);
+  }
+  return NGBreakStatus::kContinue;
+}
+
 NGBreakStatus BreakBeforeChildIfNeeded(const NGConstraintSpace& space,
                                        NGLayoutInputNode child,
                                        const NGLayoutResult& layout_result,
@@ -694,9 +761,8 @@ bool MovePastBreakpoint(const NGConstraintSpace& space,
       return true;
     }
   } else if (refuse_break_before ||
-             BlockAxisLayoutOverflow(physical_fragment,
-                                     space.GetWritingDirection()) <=
-                 space_left) {
+             BlockAxisLayoutOverflow(
+                 layout_result, space.GetWritingDirection()) <= space_left) {
     // The child either fits, or we are not allowed to break. So we can move
     // past this breakpoint.
     if (child.IsBlock() && builder) {
@@ -801,7 +867,7 @@ NGConstraintSpace CreateConstraintSpaceForColumns(
       parent_space, parent_space.GetWritingDirection(), /* is_new_fc */ true);
   space_builder.SetAvailableSize(column_size);
   space_builder.SetPercentageResolutionSize(percentage_resolution_size);
-  space_builder.SetStretchInlineSizeIfAuto(true);
+  space_builder.SetInlineAutoBehavior(NGAutoBehavior::kStretchImplicit);
   space_builder.SetFragmentationType(kFragmentColumn);
   space_builder.SetFragmentainerBlockSize(column_size.block_size);
   space_builder.SetIsAnonymous(true);
@@ -844,6 +910,91 @@ NGConstraintSpace CreateConstraintSpaceForMulticol(
       writing_direction_mode.GetWritingMode(), writing_direction_mode,
       /* is_new_fc */ true);
   return space_builder.ToConstraintSpace();
+}
+
+const NGBlockBreakToken* PreviousFragmentainerBreakToken(
+    const NGBoxFragmentBuilder& container_builder,
+    wtf_size_t index) {
+  const NGBlockBreakToken* previous_break_token = nullptr;
+  for (wtf_size_t i = index; i > 0; --i) {
+    auto* previous_fragment =
+        container_builder.Children()[i - 1].fragment.get();
+    if (previous_fragment->IsFragmentainerBox()) {
+      previous_break_token = To<NGBlockBreakToken>(
+          To<NGPhysicalBoxFragment>(previous_fragment)->BreakToken());
+      break;
+    }
+  }
+  return previous_break_token;
+}
+
+const NGBlockBreakToken* FindPreviousBreakToken(
+    const NGPhysicalBoxFragment& fragment) {
+  const LayoutBox* box = To<LayoutBox>(fragment.GetLayoutObject());
+  DCHECK(box);
+  DCHECK_GE(box->PhysicalFragmentCount(), 1u);
+
+  // Bail early if this is the first fragment. There'll be no previous break
+  // token then.
+  if (fragment.IsFirstForNode())
+    return nullptr;
+
+  // If this isn't the first fragment, it means that there has to be multiple
+  // fragments.
+  DCHECK_GT(box->PhysicalFragmentCount(), 1u);
+
+  const NGPhysicalBoxFragment* previous_fragment;
+  if (const auto* break_token = To<NGBlockBreakToken>(fragment.BreakToken())) {
+    // The sequence number of the outgoing break token is the same as the index
+    // of this fragment.
+    DCHECK_GE(break_token->SequenceNumber(), 1u);
+    previous_fragment =
+        box->GetPhysicalFragment(break_token->SequenceNumber() - 1);
+  } else {
+    // This is the last fragment, so its incoming break token will be the
+    // outgoing one from the penultimate fragment.
+    previous_fragment =
+        box->GetPhysicalFragment(box->PhysicalFragmentCount() - 2);
+  }
+  return To<NGBlockBreakToken>(previous_fragment->BreakToken());
+}
+
+wtf_size_t PreviousInnerFragmentainerIndex(
+    const NGPhysicalBoxFragment& fragment) {
+  // This should be a fragmentation context root, typically a multicol
+  // container.
+  DCHECK(fragment.IsFragmentationContextRoot());
+
+  const LayoutBox* box = To<LayoutBox>(fragment.GetLayoutObject());
+  DCHECK_GE(box->PhysicalFragmentCount(), 1u);
+  if (box->PhysicalFragmentCount() == 1)
+    return 0;
+
+  wtf_size_t idx = 0;
+  // Walk the list of fragments generated by the node, until we reach the
+  // specified one. Note that some fragments may not contain any fragmentainers
+  // at all, if all the space is taken up by column spanners, for instance.
+  for (const NGPhysicalBoxFragment& walker : box->PhysicalFragments()) {
+    if (&walker == &fragment)
+      return idx;
+    const auto* break_token = To<NGBlockBreakToken>(walker.BreakToken());
+
+    // Find the last fragmentainer inside this fragment.
+    const auto children = break_token->ChildBreakTokens();
+    for (scoped_refptr<const NGBreakToken> child_token :
+         base::Reversed(children)) {
+      DCHECK(child_token->IsBlockType());
+      if (child_token->InputNode() != break_token->InputNode()) {
+        // Not a fragmentainer (probably a spanner)
+        continue;
+      }
+      idx = To<NGBlockBreakToken>(child_token.get())->SequenceNumber() + 1;
+      break;
+    }
+  }
+
+  NOTREACHED();
+  return idx;
 }
 
 }  // namespace blink

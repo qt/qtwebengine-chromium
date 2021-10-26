@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "components/query_tiles/internal/tile_utils.h"
+
 #include <algorithm>
 #include <limits>
 
 #include "base/rand_util.h"
 #include "base/strings/string_util.h"
 #include "components/query_tiles/internal/tile_config.h"
-#include "components/query_tiles/internal/tile_utils.h"
 
 namespace query_tiles {
 namespace {
@@ -24,25 +25,6 @@ struct TileComparator {
 
   std::map<std::string, double>* tile_score_map;
 };
-
-// Shuffle unclicked tiles from index starting with |GetTileShufflePosition()|,
-// so that they have a chance to be displayed. Trending tiles are excluded.
-void ShuffleUnclickedTiles(std::vector<std::unique_ptr<Tile>>* tiles,
-                           std::map<std::string, double>* tile_score_map) {
-  size_t starting_index = TileConfig::GetTileShufflePosition();
-  if (tiles->empty() || tiles->size() <= starting_index + 1)
-    return;
-
-  auto iter = --tiles->end();
-  while (iter >= tiles->begin() + starting_index) {
-    const std::string& id = iter->get()->id;
-    if ((*tile_score_map)[id] > 0 || IsTrendingTile(id))
-      break;
-    --iter;
-  }
-  if (iter + 1 != tiles->end())
-    base::RandomShuffle(iter + 1, tiles->end());
-}
 
 void SortTiles(std::vector<std::unique_ptr<Tile>>* tiles,
                std::map<std::string, TileStats>* tile_stats,
@@ -106,15 +88,15 @@ void SortTiles(std::vector<std::unique_ptr<Tile>>* tiles,
   // Sort the tiles in descending order.
   std::sort(tiles->begin(), tiles->end(), TileComparator(score_map));
 
-  // Randomly shuffle tiles that are never clicked so they get a chance
-  // to show up on the display.
-  ShuffleUnclickedTiles(tiles, score_map);
-
   for (auto& tile : *tiles)
     SortTiles(&tile->sub_tiles, tile_stats, score_map);
 }
 
 }  // namespace
+
+void TileShuffler::Shuffle(std::vector<Tile>* tiles, int start) const {
+  base::RandomShuffle(tiles->begin() + start, tiles->end());
+}
 
 void SortTilesAndClearUnusedStats(
     std::vector<std::unique_ptr<Tile>>* tiles,
@@ -137,13 +119,25 @@ double CalculateTileScore(const TileStats& tile_stats,
                           base::Time current_time) {
   if (tile_stats.last_clicked_time >= current_time)
     return tile_stats.score;
-  return tile_stats.score *
-         exp(TileConfig::GetTileScoreDecayLambda() *
-             (current_time - tile_stats.last_clicked_time).InDaysFloored());
+  // Reset the score if the tile has not been clicked for a long time.
+  int days_passed_since_last_click =
+      (current_time - tile_stats.last_clicked_time).InDaysFloored();
+  if (days_passed_since_last_click >= TileConfig::GetNumDaysToResetTileScore())
+    return 0;
+  return tile_stats.score * exp(TileConfig::GetTileScoreDecayLambda() *
+                                days_passed_since_last_click);
 }
 
 bool IsTrendingTile(const std::string& tile_id) {
   return base::StartsWith(tile_id, "trending_");
+}
+
+void ShuffleTiles(std::vector<Tile>* tiles, const TileShuffler& shuffler) {
+  size_t starting_index = TileConfig::GetTileShufflePosition();
+  if (tiles->size() <= starting_index + 1)
+    return;
+
+  shuffler.Shuffle(tiles, starting_index);
 }
 
 }  // namespace query_tiles

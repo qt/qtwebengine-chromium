@@ -16,10 +16,10 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -1617,7 +1617,8 @@ void V4L2VideoDecodeAccelerator::FlushTask() {
     return;
   }
 
-  TRACE_EVENT_ASYNC_BEGIN0("media,gpu", "V4L2VDA::FlushTask", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("media,gpu", "V4L2VDA::FlushTask",
+                                    TRACE_ID_LOCAL(this));
 
   // We don't support stacked flushing.
   DCHECK(!decoder_flushing_);
@@ -1688,7 +1689,8 @@ void V4L2VideoDecodeAccelerator::NotifyFlushDoneIfNeeded() {
 }
 
 void V4L2VideoDecodeAccelerator::NofityFlushDone() {
-  TRACE_EVENT_ASYNC_END0("media,gpu", "V4L2VDA::FlushTask", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2VDA::FlushTask",
+                                  TRACE_ID_LOCAL(this));
   decoder_delay_bitstream_buffer_id_ = -1;
   decoder_flushing_ = false;
   VLOGF(2) << "returning flush";
@@ -1737,7 +1739,8 @@ void V4L2VideoDecodeAccelerator::ResetTask() {
     return;
   }
 
-  TRACE_EVENT_ASYNC_BEGIN0("media,gpu", "V4L2VDA::ResetTask", this);
+  TRACE_EVENT_NESTABLE_ASYNC_BEGIN0("media,gpu", "V4L2VDA::ResetTask",
+                                    TRACE_ID_LOCAL(this));
 
   decoder_current_bitstream_buffer_.reset();
   while (!decoder_input_queue_.empty())
@@ -1813,7 +1816,8 @@ void V4L2VideoDecodeAccelerator::ResetDoneTask() {
     return;
   }
 
-  TRACE_EVENT_ASYNC_END0("media,gpu", "V4L2VDA::ResetTask", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("media,gpu", "V4L2VDA::ResetTask",
+                                  TRACE_ID_LOCAL(this));
 
   // Start poll thread if NotifyFlushDoneIfNeeded has not already.
   if (!device_poll_thread_.IsRunning()) {

@@ -109,6 +109,10 @@ class X11_WINDOW_EXPORT X11Window
   void SizeConstraintsChanged() override;
   bool IsTranslucentWindowOpacitySupported() const override;
   void SetOpacity(float opacity) override;
+  bool CanSetDecorationInsets() const override;
+  void SetDecorationInsets(gfx::Insets insets_px) override;
+  void SetOpaqueRegion(std::vector<gfx::Rect> region_px) override;
+  void SetInputRegion(gfx::Rect region_px) override;
 
   // WorkspaceExtension:
   std::string GetWorkspace() const override;
@@ -125,6 +129,7 @@ class X11_WINDOW_EXPORT X11Window
   bool ContainsPointInXRegion(const gfx::Point& point) const override;
   void LowerXWindow() override;
   void SetOverrideRedirect(bool override_redirect) override;
+  bool CanResetOverrideRedirect() const override;
   void SetX11ExtensionDelegate(X11ExtensionDelegate* delegate) override;
 
   // x11::EventObserver:

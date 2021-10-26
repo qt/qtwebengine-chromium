@@ -20,6 +20,7 @@
 #include "content/browser/renderer_host/back_forward_cache_impl.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/should_swap_browsing_instance.h"
+#include "content/browser/renderer_host/stored_page.h"
 #include "content/browser/site_instance_impl.h"
 #include "content/browser/web_exposed_isolation_info.h"
 #include "content/common/content_export.h"
@@ -44,7 +45,8 @@ class RenderFrameHostManagerTest;
 class RenderFrameProxyHost;
 class RenderViewHost;
 class RenderViewHostImpl;
-class RenderWidgetHostView;
+class RenderWidgetHostViewBase;
+class RenderWidgetHostViewChildFrame;
 class TestWebContents;
 
 using PageBroadcastMethodCallback =
@@ -104,8 +106,9 @@ class CONTENT_EXPORT RenderFrameHostManager
     : public SiteInstanceImpl::Observer {
  public:
   using RenderFrameProxyHostMap =
-      std::unordered_map<int32_t /* SiteInstance id */,
-                         std::unique_ptr<RenderFrameProxyHost>>;
+      std::unordered_map<SiteInstanceId,
+                         std::unique_ptr<RenderFrameProxyHost>,
+                         SiteInstanceId::Hasher>;
 
   // Functions implemented by our owner that we need.
   //
@@ -148,12 +151,6 @@ class CONTENT_EXPORT RenderFrameHostManager
     // to see what it should do.
     virtual bool FocusLocationBarByDefault() = 0;
 
-    // If the delegate is an inner WebContents, this method returns the
-    // FrameTreeNode ID of the frame in the outer WebContents which hosts
-    // the inner WebContents. Returns FrameTreeNode::kFrameTreeNodeInvalidId
-    // if the delegate does not have an outer WebContents.
-    virtual int GetOuterDelegateFrameTreeNodeId() = 0;
-
     // If the delegate is an inner WebContents, reattach it to the outer
     // WebContents.
     virtual void ReattachOuterDelegateIfNeeded() = 0;
@@ -195,7 +192,7 @@ class CONTENT_EXPORT RenderFrameHostManager
 
   // Returns the view associated with the current RenderViewHost, or null if
   // there is no current one.
-  RenderWidgetHostView* GetRenderWidgetHostView() const;
+  RenderWidgetHostViewBase* GetRenderWidgetHostView() const;
 
   // Returns whether this manager is a main frame and belongs to a FrameTreeNode
   // that belongs to an inner WebContents.
@@ -290,11 +287,11 @@ class CONTENT_EXPORT RenderFrameHostManager
   // Returns whether it was deleted.
   bool DeleteFromPendingList(RenderFrameHostImpl* render_frame_host);
 
-  // BackForwardCache:
+  // BackForwardCache/Prerender:
   // During a history navigation, unfreezes and swaps in a document from the
-  // BackForwardCache, making it active.
-  void RestoreFromBackForwardCache(
-      std::unique_ptr<BackForwardCacheImpl::Entry>);
+  // BackForwardCache, making it active. This mechanism is also used for
+  // activating prerender page.
+  void RestorePage(std::unique_ptr<StoredPage> stored_page);
 
   // Temporary method to allow reusing back-forward cache activation for
   // prerender activation. Similar to RestoreFromBackForwardCache(), but cleans
@@ -302,7 +299,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // TODO(https://crbug.com/1190197). This method might not be needed if we do
   // not create the speculative RFH in the first place for Prerender
   // activations.
-  void ActivatePrerender(std::unique_ptr<BackForwardCacheImpl::Entry>);
+  void ActivatePrerender(std::unique_ptr<StoredPage>);
 
   // Deletes any proxy hosts associated with this node. Used during destruction
   // of WebContentsImpl.
@@ -408,9 +405,9 @@ class CONTENT_EXPORT RenderFrameHostManager
   void OnDidUpdateOrigin(const url::Origin& origin,
                          bool is_potentially_trustworthy_unique_origin);
 
-  // Send updated ad frame type to all frame proxies at ready-to-commit time
-  // when the ad status gets updated.
-  void OnDidSetAdFrameType(blink::mojom::AdFrameType ad_frame_type);
+  // Send updated ad status to all frame proxies at ready-to-commit time when it
+  // gets updated.
+  void OnDidSetIsAdSubframe(bool is_ad_subframe);
 
   void EnsureRenderViewInitialized(RenderViewHostImpl* render_view_host,
                                    SiteInstance* instance);
@@ -460,7 +457,7 @@ class CONTENT_EXPORT RenderFrameHostManager
 
   // Sets the child RenderWidgetHostView for this frame, which must be part of
   // an inner WebContents.
-  void SetRWHViewForInnerContents(RenderWidgetHostView* child_rwhv);
+  void SetRWHViewForInnerContents(RenderWidgetHostViewChildFrame* child_rwhv);
 
   // Returns the number of RenderFrameProxyHosts for this frame.
   size_t GetProxyCount();
@@ -561,16 +558,20 @@ class CONTENT_EXPORT RenderFrameHostManager
 
   Delegate* delegate() { return delegate_; }
 
-  // Collects the current page into BackForwardCacheImpl::Entry in preparation
+  // Collects the current page into StoredPage in preparation
   // for it to be moved to another FrameTree for prerender activation. After
   // this call, |current_frame_host_| will become null, which breaks many
   // invariants in the code, so the caller is responsible for destroying the
   // FrameTree immediately after this call.
-  //
-  // TODO(https://crbug.com/1183523): Rename BackForwardCacheImpl::Entry to make
-  // clear that it is also used to transfer pages between FrameTrees for
-  // prerendering.
-  std::unique_ptr<BackForwardCacheImpl::Entry> TakePrerenderedPage();
+  std::unique_ptr<StoredPage> TakePrerenderedPage();
+
+  // Returns the first RenderFrameProxyHosts in `proxy_hosts_` found to not have
+  // a corresponding RenderViewHost. Used to check if a subframe creation can
+  // proceed, since it needs the RenderViewHosts to create proxies for the
+  // subframe. This is only used for temporary debugging to figure out how this
+  // case can happen.
+  // TODO(https://crbug.com/1243541): Remove this once the bug is fixed.
+  RenderFrameProxyHost* GetProxyHostWithoutRenderViewHost();
 
  private:
   friend class NavigatorTest;
@@ -604,7 +605,7 @@ class CONTENT_EXPORT RenderFrameHostManager
   // It can point to an existing one or store the details needed to create a new
   // one.
   struct CONTENT_EXPORT SiteInstanceDescriptor {
-    explicit SiteInstanceDescriptor(content::SiteInstance* site_instance)
+    explicit SiteInstanceDescriptor(SiteInstance* site_instance)
         : existing_site_instance(site_instance),
           relation(SiteInstanceRelation::PREEXISTING),
           web_exposed_isolation_info(
@@ -616,7 +617,7 @@ class CONTENT_EXPORT RenderFrameHostManager
         const WebExposedIsolationInfo& web_exposed_isolation_info);
 
     // Set with an existing SiteInstance to be reused.
-    content::SiteInstance* existing_site_instance;
+    SiteInstance* existing_site_instance;
 
     // In case |existing_site_instance| is null, specify a destination URL.
     UrlInfo dest_url_info;
@@ -885,15 +886,14 @@ class CONTENT_EXPORT RenderFrameHostManager
   //
   // This function is also called when restoring an entry from BackForwardCache.
   // In that case, |pending_rfh| is the RenderFrameHost to be restored, and
-  // |pending_bfcache_entry| provides additional state to be restored, such as
+  // |pending_stored_page| provides additional state to be restored, such as
   // proxies.
   // |clear_proxies_on_commit| Indicates if the proxies and opener must be
   // removed during the commit. This can happen following some BrowsingInstance
   // swaps, such as those for COOP.
-  void CommitPending(
-      std::unique_ptr<RenderFrameHostImpl> pending_rfh,
-      std::unique_ptr<BackForwardCacheImpl::Entry> pending_bfcache_entry,
-      bool clear_proxies_on_commit);
+  void CommitPending(std::unique_ptr<RenderFrameHostImpl> pending_rfh,
+                     std::unique_ptr<StoredPage> pending_stored_page,
+                     bool clear_proxies_on_commit);
 
   // Helper to call CommitPending() in all necessary cases.
   void CommitPendingIfNecessary(RenderFrameHostImpl* render_frame_host,
@@ -943,11 +943,16 @@ class CONTENT_EXPORT RenderFrameHostManager
 
   NavigationControllerImpl& GetNavigationController();
 
+  void PrepareForCollectingPage(
+      RenderFrameHostImpl* main_render_frame_host,
+      std::set<RenderViewHostImpl*>* render_view_hosts,
+      RenderFrameProxyHostMap* proxy_hosts);
+
   // Collects all of the page-related state currently owned by
   // RenderFrameHostManager (including relevant RenderViewHosts and
-  // RenderFrameProxyHosts) into a BackForwardCacheImpl::Entry object to be
+  // RenderFrameProxyHosts) into a StoredPage object to be
   // stored in back-forward cache or to activate the prerenderer.
-  std::unique_ptr<BackForwardCacheImpl::Entry> CollectPage(
+  std::unique_ptr<StoredPage> CollectPage(
       std::unique_ptr<RenderFrameHostImpl> main_render_frame_host);
 
   // For use in creating RenderFrameHosts.
@@ -978,9 +983,9 @@ class CONTENT_EXPORT RenderFrameHostManager
   // it.
   std::unique_ptr<RenderFrameHostImpl> speculative_render_frame_host_;
 
-  // After being set in RestoreFromBackForwardCache(), the bfcache entry is
-  // immediately consumed in CommitPending().
-  std::unique_ptr<BackForwardCacheImpl::Entry> bfcache_entry_to_restore_;
+  // After being set in RestoreFromBackForwardCache() or ActivatePrerenderer(),
+  // the stored page is immediately consumed in CommitPending().
+  std::unique_ptr<StoredPage> stored_page_to_restore_;
 
   // This callback is used when attaching an inner Delegate to |delegate_|
   // through |frame_tree_node_|.

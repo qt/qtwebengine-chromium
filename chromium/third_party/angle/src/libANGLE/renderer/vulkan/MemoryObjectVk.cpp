@@ -66,7 +66,7 @@ VkExternalMemoryHandleTypeFlagBits ToVulkanHandleType(gl::HandleType handleType)
         case gl::HandleType::OpaqueFd:
             return VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT;
         case gl::HandleType::ZirconVmo:
-            return VK_EXTERNAL_MEMORY_HANDLE_TYPE_TEMP_ZIRCON_VMO_BIT_FUCHSIA;
+            return VK_EXTERNAL_MEMORY_HANDLE_TYPE_ZIRCON_VMO_BIT_FUCHSIA;
         default:
             // Not a memory handle type.
             UNREACHABLE();
@@ -98,6 +98,12 @@ void MemoryObjectVk::onDestroy(const gl::Context *context)
 angle::Result MemoryObjectVk::setDedicatedMemory(const gl::Context *context, bool dedicatedMemory)
 {
     mDedicatedMemory = dedicatedMemory;
+    return angle::Result::Continue;
+}
+
+angle::Result MemoryObjectVk::setProtectedMemory(const gl::Context *context, bool protectedMemory)
+{
+    mProtectedMemory = protectedMemory;
     return angle::Result::Continue;
 }
 
@@ -204,11 +210,12 @@ angle::Result MemoryObjectVk::createImage(ContextVk *contextVk,
     // ANGLE_external_objects_flags allows create flags to be specified by the application instead
     // of getting defaulted to zero.  Note that the GL enum values constituting the bits of
     // |createFlags| are identical to their corresponding Vulkan value.
-    ANGLE_TRY(image->initExternal(contextVk, type, vkExtents, vkFormat, 1, imageUsageFlags,
-                                  createFlags, vk::ImageLayout::Undefined,
-                                  &externalMemoryImageCreateInfo, gl::LevelIndex(0),
-                                  static_cast<uint32_t>(levels), layerCount,
-                                  contextVk->isRobustResourceInitEnabled(), nullptr));
+    bool hasProtectedContent = mProtectedMemory;
+    ANGLE_TRY(image->initExternal(
+        contextVk, type, vkExtents, vkFormat, 1, imageUsageFlags, createFlags,
+        vk::ImageLayout::Undefined, &externalMemoryImageCreateInfo, gl::LevelIndex(0),
+        static_cast<uint32_t>(levels), layerCount, contextVk->isRobustResourceInitEnabled(),
+        nullptr, hasProtectedContent));
 
     VkMemoryRequirements externalMemoryRequirements;
     image->getImage().getMemoryRequirements(renderer->getDevice(), &externalMemoryRequirements);
@@ -237,7 +244,7 @@ angle::Result MemoryObjectVk::createImage(ContextVk *contextVk,
         case gl::HandleType::ZirconVmo:
             ASSERT(mZirconHandle != ZX_HANDLE_INVALID);
             importMemoryZirconHandleInfo.sType =
-                VK_STRUCTURE_TYPE_TEMP_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA;
+                VK_STRUCTURE_TYPE_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA;
             importMemoryZirconHandleInfo.pNext      = importMemoryInfo;
             importMemoryZirconHandleInfo.handleType = ToVulkanHandleType(mHandleType);
             ANGLE_TRY(
@@ -252,7 +259,7 @@ angle::Result MemoryObjectVk::createImage(ContextVk *contextVk,
     ASSERT(offset == 0);
     ASSERT(externalMemoryRequirements.size == mSize);
 
-    VkMemoryPropertyFlags flags = 0;
+    VkMemoryPropertyFlags flags = hasProtectedContent ? VK_MEMORY_PROPERTY_PROTECTED_BIT : 0;
     ANGLE_TRY(image->initExternalMemory(contextVk, renderer->getMemoryProperties(),
                                         externalMemoryRequirements, nullptr, importMemoryInfo,
                                         renderer->getQueueFamilyIndex(), flags));

@@ -15,6 +15,7 @@
 #include "components/permissions/permission_result.h"
 #include "components/permissions/permission_util.h"
 #include "components/permissions/prediction_service/prediction_service_messages.pb.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace content {
 class BrowserContext;
@@ -120,7 +121,7 @@ enum class PermissionEmbargoStatus {
 // Enum used in UKMs and UMAs, do not re-order or change values. Deprecated
 // items should only be commented out. New items should be added at the end,
 // and the "PermissionPromptDisposition" histogram suffix needs to be updated to
-// match (tools/metrics/histograms/histograms_xml/histogram_suffixes_list.xml).
+// match (tools/metrics/histograms/metadata/histogram_suffixes_list.xml).
 enum class PermissionPromptDisposition {
   // Not all permission actions will have an associated permission prompt (e.g.
   // changing permission via the settings page).
@@ -154,6 +155,10 @@ enum class PermissionPromptDisposition {
 
   // Other custom modal dialogs.
   CUSTOM_MODAL_DIALOG = 8,
+
+  // Only used on desktop, a less prominent version of chip on the left-hand
+  // side of the location bar that shows a bubble when clicked.
+  LOCATION_BAR_LEFT_QUIET_CHIP = 9,
 };
 
 // The reason why the permission prompt disposition was used. Enum used in UKMs,

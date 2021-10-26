@@ -26,8 +26,10 @@
 #include "base/memory/ptr_util.h"
 #include "base/numerics/clamped_math.h"
 #include "third_party/blink/renderer/core/css/counter_style.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
+#include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/dom/node_computed_style.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/html/html_olist_element.h"
@@ -35,7 +37,6 @@
 #include "third_party/blink/renderer/core/layout/counter_node.h"
 #include "third_party/blink/renderer/core/layout/layout_list_item.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
-#include "third_party/blink/renderer/core/layout/list_marker_text.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 
@@ -391,9 +392,11 @@ CounterNode* MakeCounterNodeIfNeeded(LayoutObject& object,
                                      const AtomicString& identifier,
                                      bool always_create_counter) {
   if (object.HasCounterNodeMap()) {
-    if (CounterMap* node_map = GetCounterMaps().at(&object)) {
-      if (CounterNode* node = node_map->at(identifier))
-        return node;
+    auto it_counter = GetCounterMaps().find(&object);
+    if (it_counter != GetCounterMaps().end()) {
+      auto it_node = it_counter->value->find(identifier);
+      if (it_node != it_counter->value->end())
+        return &*it_node->value;
     }
   }
 
@@ -464,8 +467,10 @@ CounterNode* MakeCounterNodeIfNeeded(LayoutObject& object,
     skip_descendants = current_layout_object->ShouldApplyStyleContainment();
     if (!current_layout_object->HasCounterNodeMap())
       continue;
+    auto* current_object = maps.at(current_layout_object);
+    auto it = current_object->find(identifier);
     CounterNode* current_counter =
-        maps.at(current_layout_object)->at(identifier);
+        it != current_object->end() ? &*it->value : nullptr;
     if (!current_counter)
       continue;
     // At this point we found a counter to reparent. So we don't need to descend
@@ -483,14 +488,10 @@ CounterNode* MakeCounterNodeIfNeeded(LayoutObject& object,
 }
 
 String GenerateCounterText(const CounterStyle* counter_style,
-                           EListStyleType deprecated_list_style_type,
                            int value) {
-  if (RuntimeEnabledFeatures::CSSAtRuleCounterStyleEnabled()) {
-    if (!counter_style)
-      return g_empty_string;
-    return counter_style->GenerateRepresentation(value);
-  }
-  return list_marker_text::GetText(deprecated_list_style_type, value);
+  if (!counter_style)
+    return g_empty_string;
+  return counter_style->GenerateRepresentation(value);
 }
 
 }  // namespace
@@ -598,20 +599,15 @@ scoped_refptr<StringImpl> LayoutCounter::OriginalText() const {
 
   int value = ValueForText(child);
   const CounterStyle* counter_style = nullptr;
-  EListStyleType list_style = EListStyleType::kNone;
-  if (RuntimeEnabledFeatures::CSSAtRuleCounterStyleEnabled()) {
-    // Note: CSS3 spec doesn't allow 'none' but CSS2.1 allows it. We currently
-    // allow it for backward compatibility.
-    // See https://github.com/w3c/csswg-drafts/issues/5795 for details.
-    if (counter_->ListStyle() != "none") {
-      counter_style =
-          &GetDocument().GetStyleEngine().FindCounterStyleAcrossScopes(
-              counter_->ListStyle(), counter_->GetTreeScope());
-    }
-  } else {
-    list_style = counter_->ToDeprecatedListStyleTypeEnum();
+  // Note: CSS3 spec doesn't allow 'none' but CSS2.1 allows it. We currently
+  // allow it for backward compatibility.
+  // See https://github.com/w3c/csswg-drafts/issues/5795 for details.
+  if (counter_->ListStyle() != "none") {
+    counter_style =
+        &GetDocument().GetStyleEngine().FindCounterStyleAcrossScopes(
+            counter_->ListStyle(), counter_->GetTreeScope());
   }
-  String text = GenerateCounterText(counter_style, list_style, value);
+  String text = GenerateCounterText(counter_style, value);
   // If the separator exists, we need to append all of the parent values as well,
   // including the ones that cross the style containment boundary.
   if (!counter_->Separator().IsNull()) {
@@ -622,7 +618,7 @@ scoped_refptr<StringImpl> LayoutCounter::OriginalText() const {
                child->ParentCrossingStyleContainment(counter_->Identifier())) {
       int next_value = next_result_uses_parent_value ? ValueForText(parent)
                                                      : child->CountInParent();
-      text = GenerateCounterText(counter_style, list_style, next_value) +
+      text = GenerateCounterText(counter_style, next_value) +
              counter_->Separator() + text;
       child = parent;
       next_result_uses_parent_value = !child->Parent();
@@ -679,7 +675,8 @@ void LayoutCounter::DestroyCounterNodes(LayoutObject& owner) {
 
 void LayoutCounter::DestroyCounterNode(LayoutObject& owner,
                                        const AtomicString& identifier) {
-  CounterMap* map = GetCounterMaps().at(&owner);
+  auto it = GetCounterMaps().find(&owner);
+  CounterMap* map = it != GetCounterMaps().end() ? &*it->value : nullptr;
   if (!map)
     return;
   CounterMap::iterator map_iterator = map->find(identifier);
@@ -732,11 +729,15 @@ static void UpdateCounters(LayoutObject& layout_object) {
       MakeCounterNodeIfNeeded(layout_object, it->key, false);
     return;
   }
-  CounterMap* counter_map = GetCounterMaps().at(&layout_object);
+  auto it_counter = GetCounterMaps().find(&layout_object);
+  CounterMap* counter_map =
+      it_counter != GetCounterMaps().end() ? &*it_counter->value : nullptr;
   DCHECK(counter_map);
   for (CounterDirectiveMap::const_iterator it = directive_map->begin();
        it != end; ++it) {
-    scoped_refptr<CounterNode> node = counter_map->at(it->key);
+    auto it_node = counter_map->find(it->key);
+    scoped_refptr<CounterNode> node =
+        it_node != counter_map->end() ? it_node->value : nullptr;
     if (!node) {
       MakeCounterNodeIfNeeded(layout_object, it->key, false);
       continue;
@@ -746,7 +747,8 @@ static void UpdateCounters(LayoutObject& layout_object) {
 
     FindPlaceForCounter(layout_object, it->key, node->HasResetType(),
                         new_parent, new_previous_sibling);
-    if (node != counter_map->at(it->key))
+    auto it_node2 = counter_map->find(it->key);
+    if (it_node2 == counter_map->end() || (node != it_node2->value))
       continue;
     CounterNode* parent = node->Parent();
     if (new_parent == parent && new_previous_sibling == node->PreviousSibling())

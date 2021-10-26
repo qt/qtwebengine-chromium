@@ -8,6 +8,7 @@
 
 #include "base/command_line.h"
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 #include "base/system/sys_info.h"
 #include "build/chromeos_buildflags.h"
 #include "components/viz/common/delegated_ink_prediction_configuration.h"
@@ -35,6 +36,9 @@ const base::Feature kEnableOverlayPrioritization {
 #endif
 };
 
+const base::Feature kDelegatedCompositing{"DelegatedCompositing",
+                                          base::FEATURE_DISABLED_BY_DEFAULT};
+
 const base::Feature kSimpleFrameRateThrottling{
     "SimpleFrameRateThrottling", base::FEATURE_DISABLED_BY_DEFAULT};
 
@@ -42,9 +46,7 @@ const base::Feature kSimpleFrameRateThrottling{
 const base::Feature kUseSkiaRenderer {
   "UseSkiaRenderer",
 #if defined(OS_WIN) || defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_LACROS) || \
-    defined(OS_LINUX)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#elif defined(OS_MAC)
+    defined(OS_LINUX) || defined(OS_FUCHSIA) || defined(OS_MAC)
       base::FEATURE_ENABLED_BY_DEFAULT
 #else
       base::FEATURE_DISABLED_BY_DEFAULT
@@ -55,6 +57,12 @@ const base::Feature kUseSkiaRenderer {
 // be enabled.
 const base::Feature kDisableDeJelly{"DisableDeJelly",
                                     base::FEATURE_DISABLED_BY_DEFAULT};
+
+// On platform and configuration where viz controls the allocation of frame
+// buffers (ie SkiaOutputDeviceBufferQueue is used), allocate and release frame
+// buffers on demand.
+const base::Feature kDynamicBufferQueueAllocation{
+    "DynamicBufferQueueAllocation", base::FEATURE_DISABLED_BY_DEFAULT};
 
 #if defined(OS_ANDROID)
 // When wide color gamut content from the web is encountered, promote our
@@ -84,13 +92,7 @@ const base::Feature kUsePreferredIntervalForVideo{
 // Whether we should use the real buffers corresponding to overlay candidates in
 // order to do a pageflip test rather than allocating test buffers.
 const base::Feature kUseRealBuffersForPageFlipTest{
-  "UseRealBuffersForPageFlipTest",
-#if BUILDFLAG(USE_CHROMEOS_PROTECTED_MEDIA)
-      base::FEATURE_ENABLED_BY_DEFAULT
-#else
-      base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
+    "UseRealBuffersForPageFlipTest", base::FEATURE_ENABLED_BY_DEFAULT};
 
 #if defined(OS_FUCHSIA)
 // Enables SkiaOutputDeviceBufferQueue instead of Vulkan swapchain on Fuchsia.
@@ -132,6 +134,19 @@ const base::Feature kUseSurfaceLayerForVideoDefault{
     "UseSurfaceLayerForVideoDefault", base::FEATURE_ENABLED_BY_DEFAULT};
 #endif
 
+// Used by CC to throttle frame production of older surfaces. Used by the
+// Browser to batch SurfaceSync calls sent to the Renderer for properties can
+// change in close proximity to each other.
+const base::Feature kSurfaceSyncThrottling{"SurfaceSyncThrottling",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+
+const base::Feature kDrawPredictedInkPoint{"DrawPredictedInkPoint",
+                                           base::FEATURE_DISABLED_BY_DEFAULT};
+const char kDraw1Point12Ms[] = "1-pt-12ms";
+const char kDraw2Points6Ms[] = "2-pt-6ms";
+const char kDraw1Point6Ms[] = "1-pt-6ms";
+const char kDraw2Points3Ms[] = "2-pt-3ms";
+
 bool IsAdpfEnabled() {
   // TODO(crbug.com/1157620): Limit this to correct android version.
   return base::FeatureList::IsEnabled(kAdpf);
@@ -139,6 +154,10 @@ bool IsAdpfEnabled() {
 
 bool IsOverlayPrioritizationEnabled() {
   return base::FeatureList::IsEnabled(kEnableOverlayPrioritization);
+}
+
+bool IsDelegatedCompositingEnabled() {
+  return base::FeatureList::IsEnabled(kDelegatedCompositing);
 }
 
 // If a synchronous IPC should used when destroying windows. This exists to test
@@ -219,19 +238,18 @@ bool ShouldUseSetPresentDuration() {
 #endif  // OS_WIN
 
 absl::optional<int> ShouldDrawPredictedInkPoints() {
-  auto* command_line = base::CommandLine::ForCurrentProcess();
-  if (!command_line->HasSwitch(switches::kDrawPredictedInkPoint))
+  if (!base::FeatureList::IsEnabled(kDrawPredictedInkPoint))
     return absl::nullopt;
 
-  std::string predicted_points =
-      command_line->GetSwitchValueASCII(switches::kDrawPredictedInkPoint);
-  if (predicted_points == switches::kDraw1Point12Ms)
+  std::string predicted_points = GetFieldTrialParamValueByFeature(
+      kDrawPredictedInkPoint, "predicted_points");
+  if (predicted_points == kDraw1Point12Ms)
     return viz::PredictionConfig::k1Point12Ms;
-  else if (predicted_points == switches::kDraw2Points6Ms)
+  else if (predicted_points == kDraw2Points6Ms)
     return viz::PredictionConfig::k2Points6Ms;
-  else if (predicted_points == switches::kDraw1Point6Ms)
+  else if (predicted_points == kDraw1Point6Ms)
     return viz::PredictionConfig::k1Point6Ms;
-  else if (predicted_points == switches::kDraw2Points3Ms)
+  else if (predicted_points == kDraw2Points3Ms)
     return viz::PredictionConfig::k2Points3Ms;
 
   NOTREACHED();
@@ -251,5 +269,9 @@ bool UseSurfaceLayerForVideo() {
   return base::FeatureList::IsEnabled(kUseSurfaceLayerForVideoDefault);
 }
 #endif
+
+bool IsSurfaceSyncThrottling() {
+  return base::FeatureList::IsEnabled(kSurfaceSyncThrottling);
+}
 
 }  // namespace features

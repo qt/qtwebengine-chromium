@@ -10,6 +10,7 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "build/build_config.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace discardable_memory {
@@ -287,8 +288,6 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest, ReleaseUnlocked) {
 // task runner for this test and fast forward to make sure that the memory is
 // purged at the right time.
 TEST_F(ClientDiscardableSharedMemoryManagerTest, ScheduledReleaseUnlocked) {
-  base::test::ScopedFeatureList fl;
-  fl.InitAndEnableFeature(discardable_memory::kSchedulePeriodicPurge);
   auto client =
       base::MakeRefCounted<TestClientDiscardableSharedMemoryManager>();
   ASSERT_EQ(client->GetBytesAllocated(), 0u);
@@ -313,8 +312,6 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest, ScheduledReleaseUnlocked) {
 // handled properly.
 TEST_F(ClientDiscardableSharedMemoryManagerTest,
        ScheduledReleaseUnlockedMultiple) {
-  base::test::ScopedFeatureList fl;
-  fl.InitAndEnableFeature(discardable_memory::kSchedulePeriodicPurge);
   auto client =
       base::MakeRefCounted<TestClientDiscardableSharedMemoryManager>();
   ASSERT_EQ(client->GetBytesAllocated(), 0u);
@@ -401,8 +398,6 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest, LockingSuccessUma) {
 // Test that a repeating timer for background purging is created when we
 // allocate memory and discarded when we run out of allocated memory.
 TEST_F(ClientDiscardableSharedMemoryManagerTest, SchedulingProactivePurging) {
-  base::test::ScopedFeatureList fl;
-  fl.InitAndEnableFeature(discardable_memory::kSchedulePeriodicPurge);
   auto client =
       base::MakeRefCounted<TestClientDiscardableSharedMemoryManager>();
   ASSERT_FALSE(client->IsPurgeScheduled());
@@ -432,8 +427,6 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest, SchedulingProactivePurging) {
 // the timer still works with multiple pieces of allocated memory.
 TEST_F(ClientDiscardableSharedMemoryManagerTest,
        SchedulingProactivePurgingMultipleAllocations) {
-  base::test::ScopedFeatureList fl;
-  fl.InitAndEnableFeature(discardable_memory::kSchedulePeriodicPurge);
   auto client =
       base::MakeRefCounted<TestClientDiscardableSharedMemoryManager>();
   ASSERT_FALSE(client->IsPurgeScheduled());
@@ -464,6 +457,9 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest,
 }
 
 TEST_F(ClientDiscardableSharedMemoryManagerTest, MarkDirtyFreelistPages) {
+  base::test::ScopedFeatureList fl;
+  fl.InitAndDisableFeature(
+      discardable_memory::kReleaseDiscardableFreeListPages);
   auto client =
       base::MakeRefCounted<TestClientDiscardableSharedMemoryManager>();
 
@@ -497,7 +493,8 @@ TEST_F(ClientDiscardableSharedMemoryManagerTest, MarkDirtyFreelistPages) {
 
   mem3 = nullptr;
 
-  ASSERT_EQ(1283u, client->GetDirtyFreedMemoryPageCount());
+  ASSERT_EQ(3u + 5 * 1024 * 1024 / base::GetPageSize(),
+            client->GetDirtyFreedMemoryPageCount());
 
   client->ReleaseFreeMemory();
 

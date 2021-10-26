@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <memory>
 
+#include "ash/constants/ash_pref_names.h"
 #include "base/bind.h"
 #include "base/containers/contains.h"
 #include "base/strings/string_number_conversions.h"
@@ -17,7 +18,6 @@
 #include "chrome/browser/ash/login/quick_unlock/quick_unlock_storage.h"
 #include "chrome/browser/ash/profiles/profile_helper.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/prefs/pref_service.h"
 #include "content/public/browser/device_service.h"
@@ -36,17 +36,17 @@ constexpr int kMaxAllowedFingerprints = 3;
 std::unique_ptr<base::DictionaryValue> GetFingerprintsInfo(
     const std::vector<std::string>& fingerprints_list) {
   auto response = std::make_unique<base::DictionaryValue>();
-  auto fingerprints = std::make_unique<base::ListValue>();
+  base::ListValue fingerprints;
 
   DCHECK_LE(static_cast<int>(fingerprints_list.size()),
             kMaxAllowedFingerprints);
   for (auto& fingerprint_name: fingerprints_list) {
     std::unique_ptr<base::Value> str =
         std::make_unique<base::Value>(fingerprint_name);
-    fingerprints->Append(std::move(str));
+    fingerprints.Append(std::move(str));
   }
 
-  response->Set("fingerprintsList", std::move(fingerprints));
+  response->SetKey("fingerprintsList", std::move(fingerprints));
   response->SetBoolean("isMaxed", static_cast<int>(fingerprints_list.size()) >=
                                       kMaxAllowedFingerprints);
   return response;
@@ -146,19 +146,19 @@ void FingerprintHandler::OnAuthScanDone(
   if (it == matches.end() || it->second.size() < 1)
     return;
 
-  auto fingerprint_ids = std::make_unique<base::ListValue>();
+  base::ListValue fingerprint_ids;
 
   for (const std::string& matched_path : it->second) {
     auto path_it = std::find(fingerprints_paths_.begin(),
                              fingerprints_paths_.end(), matched_path);
     DCHECK(path_it != fingerprints_paths_.end());
-    fingerprint_ids->AppendInteger(
+    fingerprint_ids.Append(
         static_cast<int>(path_it - fingerprints_paths_.begin()));
   }
 
   auto fingerprint_attempt = std::make_unique<base::DictionaryValue>();
   fingerprint_attempt->SetInteger("result", static_cast<int>(scan_result));
-  fingerprint_attempt->Set("indexes", std::move(fingerprint_ids));
+  fingerprint_attempt->SetKey("indexes", std::move(fingerprint_ids));
 
   FireWebUIListener("on-fingerprint-attempt-received", *fingerprint_attempt);
 }
@@ -259,11 +259,10 @@ void FingerprintHandler::OnCancelCurrentEnrollSession(bool success) {
 }
 
 void FingerprintHandler::HandleGetEnrollmentLabel(const base::ListValue* args) {
-  CHECK_EQ(2U, args->GetSize());
-  std::string callback_id;
-  int index;
-  CHECK(args->GetString(0, &callback_id));
-  CHECK(args->GetInteger(1, &index));
+  const auto& list = args->GetList();
+  CHECK_EQ(2U, list.size());
+  std::string callback_id = list[0].GetString();
+  int index = list[1].GetInt();
   DCHECK_LT(index, static_cast<int>(fingerprints_labels_.size()));
 
   AllowJavascript();
@@ -279,11 +278,10 @@ void FingerprintHandler::OnRequestRecordLabel(const std::string& callback_id,
 }
 
 void FingerprintHandler::HandleRemoveEnrollment(const base::ListValue* args) {
-  CHECK_EQ(2U, args->GetSize());
-  std::string callback_id;
-  int index;
-  CHECK(args->GetString(0, &callback_id));
-  CHECK(args->GetInteger(1, &index));
+  const auto& list = args->GetList();
+  CHECK_EQ(2U, list.size());
+  std::string callback_id = list[0].GetString();
+  int index = list[1].GetInt();
   DCHECK_LT(index, static_cast<int>(fingerprints_paths_.size()));
 
   AllowJavascript();
@@ -302,14 +300,12 @@ void FingerprintHandler::OnRemoveRecord(const std::string& callback_id,
 
 void FingerprintHandler::HandleChangeEnrollmentLabel(
     const base::ListValue* args) {
-  CHECK_EQ(3U, args->GetSize());
-  std::string callback_id;
-  int index;
-  std::string new_label;
+  const auto& list = args->GetList();
+  CHECK_EQ(3U, list.size());
 
-  CHECK(args->GetString(0, &callback_id));
-  CHECK(args->GetInteger(1, &index));
-  CHECK(args->GetString(2, &new_label));
+  std::string callback_id = list[0].GetString();
+  int index = list[1].GetInt();
+  std::string new_label = list[2].GetString();
 
   AllowJavascript();
   fp_service_->SetRecordLabel(

@@ -244,6 +244,10 @@ OutputPresenterFuchsia::AllocateImages(gfx::ColorSpace color_space,
   if (!image_pipe_)
     return {};
 
+  // Fuchsia allocates images in batches and does not support allocating and
+  // releasing images on demand.
+  CHECK_NE(num_images, 1u);
+
   // If we already allocated buffer collection then it needs to be released.
   if (last_buffer_collection_id_) {
     // If there are pending frames for the old buffer collection then remove the
@@ -453,6 +457,7 @@ void OutputPresenterFuchsia::PresentNextFrame() {
                                  overlay.plane_z_order, overlay.transform,
                                  gfx::ToRoundedRect(overlay.display_rect),
                                  overlay.uv_rect, !overlay.is_opaque,
+                                 gfx::ToRoundedRect(overlay.damage_rect),
                                  ZxEventsToGpuFences(frame.acquire_fences),
                                  /*release_fences=*/{});
   }
@@ -511,8 +516,8 @@ void OutputPresenterFuchsia::OnPresentComplete(
   }
 
   presentation_state_ =
-      PresentationState{pending_frames_.front().ordinal, presentation_time,
-                        presentation_interval};
+      PresentationState{static_cast<int>(pending_frames_.front().ordinal),
+                        presentation_time, presentation_interval};
 
   pending_frames_.pop_front();
 }

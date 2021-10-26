@@ -36,6 +36,7 @@
 #include "gpu/tools/compositor_model_bench/render_tree.h"
 #include "ui/base/x/x11_util.h"
 #include "ui/gfx/x/connection.h"
+#include "ui/gfx/x/event.h"
 #include "ui/gfx/x/glx.h"
 #include "ui/gfx/x/xproto.h"
 #include "ui/gfx/x/xproto_util.h"
@@ -163,8 +164,8 @@ class Simulator {
         .parent = connection_->default_root(),
         .x = 1,
         .y = 1,
-        .width = window_width_,
-        .height = window_height_,
+        .width = static_cast<uint16_t>(window_width_),
+        .height = static_cast<uint16_t>(window_height_),
         .background_pixel = black_pixel,
         .border_pixel = black_pixel,
         .event_mask = x11::EventMask::Exposure | x11::EventMask::KeyPress |

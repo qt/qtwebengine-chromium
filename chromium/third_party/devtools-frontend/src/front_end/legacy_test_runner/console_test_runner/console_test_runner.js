@@ -362,8 +362,8 @@ ConsoleTestRunner.dumpConsoleClassesBrief = async function() {
 };
 
 ConsoleTestRunner.dumpConsoleCounters = async function() {
-  const counter = ConsoleCounters.WarningErrorCounter.WarningErrorCounter._instanceForTest;
-  if (counter._updatingForTest) {
+  const counter = ConsoleCounters.WarningErrorCounter.WarningErrorCounter.instanceForTest;
+  if (counter.updatingForTest) {
     await TestRunner.addSnifferPromise(counter, '_updatedForTest');
   }
   if (counter.titlesForTesting) {
@@ -691,7 +691,7 @@ ConsoleTestRunner.visibleIndices = function() {
       continue;
     }
     const itemRect = item._element.getBoundingClientRect();
-    const isVisible = (itemRect.bottom > viewportRect.top + 1) && (itemRect.top <= viewportRect.bottom - 1);
+    const isVisible = (itemRect.bottom > viewportRect.top + 0.5) && (itemRect.top < viewportRect.bottom - 0.5);
     if (isVisible) {
       first = first === -1 ? i : first;
       last = i;

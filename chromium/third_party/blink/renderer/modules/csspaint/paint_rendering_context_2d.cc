@@ -41,10 +41,6 @@ void PaintRenderingContext2D::InitializePaintRecorder() {
   did_record_draw_commands_in_paint_recorder_ = false;
 }
 
-void PaintRenderingContext2D::DidDraw(const SkIRect&) {
-  did_record_draw_commands_in_paint_recorder_ = true;
-}
-
 int PaintRenderingContext2D::Width() const {
   return container_size_.Width();
 }
@@ -98,6 +94,19 @@ cc::PaintCanvas* PaintRenderingContext2D::GetPaintCanvas() const {
   return paint_recorder_->getRecordingCanvas();
 }
 
+cc::PaintCanvas* PaintRenderingContext2D::GetDrawingPaintCanvas() {
+  DCHECK(paint_recorder_);
+  DCHECK(paint_recorder_->getRecordingCanvas());
+  did_record_draw_commands_in_paint_recorder_ = true;
+  return paint_recorder_->getRecordingCanvas();
+}
+
+cc::PaintCanvas* PaintRenderingContext2D::GetPaintCanvasForDraw(
+    const SkIRect&,
+    CanvasPerformanceMonitor::DrawType) {
+  return GetDrawingPaintCanvas();
+}
+
 void PaintRenderingContext2D::ValidateStateStackWithCanvas(
     const cc::PaintCanvas* canvas) const {
 #if DCHECK_IS_ON()
@@ -106,11 +115,6 @@ void PaintRenderingContext2D::ValidateStateStackWithCanvas(
               state_stack_.size() + 1);
   }
 #endif
-}
-
-bool PaintRenderingContext2D::StateHasFilter() {
-  return GetState().HasFilterForOffscreenCanvas(IntSize(Width(), Height()),
-                                                this);
 }
 
 sk_sp<PaintFilter> PaintRenderingContext2D::StateGetFilter() {

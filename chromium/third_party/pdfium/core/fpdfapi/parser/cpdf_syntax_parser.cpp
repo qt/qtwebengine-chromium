@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/parser/cpdf_syntax_parser.h"
 
+#include <ctype.h>
+
 #include <algorithm>
 #include <sstream>
 #include <utility>
@@ -27,6 +29,7 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_safe_types.h"
 #include "third_party/base/check.h"
+#include "third_party/base/check_op.h"
 #include "third_party/base/numerics/safe_math.h"
 
 namespace {
@@ -335,7 +338,7 @@ ByteString CPDF_SyntaxParser::ReadHexString() {
     if (ch == '>')
       break;
 
-    if (std::isxdigit(ch)) {
+    if (isxdigit(ch)) {
       int val = FXSYS_HexCharToInt(ch);
       if (bFirst) {
         code = val * 16;
@@ -588,9 +591,11 @@ RetainPtr<CPDF_Object> CPDF_SyntaxParser::GetObjectBodyInternal(
         return nullptr;
       }
 
-      if (!key.IsEmpty()) {
-        ByteString keyNoSlash(key.raw_str() + 1, key.GetLength() - 1);
-        pDict->SetFor(keyNoSlash, std::move(pObj));
+      // `key` has to be "/X" at the minimum.
+      if (key.GetLength() > 1) {
+        ByteString key_no_slash(key.raw_str() + 1, key.GetLength() - 1);
+        if (CPDF_Dictionary::IsValidKey(key_no_slash))
+          pDict->SetFor(key_no_slash, std::move(pObj));
       }
     }
 
@@ -768,7 +773,7 @@ RetainPtr<CPDF_Stream> CPDF_SyntaxParser::ReadStream(
       return nullptr;
 
     len = streamEndPos - streamStartPos;
-    DCHECK(len >= 0);
+    DCHECK_GE(len, 0);
     if (len > 0) {
       SetPos(streamStartPos);
       // Check data availability first to allow the Validator to request data
@@ -887,7 +892,7 @@ bool CPDF_SyntaxParser::BackwardsSearchToWord(ByteStringView word,
 FX_FILESIZE CPDF_SyntaxParser::FindTag(ByteStringView tag) {
   const FX_FILESIZE startpos = GetPos();
   const int32_t taglen = tag.GetLength();
-  DCHECK(taglen > 0);
+  DCHECK_GT(taglen, 0);
 
   int32_t match = 0;
   while (1) {
@@ -903,7 +908,6 @@ FX_FILESIZE CPDF_SyntaxParser::FindTag(ByteStringView tag) {
       match = ch == tag[0] ? 1 : 0;
     }
   }
-  return -1;
 }
 
 bool CPDF_SyntaxParser::IsPositionRead(FX_FILESIZE pos) const {

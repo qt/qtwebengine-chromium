@@ -102,6 +102,8 @@ struct DefaultUniformBlock final : private angle::NonCopyable
 
 // Performance and resource counters.
 using DescriptorSetCountList = angle::PackedEnumMap<DescriptorSetIndex, uint32_t>;
+template <typename T>
+using FormatIndexMap = angle::HashMap<T, uint32_t>;
 
 struct ProgramExecutablePerfCounters
 {
@@ -192,6 +194,13 @@ class ProgramExecutableVk
         return mUniformBufferDescriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
     }
 
+    bool isImmutableSamplerFormatCompatible(const FormatIndexMap<uint64_t> &externalFormatIndexMap,
+                                            const FormatIndexMap<VkFormat> &vkFormatIndexMap) const
+    {
+        return (mExternalFormatIndexMap == externalFormatIndexMap &&
+                mVkFormatIndexMap == vkFormatIndexMap);
+    }
+
     void accumulateCacheStats(VulkanCacheType cacheType, const CacheStats &cacheStats);
     ProgramExecutablePerfCounters getAndResetObjectPerfCounters();
 
@@ -222,7 +231,8 @@ class ProgramExecutableVk
     void addInputAttachmentDescriptorSetDesc(const gl::ProgramExecutable &executable,
                                              const gl::ShaderType shaderType,
                                              vk::DescriptorSetLayoutDesc *descOut);
-    void addTextureDescriptorSetDesc(const gl::ProgramState &programState,
+    void addTextureDescriptorSetDesc(ContextVk *contextVk,
+                                     const gl::ProgramState &programState,
                                      const gl::ActiveTextureArray<vk::TextureUnit> *activeTextures,
                                      vk::DescriptorSetLayoutDesc *descOut);
 
@@ -275,6 +285,9 @@ class ProgramExecutableVk
 
     // We keep a reference to the pipeline and descriptor set layouts. This ensures they don't get
     // deleted while this program is in use.
+    uint32_t mImmutableSamplersMaxDescriptorCount;
+    FormatIndexMap<uint64_t> mExternalFormatIndexMap;
+    FormatIndexMap<VkFormat> mVkFormatIndexMap;
     vk::BindingPointer<vk::PipelineLayout> mPipelineLayout;
     vk::DescriptorSetLayoutPointerArray mDescriptorSetLayouts;
 

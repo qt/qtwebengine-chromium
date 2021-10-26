@@ -7,13 +7,14 @@
 #ifndef CORE_FPDFAPI_FONT_CPDF_CIDFONT_H_
 #define CORE_FPDFAPI_FONT_CPDF_CIDFONT_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <vector>
 
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 
@@ -28,7 +29,6 @@ enum CIDSet : uint8_t {
 };
 
 class CFX_CTTGSUBTable;
-class CPDF_Array;
 class CPDF_CID2UnicodeMap;
 class CPDF_CMap;
 class CPDF_StreamAcc;

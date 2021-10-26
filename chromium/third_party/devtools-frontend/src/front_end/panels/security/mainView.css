@@ -1,4 +1,5 @@
-/* Copyright (c) 2015 The Chromium Authors. All rights reserved.
+/*
+ * Copyright 2015 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
@@ -46,8 +47,7 @@
 .security-summary:not(.security-summary-neutral) .lock-icon-neutral,
 .security-summary:not(.security-summary-insecure) .lock-icon-insecure,
 .security-summary:not(.security-summary-insecure-broken) .lock-icon-insecure-broken {
-  background-color: rgb(90 90 90 / 25%); /* stylelint-disable-line plugin/use_theme_colors */
-  /* See: crbug.com/1152736 for color variable migration. */
+  background-color: var(--color-text-disabled);
 }
 
 @media (forced-colors: active) {

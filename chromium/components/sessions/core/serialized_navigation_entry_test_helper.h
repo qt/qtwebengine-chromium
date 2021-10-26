@@ -8,7 +8,6 @@
 #include <stdint.h>
 
 #include <string>
-#include <vector>
 
 #include "base/macros.h"
 #include "base/time/time.h"
@@ -43,17 +42,6 @@ extern const std::string kExtendedInfoValue2;
 extern const int64_t kParentTaskId;
 extern const int64_t kRootTaskId;
 extern const int64_t kTaskId;
-
-// TODO(https://crbug.com/1042727): Fix test GURL scoping and remove this getter
-// function.
-GURL ReferrerUrl();
-GURL Url();
-GURL VirtualUrl();
-GURL OriginalRequestUrl();
-GURL FaviconUrl();
-GURL RedirectUrl0();
-GURL RedirectUrl1();
-GURL OtherUrl();
 
 }  // namespace test_data
 

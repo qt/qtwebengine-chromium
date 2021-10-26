@@ -33,15 +33,17 @@ TEST_F(MslGeneratorImplTest, Emit_Loop) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  for(;;) {
+  EXPECT_EQ(gen.result(), R"(  while (true) {
     discard_fragment();
   }
 )");
 }
 
 TEST_F(MslGeneratorImplTest, Emit_LoopWithContinuing) {
+  Func("a_statement", {}, ty.void_(), {});
+
   auto* body = Block(create<ast::DiscardStatement>());
-  auto* continuing = Block(Return());
+  auto* continuing = Block(create<ast::CallStatement>(Call("a_statement")));
   auto* l = Loop(body, continuing);
   WrapInFunction(l);
 
@@ -50,26 +52,23 @@ TEST_F(MslGeneratorImplTest, Emit_LoopWithContinuing) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitStatement(l)) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  {
-    bool tint_msl_is_first_1 = true;
-    for(;;) {
-      if (!tint_msl_is_first_1) {
-        return;
-      }
-      tint_msl_is_first_1 = false;
-
-      discard_fragment();
+  EXPECT_EQ(gen.result(), R"(  while (true) {
+    discard_fragment();
+    {
+      a_statement();
     }
   }
 )");
 }
 
 TEST_F(MslGeneratorImplTest, Emit_LoopNestedWithContinuing) {
-  Global("lhs", ty.f32(), ast::StorageClass::kInput);
-  Global("rhs", ty.f32(), ast::StorageClass::kInput);
+  Func("a_statement", {}, ty.void_(), {});
+
+  Global("lhs", ty.f32(), ast::StorageClass::kPrivate);
+  Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
   auto* body = Block(create<ast::DiscardStatement>());
-  auto* continuing = Block(Return());
+  auto* continuing = Block(create<ast::CallStatement>(Call("a_statement")));
   auto* inner = Loop(body, continuing);
 
   body = Block(inner);
@@ -84,25 +83,15 @@ TEST_F(MslGeneratorImplTest, Emit_LoopNestedWithContinuing) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitStatement(outer)) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  {
-    bool tint_msl_is_first_1 = true;
-    for(;;) {
-      if (!tint_msl_is_first_1) {
-        lhs = rhs;
-      }
-      tint_msl_is_first_1 = false;
-
+  EXPECT_EQ(gen.result(), R"(  while (true) {
+    while (true) {
+      discard_fragment();
       {
-        bool tint_msl_is_first_2 = true;
-        for(;;) {
-          if (!tint_msl_is_first_2) {
-            return;
-          }
-          tint_msl_is_first_2 = false;
-
-          discard_fragment();
-        }
+        a_statement();
       }
+    }
+    {
+      lhs = rhs;
     }
   }
 )");
@@ -130,7 +119,7 @@ TEST_F(MslGeneratorImplTest, Emit_LoopWithVarUsedInContinuing) {
   //   }
   // }
 
-  Global("rhs", ty.f32(), ast::StorageClass::kInput);
+  Global("rhs", ty.f32(), ast::StorageClass::kPrivate);
 
   auto* var = Var("lhs", ty.f32(), ast::StorageClass::kNone, Expr(2.4f));
 
@@ -146,18 +135,223 @@ TEST_F(MslGeneratorImplTest, Emit_LoopWithVarUsedInContinuing) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitStatement(outer)) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  {
-    bool tint_msl_is_first_1 = true;
-    float lhs;
-    float other;
-    for(;;) {
-      if (!tint_msl_is_first_1) {
-        lhs = rhs;
-      }
-      tint_msl_is_first_1 = false;
+  EXPECT_EQ(gen.result(), R"(  while (true) {
+    float lhs = 2.400000095f;
+    float other = 0.0f;
+    {
+      lhs = rhs;
+    }
+  }
+)");
+}
 
-      lhs = 2.400000095f;
-      other = 0.0f;
+TEST_F(MslGeneratorImplTest, Emit_ForLoop) {
+  // for(; ; ) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  auto* f = For(nullptr, nullptr, nullptr,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  for(; ; ) {
+    a_statement();
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithSimpleInit) {
+  // for(var i : i32; ; ) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  auto* f = For(Decl(Var("i", ty.i32())), nullptr, nullptr,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  for(int i = 0; ; ) {
+    a_statement();
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtInit) {
+  // var<workgroup> a : atomic<i32>;
+  // for({ignore(1); ignore(2);}; ; ) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+  auto* multi_stmt = Block(Ignore(1), Ignore(2));
+  auto* f = For(multi_stmt, nullptr, nullptr,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  {
+    {
+      (void) 1;
+      (void) 2;
+    }
+    for(; ; ) {
+      a_statement();
+    }
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithSimpleCond) {
+  // for(; true; ) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  auto* f = For(nullptr, true, nullptr,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  for(; true; ) {
+    a_statement();
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithSimpleCont) {
+  // for(; ; i = i + 1) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  auto* v = Decl(Var("i", ty.i32()));
+  auto* f = For(nullptr, nullptr, Assign("i", Add("i", 1)),
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(v, f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(
+      gen.result(),
+      R"(  for(; ; i = as_type<int>((as_type<uint>(i) + as_type<uint>(1)))) {
+    a_statement();
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtCont) {
+  // var<workgroup> a : atomic<i32>;
+  // for(; ; { ignore(1); ignore(2); }) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+  auto* multi_stmt = Block(Ignore(1), Ignore(2));
+  auto* f = For(nullptr, nullptr, multi_stmt,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  while (true) {
+    a_statement();
+    {
+      (void) 1;
+      (void) 2;
+    }
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithSimpleInitCondCont) {
+  // for(var i : i32; true; i = i + 1) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  auto* f = For(Decl(Var("i", ty.i32())), true, Assign("i", Add("i", 1)),
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(
+      gen.result(),
+      R"(  for(int i = 0; true; i = as_type<int>((as_type<uint>(i) + as_type<uint>(1)))) {
+    a_statement();
+  }
+)");
+}
+
+TEST_F(MslGeneratorImplTest, Emit_ForLoopWithMultiStmtInitCondCont) {
+  // var<workgroup> a : atomic<i32>;
+  // for({ ignore(1); ignore(2); }; true; { ignore(3); ignore(4); }) {
+  //   return;
+  // }
+
+  Func("a_statement", {}, ty.void_(), {});
+
+  Global("a", ty.atomic<i32>(), ast::StorageClass::kWorkgroup);
+  auto* multi_stmt_a = Block(Ignore(1), Ignore(2));
+  auto* multi_stmt_b = Block(Ignore(3), Ignore(4));
+  auto* f = For(multi_stmt_a, Expr(true), multi_stmt_b,
+                Block(create<ast::CallStatement>(Call("a_statement"))));
+  WrapInFunction(f);
+
+  GeneratorImpl& gen = Build();
+
+  gen.increment_indent();
+
+  ASSERT_TRUE(gen.EmitStatement(f)) << gen.error();
+  EXPECT_EQ(gen.result(), R"(  {
+    {
+      (void) 1;
+      (void) 2;
+    }
+    while (true) {
+      if (!(true)) { break; }
+      a_statement();
+      {
+        (void) 3;
+        (void) 4;
+      }
     }
   }
 )");

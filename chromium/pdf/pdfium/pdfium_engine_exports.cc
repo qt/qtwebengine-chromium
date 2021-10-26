@@ -10,10 +10,10 @@
 #include "base/bind.h"
 #include "base/no_destructor.h"
 #include "base/numerics/safe_conversions.h"
-#include "build/chromeos_buildflags.h"
 #include "pdf/pdfium/pdfium_api_string_buffer_adapter.h"
 #include "pdf/pdfium/pdfium_mem_buffer_file_write.h"
 #include "pdf/pdfium/pdfium_print.h"
+#include "pdf/pdfium/pdfium_unsupported_features.h"
 #include "printing/nup_parameters.h"
 #include "printing/units.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -227,15 +227,17 @@ PDFiumEngineExports::PDFiumEngineExports() {}
 
 PDFiumEngineExports::~PDFiumEngineExports() {}
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(OS_CHROMEOS)
 std::vector<uint8_t> PDFiumEngineExports::CreateFlattenedPdf(
     base::span<const uint8_t> input_buffer) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(input_buffer);
   if (!doc)
     return std::vector<uint8_t>();
   return PDFiumPrint::CreateFlattenedPdf(std::move(doc));
 }
-#endif  // BUILDFLAG(IS_CHROMEOS_ASH)
+#endif  // defined(OS_CHROMEOS)
 
 #if defined(OS_WIN)
 bool PDFiumEngineExports::RenderPDFPageToDC(
@@ -243,6 +245,8 @@ bool PDFiumEngineExports::RenderPDFPageToDC(
     int page_number,
     const RenderingSettings& settings,
     HDC dc) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return false;
@@ -327,6 +331,8 @@ bool PDFiumEngineExports::RenderPDFPageToBitmap(
     int page_number,
     const RenderingSettings& settings,
     void* bitmap_buffer) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return false;
@@ -360,6 +366,8 @@ std::vector<uint8_t> PDFiumEngineExports::ConvertPdfPagesToNupPdf(
   if (!IsValidPrintableArea(page_size, printable_area))
     return std::vector<uint8_t>();
 
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = CreatePdfDoc(std::move(input_buffers));
   if (!doc)
     return std::vector<uint8_t>();
@@ -376,6 +384,8 @@ std::vector<uint8_t> PDFiumEngineExports::ConvertPdfDocumentToNupPdf(
   if (!IsValidPrintableArea(page_size, printable_area))
     return std::vector<uint8_t>();
 
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(input_buffer);
   if (!doc)
     return std::vector<uint8_t>();
@@ -387,6 +397,8 @@ std::vector<uint8_t> PDFiumEngineExports::ConvertPdfDocumentToNupPdf(
 bool PDFiumEngineExports::GetPDFDocInfo(base::span<const uint8_t> pdf_buffer,
                                         int* page_count,
                                         float* max_page_width) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return false;
@@ -413,6 +425,8 @@ bool PDFiumEngineExports::GetPDFDocInfo(base::span<const uint8_t> pdf_buffer,
 
 absl::optional<bool> PDFiumEngineExports::IsPDFDocTagged(
     base::span<const uint8_t> pdf_buffer) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return absl::nullopt;
@@ -423,6 +437,8 @@ absl::optional<bool> PDFiumEngineExports::IsPDFDocTagged(
 base::Value PDFiumEngineExports::GetPDFStructTreeForPage(
     base::span<const uint8_t> pdf_buffer,
     int page_index) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return base::Value(base::Value::Type::NONE);
@@ -451,6 +467,8 @@ base::Value PDFiumEngineExports::GetPDFStructTreeForPage(
 absl::optional<gfx::SizeF> PDFiumEngineExports::GetPDFPageSizeByIndex(
     base::span<const uint8_t> pdf_buffer,
     int page_number) {
+  ScopedUnsupportedFeature scoped_unsupported_feature(
+      ScopedUnsupportedFeature::kNoEngine);
   ScopedFPDFDocument doc = LoadPdfData(pdf_buffer);
   if (!doc)
     return absl::nullopt;

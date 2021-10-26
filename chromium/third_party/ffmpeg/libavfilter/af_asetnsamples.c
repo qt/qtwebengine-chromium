@@ -24,7 +24,6 @@
  * Filter that changes number of samples on single output operation
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
@@ -118,7 +117,7 @@ static const AVFilterPad asetnsamples_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_asetnsamples = {
+const AVFilter ff_af_asetnsamples = {
     .name        = "asetnsamples",
     .description = NULL_IF_CONFIG_SMALL("Set the number of samples for each output audio frames."),
     .priv_size   = sizeof(ASNSContext),

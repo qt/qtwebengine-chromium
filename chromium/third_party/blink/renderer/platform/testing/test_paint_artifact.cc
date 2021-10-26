@@ -69,7 +69,8 @@ TestPaintArtifact& TestPaintArtifact::ForeignLayer(
   DEFINE_STATIC_LOCAL(LiteralDebugNameClient, client, ("ForeignLayer"));
   paint_artifact_->GetDisplayItemList()
       .AllocateAndConstruct<ForeignLayerDisplayItem>(
-          client, DisplayItem::kForeignLayerFirst, std::move(layer), offset);
+          client, DisplayItem::kForeignLayerFirst, std::move(layer), offset,
+          client.GetPaintInvalidationReason());
   DidAddDisplayItem();
   return *this;
 }
@@ -87,7 +88,8 @@ TestPaintArtifact& TestPaintArtifact::RectDrawing(DisplayItemClient& client,
   paint_artifact_->GetDisplayItemList()
       .AllocateAndConstruct<DrawingDisplayItem>(
           client, DisplayItem::kDrawingFirst, bounds,
-          recorder.finishRecordingAsPicture());
+          recorder.finishRecordingAsPicture(),
+          client.GetPaintInvalidationReason());
   DidAddDisplayItem();
   return *this;
 }
@@ -109,8 +111,30 @@ TestPaintArtifact& TestPaintArtifact::SetRasterEffectOutset(
   return *this;
 }
 
-TestPaintArtifact& TestPaintArtifact::KnownToBeOpaque() {
-  paint_artifact_->PaintChunks().back().known_to_be_opaque = true;
+TestPaintArtifact& TestPaintArtifact::RectKnownToBeOpaque(const IntRect& r) {
+  auto& chunk = paint_artifact_->PaintChunks().back();
+  chunk.rect_known_to_be_opaque = r;
+  DCHECK(chunk.bounds.Contains(r));
+  return *this;
+}
+
+TestPaintArtifact& TestPaintArtifact::TextKnownToBeOnOpaqueBackground() {
+  auto& chunk = paint_artifact_->PaintChunks().back();
+  DCHECK(chunk.has_text);
+  paint_artifact_->PaintChunks().back().text_known_to_be_on_opaque_background =
+      true;
+  return *this;
+}
+
+TestPaintArtifact& TestPaintArtifact::HasText() {
+  auto& chunk = paint_artifact_->PaintChunks().back();
+  chunk.has_text = true;
+  chunk.text_known_to_be_on_opaque_background = false;
+  return *this;
+}
+
+TestPaintArtifact& TestPaintArtifact::EffectivelyInvisible() {
+  paint_artifact_->PaintChunks().back().effectively_invisible = true;
   return *this;
 }
 
@@ -131,6 +155,11 @@ TestPaintArtifact& TestPaintArtifact::DrawableBounds(
 
 TestPaintArtifact& TestPaintArtifact::Uncacheable() {
   paint_artifact_->PaintChunks().back().is_cacheable = false;
+  return *this;
+}
+
+TestPaintArtifact& TestPaintArtifact::IsMovedFromCachedSubsequence() {
+  paint_artifact_->PaintChunks().back().is_moved_from_cached_subsequence = true;
   return *this;
 }
 

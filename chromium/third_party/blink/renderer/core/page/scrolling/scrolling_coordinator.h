@@ -28,7 +28,6 @@
 
 #include <memory>
 
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"
@@ -64,6 +63,8 @@ class CORE_EXPORT ScrollingCoordinator final
       public CompositorScrollCallbacks {
  public:
   explicit ScrollingCoordinator(Page*);
+  ScrollingCoordinator(const ScrollingCoordinator&) = delete;
+  ScrollingCoordinator& operator=(const ScrollingCoordinator&) = delete;
   ~ScrollingCoordinator() override;
   void Trace(Visitor*) const;
 
@@ -112,9 +113,10 @@ class CORE_EXPORT ScrollingCoordinator final
       const CompositorElementId&);
 
   // ScrollCallbacks implementation
-  void DidScroll(CompositorElementId,
-                 const gfx::ScrollOffset&,
-                 const absl::optional<cc::TargetSnapAreaElementIds>&) override;
+  void DidCompositorScroll(
+      CompositorElementId,
+      const gfx::ScrollOffset&,
+      const absl::optional<cc::TargetSnapAreaElementIds>&) override;
   void DidChangeScrollbarsHidden(CompositorElementId, bool hidden) override;
 
   base::WeakPtr<ScrollingCoordinator> GetWeakPtr() {
@@ -149,8 +151,6 @@ class CORE_EXPORT ScrollingCoordinator final
   ScrollbarMap vertical_scrollbars_;
 
   base::WeakPtrFactory<ScrollingCoordinator> weak_ptr_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(ScrollingCoordinator);
 };
 
 }  // namespace blink

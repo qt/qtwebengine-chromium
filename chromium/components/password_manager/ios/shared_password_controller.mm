@@ -194,6 +194,9 @@ NSString* const kSuggestionSuffix = @" ••••••••";
     return;
   }
 
+  // Clear per-page state.
+  [self.suggestionHelper resetForNewPage];
+
   auto fieldDataManager =
       UniqueIDDataTabHelper::FromWebState(_webState)->GetFieldDataManager();
   _passwordManager->PropagateFieldDataManagerInfo(
@@ -210,8 +213,6 @@ NSString* const kSuggestionSuffix = @" ••••••••";
 
 - (void)webState:(web::WebState*)webState didLoadPageWithSuccess:(BOOL)success {
   DCHECK_EQ(_webState, webState);
-  // Clear per-page state.
-  [self.suggestionHelper resetForNewPage];
 
   // Retrieve the identity of the page. In case the page might be malicous,
   // returns early.
@@ -376,8 +377,6 @@ NSString* const kSuggestionSuffix = @" ••••••••";
       continue;
     }
     DCHECK(self.delegate.passwordManagerClient);
-    BOOL requiresReauth =
-        self.delegate.passwordManagerClient->RequiresReauthToFill();
     NSString* value =
         [rawSuggestion.value stringByAppendingString:kSuggestionSuffix];
     FormSuggestion* suggestion =
@@ -385,7 +384,7 @@ NSString* const kSuggestionSuffix = @" ••••••••";
                          displayDescription:rawSuggestion.displayDescription
                                        icon:nil
                                  identifier:0
-                             requiresReauth:requiresReauth];
+                             requiresReauth:YES];
     [suggestions addObject:suggestion];
   }
   absl::optional<PasswordDropdownState> suggestionState;

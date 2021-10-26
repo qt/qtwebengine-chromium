@@ -14,6 +14,7 @@
 #include "core/fpdfapi/font/cpdf_font.h"
 #include "core/fpdfapi/page/cpdf_colorspace.h"
 #include "core/fpdfapi/parser/cpdf_document.h"
+#include "core/fxcrt/fx_codepage_forward.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/observed_ptr.h"
@@ -51,7 +52,8 @@ class CPDF_DocPageData : public CPDF_Document::PageDataIface,
 
   bool IsForceClear() const { return m_bForceClear; }
 
-  RetainPtr<CPDF_Font> AddFont(std::unique_ptr<CFX_Font> pFont, int charset);
+  RetainPtr<CPDF_Font> AddFont(std::unique_ptr<CFX_Font> pFont,
+                               FX_Charset charset);
   RetainPtr<CPDF_Font> GetFont(CPDF_Dictionary* pFontDict);
   RetainPtr<CPDF_Font> AddStandardFont(const ByteString& fontName,
                                        const CPDF_FontEncoding* pEncoding);
@@ -74,8 +76,9 @@ class CPDF_DocPageData : public CPDF_Document::PageDataIface,
       std::set<const CPDF_Object*>* pVisited);
 
   RetainPtr<CPDF_Pattern> GetPattern(CPDF_Object* pPatternObj,
-                                     bool bShading,
                                      const CFX_Matrix& matrix);
+  RetainPtr<CPDF_ShadingPattern> GetShading(CPDF_Object* pPatternObj,
+                                            const CFX_Matrix& matrix);
 
   RetainPtr<CPDF_Image> GetImage(uint32_t dwStreamObjNum);
   void MaybePurgeImage(uint32_t dwStreamObjNum);
@@ -94,10 +97,10 @@ class CPDF_DocPageData : public CPDF_Document::PageDataIface,
       std::set<const CPDF_Object*>* pVisited,
       std::set<const CPDF_Object*>* pVisitedInternal);
 
-  size_t CalculateEncodingDict(int charset, CPDF_Dictionary* pBaseDict);
+  size_t CalculateEncodingDict(FX_Charset charset, CPDF_Dictionary* pBaseDict);
   CPDF_Dictionary* ProcessbCJK(
       CPDF_Dictionary* pBaseDict,
-      int charset,
+      FX_Charset charset,
       ByteString basefont,
       std::function<void(wchar_t, wchar_t, CPDF_Array*)> Insert);
 

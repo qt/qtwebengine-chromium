@@ -9,7 +9,6 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_client.h"
@@ -19,6 +18,7 @@
 #include "components/autofill/core/browser/payments/payments_client.h"
 #include "components/autofill/core/browser/payments/upi_vpa_save_manager.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class SaveCardOfferObserver;
 
@@ -68,6 +68,10 @@ class FormDataImporter {
                                       const std::string& app_locale,
                                       LogBuffer* import_log_buffer);
 
+  // Cache the last four of the fetched virtual card so we don't offer saving
+  // them.
+  void CacheFetchedVirtualCard(const std::u16string& last_four);
+
 #if !defined(OS_ANDROID) && !defined(OS_IOS)
   LocalCardMigrationManager* local_card_migration_manager() {
     return local_card_migration_manager_.get();
@@ -112,15 +116,19 @@ class FormDataImporter {
   // Go through the |form| fields and attempt to extract and import valid
   // address profiles. Returns true on extraction success of at least one
   // profile. There are many reasons that extraction may fail (see
-  // implementation). The function returns true if at least one complete address
-  // profile was found.
-  bool ImportAddressProfiles(const FormStructure& form);
+  // implementation). |allow_save_prompts| indicates if a dialog to import a new
+  // address can be shown.  The function returns true if at least one complete
+  // address profile was found.
+  bool ImportAddressProfiles(const FormStructure& form,
+                             bool allow_save_prompts);
 
   // Helper method for ImportAddressProfiles which only considers the fields for
   // a specified |section|. If |section| is the empty string, the import is
-  // performed on the union of all sections.
+  // performed on the union of all sections. |allow_save_prompts| indicates if
+  // a dialog to import a new address can be shown.
   bool ImportAddressProfileForSection(const FormStructure& form,
                                       const std::string& section,
+                                      bool allow_save_prompts,
                                       LogBuffer* import_log_buffer);
 
   // Go through the |form| fields and attempt to extract a new credit card in
@@ -178,6 +186,9 @@ class FormDataImporter {
 
   std::string app_locale_;
 
+  // Used to store the last four digits of the fetched virtual cards.
+  base::flat_set<std::u16string> fetched_virtual_cards_;
+
   friend class AutofillMergeTest;
   friend class FormDataImporterTest;
   friend class FormDataImporterTestBase;
@@ -215,6 +226,9 @@ class FormDataImporter {
   FRIEND_TEST_ALL_PREFIXES(
       FormDataImporterTest,
       ImportFormData_ImportCreditCardRecordType_NoCard_InvalidCardNumber);
+  FRIEND_TEST_ALL_PREFIXES(
+      FormDataImporterTest,
+      ImportFormData_ImportCreditCardRecordType_NoCard_VirtualCard);
   FRIEND_TEST_ALL_PREFIXES(
       FormDataImporterTest,
       ImportFormData_ImportCreditCardRecordType_NoCard_NoCardOnForm);

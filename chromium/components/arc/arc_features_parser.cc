@@ -10,7 +10,6 @@
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "base/strings/string_util.h"
 #include "base/task/post_task.h"
 #include "base/task/thread_pool.h"
@@ -92,7 +91,7 @@ absl::optional<ArcFeatures> ParseFeaturesJson(base::StringPiece input_json) {
     LOG(ERROR) << "No properties in JSON.";
     return absl::nullopt;
   }
-  for (const auto& item : properties->DictItems()) {
+  for (const auto item : properties->DictItems()) {
     if (!item.second.is_string()) {
       LOG(ERROR) << "Item in the properties mapping is not a string.";
       return absl::nullopt;

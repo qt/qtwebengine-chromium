@@ -15,6 +15,7 @@
 #include "base/time/tick_clock.h"
 #include "net/base/url_util.h"
 #include "net/log/net_log.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace net {
 
@@ -23,12 +24,7 @@ ReportingCacheImpl::ReportingCacheImpl(ReportingContext* context)
   DCHECK(context_);
 }
 
-ReportingCacheImpl::~ReportingCacheImpl() {
-  for (const auto& report : reports_) {
-    if (report->status != ReportingReport::Status::DOOMED)
-      report->outcome = ReportingReport::Outcome::ERASED_REPORTING_SHUT_DOWN;
-  }
-}
+ReportingCacheImpl::~ReportingCacheImpl() = default;
 
 void ReportingCacheImpl::AddReport(
     const NetworkIsolationKey& network_isolation_key,
@@ -41,8 +37,8 @@ void ReportingCacheImpl::AddReport(
     base::TimeTicks queued,
     int attempts) {
   auto report = std::make_unique<ReportingReport>(
-      network_isolation_key, url, user_agent, group_name, type, std::move(body),
-      depth, queued, attempts);
+      absl::nullopt, network_isolation_key, url, user_agent, group_name, type,
+      std::move(body), depth, queued, attempts);
 
   auto inserted = reports_.insert(std::move(report));
   DCHECK(inserted.second);
@@ -55,7 +51,6 @@ void ReportingCacheImpl::AddReport(
     // The newly-added report isn't pending, so even if all other reports are
     // pending, the cache should have a report to evict.
     DCHECK(!to_evict->get()->IsUploadPending());
-    to_evict->get()->outcome = ReportingReport::Outcome::ERASED_EVICTED;
     reports_.erase(to_evict);
   }
 
@@ -175,13 +170,10 @@ void ReportingCacheImpl::IncrementEndpointDeliveries(
 }
 
 void ReportingCacheImpl::RemoveReports(
-    const std::vector<const ReportingReport*>& reports,
-    ReportingReport::Outcome outcome) {
+    const std::vector<const ReportingReport*>& reports) {
   for (const ReportingReport* report : reports) {
     auto it = reports_.find(report);
     DCHECK(it != reports_.end());
-
-    it->get()->outcome = outcome;
 
     if (it->get()->IsUploadPending()) {
       it->get()->status = ReportingReport::Status::DOOMED;
@@ -192,10 +184,10 @@ void ReportingCacheImpl::RemoveReports(
   context_->NotifyCachedReportsUpdated();
 }
 
-void ReportingCacheImpl::RemoveAllReports(ReportingReport::Outcome outcome) {
+void ReportingCacheImpl::RemoveAllReports() {
   std::vector<const ReportingReport*> reports_to_remove;
   GetReports(&reports_to_remove);
-  RemoveReports(reports_to_remove, outcome);
+  RemoveReports(reports_to_remove);
 }
 
 size_t ReportingCacheImpl::GetFullReportCountForTesting() const {

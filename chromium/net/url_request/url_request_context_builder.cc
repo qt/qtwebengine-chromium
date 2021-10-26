@@ -33,6 +33,7 @@
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/http_server_properties_manager.h"
 #include "net/http/transport_security_persister.h"
@@ -67,61 +68,6 @@
 namespace net {
 
 namespace {
-
-class BasicNetworkDelegate : public NetworkDelegateImpl {
- public:
-  BasicNetworkDelegate() = default;
-  ~BasicNetworkDelegate() override = default;
-
- private:
-  int OnBeforeURLRequest(URLRequest* request,
-                         CompletionOnceCallback callback,
-                         GURL* new_url) override {
-    return OK;
-  }
-
-  int OnBeforeStartTransaction(URLRequest* request,
-                               CompletionOnceCallback callback,
-                               HttpRequestHeaders* headers) override {
-    return OK;
-  }
-
-  int OnHeadersReceived(
-      URLRequest* request,
-      CompletionOnceCallback callback,
-      const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers,
-      const IPEndPoint& endpoint,
-      absl::optional<GURL>* preserve_fragment_on_redirect_url) override {
-    return OK;
-  }
-
-  void OnBeforeRedirect(URLRequest* request,
-                        const GURL& new_location) override {}
-
-  void OnResponseStarted(URLRequest* request, int net_error) override {}
-
-  void OnCompleted(URLRequest* request, bool started, int net_error) override {}
-
-  void OnURLRequestDestroyed(URLRequest* request) override {}
-
-  void OnPACScriptError(int line_number, const std::u16string& error) override {
-  }
-
-  bool OnCanGetCookies(const URLRequest& request,
-                       bool allowed_from_caller) override {
-    return allowed_from_caller;
-  }
-
-  bool OnCanSetCookie(const URLRequest& request,
-                      const CanonicalCookie& cookie,
-                      CookieOptions* options,
-                      bool allowed_from_caller) override {
-    return allowed_from_caller;
-  }
-
-  DISALLOW_COPY_AND_ASSIGN(BasicNetworkDelegate);
-};
 
 // A URLRequestContext subclass that owns most of its components
 // via a UrlRequestContextStorage object. When URLRequestContextBuilder::Build()
@@ -186,7 +132,7 @@ URLRequestContextBuilder::~URLRequestContextBuilder() = default;
 
 void URLRequestContextBuilder::SetHttpNetworkSessionComponents(
     const URLRequestContext* request_context,
-    HttpNetworkSession::Context* session_context) {
+    HttpNetworkSessionContext* session_context) {
   session_context->host_resolver = request_context->host_resolver();
   session_context->cert_verifier = request_context->cert_verifier();
   session_context->transport_security_state =
@@ -368,7 +314,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
   }
 
   if (!network_delegate_)
-    network_delegate_ = std::make_unique<BasicNetworkDelegate>();
+    network_delegate_ = std::make_unique<NetworkDelegateImpl>();
   storage->set_network_delegate(std::move(network_delegate_));
 
   if (net_log_) {
@@ -432,7 +378,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
 
   storage->set_transport_security_state(
       std::make_unique<TransportSecurityState>(hsts_policy_bypass_list_));
-  if (!transport_security_persister_path_.empty()) {
+  if (!transport_security_persister_file_path_.empty()) {
     // Use a low priority because saving this should not block anything
     // user-visible. Block shutdown to ensure it does get persisted to disk,
     // since it contains security-relevant information.
@@ -443,8 +389,8 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
 
     context->set_transport_security_persister(
         std::make_unique<TransportSecurityPersister>(
-            context->transport_security_state(),
-            transport_security_persister_path_, task_runner));
+            context->transport_security_state(), task_runner,
+            transport_security_persister_file_path_));
   }
 
   if (http_server_properties_) {
@@ -540,7 +486,7 @@ std::unique_ptr<URLRequestContext> URLRequestContextBuilder::Build() {
     storage->set_proxy_delegate(std::move(proxy_delegate_));
   }
 
-  HttpNetworkSession::Context network_session_context;
+  HttpNetworkSessionContext network_session_context;
   SetHttpNetworkSessionComponents(context.get(), &network_session_context);
   // Unlike the other fields of HttpNetworkSession::Context,
   // |client_socket_factory| is not mirrored in URLRequestContext.

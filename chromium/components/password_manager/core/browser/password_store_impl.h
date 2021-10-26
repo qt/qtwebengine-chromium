@@ -14,89 +14,59 @@
 #include "components/password_manager/core/browser/login_database.h"
 #include "components/password_manager/core/browser/password_store.h"
 
+namespace syncer {
+class ModelTypeControllerDelegate;
+}  // namespace syncer
+
 namespace password_manager {
+
+class PasswordSyncBridge;
+
+struct FieldInfo;
 
 // Simple password store implementation that delegates everything to
 // the LoginDatabase.
-class PasswordStoreImpl : public PasswordStore {
+class PasswordStoreImpl : protected PasswordStoreSync,
+                          public PasswordStore,
+                          public PasswordStoreBackend,
+                          public SmartBubbleStatsStore,
+                          protected FieldInfoStore {
  public:
   // The |login_db| must not have been Init()-ed yet. It will be initialized in
   // a deferred manner on the background sequence.
   explicit PasswordStoreImpl(std::unique_ptr<LoginDatabase> login_db);
 
-  void ShutdownOnUIThread() override;
+  PasswordStoreImpl(
+      std::unique_ptr<LoginDatabase> login_db,
+      std::unique_ptr<UnsyncedCredentialsDeletionNotifier> notifier);
 
-  // To be used only for testing or in subclasses.
-  LoginDatabase* login_db() const { return login_db_.get(); }
+  void ShutdownOnUIThread() override;
 
  protected:
   ~PasswordStoreImpl() override;
-
-  // Opens |login_db_| on the background sequence.
-  bool InitOnBackgroundSequence(
-      bool upload_phished_credentials_to_sync) override;
 
   // Implements PasswordStore interface.
   void ReportMetricsImpl(const std::string& sync_username,
                          bool custom_passphrase_sync_enabled,
                          BulkCheckDone bulk_check_done) override;
-  PasswordStoreChangeList AddLoginImpl(const PasswordForm& form,
-                                       AddLoginError* error) override;
-  PasswordStoreChangeList UpdateLoginImpl(const PasswordForm& form,
-                                          UpdateLoginError* error) override;
-  PasswordStoreChangeList RemoveLoginImpl(const PasswordForm& form) override;
-  PasswordStoreChangeList RemoveLoginsByURLAndTimeImpl(
-      const base::RepeatingCallback<bool(const GURL&)>& url_filter,
-      base::Time delete_begin,
-      base::Time delete_end) override;
-  PasswordStoreChangeList RemoveLoginsCreatedBetweenImpl(
-      base::Time delete_begin,
-      base::Time delete_end) override;
   PasswordStoreChangeList DisableAutoSignInForOriginsImpl(
-      const base::RepeatingCallback<bool(const GURL&)>& origin_filter) override;
-  bool RemoveStatisticsByOriginAndTimeImpl(
-      const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
-      base::Time delete_begin,
-      base::Time delete_end) override;
-  std::vector<std::unique_ptr<PasswordForm>> FillMatchingLogins(
-      const FormDigest& form) override;
-  std::vector<std::unique_ptr<PasswordForm>> FillMatchingLoginsByPassword(
-      const std::u16string& plain_text_password) override;
-  bool FillAutofillableLogins(
-      std::vector<std::unique_ptr<PasswordForm>>* forms) override;
-  bool FillBlocklistLogins(
-      std::vector<std::unique_ptr<PasswordForm>>* forms) override;
+      const base::RepeatingCallback<bool(const GURL&)>& origin_filter);
   DatabaseCleanupResult DeleteUndecryptableLogins() override;
-  void AddSiteStatsImpl(const InteractionsStats& stats) override;
-  void RemoveSiteStatsImpl(const GURL& origin_domain) override;
-  std::vector<InteractionsStats> GetAllSiteStatsImpl() override;
-  std::vector<InteractionsStats> GetSiteStatsImpl(
-      const GURL& origin_domain) override;
-  PasswordStoreChangeList AddInsecureCredentialImpl(
-      const InsecureCredential& insecure_credential) override;
-  PasswordStoreChangeList RemoveInsecureCredentialsImpl(
-      const std::string& signon_realm,
-      const std::u16string& username,
-      RemoveInsecureCredentialsReason reason) override;
-  std::vector<InsecureCredential> GetAllInsecureCredentialsImpl() override;
-  std::vector<InsecureCredential> GetMatchingInsecureCredentialsImpl(
-      const std::string& signon_realm) override;
-
-  void AddFieldInfoImpl(const FieldInfo& field_info) override;
-  std::vector<FieldInfo> GetAllFieldInfoImpl() override;
-  void RemoveFieldInfoByTimeImpl(base::Time remove_begin,
-                                 base::Time remove_end) override;
-
-  bool IsEmpty() override;
 
   // Implements PasswordStoreSync interface.
+  PasswordStoreChangeList AddLoginSync(const PasswordForm& form,
+                                       AddLoginError* error) override;
+  PasswordStoreChangeList UpdateLoginSync(const PasswordForm& form,
+                                          UpdateLoginError* error) override;
+  void NotifyLoginsChanged(const PasswordStoreChangeList& changes) override;
+  void NotifyDeletionsHaveSynced(bool success) override;
+  void NotifyUnsyncedCredentialsWillBeDeleted(
+      std::vector<PasswordForm> unsynced_credentials) override;
   bool BeginTransaction() override;
   void RollbackTransaction() override;
   bool CommitTransaction() override;
   FormRetrievalResult ReadAllLogins(
       PrimaryKeyToFormMap* key_to_form_map) override;
-  std::vector<InsecureCredential> ReadSecurityIssues(
-      FormPrimaryKey parent_key) override;
   PasswordStoreChangeList RemoveLoginByPrimaryKeySync(
       FormPrimaryKey primary_key) override;
   PasswordStoreSync::MetadataStore* GetMetadataStore() override;
@@ -104,14 +74,132 @@ class PasswordStoreImpl : public PasswordStore {
   bool DeleteAndRecreateDatabaseFile() override;
 
  private:
-  // Resets |login_db_| on the background sequence.
-  void ResetLoginDB();
+  FRIEND_TEST_ALL_PREFIXES(PasswordStoreTest,
+                           UpdatePasswordsStoredForAffiliatedWebsites);
+
+  // Implements PasswordStoreBackend interface.
+  void InitBackend(RemoteChangesReceived remote_form_changes_received,
+                   base::RepeatingClosure sync_enabled_or_disabled_cb,
+                   base::OnceCallback<void(bool)> completion) override;
+  void GetAllLoginsAsync(LoginsReply callback) override;
+  void GetAutofillableLoginsAsync(LoginsReply callback) override;
+  void FillMatchingLoginsAsync(
+      LoginsReply callback,
+      bool include_psl,
+      const std::vector<PasswordFormDigest>& forms) override;
+  void AddLoginAsync(const PasswordForm& form,
+                     PasswordStoreChangeListReply callback) override;
+  void UpdateLoginAsync(const PasswordForm& form,
+                        PasswordStoreChangeListReply callback) override;
+  void RemoveLoginAsync(const PasswordForm& form,
+                        PasswordStoreChangeListReply callback) override;
+  void RemoveLoginsCreatedBetweenAsync(
+      base::Time delete_begin,
+      base::Time delete_end,
+      PasswordStoreChangeListReply callback) override;
+  void RemoveLoginsByURLAndTimeAsync(
+      const base::RepeatingCallback<bool(const GURL&)>& url_filter,
+      base::Time delete_begin,
+      base::Time delete_end,
+      base::OnceCallback<void(bool)> sync_completion,
+      PasswordStoreChangeListReply callback) override;
+  void DisableAutoSignInForOriginsAsync(
+      const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
+      base::OnceClosure completion) override;
+  SmartBubbleStatsStore* GetSmartBubbleStatsStore() override;
+  FieldInfoStore* GetFieldInfoStore() override;
+  std::unique_ptr<syncer::ProxyModelTypeControllerDelegate>
+  CreateSyncControllerDelegateFactory() override;
+
+  // SmartBubbleStatsStore:
+  void AddSiteStats(const InteractionsStats& stats) override;
+  void RemoveSiteStats(const GURL& origin_domain) override;
+  void GetSiteStats(const GURL& origin_domain,
+                    PasswordStoreConsumer* consumer) override;
+  void RemoveStatisticsByOriginAndTime(
+      const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
+      base::Time delete_begin,
+      base::Time delete_end,
+      base::OnceClosure completion) override;
+
+  // FieldInfoStore:
+  void AddFieldInfo(const FieldInfo& field_info) override;
+  void GetAllFieldInfo(PasswordStoreConsumer* consumer) override;
+  void RemoveFieldInfoByTime(base::Time remove_begin,
+                             base::Time remove_end,
+                             base::OnceClosure completion) override;
+
+  // Opens |login_db_| and creates |sync_bridge_| on the background sequence.
+  bool InitOnBackgroundSequence(
+      RemoteChangesReceived remote_form_changes_received,
+      base::RepeatingClosure sync_enabled_or_disabled_cb);
+
+  // Resets |login_db_| and |sync_bridge_| on the background sequence.
+  void DestroyOnBackgroundSequence();
+
+  // Synchronous implementation of GetAllLoginsAsync.
+  LoginsResult GetAllLoginsInternal();
+
+  // Synchronous implementation of GetAutofillableLoginsAsync.
+  LoginsResult GetAutofillableLoginsInternal();
+
+  // Synchronous implementation of FillMatchingLoginsAsync.
+  LoginsResult FillMatchingLoginsInternal(
+      const std::vector<PasswordFormDigest>& forms,
+      bool include_psl);
+
+  PasswordStoreChangeList AddLoginInternal(const PasswordForm& form);
+  PasswordStoreChangeList UpdateLoginInternal(const PasswordForm& form);
+  PasswordStoreChangeList RemoveLoginInternal(const PasswordForm& form);
+  PasswordStoreChangeList RemoveLoginsCreatedBetweenInternal(
+      base::Time delete_begin,
+      base::Time delete_end);
+  PasswordStoreChangeList RemoveLoginsByURLAndTimeInternal(
+      const base::RepeatingCallback<bool(const GURL&)>& url_filter,
+      base::Time delete_begin,
+      base::Time delete_end,
+      base::OnceCallback<void(bool)> sync_completion);
+
+  // Synchronous implementation for manipulating with statistics.
+  void AddSiteStatsInternal(const InteractionsStats& stats);
+  void RemoveSiteStatsInternal(const GURL& origin_domain);
+  std::vector<InteractionsStats> GetSiteStatsInternal(
+      const GURL& origin_domain);
+  void RemoveStatisticsByOriginAndTimeInternal(
+      const base::RepeatingCallback<bool(const GURL&)>& origin_filter,
+      base::Time delete_begin,
+      base::Time delete_end);
+
+  // Synchronous implementation for manipulating with field info.
+  void AddFieldInfoInternal(const FieldInfo& field_info);
+  std::vector<FieldInfo> GetAllFieldInfoInternal();
+  void RemoveFieldInfoByTimeInternal(base::Time remove_begin,
+                                     base::Time remove_end);
+
+  base::WeakPtr<syncer::ModelTypeControllerDelegate>
+  GetSyncControllerDelegateOnBackgroundSequence();
 
   // The login SQL database. The LoginDatabase instance is received via the
   // in an uninitialized state, so as to allow injecting mocks, then Init() is
   // called on the background sequence in a deferred manner. If opening the DB
   // fails, |login_db_| will be reset and stay NULL for the lifetime of |this|.
   std::unique_ptr<LoginDatabase> login_db_;
+
+  std::unique_ptr<PasswordSyncBridge> sync_bridge_;
+
+  // Whenever 'sync_bridge_'receive remote changes this callback is used to
+  // notify PasswordStore observers about them. Called on a main sequence from
+  // the 'NotifyLoginsChanged'.
+  RemoteChangesReceived remote_forms_changes_received_callback_;
+
+  std::unique_ptr<UnsyncedCredentialsDeletionNotifier> deletion_notifier_;
+
+  // A list of callbacks that should be run once all pending deletions have been
+  // sent to the Sync server. Note that the vector itself lives on the
+  // background thread, but the callbacks must be run on the main thread!
+  std::vector<base::OnceCallback<void(bool)>> deletions_have_synced_callbacks_;
+  // Timeout closure that runs if sync takes too long to propagate deletions.
+  base::CancelableOnceClosure deletions_have_synced_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreImpl);
 };

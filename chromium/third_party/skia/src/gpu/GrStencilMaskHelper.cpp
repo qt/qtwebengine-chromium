@@ -11,8 +11,10 @@
 #include "include/core/SkPath.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrStencilSettings.h"
+#include "src/gpu/effects/GrDisableColorXP.h"
 #include "src/gpu/geometry/GrShape.h"
 #include "src/gpu/geometry/GrStyledShape.h"
+#include "src/gpu/v1/SurfaceDrawContext_v1.h"
 
 namespace {
 
@@ -272,16 +274,16 @@ static GrUserStencilSettings const* const* get_stencil_passes(
     return gUserToClipTable[fillInverted][op];
 }
 
-static void draw_stencil_rect(GrSurfaceDrawContext* rtc, const GrHardClip& clip,
+static void draw_stencil_rect(skgpu::v1::SurfaceDrawContext* sdc, const GrHardClip& clip,
                               const GrUserStencilSettings* ss, const SkMatrix& matrix,
                               const SkRect& rect, GrAA aa) {
     GrPaint paint;
     paint.setXPFactory(GrDisableColorXPFactory::Get());
-    rtc->stencilRect(&clip, ss, std::move(paint), aa, matrix, rect);
+    sdc->stencilRect(&clip, ss, std::move(paint), aa, matrix, rect);
 }
 
-static void draw_path(GrRecordingContext* context,
-                      GrSurfaceDrawContext* rtc,
+static void draw_path(GrRecordingContext* rContext,
+                      skgpu::v1::SurfaceDrawContext* sdc,
                       GrPathRenderer* pr, const GrHardClip& clip, const SkIRect& bounds,
                       const GrUserStencilSettings* ss,  const SkMatrix& matrix,
                       const GrStyledShape& shape, GrAA aa) {
@@ -291,10 +293,10 @@ static void draw_path(GrRecordingContext* context,
     // kMSAA is the only type of AA that's possible on a stencil buffer.
     GrAAType pathAAType = aa == GrAA::kYes ? GrAAType::kMSAA : GrAAType::kNone;
 
-    GrPathRenderer::DrawPathArgs args{context,
+    GrPathRenderer::DrawPathArgs args{rContext,
                                       std::move(paint),
                                       ss,
-                                      rtc,
+                                      sdc,
                                       &clip,
                                       &bounds,
                                       &matrix,
@@ -304,13 +306,16 @@ static void draw_path(GrRecordingContext* context,
     pr->drawPath(args);
 }
 
-static void stencil_path(GrRecordingContext* context,
-                         GrSurfaceDrawContext* rtc,
-                         GrPathRenderer* pr, const GrFixedClip& clip, const SkMatrix& matrix,
-                         const GrStyledShape& shape, GrAA aa) {
+static void stencil_path(GrRecordingContext* rContext,
+                         skgpu::v1::SurfaceDrawContext* sdc,
+                         GrPathRenderer* pr,
+                         const GrFixedClip& clip,
+                         const SkMatrix& matrix,
+                         const GrStyledShape& shape,
+                         GrAA aa) {
     GrPathRenderer::StencilPathArgs args;
-    args.fContext = context;
-    args.fRenderTargetContext = rtc;
+    args.fContext = rContext;
+    args.fSurfaceDrawContext = sdc;
     args.fClip = &clip;
     args.fClipConservativeBounds = &clip.scissorRect();
     args.fViewMatrix = &matrix;
@@ -320,9 +325,12 @@ static void stencil_path(GrRecordingContext* context,
     pr->stencilPath(args);
 }
 
-static GrAA supported_aa(GrSurfaceDrawContext* rtc, GrAA aa) {
-    if (rtc->numSamples() > 1) {
-        if (rtc->caps()->multisampleDisableSupport()) {
+static GrAA supported_aa(skgpu::v1::SurfaceDrawContext* sdc, GrAA aa) {
+    if (sdc->canUseDynamicMSAA()) {
+        return GrAA::kYes;
+    }
+    if (sdc->numSamples() > 1) {
+        if (sdc->caps()->multisampleDisableSupport()) {
             return aa;
         } else {
             return GrAA::kYes;
@@ -334,9 +342,16 @@ static GrAA supported_aa(GrSurfaceDrawContext* rtc, GrAA aa) {
 
 }  // namespace
 
+GrStencilMaskHelper::GrStencilMaskHelper(GrRecordingContext* rContext,
+                                         skgpu::v1::SurfaceDrawContext* sdc)
+        : fContext(rContext)
+        , fSDC(sdc)
+        , fClip(sdc->dimensions()) {
+}
+
 bool GrStencilMaskHelper::init(const SkIRect& bounds, uint32_t genID,
                                const GrWindowRectangles& windowRects, int numFPs) {
-    if (!fRTC->mustRenderClip(genID, bounds, numFPs)) {
+    if (!fSDC->mustRenderClip(genID, bounds, numFPs)) {
         return false;
     }
 
@@ -362,20 +377,20 @@ void GrStencilMaskHelper::drawRect(const SkRect& rect,
     bool drawDirectToClip;
     auto passes = get_stencil_passes(op, GrPathRenderer::kNoRestriction_StencilSupport, false,
                                      &drawDirectToClip);
-    aa = supported_aa(fRTC, aa);
+    aa = supported_aa(fSDC, aa);
 
     if (!drawDirectToClip) {
         // Draw to client stencil bits first
-        draw_stencil_rect(fRTC, fClip.fixedClip(), &gDrawToStencil, matrix, rect, aa);
+        draw_stencil_rect(fSDC, fClip.fixedClip(), &gDrawToStencil, matrix, rect, aa);
     }
 
     // Now modify the clip bit (either by rendering directly), or by covering the bounding box
     // of the clip
     for (GrUserStencilSettings const* const* pass = passes; *pass; ++pass) {
         if (drawDirectToClip) {
-            draw_stencil_rect(fRTC, fClip, *pass, matrix, rect, aa);
+            draw_stencil_rect(fSDC, fClip, *pass, matrix, rect, aa);
         } else {
-            draw_stencil_rect(fRTC, fClip, *pass, SkMatrix::I(),
+            draw_stencil_rect(fSDC, fClip, *pass, SkMatrix::I(),
                               SkRect::Make(fClip.fixedClip().scissorRect()), aa);
         }
     }
@@ -392,7 +407,7 @@ bool GrStencilMaskHelper::drawPath(const SkPath& path,
     // drawPath follows a similar approach to drawRect(), where we either draw directly to the clip
     // bit or first draw to client bits and then apply a cover pass. The complicating factor is that
     // we rely on path rendering and how the chosen path renderer uses the stencil buffer.
-    aa = supported_aa(fRTC, aa);
+    aa = supported_aa(fSDC, aa);
 
     GrAAType pathAAType = aa == GrAA::kYes ? GrAAType::kMSAA : GrAAType::kNone;
 
@@ -412,12 +427,12 @@ bool GrStencilMaskHelper::drawPath(const SkPath& path,
 
     GrPathRenderer::CanDrawPathArgs canDrawArgs;
     canDrawArgs.fCaps = fContext->priv().caps();
-    canDrawArgs.fProxy = fRTC->asRenderTargetProxy();
+    canDrawArgs.fProxy = fSDC->asRenderTargetProxy();
     canDrawArgs.fClipConservativeBounds = &fClip.fixedClip().scissorRect();
     canDrawArgs.fViewMatrix = &matrix;
     canDrawArgs.fShape = &shape;
     canDrawArgs.fPaint = nullptr;
-    canDrawArgs.fSurfaceProps = &fRTC->surfaceProps();
+    canDrawArgs.fSurfaceProps = &fSDC->surfaceProps();
     canDrawArgs.fAAType = pathAAType;
     canDrawArgs.fHasUserStencilSettings = false;
 
@@ -433,10 +448,10 @@ bool GrStencilMaskHelper::drawPath(const SkPath& path,
     // Write to client bits if necessary
     if (!drawDirectToClip) {
         if (stencilSupport == GrPathRenderer::kNoRestriction_StencilSupport) {
-            draw_path(fContext, fRTC, pr, fClip.fixedClip(), fClip.fixedClip().scissorRect(),
+            draw_path(fContext, fSDC, pr, fClip.fixedClip(), fClip.fixedClip().scissorRect(),
                       &gDrawToStencil, matrix, shape, aa);
         } else {
-            stencil_path(fContext, fRTC, pr, fClip.fixedClip(), matrix, shape, aa);
+            stencil_path(fContext, fSDC, pr, fClip.fixedClip(), matrix, shape, aa);
         }
     }
 
@@ -444,10 +459,10 @@ bool GrStencilMaskHelper::drawPath(const SkPath& path,
     // of the clip
     for (GrUserStencilSettings const* const* pass = passes; *pass; ++pass) {
         if (drawDirectToClip) {
-            draw_path(fContext, fRTC, pr, fClip, fClip.fixedClip().scissorRect(),
+            draw_path(fContext, fSDC, pr, fClip, fClip.fixedClip().scissorRect(),
                       *pass, matrix, shape, aa);
         } else {
-            draw_stencil_rect(fRTC, fClip, *pass, SkMatrix::I(),
+            draw_stencil_rect(fSDC, fClip, *pass, SkMatrix::I(),
                               SkRect::Make(fClip.fixedClip().scissorRect()), aa);
         }
     }
@@ -473,14 +488,14 @@ void GrStencilMaskHelper::clear(bool insideStencil) {
     if (fClip.fixedClip().hasWindowRectangles()) {
         // Use a draw to benefit from window rectangles when resetting the stencil buffer; for
         // large buffers with MSAA this can be significant.
-        draw_stencil_rect(fRTC, fClip.fixedClip(),
+        draw_stencil_rect(fSDC, fClip.fixedClip(),
                           GrStencilSettings::SetClipBitSettings(insideStencil), SkMatrix::I(),
                           SkRect::Make(fClip.fixedClip().scissorRect()), GrAA::kNo);
     } else {
-        fRTC->clearStencilClip(fClip.fixedClip().scissorRect(), insideStencil);
+        fSDC->clearStencilClip(fClip.fixedClip().scissorRect(), insideStencil);
     }
 }
 
 void GrStencilMaskHelper::finish() {
-    fRTC->setLastClip(fClip.stencilStackID(), fClip.fixedClip().scissorRect(), fNumFPs);
+    fSDC->setLastClip(fClip.stencilStackID(), fClip.fixedClip().scissorRect(), fNumFPs);
 }

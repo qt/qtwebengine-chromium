@@ -113,13 +113,6 @@ const char kMinHeightForGpuRasterTile[] = "min-height-for-gpu-raster-tile";
 // signal to dismiss a splash screen.
 const char kNetworkQuietTimeout[] = "network-quiet-timeout";
 
-// Override the default value for the 'passive' field in javascript
-// addEventListener calls. Values are defined as:
-//  'documentonlytrue' to set the default be true only for document level nodes.
-//  'true' to set the default to be true on all nodes (when not specified).
-//  'forcealltrue' to force the value on all nodes.
-const char kPassiveListenersDefault[] = "passive-listeners-default";
-
 // Visibly render a border around layout shift rects in the web page to help
 // debug and study layout shifts.
 const char kShowLayoutShiftRegions[] = "show-layout-shift-regions";
@@ -133,13 +126,10 @@ const char kShowPaintRects[] = "show-paint-rects";
 // the platform default is used.
 const char kTouchTextSelectionStrategy[] = "touch-selection-strategy";
 
-// Used to communicate managed policy for the UserAgentClientHint feature.
-// This feature is typically controlled by base::Feature (see
-// renderer/platform/scheduler/common/features.*) but requires an enterprise
-// policy override.
-
-extern const char kUserAgentClientHintDisable[] =
-    "user-agent-client-hint-disable";
+// Comma-separated list of origins that can use SharedArrayBuffer without
+// enabling cross-origin isolation.
+const char kSharedArrayBufferAllowedOrigins[] =
+    "shared-array-buffer-allowed-origins";
 
 }  // namespace switches
 }  // namespace blink

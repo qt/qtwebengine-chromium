@@ -9,10 +9,8 @@
 
 #include "base/check.h"
 #include "base/files/file_path.h"
-#include "base/path_service.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
-#include "base/test/gtest_util.h"
 #include "cc/test/pixel_comparator.h"
 #include "cc/test/pixel_test_utils.h"
 #include "pdf/accessibility_structs.h"
@@ -20,14 +18,15 @@
 #include "pdf/pdfium/pdfium_test_base.h"
 #include "pdf/ppapi_migration/geometry_conversions.h"
 #include "pdf/test/test_client.h"
+#include "pdf/test/test_helpers.h"
 #include "pdf/ui/thumbnail.h"
-#include "ppapi/c/private/ppb_pdf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/pdfium/public/fpdf_formfill.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/size_f.h"
 #include "ui/gfx/range/range.h"
 #include "ui/gfx/test/gfx_util.h"
 
@@ -40,15 +39,6 @@ TEST(PDFiumPageHelperTest, ToPDFiumRotation) {
   EXPECT_EQ(ToPDFiumRotation(PageOrientation::kClockwise90), 1);
   EXPECT_EQ(ToPDFiumRotation(PageOrientation::kClockwise180), 2);
   EXPECT_EQ(ToPDFiumRotation(PageOrientation::kClockwise270), 3);
-}
-
-TEST(PDFiumPageHelperDeathTest, ToPDFiumRotation) {
-  PageOrientation invalid_orientation = static_cast<PageOrientation>(-1);
-#if DCHECK_IS_ON()
-  EXPECT_DCHECK_DEATH(ToPDFiumRotation(invalid_orientation));
-#else
-  EXPECT_EQ(ToPDFiumRotation(invalid_orientation), 0);
-#endif
 }
 
 void CompareTextRuns(const AccessibilityTextRunInfo& expected_text_run,
@@ -80,19 +70,20 @@ void PopulateTextObjects(const std::vector<gfx::Range>& ranges,
   }
 }
 
+// Returns the page size for a `PDFiumPage`. The caller must make sure that
+// `pdfium_page` is available.
+gfx::SizeF GetPageSizeHelper(PDFiumPage& pdfium_page) {
+  FPDF_PAGE page = pdfium_page.GetPage();
+  return gfx::SizeF(FPDF_GetPageWidthF(page), FPDF_GetPageHeightF(page));
+}
+
 base::FilePath GetThumbnailTestData(const std::string& expectation_file_prefix,
                                     size_t page_index,
                                     float device_pixel_ratio) {
   std::string file_dir = base::StringPrintf("%.1fx", device_pixel_ratio);
   std::string file_name = base::StringPrintf(
       "%s_expected.pdf.%zu.png", expectation_file_prefix.c_str(), page_index);
-  base::FilePath root_path;
-  if (!base::PathService::Get(base::DIR_SOURCE_ROOT, &root_path))
-    return base::FilePath();
-  return root_path.Append(FILE_PATH_LITERAL("pdf"))
-      .Append(FILE_PATH_LITERAL("test"))
-      .Append(FILE_PATH_LITERAL("data"))
-      .Append(FILE_PATH_LITERAL("thumbnail"))
+  return base::FilePath(FILE_PATH_LITERAL("thumbnail"))
       .AppendASCII(file_dir)
       .AppendASCII(file_name);
 }
@@ -217,6 +208,41 @@ TEST_F(PDFiumPageLinkTest, TestAnnotLinkGeneration) {
                       actual_current_link.target.y_in_pixels.value());
     }
   }
+}
+
+TEST_F(PDFiumPageLinkTest, TestGetLinkTarget) {
+  TestClient client;
+  std::unique_ptr<PDFiumEngine> engine = InitializeEngine(
+      &client, FILE_PATH_LITERAL("in_doc_link_with_various_page_sizes.pdf"));
+  ASSERT_EQ(3, engine->GetNumberOfPages());
+
+  const std::vector<PDFiumPage::Link>& links = GetLinks(*engine, 0);
+  ASSERT_EQ(1u, links.size());
+
+  // Get the destination link that exists in the first page.
+  PDFiumPage& first_page = GetPDFiumPageForTest(*engine, 0);
+  FPDF_LINK link = FPDFLink_GetLinkAtPoint(first_page.GetPage(), 70, 740);
+  ASSERT_TRUE(link);
+  FPDF_DEST dest_link = FPDFLink_GetDest(engine->doc(), link);
+  ASSERT_TRUE(dest_link);
+
+  PDFiumPage::LinkTarget target;
+  PDFiumPage::Area area = first_page.GetLinkTarget(link, &target);
+
+  EXPECT_EQ(PDFiumPage::Area::DOCLINK_AREA, area);
+  EXPECT_EQ(1, target.page);
+
+  // Make sure the target page's size is different from the first page's. This
+  // guarantees that the in-screen coordinates are calculated based on the
+  // target page's dimension.
+  PDFiumPage& target_page = GetPDFiumPageForTest(*engine, target.page);
+  ASSERT_TRUE(target_page.available());
+  ASSERT_TRUE(first_page.available());
+  EXPECT_NE(GetPageSizeHelper(first_page), GetPageSizeHelper(target_page));
+
+  EXPECT_FLOAT_EQ(74.666664f, target.x_in_pixels.value());
+  EXPECT_FLOAT_EQ(120.f, target.y_in_pixels.value());
+  EXPECT_FALSE(target.zoom);
 }
 
 using PDFiumPageImageTest = PDFiumTestBase;
@@ -743,8 +769,10 @@ class PDFiumPageThumbnailTest : public PDFiumTestBase {
     base::FilePath expectation_png_file_path = GetThumbnailTestData(
         expectation_file_prefix, page_index, device_pixel_ratio);
 
-    cc::MatchesPNGFile(thumbnail.bitmap(), expectation_png_file_path,
-                       cc::ExactPixelComparator(/*discard_alpha=*/false));
+    EXPECT_TRUE(cc::MatchesPNGFile(
+        thumbnail.bitmap(), GetTestDataFilePath(expectation_png_file_path),
+        cc::ExactPixelComparator(/*discard_alpha=*/false)))
+        << "Reference: " << expectation_png_file_path;
   }
 };
 

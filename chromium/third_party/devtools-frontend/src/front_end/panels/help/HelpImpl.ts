@@ -4,7 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
-import * as UI from '../../ui/legacy/legacy.js';  // eslint-disable-line no-unused-vars
+import * as UI from '../../ui/legacy/legacy.js';
 
 import {releaseNoteText} from './ReleaseNoteText.js';
 
@@ -79,7 +79,6 @@ export class HelpLateInitialization implements Common.Runnable.Runnable {
     }
   }
 }
-Common.Runnable.registerLateInitializationRunnable(HelpLateInitialization.instance);
 
 let releaseNotesActionDelegateInstance: ReleaseNotesActionDelegate;
 export class ReleaseNotesActionDelegate implements UI.ActionRegistration.ActionDelegate {

@@ -11,6 +11,7 @@
 #include "base/test/bind.h"
 #include "build/build_config.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/page.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
@@ -22,6 +23,7 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "third_party/blink/public/common/buildflags.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
 #include "content/test/ppapi/ppapi_test.h"
@@ -191,7 +193,7 @@ IN_PROC_BROWSER_TEST_F(AcceptHeaderTest, Check) {
   // Ensure that if an Accept header is already set, it is not overwritten.
   EXPECT_EQ("custom/type", GetFor("/xhr_with_accept_header"));
 
-  shell()->web_contents()->GetManifest(base::DoNothing());
+  shell()->web_contents()->GetPrimaryPage().GetManifest(base::DoNothing());
 
   // ResourceType::kSubResource
   EXPECT_EQ("*/*", GetFor("/manifest"));

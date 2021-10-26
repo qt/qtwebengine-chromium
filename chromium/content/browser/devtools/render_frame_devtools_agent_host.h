@@ -10,7 +10,6 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/macros.h"
 #include "build/build_config.h"
@@ -36,6 +35,7 @@ namespace content {
 class BrowserContext;
 class DevToolsFrameTraceRecorder;
 class FrameTreeNode;
+class FrameAutoAttacher;
 class NavigationRequest;
 class RenderFrameHostImpl;
 
@@ -71,7 +71,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   static scoped_refptr<DevToolsAgentHost> FindForDangling(
       FrameTreeNode* frame_tree_node);
 
-  static void WebContentsMainFrameCreated(WebContents* web_contents);
+  static void AttachToWebContents(WebContents* web_contents);
 
 #if defined(OS_ANDROID)
   static void SignalSynchronousSwapCompositorFrame(
@@ -83,6 +83,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
 
   void OnNavigationRequestWillBeSent(
       const NavigationRequest& navigation_request);
+  void UpdatePortals();
 
   // DevToolsAgentHost overrides.
   void DisconnectWebContents() override;
@@ -163,6 +164,7 @@ class CONTENT_EXPORT RenderFrameDevToolsAgentHost
   mojo::Remote<device::mojom::WakeLock> wake_lock_;
 #endif
 
+  std::unique_ptr<FrameAutoAttacher> auto_attacher_;
   // The active host we are talking to.
   RenderFrameHostImpl* frame_host_ = nullptr;
   base::flat_set<NavigationRequest*> navigation_requests_;

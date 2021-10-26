@@ -310,6 +310,8 @@ namespace autotestPrivate {
 
   callback SetTabletModeEnabledCallback = void(boolean enabled);
 
+  callback SetShelfIconPinCallback = void(DOMString[] results);
+
   callback SetOverviewModeStateCallback = void(boolean finished);
 
   callback ArcAppTracingCallback = void(ArcAppTracingInfo info);
@@ -381,6 +383,15 @@ namespace autotestPrivate {
     boolean isDragged;
   };
 
+  // Used to update an app's shelf pin state.
+  dictionary ShelfIconPinUpdateParam {
+    // The identifier of the target app.
+    DOMString appId;
+
+    // The target pin state for the app.
+    boolean pinned;
+  };
+
   dictionary AppWindowInfo {
     // The identifier of the window. This shouldn't change across the time.
     long id;
@@ -439,6 +450,8 @@ namespace autotestPrivate {
     DOMString? arcPackageName;
 
     OverviewInfo? overviewInfo;
+
+    DOMString? fullRestoreWindowAppId;
   };
 
   dictionary Accelerator {
@@ -471,6 +484,7 @@ namespace autotestPrivate {
     Bounds leftArrowBounds;
     Bounds rightArrowBounds;
     boolean isAnimating;
+    boolean iconsUnderAnimation;
     boolean isOverflow;
     Bounds[] iconsBoundsInScreen;
     boolean isShelfWidgetAnimating;
@@ -487,6 +501,8 @@ namespace autotestPrivate {
     HotseatSwipeDescriptor swipeUp;
     HotseatState state;
     boolean isAnimating;
+    // Whether the shelf is hidden with auto-hide enabled.
+    boolean isAutoHidden;
   };
 
   // The ui information of shelf components, including hotseat and
@@ -903,7 +919,14 @@ namespace autotestPrivate {
         ShelfAlignmentType alignment, VoidCallback callback);
 
     // Create a pin on shelf for the app specified by |appId|.
+    // Deprecated. Use setShelfIconPin() instead.
     static void pinShelfIcon(DOMString appId, VoidCallback callback);
+
+    // Update pin states of the shelf apps based on |updateParams|. Return a
+    // list of app ids whose pin state changed. Pin states will not be changed
+    // if the method fails.
+    static void setShelfIconPin(ShelfIconPinUpdateParam[] updateParams,
+                                optional SetShelfIconPinCallback callback);
 
     // Enter or exit the overview mode.
     // |start|: whether entering to or exiting from the overview mode.
@@ -950,9 +973,12 @@ namespace autotestPrivate {
     // Send WM event to change the app window's window state.
     // |id|: the id of the window
     // |change|: WM event type to send to the app window.
-    // |callback|: called when the window state is changed.
+    // |wait|: whether the method should wait for the window state to change before returning.
+    // |callback|: called when the window state is changed if |wait| is true.
+    //             Otherwise, called right after the WM event is sent.
     static void setAppWindowState(long id,
                                   WindowStateChangeDict change,
+                                  optional boolean wait,
                                   WindowStateCallback callback);
 
     // Activate app window given by "id".

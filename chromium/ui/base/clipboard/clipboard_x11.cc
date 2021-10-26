@@ -8,6 +8,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/containers/contains.h"
@@ -50,7 +51,8 @@ DataTransferEndpoint* ClipboardX11::GetSource(ClipboardBuffer buffer) const {
   return it == data_src_.end() ? nullptr : it->second.get();
 }
 
-uint64_t ClipboardX11::GetSequenceNumber(ClipboardBuffer buffer) const {
+const ClipboardSequenceNumberToken& ClipboardX11::GetSequenceNumber(
+    ClipboardBuffer buffer) const {
   DCHECK(CalledOnValidThread());
   return buffer == ClipboardBuffer::kCopyPaste ? clipboard_sequence_number_
                                                : primary_sequence_number_;
@@ -88,10 +90,10 @@ void ClipboardX11::ReadAvailableTypes(
   for (const auto& mime_type : available_types) {
     // Special handling for chromium/x-web-custom-data. We must read the data
     // and deserialize it to find the list of mime types to report.
-    if (mime_type == ClipboardFormatType::GetWebCustomDataType().GetName()) {
+    if (mime_type == ClipboardFormatType::WebCustomDataType().GetName()) {
       auto data(x_clipboard_helper_->Read(
           buffer, x_clipboard_helper_->GetAtomsForFormat(
-                      ClipboardFormatType::GetWebCustomDataType())));
+                      ClipboardFormatType::WebCustomDataType())));
       if (data.IsValid())
         ReadCustomDataTypes(data.GetData(), data.GetSize(), types);
     } else {
@@ -162,8 +164,8 @@ void ClipboardX11::ReadHTML(ClipboardBuffer buffer,
   *fragment_end = 0;
 
   SelectionData data(x_clipboard_helper_->Read(
-      buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetHtmlType())));
+      buffer,
+      x_clipboard_helper_->GetAtomsForFormat(ClipboardFormatType::HtmlType())));
   if (data.IsValid()) {
     *markup = data.GetHtml();
 
@@ -182,8 +184,8 @@ void ClipboardX11::ReadSvg(ClipboardBuffer buffer,
   RecordRead(ClipboardFormatMetric::kSvg);
 
   SelectionData data(x_clipboard_helper_->Read(
-      buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetSvgType())));
+      buffer,
+      x_clipboard_helper_->GetAtomsForFormat(ClipboardFormatType::SvgType())));
   if (data.IsValid()) {
     std::string markup;
     data.AssignTo(&markup);
@@ -200,8 +202,8 @@ void ClipboardX11::ReadRTF(ClipboardBuffer buffer,
   RecordRead(ClipboardFormatMetric::kRtf);
 
   SelectionData data(x_clipboard_helper_->Read(
-      buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetRtfType())));
+      buffer,
+      x_clipboard_helper_->GetAtomsForFormat(ClipboardFormatType::RtfType())));
   if (data.IsValid())
     data.AssignTo(result);
 }
@@ -211,8 +213,9 @@ void ClipboardX11::ReadRTF(ClipboardBuffer buffer,
 void ClipboardX11::ReadPng(ClipboardBuffer buffer,
                            const DataTransferEndpoint* data_dst,
                            ReadPngCallback callback) const {
-  // TODO(crbug.com/1201018): Implement this.
-  NOTIMPLEMENTED();
+  DCHECK(IsSupportedClipboardBuffer(buffer));
+  RecordRead(ClipboardFormatMetric::kPng);
+  std::move(callback).Run(ReadPngInternal(buffer));
 }
 
 // |data_dst| is not used. It's only passed to be consistent with other
@@ -222,7 +225,10 @@ void ClipboardX11::ReadImage(ClipboardBuffer buffer,
                              ReadImageCallback callback) const {
   DCHECK(IsSupportedClipboardBuffer(buffer));
   RecordRead(ClipboardFormatMetric::kImage);
-  std::move(callback).Run(ReadImageInternal(buffer));
+  auto png_data = ReadPngInternal(buffer);
+  SkBitmap bitmap;
+  gfx::PNGCodec::Decode(png_data.data(), png_data.size(), &bitmap);
+  std::move(callback).Run(bitmap);
 }
 
 // |data_dst| is not used. It's only passed to be consistent with other
@@ -236,7 +242,7 @@ void ClipboardX11::ReadCustomData(ClipboardBuffer buffer,
 
   SelectionData data(x_clipboard_helper_->Read(
       buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetWebCustomDataType())));
+                  ClipboardFormatType::WebCustomDataType())));
   if (data.IsValid())
     ReadCustomDataForType(data.GetData(), data.GetSize(), type, result);
 }
@@ -251,7 +257,7 @@ void ClipboardX11::ReadFilenames(ClipboardBuffer buffer,
 
   SelectionData data(x_clipboard_helper_->Read(
       buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetFilenamesType())));
+                  ClipboardFormatType::FilenamesType())));
   std::string uri_list;
   if (data.IsValid())
     data.AssignTo(&uri_list);
@@ -289,20 +295,8 @@ bool ClipboardX11::IsSelectionBufferAvailable() const {
 }
 #endif  // defined(USE_OZONE)
 
-// |data_src| is not used. It's only passed to be consistent with other
-// platforms.
-void ClipboardX11::WritePortableRepresentations(
-    ClipboardBuffer buffer,
-    const ObjectMap& objects,
-    std::unique_ptr<DataTransferEndpoint> data_src) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(IsSupportedClipboardBuffer(buffer));
-
-  x_clipboard_helper_->CreateNewClipboardData();
-  for (const auto& object : objects)
-    DispatchPortableRepresentation(object.first, object.second);
-  x_clipboard_helper_->TakeOwnershipOfSelection(buffer);
-
+void ClipboardX11::WritePortableTextRepresentation(ClipboardBuffer buffer,
+                                                   const ObjectMap& objects) {
   if (buffer == ClipboardBuffer::kCopyPaste) {
     auto text_iter = objects.find(PortableFormat::kText);
     if (text_iter != objects.end()) {
@@ -317,14 +311,13 @@ void ClipboardX11::WritePortableRepresentations(
           ClipboardBuffer::kSelection);
     }
   }
-
-  data_src_[buffer] = std::move(data_src);
 }
 
 // |data_src| is not used. It's only passed to be consistent with other
 // platforms.
-void ClipboardX11::WritePlatformRepresentations(
+void ClipboardX11::WritePortableAndPlatformRepresentations(
     ClipboardBuffer buffer,
+    const ObjectMap& objects,
     std::vector<Clipboard::PlatformRepresentation> platform_representations,
     std::unique_ptr<DataTransferEndpoint> data_src) {
   DCHECK(CalledOnValidThread());
@@ -332,7 +325,12 @@ void ClipboardX11::WritePlatformRepresentations(
 
   x_clipboard_helper_->CreateNewClipboardData();
   DispatchPlatformRepresentations(std::move(platform_representations));
+  for (const auto& object : objects)
+    DispatchPortableRepresentation(object.first, object.second);
   x_clipboard_helper_->TakeOwnershipOfSelection(buffer);
+
+  WritePortableTextRepresentation(buffer, objects);
+
   data_src_[buffer] = std::move(data_src);
 }
 
@@ -374,7 +372,7 @@ void ClipboardX11::WriteSvg(const char* markup_data, size_t markup_len) {
 }
 
 void ClipboardX11::WriteRTF(const char* rtf_data, size_t data_len) {
-  WriteData(ClipboardFormatType::GetRtfType(), rtf_data, data_len);
+  WriteData(ClipboardFormatType::RtfType(), rtf_data, data_len);
 }
 
 void ClipboardX11::WriteFilenames(std::vector<ui::FileInfo> filenames) {
@@ -382,7 +380,7 @@ void ClipboardX11::WriteFilenames(std::vector<ui::FileInfo> filenames) {
   scoped_refptr<base::RefCountedMemory> mem(
       base::RefCountedString::TakeString(&uri_list));
   x_clipboard_helper_->InsertMapping(
-      ClipboardFormatType::GetFilenamesType().GetName(), mem);
+      ClipboardFormatType::FilenamesType().GetName(), mem);
 }
 
 void ClipboardX11::WriteBookmark(const char* title_data,
@@ -431,29 +429,30 @@ void ClipboardX11::WriteData(const ClipboardFormatType& format,
   x_clipboard_helper_->InsertMapping(format.GetName(), mem);
 }
 
-SkBitmap ClipboardX11::ReadImageInternal(ClipboardBuffer buffer) const {
+std::vector<uint8_t> ClipboardX11::ReadPngInternal(
+    ClipboardBuffer buffer) const {
   DCHECK(CalledOnValidThread());
 
-  // TODO(https://crbug.com/443355): Since now that ReadImage() is async,
-  // refactor the code to keep a callback with the request, and invoke the
-  // callback when the request is satisfied.
+  // TODO(https://crbug.com/443355): Since ReadPng() is async, refactor the code
+  // to keep a callback with the request, and invoke the callback when the
+  // request is satisfied.
   SelectionData data(x_clipboard_helper_->Read(
-      buffer, x_clipboard_helper_->GetAtomsForFormat(
-                  ClipboardFormatType::GetBitmapType())));
+      buffer,
+      x_clipboard_helper_->GetAtomsForFormat(ClipboardFormatType::PngType())));
+
   if (data.IsValid()) {
-    SkBitmap bitmap;
-    if (gfx::PNGCodec::Decode(data.GetData(), data.GetSize(), &bitmap))
-      return SkBitmap(bitmap);
+    return std::vector<uint8_t>(data.GetData(),
+                                data.GetData() + data.GetSize());
   }
 
-  return SkBitmap();
+  return std::vector<uint8_t>();
 }
 
 void ClipboardX11::OnSelectionChanged(ClipboardBuffer buffer) {
   if (buffer == ClipboardBuffer::kCopyPaste)
-    clipboard_sequence_number_++;
+    clipboard_sequence_number_ = ClipboardSequenceNumberToken();
   else
-    primary_sequence_number_++;
+    primary_sequence_number_ = ClipboardSequenceNumberToken();
   ClipboardMonitor::GetInstance()->NotifyClipboardDataChanged();
 }
 

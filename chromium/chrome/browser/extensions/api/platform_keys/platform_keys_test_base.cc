@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
+#include "chrome/browser/ash/policy/affiliation/affiliation_test_helper.h"
 #include "chrome/browser/chromeos/platform_keys/platform_keys_service_factory.h"
-#include "chrome/browser/chromeos/policy/affiliation_test_helper.h"
 #include "chrome/browser/extensions/mixin_based_extension_apitest.h"
 #include "chrome/browser/policy/profile_policy_connector.h"
 #include "chrome/browser/ui/browser.h"
@@ -16,7 +16,7 @@
 #include "chrome/test/base/ui_test_utils.h"
 #include "chromeos/dbus/session_manager/fake_session_manager_client.h"
 #include "components/policy/core/browser/browser_policy_connector.h"
-#include "components/policy/core/common/cloud/policy_builder.h"
+#include "components/policy/core/common/cloud/test/policy_builder.h"
 #include "components/policy/policy_constants.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -121,10 +121,9 @@ void PlatformKeysTestBase::SetUpInProcessBrowserTestFixture() {
         &user_policy, account_id_, user_affiliation_ids));
   }
 
-  ON_CALL(mock_policy_provider_, IsInitializationComplete(testing::_))
-      .WillByDefault(testing::Return(true));
-  ON_CALL(mock_policy_provider_, IsFirstPolicyLoadComplete(testing::_))
-      .WillByDefault(testing::Return(true));
+  mock_policy_provider_.SetDefaultReturns(
+      /*is_initialization_complete_return=*/true,
+      /*is_first_policy_load_complete_return=*/true);
   mock_policy_provider_.SetAutoRefresh();
   policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
       &mock_policy_provider_);

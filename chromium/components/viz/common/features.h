@@ -11,6 +11,9 @@
 #include "components/viz/common/viz_common_export.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
+// See the following for guidance on adding new viz feature flags:
+// https://cs.chromium.org/chromium/src/components/viz/README.md#runtime-features
+
 namespace features {
 
 VIZ_COMMON_EXPORT extern const base::Feature kAdpf;
@@ -21,6 +24,7 @@ VIZ_COMMON_EXPORT extern const base::Feature kDisableDeJelly;
 #if defined(OS_ANDROID)
 VIZ_COMMON_EXPORT extern const base::Feature kDynamicColorGamut;
 #endif
+VIZ_COMMON_EXPORT extern const base::Feature kDynamicBufferQueueAllocation;
 VIZ_COMMON_EXPORT extern const base::Feature kFastSolidColorDraw;
 VIZ_COMMON_EXPORT extern const base::Feature kVizFrameSubmissionForWebView;
 VIZ_COMMON_EXPORT extern const base::Feature kUsePreferredIntervalForVideo;
@@ -40,6 +44,13 @@ VIZ_COMMON_EXPORT extern const base::Feature kUsePlatformDelegatedInk;
 #if defined(OS_ANDROID)
 VIZ_COMMON_EXPORT extern const base::Feature kUseSurfaceLayerForVideoDefault;
 #endif
+VIZ_COMMON_EXPORT extern const base::Feature kSurfaceSyncThrottling;
+
+VIZ_COMMON_EXPORT extern const base::Feature kDrawPredictedInkPoint;
+VIZ_COMMON_EXPORT extern const char kDraw1Point12Ms[];
+VIZ_COMMON_EXPORT extern const char kDraw2Points6Ms[];
+VIZ_COMMON_EXPORT extern const char kDraw1Point6Ms[];
+VIZ_COMMON_EXPORT extern const char kDraw2Points3Ms[];
 
 VIZ_COMMON_EXPORT bool IsAdpfEnabled();
 VIZ_COMMON_EXPORT bool IsSimpleFrameRateThrottlingEnabled();
@@ -47,6 +58,7 @@ VIZ_COMMON_EXPORT bool IsSimpleFrameRateThrottlingEnabled();
 VIZ_COMMON_EXPORT bool IsDynamicColorGamutEnabled();
 #endif
 VIZ_COMMON_EXPORT bool IsOverlayPrioritizationEnabled();
+VIZ_COMMON_EXPORT bool IsDelegatedCompositingEnabled();
 VIZ_COMMON_EXPORT bool IsSyncWindowDestructionEnabled();
 VIZ_COMMON_EXPORT bool IsUsingFastPathForSolidColorQuad();
 VIZ_COMMON_EXPORT bool IsUsingSkiaRenderer();
@@ -63,6 +75,7 @@ VIZ_COMMON_EXPORT bool ShouldUsePlatformDelegatedInk();
 #if defined(OS_ANDROID)
 VIZ_COMMON_EXPORT bool UseSurfaceLayerForVideo();
 #endif
+VIZ_COMMON_EXPORT bool IsSurfaceSyncThrottling();
 
 }  // namespace features
 

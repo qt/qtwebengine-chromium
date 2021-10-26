@@ -22,6 +22,19 @@ source_set("constants") {
     "it2me_constants.cc",
     "it2me_constants.h",
   ]
+  deps = [ "//remoting/host/native_messaging" ]
+}
+
+source_set("helpers") {
+  sources = [
+    "it2me_helpers.cc",
+    "it2me_helpers.h",
+  ]
+  deps = [
+    ":constants",
+    "//base",
+    "//remoting/base",
+  ]
 }
 
 source_set("common") {
@@ -56,7 +69,10 @@ source_set("common") {
     "//remoting/build/config:version",
   ]
 
-  public_deps = [ ":constants" ]
+  public_deps = [
+    ":constants",
+    ":helpers",
+  ]
 
   deps = [
     "//base:i18n",
@@ -87,13 +103,19 @@ source_set("common") {
     ]
   }
   if (is_chromeos_ash) {
-    deps += [ "//remoting/host/chromeos:chromeos" ]
+    deps += [
+      "//chromeos/ui/vector_icons",
+      "//remoting/host/chromeos",
+    ]
   }
   if (is_mac) {
     deps += [ "//ui/base:base" ]
   }
   if (is_win) {
-    deps += [ "//remoting/host/win:elevated_native_messaging_host" ]
+    deps += [
+      "//remoting/host/win",
+      "//remoting/host/win:elevated_native_messaging_host",
+    ]
   }
 }
 
@@ -110,11 +132,19 @@ if (is_chromeos_ash || is_chromeos_lacros) {
         "it2me_native_messaging_host_lacros.h",
       ]
       deps = [
+        ":constants",
+        ":helpers",
         "//base",
+        "//chromeos/crosapi/mojom",
+        "//chromeos/lacros",
         "//extensions/browser/api/messaging:native_messaging",
+        "//remoting/host/native_messaging",
+        "//remoting/protocol:errors",
       ]
     } else {
       sources += [
+        "it2me_native_messaging_host_ash.cc",
+        "it2me_native_messaging_host_ash.h",
         "it2me_native_messaging_host_chromeos.cc",
         "it2me_native_messaging_host_chromeos.h",
       ]
@@ -124,6 +154,8 @@ if (is_chromeos_ash || is_chromeos_lacros) {
         "//extensions/browser/api/messaging:native_messaging",
         "//remoting/base:base",
         "//remoting/host:common",
+        "//remoting/host/mojom:mojom",
+        "//remoting/host/native_messaging",
         "//skia",
       ]
 
@@ -259,6 +291,7 @@ if (!is_chromeos_ash && enable_remoting_host) {
       deps = [
         ":common",
         "//remoting/host",
+        "//remoting/host:host_main_headers",
         "//remoting/host/native_messaging",
         "//remoting/proto",
         "//third_party/webrtc_overrides:webrtc_component",

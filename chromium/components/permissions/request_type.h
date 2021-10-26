@@ -41,7 +41,7 @@ enum class RequestType {
   kNfcDevice,
 #endif
   kNotifications,
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
   kProtectedMediaIdentifier,
 #endif
 #if !defined(OS_ANDROID)
@@ -68,6 +68,9 @@ typedef const gfx::VectorIcon& IconId;
 
 RequestType ContentSettingsTypeToRequestType(
     ContentSettingsType content_settings_type);
+
+absl::optional<ContentSettingsType> RequestTypeToContentSettingsType(
+    RequestType request_type);
 
 // Returns the icon to display.
 IconId GetIconId(RequestType type);

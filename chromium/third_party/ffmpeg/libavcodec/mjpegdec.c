@@ -76,6 +76,7 @@ static int init_default_huffman_tables(MJpegDecodeContext *s)
     int i, ret;
 
     for (i = 0; i < FF_ARRAY_ELEMS(ht); i++) {
+        ff_free_vlc(&s->vlcs[ht[i].class][ht[i].index]);
         ret = ff_mjpeg_build_vlc(&s->vlcs[ht[i].class][ht[i].index],
                                  ht[i].bits, ht[i].values,
                                  ht[i].class == 1, s->avctx);
@@ -153,7 +154,8 @@ av_cold int ff_mjpeg_decode_init(AVCodecContext *avctx)
         if (ff_mjpeg_decode_dht(s)) {
             av_log(avctx, AV_LOG_ERROR,
                    "error using external huffman table, switching back to internal\n");
-            init_default_huffman_tables(s);
+            if ((ret = init_default_huffman_tables(s)) < 0)
+                return ret;
         }
     }
     if (avctx->field_order == AV_FIELD_BB) { /* quicktime icefloe 019 */
@@ -215,8 +217,10 @@ int ff_mjpeg_decode_dqt(MJpegDecodeContext *s)
         for (i = 0; i < 64; i++) {
             s->quant_matrixes[index][i] = get_bits(&s->gb, pr ? 16 : 8);
             if (s->quant_matrixes[index][i] == 0) {
-                av_log(s->avctx, AV_LOG_ERROR, "dqt: 0 quant value\n");
-                return AVERROR_INVALIDDATA;
+                int log_level = s->avctx->err_recognition & AV_EF_EXPLODE ? AV_LOG_ERROR : AV_LOG_WARNING;
+                av_log(s->avctx, log_level, "dqt: 0 quant value\n");
+                if (s->avctx->err_recognition & AV_EF_EXPLODE)
+                    return AVERROR_INVALIDDATA;
             }
         }
 
@@ -560,6 +564,7 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
         case 0x12121100:
         case 0x22122100:
         case 0x21211100:
+        case 0x21112100:
         case 0x22211200:
         case 0x22221100:
         case 0x22112200:
@@ -579,7 +584,7 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
         case 0x43000000:
         case 0x44000000:
             if(s->bits <= 8)
-                s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
+                s->avctx->pix_fmt = s->force_pal8 ? AV_PIX_FMT_PAL8 : AV_PIX_FMT_GRAY8;
             else
                 s->avctx->pix_fmt = AV_PIX_FMT_GRAY16;
             break;
@@ -678,7 +683,7 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
             } else if (s->nb_components != 1) {
                 av_log(s->avctx, AV_LOG_ERROR, "Unsupported number of components %d\n", s->nb_components);
                 return AVERROR_PATCHWELCOME;
-            } else if (s->palette_index && s->bits <= 8)
+            } else if ((s->palette_index || s->force_pal8) && s->bits <= 8)
                 s->avctx->pix_fmt = AV_PIX_FMT_PAL8;
             else if (s->bits <= 8)
                 s->avctx->pix_fmt = AV_PIX_FMT_GRAY8;
@@ -726,6 +731,10 @@ int ff_mjpeg_decode_sof(MJpegDecodeContext *s)
         s->picture_ptr->pict_type = AV_PICTURE_TYPE_I;
         s->picture_ptr->key_frame = 1;
         s->got_picture            = 1;
+
+        // Lets clear the palette to avoid leaving uninitialized values in it
+        if (s->avctx->pix_fmt == AV_PIX_FMT_PAL8)
+            memset(s->picture_ptr->data[1], 0, 1024);
 
         for (i = 0; i < 4; i++)
             s->linesize[i] = s->picture_ptr->linesize[i] << s->interlaced;
@@ -2085,28 +2094,26 @@ static int mjpeg_decode_app(MJpegDecodeContext *s)
 
         /* Allocate if this is the first APP2 we've seen. */
         if (s->iccnum == 0) {
-            s->iccdata     = av_mallocz(nummarkers * sizeof(*(s->iccdata)));
-            s->iccdatalens = av_mallocz(nummarkers * sizeof(*(s->iccdatalens)));
-            if (!s->iccdata || !s->iccdatalens) {
+            if (!FF_ALLOCZ_TYPED_ARRAY(s->iccentries, nummarkers)) {
                 av_log(s->avctx, AV_LOG_ERROR, "Could not allocate ICC data arrays\n");
                 return AVERROR(ENOMEM);
             }
             s->iccnum = nummarkers;
         }
 
-        if (s->iccdata[seqno - 1]) {
+        if (s->iccentries[seqno - 1].data) {
             av_log(s->avctx, AV_LOG_WARNING, "Duplicate ICC sequence number\n");
             goto out;
         }
 
-        s->iccdatalens[seqno - 1]  = len;
-        s->iccdata[seqno - 1]      = av_malloc(len);
-        if (!s->iccdata[seqno - 1]) {
+        s->iccentries[seqno - 1].length = len;
+        s->iccentries[seqno - 1].data   = av_malloc(len);
+        if (!s->iccentries[seqno - 1].data) {
             av_log(s->avctx, AV_LOG_ERROR, "Could not allocate ICC data buffer\n");
             return AVERROR(ENOMEM);
         }
 
-        memcpy(s->iccdata[seqno - 1], align_get_bits(&s->gb), len);
+        memcpy(s->iccentries[seqno - 1].data, align_get_bits(&s->gb), len);
         skip_bits(&s->gb, len << 3);
         len = 0;
         s->iccread++;
@@ -2315,11 +2322,11 @@ static void reset_icc_profile(MJpegDecodeContext *s)
 {
     int i;
 
-    if (s->iccdata)
+    if (s->iccentries) {
         for (i = 0; i < s->iccnum; i++)
-            av_freep(&s->iccdata[i]);
-    av_freep(&s->iccdata);
-    av_freep(&s->iccdatalens);
+            av_freep(&s->iccentries[i].data);
+        av_freep(&s->iccentries);
+    }
 
     s->iccread = 0;
     s->iccnum  = 0;
@@ -2397,6 +2404,8 @@ int ff_mjpeg_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     int ret = 0;
     int is16bit;
 
+    s->force_pal8 = 0;
+
     if (avctx->codec_id == AV_CODEC_ID_SMVJPEG && s->smv_next_frame > 0)
         return smv_process_frame(avctx, frame);
 
@@ -2410,7 +2419,7 @@ int ff_mjpeg_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     ret = mjpeg_get_packet(avctx);
     if (ret < 0)
         return ret;
-
+redo_for_pal8:
     buf_ptr = s->pkt->data;
     buf_end = s->pkt->data + s->pkt->size;
     while (buf_ptr < buf_end) {
@@ -2541,6 +2550,8 @@ int ff_mjpeg_receive_frame(AVCodecContext *avctx, AVFrame *frame)
             if (!CONFIG_JPEGLS_DECODER ||
                 (ret = ff_jpegls_decode_lse(s)) < 0)
                 goto fail;
+            if (ret == 1)
+                goto redo_for_pal8;
             break;
         case EOI:
 eoi_parser:
@@ -2835,7 +2846,7 @@ the_end:
 
         /* Sum size of all parts. */
         for (i = 0; i < s->iccnum; i++)
-            total_size += s->iccdatalens[i];
+            total_size += s->iccentries[i].length;
 
         sd = av_frame_new_side_data(frame, AV_FRAME_DATA_ICC_PROFILE, total_size);
         if (!sd) {
@@ -2845,8 +2856,8 @@ the_end:
 
         /* Reassemble the parts, which are now in-order. */
         for (i = 0; i < s->iccnum; i++) {
-            memcpy(sd->data + offset, s->iccdata[i], s->iccdatalens[i]);
-            offset += s->iccdatalens[i];
+            memcpy(sd->data + offset, s->iccentries[i].data, s->iccentries[i].length);
+            offset += s->iccentries[i].length;
         }
     }
 
@@ -2915,6 +2926,7 @@ av_cold int ff_mjpeg_decode_end(AVCodecContext *avctx)
     reset_icc_profile(s);
 
     av_freep(&s->hwaccel_picture_private);
+    av_freep(&s->jls_state);
 
     return 0;
 }
@@ -2944,7 +2956,7 @@ static const AVClass mjpegdec_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_mjpeg_decoder = {
+const AVCodec ff_mjpeg_decoder = {
     .name           = "mjpeg",
     .long_name      = NULL_IF_CONFIG_SMALL("MJPEG (Motion JPEG)"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -2972,7 +2984,7 @@ AVCodec ff_mjpeg_decoder = {
 };
 #endif
 #if CONFIG_THP_DECODER
-AVCodec ff_thp_decoder = {
+const AVCodec ff_thp_decoder = {
     .name           = "thp",
     .long_name      = NULL_IF_CONFIG_SMALL("Nintendo Gamecube THP video"),
     .type           = AVMEDIA_TYPE_VIDEO,
@@ -2990,7 +3002,7 @@ AVCodec ff_thp_decoder = {
 #endif
 
 #if CONFIG_SMVJPEG_DECODER
-AVCodec ff_smvjpeg_decoder = {
+const AVCodec ff_smvjpeg_decoder = {
     .name           = "smvjpeg",
     .long_name      = NULL_IF_CONFIG_SMALL("SMV JPEG"),
     .type           = AVMEDIA_TYPE_VIDEO,

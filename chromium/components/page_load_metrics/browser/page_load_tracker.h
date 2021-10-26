@@ -11,7 +11,6 @@
 #include "base/macros.h"
 #include "base/time/time.h"
 #include "components/page_load_metrics/browser/observers/core/largest_contentful_paint_handler.h"
-#include "components/page_load_metrics/browser/page_load_metrics_event.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer.h"
 #include "components/page_load_metrics/browser/page_load_metrics_observer_delegate.h"
 #include "components/page_load_metrics/browser/page_load_metrics_update_dispatcher.h"
@@ -23,7 +22,6 @@
 #include "net/cookies/canonical_cookie.h"
 #include "services/metrics/public/cpp/ukm_source.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "ui/base/page_transition_types.h"
 #include "ui/base/scoped_visibility_tracker.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -45,6 +43,14 @@ class PageLoadMetricsEmbedderInterface;
 
 namespace internal {
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class PageLoadPrerenderEvent {
+  kNavigationInPrerenderedMainFrame = 0,
+  kPrerenderActivationNavigation = 1,
+  kMaxValue = kPrerenderActivationNavigation,
+};
+
 extern const char kErrorEvents[];
 extern const char kAbortChainSizeReload[];
 extern const char kAbortChainSizeForwardBack[];
@@ -53,6 +59,7 @@ extern const char kAbortChainSizeNoCommit[];
 extern const char kAbortChainSizeSameURL[];
 extern const char kPageLoadCompletedAfterAppBackground[];
 extern const char kPageLoadStartedInForeground[];
+extern const char kPageLoadPrerender2Event[];
 
 }  // namespace internal
 
@@ -193,6 +200,8 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   void OnMainFrameMetadataChanged() override;
   void OnSubframeMetadataChanged(content::RenderFrameHost* rfh,
                                  const mojom::FrameMetadata& metadata) override;
+  void OnSubFrameMobileFriendlinessChanged(
+      const blink::MobileFriendliness&) override;
   void UpdateFeaturesUsage(
       content::RenderFrameHost* rfh,
       const std::vector<blink::UseCounterFeature>& new_features) override;
@@ -219,6 +228,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   const BackForwardCacheRestore& GetBackForwardCacheRestore(
       size_t index) const override;
   bool StartedInForeground() const override;
+  bool WasPrerenderedThenActivatedInForeground() const override;
   const UserInitiatedInfo& GetUserInitiatedInfo() const override;
   const GURL& GetUrl() const override;
   const GURL& GetStartUrl() const override;
@@ -258,7 +268,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   void PageHidden();
   void PageShown();
   void RenderFrameDeleted(content::RenderFrameHost* rfh);
-  void FrameDeleted(int frame_tree_node_id);
+  void SubFrameDeleted(int frame_tree_node_id);
 
   void OnInputEvent(const blink::WebInputEvent& event);
 
@@ -345,8 +355,6 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
 
   base::TimeTicks navigation_start() const { return navigation_start_; }
 
-  ui::PageTransition page_transition() const { return page_transition_; }
-
   UserInitiatedInfo user_initiated_info() const { return user_initiated_info_; }
 
   PageLoadMetricsUpdateDispatcher* metrics_update_dispatcher() {
@@ -366,8 +374,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
       const content::WebContentsObserver::MediaPlayerInfo& video_type,
       content::RenderFrameHost* render_frame_host);
 
-  // Informs the observers that |event| has occurred.
-  void BroadcastEventToObservers(PageLoadMetricsEvent event);
+  void OnPrefetchLikely();
 
   void OnEnterBackForwardCache();
   void OnRestoreFromBackForwardCache(
@@ -376,6 +383,9 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   // Called when the page tracked was just activated after being loaded inside a
   // portal.
   void DidActivatePortal(base::TimeTicks activation_time);
+
+  // Called when the page tracked was just activated after being prerendered.
+  void DidActivatePrerenderedPage(content::NavigationHandle* navigation_handle);
 
   // Called when V8 per-frame memory usage updates are available.
   void OnV8MemoryChanged(const std::vector<MemoryUpdate>& memory_updates);
@@ -451,11 +461,10 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
   absl::optional<base::TimeDelta> first_foreground_time_;
   std::vector<BackForwardCacheRestore> back_forward_cache_restores_;
   const bool started_in_foreground_;
+  bool was_prerendered_then_activated_in_foreground_ = false;
 
   mojom::PageLoadTimingPtr last_dispatched_merged_page_timing_;
   blink::MobileFriendliness latest_mobile_friendliness_;
-
-  ui::PageTransition page_transition_;
 
   absl::optional<content::GlobalRequestID> navigation_request_id_;
 
@@ -484,7 +493,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
 
   PageLoadMetricsUpdateDispatcher metrics_update_dispatcher_;
 
-  const ukm::SourceId source_id_;
+  ukm::SourceId source_id_ = ukm::kInvalidSourceId;
 
   content::WebContents* const web_contents_;
 

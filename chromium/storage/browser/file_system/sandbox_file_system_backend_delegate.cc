@@ -24,6 +24,7 @@
 #include "storage/browser/file_system/file_system_operation_context.h"
 #include "storage/browser/file_system/file_system_url.h"
 #include "storage/browser/file_system/file_system_usage_cache.h"
+#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/file_system/obfuscated_file_util.h"
 #include "storage/browser/file_system/obfuscated_file_util_memory_delegate.h"
 #include "storage/browser/file_system/quota/quota_backend_impl.h"
@@ -35,6 +36,8 @@
 #include "storage/browser/file_system/sandbox_quota_observer.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/file_system/file_system_util.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
+#include "url/gurl.h"
 #include "url/origin.h"
 
 namespace storage {
@@ -177,14 +180,14 @@ std::string SandboxFileSystemBackendDelegate::GetTypeString(
 }
 
 SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
-    QuotaManagerProxy* quota_manager_proxy,
-    base::SequencedTaskRunner* file_task_runner,
+    scoped_refptr<QuotaManagerProxy> quota_manager_proxy,
+    scoped_refptr<base::SequencedTaskRunner> file_task_runner,
     const base::FilePath& profile_path,
-    SpecialStoragePolicy* special_storage_policy,
+    scoped_refptr<SpecialStoragePolicy> special_storage_policy,
     const FileSystemOptions& file_system_options,
     leveldb::Env* env_override)
-    : file_task_runner_(file_task_runner),
-      quota_manager_proxy_(quota_manager_proxy),
+    : file_task_runner_(std::move(file_task_runner)),
+      quota_manager_proxy_(std::move(quota_manager_proxy)),
       sandbox_file_util_(std::make_unique<AsyncFileUtilAdapter>(
           std::make_unique<ObfuscatedFileUtil>(
               special_storage_policy,
@@ -197,19 +200,18 @@ SandboxFileSystemBackendDelegate::SandboxFileSystemBackendDelegate(
       file_system_usage_cache_(std::make_unique<FileSystemUsageCache>(
           file_system_options.is_incognito())),
       quota_observer_(
-          std::make_unique<SandboxQuotaObserver>(quota_manager_proxy,
-                                                 file_task_runner,
+          std::make_unique<SandboxQuotaObserver>(quota_manager_proxy_,
+                                                 file_task_runner_,
                                                  obfuscated_file_util(),
                                                  usage_cache())),
       quota_reservation_manager_(std::make_unique<QuotaReservationManager>(
-          std::make_unique<QuotaBackendImpl>(file_task_runner_.get(),
+          std::make_unique<QuotaBackendImpl>(file_task_runner_,
                                              obfuscated_file_util(),
                                              usage_cache(),
-                                             quota_manager_proxy))),
-      special_storage_policy_(special_storage_policy),
+                                             quota_manager_proxy_))),
+      special_storage_policy_(std::move(special_storage_policy)),
       file_system_options_(file_system_options),
-      is_filesystem_opened_(false) {
-}
+      is_filesystem_opened_(false) {}
 
 SandboxFileSystemBackendDelegate::~SandboxFileSystemBackendDelegate() {
   DETACH_FROM_THREAD(io_thread_checker_);
@@ -258,7 +260,7 @@ void SandboxFileSystemBackendDelegate::OpenFileSystem(
   base::OnceClosure quota_callback =
       (quota_manager_proxy_.get())
           ? base::BindOnce(&QuotaManagerProxy::NotifyStorageAccessed,
-                           quota_manager_proxy_, origin,
+                           quota_manager_proxy_, blink::StorageKey(origin),
                            FileSystemTypeToQuotaStorageType(type),
                            base::Time::Now())
           : base::DoNothing();
@@ -337,9 +339,9 @@ SandboxFileSystemBackendDelegate::DeleteOriginDataOnFileTaskRunner(
   bool result = obfuscated_file_util()->DeleteDirectoryForOriginAndType(
       origin, GetTypeString(type));
   if (result && proxy && usage) {
-    proxy->NotifyStorageModified(QuotaClientType::kFileSystem, origin,
-                                 FileSystemTypeToQuotaStorageType(type), -usage,
-                                 base::Time::Now());
+    proxy->NotifyStorageModified(
+        QuotaClientType::kFileSystem, blink::StorageKey(origin),
+        FileSystemTypeToQuotaStorageType(type), -usage, base::Time::Now());
   }
 
   if (result)
@@ -612,8 +614,8 @@ int64_t SandboxFileSystemBackendDelegate::RecalculateUsage(
     const url::Origin& origin,
     FileSystemType type) {
   FileSystemOperationContext operation_context(context);
-  FileSystemURL url =
-      context->CreateCrackedFileSystemURL(origin, type, base::FilePath());
+  FileSystemURL url = context->CreateCrackedFileSystemURL(
+      blink::StorageKey(origin), type, base::FilePath());
   std::unique_ptr<FileSystemFileUtil::AbstractFileEnumerator> enumerator(
       obfuscated_file_util()->CreateFileEnumerator(&operation_context, url,
                                                    true));
@@ -706,15 +708,15 @@ SandboxFileSystemBackendDelegate::memory_file_util_delegate() {
 
 // Declared in obfuscated_file_util.h.
 // static
-ObfuscatedFileUtil* ObfuscatedFileUtil::CreateForTesting(
-    SpecialStoragePolicy* special_storage_policy,
+std::unique_ptr<ObfuscatedFileUtil> ObfuscatedFileUtil::CreateForTesting(
+    scoped_refptr<SpecialStoragePolicy> special_storage_policy,
     const base::FilePath& file_system_directory,
     leveldb::Env* env_override,
     bool is_incognito) {
-  return new ObfuscatedFileUtil(special_storage_policy, file_system_directory,
-                                env_override,
-                                base::BindRepeating(&GetTypeStringForURL),
-                                GetKnownTypeStrings(), nullptr, is_incognito);
+  return std::make_unique<ObfuscatedFileUtil>(
+      std::move(special_storage_policy), file_system_directory, env_override,
+      base::BindRepeating(&GetTypeStringForURL), GetKnownTypeStrings(),
+      /*sandbox_delegate=*/nullptr, is_incognito);
 }
 
 }  // namespace storage

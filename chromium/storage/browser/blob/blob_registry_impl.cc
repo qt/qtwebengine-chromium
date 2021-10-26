@@ -15,6 +15,7 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/blob/blob_transport_strategy.h"
 #include "storage/browser/blob/blob_url_store_impl.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/blob/data_element.mojom.h"
 #include "third_party/blink/public/mojom/blob/serialized_blob.mojom.h"
 
@@ -396,32 +397,37 @@ void BlobRegistryImpl::BlobUnderConstruction::ResolvedAllBlobDependencies() {
     }
   }
 
-  auto callback =
-      base::BindRepeating(&BlobUnderConstruction::OnReadyForTransport,
-                          weak_ptr_factory_.GetWeakPtr());
-
+  // BuildPreregisterdBlob might delete `this`, so store some members in local
+  // variables before calling that method.
+  auto weak_this = weak_ptr_factory_.GetWeakPtr();
   auto blob_impl = std::move(blob_impl_);
 
   // OnReadyForTransport can be called synchronously, which can call
   // MarkAsFinishedAndDeleteSelf synchronously, so don't access any members
   // after this call.
   std::unique_ptr<BlobDataHandle> new_handle =
-      context()->BuildPreregisteredBlob(std::move(builder_), callback);
+      context()->BuildPreregisteredBlob(
+          std::move(builder_),
+          base::BindOnce(&BlobUnderConstruction::OnReadyForTransport,
+                         weak_ptr_factory_.GetWeakPtr()));
 
-  bool is_being_built = new_handle->IsBeingBuilt();
-  auto blob_status = new_handle->GetBlobStatus();
+  // BuildPreregisteredBlob might or might not have called the callback if
+  // it finished synchronously. Additionally even if the blob didn't finish
+  // synchronously, the callback might end up never being called, for example
+  // if no transport of bytes will be needed. To make sure `this` will get
+  // cleaned up regardless of how construction completes, add a
+  // OnConstructionComplete callback.
+  if (weak_this) {
+    new_handle->RunOnConstructionComplete(base::BindOnce(
+        [](base::WeakPtr<BlobUnderConstruction> blob, BlobStatus) {
+          if (blob)
+            blob->MarkAsFinishedAndDeleteSelf();
+        },
+        std::move(weak_this)));
+  }
 
   if (blob_impl)
     blob_impl->UpdateHandle(std::move(new_handle));
-
-  // BuildPreregisteredBlob might or might not have called the callback if
-  // it finished synchronously, so call the callback directly. If it was
-  // already called |this| would have been deleted making calling the
-  // callback a no-op.
-  if (!is_being_built) {
-    callback.Run(blob_status,
-                 std::vector<BlobMemoryController::FileCreationInfo>());
-  }
 }
 
 void BlobRegistryImpl::BlobUnderConstruction::OnReadyForTransport(
@@ -548,8 +554,13 @@ void BlobRegistryImpl::Register(
         return;
       }
     } else if (entry.element->is_file_filesystem()) {
-      entry.filesystem_url = file_system_context_->CrackURL(
-          entry.element->get_file_filesystem()->url);
+      const GURL crack_url = entry.element->get_file_filesystem()->url;
+      // TODO(https://crbug.com/1221308): determine whether StorageKey should be
+      // replaced with a more meaningful value
+      const blink::StorageKey crack_storage_key =
+          blink::StorageKey(url::Origin::Create(crack_url));
+      entry.filesystem_url =
+          file_system_context_->CrackURL(crack_url, crack_storage_key);
       if (!entry.filesystem_url.is_valid() ||
           !file_system_context_->GetFileSystemBackend(
               entry.filesystem_url.type()) ||

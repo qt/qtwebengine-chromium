@@ -21,7 +21,6 @@
  * video freeze detection filter
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -222,7 +221,7 @@ static const AVFilterPad freezedetect_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_freezedetect = {
+const AVFilter ff_vf_freezedetect = {
     .name          = "freezedetect",
     .description   = NULL_IF_CONFIG_SMALL("Detects frozen video input."),
     .priv_size     = sizeof(FreezeDetectContext),

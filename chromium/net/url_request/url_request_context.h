@@ -21,7 +21,6 @@
 #include "build/chromeos_buildflags.h"
 #include "net/base/net_export.h"
 #include "net/base/request_priority.h"
-#include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
 #include "net/http/transport_security_state.h"
 #include "net/net_buildflags.h"
@@ -40,6 +39,8 @@ class CookieStore;
 class CTPolicyEnforcer;
 class HostResolver;
 class HttpAuthHandlerFactory;
+struct HttpNetworkSessionContext;
+struct HttpNetworkSessionParams;
 class HttpTransactionFactory;
 class HttpUserAgentSettings;
 class NetLog;
@@ -77,11 +78,11 @@ class NET_EXPORT URLRequestContext
 
   // May return nullptr if this context doesn't have an associated network
   // session.
-  const HttpNetworkSession::Params* GetNetworkSessionParams() const;
+  const HttpNetworkSessionParams* GetNetworkSessionParams() const;
 
   // May return nullptr if this context doesn't have an associated network
   // session.
-  const HttpNetworkSession::Context* GetNetworkSessionContext() const;
+  const HttpNetworkSessionContext* GetNetworkSessionContext() const;
 
 // TODO(crbug.com/1052397): Revisit once build flag switch of lacros-chrome is
 // complete.
@@ -101,7 +102,7 @@ class NET_EXPORT URLRequestContext
   // |traffic_annotation| is metadata about the network traffic send via this
   // URLRequest, see net::DefineNetworkTrafficAnnotation. Note that:
   // - net provides the API for tagging requests with an opaque identifier.
-  // - tools/traffic_annotation/traffic_annotation.proto contains the Chrome
+  // - chrome/browser/privacy/traffic_annotation.proto contains the Chrome
   // specific .proto describing the verbose annotation format that Chrome's
   // callsites are expected to follow.
   // - tools/traffic_annotation/ contains sample and template for annotation and

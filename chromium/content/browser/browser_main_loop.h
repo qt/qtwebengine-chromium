@@ -18,6 +18,7 @@
 #include "content/public/browser/browser_main_runner.h"
 #include "media/media_buildflags.h"
 #include "services/viz/public/mojom/compositing/compositing_mode_watcher.mojom.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
@@ -325,11 +326,6 @@ class CONTENT_EXPORT BrowserMainLoop {
   // Members initialized in |CreateMainMessageLoop()| --------------------------
   // This must get destroyed before other threads that are created in |parts_|.
   std::unique_ptr<BrowserThreadImpl> main_thread_;
-
-  // Unregister UI thread from hang watching on destruction.
-  // NOTE: Hang watching should stop before the watched thread stops so this
-  // member must be after |main_thread_|.
-  base::ScopedClosureRunner unregister_thread_closure_;
 
   // Members initialized in |CreateStartupTasks()| -----------------------------
   std::unique_ptr<StartupTaskRunner> startup_task_runner_;

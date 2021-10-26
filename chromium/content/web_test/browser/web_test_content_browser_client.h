@@ -16,10 +16,11 @@
 #include "mojo/public/cpp/bindings/binder_map.h"
 #include "mojo/public/cpp/bindings/pending_associated_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
+#include "mojo/public/cpp/bindings/unique_receiver_set.h"
 #include "services/service_manager/public/cpp/binder_registry.h"
 #include "third_party/blink/public/mojom/badging/badging.mojom.h"
 #include "third_party/blink/public/mojom/clipboard/clipboard.mojom.h"
-#include "third_party/blink/public/mojom/clipboard/raw_clipboard.mojom.h"
+#include "third_party/blink/public/mojom/cookie_manager/cookie_manager_automation.mojom-forward.h"
 #include "third_party/blink/public/mojom/permissions/permission_automation.mojom-forward.h"
 #include "third_party/blink/public/mojom/storage_access/storage_access_automation.mojom-forward.h"
 
@@ -36,7 +37,6 @@ class FakeBluetoothDelegate;
 class MockBadgeService;
 class MockClipboardHost;
 class MockPlatformNotificationService;
-class MockRawClipboardHost;
 class WebTestBrowserContext;
 
 class WebTestContentBrowserClient : public ShellContentBrowserClient {
@@ -125,9 +125,6 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   void BindClipboardHost(
       RenderFrameHost* render_frame_host,
       mojo::PendingReceiver<blink::mojom::ClipboardHost> receiver);
-  void BindRawClipboardHost(
-      RenderFrameHost* render_frame_host,
-      mojo::PendingReceiver<blink::mojom::RawClipboardHost> receiver);
 
   void BindBadgeService(
       RenderFrameHost* render_frame_host,
@@ -138,6 +135,11 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
 
   void BindStorageAccessAutomation(
       mojo::PendingReceiver<blink::test::mojom::StorageAccessAutomation>
+          receiver);
+
+  void BindCookieManagerAutomation(
+      RenderFrameHost* render_frame_host,
+      mojo::PendingReceiver<blink::test::mojom::CookieManagerAutomation>
           receiver);
 
   void BindWebTestControlHost(
@@ -153,8 +155,9 @@ class WebTestContentBrowserClient : public ShellContentBrowserClient {
   std::unique_ptr<FakeBluetoothChooserFactory> fake_bluetooth_chooser_factory_;
   std::unique_ptr<FakeBluetoothDelegate> fake_bluetooth_delegate_;
   std::unique_ptr<MockClipboardHost> mock_clipboard_host_;
-  std::unique_ptr<MockRawClipboardHost> mock_raw_clipboard_host_;
   std::unique_ptr<MockBadgeService> mock_badge_service_;
+  mojo::UniqueReceiverSet<blink::test::mojom::CookieManagerAutomation>
+      cookie_managers_;
 };
 
 }  // namespace content

@@ -129,16 +129,6 @@ class VIEWS_EXPORT InkDropHost {
   void SetLargeCornerRadius(int large_radius);
   int GetLargeCornerRadius() const;
 
-  // Allows InstallableInkDrop to override our InkDropEventHandler
-  // instance.
-  //
-  // TODO(crbug.com/931964): Remove this, either by finishing refactor or by
-  // giving up.
-  void set_ink_drop_event_handler_override(
-      InkDropEventHandler* ink_drop_event_handler_override) {
-    ink_drop_event_handler_override_ = ink_drop_event_handler_override;
-  }
-
   // Animates |ink_drop_| to the desired |ink_drop_state|. Caches |event| as the
   // last_ripple_triggering_event().
   //
@@ -246,8 +236,6 @@ class VIEWS_EXPORT InkDropHost {
   InkDropHostEventHandlerDelegate ink_drop_event_handler_delegate_;
   InkDropEventHandler ink_drop_event_handler_;
 
-  InkDropEventHandler* ink_drop_event_handler_override_ = nullptr;
-
   float ink_drop_visible_opacity_ = 0.175f;
 
   // The color of the ripple and hover.
@@ -260,8 +248,6 @@ class VIEWS_EXPORT InkDropHost {
   // Radii used for the SquareInkDropRipple.
   int ink_drop_small_corner_radius_ = 2;
   int ink_drop_large_corner_radius_ = 4;
-
-  bool destroying_ = false;
 
   std::unique_ptr<views::InkDropMask> ink_drop_mask_;
 

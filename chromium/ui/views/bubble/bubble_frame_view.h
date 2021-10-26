@@ -64,6 +64,7 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView {
   void UpdateWindowIcon() override;
   void UpdateWindowTitle() override;
   void SizeConstraintsChanged() override;
+  void InsertClientView(ClientView* client_view) override;
 
   // Sets a custom view to be the dialog title instead of the |default_title_|
   // label. If there is an existing title view it will be deleted.
@@ -138,6 +139,10 @@ class VIEWS_EXPORT BubbleFrameView : public NonClientFrameView {
   // Set the arrow of the bubble border.
   void SetArrow(BubbleBorder::Arrow arrow);
   BubbleBorder::Arrow GetArrow() const;
+
+  // Specify whether the frame should include a visible, caret-shaped arrow.
+  void SetDisplayVisibleArrow(bool display_visible_arrow);
+  bool GetDisplayVisibleArrow() const;
 
   // Set the background color of the bubble border.
   void SetBackgroundColor(SkColor color);

@@ -24,6 +24,11 @@ const char kSystemInDevMode[] = "system-developer-mode";
 // multi-value items). Example: ["dark-light-mode@1","tint-composited-content"]
 const char kFeatureFlags[] = "feature-flags";
 
+// Passes JSON-encoded dictionary of origin list flags (i.e. feature flags that
+// take an optional string argument which is supposed to specify a list of web
+// origins). Example: {"isolate-origins":"http://example.com"}
+const char kFeatureFlagsOriginList[] = "feature-flags-origin-list";
+
 }  // namespace switches
 }  // namespace chromeos
 

@@ -24,6 +24,7 @@
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "avcodec.h"
+#include "encode.h"
 #include "internal.h"
 #include "packet_internal.h"
 #include "snow_dwt.h"
@@ -40,13 +41,6 @@ static av_cold int encode_init(AVCodecContext *avctx)
     SnowContext *s = avctx->priv_data;
     int plane_index, ret;
     int i;
-
-#if FF_API_PRIVATE_OPT
-FF_DISABLE_DEPRECATION_WARNINGS
-    if (avctx->prediction_method)
-        s->pred = avctx->prediction_method;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     if(s->pred == DWT_97
        && (avctx->flags & AV_CODEC_FLAG_QSCALE)
@@ -1576,7 +1570,7 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     uint8_t rc_header_bak[sizeof(s->header_state)];
     uint8_t rc_block_bak[sizeof(s->block_state)];
 
-    if ((ret = ff_alloc_packet2(avctx, pkt, s->b_width*s->b_height*MB_SIZE*MB_SIZE*3 + AV_INPUT_BUFFER_MIN_SIZE, 0)) < 0)
+    if ((ret = ff_alloc_packet(avctx, pkt, s->b_width*s->b_height*MB_SIZE*MB_SIZE*3 + AV_INPUT_BUFFER_MIN_SIZE)) < 0)
         return ret;
 
     ff_init_range_encoder(c, pkt->data, pkt->size);
@@ -1625,21 +1619,9 @@ static int encode_frame(AVCodecContext *avctx, AVPacket *pkt,
         s->lambda = 0;
     }//else keep previous frame's qlog until after motion estimation
 
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
-    av_frame_unref(avctx->coded_frame);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-
     if (s->current_picture->data[0]) {
         int w = s->avctx->width;
         int h = s->avctx->height;
-
-#if FF_API_CODED_FRAME
-        ret = av_frame_make_writable(s->current_picture);
-        if (ret < 0)
-            return ret;
-#endif
 
         s->mpvencdsp.draw_edges(s->current_picture->data[0],
                                 s->current_picture->linesize[0], w   , h   ,
@@ -1656,13 +1638,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     }
 
     ff_snow_frame_start(s);
-#if FF_API_CODED_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
-    ret = av_frame_ref(avctx->coded_frame, s->current_picture);
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
-    if (ret < 0)
-        return ret;
 
     s->m.current_picture_ptr= &s->m.current_picture;
     s->m.current_picture.f = s->current_picture;
@@ -1758,13 +1733,6 @@ redo_frame:
                     }
                 }
             predict_plane(s, s->spatial_idwt_buffer, plane_index, 0);
-
-#if FF_API_PRIVATE_OPT
-FF_DISABLE_DEPRECATION_WARNINGS
-            if(s->avctx->scenechange_threshold)
-                s->scenechange_threshold = s->avctx->scenechange_threshold;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
             if(   plane_index==0
                && pic->pict_type == AV_PICTURE_TYPE_P
@@ -1890,14 +1858,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     if(avctx->flags&AV_CODEC_FLAG_PASS1)
         ff_write_pass1_stats(&s->m);
     s->m.last_pict_type = s->m.pict_type;
-#if FF_API_STAT_BITS
-FF_DISABLE_DEPRECATION_WARNINGS
-    avctx->frame_bits = s->m.frame_bits;
-    avctx->mv_bits = s->m.mv_bits;
-    avctx->misc_bits = s->m.misc_bits;
-    avctx->p_tex_bits = s->m.p_tex_bits;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     emms_c();
 
@@ -1905,12 +1865,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
                                    s->encoding_error,
                                    (s->avctx->flags&AV_CODEC_FLAG_PSNR) ? 4 : 0,
                                    s->current_picture->pict_type);
-
-#if FF_API_ERROR_FRAME
-FF_DISABLE_DEPRECATION_WARNINGS
-    memcpy(s->current_picture->error, s->encoding_error, sizeof(s->encoding_error));
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     pkt->size = ff_rac_terminate(c, 0);
     if (s->current_picture->key_frame)
@@ -1963,7 +1917,7 @@ static const AVClass snowenc_class = {
     .version    = LIBAVUTIL_VERSION_INT,
 };
 
-AVCodec ff_snow_encoder = {
+const AVCodec ff_snow_encoder = {
     .name           = "snow",
     .long_name      = NULL_IF_CONFIG_SMALL("Snow"),
     .type           = AVMEDIA_TYPE_VIDEO,

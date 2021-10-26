@@ -32,7 +32,6 @@
 
 #include <float.h>
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -1055,7 +1054,7 @@ static const AVFilterPad bm3d_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_bm3d = {
+const AVFilter ff_vf_bm3d = {
     .name          = "bm3d",
     .description   = NULL_IF_CONFIG_SMALL("Block-Matching 3D denoiser."),
     .priv_size     = sizeof(BM3DContext),

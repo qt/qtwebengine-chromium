@@ -59,6 +59,7 @@ class CONTENT_EXPORT NavigatorDelegate {
   // Handles post-navigation tasks in navigation BEFORE the entry has been
   // committed to the NavigationController.
   virtual void DidNavigateMainFramePreCommit(
+      FrameTreeNode* frame_tree_node,
       bool navigation_is_within_page) = 0;
 
   // Handles post-navigation tasks in navigation AFTER the entry has been
@@ -85,7 +86,8 @@ class CONTENT_EXPORT NavigatorDelegate {
 
   // Returns whether to continue a navigation that needs to transfer to a
   // different process between the load start and commit.
-  virtual bool ShouldTransferNavigation(bool is_main_frame_navigation) = 0;
+  virtual bool ShouldAllowRendererInitiatedCrossProcessNavigation(
+      bool is_main_frame_navigation) = 0;
 
   // Returns the overridden user agent string if it's set.
   virtual const blink::UserAgentOverride& GetUserAgentOverride() = 0;
@@ -131,6 +133,13 @@ class CONTENT_EXPORT NavigatorDelegate {
   virtual void RegisterExistingOriginToPreventOptInIsolation(
       const url::Origin& origin,
       NavigationRequest* navigation_request_to_exclude) = 0;
+
+  // Returns true if activation navigations are disallowed in the
+  // Navigator.
+  // TODO(https://crbug.com/1234857): Remove this. This is a temporary
+  // workaround to avoid breaking features that must be taught to deal with
+  // activation navigations.
+  virtual bool IsActivationNavigationDisallowedForBug1234857() = 0;
 };
 
 }  // namespace content

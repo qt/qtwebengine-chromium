@@ -89,7 +89,7 @@ RequestTypeForUma GetUmaValueForRequestType(RequestType request_type) {
 #endif
     case RequestType::kNotifications:
       return RequestTypeForUma::PERMISSION_NOTIFICATIONS;
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
     case RequestType::kProtectedMediaIdentifier:
       return RequestTypeForUma::PERMISSION_PROTECTED_MEDIA_IDENTIFIER;
 #endif
@@ -168,7 +168,7 @@ void RecordEngagementMetric(const std::vector<PermissionRequest*>& requests,
                             content::WebContents* web_contents,
                             const std::string& action) {
   RequestTypeForUma type =
-      GetUmaValueForRequestType(requests[0]->GetRequestType());
+      GetUmaValueForRequestType(requests[0]->request_type());
   if (requests.size() > 1)
     type = RequestTypeForUma::MULTIPLE;
 
@@ -178,7 +178,7 @@ void RecordEngagementMetric(const std::vector<PermissionRequest*>& requests,
                      GetPermissionRequestString(type);
 
   double engagement_score = PermissionsClient::Get()->GetSiteEngagementScore(
-      web_contents->GetBrowserContext(), requests[0]->GetOrigin());
+      web_contents->GetBrowserContext(), requests[0]->requesting_origin());
   base::UmaHistogramPercentageObsoleteDoNotUse(name, engagement_score);
 }
 
@@ -269,6 +269,8 @@ std::string GetPromptDispositionString(
       return "CustomModalDialog";
     case PermissionPromptDisposition::LOCATION_BAR_LEFT_CHIP:
       return "LocationBarLeftChip";
+    case PermissionPromptDisposition::LOCATION_BAR_LEFT_QUIET_CHIP:
+      return "LocationBarLeftQuietChip";
     case PermissionPromptDisposition::LOCATION_BAR_RIGHT_ANIMATED_ICON:
       return "LocationBarRightAnimatedIcon";
     case PermissionPromptDisposition::LOCATION_BAR_RIGHT_STATIC_ICON:
@@ -388,18 +390,8 @@ void PermissionUmaUtil::PermissionRequested(ContentSettingsType content_type,
   bool success = PermissionUtil::GetPermissionType(content_type, &permission);
   DCHECK(success);
 
-  bool secure_origin = network::IsUrlPotentiallyTrustworthy(requesting_origin);
   base::UmaHistogramEnumeration("ContentSettings.PermissionRequested",
                                 permission, PermissionType::NUM);
-  if (secure_origin) {
-    base::UmaHistogramEnumeration(
-        "ContentSettings.PermissionRequested_SecureOrigin", permission,
-        PermissionType::NUM);
-  } else {
-    base::UmaHistogramEnumeration(
-        "ContentSettings.PermissionRequested_InsecureOrigin", permission,
-        PermissionType::NUM);
-  }
 }
 
 void PermissionUmaUtil::PermissionRevoked(
@@ -465,7 +457,7 @@ void PermissionUmaUtil::PermissionPromptShown(
   PermissionRequestGestureType gesture_type =
       PermissionRequestGestureType::UNKNOWN;
   if (requests.size() == 1) {
-    request_type = GetUmaValueForRequestType(requests[0]->GetRequestType());
+    request_type = GetUmaValueForRequestType(requests[0]->request_type());
     gesture_type = requests[0]->GetGestureType();
   }
 
@@ -510,14 +502,13 @@ void PermissionUmaUtil::PermissionPromptResolved(
 
   for (PermissionRequest* request : requests) {
     ContentSettingsType permission = request->GetContentSettingsType();
-    // TODO(timloh): We only record these metrics for permissions which use
-    // PermissionRequestImpl as the other subclasses don't support
-    // GetGestureType and GetContentSettingsType.
+    // TODO(timloh): We only record these metrics for permissions which have a
+    // ContentSettingsType, as otherwise they don't support GetGestureType.
     if (permission == ContentSettingsType::DEFAULT)
       continue;
 
     PermissionRequestGestureType gesture_type = request->GetGestureType();
-    const GURL& requesting_origin = request->GetOrigin();
+    const GURL& requesting_origin = request->requesting_origin();
 
     RecordPermissionAction(
         permission, permission_action, PermissionSourceUI::PROMPT, gesture_type,
@@ -815,7 +806,7 @@ void PermissionUmaUtil::RecordPromptDecided(
   PermissionRequestGestureType gesture_type =
       PermissionRequestGestureType::UNKNOWN;
   if (requests.size() == 1) {
-    request_type = GetUmaValueForRequestType(requests[0]->GetRequestType());
+    request_type = GetUmaValueForRequestType(requests[0]->request_type());
     gesture_type = requests[0]->GetGestureType();
   }
 
@@ -866,10 +857,29 @@ void PermissionUmaUtil::RecordAutoDSEPermissionReverted(
   std::string permission_string =
       GetPermissionRequestString(GetUmaValueForRequestType(
           ContentSettingsTypeToRequestType(permission_type)));
+  auto transition = GetAutoDSEPermissionRevertedTransition(
+      backed_up_setting, effective_setting, end_state_setting);
   base::UmaHistogramEnumeration(
       "Permissions.DSE.AutoPermissionRevertTransition." + permission_string,
-      GetAutoDSEPermissionRevertedTransition(
-          backed_up_setting, effective_setting, end_state_setting));
+      transition);
+
+  if (transition == AutoDSEPermissionRevertTransition::INVALID_END_STATE) {
+    base::UmaHistogramEnumeration(
+        "Permissions.DSE.InvalidAutoPermissionRevertTransition."
+        "BackedUpSetting." +
+            permission_string,
+        backed_up_setting, CONTENT_SETTING_NUM_SETTINGS);
+    base::UmaHistogramEnumeration(
+        "Permissions.DSE.InvalidAutoPermissionRevertTransition."
+        "EffectiveSetting." +
+            permission_string,
+        effective_setting, CONTENT_SETTING_NUM_SETTINGS);
+    base::UmaHistogramEnumeration(
+        "Permissions.DSE.InvalidAutoPermissionRevertTransition."
+        "EndStateSetting." +
+            permission_string,
+        end_state_setting, CONTENT_SETTING_NUM_SETTINGS);
+  }
 }
 
 // static

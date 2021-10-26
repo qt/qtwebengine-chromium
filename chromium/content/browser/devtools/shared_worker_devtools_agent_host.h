@@ -13,7 +13,15 @@
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/public/browser/shared_worker_instance.h"
 
+namespace blink {
+class StorageKey;
+}  // namespace blink
+
 namespace content {
+
+namespace protocol {
+class TargetAutoAttacher;
+}  // namespace protocol
 
 class SharedWorkerHost;
 
@@ -40,7 +48,7 @@ class SharedWorkerDevToolsAgentHost : public DevToolsAgentHostImpl {
       override;
   RenderProcessHost* GetProcessHost() override;
 
-  storage::StorageKey GetStorageKey() const;
+  blink::StorageKey GetStorageKey() const;
 
   bool Matches(SharedWorkerHost* worker_host);
   void WorkerReadyForInspection(
@@ -60,6 +68,8 @@ class SharedWorkerDevToolsAgentHost : public DevToolsAgentHostImpl {
   // DevToolsAgentHostImpl overrides.
   bool AttachSession(DevToolsSession* session, bool acquire_wake_lock) override;
   void DetachSession(DevToolsSession* session) override;
+
+  std::unique_ptr<protocol::TargetAutoAttacher> auto_attacher_;
 
   enum WorkerState {
     WORKER_NOT_READY,

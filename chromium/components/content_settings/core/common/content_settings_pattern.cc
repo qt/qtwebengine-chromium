@@ -9,11 +9,10 @@
 #include <memory>
 #include <tuple>
 #include <utility>
-#include <vector>
 
 #include "base/check_op.h"
+#include "base/cxx17_backports.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"

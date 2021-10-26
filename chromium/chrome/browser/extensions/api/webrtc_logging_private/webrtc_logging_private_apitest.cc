@@ -401,8 +401,8 @@ class WebrtcLoggingPrivateApiTest : public extensions::ExtensionApiTest {
 
     content::RenderFrameHost* render_frame_host =
         web_contents()->GetMainFrame();
-    const content::GlobalFrameRoutingId frame_id =
-        render_frame_host->GetGlobalFrameRoutingId();
+    const content::GlobalRenderFrameHostId frame_id =
+        render_frame_host->GetGlobalId();
     const base::ProcessId pid =
         render_frame_host->GetProcess()->GetProcess().Pid();
     const int lid = 0;
@@ -701,10 +701,9 @@ class WebrtcLoggingPrivateApiStartEventLoggingTestBase
   }
 
   void SetUpInProcessBrowserTestFixture() override {
-    ON_CALL(provider_, IsInitializationComplete(testing::_))
-        .WillByDefault(testing::Return(true));
-    ON_CALL(provider_, IsFirstPolicyLoadComplete(testing::_))
-        .WillByDefault(testing::Return(true));
+    provider_.SetDefaultReturns(
+        /*is_initialization_complete_return=*/true,
+        /*is_first_policy_load_complete_return=*/true);
 
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(&provider_);
     policy::PolicyMap values;

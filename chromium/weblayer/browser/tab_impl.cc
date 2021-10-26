@@ -15,8 +15,6 @@
 #include "base/task/thread_pool.h"
 #include "base/time/default_tick_clock.h"
 #include "cc/layers/layer.h"
-#include "components/android_autofill/browser/android_autofill_manager.h"
-#include "components/android_autofill/browser/autofill_provider.h"
 #include "components/autofill/content/browser/content_autofill_driver_factory.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/blocked_content/popup_blocker.h"
@@ -36,8 +34,9 @@
 #include "components/permissions/permission_request_manager.h"
 #include "components/permissions/permission_result.h"
 #include "components/prefs/pref_service.h"
+#include "components/safe_browsing/core/browser/db/database_manager.h"
 #include "components/sessions/content/session_tab_helper.h"
-#include "components/subresource_filter/content/browser/content_subresource_filter_throttle_manager.h"
+#include "components/subresource_filter/content/browser/content_subresource_filter_web_contents_helper.h"
 #include "components/subresource_filter/content/browser/ruleset_service.h"
 #include "components/translate/core/browser/translate_manager.h"
 #include "components/ukm/content/source_url_recorder.h"
@@ -103,7 +102,9 @@
 #include "base/android/jni_string.h"
 #include "base/json/json_writer.h"
 #include "base/trace_event/trace_event.h"
-#include "components/android_autofill/android/autofill_provider_android.h"
+#include "components/android_autofill/browser/android_autofill_manager.h"
+#include "components/android_autofill/browser/autofill_provider.h"
+#include "components/android_autofill/browser/autofill_provider_android.h"
 #include "components/browser_ui/sms/android/sms_infobar.h"
 #include "components/download/content/public/context_menu_download.h"
 #include "components/embedder_support/android/contextmenu/context_menu_builder.h"
@@ -275,15 +276,15 @@ GetDatabaseManagerFromSafeBrowsingService() {
 #endif
 }
 
-// Creates a ContentSubresourceFilterThrottleManager for |web_contents|, passing
-// it the needed embedder-level state.
-void CreateContentSubresourceFilterThrottleManagerForWebContents(
+// Creates a ContentSubresourceFilterWebContentsHelper for |web_contents|,
+// passing it the needed embedder-level state.
+void CreateContentSubresourceFilterWebContentsHelper(
     content::WebContents* web_contents) {
   subresource_filter::RulesetService* ruleset_service =
       BrowserProcess::GetInstance()->subresource_filter_ruleset_service();
   subresource_filter::VerifiedRulesetDealer::Handle* dealer =
       ruleset_service ? ruleset_service->GetRulesetDealer() : nullptr;
-  subresource_filter::ContentSubresourceFilterThrottleManager::
+  subresource_filter::ContentSubresourceFilterWebContentsHelper::
       CreateForWebContents(
           web_contents,
           SubresourceFilterProfileContextFactory::GetForBrowserContext(
@@ -365,8 +366,7 @@ TabImpl::TabImpl(ProfileImpl* profile,
   infobars::ContentInfoBarManager::CreateForWebContents(web_contents_.get());
 #endif
 
-  CreateContentSubresourceFilterThrottleManagerForWebContents(
-      web_contents_.get());
+  CreateContentSubresourceFilterWebContentsHelper(web_contents_.get());
 
   sessions::SessionTabHelper::CreateForWebContents(
       web_contents_.get(),
@@ -838,7 +838,7 @@ jboolean TabImpl::CanTranslate(JNIEnv* env) {
 
 void TabImpl::ShowTranslateUi(JNIEnv* env) {
   TranslateClientImpl::FromWebContents(web_contents())
-      ->ManualTranslateWhenReady();
+      ->ShowTranslateUiWhenReady();
 }
 
 void TabImpl::RemoveTabFromBrowserBeforeDestroying(JNIEnv* env) {
@@ -989,17 +989,15 @@ content::JavaScriptDialogManager* TabImpl::GetJavaScriptDialogManager(
 #endif
 }
 
-content::ColorChooser* TabImpl::OpenColorChooser(
+#if defined(OS_ANDROID)
+std::unique_ptr<content::ColorChooser> TabImpl::OpenColorChooser(
     content::WebContents* web_contents,
     SkColor color,
     const std::vector<blink::mojom::ColorSuggestionPtr>& suggestions) {
-#if defined(OS_ANDROID)
-  return new web_contents_delegate_android::ColorChooserAndroid(
+  return std::make_unique<web_contents_delegate_android::ColorChooserAndroid>(
       web_contents, color, suggestions);
-#else
-  return nullptr;
-#endif
 }
+#endif
 
 void TabImpl::CreateSmsPrompt(content::RenderFrameHost* render_frame_host,
                               const std::vector<url::Origin>& origin_list,
@@ -1126,7 +1124,7 @@ bool TabImpl::CheckMediaAccessPermission(
 void TabImpl::EnterFullscreenModeForTab(
     content::RenderFrameHost* requesting_frame,
     const blink::mojom::FullscreenOptions& options) {
-  // TODO: support |options|.
+  // TODO(crbug.com/1232147): support |options|.
   if (is_fullscreen_) {
     // Typically EnterFullscreenModeForTab() should not be called consecutively,
     // but there may be corner cases with oopif that lead to multiple
@@ -1358,7 +1356,6 @@ void TabImpl::SetBrowserControlsConstraint(
       base::android::AttachCurrentThread(), java_impl_,
       static_cast<int>(reason), static_cast<int>(constraint));
 }
-#endif
 
 void TabImpl::InitializeAutofillForTests() {
   InitializeAutofillDriver();
@@ -1375,7 +1372,6 @@ void TabImpl::InitializeAutofillDriver() {
   autofill::AutofillManager::AutofillDownloadManagerState
       enable_autofill_download_manager =
           autofill::AutofillManager::DISABLE_AUTOFILL_DOWNLOAD_MANAGER;
-#if defined(OS_ANDROID)
   if (base::FeatureList::IsEnabled(
           autofill::features::kAndroidAutofillQueryServerFieldTypes) &&
       (!autofill::AutofillProvider::
@@ -1383,13 +1379,14 @@ void TabImpl::InitializeAutofillDriver() {
     enable_autofill_download_manager =
         autofill::AutofillManager::ENABLE_AUTOFILL_DOWNLOAD_MANAGER;
   }
-#endif  // OS_ANDROID
 
   autofill::ContentAutofillDriverFactory::CreateForWebContentsAndDelegate(
       web_contents, AutofillClientImpl::FromWebContents(web_contents),
       i18n::GetApplicationLocale(), enable_autofill_download_manager,
       base::BindRepeating(&autofill::AndroidAutofillManager::Create));
 }
+
+#endif  // defined(OS_ANDROID)
 
 find_in_page::FindTabHelper* TabImpl::GetFindTabHelper() {
   return find_in_page::FindTabHelper::FromWebContents(web_contents_.get());

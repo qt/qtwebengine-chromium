@@ -8,7 +8,7 @@
 
 #include <algorithm>
 
-#include "base/numerics/ranges.h"
+#include "base/cxx17_backports.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -85,6 +85,12 @@ class GestureDetector::TimeoutGestureHandler {
 
     timeout_callbacks_[TAP] = &GestureDetector::OnTapTimeout;
     timeout_delays_[TAP] = config.double_tap_timeout;
+
+    if (config.task_runner) {
+      timeout_timers_[SHOW_PRESS].SetTaskRunner(config.task_runner);
+      timeout_timers_[LONG_PRESS].SetTaskRunner(config.task_runner);
+      timeout_timers_[TAP].SetTaskRunner(config.task_runner);
+    }
   }
 
   ~TimeoutGestureHandler() {
@@ -484,7 +490,7 @@ void GestureDetector::Init(const Config& config) {
   DCHECK_GT(config.maximum_swipe_deviation_angle, 0);
   DCHECK_LE(config.maximum_swipe_deviation_angle, 45);
   const float maximum_swipe_deviation_angle =
-      base::ClampToRange(config.maximum_swipe_deviation_angle, 0.001f, 45.0f);
+      base::clamp(config.maximum_swipe_deviation_angle, 0.001f, 45.0f);
   min_swipe_direction_component_ratio_ =
       1.f / tan(gfx::DegToRad(maximum_swipe_deviation_angle));
 

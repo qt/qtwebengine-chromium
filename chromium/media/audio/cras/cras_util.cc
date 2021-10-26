@@ -5,7 +5,6 @@
 #include "media/audio/cras/cras_util.h"
 
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "media/audio/audio_device_description.h"
@@ -46,6 +45,10 @@ bool IsForSimpleUsage(std::string type) {
          type == kLineout || type == kMic || type == kInternalMic ||
          type == kFrontMic || type == kRearMic || type == kBluetoothNBMic ||
          type == kUSB || type == kBluetooth || type == kAlsaLoopback;
+}
+
+bool IsInternalMic(std::string type) {
+  return type == kInternalMic || type == kFrontMic || type == kRearMic;
 }
 
 // Connects to the CRAS server.
@@ -141,7 +144,8 @@ void mergeDevices(CrasDevice& old_dev, CrasDevice& new_dev) {
              new_dev.node_type == kInternalSpeaker) {
     old_dev.name = kInternalOutputVirtualDevice;
     old_dev.node_type = "";
-  } else if (old_dev.node_type == kMic || new_dev.node_type == kMic) {
+  } else if (IsInternalMic(old_dev.node_type) ||
+             IsInternalMic(new_dev.node_type)) {
     old_dev.name = kInternalInputVirtualDevice;
     old_dev.node_type = "";
   } else {

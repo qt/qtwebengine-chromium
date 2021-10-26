@@ -213,9 +213,7 @@ SK_API void SkDebugf_FileLine(const char* file,
 
 #define SK_SUPPORT_LEGACY_DITHER
 
-#define SK_LEGACY_FLOAT_RSQRT
-
-#define SK_RASTER_PIPELINE_LEGACY_RCP_RSQRT
+#define SK_LEGACY_INNER_JOINS
 
 ///////////////////////// Imported from BUILD.gn and skia_common.gypi
 
@@ -229,6 +227,10 @@ SK_API void SkDebugf_FileLine(const char* file,
 
 #define SK_IGNORE_BLURRED_RRECT_OPT
 #define SK_USE_DISCARDABLE_SCALEDIMAGECACHE
+
+// Slight layout tests differences when changing GPU dither from shader
+// calculations to a texture table.
+#define SK_DISABLE_GPU_TABLE_DITHER
 
 #define SK_ATTR_DEPRECATED          SK_NOTHING_ARG1
 #define GR_GL_CUSTOM_SETUP_HEADER   "GrGLConfig_chrome.h"

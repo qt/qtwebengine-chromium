@@ -27,12 +27,13 @@ class CPWL_ListBox : public CPWL_Wnd, public CPWL_ListCtrl::NotifyIface {
   void OnDestroy() override;
   void DrawThisAppearance(CFX_RenderDevice* pDevice,
                           const CFX_Matrix& mtUser2Device) override;
-  bool OnKeyDown(uint16_t nChar, uint32_t nFlag) override;
-  bool OnChar(uint16_t nChar, uint32_t nFlag) override;
-  bool OnLButtonDown(uint32_t nFlag, const CFX_PointF& point) override;
-  bool OnLButtonUp(uint32_t nFlag, const CFX_PointF& point) override;
-  bool OnMouseMove(uint32_t nFlag, const CFX_PointF& point) override;
-  bool OnMouseWheel(uint32_t nFlag,
+  bool OnKeyDown(FWL_VKEYCODE nKeyCode, Mask<FWL_EVENTFLAG> nFlag) override;
+  bool OnChar(uint16_t nChar, Mask<FWL_EVENTFLAG> nFlag) override;
+  bool OnLButtonDown(Mask<FWL_EVENTFLAG> nFlag,
+                     const CFX_PointF& point) override;
+  bool OnLButtonUp(Mask<FWL_EVENTFLAG> nFlag, const CFX_PointF& point) override;
+  bool OnMouseMove(Mask<FWL_EVENTFLAG> nFlag, const CFX_PointF& point) override;
+  bool OnMouseWheel(Mask<FWL_EVENTFLAG> nFlag,
                     const CFX_PointF& point,
                     const CFX_Vector& delta) override;
   WideString GetText() override;
@@ -54,7 +55,7 @@ class CPWL_ListBox : public CPWL_Wnd, public CPWL_ListCtrl::NotifyIface {
   void OnSetScrollPosY(float fy) override;
   void OnInvalidateRect(const CFX_FloatRect& pRect) override;
 
-  bool OnNotifySelectionChanged(bool bKeyDown, uint32_t nFlag);
+  bool OnNotifySelectionChanged(bool bKeyDown, Mask<FWL_EVENTFLAG> nFlag);
 
   void AddString(const WideString& str);
   void SetTopVisibleIndex(int32_t nItemIndex);
@@ -81,7 +82,7 @@ class CPWL_ListBox : public CPWL_Wnd, public CPWL_ListCtrl::NotifyIface {
     m_pFillerNotify = pNotify;
   }
 
-  void AttachFFLData(CFFL_FormFiller* pData) { m_pFormFiller = pData; }
+  void AttachFFLData(CFFL_FormField* pData) { m_pFormFiller = pData; }
 
  protected:
   bool m_bMouseDown = false;
@@ -90,7 +91,7 @@ class CPWL_ListBox : public CPWL_Wnd, public CPWL_ListCtrl::NotifyIface {
   UnownedPtr<IPWL_FillerNotify> m_pFillerNotify;
 
  private:
-  UnownedPtr<CFFL_FormFiller> m_pFormFiller;
+  UnownedPtr<CFFL_FormField> m_pFormFiller;
 };
 
 #endif  // FPDFSDK_PWL_CPWL_LIST_BOX_H_

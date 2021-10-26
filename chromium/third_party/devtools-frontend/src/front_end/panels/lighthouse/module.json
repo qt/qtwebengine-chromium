@@ -6,9 +6,8 @@
     "entrypoints/inspector_main",
     "ui/legacy"
   ],
-    "resources": [
-    "../../third_party/lighthouse/report-assets/template.html",
-    "../../third_party/lighthouse/report-assets/templates.html",
+  "resources": [
+    "../../third_party/lighthouse/report-assets/standalone-template.html",
     "../../third_party/lighthouse/report-assets/report.css",
     "../../third_party/lighthouse/report-assets/report.js",
     "lighthouseDialog.css",

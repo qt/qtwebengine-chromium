@@ -43,6 +43,8 @@
 namespace angle
 {
 class FrameCapture;
+class FrameCaptureShared;
+class ResourceTracker;
 struct FrontendFeatures;
 }  // namespace angle
 
@@ -269,6 +271,8 @@ class StateCache final : angle::NonCopyable
     void onQueryChange(Context *context);
     void onActiveTransformFeedbackChange(Context *context);
     void onUniformBufferStateChange(Context *context);
+    void onAtomicCounterBufferStateChange(Context *context);
+    void onShaderStorageBufferStateChange(Context *context);
     void onColorMaskChange(Context *context);
     void onBufferBindingChange(Context *context);
     void onBlendFuncIndexedChange(Context *context);
@@ -444,6 +448,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     ANGLE_GLES_3_2_CONTEXT_API
     ANGLE_GLES_EXT_CONTEXT_API
 
+    angle::Result handleNoopDrawEvent();
+
     // Consumes an error.
     void handleError(GLenum errorCode,
                      const char *message,
@@ -588,7 +594,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     const angle::FrontendFeatures &getFrontendFeatures() const;
 
-    angle::FrameCapture *getFrameCapture() { return mFrameCapture.get(); }
+    angle::FrameCapture *getFrameCapture() const { return mFrameCapture.get(); }
+    angle::ResourceTracker &getFrameCaptureSharedResourceTracker() const;
 
     const VertexArrayMap &getVertexArraysForCapture() const { return mVertexArrayMap; }
     const QueryMap &getQueriesForCapture() const { return mQueryMap; }
@@ -738,7 +745,6 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     GLenum mResetStrategy;
     const bool mRobustAccess;
     const bool mSurfacelessSupported;
-    const bool mExplicitContextAvailable;
     egl::Surface *mCurrentDrawSurface;
     egl::Surface *mCurrentReadSurface;
     egl::Display *mDisplay;
@@ -770,6 +776,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     angle::ObserverBinding mDrawFramebufferObserverBinding;
     angle::ObserverBinding mReadFramebufferObserverBinding;
     std::vector<angle::ObserverBinding> mUniformBufferObserverBindings;
+    std::vector<angle::ObserverBinding> mAtomicCounterBufferObserverBindings;
+    std::vector<angle::ObserverBinding> mShaderStorageBufferObserverBindings;
     std::vector<angle::ObserverBinding> mSamplerObserverBindings;
     std::vector<angle::ObserverBinding> mImageObserverBindings;
 
@@ -793,6 +801,28 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     const bool mSaveAndRestoreState;
 
     bool mIsCurrent;
+};
+
+class ScopedContextRef
+{
+  public:
+    ScopedContextRef(Context *context) : mContext(context)
+    {
+        if (mContext)
+        {
+            mContext->addRef();
+        }
+    }
+    ~ScopedContextRef()
+    {
+        if (mContext)
+        {
+            mContext->release();
+        }
+    }
+
+  private:
+    Context *const mContext;
 };
 
 // Thread-local current valid context bound to the thread.

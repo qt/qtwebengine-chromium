@@ -15,20 +15,17 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLConstantFolder.h"
+#include "src/sksl/SkSLDSLParser.h"
 #include "src/sksl/SkSLIRGenerator.h"
 #include "src/sksl/SkSLOperators.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLRehydrator.h"
-#include "src/sksl/codegen/SkSLCPPCodeGenerator.h"
-#include "src/sksl/codegen/SkSLDSLCPPCodeGenerator.h"
 #include "src/sksl/codegen/SkSLGLSLCodeGenerator.h"
-#include "src/sksl/codegen/SkSLHCodeGenerator.h"
 #include "src/sksl/codegen/SkSLMetalCodeGenerator.h"
 #include "src/sksl/codegen/SkSLSPIRVCodeGenerator.h"
 #include "src/sksl/codegen/SkSLSPIRVtoHLSL.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/dsl/priv/DSL_priv.h"
-#include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
@@ -61,11 +58,11 @@
 #else
 
 // At runtime, we load the dehydrated sksl data files. The data is a (pointer, size) pair.
-#include "src/sksl/generated/sksl_fp.dehydrated.sksl"
 #include "src/sksl/generated/sksl_frag.dehydrated.sksl"
 #include "src/sksl/generated/sksl_geom.dehydrated.sksl"
 #include "src/sksl/generated/sksl_gpu.dehydrated.sksl"
 #include "src/sksl/generated/sksl_public.dehydrated.sksl"
+#include "src/sksl/generated/sksl_rt_blend.dehydrated.sksl"
 #include "src/sksl/generated/sksl_rt_colorfilter.dehydrated.sksl"
 #include "src/sksl/generated/sksl_rt_shader.dehydrated.sksl"
 #include "src/sksl/generated/sksl_vert.dehydrated.sksl"
@@ -85,7 +82,7 @@ using RefKind = VariableReference::RefKind;
 
 class AutoSource {
 public:
-    AutoSource(Compiler* compiler, const String* source)
+    AutoSource(Compiler* compiler, const char* source)
             : fCompiler(compiler) {
         SkASSERT(!fCompiler->fSource);
         fCompiler->fSource = source;
@@ -156,6 +153,7 @@ Compiler::Compiler(const ShaderCapsClass* caps)
 
         TYPE(ColorFilter),
         TYPE(Shader),
+        TYPE(Blender),
     };
 
     const SkSL::Symbol* privateTypes[] = {
@@ -185,8 +183,6 @@ Compiler::Compiler(const ShaderCapsClass* caps)
 
         TYPE(Sampler),
         TYPE(Texture2D),
-
-        TYPE(FragmentProcessor),
     };
 
     for (const SkSL::Symbol* type : rootTypes) {
@@ -244,14 +240,6 @@ const ParsedModule& Compiler::loadGeometryModule() {
     return fGeometryModule;
 }
 
-const ParsedModule& Compiler::loadFPModule() {
-    if (!fFPModule.fSymbols) {
-        fFPModule = this->parseModule(ProgramKind::kFragmentProcessor, MODULE_DATA(fp),
-                                      this->loadGPUModule());
-    }
-    return fFPModule;
-}
-
 const ParsedModule& Compiler::loadPublicModule() {
     if (!fPublicModule.fSymbols) {
         fPublicModule = this->parseModule(ProgramKind::kGeneric, MODULE_DATA(public), fRootModule);
@@ -297,14 +285,23 @@ const ParsedModule& Compiler::loadRuntimeShaderModule() {
     return fRuntimeShaderModule;
 }
 
+const ParsedModule& Compiler::loadRuntimeBlenderModule() {
+    if (!fRuntimeBlenderModule.fSymbols) {
+        fRuntimeBlenderModule = this->parseModule(
+                ProgramKind::kRuntimeBlender, MODULE_DATA(rt_blend), this->loadPublicModule());
+        add_glsl_type_aliases(fRuntimeBlenderModule.fSymbols.get(), fContext->fTypes);
+    }
+    return fRuntimeBlenderModule;
+}
+
 const ParsedModule& Compiler::moduleForProgramKind(ProgramKind kind) {
     switch (kind) {
         case ProgramKind::kVertex:             return this->loadVertexModule();             break;
         case ProgramKind::kFragment:           return this->loadFragmentModule();           break;
         case ProgramKind::kGeometry:           return this->loadGeometryModule();           break;
-        case ProgramKind::kFragmentProcessor:  return this->loadFPModule();                 break;
         case ProgramKind::kRuntimeColorFilter: return this->loadRuntimeColorFilterModule(); break;
         case ProgramKind::kRuntimeShader:      return this->loadRuntimeShaderModule();      break;
+        case ProgramKind::kRuntimeBlender:     return this->loadRuntimeBlenderModule();     break;
         case ProgramKind::kGeneric:            return this->loadPublicModule();             break;
     }
     SkUNREACHABLE;
@@ -346,9 +343,9 @@ LoadedModule Compiler::loadModule(ProgramKind kind,
     std::vector<std::unique_ptr<ProgramElement>> elements;
     std::vector<const ProgramElement*> sharedElements;
     dsl::StartModule(this, kind, settings, baseModule);
-    AutoSource as(this, source);
+    AutoSource as(this, source->c_str());
     IRGenerator::IRBundle ir = fIRGenerator->convertProgram(baseModule, /*isBuiltinCode=*/true,
-                                                            source->c_str(), source->length());
+                                                            *source);
     SkASSERT(ir.fSharedElements.empty());
     LoadedModule module = { kind, std::move(ir.fSymbolTable), std::move(ir.fElements) };
     dsl::End();
@@ -395,23 +392,17 @@ ParsedModule Compiler::parseModule(ProgramKind kind, ModuleData data, const Pars
                 // These are already in the symbol table.
                 break;
             }
-            case ProgramElement::Kind::kEnum: {
-                const Enum& e = element->as<Enum>();
-                SkASSERT(e.isBuiltin());
-                intrinsics->insertOrDie(e.typeName(), std::move(element));
-                break;
-            }
             case ProgramElement::Kind::kGlobalVar: {
                 const GlobalVarDeclaration& global = element->as<GlobalVarDeclaration>();
                 const Variable& var = global.declaration()->as<VarDeclaration>().var();
                 SkASSERT(var.isBuiltin());
-                intrinsics->insertOrDie(var.name(), std::move(element));
+                intrinsics->insertOrDie(String(var.name()), std::move(element));
                 break;
             }
             case ProgramElement::Kind::kInterfaceBlock: {
                 const Variable& var = element->as<InterfaceBlock>().variable();
                 SkASSERT(var.isBuiltin());
-                intrinsics->insertOrDie(var.name(), std::move(element));
+                intrinsics->insertOrDie(String(var.name()), std::move(element));
                 break;
             }
             default:
@@ -432,9 +423,11 @@ std::unique_ptr<Program> Compiler::convertProgram(
 
     SkASSERT(!settings.fExternalFunctions || (kind == ProgramKind::kGeneric));
 
+#if !SKSL_DSL_PARSER
     // Loading and optimizing our base module might reset the inliner, so do that first,
     // *then* configure the inliner with the settings for this program.
     const ParsedModule& baseModule = this->moduleForProgramKind(kind);
+#endif
 
     // Honor our optimization-override flags.
     switch (sOptimizer) {
@@ -466,18 +459,28 @@ std::unique_ptr<Program> Compiler::convertProgram(
     settings.fRemoveDeadFunctions &= settings.fOptimize;
     settings.fRemoveDeadVariables &= settings.fOptimize;
 
+    // Runtime effects always allow narrowing conversions.
+    if (ProgramConfig::IsRuntimeEffect(kind)) {
+        settings.fAllowNarrowingConversions = true;
+    }
+
     fErrorText = "";
     fErrorCount = 0;
     fInliner.reset();
 
+#if SKSL_DSL_PARSER
+    settings.fDSLMangling = false;
+    return DSLParser(this, settings, kind, text).program();
+#else
     auto textPtr = std::make_unique<String>(std::move(text));
-    AutoSource as(this, textPtr.get());
+    AutoSource as(this, textPtr->c_str());
 
     dsl::Start(this, kind, settings);
+    dsl::SetErrorHandler(this);
     IRGenerator::IRBundle ir = fIRGenerator->convertProgram(baseModule, /*isBuiltinCode=*/false,
-                                                            textPtr->c_str(), textPtr->size());
-    // Ideally, we would just use DSLWriter::ReleaseProgram and not have to do any manual mucking
-    // about with the memory pool, but we've got some impedance mismatches to solve first
+                                                            *textPtr);
+    // Ideally, we would just use dsl::ReleaseProgram and not have to do any manual mucking about
+    // with the memory pool, but we've got some impedance mismatches to solve first
     Pool* memoryPool = dsl::DSLWriter::MemoryPool().get();
     auto program = std::make_unique<Program>(std::move(textPtr),
                                              std::move(dsl::DSLWriter::GetProgramConfig()),
@@ -502,6 +505,7 @@ std::unique_ptr<Program> Compiler::convertProgram(
         memoryPool->detachFromThread();
     }
     return success ? std::move(program) : nullptr;
+#endif // SKSL_DSL_PARSER
 }
 
 void Compiler::verifyStaticTests(const Program& program) {
@@ -719,6 +723,131 @@ bool Compiler::removeDeadLocalVariables(Program& program, ProgramUsage* usage) {
     return visitor.fMadeChanges;
 }
 
+void Compiler::removeUnreachableCode(Program& program, ProgramUsage* usage) {
+    class UnreachableCodeEliminator : public ProgramWriter {
+    public:
+        UnreachableCodeEliminator(const Context& context, ProgramUsage* usage)
+                : fContext(context)
+                , fUsage(usage) {
+            fFoundFunctionExit.push(false);
+            fFoundLoopExit.push(false);
+        }
+
+        using ProgramWriter::visitProgramElement;
+
+        bool visitExpressionPtr(std::unique_ptr<Expression>& expr) override {
+            // We don't need to look inside expressions at all.
+            return false;
+        }
+
+        bool visitStatementPtr(std::unique_ptr<Statement>& stmt) override {
+            if (fFoundFunctionExit.top() || fFoundLoopExit.top()) {
+                // If we already found an exit in this section, anything beyond it is dead code.
+                if (!stmt->is<Nop>()) {
+                    // Eliminate the dead statement by substituting a Nop.
+                    fUsage->remove(stmt.get());
+                    stmt = std::make_unique<Nop>();
+                }
+                return false;
+            }
+
+            switch (stmt->kind()) {
+                case Statement::Kind::kReturn:
+                case Statement::Kind::kDiscard:
+                    // We found a function exit on this path.
+                    fFoundFunctionExit.top() = true;
+                    break;
+
+                case Statement::Kind::kBreak:
+                case Statement::Kind::kContinue:
+                    // We found a loop exit on this path. Note that we skip over switch statements
+                    // completely when eliminating code, so any `break` statement would be breaking
+                    // out of a loop, not out of a switch.
+                    fFoundLoopExit.top() = true;
+                    break;
+
+                case Statement::Kind::kExpression:
+                case Statement::Kind::kInlineMarker:
+                case Statement::Kind::kNop:
+                case Statement::Kind::kVarDeclaration:
+                    // These statements don't affect control flow.
+                    break;
+
+                case Statement::Kind::kBlock:
+                    // Blocks are on the straight-line path and don't affect control flow.
+                    return INHERITED::visitStatementPtr(stmt);
+
+                case Statement::Kind::kDo: {
+                    // Function-exits are allowed to propagate outside of a do-loop, because it
+                    // always executes its body at least once.
+                    fFoundLoopExit.push(false);
+                    bool result = INHERITED::visitStatementPtr(stmt);
+                    fFoundLoopExit.pop();
+                    return result;
+                }
+                case Statement::Kind::kFor: {
+                    // Function-exits are not allowed to propagate out, because a for-loop or while-
+                    // loop could potentially run zero times.
+                    fFoundFunctionExit.push(false);
+                    fFoundLoopExit.push(false);
+                    bool result = INHERITED::visitStatementPtr(stmt);
+                    fFoundLoopExit.pop();
+                    fFoundFunctionExit.pop();
+                    return result;
+                }
+                case Statement::Kind::kIf: {
+                    // This statement is conditional and encloses two inner sections of code.
+                    // If both sides contain a function-exit or loop-exit, that exit is allowed to
+                    // propagate out.
+                    IfStatement& ifStmt = stmt->as<IfStatement>();
+
+                    fFoundFunctionExit.push(false);
+                    fFoundLoopExit.push(false);
+                    bool result = (ifStmt.ifTrue() && this->visitStatementPtr(ifStmt.ifTrue()));
+                    bool foundFunctionExitOnTrue = fFoundFunctionExit.top();
+                    bool foundLoopExitOnTrue = fFoundLoopExit.top();
+                    fFoundFunctionExit.pop();
+                    fFoundLoopExit.pop();
+
+                    fFoundFunctionExit.push(false);
+                    fFoundLoopExit.push(false);
+                    result |= (ifStmt.ifFalse() && this->visitStatementPtr(ifStmt.ifFalse()));
+                    bool foundFunctionExitOnFalse = fFoundFunctionExit.top();
+                    bool foundLoopExitOnFalse = fFoundLoopExit.top();
+                    fFoundFunctionExit.pop();
+                    fFoundLoopExit.pop();
+
+                    fFoundFunctionExit.top() |= foundFunctionExitOnTrue && foundFunctionExitOnFalse;
+                    fFoundLoopExit.top() |= foundLoopExitOnTrue && foundLoopExitOnFalse;
+                    return result;
+                }
+                case Statement::Kind::kSwitch:
+                case Statement::Kind::kSwitchCase:
+                    // We skip past switch statements entirely when scanning for dead code. Their
+                    // control flow is quite complex and we already do a good job of flattening out
+                    // switches on constant values.
+                    break;
+            }
+
+            return false;
+        }
+
+        const Context& fContext;
+        ProgramUsage* fUsage;
+        std::stack<bool> fFoundFunctionExit;
+        std::stack<bool> fFoundLoopExit;
+
+        using INHERITED = ProgramWriter;
+    };
+
+    for (std::unique_ptr<ProgramElement>& pe : program.ownedElements()) {
+        if (pe->is<FunctionDefinition>()) {
+            UnreachableCodeEliminator visitor{*fContext, usage};
+            visitor.visitProgramElement(*pe);
+        }
+    }
+}
+
 bool Compiler::optimize(Program& program) {
     // The optimizer only needs to run when it is enabled.
     if (!program.fConfig->fSettings.fOptimize) {
@@ -739,9 +868,10 @@ bool Compiler::optimize(Program& program) {
         while (this->removeDeadLocalVariables(program, usage)) {
             // Removing dead variables may cause more variables to become unreferenced. Try again.
         }
-        if (program.fConfig->fKind != ProgramKind::kFragmentProcessor) {
-            this->removeDeadGlobalVariables(program, usage);
-        }
+        // Unreachable code can confuse some drivers, so it's worth removing. (skia:12012)
+        this->removeUnreachableCode(program, usage);
+
+        this->removeDeadGlobalVariables(program, usage);
     }
 
     if (fErrorCount == 0) {
@@ -755,7 +885,11 @@ bool Compiler::optimize(Program& program) {
 
 bool Compiler::toSPIRV(Program& program, OutputStream& out) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::toSPIRV");
-    AutoSource as(this, program.fSource.get());
+    AutoSource as(this, program.fSource->c_str());
+    ProgramSettings settings;
+    settings.fDSLUseMemoryPool = false;
+    dsl::Start(this, program.fConfig->fKind, settings);
+    dsl::DSLWriter::IRGenerator().fSymbolTable = program.fSymbols;
 #ifdef SK_ENABLE_SPIRV_VALIDATION
     StringStream buffer;
     SPIRVCodeGenerator cg(fContext.get(), &program, this, &buffer);
@@ -794,6 +928,7 @@ bool Compiler::toSPIRV(Program& program, OutputStream& out) {
     SPIRVCodeGenerator cg(fContext.get(), &program, this, &out);
     bool result = cg.generateCode();
 #endif
+    dsl::End();
     return result;
 }
 
@@ -808,7 +943,7 @@ bool Compiler::toSPIRV(Program& program, String* out) {
 
 bool Compiler::toGLSL(Program& program, OutputStream& out) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::toGLSL");
-    AutoSource as(this, program.fSource.get());
+    AutoSource as(this, program.fSource->c_str());
     GLSLCodeGenerator cg(fContext.get(), &program, this, &out);
     bool result = cg.generateCode();
     return result;
@@ -834,7 +969,7 @@ bool Compiler::toHLSL(Program& program, String* out) {
 
 bool Compiler::toMetal(Program& program, OutputStream& out) {
     TRACE_EVENT0("skia.shaders", "SkSL::Compiler::toMetal");
-    AutoSource as(this, program.fSource.get());
+    AutoSource as(this, program.fSource->c_str());
     MetalCodeGenerator cg(fContext.get(), &program, this, &out);
     bool result = cg.generateCode();
     return result;
@@ -849,63 +984,15 @@ bool Compiler::toMetal(Program& program, String* out) {
     return result;
 }
 
-#if defined(SKSL_STANDALONE) || GR_TEST_UTILS
-bool Compiler::toCPP(Program& program, String name, OutputStream& out) {
-    AutoSource as(this, program.fSource.get());
-    CPPCodeGenerator cg(fContext.get(), &program, this, name, &out);
-    bool result = cg.generateCode();
-    return result;
-}
-
-bool Compiler::toDSLCPP(Program& program, String name, OutputStream& out) {
-    AutoSource as(this, program.fSource.get());
-    DSLCPPCodeGenerator cg(fContext.get(), &program, this, name, &out);
-    bool result = cg.generateCode();
-    return result;
-}
-
-bool Compiler::toH(Program& program, String name, OutputStream& out) {
-    AutoSource as(this, program.fSource.get());
-    HCodeGenerator cg(fContext.get(), &program, this, name, &out);
-    bool result = cg.generateCode();
-    return result;
-}
-#endif // defined(SKSL_STANDALONE) || GR_TEST_UTILS
-
 #endif // defined(SKSL_STANDALONE) || SK_SUPPORT_GPU
 
-Position Compiler::position(int offset) {
-    if (fSource && offset >= 0) {
-        int line = 1;
-        int column = 1;
-        for (int i = 0; i < offset; i++) {
-            if ((*fSource)[i] == '\n') {
-                ++line;
-                column = 1;
-            }
-            else {
-                ++column;
-            }
-        }
-        return Position(line, column);
-    } else {
-        return Position(-1, -1);
+void Compiler::handleError(const char* msg, dsl::PositionInfo pos) {
+    if (strstr(msg, POISON_TAG)) {
+        // don't report errors on poison values
+        return;
     }
-}
-
-void Compiler::error(int offset, String msg) {
     fErrorCount++;
-    Position pos = this->position(offset);
-    fErrorTextLength.push_back(fErrorText.length());
-    fErrorText += "error: " + (pos.fLine >= 1 ? to_string(pos.fLine) + ": " : "") + msg + "\n";
-}
-
-void Compiler::setErrorCount(int c) {
-    if (c < fErrorCount) {
-        fErrorText.resize(fErrorTextLength[c]);
-        fErrorTextLength.resize(c);
-        fErrorCount = c;
-    }
+    fErrorText += "error: " + (pos.line() >= 1 ? to_string(pos.line()) + ": " : "") + msg + "\n";
 }
 
 String Compiler::errorText(bool showCount) {

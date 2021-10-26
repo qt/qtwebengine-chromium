@@ -158,13 +158,13 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateRootStyle(
     CFX_CSSLength letterSpacing;
     letterSpacing.Set(CFX_CSSLengthUnit::Point, font->GetLetterSpacing());
     pStyle->SetLetterSpacing(letterSpacing);
-    uint32_t dwDecoration = 0;
+    Mask<CFX_CSSTEXTDECORATION> dwDecoration;
     if (font->GetLineThrough() > 0)
-      dwDecoration |= CFX_CSSTEXTDECORATION_LineThrough;
+      dwDecoration |= CFX_CSSTEXTDECORATION::kLineThrough;
     if (font->GetUnderline() > 1)
-      dwDecoration |= CFX_CSSTEXTDECORATION_Double;
+      dwDecoration |= CFX_CSSTEXTDECORATION::kDouble;
     else if (font->GetUnderline() > 0)
-      dwDecoration |= CFX_CSSTEXTDECORATION_Underline;
+      dwDecoration |= CFX_CSSTEXTDECORATION::kUnderline;
 
     pStyle->SetTextDecoration(dwDecoration);
   }
@@ -180,7 +180,7 @@ RetainPtr<CFX_CSSComputedStyle> CXFA_TextParser::CreateStyle(
   if (!pParentStyle)
     return pNewStyle;
 
-  uint32_t dwDecoration = pParentStyle->GetTextDecoration();
+  Mask<CFX_CSSTEXTDECORATION> dwDecoration = pParentStyle->GetTextDecoration();
   float fBaseLine = 0;
   if (pParentStyle->GetVerticalAlign() == CFX_CSSVerticalAlign::Number)
     fBaseLine = pParentStyle->GetNumberVerticalAlign();
@@ -283,7 +283,7 @@ bool CXFA_TextParser::TagValidate(const WideString& wsName) const {
       0xdb8ac455,  // html
   };
   return std::binary_search(std::begin(s_XFATagName), std::end(s_XFATagName),
-                            FX_HashCode_GetW(wsName.AsStringView(), true));
+                            FX_HashCode_GetLoweredW(wsName.AsStringView()));
 }
 
 // static
@@ -420,10 +420,10 @@ int32_t CXFA_TextParser::GetUnderline(
   if (!pStyle)
     return font ? font->GetUnderline() : 0;
 
-  const uint32_t dwDecoration = pStyle->GetTextDecoration();
-  if (dwDecoration & CFX_CSSTEXTDECORATION_Double)
+  const Mask<CFX_CSSTEXTDECORATION> dwDecoration = pStyle->GetTextDecoration();
+  if (dwDecoration & CFX_CSSTEXTDECORATION::kDouble)
     return 2;
-  if (dwDecoration & CFX_CSSTEXTDECORATION_Underline)
+  if (dwDecoration & CFX_CSSTEXTDECORATION::kUnderline)
     return 1;
   return 0;
 }
@@ -444,8 +444,9 @@ int32_t CXFA_TextParser::GetLinethrough(
     CXFA_TextProvider* pTextProvider,
     const CFX_CSSComputedStyle* pStyle) const {
   if (pStyle) {
-    const uint32_t dwDecoration = pStyle->GetTextDecoration();
-    return (dwDecoration & CFX_CSSTEXTDECORATION_LineThrough) ? 1 : 0;
+    const Mask<CFX_CSSTEXTDECORATION> dwDecoration =
+        pStyle->GetTextDecoration();
+    return (dwDecoration & CFX_CSSTEXTDECORATION::kLineThrough) ? 1 : 0;
   }
   CXFA_Font* font = pTextProvider->GetFontIfExists();
   return font ? font->GetLineThrough() : 0;
@@ -503,15 +504,15 @@ Optional<WideString> CXFA_TextParser::GetEmbeddedObj(
     const CXFA_TextProvider* pTextProvider,
     const CFX_XMLNode* pXMLNode) {
   if (!pXMLNode)
-    return {};
+    return pdfium::nullopt;
 
   const CFX_XMLElement* pElement = ToXMLElement(pXMLNode);
   if (!pElement)
-    return {};
+    return pdfium::nullopt;
 
   WideString wsAttr = pElement->GetAttribute(L"xfa:embed");
   if (wsAttr.IsEmpty())
-    return {};
+    return pdfium::nullopt;
 
   if (wsAttr[0] == L'#')
     wsAttr.Delete(0);
@@ -519,12 +520,12 @@ Optional<WideString> CXFA_TextParser::GetEmbeddedObj(
   WideString ws =
       GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedType", L"som");
   if (!ws.EqualsASCII("uri"))
-    return {};
+    return pdfium::nullopt;
 
   ws = GetLowerCaseElementAttributeOrDefault(pElement, L"xfa:embedMode",
                                              L"formatted");
   if (!(ws.EqualsASCII("raw") || ws.EqualsASCII("formatted")))
-    return {};
+    return pdfium::nullopt;
 
   return pTextProvider->GetEmbeddedObj(wsAttr);
 }
@@ -599,7 +600,7 @@ bool CXFA_TextParser::GetTabstops(const CFX_CSSComputedStyle* pStyle,
         break;
       case TabStopStatus::Location:
         if (ch == ' ') {
-          uint32_t dwHashCode = FX_HashCode_GetW(wsAlign.AsStringView(), true);
+          uint32_t dwHashCode = FX_HashCode_GetLoweredW(wsAlign.AsStringView());
           CXFA_Measurement ms(
               WideStringView(spTabStops.subspan(iLast, iCur - iLast)));
           float fPos = ms.ToUnit(XFA_Unit::Pt);
@@ -615,7 +616,7 @@ bool CXFA_TextParser::GetTabstops(const CFX_CSSComputedStyle* pStyle,
   }
 
   if (!wsAlign.IsEmpty()) {
-    uint32_t dwHashCode = FX_HashCode_GetW(wsAlign.AsStringView(), true);
+    uint32_t dwHashCode = FX_HashCode_GetLoweredW(wsAlign.AsStringView());
     CXFA_Measurement ms(
         WideStringView(spTabStops.subspan(iLast, iCur - iLast)));
     float fPos = ms.ToUnit(XFA_Unit::Pt);

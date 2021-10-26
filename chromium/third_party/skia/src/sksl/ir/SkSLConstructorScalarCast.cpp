@@ -61,17 +61,28 @@ std::unique_ptr<Expression> ConstructorScalarCast::Convert(const Context& contex
     SkASSERT(type.isScalar());
 
     if (args.size() != 1) {
-        context.fErrors.error(offset, "invalid arguments to '" + type.displayName() +
-                                      "' constructor, (expected exactly 1 argument, but found " +
-                                      to_string((uint64_t)args.size()) + ")");
+        context.errors().error(offset, "invalid arguments to '" + type.displayName() +
+                                       "' constructor, (expected exactly 1 argument, but found " +
+                                       to_string((uint64_t)args.size()) + ")");
         return nullptr;
     }
 
     const Type& argType = args[0]->type();
     if (!argType.isScalar()) {
-        context.fErrors.error(offset, "invalid argument to '" + type.displayName() +
-                                      "' constructor (expected a number or bool, but found '" +
-                                      argType.displayName() + "')");
+        // Casting a vector-type into its scalar component type is treated as a slice in GLSL.
+        // We don't allow those casts in SkSL; recommend a .x swizzle instead.
+        const char* swizzleHint = "";
+        if (argType.componentType() == type) {
+            if (argType.isVector()) {
+                swizzleHint = "; use '.x' instead";
+            } else if (argType.isMatrix()) {
+                swizzleHint = "; use '[0][0]' instead";
+            }
+        }
+
+        context.errors().error(offset,
+                               "'" + argType.displayName() + "' is not a valid parameter to '" +
+                               type.displayName() + "' constructor" + swizzleHint);
         return nullptr;
     }
 

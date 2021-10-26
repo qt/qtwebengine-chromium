@@ -1,7 +1,9 @@
-/* Copyright 2020 The Chromium Authors. All rights reserved.
+/*
+ * Copyright 2020 The Chromium Authors. All rights reserved.
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
+
 /**
  * These are the new set of colors for the new Light/Dark themes. See
  * https://crbug.com/1122511 and
@@ -98,6 +100,26 @@
   --issue-color-blue: rgb(26 115 232);
   /** Used to indicate an input box */
   --input-outline: rgb(202 205 209);
+
+  /** These colors are used to show errors */
+  --color-error-text: #f00;
+  --color-error-border: hsl(0deg 100% 92%);
+  --color-error-background: hsl(0deg 100% 97%);
+  --color-image-preview-background: rgb(255 255 255);
+
+  /* Colors for styling inputs */
+  --color-input-outline: rgb(128 134 139);
+  --color-input-outline-active: rgb(26 115 232);
+  --color-input-outline-error: rgb(217 48 37);
+  --color-input-outline-disabled: rgba(128 134 139 / 20%);
+  --color-input-text-disabled: rgba(128 134 139 / 50%);
+
+  /* Colors for styling buttons */
+  --color-button-outline-focus: rgb(26 115 232 / 50%);
+  --color-button-primary-background-hovering: rgb(77 134 225 / 100%);
+  --color-button-primary-background-pressed: rgb(88 132 205);
+  --color-button-secondary-background-hovering: rgb(26 115 232 / 10%);
+  --color-button-secondary-background-pressed: rgb(26 92 178 / 25%);
 }
 
 .-theme-with-dark-background {
@@ -110,7 +132,7 @@
   --color-background-elevation-0: rgb(32 32 35);
   --color-background-elevation-1: rgb(41 42 45);
   --color-background-elevation-2: rgb(53 54 58);
-  --color-background-elevation-dark-only: var(--color-background-elevation-2);
+  --color-background-elevation-dark-only: var(--color-background-elevation-1);
   --color-background-highlight: rgb(75 76 79);
   --divider-line: rgb(255 255 255 / 10%);
   --color-background-hover-overlay: rgb(56 121 217 / 10%);
@@ -124,6 +146,7 @@
   --color-details-hairline: rgb(73 76 80);
   --color-details-hairline-light: rgb(54 57 59);
   --color-accent-red: rgb(242 139 130);
+  --color-red: rgb(237 78 76);
   --color-accent-green: rgb(129 201 149);
   --color-link: var(--color-primary);
   --color-syntax-1: rgb(53 212 199);
@@ -159,4 +182,19 @@
   --color-scrollbar-mac-hover: rgb(75 76 79);
   --color-scrollbar-other: rgb(51 51 51);
   --color-scrollbar-other-hover: rgb(75 76 79);
+  --color-error-text: hsl(0deg 100% 75%);
+  --color-error-border: rgb(92 0 0);
+  --color-error-background: hsl(0deg 100% 8%);
+  /* Colors for styling inputs */
+  --color-input-outline: rgb(189 193 198);
+  --color-input-outline-active: rgb(138 180 248);
+  --color-input-outline-error: rgb(242 139 130);
+  --color-input-outline-disabled: rgba(189 193 198 / 20%);
+  --color-input-text-disabled: rgba(128 134 139 / 70%);
+  /* Colors for styling buttons */
+  --color-button-outline-focus: rgb(138 180 248 / 80%);
+  --color-button-primary-background-hovering: rgb(174 203 250 / 100%);
+  --color-button-primary-background-pressed: rgb(210 227 252 / 100%);
+  --color-button-secondary-background-hovering: rgb(138 180 248 / 15%);
+  --color-button-secondary-background-pressed: rgb(138 180 248 / 23%);
 }

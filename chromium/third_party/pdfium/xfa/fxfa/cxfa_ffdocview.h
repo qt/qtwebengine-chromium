@@ -26,7 +26,8 @@ class CXFA_FFWidgetHandler;
 class CXFA_Node;
 class CXFA_ViewLayoutItem;
 
-extern const XFA_AttributeValue gs_EventActivity[];
+extern const XFA_AttributeValue kXFAEventActivity[];
+
 enum XFA_DOCVIEW_LAYOUTSTATUS {
   XFA_DOCVIEW_LAYOUTSTATUS_None,
   XFA_DOCVIEW_LAYOUTSTATUS_Start,
@@ -72,7 +73,8 @@ class CXFA_FFDocView : public cppgc::GarbageCollected<CXFA_FFDocView> {
   CXFA_FFWidget* GetWidgetByName(const WideString& wsName,
                                  CXFA_FFWidget* pRefWidget);
   CXFA_LayoutProcessor* GetLayoutProcessor() const;
-  void OnPageEvent(CXFA_ViewLayoutItem* pSender, uint32_t dwEvent);
+  void OnPageViewEvent(CXFA_ViewLayoutItem* pSender,
+                       CXFA_FFDoc::PageViewEvent eEvent);
   void LockUpdate() { m_iLock++; }
   void UnlockUpdate() { m_iLock--; }
   void InvalidateRect(CXFA_FFPageView* pPageView,

@@ -589,6 +589,8 @@ SpdyProtocolErrorDetails MapFramerErrorToProtocolError(
     case http2::Http2DecoderAdapter::
         SPDY_HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT:
       return SPDY_ERROR_HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT;
+    case http2::Http2DecoderAdapter::SPDY_STOP_PROCESSING:
+      return SPDY_ERROR_STOP_PROCESSING;
 
     case http2::Http2DecoderAdapter::LAST_ERROR:
       NOTREACHED();
@@ -632,6 +634,8 @@ Error MapFramerErrorToNetError(
     case http2::Http2DecoderAdapter::SPDY_HPACK_FRAGMENT_TOO_LONG:
     case http2::Http2DecoderAdapter::
         SPDY_HPACK_COMPRESSED_HEADER_SIZE_EXCEEDS_LIMIT:
+      return ERR_HTTP2_COMPRESSION_ERROR;
+    case http2::Http2DecoderAdapter::SPDY_STOP_PROCESSING:
       return ERR_HTTP2_COMPRESSION_ERROR;
     case http2::Http2DecoderAdapter::SPDY_COMPRESS_FAILURE:
       return ERR_HTTP2_COMPRESSION_ERROR;
@@ -845,6 +849,9 @@ void SpdyStreamRequest::Reset() {
 
 void SpdyStreamRequest::OnConfirmHandshakeComplete(int rv) {
   DCHECK_NE(ERR_IO_PENDING, rv);
+  if (!session_)
+    return;
+
   if (rv != OK) {
     OnRequestCompleteFailure(rv);
     return;
@@ -1251,6 +1258,12 @@ bool SpdySession::ShouldSendPriorityUpdate() const {
 }
 
 int SpdySession::ConfirmHandshake(CompletionOnceCallback callback) {
+  if (availability_state_ == STATE_GOING_AWAY)
+    return ERR_FAILED;
+
+  if (availability_state_ == STATE_DRAINING)
+    return ERR_CONNECTION_CLOSED;
+
   int rv = ERR_IO_PENDING;
   if (!in_confirm_handshake_) {
     rv = socket_->ConfirmHandshake(
@@ -1550,6 +1563,8 @@ void SpdySession::StartGoingAway(spdy::SpdyStreamId last_good_stream_id,
   DCHECK_NE(ERR_IO_PENDING, status);
 
   // The loops below are carefully written to avoid reentrancy problems.
+
+  NotifyRequestsOfConfirmation(status);
 
   while (true) {
     size_t old_size = GetTotalSize(pending_create_stream_queues_);
@@ -3061,10 +3076,6 @@ void SpdySession::DoDrainSession(Error err, const std::string& description) {
   }
   MakeUnavailable();
 
-  // Notify any requests waiting for handshake confirmation that there is an
-  // error.
-  NotifyRequestsOfConfirmation(err);
-
   // Mark host_port_pair requiring HTTP/1.1 for subsequent connections.
   if (err == ERR_HTTP_1_1_REQUIRED) {
     http_server_properties_->SetHTTP11Required(
@@ -3272,7 +3283,9 @@ void SpdySession::OnGoAway(spdy::SpdyStreamId last_accepted_stream_id,
                            base::StringPiece debug_data) {
   CHECK(in_io_loop_);
 
-  // TODO(jgraettinger): UMA histogram on |error_code|.
+  // Use sparse histogram to record the unlikely case that a server sends
+  // an unknown error code.
+  base::UmaHistogramSparse("Net.SpdySession.GoAwayReceived", error_code);
 
   net_log_.AddEvent(
       NetLogEventType::HTTP2_SESSION_RECV_GOAWAY,

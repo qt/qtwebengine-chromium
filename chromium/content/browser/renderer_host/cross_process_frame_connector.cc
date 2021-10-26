@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/trace_event/optional_trace_event.h"
 #include "components/viz/common/features.h"
 #include "content/browser/renderer_host/cursor_manager.h"
 #include "content/browser/renderer_host/frame_tree.h"
@@ -20,7 +21,6 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
-#include "gpu/ipc/common/gpu_messages.h"
 #include "third_party/blink/public/common/frame/frame_visual_properties.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/mojom/frame/intrinsic_sizing_info.mojom.h"
@@ -113,12 +113,15 @@ void CrossProcessFrameConnector::SetView(RenderWidgetHostViewChildFrame* view) {
 }
 
 void CrossProcessFrameConnector::RenderProcessGone() {
+  OPTIONAL_TRACE_EVENT1("content",
+                        "CrossProcessFrameConnector::RenderProcessGone",
+                        "visibility", visibility_);
   has_crashed_ = true;
 
-  RenderFrameHost* rfh =
-      frame_proxy_in_parent_renderer_->frame_tree_node()->current_frame_host();
-  int process_id = rfh->GetProcess()->GetID();
-  for (rfh = rfh->GetParent(); rfh; rfh = rfh->GetParent()) {
+  RenderFrameHostImpl* current_child_rfh = current_child_frame_host();
+  int process_id = current_child_rfh->GetProcess()->GetID();
+  for (auto* rfh = current_child_rfh->GetParent(); rfh;
+       rfh = rfh->GetParent()) {
     if (rfh->GetProcess()->GetID() == process_id) {
       // The crash will be already logged by the ancestor - ignore this crash in
       // the current instance of the CrossProcessFrameConnector.
@@ -131,9 +134,34 @@ void CrossProcessFrameConnector::RenderProcessGone() {
 
   frame_proxy_in_parent_renderer_->ChildProcessGone();
 
-  auto* parent_view = GetParentRenderWidgetHostView();
-  if (parent_view && parent_view->host()->delegate())
-    parent_view->host()->delegate()->SubframeCrashed(visibility_);
+  if (current_child_rfh->delegate()) {
+    // If a subframe crashed on a hidden tab, mark the tab for reload to avoid
+    // showing a sad frame to the user if they ever switch back to that tab. Do
+    // this for subframes that are either visible in viewport or visible but
+    // scrolled out of view, but skip subframes that are not rendered (e.g., via
+    // "display:none"), since in that case the user wouldn't see a sad frame
+    // anyway. Prerendering subframes do not enter this code since
+    // RenderFrameHostImpl immediately cancels prerender if a render process
+    // exits.
+    bool did_mark_for_reload = false;
+    if (current_child_rfh->delegate()->GetVisibility() != Visibility::VISIBLE &&
+        visibility_ != blink::mojom::FrameVisibility::kNotRendered &&
+        base::FeatureList::IsEnabled(
+            features::kReloadHiddenTabsWithCrashedSubframes)) {
+      frame_proxy_in_parent_renderer_->frame_tree_node()
+          ->frame_tree()
+          ->controller()
+          .SetNeedsReload(
+              NavigationControllerImpl::NeedsReloadType::kCrashedSubframe);
+      did_mark_for_reload = true;
+      UMA_HISTOGRAM_ENUMERATION(
+          "Stability.ChildFrameCrash.TabMarkedForReload.Visibility",
+          visibility_);
+    }
+
+    UMA_HISTOGRAM_BOOLEAN("Stability.ChildFrameCrash.TabMarkedForReload",
+                          did_mark_for_reload);
+  }
 }
 
 void CrossProcessFrameConnector::SendIntrinsicSizingInfoToParent(
@@ -328,17 +356,34 @@ void CrossProcessFrameConnector::OnSynchronizeVisualProperties(
 void CrossProcessFrameConnector::UpdateViewportIntersection(
     const blink::mojom::ViewportIntersectionState& intersection_state,
     const absl::optional<blink::FrameVisualProperties>& visual_properties) {
-  if (visual_properties.has_value())
-    SynchronizeVisualProperties(visual_properties.value(), false);
-  UpdateViewportIntersectionInternal(intersection_state);
+  bool intersection_changed = !intersection_state.Equals(intersection_state_);
+  if (intersection_changed) {
+    bool visual_properties_changed = false;
+    if (visual_properties.has_value()) {
+      absl::optional<blink::VisualProperties> last_properties =
+          view_->host()->LastComputedVisualProperties();
+      SynchronizeVisualProperties(visual_properties.value(), false);
+      visual_properties_changed =
+          last_properties != view_->host()->LastComputedVisualProperties();
+    }
+    UpdateViewportIntersectionInternal(intersection_state,
+                                       visual_properties_changed);
+  } else if (visual_properties.has_value()) {
+    SynchronizeVisualProperties(visual_properties.value(), true);
+  }
 }
 
 void CrossProcessFrameConnector::UpdateViewportIntersectionInternal(
-    const blink::mojom::ViewportIntersectionState& intersection_state) {
+    const blink::mojom::ViewportIntersectionState& intersection_state,
+    bool include_visual_properties) {
   intersection_state_ = intersection_state;
   if (view_) {
+    // Only ship over the visual properties if they were included in the update
+    // viewport intersection message.
     view_->UpdateViewportIntersection(
-        intersection_state_, view_->host()->LastComputedVisualProperties());
+        intersection_state_, include_visual_properties
+                                 ? view_->host()->LastComputedVisualProperties()
+                                 : absl::nullopt);
   }
 
   if (IsVisible()) {

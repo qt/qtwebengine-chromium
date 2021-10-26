@@ -141,10 +141,6 @@ void PreviewModeClient::DocumentLoadFailed() {
   client_->PreviewDocumentLoadFailed();
 }
 
-pp::Instance* PreviewModeClient::GetPluginInstance() {
-  return nullptr;
-}
-
 void PreviewModeClient::DocumentHasUnsupportedFeature(
     const std::string& feature) {
   NOTREACHED();
@@ -154,7 +150,7 @@ void PreviewModeClient::FormTextFieldFocusChange(bool in_focus) {
   NOTREACHED();
 }
 
-bool PreviewModeClient::IsPrintPreview() {
+bool PreviewModeClient::IsPrintPreview() const {
   return true;
 }
 

@@ -44,9 +44,14 @@ export interface Cell {
   renderer?: (value: CellValue) => LitHtml.TemplateResult | typeof LitHtml.nothing;
 }
 
+export interface RowCSSStylesObject {
+  readonly [name: string]: string;
+}
+
 export type Row = {
   cells: Cell[],
   hidden?: boolean,
+  styles?: RowCSSStylesObject,
 };
 
 export const enum SortDirection {
@@ -77,7 +82,6 @@ export function renderCellValue(cell: Cell): LitHtml.TemplateResult|typeof LitHt
 
   return DataGridRenderers.primitiveRenderer(cell.value);
 }
-
 
 /**
  * When the user passes in columns we want to know how wide each one should be.
@@ -237,23 +241,3 @@ export const calculateFirstFocusableCell =
 
       return [focusableColIndex, focusableRowIndex];
     };
-
-
-export class ContextMenuColumnSortClickEvent extends Event {
-  data: {
-    column: Column,
-  };
-
-  constructor(column: Column) {
-    super('contextmenucolumnsortclick');
-    this.data = {
-      column,
-    };
-  }
-}
-
-export class ContextMenuHeaderResetClickEvent extends Event {
-  constructor() {
-    super('contextmenuheaderresetclick');
-  }
-}

@@ -29,7 +29,7 @@
 #include <algorithm>
 #include <memory>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "third_party/blink/renderer/core/css/css_markup.h"
 #include "third_party/blink/renderer/core/css/css_selector_list.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
@@ -143,6 +143,10 @@ inline unsigned CSSSelector::SpecificityForOneSelector() const {
           FALLTHROUGH;
         case kPseudoIs:
           return MaximumSpecificity(SelectorList());
+        case kPseudoHas:
+          return MaximumSpecificity(SelectorList());
+        case kPseudoRelativeLeftmost:
+          return 0;
         // FIXME: PseudoAny should base the specificity on the sub-selectors.
         // See http://lists.w3.org/Archives/Public/www-style/2010Sep/0530.html
         case kPseudoAny:
@@ -341,6 +345,8 @@ PseudoId CSSSelector::GetPseudoId(PseudoType type) {
     case kPseudoVideoPersistentAncestor:
     case kPseudoXrOverlay:
     case kPseudoModal:
+    case kPseudoHas:
+    case kPseudoRelativeLeftmost:
       return kPseudoIdNone;
   }
 
@@ -368,6 +374,7 @@ const static NameToPseudoStruct kPseudoTypeWithoutArgumentsMap[] = {
     {"-internal-modal", CSSSelector::kPseudoModal},
     {"-internal-multi-select-focus", CSSSelector::kPseudoMultiSelectFocus},
     {"-internal-popup-open", CSSSelector::kPseudoPopupOpen},
+    {"-internal-relative-leftmost", CSSSelector::kPseudoRelativeLeftmost},
     {"-internal-shadow-host-has-appearance",
      CSSSelector::kPseudoHostHasAppearance},
     {"-internal-spatial-navigation-focus",
@@ -464,6 +471,7 @@ const static NameToPseudoStruct kPseudoTypeWithArgumentsMap[] = {
     {"-webkit-any", CSSSelector::kPseudoAny},
     {"cue", CSSSelector::kPseudoCue},
     {"dir", CSSSelector::kPseudoDir},
+    {"has", CSSSelector::kPseudoHas},
     {"highlight", CSSSelector::kPseudoHighlight},
     {"host", CSSSelector::kPseudoHost},
     {"host-context", CSSSelector::kPseudoHostContext},
@@ -542,6 +550,11 @@ CSSSelector::PseudoType CSSSelector::NameToPseudoType(const AtomicString& name,
   if ((match->type == CSSSelector::kPseudoSpellingError ||
        match->type == CSSSelector::kPseudoGrammarError) &&
       !RuntimeEnabledFeatures::CSSSpellingGrammarErrorsEnabled()) {
+    return CSSSelector::kPseudoUnknown;
+  }
+
+  if (match->type == CSSSelector::kPseudoHas &&
+      !RuntimeEnabledFeatures::CSSPseudoHasInSnapshotProfileEnabled()) {
     return CSSSelector::kPseudoUnknown;
   }
 
@@ -688,6 +701,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
     case kPseudoFullScreenAncestor:
     case kPseudoFullscreen:
     case kPseudoFutureCue:
+    case kPseudoHas:
     case kPseudoHorizontal:
     case kPseudoHost:
     case kPseudoHostContext:
@@ -719,6 +733,7 @@ void CSSSelector::UpdatePseudoType(const AtomicString& value,
     case kPseudoPastCue:
     case kPseudoReadOnly:
     case kPseudoReadWrite:
+    case kPseudoRelativeLeftmost:
     case kPseudoRequired:
     case kPseudoRoot:
     case kPseudoScope:
@@ -848,6 +863,7 @@ const CSSSelector* CSSSelector::SerializeCompound(
           SerializeIdentifier(simple_selector->Argument(), builder);
           builder.Append(')');
           break;
+        case kPseudoHas:
         case kPseudoNot:
           DCHECK(simple_selector->SelectorList());
           break;
@@ -861,6 +877,9 @@ const CSSSelector* CSSSelector::SerializeCompound(
         case kPseudoIs:
         case kPseudoWhere:
           break;
+        case kPseudoRelativeLeftmost:
+          NOTREACHED();
+          return nullptr;
         default:
           break;
       }
@@ -984,6 +1003,14 @@ String CSSSelector::SelectorText() const {
       case kShadowSlot:
         result = builder.ToString() + result;
         break;
+      case kRelativeDescendant:
+        return builder.ToString() + result;
+      case kRelativeChild:
+        return "> " + builder.ToString() + result;
+      case kRelativeDirectAdjacent:
+        return "+ " + builder.ToString() + result;
+      case kRelativeIndirectAdjacent:
+        return "~ " + builder.ToString() + result;
     }
   }
   NOTREACHED();

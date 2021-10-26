@@ -21,9 +21,12 @@
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrSWMaskHelper.h"
+#include "src/gpu/GrUtil.h"
 #include "src/gpu/SkGr.h"
+#include "src/gpu/effects/GrTextureEffect.h"
 #include "src/gpu/geometry/GrStyledShape.h"
 #include "src/gpu/ops/GrDrawOp.h"
+#include "src/gpu/v1/SurfaceDrawContext_v1.h"
 
 ////////////////////////////////////////////////////////////////////////////////
 GrPathRenderer::CanDrawPath
@@ -66,7 +69,7 @@ static bool get_unclipped_shape_dev_bounds(const GrStyledShape& shape, const SkM
 
 // Gets the shape bounds, the clip bounds, and the intersection (if any). Returns false if there
 // is no intersection.
-bool GrSoftwarePathRenderer::GetShapeAndClipBounds(GrSurfaceDrawContext* surfaceDrawContext,
+bool GrSoftwarePathRenderer::GetShapeAndClipBounds(skgpu::v1::SurfaceDrawContext* sdc,
                                                    const GrClip* clip,
                                                    const GrStyledShape& shape,
                                                    const SkMatrix& matrix,
@@ -75,8 +78,7 @@ bool GrSoftwarePathRenderer::GetShapeAndClipBounds(GrSurfaceDrawContext* surface
                                                    SkIRect* devClipBounds) {
     // compute bounds as intersection of rt size, clip, and path
     *devClipBounds = clip ? clip->getConservativeBounds()
-                          : SkIRect::MakeWH(surfaceDrawContext->width(),
-                                            surfaceDrawContext->height());
+                          : SkIRect::MakeWH(sdc->width(), sdc->height());
 
     if (!get_unclipped_shape_dev_bounds(shape, matrix, unclippedDevShapeBounds)) {
         *unclippedDevShapeBounds = SkIRect::MakeEmpty();
@@ -92,18 +94,18 @@ bool GrSoftwarePathRenderer::GetShapeAndClipBounds(GrSurfaceDrawContext* surface
 
 ////////////////////////////////////////////////////////////////////////////////
 
-void GrSoftwarePathRenderer::DrawNonAARect(GrSurfaceDrawContext* surfaceDrawContext,
+void GrSoftwarePathRenderer::DrawNonAARect(skgpu::v1::SurfaceDrawContext* sdc,
                                            GrPaint&& paint,
                                            const GrUserStencilSettings& userStencilSettings,
                                            const GrClip* clip,
                                            const SkMatrix& viewMatrix,
                                            const SkRect& rect,
                                            const SkMatrix& localMatrix) {
-    surfaceDrawContext->stencilRect(clip, &userStencilSettings, std::move(paint), GrAA::kNo,
-                                    viewMatrix, rect, &localMatrix);
+    sdc->stencilRect(clip, &userStencilSettings, std::move(paint), GrAA::kNo,
+                     viewMatrix, rect, &localMatrix);
 }
 
-void GrSoftwarePathRenderer::DrawAroundInvPath(GrSurfaceDrawContext* surfaceDrawContext,
+void GrSoftwarePathRenderer::DrawAroundInvPath(skgpu::v1::SurfaceDrawContext* sdc,
                                                GrPaint&& paint,
                                                const GrUserStencilSettings& userStencilSettings,
                                                const GrClip* clip,
@@ -119,32 +121,32 @@ void GrSoftwarePathRenderer::DrawAroundInvPath(GrSurfaceDrawContext* surfaceDraw
     if (devClipBounds.fTop < devPathBounds.fTop) {
         rect.setLTRB(SkIntToScalar(devClipBounds.fLeft),  SkIntToScalar(devClipBounds.fTop),
                      SkIntToScalar(devClipBounds.fRight), SkIntToScalar(devPathBounds.fTop));
-        DrawNonAARect(surfaceDrawContext, GrPaint::Clone(paint), userStencilSettings, clip,
+        DrawNonAARect(sdc, GrPaint::Clone(paint), userStencilSettings, clip,
                       SkMatrix::I(), rect, invert);
     }
     if (devClipBounds.fLeft < devPathBounds.fLeft) {
         rect.setLTRB(SkIntToScalar(devClipBounds.fLeft), SkIntToScalar(devPathBounds.fTop),
                      SkIntToScalar(devPathBounds.fLeft), SkIntToScalar(devPathBounds.fBottom));
-        DrawNonAARect(surfaceDrawContext, GrPaint::Clone(paint), userStencilSettings, clip,
+        DrawNonAARect(sdc, GrPaint::Clone(paint), userStencilSettings, clip,
                       SkMatrix::I(), rect, invert);
     }
     if (devClipBounds.fRight > devPathBounds.fRight) {
         rect.setLTRB(SkIntToScalar(devPathBounds.fRight), SkIntToScalar(devPathBounds.fTop),
                      SkIntToScalar(devClipBounds.fRight), SkIntToScalar(devPathBounds.fBottom));
-        DrawNonAARect(surfaceDrawContext, GrPaint::Clone(paint), userStencilSettings, clip,
+        DrawNonAARect(sdc, GrPaint::Clone(paint), userStencilSettings, clip,
                       SkMatrix::I(), rect, invert);
     }
     if (devClipBounds.fBottom > devPathBounds.fBottom) {
         rect.setLTRB(SkIntToScalar(devClipBounds.fLeft),  SkIntToScalar(devPathBounds.fBottom),
                      SkIntToScalar(devClipBounds.fRight), SkIntToScalar(devClipBounds.fBottom));
-        DrawNonAARect(surfaceDrawContext, std::move(paint), userStencilSettings, clip,
+        DrawNonAARect(sdc, std::move(paint), userStencilSettings, clip,
                       SkMatrix::I(), rect, invert);
     }
 }
 
 void GrSoftwarePathRenderer::DrawToTargetWithShapeMask(
         GrSurfaceProxyView view,
-        GrSurfaceDrawContext* surfaceDrawContext,
+        skgpu::v1::SurfaceDrawContext* sdc,
         GrPaint&& paint,
         const GrUserStencilSettings& userStencilSettings,
         const GrClip* clip,
@@ -169,15 +171,15 @@ void GrSoftwarePathRenderer::DrawToTargetWithShapeMask(
 
     paint.setCoverageFragmentProcessor(GrTextureEffect::Make(
             std::move(view), kPremul_SkAlphaType, maskMatrix, GrSamplerState::Filter::kNearest));
-    DrawNonAARect(surfaceDrawContext, std::move(paint), userStencilSettings, clip, SkMatrix::I(),
+    DrawNonAARect(sdc, std::move(paint), userStencilSettings, clip, SkMatrix::I(),
                   dstRect, invert);
 }
 
-static GrSurfaceProxyView make_deferred_mask_texture_view(GrRecordingContext* context,
+static GrSurfaceProxyView make_deferred_mask_texture_view(GrRecordingContext* rContext,
                                                           SkBackingFit fit,
                                                           SkISize dimensions) {
-    GrProxyProvider* proxyProvider = context->priv().proxyProvider();
-    const GrCaps* caps = context->priv().caps();
+    GrProxyProvider* proxyProvider = rContext->priv().proxyProvider();
+    const GrCaps* caps = rContext->priv().caps();
 
     const GrBackendFormat format = caps->getDefaultBackendFormat(GrColorType::kAlpha_8,
                                                                  GrRenderable::kNo);
@@ -223,8 +225,9 @@ private:
 ////////////////////////////////////////////////////////////////////////////////
 // return true on success; false on failure
 bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
-    GR_AUDIT_TRAIL_AUTO_FRAME(args.fRenderTargetContext->auditTrail(),
+    GR_AUDIT_TRAIL_AUTO_FRAME(args.fContext->priv().auditTrail(),
                               "GrSoftwarePathRenderer::onDrawPath");
+
     if (!fProxyProvider) {
         return false;
     }
@@ -233,8 +236,8 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
     // We really need to know if the shape will be inverse filled or not
     // If the path is hairline, ignore inverse fill.
     bool inverseFilled = args.fShape->inverseFilled() &&
-                        !IsStrokeHairlineOrEquivalent(args.fShape->style(),
-                                                      *args.fViewMatrix, nullptr);
+                        !GrIsStrokeHairlineOrEquivalent(args.fShape->style(),
+                                                        *args.fViewMatrix, nullptr);
 
     SkIRect unclippedDevShapeBounds, clippedDevShapeBounds, devClipBounds;
     // To prevent overloading the cache with entries during animations we limit the cache of masks
@@ -242,13 +245,13 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
     bool useCache = fAllowCaching && !inverseFilled && args.fViewMatrix->preservesAxisAlignment() &&
                     args.fShape->hasUnstyledKey() && (GrAAType::kCoverage == args.fAAType);
 
-    if (!GetShapeAndClipBounds(args.fRenderTargetContext,
+    if (!GetShapeAndClipBounds(args.fSurfaceDrawContext,
                                args.fClip, *args.fShape,
                                *args.fViewMatrix, &unclippedDevShapeBounds,
                                &clippedDevShapeBounds,
                                &devClipBounds)) {
         if (inverseFilled) {
-            DrawAroundInvPath(args.fRenderTargetContext, std::move(args.fPaint),
+            DrawAroundInvPath(args.fSurfaceDrawContext, std::move(args.fPaint),
                               *args.fUserStencilSettings, args.fClip, *args.fViewMatrix,
                               devClipBounds, unclippedDevShapeBounds);
         }
@@ -263,7 +266,7 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
         int64_t unclippedArea = sk_64_mul(unclippedWidth, unclippedHeight);
         int64_t clippedArea = sk_64_mul(clippedDevShapeBounds.width(),
                                         clippedDevShapeBounds.height());
-        int maxTextureSize = args.fRenderTargetContext->caps()->maxTextureSize();
+        int maxTextureSize = args.fSurfaceDrawContext->caps()->maxTextureSize();
         if (unclippedArea > 2 * clippedArea || unclippedWidth > maxTextureSize ||
             unclippedHeight > maxTextureSize) {
             useCache = false;
@@ -312,12 +315,11 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
         args.fShape->writeUnstyledKey(&builder[7]);
     }
 
-    sk_sp<GrTextureProxy> proxy;
     GrSurfaceProxyView view;
     if (useCache) {
-        auto proxy = fProxyProvider->findOrCreateProxyByUniqueKey(maskKey);
+        sk_sp<GrTextureProxy> proxy = fProxyProvider->findOrCreateProxyByUniqueKey(maskKey);
         if (proxy) {
-            GrSwizzle swizzle = args.fRenderTargetContext->caps()->getReadSwizzle(
+            GrSwizzle swizzle = args.fSurfaceDrawContext->caps()->getReadSwizzle(
                     proxy->backendFormat(), GrColorType::kAlpha_8);
             view = {std::move(proxy), kTopLeft_GrSurfaceOrigin, swizzle};
             args.fContext->priv().stats()->incNumPathMasksCacheHits();
@@ -383,11 +385,11 @@ bool GrSoftwarePathRenderer::onDrawPath(const DrawPathArgs& args) {
     }
     SkASSERT(view);
     if (inverseFilled) {
-        DrawAroundInvPath(args.fRenderTargetContext, GrPaint::Clone(args.fPaint),
+        DrawAroundInvPath(args.fSurfaceDrawContext, GrPaint::Clone(args.fPaint),
                           *args.fUserStencilSettings, args.fClip, *args.fViewMatrix, devClipBounds,
                           unclippedDevShapeBounds);
     }
-    DrawToTargetWithShapeMask(std::move(view), args.fRenderTargetContext, std::move(args.fPaint),
+    DrawToTargetWithShapeMask(std::move(view), args.fSurfaceDrawContext, std::move(args.fPaint),
                               *args.fUserStencilSettings, args.fClip, *args.fViewMatrix,
                               SkIPoint{boundsForMask->fLeft, boundsForMask->fTop}, *boundsForMask);
 

@@ -143,9 +143,6 @@ const char kSettingPolicies[] = "policies";
 // Whether the source page content is from ARC or not.
 const char kSettingPreviewIsFromArc[] = "previewIsFromArc";
 
-// Whether the source page content is PDF or not.
-const char kSettingPreviewIsPdf[] = "previewIsPdf";
-
 // Whether the source page content is modifiable. True for web content.
 // i.e. Anything from Blink. False for everything else. e.g. PDF/Flash.
 const char kSettingPreviewModifiable[] = "previewModifiable";
@@ -182,6 +179,9 @@ const char kSettingPagesPerSheet[] = "pagesPerSheet";
 
 // Whether to rasterize the PDF for printing.
 const char kSettingRasterizePdf[] = "rasterizePDF";
+
+// The DPI override to use when rasterize the PDF for printing.
+const char kSettingRasterizePdfDpi[] = "rasterizePdfDpi";
 
 // Ticket option. Contains the ticket in CJT format.
 const char kSettingTicket[] = "ticket";

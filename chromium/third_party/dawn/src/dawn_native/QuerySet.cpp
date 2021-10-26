@@ -58,6 +58,14 @@ namespace dawn_native {
                 break;
 
             case wgpu::QueryType::PipelineStatistics: {
+                // TODO(crbug.com/1177506): Pipeline statistics query is not fully implemented.
+                // Disallow it as unsafe until the implementaion is completed.
+                if (device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+                    return DAWN_VALIDATION_ERROR(
+                        "Pipeline statistics query is disallowed because it's not fully "
+                        "implemented");
+                }
+
                 if (!device->IsExtensionEnabled(Extension::PipelineStatisticsQuery)) {
                     return DAWN_VALIDATION_ERROR(
                         "The pipeline statistics query feature is not supported");
@@ -84,6 +92,12 @@ namespace dawn_native {
             case wgpu::QueryType::Timestamp:
                 if (!device->IsExtensionEnabled(Extension::TimestampQuery)) {
                     return DAWN_VALIDATION_ERROR("The timestamp query feature is not supported");
+                }
+
+                if (device->IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
+                    return DAWN_VALIDATION_ERROR(
+                        "The timestamp query is disallowed because it may expose precise timing "
+                        "information");
                 }
 
                 if (descriptor->pipelineStatisticsCount != 0) {

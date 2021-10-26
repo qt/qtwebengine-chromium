@@ -4,11 +4,16 @@
 
 #include "third_party/blink/renderer/core/frame/local_frame_ukm_aggregator.h"
 
+#include "base/metrics/statistics_recorder.h"
 #include "base/test/test_mock_time_task_runner.h"
 #include "cc/metrics/begin_main_frame_metrics.h"
 #include "components/ukm/test_ukm_recorder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/metrics/document_update_reason.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_intersection_observer_init.h"
+#include "third_party/blink/renderer/core/testing/intersection_observer_test_helper.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_request.h"
+#include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 
 namespace blink {
 
@@ -52,6 +57,10 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
     return GetMetricName(index) + "BeginMainFrame";
   }
 
+  int64_t GetIntervalCount(int index) {
+    return aggregator_->absolute_metric_records_[index].interval_count;
+  }
+
   void ChooseNextFrameForTest() { aggregator().ChooseNextFrameForTest(); }
   void DoNotChooseNextFrameForTest() {
     aggregator().DoNotChooseNextFrameForTest();
@@ -76,7 +85,7 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
         ukm::TestUkmRecorder::EntryHasMetric(entry, GetPrimaryMetricName()));
     const int64_t* primary_metric_value =
         ukm::TestUkmRecorder::GetEntryMetric(entry, GetPrimaryMetricName());
-    EXPECT_NEAR(*primary_metric_value / 1e3, expected_primary_metric, 0.001);
+    EXPECT_NEAR(*primary_metric_value, expected_primary_metric * 1e3, 1);
     // All tests using this method check through kForcedStyleAndLayout because
     // kForcedStyleAndLayout and subsequent metrics report and record
     // differently.
@@ -85,15 +94,20 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
           ukm::TestUkmRecorder::EntryHasMetric(entry, GetMetricName(i)));
       const int64_t* metric_value =
           ukm::TestUkmRecorder::GetEntryMetric(entry, GetMetricName(i));
-      EXPECT_NEAR(*metric_value / 1e3, expected_sub_metric, 0.001);
+      EXPECT_NEAR(*metric_value,
+                  LocalFrameUkmAggregator::ApplyBucketIfNecessary(
+                      expected_sub_metric * 1e3, i),
+                  1);
 
       EXPECT_TRUE(ukm::TestUkmRecorder::EntryHasMetric(
           entry, GetBeginMainFrameMetricName(i)));
       const int64_t* metric_begin_main_frame =
           ukm::TestUkmRecorder::GetEntryMetric(entry,
                                                GetBeginMainFrameMetricName(i));
-      EXPECT_NEAR(*metric_begin_main_frame / 1e3, expected_begin_main_frame,
-                  0.001);
+      EXPECT_NEAR(*metric_begin_main_frame,
+                  LocalFrameUkmAggregator::ApplyBucketIfNecessary(
+                      expected_begin_main_frame * 1e3, i),
+                  1);
     }
     EXPECT_TRUE(
         ukm::TestUkmRecorder::EntryHasMetric(entry, "MainFrameIsBeforeFCP"));
@@ -116,7 +130,7 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
           ukm::TestUkmRecorder::EntryHasMetric(entry, GetPrimaryMetricName()));
       const int64_t* primary_metric_value =
           ukm::TestUkmRecorder::GetEntryMetric(entry, GetPrimaryMetricName());
-      EXPECT_NEAR(*primary_metric_value / 1e3, expected_primary_metric, 0.001);
+      EXPECT_NEAR(*primary_metric_value, expected_primary_metric * 1e3, 1);
       // All tests using this method check through kForcedStyleAndLayout because
       // kForcedStyleAndLayout and subsequent metrics report and record
       // differently.
@@ -125,7 +139,10 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
             ukm::TestUkmRecorder::EntryHasMetric(entry, GetMetricName(i)));
         const int64_t* metric_value =
             ukm::TestUkmRecorder::GetEntryMetric(entry, GetMetricName(i));
-        EXPECT_NEAR(*metric_value / 1e3, expected_sub_metric, 0.001);
+        EXPECT_NEAR(*metric_value,
+                    LocalFrameUkmAggregator::ApplyBucketIfNecessary(
+                        expected_sub_metric * 1e3, i),
+                    1);
       }
     }
   }
@@ -181,14 +198,14 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
         entry, GetMetricName(LocalFrameUkmAggregator::kForcedStyleAndLayout)));
     const int64_t* metric_value = ukm::TestUkmRecorder::GetEntryMetric(
         entry, GetMetricName(LocalFrameUkmAggregator::kForcedStyleAndLayout));
-    EXPECT_NEAR(*metric_value / 1e3, 10, 0.001);
+    EXPECT_NEAR(*metric_value, 10000, 1);
 
     if (target_metric != LocalFrameUkmAggregator::kCount) {
       EXPECT_TRUE(ukm::TestUkmRecorder::EntryHasMetric(
           entry, GetMetricName(target_metric)));
       metric_value = ukm::TestUkmRecorder::GetEntryMetric(
           entry, GetMetricName(target_metric));
-      EXPECT_NEAR(*metric_value / 1e3, 10, 0.001);
+      EXPECT_NEAR(*metric_value, 10000, 1);
     }
     for (int i = LocalFrameUkmAggregator::kForcedStyleAndLayout + 1;
          i < LocalFrameUkmAggregator::kCount; ++i) {
@@ -204,9 +221,8 @@ class LocalFrameUkmAggregatorTest : public testing::Test {
   }
 
   bool SampleMatchesIteration(int64_t iteration_count) {
-    return aggregator()
-               .current_sample_.sub_metrics_durations[0]
-               .InMilliseconds() == iteration_count;
+    return aggregator().current_sample_.sub_metrics_counts[0] / 1000 ==
+           iteration_count;
   }
 
  private:
@@ -539,4 +555,89 @@ TEST_F(LocalFrameUkmAggregatorTest, SampleDoesChange) {
   EXPECT_LT(iteration_count, 100000u);
 }
 
+TEST_F(LocalFrameUkmAggregatorTest, IterativeTimer) {
+  {
+    LocalFrameUkmAggregator::IterativeTimer timer(aggregator());
+    timer.StartInterval(LocalFrameUkmAggregator::kStyle);
+    test_task_runner_->AdvanceMockTickClock(
+        base::TimeDelta::FromMicroseconds(5));
+    timer.StartInterval(LocalFrameUkmAggregator::kLayout);
+    test_task_runner_->AdvanceMockTickClock(
+        base::TimeDelta::FromMicroseconds(7));
+    timer.StartInterval(LocalFrameUkmAggregator::kLayout);
+    test_task_runner_->AdvanceMockTickClock(
+        base::TimeDelta::FromMicroseconds(11));
+    timer.StartInterval(LocalFrameUkmAggregator::kPrePaint);
+    test_task_runner_->AdvanceMockTickClock(
+        base::TimeDelta::FromMicroseconds(13));
+  }
+  EXPECT_EQ(GetIntervalCount(LocalFrameUkmAggregator::kStyle), 5);
+  EXPECT_EQ(GetIntervalCount(LocalFrameUkmAggregator::kLayout), 18);
+  EXPECT_EQ(GetIntervalCount(LocalFrameUkmAggregator::kPrePaint), 13);
+}
+
+class LocalFrameUkmAggregatorSimTest : public SimTest {
+ protected:
+  void ChooseNextFrameForTest() {
+    LocalFrameRoot()
+        .GetFrame()
+        ->View()
+        ->EnsureUkmAggregator()
+        .ChooseNextFrameForTest();
+  }
+};
+
+TEST_F(LocalFrameUkmAggregatorSimTest, IntersectionObserverCounts) {
+  WebView().MainFrameViewWidget()->Resize(gfx::Size(800, 600));
+  SimRequest main_resource("https://example.com/", "text/html");
+  LoadURL("https://example.com/");
+  main_resource.Complete(R"HTML(
+    <style>
+    .target { width: 50px; height: 50px; }
+    .spacer { height: 1000px; }
+    </style>
+    <div id=target1 class=target></div>
+    <div id=target2 class=target></div>
+    <div class=spacer></div>
+  )HTML");
+  Compositor().BeginFrame();
+  ChooseNextFrameForTest();
+
+  Element* target1 = GetDocument().getElementById("target1");
+  Element* target2 = GetDocument().getElementById("target2");
+
+  // Create internal observer
+  IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
+  TestIntersectionObserverDelegate* internal_delegate =
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(
+          GetDocument(),
+          LocalFrameUkmAggregator::kLazyLoadIntersectionObserver);
+  IntersectionObserver* internal_observer =
+      IntersectionObserver::Create(observer_init, *internal_delegate);
+  internal_observer->observe(target1);
+  internal_observer->observe(target2);
+  Compositor().BeginFrame();
+  base::HistogramBase* internal_count_histogram =
+      base::StatisticsRecorder::FindHistogram(
+          "Blink.IntersectionObservationInternalCount.UpdateTime.PreFCP");
+  ASSERT_TRUE(internal_count_histogram);
+  EXPECT_EQ(internal_count_histogram->SnapshotSamples()->GetCount(2), 1);
+  base::HistogramBase* javascript_count_histogram =
+      base::StatisticsRecorder::FindHistogram(
+          "Blink.IntersectionObservationJavascriptCount.UpdateTime.PreFCP");
+  ASSERT_TRUE(javascript_count_histogram);
+  EXPECT_EQ(javascript_count_histogram->SnapshotSamples()->sum(), 0);
+
+  TestIntersectionObserverDelegate* javascript_delegate =
+      MakeGarbageCollected<TestIntersectionObserverDelegate>(
+          GetDocument(),
+          LocalFrameUkmAggregator::kJavascriptIntersectionObserver);
+  IntersectionObserver* javascript_observer =
+      IntersectionObserver::Create(observer_init, *javascript_delegate);
+  javascript_observer->observe(target1);
+  javascript_observer->observe(target2);
+  Compositor().BeginFrame();
+  EXPECT_EQ(internal_count_histogram->SnapshotSamples()->GetCount(2), 2);
+  EXPECT_EQ(javascript_count_histogram->SnapshotSamples()->GetCount(2), 1);
+}
 }  // namespace blink

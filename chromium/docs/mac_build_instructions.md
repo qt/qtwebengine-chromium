@@ -12,8 +12,8 @@ Are you a Google employee? See
 
 ## System requirements
 
-*   A 64-bit Intel Mac running 10.15.4+. (Building on Arm Macs is
-    [not yet supported](https://chromium.googlesource.com/chromium/src.git/+/master/docs/mac_arm64.md).)
+*   A Mac running 10.15.4+, Intel or Arm.
+    ([More details about Arm Macs](https://chromium.googlesource.com/chromium/src.git/+/main/docs/mac_arm64.md).)
 *   [Xcode](https://developer.apple.com/xcode/) 12.2+. This version of Xcode
     comes with ...
 *   The macOS 11.0 SDK. Run
@@ -95,7 +95,7 @@ development and testing purposes.
 ## Setting up the build
 
 Chromium uses [Ninja](https://ninja-build.org) as its main build tool along with
-a tool called [GN](https://gn.googlesource.com/gn/+/master/docs/quick_start.md)
+a tool called [GN](https://gn.googlesource.com/gn/+/main/docs/quick_start.md)
 to generate `.ninja` files. You can create any number of *build directories*
 with different configurations. To create a build directory:
 
@@ -112,7 +112,7 @@ $ gn gen out/Default
   The default will be a debug component build matching the current host
   operating system and CPU.
 * For more info on GN, run `gn help` on the command line or read the
-  [quick start guide](https://gn.googlesource.com/gn/+/master/docs/quick_start.md).
+  [quick start guide](https://gn.googlesource.com/gn/+/main/docs/quick_start.md).
 * Building Chromium for arm Macs requires [additional setup](mac_arm64.md).
 
 
@@ -213,7 +213,7 @@ $ gclient sync
 
 The first command updates the primary Chromium source repository and rebases
 any of your local branches on top of tip-of-tree (aka the Git branch
-`origin/master`). If you don't want to use this script, you can also just use
+`origin/main`). If you don't want to use this script, you can also just use
 `git pull` or other common Git commands to update the repo.
 
 The second command syncs dependencies to the appropriate versions and re-runs

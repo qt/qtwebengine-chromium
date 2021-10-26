@@ -38,8 +38,8 @@ import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import type {PerformanceModel, Window} from './PerformanceModel.js';
-import {Events} from './PerformanceModel.js';                     // eslint-disable-line no-unused-vars
-import type {TimelineModeViewDelegate} from './TimelinePanel.js'; // eslint-disable-line no-unused-vars
+import {Events} from './PerformanceModel.js';
+import type {TimelineModeViewDelegate} from './TimelinePanel.js';
 
 const UIStrings = {
   /**
@@ -111,7 +111,7 @@ export class CountersGraph extends UI.Widget.VBox {
     this._createCurrentValuesBar();
     this._canvasContainer = canvasWidget.element;
     this._canvasContainer.id = 'memory-graphs-canvas-container';
-    this._canvas = (document.createElement('canvas') as HTMLCanvasElement);
+    this._canvas = document.createElement('canvas');
     this._canvasContainer.appendChild(this._canvas);
     this._canvas.id = 'memory-counters-graph';
 
@@ -590,7 +590,7 @@ export class Calculator implements PerfUI.TimelineGrid.Calculator {
   }
 
   formatValue(value: number, precision?: number): string {
-    return Number.preciseMillisToString(value - this.zeroTime(), precision);
+    return i18n.TimeUtilities.preciseMillisToString(value - this.zeroTime(), precision);
   }
 
   maximumBoundary(): number {

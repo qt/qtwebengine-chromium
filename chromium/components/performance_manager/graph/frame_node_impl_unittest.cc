@@ -4,6 +4,7 @@
 
 #include "components/performance_manager/graph/frame_node_impl.h"
 
+#include "base/containers/contains.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/gtest_util.h"
 #include "components/performance_manager/graph/page_node_impl.h"
@@ -56,9 +57,9 @@ TEST_F(FrameNodeImplTest, AddFrameHierarchyBasic) {
   auto page = CreateNode<PageNodeImpl>();
   auto parent_node = CreateFrameNodeAutoId(process.get(), page.get());
   auto child2_node =
-      CreateFrameNodeAutoId(process.get(), page.get(), parent_node.get(), 1);
+      CreateFrameNodeAutoId(process.get(), page.get(), parent_node.get());
   auto child3_node =
-      CreateFrameNodeAutoId(process.get(), page.get(), parent_node.get(), 2);
+      CreateFrameNodeAutoId(process.get(), page.get(), parent_node.get());
 
   EXPECT_EQ(nullptr, parent_node->parent_frame_node());
   EXPECT_EQ(2u, parent_node->child_frame_nodes().size());
@@ -113,8 +114,8 @@ TEST_F(FrameNodeImplTest, RemoveChildFrame) {
   auto process = CreateNode<ProcessNodeImpl>();
   auto page = CreateNode<PageNodeImpl>();
   auto parent_frame_node = CreateFrameNodeAutoId(process.get(), page.get());
-  auto child_frame_node = CreateFrameNodeAutoId(process.get(), page.get(),
-                                                parent_frame_node.get(), 1);
+  auto child_frame_node =
+      CreateFrameNodeAutoId(process.get(), page.get(), parent_frame_node.get());
 
   // Ensure correct Parent-child relationships have been established.
   EXPECT_EQ(1u, parent_frame_node->child_frame_nodes().size());
@@ -493,8 +494,6 @@ TEST_F(FrameNodeImplTest, PublicInterface) {
             public_frame_node->GetPageNode());
   EXPECT_EQ(static_cast<const ProcessNode*>(frame_node->process_node()),
             public_frame_node->GetProcessNode());
-  EXPECT_EQ(frame_node->frame_tree_node_id(),
-            public_frame_node->GetFrameTreeNodeId());
   EXPECT_EQ(frame_node->frame_token(), public_frame_node->GetFrameToken());
   EXPECT_EQ(frame_node->browsing_instance_id(),
             public_frame_node->GetBrowsingInstanceId());

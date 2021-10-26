@@ -5,7 +5,6 @@
 #ifndef CONTENT_BROWSER_DEVTOOLS_BROWSER_DEVTOOLS_AGENT_HOST_H_
 #define CONTENT_BROWSER_DEVTOOLS_BROWSER_DEVTOOLS_AGENT_HOST_H_
 
-#include "base/containers/flat_map.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 
 namespace content {
@@ -17,6 +16,8 @@ class BrowserDevToolsAgentHost : public DevToolsAgentHostImpl {
 
  private:
   friend class DevToolsAgentHost;
+  class BrowserAutoAttacher;
+
   BrowserDevToolsAgentHost(
       scoped_refptr<base::SingleThreadTaskRunner> tethering_task_runner,
       const CreateServerSocketCallback& socket_callback,
@@ -35,6 +36,7 @@ class BrowserDevToolsAgentHost : public DevToolsAgentHostImpl {
   void Reload() override;
   bool Close() override;
 
+  std::unique_ptr<BrowserAutoAttacher> auto_attacher_;
   scoped_refptr<base::SingleThreadTaskRunner> tethering_task_runner_;
   CreateServerSocketCallback socket_callback_;
   bool only_discovery_;

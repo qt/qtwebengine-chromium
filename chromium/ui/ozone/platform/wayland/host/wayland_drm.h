@@ -9,7 +9,6 @@
 
 #include <vector>
 
-#include "base/containers/flat_map.h"
 #include "base/files/scoped_file.h"
 #include "base/macros.h"
 #include "ui/ozone/platform/wayland/common/wayland_object.h"
@@ -28,8 +27,14 @@ class WaylandConnection;
 
 // Wrapper around |wl_drm| Wayland factory, which creates
 // |wl_buffer|s backed by dmabuf prime file descriptors.
-class WaylandDrm {
+class WaylandDrm : public wl::GlobalObjectRegistrar<WaylandDrm> {
  public:
+  static void Register(WaylandConnection* connection);
+  static void Instantiate(WaylandConnection* connection,
+                          wl_registry* registry,
+                          uint32_t name,
+                          uint32_t version);
+
   WaylandDrm(wl_drm* drm, WaylandConnection* connection);
   ~WaylandDrm();
 

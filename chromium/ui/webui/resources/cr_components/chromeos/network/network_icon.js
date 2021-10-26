@@ -61,14 +61,6 @@ Polymer({
       reflectToAttribute: true,
       computed: 'computeAriaLabel_(locale, networkState)'
     },
-
-    /** @private */
-    isUpdatedCellularUiEnabled_: {
-      type: Boolean,
-      value() {
-        return loadTimeData.getBoolean('updatedCellularActivationUi');
-      }
-    },
   },
 
   /**
@@ -101,8 +93,7 @@ Polymer({
     const prefix = OncMojo.networkTypeIsMobile(type) ? 'cellular-' : 'wifi-';
 
     if (this.networkState.type === mojom.NetworkType.kCellular &&
-        this.networkState.typeState.cellular.simLocked &&
-        this.isUpdatedCellularUiEnabled_) {
+        this.networkState.typeState.cellular.simLocked) {
       return prefix + 'locked';
     }
 
@@ -304,5 +295,18 @@ Polymer({
     }
     return this.networkState.type === mojom.NetworkType.kWiFi &&
         this.networkState.typeState.wifi.security !== mojom.SecurityType.kNone;
+  },
+
+  /**
+   * @return {boolean}
+   * @private
+   */
+  showRoaming_() {
+    if (!this.networkState) {
+      return false;
+    }
+    const mojom = chromeos.networkConfig.mojom;
+    return this.networkState.type === mojom.NetworkType.kCellular &&
+        this.networkState.typeState.cellular.roaming;
   },
 });

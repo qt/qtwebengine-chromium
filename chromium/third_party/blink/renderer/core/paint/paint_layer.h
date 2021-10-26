@@ -6,7 +6,7 @@
  *
  * Other contributors:
  *   Robert O'Callahan <roc+@cs.cmu.edu>
- *   David Baron <dbaron@fas.harvard.edu>
+ *   David Baron <dbaron@dbaron.org>
  *   Christian Biesinger <cbiesinger@web.de>
  *   Randall Jesup <rjesup@wgate.com>
  *   Roland Mainz <roland.mainz@informatik.med.uni-giessen.de>
@@ -313,7 +313,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // testing, intersection observer). Most other cases should use the unsnapped
   // offset from LayoutBox (for layout) or the source offset from the
   // ScrollableArea.
-  LayoutSize PixelSnappedScrolledContentOffset() const;
+  IntPoint PixelSnappedScrolledContentOffset() const;
 
   // FIXME: size() should DCHECK(!needs_position_update_) as well, but that
   // fails in some tests, for example, fast/repaint/clipped-relative.html.
@@ -407,6 +407,10 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   PaintLayer* EnclosingLayerForPaintInvalidation() const;
 
   PaintLayer* EnclosingDirectlyCompositableLayer(IncludeSelfOrNot) const;
+
+  // For CompositeAfterPaint, but not for LayoutNGBlockFragmentation.
+  const PaintLayer* EnclosingCompositedScrollingLayerUnderPagination(
+      IncludeSelfOrNot) const;
 
   // https://crbug.com/751768, this function can return nullptr sometimes.
   // Always check the result before using it, don't just DCHECK.
@@ -619,6 +623,7 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
       PhysicalOffset&);
 
   bool PaintsWithTransparency(GlobalPaintFlags global_paint_flags) const {
+    DCHECK(!RuntimeEnabledFeatures::CompositeAfterPaintEnabled());
     return IsTransparent() && !PaintsIntoOwnBacking(global_paint_flags);
   }
 
@@ -681,7 +686,9 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // Calls the above, rounding outwards.
   PhysicalRect MapRectForFilter(const PhysicalRect&) const;
 
-  bool HasFilterThatMovesPixels() const;
+  bool HasFilterThatMovesPixels() const {
+    return has_filter_that_moves_pixels_;
+  }
 
   PaintLayerResourceInfo* ResourceInfo() const {
     return rare_data_ ? rare_data_->resource_info.Get() : nullptr;
@@ -990,19 +997,10 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
 
   void DidUpdateScrollsOverflow();
 
-  void AppendSingleFragmentIgnoringPagination(
-      PaintLayerFragments&,
-      const PaintLayer* root_layer,
-      const CullRect* cull_rect,
-      OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize,
-      ShouldRespectOverflowClipType = kRespectOverflowClip,
-      const PhysicalOffset* offset_from_root = nullptr,
-      const PhysicalOffset& sub_pixel_accumulation = PhysicalOffset()) const;
-
   void CollectFragments(
       PaintLayerFragments&,
       const PaintLayer* root_layer,
-      const CullRect* cull_rect,
+      const CullRect* painting_cull_rect,
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize,
       ShouldRespectOverflowClipType = kRespectOverflowClip,
       const PhysicalOffset* offset_from_root = nullptr,
@@ -1162,6 +1160,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
     needs_paint_offset_translation_for_compositing_ = b;
   }
 
+  bool KnownToClipSubtree() const;
+
  private:
   PhysicalRect LocalBoundingBoxForCompositingOverlapTest() const;
   bool PaintsWithDirectReasonIntoOwnBacking(GlobalPaintFlags) const;
@@ -1184,6 +1184,10 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   void SetLastChild(PaintLayer* last) { last_ = last; }
 
   void UpdateHasSelfPaintingLayerDescendant() const;
+
+  void AppendSingleFragmentIgnoringPaginationForHitTesting(
+      PaintLayerFragments&,
+      ShouldRespectOverflowClipType) const;
 
   struct HitTestRecursionData {
     const PhysicalRect& rect;
@@ -1333,6 +1337,8 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
     needs_reorder_overlay_overflow_controls_ = b;
   }
 
+  bool ComputeHasFilterThatMovesPixels() const;
+
   // Self-painting layer is an optimization where we avoid the heavy Layer
   // painting machinery for a Layer allocated only to handle the overflow clip
   // case.
@@ -1403,6 +1409,9 @@ class CORE_EXPORT PaintLayer : public DisplayItemClient {
   // property node is updated.
   unsigned filter_on_effect_node_dirty_ : 1;
   unsigned backdrop_filter_on_effect_node_dirty_ : 1;
+
+  // Caches |ComputeHasFilterThatMovesPixels()|, updated on style changes.
+  unsigned has_filter_that_moves_pixels_ : 1;
 
   // True if the current subtree is underneath a LayoutSVGHiddenContainer
   // ancestor.

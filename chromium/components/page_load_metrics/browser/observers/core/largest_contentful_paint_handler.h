@@ -10,6 +10,7 @@
 #include "base/trace_event/traced_value.h"
 #include "components/page_load_metrics/common/page_load_metrics.mojom.h"
 #include "components/page_load_metrics/common/page_load_timing.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace content {
 
@@ -132,7 +133,7 @@ class LargestContentfulPaintHandler {
   void OnDidFinishSubFrameNavigation(
       content::NavigationHandle* navigation_handle,
       base::TimeTicks navigation_start);
-  void OnFrameDeleted(int frame_tree_node_id);
+  void OnSubFrameDeleted(int frame_tree_node_id);
 
  private:
   void RecordSubframeTiming(

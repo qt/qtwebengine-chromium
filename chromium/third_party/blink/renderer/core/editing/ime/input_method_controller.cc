@@ -26,6 +26,7 @@
 
 #include "third_party/blink/renderer/core/editing/ime/input_method_controller.h"
 
+#include "base/macros.h"
 #include "third_party/blink/public/mojom/input/focus_type.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_node_ids.h"
@@ -1336,8 +1337,7 @@ bool InputMethodController::DeleteSelectionWithoutAdjustment() {
     TypingCommand::UpdateSelectionIfDifferentFromCurrentSelection(
         last_typing_command, &GetFrame());
 
-    last_typing_command->DeleteSelection(TypingCommand::kSmartDelete,
-                                         ASSERT_NO_EDITING_ABORT);
+    last_typing_command->DeleteSelection(true, ASSERT_NO_EDITING_ABORT);
     return true;
   }
 
@@ -1520,6 +1520,11 @@ void InputMethodController::GetLayoutBounds(gfx::Rect* control_bounds,
   // For editable elements we use GetCompositionCharacterBounds to fetch the
   // selection bounds.
   *control_bounds = element->BoundsInViewport();
+}
+
+void InputMethodController::DidChangeVisibility(
+    const LayoutObject& layout_object) {
+  cached_text_input_info_.DidChangeVisibility(layout_object);
 }
 
 void InputMethodController::DidLayoutSubtree(

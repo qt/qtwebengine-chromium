@@ -18,6 +18,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "libavutil/eval.h"
 #include "libavutil/avassert.h"
@@ -968,7 +969,7 @@ static const AVFilterPad firequalizer_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_firequalizer = {
+const AVFilter ff_af_firequalizer = {
     .name               = "firequalizer",
     .description        = NULL_IF_CONFIG_SMALL("Finite Impulse Response Equalizer."),
     .uninit             = uninit,

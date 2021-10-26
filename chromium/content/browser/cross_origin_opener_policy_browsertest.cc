@@ -5,7 +5,6 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
@@ -13,8 +12,10 @@
 #include "content/common/content_navigation_policy.h"
 #include "content/public/common/content_features.h"
 #include "content/public/test/browser_test.h"
+#include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/content_mock_cert_verifier.h"
 #include "content/public/test/url_loader_interceptor.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
@@ -61,6 +62,12 @@ network::CrossOriginOpenerPolicy CoopUnsafeNone() {
   return coop;
 }
 
+network::CrossOriginEmbedderPolicy CoepUnsafeNone() {
+  network::CrossOriginEmbedderPolicy coep;
+  // Using the default value.
+  return coep;
+}
+
 std::unique_ptr<net::test_server::HttpResponse>
 CrossOriginIsolatedCrossOriginRedirectHandler(
     const net::test_server::HttpRequest& request) {
@@ -88,8 +95,7 @@ class CrossOriginOpenerPolicyBrowserTest
     // Enable COOP/COEP:
     feature_list_.InitWithFeatures(
         {network::features::kCrossOriginOpenerPolicy,
-         network::features::kCrossOriginOpenerPolicyReporting,
-         network::features::kCrossOriginIsolated},
+         network::features::kCrossOriginOpenerPolicyReporting},
         {});
 
     // Enable RenderDocument:
@@ -106,10 +112,7 @@ class CrossOriginOpenerPolicyBrowserTest
       feature_list_for_back_forward_cache_.InitWithFeatures(
           {}, {features::kBackForwardCache});
     }
-
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kIgnoreCertificateErrors);
-    }
+  }
 
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
@@ -122,7 +125,11 @@ class CrossOriginOpenerPolicyBrowserTest
     return web_contents()->GetMainFrame();
   }
 
+ private:
   void SetUpOnMainThread() override {
+    ContentBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
+
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
 
@@ -137,12 +144,22 @@ class CrossOriginOpenerPolicyBrowserTest
     ASSERT_TRUE(https_server()->Start());
   }
 
- private:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     ContentBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
   }
 
+  void SetUpInProcessBrowserTestFixture() override {
+    ContentBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    ContentBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+  content::ContentMockCertVerifier mock_cert_verifier_;
   base::test::ScopedFeatureList feature_list_;
   base::test::ScopedFeatureList feature_list_for_render_document_;
   base::test::ScopedFeatureList feature_list_for_back_forward_cache_;
@@ -163,6 +180,18 @@ class NoSharedArrayBufferByDefault : public CrossOriginOpenerPolicyBrowserTest {
         {
             features::kSharedArrayBuffer,
         });
+  }
+
+ private:
+  base::test::ScopedFeatureList feature_list_;
+};
+
+// Same as CrossOriginOpenerPolicyBrowserTest, but disable COEP credentialless.
+class NoCoepCredentialless : public CrossOriginOpenerPolicyBrowserTest {
+ public:
+  NoCoepCredentialless() {
+    feature_list_.InitWithFeatures(
+        {}, {network::features::kCrossOriginEmbedderPolicyCredentialless});
   }
 
  private:
@@ -1207,8 +1236,12 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
 // Try to host into the same cross-origin isolated process, two cross-origin
 // documents. The second's response sets CSP:sandbox, so its origin is opaque
 // and derived from the first.
+//
+// Variants:
+// 1. CrossOriginIsolatedOpeneeCspSandbox
+// 2. CrossOriginIsolatedOpeneeOpenerSandbox
 IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
-                       CrossOriginIsolatedWithDifferentOrigin) {
+                       CrossOriginIsolatedWithOpeneeCspSandbox) {
   GURL opener_url =
       https_server()->GetURL("a.com",
                              "/set-header?"
@@ -1244,18 +1277,70 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
   EXPECT_EQ(opener_current_main_document->last_http_status_code(), 200);
   EXPECT_EQ(openee_current_main_document->last_http_status_code(), 200);
 
-  // We have two main documents in the same cross-origin isolated process from a
-  // different origin.
-  // TODO(https://crbug.com/1115426): Investigate what needs to be done.
+  // We have two main documents in different cross-origin isolated process.
   EXPECT_NE(opener_current_main_document->GetLastCommittedOrigin(),
             openee_current_main_document->GetLastCommittedOrigin());
-  EXPECT_EQ(opener_current_main_document->GetProcess(),
+  EXPECT_NE(opener_current_main_document->GetProcess(),
             openee_current_main_document->GetProcess());
-  EXPECT_EQ(opener_current_main_document->GetSiteInstance(),
+  EXPECT_NE(opener_current_main_document->GetSiteInstance(),
             openee_current_main_document->GetSiteInstance());
 
-  // TODO(arthursonzogni): Check whether the processes are marked as
-  // cross-origin isolated or not.
+  EXPECT_TRUE(
+      opener_current_main_document->GetSiteInstance()->IsCrossOriginIsolated());
+  EXPECT_TRUE(
+      openee_current_main_document->GetSiteInstance()->IsCrossOriginIsolated());
+}
+
+// Variants:
+// 1. CrossOriginIsolatedOpeneeCspSandbox
+// 2. CrossOriginIsolatedOpeneeOpenerSandbox
+IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
+                       CrossOriginIsolatedOpeneeOpenerSandbox) {
+  // The URL used by both the openee and the opener.
+  GURL url = https_server()->GetURL(
+      "a.com",
+      "/set-header?"
+      "Cross-Origin-Opener-Policy: same-origin&"
+      "Cross-Origin-Embedder-Policy: require-corp&"
+      "Content-Security-Policy: sandbox allow-scripts allow-popups");
+
+  // Load the first window.
+  EXPECT_TRUE(NavigateToURL(shell(), url));
+  RenderFrameHostImpl* opener_current_main_document = current_frame_host();
+
+  // Load the second window.
+  ShellAddedObserver shell_observer;
+  EXPECT_TRUE(ExecJs(current_frame_host(), JsReplace("window.open($1)", url)));
+  WebContents* popup = shell_observer.GetShell()->web_contents();
+  WaitForLoadStop(popup);
+
+  RenderFrameHostImpl* openee_current_main_document =
+      static_cast<WebContentsImpl*>(popup)
+          ->GetFrameTree()
+          ->root()
+          ->current_frame_host();
+
+  // Popups with a sandboxing flag, inherited from their opener, are not
+  // allowed to navigate to a document with a Cross-Origin-Opener-Policy that
+  // is not "unsafe-none". As a result, the navigation in the popup ended up
+  // loading an error document.
+
+  EXPECT_EQ(opener_current_main_document->GetLastCommittedURL(), url);
+  EXPECT_EQ(openee_current_main_document->GetLastCommittedURL(), url);
+  EXPECT_EQ(opener_current_main_document->last_http_status_code(), 200);
+  EXPECT_EQ(openee_current_main_document->last_http_status_code(), 0);
+
+  EXPECT_NE(opener_current_main_document->GetLastCommittedOrigin(),
+            openee_current_main_document->GetLastCommittedOrigin());
+  EXPECT_NE(opener_current_main_document->GetProcess(),
+            openee_current_main_document->GetProcess());
+  EXPECT_NE(opener_current_main_document->GetSiteInstance(),
+            openee_current_main_document->GetSiteInstance());
+
+  EXPECT_TRUE(
+      opener_current_main_document->GetSiteInstance()->IsCrossOriginIsolated());
+  EXPECT_FALSE(
+      openee_current_main_document->GetSiteInstance()->IsCrossOriginIsolated());
 }
 
 // Navigate in between two documents. Check the virtual browsing context group
@@ -2521,6 +2606,70 @@ IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
   }
 }
 
+// Regression test for https://crbug.com/1226909.
+IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
+                       NavigatePopupToErrorAndCrash) {
+  GURL isolated_page(
+      https_server()->GetURL("a.com",
+                             "/set-header?"
+                             "Cross-Origin-Opener-Policy: same-origin&"
+                             "Cross-Origin-Embedder-Policy: require-corp"));
+
+  // Initial cross-origin isolated page.
+  EXPECT_TRUE(NavigateToURL(shell(), isolated_page));
+  SiteInstanceImpl* main_si = current_frame_host()->GetSiteInstance();
+  EXPECT_TRUE(main_si->IsCrossOriginIsolated());
+
+  ShellAddedObserver shell_observer;
+  GURL error_url(embedded_test_server()->GetURL("/close-socket"));
+  EXPECT_TRUE(ExecJs(current_frame_host(),
+                     JsReplace("window.w = open($1);", error_url)));
+  WebContentsImpl* popup_web_contents =
+      static_cast<WebContentsImpl*>(shell_observer.GetShell()->web_contents());
+  WaitForLoadStop(popup_web_contents);
+
+  // The popup should commit an error page with default COOP.
+  EXPECT_EQ(PAGE_TYPE_ERROR, popup_web_contents->GetController()
+                                 .GetLastCommittedEntry()
+                                 ->GetPageType());
+  EXPECT_FALSE(popup_web_contents->GetMainFrame()
+                   ->GetSiteInstance()
+                   ->IsCrossOriginIsolated());
+  EXPECT_EQ(CoopUnsafeNone(),
+            popup_web_contents->GetMainFrame()->cross_origin_opener_policy());
+
+  url::Origin error_origin =
+      popup_web_contents->GetMainFrame()->GetLastCommittedOrigin();
+
+  // Simulate the popup renderer process crashing.
+  RenderProcessHost* popup_process =
+      popup_web_contents->GetMainFrame()->GetProcess();
+  EXPECT_NE(popup_process, current_frame_host()->GetProcess());
+
+  ASSERT_TRUE(popup_process);
+  {
+    RenderProcessHostWatcher crash_observer(
+        popup_process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT);
+    popup_process->Shutdown(0);
+    crash_observer.Wait();
+  }
+
+  // Try to navigate the popup. This should not be possible, since the opener
+  // relationship should be closed.
+  EXPECT_TRUE(
+      ExecJs(current_frame_host(), "window.w.location = 'about:blank';"));
+  WaitForLoadStop(popup_web_contents);
+
+  // The popup should not have navigated.
+  EXPECT_EQ(error_origin,
+            popup_web_contents->GetMainFrame()->GetLastCommittedOrigin());
+  EXPECT_FALSE(popup_web_contents->GetMainFrame()
+                   ->GetSiteInstance()
+                   ->IsCrossOriginIsolated());
+  EXPECT_EQ(CoopUnsafeNone(),
+            popup_web_contents->GetMainFrame()->cross_origin_opener_policy());
+}
+
 IN_PROC_BROWSER_TEST_P(CrossOriginOpenerPolicyBrowserTest,
                        CrossOriginRedirectHasProperCrossOriginIsolatedState) {
   GURL non_isolated_page(
@@ -2680,6 +2829,7 @@ static auto kTestParams =
 INSTANTIATE_TEST_SUITE_P(All, CrossOriginOpenerPolicyBrowserTest, kTestParams);
 INSTANTIATE_TEST_SUITE_P(All, VirtualBrowsingContextGroupTest, kTestParams);
 INSTANTIATE_TEST_SUITE_P(All, NoSharedArrayBufferByDefault, kTestParams);
+INSTANTIATE_TEST_SUITE_P(All, NoCoepCredentialless, kTestParams);
 
 namespace {
 
@@ -2729,9 +2879,9 @@ class CoopReportingOriginTrialBrowserTest : public ContentBrowserTest {
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
  private:
-  void SetUpOnMainThread() final {
-    ContentBrowserTest::TearDownOnMainThread();
-
+  void SetUpOnMainThread() override {
+    ContentBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     https_server()->ServeFilesFromSourceDirectory(GetTestDataFilePath());
@@ -2739,16 +2889,23 @@ class CoopReportingOriginTrialBrowserTest : public ContentBrowserTest {
     net::test_server::RegisterDefaultHandlers(&https_server_);
     ASSERT_TRUE(https_server()->Start());
   }
-  void TearDownOnMainThread() final {
-    ContentBrowserTest::TearDownOnMainThread();
-  }
 
-  void SetUpCommandLine(base::CommandLine* command_line) final {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ContentBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
   }
 
- private:
+  void SetUpInProcessBrowserTestFixture() override {
+    ContentBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    ContentBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+  content::ContentMockCertVerifier mock_cert_verifier_;
   base::test::ScopedFeatureList feature_list_;
   net::EmbeddedTestServer https_server_;
 };
@@ -3089,9 +3246,9 @@ class UnrestrictedSharedArrayBufferOriginTrialBrowserTest
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
  private:
-  void SetUpOnMainThread() final {
-    ContentBrowserTest::TearDownOnMainThread();
-
+  void SetUpOnMainThread() override {
+    ContentBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     https_server()->ServeFilesFromSourceDirectory(GetTestDataFilePath());
@@ -3100,12 +3257,22 @@ class UnrestrictedSharedArrayBufferOriginTrialBrowserTest
     ASSERT_TRUE(https_server()->Start());
   }
 
-  void SetUpCommandLine(base::CommandLine* command_line) final {
+  void SetUpCommandLine(base::CommandLine* command_line) override {
     ContentBrowserTest::SetUpCommandLine(command_line);
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
   }
 
- private:
+  void SetUpInProcessBrowserTestFixture() override {
+    ContentBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    ContentBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+  content::ContentMockCertVerifier mock_cert_verifier_;
   base::test::ScopedFeatureList feature_list_;
   net::EmbeddedTestServer https_server_;
 };
@@ -3397,4 +3564,23 @@ IN_PROC_BROWSER_TEST_P(SharedArrayBufferOnDesktopBrowserTest,
   )"));
 #endif  // defined(OS_ANDROID)
 }
+
+// Regression test for https://crbug.com/1238282#c16
+// Disable COEP:credentialless feature and navigate to a document with:
+// COOP:same-origin, COEP:credentialless. The navigation used to be suspended,
+// instead of proceeding with COEP:unsafe-none.
+IN_PROC_BROWSER_TEST_P(NoCoepCredentialless, Regression1238282) {
+  EXPECT_TRUE(NavigateToURL(
+      shell(),
+      https_server()->GetURL("a.com",
+                             "/set-header?"
+                             "Cross-Origin-Opener-Policy: same-origin&"
+                             "Cross-Origin-Embedder-Policy: credentialless")));
+  EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  EXPECT_EQ(current_frame_host()->cross_origin_opener_policy(),
+            CoopSameOrigin());
+  EXPECT_EQ(current_frame_host()->cross_origin_embedder_policy(),
+            CoepUnsafeNone());
+}
+
 }  // namespace content

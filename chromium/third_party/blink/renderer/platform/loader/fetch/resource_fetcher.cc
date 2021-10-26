@@ -273,17 +273,6 @@ void SetReferrer(
   request.SetReferrerPolicy(generated_referrer.referrer_policy);
 }
 
-void PopulateAndAddResourceTimingInfo(Resource* resource,
-                                      scoped_refptr<ResourceTimingInfo> info,
-                                      base::TimeTicks response_end) {
-  info->SetInitialURL(
-      resource->GetResourceRequest().GetRedirectInfo().has_value()
-          ? resource->GetResourceRequest().GetRedirectInfo()->original_url
-          : resource->GetResourceRequest().Url());
-  info->SetFinalResponse(resource->GetResponse());
-  info->SetLoadResponseEnd(response_end);
-}
-
 }  // namespace
 
 ResourceFetcherInit::ResourceFetcherInit(
@@ -549,7 +538,8 @@ Resource* ResourceFetcher::CachedResource(const KURL& resource_url) const {
   if (resource_url.IsEmpty())
     return nullptr;
   KURL url = MemoryCache::RemoveFragmentIdentifierIfNeeded(resource_url);
-  const WeakMember<Resource>& resource = cached_resources_map_.at(url);
+  const WeakMember<Resource>& resource =
+      cached_resources_map_.DeprecatedAtOrEmptyValue(url);
   return resource.Get();
 }
 
@@ -720,6 +710,10 @@ void ResourceFetcher::MakePreloadedResourceBlockOnloadIfNeeded(
       non_blocking_loaders_.Contains(resource->Loader())) {
     non_blocking_loaders_.erase(resource->Loader());
     loaders_.insert(resource->Loader());
+    if (resource_load_observer_) {
+      resource_load_observer_->DidChangeRenderBlockingBehavior(resource,
+                                                               params);
+    }
   }
 }
 
@@ -1175,14 +1169,6 @@ Resource* ResourceFetcher::RequestResource(FetchParameters& params,
   }
 
   return resource;
-}
-
-void ResourceFetcher::MarkFirstPaint() {
-  scheduler_->MarkFirstPaint();
-}
-
-void ResourceFetcher::MarkFirstContentfulPaint() {
-  scheduler_->MarkFirstContentfulPaint();
 }
 
 void ResourceFetcher::ResourceTimingReportTimerFired(TimerBase* timer) {
@@ -1869,7 +1855,7 @@ void ResourceFetcher::HandleLoaderFinish(Resource* resource,
 
   if (scoped_refptr<ResourceTimingInfo> info =
           resource_timing_info_map_.Take(resource)) {
-    if (resource->GetResponse().IsHTTP()) {
+    if (resource->GetResponse().ShouldPopulateResourceTiming()) {
       PopulateAndAddResourceTimingInfo(resource, info, response_end);
       auto receiver = Context().TakePendingWorkerTimingReceiver(
           resource->GetResponse().RequestId());
@@ -2057,11 +2043,11 @@ void ResourceFetcher::StopFetching() {
   StopFetchingInternal(StopFetchingTarget::kExcludingKeepaliveLoaders);
 }
 
-void ResourceFetcher::SetDefersLoading(WebURLLoader::DeferType defers) {
+void ResourceFetcher::SetDefersLoading(LoaderFreezeMode mode) {
   for (const auto& loader : non_blocking_loaders_)
-    loader->SetDefersLoading(defers);
+    loader->SetDefersLoading(mode);
   for (const auto& loader : loaders_)
-    loader->SetDefersLoading(defers);
+    loader->SetDefersLoading(mode);
 }
 
 void ResourceFetcher::UpdateAllImageResourcePriorities() {
@@ -2260,6 +2246,31 @@ mojom::blink::BlobRegistry* ResourceFetcher::GetBlobRegistry() {
 
 FrameOrWorkerScheduler* ResourceFetcher::GetFrameOrWorkerScheduler() {
   return frame_or_worker_scheduler_.get();
+}
+
+void ResourceFetcher::PopulateAndAddResourceTimingInfo(
+    Resource* resource,
+    scoped_refptr<ResourceTimingInfo> info,
+    base::TimeTicks response_end) {
+  const KURL& initial_url =
+      resource->GetResourceRequest().GetRedirectInfo().has_value()
+          ? resource->GetResourceRequest().GetRedirectInfo()->original_url
+          : resource->GetResourceRequest().Url();
+
+  auto it = early_hints_preloaded_resources_.find(initial_url);
+  if (it != early_hints_preloaded_resources_.end()) {
+    early_hints_preloaded_resources_.erase(it);
+    const ResourceResponse& response = resource->GetResponse();
+    if (!response.NetworkAccessed() &&
+        (!response.WasFetchedViaServiceWorker() ||
+         response.IsServiceWorkerPassThrough())) {
+      info->SetInitiatorType("early-hints");
+    }
+  }
+
+  info->SetInitialURL(initial_url);
+  info->SetFinalResponse(resource->GetResponse());
+  info->SetLoadResponseEnd(response_end);
 }
 
 void ResourceFetcher::Trace(Visitor* visitor) const {

@@ -10,9 +10,14 @@ js_type_check("closure_compile") {
                     "browser_resolver_prefix_replacements=\"chrome://new-tab-page/=../../chrome/browser/resources/new_tab_page/\"",
                     "js_module_root=../../chrome/test/data/webui/",
                     "js_module_root=./gen/chrome/test/data/webui/",
+                    "js_module_root=" +
+                        rebase_path("//chrome/browser/resources/new_tab_page/",
+                                    root_build_dir),
+                    "js_module_root=" + rebase_path(
+                            "$root_gen_dir/mojom-webui/chrome/browser/promo_browser_command",
+                            root_build_dir),
                   ]
   deps = [
-    ":img_test",
     ":metrics_utils_test",
     ":test_support",
     "modules:info_dialog_test",
@@ -20,11 +25,6 @@ js_type_check("closure_compile") {
     "modules:module_registry_test",
     "modules:modules_test",
   ]
-}
-
-js_library("img_test") {
-  deps = [ "//chrome/browser/resources/new_tab_page" ]
-  externs_list = [ "$externs_path/mocha-2.5.js" ]
 }
 
 js_library("metrics_test_support") {
@@ -41,6 +41,6 @@ js_library("metrics_utils_test") {
 js_library("test_support") {
   deps = [
     "//chrome/browser/resources/new_tab_page",
-    "//chrome/test/data/webui:test_browser_proxy.m",
+    "//chrome/test/data/webui:test_browser_proxy",
   ]
 }

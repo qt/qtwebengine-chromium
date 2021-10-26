@@ -7,6 +7,7 @@
 
 #include <bitset>
 #include <map>
+#include <memory>
 #include <ostream>
 #include <set>
 #include <string>
@@ -19,6 +20,8 @@
 #include "ui/accessibility/ax_tree_observer.h"
 
 namespace ui {
+
+class AXLiveRegionTracker;
 
 // Subclass of AXTreeObserver that automatically generates AXEvents to fire
 // based on changes to an accessibility tree.  Every platform
@@ -40,10 +43,12 @@ class AX_EXPORT AXEventGenerator : public AXTreeObserver {
     AUTO_COMPLETE_CHANGED,
     BUSY_CHANGED,
     CHECKED_STATE_CHANGED,
+    CHECKED_STATE_DESCRIPTION_CHANGED,
     CHILDREN_CHANGED,
     CLASS_NAME_CHANGED,
     COLLAPSED,
     CONTROLS_CHANGED,
+    DETAILS_CHANGED,
     DESCRIBED_BY_CHANGED,
     DESCRIPTION_CHANGED,
     DOCUMENT_SELECTION_CHANGED,
@@ -338,6 +343,9 @@ class AX_EXPORT AXEventGenerator : public AXTreeObserver {
   // Please make sure that this ScopedObserver is always declared last in order
   // to prevent any use-after-free.
   base::ScopedObservation<AXTree, AXTreeObserver> tree_event_observation_{this};
+
+  // Helper that tracks live regions.
+  std::unique_ptr<AXLiveRegionTracker> live_region_tracker_;
 };
 
 AX_EXPORT std::ostream& operator<<(std::ostream& os,

@@ -119,6 +119,8 @@ config("dawn_internal") {
       "-Wshadow-field",
       "-Wstrict-prototypes",
       "-Wtautological-unsigned-zero-compare",
+      "-Wunreachable-code-aggressive",
+      "-Wunused-but-set-variable",
     ]
 
     if (is_win) {
@@ -201,8 +203,6 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
       "TypeTraits.h",
       "TypedInteger.h",
       "UnderlyingType.h",
-      "VertexFormatUtils.cpp",
-      "VertexFormatUtils.h",
       "ityp_array.h",
       "ityp_bitset.h",
       "ityp_span.h",
@@ -211,6 +211,10 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
       "vulkan_platform.h",
       "xlib_with_undefs.h",
     ]
+
+    if (is_mac) {
+      sources += [ "SystemUtils_mac.mm" ]
+    }
 
     public_configs = [ ":dawn_internal" ]
     deps = [

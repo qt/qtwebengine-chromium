@@ -43,7 +43,7 @@ import {linkifyDeferredNodeReference} from './DOMLinkifier.js';
 import {ElementsPanel} from './ElementsPanel.js';
 import {ElementsTreeElement, InitialChildrenLimit} from './ElementsTreeElement.js';
 import {ImagePreviewPopover} from './ImagePreviewPopover.js';
-import type {MarkerDecoratorRegistration} from './MarkerDecorator.js'; // eslint-disable-line no-unused-vars
+import type {MarkerDecoratorRegistration} from './MarkerDecorator.js';
 
 const UIStrings = {
   /**
@@ -92,7 +92,7 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
   _visibleWidth?: number;
   _clipboardNodeData?: ClipboardData;
   _isXMLMimeType?: boolean|null;
-  _suppressRevealAndSelect?: boolean;
+  suppressRevealAndSelect: boolean = false;
   _previousHoveredElement?: UI.TreeOutline.TreeElement;
   _treeElementBeingDragged?: ElementsTreeElement;
   _dragOverTreeElement?: ElementsTreeElement;
@@ -103,8 +103,7 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     this.treeElementByNode = new WeakMap();
     const shadowContainer = document.createElement('div');
     this._shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
-        shadowContainer,
-        {cssFile: 'panels/elements/elementsTreeOutline.css', enableLegacyPatching: false, delegatesFocus: undefined});
+        shadowContainer, {cssFile: 'panels/elements/elementsTreeOutline.css', delegatesFocus: undefined});
     const outlineDisclosureElement = this._shadowRoot.createChild('div', 'elements-disclosure');
 
     this._element = this.element;
@@ -522,15 +521,8 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     return treeElement ? this._showChild(treeElement, node) : null;
   }
 
-  set suppressRevealAndSelect(x: boolean) {
-    if (this._suppressRevealAndSelect === x) {
-      return;
-    }
-    this._suppressRevealAndSelect = x;
-  }
-
   _revealAndSelectNode(node: SDK.DOMModel.DOMNode|null, omitFocus: boolean): void {
-    if (this._suppressRevealAndSelect) {
+    if (this.suppressRevealAndSelect) {
       return;
     }
 
@@ -614,7 +606,7 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
 
     this.setHoverEffect(element);
     this._highlightTreeElement(
-        (element as UI.TreeOutline.TreeElement), !UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlOrMeta(event));
+        (element as UI.TreeOutline.TreeElement), !UI.KeyboardShortcut.KeyboardShortcut.eventHasEitherCtrlOrMeta(event));
   }
 
   _highlightTreeElement(element: UI.TreeOutline.TreeElement, showInfo: boolean): void {
@@ -832,7 +824,7 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
       return;
     }
 
-    if (UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlOrMeta(keyboardEvent) && node.parentNode) {
+    if (UI.KeyboardShortcut.KeyboardShortcut.eventHasCtrlEquivalentKey(keyboardEvent) && node.parentNode) {
       if (keyboardEvent.key === 'ArrowUp' && node.previousSibling) {
         node.moveTo(node.parentNode, node.previousSibling, this.selectNodeAfterEdit.bind(this, treeElement.expanded));
         keyboardEvent.consume(true);
@@ -1036,28 +1028,28 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     return this._updateRecords.get(node) || null;
   }
 
-  _documentUpdated(event: Common.EventTarget.EventTargetEvent): void {
-    const domModel = (event.data as SDK.DOMModel.DOMModel);
+  _documentUpdated(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMModel>): void {
+    const domModel = event.data;
     this._reset();
     if (domModel.existingDocument()) {
       this.rootDOMNode = domModel.existingDocument();
     }
   }
 
-  _attributeModified(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data.node as SDK.DOMModel.DOMNode);
+  _attributeModified(event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode, name: string}>): void {
+    const {node} = event.data;
     this._addUpdateRecord(node).attributeModified(event.data.name);
     this._updateModifiedNodesSoon();
   }
 
-  _attributeRemoved(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data.node as SDK.DOMModel.DOMNode);
+  _attributeRemoved(event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode, name: string}>): void {
+    const {node} = event.data;
     this._addUpdateRecord(node).attributeRemoved(event.data.name);
     this._updateModifiedNodesSoon();
   }
 
-  _characterDataModified(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _characterDataModified(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     this._addUpdateRecord(node).charDataModified();
     // Text could be large and force us to render itself as the child in the tree outline.
     if (node.parentNode && node.parentNode.firstChild === node.parentNode.lastChild) {
@@ -1066,28 +1058,28 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     this._updateModifiedNodesSoon();
   }
 
-  _nodeInserted(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _nodeInserted(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     this._addUpdateRecord((node.parentNode as SDK.DOMModel.DOMNode)).nodeInserted(node);
     this._updateModifiedNodesSoon();
   }
 
-  _nodeRemoved(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data.node as SDK.DOMModel.DOMNode);
-    const parentNode = (event.data.parent as SDK.DOMModel.DOMNode);
+  _nodeRemoved(event: Common.EventTarget.EventTargetEvent<{node: SDK.DOMModel.DOMNode, parent: SDK.DOMModel.DOMNode}>):
+      void {
+    const {node, parent} = event.data;
     this.resetClipboardIfNeeded(node);
-    this._addUpdateRecord(parentNode).nodeRemoved(node);
+    this._addUpdateRecord(parent).nodeRemoved(node);
     this._updateModifiedNodesSoon();
   }
 
-  _childNodeCountUpdated(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _childNodeCountUpdated(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     this._addUpdateRecord(node).childrenModified();
     this._updateModifiedNodesSoon();
   }
 
-  _distributedNodesChanged(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _distributedNodesChanged(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     this._addUpdateRecord(node).childrenModified();
     this._updateModifiedNodesSoon();
   }
@@ -1414,8 +1406,8 @@ export class ElementsTreeOutline extends UI.TreeOutline.TreeOutline {
     this._treeElementsBeingUpdated.delete(treeElement);
   }
 
-  _markersChanged(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _markersChanged(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     const treeElement = this.treeElementByNode.get(node);
     if (treeElement) {
       treeElement.updateDecorations();

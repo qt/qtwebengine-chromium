@@ -7,12 +7,13 @@
 #ifndef FPDFSDK_FPDFXFA_CPDFXFA_CONTEXT_H_
 #define FPDFSDK_FPDFXFA_CPDFXFA_CONTEXT_H_
 
+#include <stdint.h>
+
 #include <memory>
 #include <vector>
 
 #include "core/fpdfapi/parser/cpdf_document.h"
 #include "core/fxcrt/cfx_timer.h"
-#include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
@@ -20,6 +21,7 @@
 #include "fpdfsdk/fpdfxfa/cpdfxfa_page.h"
 #include "fxjs/gc/heap.h"
 #include "v8/include/cppgc/persistent.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 
 class CFX_XMLDocument;
@@ -38,7 +40,7 @@ void CPDFXFA_ModuleInit();
 void CPDFXFA_ModuleDestroy();
 
 class CPDFXFA_Context final : public CPDF_Document::Extension,
-                              public IXFA_AppProvider {
+                              public CXFA_FFApp::CallbackIface {
  public:
   explicit CPDFXFA_Context(CPDF_Document* pPDFDoc);
   ~CPDFXFA_Context() override;
@@ -73,7 +75,7 @@ class CPDFXFA_Context final : public CPDF_Document::Extension,
   bool ContainsExtensionFullForm() const override;
   bool ContainsExtensionForegroundForm() const override;
 
-  // IFXA_AppProvider:
+  // CXFA_FFApp::CallbackIface:
   WideString GetLanguage() override;
   WideString GetPlatform() override;
   WideString GetAppName() override;

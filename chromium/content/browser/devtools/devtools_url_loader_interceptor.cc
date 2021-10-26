@@ -37,6 +37,7 @@
 #include "services/network/public/cpp/cors/cors.h"
 #include "services/network/public/cpp/header_util.h"
 #include "services/network/public/cpp/resource_request_body.h"
+#include "services/network/public/mojom/early_hints.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "third_party/blink/public/platform/resource_request_blocked_reason.h"
 
@@ -88,11 +89,13 @@ DevToolsURLLoaderInterceptor::Modifications::Modifications(
     protocol::Maybe<std::string> modified_url,
     protocol::Maybe<std::string> modified_method,
     protocol::Maybe<protocol::Binary> modified_post_data,
-    std::unique_ptr<HeadersVector> modified_headers)
+    std::unique_ptr<HeadersVector> modified_headers,
+    protocol::Maybe<bool> intercept_response)
     : modified_url(std::move(modified_url)),
       modified_method(std::move(modified_method)),
       modified_post_data(std::move(modified_post_data)),
-      modified_headers(std::move(modified_headers)) {}
+      modified_headers(std::move(modified_headers)),
+      intercept_response(std::move(intercept_response)) {}
 
 DevToolsURLLoaderInterceptor::Modifications::Modifications(
     absl::optional<net::Error> error_reason,
@@ -646,11 +649,14 @@ void DevToolsURLLoaderInterceptor::ContinueInterceptedRequest(
 }
 
 bool DevToolsURLLoaderInterceptor::CreateProxyForInterception(
-    RenderProcessHost* rph,
+    int process_id,
+    StoragePartition* storage_partition,
     const base::UnguessableToken& frame_token,
     bool is_navigation,
     bool is_download,
     network::mojom::URLLoaderFactoryOverride* intercepting_factory) {
+  DCHECK(storage_partition);
+
   if (patterns_.empty())
     return false;
 
@@ -667,11 +673,19 @@ bool DevToolsURLLoaderInterceptor::CreateProxyForInterception(
   auto overridden_factory_receiver =
       target_remote.InitWithNewPipeAndPassReceiver();
   mojo::PendingRemote<network::mojom::CookieManager> cookie_manager;
-  int process_id = is_navigation ? 0 : rph->GetID();
-  rph->GetStoragePartition()->GetNetworkContext()->GetCookieManager(
+
+  // TODO(ahemery): Using 0 as the process id for navigations can lead to
+  // collisions between multiple navigations/service workers main script fetch.
+  // It should be replaced by the more robust
+  // GlobalRequestID::MakeBrowserInitiated().
+  int process_id_override = process_id;
+  if (is_navigation)
+    process_id_override = 0;
+
+  storage_partition->GetNetworkContext()->GetCookieManager(
       cookie_manager.InitWithNewPipeAndPassReceiver());
   new DevToolsURLLoaderFactoryProxy(
-      frame_token, process_id, is_download,
+      frame_token, process_id_override, is_download,
       std::move(intercepting_factory->overridden_factory_receiver),
       std::move(target_remote), std::move(cookie_manager),
       weak_factory_.GetWeakPtr());
@@ -865,6 +879,20 @@ Response InterceptionJob::InnerContinueRequest(
         "Invalid state for continueInterceptedRequest");
   }
   waiting_for_resolution_ = false;
+
+  if (modifications->intercept_response.isJust()) {
+    if (modifications->intercept_response.fromJust()) {
+      if (stage_ == InterceptionStage::REQUEST)
+        stage_ = InterceptionStage::BOTH;
+      else
+        stage_ = InterceptionStage::RESPONSE;
+    } else {
+      if (stage_ == InterceptionStage::BOTH)
+        stage_ = InterceptionStage::REQUEST;
+      else if (stage_ == InterceptionStage::RESPONSE)
+        stage_ = InterceptionStage::DONT_INTERCEPT;
+    }
+  }
 
   if (state_ == State::kAuthRequired) {
     if (!modifications->auth_challenge_response)
@@ -1111,7 +1139,8 @@ void InterceptionJob::ProcessSetCookies(const net::HttpResponseHeaders& headers,
   size_t iter = 0;
   while (headers.EnumerateHeader(&iter, name, &cookie_line)) {
     std::unique_ptr<net::CanonicalCookie> cookie = net::CanonicalCookie::Create(
-        create_loader_params_->request.url, cookie_line, now, server_time);
+        create_loader_params_->request.url, cookie_line, now, server_time,
+        net::CookiePartitionKey::Todo());
     if (cookie)
       cookies.emplace_back(std::move(cookie));
   }
@@ -1125,12 +1154,15 @@ void InterceptionJob::ProcessSetCookies(const net::HttpResponseHeaders& headers,
               create_loader_params_->request.site_for_cookies.scheme(),
               create_loader_params_->request.url.SchemeIsCryptographic());
   DCHECK_EQ(create_loader_params_->request.url, url_chain_.back());
+  bool is_main_frame_navigation =
+      create_loader_params_->request.trusted_params.has_value() &&
+      create_loader_params_->request.trusted_params->isolation_info
+              .request_type() == net::IsolationInfo::RequestType::kMainFrame;
   options.set_same_site_cookie_context(
       net::cookie_util::ComputeSameSiteContextForResponse(
           url_chain_, create_loader_params_->request.site_for_cookies,
           create_loader_params_->request.request_initiator,
-          create_loader_params_->request.is_main_frame,
-          should_treat_as_first_party));
+          is_main_frame_navigation, should_treat_as_first_party));
 
   // |this| might be deleted here if |cookies| is empty!
   auto on_cookie_set = base::BindRepeating(
@@ -1275,10 +1307,14 @@ void InterceptionJob::FetchCookies(
           ->ShouldIgnoreSameSiteCookieRestrictionsWhenTopLevel(
               request.site_for_cookies.scheme(),
               request.url.SchemeIsCryptographic());
+  bool is_main_frame_navigation =
+      request.trusted_params.has_value() &&
+      request.trusted_params->isolation_info.request_type() ==
+          net::IsolationInfo::RequestType::kMainFrame;
   options.set_same_site_cookie_context(
       net::cookie_util::ComputeSameSiteContextForRequest(
           request.method, url_chain_, request.site_for_cookies,
-          request.request_initiator, request.is_main_frame,
+          request.request_initiator, is_main_frame_navigation,
           should_treat_as_first_party));
 
   cookie_manager_->GetCookieList(request.url, options, std::move(callback));

@@ -4,11 +4,13 @@
 
 import("//build/config/chromeos/ui_mode.gni")
 
-source_set("soda") {
+component("soda") {
   sources = [
     "soda_installer.cc",
     "soda_installer.h",
   ]
+
+  defines = [ "IS_SODA_INSTALLER_IMPL" ]
 
   deps = [
     ":constants",
@@ -25,7 +27,7 @@ source_set("soda") {
     ]
 
     deps += [
-      "//ash/public/cpp",
+      "//ash/constants",
       "//chromeos/dbus/dlcservice",
       "//ui/base",
     ]
@@ -46,4 +48,23 @@ source_set("constants") {
     "//components/crx_file",
     "//components/strings/",
   ]
+}
+
+source_set("unit_tests") {
+  testonly = true
+  if (is_chromeos_ash) {
+    sources = [ "soda_installer_impl_chromeos_unittest.cc" ]
+
+    deps = [
+      ":constants",
+      ":soda",
+      "//ash/constants",
+      "//chromeos/dbus/dlcservice:test_support",
+      "//components/live_caption:constants",
+      "//components/prefs:test_support",
+      "//content/test:test_support",
+      "//testing/gmock",
+      "//testing/gtest",
+    ]
+  }
 }

@@ -10,11 +10,11 @@
 #include "base/check_op.h"
 #include "base/feature_list.h"
 #include "base/numerics/checked_math.h"
-#include "base/optional.h"
 #include "base/trace_event/trace_event.h"
-#include "components/safe_browsing/core/features.h"
-#include "components/safe_browsing/core/proto/client_model.pb.h"
-#include "components/safe_browsing/core/proto/csd.pb.h"
+#include "components/safe_browsing/core/common/features.h"
+#include "components/safe_browsing/core/common/proto/client_model.pb.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/opencv/src/emd_wrapper.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
@@ -279,9 +279,9 @@ bool GetBlurredImage(const SkBitmap& image,
   const int data_size = blurred->width() * blurred->height();
   blurred_image->mutable_data()->reserve(data_size);
 
-  for (int x = 0; x < blurred->width(); ++x) {
-    for (int y = 0; y < blurred->height(); ++y) {
-      SkColor color = blurred->getColor(y, x);
+  for (int y = 0; y < blurred->height(); ++y) {
+    for (int x = 0; x < blurred->width(); ++x) {
+      SkColor color = blurred->getColor(x, y);
       *blurred_image->mutable_data() += static_cast<char>(SkColorGetR(color));
       *blurred_image->mutable_data() += static_cast<char>(SkColorGetG(color));
       *blurred_image->mutable_data() += static_cast<char>(SkColorGetB(color));

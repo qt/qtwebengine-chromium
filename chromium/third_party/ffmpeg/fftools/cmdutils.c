@@ -34,7 +34,6 @@
 #include "libavformat/avformat.h"
 #include "libavfilter/avfilter.h"
 #include "libavdevice/avdevice.h"
-#include "libavresample/avresample.h"
 #include "libswscale/swscale.h"
 #include "libswresample/swresample.h"
 #include "libpostproc/postprocess.h"
@@ -42,6 +41,7 @@
 #include "libavutil/avassert.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/display.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/imgutils.h"
@@ -54,6 +54,7 @@
 #include "libavutil/cpu.h"
 #include "libavutil/ffversion.h"
 #include "libavutil/version.h"
+#include "libavcodec/bsf.h"
 #include "cmdutils.h"
 #if HAVE_SYS_RESOURCE_H
 #include <sys/time.h>
@@ -72,6 +73,7 @@ AVDictionary *format_opts, *codec_opts, *resample_opts;
 static FILE *report_file;
 static int report_file_level = AV_LOG_DEBUG;
 int hide_banner = 0;
+int cpu_count = -1;
 
 enum show_muxdemuxers {
     SHOW_DEFAULT,
@@ -545,9 +547,6 @@ int opt_default(void *optctx, const char *opt, const char *arg)
     char opt_stripped[128];
     const char *p;
     const AVClass *cc = avcodec_get_class(), *fc = avformat_get_class();
-#if CONFIG_AVRESAMPLE
-    const AVClass *rc = avresample_get_class();
-#endif
 #if CONFIG_SWSCALE
     const AVClass *sc = sws_get_class();
 #endif
@@ -614,13 +613,6 @@ int opt_default(void *optctx, const char *opt, const char *arg)
             return ret;
         }
         av_dict_set(&swr_opts, opt, arg, FLAGS);
-        consumed = 1;
-    }
-#endif
-#if CONFIG_AVRESAMPLE
-    if ((o=opt_find(&rc, opt, NULL, 0,
-                       AV_OPT_SEARCH_CHILDREN | AV_OPT_SEARCH_FAKE_OBJ))) {
-        av_dict_set(&resample_opts, opt, arg, FLAGS);
         consumed = 1;
     }
 #endif
@@ -862,6 +854,32 @@ int opt_cpuflags(void *optctx, const char *opt, const char *arg)
 
     av_force_cpu_flags(flags);
     return 0;
+}
+
+int opt_cpucount(void *optctx, const char *opt, const char *arg)
+{
+    int ret;
+    int count;
+
+    static const AVOption opts[] = {
+        {"count", NULL, 0, AV_OPT_TYPE_INT, { .i64 = -1}, -1, INT_MAX, NULL},
+        {NULL},
+    };
+    static const AVClass class = {
+        .class_name = "cpucount",
+        .item_name  = av_default_item_name,
+        .option     = opts,
+        .version    = LIBAVUTIL_VERSION_INT,
+    };
+    const AVClass *pclass = &class;
+
+    ret = av_opt_eval_int(&pclass, opts, arg, &count);
+
+    if (!ret) {
+        av_cpu_force_count(count);
+    }
+
+    return ret;
 }
 
 int opt_loglevel(void *optctx, const char *opt, const char *arg)
@@ -1134,7 +1152,6 @@ static void print_all_libs_info(int flags, int level)
     PRINT_LIB_INFO(avformat,   AVFORMAT,   flags, level);
     PRINT_LIB_INFO(avdevice,   AVDEVICE,   flags, level);
     PRINT_LIB_INFO(avfilter,   AVFILTER,   flags, level);
-    PRINT_LIB_INFO(avresample, AVRESAMPLE, flags, level);
     PRINT_LIB_INFO(swscale,    SWSCALE,    flags, level);
     PRINT_LIB_INFO(swresample, SWRESAMPLE, flags, level);
     PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
@@ -1163,13 +1180,13 @@ static void print_buildconf(int flags, int level)
     // Change all the ' --' strings to '~--' so that
     // they can be identified as tokens.
     while ((conflist = strstr(str, " --")) != NULL) {
-        strncpy(conflist, "~--", 3);
+        conflist[0] = '~';
     }
 
     // Compensate for the weirdness this would cause
     // when passing 'pkg-config --static'.
     while ((remove_tilde = strstr(str, "pkg-config~")) != NULL) {
-        strncpy(remove_tilde, "pkg-config ", 11);
+        remove_tilde[sizeof("pkg-config~") - 2] = ' ';
     }
 
     splitconf = strtok(str, "~");
@@ -1415,7 +1432,7 @@ static void print_codec(const AVCodec *c)
         printf("variable ");
     if (c->capabilities & (AV_CODEC_CAP_FRAME_THREADS |
                            AV_CODEC_CAP_SLICE_THREADS |
-                           AV_CODEC_CAP_AUTO_THREADS))
+                           AV_CODEC_CAP_OTHER_THREADS))
         printf("threads ");
     if (c->capabilities & AV_CODEC_CAP_AVOID_PROBING)
         printf("avoidprobe ");
@@ -1432,12 +1449,12 @@ static void print_codec(const AVCodec *c)
         printf("    Threading capabilities: ");
         switch (c->capabilities & (AV_CODEC_CAP_FRAME_THREADS |
                                    AV_CODEC_CAP_SLICE_THREADS |
-                                   AV_CODEC_CAP_AUTO_THREADS)) {
+                                   AV_CODEC_CAP_OTHER_THREADS)) {
         case AV_CODEC_CAP_FRAME_THREADS |
              AV_CODEC_CAP_SLICE_THREADS: printf("frame and slice"); break;
         case AV_CODEC_CAP_FRAME_THREADS: printf("frame");           break;
         case AV_CODEC_CAP_SLICE_THREADS: printf("slice");           break;
-        case AV_CODEC_CAP_AUTO_THREADS : printf("auto");            break;
+        case AV_CODEC_CAP_OTHER_THREADS: printf("other");           break;
         default:                         printf("none");            break;
         }
         printf("\n");
@@ -2217,7 +2234,7 @@ double get_rotation(AVStream *st)
 }
 
 #if CONFIG_AVDEVICE
-static int print_device_sources(AVInputFormat *fmt, AVDictionary *opts)
+static int print_device_sources(const AVInputFormat *fmt, AVDictionary *opts)
 {
     int ret, i;
     AVDeviceInfoList *device_list = NULL;
@@ -2247,7 +2264,7 @@ static int print_device_sources(AVInputFormat *fmt, AVDictionary *opts)
     return ret;
 }
 
-static int print_device_sinks(AVOutputFormat *fmt, AVDictionary *opts)
+static int print_device_sinks(const AVOutputFormat *fmt, AVDictionary *opts)
 {
     int ret, i;
     AVDeviceInfoList *device_list = NULL;
@@ -2301,7 +2318,7 @@ static int show_sinks_sources_parse_arg(const char *arg, char **dev, AVDictionar
 
 int show_sources(void *optctx, const char *opt, const char *arg)
 {
-    AVInputFormat *fmt = NULL;
+    const AVInputFormat *fmt = NULL;
     char *dev = NULL;
     AVDictionary *opts = NULL;
     int ret = 0;
@@ -2339,7 +2356,7 @@ int show_sources(void *optctx, const char *opt, const char *arg)
 
 int show_sinks(void *optctx, const char *opt, const char *arg)
 {
-    AVOutputFormat *fmt = NULL;
+    const AVOutputFormat *fmt = NULL;
     char *dev = NULL;
     AVDictionary *opts = NULL;
     int ret = 0;

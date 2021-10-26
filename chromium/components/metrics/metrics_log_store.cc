@@ -48,53 +48,98 @@ void MetricsLogStore::LoadPersistedUnsentLogs() {
   unsent_logs_loaded_ = true;
 }
 
-void MetricsLogStore::StoreLog(
-    const std::string& log_data,
-    MetricsLog::LogType log_type,
-    absl::optional<base::HistogramBase::Count> samples_count) {
+void MetricsLogStore::StoreLog(const std::string& log_data,
+                               MetricsLog::LogType log_type,
+                               const LogMetadata& log_metadata) {
   switch (log_type) {
     case MetricsLog::INITIAL_STABILITY_LOG:
-      initial_log_queue_.StoreLog(log_data, samples_count);
+      initial_log_queue_.StoreLog(log_data, log_metadata);
       break;
     case MetricsLog::ONGOING_LOG:
     case MetricsLog::INDEPENDENT_LOG:
-      ongoing_log_queue_.StoreLog(log_data, samples_count);
+      has_alternate_ongoing_log_store()
+          ? alternate_ongoing_log_queue_->StoreLog(log_data, log_metadata)
+          : ongoing_log_queue_.StoreLog(log_data, log_metadata);
       break;
   }
 }
 
+void MetricsLogStore::SetAlternateOngoingLogStore(
+    std::unique_ptr<UnsentLogStore> log_store) {
+  DCHECK(!has_alternate_ongoing_log_store());
+  DCHECK(unsent_logs_loaded_);
+  alternate_ongoing_log_queue_ = std::move(log_store);
+  alternate_ongoing_log_queue_->LoadPersistedUnsentLogs();
+}
+
+void MetricsLogStore::UnsetAlternateOngoingLogStore() {
+  DCHECK(has_alternate_ongoing_log_store());
+  alternate_ongoing_log_queue_->TrimAndPersistUnsentLogs();
+  alternate_ongoing_log_queue_.reset();
+}
+
 bool MetricsLogStore::has_unsent_logs() const {
   return initial_log_queue_.has_unsent_logs() ||
-         ongoing_log_queue_.has_unsent_logs();
+         ongoing_log_queue_.has_unsent_logs() ||
+         alternate_ongoing_log_store_has_unsent_logs();
 }
 
 bool MetricsLogStore::has_staged_log() const {
   return initial_log_queue_.has_staged_log() ||
-         ongoing_log_queue_.has_staged_log();
+         ongoing_log_queue_.has_staged_log() ||
+         alternate_ongoing_log_store_has_staged_log();
 }
 
 const std::string& MetricsLogStore::staged_log() const {
-  return initial_log_queue_.has_staged_log() ? initial_log_queue_.staged_log()
-                                             : ongoing_log_queue_.staged_log();
+  return initial_log_queue_.has_staged_log()
+             ? initial_log_queue_.staged_log()
+             : ongoing_log_store()->staged_log();
 }
 
 const std::string& MetricsLogStore::staged_log_hash() const {
   return initial_log_queue_.has_staged_log()
              ? initial_log_queue_.staged_log_hash()
-             : ongoing_log_queue_.staged_log_hash();
+             : ongoing_log_store()->staged_log_hash();
 }
 
 const std::string& MetricsLogStore::staged_log_signature() const {
   return initial_log_queue_.has_staged_log()
              ? initial_log_queue_.staged_log_signature()
-             : ongoing_log_queue_.staged_log_signature();
+             : ongoing_log_store()->staged_log_signature();
+}
+
+absl::optional<uint64_t> MetricsLogStore::staged_log_user_id() const {
+  return initial_log_queue_.has_staged_log()
+             ? initial_log_queue_.staged_log_user_id()
+             : ongoing_log_store()->staged_log_user_id();
+}
+
+bool MetricsLogStore::has_alternate_ongoing_log_store() const {
+  return alternate_ongoing_log_queue_ != nullptr;
+}
+
+bool MetricsLogStore::alternate_ongoing_log_store_has_unsent_logs() const {
+  return has_alternate_ongoing_log_store() &&
+         alternate_ongoing_log_queue_->has_unsent_logs();
+}
+
+bool MetricsLogStore::alternate_ongoing_log_store_has_staged_log() const {
+  return has_alternate_ongoing_log_store() &&
+         alternate_ongoing_log_queue_->has_staged_log();
+}
+
+const UnsentLogStore* MetricsLogStore::ongoing_log_store() const {
+  return has_alternate_ongoing_log_store() ? alternate_ongoing_log_queue_.get()
+                                           : &ongoing_log_queue_;
 }
 
 void MetricsLogStore::StageNextLog() {
   DCHECK(!has_staged_log());
   if (initial_log_queue_.has_unsent_logs())
     initial_log_queue_.StageNextLog();
-  else
+  else if (alternate_ongoing_log_store_has_unsent_logs())
+    alternate_ongoing_log_queue_->StageNextLog();
+  else if (ongoing_log_queue_.has_unsent_logs())
     ongoing_log_queue_.StageNextLog();
 }
 
@@ -102,8 +147,11 @@ void MetricsLogStore::DiscardStagedLog() {
   DCHECK(has_staged_log());
   if (initial_log_queue_.has_staged_log())
     initial_log_queue_.DiscardStagedLog();
-  else
+  else if (alternate_ongoing_log_store_has_staged_log())
+    alternate_ongoing_log_queue_->DiscardStagedLog();
+  else if (ongoing_log_queue_.has_staged_log())
     ongoing_log_queue_.DiscardStagedLog();
+
   DCHECK(!has_staged_log());
 }
 
@@ -111,7 +159,9 @@ void MetricsLogStore::MarkStagedLogAsSent() {
   DCHECK(has_staged_log());
   if (initial_log_queue_.has_staged_log())
     initial_log_queue_.MarkStagedLogAsSent();
-  else
+  else if (alternate_ongoing_log_store_has_staged_log())
+    alternate_ongoing_log_queue_->MarkStagedLogAsSent();
+  else if (ongoing_log_queue_.has_staged_log())
     ongoing_log_queue_.MarkStagedLogAsSent();
 }
 
@@ -122,6 +172,8 @@ void MetricsLogStore::TrimAndPersistUnsentLogs() {
 
   initial_log_queue_.TrimAndPersistUnsentLogs();
   ongoing_log_queue_.TrimAndPersistUnsentLogs();
+  if (has_alternate_ongoing_log_store())
+    alternate_ongoing_log_queue_->TrimAndPersistUnsentLogs();
 }
 
 }  // namespace metrics

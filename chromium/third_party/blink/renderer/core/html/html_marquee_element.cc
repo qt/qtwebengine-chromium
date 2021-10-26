@@ -27,6 +27,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_html_marquee_element.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_keyframe_effect_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_optional_effect_timing.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_string_unrestricteddouble.h"
 #include "third_party/blink/renderer/core/animation/document_timeline.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect.h"
 #include "third_party/blink/renderer/core/animation/keyframe_effect_model.h"
@@ -82,6 +83,9 @@ class HTMLMarqueeElement::RequestAnimationFrameCallback final
  public:
   explicit RequestAnimationFrameCallback(HTMLMarqueeElement* marquee)
       : marquee_(marquee) {}
+  RequestAnimationFrameCallback(const RequestAnimationFrameCallback&) = delete;
+  RequestAnimationFrameCallback& operator=(
+      const RequestAnimationFrameCallback&) = delete;
 
   void Invoke(double) override {
     marquee_->continue_callback_request_id_ = 0;
@@ -95,8 +99,6 @@ class HTMLMarqueeElement::RequestAnimationFrameCallback final
 
  private:
   Member<HTMLMarqueeElement> marquee_;
-
-  DISALLOW_COPY_AND_ASSIGN(RequestAnimationFrameCallback);
 };
 
 class HTMLMarqueeElement::AnimationFinished final : public NativeEventListener {
@@ -293,7 +295,7 @@ void HTMLMarqueeElement::ContinueAnimation() {
   OptionalEffectTiming* effect_timing = OptionalEffectTiming::Create();
   effect_timing->setFill("forwards");
   effect_timing->setDuration(
-      UnrestrictedDoubleOrString::FromUnrestrictedDouble(duration));
+      MakeGarbageCollected<V8UnionStringOrUnrestrictedDouble>(duration));
   TimingInput::Update(timing, effect_timing, nullptr, ASSERT_NO_EXCEPTION);
 
   auto* keyframe_effect =

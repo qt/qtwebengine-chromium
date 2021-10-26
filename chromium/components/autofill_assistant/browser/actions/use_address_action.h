@@ -6,7 +6,6 @@
 #define COMPONENTS_AUTOFILL_ASSISTANT_BROWSER_ACTIONS_USE_ADDRESS_ACTION_H_
 
 #include <memory>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/macros.h"
@@ -38,6 +37,8 @@ class UseAddressAction : public Action {
   // through OnFormFilled.
   void FillFormWithData();
   void OnWaitForElement(const ClientStatus& element_status);
+
+  void InitFallbackHandler(const autofill::AutofillProfile& profile);
 
   // Called when the address has been filled.
   void ExecuteFallback(const ClientStatus& status);

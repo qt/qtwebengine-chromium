@@ -14,6 +14,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/browser/web_contents.h"
+#include "third_party/blink/public/mojom/navigation/was_activated_option.mojom-shared.h"
 #include "ui/base/page_transition_types.h"
 #include "weblayer/browser/navigation_entry_data.h"
 #include "weblayer/browser/navigation_ui_data_impl.h"
@@ -196,6 +197,20 @@ void NavigationControllerImpl::OnPageDestroyed(Page* page) {
     observer.OnPageDestroyed(page);
 }
 
+void NavigationControllerImpl::OnPageLanguageDetermined(
+    Page* page,
+    const std::string& language) {
+#if defined(OS_ANDROID)
+  JNIEnv* env = AttachCurrentThread();
+  Java_NavigationControllerImpl_onPageLanguageDetermined(
+      env, java_controller_, static_cast<PageImpl*>(page)->java_page(),
+      base::android::ConvertUTF8ToJavaString(env, language));
+#endif
+
+  for (auto& observer : observers_)
+    observer.OnPageLanguageDetermined(page, language);
+}
+
 #if defined(OS_ANDROID)
 void NavigationControllerImpl::SetNavigationControllerImpl(
     JNIEnv* env,
@@ -238,7 +253,7 @@ void NavigationControllerImpl::Navigate(
   params->navigation_ui_data = std::move(data);
 
   if (enable_auto_play)
-    params->was_activated = content::mojom::WasActivatedOption::kYes;
+    params->was_activated = blink::mojom::WasActivatedOption::kYes;
 
   DoNavigate(std::move(params));
 }
@@ -313,7 +328,7 @@ void NavigationControllerImpl::Navigate(
   load_params->should_replace_current_entry =
       params.should_replace_current_entry;
   if (params.enable_auto_play)
-    load_params->was_activated = content::mojom::WasActivatedOption::kYes;
+    load_params->was_activated = blink::mojom::WasActivatedOption::kYes;
 
   DoNavigate(std::move(load_params));
 }
@@ -388,7 +403,10 @@ bool NavigationControllerImpl::IsNavigationEntrySkippable(int index) {
 
 void NavigationControllerImpl::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame())
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame())
     return;
 
   // This function should not be called reentrantly.
@@ -456,7 +474,10 @@ void NavigationControllerImpl::DidRedirectNavigation(
 void NavigationControllerImpl::ReadyToCommitNavigation(
     content::NavigationHandle* navigation_handle) {
 #if defined(OS_ANDROID)
-  if (!navigation_handle->IsInMainFrame())
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame())
     return;
 
   DCHECK(navigation_map_.find(navigation_handle) != navigation_map_.end());
@@ -472,16 +493,19 @@ void NavigationControllerImpl::ReadyToCommitNavigation(
 
 void NavigationControllerImpl::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->IsInMainFrame())
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!navigation_handle->IsInPrimaryMainFrame())
     return;
 
   DelayDeletionHelper deletion_helper(this);
   DCHECK(navigation_map_.find(navigation_handle) != navigation_map_.end());
   auto* navigation = navigation_map_[navigation_handle].get();
 
-  navigation->set_safe_to_get_page();
-
   if (navigation_handle->HasCommitted()) {
+    navigation->set_safe_to_get_page();
+
     // Set state on NavigationEntry user data if a per-navigation user agent was
     // specified. This can't be done earlier because a NavigationEntry might not
     // have existed at the time that SetUserAgentString was called.
@@ -496,7 +520,7 @@ void NavigationControllerImpl::DidFinishNavigation(
 
     auto* rfh = navigation_handle->GetRenderFrameHost();
     if (rfh)
-      PageImpl::GetOrCreateForCurrentDocument(rfh);
+      PageImpl::GetOrCreateForPage(rfh->GetPage());
   }
 
   if (navigation_handle->GetNetErrorCode() == net::OK &&

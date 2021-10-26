@@ -20,7 +20,6 @@
 
 #include <float.h> /* FLT_MAX */
 
-#include "libavutil/cpu.h"
 #include "libavutil/common.h"
 #include "libavutil/opt.h"
 #include "internal.h"
@@ -441,7 +440,7 @@ static const AVFilterPad idet_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_idet = {
+const AVFilter ff_vf_idet = {
     .name          = "idet",
     .description   = NULL_IF_CONFIG_SMALL("Interlace detect Filter."),
     .priv_size     = sizeof(IDETContext),

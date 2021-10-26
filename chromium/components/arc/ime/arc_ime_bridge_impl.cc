@@ -20,6 +20,17 @@
 namespace arc {
 namespace {
 
+mojom::SegmentStyle GetSegmentStyle(const ui::ImeTextSpan& ime_text_span) {
+  if (ime_text_span.thickness == ui::ImeTextSpan::Thickness::kNone ||
+      ime_text_span.underline_style == ui::ImeTextSpan::UnderlineStyle::kNone) {
+    return mojom::SegmentStyle::NONE;
+  }
+  if (ime_text_span.thickness == ui::ImeTextSpan::Thickness::kThick) {
+    return mojom::SegmentStyle::EMPHASIZED;
+  }
+  return mojom::SegmentStyle::DEFAULT;
+}
+
 std::vector<mojom::CompositionSegmentPtr> ConvertSegments(
     const ui::CompositionText& composition) {
   std::vector<mojom::CompositionSegmentPtr> segments;
@@ -31,6 +42,7 @@ std::vector<mojom::CompositionSegmentPtr> ConvertSegments(
         (ime_text_span.thickness == ui::ImeTextSpan::Thickness::kThick ||
          (composition.selection.start() == ime_text_span.start_offset &&
           composition.selection.end() == ime_text_span.end_offset));
+    segment->style = GetSegmentStyle(ime_text_span);
     segments.push_back(std::move(segment));
   }
   return segments;
@@ -88,13 +100,14 @@ void ArcImeBridgeImpl::SendSelectionRange(const gfx::Range& selection_range) {
   ime_instance->SetSelectionText(selection_range);
 }
 
-void ArcImeBridgeImpl::SendInsertText(const std::u16string& text) {
+void ArcImeBridgeImpl::SendInsertText(const std::u16string& text,
+                                      int new_cursor_position) {
   auto* ime_instance =
       ARC_GET_INSTANCE_FOR_METHOD(bridge_service_->ime(), InsertText);
   if (!ime_instance)
     return;
 
-  ime_instance->InsertText(base::UTF16ToUTF8(text));
+  ime_instance->InsertText(base::UTF16ToUTF8(text), new_cursor_position);
 }
 
 void ArcImeBridgeImpl::SendExtendSelectionAndDelete(
@@ -162,11 +175,6 @@ void ArcImeBridgeImpl::OnCursorRectChangedWithSurroundingText(
 
 void ArcImeBridgeImpl::RequestHideImeDeprecated() {
   DVLOG(1) << "RequestHideIme is deprecated.";
-}
-
-void ArcImeBridgeImpl::ShouldEnableKeyEventForwarding(
-    ShouldEnableKeyEventForwardingCallback callback) {
-  std::move(callback).Run(delegate_->ShouldEnableKeyEventForwarding());
 }
 
 void ArcImeBridgeImpl::SendKeyEvent(std::unique_ptr<ui::KeyEvent> key_event,

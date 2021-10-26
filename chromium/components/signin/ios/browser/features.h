@@ -9,14 +9,18 @@
 
 namespace signin {
 
-// Features to trigger the startup sign-in promo at boot.
-extern const base::Feature kForceStartupSigninPromo;
-
 // This feature simplify sign-out UI in the account table view.
 extern const base::Feature kSimplifySignOutIOS;
 
 // Returns true if the startup sign-in promo should be displayed at boot.
 bool ForceStartupSigninPromo();
+
+// Returns true if extended sync promos should be disabled unconditionally.
+bool ForceDisableExtendedSyncPromos();
+
+// Returns true if the Chrome client can read the extended sync promo
+// capability.
+bool ExtendedSyncPromosCapabilityEnabled();
 
 // Feature controlling whether to restore GAIA cookies when the user explicitly
 // requests to sign in to a Google service.
@@ -26,27 +30,12 @@ extern const base::Feature kRestoreGaiaCookiesOnUserAction;
 // for the existence of Gaia cookies for google.com.
 extern const char kDelayThresholdMinutesToUpdateGaiaCookie[];
 
+// Name of multi-value switch that controls the max time (in seconds) for
+// waiting for a response from the Account Capabilities API.
+extern const char kWaitThresholdMillisecondsForCapabilitiesApi[];
+
 // Feature controlling whether to use full username in sign-in notifications.
 extern const base::Feature kSigninNotificationInfobarUsernameInTitle;
-
-// This feature disable SSO editing.
-extern const base::Feature kDisableSSOEditing;
-
-// Returns true if SSO editing is enabled.
-bool IsSSOEditingEnabled();
-
-// This feature enable account creation in a Chrome tab.
-// This flag is unused if kSSODisableAccountCreation is set to true.
-extern const base::Feature kSSOAccountCreationInChromeTab;
-
-// Returns true if the account creation should be done in a Chrome tab.
-bool IsSSOAccountCreationInChromeTabEnabled();
-
-// This feature enable account creation.
-extern const base::Feature kSSODisableAccountCreation;
-
-// Returns true if the account creation is enabled.
-bool IsSSOAccountCreationEnabled();
 
 }  // namespace signin
 

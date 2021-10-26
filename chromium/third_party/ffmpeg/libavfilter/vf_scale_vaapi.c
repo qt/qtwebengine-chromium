@@ -18,8 +18,6 @@
 
 #include <string.h>
 
-#include "libavutil/avassert.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -283,7 +281,7 @@ static const AVFilterPad scale_vaapi_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_scale_vaapi = {
+const AVFilter ff_vf_scale_vaapi = {
     .name          = "scale_vaapi",
     .description   = NULL_IF_CONFIG_SMALL("Scale to/from VAAPI surfaces."),
     .priv_size     = sizeof(ScaleVAAPIContext),

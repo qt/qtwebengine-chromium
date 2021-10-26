@@ -6,21 +6,17 @@
 
 #include "base/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#include "components/password_manager/core/browser/fake_password_store_backend.h"
 
 namespace password_manager {
 
-MockPasswordStore::MockPasswordStore() = default;
-
+MockPasswordStore::MockPasswordStore()
+    : PasswordStore(std::make_unique<FakePasswordStoreBackend>()) {}
 MockPasswordStore::~MockPasswordStore() = default;
 
 scoped_refptr<base::SequencedTaskRunner>
 MockPasswordStore::CreateBackgroundTaskRunner() const {
   return base::SequencedTaskRunnerHandle::Get();
-}
-
-bool MockPasswordStore::InitOnBackgroundSequence(
-    bool upload_phished_credentials_to_sync) {
-  return true;
 }
 
 }  // namespace password_manager

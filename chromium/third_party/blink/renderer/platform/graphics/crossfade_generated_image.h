@@ -30,7 +30,6 @@
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/generated_image.h"
 #include "third_party/blink/renderer/platform/graphics/image.h"
-#include "third_party/blink/renderer/platform/graphics/image_observer.h"
 
 namespace blink {
 
@@ -40,24 +39,23 @@ class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
       scoped_refptr<Image> from_image,
       scoped_refptr<Image> to_image,
       float percentage,
-      FloatSize crossfade_size,
       const FloatSize& size) {
-    return base::AdoptRef(
-        new CrossfadeGeneratedImage(std::move(from_image), std::move(to_image),
-                                    percentage, crossfade_size, size));
+    return base::AdoptRef(new CrossfadeGeneratedImage(
+        std::move(from_image), std::move(to_image), percentage, size));
   }
 
   bool HasIntrinsicSize() const override { return true; }
 
-  IntSize Size() const override { return FlooredIntSize(crossfade_size_); }
+  IntSize SizeWithConfig(SizeConfig) const override {
+    return FlooredIntSize(size_);
+  }
 
  protected:
   void Draw(cc::PaintCanvas*,
             const cc::PaintFlags&,
             const FloatRect&,
             const FloatRect&,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override;
   void DrawTile(GraphicsContext&,
@@ -67,14 +65,12 @@ class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
   CrossfadeGeneratedImage(scoped_refptr<Image> from_image,
                           scoped_refptr<Image> to_image,
                           float percentage,
-                          FloatSize crossfade_size,
                           const FloatSize&);
 
  private:
   void DrawCrossfade(cc::PaintCanvas*,
-                     const SkSamplingOptions&,
                      const cc::PaintFlags&,
-                     RespectImageOrientationEnum,
+                     const ImageDrawOptions& draw_options,
                      ImageClampingMode,
                      ImageDecodingMode);
 
@@ -82,7 +78,6 @@ class PLATFORM_EXPORT CrossfadeGeneratedImage final : public GeneratedImage {
   scoped_refptr<Image> to_image_;
 
   float percentage_;
-  FloatSize crossfade_size_;
 };
 
 }  // namespace blink

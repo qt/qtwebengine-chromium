@@ -16,6 +16,7 @@
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkData.h"
 #include "third_party/skia/include/core/SkICC.h"
+#include "third_party/skia/include/core/SkImageInfo.h"
 #include "ui/gfx/display_color_spaces.h"
 #include "ui/gfx/icc_profile.h"
 #include "ui/gfx/skia_color_space_util.h"
@@ -956,7 +957,7 @@ void ColorSpace::GetPrimaryMatrix(skcms_Matrix3x3* to_XYZD50) const {
   }
 }
 
-void ColorSpace::GetPrimaryMatrix(SkMatrix44* to_XYZD50) const {
+void ColorSpace::GetPrimaryMatrix(skia::Matrix44* to_XYZD50) const {
   skcms_Matrix3x3 toXYZ_3x3;
   GetPrimaryMatrix(&toXYZ_3x3);
   to_XYZD50->set3x3RowMajorf(&toXYZ_3x3.vals[0][0]);
@@ -1087,7 +1088,8 @@ bool ColorSpace::GetPiecewiseHDRParams(float* sdr_joint,
   return true;
 }
 
-void ColorSpace::GetTransferMatrix(int bit_depth, SkMatrix44* matrix) const {
+void ColorSpace::GetTransferMatrix(int bit_depth,
+                                   skia::Matrix44* matrix) const {
   DCHECK_GE(bit_depth, 8);
   // If chroma samples are real numbers in the range of −0.5 to 0.5, an offset
   // of 0.5 is added to get real numbers in the range of 0 to 1. When
@@ -1158,12 +1160,14 @@ void ColorSpace::GetTransferMatrix(int bit_depth, SkMatrix44* matrix) const {
       break;
 
     case ColorSpace::MatrixID::YDZDX: {
+      // clang-format off
       float data[16] = {
           0.0f,              1.0f,             0.0f, 0.0f,  // Y
           0.0f,             -0.5f, 0.986566f / 2.0f, 0.5f,  // DX or DZ
           0.5f, -0.991902f / 2.0f,             0.0f, 0.5f,  // DZ or DX
           0.0f,              0.0f,             0.0f, 1.0f,
       };
+      // clang-format on
       matrix->setRowMajorf(data);
       return;
     }
@@ -1179,16 +1183,19 @@ void ColorSpace::GetTransferMatrix(int bit_depth, SkMatrix44* matrix) const {
   float Kg = 1.0f - Kr - Kb;
   float u_m = 0.5f / (1.0f - Kb);
   float v_m = 0.5f / (1.0f - Kr);
+  // clang-format off
   float data[16] = {
                      Kr,        Kg,                Kb, 0.0f,  // Y
               u_m * -Kr, u_m * -Kg, u_m * (1.0f - Kb), 0.5f,  // U
       v_m * (1.0f - Kr), v_m * -Kg,         v_m * -Kb, 0.5f,  // V
                    0.0f,      0.0f,              0.0f, 1.0f,
   };
+  // clang-format on
   matrix->setRowMajorf(data);
 }
 
-void ColorSpace::GetRangeAdjustMatrix(int bit_depth, SkMatrix44* matrix) const {
+void ColorSpace::GetRangeAdjustMatrix(int bit_depth,
+                                      skia::Matrix44* matrix) const {
   DCHECK_GE(bit_depth, 8);
   switch (range_) {
     case RangeID::FULL:

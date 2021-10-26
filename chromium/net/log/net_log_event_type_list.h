@@ -2647,6 +2647,9 @@ EVENT_TYPE(AUTH_BOUND_TO_CONTROLLER)
 //      "scheme": <scheme>
 //      "net_error": <Net Error. Only present in case of error.>
 //      "challenge": <challenge string, if NetLogCaptureIncludesSensitive>
+//      "origin": <the origin of the server or proxy which issued the challenge>
+//      "allows_default_credentials": <whether the default credentials may be
+//                                     used for the origin>
 //  }
 EVENT_TYPE(AUTH_HANDLER_CREATE_RESULT)
 
@@ -2861,6 +2864,10 @@ EVENT_TYPE(SPECIFIC_NETWORK_SOON_TO_DISCONNECT)
 //                                       networks.>
 //   }
 EVENT_TYPE(SPECIFIC_NETWORK_MADE_DEFAULT)
+
+// This event is emitted whenever CertDatabase determines that the certificate
+// database has changed.
+EVENT_TYPE(CERTIFICATE_DATABASE_CHANGED)
 
 // ------------------------------------------------------------------------
 // Exponential back-off throttling events

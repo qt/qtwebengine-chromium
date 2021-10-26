@@ -35,9 +35,9 @@ bool ZXDGToplevelV6WrapperImpl::Initialize() {
     return false;
   }
 
-  static const zxdg_toplevel_v6_listener zxdg_toplevel_v6_listener = {
-      &ZXDGToplevelV6WrapperImpl::ConfigureTopLevel,
-      &ZXDGToplevelV6WrapperImpl::CloseTopLevel,
+  static constexpr zxdg_toplevel_v6_listener zxdg_toplevel_v6_listener = {
+      &ConfigureTopLevel,
+      &CloseTopLevel,
   };
 
   if (!zxdg_surface_v6_wrapper_)
@@ -126,6 +126,11 @@ void ZXDGToplevelV6WrapperImpl::SetDecoration(DecorationMode decoration) {}
 void ZXDGToplevelV6WrapperImpl::AckConfigure(uint32_t serial) {
   DCHECK(zxdg_surface_v6_wrapper_);
   zxdg_surface_v6_wrapper_->AckConfigure(serial);
+}
+
+bool ZXDGToplevelV6WrapperImpl::IsConfigured() {
+  DCHECK(zxdg_surface_v6_wrapper_);
+  return zxdg_surface_v6_wrapper_->IsConfigured();
 }
 
 // static

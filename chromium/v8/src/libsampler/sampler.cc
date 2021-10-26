@@ -13,7 +13,7 @@
 #include <atomic>
 
 #if !V8_OS_QNX && !V8_OS_AIX
-#include <sys/syscall.h>  // NOLINT
+#include <sys/syscall.h>
 #endif
 
 #if V8_OS_MACOSX
@@ -27,6 +27,8 @@
 #include <unistd.h>
 
 #elif V8_OS_WIN || V8_OS_CYGWIN
+
+#include <windows.h>
 
 #include "src/base/win32-headers.h"
 

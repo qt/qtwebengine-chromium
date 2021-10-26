@@ -11,7 +11,6 @@
 #include "base/callback.h"
 #include "base/trace_event/traced_value.h"
 #include "cc/cc_export.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace cc {
 class ThroughputUkmReporter;
@@ -147,7 +146,7 @@ class CC_EXPORT FrameSequenceMetrics {
   struct CustomReportData {
     uint32_t frames_expected = 0;
     uint32_t frames_produced = 0;
-    uint32_t jank_count = 0;
+    int jank_count = 0;
   };
   using CustomReporter = base::OnceCallback<void(const CustomReportData& data)>;
   // Sets reporter callback for kCustom typed sequence.
@@ -229,6 +228,14 @@ class CC_EXPORT FrameSequenceMetrics {
 
   std::unique_ptr<JankMetrics> jank_reporter_;
 };
+
+bool ShouldReportForAnimation(FrameSequenceTrackerType sequence_type,
+                              FrameSequenceMetrics::ThreadType thread_type);
+
+bool ShouldReportForInteraction(
+    FrameSequenceTrackerType sequence_type,
+    FrameSequenceMetrics::ThreadType reporting_thread_type,
+    FrameSequenceMetrics::ThreadType metrics_effective_thread_type);
 
 }  // namespace cc
 

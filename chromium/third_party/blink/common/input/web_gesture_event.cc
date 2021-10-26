@@ -96,10 +96,8 @@ void WebGestureEvent::Coalesce(const WebInputEvent& event) {
   }
 }
 
-absl::optional<ui::ScrollInputType> WebGestureEvent::GetScrollInputType()
-    const {
-  if (!IsGestureScroll())
-    return absl::nullopt;
+ui::ScrollInputType WebGestureEvent::GetScrollInputType() const {
+  DCHECK(IsGestureScroll());
   switch (SourceDevice()) {
     case WebGestureDevice::kTouchpad:
       return ui::ScrollInputType::kWheel;
@@ -110,8 +108,10 @@ absl::optional<ui::ScrollInputType> WebGestureEvent::GetScrollInputType()
     case WebGestureDevice::kScrollbar:
       return ui::ScrollInputType::kScrollbar;
     case WebGestureDevice::kUninitialized:
-      return absl::nullopt;
+      break;
   }
+  NOTREACHED();
+  return ui::ScrollInputType::kTouchscreen;
 }
 
 float WebGestureEvent::DeltaXInRootFrame() const {
@@ -315,6 +315,8 @@ WebGestureEvent::CoalesceScrollAndPinch(
       WebInputEvent::Type::kGestureScrollUpdate, new_event.GetModifiers(),
       new_event.TimeStamp(), new_event.SourceDevice());
   scroll_event->primary_pointer_type = new_event.primary_pointer_type;
+  scroll_event->primary_unique_touch_event_id =
+      new_event.primary_unique_touch_event_id;
   auto pinch_event = std::make_unique<WebGestureEvent>(*scroll_event);
   pinch_event->SetType(WebInputEvent::Type::kGesturePinchUpdate);
   pinch_event->SetPositionInWidget(

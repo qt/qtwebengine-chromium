@@ -9,6 +9,7 @@
 #include <memory>
 #include <utility>
 
+#include "core/fxcrt/fx_codepage.h"
 #include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,7 +20,7 @@
 class CFGAS_RTFBreakTest : public testing::Test {
  public:
   void SetUp() override {
-    font_ = CFGAS_GEFont::LoadFont(L"Arial Black", 0, 0);
+    font_ = CFGAS_GEFont::LoadFont(L"Arial Black", 0, FX_CodePage::kDefANSI);
     ASSERT_TRUE(font_);
   }
 
@@ -65,9 +66,8 @@ TEST_F(CFGAS_RTFBreakTest, ControlCharacters) {
   auto rtf_break = CreateBreak(FX_LAYOUTSTYLE_ExpandTab);
   EXPECT_EQ(CFGAS_Char::BreakType::kLine, rtf_break->AppendChar(L'\v'));
   EXPECT_EQ(CFGAS_Char::BreakType::kPage, rtf_break->AppendChar(L'\f'));
-  const wchar_t kUnicodeParagraphSeparator = 0x2029;
   EXPECT_EQ(CFGAS_Char::BreakType::kParagraph,
-            rtf_break->AppendChar(kUnicodeParagraphSeparator));
+            rtf_break->AppendChar(pdfium::unicode::kParagraphSeparator));
   EXPECT_EQ(CFGAS_Char::BreakType::kParagraph, rtf_break->AppendChar(L'\n'));
 
   ASSERT_EQ(1, rtf_break->CountBreakPieces());

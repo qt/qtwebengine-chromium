@@ -20,8 +20,6 @@
 #include "dawn_native/Instance.h"
 #include "dawn_native/Surface.h"
 
-#include <spirv_cross.hpp>
-
 namespace dawn_native { namespace null {
 
     // Implementation of pre-Device objects: the null adapter, null backend connection and Connect()
@@ -31,10 +29,14 @@ namespace dawn_native { namespace null {
         mAdapterType = wgpu::AdapterType::CPU;
 
         // Enable all extensions by default for the convenience of tests.
-        mSupportedExtensions.extensionsBitSet.flip();
+        mSupportedExtensions.extensionsBitSet.set();
     }
 
     Adapter::~Adapter() = default;
+
+    bool Adapter::SupportsExternalImages() const {
+        return false;
+    }
 
     // Used for the tests that intend to use an adapter without all extensions enabled.
     void Adapter::SetSupportedExtensions(const std::vector<const char*>& requiredExtensions) {
@@ -122,7 +124,7 @@ namespace dawn_native { namespace null {
         return AcquireRef(new QuerySet(this, descriptor));
     }
     ResultOrError<Ref<RenderPipelineBase>> Device::CreateRenderPipelineImpl(
-        const RenderPipelineDescriptor2* descriptor) {
+        const RenderPipelineDescriptor* descriptor) {
         return AcquireRef(new RenderPipeline(this, descriptor));
     }
     ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
@@ -205,7 +207,7 @@ namespace dawn_native { namespace null {
 
     MaybeError Device::IncrementMemoryUsage(uint64_t bytes) {
         static_assert(kMaxMemoryUsage <= std::numeric_limits<size_t>::max(), "");
-        if (bytes > kMaxMemoryUsage || mMemoryUsage + bytes > kMaxMemoryUsage) {
+        if (bytes > kMaxMemoryUsage || mMemoryUsage > kMaxMemoryUsage - bytes) {
             return DAWN_OUT_OF_MEMORY_ERROR("Out of memory.");
         }
         mMemoryUsage += bytes;
@@ -265,6 +267,7 @@ namespace dawn_native { namespace null {
     Buffer::Buffer(Device* device, const BufferDescriptor* descriptor)
         : BufferBase(device, descriptor) {
         mBackingData = std::unique_ptr<uint8_t[]>(new uint8_t[GetSize()]);
+        mAllocatedSize = GetSize();
     }
 
     Buffer::~Buffer() {
@@ -369,7 +372,7 @@ namespace dawn_native { namespace null {
 
     MaybeError SwapChain::Initialize(NewSwapChainBase* previousSwapChain) {
         if (previousSwapChain != nullptr) {
-            // TODO(cwallez@chromium.org): figure out what should happen when surfaces are used by
+            // TODO(crbug.com/dawn/269): figure out what should happen when surfaces are used by
             // multiple backends one after the other. It probably needs to block until the backend
             // and GPU are completely finished with the previous swapchain.
             if (previousSwapChain->GetBackendType() != wgpu::BackendType::Null) {

@@ -264,7 +264,9 @@ class LayerTreeHostImplTest : public testing::Test,
       uint32_t frame_token,
       PresentationTimeCallbackBuffer::PendingCallbacks activated,
       const viz::FrameTimingDetails& details) override {
-    std::move(activated.main_thread_callbacks);
+    // We don't call main thread callbacks in this test.
+    activated.main_thread_callbacks.clear();
+
     host_impl_->NotifyDidPresentCompositorFrameOnImplThread(
         frame_token, std::move(activated.compositor_thread_callbacks), details);
   }
@@ -891,6 +893,16 @@ class CommitToPendingTreeLayerTreeHostImplTest : public LayerTreeHostImplTest {
   }
 };
 
+class OccludedSurfaceThrottlingLayerTreeHostImplTest
+    : public LayerTreeHostImplTest {
+ public:
+  void SetUp() override {
+    LayerTreeSettings settings = DefaultSettings();
+    settings.enable_compositing_based_throttling = true;
+    CreateHostImpl(settings, CreateLayerTreeFrameSink());
+  }
+};
+
 // A test fixture for new animation timelines tests.
 class LayerTreeHostImplTimelinesTest : public LayerTreeHostImplTest {
  public:
@@ -916,6 +928,7 @@ class TestInputHandlerClient : public InputHandlerClient {
   void WillShutdown() override {}
   void Animate(base::TimeTicks time) override {}
   void ReconcileElasticOverscrollAndRootScroll() override {}
+  void SetPrefersReducedMotion(bool prefers_reduced_motion) override {}
   void UpdateRootLayerStateForSynchronousInputHandler(
       const gfx::ScrollOffset& total_scroll_offset,
       const gfx::ScrollOffset& max_scroll_offset,
@@ -1679,10 +1692,8 @@ class LayerTreeHostImplTestInvokeMainThreadCallbacks
     auto main_thread_callbacks = std::move(activated.main_thread_callbacks);
     host_impl_->NotifyDidPresentCompositorFrameOnImplThread(
         frame_token, std::move(activated.compositor_thread_callbacks), details);
-    for (LayerTreeHost::PresentationTimeCallback& callback :
-         main_thread_callbacks) {
+    for (auto& callback : main_thread_callbacks)
       std::move(callback).Run(details.presentation_feedback);
-    }
   }
 };
 
@@ -1692,25 +1703,27 @@ TEST_F(LayerTreeHostImplTestInvokeMainThreadCallbacks,
        PresentationFeedbackCallbacksFire) {
   bool compositor_thread_callback_fired = false;
   bool main_thread_callback_fired = false;
-  gfx::PresentationFeedback feedback_seen_by_compositor_thread_callback;
+  base::TimeTicks presentation_time_seen_by_compositor_thread_callback;
   gfx::PresentationFeedback feedback_seen_by_main_thread_callback;
 
   // Register a compositor-thread callback to run when the frame for
   // |frame_token_1| gets presented.
   constexpr uint32_t frame_token_1 = 1;
   host_impl_->RegisterCompositorPresentationTimeCallback(
-      frame_token_1, base::BindLambdaForTesting(
-                         [&](const gfx::PresentationFeedback& feedback) {
-                           compositor_thread_callback_fired = true;
-                           feedback_seen_by_compositor_thread_callback =
-                               feedback;
-                         }));
+      frame_token_1,
+      base::BindLambdaForTesting([&](base::TimeTicks presentation_timestamp) {
+        DCHECK(presentation_time_seen_by_compositor_thread_callback.is_null());
+        DCHECK(!presentation_timestamp.is_null());
+        compositor_thread_callback_fired = true;
+        presentation_time_seen_by_compositor_thread_callback =
+            presentation_timestamp;
+      }));
 
   // Register a main-thread callback to run when the frame for |frame_token_2|
   // gets presented.
   constexpr uint32_t frame_token_2 = 2;
   ASSERT_GT(frame_token_2, frame_token_1);
-  host_impl_->RegisterMainThreadPresentationTimeCallback(
+  host_impl_->RegisterMainThreadPresentationTimeCallbackForTesting(
       frame_token_2, base::BindLambdaForTesting(
                          [&](const gfx::PresentationFeedback& feedback) {
                            main_thread_callback_fired = true;
@@ -1723,8 +1736,8 @@ TEST_F(LayerTreeHostImplTestInvokeMainThreadCallbacks,
   host_impl_->DidPresentCompositorFrame(frame_token_1, mock_details);
 
   EXPECT_TRUE(compositor_thread_callback_fired);
-  EXPECT_EQ(feedback_seen_by_compositor_thread_callback,
-            mock_details.presentation_feedback);
+  EXPECT_EQ(presentation_time_seen_by_compositor_thread_callback,
+            mock_details.presentation_feedback.timestamp);
 
   // Since |frame_token_2| is strictly greater than |frame_token_1|, the
   // main-thread callback must remain queued for now.
@@ -3242,7 +3255,7 @@ TEST_P(ScrollUnifiedLayerTreeHostImplTest, ScrollNodeWithoutScrollLayer) {
     EXPECT_FALSE(status.needs_main_thread_hit_test);
   } else {
     EXPECT_EQ(ScrollThread::SCROLL_ON_MAIN_THREAD, status.thread);
-    EXPECT_EQ(MainThreadScrollingReason::kNonFastScrollableRegion,
+    EXPECT_EQ(MainThreadScrollingReason::kNoScrollingLayer,
               status.main_thread_scrolling_reasons);
   }
 }
@@ -3461,21 +3474,87 @@ TEST_P(ScrollUnifiedLayerTreeHostImplTest,
 
 class MissingTilesLayer : public LayerImpl {
  public:
-  MissingTilesLayer(LayerTreeImpl* layer_tree_impl, int id)
-      : LayerImpl(layer_tree_impl, id), has_missing_tiles_(true) {}
-
-  void set_has_missing_tiles(bool has_missing_tiles) {
-    has_missing_tiles_ = has_missing_tiles;
+  static std::unique_ptr<MissingTilesLayer> Create(LayerTreeImpl* tree_impl,
+                                                   int id) {
+    return base::WrapUnique(new MissingTilesLayer(tree_impl, id));
   }
+  MissingTilesLayer(LayerTreeImpl* layer_tree_impl, int id)
+      : LayerImpl(layer_tree_impl, id) {}
 
   void AppendQuads(viz::CompositorRenderPass* render_pass,
                    AppendQuadsData* append_quads_data) override {
-    append_quads_data->num_missing_tiles += has_missing_tiles_;
+    append_quads_data->num_missing_tiles += 10;
+    append_quads_data->checkerboarded_no_recording_content_area += 200;
+    append_quads_data->checkerboarded_needs_raster_content_area += 200;
+    append_quads_data->visible_layer_area += 200;
   }
-
- private:
-  bool has_missing_tiles_;
 };
+
+TEST_P(ScrollUnifiedLayerTreeHostImplTest,
+       CurrentScrollDidCheckerboardLargeArea) {
+  LayerTreeSettings settings = DefaultSettings();
+  CreateHostImpl(settings, CreateLayerTreeFrameSink());
+  host_impl_->active_tree()->PushPageScaleFromMainThread(1, 0.25f, 4);
+
+  const gfx::Size content_size(1000, 1000);
+  const gfx::Size viewport_size(500, 500);
+  SetupViewportLayersOuterScrolls(viewport_size, content_size);
+
+  LayerImpl* outer_scroll_layer = OuterViewportScrollLayer();
+  outer_scroll_layer->SetDrawsContent(true);
+  LayerImpl* inner_scroll_layer = InnerViewportScrollLayer();
+  inner_scroll_layer->SetDrawsContent(true);
+
+  // Add layer that draws content and has checkerboarded areas.
+  auto* scroll_layer = AddLayer<MissingTilesLayer>(host_impl_->active_tree());
+  CopyProperties(inner_scroll_layer, scroll_layer);
+  scroll_layer->SetBounds(gfx::Size(500, 500));
+  scroll_layer->SetDrawsContent(true);
+  scroll_layer->SetHitTestable(false);
+  host_impl_->active_tree()->SetElementIdsForTesting();
+
+  UpdateDrawProperties(host_impl_->active_tree());
+
+  DrawFrame();
+
+  // No scroll has taken place so this should be false.
+  EXPECT_FALSE(host_impl_->CurrentScrollDidCheckerboardLargeArea());
+
+  // Send scroll begin.
+  GetInputHandler().ScrollBegin(
+      BeginState(gfx::Point(250, 250), gfx::Vector2dF(),
+                 ui::ScrollInputType::kTouchscreen)
+          .get(),
+      ui::ScrollInputType::kTouchscreen);
+
+  DrawFrame();
+
+  // Even though a ScrollBegin has been processed, we still don't consider the
+  // interaction to be "actively scrolling". Expect this to be false.
+  EXPECT_FALSE(host_impl_->CurrentScrollDidCheckerboardLargeArea());
+
+  gfx::ScrollOffset scroll_delta(0, 10);
+
+  // Send scroll update.
+  GetInputHandler().ScrollUpdate(
+      UpdateState(gfx::Point(10, 10),
+                  gfx::ScrollOffsetToVector2dF(scroll_delta),
+                  ui::ScrollInputType::kWheel)
+          .get());
+
+  host_impl_->SetFullViewportDamage();
+  DrawFrame();
+
+  // Now that a scroll update has been processed and the latest
+  // CalculateRenderPasses run has computed significant visible checkerboarding,
+  // expect this flag to be true.
+  EXPECT_TRUE(host_impl_->CurrentScrollDidCheckerboardLargeArea());
+
+  GetInputHandler().ScrollEnd();
+
+  // Expect state to be reset after a scroll end.
+  EXPECT_FALSE(host_impl_->CurrentScrollDidCheckerboardLargeArea());
+}
 
 TEST_P(ScrollUnifiedLayerTreeHostImplTest, ImplPinchZoom) {
   SetupViewportLayersInnerScrolls(gfx::Size(50, 50), gfx::Size(100, 100));
@@ -11668,7 +11747,8 @@ TEST_P(LayerTreeHostImplTestWithRenderer, ShutdownReleasesContext) {
   GetPropertyTrees(root)->effect_tree.AddCopyRequest(
       root->effect_tree_index(),
       std::make_unique<viz::CopyOutputRequest>(
-          viz::CopyOutputRequest::ResultFormat::RGBA_TEXTURE,
+          viz::CopyOutputRequest::ResultFormat::RGBA,
+          viz::CopyOutputRequest::ResultDestination::kNativeTextures,
           base::BindOnce(&Helper::OnResult, base::Unretained(&helper),
                          copy_request_run_loop.QuitClosure())));
   DrawFrame();
@@ -12017,7 +12097,7 @@ class LayerTreeHostImplWithBrowserControlsTest : public LayerTreeHostImplTest {
     settings.commit_to_active_tree = false;
     CreateHostImpl(settings, CreateLayerTreeFrameSink());
     host_impl_->active_tree()->SetBrowserControlsParams(
-        {top_controls_height_, 0, 0, 0, false, false});
+        {static_cast<float>(top_controls_height_), 0, 0, 0, false, false});
     host_impl_->active_tree()->SetCurrentBrowserControlsShownRatio(1.f, 1.f);
   }
 
@@ -18081,6 +18161,33 @@ TEST_F(UnifiedScrollingTest, CompositedWithSquashedLayerMutatesTransform) {
   TestUncompositedScrollingState(/*mutates_transform_tree=*/true);
 
   ScrollEnd();
+}
+
+// Verifies that when a surface layer is occluded, its frame sink id will be
+// marked as qualified for throttling.
+TEST_F(OccludedSurfaceThrottlingLayerTreeHostImplTest,
+       ThrottleOccludedSurface) {
+  LayerTreeImpl* tree = host_impl_->active_tree();
+  gfx::Rect viewport_rect(0, 0, 800, 600);
+  auto* root = SetupRootLayer<LayerImpl>(tree, viewport_rect.size());
+
+  auto* occluded = AddLayer<SurfaceLayerImpl>(tree);
+  occluded->SetBounds(gfx::Size(400, 300));
+  occluded->SetDrawsContent(true);
+  viz::SurfaceId start = MakeSurfaceId(viz::FrameSinkId(1, 2), 1);
+  viz::SurfaceId end = MakeSurfaceId(viz::FrameSinkId(3, 4), 1);
+  occluded->SetRange(viz::SurfaceRange(start, end), 2u);
+  CopyProperties(root, occluded);
+
+  auto* occluder = AddLayer<SolidColorLayerImpl>(tree);
+  occluder->SetBounds(gfx::Size(400, 400));
+  occluder->SetDrawsContent(true);
+  occluder->SetContentsOpaque(true);
+  CopyProperties(root, occluder);
+
+  DrawFrame();
+  EXPECT_EQ(host_impl_->GetFrameSinksToThrottleForTesting(),
+            base::flat_set<viz::FrameSinkId>{end.frame_sink_id()});
 }
 
 TEST_F(LayerTreeHostImplTest, FrameElementIdHitTestSimple) {

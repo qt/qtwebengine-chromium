@@ -9,7 +9,6 @@
 
 #include "base/callback_forward.h"
 #include "base/containers/circular_deque.h"
-#include "base/containers/flat_map.h"
 #include "base/containers/queue.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/unsafe_shared_memory_pool.h"
@@ -147,14 +146,6 @@ class MEDIA_EXPORT VideoEncodeAcceleratorAdapter
   // True if underlying instance of VEA can handle GPU backed frames with a
   // size different from what VEA was configured for.
   bool gpu_resize_supported_ = false;
-
-  struct PendingEncode {
-    PendingEncode();
-    ~PendingEncode();
-    StatusCB done_callback;
-    scoped_refptr<VideoFrame> frame;
-    bool key_frame;
-  };
 
   // These are encodes that have not been sent to the accelerator.
   std::vector<std::unique_ptr<PendingEncode>> pending_encodes_;

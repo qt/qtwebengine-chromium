@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/macros.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/views/widget/widget.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
@@ -72,6 +71,7 @@ class SystemWebDialogDelegate : public ui::WebDialogDelegate {
   void GetWebUIMessageHandlers(
       std::vector<content::WebUIMessageHandler*>* handlers) const override;
   void GetDialogSize(gfx::Size* size) const override;
+  FrameKind GetWebDialogFrameKind() const override;
   std::string GetDialogArgs() const override;
   void OnDialogShown(content::WebUI* webui) override;
   // Note: deletes |this|.

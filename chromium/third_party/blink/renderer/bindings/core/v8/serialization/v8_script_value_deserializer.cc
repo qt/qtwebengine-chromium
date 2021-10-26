@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/geometry/dom_rect_read_only.h"
 #include "third_party/blink/renderer/core/html/canvas/image_data.h"
 #include "third_party/blink/renderer/core/imagebitmap/image_bitmap.h"
+#include "third_party/blink/renderer/core/inspector/inspector_audits_issue.h"
 #include "third_party/blink/renderer/core/messaging/message_port.h"
 #include "third_party/blink/renderer/core/mojo/mojo_handle.h"
 #include "third_party/blink/renderer/core/offscreencanvas/offscreen_canvas.h"
@@ -41,7 +42,6 @@
 #include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
-#include "third_party/skia/include/core/SkFilterQuality.h"
 
 namespace blink {
 
@@ -551,9 +551,9 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
       canvas->SetPlaceholderCanvasId(canvas_id);
       canvas->SetFrameSinkId(client_id, sink_id);
       if (filter_quality == 0)
-        canvas->SetFilterQuality(kNone_SkFilterQuality);
+        canvas->SetFilterQuality(cc::PaintFlags::FilterQuality::kNone);
       else
-        canvas->SetFilterQuality(kLow_SkFilterQuality);
+        canvas->SetFilterQuality(cc::PaintFlags::FilterQuality::kLow);
       return canvas;
     }
     case kReadableStreamTransferTag: {
@@ -755,13 +755,19 @@ V8ScriptValueDeserializer::GetWasmModuleFromId(v8::Isolate* isolate,
     ExecutionContext* execution_context = ExecutionContext::From(script_state_);
     DCHECK(serialized_script_value_->origin());
     UseCounter::Count(execution_context, WebFeature::kWasmModuleSharing);
+    const v8::CompiledWasmModule& wasm_module =
+        serialized_script_value_->WasmModules()[id];
     if (!serialized_script_value_->origin()->IsSameOriginWith(
             execution_context->GetSecurityOrigin())) {
       UseCounter::Count(execution_context,
                         WebFeature::kCrossOriginWasmModuleSharing);
+      AuditsIssue::ReportCrossOriginWasmModuleSharingIssue(
+          execution_context, wasm_module.source_url(),
+          serialized_script_value_->origin()->ToString(),
+          execution_context->GetSecurityOrigin()->ToString(),
+          true /* is_warning */);
     }
-    return v8::WasmModuleObject::FromCompiledModule(
-        isolate, serialized_script_value_->WasmModules()[id]);
+    return v8::WasmModuleObject::FromCompiledModule(isolate, wasm_module);
   }
   CHECK(serialized_script_value_->WasmModules().IsEmpty());
   return v8::MaybeLocal<v8::WasmModuleObject>();

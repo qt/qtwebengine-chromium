@@ -26,16 +26,40 @@ namespace content {
 
 namespace {
 
+bool g_disable_flag_caching_for_tests = false;
+
+bool IsDisableSiteIsolationFlagPresent() {
+  static const bool site_isolation_disabled =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableSiteIsolation);
+  if (g_disable_flag_caching_for_tests) {
+    return base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisableSiteIsolation);
+  }
+  return site_isolation_disabled;
+}
+
+#if defined(OS_ANDROID)
+bool IsDisableSiteIsolationForPolicyFlagPresent() {
+  static const bool site_isolation_disabled_by_policy =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableSiteIsolationForPolicy);
+  if (g_disable_flag_caching_for_tests) {
+    return base::CommandLine::ForCurrentProcess()->HasSwitch(
+        switches::kDisableSiteIsolationForPolicy);
+  }
+  return site_isolation_disabled_by_policy;
+}
+#endif
+
 bool IsSiteIsolationDisabled() {
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSiteIsolation)) {
+  if (IsDisableSiteIsolationFlagPresent()) {
     return true;
   }
 
 #if defined(OS_ANDROID)
   // Desktop platforms no longer support disabling Site Isolation by policy.
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableSiteIsolationForPolicy)) {
+  if (IsDisableSiteIsolationForPolicyFlagPresent()) {
     return true;
   }
 #endif
@@ -237,6 +261,11 @@ void SiteIsolationPolicy::ApplyGlobalIsolatedOrigins() {
   policy->AddFutureIsolatedOrigins(
       from_embedder,
       ChildProcessSecurityPolicy::IsolatedOriginSource::BUILT_IN);
+}
+
+// static
+void SiteIsolationPolicy::DisableFlagCachingForTesting() {
+  g_disable_flag_caching_for_tests = true;
 }
 
 }  // namespace content

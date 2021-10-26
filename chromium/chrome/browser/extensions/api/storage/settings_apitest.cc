@@ -79,10 +79,9 @@ class ExtensionSettingsApiTest : public ExtensionApiTest {
   void SetUpInProcessBrowserTestFixture() override {
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
 
-    ON_CALL(policy_provider_, IsInitializationComplete(_))
-        .WillByDefault(Return(true));
-    ON_CALL(policy_provider_, IsFirstPolicyLoadComplete(_))
-        .WillByDefault(Return(true));
+    policy_provider_.SetDefaultReturns(
+        /*is_initialization_complete_return=*/true,
+        /*is_first_policy_load_complete_return=*/true);
     policy_provider_.SetAutoRefresh();
     policy::BrowserPolicyConnector::SetPolicyProviderForTesting(
         &policy_provider_);
@@ -328,14 +327,6 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest, SplitModeIncognito) {
   for (const StorageAreaNamespace& storage_area : storage_areas) {
     ReplyWhenSatisfied(storage_area, "assertEmpty", "assertEmpty");
     ReplyWhenSatisfied(storage_area, "noop", "setFoo");
-    // TODO(crbug.com/1185226): Move this condition accordingly as `session`
-    // SettingFunction's are implemented. Currently it skips the
-    // functions that `session` has not implemented yet. When all functions are
-    // implemented, FinalReplyWhenSatisfied() will be moved outside the loop.
-    if (storage_area == StorageAreaNamespace::kSession) {
-      FinalReplyWhenSatisfied(storage_area, "assertFoo", "assertFoo");
-      break;
-    }
     ReplyWhenSatisfied(storage_area, "assertFoo", "assertFoo");
     ReplyWhenSatisfied(storage_area, "clear", "noop");
     ReplyWhenSatisfied(storage_area, "assertEmpty", "assertEmpty");
@@ -344,32 +335,63 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest, SplitModeIncognito) {
     ReplyWhenSatisfied(storage_area, "noop", "removeFoo");
     ReplyWhenSatisfied(storage_area, "assertEmpty", "assertEmpty");
   }
+  FinalReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertEmpty",
+                          "assertEmpty");
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_TRUE(catcher_incognito.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
+// TODO(crbug.com/1185226): Change parent class to `ExtensionSettingsApiTest`
+// when chrome.storage.session is released in stable.
+// TODO(crbug.com/1229351): Service worker extension listener should receive an
+// event before the callback is made. Current workaround: wait for the event to
+// be received by the extension before checking for it. Potential solution: once
+// browser-side observation of SW lifetime work is finished, check if it fixes
+// this test.
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
                        OnChangedNotificationsBetweenBackgroundPages) {
   // We need 2 ResultCatchers because we'll be running the same test in both
   // regular and incognito mode.
-  ResultCatcher catcher, catcher_incognito;
+  ResultCatcher catcher;
+  ResultCatcher catcher_incognito;
   catcher.RestrictToBrowserContext(browser()->profile());
   catcher_incognito.RestrictToBrowserContext(
       browser()->profile()->GetPrimaryOTRProfile(/*create_if_needed=*/true));
 
-  LoadAndReplyWhenSatisfied(StorageAreaNamespace::kSync,
-                            "assertNoNotifications", "assertNoNotifications",
-                            "split_incognito");
-  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "noop", "setFoo");
-  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertAddFooNotification",
-                     "assertAddFooNotification");
-  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "clearNotifications",
-                     "clearNotifications");
-  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "removeFoo", "noop");
-  FinalReplyWhenSatisfied(StorageAreaNamespace::kSync,
-                          "assertDeleteFooNotification",
-                          "assertDeleteFooNotification");
+  StorageAreaNamespace storage_areas[2] = {StorageAreaNamespace::kSync,
+                                           StorageAreaNamespace::kSession};
+
+  for (const StorageAreaNamespace& storage_area : storage_areas) {
+    // We need to load the extension when it's the first reply.
+    // kSync is the first storage area to run.
+    if (storage_area == StorageAreaNamespace::kSync) {
+      LoadAndReplyWhenSatisfied(StorageAreaNamespace::kSync,
+                                "assertNoNotifications",
+                                "assertNoNotifications", "split_incognito");
+    } else {
+      ReplyWhenSatisfied(storage_area, "assertNoNotifications",
+                         "assertNoNotifications");
+    }
+
+    ReplyWhenSatisfied(storage_area, "noop", "setFoo");
+    ReplyWhenSatisfied(storage_area, "assertAddFooNotification",
+                       "assertAddFooNotification");
+    ReplyWhenSatisfied(storage_area, "clearNotifications",
+                       "clearNotifications");
+    ReplyWhenSatisfied(storage_area, "removeFoo", "noop");
+
+    // We need to end the test with a final reply when it's the last reply.
+    // kSession is the last storage area to run.
+    if (storage_area == StorageAreaNamespace::kSession) {
+      FinalReplyWhenSatisfied(StorageAreaNamespace::kSession,
+                              "assertDeleteFooNotification",
+                              "assertDeleteFooNotification");
+    } else {
+      ReplyWhenSatisfied(storage_area, "assertDeleteFooNotification",
+                         "assertDeleteFooNotification");
+    }
+  }
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_TRUE(catcher_incognito.GetNextResult()) << catcher.message();
@@ -401,8 +423,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
                      "assertNoNotifications");
   ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertEmpty",
                      "assertEmpty");
-  // TODO(crbug.com/1185226): Assert no notifications when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertNoNotifications",
+                     "assertNoNotifications");
 
   ReplyWhenSatisfied(StorageAreaNamespace::kSync, "clearNotifications",
                      "clearNotifications");
@@ -416,16 +438,16 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
                      "assertNoNotifications");
   ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertEmpty",
                      "assertEmpty");
-  // TODO(crbug.com/1185226): Assert no notifications when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertNoNotifications",
+                     "assertNoNotifications");
 
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "clearNotifications",
                      "clearNotifications");
 
   ReplyWhenSatisfied(StorageAreaNamespace::kSession, "setFoo", "noop");
   ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertFoo", "assertFoo");
-  // TODO(crbug.com/1185226): Assert add notification when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertAddFooNotification",
+                     "assertAddFooNotification");
   ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertFoo", "assertFoo");
   ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertNoNotifications",
                      "assertNoNotifications");
@@ -433,8 +455,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "assertNoNotifications",
                      "assertNoNotifications");
 
-  // TODO(crbug.com/1185226): Clear notifications when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "clearNotifications",
+                     "clearNotifications");
 
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "noop", "removeFoo");
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "assertEmpty",
@@ -446,8 +468,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
   ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertNoNotifications",
                      "assertNoNotifications");
   ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertFoo", "assertFoo");
-  // TODO(crbug.com/1185226): Assert no notifications when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertNoNotifications",
+                     "assertNoNotifications");
 
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "clearNotifications",
                      "clearNotifications");
@@ -460,15 +482,36 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsTrunkApiTest,
                      "assertEmpty");
   ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "assertNoNotifications",
                      "assertNoNotifications");
-  FinalReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertFoo",
-                          "assertFoo");
-  // TODO(crbug.com/1185226): Assert no notifications when onChangedEvent
-  // implemented for 'session'.
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertFoo", "assertFoo");
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertNoNotifications",
+                     "assertNoNotifications");
+
+  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "clearNotifications",
+                     "clearNotifications");
+
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "removeFoo", "noop");
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession, "assertEmpty",
+                     "assertEmpty");
+  ReplyWhenSatisfied(StorageAreaNamespace::kSession,
+                     "assertDeleteFooNotification",
+                     "assertDeleteFooNotification");
+  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertEmpty", "assertEmpty");
+  ReplyWhenSatisfied(StorageAreaNamespace::kSync, "assertNoNotifications",
+                     "assertNoNotifications");
+  ReplyWhenSatisfied(StorageAreaNamespace::kLocal, "assertEmpty",
+                     "assertEmpty");
+  FinalReplyWhenSatisfied(StorageAreaNamespace::kLocal, "assertNoNotifications",
+                          "assertNoNotifications");
 
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
   EXPECT_TRUE(catcher_incognito.GetNextResult()) << catcher.message();
 }
 
+// TODO(crbug.com/1229351): Service worker extension listener should receive an
+// event before the callback is made. Current workaround: wait for the event to
+// be received by the extension before checking for it. Potential solution: once
+// browser-side observation of SW lifetime work is finished, check if it fixes
+// this test.
 IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
                        OnChangedNotificationsFromSync) {
   // We need 2 ResultCatchers because we'll be running the same test in both
@@ -679,7 +722,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, DISABLED_ManagedStorage) {
   ASSERT_TRUE(RunExtensionTest("settings/managed_storage")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, PRE_ManagedStorageEvents) {
+// TODO(crbug.com/1241501): Somewhat flaky on all bots, but worse on the Linux
+// and ChromeOS bots.
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
+                       DISABLED_PRE_ManagedStorageEvents) {
   ResultCatcher catcher;
 
   // This test starts without any test extensions installed.
@@ -713,7 +759,10 @@ IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, PRE_ManagedStorageEvents) {
   EXPECT_TRUE(catcher.GetNextResult()) << catcher.message();
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest, ManagedStorageEvents) {
+// TODO(crbug.com/1241501): Somewhat flaky on all bots, but worse on the Linux
+// and ChromeOS bots.
+IN_PROC_BROWSER_TEST_F(ExtensionSettingsApiTest,
+                       DISABLED_ManagedStorageEvents) {
   // This test runs after PRE_ManagedStorageEvents without having deleted the
   // profile, so the extension is still around. While the browser restarted the
   // policy went back to the empty default, and so the extension should receive

@@ -40,7 +40,7 @@ TIMEOUT_SECONDS = 210 * 60
 
 # Sheriff calendar URL, used for getting the ecosystem infra sheriff to cc.
 ROTATIONS_URL = 'https://chrome-ops-rotation-proxy.appspot.com/current/grotation:chrome-ecosystem-infra'
-SHERIFF_EMAIL_FALLBACK = 'smcgruer@google.com'
+SHERIFF_EMAIL_FALLBACK = 'weizhong@google.com'
 RUBBER_STAMPER_BOT = 'rubber-stamper@appspot.gserviceaccount.com'
 
 _log = logging.getLogger(__file__)
@@ -75,14 +75,8 @@ class TestImporter(object):
         self.new_override_expectations = {}
         self.verbose = False
 
-        args = [
-            '--clean-up-affected-tests-only',
-            '--clean-up-test-expectations',
-            # TODO(crbug.com/1196713): Result download needs to migrate away
-            # from test-results.appspot.com before we can resume using
-            # results from CQ builders.
-            '--rebaseline-blink-try-bots-only'
-        ]
+        args = ['--clean-up-affected-tests-only',
+                '--clean-up-test-expectations']
         self._expectations_updater = WPTExpectationsUpdater(
             self.host, args, wpt_manifests)
 
@@ -192,7 +186,7 @@ class TestImporter(object):
             _log.info('Only manifest was updated; skipping the import.')
             return 0
 
-        with self._expectations_updater.prepare_smoke_tests():
+        with self._expectations_updater.prepare_smoke_tests(self.chromium_git):
             self._commit_changes(commit_message)
             _log.info('Changes imported and committed.')
 
@@ -287,23 +281,33 @@ class TestImporter(object):
             self.git_cl.run(['set-close'])
             return False
 
-        _log.info(
-            'CQ appears to have passed; sending to the rubber-stamper bot for '
-            'CR+1 and commit.')
-        _log.info(
-            'If the rubber-stamper bot rejects the CL, you either need to '
-            'modify the benign file patterns, or manually CR+1 and land the '
-            'import yourself if it touches code files. See https://chromium.'
-            'googlesource.com/infra/infra/+/refs/heads/main/go/src/infra/'
-            'appengine/rubber-stamper/README.md')
-
         # `--send-mail` is required to take the CL out of WIP mode.
-        self.git_cl.run([
-            'upload', '-f', '--send-mail', '--enable-auto-submit',
-            '--reviewers', RUBBER_STAMPER_BOT
-        ])
+        if self._need_sheriff_attention():
+            _log.info(
+                'CQ appears to have passed; sending to the sheriff for '
+                'CR+1 and commit. The sheriff has one hour to respond.')
+            self.git_cl.run([
+                'upload', '-f', '--send-mail', '--enable-auto-submit'
+                '--reviewers', self.sheriff_email()
+            ])
+            timeout = 3600
+        else:
+            _log.info(
+                'CQ appears to have passed; sending to the rubber-stamper bot for '
+                'CR+1 and commit.')
+            _log.info(
+                'If the rubber-stamper bot rejects the CL, you either need to '
+                'modify the benign file patterns, or manually CR+1 and land the '
+                'import yourself if it touches code files. See https://chromium.'
+                'googlesource.com/infra/infra/+/refs/heads/main/go/src/infra/'
+                'appengine/rubber-stamper/README.md')
+            self.git_cl.run([
+                'upload', '-f', '--send-mail', '--enable-auto-submit',
+                '--reviewers', RUBBER_STAMPER_BOT
+            ])
+            timeout = 1800
 
-        if self.git_cl.wait_for_closed_status():
+        if self.git_cl.wait_for_closed_status(timeout_seconds=timeout):
             _log.info('Update completed.')
             return True
 
@@ -469,6 +473,17 @@ class TestImporter(object):
             self.finder.chromium_base())
         return changed_files == [wpt_base_manifest]
 
+    def _need_sheriff_attention(self):
+        # Per the rules defined for the rubber-stamper, it can not auto approve
+        # a CL that has .bat, .sh or .py files. Request the sheriff on rotation
+        # to approve the CL.
+        changed_files = self.chromium_git.changed_files()
+        for cf in changed_files:
+            extension = self.fs.splitext(cf)[1]
+            if extension in ['.bat', '.sh', '.py']:
+                return True
+        return False
+
     def _commit_message(self,
                         chromium_commit_sha,
                         import_commit_sha,
@@ -527,7 +542,7 @@ class TestImporter(object):
         self.fs.remove(dest)
 
     def _upload_patchset(self, message):
-        self.git_cl.run(['upload', '-f', '-t', message])
+        self.git_cl.run(['upload', '--bypass-hooks', '-f', '-t', message])
 
     def _upload_cl(self):
         _log.info('Uploading change list.')
@@ -541,11 +556,10 @@ class TestImporter(object):
 
         self.git_cl.run([
             'upload',
+            '--bypass-hooks',
             '-f',
             '--message-file',
-            temp_path,
-            '--cc',
-            sheriff_email,
+            temp_path
         ])
 
         self.fs.remove(temp_path)

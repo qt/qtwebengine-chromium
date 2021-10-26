@@ -45,6 +45,7 @@ static const char kTestUsageMessage[] = "Custom usage message";
 struct UDT {
   UDT() = default;
   UDT(const UDT&) = default;
+  UDT& operator=(const UDT&) = default;
 };
 bool AbslParseFlag(absl::string_view, UDT*, std::string*) { return true; }
 std::string AbslUnparseFlag(const UDT&) { return "UDT{}"; }
@@ -59,6 +60,9 @@ ABSL_FLAG(
     "Some more help.\n"
     "Even more long long long long long long long long long long long long "
     "help message.");
+
+ABSL_RETIRED_FLAG(int64_t, usage_reporting_test_flag_07, 1,
+                  "usage_reporting_test_flag_07 help message");
 
 namespace {
 

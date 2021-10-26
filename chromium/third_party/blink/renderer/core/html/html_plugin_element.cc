@@ -110,7 +110,8 @@ void PluginParameters::MapDataParamToSrc() {
   });
 
   if (data != names_.end()) {
-    AppendNameWithValue("src", values_[data - names_.begin()]);
+    AppendNameWithValue(
+        "src", values_[base::checked_cast<wtf_size_t>(data - names_.begin())]);
   }
 }
 
@@ -263,6 +264,13 @@ void HTMLPlugInElement::UpdatePlugin() {
     is_delaying_load_event_ = false;
     GetDocument().DecrementLoadEventDelayCount();
   }
+}
+
+Node::InsertionNotificationRequest HTMLPlugInElement::InsertedInto(
+    ContainerNode& insertion_point) {
+  if (insertion_point.isConnected())
+    GetDocument().DelayLoadEventUntilLayoutTreeUpdate();
+  return HTMLFrameOwnerElement::InsertedInto(insertion_point);
 }
 
 void HTMLPlugInElement::RemovedFrom(ContainerNode& insertion_point) {

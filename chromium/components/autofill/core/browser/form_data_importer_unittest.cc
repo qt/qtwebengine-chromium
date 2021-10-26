@@ -76,8 +76,8 @@ class PersonalDataLoadedObserverMock : public PersonalDataManagerObserver {
   PersonalDataLoadedObserverMock() {}
   ~PersonalDataLoadedObserverMock() override {}
 
-  MOCK_METHOD0(OnPersonalDataChanged, void());
-  MOCK_METHOD0(OnPersonalDataFinishedProfileTasks, void());
+  MOCK_METHOD(void, OnPersonalDataChanged, (), (override));
+  MOCK_METHOD(void, OnPersonalDataFinishedProfileTasks, (), (override));
 };
 
 template <typename T>
@@ -128,6 +128,7 @@ class FormDataImporterTestBase {
         /*client_profile_validator=*/nullptr,
         /*history_service=*/nullptr,
         /*strike_database=*/nullptr,
+        /*image_fetcher=*/nullptr,
         /*is_off_the_record=*/(user_mode == USER_MODE_INCOGNITO));
     personal_data_manager_->AddObserver(&personal_data_observer_);
     personal_data_manager_->OnSyncServiceInitialized(nullptr);
@@ -169,9 +170,18 @@ class FormDataImporterTestBase {
   // having to friend every test that needs to access the private
   // PersonalDataManager::ImportAddressProfile or ImportCreditCard).
   void ImportAddressProfiles(bool extraction_successful,
-                             const FormStructure& form) {
+                             const FormStructure& form,
+                             bool skip_waiting_on_pdm = false,
+                             bool allow_save_prompts = true) {
     if (!extraction_successful) {
-      EXPECT_FALSE(form_data_importer_->ImportAddressProfiles(form));
+      EXPECT_FALSE(
+          form_data_importer_->ImportAddressProfiles(form, allow_save_prompts));
+      return;
+    }
+
+    if (skip_waiting_on_pdm) {
+      EXPECT_TRUE(
+          form_data_importer_->ImportAddressProfiles(form, allow_save_prompts));
       return;
     }
 
@@ -179,7 +189,8 @@ class FormDataImporterTestBase {
     EXPECT_CALL(personal_data_observer_, OnPersonalDataFinishedProfileTasks())
         .WillOnce(QuitMessageLoop(&run_loop));
     EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged()).Times(1);
-    EXPECT_TRUE(form_data_importer_->ImportAddressProfiles(form));
+    EXPECT_TRUE(
+        form_data_importer_->ImportAddressProfiles(form, allow_save_prompts));
     run_loop.Run();
   }
 
@@ -614,6 +625,54 @@ TEST_P(FormDataImporterTest, ImportAddressProfiles) {
       personal_data_manager_->GetProfiles();
   ASSERT_EQ(1U, results.size());
   EXPECT_EQ(0, expected.Compare(*results[0]));
+}
+
+// Test that the storage is prevented if the structured address prompt feature
+// is enabled, but address prompts are not allowed.
+TEST_P(FormDataImporterTest, ImportAddressProfiles_DontAllowPrompt) {
+  base::test::ScopedFeatureList save_prompt_feature;
+  save_prompt_feature.InitAndEnableFeature(
+      features::kAutofillAddressProfileSavePrompt);
+
+  FormData form;
+  form.url = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("First name:", "first_name", "George", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Last name:", "last_name", "Washington", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Email:", "email", "theprez@gmail.com", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Address:", "address1", "21 Laussat St", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("City:", "city", "San Francisco", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("State:", "state", "California", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Zip:", "zip", "94102", "text", &field);
+  form.fields.push_back(field);
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes(nullptr, nullptr);
+  ImportAddressProfiles(/*extraction_successful=*/false, form_structure,
+                        /*skip_waiting_on_pdm=*/true,
+                        /*allow_save_prompts=*/false);
+
+  EXPECT_EQ(personal_data_manager_->GetProfiles().size(), 0U);
+
+  save_prompt_feature.Reset();
+  save_prompt_feature.InitAndDisableFeature(
+      features::kAutofillAddressProfileSavePrompt);
+
+  // Verify that the behavior changes when prompts are disabled.
+  ImportAddressProfiles(/*extraction_successful=*/true, form_structure,
+                        /*skip_waiting_on_pdm=*/false,
+                        /*allow_save_prompts=*/false);
+  EXPECT_EQ(personal_data_manager_->GetProfiles().size(), 1U);
 }
 
 // Tests that even if the the autocomplete prevents filling, it does not prevent
@@ -2295,16 +2354,11 @@ TEST_P(FormDataImporterTest, ImportCreditCard_MonthSelectInvalidText) {
                         "Feb (2)", "2999");
   // Add option values and contents to the expiration month field.
   ASSERT_EQ(u"exp_month", form.fields[2].name);
-  std::vector<std::u16string> values;
-  values.push_back(u"1");
-  values.push_back(u"2");
-  values.push_back(u"3");
-  std::vector<std::u16string> contents;
-  contents.push_back(u"Jan (1)");
-  contents.push_back(u"Feb (2)");
-  contents.push_back(u"Mar (3)");
-  form.fields[2].option_values = values;
-  form.fields[2].option_contents = contents;
+  form.fields[2].options = {
+      {.value = u"1", .content = u"Jan (1)"},
+      {.value = u"2", .content = u"Feb (2)"},
+      {.value = u"3", .content = u"Mar (3)"},
+  };
 
   FormStructure form_structure(form);
   form_structure.DetermineHeuristicTypes(nullptr, nullptr);
@@ -3158,6 +3212,33 @@ TEST_P(FormDataImporterTest,
   ASSERT_FALSE(imported_credit_card);
   // |imported_credit_card_record_type_| should be NO_CARD because no valid card
   // was successfully imported from the form.
+  ASSERT_TRUE(form_data_importer_->imported_credit_card_record_type_ ==
+              FormDataImporter::ImportedCreditCardRecordType::NO_CARD);
+}
+
+// Ensures that |imported_credit_card_record_type_| is set correctly.
+TEST_P(FormDataImporterTest,
+       ImportFormData_ImportCreditCardRecordType_NoCard_VirtualCard) {
+  // Simulate a form submission using a credit card that is known as a virtual
+  // card.
+  FormData form;
+  form.url = GURL("https://wwww.foo.com");
+  AddFullCreditCardForm(&form, "Biggie Smalls", "4111 1111 1111 1111", "01",
+                        "2999");
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes(nullptr, nullptr);
+  form_data_importer_->CacheFetchedVirtualCard(u"1111");
+  std::unique_ptr<CreditCard> imported_credit_card;
+  absl::optional<std::string> imported_upi_id;
+
+  EXPECT_FALSE(form_data_importer_->ImportFormData(
+      form_structure, /*profile_autofill_enabled=*/true,
+      /*credit_card_autofill_enabled=*/true,
+      /*should_return_local_card=*/true, &imported_credit_card,
+      &imported_upi_id));
+  ASSERT_FALSE(imported_credit_card);
+  // |imported_credit_card_record_type_| should be NO_CARD because the card
+  // imported from the form was a virtual card.
   ASSERT_TRUE(form_data_importer_->imported_credit_card_record_type_ ==
               FormDataImporter::ImportedCreditCardRecordType::NO_CARD);
 }
@@ -4189,6 +4270,190 @@ TEST_P(FormDataImporterTest, ImportUpiIdIgnoreNonUpiId) {
       &imported_upi_id));
 
   EXPECT_FALSE(imported_upi_id.has_value());
+}
+
+TEST_P(FormDataImporterTest, SilentlyUpdateExistingProfileByIncompleteProfile) {
+  // This test is only applicable when structured names are enabled.
+  if (!StructuredNames())
+    return;
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kAutofillSilentProfileUpdateForInsufficientImport);
+
+  AutofillProfile profile(base::GenerateGUID(), test::kEmptyOrigin);
+  test::SetProfileInfo(&profile, "Marion", "Mitchell", "Morrison",
+                       "johnwayne@me.xyz", "Fox", "123 Zoo St.", "unit 5",
+                       "Hollywood", "CA", "91601", "US", "12345678910");
+
+  // Set the verification status for the first and middle name to parsed.
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_FIRST, u"Marion", structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_MIDDLE, u"Mitchell",
+      structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_LAST, u"Morrison", structured_address::VerificationStatus::kParsed);
+
+  base::RunLoop run_loop;
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataFinishedProfileTasks())
+      .WillOnce(QuitMessageLoop(&run_loop));
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged()).Times(1);
+  personal_data_manager_->AddProfile(profile);
+  run_loop.Run();
+
+  // Simulate a form submission with conflicting info.
+  FormData form;
+  form.url = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("First name:", "first_name", "Marion", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Middle name:", "middle_name", "", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Last name:", "last_name", "Mitchell Morrison",
+                            "text", &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes(nullptr, nullptr);
+  ImportAddressProfiles(/*extraction_successful=*/false, form_structure);
+
+  // Expect that no new profile is saved.
+  const std::vector<AutofillProfile*>& results =
+      personal_data_manager_->GetProfiles();
+  ASSERT_EQ(1U, results.size());
+  EXPECT_EQ(1, profile.Compare(*results[0]));
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FULL), u"Marion Mitchell Morrison");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FIRST), u"Marion");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_MIDDLE), u"");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_LAST), u"Mitchell Morrison");
+}
+
+TEST_P(
+    FormDataImporterTest,
+    SilentlyUpdateExistingProfileByIncompleteProfile_DespiteDisallowedPrompts) {
+  // This test is only applicable when structured names are enabled.
+  if (!StructuredNames())
+    return;
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitWithFeatures(
+      {features::kAutofillSilentProfileUpdateForInsufficientImport,
+       features::kAutofillAddressProfileSavePrompt},
+      {});
+
+  AutofillProfile profile(base::GenerateGUID(), test::kEmptyOrigin);
+  test::SetProfileInfo(&profile, "Marion", "Mitchell", "Morrison",
+                       "johnwayne@me.xyz", "Fox", "123 Zoo St.", "unit 5",
+                       "Hollywood", "CA", "91601", "US", "12345678910");
+
+  // Set the verification status for the first and middle name to parsed.
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_FIRST, u"Marion", structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_MIDDLE, u"Mitchell",
+      structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_LAST, u"Morrison", structured_address::VerificationStatus::kParsed);
+
+  base::RunLoop run_loop;
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataFinishedProfileTasks())
+      .WillOnce(QuitMessageLoop(&run_loop));
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged()).Times(1);
+  personal_data_manager_->AddProfile(profile);
+  run_loop.Run();
+
+  // Simulate a form submission with conflicting info.
+  FormData form;
+  form.url = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("First name:", "first_name", "Marion", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Middle name:", "middle_name", "", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Last name:", "last_name", "Mitchell Morrison",
+                            "text", &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes(nullptr, nullptr);
+  ImportAddressProfiles(/*extraction_successful=*/false, form_structure,
+                        /*skip_waiting_on_pdm=*/false,
+                        /*allow_save_prompts=*/false);
+
+  // Expect that no new profile is saved and the existing profile is updated.
+  const std::vector<AutofillProfile*>& results =
+      personal_data_manager_->GetProfiles();
+  ASSERT_EQ(1U, results.size());
+  EXPECT_EQ(1, profile.Compare(*results[0]));
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FULL), u"Marion Mitchell Morrison");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FIRST), u"Marion");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_MIDDLE), u"");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_LAST), u"Mitchell Morrison");
+}
+
+TEST_P(FormDataImporterTest, UnusableIncompleteProfile) {
+  // This test is only applicable when structured names are enabled.
+  if (!StructuredNames())
+    return;
+
+  base::test::ScopedFeatureList scoped_feature_list;
+  scoped_feature_list.InitAndEnableFeature(
+      features::kAutofillSilentProfileUpdateForInsufficientImport);
+
+  AutofillProfile profile(base::GenerateGUID(), test::kEmptyOrigin);
+  test::SetProfileInfo(&profile, "Marion", "Mitchell", "Morrison",
+                       "johnwayne@me.xyz", "Fox", "123 Zoo St.", "unit 5",
+                       "Hollywood", "CA", "91601", "US", "12345678910");
+
+  // Set the verification status for the first and middle name to parsed.
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_FIRST, u"Marion", structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_MIDDLE, u"Mitchell",
+      structured_address::VerificationStatus::kParsed);
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_LAST, u"Morrison", structured_address::VerificationStatus::kParsed);
+
+  base::RunLoop run_loop;
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataFinishedProfileTasks())
+      .WillOnce(QuitMessageLoop(&run_loop));
+  EXPECT_CALL(personal_data_observer_, OnPersonalDataChanged()).Times(1);
+  personal_data_manager_->AddProfile(profile);
+  run_loop.Run();
+
+  // Simulate a form submission with conflicting info.
+  FormData form;
+  form.url = GURL("https://wwww.foo.com");
+
+  FormFieldData field;
+  test::CreateTestFormField("First name:", "first_name", "Marion", "text",
+                            &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Middle name:", "middle_name", "", "text", &field);
+  form.fields.push_back(field);
+  test::CreateTestFormField("Last name:", "last_name", "Mitch Morrison", "text",
+                            &field);
+  form.fields.push_back(field);
+
+  FormStructure form_structure(form);
+  form_structure.DetermineHeuristicTypes(nullptr, nullptr);
+  ImportAddressProfiles(/*extraction_successful=*/false, form_structure,
+                        /*skip_waiting_on_pdm=*/true);
+
+  // Expect that no new profile is saved.
+  const std::vector<AutofillProfile*>& results =
+      personal_data_manager_->GetProfiles();
+  ASSERT_EQ(1U, results.size());
+  EXPECT_EQ(0, profile.Compare(*results[0]));
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FULL), u"Marion Mitchell Morrison");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_FIRST), u"Marion");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_MIDDLE), u"Mitchell");
+  EXPECT_EQ(results[0]->GetRawInfo(NAME_LAST), u"Morrison");
 }
 
 // Runs the suite with the feature |kAutofillSupportForMoreStructuredNames|,

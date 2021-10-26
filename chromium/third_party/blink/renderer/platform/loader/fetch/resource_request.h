@@ -31,7 +31,6 @@
 #include <memory>
 
 #include "base/containers/flat_set.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
 #include "net/cookies/site_for_cookies.h"
@@ -56,6 +55,12 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/ref_counted.h"
+
+namespace network {
+namespace mojom {
+class WebBundleHandle;
+}  // namespace mojom
+}  // namespace network
 
 namespace blink {
 
@@ -229,13 +234,6 @@ class PLATFORM_EXPORT ResourceRequestHead {
   bool ReportUploadProgress() const { return report_upload_progress_; }
   void SetReportUploadProgress(bool report_upload_progress) {
     report_upload_progress_ = report_upload_progress;
-  }
-
-  // Whether actual headers being sent/received should be collected and reported
-  // for the request.
-  bool ReportRawHeaders() const { return report_raw_headers_; }
-  void SetReportRawHeaders(bool report_raw_headers) {
-    report_raw_headers_ = report_raw_headers;
   }
 
   // True if request was user initiated.
@@ -556,7 +554,6 @@ class PLATFORM_EXPORT ResourceRequestHead {
   HTTPHeaderMap http_header_fields_;
   bool allow_stored_credentials_ : 1;
   bool report_upload_progress_ : 1;
-  bool report_raw_headers_ : 1;
   bool has_user_gesture_ : 1;
   bool has_text_fragment_token_ : 1;
   bool download_to_blob_ : 1;
@@ -700,7 +697,7 @@ class PLATFORM_EXPORT ResourceRequestBody {
 // This class is thread-bound. Do not copy/pass an instance across threads.
 //
 // Although request consists head and body, ResourceRequest is implemented by
-// inheriting ResourceRequestHead due in order to make it possible to use
+// inheriting ResourceRequestHead in order to make it possible to use
 // property accessors through both ResourceRequestHead and ResourceRequest while
 // avoiding duplicate accessor definitions.
 // For those who want to add a new property in request, please implement its

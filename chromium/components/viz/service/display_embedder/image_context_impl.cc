@@ -15,6 +15,7 @@
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "third_party/skia/include/core/SkImageInfo.h"
 #include "third_party/skia/include/core/SkPromiseImageTexture.h"
+#include "third_party/skia/include/gpu/GrContextThreadSafeProxy.h"
 
 namespace viz {
 
@@ -24,26 +25,15 @@ ImageContextImpl::ImageContextImpl(
     ResourceFormat resource_format,
     bool maybe_concurrent_reads,
     const absl::optional<gpu::VulkanYCbCrInfo>& ycbcr_info,
-    sk_sp<SkColorSpace> color_space)
+    sk_sp<SkColorSpace> color_space,
+    const bool allow_keeping_read_access)
     : ImageContext(mailbox_holder,
                    size,
                    resource_format,
                    ycbcr_info,
                    color_space),
-      maybe_concurrent_reads_(maybe_concurrent_reads) {}
-
-ImageContextImpl::ImageContextImpl(AggregatedRenderPassId render_pass_id,
-                                   const gfx::Size& size,
-                                   ResourceFormat resource_format,
-                                   bool mipmap,
-                                   sk_sp<SkColorSpace> color_space)
-    : ImageContext(gpu::MailboxHolder(),
-                   size,
-                   resource_format,
-                   /*ycbcr_info=*/absl::nullopt,
-                   std::move(color_space)),
-      render_pass_id_(render_pass_id),
-      mipmap_(mipmap ? GrMipMapped::kYes : GrMipMapped::kNo) {}
+      maybe_concurrent_reads_(maybe_concurrent_reads),
+      allow_keeping_read_access_(allow_keeping_read_access) {}
 
 ImageContextImpl::~ImageContextImpl() {
   if (fallback_context_state_)
@@ -148,7 +138,8 @@ void ImageContextImpl::BeginAccessIfNecessary(
   GrBackendTexture backend_texture;
   gpu::GetGrBackendTexture(
       context_state->feature_info(), texture_base->target(), size(),
-      texture_base->service_id(), resource_format(), &backend_texture);
+      texture_base->service_id(), resource_format(),
+      context_state->gr_context()->threadSafeProxy(), &backend_texture);
   if (!backend_texture.isValid()) {
     DLOG(ERROR) << "Failed to fulfill the promise texture.";
     CreateFallbackImage(context_state);
@@ -267,7 +258,8 @@ void ImageContextImpl::EndAccessIfNecessary() {
 
   // Avoid unnecessary read access churn for representations that
   // support multiple readers.
-  if (representation_->SupportsMultipleConcurrentReadAccess())
+  if (representation_->SupportsMultipleConcurrentReadAccess() &&
+      allow_keeping_read_access_)
     return;
 
   representation_scoped_read_access_.reset();

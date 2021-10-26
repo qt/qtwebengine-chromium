@@ -11,8 +11,6 @@
 
 #include "aom/aomcx.h"
 
-#include "aom_ports/system_state.h"
-
 #include "av1/encoder/bitstream.h"
 #include "av1/encoder/encodeframe.h"
 #include "av1/encoder/encoder.h"
@@ -25,6 +23,7 @@
 #include "av1/encoder/rdopt.h"
 #include "av1/encoder/segmentation.h"
 #include "av1/encoder/superres_scale.h"
+#include "av1/encoder/tpl_model.h"
 #include "av1/encoder/var_based_part.h"
 
 #if CONFIG_TUNE_VMAF
@@ -311,7 +310,16 @@ static void configure_static_seg_features(AV1_COMP *cpi) {
   const RATE_CONTROL *const rc = &cpi->rc;
   struct segmentation *const seg = &cm->seg;
 
-  int high_q = (int)(rc->avg_q > 48.0);
+  double avg_q;
+#if CONFIG_FRAME_PARALLEL_ENCODE
+  avg_q = (cpi->ppi->gf_group.frame_parallel_level[cpi->gf_frame_index] > 0)
+              ? cpi->ppi->p_rc.temp_avg_q
+              : cpi->rc.avg_q;
+#else
+  avg_q = rc->avg_q;
+#endif
+
+  int high_q = (int)(avg_q > 48.0);
   int qi_delta;
 
   // Disable and clear down for KF
@@ -343,7 +351,7 @@ static void configure_static_seg_features(AV1_COMP *cpi) {
       seg->update_map = 1;
       seg->update_data = 1;
 
-      qi_delta = av1_compute_qdelta(rc, rc->avg_q, rc->avg_q * 0.875,
+      qi_delta = av1_compute_qdelta(rc, avg_q, avg_q * 0.875,
                                     cm->seq_params->bit_depth);
       av1_set_segdata(seg, 1, SEG_LVL_ALT_Q, qi_delta - 2);
       av1_set_segdata(seg, 1, SEG_LVL_ALT_LF_Y_H, -2);
@@ -495,7 +503,6 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
     if (mc_dep_cost_base == 0) {
       tpl_frame->is_valid = 0;
     } else {
-      aom_clear_system_state();
       cpi->rd.r0 = (double)intra_cost_base / mc_dep_cost_base;
       if (is_frame_tpl_eligible(gf_group, cpi->gf_frame_index)) {
         if (cpi->ppi->lap_enabled) {
@@ -516,7 +523,6 @@ static void process_tpl_stats_frame(AV1_COMP *cpi) {
               cpi->ppi->p_rc.gfu_boost, gfu_boost, cpi->rc.frames_to_key);
         }
       }
-      aom_clear_system_state();
     }
   }
 }
@@ -541,6 +547,31 @@ void av1_set_size_dependent_vars(AV1_COMP *cpi, int *q, int *bottom_index,
   // Decide q and q bounds.
   *q = av1_rc_pick_q_and_bounds(cpi, cm->width, cm->height, cpi->gf_frame_index,
                                 bottom_index, top_index);
+
+#if !CONFIG_REALTIME_ONLY
+  if (cpi->oxcf.rc_cfg.mode == AOM_Q &&
+      cpi->ppi->tpl_data.tpl_frame[cpi->gf_frame_index].is_valid &&
+      is_frame_tpl_eligible(gf_group, cpi->gf_frame_index) &&
+      !is_lossless_requested(&cpi->oxcf.rc_cfg) && !frame_is_intra_only(cm)) {
+    *q = av1_tpl_get_q_index(&cpi->ppi->tpl_data, cpi->gf_frame_index,
+                             cpi->rc.active_worst_quality,
+                             cm->seq_params->bit_depth);
+    *top_index = *bottom_index = *q;
+    if (gf_group->update_type[cpi->gf_frame_index] == ARF_UPDATE)
+      cpi->ppi->p_rc.arf_q = *q;
+  }
+
+  if (cpi->oxcf.q_cfg.use_fixed_qp_offsets && cpi->oxcf.rc_cfg.mode == AOM_Q &&
+      is_frame_tpl_eligible(gf_group, cpi->gf_frame_index)) {
+    const double qstep_ratio =
+        0.2 + (1.0 - (double)cpi->rc.active_worst_quality / MAXQ) * 0.3;
+    *q = av1_get_q_index_from_qstep_ratio(
+        cpi->rc.active_worst_quality, qstep_ratio, cm->seq_params->bit_depth);
+    *top_index = *bottom_index = *q;
+    if (gf_group->update_type[cpi->gf_frame_index] == ARF_UPDATE)
+      cpi->ppi->p_rc.arf_q = *q;
+  }
+#endif
 
   // Configure experimental use of segmentation for enhanced coding of
   // static regions if indicated.
@@ -720,6 +751,12 @@ BLOCK_SIZE av1_select_sb_size(const AV1EncoderConfig *const oxcf, int width,
   if (oxcf->tool_cfg.superblock_size == AOM_SUPERBLOCK_SIZE_128X128)
     return BLOCK_128X128;
 
+  // Force 64x64 superblock size to increase resolution in perceptual
+  // AQ mode.
+  if (oxcf->mode == ALLINTRA &&
+      oxcf->q_cfg.deltaq_mode == DELTA_Q_PERCEPTUAL_AI)
+    return BLOCK_64X64;
+
   assert(oxcf->tool_cfg.superblock_size == AOM_SUPERBLOCK_SIZE_DYNAMIC);
 
   if (number_spatial_layers > 1 ||
@@ -842,7 +879,16 @@ static void screen_content_tools_determination(
     int *projected_size_pass, PSNR_STATS *psnr) {
   AV1_COMMON *const cm = &cpi->common;
   FeatureFlags *const features = &cm->features;
-  projected_size_pass[pass] = cpi->rc.projected_frame_size;
+  int projected_frame_size;
+#if CONFIG_FRAME_PARALLEL_ENCODE
+  projected_frame_size =
+      (cpi->ppi->gf_group.frame_parallel_level[cpi->gf_frame_index] > 0)
+          ? cpi->ppi->p_rc.temp_projected_frame_size
+          : cpi->rc.projected_frame_size;
+#else
+  projected_frame_size = cpi->rc.projected_frame_size;
+#endif
+  projected_size_pass[pass] = projected_frame_size;
 #if CONFIG_AV1_HIGHBITDEPTH
   const uint32_t in_bit_depth = cpi->oxcf.input_cfg.input_bit_depth;
   const uint32_t bit_depth = cpi->td.mb.e_mbd.bd;
@@ -932,7 +978,6 @@ void av1_determine_sc_tools_with_encoding(AV1_COMP *cpi, const int q_orig) {
       cpi->sf.part_sf.fixed_partition_size;
 
   // Setup necessary params for encoding, including frame source, etc.
-  aom_clear_system_state();
 
   cpi->source =
       av1_scale_if_required(cm, cpi->unscaled_source, &cpi->scaled_source,
@@ -1058,7 +1103,6 @@ void av1_finalize_encoded_frame(AV1_COMP *const cpi) {
 int av1_is_integer_mv(const YV12_BUFFER_CONFIG *cur_picture,
                       const YV12_BUFFER_CONFIG *last_picture,
                       ForceIntegerMVInfo *const force_intpel_info) {
-  aom_clear_system_state();
   // check use hash ME
   int k;
 
@@ -1241,7 +1285,7 @@ static void save_extra_coding_context(AV1_COMP *cpi) {
   cc->lf = cm->lf;
   cc->cdef_info = cm->cdef_info;
   cc->rc = cpi->rc;
-  cc->mv_stats = cpi->mv_stats;
+  cc->mv_stats = cpi->ppi->mv_stats;
 }
 
 void av1_save_all_coding_context(AV1_COMP *cpi) {

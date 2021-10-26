@@ -31,7 +31,6 @@
 #include <memory>
 
 #include "base/dcheck_is_on.h"
-#include "base/macros.h"
 #include "third_party/blink/public/mojom/frame/color_scheme.mojom-blink-forward.h"
 #include "third_party/blink/renderer/platform/fonts/font.h"
 #include "third_party/blink/renderer/platform/graphics/dark_mode_filter.h"
@@ -68,11 +67,37 @@ class PaintController;
 class Path;
 struct TextRunPaintInfo;
 
+// Tiling parameters for the DrawImageTiled() method.
+struct ImageTilingInfo {
+  // The part of the Image (the |image| argument to the method) to tile. It's in
+  // the space of the image.
+  FloatRect image_rect;
+
+  // Scale factor from image space to destination space. Will include
+  // image-resolution information.
+  FloatSize scale{1.0f, 1.0f};
+
+  // Origin of the full image in destination space.
+  FloatPoint phase;
+
+  // Additional spacing between tiles in destination space.
+  FloatSize spacing;
+};
+
+struct ImageDrawOptions {
+  SkSamplingOptions sampling_options;
+  RespectImageOrientationEnum respect_image_orientation =
+      kRespectImageOrientation;
+  bool apply_dark_mode = false;
+};
+
 class PLATFORM_EXPORT GraphicsContext {
   USING_FAST_MALLOC(GraphicsContext);
 
  public:
   explicit GraphicsContext(PaintController&);
+  GraphicsContext(const GraphicsContext&) = delete;
+  GraphicsContext& operator=(const GraphicsContext&) = delete;
   ~GraphicsContext();
 
   // Copy configs such as printing, dark mode, device scale factor etc. from
@@ -160,7 +185,7 @@ class PLATFORM_EXPORT GraphicsContext {
 
   SkSamplingOptions ImageSamplingOptions() const {
     return PaintFlags::FilterQualityToSkSamplingOptions(
-        static_cast<SkFilterQuality>(ImageInterpolationQuality()));
+        static_cast<PaintFlags::FilterQuality>(ImageInterpolationQuality()));
   }
 
   // Specify the device scale factor which may change the way document markers
@@ -238,22 +263,20 @@ class PLATFORM_EXPORT GraphicsContext {
                  Image::ImageDecodingMode,
                  const FloatRect& dest_rect,
                  const FloatRect* src_rect = nullptr,
-                 bool has_filter_property = false,
+                 bool has_disable_dark_mode_style = false,
                  SkBlendMode = SkBlendMode::kSrcOver,
                  RespectImageOrientationEnum = kRespectImageOrientation);
   void DrawImageRRect(Image*,
                       Image::ImageDecodingMode,
                       const FloatRoundedRect& dest,
                       const FloatRect& src_rect,
-                      bool has_filter_property = false,
+                      bool has_disable_dark_mode_style = false,
                       SkBlendMode = SkBlendMode::kSrcOver,
                       RespectImageOrientationEnum = kRespectImageOrientation);
   void DrawImageTiled(Image* image,
                       const FloatRect& dest_rect,
-                      const FloatRect& src_rect,
-                      const FloatSize& scale_src_to_dest,
-                      const FloatPoint& phase,
-                      const FloatSize& repeat_spacing,
+                      const ImageTilingInfo& tiling_info,
+                      bool has_disable_dark_mode_style = false,
                       SkBlendMode = SkBlendMode::kSrcOver,
                       RespectImageOrientationEnum = kRespectImageOrientation);
 
@@ -311,6 +334,14 @@ class PLATFORM_EXPORT GraphicsContext {
                 const PaintFlags&,
                 DOMNodeId);
 
+  // TODO(layout-dev): This method is only used by NGTextPainter, see if the
+  // four parameter overload can be removed or if it can wrap this method.
+  void DrawText(const Font&,
+                const NGTextFragmentPaintInfo&,
+                const FloatPoint&,
+                const PaintFlags&,
+                DOMNodeId);
+
   void DrawEmphasisMarks(const Font&,
                          const TextRunPaintInfo&,
                          const AtomicString& mark,
@@ -357,14 +388,11 @@ class PLATFORM_EXPORT GraphicsContext {
 
   void SetDrawLooper(sk_sp<SkDrawLooper>);
 
-  void DrawFocusRing(const Vector<IntRect>&,
-                     float width,
-                     int offset,
-                     float border_radius,
-                     float min_border_width,
-                     const Color&,
-                     mojom::blink::ColorScheme color_scheme);
-  void DrawFocusRing(const Path&, float width, int offset, const Color&);
+  void DrawFocusRingPath(const SkPath&,
+                         const Color&,
+                         float width,
+                         float corner_radius);
+  void DrawFocusRingRect(const SkRRect&, const Color&, float width);
 
   const PaintFlags& FillFlags() const { return ImmutableState()->FillFlags(); }
   // If the length of the path to be stroked is known, pass it in for correct
@@ -384,9 +412,9 @@ class PLATFORM_EXPORT GraphicsContext {
   void Translate(float x, float y);
   // ---------- End transformation methods -----------------
 
-  SkFilterQuality ComputeFilterQuality(Image*,
-                                       const FloatRect& dest,
-                                       const FloatRect& src) const;
+  PaintFlags::FilterQuality ComputeFilterQuality(Image*,
+                                                 const FloatRect& dest,
+                                                 const FloatRect& src) const;
 
   SkSamplingOptions ComputeSamplingOptions(Image* image,
                                            const FloatRect& dest,
@@ -416,8 +444,6 @@ class PLATFORM_EXPORT GraphicsContext {
                                  float stroke_thickness,
                                  StrokeStyle);
   static bool ShouldUseStrokeForTextLine(StrokeStyle);
-
-  static int FocusRingOutsetExtent(int offset, int width);
 
   void SetInDrawingRecorder(bool);
   bool InDrawingRecorder() const { return in_drawing_recorder_; }
@@ -458,22 +484,6 @@ class PLATFORM_EXPORT GraphicsContext {
 
   void SaveLayer(const SkRect* bounds, const PaintFlags*);
   void RestoreLayer();
-
-  // Helpers for drawing a focus ring (drawFocusRing)
-  void DrawFocusRingPath(const SkPath&,
-                         const Color&,
-                         float width,
-                         float border_radius);
-  void DrawFocusRingRect(const SkRect&,
-                         const Color&,
-                         float width,
-                         float border_radius);
-
-  void DrawFocusRingInternal(const Vector<IntRect>&,
-                             float width,
-                             int offset,
-                             float border_radius,
-                             const Color&);
 
   // SkCanvas wrappers.
   void ClipRRect(const SkRRect&,
@@ -542,8 +552,6 @@ class PLATFORM_EXPORT GraphicsContext {
 
   // The current node ID, which is used for marked content in a tagged PDF.
   DOMNodeId dom_node_id_ = kInvalidDOMNodeId;
-
-  DISALLOW_COPY_AND_ASSIGN(GraphicsContext);
 };
 
 }  // namespace blink

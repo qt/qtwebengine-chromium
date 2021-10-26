@@ -40,12 +40,14 @@
 #include "storage/browser/file_system/file_system_operation_context.h"
 #include "storage/browser/file_system/file_system_operation_runner.h"
 #include "storage/browser/file_system/file_system_url.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/async_file_test_helper.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "storage/browser/test/test_file_system_backend.h"
 #include "storage/browser/test/test_file_system_context.h"
 #include "storage/browser/test/test_file_system_options.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/icu/source/i18n/unicode/datefmt.h"
 #include "third_party/icu/source/i18n/unicode/regex.h"
 #include "url/gurl.h"
@@ -195,7 +197,7 @@ class FileSystemURLLoaderFactoryTest
         FROM_HERE,
         base::BindOnce(
             &FileSystemContext::OpenFileSystem, file_system_context_,
-            url::Origin::Create(GURL("http://remote/")),
+            blink::StorageKey::CreateFromStringForTesting("http://remote/"),
             storage::kFileSystemTypeTemporary,
             storage::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT,
             base::BindOnce(&FileSystemURLLoaderFactoryTest::OnOpenFileSystem,
@@ -248,7 +250,7 @@ class FileSystemURLLoaderFactoryTest
 
   FileSystemURL CreateURL(const base::FilePath& file_path) {
     return file_system_context_->CreateCrackedFileSystemURL(
-        url::Origin::Create(GURL("http://remote")),
+        blink::StorageKey::CreateFromStringForTesting("http://remote"),
         storage::kFileSystemTypeTemporary, file_path);
   }
 
@@ -272,7 +274,7 @@ class FileSystemURLLoaderFactoryTest
                  int buf_size) {
     FileSystemURL url;
     url = file_system_context_->CreateCrackedFileSystemURL(
-        url::Origin::Create(GURL("http://remote")),
+        blink::StorageKey::CreateFromStringForTesting("http://remote"),
         storage::kFileSystemTypeTemporary,
         base::FilePath().AppendASCII(file_name));
 
@@ -424,8 +426,8 @@ class FileSystemURLLoaderFactoryTest
     std::move(done_closure).Run();
   }
 
-  storage::FileSystemContext* CreateFileSystemContext(
-      storage::QuotaManagerProxy* quota_manager_proxy,
+  scoped_refptr<storage::FileSystemContext> CreateFileSystemContext(
+      scoped_refptr<storage::QuotaManagerProxy> quota_manager_proxy,
       const base::FilePath& base_path) {
     std::vector<std::unique_ptr<storage::FileSystemBackend>>
         additional_providers;
@@ -434,12 +436,14 @@ class FileSystemURLLoaderFactoryTest
             blocking_task_runner_.get(), base_path));
     if (IsIncognito()) {
       return CreateIncognitoFileSystemContextWithAdditionalProvidersForTesting(
-          io_task_runner_, blocking_task_runner_, quota_manager_proxy,
-          std::move(additional_providers), base_path);
+          io_task_runner_, blocking_task_runner_,
+          std::move(quota_manager_proxy), std::move(additional_providers),
+          base_path);
     } else {
       return CreateFileSystemContextWithAdditionalProvidersForTesting(
-          io_task_runner_, blocking_task_runner_, quota_manager_proxy,
-          std::move(additional_providers), base_path);
+          io_task_runner_, blocking_task_runner_,
+          std::move(quota_manager_proxy), std::move(additional_providers),
+          base_path);
     }
   }
 

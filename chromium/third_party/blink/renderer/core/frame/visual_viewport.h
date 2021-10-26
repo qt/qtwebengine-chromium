@@ -90,6 +90,7 @@ struct PaintPropertyTreeBuilderFragmentContext;
 //           +- scroll_translation_node_ (scroll: scroll_node_)
 // Effect tree:
 //  parent effect state
+//  +- overscroll_elasticity_effect_node_
 //  +- horizontal_scrollbar_effect_node_
 //  +- vertical_scrollbar_effect_node_
 //
@@ -217,6 +218,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   cc::Layer* LayerForHorizontalScrollbar() const override;
   cc::Layer* LayerForVerticalScrollbar() const override;
   bool ScheduleAnimation() override;
+  bool UsesCompositedScrolling() const override { return true; }
   cc::AnimationHost* GetCompositorAnimationHost() const override;
   CompositorAnimationTimeline* GetCompositorAnimationTimeline() const override;
   IntRect VisibleContentRect(
@@ -226,9 +228,10 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   mojom::blink::ColorScheme UsedColorScheme() const override;
 
   // VisualViewport scrolling may involve pinch zoom and gets routed through
-  // WebViewImpl explicitly rather than via ScrollingCoordinator::DidScroll
-  // since it needs to be set in tandem with the page scale delta.
-  void DidScroll(const FloatPoint&) final { NOTREACHED(); }
+  // WebViewImpl explicitly rather than via
+  // ScrollingCoordinator::DidCompositorScroll() since it needs to be set in
+  // tandem with the page scale delta.
+  void DidCompositorScroll(const FloatPoint&) final { NOTREACHED(); }
 
   // Visual Viewport API implementation.
   double OffsetLeft() const;
@@ -257,6 +260,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
 
   TransformPaintPropertyNode* GetDeviceEmulationTransformNode() const;
   TransformPaintPropertyNode* GetOverscrollElasticityTransformNode() const;
+  EffectPaintPropertyNode* GetOverscrollElasticityEffectNode() const;
   TransformPaintPropertyNode* GetPageScaleNode() const;
   TransformPaintPropertyNode* GetScrollTranslationNode() const;
   ScrollPaintPropertyNode* GetScrollNode() const;
@@ -321,6 +325,7 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   scoped_refptr<TransformPaintPropertyNode> page_scale_node_;
   scoped_refptr<TransformPaintPropertyNode> scroll_translation_node_;
   scoped_refptr<ScrollPaintPropertyNode> scroll_node_;
+  scoped_refptr<EffectPaintPropertyNode> overscroll_elasticity_effect_node_;
   scoped_refptr<EffectPaintPropertyNode> horizontal_scrollbar_effect_node_;
   scoped_refptr<EffectPaintPropertyNode> vertical_scrollbar_effect_node_;
 
@@ -354,6 +359,8 @@ class CORE_EXPORT VisualViewport : public GarbageCollected<VisualViewport>,
   // For scrolling, on scroll_layer_, scroll_node_, and scroll element ids of
   // scrollbar layers.
   CompositorElementId scroll_element_id_;
+  // For overscroll elasticity.
+  CompositorElementId elasticity_effect_node_id_;
 
   bool needs_paint_property_update_;
 };

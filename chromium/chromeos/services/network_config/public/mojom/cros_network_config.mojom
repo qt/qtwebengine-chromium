@@ -70,6 +70,7 @@ enum VpnType {
   // Internal VPN types.
   kL2TPIPsec,
   kOpenVPN,
+  kWireGuard,
   // VPN provided by a Chrome Extension.
   kExtension,
   // VPN provided by an Arc++ app.
@@ -320,6 +321,10 @@ struct ApnProperties {
   string? attach;
 };
 
+struct RoamingProperties {
+  bool allow_roaming;
+};
+
 struct CellularProviderProperties {
   string name;
   string code;
@@ -434,8 +439,10 @@ struct ManagedEAPProperties {
   ManagedString? anonymous_identity;
   ManagedCertificatePattern? client_cert_pattern;
   ManagedString? client_cert_pkcs11_id;
+  ManagedString? client_cert_provisioning_profile_id;
   ManagedString? client_cert_ref;
   ManagedString? client_cert_type;
+  ManagedStringList? domain_suffix_match;
   ManagedString? identity;
   ManagedString? inner;
   ManagedString? outer;
@@ -444,10 +451,17 @@ struct ManagedEAPProperties {
   ManagedBoolean? save_credentials;
   ManagedStringList? server_ca_pems;
   ManagedStringList? server_ca_refs;
+  ManagedSubjectAltNameMatchList? subject_alt_name_match;
   ManagedString? subject_match;
   ManagedString? tls_version_max;
   ManagedBoolean? use_proactive_key_caching;
   ManagedBoolean? use_system_cas;
+};
+
+struct ManagedSubjectAltNameMatchList {
+  array<SubjectAltName> active_value;
+  PolicySource policy_source = kNone;
+  array<SubjectAltName> policy_value;
 };
 
 struct ManagedIPConfigProperties {
@@ -464,6 +478,7 @@ struct ManagedIPSecProperties {
   ManagedString authentication_type;
   ManagedCertificatePattern? client_cert_pattern;
   ManagedString? client_cert_pkcs11_id;
+  ManagedString? client_cert_provisioning_profile_id;
   ManagedString? client_cert_ref;
   ManagedString? client_cert_type;
   ManagedEAPProperties? eap;
@@ -515,6 +530,7 @@ struct ManagedOpenVPNProperties {
   ManagedString? cipher;
   ManagedString? client_cert_pkcs11_id;
   ManagedCertificatePattern? client_cert_pattern;
+  ManagedString? client_cert_provisioning_profile_id;
   ManagedString? client_cert_ref;
   ManagedString? client_cert_type;
   ManagedString? compression_algorithm;
@@ -554,7 +570,7 @@ struct ManagedCellularProperties {
   ActivationStateType activation_state;
   // Note: |sim_locked| field is not part of ONC spec.
   bool sim_locked = false;
-  bool allow_roaming = false;
+  ManagedBoolean? allow_roaming;
   ManagedApnList? apn_list;
   ManagedBoolean? auto_connect;
   // List of user-entered custom APN entries. Note: This field is not
@@ -660,6 +676,8 @@ struct ManagedProperties {
   // match the type of |type_properties|, which will always be provided.
   NetworkType type;
   NetworkTypeManagedProperties type_properties;
+  // Represents when the traffic counters for a Service were last reset.
+  mojo_base.mojom.Time? traffic_counter_reset_time;
 };
 
 // Properties for SetProperties and ConfigureNetwork. All of the top level
@@ -714,14 +732,26 @@ struct EAPConfigProperties {
   string? anonymous_identity;
   string? client_cert_pkcs11_id;
   string? client_cert_type;
+  array<string> domain_suffix_match;
   string? identity;
   string? inner;
   string? outer;
   string? password;
   bool save_credentials = false;
   array<string>? server_ca_pems;
+  array<SubjectAltName> subject_alt_name_match;
   string? subject_match;
   bool use_system_cas = false;
+};
+
+struct SubjectAltName {
+  enum Type {
+    kEmail,
+    kDns,
+    kUri
+  };
+  Type type;
+  string value;
 };
 
 // Subset of currently implemented config properties in the UI. Additional
@@ -766,6 +796,9 @@ struct OpenVPNConfigProperties {
 // TODO(stevenjb): Make these a union.
 struct CellularConfigProperties {
   ApnProperties? apn;
+  // If not provided the default allow_roaming behavior will be used for the
+  // network.
+  RoamingProperties? roaming;
 };
 
 struct EthernetConfigProperties {
@@ -832,17 +865,21 @@ struct CellularSimState {
 // Properties provided by GetGlobalPolicy. These properties affect network
 // configuration as a whole instead of individual network configurations.
 struct GlobalPolicy {
+  // If true, only cellular networks present in policy may be connected to and
+  // no new networks may be added or configured.
+  bool allow_only_policy_cellular_networks = false;
+
   // If true, only policy networks may auto connect.
   bool allow_only_policy_networks_to_autoconnect = false;
 
-  // If true, only policy networks may be connected to and no new networks may
-  // be added or configured.
-  bool allow_only_policy_networks_to_connect = false;
+  // If true, only WiFi networks present in policy may be connected to and no
+  // new networks may be added or configured.
+  bool allow_only_policy_wifi_networks_to_connect = false;
 
   // If true and a managed network is available in the visible network list,
-  // only policy networks may be connected to and no new networks may be added
-  // or configured.
-  bool allow_only_policy_networks_to_connect_if_available = false;
+  // only WiFi networks present in policy may be connected to and no new
+  // networks may be added or configured.
+  bool allow_only_policy_wifi_networks_to_connect_if_available = false;
 
   // List of blocked networks which can not be connected to.
   array<string> blocked_hex_ssids;
@@ -905,6 +942,32 @@ struct AlwaysOnVpnProperties {
   // independently of |mode|, but it expected to be only used when |mode| is not
   // AlwaysOnVpnMode::kOff.
   string service_guid;
+};
+
+// Source of the traffic. These sources are kept in sync with
+// third_party/cros_system_api/dbus/shill/dbus-constants.h.
+enum TrafficCounterSource {
+  kUnknown,
+  kChrome,
+  kUser,
+  kArc,
+  kCrosvm,
+  kPluginvm,
+  kUpdateEngine,
+  kVpn,
+  kSystem,
+};
+
+// Information about a traffic counter for a single source.
+struct TrafficCounter {
+  // Source of traffic.
+  TrafficCounterSource source;
+  // Corresponds to the number of bytes received by |source| since the last
+  // reset.
+  uint64 rx_bytes;
+  // Corresponds to the number of bytes transmitted by |source| since the last
+  // reset.
+  uint64 tx_bytes;
 };
 
 // Interface for fetching and setting network configuration properties, e.g.
@@ -1023,6 +1086,13 @@ interface CrosNetworkConfig {
   // Sets the always-on VPN mode and service with |properties.mode| and
   // |properties.service_guid|. The service GUID must match a VPN service.
   SetAlwaysOnVpn(AlwaysOnVpnProperties properties);
+
+  // Requests traffic counters for a service with ID |guid|.
+  RequestTrafficCounters(string guid) =>
+    (array<TrafficCounter> traffic_counters);
+
+  // Resets traffic counters for a service with ID |guid|.
+  ResetTrafficCounters(string guid);
 };
 
 interface CrosNetworkConfigObserver {

@@ -11,12 +11,15 @@
 #include <string>
 #include <vector>
 
-#include "base/containers/span.h"
 #include "base/macros.h"
-#include "base/values.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/hashed_extension_id.h"
 #include "extensions/common/mojom/manifest.mojom-shared.h"
+
+namespace base {
+class DictionaryValue;
+class Value;
+}  // namespace base
 
 namespace extensions {
 struct InstallWarning;
@@ -39,6 +42,7 @@ class Manifest final {
     TYPE_PLATFORM_APP = 6,
     TYPE_SHARED_MODULE = 7,
     TYPE_LOGIN_SCREEN_EXTENSION = 8,
+    TYPE_CHROMEOS_SYSTEM_EXTENSION = 9,
 
     // New enum values must go above here.
     NUM_LOAD_TYPES
@@ -157,6 +161,9 @@ class Manifest final {
     return type_ == TYPE_LOGIN_SCREEN_EXTENSION;
   }
   bool is_shared_module() const { return type_ == TYPE_SHARED_MODULE; }
+  bool is_chromeos_system_extension() const {
+    return type_ == TYPE_CHROMEOS_SYSTEM_EXTENSION;
+  }
 
   // These access the wrapped manifest value, returning false when the property
   // does not exist or if the manifest type can't access it.
@@ -176,15 +183,7 @@ class Manifest final {
                      const base::DictionaryValue** out_value) const;
   bool GetDictionary(const std::string& path,
                      const base::Value** out_value) const;
-  // Deprecated: Use the GetList() overload that accepts a base::Value output
-  // parameter instead.
-  bool GetList(const std::string& path,
-               const base::ListValue** out_value) const;
   bool GetList(const std::string& path, const base::Value** out_value) const;
-
-  bool GetPathOfType(const std::string& path,
-                     base::Value::Type type,
-                     const base::Value** out_value) const;
 
   // Returns true if this equals the |other| manifest.
   bool EqualsForTesting(const Manifest& other) const;

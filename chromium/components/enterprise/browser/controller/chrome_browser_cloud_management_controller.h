@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
@@ -15,11 +16,9 @@
 #include "base/observer_list.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/policy/core/common/cloud/cloud_policy_client.h"
-
-#if !defined(OS_ANDROID)
 #include "components/enterprise/browser/reporting/reporting_delegate_factory.h"
-#endif
+#include "components/policy/core/common/cloud/cloud_policy_client.h"
+#include "components/policy/core/common/policy_service.h"
 
 class PrefService;
 
@@ -28,11 +27,9 @@ class NetworkConnectionTracker;
 class SharedURLLoaderFactory;
 }  // namespace network
 
-#if !defined(OS_ANDROID)
 namespace enterprise_reporting {
 class ReportScheduler;
-}
-#endif
+}  // namespace enterprise_reporting
 
 namespace policy {
 class ChromeBrowserCloudManagementRegistrar;
@@ -126,24 +123,35 @@ class ChromeBrowserCloudManagementController
     virtual scoped_refptr<network::SharedURLLoaderFactory>
     GetSharedURLLoaderFactory() = 0;
 
-#if !defined(OS_ANDROID)
-    // Creates and returns a ReportScheduler for enterprise reporting. Delegates
-    // must pass the platform-specific factory that should be used to
-    // instantiate the delegates for the reporting objects.
-    virtual std::unique_ptr<enterprise_reporting::ReportScheduler>
-    CreateReportScheduler(CloudPolicyClient* client) = 0;
-#endif
-
     // Returns a BestEffort Task Runner, bound to the UI thread like the rest of
     // this class, that is meant to be used to schedule asynchronous tasks
     // during startup.
     virtual scoped_refptr<base::SingleThreadTaskRunner>
     GetBestEffortTaskRunner() = 0;
 
+    // Gets the platform-specific reporting delegate factory.
+    virtual std::unique_ptr<enterprise_reporting::ReportingDelegateFactory>
+    GetReportingDelegateFactory() = 0;
+
     // Sets the SharedURLLoaderFactory that this object will use to make
     // requests to GAIA.
     virtual void SetGaiaURLLoaderFactory(
         scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory) = 0;
+
+    // Returns true if the cloud policy manager can be created rightaway of if
+    // it should be deferred for some reason depending on the platform (e.g. on
+    // Android it should wait for PolicyService initialization).
+    virtual bool ReadyToCreatePolicyManager() = 0;
+
+    // Returns true if controller initialization can proceed, and false it it
+    // needs to be deferred. On platforms where controller initialization isn't
+    // blocked, this method should return true.
+    virtual bool ReadyToInit() = 0;
+
+    // Postpones controller initialization until |ReadyToInit()| is true.
+    // Implemented in the delegate because the reason why initialization needs
+    // to be deferred may vary across platforms.
+    virtual void DeferInitialization(base::OnceClosure init_callback);
   };
 
   class Observer {
@@ -157,10 +165,8 @@ class ChromeBrowserCloudManagementController
     // Called when the browser has been unenrolled.
     virtual void OnBrowserUnenrolled(bool succeeded) {}
 
-#if !defined(OS_ANDROID)
     // Called when the cloud reporting is launched.
     virtual void OnCloudReportingLaunched() {}
-#endif
   };
 
   // Directory name under the user-data-dir where the policy data is stored.
@@ -174,13 +180,30 @@ class ChromeBrowserCloudManagementController
   // The Chrome browser cloud management is only enabled on Chrome by default.
   // However, it can be enabled on Chromium by command line switch for test and
   // development purpose.
-  bool IsEnabled();
+  static bool IsEnabled();
 
+  // Returns a MachineLevelUserCloudPolicyManager instance if cloud management
+  // is enabled, or nullptr otherwise.
+  // TODO(http://crbug.com/1221173): Consider deprecating this method (still
+  // used on iOS) in favor of DeferrableCreatePolicyManager.
   std::unique_ptr<MachineLevelUserCloudPolicyManager> CreatePolicyManager(
       ConfigurationPolicyProvider* platform_provider);
 
+  // Invokes |callback| with a MachineLevelUserCloudPolicyManager instance if
+  // cloud management is enabled, or with nullptr otherwise. Callback invocation
+  // may be deferred if it can't be determined rightaway if cloud management
+  // is enabled (e.g. on Android).
+  void DeferrableCreatePolicyManager(
+      ConfigurationPolicyProvider* platform_provider,
+      base::OnceCallback<
+          void(std::unique_ptr<MachineLevelUserCloudPolicyManager>)> callback);
+
   void Init(PrefService* local_state,
             scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
+
+  void MaybeInit(
+      PrefService* local_state,
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
 
   bool WaitUntilPolicyEnrollmentFinished();
 
@@ -210,9 +233,7 @@ class ChromeBrowserCloudManagementController
  protected:
   void NotifyPolicyRegisterFinished(bool succeeded);
   void NotifyBrowserUnenrolled(bool succeeded);
-#if !defined(OS_ANDROID)
   void NotifyCloudReportingLaunched();
-#endif
 
  private:
   bool GetEnrollmentTokenAndClientId(std::string* enrollment_token,
@@ -224,9 +245,14 @@ class ChromeBrowserCloudManagementController
   void InvalidatePolicies();
   void InvalidateDMTokenCallback(bool success);
 
-#if !defined(OS_ANDROID)
   void CreateReportScheduler();
-#endif
+
+  // Implementation of |DeferrableCreatePolicyManager| that can be invoked right
+  // away or bound to a callback to be executed later.
+  void DeferrableCreatePolicyManagerImpl(
+      ConfigurationPolicyProvider* platform_provider,
+      base::OnceCallback<
+          void(std::unique_ptr<MachineLevelUserCloudPolicyManager>)> callback);
 
   base::ObserverList<Observer, true>::Unchecked observers_;
 
@@ -239,11 +265,15 @@ class ChromeBrowserCloudManagementController
   // Time at which the enrollment process was started.  Used to log UMA metric.
   base::Time enrollment_start_time_;
 
-#if !defined(OS_ANDROID)
   std::unique_ptr<enterprise_reporting::ReportScheduler> report_scheduler_;
-#endif
 
   std::unique_ptr<policy::CloudPolicyClient> cloud_policy_client_;
+
+  // Holds a callback to the function that will consume the
+  // MachineLevelUserCloudPolicyManager object once it's created.
+  // This allows creation to be deferred on platforms in which the enrollment
+  // token may not be immediately available (e.g. Android).
+  base::OnceClosure create_cloud_policy_manager_callback_;
 
   base::WeakPtrFactory<ChromeBrowserCloudManagementController> weak_factory_{
       this};

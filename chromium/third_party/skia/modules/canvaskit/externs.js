@@ -83,6 +83,7 @@ var CanvasKit = {
   _decodeAnimatedImage: function() {},
   _decodeImage: function() {},
   _getShadowLocalBounds: function() {},
+  _setTextureCleanup: function() {},
 
   // The testing object is meant to expose internal functions
   // for more fine-grained testing, e.g. parseColor
@@ -184,9 +185,6 @@ var CanvasKit = {
   },
 
   ParagraphStyle: function() {},
-  RSXFormBuilder: function() {},
-  ColorBuilder: function() {},
-  RectBuilder: function() {},
 
   AnimatedImage: {
     // public API (from C++ bindings)
@@ -207,14 +205,12 @@ var CanvasKit = {
     drawImage: function() {},
     drawImageCubic: function() {},
     drawImageOptions: function() {},
-    drawImageAtCurrentFrame: function() {},
     drawLine: function() {},
     drawPaint: function() {},
     drawParagraph: function() {},
     drawPath: function() {},
     drawPicture: function() {},
     drawRect4f: function() {},
-    drawText: function() {},
     drawTextBlob: function() {},
     drawVertices: function() {},
     getSaveCount: function() {},
@@ -363,6 +359,7 @@ var CanvasKit = {
 
     // private API (from C++ bindings)
     _getGlyphIDs: function() {},
+    _getGlyphIntercepts: function() {},
     _getGlyphWidthBounds: function() {},
   },
 
@@ -412,7 +409,8 @@ var CanvasKit = {
     MakeMatrixTransform: function() {},
 
     // private API
-    _MakeMatrixTransform: function() {},
+    _MakeMatrixTransformCubic: function() {},
+    _MakeMatrixTransformOptions: function() {},
   },
 
   // These are defined in interface.js
@@ -457,8 +455,6 @@ var CanvasKit = {
     // public API (from C++ bindings)
     /** @return {CanvasKit.Paint} */
     copy: function() {},
-    getBlendMode: function() {},
-    getFilterQuality: function() {},
     getStrokeCap: function() {},
     getStrokeJoin: function() {},
     getStrokeMiter: function() {},
@@ -466,7 +462,6 @@ var CanvasKit = {
     setAntiAlias: function() {},
     setBlendMode: function() {},
     setColorInt: function() {},
-    setFilterQuality: function() {},
     setImageFilter: function() {},
     setMaskFilter: function() {},
     setPathEffect: function() {},
@@ -534,6 +529,7 @@ var CanvasKit = {
     getFillType: function() {},
     isEmpty: function() {},
     isVolatile: function() {},
+    makeAsWinding: function() {},
     reset: function() {},
     rewind: function() {},
     setFillType: function() {},
@@ -638,7 +634,6 @@ var CanvasKit = {
     MakeBlend: function() {},
     MakeColor: function() {},
     MakeFractalNoise: function() {},
-    MakeLerp: function() {},
     MakeLinearGradient: function() {},
     MakeRadialGradient: function() {},
     MakeSweepGradient: function() {},
@@ -666,12 +661,15 @@ var CanvasKit = {
     openGLversion: {},
 
     prototype: {
+      makeImageFromTexture: function() {},
+      makeImageFromTextureSource: function() {},
       /** @return {CanvasKit.Image} */
       makeImageSnapshot: function() {},
     },
 
     // private API
     _flush: function() {},
+    _makeImageFromTexture: function() {},
     _makeImageSnapshot: function() {},
     _makeRasterDirect: function() {},
     delete: function() {},
@@ -689,6 +687,15 @@ var CanvasKit = {
     _MakeFromRSXform: function() {},
     _MakeFromRSXformGlyphs: function() {},
     _MakeFromText: function() {},
+  },
+
+  Typeface: {
+    MakeFreeTypeFaceFromData: function() {},
+    prototype: {
+      getGlyphIDs: function() {},
+    },
+    _MakeFreeTypeFaceFromData: function() {},
+    _getGlyphIDs: function() {},
   },
 
   // These are defined in interface.js
@@ -832,13 +839,6 @@ var CanvasKit = {
   FilterMode: {
     Linear: {},
     Nearest: {},
-  },
-
-  FilterQuality: {
-    None: {},
-    Low: {},
-    Medium: {},
-    High: {},
   },
 
   FontSlant: {
@@ -1042,16 +1042,6 @@ CanvasKit.Surface.prototype.requestAnimationFrame = function() {};
 CanvasKit.Surface.prototype.drawOnce = function() {};
 
 CanvasKit.FontMgr.prototype.MakeTypefaceFromData = function() {};
-
-CanvasKit.RSXFormBuilder.prototype.build = function() {};
-CanvasKit.RSXFormBuilder.prototype.delete = function() {};
-CanvasKit.RSXFormBuilder.prototype.push = function() {};
-CanvasKit.RSXFormBuilder.prototype.set = function() {};
-
-CanvasKit.ColorBuilder.prototype.build = function() {};
-CanvasKit.ColorBuilder.prototype.delete = function() {};
-CanvasKit.ColorBuilder.prototype.push = function() {};
-CanvasKit.ColorBuilder.prototype.set = function() {};
 
 CanvasKit.RuntimeEffect.prototype.makeShader = function() {};
 CanvasKit.RuntimeEffect.prototype.makeShaderWithChildren = function() {};

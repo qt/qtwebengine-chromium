@@ -14,9 +14,9 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/containers/queue.h"
+#include "base/cxx17_backports.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/numerics/ranges.h"
 #include "base/task/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
@@ -848,7 +848,7 @@ base::TimeDelta ArCoreGl::EstimatedArCoreFrameTime() {
   // Ensure that the returned value is within ARCore's nominal frame time range.
   // This helps avoid underestimating the frame rate if the app is too slow
   // to reach the minimum target FPS value.
-  return base::ClampToRange(frametime, min_frametime, max_frametime);
+  return base::clamp(frametime, min_frametime, max_frametime);
 }
 
 base::TimeDelta ArCoreGl::WaitTimeForArCoreUpdate() {
@@ -1420,7 +1420,7 @@ void ArCoreGl::SubscribeToHitTest(
   // Input source state information is known to ArCoreGl and not to ArCore -
   // check if we recognize the input source id.
 
-  if (native_origin_information->is_input_source_id()) {
+  if (native_origin_information->is_input_source_space_info()) {
     DVLOG(1) << __func__
              << ": ARCore device supports only transient input sources for "
                 "now. Rejecting subscription request.";
@@ -1547,13 +1547,17 @@ void ArCoreGl::ProcessFrame(
         arcore_->GetHitTestSubscriptionResults(mojo_from_viewer.ToTransform(),
                                                *frame_data->input_state);
 
-    arcore_->ProcessAnchorCreationRequests(
-        mojo_from_viewer.ToTransform(), *frame_data->input_state,
-        frame_data->time_delta + base::TimeTicks());
+    if (IsFeatureEnabled(device::mojom::XRSessionFeature::ANCHORS)) {
+      arcore_->ProcessAnchorCreationRequests(
+          mojo_from_viewer.ToTransform(), *frame_data->input_state,
+          frame_data->time_delta + base::TimeTicks());
+    }
   }
 
   // Get anchors data, including anchors created this frame.
-  frame_data->anchors_data = arcore_->GetAnchorsData();
+  if (IsFeatureEnabled(device::mojom::XRSessionFeature::ANCHORS)) {
+    frame_data->anchors_data = arcore_->GetAnchorsData();
+  }
 
   // Get planes data if it was requested.
   if (IsFeatureEnabled(device::mojom::XRSessionFeature::PLANE_DETECTION)) {

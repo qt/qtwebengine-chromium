@@ -14,6 +14,7 @@
 #include "services/network/public/mojom/fetch_api.mojom-blink.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom-blink.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink-forward.h"
+#include "third_party/blink/public/mojom/fetch/fetch_api_response.mojom-blink.h"
 #include "third_party/blink/public/mojom/loader/request_context_frame_type.mojom-blink.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_stream_handle.mojom-blink.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -220,9 +221,7 @@ void FetchRespondWithObserver::OnResponseRejected(
 void FetchRespondWithObserver::OnResponseFulfilled(
     ScriptState* script_state,
     const ScriptValue& value,
-    ExceptionState::ContextType context_type,
-    const char* interface_name,
-    const char* property_name) {
+    const ExceptionContext& exception_context) {
   DCHECK(GetExecutionContext());
   if (!V8Response::HasInstance(value.V8Value(), script_state->GetIsolate())) {
     OnResponseRejected(ServiceWorkerResponseError::kNoV8Instance);
@@ -320,8 +319,8 @@ void FetchRespondWithObserver::OnResponseFulfilled(
     // drained or loading begins.
     fetch_api_response->side_data_blob = buffer->TakeSideDataBlob();
 
-    ExceptionState exception_state(script_state->GetIsolate(), context_type,
-                                   interface_name, property_name);
+    ExceptionState exception_state(script_state->GetIsolate(),
+                                   exception_context);
 
     scoped_refptr<BlobDataHandle> blob_data_handle =
         buffer->DrainAsBlobDataHandle(

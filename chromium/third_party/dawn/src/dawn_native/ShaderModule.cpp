@@ -14,8 +14,8 @@
 
 #include "dawn_native/ShaderModule.h"
 
+#include "common/Constants.h"
 #include "common/HashUtils.h"
-#include "common/VertexFormatUtils.h"
 #include "dawn_native/BindGroupLayout.h"
 #include "dawn_native/ChainUtils_autogen.h"
 #include "dawn_native/CompilationMessages.h"
@@ -24,17 +24,8 @@
 #include "dawn_native/Pipeline.h"
 #include "dawn_native/PipelineLayout.h"
 #include "dawn_native/RenderPipeline.h"
-#include "dawn_native/SpirvUtils.h"
 #include "dawn_native/TintUtils.h"
 
-#include <spirv-tools/libspirv.hpp>
-#include <spirv-tools/optimizer.hpp>
-#include <spirv_cross.hpp>
-
-// Tint include must be after spirv_cross.hpp, because spirv-cross has its own
-// version of spirv_headers. We also need to undef SPV_REVISION because SPIRV-Cross
-// is at 3 while spirv-headers is at 4.
-#undef SPV_REVISION
 #include <tint/tint.h>
 
 #include <sstream>
@@ -51,114 +42,80 @@ namespace dawn_native {
         }
 
         tint::transform::VertexFormat ToTintVertexFormat(wgpu::VertexFormat format) {
-            format = dawn::NormalizeVertexFormat(format);
             switch (format) {
                 case wgpu::VertexFormat::Uint8x2:
-                    return tint::transform::VertexFormat::kVec2U8;
+                    return tint::transform::VertexFormat::kUint8x2;
                 case wgpu::VertexFormat::Uint8x4:
-                    return tint::transform::VertexFormat::kVec4U8;
+                    return tint::transform::VertexFormat::kUint8x4;
                 case wgpu::VertexFormat::Sint8x2:
-                    return tint::transform::VertexFormat::kVec2I8;
+                    return tint::transform::VertexFormat::kSint8x2;
                 case wgpu::VertexFormat::Sint8x4:
-                    return tint::transform::VertexFormat::kVec4I8;
+                    return tint::transform::VertexFormat::kSint8x4;
                 case wgpu::VertexFormat::Unorm8x2:
-                    return tint::transform::VertexFormat::kVec2U8Norm;
+                    return tint::transform::VertexFormat::kUnorm8x2;
                 case wgpu::VertexFormat::Unorm8x4:
-                    return tint::transform::VertexFormat::kVec4U8Norm;
+                    return tint::transform::VertexFormat::kUnorm8x4;
                 case wgpu::VertexFormat::Snorm8x2:
-                    return tint::transform::VertexFormat::kVec2I8Norm;
+                    return tint::transform::VertexFormat::kSnorm8x2;
                 case wgpu::VertexFormat::Snorm8x4:
-                    return tint::transform::VertexFormat::kVec4I8Norm;
+                    return tint::transform::VertexFormat::kSnorm8x4;
                 case wgpu::VertexFormat::Uint16x2:
-                    return tint::transform::VertexFormat::kVec2U16;
+                    return tint::transform::VertexFormat::kUint16x2;
                 case wgpu::VertexFormat::Uint16x4:
-                    return tint::transform::VertexFormat::kVec4U16;
+                    return tint::transform::VertexFormat::kUint16x4;
                 case wgpu::VertexFormat::Sint16x2:
-                    return tint::transform::VertexFormat::kVec2I16;
+                    return tint::transform::VertexFormat::kSint16x2;
                 case wgpu::VertexFormat::Sint16x4:
-                    return tint::transform::VertexFormat::kVec4I16;
+                    return tint::transform::VertexFormat::kSint16x4;
                 case wgpu::VertexFormat::Unorm16x2:
-                    return tint::transform::VertexFormat::kVec2U16Norm;
+                    return tint::transform::VertexFormat::kUnorm16x2;
                 case wgpu::VertexFormat::Unorm16x4:
-                    return tint::transform::VertexFormat::kVec4U16Norm;
+                    return tint::transform::VertexFormat::kUnorm16x4;
                 case wgpu::VertexFormat::Snorm16x2:
-                    return tint::transform::VertexFormat::kVec2I16Norm;
+                    return tint::transform::VertexFormat::kSnorm16x2;
                 case wgpu::VertexFormat::Snorm16x4:
-                    return tint::transform::VertexFormat::kVec4I16Norm;
+                    return tint::transform::VertexFormat::kSnorm16x4;
                 case wgpu::VertexFormat::Float16x2:
-                    return tint::transform::VertexFormat::kVec2F16;
+                    return tint::transform::VertexFormat::kFloat16x2;
                 case wgpu::VertexFormat::Float16x4:
-                    return tint::transform::VertexFormat::kVec4F16;
+                    return tint::transform::VertexFormat::kFloat16x4;
                 case wgpu::VertexFormat::Float32:
-                    return tint::transform::VertexFormat::kF32;
+                    return tint::transform::VertexFormat::kFloat32;
                 case wgpu::VertexFormat::Float32x2:
-                    return tint::transform::VertexFormat::kVec2F32;
+                    return tint::transform::VertexFormat::kFloat32x2;
                 case wgpu::VertexFormat::Float32x3:
-                    return tint::transform::VertexFormat::kVec3F32;
+                    return tint::transform::VertexFormat::kFloat32x3;
                 case wgpu::VertexFormat::Float32x4:
-                    return tint::transform::VertexFormat::kVec4F32;
+                    return tint::transform::VertexFormat::kFloat32x4;
                 case wgpu::VertexFormat::Uint32:
-                    return tint::transform::VertexFormat::kU32;
+                    return tint::transform::VertexFormat::kUint32;
                 case wgpu::VertexFormat::Uint32x2:
-                    return tint::transform::VertexFormat::kVec2U32;
+                    return tint::transform::VertexFormat::kUint32x2;
                 case wgpu::VertexFormat::Uint32x3:
-                    return tint::transform::VertexFormat::kVec3U32;
+                    return tint::transform::VertexFormat::kUint32x3;
                 case wgpu::VertexFormat::Uint32x4:
-                    return tint::transform::VertexFormat::kVec4U32;
+                    return tint::transform::VertexFormat::kUint32x4;
                 case wgpu::VertexFormat::Sint32:
-                    return tint::transform::VertexFormat::kI32;
+                    return tint::transform::VertexFormat::kSint32;
                 case wgpu::VertexFormat::Sint32x2:
-                    return tint::transform::VertexFormat::kVec2I32;
+                    return tint::transform::VertexFormat::kSint32x2;
                 case wgpu::VertexFormat::Sint32x3:
-                    return tint::transform::VertexFormat::kVec3I32;
+                    return tint::transform::VertexFormat::kSint32x3;
                 case wgpu::VertexFormat::Sint32x4:
-                    return tint::transform::VertexFormat::kVec4I32;
+                    return tint::transform::VertexFormat::kSint32x4;
 
                 case wgpu::VertexFormat::Undefined:
-                    break;
-
-                // Deprecated formats (should be unreachable after NormalizeVertexFormat call)
-                case wgpu::VertexFormat::UChar2:
-                case wgpu::VertexFormat::UChar4:
-                case wgpu::VertexFormat::Char2:
-                case wgpu::VertexFormat::Char4:
-                case wgpu::VertexFormat::UChar2Norm:
-                case wgpu::VertexFormat::UChar4Norm:
-                case wgpu::VertexFormat::Char2Norm:
-                case wgpu::VertexFormat::Char4Norm:
-                case wgpu::VertexFormat::UShort2:
-                case wgpu::VertexFormat::UShort4:
-                case wgpu::VertexFormat::UShort2Norm:
-                case wgpu::VertexFormat::UShort4Norm:
-                case wgpu::VertexFormat::Short2:
-                case wgpu::VertexFormat::Short4:
-                case wgpu::VertexFormat::Short2Norm:
-                case wgpu::VertexFormat::Short4Norm:
-                case wgpu::VertexFormat::Half2:
-                case wgpu::VertexFormat::Half4:
-                case wgpu::VertexFormat::Float:
-                case wgpu::VertexFormat::Float2:
-                case wgpu::VertexFormat::Float3:
-                case wgpu::VertexFormat::Float4:
-                case wgpu::VertexFormat::UInt:
-                case wgpu::VertexFormat::UInt2:
-                case wgpu::VertexFormat::UInt3:
-                case wgpu::VertexFormat::UInt4:
-                case wgpu::VertexFormat::Int:
-                case wgpu::VertexFormat::Int2:
-                case wgpu::VertexFormat::Int3:
-                case wgpu::VertexFormat::Int4:
                     break;
             }
             UNREACHABLE();
         }
 
-        tint::transform::InputStepMode ToTintInputStepMode(wgpu::InputStepMode mode) {
+        tint::transform::VertexStepMode ToTintVertexStepMode(wgpu::VertexStepMode mode) {
             switch (mode) {
-                case wgpu::InputStepMode::Vertex:
-                    return tint::transform::InputStepMode::kVertex;
-                case wgpu::InputStepMode::Instance:
-                    return tint::transform::InputStepMode::kInstance;
+                case wgpu::VertexStepMode::Vertex:
+                    return tint::transform::VertexStepMode::kVertex;
+                case wgpu::VertexStepMode::Instance:
+                    return tint::transform::VertexStepMode::kInstance;
             }
         }
 
@@ -189,10 +146,13 @@ namespace dawn_native {
                 case tint::inspector::ResourceBinding::ResourceType::kSampledTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kMultisampledTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kDepthTexture:
+                case tint::inspector::ResourceBinding::ResourceType::kDepthMultisampledTexture:
                     return BindingInfoType::Texture;
                 case tint::inspector::ResourceBinding::ResourceType::kReadOnlyStorageTexture:
                 case tint::inspector::ResourceBinding::ResourceType::kWriteOnlyStorageTexture:
                     return BindingInfoType::StorageTexture;
+                case tint::inspector::ResourceBinding::ResourceType::kExternalTexture:
+                    return BindingInfoType::ExternalTexture;
 
                 default:
                     UNREACHABLE();
@@ -298,17 +258,17 @@ namespace dawn_native {
             }
         }
 
-        wgpu::TextureSampleType TintSampledKindToTextureSampleType(
+        SampleTypeBit TintSampledKindToSampleTypeBit(
             tint::inspector::ResourceBinding::SampledKind s) {
             switch (s) {
                 case tint::inspector::ResourceBinding::SampledKind::kSInt:
-                    return wgpu::TextureSampleType::Sint;
+                    return SampleTypeBit::Sint;
                 case tint::inspector::ResourceBinding::SampledKind::kUInt:
-                    return wgpu::TextureSampleType::Uint;
+                    return SampleTypeBit::Uint;
                 case tint::inspector::ResourceBinding::SampledKind::kFloat:
-                    return wgpu::TextureSampleType::Float;
+                    return SampleTypeBit::Float | SampleTypeBit::UnfilterableFloat;
                 case tint::inspector::ResourceBinding::SampledKind::kUnknown:
-                    return wgpu::TextureSampleType::Undefined;
+                    return SampleTypeBit::None;
             }
         }
 
@@ -321,6 +281,21 @@ namespace dawn_native {
                     return wgpu::TextureComponentType::Sint;
                 case tint::inspector::ComponentType::kUInt:
                     return wgpu::TextureComponentType::Uint;
+                case tint::inspector::ComponentType::kUnknown:
+                    return DAWN_VALIDATION_ERROR(
+                        "Attempted to convert 'Unknown' component type from Tint");
+            }
+        }
+
+        ResultOrError<VertexFormatBaseType> TintComponentTypeToVertexFormatBaseType(
+            tint::inspector::ComponentType type) {
+            switch (type) {
+                case tint::inspector::ComponentType::kFloat:
+                    return VertexFormatBaseType::Float;
+                case tint::inspector::ComponentType::kSInt:
+                    return VertexFormatBaseType::Sint;
+                case tint::inspector::ComponentType::kUInt:
+                    return VertexFormatBaseType::Uint;
                 case tint::inspector::ComponentType::kUnknown:
                     return DAWN_VALIDATION_ERROR(
                         "Attempted to convert 'Unknown' component type from Tint");
@@ -354,46 +329,68 @@ namespace dawn_native {
             }
         }
 
-        MaybeError ValidateSpirv(const uint32_t* code, uint32_t codeSize) {
-            spvtools::SpirvTools spirvTools(SPV_ENV_VULKAN_1_1);
-
-            std::ostringstream errorStream;
-            errorStream << "SPIRV Validation failure:" << std::endl;
-
-            spirvTools.SetMessageConsumer([&errorStream](spv_message_level_t level, const char*,
-                                                         const spv_position_t& position,
-                                                         const char* message) {
-                switch (level) {
-                    case SPV_MSG_FATAL:
-                    case SPV_MSG_INTERNAL_ERROR:
-                    case SPV_MSG_ERROR:
-                        errorStream << "error: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    case SPV_MSG_WARNING:
-                        errorStream << "warning: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    case SPV_MSG_INFO:
-                        errorStream << "info: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    default:
-                        break;
-                }
-            });
-
-            if (!spirvTools.Validate(code, codeSize)) {
-                std::string disassembly;
-                if (spirvTools.Disassemble(std::vector<uint32_t>(code, code + codeSize),
-                                           &disassembly)) {
-                    errorStream << "disassembly:" << std::endl << disassembly;
-                }
-
-                return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
+        ResultOrError<InterStageComponentType> TintComponentTypeToInterStageComponentType(
+            tint::inspector::ComponentType type) {
+            switch (type) {
+                case tint::inspector::ComponentType::kFloat:
+                    return InterStageComponentType::Float;
+                case tint::inspector::ComponentType::kSInt:
+                    return InterStageComponentType::Sint;
+                case tint::inspector::ComponentType::kUInt:
+                    return InterStageComponentType::Uint;
+                case tint::inspector::ComponentType::kUnknown:
+                    return DAWN_VALIDATION_ERROR(
+                        "Attempted to convert 'Unknown' component type from Tint");
             }
+        }
 
-            return {};
+        ResultOrError<uint32_t> TintCompositionTypeToInterStageComponentCount(
+            tint::inspector::CompositionType type) {
+            switch (type) {
+                case tint::inspector::CompositionType::kScalar:
+                    return 1u;
+                case tint::inspector::CompositionType::kVec2:
+                    return 2u;
+                case tint::inspector::CompositionType::kVec3:
+                    return 3u;
+                case tint::inspector::CompositionType::kVec4:
+                    return 4u;
+                case tint::inspector::CompositionType::kUnknown:
+                    return DAWN_VALIDATION_ERROR(
+                        "Attempt to convert 'Unknown' composition type from Tint");
+            }
+        }
+
+        ResultOrError<InterpolationType> TintInterpolationTypeToInterpolationType(
+            tint::inspector::InterpolationType type) {
+            switch (type) {
+                case tint::inspector::InterpolationType::kPerspective:
+                    return InterpolationType::Perspective;
+                case tint::inspector::InterpolationType::kLinear:
+                    return InterpolationType::Linear;
+                case tint::inspector::InterpolationType::kFlat:
+                    return InterpolationType::Flat;
+                case tint::inspector::InterpolationType::kUnknown:
+                    return DAWN_VALIDATION_ERROR(
+                        "Attempted to convert 'Unknown' interpolation type from Tint");
+            }
+        }
+
+        ResultOrError<InterpolationSampling> TintInterpolationSamplingToInterpolationSamplingType(
+            tint::inspector::InterpolationSampling type) {
+            switch (type) {
+                case tint::inspector::InterpolationSampling::kNone:
+                    return InterpolationSampling::None;
+                case tint::inspector::InterpolationSampling::kCenter:
+                    return InterpolationSampling::Center;
+                case tint::inspector::InterpolationSampling::kCentroid:
+                    return InterpolationSampling::Centroid;
+                case tint::inspector::InterpolationSampling::kSample:
+                    return InterpolationSampling::Sample;
+                case tint::inspector::InterpolationSampling::kUnknown:
+                    return DAWN_VALIDATION_ERROR(
+                        "Attempted to convert 'Unknown' interpolation sampling type from Tint");
+            }
         }
 
         ResultOrError<tint::Program> ParseWGSL(const tint::Source::File* file,
@@ -434,20 +431,6 @@ namespace dawn_native {
             return std::move(program);
         }
 
-        ResultOrError<std::vector<uint32_t>> ModuleToSPIRV(const tint::Program* program) {
-            std::ostringstream errorStream;
-            errorStream << "Tint SPIR-V writer failure:" << std::endl;
-
-            tint::writer::spirv::Generator generator(program);
-            if (!generator.Generate()) {
-                errorStream << "Generator: " << generator.error() << std::endl;
-                return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
-            }
-
-            std::vector<uint32_t> spirv = generator.result();
-            return std::move(spirv);
-        }
-
         std::vector<uint64_t> GetBindGroupMinBufferSizes(
             const EntryPointMetadata::BindingGroupInfoMap& shaderBindings,
             const BindGroupLayoutBase* layout) {
@@ -478,45 +461,7 @@ namespace dawn_native {
             return requiredBufferSizes;
         }
 
-        ResultOrError<std::vector<uint32_t>> RunRobustBufferAccessPass(
-            const std::vector<uint32_t>& spirv) {
-            spvtools::Optimizer opt(SPV_ENV_VULKAN_1_1);
-
-            std::ostringstream errorStream;
-            errorStream << "SPIRV Optimizer failure:" << std::endl;
-            opt.SetMessageConsumer([&errorStream](spv_message_level_t level, const char*,
-                                                  const spv_position_t& position,
-                                                  const char* message) {
-                switch (level) {
-                    case SPV_MSG_FATAL:
-                    case SPV_MSG_INTERNAL_ERROR:
-                    case SPV_MSG_ERROR:
-                        errorStream << "error: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    case SPV_MSG_WARNING:
-                        errorStream << "warning: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    case SPV_MSG_INFO:
-                        errorStream << "info: line " << position.index << ": " << message
-                                    << std::endl;
-                        break;
-                    default:
-                        break;
-                }
-            });
-            opt.RegisterPass(spvtools::CreateGraphicsRobustAccessPass());
-
-            std::vector<uint32_t> result;
-            if (!opt.Run(spirv.data(), spirv.size(), &result, spvtools::ValidatorOptions(),
-                         false)) {
-                return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
-            }
-            return std::move(result);
-        }
-
-        MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase*,
+        MaybeError ValidateCompatibilityWithBindGroupLayout(DeviceBase* device,
                                                             BindGroupIndex group,
                                                             const EntryPointMetadata& entryPoint,
                                                             const BindGroupLayoutBase* layout) {
@@ -557,10 +502,11 @@ namespace dawn_native {
                                 GetShaderDeclarationString(group, bindingNumber));
                         }
 
-                        if (layoutInfo.texture.sampleType != shaderInfo.texture.sampleType) {
+                        if ((SampleTypeToSampleTypeBit(layoutInfo.texture.sampleType) &
+                             shaderInfo.texture.compatibleSampleTypes) == 0) {
                             return DAWN_VALIDATION_ERROR(
                                 "The texture sampleType of the bind group layout entry is "
-                                "different from " +
+                                "not compatible with " +
                                 GetShaderDeclarationString(group, bindingNumber));
                         }
 
@@ -601,14 +547,27 @@ namespace dawn_native {
                         break;
                     }
 
+                    case BindingInfoType::ExternalTexture: {
+                        if (shaderInfo.bindingType != BindingInfoType::ExternalTexture) {
+                            return DAWN_VALIDATION_ERROR(
+                                "The external texture bind group layout entry conflicts with " +
+                                GetShaderDeclarationString(group, bindingNumber));
+                        }
+                        break;
+                    }
+
                     case BindingInfoType::Buffer: {
                         // Binding mismatch between shader and bind group is invalid. For example, a
                         // writable binding in the shader with a readonly storage buffer in the bind
                         // group layout is invalid. However, a readonly binding in the shader with a
-                        // writable storage buffer in the bind group layout is valid.
+                        // writable storage buffer in the bind group layout is valid, a storage
+                        // binding in the shader with an internal storage buffer in the bind group
+                        // layout is also valid.
                         bool validBindingConversion =
-                            layoutInfo.buffer.type == wgpu::BufferBindingType::Storage &&
-                            shaderInfo.buffer.type == wgpu::BufferBindingType::ReadOnlyStorage;
+                            (layoutInfo.buffer.type == wgpu::BufferBindingType::Storage &&
+                             shaderInfo.buffer.type == wgpu::BufferBindingType::ReadOnlyStorage) ||
+                            (layoutInfo.buffer.type == kInternalStorageBufferBinding &&
+                             shaderInfo.buffer.type == wgpu::BufferBindingType::Storage);
 
                         if (layoutInfo.buffer.type != shaderInfo.buffer.type &&
                             !validBindingConversion) {
@@ -628,251 +587,17 @@ namespace dawn_native {
                     }
 
                     case BindingInfoType::Sampler:
-                        // TODO(crbug.com/dawn/367): Temporarily allow using either a sampler or a
-                        // comparison sampler until we can perform the proper shader analysis of
-                        // what type is used in the shader module.
-                        break;
+                        if ((layoutInfo.sampler.type == wgpu::SamplerBindingType::Comparison) !=
+                            shaderInfo.sampler.isComparison) {
+                            return DAWN_VALIDATION_ERROR(
+                                "The sampler type of the bind group layout entry is "
+                                "not compatible with " +
+                                GetShaderDeclarationString(group, bindingNumber));
+                        }
                 }
             }
 
             return {};
-        }
-
-        ResultOrError<std::unique_ptr<EntryPointMetadata>> ExtractSpirvInfo(
-            const DeviceBase* device,
-            const spirv_cross::Compiler& compiler,
-            const std::string& entryPointName,
-            SingleShaderStage stage) {
-            std::unique_ptr<EntryPointMetadata> metadata = std::make_unique<EntryPointMetadata>();
-            metadata->stage = stage;
-
-            // TODO(cwallez@chromium.org): make errors here creation errors
-            // currently errors here do not prevent the shadermodule from being used
-            const auto& resources = compiler.get_shader_resources();
-
-            if (resources.push_constant_buffers.size() > 0) {
-                return DAWN_VALIDATION_ERROR("Push constants aren't supported.");
-            }
-
-            if (resources.sampled_images.size() > 0) {
-                return DAWN_VALIDATION_ERROR("Combined images and samplers aren't supported.");
-            }
-
-            // Fill in bindingInfo with the SPIRV bindings
-            auto ExtractResourcesBinding =
-                [](const DeviceBase* device,
-                   const spirv_cross::SmallVector<spirv_cross::Resource>& resources,
-                   const spirv_cross::Compiler& compiler, BindingInfoType bindingType,
-                   EntryPointMetadata::BindingInfoArray* metadataBindings,
-                   bool isStorageBuffer = false) -> MaybeError {
-                for (const auto& resource : resources) {
-                    if (!compiler.get_decoration_bitset(resource.id).get(spv::DecorationBinding)) {
-                        return DAWN_VALIDATION_ERROR("No Binding decoration set for resource");
-                    }
-
-                    if (!compiler.get_decoration_bitset(resource.id)
-                             .get(spv::DecorationDescriptorSet)) {
-                        return DAWN_VALIDATION_ERROR("No Descriptor Decoration set for resource");
-                    }
-
-                    BindingNumber bindingNumber(
-                        compiler.get_decoration(resource.id, spv::DecorationBinding));
-                    BindGroupIndex bindGroupIndex(
-                        compiler.get_decoration(resource.id, spv::DecorationDescriptorSet));
-
-                    if (bindGroupIndex >= kMaxBindGroupsTyped) {
-                        return DAWN_VALIDATION_ERROR("Bind group index over limits in the SPIRV");
-                    }
-
-                    const auto& it = (*metadataBindings)[bindGroupIndex].emplace(
-                        bindingNumber, EntryPointMetadata::ShaderBindingInfo{});
-                    if (!it.second) {
-                        return DAWN_VALIDATION_ERROR("Shader has duplicate bindings");
-                    }
-
-                    EntryPointMetadata::ShaderBindingInfo* info = &it.first->second;
-                    info->id = resource.id;
-                    info->base_type_id = resource.base_type_id;
-                    info->bindingType = bindingType;
-
-                    switch (bindingType) {
-                        case BindingInfoType::Texture: {
-                            spirv_cross::SPIRType::ImageType imageType =
-                                compiler.get_type(info->base_type_id).image;
-                            spirv_cross::SPIRType::BaseType textureComponentType =
-                                compiler.get_type(imageType.type).basetype;
-
-                            info->texture.viewDimension =
-                                SpirvDimToTextureViewDimension(imageType.dim, imageType.arrayed);
-                            info->texture.sampleType =
-                                SpirvBaseTypeToTextureSampleType(textureComponentType);
-                            info->texture.multisampled = imageType.ms;
-
-                            if (imageType.depth) {
-                                if (imageType.ms) {
-                                    return DAWN_VALIDATION_ERROR(
-                                        "Multisampled depth textures aren't supported");
-                                }
-                                if (info->texture.sampleType != wgpu::TextureSampleType::Float) {
-                                    return DAWN_VALIDATION_ERROR(
-                                        "Depth textures must have a float type");
-                                }
-                                info->texture.sampleType = wgpu::TextureSampleType::Depth;
-                            }
-                            if (imageType.ms && imageType.arrayed) {
-                                return DAWN_VALIDATION_ERROR(
-                                    "Multisampled array textures aren't supported");
-                            }
-                            break;
-                        }
-                        case BindingInfoType::Buffer: {
-                            // Determine buffer size, with a minimum of 1 element in the runtime
-                            // array
-                            spirv_cross::SPIRType type = compiler.get_type(info->base_type_id);
-                            info->buffer.minBindingSize =
-                                compiler.get_declared_struct_size_runtime_array(type, 1);
-
-                            // Differentiate between readonly storage bindings and writable ones
-                            // based on the NonWritable decoration.
-                            // TODO(dawn:527): Could isStorageBuffer be determined by calling
-                            // compiler.get_storage_class(resource.id)?
-                            if (isStorageBuffer) {
-                                spirv_cross::Bitset flags =
-                                    compiler.get_buffer_block_flags(resource.id);
-                                if (flags.get(spv::DecorationNonWritable)) {
-                                    info->buffer.type = wgpu::BufferBindingType::ReadOnlyStorage;
-                                } else {
-                                    info->buffer.type = wgpu::BufferBindingType::Storage;
-                                }
-                            } else {
-                                info->buffer.type = wgpu::BufferBindingType::Uniform;
-                            }
-                            break;
-                        }
-                        case BindingInfoType::StorageTexture: {
-                            spirv_cross::Bitset flags = compiler.get_decoration_bitset(resource.id);
-                            if (flags.get(spv::DecorationNonReadable)) {
-                                info->storageTexture.access = wgpu::StorageTextureAccess::WriteOnly;
-                            } else if (flags.get(spv::DecorationNonWritable)) {
-                                info->storageTexture.access = wgpu::StorageTextureAccess::ReadOnly;
-                            } else {
-                                return DAWN_VALIDATION_ERROR(
-                                    "Read-write storage textures are not supported");
-                            }
-
-                            spirv_cross::SPIRType::ImageType imageType =
-                                compiler.get_type(info->base_type_id).image;
-                            wgpu::TextureFormat storageTextureFormat =
-                                SpirvImageFormatToTextureFormat(imageType.format);
-                            if (storageTextureFormat == wgpu::TextureFormat::Undefined) {
-                                return DAWN_VALIDATION_ERROR(
-                                    "Invalid image format declaration on storage image");
-                            }
-                            const Format& format =
-                                device->GetValidInternalFormat(storageTextureFormat);
-                            if (!format.supportsStorageUsage) {
-                                return DAWN_VALIDATION_ERROR(
-                                    "The storage texture format is not supported");
-                            }
-                            if (imageType.ms) {
-                                return DAWN_VALIDATION_ERROR(
-                                    "Multisampled storage textures aren't supported");
-                            }
-                            if (imageType.depth) {
-                                return DAWN_VALIDATION_ERROR(
-                                    "Depth storage textures aren't supported");
-                            }
-                            info->storageTexture.format = storageTextureFormat;
-                            info->storageTexture.viewDimension =
-                                SpirvDimToTextureViewDimension(imageType.dim, imageType.arrayed);
-                            break;
-                        }
-                        case BindingInfoType::Sampler: {
-                            info->sampler.type = wgpu::SamplerBindingType::Filtering;
-                        }
-                    }
-                }
-                return {};
-            };
-
-            DAWN_TRY(ExtractResourcesBinding(device, resources.uniform_buffers, compiler,
-                                             BindingInfoType::Buffer, &metadata->bindings));
-            DAWN_TRY(ExtractResourcesBinding(device, resources.separate_images, compiler,
-                                             BindingInfoType::Texture, &metadata->bindings));
-            DAWN_TRY(ExtractResourcesBinding(device, resources.separate_samplers, compiler,
-                                             BindingInfoType::Sampler, &metadata->bindings));
-            DAWN_TRY(ExtractResourcesBinding(device, resources.storage_buffers, compiler,
-                                             BindingInfoType::Buffer, &metadata->bindings, true));
-            // ReadonlyStorageTexture is used as a tag to do general storage texture handling.
-            DAWN_TRY(ExtractResourcesBinding(device, resources.storage_images, compiler,
-                                             BindingInfoType::StorageTexture, &metadata->bindings));
-
-            // Extract the vertex attributes
-            if (stage == SingleShaderStage::Vertex) {
-                for (const auto& attrib : resources.stage_inputs) {
-                    if (!(compiler.get_decoration_bitset(attrib.id).get(spv::DecorationLocation))) {
-                        return DAWN_VALIDATION_ERROR(
-                            "Unable to find Location decoration for Vertex input");
-                    }
-                    uint32_t location = compiler.get_decoration(attrib.id, spv::DecorationLocation);
-
-                    if (location >= kMaxVertexAttributes) {
-                        return DAWN_VALIDATION_ERROR("Attribute location over limits in the SPIRV");
-                    }
-
-                    metadata->usedVertexAttributes.set(location);
-                }
-
-                // Without a location qualifier on vertex outputs, spirv_cross::CompilerMSL gives
-                // them all the location 0, causing a compile error.
-                for (const auto& attrib : resources.stage_outputs) {
-                    if (!compiler.get_decoration_bitset(attrib.id).get(spv::DecorationLocation)) {
-                        return DAWN_VALIDATION_ERROR("Need location qualifier on vertex output");
-                    }
-                }
-            }
-
-            if (stage == SingleShaderStage::Fragment) {
-                // Without a location qualifier on vertex inputs, spirv_cross::CompilerMSL gives
-                // them all the location 0, causing a compile error.
-                for (const auto& attrib : resources.stage_inputs) {
-                    if (!compiler.get_decoration_bitset(attrib.id).get(spv::DecorationLocation)) {
-                        return DAWN_VALIDATION_ERROR("Need location qualifier on fragment input");
-                    }
-                }
-
-                for (const auto& fragmentOutput : resources.stage_outputs) {
-                    if (!compiler.get_decoration_bitset(fragmentOutput.id)
-                             .get(spv::DecorationLocation)) {
-                        return DAWN_VALIDATION_ERROR(
-                            "Unable to find Location decoration for Fragment output");
-                    }
-                    uint32_t unsanitizedAttachment =
-                        compiler.get_decoration(fragmentOutput.id, spv::DecorationLocation);
-                    if (unsanitizedAttachment >= kMaxColorAttachments) {
-                        return DAWN_VALIDATION_ERROR(
-                            "Fragment output index must be less than max number of color "
-                            "attachments");
-                    }
-                    ColorAttachmentIndex attachment(static_cast<uint8_t>(unsanitizedAttachment));
-
-                    spirv_cross::SPIRType::BaseType shaderFragmentOutputBaseType =
-                        compiler.get_type(fragmentOutput.base_type_id).basetype;
-                    metadata->fragmentOutputFormatBaseTypes[attachment] =
-                        SpirvBaseTypeToTextureComponentType(shaderFragmentOutputBaseType);
-                    metadata->fragmentOutputsWritten.set(attachment);
-                }
-            }
-
-            if (stage == SingleShaderStage::Compute) {
-                const spirv_cross::SPIREntryPoint& spirEntryPoint =
-                    compiler.get_entry_point(entryPointName, spv::ExecutionModelGLCompute);
-                metadata->localWorkgroupSize.x = spirEntryPoint.workgroup_size.x;
-                metadata->localWorkgroupSize.y = spirEntryPoint.workgroup_size.y;
-                metadata->localWorkgroupSize.z = spirEntryPoint.workgroup_size.z;
-            }
-
-            return {std::move(metadata)};
         }
 
         ResultOrError<EntryPointMetadataTable> ReflectShaderUsingTint(
@@ -891,34 +616,64 @@ namespace dawn_native {
                 return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
             }
 
+            constexpr uint32_t kMaxInterStageShaderLocation = kMaxInterStageShaderVariables - 1;
             for (auto& entryPoint : entryPoints) {
                 ASSERT(result.count(entryPoint.name) == 0);
+
+                if (!entryPoint.overridable_constants.empty()) {
+                    return DAWN_VALIDATION_ERROR(
+                        "Pipeline overridable constants are not implemented yet");
+                }
 
                 auto metadata = std::make_unique<EntryPointMetadata>();
 
                 DAWN_TRY_ASSIGN(metadata->stage, TintPipelineStageToShaderStage(entryPoint.stage));
-                if (metadata->stage == SingleShaderStage::Vertex) {
-                    for (auto& stage_input : entryPoint.input_variables) {
-                        if (!stage_input.has_location_decoration) {
-                            return DAWN_VALIDATION_ERROR(
-                                "Need Location decoration on Vertex input");
-                        }
-                        uint32_t location = stage_input.location_decoration;
-                        if (location >= kMaxVertexAttributes) {
-                            return DAWN_VALIDATION_ERROR("Attribute location over limits");
-                        }
-                        metadata->usedVertexAttributes.set(location);
-                    }
-
-                    for (auto& stage_output : entryPoint.output_variables) {
-                        if (!stage_output.has_location_decoration) {
-                            return DAWN_VALIDATION_ERROR(
-                                "Need Location decoration on Vertex output");
-                        }
-                    }
-                }
 
                 if (metadata->stage == SingleShaderStage::Compute) {
+                    if (entryPoint.workgroup_size_x > kMaxComputeWorkgroupSizeX) {
+                        errorStream << "Workgroup X dimension exceeds maximum allowed:"
+                                    << entryPoint.workgroup_size_x << " > "
+                                    << kMaxComputeWorkgroupSizeX;
+                        return DAWN_VALIDATION_ERROR(errorStream.str());
+                    }
+                    if (entryPoint.workgroup_size_y > kMaxComputeWorkgroupSizeY) {
+                        errorStream << "Workgroup Y dimension exceeds maximum allowed: "
+                                    << entryPoint.workgroup_size_y << " > "
+                                    << kMaxComputeWorkgroupSizeY;
+                        return DAWN_VALIDATION_ERROR(errorStream.str());
+                    }
+                    if (entryPoint.workgroup_size_z > kMaxComputeWorkgroupSizeZ) {
+                        errorStream << "Workgroup Z dimension exceeds maximum allowed: "
+                                    << entryPoint.workgroup_size_z << " > "
+                                    << kMaxComputeWorkgroupSizeZ;
+                        return DAWN_VALIDATION_ERROR(errorStream.str());
+                    }
+
+                    // Dimensions have already been validated against their individual limits above.
+                    // This assertion ensures that the product of such limited dimensions cannot
+                    // possibly overflow a uint32_t.
+                    static_assert(static_cast<uint64_t>(kMaxComputeWorkgroupSizeX) *
+                                          kMaxComputeWorkgroupSizeY * kMaxComputeWorkgroupSizeZ <=
+                                      std::numeric_limits<uint32_t>::max(),
+                                  "Per-dimension workgroup size limits are too high");
+                    uint32_t num_invocations = entryPoint.workgroup_size_x *
+                                               entryPoint.workgroup_size_y *
+                                               entryPoint.workgroup_size_z;
+                    if (num_invocations > kMaxComputeWorkgroupInvocations) {
+                        errorStream << "Number of workgroup invocations exceeds maximum allowed: "
+                                    << num_invocations << " > " << kMaxComputeWorkgroupInvocations;
+                        return DAWN_VALIDATION_ERROR(errorStream.str());
+                    }
+
+                    const size_t workgroup_storage_size =
+                        inspector.GetWorkgroupStorageSize(entryPoint.name);
+                    if (workgroup_storage_size > kMaxComputeWorkgroupStorageSize) {
+                        errorStream << "Workgroup shared storage size for " << entryPoint.name
+                                    << " exceeds the maximum allowed: " << workgroup_storage_size
+                                    << " > " << kMaxComputeWorkgroupStorageSize;
+                        return DAWN_VALIDATION_ERROR(errorStream.str());
+                    }
+
                     metadata->localWorkgroupSize.x = entryPoint.workgroup_size_x;
                     metadata->localWorkgroupSize.y = entryPoint.workgroup_size_y;
                     metadata->localWorkgroupSize.z = entryPoint.workgroup_size_z;
@@ -926,19 +681,25 @@ namespace dawn_native {
 
                 if (metadata->stage == SingleShaderStage::Vertex) {
                     for (const auto& input_var : entryPoint.input_variables) {
-                        uint32_t location = 0;
-                        if (input_var.has_location_decoration) {
-                            location = input_var.location_decoration;
+                        if (!input_var.has_location_decoration) {
+                            return DAWN_VALIDATION_ERROR(
+                                "Need Location decoration on Vertex input");
                         }
-
-                        if (DAWN_UNLIKELY(location >= kMaxVertexAttributes)) {
+                        uint32_t unsanitizedLocation = input_var.location_decoration;
+                        if (DAWN_UNLIKELY(unsanitizedLocation >= kMaxVertexAttributes)) {
                             std::stringstream ss;
-                            ss << "Attribute location (" << location << ") over limits";
+                            ss << "Attribute location (" << unsanitizedLocation << ") over limits";
                             return DAWN_VALIDATION_ERROR(ss.str());
                         }
-                        metadata->usedVertexAttributes.set(location);
+                        VertexAttributeLocation location(static_cast<uint8_t>(unsanitizedLocation));
+                        DAWN_TRY_ASSIGN(
+                            metadata->vertexInputBaseTypes[location],
+                            TintComponentTypeToVertexFormatBaseType(input_var.component_type));
+                        metadata->usedVertexInputs.set(location);
                     }
 
+                    // [[position]] must be declared in a vertex shader.
+                    uint32_t totalInterStageShaderComponents = 4;
                     for (const auto& output_var : entryPoint.output_variables) {
                         if (DAWN_UNLIKELY(!output_var.has_location_decoration)) {
                             std::stringstream ss;
@@ -946,15 +707,84 @@ namespace dawn_native {
                                << output_var.name;
                             return DAWN_VALIDATION_ERROR(ss.str());
                         }
+                        uint32_t location = output_var.location_decoration;
+                        if (DAWN_UNLIKELY(location > kMaxInterStageShaderLocation)) {
+                            std::stringstream ss;
+                            ss << "Vertex output location (" << location << ") over limits";
+                            return DAWN_VALIDATION_ERROR(ss.str());
+                        }
+                        metadata->usedInterStageVariables.set(location);
+                        DAWN_TRY_ASSIGN(
+                            metadata->interStageVariables[location].baseType,
+                            TintComponentTypeToInterStageComponentType(output_var.component_type));
+                        DAWN_TRY_ASSIGN(metadata->interStageVariables[location].componentCount,
+                                        TintCompositionTypeToInterStageComponentCount(
+                                            output_var.composition_type));
+                        DAWN_TRY_ASSIGN(metadata->interStageVariables[location].interpolationType,
+                                        TintInterpolationTypeToInterpolationType(
+                                            output_var.interpolation_type));
+                        DAWN_TRY_ASSIGN(
+                            metadata->interStageVariables[location].interpolationSampling,
+                            TintInterpolationSamplingToInterpolationSamplingType(
+                                output_var.interpolation_sampling));
+
+                        totalInterStageShaderComponents +=
+                            metadata->interStageVariables[location].componentCount;
+                    }
+
+                    if (DAWN_UNLIKELY(totalInterStageShaderComponents >
+                                      kMaxInterStageShaderComponents)) {
+                        return DAWN_VALIDATION_ERROR(
+                            "Total vertex output components count exceeds limits");
                     }
                 }
 
                 if (metadata->stage == SingleShaderStage::Fragment) {
+                    uint32_t totalInterStageShaderComponents = 0;
                     for (const auto& input_var : entryPoint.input_variables) {
                         if (!input_var.has_location_decoration) {
                             return DAWN_VALIDATION_ERROR(
                                 "Need location decoration on fragment input");
                         }
+                        uint32_t location = input_var.location_decoration;
+                        if (DAWN_UNLIKELY(location > kMaxInterStageShaderLocation)) {
+                            std::stringstream ss;
+                            ss << "Fragment input location (" << location << ") over limits";
+                            return DAWN_VALIDATION_ERROR(ss.str());
+                        }
+                        metadata->usedInterStageVariables.set(location);
+                        DAWN_TRY_ASSIGN(
+                            metadata->interStageVariables[location].baseType,
+                            TintComponentTypeToInterStageComponentType(input_var.component_type));
+                        DAWN_TRY_ASSIGN(metadata->interStageVariables[location].componentCount,
+                                        TintCompositionTypeToInterStageComponentCount(
+                                            input_var.composition_type));
+                        DAWN_TRY_ASSIGN(
+                            metadata->interStageVariables[location].interpolationType,
+                            TintInterpolationTypeToInterpolationType(input_var.interpolation_type));
+                        DAWN_TRY_ASSIGN(
+                            metadata->interStageVariables[location].interpolationSampling,
+                            TintInterpolationSamplingToInterpolationSamplingType(
+                                input_var.interpolation_sampling));
+
+                        totalInterStageShaderComponents +=
+                            metadata->interStageVariables[location].componentCount;
+                    }
+                    if (entryPoint.front_facing_used) {
+                        totalInterStageShaderComponents += 1;
+                    }
+                    if (entryPoint.input_sample_mask_used) {
+                        totalInterStageShaderComponents += 1;
+                    }
+                    if (entryPoint.sample_index_used) {
+                        totalInterStageShaderComponents += 1;
+                    }
+                    if (entryPoint.input_position_used) {
+                        totalInterStageShaderComponents += 4;
+                    }
+                    if (totalInterStageShaderComponents > kMaxInterStageShaderComponents) {
+                        return DAWN_VALIDATION_ERROR(
+                            "Total fragment input components count exceeds limits");
                     }
 
                     for (const auto& output_var : entryPoint.output_variables) {
@@ -972,13 +802,22 @@ namespace dawn_native {
                         ColorAttachmentIndex attachment(
                             static_cast<uint8_t>(unsanitizedAttachment));
                         DAWN_TRY_ASSIGN(
-                            metadata->fragmentOutputFormatBaseTypes[attachment],
+                            metadata->fragmentOutputVariables[attachment].baseType,
                             TintComponentTypeToTextureComponentType(output_var.component_type));
+                        uint32_t componentCount;
+                        DAWN_TRY_ASSIGN(componentCount,
+                                        TintCompositionTypeToInterStageComponentCount(
+                                            output_var.composition_type));
+                        // componentCount should be no larger than 4u
+                        ASSERT(componentCount <= 4u);
+                        metadata->fragmentOutputVariables[attachment].componentCount =
+                            componentCount;
                         metadata->fragmentOutputsWritten.set(attachment);
                     }
                 }
 
-                for (auto& resource : inspector.GetResourceBindings(entryPoint.name)) {
+                for (const tint::inspector::ResourceBinding& resource :
+                     inspector.GetResourceBindings(entryPoint.name)) {
                     BindingNumber bindingNumber(resource.binding);
                     BindGroupIndex bindGroupIndex(resource.bind_group);
                     if (bindGroupIndex >= kMaxBindGroupsTyped) {
@@ -1001,21 +840,37 @@ namespace dawn_native {
                                                                    resource.resource_type));
                             break;
                         case BindingInfoType::Sampler:
-                            info->sampler.type = wgpu::SamplerBindingType::Filtering;
+                            switch (resource.resource_type) {
+                                case tint::inspector::ResourceBinding::ResourceType::kSampler:
+                                    info->sampler.isComparison = false;
+                                    break;
+                                case tint::inspector::ResourceBinding::ResourceType::
+                                    kComparisonSampler:
+                                    info->sampler.isComparison = true;
+                                    break;
+                                default:
+                                    UNREACHABLE();
+                            }
                             break;
                         case BindingInfoType::Texture:
                             info->texture.viewDimension =
                                 TintTextureDimensionToTextureViewDimension(resource.dim);
                             if (resource.resource_type ==
-                                tint::inspector::ResourceBinding::ResourceType::kDepthTexture) {
-                                info->texture.sampleType = wgpu::TextureSampleType::Depth;
+                                    tint::inspector::ResourceBinding::ResourceType::kDepthTexture ||
+                                resource.resource_type ==
+                                    tint::inspector::ResourceBinding::ResourceType::
+                                        kDepthMultisampledTexture) {
+                                info->texture.compatibleSampleTypes = SampleTypeBit::Depth;
                             } else {
-                                info->texture.sampleType =
-                                    TintSampledKindToTextureSampleType(resource.sampled_kind);
+                                info->texture.compatibleSampleTypes =
+                                    TintSampledKindToSampleTypeBit(resource.sampled_kind);
                             }
-                            info->texture.multisampled = resource.resource_type ==
-                                                         tint::inspector::ResourceBinding::
-                                                             ResourceType::kMultisampledTexture;
+                            info->texture.multisampled =
+                                resource.resource_type == tint::inspector::ResourceBinding::
+                                                              ResourceType::kMultisampledTexture ||
+                                resource.resource_type ==
+                                    tint::inspector::ResourceBinding::ResourceType::
+                                        kDepthMultisampledTexture;
 
                             break;
                         case BindingInfoType::StorageTexture:
@@ -1028,10 +883,27 @@ namespace dawn_native {
                                 TintTextureDimensionToTextureViewDimension(resource.dim);
 
                             break;
+                        case BindingInfoType::ExternalTexture:
+                            break;
                         default:
                             return DAWN_VALIDATION_ERROR("Unknown binding type in Shader");
                     }
                 }
+
+                std::vector<tint::inspector::SamplerTexturePair> samplerTextureUses =
+                    inspector.GetSamplerTextureUses(entryPoint.name);
+                metadata->samplerTexturePairs.reserve(samplerTextureUses.size());
+                std::transform(
+                    samplerTextureUses.begin(), samplerTextureUses.end(),
+                    std::back_inserter(metadata->samplerTexturePairs),
+                    [](const tint::inspector::SamplerTexturePair& pair) {
+                        EntryPointMetadata::SamplerTexturePair result;
+                        result.sampler = {BindGroupIndex(pair.sampler_binding_point.group),
+                                          BindingNumber(pair.sampler_binding_point.binding)};
+                        result.texture = {BindGroupIndex(pair.texture_binding_point.group),
+                                          BindingNumber(pair.texture_binding_point.binding)};
+                        return result;
+                    });
 
                 result[entryPoint.name] = std::move(metadata);
             }
@@ -1039,9 +911,7 @@ namespace dawn_native {
         }
     }  // anonymous namespace
 
-    ShaderModuleParseResult::ShaderModuleParseResult()
-        : compilationMessages(new OwnedCompilationMessages()) {
-    }
+    ShaderModuleParseResult::ShaderModuleParseResult() = default;
     ShaderModuleParseResult::~ShaderModuleParseResult() = default;
 
     ShaderModuleParseResult::ShaderModuleParseResult(ShaderModuleParseResult&& rhs) = default;
@@ -1050,7 +920,7 @@ namespace dawn_native {
         default;
 
     bool ShaderModuleParseResult::HasParsedShader() const {
-        return tintProgram != nullptr || spirv.size() > 0;
+        return tintProgram != nullptr;
     }
 
     // TintSource is a PIMPL container for a tint::Source::File, which needs to be kept alive for as
@@ -1066,7 +936,8 @@ namespace dawn_native {
 
     MaybeError ValidateShaderModuleDescriptor(DeviceBase* device,
                                               const ShaderModuleDescriptor* descriptor,
-                                              ShaderModuleParseResult* parseResult) {
+                                              ShaderModuleParseResult* parseResult,
+                                              OwnedCompilationMessages* outMessages) {
         ASSERT(parseResult != nullptr);
 
         const ChainedStruct* chainedDescriptor = descriptor->nextInChain;
@@ -1077,8 +948,6 @@ namespace dawn_native {
         DAWN_TRY(ValidateSingleSType(chainedDescriptor, wgpu::SType::ShaderModuleSPIRVDescriptor,
                                      wgpu::SType::ShaderModuleWGSLDescriptor));
 
-        OwnedCompilationMessages* outMessages = parseResult->compilationMessages.get();
-
         ScopedTintICEHandler scopedICEHandler(device);
 
         const ShaderModuleSPIRVDescriptor* spirvDesc = nullptr;
@@ -1086,46 +955,53 @@ namespace dawn_native {
         const ShaderModuleWGSLDescriptor* wgslDesc = nullptr;
         FindInChain(chainedDescriptor, &wgslDesc);
 
-        if (spirvDesc) {
+        // We have a temporary toggle to force the SPIRV ingestion to go through a WGSL
+        // intermediate step. It is done by switching the spirvDesc for a wgslDesc below.
+        ShaderModuleWGSLDescriptor newWgslDesc;
+        std::string newWgslCode;
+        if (spirvDesc && device->IsToggleEnabled(Toggle::ForceWGSLStep)) {
             std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
-            if (device->IsToggleEnabled(Toggle::UseTintGenerator)) {
-                tint::Program program;
-                DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages));
-                parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
-            } else {
-                if (device->IsValidationEnabled()) {
-                    DAWN_TRY(ValidateSpirv(spirv.data(), spirv.size()));
-                }
-                parseResult->spirv = std::move(spirv);
+            tint::Program program;
+            DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages));
+
+            tint::writer::wgsl::Options options;
+            auto result = tint::writer::wgsl::Generate(&program, options);
+            if (!result.success) {
+                std::ostringstream errorStream;
+                errorStream << "Tint WGSL failure:" << std::endl;
+                errorStream << "Generator: " << result.error << std::endl;
+                return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
             }
+
+            newWgslCode = std::move(result.wgsl);
+            newWgslDesc.source = newWgslCode.c_str();
+
+            spirvDesc = nullptr;
+            wgslDesc = &newWgslDesc;
+        }
+
+        if (spirvDesc) {
+            if (device->IsToggleEnabled(Toggle::DisallowSpirv)) {
+                return DAWN_VALIDATION_ERROR("SPIR-V is disallowed.");
+            }
+
+            std::vector<uint32_t> spirv(spirvDesc->code, spirvDesc->code + spirvDesc->codeSize);
+            tint::Program program;
+            DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, outMessages));
+            parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
         } else if (wgslDesc) {
             auto tintSource = std::make_unique<TintSource>("", wgslDesc->source);
 
+            if (device->IsToggleEnabled(Toggle::DumpShaders)) {
+                std::ostringstream dumpedMsg;
+                dumpedMsg << "// Dumped WGSL:" << std::endl << wgslDesc->source;
+                device->EmitLog(WGPULoggingType_Info, dumpedMsg.str().c_str());
+            }
+
             tint::Program program;
             DAWN_TRY_ASSIGN(program, ParseWGSL(&tintSource->file, outMessages));
-
-            if (device->IsToggleEnabled(Toggle::UseTintGenerator)) {
-                parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
-                parseResult->tintSource = std::move(tintSource);
-            } else {
-                tint::transform::Manager transformManager;
-                transformManager.Add<tint::transform::Spirv>();
-
-                tint::transform::DataMap transformInputs;
-
-                tint::transform::Spirv::Config spirv_cfg;
-                spirv_cfg.emit_vertex_point_size = true;
-                transformInputs.Add<tint::transform::Spirv::Config>(spirv_cfg);
-
-                DAWN_TRY_ASSIGN(program, RunTransforms(&transformManager, &program, transformInputs,
-                                                       nullptr, outMessages));
-
-                std::vector<uint32_t> spirv;
-                DAWN_TRY_ASSIGN(spirv, ModuleToSPIRV(&program));
-                DAWN_TRY(ValidateSpirv(spirv.data(), spirv.size()));
-
-                parseResult->spirv = std::move(spirv);
-            }
+            parseResult->tintProgram = std::make_unique<tint::Program>(std::move(program));
+            parseResult->tintSource = std::move(tintSource);
         }
 
         return {};
@@ -1172,7 +1048,7 @@ namespace dawn_native {
             const auto& vertexBuffer = vertexState.buffers[i];
             tint::transform::VertexBufferLayoutDescriptor layout;
             layout.array_stride = vertexBuffer.arrayStride;
-            layout.step_mode = ToTintInputStepMode(vertexBuffer.stepMode);
+            layout.step_mode = ToTintVertexStepMode(vertexBuffer.stepMode);
 
             for (uint32_t j = 0; j < vertexBuffer.attributeCount; ++j) {
                 const auto& attribute = vertexBuffer.attributes[j];
@@ -1206,6 +1082,43 @@ namespace dawn_native {
             }
         }
 
+        // Validate that filtering samplers are not used with unfilterable textures.
+        for (const auto& pair : entryPoint.samplerTexturePairs) {
+            const BindGroupLayoutBase* samplerBGL = layout->GetBindGroupLayout(pair.sampler.group);
+            const BindingInfo& samplerInfo =
+                samplerBGL->GetBindingInfo(samplerBGL->GetBindingIndex(pair.sampler.binding));
+            if (samplerInfo.sampler.type != wgpu::SamplerBindingType::Filtering) {
+                continue;
+            }
+            const BindGroupLayoutBase* textureBGL = layout->GetBindGroupLayout(pair.texture.group);
+            const BindingInfo& textureInfo =
+                textureBGL->GetBindingInfo(textureBGL->GetBindingIndex(pair.texture.binding));
+
+            ASSERT(textureInfo.bindingType != BindingInfoType::Buffer &&
+                   textureInfo.bindingType != BindingInfoType::Sampler &&
+                   textureInfo.bindingType != BindingInfoType::StorageTexture);
+
+            if (textureInfo.bindingType != BindingInfoType::Texture) {
+                continue;
+            }
+
+            // Uint/sint can't be statically used with a sampler, so they any
+            // texture bindings reflected must be float or depth textures. If
+            // the shader uses a float/depth texture but the bind group layout
+            // specifies a uint/sint texture binding,
+            // |ValidateCompatibilityWithBindGroupLayout| will fail since the
+            // sampleType does not match.
+            ASSERT(textureInfo.texture.sampleType != wgpu::TextureSampleType::Undefined &&
+                   textureInfo.texture.sampleType != wgpu::TextureSampleType::Uint &&
+                   textureInfo.texture.sampleType != wgpu::TextureSampleType::Sint);
+
+            if (textureInfo.texture.sampleType == wgpu::TextureSampleType::UnfilterableFloat) {
+                return DAWN_VALIDATION_ERROR(
+                    "unfilterable-float texture bindings cannot be sampled with a "
+                    "filtering sampler");
+            }
+        }
+
         return {};
     }
 
@@ -1229,13 +1142,8 @@ namespace dawn_native {
         }
     }
 
-    ShaderModuleBase::ShaderModuleBase(
-        DeviceBase* device,
-        ObjectBase::ErrorTag tag,
-        std::unique_ptr<OwnedCompilationMessages> compilationMessages)
-        : CachedObject(device, tag),
-          mType(Type::Undefined),
-          mCompilationMessages(std::move(compilationMessages)) {
+    ShaderModuleBase::ShaderModuleBase(DeviceBase* device, ObjectBase::ErrorTag tag)
+        : CachedObject(device, tag), mType(Type::Undefined) {
     }
 
     ShaderModuleBase::~ShaderModuleBase() {
@@ -1245,10 +1153,8 @@ namespace dawn_native {
     }
 
     // static
-    ShaderModuleBase* ShaderModuleBase::MakeError(
-        DeviceBase* device,
-        std::unique_ptr<OwnedCompilationMessages> compilationMessages) {
-        return new ShaderModuleBase(device, ObjectBase::kError, std::move(compilationMessages));
+    Ref<ShaderModuleBase> ShaderModuleBase::MakeError(DeviceBase* device) {
+        return AcquireRef(new ShaderModuleBase(device, ObjectBase::kError));
     }
 
     bool ShaderModuleBase::HasEntryPoint(const std::string& entryPoint) const {
@@ -1274,13 +1180,8 @@ namespace dawn_native {
                a->mWgsl == b->mWgsl;
     }
 
-    const std::vector<uint32_t>& ShaderModuleBase::GetSpirv() const {
-        ASSERT(!GetDevice()->IsToggleEnabled(Toggle::UseTintGenerator));
-        return mSpirv;
-    }
-
     const tint::Program* ShaderModuleBase::GetTintProgram() const {
-        ASSERT(GetDevice()->IsToggleEnabled(Toggle::UseTintGenerator));
+        ASSERT(mTintProgram);
         return mTintProgram.get();
     }
 
@@ -1294,96 +1195,48 @@ namespace dawn_native {
                  mCompilationMessages->GetCompilationInfo(), userdata);
     }
 
-    ResultOrError<std::vector<uint32_t>> ShaderModuleBase::GeneratePullingSpirv(
-        const std::vector<uint32_t>& spirv,
-        const VertexState& vertexState,
-        const std::string& entryPoint,
-        BindGroupIndex pullingBufferBindingSet) const {
-        tint::Program program;
-        DAWN_TRY_ASSIGN(program, ParseSPIRV(spirv, nullptr));
+    void ShaderModuleBase::InjectCompilationMessages(
+        std::unique_ptr<OwnedCompilationMessages> compilationMessages) {
+        // TODO(dawn:944): ensure the InjectCompilationMessages is properly handled for shader
+        // module returned from cache.
+        // InjectCompilationMessages should be called only once for a shader module, after it is
+        // created. However currently InjectCompilationMessages may be called on a shader module
+        // returned from cache rather than newly created, and violate the rule. We just skip the
+        // injection in this case for now, but a proper solution including ensure the cache goes
+        // before the validation is required.
+        if (mCompilationMessages != nullptr) {
+            return;
+        }
+        // Move the compilationMessages into the shader module and emit the tint errors and warnings
+        mCompilationMessages = std::move(compilationMessages);
 
-        return GeneratePullingSpirv(&program, vertexState, entryPoint, pullingBufferBindingSet);
+        // Emit the formatted Tint errors and warnings within the moved compilationMessages
+        const std::vector<std::string>& formattedTintMessages =
+            mCompilationMessages->GetFormattedTintMessages();
+        if (formattedTintMessages.empty()) {
+            return;
+        }
+        std::ostringstream t;
+        for (auto pMessage = formattedTintMessages.begin(); pMessage != formattedTintMessages.end();
+             pMessage++) {
+            if (pMessage != formattedTintMessages.begin()) {
+                t << std::endl;
+            }
+            t << *pMessage;
+        }
+        this->GetDevice()->EmitLog(WGPULoggingType_Warning, t.str().c_str());
     }
 
-    ResultOrError<std::vector<uint32_t>> ShaderModuleBase::GeneratePullingSpirv(
-        const tint::Program* programIn,
-        const VertexState& vertexState,
-        const std::string& entryPoint,
-        BindGroupIndex pullingBufferBindingSet) const {
-        std::ostringstream errorStream;
-        errorStream << "Tint vertex pulling failure:" << std::endl;
-
-        tint::transform::Manager transformManager;
-        transformManager.Add<tint::transform::VertexPulling>();
-        transformManager.Add<tint::transform::Spirv>();
-        if (GetDevice()->IsRobustnessEnabled()) {
-            transformManager.Add<tint::transform::BoundArrayAccessors>();
-        }
-
-        tint::transform::DataMap transformInputs;
-
-        tint::transform::Spirv::Config spirv_cfg;
-        spirv_cfg.emit_vertex_point_size = true;
-        transformInputs.Add<tint::transform::Spirv::Config>(spirv_cfg);
-
-        AddVertexPullingTransformConfig(vertexState, entryPoint, pullingBufferBindingSet,
-                                        &transformInputs);
-
-        // A nullptr is passed in for the CompilationMessages here since this method is called
-        // during RenderPipeline creation, by which point the shader module's CompilationInfo
-        // may have already been queried.
-        tint::Program program;
-        DAWN_TRY_ASSIGN(program, RunTransforms(&transformManager, programIn, transformInputs,
-                                               nullptr, nullptr));
-
-        tint::writer::spirv::Generator generator(&program);
-        if (!generator.Generate()) {
-            errorStream << "Generator: " << generator.error() << std::endl;
-            return DAWN_VALIDATION_ERROR(errorStream.str().c_str());
-        }
-
-        std::vector<uint32_t> spirv = generator.result();
-        DAWN_TRY(ValidateSpirv(spirv.data(), spirv.size()));
-        return std::move(spirv);
+    OwnedCompilationMessages* ShaderModuleBase::GetCompilationMessages() const {
+        return mCompilationMessages.get();
     }
 
     MaybeError ShaderModuleBase::InitializeBase(ShaderModuleParseResult* parseResult) {
         mTintProgram = std::move(parseResult->tintProgram);
         mTintSource = std::move(parseResult->tintSource);
-        mSpirv = std::move(parseResult->spirv);
-        mCompilationMessages = std::move(parseResult->compilationMessages);
 
-        if (GetDevice()->IsToggleEnabled(Toggle::UseTintGenerator)) {
-            DAWN_TRY_ASSIGN(mEntryPoints, ReflectShaderUsingTint(GetDevice(), mTintProgram.get()));
-        } else {
-            // If not using Tint to generate backend code, run the robust buffer access pass now
-            // since all backends will use this SPIR-V. If Tint is used, the robustness pass should
-            // be run per-backend.
-            if (GetDevice()->IsRobustnessEnabled()) {
-                DAWN_TRY_ASSIGN(mSpirv, RunRobustBufferAccessPass(mSpirv));
-            }
-            DAWN_TRY_ASSIGN(mEntryPoints, ReflectShaderUsingSPIRVCross(GetDevice(), mSpirv));
-        }
-
+        DAWN_TRY_ASSIGN(mEntryPoints, ReflectShaderUsingTint(GetDevice(), mTintProgram.get()));
         return {};
-    }
-
-    ResultOrError<EntryPointMetadataTable> ShaderModuleBase::ReflectShaderUsingSPIRVCross(
-        DeviceBase* device,
-        const std::vector<uint32_t>& spirv) {
-        EntryPointMetadataTable result;
-        spirv_cross::Compiler compiler(spirv);
-        for (const spirv_cross::EntryPoint& entryPoint : compiler.get_entry_points_and_stages()) {
-            ASSERT(result.count(entryPoint.name) == 0);
-
-            SingleShaderStage stage = ExecutionModelToShaderStage(entryPoint.execution_model);
-            compiler.set_entry_point(entryPoint.name, entryPoint.execution_model);
-
-            std::unique_ptr<EntryPointMetadata> metadata;
-            DAWN_TRY_ASSIGN(metadata, ExtractSpirvInfo(device, compiler, entryPoint.name, stage));
-            result[entryPoint.name] = std::move(metadata);
-        }
-        return std::move(result);
     }
 
     size_t PipelineLayoutEntryPointPairHashFunc::operator()(

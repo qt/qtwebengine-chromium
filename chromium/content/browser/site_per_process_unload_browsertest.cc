@@ -17,13 +17,11 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/test/bind.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/browser/renderer_host/cross_process_frame_connector.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/navigation_controller_impl.h"
@@ -39,6 +37,7 @@
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/content_mock_cert_verifier.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "content/test/render_document_feature.h"
@@ -486,12 +485,12 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, SlowUnloadHandlerInIframe) {
       web_contents()->GetFrameTree()->root()->child_at(0)->current_frame_host();
   rfh_b->DoNotDeleteForTesting();
 
-  // With BackForwardCache, old frame doesn't fire unload handlers as the page
-  // is stored in BackForwardCache on navigating.
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
   DisableBackForwardCacheForTesting(web_contents(),
                                     BackForwardCache::TEST_USES_UNLOAD_EVENT);
 
-  // 3) Navigate and check the old frame is deleted after some time.
+  // 3) Navigate and check the old document is deleted after some time.
   FrameTreeNode* root = web_contents()->GetFrameTree()->root();
   RenderFrameDeletedObserver deleted_observer(root->current_frame_host());
   EXPECT_TRUE(NavigateToURL(shell(), next_url));
@@ -501,6 +500,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, SlowUnloadHandlerInIframe) {
 // Navigate from A(B(A(B)) to C. Check the unload handler are executed, executed
 // in the right order and the processes for A and B are removed.
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, Unload_ABAB) {
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
   web_contents()->GetController().GetBackForwardCache().DisableForTesting(
       content::BackForwardCache::TEST_USES_UNLOAD_EVENT);
 
@@ -646,6 +647,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, UnloadNestedPendingDeletion) {
 // If B1's mojom::FrameHost::Detach is called before A2, it should not destroy
 // itself and its children, but rather wait for A2.
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, PartialUnloadHandler) {
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
   web_contents()->GetController().GetBackForwardCache().DisableForTesting(
       content::BackForwardCache::TEST_USES_UNLOAD_EVENT);
 
@@ -755,6 +758,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, PartialUnloadHandler) {
 //          [6]            [14] |
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
                        PendingDeletionCheckCompletedOnSubtree) {
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
   web_contents()->GetController().GetBackForwardCache().DisableForTesting(
       content::BackForwardCache::TEST_USES_UNLOAD_EVENT);
 
@@ -1219,7 +1224,7 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest, FocusedFrameUnload) {
   EXPECT_TRUE(B2->GetSuddenTerminationDisablerState(
       blink::mojom::SuddenTerminationDisablerType::kUnloadHandler));
 
-  EXPECT_TRUE(B2->IsCurrent());
+  EXPECT_TRUE(B2->IsActive());
   EXPECT_TRUE(ExecJs(A1, "document.querySelector('iframe').remove()"));
   EXPECT_EQ(nullptr, frame_tree->GetFocusedFrame());
   EXPECT_EQ(2u, A1->child_count());
@@ -1313,6 +1318,10 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
 // 4. The browser must be resilient and detach B1 when A3 commits.
 IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
                        SameProcessNavigationResilientToDetachDropped) {
+  // The test assumes the previous page gets deleted after navigation. Disable
+  // back-forward cache to ensure that it doesn't get preserved in the cache.
+  DisableBackForwardCacheForTesting(shell()->web_contents(),
+                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
   GURL A1_url(embedded_test_server()->GetURL(
       "a.com", "/cross_site_iframe_factory.html?a(b)"));
   GURL A3_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
@@ -1376,28 +1385,37 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessBrowserTest,
 
 // Some tests need an https server because third-party cookies are used, and
 // SameSite=None cookies must be Secure. This is a separate fixture due to
-// kIgnoreCertificateErrors flag.
+// use the ContentMockCertVerifier.
 class SitePerProcessSSLBrowserTest : public SitePerProcessBrowserTest {
  protected:
-  SitePerProcessSSLBrowserTest()
-      : https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {}
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    SitePerProcessBrowserTest::SetUpCommandLine(command_line);
-    // This is necessary to use https with arbitrary hostnames.
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
-  }
-
-  void SetUpOnMainThread() override {
-    https_server()->AddDefaultHandlers(GetTestDataFilePath());
-    ASSERT_TRUE(https_server()->Start());
-    SitePerProcessBrowserTest::SetUpOnMainThread();
-  }
-
+  SitePerProcessSSLBrowserTest() = default;
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
  private:
-  net::EmbeddedTestServer https_server_;
+  void SetUpOnMainThread() override {
+    SitePerProcessBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
+    https_server()->AddDefaultHandlers(GetTestDataFilePath());
+    ASSERT_TRUE(https_server()->Start());
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    SitePerProcessBrowserTest::SetUpCommandLine(command_line);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
+  }
+
+  void SetUpInProcessBrowserTestFixture() override {
+    SitePerProcessBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    SitePerProcessBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+  content::ContentMockCertVerifier mock_cert_verifier_;
+  net::EmbeddedTestServer https_server_{net::EmbeddedTestServer::TYPE_HTTPS};
 };
 
 // Unload handlers should be able to do things that might require for instance
@@ -1418,6 +1436,10 @@ class SitePerProcessSSLBrowserTest : public SitePerProcessBrowserTest {
 // different frame hierarchy.
 IN_PROC_BROWSER_TEST_P(SitePerProcessSSLBrowserTest,
                        UnloadHandlersArePowerful) {
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
+  DisableBackForwardCacheForTesting(
+      web_contents(), content::BackForwardCache::TEST_USES_UNLOAD_EVENT);
   // Navigate to a page hosting a cross-origin frame.
   GURL url =
       https_server()->GetURL("a.com", "/cross_site_iframe_factory.html?a(b)");
@@ -1474,6 +1496,11 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessSSLBrowserTest,
   web_contents()->GetController().GoBack();
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
 
+  // Temporary extra expectations to investigate:
+  // https://bugs.chromium.org/p/chromium/issues/detail?id=1215493
+  EXPECT_EQ(url, web_contents()->GetLastCommittedURL());
+  EXPECT_EQ(2u, web_contents()->GetAllFrames().size());
+
   RenderFrameHostImpl* A4 = web_contents()->GetMainFrame();
   RenderFrameHostImpl* B5 = A4->child_at(0)->current_frame_host();
 
@@ -1509,6 +1536,10 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessSSLBrowserTest,
 // hierarchy.
 IN_PROC_BROWSER_TEST_P(SitePerProcessSSLBrowserTest,
                        UnloadHandlersArePowerfulGrandChild) {
+  // With BackForwardCache, old document doesn't fire unload handlers as the
+  // page is stored in BackForwardCache on navigation.
+  DisableBackForwardCacheForTesting(
+      web_contents(), content::BackForwardCache::TEST_USES_UNLOAD_EVENT);
   // Navigate to a page hosting a cross-origin frame.
   GURL url = https_server()->GetURL("a.com",
                                     "/cross_site_iframe_factory.html?a(b(c))");
@@ -1568,6 +1599,11 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessSSLBrowserTest,
   // Navigate back from A4 to A5(B6(C7))
   web_contents()->GetController().GoBack();
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
+
+  // Temporary extra expectations to investigate:
+  // https://bugs.chromium.org/p/chromium/issues/detail?id=1215493
+  EXPECT_EQ(url, web_contents()->GetLastCommittedURL());
+  EXPECT_EQ(3u, web_contents()->GetAllFrames().size());
 
   RenderFrameHostImpl* A5 = web_contents()->GetMainFrame();
   RenderFrameHostImpl* B6 = A5->child_at(0)->current_frame_host();

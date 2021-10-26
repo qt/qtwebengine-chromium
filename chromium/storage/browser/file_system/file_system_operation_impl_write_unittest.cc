@@ -22,7 +22,9 @@
 #include "storage/browser/file_system/file_system_file_util.h"
 #include "storage/browser/file_system/file_system_operation_context.h"
 #include "storage/browser/file_system/file_system_operation_runner.h"
+#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/file_system/local_file_util.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/mock_blob_util.h"
 #include "storage/browser/test/mock_file_change_observer.h"
 #include "storage/browser/test/mock_quota_manager.h"
@@ -30,6 +32,7 @@
 #include "storage/browser/test/test_file_system_context.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
 #include "url/origin.h"
 
@@ -104,7 +107,8 @@ class FileSystemOperationImplWriteTest : public testing::Test {
 
   FileSystemURL URLForPath(const base::FilePath& path) const {
     return file_system_context_->CreateCrackedFileSystemURL(
-        url::Origin::Create(GURL(kOrigin)), kFileSystemType, path);
+        blink::StorageKey::CreateFromStringForTesting(kOrigin), kFileSystemType,
+        path);
   }
 
   // Callback function for recording test results.
@@ -248,9 +252,9 @@ TEST_F(FileSystemOperationImplWriteTest, TestWriteDir) {
 TEST_F(FileSystemOperationImplWriteTest, TestWriteFailureByQuota) {
   ScopedTextBlob blob(blob_storage_context(), "blob:success",
                       "Hello, world!\n");
-  quota_manager_->SetQuota(url::Origin::Create(GURL(kOrigin)),
-                           FileSystemTypeToQuotaStorageType(kFileSystemType),
-                           10);
+  quota_manager_->SetQuota(
+      blink::StorageKey::CreateFromStringForTesting(kOrigin),
+      FileSystemTypeToQuotaStorageType(kFileSystemType), 10);
   file_system_context_->operation_runner()->Write(URLForPath(virtual_path_),
                                                   blob.GetBlobDataHandle(), 0,
                                                   RecordWriteCallback());

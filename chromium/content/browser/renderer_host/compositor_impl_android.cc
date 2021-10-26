@@ -295,14 +295,9 @@ CompositorImpl::CompositorImpl(CompositorClient* client,
   DCHECK(client);
 
   SetRootWindow(root_window);
-
-  // Listen to display density change events and update painted device scale
-  // factor accordingly.
-  display::Screen::GetScreen()->AddObserver(this);
 }
 
 CompositorImpl::~CompositorImpl() {
-  display::Screen::GetScreen()->RemoveObserver(this);
   DetachRootWindow();
   // Clean-up any surface references.
   SetSurface(nullptr, false);
@@ -419,10 +414,6 @@ void CompositorImpl::CreateLayerTreeHost() {
     settings.initial_debug_state.show_debug_borders.set();
   settings.single_thread_proxy_scheduler = true;
   settings.use_painted_device_scale_factor = true;
-  // TODO(crbug.com/933846): LatencyRecovery is causing jank on Android. Disable
-  // for now, with a plan to disable more widely once viz launches.
-  settings.enable_impl_latency_recovery = false;
-  settings.enable_main_latency_recovery = false;
 
   animation_host_ = cc::AnimationHost::CreateMainInstance();
 
@@ -430,7 +421,8 @@ void CompositorImpl::CreateLayerTreeHost() {
   params.client = this;
   params.task_graph_runner =
       CompositorDependenciesAndroid::Get().GetTaskGraphRunner();
-  params.main_task_runner = base::ThreadTaskRunnerHandle::Get();
+  params.main_task_runner =
+      content::GetUIThreadTaskRunner({BrowserTaskType::kUserInput});
   params.settings = &settings;
   params.mutator_host = animation_host_.get();
   host_ = cc::LayerTreeHost::CreateSingleThreaded(this, std::move(params));
@@ -812,7 +804,7 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   pending_frames_ = 0;
   gpu_capabilities_ = context_provider->ContextCapabilities();
   scoped_refptr<base::SingleThreadTaskRunner> task_runner =
-      base::ThreadTaskRunnerHandle::Get();
+      content::GetUIThreadTaskRunner({BrowserTaskType::kUserInput});
 
   auto root_params = viz::mojom::RootCompositorFrameSinkParams::New();
 

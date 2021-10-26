@@ -18,8 +18,6 @@
 #include "spdy/core/spdy_bitmasks.h"
 #include "spdy/core/spdy_frame_builder.h"
 #include "spdy/core/spdy_frame_reader.h"
-#include "spdy/platform/api/spdy_estimate_memory_usage.h"
-#include "spdy/platform/api/spdy_string_utils.h"
 
 namespace spdy {
 
@@ -303,9 +301,8 @@ size_t SpdyFramer::SpdyFrameIterator::NextFrame(ZeroCopyOutputBuffer* output) {
 
   const size_t size_without_block =
       is_first_frame_ ? GetFrameSizeSansBlock() : kContinuationFrameMinimumSize;
-  auto encoding = std::make_unique<std::string>();
-  encoder_->Next(kHttp2MaxControlFrameSendSize - size_without_block,
-                 encoding.get());
+  std::string encoding;
+  encoder_->Next(kHttp2MaxControlFrameSendSize - size_without_block, &encoding);
   has_next_frame_ = encoder_->HasNext();
 
   if (framer_->debug_visitor_ != nullptr) {
@@ -316,14 +313,14 @@ size_t SpdyFramer::SpdyFrameIterator::NextFrame(ZeroCopyOutputBuffer* output) {
     framer_->debug_visitor_->OnSendCompressedFrame(
         frame_ir.stream_id(),
         is_first_frame_ ? frame_ir.frame_type() : SpdyFrameType::CONTINUATION,
-        header_list_size, size_without_block + encoding->size());
+        header_list_size, size_without_block + encoding.size());
   }
 
   const size_t free_bytes_before = output->BytesFree();
   bool ok = false;
   if (is_first_frame_) {
     is_first_frame_ = false;
-    ok = SerializeGivenEncoding(*encoding, output);
+    ok = SerializeGivenEncoding(encoding, output);
   } else {
     SpdyContinuationIR continuation_ir(frame_ir.stream_id());
     continuation_ir.take_encoding(std::move(encoding));
@@ -1378,10 +1375,6 @@ size_t SpdyFramer::header_encoder_table_size() const {
   } else {
     return hpack_encoder_->CurrentHeaderTableSizeSetting();
   }
-}
-
-size_t SpdyFramer::EstimateMemoryUsage() const {
-  return SpdyEstimateMemoryUsage(hpack_encoder_);
 }
 
 }  // namespace spdy

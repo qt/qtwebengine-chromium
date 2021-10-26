@@ -28,8 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import type * as Formatter from '../../models/formatter/formatter.js';
@@ -43,7 +41,7 @@ import {FormattedContentBuilder} from './FormattedContentBuilder.js';
 import {HTMLFormatter} from './HTMLFormatter.js';
 import {IdentityFormatter} from './IdentityFormatter.js';
 import {JavaScriptFormatter} from './JavaScriptFormatter.js';
-
+import {JSONFormatter} from './JSONFormatter.js';
 
 export interface Chunk {
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -196,6 +194,7 @@ export function format(
         formatter.format(text, lineEndings);
         break;
       }
+      case 'text/x-scss':
       case 'text/css': {
         const formatter = new CSSFormatter(builder);
         formatter.format(text, lineEndings, 0, text.length);
@@ -204,6 +203,11 @@ export function format(
       case 'text/javascript':
       case 'application/javascript': {
         const formatter = new JavaScriptFormatter(builder);
+        formatter.format(text, lineEndings, 0, text.length);
+        break;
+      }
+      case 'application/json': {
+        const formatter = new JSONFormatter(builder);
         formatter.format(text, lineEndings, 0, text.length);
         break;
       }
@@ -301,7 +305,9 @@ export function argumentsList(content: string): string[] {
       if (!expression.body.body) {
         break;
       }
-      const constructor = expression.body.body.find(method => method.kind === 'constructor');
+      const constructor =
+          expression.body.body.find(method => method.type === 'MethodDefinition' && method.kind === 'constructor') as
+          Acorn.ESTree.MethodDefinition;
       if (constructor) {
         params = constructor.value.params;
       }

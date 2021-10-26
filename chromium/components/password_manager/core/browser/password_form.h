@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/containers/flat_map.h"
 #include "base/time/time.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/gaia_id_hash.h"
@@ -29,6 +30,37 @@ using ValueElementPair = std::pair<std::u16string, std::u16string>;
 
 // Vector of possible username values and corresponding field names.
 using ValueElementVector = std::vector<ValueElementPair>;
+
+using IsMuted = base::StrongAlias<class IsMutedTag, bool>;
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+enum class InsecureType {
+  // If the credentials was leaked by a data breach.
+  kLeaked = 0,
+  // If the credentials was entered on a phishing site.
+  kPhished = 1,
+  // If the password is weak.
+  kWeak = 2,
+  // If the password is reused for other accounts.
+  kReused = 3,
+  kMaxValue = kReused
+};
+
+// Metadata for insecure credentials
+struct InsecurityMetadata {
+  InsecurityMetadata();
+  InsecurityMetadata(base::Time create_time, IsMuted is_muted);
+  InsecurityMetadata(const InsecurityMetadata& rhs);
+  ~InsecurityMetadata();
+
+  // The date when the record was created.
+  base::Time create_time;
+  // Whether the problem was explicitly muted by the user.
+  IsMuted is_muted{false};
+};
+
+bool operator==(const InsecurityMetadata& lhs, const InsecurityMetadata& rhs);
 
 // The PasswordForm struct encapsulates information about a login form,
 // which can be an HTML form or a dialog with username/password text fields.
@@ -228,16 +260,17 @@ struct PasswordForm {
   // When parsing an HTML form, this is not used.
   base::Time date_last_used;
 
+  // When the password value was last changed. The date can be unset on the old
+  // credentials because the passwords wasn't modified yet. The code must keep
+  // it in mind and fallback to 'date_last_used' or 'date_created'.
+  //
+  // When parsing an HTML form, this is not used.
+  base::Time date_password_modified;
+
   // When the login was saved (by chrome).
   //
   // When parsing an HTML form, this is not used.
   base::Time date_created;
-
-  // When the login was downloaded from the sync server. For local passwords is
-  // not used.
-  //
-  // When parsing an HTML form, this is not used.
-  base::Time date_synced;
 
   // Tracks if the user opted to never remember passwords for this form. Default
   // to false.
@@ -322,6 +355,7 @@ struct PasswordForm {
     kAccountStore = 1 << 1,
     kMaxValue = kAccountStore
   };
+
   // Please use IsUsingAccountStore and IsUsingProfileStore to check in which
   // store the form is present.
   // TODO(crbug.com/1201643): Rename to in_stores to reflect possibility of
@@ -333,14 +367,13 @@ struct PasswordForm {
   // prompt for those users.
   std::vector<autofill::GaiaIdHash> moving_blocked_for_list;
 
-  // Return true if we consider this form to be a change password form.
-  // We use only client heuristics, so it could include signup forms.
-  bool IsPossibleChangePasswordForm() const;
+  // A mapping from the credential insecurity type (e.g. leaked, phished),
+  // to its metadata (e.g. time it was discovered, whether alerts are muted).
+  base::flat_map<InsecureType, InsecurityMetadata> password_issues;
 
-  // Return true if we consider this form to be a change password form
-  // without username field. We use only client heuristics, so it could
-  // include signup forms.
-  bool IsPossibleChangePasswordFormWithoutUsername() const;
+  // Return true if we consider this form to be a change password form and not
+  // a signup form. It's based on local heuristics and may be inaccurate.
+  bool IsLikelyChangePasswordForm() const;
 
   // Returns true if current password element is set.
   bool HasUsernameElement() const;
@@ -366,6 +399,10 @@ struct PasswordForm {
 
   // Returns true when |password_value| or |new_password_value| are non-empty.
   bool HasNonEmptyPasswordValue() const;
+
+  // Utility method to check whether the form represents an insecure credential
+  // of insecure type `type`.
+  bool IsInsecureCredential(InsecureType type) const;
 
   PasswordForm();
   PasswordForm(const PasswordForm& other);

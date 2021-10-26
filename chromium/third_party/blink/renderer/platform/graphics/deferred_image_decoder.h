@@ -28,7 +28,7 @@
 
 #include <memory>
 
-#include "base/macros.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/platform/geometry/int_size.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_image.h"
 #include "third_party/blink/renderer/platform/graphics/rw_buffer.h"
@@ -59,6 +59,8 @@ class PLATFORM_EXPORT DeferredImageDecoder final {
   static std::unique_ptr<DeferredImageDecoder> CreateForTesting(
       std::unique_ptr<ImageDecoder>);
 
+  DeferredImageDecoder(const DeferredImageDecoder&) = delete;
+  DeferredImageDecoder& operator=(const DeferredImageDecoder&) = delete;
   ~DeferredImageDecoder();
 
   String FilenameExtension() const;
@@ -66,19 +68,21 @@ class PLATFORM_EXPORT DeferredImageDecoder final {
   sk_sp<PaintImageGenerator> CreateGenerator();
 
   scoped_refptr<SharedBuffer> Data();
+  bool HasData() const;
+  size_t DataSize() const;
   void SetData(scoped_refptr<SharedBuffer> data, bool all_data_received);
 
   bool IsSizeAvailable();
   bool HasEmbeddedColorProfile() const;
   IntSize Size() const;
-  IntSize FrameSizeAtIndex(size_t index) const;
-  size_t FrameCount();
+  IntSize FrameSizeAtIndex(wtf_size_t index) const;
+  wtf_size_t FrameCount();
   bool ImageIsHighBitDepth() const { return image_is_high_bit_depth_; }
   int RepetitionCount() const;
-  bool FrameIsReceivedAtIndex(size_t index) const;
-  base::TimeDelta FrameDurationAtIndex(size_t index) const;
-  ImageOrientation OrientationAtIndex(size_t index) const;
-  IntSize DensityCorrectedSizeAtIndex(size_t index) const;
+  bool FrameIsReceivedAtIndex(wtf_size_t index) const;
+  base::TimeDelta FrameDurationAtIndex(wtf_size_t index) const;
+  ImageOrientation OrientationAtIndex(wtf_size_t index) const;
+  IntSize DensityCorrectedSizeAtIndex(wtf_size_t index) const;
   bool HotSpot(IntPoint&) const;
   SkAlphaType AlphaType() const;
 
@@ -134,10 +138,8 @@ class PLATFORM_EXPORT DeferredImageDecoder final {
   Vector<DeferredFrameData> frame_data_;
   // The number of received/complete frames in |frame_data_|. Note: This is also
   // the index of the first unreceived/incomplete frame in |frame_data_|.
-  size_t received_frame_count_ = 0;
+  wtf_size_t received_frame_count_ = 0;
   scoped_refptr<ImageFrameGenerator> frame_generator_;
-
-  DISALLOW_COPY_AND_ASSIGN(DeferredImageDecoder);
 };
 
 }  // namespace blink

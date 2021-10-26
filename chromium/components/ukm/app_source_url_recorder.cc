@@ -17,10 +17,24 @@ SourceId AssignNewAppId() {
   return ConvertToSourceId(seq.GetNext() + 1, SourceIdType::APP_ID);
 }
 
+SourceId AppSourceUrlRecorder::GetSourceIdForChromeApp(
+    const std::string& app_id) {
+  DCHECK(!app_id.empty());
+  GURL url("app://" + app_id);
+  return GetSourceIdForUrl(url, AppType::kChromeApp);
+}
+
 SourceId AppSourceUrlRecorder::GetSourceIdForChromeExtension(
     const std::string& id) {
   GURL url("chrome-extension://" + id);
   return GetSourceIdForUrl(url, AppType::kExtension);
+}
+
+SourceId AppSourceUrlRecorder::GetSourceIdForArcPackageName(
+    const std::string& package_name) {
+  DCHECK(!package_name.empty());
+  GURL url("app://" + package_name);
+  return GetSourceIdForUrl(url, AppType::kArc);
 }
 
 SourceId AppSourceUrlRecorder::GetSourceIdForArc(
@@ -47,6 +61,19 @@ SourceId AppSourceUrlRecorder::GetSourceIdForUrl(const GURL& url,
     recorder->UpdateAppURL(source_id, url, app_type);
   }
   return source_id;
+}
+
+void AppSourceUrlRecorder::MarkSourceForDeletion(SourceId source_id) {
+  if (GetSourceIdType(source_id) != SourceIdType::APP_ID) {
+    DLOG(FATAL) << "AppSourceUrlRecorder::MarkSourceForDeletion invoked on "
+                << "non-APP_ID type SourceId: " << source_id;
+    return;
+  }
+
+  ukm::DelegatingUkmRecorder* const recorder =
+      ukm::DelegatingUkmRecorder::Get();
+  if (recorder)
+    recorder->MarkSourceForDeletion(source_id);
 }
 
 }  // namespace ukm

@@ -8,6 +8,7 @@
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/singleton.h"
@@ -227,7 +228,7 @@ arc::mojom::NetworkConfigurationPtr TranslateNetworkProperties(
   if (const auto* device =
           GetStateHandler()->GetDeviceState(network_state->device_path())) {
     mojo->network_interface = device->interface();
-    for (const auto& kv : device->ip_configs().DictItems())
+    for (const auto kv : device->ip_configs().DictItems())
       AddIpConfiguration(mojo.get(), &kv.second);
   }
 

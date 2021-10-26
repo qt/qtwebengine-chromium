@@ -13,6 +13,7 @@
 #include "base/callback.h"
 #include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill_assistant/browser/cud_condition.pb.h"
 #include "components/autofill_assistant/browser/service.pb.h"
 #include "components/autofill_assistant/browser/user_action.h"
 #include "components/autofill_assistant/browser/website_login_manager.h"
@@ -119,9 +120,6 @@ class UserData {
   absl::optional<int> date_time_range_start_timeslot_;
   absl::optional<int> date_time_range_end_timeslot_;
 
-  // A set of additional key/value pairs to be stored in client_memory.
-  std::map<std::string, ValueProto> additional_values_;
-
   std::vector<std::unique_ptr<autofill::AutofillProfile>> available_profiles_;
   std::vector<std::unique_ptr<PaymentInstrument>>
       available_payment_instruments_;
@@ -133,9 +131,6 @@ class UserData {
   // has_selected_address() is true because fill manually was chosen.
   bool has_selected_address(const std::string& name) const;
 
-  // Returns true if an additional value is stored for |key|.
-  bool has_additional_value(const std::string& key) const;
-
   // Selected address for |name|. It will be a nullptr if didn't select anything
   // or if selected 'Fill manually'.
   const autofill::AutofillProfile* selected_address(
@@ -144,8 +139,14 @@ class UserData {
   // The selected card.
   const autofill::CreditCard* selected_card() const;
 
+  // Set an additional value for |key|.
+  void SetAdditionalValue(const std::string& name, const ValueProto& value);
+
+  // Returns true if an additional value is stored for |key|.
+  bool HasAdditionalValue(const std::string& key) const;
+
   // The additional value for |key|, or nullptr if it does not exist.
-  const ValueProto* additional_value(const std::string& key) const;
+  const ValueProto* GetAdditionalValue(const std::string& key) const;
 
   // The form data of the password change form. This is stored at the time of
   // password generation (GeneratePasswordForFormFieldProto) to allow a
@@ -165,6 +166,9 @@ class UserData {
   // The selected credit card.
   // Written by |UserModel| to ensure that it stays in sync.
   std::unique_ptr<autofill::CreditCard> selected_card_;
+
+  // A set of additional key/value pairs to be stored in client_memory.
+  std::map<std::string, ValueProto> additional_values_;
 };
 
 // Struct for holding the payment request options.
@@ -172,6 +176,9 @@ struct CollectUserDataOptions {
   CollectUserDataOptions();
   ~CollectUserDataOptions();
 
+  // TODO(b/180705720): Eventually remove |request_payer_name|,
+  // |request_payer_email| and |request_payer_phone|. They're still used to
+  // control the ContactEditor.
   bool request_payer_name = false;
   bool request_payer_email = false;
   bool request_payer_phone = false;
@@ -184,9 +191,14 @@ struct CollectUserDataOptions {
   std::vector<AutofillContactField> contact_full_fields;
   int contact_full_max_lines;
 
-  bool require_billing_postal_code = false;
-  std::string billing_postal_code_missing_text;
+  // TODO(b/180705720): Eventually remove |credit_card_expired_text| and
+  // place it into |required_credit_card_pieces|.
   std::string credit_card_expired_text;
+
+  std::vector<RequiredDataPiece> required_contact_data_pieces;
+  std::vector<RequiredDataPiece> required_shipping_address_data_pieces;
+  std::vector<RequiredDataPiece> required_credit_card_data_pieces;
+  std::vector<RequiredDataPiece> required_billing_address_data_pieces;
 
   // If empty, terms and conditions should not be shown.
   std::string accept_terms_and_conditions_text;

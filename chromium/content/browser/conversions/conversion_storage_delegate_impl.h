@@ -6,13 +6,17 @@
 #define CONTENT_BROWSER_CONVERSIONS_CONVERSION_STORAGE_DELEGATE_IMPL_H_
 
 #include "base/sequence_checker.h"
-#include "base/time/time.h"
-#include "content/browser/conversions/conversion_report.h"
 #include "content/browser/conversions/conversion_storage.h"
 #include "content/browser/conversions/storable_impression.h"
 #include "content/common/content_export.h"
 
+namespace base {
+class Time;
+}  // namespace base
+
 namespace content {
+
+struct ConversionReport;
 
 // Implementation of the storage delegate. This class handles assigning
 // report times to newly created conversion reports. It
@@ -27,27 +31,29 @@ class CONTENT_EXPORT ConversionStorageDelegateImpl
       delete;
   ConversionStorageDelegateImpl& operator=(
       const ConversionStorageDelegateImpl& other) = delete;
+  ConversionStorageDelegateImpl(ConversionStorageDelegateImpl&& other) = delete;
+  ConversionStorageDelegateImpl& operator=(
+      ConversionStorageDelegateImpl&& other) = delete;
   ~ConversionStorageDelegateImpl() override = default;
 
   // ConversionStorageDelegate:
-  const StorableImpression& GetImpressionToAttribute(
-      const std::vector<StorableImpression>& impressions) override;
-  void ProcessNewConversionReport(ConversionReport& report) override;
+  base::Time GetReportTime(const ConversionReport& report) const override;
   int GetMaxConversionsPerImpression(
       StorableImpression::SourceType source_type) const override;
   int GetMaxImpressionsPerOrigin() const override;
   int GetMaxConversionsPerOrigin() const override;
+  int GetMaxAttributionDestinationsPerEventSource() const override;
   RateLimitConfig GetRateLimits() const override;
+  StorableImpression::AttributionLogic SelectAttributionLogic(
+      const StorableImpression& impression) const override;
+  uint64_t GetFakeEventSourceTriggerData() const override;
+  base::TimeDelta GetDeleteExpiredImpressionsFrequency() const override;
+  base::TimeDelta GetDeleteExpiredRateLimitsFrequency() const override;
 
  private:
-  // Get the time a conversion report should be sent, by batching reports into
-  // set reporting windows based on their impression time. This strictly delays
-  // the time a report will be sent.
-  base::Time GetReportTimeForConversion(const ConversionReport& report) const;
-
   // Whether the API is running in debug mode, meaning that there should be
   // no delays or noise added to reports.
-  bool debug_mode_ = false;
+  const bool debug_mode_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

@@ -158,11 +158,10 @@ class TestNetworkingPrivateDelegate : public NetworkingPrivateDelegate {
   }
 
   // Synchronous methods
-  std::unique_ptr<base::ListValue> GetEnabledNetworkTypes() override {
-    std::unique_ptr<base::ListValue> result;
+  base::Value GetEnabledNetworkTypes() override {
+    base::Value result(base::Value::Type::LIST);
     if (!fail_) {
-      result = std::make_unique<base::ListValue>();
-      result->AppendString(::onc::network_config::kEthernet);
+      result.Append(::onc::network_config::kEthernet);
     }
     return result;
   }
@@ -308,9 +307,9 @@ class NetworkingPrivateApiTest : public ExtensionApiTest {
  protected:
   bool RunNetworkingSubtest(const std::string& subtest) {
     const std::string page_url = "main.html?" + subtest;
-    return RunExtensionTest(
-        {.name = "networking_private", .page_url = page_url.c_str()},
-        {.load_as_component = true});
+    return RunExtensionTest("networking_private",
+                            {.page_url = page_url.c_str()},
+                            {.load_as_component = true});
   }
 
  private:

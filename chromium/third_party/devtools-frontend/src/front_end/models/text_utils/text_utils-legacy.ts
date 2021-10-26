@@ -21,7 +21,6 @@ TextUtils.ContentProvider.SearchMatch = TextUtilsModule.ContentProvider.SearchMa
 TextUtils.ContentProvider.contentAsDataURL = TextUtilsModule.ContentProvider.contentAsDataURL;
 TextUtils.StaticContentProvider = TextUtilsModule.StaticContentProvider.StaticContentProvider;
 
-
 /** @constructor */
 TextUtils.Text = TextUtilsModule.Text.Text;
 
@@ -33,9 +32,6 @@ TextUtils.TextRange = TextUtilsModule.TextRange.TextRange;
 
 /** @constructor */
 TextUtils.SourceRange = TextUtilsModule.TextRange.SourceRange;
-
-/** @constructor */
-TextUtils.SourceEdit = TextUtilsModule.TextRange.SourceEdit;
 
 TextUtils.TextUtils = TextUtilsModule.TextUtils.Utils;
 

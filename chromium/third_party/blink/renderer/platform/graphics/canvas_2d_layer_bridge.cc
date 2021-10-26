@@ -258,7 +258,7 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider() {
   // Calling to DidDraw because GetOrCreateResourceProvider created a new
   // provider and cleared it
   // TODO crbug/1090081: Check possibility to move DidDraw inside Clear.
-  DidDraw(FloatRect(0.f, 0.f, size_.Width(), size_.Height()));
+  DidDraw();
 
   if (IsAccelerated() && !layer_) {
     layer_ = cc::TextureLayer::CreateForMailbox(this);
@@ -267,7 +267,7 @@ CanvasResourceProvider* Canvas2DLayerBridge::GetOrCreateResourceProvider() {
     layer_->SetContentsOpaque(ColorParams().GetOpacityMode() == kOpaque);
     layer_->SetBlendBackgroundColor(ColorParams().GetOpacityMode() != kOpaque);
     layer_->SetNearestNeighbor(resource_host_->FilterQuality() ==
-                               kNone_SkFilterQuality);
+                               cc::PaintFlags::FilterQuality::kNone);
   }
 
   if (!IsHibernating())
@@ -307,11 +307,13 @@ cc::PaintCanvas* Canvas2DLayerBridge::GetPaintCanvas() {
   return ResourceProvider()->Canvas();
 }
 
-void Canvas2DLayerBridge::SetFilterQuality(SkFilterQuality filter_quality) {
+void Canvas2DLayerBridge::SetFilterQuality(
+    cc::PaintFlags::FilterQuality filter_quality) {
   if (CanvasResourceProvider* resource_provider = ResourceProvider())
     resource_provider->SetFilterQuality(filter_quality);
   if (layer_)
-    layer_->SetNearestNeighbor(filter_quality == kNone_SkFilterQuality);
+    layer_->SetNearestNeighbor(filter_quality ==
+                               cc::PaintFlags::FilterQuality::kNone);
 }
 
 void Canvas2DLayerBridge::SetIsInHiddenPage(bool hidden) {
@@ -637,7 +639,7 @@ cc::Layer* Canvas2DLayerBridge::Layer() {
   return layer_.get();
 }
 
-void Canvas2DLayerBridge::DidDraw(const FloatRect& /* rect */) {
+void Canvas2DLayerBridge::DidDraw() {
   if (ResourceProvider() && ResourceProvider()->needs_flush())
     FinalizeFrame();
   have_recorded_draw_commands_ = true;
@@ -669,9 +671,9 @@ void Canvas2DLayerBridge::FinalizeFrame() {
     rate_limiter_->Tick();
 }
 
-void Canvas2DLayerBridge::DoPaintInvalidation(const FloatRect& dirty_rect) {
+void Canvas2DLayerBridge::DoPaintInvalidation(const IntRect& dirty_rect) {
   if (layer_ && raster_mode_ == RasterMode::kGPU)
-    layer_->SetNeedsDisplayRect(EnclosingIntRect(dirty_rect));
+    layer_->SetNeedsDisplayRect(dirty_rect);
 }
 
 scoped_refptr<StaticBitmapImage> Canvas2DLayerBridge::NewImageSnapshot() {

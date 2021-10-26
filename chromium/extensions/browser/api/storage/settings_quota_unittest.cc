@@ -15,8 +15,6 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::DictionaryValue;
-using base::ListValue;
-using base::Value;
 
 namespace extensions {
 
@@ -30,9 +28,10 @@ class ExtensionSettingsQuotaTest : public testing::Test {
   ExtensionSettingsQuotaTest()
       : byte_value_1_(1),
         byte_value_16_("sixteen bytes."),
+        byte_value_256_(base::Value(base::Value::Type::LIST)),
         delegate_(new TestingValueStore()) {
     for (int i = 1; i < 89; ++i) {
-      byte_value_256_.AppendInteger(i);
+      byte_value_256_.Append(i);
     }
     ValidateByteValues();
   }
@@ -70,7 +69,7 @@ class ExtensionSettingsQuotaTest : public testing::Test {
   // Values with different serialized sizes.
   base::Value byte_value_1_;
   base::Value byte_value_16_;
-  base::ListValue byte_value_256_;
+  base::Value byte_value_256_;
 
   // Quota enforcing storage area being tested.
   std::unique_ptr<SettingsStorageQuotaEnforcer> storage_;
@@ -115,17 +114,17 @@ TEST_F(ExtensionSettingsQuotaTest, MediumByteQuota) {
   CreateStorage(40, UINT_MAX, UINT_MAX);
 
   base::DictionaryValue to_set;
-  to_set.Set("a", byte_value_1_.CreateDeepCopy());
-  to_set.Set("b", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("a", byte_value_1_.Clone());
+  to_set.SetKey("b", byte_value_16_.Clone());
   EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
+  settings.SetKey("b", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Should be able to set value to other under-quota value.
-  to_set.Set("a", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_256_).status().ok());
@@ -147,12 +146,12 @@ TEST_F(ExtensionSettingsQuotaTest, SmallMaxKeys) {
   CreateStorage(UINT_MAX, UINT_MAX, 1);
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Should be able to set existing key to other value without going over quota.
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_16_).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "b", byte_value_16_).status().ok());
@@ -165,18 +164,18 @@ TEST_F(ExtensionSettingsQuotaTest, MediumMaxKeys) {
   CreateStorage(UINT_MAX, UINT_MAX, 2);
 
   base::DictionaryValue to_set;
-  to_set.Set("a", byte_value_1_.CreateDeepCopy());
-  to_set.Set("b", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("a", byte_value_1_.Clone());
+  to_set.SetKey("b", byte_value_16_.Clone());
   EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
+  settings.SetKey("b", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Should be able to set existing keys to other values without going over
   // quota.
-  to_set.Set("a", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_256_).status().ok());
@@ -188,21 +187,21 @@ TEST_F(ExtensionSettingsQuotaTest, RemovingExistingSettings) {
   CreateStorage(266, UINT_MAX, 2);
 
   storage_->Set(DEFAULTS, "b", byte_value_16_);
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_16_.Clone());
   // Not enough quota.
   storage_->Set(DEFAULTS, "c", byte_value_256_);
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Try again with "b" removed, enough quota.
   EXPECT_TRUE(storage_->Remove("b").status().ok());
-  settings.Remove("b", NULL);
+  settings.RemoveKey("b");
   EXPECT_TRUE(storage_->Set(DEFAULTS, "c", byte_value_256_).status().ok());
   settings.SetKey("c", byte_value_256_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Enough byte quota but max keys not high enough.
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "b", byte_value_1_).status().ok());
@@ -210,9 +209,9 @@ TEST_F(ExtensionSettingsQuotaTest, RemovingExistingSettings) {
 
   // Back under max keys.
   EXPECT_TRUE(storage_->Remove("a").status().ok());
-  settings.Remove("a", NULL);
+  settings.RemoveKey("a");
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_1_).status().ok());
-  settings.Set("b", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 }
 
@@ -222,11 +221,11 @@ TEST_F(ExtensionSettingsQuotaTest, RemovingNonexistentSettings) {
 
   // Max out bytes.
   base::DictionaryValue to_set;
-  to_set.Set("b1", byte_value_16_.CreateDeepCopy());
-  to_set.Set("b2", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("b1", byte_value_16_.Clone());
+  to_set.SetKey("b2", byte_value_16_.Clone());
   storage_->Set(DEFAULTS, to_set);
-  settings.Set("b1", byte_value_16_.CreateDeepCopy());
-  settings.Set("b2", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("b1", byte_value_16_.Clone());
+  settings.SetKey("b2", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
   EXPECT_TRUE(SettingsEqual(settings));
 
@@ -244,13 +243,13 @@ TEST_F(ExtensionSettingsQuotaTest, RemovingNonexistentSettings) {
 
   // Max out key count.
   to_set.Clear();
-  to_set.Set("b1", byte_value_1_.CreateDeepCopy());
-  to_set.Set("b2", byte_value_1_.CreateDeepCopy());
+  to_set.SetKey("b1", byte_value_1_.Clone());
+  to_set.SetKey("b2", byte_value_1_.Clone());
   storage_->Set(DEFAULTS, to_set);
-  settings.Set("b1", byte_value_1_.CreateDeepCopy());
-  settings.Set("b2", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("b1", byte_value_1_.Clone());
+  settings.SetKey("b2", byte_value_1_.Clone());
   storage_->Set(DEFAULTS, "b3", byte_value_1_);
-  settings.Set("b3", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("b3", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Remove some settings that don't exist.
@@ -273,8 +272,8 @@ TEST_F(ExtensionSettingsQuotaTest, Clear) {
   // Test running out of byte quota.
   {
     base::DictionaryValue to_set;
-    to_set.Set("a", byte_value_16_.CreateDeepCopy());
-    to_set.Set("b", byte_value_16_.CreateDeepCopy());
+    to_set.SetKey("a", byte_value_16_.Clone());
+    to_set.SetKey("b", byte_value_16_.Clone());
     EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
     EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_16_).status().ok());
 
@@ -289,11 +288,11 @@ TEST_F(ExtensionSettingsQuotaTest, Clear) {
   storage_->Clear();
   {
     base::DictionaryValue to_set;
-    to_set.Set("a", byte_value_1_.CreateDeepCopy());
-    to_set.Set("b", byte_value_1_.CreateDeepCopy());
-    to_set.Set("c", byte_value_1_.CreateDeepCopy());
-    to_set.Set("d", byte_value_1_.CreateDeepCopy());
-    to_set.Set("e", byte_value_1_.CreateDeepCopy());
+    to_set.SetKey("a", byte_value_1_.Clone());
+    to_set.SetKey("b", byte_value_1_.Clone());
+    to_set.SetKey("c", byte_value_1_.Clone());
+    to_set.SetKey("d", byte_value_1_.Clone());
+    to_set.SetKey("e", byte_value_1_.Clone());
     EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
     EXPECT_FALSE(storage_->Set(DEFAULTS, "f", byte_value_1_).status().ok());
 
@@ -311,7 +310,7 @@ TEST_F(ExtensionSettingsQuotaTest, ChangingUsedBytesWithSet) {
 
   // Change a setting to make it go over quota.
   storage_->Set(DEFAULTS, "a", byte_value_16_);
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "a", byte_value_256_).status().ok());
@@ -320,10 +319,10 @@ TEST_F(ExtensionSettingsQuotaTest, ChangingUsedBytesWithSet) {
   // Change a setting to reduce usage and room for another setting.
   EXPECT_FALSE(storage_->Set(DEFAULTS, "foobar", byte_value_1_).status().ok());
   storage_->Set(DEFAULTS, "a", byte_value_1_);
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "foobar", byte_value_1_).status().ok());
-  settings.Set("foobar", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("foobar", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 }
 
@@ -332,21 +331,21 @@ TEST_F(ExtensionSettingsQuotaTest, SetsOnlyEntirelyCompletedWithByteQuota) {
   CreateStorage(40, UINT_MAX, UINT_MAX);
 
   storage_->Set(DEFAULTS, "a", byte_value_16_);
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
 
   // The entire change is over quota.
   base::DictionaryValue to_set;
-  to_set.Set("b", byte_value_16_.CreateDeepCopy());
-  to_set.Set("c", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("b", byte_value_16_.Clone());
+  to_set.SetKey("c", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, to_set).status().ok());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // The entire change is over quota, but quota reduced in existing key.
-  to_set.Set("a", byte_value_1_.CreateDeepCopy());
+  to_set.SetKey("a", byte_value_1_.Clone());
   EXPECT_TRUE(storage_->Set(DEFAULTS, to_set).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
+  settings.SetKey("b", byte_value_16_.Clone());
+  settings.SetKey("c", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 }
 
@@ -355,11 +354,11 @@ TEST_F(ExtensionSettingsQuotaTest, SetsOnlyEntireCompletedWithMaxKeys) {
   CreateStorage(UINT_MAX, UINT_MAX, 2);
 
   storage_->Set(DEFAULTS, "a", byte_value_1_);
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
 
   base::DictionaryValue to_set;
-  to_set.Set("b", byte_value_16_.CreateDeepCopy());
-  to_set.Set("c", byte_value_16_.CreateDeepCopy());
+  to_set.SetKey("b", byte_value_16_.Clone());
+  to_set.SetKey("c", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, to_set).status().ok());
   EXPECT_TRUE(SettingsEqual(settings));
 }
@@ -374,7 +373,7 @@ TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndByteQuota) {
 
   // Add some data.
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_16_).status().ok());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Not enough quota.
@@ -383,11 +382,11 @@ TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndByteQuota) {
 
   // Reduce usage of original setting so that "c" can fit.
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_16_).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "c", byte_value_16_).status().ok());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("c", byte_value_16_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Remove to free up some more data.
@@ -397,8 +396,8 @@ TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndByteQuota) {
   to_remove.push_back("a");
   to_remove.push_back("b");
   storage_->Remove(to_remove);
-  settings.Remove("a", NULL);
-  settings.Remove("b", NULL);
+  settings.RemoveKey("a");
+  settings.RemoveKey("b");
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "d", byte_value_256_).status().ok());
@@ -409,11 +408,11 @@ TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndByteQuota) {
 TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndMaxKeys) {
   base::DictionaryValue settings;
   delegate_->Set(DEFAULTS, "a", byte_value_1_);
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
   CreateStorage(UINT_MAX, UINT_MAX, 2);
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_1_).status().ok());
-  settings.Set("b", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_1_.Clone());
 
   EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_1_).status().ok());
 
@@ -422,9 +421,9 @@ TEST_F(ExtensionSettingsQuotaTest, WithInitialDataAndMaxKeys) {
 
 TEST_F(ExtensionSettingsQuotaTest, InitiallyOverByteQuota) {
   base::DictionaryValue settings;
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
+  settings.SetKey("b", byte_value_16_.Clone());
+  settings.SetKey("c", byte_value_16_.Clone());
   delegate_->Set(DEFAULTS, settings);
 
   CreateStorage(40, UINT_MAX, UINT_MAX);
@@ -434,20 +433,20 @@ TEST_F(ExtensionSettingsQuotaTest, InitiallyOverByteQuota) {
 
   // Take under quota by reducing size of an existing setting
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
-  settings.Set("a", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Should be able set another small setting.
   EXPECT_TRUE(storage_->Set(DEFAULTS, "d", byte_value_1_).status().ok());
-  settings.Set("d", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("d", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 }
 
 TEST_F(ExtensionSettingsQuotaTest, InitiallyOverMaxKeys) {
   base::DictionaryValue settings;
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
+  settings.SetKey("b", byte_value_16_.Clone());
+  settings.SetKey("c", byte_value_16_.Clone());
   delegate_->Set(DEFAULTS, settings);
 
   CreateStorage(UINT_MAX, UINT_MAX, 2);
@@ -460,13 +459,13 @@ TEST_F(ExtensionSettingsQuotaTest, InitiallyOverMaxKeys) {
 
   // Should be able after removing 2.
   storage_->Remove("a");
-  settings.Remove("a", NULL);
+  settings.RemoveKey("a");
   storage_->Remove("b");
-  settings.Remove("b", NULL);
+  settings.RemoveKey("b");
   EXPECT_TRUE(SettingsEqual(settings));
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "e", byte_value_1_).status().ok());
-  settings.Set("e", byte_value_1_.CreateDeepCopy());
+  settings.SetKey("e", byte_value_1_.Clone());
   EXPECT_TRUE(SettingsEqual(settings));
 
   // Still can't set any.
@@ -492,12 +491,12 @@ TEST_F(ExtensionSettingsQuotaTest, QuotaBytesPerSetting) {
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_16_).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "a", byte_value_256_).status().ok());
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_16_).status().ok());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "b", byte_value_256_).status().ok());
 
   EXPECT_TRUE(SettingsEqual(settings));
@@ -513,17 +512,17 @@ TEST_F(ExtensionSettingsQuotaTest, QuotaBytesPerSettingWithInitialSettings) {
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(DEFAULTS, "a", byte_value_16_).status().ok());
-  settings.Set("a", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("a", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "a", byte_value_256_).status().ok());
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(DEFAULTS, "b", byte_value_16_).status().ok());
-  settings.Set("b", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("b", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "b", byte_value_256_).status().ok());
 
   EXPECT_TRUE(storage_->Set(DEFAULTS, "c", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(DEFAULTS, "c", byte_value_16_).status().ok());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("c", byte_value_16_.Clone());
   EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_256_).status().ok());
 
   EXPECT_TRUE(SettingsEqual(settings));
@@ -553,7 +552,7 @@ TEST_F(ExtensionSettingsQuotaTest,
 
   EXPECT_TRUE(storage_->Set(IGNORE_QUOTA, "c", byte_value_1_).status().ok());
   EXPECT_TRUE(storage_->Set(IGNORE_QUOTA, "c", byte_value_16_).status().ok());
-  settings.Set("c", byte_value_16_.CreateDeepCopy());
+  settings.SetKey("c", byte_value_16_.Clone());
 
   // ... except the last.  Make sure it can still fail.
   EXPECT_FALSE(storage_->Set(DEFAULTS, "c", byte_value_256_).status().ok());

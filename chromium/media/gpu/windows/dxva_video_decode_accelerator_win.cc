@@ -25,6 +25,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
+#include "base/cxx17_backports.h"
 #include "base/file_version_info.h"
 #include "base/files/file_path.h"
 #include "base/location.h"
@@ -33,7 +34,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/path_service.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/threading/thread_local_storage.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/trace_event/trace_event.h"
@@ -159,7 +159,10 @@ HRESULT CreateAV1Decoder(const IID& iid, void** object) {
   if (acts_num < 1)
     return E_FAIL;
 
-  return acts[0]->ActivateObject(iid, object);
+  hr = acts[0]->ActivateObject(iid, object);
+  for (UINT32 i = 0; i < acts_num; ++i)
+    acts[i]->Release();
+  return hr;
 }
 
 uint64_t g_last_process_output_time;
@@ -1884,7 +1887,8 @@ void DXVAVideoDecodeAccelerator::DoDecode(const gfx::Rect& visible_rect,
 
     break;  // No more retries needed.
   }
-  TRACE_EVENT_ASYNC_END0("gpu", "DXVAVideoDecodeAccelerator.Decoding", this);
+  TRACE_EVENT_NESTABLE_ASYNC_END0("gpu", "DXVAVideoDecodeAccelerator.Decoding",
+                                  TRACE_ID_LOCAL(this));
 
   TRACE_COUNTER1("DXVA_Decoding", "TotalPacketsBeforeDecode",
                  inputs_before_decode_);
@@ -2343,7 +2347,7 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
   RETURN_AND_NOTIFY_ON_HR_FAILURE(hr, "Failed to check video stream config",
                                   PLATFORM_FAILURE, );
 
-  if (disallow_vp9_resilient_dxva_decoding_ &&
+  if (disallow_vp9_resilient_dxva_decoding_ && config_change_detector_ &&
       config_change_detector_->is_vp9_resilient_mode()) {
     RETURN_AND_NOTIFY_ON_HR_FAILURE(
         E_FAIL, "Incompatible GPU for VP9 resilient mode", PLATFORM_FAILURE, );
@@ -2372,8 +2376,8 @@ void DXVAVideoDecodeAccelerator::DecodeInternal(
   current_color_space_ = color_space;
 
   if (!inputs_before_decode_) {
-    TRACE_EVENT_ASYNC_BEGIN0("gpu", "DXVAVideoDecodeAccelerator.Decoding",
-                             this);
+    TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
+        "gpu", "DXVAVideoDecodeAccelerator.Decoding", TRACE_ID_LOCAL(this));
   }
   inputs_before_decode_++;
   hr = decoder_->ProcessInput(0, sample.Get(), 0);

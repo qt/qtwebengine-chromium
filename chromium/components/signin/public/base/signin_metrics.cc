@@ -770,6 +770,19 @@ void RecordRefreshTokenRevokedFromSource(
   UMA_HISTOGRAM_ENUMERATION("Signin.RefreshTokenRevoked.Source", source);
 }
 
+void RecordSigninAccountType(bool is_signin_and_sync, bool is_managed_account) {
+  SigninAccountType account_type = is_managed_account
+                                       ? SigninAccountType::kManaged
+                                       : SigninAccountType::kRegular;
+  if (is_signin_and_sync) {
+    base::UmaHistogramEnumeration("Signin.AccountType.SyncConsent",
+                                  account_type);
+  } else {
+    base::UmaHistogramEnumeration("Signin.AccountType.SigninConsent",
+                                  account_type);
+  }
+}
+
 // --------------------------------------------------------------
 // User actions
 // --------------------------------------------------------------
@@ -1039,5 +1052,13 @@ void RecordSigninImpressionWithAccountUserActionForAccessPoint(
       break;
   }
 }
+
+#if defined(OS_IOS)
+void RecordConsistencyPromoUserAction(AccountConsistencyPromoAction action) {
+  UMA_HISTOGRAM_ENUMERATION(
+      "Signin.AccountConsistencyPromoAction", static_cast<int>(action),
+      static_cast<int>(AccountConsistencyPromoAction::MAX));
+}
+#endif  // defined(OS_IOS)
 
 }  // namespace signin_metrics

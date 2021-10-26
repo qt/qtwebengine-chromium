@@ -9,8 +9,8 @@
 #define GrGLSLFragmentShaderBuilder_DEFINED
 
 #include "src/gpu/GrBlend.h"
+#include "src/gpu/GrFragmentProcessor.h"
 #include "src/gpu/GrProcessor.h"
-#include "src/gpu/glsl/GrGLSLFragmentProcessor.h"
 #include "src/gpu/glsl/GrGLSLShaderBuilder.h"
 
 class GrRenderTarget;
@@ -24,7 +24,7 @@ public:
     /** Appease the compiler; the derived class initializes GrGLSLShaderBuilder. */
     GrGLSLFPFragmentBuilder() : GrGLSLShaderBuilder(nullptr) {
         // Suppress unused warning error
-        (void) fDummyPadding;
+        (void) fPadding;
     }
 
     enum class ScopeFlags {
@@ -38,9 +38,14 @@ public:
         kInsideLoop = (1 << 2)
     };
 
-    SkString writeProcessorFunction(GrGLSLFragmentProcessor*, GrGLSLFragmentProcessor::EmitArgs&);
+    void writeProcessorFunction(GrFragmentProcessor::ProgramImpl*,
+                                GrFragmentProcessor::ProgramImpl::EmitArgs&);
 
     virtual void forceHighPrecision() = 0;
+
+    /** Returns the variable name that holds the color of the destination pixel. This may be nullptr
+     * if no effect advertised that it will read the destination. */
+    virtual const char* dstColor() = 0;
 
 private:
     /**
@@ -57,10 +62,10 @@ private:
     // to start aligned, even though clang is already correctly offsetting the individual fields
     // that require the larger alignment. In the current world, this extra padding is sufficient to
     // correctly initialize GrGLSLXPFragmentBuilder second.
-    char fDummyPadding[4] = {};
+    char fPadding[4] = {};
 };
 
-GR_MAKE_BITFIELD_CLASS_OPS(GrGLSLFPFragmentBuilder::ScopeFlags);
+GR_MAKE_BITFIELD_CLASS_OPS(GrGLSLFPFragmentBuilder::ScopeFlags)
 
 /*
  * This class is used by Xfer processors to build their fragment code.
@@ -88,11 +93,10 @@ public:
  */
 class GrGLSLFragmentShaderBuilder : public GrGLSLFPFragmentBuilder, public GrGLSLXPFragmentBuilder {
 public:
-   /** Returns a nonzero key for a surface's origin. This should only be called if a processor will
-       use the fragment position and/or sample locations. */
-    static uint8_t KeyForSurfaceOrigin(GrSurfaceOrigin);
-
     GrGLSLFragmentShaderBuilder(GrGLSLProgramBuilder* program);
+
+    // Shared FP/XP interface.
+    const char* dstColor() override;
 
     // GrGLSLFPFragmentBuilder interface.
     void forceHighPrecision() override { fForceHighPrecision = true; }
@@ -100,7 +104,6 @@ public:
     // GrGLSLXPFragmentBuilder interface.
     bool hasCustomColorOutput() const override { return SkToBool(fCustomColorOutput); }
     bool hasSecondaryOutput() const override { return fHasSecondaryOutput; }
-    const char* dstColor() override;
     void enableAdvancedBlendEquationIfNeeded(GrBlendEquation) override;
 
 private:
@@ -138,7 +141,7 @@ private:
 
     void onFinalize() override;
 
-    static const char* kDstColorName;
+    static constexpr const char kDstColorName[] = "_dstColor";
 
     /*
      * State that tracks which child proc in the proc tree is currently emitting code.  This is

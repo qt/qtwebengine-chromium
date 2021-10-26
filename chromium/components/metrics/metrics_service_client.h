@@ -49,7 +49,7 @@ class MetricsServiceClient {
 
   // Returns true if metrics should be uploaded for the given |user_id|, which
   // corresponds to the |user_id| field in ChromeUserMetricsExtension.
-  virtual bool ShouldUploadMetricsForUserId(const uint64_t user_id);
+  virtual bool ShouldUploadMetricsForUserId(uint64_t user_id);
 
   // Registers the client id with other services (e.g. crash reporting), called
   // when metrics recording gets enabled.
@@ -116,6 +116,9 @@ class MetricsServiceClient {
   // data.
   virtual bool ShouldStartUpFastForTesting() const;
 
+  // Called when loading state changed, e.g. start/stop loading.
+  virtual void LoadingStateChanged(bool is_loading) {}
+
   // Called on plugin loading errors.
   virtual void OnPluginLoadingError(const base::FilePath& plugin_path) {}
 
@@ -154,7 +157,7 @@ class MetricsServiceClient {
   // string (this is the same as the default behavior). If the package name
   // should not be logged for privacy/fingerprintability reasons, the embedder
   // should return the empty string.
-  virtual std::string GetAppPackageName();
+  virtual std::string GetAppPackageNameIfLoggable();
 
   // Gets the key used to sign metrics uploads. This will be used to compute an
   // HMAC-SHA256 signature of an uploaded log.

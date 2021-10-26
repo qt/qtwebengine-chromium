@@ -270,6 +270,10 @@ class PageLoadTimingMerger {
     MergeBackForwardCacheTiming(navigation_start_offset,
                                 new_page_load_timing.back_forward_cache_timings,
                                 is_main_frame);
+    if (is_main_frame) {
+      MaybeUpdateTimeDelta(&target_->activation_start, navigation_start_offset,
+                           new_page_load_timing.activation_start);
+    }
   }
 
   // Whether we merged a new value.
@@ -444,7 +448,9 @@ PageLoadMetricsUpdateDispatcher::PageLoadMetricsUpdateDispatcher(
       main_frame_metadata_(mojom::FrameMetadata::New()),
       subframe_metadata_(mojom::FrameMetadata::New()),
       page_input_timing_(mojom::InputTiming()),
-      mobile_friendliness_(blink::MobileFriendliness()) {}
+      mobile_friendliness_(blink::MobileFriendliness()),
+      is_prerendered_page_load_(navigation_handle->IsInPrerenderedMainFrame()) {
+}
 
 PageLoadMetricsUpdateDispatcher::~PageLoadMetricsUpdateDispatcher() {
   ShutDown();
@@ -497,12 +503,13 @@ void PageLoadMetricsUpdateDispatcher::UpdateMetrics(
     UpdateMainFrameMetadata(render_frame_host, std::move(new_metadata));
     UpdateMainFrameTiming(std::move(new_timing));
     UpdateMainFrameRenderData(*render_data);
+    UpdateMainFrameMobileFriendliness(mobile_friendliness);
   } else {
     UpdateSubFrameMetadata(render_frame_host, std::move(new_metadata));
     UpdateSubFrameTiming(render_frame_host, std::move(new_timing));
+    UpdateSubFrameMobileFriendliness(mobile_friendliness);
   }
   UpdatePageInputTiming(*input_timing_delta);
-  UpdateMobileFriendliness(mobile_friendliness);
   UpdatePageRenderData(*render_data);
   if (!is_main_frame) {
     // This path is just for the AMP metrics.
@@ -569,7 +576,8 @@ void PageLoadMetricsUpdateDispatcher::DidFinishSubFrameNavigation(
       navigation_handle->GetFrameTreeNodeId(), navigation_delta));
 }
 
-void PageLoadMetricsUpdateDispatcher::OnFrameDeleted(int frame_tree_node_id) {
+void PageLoadMetricsUpdateDispatcher::OnSubFrameDeleted(
+    int frame_tree_node_id) {
   subframe_navigation_start_offset_.erase(frame_tree_node_id);
 }
 
@@ -619,6 +627,17 @@ void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMetadata(
   client_->OnSubframeMetadataChanged(render_frame_host, *subframe_metadata);
 
   MaybeUpdateFrameIntersection(render_frame_host, subframe_metadata);
+}
+
+void PageLoadMetricsUpdateDispatcher::UpdateMainFrameMobileFriendliness(
+    const blink::MobileFriendliness& mobile_friendliness) {
+  mobile_friendliness_ = mobile_friendliness;
+}
+
+void PageLoadMetricsUpdateDispatcher::UpdateSubFrameMobileFriendliness(
+    const blink::MobileFriendliness& mobile_friendliness) {
+  mobile_friendliness_ = mobile_friendliness;
+  client_->OnSubFrameMobileFriendlinessChanged(mobile_friendliness);
 }
 
 void PageLoadMetricsUpdateDispatcher::MaybeUpdateFrameIntersection(
@@ -728,11 +747,6 @@ void PageLoadMetricsUpdateDispatcher::UpdatePageInputTiming(
       input_timing_delta.total_adjusted_input_delay;
 }
 
-void PageLoadMetricsUpdateDispatcher::UpdateMobileFriendliness(
-    const blink::MobileFriendliness& mobile_friendliness) {
-  mobile_friendliness_ = mobile_friendliness;
-}
-
 void PageLoadMetricsUpdateDispatcher::UpdatePageRenderData(
     const mojom::FrameRenderDataUpdate& render_data) {
   page_render_data_.layout_shift_score += render_data.layout_shift_delta;
@@ -832,6 +846,13 @@ void PageLoadMetricsUpdateDispatcher::DispatchTimingUpdates() {
       // received all expected events (e.g. wait to receive a parse event before
       // dispatching a paint event), so observers can make assumptions about
       // ordering of these events in their callbacks.
+      return;
+    }
+    if (is_prerendered_page_load_ &&
+        !pending_merged_page_timing_->activation_start) {
+      // Similarly, in a prerendered page load we may receive a first paint in a
+      // child frame before we've received a notification for activation start
+      // in the main frame.
       return;
     }
   }

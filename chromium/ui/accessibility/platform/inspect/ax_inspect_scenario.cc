@@ -9,6 +9,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "ui/accessibility/platform/inspect/ax_inspect.h"
+#include "ui/accessibility/platform/inspect/ax_script_instruction.h"
 
 namespace ui {
 
@@ -70,8 +71,6 @@ AXInspectScenario::Directive AXInspectScenario::ParseDirective(
     return kWaitFor;
   if (directive == "@EXECUTE-AND-WAIT-FOR")
     return kExecuteAndWaitFor;
-  if (directive == directive_prefix + "-RUN-UNTIL-EVENT")
-    return kRunUntil;
   if (directive == "@DEFAULT-ACTION-ON")
     return kDefaultActionOn;
   if (directive == directive_prefix + "-ALLOW")
@@ -100,9 +99,6 @@ void AXInspectScenario::ProcessDirective(Directive directive,
     case kExecuteAndWaitFor:
       execute.push_back(value);
       break;
-    case kRunUntil:
-      run_until.push_back(value);
-      break;
     case kDefaultActionOn:
       default_action_on.push_back(value);
       break;
@@ -116,7 +112,7 @@ void AXInspectScenario::ProcessDirective(Directive directive,
       property_filters.emplace_back(value, AXPropertyFilter::DENY);
       break;
     case kScript:
-      property_filters.emplace_back(value, AXPropertyFilter::SCRIPT);
+      script_instructions.emplace_back(value);
       break;
     case kNodeFilter: {
       const auto& parts = base::SplitString(value, "=", base::TRIM_WHITESPACE,

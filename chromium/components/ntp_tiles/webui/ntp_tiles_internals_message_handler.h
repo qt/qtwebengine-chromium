@@ -14,7 +14,6 @@
 #include "base/task/cancelable_task_tracker.h"
 #include "components/favicon_base/favicon_types.h"
 #include "components/ntp_tiles/most_visited_sites.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class ListValue;
@@ -78,7 +77,6 @@ class NTPTilesInternalsMessageHandler : public MostVisitedSites::Observer {
   int site_count_;
   std::unique_ptr<MostVisitedSites> most_visited_sites_;
 
-  std::string suggestions_status_;
   std::string popular_sites_json_;
 
   base::CancelableTaskTracker cancelable_task_tracker_;

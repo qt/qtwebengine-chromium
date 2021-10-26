@@ -18,6 +18,10 @@
 #include "storage/common/file_system/file_system_types.h"
 #include "url/origin.h"
 
+namespace blink {
+class StorageKey;
+}  // namespace blink
+
 namespace storage {
 class FileSystemContext;
 }
@@ -63,16 +67,15 @@ class FileSystemHelper : public base::RefCountedThreadSafe<FileSystemHelper> {
       base::OnceCallback<void(const std::list<FileSystemInfo>&)>;
 
   // Creates a FileSystemHelper instance for the file systems stored
-  // in |profile|'s user data directory. The FileSystemHelper object
+  // in `profile`'s user data directory. The FileSystemHelper object
   // will hold a reference to the FileSystemContext that's passed in, but is not
   // responsible for destroying it.
   //
   // The FileSystemHelper will not change the profile itself, but
   // can modify data it contains (by removing file systems).
-  static FileSystemHelper* Create(
-      storage::FileSystemContext* file_system_context,
-      const std::vector<storage::FileSystemType>& additional_types,
-      content::NativeIOContext* native_io_context);
+  FileSystemHelper(storage::FileSystemContext* filesystem_context,
+                   const std::vector<storage::FileSystemType>& additional_types,
+                   content::NativeIOContext* native_io_context);
 
   // Starts the process of fetching file system data, which will call |callback|
   // upon completion, passing it a constant list of FileSystemInfo objects.
@@ -90,10 +93,6 @@ class FileSystemHelper : public base::RefCountedThreadSafe<FileSystemHelper> {
 
  protected:
   friend class base::RefCountedThreadSafe<FileSystemHelper>;
-
-  FileSystemHelper(storage::FileSystemContext* filesystem_context,
-                   const std::vector<storage::FileSystemType>& additional_types,
-                   content::NativeIOContext* native_io_context);
 
   virtual ~FileSystemHelper();
 
@@ -118,7 +117,7 @@ class FileSystemHelper : public base::RefCountedThreadSafe<FileSystemHelper> {
   void AppendNativeIOInfoToFileSystemInfo(
       FetchCallback callback,
       const std::list<FileSystemInfo>& file_system_info_list,
-      std::map<url::Origin, int64_t> native_io_usage_map);
+      const std::map<blink::StorageKey, int64_t>& native_io_usage_map);
 
   // Returns the file task runner for the |filesystem_context_|.
   base::SequencedTaskRunner* file_task_runner();

@@ -48,14 +48,16 @@ struct amdgpu_linear_vma_priv {
 };
 
 const static uint32_t render_target_formats[] = {
-	DRM_FORMAT_ABGR8888,	DRM_FORMAT_ARGB8888,	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XBGR8888,	DRM_FORMAT_XRGB8888,	DRM_FORMAT_ABGR2101010,
-	DRM_FORMAT_ARGB2101010, DRM_FORMAT_XBGR2101010, DRM_FORMAT_XRGB2101010,
+	DRM_FORMAT_ABGR8888,	  DRM_FORMAT_ARGB8888,	  DRM_FORMAT_RGB565,
+	DRM_FORMAT_XBGR8888,	  DRM_FORMAT_XRGB8888,	  DRM_FORMAT_ABGR2101010,
+	DRM_FORMAT_ARGB2101010,	  DRM_FORMAT_XBGR2101010, DRM_FORMAT_XRGB2101010,
+	DRM_FORMAT_ABGR16161616F,
 };
 
-const static uint32_t texture_source_formats[] = { DRM_FORMAT_GR88,	      DRM_FORMAT_R8,
-						   DRM_FORMAT_NV21,	      DRM_FORMAT_NV12,
-						   DRM_FORMAT_YVU420_ANDROID, DRM_FORMAT_YVU420 };
+const static uint32_t texture_source_formats[] = {
+	DRM_FORMAT_GR88,	   DRM_FORMAT_R8,     DRM_FORMAT_NV21, DRM_FORMAT_NV12,
+	DRM_FORMAT_YVU420_ANDROID, DRM_FORMAT_YVU420, DRM_FORMAT_P010
+};
 
 static int query_dev_info(int fd, struct drm_amdgpu_info_device *dev_info)
 {
@@ -336,11 +338,9 @@ static int amdgpu_init(struct driver *drv)
 		return -ENODEV;
 	}
 
-	if (sdma_init(priv, drv_get_fd(drv))) {
+	/* Continue on failure, as we can still succesfully map things without SDMA. */
+	if (sdma_init(priv, drv_get_fd(drv)))
 		drv_log("SDMA init failed\n");
-
-		/* Continue, as we can still succesfully map things without SDMA. */
-	}
 
 	metadata.tiling = TILE_TYPE_LINEAR;
 	metadata.priority = 1;
@@ -355,7 +355,12 @@ static int amdgpu_init(struct driver *drv)
 	/* NV12 format for camera, display, decoding and encoding. */
 	drv_modify_combination(drv, DRM_FORMAT_NV12, &metadata,
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_SCANOUT |
-				   BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER);
+				   BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
+				   BO_USE_PROTECTED);
+
+	drv_modify_combination(drv, DRM_FORMAT_P010, &metadata,
+			       BO_USE_SCANOUT | BO_USE_HW_VIDEO_DECODER | BO_USE_HW_VIDEO_ENCODER |
+				   BO_USE_PROTECTED);
 
 	/* Android CTS tests require this. */
 	drv_add_combination(drv, DRM_FORMAT_BGR888, &metadata, BO_USE_SW_MASK);
@@ -389,6 +394,10 @@ static int amdgpu_init(struct driver *drv)
 	use_flags &= ~BO_USE_RENDERSCRIPT;
 	use_flags &= ~BO_USE_SW_WRITE_OFTEN;
 	use_flags &= ~BO_USE_SW_READ_OFTEN;
+#if __ANDROID__
+	use_flags &= ~BO_USE_SW_WRITE_RARELY;
+	use_flags &= ~BO_USE_SW_READ_RARELY;
+#endif
 	use_flags &= ~BO_USE_LINEAR;
 
 	metadata.tiling = TILE_TYPE_DRI;
@@ -469,6 +478,10 @@ static int amdgpu_create_bo_linear(struct bo *bo, uint32_t width, uint32_t heigh
 	if ((use_flags & BO_USE_SCANOUT) || !(use_flags & BO_USE_SW_READ_OFTEN))
 		gem_create.in.domain_flags |= AMDGPU_GEM_CREATE_CPU_GTT_USWC;
 
+	/* For protected data Buffer needs to be allocated from TMZ */
+	if (use_flags & BO_USE_PROTECTED)
+		gem_create.in.domain_flags |= AMDGPU_GEM_CREATE_ENCRYPTED;
+
 	/* Allocate the buffer with the preferred heap. */
 	ret = drmCommandWriteRead(drv_get_fd(bo->drv), DRM_AMDGPU_GEM_CREATE, &gem_create,
 				  sizeof(gem_create));
@@ -478,7 +491,7 @@ static int amdgpu_create_bo_linear(struct bo *bo, uint32_t width, uint32_t heigh
 	for (plane = 0; plane < bo->meta.num_planes; plane++)
 		bo->handles[plane].u32 = gem_create.out.handle;
 
-	bo->meta.format_modifiers[0] = DRM_FORMAT_MOD_LINEAR;
+	bo->meta.format_modifier = DRM_FORMAT_MOD_LINEAR;
 
 	return 0;
 }
@@ -487,29 +500,15 @@ static int amdgpu_create_bo(struct bo *bo, uint32_t width, uint32_t height, uint
 			    uint64_t use_flags)
 {
 	struct combination *combo;
+	struct amdgpu_priv *priv = bo->drv->priv;
 
 	combo = drv_get_combination(bo->drv, format, use_flags);
 	if (!combo)
 		return -EINVAL;
 
 	if (combo->metadata.tiling == TILE_TYPE_DRI) {
-		bool needs_alignment = false;
-#ifdef __ANDROID__
-		/*
-		 * Currently, the gralloc API doesn't differentiate between allocation time and map
-		 * time strides. A workaround for amdgpu DRI buffers is to always to align to 256 at
-		 * allocation time.
-		 *
-		 * See b/115946221,b/117942643
-		 */
-		if (use_flags & (BO_USE_SW_MASK))
-			needs_alignment = true;
-#endif
 		// See b/122049612
-		if (use_flags & (BO_USE_SCANOUT))
-			needs_alignment = true;
-
-		if (needs_alignment) {
+		if (use_flags & (BO_USE_SCANOUT) && priv->dev_info.family == AMDGPU_FAMILY_CZ) {
 			uint32_t bytes_per_pixel = drv_bytes_per_pixel_from_format(format, 0);
 			width = ALIGN(width, 256 / bytes_per_pixel);
 		}
@@ -538,8 +537,8 @@ static int amdgpu_create_bo_with_modifiers(struct bo *bo, uint32_t width, uint32
 
 static int amdgpu_import_bo(struct bo *bo, struct drv_import_fd_data *data)
 {
-	bool dri_tiling = data->format_modifiers[0] != DRM_FORMAT_MOD_LINEAR;
-	if (data->format_modifiers[0] == DRM_FORMAT_MOD_INVALID) {
+	bool dri_tiling = data->format_modifier != DRM_FORMAT_MOD_LINEAR;
+	if (data->format_modifier == DRM_FORMAT_MOD_INVALID) {
 		struct combination *combo;
 		combo = drv_get_combination(bo->drv, data->format, data->use_flags);
 		if (!combo)
@@ -646,9 +645,9 @@ fail:
 
 static int amdgpu_unmap_bo(struct bo *bo, struct vma *vma)
 {
-	if (bo->priv)
+	if (bo->priv) {
 		return dri_bo_unmap(bo, vma);
-	else {
+	} else {
 		int r = munmap(vma->addr, vma->length);
 		if (r)
 			return r;
@@ -697,22 +696,6 @@ static int amdgpu_bo_invalidate(struct bo *bo, struct mapping *mapping)
 	return 0;
 }
 
-static uint32_t amdgpu_resolve_format(struct driver *drv, uint32_t format, uint64_t use_flags)
-{
-	switch (format) {
-	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
-		/* Camera subsystem requires NV12. */
-		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
-			return DRM_FORMAT_NV12;
-		/*HACK: See b/28671744 */
-		return DRM_FORMAT_XBGR8888;
-	case DRM_FORMAT_FLEX_YCbCr_420_888:
-		return DRM_FORMAT_NV12;
-	default:
-		return format;
-	}
-}
-
 const struct backend backend_amdgpu = {
 	.name = "amdgpu",
 	.init = amdgpu_init,
@@ -724,7 +707,7 @@ const struct backend backend_amdgpu = {
 	.bo_map = amdgpu_map_bo,
 	.bo_unmap = amdgpu_unmap_bo,
 	.bo_invalidate = amdgpu_bo_invalidate,
-	.resolve_format = amdgpu_resolve_format,
+	.resolve_format = drv_resolve_format_helper,
 	.num_planes_from_modifier = dri_num_planes_from_modifier,
 };
 

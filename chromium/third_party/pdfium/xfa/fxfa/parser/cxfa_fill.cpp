@@ -7,6 +7,7 @@
 #include "xfa/fxfa/parser/cxfa_fill.h"
 
 #include "fxjs/xfa/cjx_node.h"
+#include "xfa/fgas/graphics/cfgas_gegraphics.h"
 #include "xfa/fxfa/parser/cxfa_color.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_linear.h"
@@ -18,14 +19,14 @@
 namespace {
 
 const CXFA_Node::PropertyData kFillPropertyData[] = {
-    {XFA_Element::Pattern, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Pattern, 1, XFA_PropertyFlag_OneOf},
     {XFA_Element::Solid, 1,
-     XFA_PROPERTYFLAG_OneOf | XFA_PROPERTYFLAG_DefaultOneOf},
-    {XFA_Element::Stipple, 1, XFA_PROPERTYFLAG_OneOf},
+     XFA_PropertyFlag_OneOf | XFA_PropertyFlag_DefaultOneOf},
+    {XFA_Element::Stipple, 1, XFA_PropertyFlag_OneOf},
     {XFA_Element::Color, 1, 0},
-    {XFA_Element::Linear, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Linear, 1, XFA_PropertyFlag_OneOf},
     {XFA_Element::Extras, 1, 0},
-    {XFA_Element::Radial, 1, XFA_PROPERTYFLAG_OneOf},
+    {XFA_Element::Radial, 1, XFA_PropertyFlag_OneOf},
 };
 
 const CXFA_Node::AttributeData kFillAttributeData[] = {

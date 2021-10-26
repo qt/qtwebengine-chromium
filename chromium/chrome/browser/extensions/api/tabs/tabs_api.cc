@@ -21,7 +21,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/pattern.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -327,7 +326,7 @@ int MoveTabToWindow(ExtensionFunction* function,
   }
 
   std::unique_ptr<content::WebContents> web_contents =
-      source_tab_strip->DetachWebContentsAt(source_index);
+      source_tab_strip->DetachWebContentsAtForInsertion(source_index);
   if (!web_contents) {
     *error = ErrorUtils::FormatErrorMessage(tabs_constants::kTabNotFoundError,
                                             base::NumberToString(tab_id));
@@ -705,7 +704,7 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
   if (window_type == Browser::TYPE_NORMAL || urls.empty()) {
     if (source_tab_strip) {
       std::unique_ptr<content::WebContents> detached_tab =
-          source_tab_strip->DetachWebContentsAt(tab_index);
+          source_tab_strip->DetachWebContentsAtForInsertion(tab_index);
       contents = detached_tab.get();
       TabStripModel* target_tab_strip =
           ExtensionTabUtil::GetEditableTabStripModel(new_window);
@@ -1085,7 +1084,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
 
       if (group_id.has_value()) {
         absl::optional<tab_groups::TabGroupId> group =
-            tab_strip->GetTabGroupForTab(index);
+            tab_strip->GetTabGroupForTab(i);
         if (group_id.value() == -1) {
           if (group.has_value())
             continue;
@@ -1168,6 +1167,8 @@ ExtensionFunction::ResponseAction TabsCreateFunction::Run() {
   std::unique_ptr<tabs::Create::Params> params(
       tabs::Create::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
+  if (!ExtensionTabUtil::IsTabStripEditable())
+    return RespondNow(Error(tabs_constants::kTabStripNotEditableError));
 
   ExtensionTabUtil::OpenTabParams options;
   AssignOptionalValue(params->create_properties.window_id, &options.window_id);
@@ -1197,6 +1198,8 @@ ExtensionFunction::ResponseAction TabsDuplicateFunction::Run() {
   std::unique_ptr<tabs::Duplicate::Params> params(
       tabs::Duplicate::Params::Create(*args_));
   EXTENSION_FUNCTION_VALIDATE(params.get());
+  if (!ExtensionTabUtil::IsTabStripEditable())
+    return RespondNow(Error(tabs_constants::kTabStripNotEditableError));
   int tab_id = params->tab_id;
 
   Browser* browser = NULL;
@@ -1558,7 +1561,7 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
 
   int new_index = params->move_properties.index;
   int* window_id = params->move_properties.window_id.get();
-  std::unique_ptr<base::ListValue> tab_values(new base::ListValue());
+  base::ListValue tab_values;
 
   size_t num_tabs = 0;
   std::string error;
@@ -1566,13 +1569,13 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
     std::vector<int>& tab_ids = *params->tab_ids.as_integers;
     num_tabs = tab_ids.size();
     for (int tab_id : tab_ids) {
-      if (!MoveTab(tab_id, &new_index, tab_values.get(), window_id, &error))
+      if (!MoveTab(tab_id, &new_index, &tab_values, window_id, &error))
         return RespondNow(Error(std::move(error)));
     }
   } else {
     EXTENSION_FUNCTION_VALIDATE(params->tab_ids.as_integer);
     num_tabs = 1;
-    if (!MoveTab(*params->tab_ids.as_integer, &new_index, tab_values.get(),
+    if (!MoveTab(*params->tab_ids.as_integer, &new_index, &tab_values,
                  window_id, &error)) {
       return RespondNow(Error(std::move(error)));
     }
@@ -1586,15 +1589,12 @@ ExtensionFunction::ResponseAction TabsMoveFunction::Run() {
   if (num_tabs == 0)
     return RespondNow(Error("No tabs given."));
   if (num_tabs == 1) {
-    std::unique_ptr<base::Value> value;
-    CHECK(tab_values->Remove(0, &value));
-    return RespondNow(
-        OneArgument(base::Value::FromUniquePtrValue(std::move(value))));
+    CHECK_EQ(1u, tab_values.GetList().size());
+    return RespondNow(OneArgument(std::move(tab_values.GetList()[0])));
   }
 
   // Return the results as an array if there are multiple tabs.
-  return RespondNow(
-      OneArgument(base::Value::FromUniquePtrValue(std::move(tab_values))));
+  return RespondNow(OneArgument(std::move(tab_values)));
 }
 
 bool TabsMoveFunction::MoveTab(int tab_id,
@@ -2024,15 +2024,15 @@ ExtensionFunction::ResponseAction TabsCaptureVisibleTabFunction::Run() {
   using api::extension_types::ImageDetails;
 
   EXTENSION_FUNCTION_VALIDATE(args_);
-
+  const auto& list = args_->GetList();
   int context_id = extension_misc::kCurrentWindowId;
-  args_->GetInteger(0, &context_id);
+
+  if (list.size() > 0 && list[0].is_int())
+    context_id = list[0].GetInt();
 
   std::unique_ptr<ImageDetails> image_details;
-  if (args_->GetSize() > 1) {
-    base::Value* spec = NULL;
-    EXTENSION_FUNCTION_VALIDATE(args_->Get(1, &spec) && spec);
-    image_details = ImageDetails::FromValue(*spec);
+  if (list.size() > 1) {
+    image_details = ImageDetails::FromValue(list[1]);
   }
 
   std::string error;
@@ -2243,17 +2243,27 @@ ExecuteCodeFunction::InitResult ExecuteCodeInTabFunction::Init() {
   if (init_result_)
     return init_result_.value();
 
-  // |tab_id| is optional so it's ok if it's not there.
-  int tab_id = -1;
-  if (args_->GetInteger(0, &tab_id) && tab_id < 0)
+  const auto& list = args_->GetList();
+  if (list.size() < 2)
     return set_init_result(VALIDATION_FAILURE);
 
+  const auto& tab_id_value = list[0];
+  // |tab_id| is optional so it's ok if it's not there.
+  int tab_id = -1;
+  if (tab_id_value.is_int()) {
+    // But if it is present, it needs to be non-negative.
+    tab_id = tab_id_value.GetInt();
+    if (tab_id < 0) {
+      return set_init_result(VALIDATION_FAILURE);
+    }
+  }
+
   // |details| are not optional.
-  base::DictionaryValue* details_value = NULL;
-  if (!args_->GetDictionary(1, &details_value))
+  const base::Value& details_value = list[1];
+  if (!details_value.is_dict())
     return set_init_result(VALIDATION_FAILURE);
   std::unique_ptr<InjectDetails> details(new InjectDetails());
-  if (!InjectDetails::Populate(*details_value, details.get()))
+  if (!InjectDetails::Populate(details_value, details.get()))
     return set_init_result(VALIDATION_FAILURE);
 
   // If the tab ID wasn't given then it needs to be converted to the

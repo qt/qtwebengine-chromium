@@ -132,9 +132,6 @@ config("blink_platform_config") {
     "//third_party/blink/renderer:config",
     "//third_party/blink/renderer:inside_blink",
     "//build/config/compiler:noshadowing",
-
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    "//build/config/compiler:no_size_t_to_int_warning",
   ]
 }
 
@@ -253,7 +250,6 @@ source_set("platform_export") {
 component("platform") {
   visibility = []  # Allow re-assignment of list.
   visibility = [
-    "//components/pdf/common:interfaces_blink",
     "//services/device/public/mojom:mojom_blink",
     "//services/media_session/public/mojom:mojom_blink",
     "//third_party/blink/*",
@@ -266,7 +262,6 @@ component("platform") {
   sources = [
     "animation/animation_translation_util.cc",
     "animation/animation_translation_util.h",
-    "animation/animation_utilities.h",
     "animation/compositor_animation.cc",
     "animation/compositor_animation.h",
     "animation/compositor_animation_client.cc",
@@ -416,6 +411,7 @@ component("platform") {
     "bindings/callback_method_retriever.cc",
     "bindings/callback_method_retriever.h",
     "bindings/custom_wrappable.h",
+    "bindings/dictionary_base.cc",
     "bindings/dictionary_base.h",
     "bindings/dom_data_store.cc",
     "bindings/dom_data_store.h",
@@ -472,6 +468,7 @@ component("platform") {
     "bindings/v8_dom_wrapper.h",
     "bindings/v8_global_value_map.h",
     "bindings/v8_interface_bridge.h",
+    "bindings/v8_interface_bridge_base.cc",
     "bindings/v8_interface_bridge_base.h",
     "bindings/v8_object_constructor.cc",
     "bindings/v8_object_constructor.h",
@@ -540,7 +537,6 @@ component("platform") {
     "exported/web_font.cc",
     "exported/web_font_description.cc",
     "exported/web_http_body.cc",
-    "exported/web_http_load_info.cc",
     "exported/web_icon_sizes_parser.cc",
     "exported/web_image_generator.cc",
     "exported/web_media_player_client.cc",
@@ -619,6 +615,8 @@ component("platform") {
     "fonts/font_optical_sizing.h",
     "fonts/font_orientation.cc",
     "fonts/font_orientation.h",
+    "fonts/font_performance.cc",
+    "fonts/font_performance.h",
     "fonts/font_platform_data.cc",
     "fonts/font_platform_data.h",
     "fonts/font_selection_algorithm.cc",
@@ -842,6 +840,8 @@ component("platform") {
     "graphics/compositing/paint_artifact_compositor.h",
     "graphics/compositing/paint_chunks_to_cc_layer.cc",
     "graphics/compositing/paint_chunks_to_cc_layer.h",
+    "graphics/compositing/pending_layer.cc",
+    "graphics/compositing/pending_layer.h",
     "graphics/compositing/property_tree_manager.cc",
     "graphics/compositing/property_tree_manager.h",
     "graphics/compositing_reasons.cc",
@@ -989,8 +989,6 @@ component("platform") {
     "graphics/graphics_types.cc",
     "graphics/graphics_types.h",
     "graphics/graphics_types_3d.h",
-    "graphics/identifiability_paint_op_digest.cc",
-    "graphics/identifiability_paint_op_digest.h",
     "graphics/image.cc",
     "graphics/image.h",
     "graphics/image_data_buffer.cc",
@@ -1081,6 +1079,8 @@ component("platform") {
     "graphics/paint/paint_record_builder.h",
     "graphics/paint/paint_recorder.h",
     "graphics/paint/paint_shader.h",
+    "graphics/paint/paint_under_invalidation_checker.cc",
+    "graphics/paint/paint_under_invalidation_checker.h",
     "graphics/paint/painted_selection_bound.h",
     "graphics/paint/property_tree_state.cc",
     "graphics/paint/property_tree_state.h",
@@ -1090,6 +1090,7 @@ component("platform") {
     "graphics/paint/raster_invalidator.h",
     "graphics/paint/ref_counted_property_tree_state.h",
     "graphics/paint/scoped_display_item_fragment.h",
+    "graphics/paint/scoped_effectively_invisible.h",
     "graphics/paint/scoped_paint_chunk_hint.h",
     "graphics/paint/scoped_paint_chunk_properties.h",
     "graphics/paint/scroll_paint_property_node.cc",
@@ -1160,12 +1161,18 @@ component("platform") {
     "graphics/video_frame_image_util.h",
     "graphics/video_frame_resource_provider.cc",
     "graphics/video_frame_resource_provider.h",
+    "graphics/video_frame_sink_bundle.cc",
+    "graphics/video_frame_sink_bundle.h",
     "graphics/video_frame_submitter.cc",
     "graphics/video_frame_submitter.h",
+    "graphics/viz_util.cc",
+    "graphics/viz_util.h",
     "graphics/web_graphics_context_3d_provider_util.cc",
     "graphics/web_graphics_context_3d_provider_util.h",
     "graphics/web_graphics_context_3d_provider_wrapper.cc",
     "graphics/web_graphics_context_3d_provider_wrapper.h",
+    "graphics/web_graphics_context_3d_video_frame_pool.cc",
+    "graphics/web_graphics_context_3d_video_frame_pool.h",
     "heap_observer_set.h",
     "image-decoders/bmp/bmp_image_decoder.cc",
     "image-decoders/bmp/bmp_image_decoder.h",
@@ -1346,8 +1353,6 @@ component("platform") {
     "peerconnection/rtc_video_encoder_factory.cc",
     "peerconnection/rtc_video_encoder_factory.h",
     "peerconnection/rtc_void_request.h",
-    "peerconnection/transmission_encoding_info_handler.cc",
-    "peerconnection/transmission_encoding_info_handler.h",
     "peerconnection/two_keys_adapter_map.h",
     "peerconnection/video_codec_factory.cc",
     "peerconnection/video_codec_factory.h",
@@ -1355,6 +1360,9 @@ component("platform") {
     "peerconnection/webrtc_audio_sink.h",
     "peerconnection/webrtc_decoding_info_handler.cc",
     "peerconnection/webrtc_decoding_info_handler.h",
+    "peerconnection/webrtc_encoding_info_handler.cc",
+    "peerconnection/webrtc_encoding_info_handler.h",
+    "peerconnection/webrtc_util.cc",
     "peerconnection/webrtc_util.h",
     "peerconnection/webrtc_video_track_source.cc",
     "peerconnection/webrtc_video_track_source.h",
@@ -1363,6 +1371,9 @@ component("platform") {
     "resolution_units.h",
     "search_engine_utils.cc",
     "search_engine_utils.h",
+    "storage/blink_storage_key.cc",
+    "storage/blink_storage_key.h",
+    "storage/blink_storage_key_mojom_traits.cc",
     "supplementable.cc",
     "supplementable.h",
     "text/bidi_character_run.h",
@@ -1470,6 +1481,7 @@ component("platform") {
     "weborigin/kurl_hash.h",
     "weborigin/origin_access_entry.cc",
     "weborigin/origin_access_entry.h",
+    "weborigin/referrer.cc",
     "weborigin/referrer.h",
     "weborigin/reporting_disposition.h",
     "weborigin/scheme_registry.cc",
@@ -1481,8 +1493,6 @@ component("platform") {
     "weborigin/security_policy.h",
     "webrtc/convert_to_webrtc_video_frame_buffer.cc",
     "webrtc/convert_to_webrtc_video_frame_buffer.h",
-    "webrtc/legacy_webrtc_video_frame_adapter.cc",
-    "webrtc/legacy_webrtc_video_frame_adapter.h",
     "webrtc/peer_connection_remote_audio_source.cc",
     "webrtc/peer_connection_remote_audio_source.h",
     "webrtc/track_observer.cc",
@@ -1585,8 +1595,6 @@ component("platform") {
       "mac/color_mac.mm",
       "mac/graphics_context_canvas.h",
       "mac/graphics_context_canvas.mm",
-      "mac/local_current_graphics_context.h",
-      "mac/local_current_graphics_context.mm",
       "mac/web_core_ns_cell_extras.h",
       "mac/web_core_ns_cell_extras.mm",
       "text/locale_mac.h",
@@ -1663,6 +1671,7 @@ component("platform") {
   deps = [
     "//base:base_static",
     "//base/allocator:buildflags",
+    "//build:chromecast_buildflags",
     "//build:chromeos_buildflags",
     "//cc/ipc",
     "//cc/mojo_embedder",
@@ -1680,6 +1689,7 @@ component("platform") {
     "//media",
     "//media/capture:capture_switches",
     "//media/capture/mojom:video_capture",
+    "//media/webrtc:webrtc",
     "//mojo/public/cpp/bindings:wtf_support",
     "//services/metrics/public/cpp:ukm_builders",
     "//services/network/public/mojom:mojom_shared",
@@ -1859,7 +1869,9 @@ static_library("test_support") {
     "graphics/test/gpu_test_utils.cc",
     "graphics/test/gpu_test_utils.h",
     "graphics/test/mock_compositor_frame_sink.h",
+    "graphics/test/mock_compositor_frame_sink_client.h",
     "graphics/test/mock_embedded_frame_sink_provider.h",
+    "graphics/test/mock_frame_sink_bundle.h",
     "graphics/test/mock_image_decoder.h",
     "graphics/test/mock_paint_canvas.h",
     "testing/code_cache_loader_mock.cc",
@@ -1882,6 +1894,8 @@ static_library("test_support") {
     "testing/layer_tree_host_embedder.h",
     "testing/message_loop_for_mojo.h",
     "testing/mock_context_lifecycle_notifier.h",
+    "testing/noop_web_url_loader.cc",
+    "testing/noop_web_url_loader.h",
     "testing/paint_property_test_helpers.h",
     "testing/paint_test_configurations.h",
     "testing/picture_matchers.cc",
@@ -1938,6 +1952,7 @@ static_library("test_support") {
     "//third_party/blink/renderer/platform/blob:test_support",
     "//third_party/blink/renderer/platform/heap:test_support",
     "//third_party/blink/renderer/platform/loader:test_support",
+    "//third_party/blink/renderer/platform/media:test_support",
     "//third_party/blink/renderer/platform/scheduler:test_support",
   ]
 
@@ -1968,6 +1983,12 @@ test("blink_platform_unittests") {
     # permissions.
     additional_manifest_fragments =
         [ "//build/config/fuchsia/test/jit_capabilities.test-cmx" ]
+  }
+
+  if (is_android) {
+    # Required because of an indirect dependency on //media/base/android via
+    # platform/media:unit_tests.
+    deps += [ "//media/base/android:media_java" ]
   }
 }
 
@@ -2055,6 +2076,7 @@ source_set("blink_platform_unittests_sources") {
     "graphics/compositing/chunk_to_layer_mapper_test.cc",
     "graphics/compositing/paint_artifact_compositor_test.cc",
     "graphics/compositing/paint_chunks_to_cc_layer_test.cc",
+    "graphics/compositing/pending_layer_test.cc",
     "graphics/compositor_element_id_test.cc",
     "graphics/dark_mode_color_classifier_test.cc",
     "graphics/dark_mode_filter_test.cc",
@@ -2072,7 +2094,6 @@ source_set("blink_platform_unittests_sources") {
     "graphics/gpu/webgpu_resource_provider_cache_test.cc",
     "graphics/gpu/webgpu_swap_buffer_provider_test.cc",
     "graphics/graphics_context_test.cc",
-    "graphics/identifiability_paint_op_digest_unittest.cc",
     "graphics/paint/cull_rect_test.cc",
     "graphics/paint/display_item_client_test.cc",
     "graphics/paint/display_item_raster_invalidator_test.cc",
@@ -2087,6 +2108,7 @@ source_set("blink_platform_unittests_sources") {
     "graphics/paint/paint_controller_test.cc",
     "graphics/paint/paint_property_node_test.cc",
     "graphics/paint/paint_record_builder_test.cc",
+    "graphics/paint/paint_under_invalidation_checker_test.cc",
     "graphics/paint/raster_invalidator_test.cc",
     "graphics/paint/scrollbar_display_item_test.cc",
     "graphics/paint_invalidation_reason_test.cc",
@@ -2096,6 +2118,7 @@ source_set("blink_platform_unittests_sources") {
     "graphics/raster_dark_mode_filter_impl_test.cc",
     "graphics/rw_buffer_test.cc",
     "graphics/video_frame_image_util_test.cc",
+    "graphics/video_frame_sink_bundle_test.cc",
     "graphics/video_frame_submitter_test.cc",
     "heap_observer_set_test.cc",
     "image-decoders/bmp/bmp_image_decoder_test.cc",
@@ -2118,6 +2141,7 @@ source_set("blink_platform_unittests_sources") {
     "media/webaudiosourceprovider_impl_test.cc",
     "mediastream/media_stream_audio_processor_options_test.cc",
     "mediastream/media_stream_audio_test.cc",
+    "mediastream/media_stream_source_test.cc",
     "mediastream/webrtc_uma_histograms_test.cc",
     "mhtml/mhtml_parser_test.cc",
     "mojo/big_string_mojom_traits_test.cc",
@@ -2140,14 +2164,17 @@ source_set("blink_platform_unittests_sources") {
     "peerconnection/rtc_stats_test.cc",
     "peerconnection/rtc_video_decoder_adapter_test.cc",
     "peerconnection/rtc_video_decoder_stream_adapter_test.cc",
+    "peerconnection/rtc_video_encoder_factory_test.cc",
     "peerconnection/rtc_video_encoder_test.cc",
     "peerconnection/task_queue_factory_test.cc",
-    "peerconnection/transmission_encoding_info_handler_test.cc",
     "peerconnection/two_keys_adapter_map_unittest.cc",
     "peerconnection/webrtc_audio_sink_test.cc",
     "peerconnection/webrtc_decoding_info_handler_test.cc",
+    "peerconnection/webrtc_encoding_info_handler_test.cc",
     "peerconnection/webrtc_video_track_source_test.cc",
     "runtime_enabled_features_test.cc",
+    "storage/blink_storage_key_mojom_traits_test.cc",
+    "storage/blink_storage_key_test.cc",
     "text/bidi_resolver_test.cc",
     "text/bidi_test_harness.h",
     "text/capitalize_test.cc",
@@ -2160,7 +2187,6 @@ source_set("blink_platform_unittests_sources") {
     "text/platform_locale_test.cc",
     "text/segmented_string_test.cc",
     "text/suffix_tree_test.cc",
-    "text/text_boundaries_test.cc",
     "text/text_break_iterator_test.cc",
     "text/text_encoding_detector_test.cc",
     "text/text_run_test.cc",
@@ -2182,7 +2208,6 @@ source_set("blink_platform_unittests_sources") {
     "weborigin/security_origin_test.cc",
     "weborigin/security_policy_test.cc",
     "webrtc/convert_to_webrtc_video_frame_buffer_test.cc",
-    "webrtc/legacy_webrtc_video_frame_adapter_test.cc",
     "webrtc/webrtc_video_frame_adapter_test.cc",
     "widget/compositing/layer_tree_settings_unittest.cc",
     "widget/compositing/layer_tree_view_unittest.cc",
@@ -2259,6 +2284,7 @@ source_set("blink_platform_unittests_sources") {
     "//third_party/blink/renderer/platform/blob:unit_tests",
     "//third_party/blink/renderer/platform/instrumentation:unit_tests",
     "//third_party/blink/renderer/platform/loader:unit_tests",
+    "//third_party/blink/renderer/platform/media:unit_tests",
     "//third_party/blink/renderer/platform/network:unit_tests",
     "//third_party/blink/renderer/platform/scheduler:unit_tests",
     "//third_party/blink/renderer/platform/wtf",
@@ -2338,8 +2364,6 @@ test("blink_platform_perftests") {
   ]
 
   configs += [
-    # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
-    "//build/config/compiler:no_size_t_to_int_warning",
     "//third_party/blink/renderer/platform/wtf:wtf_config",
     "//third_party/blink/renderer:config",
   ]
@@ -2583,7 +2607,12 @@ source_set("unit_tests") {
   ]
 
   deps = [
+    ":platform",
     ":test_support",
+    "//base",
+    "//base/test:test_support",
+    "//cc",
+    "//components/viz/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/blink/public:test_headers",

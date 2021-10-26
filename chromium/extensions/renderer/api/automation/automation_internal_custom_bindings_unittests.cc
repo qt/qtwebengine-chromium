@@ -12,6 +12,7 @@
 #include "extensions/renderer/native_extension_bindings_system.h"
 #include "extensions/renderer/native_extension_bindings_system_test_base.h"
 #include "extensions/renderer/script_context.h"
+#include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_tree_id.h"
 
 namespace extensions {
@@ -55,10 +56,6 @@ class AutomationInternalCustomBindingsTest
   std::map<ui::AXTreeID, std::unique_ptr<AutomationAXTreeWrapper>>&
   GetTreeIDToTreeMap() {
     return automation_internal_bindings_->tree_id_to_tree_wrapper_map_;
-  }
-
-  void SetDeviceScaleFactor(float scale) {
-    automation_internal_bindings_->device_scale_factor_for_test_ = scale;
   }
 
   void SendOnAccessibilityEvents(
@@ -136,7 +133,7 @@ TEST_F(AutomationInternalCustomBindingsTest, GetFocusOneTree) {
   ASSERT_TRUE(focused_wrapper);
   ASSERT_TRUE(focused_node);
   EXPECT_EQ(desktop, focused_wrapper);
-  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->GetRole());
 
   // Push an update where we change the focus.
   focused_wrapper = nullptr;
@@ -147,7 +144,7 @@ TEST_F(AutomationInternalCustomBindingsTest, GetFocusOneTree) {
   ASSERT_TRUE(focused_wrapper);
   ASSERT_TRUE(focused_node);
   EXPECT_EQ(desktop, focused_wrapper);
-  EXPECT_EQ(ax::mojom::Role::kDesktop, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kDesktop, focused_node->GetRole());
 
   // Push an update where we change the focus to nothing.
   focused_wrapper = nullptr;
@@ -220,7 +217,7 @@ TEST_F(AutomationInternalCustomBindingsTest,
   ASSERT_TRUE(focused_node);
   EXPECT_EQ(wrapper_1, focused_wrapper);
   EXPECT_EQ(tree_1_id, focused_node->tree()->GetAXTreeID());
-  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->GetRole());
 
   // Push an update where we change the focus.
   focused_wrapper = nullptr;
@@ -234,7 +231,7 @@ TEST_F(AutomationInternalCustomBindingsTest,
   ASSERT_TRUE(focused_node);
   EXPECT_EQ(wrapper_2, focused_wrapper);
   EXPECT_EQ(tree_2_id, focused_node->tree()->GetAXTreeID());
-  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->GetRole());
 }
 
 TEST_F(AutomationInternalCustomBindingsTest,
@@ -314,7 +311,7 @@ TEST_F(AutomationInternalCustomBindingsTest,
 
   // This is an interesting inconsistency as this node is technically not in the
   // app (which starts at the link in wrapper 1).
-  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->GetRole());
 
   // Push an update where we change the focus.
   focused_wrapper = nullptr;
@@ -328,12 +325,10 @@ TEST_F(AutomationInternalCustomBindingsTest,
   ASSERT_TRUE(focused_node);
   EXPECT_EQ(wrapper_2, focused_wrapper);
   EXPECT_EQ(tree_2_id, focused_node->tree()->GetAXTreeID());
-  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->data().role);
+  EXPECT_EQ(ax::mojom::Role::kButton, focused_node->GetRole());
 }
 
 TEST_F(AutomationInternalCustomBindingsTest, GetBoundsAppIdConstruction) {
-  SetDeviceScaleFactor(2);
-
   // two trees each with a button.
   std::vector<ExtensionMsg_AccessibilityEventBundleParams> bundles;
   for (int i = 0; i < 2; i++) {
@@ -373,6 +368,9 @@ TEST_F(AutomationInternalCustomBindingsTest, GetBoundsAppIdConstruction) {
   wrapper1_button_data.AddStringAttribute(ax::mojom::StringAttribute::kAppId,
                                           "app1");
 
+  wrapper0_button_data.AddFloatAttribute(
+      ax::mojom::FloatAttribute::kChildTreeScale, 2.0);
+
   for (auto& bundle : bundles)
     SendOnAccessibilityEvents(bundle, true /* active profile */);
 
@@ -391,6 +389,17 @@ TEST_F(AutomationInternalCustomBindingsTest, GetBoundsAppIdConstruction) {
   // (100 + 50).
   EXPECT_EQ(gfx::Rect(150, 150, 100, 100),
             CallComputeGlobalNodeBounds(wrapper_1, wrapper1_button));
+}
+
+TEST_F(AutomationInternalCustomBindingsTest, ActionStringMapping) {
+  for (uint32_t action = static_cast<uint32_t>(ax::mojom::Action::kNone) + 1;
+       action <= static_cast<uint32_t>(ax::mojom::Action::kMaxValue);
+       ++action) {
+    const char* val = ui::ToString(static_cast<ax::mojom::Action>(action));
+    EXPECT_NE(api::automation::ACTION_TYPE_NONE,
+              api::automation::ParseActionType(val))
+        << "No automation mapping found for ax::mojom::Action::" << val;
+  }
 }
 
 }  // namespace extensions

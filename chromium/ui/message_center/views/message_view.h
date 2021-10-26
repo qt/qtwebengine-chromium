@@ -80,6 +80,12 @@ class MESSAGE_CENTER_EXPORT MessageView
   explicit MessageView(const Notification& notification);
   ~MessageView() override;
 
+  // Updates this view with an additional grouped notification. If the view
+  // wasn't previously grouped it also takes care of converting the view to
+  // the grouped notification state.
+  virtual void AddGroupNotification(const Notification& notification) {}
+  virtual void RemoveGroupNotification(const std::string& notification_id) {}
+
   // Updates this view with the new data contained in the notification.
   virtual void UpdateWithNotification(const Notification& notification);
 
@@ -158,6 +164,7 @@ class MESSAGE_CENTER_EXPORT MessageView
 
   void set_scroller(views::ScrollView* scroller) { scroller_ = scroller; }
   std::string notification_id() const { return notification_id_; }
+  NotifierId notifier_id() const { return notifier_id_; }
 
  protected:
   class HighlightPathGenerator : public views::HighlightPathGenerator {
@@ -175,6 +182,9 @@ class MESSAGE_CENTER_EXPORT MessageView
   // Changes the background color and schedules a paint.
   virtual void SetDrawBackgroundAsActive(bool active);
 
+  void UpdateControlButtonsVisibilityWithNotification(
+      const Notification& notification);
+
   void SetCornerRadius(int top_radius, int bottom_radius);
 
   views::ScrollView* scroller() { return scroller_; }
@@ -182,8 +192,6 @@ class MESSAGE_CENTER_EXPORT MessageView
   base::ObserverList<Observer>* observers() { return &observers_; }
 
   bool is_nested() const { return is_nested_; }
-
-  views::FocusRing* focus_ring() { return focus_ring_; }
 
   int bottom_radius() const { return bottom_radius_; }
 
@@ -203,7 +211,12 @@ class MESSAGE_CENTER_EXPORT MessageView
   // Updates the background painter using the themed background color and radii.
   void UpdateBackgroundPainter();
 
+  void UpdateNestedBorder();
+
   std::string notification_id_;
+
+  const NotifierId notifier_id_;
+
   views::ScrollView* scroller_ = nullptr;
 
   std::u16string accessible_name_;
@@ -226,11 +239,11 @@ class MESSAGE_CENTER_EXPORT MessageView
   // MessageViewFactory parlance.
   bool is_nested_ = false;
 
+  bool is_grouped_ = false;
   // True if the slide is disabled forcibly.
   bool disable_slide_ = false;
 
   views::FocusManager* focus_manager_ = nullptr;
-  views::FocusRing* focus_ring_ = nullptr;
 
   // Radius values used to determine the rounding for the rounded rectangular
   // shape of the notification.

@@ -19,6 +19,7 @@
 #include "ui/base/ime/linux/input_method_auralinux.h"
 #include "ui/base/ui_base_features.h"
 #include "ui/events/devices/device_data_manager.h"
+#include "ui/events/event.h"
 #include "ui/events/ozone/layout/keyboard_layout_engine_manager.h"
 #include "ui/gfx/linux/client_native_pixmap_dmabuf.h"
 #include "ui/gfx/native_widget_types.h"
@@ -26,6 +27,7 @@
 #include "ui/ozone/platform/wayland/common/wayland_util.h"
 #include "ui/ozone/platform/wayland/gpu/drm_render_node_path_finder.h"
 #include "ui/ozone/platform/wayland/gpu/wayland_buffer_manager_gpu.h"
+#include "ui/ozone/platform/wayland/gpu/wayland_gl_egl_utility.h"
 #include "ui/ozone/platform/wayland/gpu/wayland_overlay_manager.h"
 #include "ui/ozone/platform/wayland/gpu/wayland_surface_factory.h"
 #include "ui/ozone/platform/wayland/host/wayland_buffer_manager_connector.h"
@@ -73,8 +75,22 @@ namespace {
 
 class OzonePlatformWayland : public OzonePlatform {
  public:
-  OzonePlatformWayland() { CHECK(features::IsUsingOzonePlatform()); }
-  ~OzonePlatformWayland() override {}
+  OzonePlatformWayland()
+      : old_synthesize_key_repeat_enabled_(
+            KeyEvent::IsSynthesizeKeyRepeatEnabled()) {
+    CHECK(features::IsUsingOzonePlatform());
+    // Disable key-repeat flag synthesizing. On Wayland, key repeat events are
+    // generated inside Chrome, and the flag is properly set.
+    // See also WaylandEventSource.
+    KeyEvent::SetSynthesizeKeyRepeatEnabled(false);
+  }
+
+  OzonePlatformWayland(const OzonePlatformWayland&) = delete;
+  OzonePlatformWayland& operator=(const OzonePlatformWayland&) = delete;
+
+  ~OzonePlatformWayland() override {
+    KeyEvent::SetSynthesizeKeyRepeatEnabled(old_synthesize_key_repeat_enabled_);
+  }
 
   // OzonePlatform
   SurfaceFactoryOzone* GetSurfaceFactoryOzone() override {
@@ -119,9 +135,23 @@ class OzonePlatformWayland : public OzonePlatform {
     return connection_->wayland_output_manager()->CreateWaylandScreen();
   }
 
+  void InitScreen(PlatformScreen* screen) override {
+    DCHECK(connection_ && connection_->wayland_output_manager());
+    // InitScreen is always called with the same screen that CreateScreen
+    // hands back, so it is safe to cast here.
+    connection_->wayland_output_manager()->InitWaylandScreen(
+        static_cast<WaylandScreen*>(screen));
+  }
+
   PlatformClipboard* GetPlatformClipboard() override {
     DCHECK(connection_);
     return connection_->clipboard();
+  }
+
+  PlatformGLEGLUtility* GetPlatformGLEGLUtility() override {
+    if (!gl_egl_utility_)
+      gl_egl_utility_ = std::make_unique<WaylandGLEGLUtility>();
+    return gl_egl_utility_.get();
   }
 
   std::unique_ptr<InputMethod> CreateInputMethod(
@@ -160,6 +190,10 @@ class OzonePlatformWayland : public OzonePlatform {
                                                                    usage);
   }
 
+  bool ShouldUseCustomFrame() override {
+    return connection_->xdg_decoration_manager_v1() == nullptr;
+  }
+
   void InitializeUI(const InitParams& args) override {
     // Initialize DeviceDataManager early as devices are set during
     // WaylandConnection::Initialize().
@@ -194,8 +228,6 @@ class OzonePlatformWayland : public OzonePlatform {
 #endif
 
     menu_utils_ = std::make_unique<WaylandMenuUtils>(connection_.get());
-
-    // TODO(crbug.com/1138740): report which Wayland compositor is used.
   }
 
   void InitializeGPU(const InitParams& args) override {
@@ -264,16 +296,24 @@ class OzonePlatformWayland : public OzonePlatform {
     return *properties;
   }
 
+  const PlatformRuntimeProperties& GetPlatformRuntimeProperties() override {
+    static OzonePlatform::PlatformRuntimeProperties properties;
+    if (connection_) {
+      properties.supports_server_side_window_decorations =
+          (connection_->xdg_decoration_manager_v1() != nullptr);
+    }
+    return properties;
+  }
+
   const InitializedHostProperties& GetInitializedHostProperties() override {
-    static base::NoDestructor<OzonePlatform::InitializedHostProperties>
-        properties;
+    static OzonePlatform::InitializedHostProperties properties;
     static bool initialized = false;
     if (!initialized) {
-      properties->supports_overlays =
+      properties.supports_overlays =
           ui::IsWaylandOverlayDelegationEnabled() && connection_->viewporter();
       initialized = true;
     }
-    return *properties;
+    return properties;
   }
 
   void AddInterfaces(mojo::BinderMap* binders) override {
@@ -296,6 +336,10 @@ class OzonePlatformWayland : public OzonePlatform {
   }
 
  private:
+  // Keeps the old value of KeyEvent::IsSynthesizeKeyRepeatEnabled(), to
+  // restore it on destruction.
+  const bool old_synthesize_key_repeat_enabled_;
+
 #if BUILDFLAG(USE_XKBCOMMON)
   XkbEvdevCodes xkb_evdev_code_converter_;
 #endif
@@ -314,6 +358,7 @@ class OzonePlatformWayland : public OzonePlatform {
   // Objects, which solely live in the GPU process.
   std::unique_ptr<WaylandBufferManagerGpu> buffer_manager_;
   std::unique_ptr<WaylandOverlayManager> overlay_manager_;
+  std::unique_ptr<WaylandGLEGLUtility> gl_egl_utility_;
 
   // Provides supported buffer formats for native gpu memory buffers
   // framework.
@@ -326,8 +371,6 @@ class OzonePlatformWayland : public OzonePlatform {
 #if BUILDFLAG(USE_GTK)
   std::unique_ptr<LinuxUiDelegateWayland> gtk_ui_platform_;
 #endif
-
-  DISALLOW_COPY_AND_ASSIGN(OzonePlatformWayland);
 };
 
 }  // namespace

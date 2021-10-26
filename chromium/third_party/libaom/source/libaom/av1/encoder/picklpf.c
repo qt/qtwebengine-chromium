@@ -69,22 +69,9 @@ static int64_t try_filter_frame(const YV12_BUFFER_CONFIG *sd,
     case 2: cm->lf.filter_level_v = filter_level[0]; break;
   }
 
-  // TODO(any): please enable multi-thread and remove the flag when loop
-  // filter mask is compatible with multi-thread.
-  if (num_workers > 1)
-    av1_loop_filter_frame_mt(&cm->cur_frame->buf, cm, &cpi->td.mb.e_mbd, plane,
-                             plane + 1, partial_frame,
-#if CONFIG_LPF_MASK
-                             0,
-#endif
-                             mt_info->workers, num_workers,
-                             &mt_info->lf_row_sync);
-  else
-    av1_loop_filter_frame(&cm->cur_frame->buf, cm, &cpi->td.mb.e_mbd,
-#if CONFIG_LPF_MASK
-                          0,
-#endif
-                          plane, plane + 1, partial_frame);
+  av1_loop_filter_frame_mt(&cm->cur_frame->buf, cm, &cpi->td.mb.e_mbd, plane,
+                           plane + 1, partial_frame, mt_info->workers,
+                           num_workers, &mt_info->lf_row_sync, 0);
 
   filt_err = aom_get_sse_plane(sd, &cm->cur_frame->buf, plane,
                                cm->seq_params->use_highbitdepth);
@@ -274,10 +261,17 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
   } else {
     int last_frame_filter_level[4] = { 0 };
     if (!frame_is_intra_only(cm)) {
+#if CONFIG_FRAME_PARALLEL_ENCODE
+      last_frame_filter_level[0] = cpi->ppi->filter_level[0];
+      last_frame_filter_level[1] = cpi->ppi->filter_level[1];
+      last_frame_filter_level[2] = cpi->ppi->filter_level_u;
+      last_frame_filter_level[3] = cpi->ppi->filter_level_v;
+#else
       last_frame_filter_level[0] = lf->filter_level[0];
       last_frame_filter_level[1] = lf->filter_level[1];
       last_frame_filter_level[2] = lf->filter_level_u;
       last_frame_filter_level[3] = lf->filter_level_v;
+#endif
     }
 
     lf->filter_level[0] = lf->filter_level[1] =

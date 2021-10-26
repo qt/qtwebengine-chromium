@@ -11,56 +11,67 @@
 
 namespace autofill {
 
-UserInfo::Field::Field(std::u16string display_text,
-                       std::u16string a11y_description,
-                       bool is_obfuscated,
-                       bool selectable)
-    : display_text_(std::move(display_text)),
+// TODO(crbug.com/1224179) Delete this constructor.
+AccessorySheetField::AccessorySheetField(std::u16string display_text,
+                                         std::u16string a11y_description,
+                                         bool is_obfuscated,
+                                         bool selectable)
+    : display_text_(display_text),
+      text_to_fill_(std::move(display_text)),
       a11y_description_(std::move(a11y_description)),
       is_obfuscated_(is_obfuscated),
       selectable_(selectable),
       estimated_memory_use_by_strings_(
           base::trace_event::EstimateMemoryUsage(display_text_) +
+          base::trace_event::EstimateMemoryUsage(text_to_fill_) +
           base::trace_event::EstimateMemoryUsage(a11y_description_)) {}
 
-UserInfo::Field::Field(std::u16string display_text,
-                       std::u16string a11y_description,
-                       std::string id,
-                       bool is_obfuscated,
-                       bool selectable)
+AccessorySheetField::AccessorySheetField(std::u16string display_text,
+                                         std::u16string text_to_fill,
+                                         std::u16string a11y_description,
+                                         std::string id,
+                                         bool is_obfuscated,
+                                         bool selectable)
     : display_text_(std::move(display_text)),
+      text_to_fill_(std::move(text_to_fill)),
       a11y_description_(std::move(a11y_description)),
       id_(std::move(id)),
       is_obfuscated_(is_obfuscated),
       selectable_(selectable),
       estimated_memory_use_by_strings_(
           base::trace_event::EstimateMemoryUsage(display_text_) +
+          base::trace_event::EstimateMemoryUsage(text_to_fill_) +
           base::trace_event::EstimateMemoryUsage(a11y_description_) +
           base::trace_event::EstimateMemoryUsage(id_)) {}
 
-UserInfo::Field::Field(const Field& field) = default;
+AccessorySheetField::AccessorySheetField(const AccessorySheetField& field) =
+    default;
 
-UserInfo::Field::Field(Field&& field) = default;
+AccessorySheetField::AccessorySheetField(AccessorySheetField&& field) = default;
 
-UserInfo::Field::~Field() = default;
+AccessorySheetField::~AccessorySheetField() = default;
 
-UserInfo::Field& UserInfo::Field::operator=(const Field& field) = default;
+AccessorySheetField& AccessorySheetField::operator=(
+    const AccessorySheetField& field) = default;
 
-UserInfo::Field& UserInfo::Field::operator=(Field&& field) = default;
+AccessorySheetField& AccessorySheetField::operator=(
+    AccessorySheetField&& field) = default;
 
-bool UserInfo::Field::operator==(const UserInfo::Field& field) const {
+bool AccessorySheetField::operator==(const AccessorySheetField& field) const {
   return display_text_ == field.display_text_ &&
+         text_to_fill_ == field.text_to_fill_ &&
          a11y_description_ == field.a11y_description_ && id_ == field.id_ &&
          is_obfuscated_ == field.is_obfuscated_ &&
          selectable_ == field.selectable_;
 }
 
-size_t UserInfo::Field::EstimateMemoryUsage() const {
-  return sizeof(UserInfo::Field) + estimated_memory_use_by_strings_;
+size_t AccessorySheetField::EstimateMemoryUsage() const {
+  return sizeof(AccessorySheetField) + estimated_memory_use_by_strings_;
 }
 
-std::ostream& operator<<(std::ostream& os, const UserInfo::Field& field) {
+std::ostream& operator<<(std::ostream& os, const AccessorySheetField& field) {
   os << "(display text: \"" << field.display_text() << "\", "
+     << "text_to_fill: \"" << field.text_to_fill() << "\", "
      << "a11y_description: \"" << field.a11y_description() << "\", "
      << "id: \"" << field.id() << "\", "
      << "is " << (field.selectable() ? "" : "not ") << "selectable, "
@@ -74,10 +85,18 @@ UserInfo::UserInfo(std::string origin)
     : UserInfo(std::move(origin), IsPslMatch(false)) {}
 
 UserInfo::UserInfo(std::string origin, IsPslMatch is_psl_match)
+    : UserInfo(std::move(origin), is_psl_match, GURL()) {}
+
+UserInfo::UserInfo(std::string origin, GURL icon_url)
+    : UserInfo(std::move(origin), IsPslMatch(false), std::move(icon_url)) {}
+
+UserInfo::UserInfo(std::string origin, IsPslMatch is_psl_match, GURL icon_url)
     : origin_(std::move(origin)),
       is_psl_match_(is_psl_match),
+      icon_url_(std::move(icon_url)),
       estimated_dynamic_memory_use_(
-          base::trace_event::EstimateMemoryUsage(origin_)) {}
+          base::trace_event::EstimateMemoryUsage(origin_) +
+          base::trace_event::EstimateMemoryUsage(icon_url_)) {}
 
 UserInfo::UserInfo(const UserInfo& user_info) = default;
 
@@ -91,7 +110,8 @@ UserInfo& UserInfo::operator=(UserInfo&& user_info) = default;
 
 bool UserInfo::operator==(const UserInfo& user_info) const {
   return fields_ == user_info.fields_ && origin_ == user_info.origin_ &&
-         is_psl_match_ == user_info.is_psl_match_;
+         is_psl_match_ == user_info.is_psl_match_ &&
+         icon_url_ == user_info.icon_url_;
 }
 
 size_t UserInfo::EstimateMemoryUsage() const {
@@ -101,8 +121,9 @@ size_t UserInfo::EstimateMemoryUsage() const {
 std::ostream& operator<<(std::ostream& os, const UserInfo& user_info) {
   os << "origin: \"" << user_info.origin() << "\", "
      << "is_psl_match: " << std::boolalpha << user_info.is_psl_match() << ", "
+     << "icon_url: " << user_info.icon_url() << ","
      << "fields: [\n";
-  for (const UserInfo::Field& field : user_info.fields()) {
+  for (const AccessorySheetField& field : user_info.fields()) {
     os << field << ", \n";
   }
   return os << "]";
@@ -292,16 +313,19 @@ AccessorySheetData::Builder& AccessorySheetData::Builder::SetOptionToggle(
 
 AccessorySheetData::Builder&& AccessorySheetData::Builder::AddUserInfo(
     std::string origin,
-    UserInfo::IsPslMatch is_psl_match) && {
+    UserInfo::IsPslMatch is_psl_match,
+    GURL icon_url) && {
   // Calls AddUserInfo()& since |this| is an lvalue.
-  return std::move(AddUserInfo(std::move(origin), is_psl_match));
+  return std::move(
+      AddUserInfo(std::move(origin), is_psl_match, std::move(icon_url)));
 }
 
 AccessorySheetData::Builder& AccessorySheetData::Builder::AddUserInfo(
     std::string origin,
-    UserInfo::IsPslMatch is_psl_match) & {
+    UserInfo::IsPslMatch is_psl_match,
+    GURL icon_url) & {
   accessory_sheet_data_.add_user_info(
-      UserInfo(std::move(origin), is_psl_match));
+      UserInfo(std::move(origin), is_psl_match, std::move(icon_url)));
   return *this;
 }
 
@@ -314,9 +338,10 @@ AccessorySheetData::Builder&& AccessorySheetData::Builder::AppendSimpleField(
 AccessorySheetData::Builder& AccessorySheetData::Builder::AppendSimpleField(
     std::u16string text) & {
   std::u16string display_text = text;
+  std::u16string text_to_fill = text;
   std::u16string a11y_description = std::move(text);
-  return AppendField(std::move(display_text), std::move(a11y_description),
-                     false, true);
+  return AppendField(std::move(display_text), std::move(text_to_fill),
+                     std::move(a11y_description), false, true);
 }
 
 AccessorySheetData::Builder&& AccessorySheetData::Builder::AppendField(
@@ -324,44 +349,50 @@ AccessorySheetData::Builder&& AccessorySheetData::Builder::AppendField(
     std::u16string a11y_description,
     bool is_obfuscated,
     bool selectable) && {
+  std::u16string text_to_fill = display_text;
   // Calls AppendField(...)& since |this| is an lvalue.
-  return std::move(AppendField(std::move(display_text),
+  return std::move(AppendField(std::move(display_text), std::move(text_to_fill),
                                std::move(a11y_description), is_obfuscated,
                                selectable));
 }
 
 AccessorySheetData::Builder& AccessorySheetData::Builder::AppendField(
     std::u16string display_text,
+    std::u16string text_to_fill,
     std::u16string a11y_description,
     bool is_obfuscated,
     bool selectable) & {
   accessory_sheet_data_.mutable_user_info_list().back().add_field(
-      UserInfo::Field(std::move(display_text), std::move(a11y_description),
-                      is_obfuscated, selectable));
+      AccessorySheetField(std::move(display_text), std::move(text_to_fill),
+                          std::move(a11y_description), /*id=*/std::string(),
+                          is_obfuscated, selectable));
   return *this;
 }
 
 AccessorySheetData::Builder&& AccessorySheetData::Builder::AppendField(
     std::u16string display_text,
+    std::u16string text_to_fill,
     std::u16string a11y_description,
     std::string id,
     bool is_obfuscated,
     bool selectable) && {
   // Calls AppendField(...)& since |this| is an lvalue.
-  return std::move(AppendField(std::move(display_text),
+  return std::move(AppendField(std::move(display_text), std::move(text_to_fill),
                                std::move(a11y_description), std::move(id),
                                is_obfuscated, selectable));
 }
 
 AccessorySheetData::Builder& AccessorySheetData::Builder::AppendField(
     std::u16string display_text,
+    std::u16string text_to_fill,
     std::u16string a11y_description,
     std::string id,
     bool is_obfuscated,
     bool selectable) & {
   accessory_sheet_data_.mutable_user_info_list().back().add_field(
-      UserInfo::Field(std::move(display_text), std::move(a11y_description),
-                      std::move(id), is_obfuscated, selectable));
+      AccessorySheetField(std::move(display_text), std::move(text_to_fill),
+                          std::move(a11y_description), std::move(id),
+                          is_obfuscated, selectable));
   return *this;
 }
 

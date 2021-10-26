@@ -9,12 +9,12 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/lazy_instance.h"
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/values.h"
@@ -225,8 +225,8 @@ void ExtensionActionAPI::DispatchEventToExtension(
   if (!EventRouter::Get(context))
     return;
 
-  auto event = std::make_unique<Event>(histogram_value, event_name,
-                                       event_args->TakeList(), context);
+  auto event = std::make_unique<Event>(
+      histogram_value, event_name, std::move(*event_args).TakeList(), context);
   event->user_gesture = EventRouter::USER_GESTURE_ENABLED;
   EventRouter::Get(context)
       ->DispatchEventToExtension(extension_id, std::move(event));
@@ -475,24 +475,24 @@ ExtensionActionSetBadgeTextFunction::RunExtensionAction() {
 ExtensionFunction::ResponseAction
 ExtensionActionSetBadgeBackgroundColorFunction::RunExtensionAction() {
   EXTENSION_FUNCTION_VALIDATE(details_);
-  base::Value* color_value = NULL;
-  EXTENSION_FUNCTION_VALIDATE(details_->Get("color", &color_value));
+  base::Value* color_value = details_->FindKey("color");
+  EXTENSION_FUNCTION_VALIDATE(color_value);
   SkColor color = 0;
   if (color_value->is_list()) {
-    base::ListValue* list = NULL;
-    EXTENSION_FUNCTION_VALIDATE(details_->GetList("color", &list));
-    EXTENSION_FUNCTION_VALIDATE(list->GetSize() == 4);
+    base::Value::ConstListView list = color_value->GetList();
+
+    EXTENSION_FUNCTION_VALIDATE(list.size() == 4);
 
     int color_array[4] = {0};
     for (size_t i = 0; i < base::size(color_array); ++i) {
-      EXTENSION_FUNCTION_VALIDATE(list->GetInteger(i, &color_array[i]));
+      EXTENSION_FUNCTION_VALIDATE(list[i].is_int());
+      color_array[i] = list[i].GetInt();
     }
 
     color = SkColorSetARGB(color_array[3], color_array[0],
                            color_array[1], color_array[2]);
   } else if (color_value->is_string()) {
-    std::string color_string;
-    EXTENSION_FUNCTION_VALIDATE(details_->GetString("color", &color_string));
+    std::string color_string = color_value->GetString();
     if (!image_util::ParseCssColorString(color_string, &color))
       return RespondNow(Error(kInvalidColorError));
   }

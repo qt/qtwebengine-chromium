@@ -123,7 +123,7 @@ class AvailableValuesFilter {
     DCHECK(input_dict.is_dict());
     DCHECK(CanAccessFeature(manifest, current_path));
 
-    for (const auto& it : input_dict.DictItems()) {
+    for (auto it : input_dict.DictItems()) {
       std::string child_path = CombineKeys(current_path, it.first);
 
       // Unavailable key, skip it.
@@ -218,6 +218,8 @@ Manifest::Type Manifest::GetTypeFromManifestValue(
     } else {
       type = TYPE_LEGACY_PACKAGED_APP;
     }
+  } else if (value.HasKey(keys::kChromeOSSystemExtension)) {
+    type = TYPE_CHROMEOS_SYSTEM_EXTENSION;
   } else if (for_login_screen) {
     type = TYPE_LOGIN_SCREEN_EXTENSION;
   } else {
@@ -361,25 +363,19 @@ bool Manifest::GetDictionary(
 
 bool Manifest::GetDictionary(const std::string& path,
                              const base::Value** out_value) const {
-  return GetPathOfType(path, base::Value::Type::DICTIONARY, out_value);
-}
-
-bool Manifest::GetList(
-    const std::string& path, const base::ListValue** out_value) const {
-  return available_values_->GetList(path, out_value);
+  const std::vector<base::StringPiece> components =
+      manifest_handler_helpers::TokenizeDictionaryPath(path);
+  *out_value = available_values_->FindPathOfType(components,
+                                                 base::Value::Type::DICTIONARY);
+  return *out_value != nullptr;
 }
 
 bool Manifest::GetList(const std::string& path,
                        const base::Value** out_value) const {
-  return GetPathOfType(path, base::Value::Type::LIST, out_value);
-}
-
-bool Manifest::GetPathOfType(const std::string& path,
-                             base::Value::Type type,
-                             const base::Value** out_value) const {
   const std::vector<base::StringPiece> components =
       manifest_handler_helpers::TokenizeDictionaryPath(path);
-  *out_value = available_values_->FindPathOfType(components, type);
+  *out_value =
+      available_values_->FindPathOfType(components, base::Value::Type::LIST);
   return *out_value != nullptr;
 }
 

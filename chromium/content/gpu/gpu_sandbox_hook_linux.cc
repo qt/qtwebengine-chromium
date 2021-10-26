@@ -243,7 +243,13 @@ void AddAmdGpuPermissions(std::vector<BrokerFilePermission>* permissions) {
 void AddIntelGpuPermissions(std::vector<BrokerFilePermission>* permissions) {
   static const char* const kReadOnlyList[] = {
       "/usr/share/vulkan/icd.d",
-      "/usr/share/vulkan/icd.d/intel_icd.x86_64.json"};
+      "/usr/share/vulkan/icd.d/intel_icd.x86_64.json",
+      // TODO(hob): libvulkan.so is broadly applicable across all platforms
+      // for WebGPU, but let's allowlist only on Intel for now since it's the
+      // first platform to support WebGPU. As we start rolling out WebGPU on
+      // more platforms, we should move this into |AddStandardGpuPermissions|.
+      "/usr/lib64/libvulkan.so.1",
+      "/usr/lib64/libvulkan_intel.so"};
   for (const char* item : kReadOnlyList)
     permissions->push_back(BrokerFilePermission::ReadOnly(item));
 
@@ -431,10 +437,17 @@ bool LoadAmdGpuLibraries() {
 }
 
 bool LoadNvidiaLibraries() {
-  // The driver may lazily load libxcb-glx. It's not an error on wayland-only
-  // systems for the library to be missing.
+  // The driver may lazily load several XCB libraries. It's not an error on
+  // wayland-only systems for them to be missing.
   if (!dlopen("libxcb-glx.so.0", dlopen_flag))
     LOG(WARNING) << "dlopen(libxcb-glx.so.0) failed with error: " << dlerror();
+  if (!dlopen("libxcb-dri3.so", dlopen_flag))
+    LOG(WARNING) << "dlopen(libxcb-dri3.so) failed with error: " << dlerror();
+  if (!dlopen("libxcb-present.so", dlopen_flag))
+    LOG(WARNING) << "dlopen(libxcb-present.so) failed with error: "
+                 << dlerror();
+  if (!dlopen("libxcb-sync.so", dlopen_flag))
+    LOG(WARNING) << "dlopen(libxcb-sync.so) failed with error: " << dlerror();
   return true;
 }
 

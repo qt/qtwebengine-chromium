@@ -26,13 +26,13 @@ namespace content {
 
 TransactionImpl::TransactionImpl(
     base::WeakPtr<IndexedDBTransaction> transaction,
-    const url::Origin& origin,
+    const blink::StorageKey& storage_key,
     base::WeakPtr<IndexedDBDispatcherHost> dispatcher_host,
     scoped_refptr<base::SequencedTaskRunner> idb_runner)
     : dispatcher_host_(dispatcher_host),
       indexed_db_context_(dispatcher_host->context()),
       transaction_(std::move(transaction)),
-      origin_(origin),
+      storage_key_(storage_key),
       idb_runner_(std::move(idb_runner)) {
   DCHECK(idb_runner_->RunsTasksInCurrentSequence());
   DCHECK(dispatcher_host_);
@@ -57,6 +57,15 @@ void TransactionImpl::CreateObjectStore(int64_t object_store_id,
     return;
   }
 
+  if (!transaction_->IsAcceptingRequests()) {
+    // TODO(https://crbug.com/1249908): If the transaction was already committed
+    // (or is in the process of being committed) we should kill the renderer.
+    // This branch however also includes cases where the browser process aborted
+    // the transaction, as currently we don't distinguish that state from the
+    // transaction having been committed. So for now simply ignore the request.
+    return;
+  }
+
   IndexedDBConnection* connection = transaction_->connection();
   if (!connection->IsConnected())
     return;
@@ -76,6 +85,15 @@ void TransactionImpl::DeleteObjectStore(int64_t object_store_id) {
   if (transaction_->mode() != blink::mojom::IDBTransactionMode::VersionChange) {
     mojo::ReportBadMessage(
         "DeleteObjectStore must be called from a version change transaction.");
+    return;
+  }
+
+  if (!transaction_->IsAcceptingRequests()) {
+    // TODO(https://crbug.com/1249908): If the transaction was already committed
+    // (or is in the process of being committed) we should kill the renderer.
+    // This branch however also includes cases where the browser process aborted
+    // the transaction, as currently we don't distinguish that state from the
+    // transaction having been committed. So for now simply ignore the request.
     return;
   }
 
@@ -108,6 +126,15 @@ void TransactionImpl::Put(
     std::move(callback).Run(
         blink::mojom::IDBTransactionPutResult::NewErrorResult(
             blink::mojom::IDBError::New(error.code(), error.message())));
+    return;
+  }
+
+  if (!transaction_->IsAcceptingRequests()) {
+    // TODO(https://crbug.com/1249908): If the transaction was already committed
+    // (or is in the process of being committed) we should kill the renderer.
+    // This branch however also includes cases where the browser process aborted
+    // the transaction, as currently we don't distinguish that state from the
+    // transaction having been committed. So for now simply ignore the request.
     return;
   }
 
@@ -167,6 +194,15 @@ void TransactionImpl::PutAll(int64_t object_store_id,
     std::move(callback).Run(
         blink::mojom::IDBTransactionPutAllResult::NewErrorResult(
             blink::mojom::IDBError::New(error.code(), error.message())));
+    return;
+  }
+
+  if (!transaction_->IsAcceptingRequests()) {
+    // TODO(https://crbug.com/1249908): If the transaction was already committed
+    // (or is in the process of being committed) we should kill the renderer.
+    // This branch however also includes cases where the browser process aborted
+    // the transaction, as currently we don't distinguish that state from the
+    // transaction having been committed. So for now simply ignore the request.
     return;
   }
 
@@ -268,6 +304,15 @@ void TransactionImpl::Commit(int64_t num_errors_handled) {
   if (!transaction_)
     return;
 
+  if (!transaction_->IsAcceptingRequests()) {
+    // TODO(https://crbug.com/1249908): If the transaction was already committed
+    // (or is in the process of being committed) we should kill the renderer.
+    // This branch however also includes cases where the browser process aborted
+    // the transaction, as currently we don't distinguish that state from the
+    // transaction having been committed. So for now simply ignore the request.
+    return;
+  }
+
   IndexedDBConnection* connection = transaction_->connection();
   if (!connection->IsConnected())
     return;
@@ -281,7 +326,7 @@ void TransactionImpl::Commit(int64_t num_errors_handled) {
   }
 
   indexed_db_context_->quota_manager_proxy()->GetUsageAndQuota(
-      origin_, blink::mojom::StorageType::kTemporary,
+      storage_key_, blink::mojom::StorageType::kTemporary,
       indexed_db_context_->IDBTaskRunner(),
       base::BindOnce(&TransactionImpl::OnGotUsageAndQuotaForCommit,
                      weak_factory_.GetWeakPtr()));

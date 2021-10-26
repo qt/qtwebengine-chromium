@@ -211,6 +211,13 @@ DEFINE_QUIC_COMMAND_LINE_FLAG(int32_t,
                               -1,
                               "Length of the client connection ID used.");
 
+DEFINE_QUIC_COMMAND_LINE_FLAG(int32_t, max_time_before_crypto_handshake_ms,
+                              10000,
+                              "Max time to wait before handshake completes.");
+
+DEFINE_QUIC_COMMAND_LINE_FLAG(int32_t, max_inbound_header_list_size, 128 * 1024,
+                              "Max inbound header list size. 0 means default.");
+
 namespace quic {
 
 QuicToyClient::QuicToyClient(ClientFactory* client_factory)
@@ -293,6 +300,8 @@ int QuicToyClient::SendRequestsAndPrintResponses(
     config.custom_transport_parameters_to_send()[kCustomParameter] =
         custom_value;
   }
+  config.set_max_time_before_crypto_handshake(QuicTime::Delta::FromMilliseconds(
+      GetQuicFlag(FLAGS_max_time_before_crypto_handshake_ms)));
 
   int address_family_for_lookup = AF_UNSPEC;
   if (GetQuicFlag(FLAGS_ip_version_for_host_lookup) == "4") {
@@ -324,6 +333,11 @@ int QuicToyClient::SendRequestsAndPrintResponses(
       GetQuicFlag(FLAGS_client_connection_id_length);
   if (client_connection_id_length >= 0) {
     client->set_client_connection_id_length(client_connection_id_length);
+  }
+  const size_t max_inbound_header_list_size =
+      GetQuicFlag(FLAGS_max_inbound_header_list_size);
+  if (max_inbound_header_list_size > 0) {
+    client->set_max_inbound_header_list_size(max_inbound_header_list_size);
   }
   if (!client->Initialize()) {
     std::cerr << "Failed to initialize client." << std::endl;

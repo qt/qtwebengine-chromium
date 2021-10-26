@@ -5,7 +5,7 @@
 #ifndef NET_DNS_PUBLIC_DNS_QUERY_TYPE_H_
 #define NET_DNS_PUBLIC_DNS_QUERY_TYPE_H_
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -22,13 +22,19 @@ enum class DnsQueryType {
   SRV,
   INTEGRITY,
   HTTPS,
-  MAX = HTTPS
+  HTTPS_EXPERIMENTAL,
+  MAX = HTTPS_EXPERIMENTAL
 };
 
-const DnsQueryType kDnsQueryTypes[] = {
-    DnsQueryType::UNSPECIFIED, DnsQueryType::A,    DnsQueryType::AAAA,
-    DnsQueryType::TXT,         DnsQueryType::PTR,  DnsQueryType::SRV,
-    DnsQueryType::INTEGRITY,   DnsQueryType::HTTPS};
+const DnsQueryType kDnsQueryTypes[] = {DnsQueryType::UNSPECIFIED,
+                                       DnsQueryType::A,
+                                       DnsQueryType::AAAA,
+                                       DnsQueryType::TXT,
+                                       DnsQueryType::PTR,
+                                       DnsQueryType::SRV,
+                                       DnsQueryType::INTEGRITY,
+                                       DnsQueryType::HTTPS,
+                                       DnsQueryType::HTTPS_EXPERIMENTAL};
 
 static_assert(base::size(kDnsQueryTypes) ==
                   static_cast<unsigned>(DnsQueryType::MAX) + 1,

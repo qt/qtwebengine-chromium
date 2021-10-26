@@ -57,7 +57,7 @@ WindowTreeHostPlatform::WindowTreeHostPlatform(
     std::unique_ptr<Window> window)
     : WindowTreeHost(std::move(window)) {
   bounds_in_pixels_ = properties.bounds;
-  CreateCompositor(viz::FrameSinkId(), false, false,
+  CreateCompositor(false, false,
                    properties.enable_compositing_based_throttling);
   CreateAndSetPlatformWindow(std::move(properties));
 }
@@ -203,6 +203,11 @@ void WindowTreeHostPlatform::OnCursorVisibilityChangedNative(bool show) {
   NOTIMPLEMENTED();
 }
 
+void WindowTreeHostPlatform::LockMouse(Window* window) {
+  window->SetCapture();
+  WindowTreeHost::LockMouse(window);
+}
+
 void WindowTreeHostPlatform::OnBoundsChanged(const BoundsChange& change) {
   // It's possible this function may be called recursively. Only notify
   // observers on initial entry. This way observers can safely assume that
@@ -256,6 +261,7 @@ void WindowTreeHostPlatform::OnCloseRequest() {
 void WindowTreeHostPlatform::OnClosed() {}
 
 void WindowTreeHostPlatform::OnWindowStateChanged(
+    ui::PlatformWindowState old_state,
     ui::PlatformWindowState new_state) {}
 
 void WindowTreeHostPlatform::OnLostCapture() {
@@ -288,6 +294,26 @@ void WindowTreeHostPlatform::OnMouseEnter() {
     DCHECK(display.is_valid());
     cursor_client->SetDisplay(display);
   }
+}
+
+void WindowTreeHostPlatform::OnOcclusionStateChanged(
+    ui::PlatformWindowOcclusionState occlusion_state) {
+  auto aura_occlusion_state = Window::OcclusionState::UNKNOWN;
+  switch (occlusion_state) {
+    case ui::PlatformWindowOcclusionState::kUnknown:
+      aura_occlusion_state = Window::OcclusionState::UNKNOWN;
+      break;
+    case ui::PlatformWindowOcclusionState::kVisible:
+      aura_occlusion_state = Window::OcclusionState::VISIBLE;
+      break;
+    case ui::PlatformWindowOcclusionState::kOccluded:
+      aura_occlusion_state = Window::OcclusionState::OCCLUDED;
+      break;
+    case ui::PlatformWindowOcclusionState::kHidden:
+      aura_occlusion_state = Window::OcclusionState::HIDDEN;
+      break;
+  }
+  SetNativeWindowOcclusionState(aura_occlusion_state);
 }
 
 }  // namespace aura

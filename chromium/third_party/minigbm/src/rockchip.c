@@ -69,7 +69,7 @@ static int afbc_bo_from_format(struct bo *bo, uint32_t width, uint32_t height, u
 
 	bo->meta.total_size = total_size;
 
-	bo->meta.format_modifiers[0] = DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC;
+	bo->meta.format_modifier = DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC;
 
 	return 0;
 }
@@ -137,7 +137,7 @@ static int rockchip_bo_create_with_modifiers(struct bo *bo, uint32_t width, uint
 		if (!drv_has_modifier(modifiers, count, DRM_FORMAT_MOD_LINEAR)) {
 			errno = EINVAL;
 			drv_log("no usable modifier found\n");
-			return -1;
+			return -errno;
 		}
 
 		uint32_t stride;
@@ -187,7 +187,7 @@ static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 
 	/* We can only map buffers created with SW access flags, which should
 	 * have no modifiers (ie, not AFBC). */
-	if (bo->meta.format_modifiers[0] == DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC)
+	if (bo->meta.format_modifier == DRM_FORMAT_MOD_CHROMEOS_ROCKCHIP_AFBC)
 		return MAP_FAILED;
 
 	gem_map.handle = bo->handles[0].u32;
@@ -245,22 +245,6 @@ static int rockchip_bo_flush(struct bo *bo, struct mapping *mapping)
 	return 0;
 }
 
-static uint32_t rockchip_resolve_format(struct driver *drv, uint32_t format, uint64_t use_flags)
-{
-	switch (format) {
-	case DRM_FORMAT_FLEX_IMPLEMENTATION_DEFINED:
-		/* Camera subsystem requires NV12. */
-		if (use_flags & (BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE))
-			return DRM_FORMAT_NV12;
-		/*HACK: See b/28671744 */
-		return DRM_FORMAT_XBGR8888;
-	case DRM_FORMAT_FLEX_YCbCr_420_888:
-		return DRM_FORMAT_NV12;
-	default:
-		return format;
-	}
-}
-
 const struct backend backend_rockchip = {
 	.name = "rockchip",
 	.init = rockchip_init,
@@ -272,7 +256,7 @@ const struct backend backend_rockchip = {
 	.bo_unmap = rockchip_bo_unmap,
 	.bo_invalidate = rockchip_bo_invalidate,
 	.bo_flush = rockchip_bo_flush,
-	.resolve_format = rockchip_resolve_format,
+	.resolve_format = drv_resolve_format_helper,
 };
 
 #endif

@@ -36,32 +36,22 @@ class MockAffiliatedMatchHelper : public AffiliatedMatchHelper {
   // |expected_observed_form|, and will cause the result callback supplied to
   // GetAffiliatedAndroidAndWebRealms() to be invoked with |results_to_return|.
   void ExpectCallToGetAffiliatedAndroidRealms(
-      const PasswordStore::FormDigest& expected_observed_form,
-      const std::vector<std::string>& results_to_return);
-
-  // Expects GetAffiliatedWebRealms() to be called with the
-  // |expected_android_form|, and will cause the result callback supplied to
-  // GetAffiliatedWebRealms() to be invoked with |results_to_return|.
-  void ExpectCallToGetAffiliatedWebRealms(
-      const PasswordStore::FormDigest& expected_android_form,
+      const PasswordFormDigest& expected_observed_form,
       const std::vector<std::string>& results_to_return);
 
   void ExpectCallToInjectAffiliationAndBrandingInformation(
       const std::vector<AffiliationAndBrandingInformation>& results_to_inject);
 
  private:
-  MOCK_METHOD1(OnGetAffiliatedAndroidRealmsCalled,
-               std::vector<std::string>(const PasswordStore::FormDigest&));
-  MOCK_METHOD1(OnGetAffiliatedWebRealmsCalled,
-               std::vector<std::string>(const PasswordStore::FormDigest&));
-  MOCK_METHOD0(OnInjectAffiliationAndBrandingInformationCalled,
-               std::vector<AffiliationAndBrandingInformation>());
+  MOCK_METHOD(std::vector<std::string>,
+              OnGetAffiliatedAndroidRealmsCalled,
+              (const PasswordFormDigest&));
+  MOCK_METHOD(std::vector<AffiliationAndBrandingInformation>,
+              OnInjectAffiliationAndBrandingInformationCalled,
+              ());
 
   void GetAffiliatedAndroidAndWebRealms(
-      const PasswordStore::FormDigest& observed_form,
-      AffiliatedRealmsCallback result_callback) override;
-  void GetAffiliatedWebRealms(
-      const PasswordStore::FormDigest& android_form,
+      const PasswordFormDigest& observed_form,
       AffiliatedRealmsCallback result_callback) override;
 
   void InjectAffiliationAndBrandingInformation(

@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/command_line.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
 #include "base/stl_util.h"
@@ -205,7 +206,7 @@ class ExamplesWindowContents : public WidgetDelegateView {
   void ComboboxChanged() {
     int index = combobox_->GetSelectedIndex();
     DCHECK_LT(index, combobox_model_->GetItemCount());
-    example_shown_->RemoveAllChildViews(false);
+    example_shown_->RemoveAllChildViewsWithoutDeleting();
     example_shown_->AddChildView(combobox_model_->GetItemViewAt(index));
     example_shown_->RequestFocus();
     SetStatus(std::string());

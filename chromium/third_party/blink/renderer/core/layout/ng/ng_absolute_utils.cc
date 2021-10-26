@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_box_fragment_builder.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_constraint_space_builder.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_fragmentation_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_length_utils.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/platform/geometry/length_functions.h"
@@ -431,8 +432,7 @@ bool ComputeOutOfFlowInlineDimensions(
     min_max_length_sizes = {LayoutUnit(), LayoutUnit::Max()};
   } else {
     min_max_length_sizes = ComputeMinMaxInlineSizes(
-        space, node, border_padding, MinMaxSizesFunc, &min_inline_length,
-        /* is_block_size_indefinite */ !can_compute_block_size_without_layout);
+        space, node, border_padding, MinMaxSizesFunc, &min_inline_length);
   }
 
   const auto writing_direction = style.GetWritingDirection();
@@ -490,6 +490,14 @@ scoped_refptr<const NGLayoutResult> ComputeOutOfFlowBlockDimensions(
           {dimensions->size.inline_size, space.AvailableSize().block_size});
       builder.SetIsFixedInlineSize(true);
       builder.SetPercentageResolutionSize(space.PercentageResolutionSize());
+
+      if (space.IsInitialColumnBalancingPass()) {
+        // The |fragmentainer_offset_delta| will not make a difference in the
+        // initial column balancing pass.
+        SetupSpaceBuilderForFragmentation(
+            space, node, /* fragmentainer_offset_delta */ LayoutUnit(),
+            &builder, /* is_new_fc */ true);
+      }
       result = node.Layout(builder.ToConstraintSpace());
     }
 
@@ -530,6 +538,15 @@ scoped_refptr<const NGLayoutResult> ComputeOutOfFlowBlockDimensions(
   } else {
     min_max_length_sizes =
         ComputeMinMaxBlockSizes(space, style, border_padding);
+
+    // Manually resolve any intrinsic/content min/max block-sizes.
+    // TODO(crbug.com/1135207): |ComputeMinMaxBlockSizes()| should handle this.
+    if (style.LogicalMinHeight().IsContentOrIntrinsic())
+      min_max_length_sizes.min_size = IntrinsicBlockSizeFunc();
+    if (style.LogicalMaxHeight().IsContentOrIntrinsic())
+      min_max_length_sizes.max_size = IntrinsicBlockSizeFunc();
+    min_max_length_sizes.max_size =
+        std::max(min_max_length_sizes.max_size, min_max_length_sizes.min_size);
 
     // Tables are never allowed to go below their "auto" block-size.
     if (is_table)

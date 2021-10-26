@@ -24,7 +24,6 @@
  */
 
 #include "libavutil/audio_fifo.h"
-#include "libavutil/avassert.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "avfilter.h"
@@ -260,7 +259,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_agate = {
+const AVFilter ff_af_agate = {
     .name           = "agate",
     .description    = NULL_IF_CONFIG_SMALL("Audio gate."),
     .query_formats  = query_formats,
@@ -437,7 +436,7 @@ static const AVFilterPad sidechaingate_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_sidechaingate = {
+const AVFilter ff_af_sidechaingate = {
     .name           = "sidechaingate",
     .description    = NULL_IF_CONFIG_SMALL("Audio sidechain gate."),
     .priv_size      = sizeof(AudioGateContext),

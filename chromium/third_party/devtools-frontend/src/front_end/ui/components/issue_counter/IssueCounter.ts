@@ -8,20 +8,9 @@ import * as IssuesManager from '../../../models/issues_manager/issues_manager.js
 import * as ComponentHelpers from '../../components/helpers/helpers.js';
 import * as LitHtml from '../../lit-html/lit-html.js';
 import type * as IconButton from '../icon_button/icon_button.js';
+import issueCounterStyles from './issueCounter.css.js';
 
 const UIStrings = {
-  /**
-   *@description A description for a kind of issue we display in the issues tab.
-   */
-  pageErrorIssue: 'A page error issue: the page is not working correctly',
-  /**
-   *@description A description for a kind of issue we display in the issues tab.
-   */
-  breakingChangeIssue: 'A breaking change issue: the page may stop working in an upcoming version of Chrome',
-  /**
-   *@description A description for a kind of issue we display in the issues tab.
-   */
-  improvementIssue: 'An improvement issue: there is an opportunity to improve the page',
   /**
   *@description Label for link to Issues tab, specifying how many issues there are.
   */
@@ -57,17 +46,6 @@ function toIconGroup({iconName, color, width, height}: IconButton.Icon.IconWithN
   return {iconName, iconColor: color, iconWidth: width, iconHeight: height};
 }
 
-export function getIssueKindDescription(issueKind: IssuesManager.Issue.IssueKind): Common.UIString.LocalizedString {
-  switch (issueKind) {
-    case IssuesManager.Issue.IssueKind.PageError:
-      return i18nString(UIStrings.pageErrorIssue);
-    case IssuesManager.Issue.IssueKind.BreakingChange:
-      return i18nString(UIStrings.breakingChangeIssue);
-    case IssuesManager.Issue.IssueKind.Improvement:
-      return i18nString(UIStrings.improvementIssue);
-  }
-}
-
 export const enum DisplayMode {
   OmitEmpty = 'OmitEmpty',
   ShowAlways = 'ShowAlways',
@@ -82,6 +60,7 @@ export interface IssueCounterData {
   issuesManager: IssuesManager.IssuesManager.IssuesManager;
   throttlerTimeout?: number;
   accessibleName?: string;
+  compact?: boolean;
 }
 
 // @ts-ignore Remove this comment once Intl.ListFormat is in type defs.
@@ -103,6 +82,7 @@ export function getIssueCountsEnumeration(
 }
 
 export class IssueCounter extends HTMLElement {
+  static readonly litTagName = LitHtml.literal`issue-counter`;
   private readonly shadow = this.attachShadow({mode: 'open'});
   private clickHandler: undefined|(() => void) = undefined;
   private tooltipCallback: undefined|(() => void) = undefined;
@@ -113,6 +93,7 @@ export class IssueCounter extends HTMLElement {
   private issuesManager: IssuesManager.IssuesManager.IssuesManager|undefined = undefined;
   private accessibleName: string|undefined = undefined;
   private throttlerTimeout: number|undefined;
+  private compact = false;
 
   scheduleUpdate(): void {
     if (this.throttler) {
@@ -122,6 +103,10 @@ export class IssueCounter extends HTMLElement {
     }
   }
 
+  connectedCallback(): void {
+    this.shadow.adoptedStyleSheets = [issueCounterStyles];
+  }
+
   set data(data: IssueCounterData) {
     this.clickHandler = data.clickHandler;
     this.leadingText = data.leadingText ?? '';
@@ -129,6 +114,7 @@ export class IssueCounter extends HTMLElement {
     this.displayMode = data.displayMode ?? DisplayMode.OmitEmpty;
     this.accessibleName = data.accessibleName;
     this.throttlerTimeout = data.throttlerTimeout;
+    this.compact = Boolean(data.compact);
     if (this.issuesManager !== data.issuesManager) {
       this.issuesManager?.removeEventListener(
           IssuesManager.IssuesManager.Events.IssuesCountUpdated, this.scheduleUpdate, this);
@@ -147,12 +133,13 @@ export class IssueCounter extends HTMLElement {
   get data(): IssueCounterData {
     return {
       clickHandler: this.clickHandler,
-      tooltipCallback: this.tooltipCallback,
       leadingText: this.leadingText,
+      tooltipCallback: this.tooltipCallback,
       displayMode: this.displayMode,
-      issuesManager: this.issuesManager as IssuesManager.IssuesManager.IssuesManager,
       accessibleName: this.accessibleName,
       throttlerTimeout: this.throttlerTimeout,
+      compact: this.compact,
+      issuesManager: this.issuesManager as IssuesManager.IssuesManager.IssuesManager,
     };
   }
 
@@ -200,17 +187,13 @@ export class IssueCounter extends HTMLElement {
       ],
       clickHandler: this.clickHandler,
       leadingText: this.leadingText,
+      accessibleName: this.accessibleName,
+      compact: this.compact,
     };
     LitHtml.render(
         LitHtml.html`
-        <style>
-            :host {
-              white-space: normal;
-              display: inline-block;
-            }
-        </style>
-        <icon-button .data=${data as IconButton.IconButton.IconButtonData}
-          aria-label="${LitHtml.Directives.ifDefined(this.accessibleName)}"></icon-button>
+        <icon-button .data=${data as IconButton.IconButton.IconButtonData} .accessibleName="${
+            this.accessibleName}"></icon-button>
         `,
         this.shadow);
     this.tooltipCallback?.();

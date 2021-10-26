@@ -17,6 +17,8 @@
 
 namespace speech {
 
+const char kUsEnglishLocale[] = "en-US";
+
 #ifdef OS_WIN
 constexpr base::FilePath::CharType kSodaBinaryRelativePath[] =
     FILE_PATH_LITERAL("SODAFiles/SODA.dll");
@@ -139,6 +141,15 @@ std::string GetLanguageName(LanguageCode language_code) {
   }
 
   return language_name;
+}
+
+LanguageCode GetLanguageCode(const std::string& language_name) {
+  absl::optional<speech::SodaLanguagePackComponentConfig> language_config =
+      speech::GetLanguageComponentConfig(language_name);
+  if (language_config.has_value()) {
+    return language_config.value().language_code;
+  }
+  return LanguageCode::kNone;
 }
 
 }  // namespace speech

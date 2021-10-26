@@ -14,14 +14,12 @@
 
 #include "base/atomicops.h"
 #include "base/callback.h"
-#include "base/containers/queue.h"
 #include "base/macros.h"
 #include "base/memory/memory_pressure_listener.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/ui_devtools/buildflags.h"
 #include "components/viz/host/gpu_host_impl.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
@@ -31,8 +29,6 @@
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_info.h"
 #include "gpu/config/gpu_mode.h"
-#include "gpu/ipc/common/surface_handle.h"
-#include "ipc/ipc_sender.h"
 #include "mojo/public/cpp/bindings/generic_pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "services/viz/privileged/mojom/compositing/frame_sink_manager.mojom.h"
@@ -44,10 +40,6 @@
 
 #if defined(OS_WIN)
 #include "services/viz/privileged/mojom/gl/info_collection_gpu_service.mojom.h"
-#endif
-
-#if BUILDFLAG(USE_VIZ_DEVTOOLS)
-#include "content/browser/gpu/viz_devtools_connector.h"
 #endif
 
 namespace base {
@@ -62,7 +54,6 @@ class CATransactionGPUCoordinator;
 #endif
 
 class GpuProcessHost : public BrowserChildProcessHostDelegate,
-                       public IPC::Sender,
                        public viz::GpuHostImpl::Delegate {
  public:
   static int GetGpuCrashCount();
@@ -94,9 +85,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   static GpuProcessHost* FromID(int host_id);
   int host_id() const { return host_id_; }
   base::ProcessId process_id() const { return process_id_; }
-
-  // IPC::Sender implementation.
-  bool Send(IPC::Message* msg) override;
 
   // What kind of GPU process, e.g. sandboxed or unsandboxed.
   GpuProcessKind kind();
@@ -144,8 +132,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   bool Init();
 
   // BrowserChildProcessHostDelegate implementation.
-  bool OnMessageReceived(const IPC::Message& message) override;
-  void OnChannelConnected(int32_t peer_pid) override;
   void OnProcessLaunched() override;
   void OnProcessLaunchFailed(int error_code) override;
   void OnProcessCrashed(int exit_code) override;
@@ -207,9 +193,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
   // GPU process id in case GPU is not in-process.
   base::ProcessId process_id_ = base::kNullProcessId;
 
-  // Qeueud messages to send when the process launches.
-  base::queue<IPC::Message*> queued_messages_;
-
   // Whether the GPU process is valid, set to false after Send() failed.
   bool valid_;
 
@@ -264,10 +247,6 @@ class GpuProcessHost : public BrowserChildProcessHostDelegate,
 #endif
 
   std::unique_ptr<viz::GpuHostImpl> gpu_host_;
-
-#if BUILDFLAG(USE_VIZ_DEVTOOLS)
-  std::unique_ptr<VizDevToolsConnector> devtools_connector_;
-#endif
 
   SEQUENCE_CHECKER(sequence_checker_);
 

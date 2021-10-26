@@ -34,6 +34,7 @@ include_rules = [
   "+ui/gfx/video_types.h",
   "+ui/gl/ca_renderer_layer_params.h",
   "+ui/gl/dc_renderer_layer_params.h",
+  "+ui/gl/gl_fence.h",
   "+ui/gl/gl_utils.h",
   "+ui/gl/gpu_switching_manager.h",
   "+ui/gl/gpu_switching_observer.h",
@@ -68,6 +69,7 @@ specific_include_rules = {
     "+media",
     "+third_party/libyuv",
     "+ui/gl/gl_implementation.h",
+    "+third_party/zlib/google",
   ],
   "delegated_ink_point_renderer\.*" : [
     "+mojo/public/cpp/bindings",

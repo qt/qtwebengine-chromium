@@ -85,8 +85,6 @@ class PrintPreviewUI : public ConstrainedWebDialogUI,
 
   bool source_is_modifiable() const { return source_is_modifiable_; }
 
-  bool source_is_pdf() const { return source_is_pdf_; }
-
   bool source_has_selection() const { return source_has_selection_; }
 
   bool print_selection_only() const { return print_selection_only_; }
@@ -227,6 +225,8 @@ class PrintPreviewUI : public ConstrainedWebDialogUI,
  private:
   FRIEND_TEST_ALL_PREFIXES(PrintPreviewDialogControllerUnitTest,
                            TitleAfterReload);
+  FRIEND_TEST_ALL_PREFIXES(PrintPreviewUIUnitTest,
+                           PrintPreviewFailureCancelsPendingActions);
 
   // Sets the print preview |data|. |index| is zero-based, and can be
   // |COMPLETE_PREVIEW_DOCUMENT_INDEX| to set the entire preview document.
@@ -275,6 +275,9 @@ class PrintPreviewUI : public ConstrainedWebDialogUI,
   // GetIDForPrintPreviewUI() everywhere.
   absl::optional<int32_t> id_;
 
+  // This UI's client ID with the print backend service manager.
+  uint32_t service_manager_client_id_;
+
   // Weak pointer to the WebUI handler.
   PrintPreviewHandler* const handler_;
 
@@ -283,9 +286,6 @@ class PrintPreviewUI : public ConstrainedWebDialogUI,
 
   // Indicates whether the source document can be modified.
   bool source_is_modifiable_ = true;
-
-  // Indicates whether the source document is a PDF.
-  bool source_is_pdf_ = false;
 
   // Indicates whether the source document has selection.
   bool source_has_selection_ = false;

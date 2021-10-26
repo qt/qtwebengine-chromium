@@ -15,6 +15,7 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/cxx17_backports.h"
 #include "base/deferred_sequenced_task_runner.h"
 #include "base/feature_list.h"
 #include "base/location.h"
@@ -33,7 +34,6 @@
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/synchronization/waitable_event.h"
@@ -83,7 +83,6 @@
 #include "content/browser/scheduler/responsiveness/watcher.h"
 #include "content/browser/screenlock_monitor/screenlock_monitor.h"
 #include "content/browser/screenlock_monitor/screenlock_monitor_device_source.h"
-#include "content/browser/service_sandbox_type.h"
 #include "content/browser/sms/sms_provider.h"
 #include "content/browser/speech/speech_recognition_manager_impl.h"
 #include "content/browser/speech/tts_controller_impl.h"
@@ -134,6 +133,7 @@
 #include "ppapi/buildflags/buildflags.h"
 #include "services/audio/service.h"
 #include "services/data_decoder/public/cpp/service_provider.h"
+#include "services/data_decoder/public/mojom/data_decoder_service.mojom.h"
 #include "services/network/transitional_url_loader_factory_owner.h"
 #include "skia/ext/event_tracer_impl.h"
 #include "skia/ext/skia_memory_dump_provider.h"
@@ -362,11 +362,8 @@ std::unique_ptr<base::MemoryPressureMonitor> CreateMemoryPressureMonitor(
 
   std::unique_ptr<util::MultiSourceMemoryPressureMonitor> monitor;
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-  if (chromeos::switches::MemoryPressureHandlingEnabled())
-    monitor = std::make_unique<util::MultiSourceMemoryPressureMonitor>();
-#elif defined(OS_MAC) || defined(OS_WIN) || defined(OS_FUCHSIA) || \
-    BUILDFLAG(IS_CHROMEOS_LACROS)
+#if defined(OS_MAC) || defined(OS_WIN) || defined(OS_FUCHSIA) || \
+    defined(OS_CHROMEOS)
   monitor = std::make_unique<util::MultiSourceMemoryPressureMonitor>();
 #endif
   // No memory monitor on other platforms...
@@ -479,15 +476,6 @@ BrowserMainLoop::BrowserMainLoop(
   DCHECK(scoped_execution_fence_)
       << "ThreadPool must be halted before kicking off content.";
   g_current_browser_main_loop = this;
-
-  // Register the UI thread for hang watching before it starts running and set
-  // up a closure to automatically unregister when |this| is destroyed. This
-  // works since the UI thread running the message loop is the main thread and
-  // that makes it the same as the current one.
-  if (base::HangWatcher::IsUIThreadHangWatchingEnabled()) {
-    unregister_thread_closure_ = base::HangWatcher::RegisterThread(
-        base::HangWatcher::ThreadType::kUIThread);
-  }
 }
 
 BrowserMainLoop::~BrowserMainLoop() {

@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "base/callback.h"
 #include "ui/gfx/geometry/insets.h"
@@ -15,7 +16,6 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace base {
-class ListValue;
 class Value;
 }
 
@@ -114,7 +114,7 @@ class DevToolsEmbedderMessageDispatcher {
   virtual ~DevToolsEmbedderMessageDispatcher() = default;
   virtual bool Dispatch(DispatchCallback callback,
                         const std::string& method,
-                        const base::ListValue* params) = 0;
+                        const std::vector<base::Value>& params) = 0;
 
   static std::unique_ptr<DevToolsEmbedderMessageDispatcher>
   CreateForDevToolsFrontend(Delegate* delegate);

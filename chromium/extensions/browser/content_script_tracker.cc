@@ -10,6 +10,8 @@
 #include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/ranges/algorithm.h"
+#include "components/guest_view/browser/guest_view_base.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/navigation_handle.h"
@@ -17,10 +19,15 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/guest_view/web_view/web_view_content_script_manager.h"
 #include "extensions/browser/url_loader_factory_manager.h"
+#include "extensions/browser/user_script_manager.h"
+#include "extensions/common/constants.h"
 #include "extensions/common/content_script_injection_url_getter.h"
 #include "extensions/common/extension.h"
 #include "extensions/common/manifest_handlers/content_scripts_handler.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
 
 namespace extensions {
@@ -40,40 +47,69 @@ namespace {
 //    by ReadyToCommit races associated with RenderDocumentHostUserData.
 // For more information see:
 // https://docs.google.com/document/d/1MFprp2ss2r9RNamJ7Jxva1bvRZvec3rzGceDGoJ6vW0/edit#
-class ContentScriptsSet : public base::SupportsUserData::Data {
+class RenderProcessHostUserData : public base::SupportsUserData::Data {
  public:
-  static const ExtensionIdSet* Get(const content::RenderProcessHost& process) {
+  static const RenderProcessHostUserData* Get(
+      const content::RenderProcessHost& process) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    auto* self =
-        static_cast<ContentScriptsSet*>(process.GetUserData(kUserDataKey));
-    return self ? &self->content_scripts_ : nullptr;
+    return static_cast<RenderProcessHostUserData*>(
+        process.GetUserData(kUserDataKey));
   }
 
-  static ExtensionIdSet& GetOrCreate(content::RenderProcessHost& process) {
+  static RenderProcessHostUserData& GetOrCreate(
+      content::RenderProcessHost& process) {
     DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
-    auto* self =
-        static_cast<ContentScriptsSet*>(process.GetUserData(kUserDataKey));
+    auto* self = static_cast<RenderProcessHostUserData*>(
+        process.GetUserData(kUserDataKey));
 
     if (!self) {
-      auto owned_self = base::WrapUnique(new ContentScriptsSet);
+      // Create a new RenderProcessHostUserData if needed.  The ownership is
+      // passed to the `process` (i.e. the new RenderProcessHostUserData will be
+      // destroyed at the same time as the `process` - this is why we don't need
+      // to purge or destroy the set from within ContentScriptTracker).
+      auto owned_self = base::WrapUnique(new RenderProcessHostUserData);
       self = owned_self.get();
       process.SetUserData(kUserDataKey, std::move(owned_self));
     }
 
-    return self->content_scripts_;
+    DCHECK(self);
+    return *self;
   }
 
   // base::SupportsUserData::Data override:
-  ~ContentScriptsSet() override = default;
+  ~RenderProcessHostUserData() override = default;
+
+  bool HasContentScript(const ExtensionId& extension_id) const {
+    return base::Contains(content_scripts_, extension_id);
+  }
+
+  void AddContentScript(const ExtensionId& extension_id) {
+    content_scripts_.insert(extension_id);
+  }
+
+  void AddFrame(content::RenderFrameHost* frame) { frames_.insert(frame); }
+  void RemoveFrame(content::RenderFrameHost* frame) { frames_.erase(frame); }
+  const std::set<content::RenderFrameHost*>& frames() const { return frames_; }
 
  private:
-  ContentScriptsSet() = default;
+  RenderProcessHostUserData() = default;
 
   static const char* kUserDataKey;
+
+  // Set of extensions ids that have *ever* injected a content script into this
+  // particular renderer process.  This is the core data maintained by the
+  // ContentScriptTracker.
   ExtensionIdSet content_scripts_;
+
+  // Set of frames that are *currently* hosted in this particular renderer
+  // process.  This is mostly used just to get GetLastCommittedURL of these
+  // frames so that when a new extension is loaded, then ContentScriptTracker
+  // can know where content scripts may be injected.
+  std::set<content::RenderFrameHost*> frames_;
 };
 
-const char* ContentScriptsSet::kUserDataKey = "ContentScriptTracker's data";
+const char* RenderProcessHostUserData::kUserDataKey =
+    "ContentScriptTracker's data";
 
 class RenderFrameHostAdapter
     : public ContentScriptInjectionUrlGetter::FrameAdapter {
@@ -160,7 +196,8 @@ GURL GetEffectiveDocumentURL(
 // This function approximates a subset of checks from
 // UserScriptSet::GetInjectionForScript (which runs in the renderer process).
 // Unlike the renderer version, the code below doesn't consider ability to
-// create an injection host or the results of ScriptInjector::CanExecuteOnFrame.
+// create an injection host, nor the results of
+// ScriptInjector::CanExecuteOnFrame, nor the path of `url_patterns`.
 // Additionally the `effective_url` calculations are also only an approximation.
 // This is okay, because the top-level doc comment for ContentScriptTracker
 // documents that false positives are expected and why they are okay.
@@ -174,8 +211,7 @@ bool DoesContentScriptMatch(const UserScript& user_script,
 
   GURL effective_url = GetEffectiveDocumentURL(
       frame, url, user_script.match_origin_as_fallback());
-  bool is_subframe = frame->GetParent();
-  return user_script.MatchesDocument(effective_url, is_subframe);
+  return user_script.url_patterns().MatchesSecurityOrigin(effective_url);
 }
 
 void HandleProgrammaticContentScriptInjection(
@@ -184,12 +220,28 @@ void HandleProgrammaticContentScriptInjection(
     const Extension& extension) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  ExtensionIdSet& content_scripts_for_process =
-      ContentScriptsSet::GetOrCreate(*frame->GetProcess());
-  content_scripts_for_process.insert(extension.id());
+  // Store `extension.id()` in `process_data`.  ContentScriptTracker never
+  // removes entries from this set - once a renderer process gains an ability to
+  // talk on behalf of a content script, it retains this ability forever.  Note
+  // that the `process_data` will be destroyed together with the
+  // RenderProcessHost (see also a comment inside
+  // RenderProcessHostUserData::GetOrCreate).
+  auto& process_data =
+      RenderProcessHostUserData::GetOrCreate(*frame->GetProcess());
+  process_data.AddContentScript(extension.id());
 
   URLLoaderFactoryManager::WillProgrammaticallyInjectContentScript(
       pass_key, frame, extension);
+}
+
+bool DoContentScriptsMatch(const UserScriptList& content_script_list,
+                           content::RenderFrameHost* frame,
+                           const GURL& url) {
+  return base::ranges::any_of(
+      content_script_list.begin(), content_script_list.end(),
+      [frame, &url](const std::unique_ptr<UserScript>& script) {
+        return DoesContentScriptMatch(*script, frame, url);
+      });
 }
 
 // If `extension`'s manifest declares that it may inject JavaScript content
@@ -203,12 +255,57 @@ void HandleProgrammaticContentScriptInjection(
 bool DoContentScriptsMatch(const Extension& extension,
                            content::RenderFrameHost* frame,
                            const GURL& url) {
-  const UserScriptList& list =
-      ContentScriptsInfo::GetContentScripts(&extension);
-  return std::any_of(list.begin(), list.end(),
-                     [frame, &url](const std::unique_ptr<UserScript>& script) {
-                       return DoesContentScriptMatch(*script, frame, url);
-                     });
+  auto* guest = guest_view::GuestViewBase::FromWebContents(
+      content::WebContents::FromRenderFrameHost(frame));
+  if (guest) {
+    // Return true if `extension` is an owner of `guest` and it registered
+    // content scripts using the `webview.addContentScripts` API.
+    GURL owner_site_url = guest->GetOwnerSiteURL();
+    if (owner_site_url.SchemeIs(kExtensionScheme) &&
+        owner_site_url.host_piece() == extension.id()) {
+      WebViewContentScriptManager* script_manager =
+          WebViewContentScriptManager::Get(frame->GetBrowserContext());
+      int embedder_process_id =
+          guest->owner_web_contents()->GetMainFrame()->GetProcess()->GetID();
+      std::set<std::string> script_ids = script_manager->GetContentScriptIDSet(
+          embedder_process_id, guest->view_instance_id());
+
+      // Note - more granular checks (e.g. against URL patterns) are desirable
+      // for performance (to avoid creating unnecessary URLLoaderFactory via
+      // URLLoaderFactoryManager), but not necessarily for security (because
+      // there are anyway no OOPIFs inside the webView process -
+      // https://crbug.com/614463).  At the same time, more granular checks are
+      // difficult to achieve, because the UserScript objects are not retained
+      // (i.e. only UserScriptIDs are available) by WebViewContentScriptManager.
+      if (!script_ids.empty())
+        return true;
+    }
+  }
+
+  if (!guest || PermissionsData::CanExecuteScriptEverywhere(
+                    extension.id(), extension.location())) {
+    // Return true if manifest-declared content scripts match.
+    const UserScriptList& manifest_scripts =
+        ContentScriptsInfo::GetContentScripts(&extension);
+    if (DoContentScriptsMatch(manifest_scripts, frame, url))
+      return true;
+
+    // Return true if dynamic content scripts match.  Note that `manager` can be
+    // null for some unit tests which do not initialize the ExtensionSystem.
+    UserScriptManager* manager =
+        ExtensionSystem::Get(frame->GetProcess()->GetBrowserContext())
+            ->user_script_manager();
+    if (manager) {
+      const UserScriptList& dynamic_scripts =
+          manager->GetUserScriptLoaderForExtension(extension.id())
+              ->GetLoadedDynamicScripts();
+      if (DoContentScriptsMatch(dynamic_scripts, frame, url))
+        return true;
+    }
+  }
+
+  // Otherwise, no content script from `extension` can run in `frame` at `url`.
+  return false;
 }
 
 std::vector<const Extension*> GetExtensionsInjectingContentScripts(
@@ -231,6 +328,28 @@ std::vector<const Extension*> GetExtensionsInjectingContentScripts(
   return extensions_injecting_content_scripts;
 }
 
+const Extension* FindExtensionByHostId(content::BrowserContext* browser_context,
+                                       const mojom::HostID& host_id) {
+  DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+
+  switch (host_id.type) {
+    case mojom::HostID::HostType::kWebUi:
+      // ContentScriptTracker only tracks extensions.
+      return nullptr;
+    case mojom::HostID::HostType::kExtensions:
+      break;
+  }
+
+  const ExtensionRegistry* registry = ExtensionRegistry::Get(browser_context);
+  DCHECK(registry);  // WillExecuteCode and WillUpdateContentScriptsInRenderer
+                     // shouldn't happen during shutdown.
+
+  const Extension* extension =
+      registry->enabled_extensions().GetByID(host_id.id);
+
+  return extension;
+}
+
 }  // namespace
 
 // static
@@ -238,14 +357,15 @@ bool ContentScriptTracker::DidProcessRunContentScriptFromExtension(
     const content::RenderProcessHost& process,
     const ExtensionId& extension_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
+  DCHECK(!extension_id.empty());
 
   // Check if we've been notified about the content script injection via
   // ReadyToCommitNavigation or WillExecuteCode methods.
-  const ExtensionIdSet* extension_id_set = ContentScriptsSet::Get(process);
-  if (!extension_id_set)
+  const auto* process_data = RenderProcessHostUserData::Get(process);
+  if (!process_data)
     return false;
 
-  return base::Contains(*extension_id_set, extension_id);
+  return process_data->HasContentScript(extension_id);
 }
 
 // static
@@ -254,16 +374,41 @@ void ContentScriptTracker::ReadyToCommitNavigation(
     content::NavigationHandle* navigation) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
+  // Store `extensions_injecting_content_scripts` in
+  // `process_data`.  ContentScriptTracker never removes entries
+  // from this set - once a renderer process gains an ability to talk on behalf
+  // of a content script, it retains this ability forever.  Note that the
+  // `process_data`
+  // will be destroyed together with the RenderProcessHost (see also a comment
+  // inside RenderProcessHostUserData::GetOrCreate).
   std::vector<const Extension*> extensions_injecting_content_scripts =
       GetExtensionsInjectingContentScripts(navigation);
-  ExtensionIdSet& content_scripts_for_process = ContentScriptsSet::GetOrCreate(
+  auto& process_data = RenderProcessHostUserData::GetOrCreate(
       *navigation->GetRenderFrameHost()->GetProcess());
   for (const Extension* extension : extensions_injecting_content_scripts)
-    content_scripts_for_process.insert(extension->id());
+    process_data.AddContentScript(extension->id());
 
   URLLoaderFactoryManager::WillInjectContentScriptsWhenNavigationCommits(
       base::PassKey<ContentScriptTracker>(), navigation,
       extensions_injecting_content_scripts);
+}
+
+// static
+void ContentScriptTracker::RenderFrameCreated(
+    base::PassKey<ExtensionWebContentsObserver> pass_key,
+    content::RenderFrameHost* frame) {
+  auto& process_data =
+      RenderProcessHostUserData::GetOrCreate(*frame->GetProcess());
+  process_data.AddFrame(frame);
+}
+
+// static
+void ContentScriptTracker::RenderFrameDeleted(
+    base::PassKey<ExtensionWebContentsObserver> pass_key,
+    content::RenderFrameHost* frame) {
+  auto& process_data =
+      RenderProcessHostUserData::GetOrCreate(*frame->GetProcess());
+  process_data.RemoveFrame(frame);
 }
 
 // static
@@ -273,20 +418,10 @@ void ContentScriptTracker::WillExecuteCode(
     const mojom::HostID& host_id) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-  switch (host_id.type) {
-    case mojom::HostID::HostType::kWebUi:
-      // This class only tracks extensions.
-      return;
-    case mojom::HostID::HostType::kExtensions:
-      break;
-  }
-
-  const ExtensionRegistry* registry =
-      ExtensionRegistry::Get(frame->GetProcess()->GetBrowserContext());
-  DCHECK(registry);  // WillExecuteCode shouldn't happen during shutdown.
   const Extension* extension =
-      registry->enabled_extensions().GetByID(host_id.id);
-  DCHECK(extension);  // Guaranteed by the caller - see the doc comment.
+      FindExtensionByHostId(frame->GetProcess()->GetBrowserContext(), host_id);
+  if (!extension)
+    return;
 
   HandleProgrammaticContentScriptInjection(PassKey(), frame, *extension);
 }
@@ -297,6 +432,29 @@ void ContentScriptTracker::WillExecuteCode(
     content::RenderFrameHost* frame,
     const Extension& extension) {
   HandleProgrammaticContentScriptInjection(PassKey(), frame, extension);
+}
+
+// static
+void ContentScriptTracker::WillUpdateContentScriptsInRenderer(
+    base::PassKey<UserScriptLoader> pass_key,
+    const mojom::HostID& host_id,
+    content::RenderProcessHost& process) {
+  const Extension* extension =
+      FindExtensionByHostId(process.GetBrowserContext(), host_id);
+  if (!extension)
+    return;
+
+  auto& process_data = RenderProcessHostUserData::GetOrCreate(process);
+  const std::set<content::RenderFrameHost*>& frames_in_process =
+      process_data.frames();
+  bool any_frame_matches_content_scripts =
+      std::any_of(frames_in_process.begin(), frames_in_process.end(),
+                  [extension](content::RenderFrameHost* frame) {
+                    return DoContentScriptsMatch(*extension, frame,
+                                                 frame->GetLastCommittedURL());
+                  });
+  if (any_frame_matches_content_scripts)
+    process_data.AddContentScript(extension->id());
 }
 
 // static

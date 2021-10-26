@@ -6,7 +6,7 @@
 
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as SDK from '../../core/sdk/sdk.js'; // eslint-disable-line no-unused-vars
+import type * as SDK from '../../core/sdk/sdk.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Protocol from '../../generated/protocol.js';
@@ -107,11 +107,11 @@ export class SignedExchangeInfoView extends UI.Widget.VBox {
     console.assert(request.signedExchangeInfo() !== null);
     const signedExchangeInfo = (request.signedExchangeInfo() as Protocol.Network.SignedExchangeInfo);
 
-    this.registerRequiredCSS('panels/network/signedExchangeInfoView.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/network/signedExchangeInfoView.css');
     this.element.classList.add('signed-exchange-info-view');
 
     const root = new UI.TreeOutline.TreeOutlineInShadow();
-    root.registerRequiredCSS('panels/network/signedExchangeInfoTree.css', {enableLegacyPatching: true});
+    root.registerRequiredCSS('panels/network/signedExchangeInfoTree.css');
     root.element.classList.add('signed-exchange-info-tree');
     root.setFocusable(false);
     root.makeDense();

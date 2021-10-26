@@ -15,15 +15,16 @@
 namespace blink {
 
 using HighlightSetIterable = SetlikeIterable<Member<AbstractRange>>;
+class HighlightRegistry;
 
 class CORE_EXPORT Highlight : public ScriptWrappable,
                               public HighlightSetIterable {
   DEFINE_WRAPPERTYPEINFO();
 
  public:
-  static Highlight* Create(const String&, HeapVector<Member<AbstractRange>>&);
+  static Highlight* Create(const HeapVector<Member<AbstractRange>>&);
 
-  Highlight(const String&, HeapVector<Member<AbstractRange>>&);
+  explicit Highlight(const HeapVector<Member<AbstractRange>>&);
   ~Highlight() override;
 
   void Trace(blink::Visitor*) const override;
@@ -34,9 +35,10 @@ class CORE_EXPORT Highlight : public ScriptWrappable,
   bool hasForBinding(ScriptState*, AbstractRange*, ExceptionState&) const;
   wtf_size_t size() const;
 
-  const String& name() const { return name_; }
   const int32_t& priority() const { return priority_; }
-  void setPriority(const int32_t& priority) { priority_ = priority; }
+  void setPriority(const int32_t&);
+
+  bool Contains(AbstractRange*) const;
 
   class IterationSource final : public HighlightSetIterable::IterationSource {
    public:
@@ -58,10 +60,23 @@ class CORE_EXPORT Highlight : public ScriptWrappable,
       ScriptState*,
       ExceptionState&) override;
 
+  const HeapLinkedHashSet<Member<AbstractRange>>& GetRanges() const {
+    return highlight_ranges_;
+  }
+
+  void RegisterIn(HighlightRegistry* highlight_registry);
+  void DeregisterFrom(HighlightRegistry* highlight_registry);
+
  private:
   HeapLinkedHashSet<Member<AbstractRange>> highlight_ranges_;
   int32_t priority_ = 0;
-  AtomicString name_;
+  // Since a Highlight can be registered many times under different names in
+  // many HighlightRegistries, we need to keep track of the number of times
+  // it's present in each registry. If the Highlight is not registered anywhere,
+  // then we avoid scheduling repaints in case of modifications to it.
+  HeapHashMap<Member<HighlightRegistry>, unsigned>
+      containing_highlight_registries_;
+  void ScheduleRepaintsInContainingHighlightRegistries() const;
 };
 
 }  // namespace blink

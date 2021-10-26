@@ -15,6 +15,7 @@
 #include "ui/display/display_observer.h"
 
 #include "build/chromeos_buildflags.h"
+#include "components/exo/buildflags.h"
 
 struct wl_resource;
 struct wl_client;
@@ -33,6 +34,7 @@ struct WaylandTextInputManager;
 struct WaylandXdgShell;
 struct WaylandZxdgShell;
 struct WaylandRemoteShellData;
+struct WestonTestState;
 
 // This class is a thin wrapper around a Wayland display server. All Wayland
 // requests are dispatched into the given Exosphere display.
@@ -77,6 +79,7 @@ class Server : public display::DisplayObserver {
   base::flat_map<int64_t, std::unique_ptr<WaylandDisplayOutput>> outputs_;
   std::unique_ptr<WaylandDataDeviceManager> data_device_manager_data_;
   std::unique_ptr<WaylandSeat> seat_data_;
+  display::ScopedDisplayObserver display_observer_{this};
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   std::unique_ptr<WaylandKeyboardExtension> zcr_keyboard_extension_data_;
@@ -84,6 +87,9 @@ class Server : public display::DisplayObserver {
   std::unique_ptr<WaylandZxdgShell> zxdg_shell_data_;
   std::unique_ptr<WaylandXdgShell> xdg_shell_data_;
   std::unique_ptr<WaylandRemoteShellData> remote_shell_data_;
+#if BUILDFLAG(ENABLE_WESTON_TEST)
+  std::unique_ptr<WestonTestState> weston_test_data_;
+#endif
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(Server);

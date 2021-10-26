@@ -380,7 +380,7 @@ void VideoReceiveStream::Start() {
       new VideoStreamDecoder(&video_receiver_, &stats_proxy_, renderer));
 
   // Make sure we register as a stats observer *after* we've prepared the
-  // |video_stream_decoder_|.
+  // `video_stream_decoder_`.
   call_stats_->RegisterStatsObserver(this);
 
   // Start decoding on task queue.
@@ -508,7 +508,7 @@ void VideoReceiveStream::OnFrame(const VideoFrame& video_frame) {
   double estimated_freq_khz;
 
   // TODO(bugs.webrtc.org/10739): we should set local capture clock offset for
-  // |video_frame.packet_infos|. But VideoFrame is const qualified here.
+  // `video_frame.packet_infos`. But VideoFrame is const qualified here.
 
   // TODO(tommi): GetStreamSyncOffsetInMs grabs three locks.  One inside the
   // function itself, another in GetChannel() and a third in
@@ -762,7 +762,6 @@ VideoReceiveStream::RecordingState VideoReceiveStream::SetAndGetRecordingState(
     RTC_DCHECK_RUN_ON(&decode_queue_);
     // Save old state.
     old_state.callback = std::move(encoded_frame_buffer_function_);
-    old_state.keyframe_needed = keyframe_generation_requested_;
     old_state.last_keyframe_request_ms = last_keyframe_request_ms_;
 
     // Set new state.
@@ -771,7 +770,7 @@ VideoReceiveStream::RecordingState VideoReceiveStream::SetAndGetRecordingState(
       RequestKeyFrame(clock_->TimeInMilliseconds());
       keyframe_generation_requested_ = true;
     } else {
-      keyframe_generation_requested_ = state.keyframe_needed;
+      keyframe_generation_requested_ = false;
       last_keyframe_request_ms_ = state.last_keyframe_request_ms.value_or(0);
     }
     event.Set();

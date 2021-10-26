@@ -7,8 +7,9 @@
 #ifndef FXJS_XFA_FXJSE_H_
 #define FXJS_XFA_FXJSE_H_
 
+#include <stdint.h>
+
 #include "core/fxcrt/fx_string.h"
-#include "core/fxcrt/fx_system.h"
 #include "v8/include/v8.h"
 
 namespace pdfium {
@@ -23,7 +24,6 @@ extern const char kClassTag[];
 }  // namespace pdfium
 
 class CFXJSE_FormCalcContext;
-class CFXJSE_Value;
 class CJS_Result;
 class CJX_Object;
 

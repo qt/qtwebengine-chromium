@@ -7,6 +7,10 @@
 //   always have to be re-compiled. Can be used in conjunction with the platform
 //   layer to warm up the cache from disk.
 
+// Include zlib first, otherwise FAR gets defined elsewhere.
+#define USE_SYSTEM_ZLIB
+#include "compression_utils_portable.h"
+
 #include "libANGLE/MemoryProgramCache.h"
 
 #include <GLSLANG/ShaderVars.h>
@@ -57,7 +61,7 @@ HashStream &operator<<(HashStream &stream, Shader *shader)
 
 HashStream &operator<<(HashStream &stream, const ProgramBindings &bindings)
 {
-    for (const auto &binding : bindings)
+    for (const auto &binding : bindings.getStableIterationMap())
     {
         stream << binding.first << binding.second;
     }
@@ -66,7 +70,7 @@ HashStream &operator<<(HashStream &stream, const ProgramBindings &bindings)
 
 HashStream &operator<<(HashStream &stream, const ProgramAliasedBindings &bindings)
 {
-    for (const auto &binding : bindings)
+    for (const auto &binding : bindings.getStableIterationMap())
     {
         stream << binding.first << binding.second.location;
     }

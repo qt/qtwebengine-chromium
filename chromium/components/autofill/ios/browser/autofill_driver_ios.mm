@@ -74,6 +74,10 @@ bool AutofillDriverIOS::IsInMainFrame() const {
   return web_frame ? web_frame->IsMainFrame() : true;
 }
 
+bool AutofillDriverIOS::IsPrerendering() const {
+  return false;
+}
+
 bool AutofillDriverIOS::CanShowAutofillUi() const {
   return true;
 }
@@ -93,10 +97,12 @@ bool AutofillDriverIOS::RendererIsAvailable() {
   return true;
 }
 
-void AutofillDriverIOS::SendFormDataToRenderer(
+void AutofillDriverIOS::FillOrPreviewForm(
     int query_id,
-    RendererFormDataAction action,
-    const FormData& data) {
+    mojom::RendererFormDataAction action,
+    const FormData& data,
+    const url::Origin& triggered_origin,
+    const base::flat_map<FieldGlobalId, ServerFieldType>& field_type_map) {
   web::WebFrame* web_frame = web::GetWebFrameWithId(web_state_, web_frame_id_);
   if (!web_frame) {
     return;
@@ -144,7 +150,7 @@ void AutofillDriverIOS::RendererShouldAcceptDataListSuggestion(
     const std::u16string& value) {}
 
 void AutofillDriverIOS::SendFieldsEligibleForManualFillingToRenderer(
-    const std::vector<FieldRendererId>& fields) {}
+    const std::vector<FieldGlobalId>& fields) {}
 
 void AutofillDriverIOS::RendererShouldClearFilledSection() {}
 
@@ -164,11 +170,6 @@ void AutofillDriverIOS::RendererShouldSetSuggestionAvailability(
     const mojom::AutofillState state) {}
 
 void AutofillDriverIOS::PopupHidden() {
-}
-
-gfx::RectF AutofillDriverIOS::TransformBoundingBoxToViewportCoordinates(
-    const gfx::RectF& bounding_box) {
-  return bounding_box;
 }
 
 net::IsolationInfo AutofillDriverIOS::IsolationInfo() {

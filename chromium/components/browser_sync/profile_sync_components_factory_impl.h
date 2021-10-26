@@ -27,7 +27,7 @@ class AutofillWebDataService;
 }
 
 namespace password_manager {
-class PasswordStore;
+class PasswordStoreInterface;
 }
 
 namespace sync_bookmarks {
@@ -44,16 +44,15 @@ class ProfileSyncComponentsFactoryImpl
   ProfileSyncComponentsFactoryImpl(
       BrowserSyncClient* sync_client,
       version_info::Channel channel,
-      const char* history_disabled_pref,
       const scoped_refptr<base::SequencedTaskRunner>& ui_thread,
       const scoped_refptr<base::SequencedTaskRunner>& db_thread,
       const scoped_refptr<autofill::AutofillWebDataService>&
           web_data_service_on_disk,
       const scoped_refptr<autofill::AutofillWebDataService>&
           web_data_service_in_memory,
-      const scoped_refptr<password_manager::PasswordStore>&
+      const scoped_refptr<password_manager::PasswordStoreInterface>&
           profile_password_store,
-      const scoped_refptr<password_manager::PasswordStore>&
+      const scoped_refptr<password_manager::PasswordStoreInterface>&
           account_password_store,
       sync_bookmarks::BookmarkSyncService* bookmark_sync_service);
   ProfileSyncComponentsFactoryImpl(const ProfileSyncComponentsFactoryImpl&) =
@@ -71,7 +70,6 @@ class ProfileSyncComponentsFactoryImpl
 
   // SyncApiComponentFactory implementation:
   std::unique_ptr<syncer::DataTypeManager> CreateDataTypeManager(
-      syncer::ModelTypeSet initial_types,
       const syncer::WeakHandle<syncer::DataTypeDebugInfoListener>&
           debug_info_listener,
       const syncer::DataTypeController::TypeMap* controllers,
@@ -117,7 +115,6 @@ class ProfileSyncComponentsFactoryImpl
   // Client/platform specific members.
   BrowserSyncClient* const sync_client_;
   const version_info::Channel channel_;
-  const char* history_disabled_pref_;
   const scoped_refptr<base::SequencedTaskRunner> ui_thread_;
   const scoped_refptr<base::SequencedTaskRunner> db_thread_;
   const scoped_refptr<base::SequencedTaskRunner>
@@ -126,8 +123,10 @@ class ProfileSyncComponentsFactoryImpl
       web_data_service_on_disk_;
   const scoped_refptr<autofill::AutofillWebDataService>
       web_data_service_in_memory_;
-  const scoped_refptr<password_manager::PasswordStore> profile_password_store_;
-  const scoped_refptr<password_manager::PasswordStore> account_password_store_;
+  const scoped_refptr<password_manager::PasswordStoreInterface>
+      profile_password_store_;
+  const scoped_refptr<password_manager::PasswordStoreInterface>
+      account_password_store_;
   sync_bookmarks::BookmarkSyncService* const bookmark_sync_service_;
 };
 

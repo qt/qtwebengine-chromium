@@ -5,14 +5,18 @@
 #include "ui/message_center/views/message_popup_collection.h"
 
 #include "base/bind.h"
-#include "base/stl_util.h"
+#include "base/containers/cxx20_erase.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/timer/timer.h"
 #include "ui/gfx/animation/linear_animation.h"
 #include "ui/gfx/animation/tween.h"
 #include "ui/message_center/message_center.h"
+#include "ui/message_center/message_center_types.h"
+#include "ui/message_center/notification_view_controller.h"
 #include "ui/message_center/public/cpp/message_center_constants.h"
 #include "ui/message_center/views/message_popup_view.h"
+#include "ui/message_center/views/message_view.h"
+#include "ui/message_center/views/notification_view_md.h"
 
 namespace message_center {
 
@@ -33,16 +37,13 @@ constexpr base::TimeDelta kWaitForReset = base::TimeDelta::FromSeconds(10);
 
 MessagePopupCollection::MessagePopupCollection()
     : animation_(std::make_unique<gfx::LinearAnimation>(this)),
-      weak_ptr_factory_(this) {
-  MessageCenter::Get()->AddObserver(this);
-}
+      weak_ptr_factory_(this) {}
 
 MessagePopupCollection::~MessagePopupCollection() {
   // Ignore calls to update which can cause crashes.
   is_updating_ = true;
   for (const auto& item : popup_items_)
     item.popup->Close();
-  MessageCenter::Get()->RemoveObserver(this);
 }
 
 void MessagePopupCollection::Update() {
@@ -77,6 +78,7 @@ void MessagePopupCollection::Update() {
                                 ? kMoveDownDuration
                                 : kFadeInFadeOutDuration);
     animation_->Start();
+    AnimationStarted();
     UpdateByAnimation();
   }
 
@@ -122,8 +124,23 @@ void MessagePopupCollection::NotifyPopupClosed(MessagePopupView* popup) {
   }
 }
 
+MessageView* MessagePopupCollection::GetMessageViewForNotificationId(
+    const std::string& notification_id) {
+  auto it =
+      std::find_if(popup_items_.begin(), popup_items_.end(), [&](auto child) {
+        return child.popup->message_view()->notification_id() ==
+               notification_id;
+      });
+
+  if (it == popup_items_.end())
+    return nullptr;
+
+  return it->popup->message_view();
+}
+
 void MessagePopupCollection::OnNotificationAdded(
     const std::string& notification_id) {
+  NotificationViewController::OnNotificationAdded(notification_id);
   // Should not call MessagePopupCollection::Update here. Because notification
   // may be removed before animation which is triggered by the previous
   // operation on MessagePopupCollection ends. As result, when a new
@@ -136,6 +153,8 @@ void MessagePopupCollection::OnNotificationAdded(
 void MessagePopupCollection::OnNotificationRemoved(
     const std::string& notification_id,
     bool by_user) {
+  NotificationViewController::OnNotificationRemoved(notification_id, by_user);
+
   if (by_user) {
     recently_closed_by_user_ = true;
     recently_closed_by_user_timer_ = std::make_unique<base::OneShotTimer>();
@@ -201,6 +220,7 @@ void MessagePopupCollection::OnBlockingStateChanged(
 
 void MessagePopupCollection::AnimationEnded(const gfx::Animation* animation) {
   Update();
+  AnimationFinished();
 }
 
 void MessagePopupCollection::AnimationProgressed(
@@ -224,7 +244,11 @@ MessagePopupView* MessagePopupCollection::GetPopupViewForNotificationID(
 
 MessagePopupView* MessagePopupCollection::CreatePopup(
     const Notification& notification) {
-  return new MessagePopupView(notification, this);
+  bool a11_feedback_on_init =
+      notification.rich_notification_data()
+          .should_make_spoken_feedback_for_popup_updates;
+  return new MessagePopupView(new NotificationViewMD(notification), this,
+                              a11_feedback_on_init);
 }
 
 void MessagePopupCollection::RestartPopupTimers() {
@@ -351,8 +375,8 @@ void MessagePopupCollection::TransitionToAnimation() {
 
 void MessagePopupCollection::UpdatePopupTimers() {
   if (state_ == State::IDLE) {
-    if (IsAnyPopupHovered() || IsAnyPopupActive()) {
-      // If any popup is hovered or activated, pause popup timer.
+    if (IsAnyPopupHovered() || IsAnyPopupFocused()) {
+      // If any popup is hovered or focused, pause popup timer.
       PausePopupTimers();
     } else {
       // If in IDLE state, restart popup timer.
@@ -465,6 +489,9 @@ bool MessagePopupCollection::AddPopup() {
     item.is_animating = false;
     item.will_fade_in = false;
   }
+
+  if (new_notification->group_child())
+    return false;
 
   {
     PopupItem item;
@@ -670,9 +697,9 @@ bool MessagePopupCollection::IsAnyPopupHovered() const {
   return false;
 }
 
-bool MessagePopupCollection::IsAnyPopupActive() const {
+bool MessagePopupCollection::IsAnyPopupFocused() const {
   for (const auto& item : popup_items_) {
-    if (item.popup->is_active())
+    if (item.popup->is_focused())
       return true;
   }
   return false;

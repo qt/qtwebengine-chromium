@@ -31,7 +31,8 @@ class ArcImeBridgeImpl : public ArcImeBridge, public mojom::ImeHost {
   // ArcImeBridge overrides:
   void SendSetCompositionText(const ui::CompositionText& composition) override;
   void SendConfirmCompositionText() override;
-  void SendInsertText(const std::u16string& text) override;
+  void SendInsertText(const std::u16string& text,
+                      int new_cursor_position) override;
   void SendExtendSelectionAndDelete(size_t before, size_t after) override;
   void SendOnKeyboardAppearanceChanging(const gfx::Rect& new_bounds,
                                         bool is_available) override;
@@ -52,8 +53,6 @@ class ArcImeBridgeImpl : public ArcImeBridge, public mojom::ImeHost {
                                               const gfx::Range& selection_range,
                                               bool screen_coordinates) override;
   void RequestHideImeDeprecated() override;
-  void ShouldEnableKeyEventForwarding(
-      ShouldEnableKeyEventForwardingCallback callback) override;
   void SendKeyEvent(std::unique_ptr<ui::KeyEvent> key_event,
                     SendKeyEventCallback callback) override;
 

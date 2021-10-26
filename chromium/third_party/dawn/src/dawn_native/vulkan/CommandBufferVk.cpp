@@ -91,7 +91,7 @@ namespace dawn_native { namespace vulkan {
                     region.srcOffset.z = srcCopy.origin.z;
                     break;
                 case wgpu::TextureDimension::e1D:
-                    // TODO(jiawei.shao@intel.com): support 1D textures
+                    // TODO(crbug.com/dawn/814): support 1D textures
                     UNREACHABLE();
             }
 
@@ -110,7 +110,7 @@ namespace dawn_native { namespace vulkan {
                     region.dstOffset.z = dstCopy.origin.z;
                     break;
                 case wgpu::TextureDimension::e1D:
-                    // TODO(jiawei.shao@intel.com): support 1D textures
+                    // TODO(crbug.com/dawn/814): support 1D textures
                     UNREACHABLE();
             }
 
@@ -130,6 +130,7 @@ namespace dawn_native { namespace vulkan {
             void Apply(Device* device,
                        CommandRecordingContext* recordingContext,
                        VkPipelineBindPoint bindPoint) {
+                BeforeApply();
                 for (BindGroupIndex dirtyIndex :
                      IterateBitSet(mDirtyBindGroupsObjectChangedOrIsDynamic)) {
                     VkDescriptorSet set = ToBackend(mBindGroups[dirtyIndex])->GetHandle();
@@ -141,7 +142,7 @@ namespace dawn_native { namespace vulkan {
                         ToBackend(mPipelineLayout)->GetHandle(), static_cast<uint32_t>(dirtyIndex),
                         1, &*set, mDynamicOffsetCounts[dirtyIndex], dynamicOffset);
                 }
-                DidApply();
+                AfterApply();
             }
         };
 
@@ -516,6 +517,10 @@ namespace dawn_native { namespace vulkan {
             switch (type) {
                 case Command::CopyBufferToBuffer: {
                     CopyBufferToBufferCmd* copy = mCommands.NextCommand<CopyBufferToBufferCmd>();
+                    if (copy->size == 0) {
+                        // Skip no-op copies.
+                        break;
+                    }
 
                     Buffer* srcBuffer = ToBackend(copy->source.Get());
                     Buffer* dstBuffer = ToBackend(copy->destination.Get());
@@ -540,6 +545,11 @@ namespace dawn_native { namespace vulkan {
 
                 case Command::CopyBufferToTexture: {
                     CopyBufferToTextureCmd* copy = mCommands.NextCommand<CopyBufferToTextureCmd>();
+                    if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
+                        copy->copySize.depthOrArrayLayers == 0) {
+                        // Skip no-op copies.
+                        continue;
+                    }
                     auto& src = copy->source;
                     auto& dst = copy->destination;
 
@@ -578,6 +588,11 @@ namespace dawn_native { namespace vulkan {
 
                 case Command::CopyTextureToBuffer: {
                     CopyTextureToBufferCmd* copy = mCommands.NextCommand<CopyTextureToBufferCmd>();
+                    if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
+                        copy->copySize.depthOrArrayLayers == 0) {
+                        // Skip no-op copies.
+                        continue;
+                    }
                     auto& src = copy->source;
                     auto& dst = copy->destination;
 
@@ -610,6 +625,11 @@ namespace dawn_native { namespace vulkan {
                 case Command::CopyTextureToTexture: {
                     CopyTextureToTextureCmd* copy =
                         mCommands.NextCommand<CopyTextureToTextureCmd>();
+                    if (copy->copySize.width == 0 || copy->copySize.height == 0 ||
+                        copy->copySize.depthOrArrayLayers == 0) {
+                        // Skip no-op copies.
+                        continue;
+                    }
                     TextureCopy& src = copy->source;
                     TextureCopy& dst = copy->destination;
                     SubresourceRange srcRange = GetSubresourcesAffectedByCopy(src, copy->copySize);
@@ -713,27 +733,23 @@ namespace dawn_native { namespace vulkan {
                     QuerySet* querySet = ToBackend(cmd->querySet.Get());
                     Buffer* destination = ToBackend(cmd->destination.Get());
 
+                    destination->EnsureDataInitializedAsDestination(
+                        recordingContext, cmd->destinationOffset,
+                        cmd->queryCount * sizeof(uint64_t));
+
                     // vkCmdCopyQueryPoolResults only can retrieve available queries because
-                    // VK_QUERY_RESULT_WAIT_BIT is set, for these unavailable queries, we need to
-                    // clear the resolving region of the buffer to 0s if the buffer has been
-                    // initialized or fully used.
+                    // VK_QUERY_RESULT_WAIT_BIT is set. In order to resolve the unavailable queries
+                    // as 0s, we need to clear the resolving region of the destination buffer to 0s.
                     auto startIt = querySet->GetQueryAvailability().begin() + cmd->firstQuery;
                     auto endIt = querySet->GetQueryAvailability().begin() + cmd->firstQuery +
                                  cmd->queryCount;
                     bool hasUnavailableQueries = std::find(startIt, endIt, false) != endIt;
-                    if (hasUnavailableQueries &&
-                        (destination->IsDataInitialized() ||
-                         destination->IsFullBufferRange(cmd->destinationOffset,
-                                                        cmd->queryCount * sizeof(uint64_t)))) {
+                    if (hasUnavailableQueries) {
                         destination->TransitionUsageNow(recordingContext,
                                                         wgpu::BufferUsage::CopyDst);
                         device->fn.CmdFillBuffer(commands, destination->GetHandle(),
                                                  cmd->destinationOffset,
                                                  cmd->queryCount * sizeof(uint64_t), 0u);
-                    } else {
-                        destination->EnsureDataInitializedAsDestination(
-                            recordingContext, cmd->destinationOffset,
-                            cmd->queryCount * sizeof(uint64_t));
                     }
 
                     destination->TransitionUsageNow(recordingContext,

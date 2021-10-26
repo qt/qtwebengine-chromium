@@ -10,10 +10,11 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-import * as TextEditor from '../../ui/legacy/components/text_editor/text_editor.js';  // eslint-disable-line no-unused-vars
+import * as TextEditor from '../../ui/legacy/components/text_editor/text_editor.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {ConsolePanel} from './ConsolePanel.js';
+import consolePromptStyles from './consolePrompt.css.js';
 
 const UIStrings = {
   /**
@@ -42,7 +43,6 @@ export class ConsolePrompt extends UI.Widget.Widget {
 
   constructor() {
     super();
-    this.registerRequiredCSS('panels/console/consolePrompt.css', {enableLegacyPatching: false});
     this._addCompletionsFromHistory = true;
     this._history = new ConsoleHistoryManager();
 
@@ -140,8 +140,8 @@ export class ConsolePrompt extends UI.Widget.Widget {
     }
     const text = this._editor.textWithCurrentSuggestion().trim();
     const executionContext = UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
-    const {preview, result} =
-        await ObjectUI.JavaScriptREPL.JavaScriptREPL.evaluateAndBuildPreview(text, true /* throwOnSideEffect */, 500);
+    const {preview, result} = await ObjectUI.JavaScriptREPL.JavaScriptREPL.evaluateAndBuildPreview(
+        text, true /* throwOnSideEffect */, true /* replMode */, 500 /* timeout */);
     this._innerPreviewElement.removeChildren();
     if (preview.deepTextContent() !== this._editor.textWithCurrentSuggestion().trim()) {
       this._innerPreviewElement.appendChild(preview);
@@ -156,6 +156,11 @@ export class ConsolePrompt extends UI.Widget.Widget {
     if (result && executionContext) {
       executionContext.runtimeModel.releaseEvaluationResult(result);
     }
+  }
+
+  wasShown(): void {
+    super.wasShown();
+    this.registerCSSFiles([consolePromptStyles]);
   }
 
   willHide(): void {

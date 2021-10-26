@@ -116,7 +116,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void ShowDefinitionForSelection() override;
   void SpeakSelection() override;
   void SetWindowFrameInScreen(const gfx::Rect& rect) override;
-  void GetScreenInfo(blink::ScreenInfo* screen_info) override;
+  void GetScreenInfo(display::ScreenInfo* screen_info) override;
   void TakeFallbackContentFrom(RenderWidgetHostView* view) override;
 
   // Implementation of RenderWidgetHostViewBase.
@@ -152,7 +152,7 @@ class CONTENT_EXPORT RenderWidgetHostViewMac
   void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
   const std::vector<display::Display>& GetDisplays() const override;
-  void UpdateScreenInfo(gfx::NativeView view) override;
+  void UpdateScreenInfo() override;
   viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
       const cc::RenderFrameMetadata& metadata) override;
   void DidNavigate() override;

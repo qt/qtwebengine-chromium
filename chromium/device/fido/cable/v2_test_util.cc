@@ -22,6 +22,8 @@
 #include "device/fido/cable/v2_discovery.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/virtual_ctap2_device.h"
+#include "mojo/public/cpp/bindings/pending_remote.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_status_code.h"
 #include "services/network/test/test_network_context.h"
@@ -54,7 +56,8 @@ class TestNetworkContext : public network::TestNetworkContext {
           url_loader_network_observer,
       mojo::PendingRemote<network::mojom::WebSocketAuthenticationHandler>
           auth_handler,
-      mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client)
+      mojo::PendingRemote<network::mojom::TrustedHeaderClient> header_client,
+      const absl::optional<base::UnguessableToken>& throttling_profile_id)
       override {
     CHECK(url.has_path());
 

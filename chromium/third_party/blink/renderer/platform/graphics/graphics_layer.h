@@ -30,7 +30,6 @@
 #include <memory>
 
 #include "base/dcheck_is_on.h"
-#include "base/macros.h"
 #include "cc/input/scroll_snap_data.h"
 #include "cc/layers/content_layer_client.h"
 #include "cc/layers/layer.h"
@@ -55,7 +54,6 @@
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/transforms/transformation_matrix.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "third_party/skia/include/core/SkFilterQuality.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
 namespace cc {
@@ -81,6 +79,8 @@ class PLATFORM_EXPORT GraphicsLayer : public DisplayItemClient,
 
  public:
   explicit GraphicsLayer(GraphicsLayerClient&);
+  GraphicsLayer(const GraphicsLayer&) = delete;
+  GraphicsLayer& operator=(const GraphicsLayer&) = delete;
   ~GraphicsLayer() override;
 
   GraphicsLayerClient& Client() const { return client_; }
@@ -173,6 +173,7 @@ class PLATFORM_EXPORT GraphicsLayer : public DisplayItemClient,
   // Returns true if any layer is repainted.
   bool PaintRecursively(GraphicsContext&,
                         Vector<PreCompositedLayerInfo>&,
+                        PaintController::CycleScope& cycle_scope,
                         PaintBenchmarkMode = PaintBenchmarkMode::kNormal);
 
   PaintController& GetPaintController() const;
@@ -239,6 +240,7 @@ class PLATFORM_EXPORT GraphicsLayer : public DisplayItemClient,
   void ClearPaintStateRecursively();
   void Paint(Vector<PreCompositedLayerInfo>&,
              PaintBenchmarkMode,
+             PaintController::CycleScope*,
              const IntRect* interest_rect = nullptr);
 
   // Adds a child without calling NotifyChildListChange(), so that adding
@@ -313,8 +315,6 @@ class PLATFORM_EXPORT GraphicsLayer : public DisplayItemClient,
 
   DOMNodeId owner_node_id_ = kInvalidDOMNodeId;
   CompositingReasons compositing_reasons_ = CompositingReason::kNone;
-
-  DISALLOW_COPY_AND_ASSIGN(GraphicsLayer);
 };
 
 // Iterates all graphics layers that should be seen by the compositor in

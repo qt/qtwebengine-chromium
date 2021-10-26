@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/metrics/field_trial.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/build_config.h"
@@ -17,6 +18,7 @@
 #include "components/variations/variations_associated_data.h"
 #include "net/base/host_mapping_rules.h"
 #include "net/base/host_port_pair.h"
+#include "net/http/http_network_session.h"
 #include "net/http/http_stream_factory.h"
 #include "net/third_party/quiche/src/quic/core/crypto/crypto_protocol.h"
 #include "net/third_party/quiche/src/quic/core/quic_packets.h"
@@ -52,7 +54,7 @@ class NetworkSessionConfiguratorTest : public testing::Test {
 
   std::string quic_user_agent_id_;
   base::test::ScopedFeatureList scoped_feature_list_;
-  net::HttpNetworkSession::Params params_;
+  net::HttpNetworkSessionParams params_;
   net::QuicParams quic_params_;
 };
 

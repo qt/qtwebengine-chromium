@@ -12,7 +12,6 @@
 #include "base/compiler_specific.h"
 #include "base/macros.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_piece.h"
@@ -217,10 +216,9 @@ std::string ConstructDataFrameForVersion(base::StringPiece body,
   if (!version.HasIetfQuicFrames()) {
     return std::string(body);
   }
-  std::unique_ptr<char[]> buffer;
-  auto header_length =
-      quic::HttpEncoder::SerializeDataFrameHeader(body.size(), &buffer);
-  return base::StrCat({base::StringPiece(buffer.get(), header_length), body});
+  quic::QuicBuffer buffer = quic::HttpEncoder::SerializeDataFrameHeader(
+      body.size(), quic::SimpleBufferAllocator::Get());
+  return base::StrCat({base::StringPiece(buffer.data(), buffer.size()), body});
 }
 
 }  // namespace
@@ -899,6 +897,7 @@ class QuicNetworkTransactionTest
             true, true, ConvertRequestPriorityToQuicPriority(DEFAULT_PRIORITY),
             GetRequestHeaders("GET", "https", "/", &client_maker), 0, nullptr));
     client_maker.SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
+    quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // Pause
     quic_data.AddRead(
         ASYNC, server_maker.MakeResponseHeadersPacket(
                    1, GetNthClientInitiatedBidirectionalStreamId(0), false,
@@ -912,7 +911,23 @@ class QuicNetworkTransactionTest
     // No more data to read.
     quic_data.AddRead(SYNCHRONOUS, ERR_IO_PENDING);
     quic_data.AddSocketDataToFactory(&socket_factory_);
-    SendRequestAndExpectQuicResponse("quic used");
+
+    HttpNetworkTransaction trans(DEFAULT_PRIORITY, session_.get());
+    TestCompletionCallback callback;
+    int rv = trans.Start(&request_, callback.callback(), net_log_.bound());
+    EXPECT_THAT(rv, IsError(ERR_IO_PENDING));
+
+    // Pump the message loop to get the request started.
+    base::RunLoop().RunUntilIdle();
+    // Explicitly confirm the handshake.
+    crypto_client_stream_factory_.last_stream()
+        ->NotifySessionOneRttKeyAvailable();
+
+    ASSERT_FALSE(quic_data.AllReadDataConsumed());
+    quic_data.Resume();
+
+    // Run the QUIC session to completion.
+    base::RunLoop().RunUntilIdle();
 
     EXPECT_TRUE(quic_data.AllReadDataConsumed());
   }
@@ -943,11 +958,11 @@ class QuicNetworkTransactionTest
         GetNthClientInitiatedBidirectionalStreamId(n);
     EXPECT_LT(cancelled_stream_id, 63u);
 
-    const unsigned char opcode = 0x40;
+    const char opcode = 0x40;
     if (create_stream) {
-      return {0x03, opcode | static_cast<unsigned char>(cancelled_stream_id)};
+      return {0x03, static_cast<char>(opcode | cancelled_stream_id)};
     } else {
-      return {opcode | static_cast<unsigned char>(cancelled_stream_id)};
+      return {static_cast<char>(opcode | cancelled_stream_id)};
     }
   }
 
@@ -999,8 +1014,8 @@ class QuicNetworkTransactionTest
   std::unique_ptr<ProxyResolutionService> proxy_resolution_service_;
   std::unique_ptr<HttpAuthHandlerFactory> auth_handler_factory_;
   std::unique_ptr<HttpServerProperties> http_server_properties_;
-  HttpNetworkSession::Params session_params_;
-  HttpNetworkSession::Context session_context_;
+  HttpNetworkSessionParams session_params_;
+  HttpNetworkSessionContext session_context_;
   HttpRequestInfo request_;
   RecordingBoundTestNetLog net_log_;
   std::vector<std::unique_ptr<StaticSocketDataProvider>> hanging_data_;
@@ -3782,7 +3797,7 @@ TEST_P(QuicNetworkTransactionTest, ResetAfterHandshakeConfirmedThenBroken) {
   if (VersionUsesHttp3(version_.transport_version)) {
     quic_data.AddWrite(
         SYNCHRONOUS,
-        client_maker_->MakeRstAckAndDataPacket(
+        client_maker_->MakeAckRstAndDataPacket(
             packet_num++, true, GetNthClientInitiatedBidirectionalStreamId(0),
             quic::QUIC_HEADERS_TOO_LARGE, 1, 1, GetQpackDecoderStreamId(),
             false, StreamCancellationQpackDecoderInstruction(0)));
@@ -4051,7 +4066,7 @@ TEST_P(QuicNetworkTransactionTest,
   if (VersionUsesHttp3(version_.transport_version)) {
     mock_quic_data.AddWrite(
         SYNCHRONOUS,
-        client_maker_->MakeRstAckAndDataPacket(
+        client_maker_->MakeAckRstAndDataPacket(
             packet_num++, /*include_version=*/true,
             GetNthClientInitiatedBidirectionalStreamId(1),
             quic::QUIC_HEADERS_TOO_LARGE, 3, 2, GetQpackDecoderStreamId(),
@@ -4812,6 +4827,8 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithHttpRace) {
       ConstructClientRequestHeadersPacket(
           packet_num++, GetNthClientInitiatedBidirectionalStreamId(0), true,
           true, GetRequestHeaders("GET", "https", "/")));
+  client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
+  mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // Pause
   mock_quic_data.AddRead(
       ASYNC, ConstructServerResponseHeadersPacket(
                  1, GetNthClientInitiatedBidirectionalStreamId(0), false, false,
@@ -4820,9 +4837,6 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithHttpRace) {
       ASYNC, ConstructServerDataPacket(
                  2, GetNthClientInitiatedBidirectionalStreamId(0), false, true,
                  ConstructDataFrame("hello!")));
-  if (version_.UsesTls()) {
-    client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
-  }
   mock_quic_data.AddWrite(SYNCHRONOUS,
                           ConstructClientAckPacket(packet_num++, 2, 1));
   mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // No more data to read
@@ -4836,7 +4850,27 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithHttpRace) {
 
   CreateSession();
   AddQuicAlternateProtocolMapping(MockCryptoClientStream::ZERO_RTT);
-  SendRequestAndExpectQuicResponse("hello!");
+  HttpNetworkTransaction trans(DEFAULT_PRIORITY, session_.get());
+  TestCompletionCallback callback;
+  EXPECT_THAT(trans.Start(&request_, callback.callback(), net_log_.bound()),
+              IsError(ERR_IO_PENDING));
+  // Complete host resolution in next message loop so that QUIC job could
+  // proceed.
+  base::RunLoop().RunUntilIdle();
+  // Explicitly confirm the handshake.
+  crypto_client_stream_factory_.last_stream()
+      ->NotifySessionOneRttKeyAvailable();
+
+  ASSERT_FALSE(mock_quic_data.AllReadDataConsumed());
+  mock_quic_data.Resume();
+
+  // Run the QUIC session to completion.
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
+
+  CheckWasQuicResponse(&trans);
+  CheckResponseData(&trans, "hello!");
 
   EXPECT_EQ(nullptr, http_server_properties_->GetServerNetworkStats(
                          url::SchemeHostPort("https", request_.url.host(), 443),
@@ -4856,6 +4890,8 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithNoHttpRace) {
       ConstructClientRequestHeadersPacket(
           packet_number++, GetNthClientInitiatedBidirectionalStreamId(0), true,
           true, GetRequestHeaders("GET", "https", "/")));
+  client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
+  mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // Pause
   mock_quic_data.AddRead(
       ASYNC, ConstructServerResponseHeadersPacket(
                  1, GetNthClientInitiatedBidirectionalStreamId(0), false, false,
@@ -4864,9 +4900,6 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithNoHttpRace) {
       ASYNC, ConstructServerDataPacket(
                  2, GetNthClientInitiatedBidirectionalStreamId(0), false, true,
                  ConstructDataFrame("hello!")));
-  if (version_.UsesTls()) {
-    client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
-  }
   mock_quic_data.AddWrite(SYNCHRONOUS,
                           ConstructClientAckPacket(packet_number++, 2, 1));
   mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // No more data to read
@@ -4883,7 +4916,27 @@ TEST_P(QuicNetworkTransactionTest, ZeroRTTWithNoHttpRace) {
   AddHangingNonAlternateProtocolSocketData();
   CreateSession();
   AddQuicAlternateProtocolMapping(MockCryptoClientStream::ZERO_RTT);
-  SendRequestAndExpectQuicResponse("hello!");
+  HttpNetworkTransaction trans(DEFAULT_PRIORITY, session_.get());
+  TestCompletionCallback callback;
+  EXPECT_THAT(trans.Start(&request_, callback.callback(), net_log_.bound()),
+              IsError(ERR_IO_PENDING));
+  // Complete host resolution in next message loop so that QUIC job could
+  // proceed.
+  base::RunLoop().RunUntilIdle();
+  // Explicitly confirm the handshake.
+  crypto_client_stream_factory_.last_stream()
+      ->NotifySessionOneRttKeyAvailable();
+
+  ASSERT_FALSE(mock_quic_data.AllReadDataConsumed());
+  mock_quic_data.Resume();
+
+  // Run the QUIC session to completion.
+  base::RunLoop().RunUntilIdle();
+
+  EXPECT_THAT(callback.WaitForResult(), IsOk());
+
+  CheckWasQuicResponse(&trans);
+  CheckResponseData(&trans, "hello!");
 }
 
 TEST_P(QuicNetworkTransactionTest, ZeroRTTWithProxy) {
@@ -5411,7 +5464,7 @@ TEST_P(QuicNetworkTransactionTest, RstStreamBeforeHeaders) {
   if (VersionUsesHttp3(version_.transport_version)) {
     mock_quic_data.AddWrite(
         SYNCHRONOUS,
-        client_maker_->MakeRstAckAndDataPacket(
+        client_maker_->MakeAckRstAndDataPacket(
             packet_num++, false, GetNthClientInitiatedBidirectionalStreamId(0),
             quic::QUIC_STREAM_CANCELLED, 1, 1, GetQpackDecoderStreamId(), false,
             StreamCancellationQpackDecoderInstruction(0)));
@@ -5606,6 +5659,8 @@ TEST_P(QuicNetworkTransactionTest, DelayTCPOnStartWithQuicSupportOnSameIP) {
       ConstructClientRequestHeadersPacket(
           packet_number++, GetNthClientInitiatedBidirectionalStreamId(0), true,
           true, GetRequestHeaders("GET", "https", "/")));
+  client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
+  mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // Pause.
   mock_quic_data.AddRead(
       ASYNC, ConstructServerResponseHeadersPacket(
                  1, GetNthClientInitiatedBidirectionalStreamId(0), false, false,
@@ -5614,9 +5669,6 @@ TEST_P(QuicNetworkTransactionTest, DelayTCPOnStartWithQuicSupportOnSameIP) {
       ASYNC, ConstructServerDataPacket(
                  2, GetNthClientInitiatedBidirectionalStreamId(0), false, true,
                  ConstructDataFrame("hello!")));
-  if (version_.UsesTls()) {
-    client_maker_->SetEncryptionLevel(quic::ENCRYPTION_FORWARD_SECURE);
-  }
   mock_quic_data.AddWrite(SYNCHRONOUS,
                           ConstructClientAckPacket(packet_number++, 2, 1));
   mock_quic_data.AddRead(ASYNC, ERR_IO_PENDING);  // No more data to read
@@ -5644,6 +5696,15 @@ TEST_P(QuicNetworkTransactionTest, DelayTCPOnStartWithQuicSupportOnSameIP) {
               IsError(ERR_IO_PENDING));
   // Complete host resolution in next message loop so that QUIC job could
   // proceed.
+  base::RunLoop().RunUntilIdle();
+  // Explicitly confirm the handshake.
+  crypto_client_stream_factory_.last_stream()
+      ->NotifySessionOneRttKeyAvailable();
+
+  ASSERT_FALSE(mock_quic_data.AllReadDataConsumed());
+  mock_quic_data.Resume();
+
+  // Run the QUIC session to completion.
   base::RunLoop().RunUntilIdle();
   EXPECT_THAT(callback.WaitForResult(), IsOk());
 
@@ -6882,14 +6943,14 @@ class QuicNetworkTransactionWithDestinationTest
     NetworkChangeNotifier::NotifyObserversOfIPAddressChangeForTests();
     base::RunLoop().RunUntilIdle();
 
-    HttpNetworkSession::Params session_params;
+    HttpNetworkSessionParams session_params;
     session_params.enable_quic = true;
     context_.params()->allow_remote_alt_svc = true;
     context_.params()->supported_versions = supported_versions_;
     context_.params()->headers_include_h2_stream_dependency =
         client_headers_include_h2_stream_dependency_;
 
-    HttpNetworkSession::Context session_context;
+    HttpNetworkSessionContext session_context;
 
     context_.AdvanceTime(quic::QuicTime::Delta::FromMilliseconds(20));
 

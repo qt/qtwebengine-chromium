@@ -34,8 +34,13 @@ PrerenderSubframeNavigationThrottle::MaybeCreateThrottleFor(
 }
 
 PrerenderSubframeNavigationThrottle::PrerenderSubframeNavigationThrottle(
-    NavigationHandle* navigation_handle)
-    : NavigationThrottle(navigation_handle) {}
+    NavigationHandle* nav_handle)
+    : NavigationThrottle(nav_handle),
+      prerender_root_ftn_id_(NavigationRequest::From(nav_handle)
+                                 ->frame_tree_node()
+                                 ->frame_tree()
+                                 ->root()
+                                 ->frame_tree_node_id()) {}
 
 PrerenderSubframeNavigationThrottle::~PrerenderSubframeNavigationThrottle() =
     default;
@@ -54,16 +59,106 @@ PrerenderSubframeNavigationThrottle::WillRedirectRequest() {
   return WillStartOrRedirectRequest();
 }
 
+NavigationThrottle::ThrottleCheckResult
+PrerenderSubframeNavigationThrottle::WillProcessResponse() {
+  auto* navigation_request = NavigationRequest::From(navigation_handle());
+  FrameTreeNode* frame_tree_node = navigation_request->frame_tree_node();
+  // Disallow downloads during prerendering and cancel the prerender.
+  if (navigation_handle()->IsDownload() &&
+      frame_tree_node->frame_tree()->is_prerendering()) {
+    PrerenderHostRegistry* prerender_host_registry =
+        frame_tree_node->current_frame_host()
+            ->delegate()
+            ->GetPrerenderHostRegistry();
+
+    prerender_host_registry->CancelHost(
+        frame_tree_node->frame_tree()->root()->frame_tree_node_id(),
+        PrerenderHost::FinalStatus::kDownload);
+    return CANCEL;
+  }
+
+  // Here GetOriginToCommit() is used, which is different from the result of
+  // using url::Origin::Create(). The value from GetOriginToCommit() will be the
+  // origin of the final frame host, and the value will be accurate.
+  RenderFrameHostImpl* rfhi = frame_tree_node->frame_tree()->GetMainFrame();
+  const url::Origin& main_origin = rfhi->GetLastCommittedOrigin();
+  if (frame_tree_node->frame_tree()->is_prerendering() &&
+      !main_origin.IsSameOriginWith(navigation_request->GetOriginToCommit())) {
+    DeferCrossOriginSubframeNavigation(frame_tree_node);
+    return NavigationThrottle::DEFER;
+  }
+
+  return PROCEED;
+}
+
 void PrerenderSubframeNavigationThrottle::OnActivated() {
   DCHECK(!NavigationRequest::From(navigation_handle())
               ->frame_tree_node()
               ->frame_tree()
               ->is_prerendering());
-  if (is_deferred_) {
-    is_deferred_ = false;
-    // May delete `this`.
-    Resume();
-  }
+  // OnActivated() is called right before activation navigation commit which is
+  // a little early. We want to resume the subframe navigation after the
+  // PageBroadcast ActivatePrerenderedPage IPC is sent, to
+  // guarantee that the new document starts in the non-prerendered state and
+  // does not get a prerenderingchange event.
+  //
+  // Listen to the WebContents to wait for the activation navigation to finish
+  // before resuming the subframe navigation.
+  Observe(navigation_handle()->GetWebContents());
+}
+
+// Use DidFinishNavigation() rather than PrimaryPageChanged() in order to
+// Resume() after the PageBroadcast Activate IPC is sent, which happens a
+// little after PrimaryPageChanged() and before DidFinishNavigation(). This
+// guarantees the new document starts in non-prerendered state.
+void PrerenderSubframeNavigationThrottle::DidFinishNavigation(
+    NavigationHandle* nav_handle) {
+  // Ignore finished navigations that are not the activation navigation for the
+  // prerendering frame tree that this subframe navigation started in.
+  auto* finished_navigation = NavigationRequest::From(nav_handle);
+  if (finished_navigation->prerender_frame_tree_node_id() !=
+      prerender_root_ftn_id_)
+    return;
+
+  // If the finished navigation did not commit, do not Resume(). We expect that
+  // the prerendered page and therefore the subframe navigation will eventually
+  // be cancelled.
+  if (!finished_navigation->HasCommitted())
+    return;
+
+  // The activation is finished. There is no need to listen to the WebContents
+  // anymore.
+  Observe(nullptr);
+
+  // Resume the subframe navigation.
+  if (!is_deferred_)
+    return;
+  is_deferred_ = false;
+  Resume();
+  // Resume() may have deleted `this`.
+}
+
+void PrerenderSubframeNavigationThrottle::DeferCrossOriginSubframeNavigation(
+    FrameTreeNode* frame_tree_node) {
+  // This function should be called for prerendering when the
+  // return state is NavigationThrottle::DEFER to properly
+  // handle the status.
+  //
+  // Look up the PrerenderHost.
+  DCHECK(!frame_tree_node->IsMainFrame());
+  PrerenderHostRegistry* registry = frame_tree_node->current_frame_host()
+                                        ->delegate()
+                                        ->GetPrerenderHostRegistry();
+  PrerenderHost* prerender_host =
+      registry->FindNonReservedHostById(prerender_root_ftn_id_);
+  DCHECK(prerender_host);
+
+  // Defer cross-origin subframe navigations during prerendering.
+  // Will resume the navigation upon activation.
+  DCHECK(!observation_.IsObserving());
+  observation_.Observe(prerender_host);
+  DCHECK(observation_.IsObservingSource(prerender_host));
+  is_deferred_ = true;
 }
 
 void PrerenderSubframeNavigationThrottle::OnHostDestroyed() {
@@ -82,34 +177,25 @@ PrerenderSubframeNavigationThrottle::WillStartOrRedirectRequest() {
   if (!frame_tree_node->frame_tree()->is_prerendering())
     return NavigationThrottle::PROCEED;
 
-  // Proceed for the same origin subframe navigation.
+  // Proceed for same-origin subframe navigation.
+  // url::Origin::Create() might not be
+  // completely accurate for cases such as sandboxed iframes, which have a
+  // different origin from the main frame even when the URL is same-origin.
+  // There is another check in WillProcessResponse to fix this issue.
+  // In WillProcessResponse, GetOriginToCommit is used to identify the
+  // accurate Origin.
+  // Note: about:blank and about:srcdoc also might not result in an appropriate
+  // origin if we create the origin from the URL, but those cases won't go
+  // through the NavigationThrottle, so it's not a problem here
   RenderFrameHostImpl* rfhi = frame_tree_node->frame_tree()->GetMainFrame();
   const url::Origin& main_origin = rfhi->GetLastCommittedOrigin();
-  if (main_origin.IsSameOriginWith(
+  if (!main_origin.IsSameOriginWith(
           url::Origin::Create(navigation_handle()->GetURL()))) {
-    return NavigationThrottle::PROCEED;
+    DeferCrossOriginSubframeNavigation(frame_tree_node);
+    return NavigationThrottle::DEFER;
   }
 
-  // Look up the PrerenderHost.
-  PrerenderHostRegistry* registry = frame_tree_node->current_frame_host()
-                                        ->delegate()
-                                        ->GetPrerenderHostRegistry();
-  int id = frame_tree_node->frame_tree()->GetMainFrame()->GetFrameTreeNodeId();
-  PrerenderHost* prerender_host = registry->FindNonReservedHostById(id);
-  if (!prerender_host) {
-    // The host might be reserved already for activation. In either case, we
-    // defer until activation for simplicity.
-    prerender_host = registry->FindReservedHostById(id);
-  }
-  DCHECK(prerender_host);
-
-  // Defer cross-origin subframe navigations during prerendering.
-  // Will resume the navigation upon activation.
-  if (!observation_.IsObserving())
-    observation_.Observe(prerender_host);
-  DCHECK(observation_.IsObservingSource(prerender_host));
-  is_deferred_ = true;
-  return NavigationThrottle::DEFER;
+  return NavigationThrottle::PROCEED;
 }
 
 }  // namespace content

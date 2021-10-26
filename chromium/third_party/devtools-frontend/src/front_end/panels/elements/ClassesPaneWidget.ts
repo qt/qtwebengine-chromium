@@ -10,6 +10,7 @@ import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
+import classesPaneWidgetStyles from './classesPaneWidget.css.js';
 import {ElementsPanel} from './ElementsPanel.js';
 
 const UIStrings = {
@@ -47,7 +48,6 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
 
   constructor() {
     super(true);
-    this.registerRequiredCSS('panels/elements/classesPaneWidget.css', {enableLegacyPatching: false});
     this.contentElement.className = 'styles-element-classes-pane';
     const container = this.contentElement.createChild('div', 'title-container');
     this._input = container.createChild('div', 'new-class-input monospace');
@@ -63,7 +63,7 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
     this._prompt.addEventListener(UI.TextPrompt.Events.TextChanged, this._onTextChanged, this);
     proxyElement.addEventListener('keydown', this._onKeyDown.bind(this), false);
 
-    SDK.SDKModel.TargetManager.instance().addModelListener(
+    SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.DOMModel.DOMModel, SDK.DOMModel.Events.DOMMutated, this._onDOMMutated, this);
     this._mutatingNodes = new Set();
     this._pendingNodeClasses = new Map();
@@ -133,8 +133,8 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
     this._installNodeClasses(node);
   }
 
-  _onDOMMutated(event: Common.EventTarget.EventTargetEvent): void {
-    const node = (event.data as SDK.DOMModel.DOMNode);
+  _onDOMMutated(event: Common.EventTarget.EventTargetEvent<SDK.DOMModel.DOMNode>): void {
+    const node = event.data;
     if (this._mutatingNodes.has(node)) {
       return;
     }
@@ -152,7 +152,9 @@ export class ClassesPaneWidget extends UI.Widget.Widget {
   }
 
   wasShown(): void {
+    super.wasShown();
     this._update();
+    this.registerCSSFiles([classesPaneWidgetStyles]);
   }
 
   _update(): void {

@@ -17,6 +17,7 @@
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "storage/browser/file_system/file_system_url.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace storage {
 
@@ -388,8 +389,11 @@ bool IsolatedContext::CrackVirtualPath(
   return true;
 }
 
+// TODO(https://crbug.com/1221308): creating StorageKey from url is
+// temporary; StorageKey will be added in future CL
 FileSystemURL IsolatedContext::CrackURL(const GURL& url) const {
-  FileSystemURL filesystem_url = FileSystemURL(url);
+  FileSystemURL filesystem_url =
+      FileSystemURL(url, blink::StorageKey(url::Origin::Create(url)));
   if (!filesystem_url.is_valid())
     return FileSystemURL();
   return CrackFileSystemURL(filesystem_url);
@@ -399,7 +403,10 @@ FileSystemURL IsolatedContext::CreateCrackedFileSystemURL(
     const url::Origin& origin,
     FileSystemType type,
     const base::FilePath& virtual_path) const {
-  return CrackFileSystemURL(FileSystemURL(origin, type, virtual_path));
+  // TODO(https://crbug.com/1221308): function will have StorageKey param in
+  // future CL; conversion from url::Origin is temporary
+  return CrackFileSystemURL(
+      FileSystemURL(blink::StorageKey(origin), type, virtual_path));
 }
 
 void IsolatedContext::RevokeFileSystemByPath(const base::FilePath& path_in) {
@@ -474,7 +481,7 @@ FileSystemURL IsolatedContext::CrackFileSystemURL(
   }
 
   return FileSystemURL(
-      url.origin(), url.mount_type(), url.virtual_path(),
+      url.storage_key(), url.mount_type(), url.virtual_path(),
       !url.filesystem_id().empty() ? url.filesystem_id() : mount_name,
       cracked_type, cracked_path,
       cracked_mount_name.empty() ? mount_name : cracked_mount_name,

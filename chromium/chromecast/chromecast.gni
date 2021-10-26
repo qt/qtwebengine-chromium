@@ -132,6 +132,9 @@ declare_args() {
 
   # True to link in alternate build targets for the Cast Media Runtime.
   enable_cast_media_runtime = false
+
+  # device specific string to append to User string.
+  device_user_agent_suffix = ""
 }
 
 declare_args() {

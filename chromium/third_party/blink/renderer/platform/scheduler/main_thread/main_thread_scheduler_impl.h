@@ -7,13 +7,11 @@
 
 #include <map>
 #include <memory>
-#include <random>
 #include <stack>
 
 #include "base/atomicops.h"
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/single_sample_metrics.h"
 #include "base/profiler/sample_metadata.h"
@@ -31,7 +29,6 @@
 #include "third_party/blink/renderer/platform/scheduler/common/pollable_thread_safe_flag.h"
 #include "third_party/blink/renderer/platform/scheduler/common/thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/common/tracing_helper.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/agent_scheduling_strategy.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/auto_advancing_virtual_time_domain.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/compositor_priority_experiments.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/deadline_task_runner.h"
@@ -77,10 +74,10 @@ class FrameSchedulerImpl;
 class PageSchedulerImpl;
 class TaskQueueThrottler;
 class WebRenderWidgetSchedulingState;
+class CPUTimeBudgetPool;
 
 class PLATFORM_EXPORT MainThreadSchedulerImpl
     : public ThreadSchedulerImpl,
-      public AgentSchedulingStrategy::Delegate,
       public IdleHelper::Delegate,
       public MainThreadSchedulerHelper::Observer,
       public RenderWidgetSignals::Observer,
@@ -163,6 +160,8 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   MainThreadSchedulerImpl(
       std::unique_ptr<base::sequence_manager::SequenceManager> sequence_manager,
       absl::optional<base::Time> initial_virtual_time);
+  MainThreadSchedulerImpl(const MainThreadSchedulerImpl&) = delete;
+  MainThreadSchedulerImpl& operator=(const MainThreadSchedulerImpl&) = delete;
 
   ~MainThreadSchedulerImpl() override;
 
@@ -233,7 +232,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   std::unique_ptr<ThreadScheduler::RendererPauseHandle> PauseScheduler()
       override;
   base::TimeTicks MonotonicallyIncreasingVirtualTime() override;
-  WebThreadScheduler* GetWebMainThreadSchedulerForTest() override;
   NonMainThreadSchedulerImpl* AsNonMainThreadScheduler() override {
     return nullptr;
   }
@@ -297,16 +295,9 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   using VirtualTimePolicy = PageScheduler::VirtualTimePolicy;
 
-  using BaseTimeOverridePolicy =
-      AutoAdvancingVirtualTimeDomain::BaseTimeOverridePolicy;
-
-  // Tells the scheduler that all TaskQueues should use virtual time. Depending
-  // on the initial time, picks the policy to be either overriding or not.
-  base::TimeTicks EnableVirtualTime();
-
   // Tells the scheduler that all TaskQueues should use virtual time. Returns
   // the base::TimeTicks that virtual time offsets will be relative to.
-  base::TimeTicks EnableVirtualTime(BaseTimeOverridePolicy policy);
+  base::TimeTicks EnableVirtualTime();
   bool IsVirtualTimeEnabled() const;
 
   // Migrates all task queues to real time.
@@ -316,7 +307,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   bool VirtualTimeAllowedToAdvance() const;
   void SetVirtualTimePolicy(VirtualTimePolicy virtual_time_policy);
   void SetInitialVirtualTime(base::Time time);
-  void SetInitialVirtualTimeOffset(base::TimeDelta offset);
   void SetMaxVirtualTimeTaskStarvationCount(int max_task_starvation_count);
   base::TimeTicks IncrementVirtualTimePauseCount();
   void DecrementVirtualTimePauseCount();
@@ -325,13 +315,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void RemoveAgentGroupScheduler(AgentGroupSchedulerImpl*);
   void AddPageScheduler(PageSchedulerImpl*);
   void RemovePageScheduler(PageSchedulerImpl*);
-
-  void OnFrameAdded(const FrameSchedulerImpl& frame_scheduler);
-  void OnFrameRemoved(const FrameSchedulerImpl& frame_scheduler);
-
-  AgentSchedulingStrategy& agent_scheduling_strategy() {
-    return *agent_scheduling_strategy_;
-  }
 
   // Called by an associated PageScheduler when frozen or resumed.
   void OnPageFrozen();
@@ -379,14 +362,11 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
   AutoAdvancingVirtualTimeDomain* GetVirtualTimeDomain();
 
-  TaskQueueThrottler* task_queue_throttler() const {
-    return task_queue_throttler_.get();
-  }
+  std::unique_ptr<CPUTimeBudgetPool> CreateCPUTimeBudgetPoolForTesting(
+      const char* name);
 
   // Virtual for test.
   virtual void OnMainFramePaint();
-  void OnMainFrameLoad(const FrameSchedulerImpl& frame_scheduler);
-  void OnAgentStrategyUpdated();
 
   void OnShutdownTaskQueue(const scoped_refptr<MainThreadTaskQueue>& queue);
 
@@ -495,6 +475,9 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     kVirtual,
   };
 
+  // WebThreadScheduler private implementation:
+  WebThreadScheduler* GetWebMainThreadScheduler() override;
+
   static const char* TimeDomainTypeToString(TimeDomainType domain_type);
 
   void AddAgentGroupScheduler(AgentGroupSchedulerImpl*);
@@ -526,11 +509,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
     RAILMode& rail_mode() { return rail_mode_; }
     RAILMode rail_mode() const { return rail_mode_; }
-
-    bool& should_disable_throttling() { return should_disable_throttling_; }
-    bool should_disable_throttling() const {
-      return should_disable_throttling_;
-    }
 
     bool& frozen_when_backgrounded() { return frozen_when_backgrounded_; }
     bool frozen_when_backgrounded() const { return frozen_when_backgrounded_; }
@@ -578,7 +556,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
     bool operator==(const Policy& other) const {
       return rail_mode_ == other.rail_mode_ &&
-             should_disable_throttling_ == other.should_disable_throttling_ &&
              frozen_when_backgrounded_ == other.frozen_when_backgrounded_ &&
              should_prioritize_loading_with_compositing_ ==
                  other.should_prioritize_loading_with_compositing_ &&
@@ -601,7 +578,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
 
    private:
     RAILMode rail_mode_{RAILMode::kAnimation};
-    bool should_disable_throttling_{false};
     bool frozen_when_backgrounded_{false};
     bool should_prioritize_loading_with_compositing_{false};
     bool should_freeze_compositor_task_queue_{false};
@@ -627,10 +603,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     MainThreadSchedulerImpl* scheduler_;  // NOT OWNED
   };
 
-  // AgentSchedulingStrategy::Delegate implementation:
-  void OnSetTimer(const FrameSchedulerImpl& frame_scheduler,
-                  base::TimeDelta delay) override;
-
   // IdleHelper::Delegate implementation:
   bool CanEnterLongIdlePeriod(
       base::TimeTicks now,
@@ -639,8 +611,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   void OnIdlePeriodStarted() override;
   void OnIdlePeriodEnded() override;
   void OnPendingTasksChanged(bool has_tasks) override;
-  void OnSafepointEntered() override;
-  void OnSafepointExited() override;
 
   void DispatchRequestBeginMainFrameNotExpected(bool has_tasks);
 
@@ -708,10 +678,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   // An input event of some sort happened, the policy may need updating.
   void UpdateForInputEventOnCompositorThread(const WebInputEvent& event,
                                              InputEventState input_event_state);
-
-  // Notifies the per-agent scheduling strategy that an input event occurred.
-  void NotifyAgentSchedulerOnInputEvent();
-  void OnAgentStrategyDelayPassed(base::WeakPtr<const FrameSchedulerImpl>);
 
   // The task cost estimators and the UserModel need to be reset upon page
   // nagigation. This function does that. Must be called from the main thread.
@@ -823,7 +789,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   MainThreadSchedulerHelper helper_;
   scoped_refptr<MainThreadTaskQueue> idle_helper_queue_;
   IdleHelper idle_helper_;
-  std::unique_ptr<TaskQueueThrottler> task_queue_throttler_;
   RenderWidgetSignals render_widget_scheduler_signals_;
 
   std::unique_ptr<FindInPageBudgetPoolController>
@@ -861,12 +826,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   base::RepeatingClosure update_policy_closure_;
   DeadlineTaskRunner delayed_update_policy_runner_;
   CancelableClosureHolder end_renderer_hidden_idle_period_closure_;
-  base::RepeatingClosure notify_agent_strategy_on_input_event_closure_;
-  base::RepeatingCallback<void(base::WeakPtr<const FrameSchedulerImpl>)>
-      agent_strategy_delay_callback_;
-
-  std::unique_ptr<AgentSchedulingStrategy> agent_scheduling_strategy_ =
-      AgentSchedulingStrategy::Create(*this);
 
   // We have decided to improve thread safety at the cost of some boilerplate
   // (the accessors) for the following data members.
@@ -933,9 +892,6 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
     base::Time initial_virtual_time;
     base::TimeTicks initial_virtual_time_ticks;
 
-    // This is used for cross origin navigations to account for virtual time
-    // advancing in the previous renderer.
-    base::TimeDelta initial_virtual_time_offset;
     VirtualTimePolicy virtual_time_policy;
 
     // In VirtualTimePolicy::kDeterministicLoading virtual time is only allowed
@@ -1061,13 +1017,10 @@ class PLATFORM_EXPORT MainThreadSchedulerImpl
   }
 
   PollableThreadSafeFlag policy_may_need_update_;
-  PollableThreadSafeFlag notify_agent_strategy_task_posted_;
   WTF::HashSet<AgentGroupSchedulerImpl*> agent_group_schedulers_;
   WebAgentGroupScheduler* current_agent_group_scheduler_{nullptr};
 
   base::WeakPtrFactory<MainThreadSchedulerImpl> weak_factory_{this};
-
-  DISALLOW_COPY_AND_ASSIGN(MainThreadSchedulerImpl);
 };
 
 }  // namespace scheduler

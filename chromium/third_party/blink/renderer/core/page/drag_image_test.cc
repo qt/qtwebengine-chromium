@@ -54,9 +54,8 @@ class TestImage : public Image {
     return base::AdoptRef(new TestImage(size));
   }
 
-  IntSize Size() const override {
+  IntSize SizeWithConfig(SizeConfig) const override {
     DCHECK(image_);
-
     return IntSize(image_->width(), image_->height());
   }
 
@@ -70,8 +69,7 @@ class TestImage : public Image {
             const cc::PaintFlags&,
             const FloatRect&,
             const FloatRect&,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override {
     // Image pure virtual stub.

@@ -7,12 +7,14 @@
 #ifndef XFA_FXFA_CXFA_FFNOTIFY_H_
 #define XFA_FXFA_CXFA_FFNOTIFY_H_
 
+#include "core/fxcrt/mask.h"
 #include "fxjs/gc/heap.h"
 #include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/member.h"
 #include "v8/include/cppgc/visitor.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
-#include "xfa/fxfa/fxfa.h"
+#include "xfa/fxfa/cxfa_ffapp.h"
+#include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 
 class CXFA_FFWidgetHandler;
@@ -28,7 +30,8 @@ class CXFA_FFNotify : public cppgc::GarbageCollected<CXFA_FFNotify> {
 
   void Trace(cppgc::Visitor* visitor) const;
 
-  void OnPageEvent(CXFA_ViewLayoutItem* pSender, uint32_t dwEvent);
+  void OnPageViewEvent(CXFA_ViewLayoutItem* pSender,
+                       CXFA_FFDoc::PageViewEvent eEvent);
 
   void OnWidgetListItemAdded(CXFA_Node* pSender,
                              const WideString& wsLabel,
@@ -53,7 +56,7 @@ class CXFA_FFNotify : public cppgc::GarbageCollected<CXFA_FFNotify> {
   void OnLayoutItemAdded(CXFA_LayoutProcessor* pLayout,
                          CXFA_LayoutItem* pSender,
                          int32_t iPageIdx,
-                         uint32_t dwStatus);
+                         Mask<XFA_WidgetStatus> dwStatus);
   void OnLayoutItemRemoving(CXFA_LayoutProcessor* pLayout,
                             CXFA_LayoutItem* pSender);
   void StartFieldDrawLayout(CXFA_Node* pItem,
@@ -66,7 +69,7 @@ class CXFA_FFNotify : public cppgc::GarbageCollected<CXFA_FFNotify> {
                                       bool bRecursive);
   void AddCalcValidate(CXFA_Node* pNode);
   CXFA_FFDoc* GetFFDoc() const { return m_pDoc.Get(); }
-  IXFA_AppProvider* GetAppProvider();
+  CXFA_FFApp::CallbackIface* GetAppProvider();
   CXFA_FFWidgetHandler* GetWidgetHandler();
   void OpenDropDownList(CXFA_Node* pNode);
   void ResetData(CXFA_Node* pNode);

@@ -23,6 +23,7 @@ vmpstr@chromium.org
 sunnyps@chromium.org
 
 # math / geometry
+dbaron@chromium.org
 flackr@chromium.org
 
 # property trees
@@ -45,15 +46,15 @@ jonross@chromium.org
 # input, scrolling
 bokan@chromium.org
 
-# scroll snap
-majidvp@chromium.org
-
 # metrics
 sadrul@chromium.org
+behdadb@chromium.org
 
 # paint
 sunnyps@chromium.org
 vasilyt@chromium.org
+reed@google.com
+fmalita@chromium.org
 
 # general
 vmpstr@chromium.org

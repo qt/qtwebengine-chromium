@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
+#include "ui/accessibility/ax_mode.h"
 
 namespace blink {
 
@@ -27,6 +28,10 @@ class ComputedAccessibleNodePromiseResolver::RequestAnimationFrameCallback final
   explicit RequestAnimationFrameCallback(
       ComputedAccessibleNodePromiseResolver* resolver)
       : resolver_(resolver) {}
+
+  RequestAnimationFrameCallback(const RequestAnimationFrameCallback&) = delete;
+  RequestAnimationFrameCallback& operator=(
+      const RequestAnimationFrameCallback&) = delete;
 
   void Invoke(double) override {
     resolver_->continue_callback_request_id_ = 0;
@@ -40,8 +45,6 @@ class ComputedAccessibleNodePromiseResolver::RequestAnimationFrameCallback final
 
  private:
   Member<ComputedAccessibleNodePromiseResolver> resolver_;
-
-  DISALLOW_COPY_AND_ASSIGN(RequestAnimationFrameCallback);
 };
 
 ComputedAccessibleNodePromiseResolver::ComputedAccessibleNodePromiseResolver(
@@ -50,7 +53,8 @@ ComputedAccessibleNodePromiseResolver::ComputedAccessibleNodePromiseResolver(
     : element_(element),
       resolver_(MakeGarbageCollected<ScriptPromiseResolver>(script_state)),
       resolve_with_node_(false),
-      ax_context_(std::make_unique<AXContext>(element_->GetDocument())) {}
+      ax_context_(std::make_unique<AXContext>(element_->GetDocument(),
+                                              ui::kAXModeComplete)) {}
 
 ScriptPromise ComputedAccessibleNodePromiseResolver::Promise() {
   return resolver_->Promise();
@@ -106,11 +110,11 @@ void ComputedAccessibleNodePromiseResolver::UpdateTreeAndResolve() {
 
 // ComputedAccessibleNode ------------------------------------------------------
 
-ComputedAccessibleNode::ComputedAccessibleNode(AXID ax_id,
-                                               Document* document)
+ComputedAccessibleNode::ComputedAccessibleNode(AXID ax_id, Document* document)
     : ax_id_(ax_id),
       document_(document),
-      ax_context_(std::make_unique<AXContext>(*document)) {}
+      ax_context_(std::make_unique<AXContext>(*document, ui::kAXModeComplete)) {
+}
 
 absl::optional<bool> ComputedAccessibleNode::atomic() const {
   return GetBoolAttribute(WebAOMBoolAttribute::AOM_ATTR_ATOMIC);

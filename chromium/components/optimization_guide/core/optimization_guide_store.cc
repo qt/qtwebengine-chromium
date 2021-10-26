@@ -96,6 +96,16 @@ bool KeySetFilter(const base::flat_set<std::string>& key_set,
   return key_set.find(key) != key_set.end();
 }
 
+bool CheckAllPathsExist(
+    const std::vector<base::FilePath>& file_paths_to_check) {
+  for (const base::FilePath& file_path : file_paths_to_check) {
+    if (!base::PathExists(file_path)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 OptimizationGuideStore::OptimizationGuideStore(
@@ -315,7 +325,7 @@ void OptimizationGuideStore::OnLoadEntriesToPurgeExpired(
     std::unique_ptr<EntryMap> entries) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
-  if (!success)
+  if (!success || !entries)
     return;
 
   EntryKeySet expired_keys_to_remove;
@@ -682,13 +692,12 @@ void OptimizationGuideStore::OnLoadMetadata(
     bool success,
     std::unique_ptr<EntryMap> metadata_entries) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  DCHECK(metadata_entries);
 
   // Create a scoped load metadata result recorder. It records the result when
   // its destructor is called.
   ScopedLoadMetadataResultRecorder result_recorder;
 
-  if (!success) {
+  if (!success || !metadata_entries) {
     result_recorder.set_result(
         OptimizationGuideHintCacheLevelDBStoreLoadMetadataResult::
             kLoadMetadataFailed);
@@ -917,13 +926,18 @@ void OptimizationGuideStore::UpdatePredictionModels(
                      std::move(callback)));
 }
 
+// This method is called during browser startup when we need to check if any
+// models have expired. When this occurs, |update_vector| and |remove_vector|
+// will both be empty. Otherwise, this method may also be called whenever a
+// model is updated or its deletion is requested in which case one of or both
+// |update_vector| and |remove_vector| will have entries.
 void OptimizationGuideStore::OnLoadModelsToBeUpdated(
     std::unique_ptr<EntryVector> update_vector,
     std::unique_ptr<leveldb_proto::KeyVector> remove_vector,
     base::OnceClosure callback,
     bool success,
     std::unique_ptr<EntryMap> entries) {
-  if (!success) {
+  if (!success || !entries) {
     std::move(callback).Run();
     return;
   }
@@ -934,8 +948,8 @@ void OptimizationGuideStore::OnLoadModelsToBeUpdated(
       !update_vector->empty() || !remove_vector->empty();
   for (const auto& entry : *entries) {
     bool should_delete_download_file = had_entries_to_update_or_remove;
-    // Only look to purge if we weren't explicitly passed in entries to update
-    // or remove.
+    // Only check expiry if we weren't explicitly passed in entries to update or
+    // remove.
     if (!had_entries_to_update_or_remove) {
       if (entry.second.has_expiry_time_secs()) {
         if (entry.second.expiry_time_secs() <= now_since_epoch) {
@@ -945,8 +959,8 @@ void OptimizationGuideStore::OnLoadModelsToBeUpdated(
                                     true);
         }
       } else {
-        // If we were purging and the entry did not have an expiration time
-        // associated with it, add one.
+        // If we were checking expiry and the entry did not have an expiration
+        // time associated with it, add one with a default TTL.
         update_vector->push_back(entry);
         update_vector->back().second.set_expiry_time_secs(
             now_since_epoch +
@@ -954,14 +968,42 @@ void OptimizationGuideStore::OnLoadModelsToBeUpdated(
       }
     }
 
-    // Delete models that are provided via file.
+    // Delete files (the model itself and any additional files) that are
+    // provided by the model in its directory.
     if (should_delete_download_file && entry.second.has_prediction_model() &&
-        entry.second.prediction_model().model().has_download_url()) {
+        !entry.second.prediction_model().model().download_url().empty()) {
+      // |GetFilePathFromPredictionModel| only returns nullopt when
+      // |model().download_url()| is empty.
+      base::FilePath model_file_path =
+          StringToFilePath(
+              entry.second.prediction_model().model().download_url())
+              .value();
+      base::FilePath path_to_delete;
+
+      // Backwards compatibility: Once upon a time (<M93), model files were
+      // stored as
+      // `$CHROME_DATA/OptGuideModels/${MODELTARGET}_${MODELVERSION}.tfl` but
+      // were later moved to
+      // `$CHROME_DATA/OptGuideModels/${MODELTARGET}_${MODELVERSION}/model.tfl`
+      // to support additional files to be packaged alongside the model. Since
+      // the current code needs to recursively delete the whole directory, we'd
+      // normally just take the directory name of the model file. However, doing
+      // this on a freshly updated browser to newer code would cause the entire
+      // OptGuide directory to be blown away, causing collateral damage to other
+      // downloaded models. This is detected by checking whether the base name
+      // of the model file is the old or new version, and acting accordingly.
+      if (model_file_path.BaseName() == GetBaseFileNameForModels()) {
+        path_to_delete = model_file_path.DirName();
+      } else {
+        path_to_delete = model_file_path;
+      }
+
+      // Note that the delete function doesn't care whether the target is a
+      // directory or file. But in the case of a directory, it is recursively
+      // deleted.
       store_task_runner_->PostTask(
-          FROM_HERE, base::BindOnce(base::GetDeleteFileCallback(),
-                                    GetFilePathFromPredictionModel(
-                                        entry.second.prediction_model())
-                                        .value()));
+          FROM_HERE, base::BindOnce(base::GetDeletePathRecursivelyCallback(),
+                                    path_to_delete));
     }
   }
 
@@ -1048,17 +1090,30 @@ void OptimizationGuideStore::OnLoadPredictionModel(
 
   std::unique_ptr<proto::PredictionModel> loaded_prediction_model(
       entry->release_prediction_model());
-  if (!loaded_prediction_model->model().has_download_url()) {
+  if (loaded_prediction_model->model().download_url().empty()) {
     std::move(callback).Run(std::move(loaded_prediction_model));
     return;
   }
 
-  // Make sure the path still exists before we send it back to the load
-  // initiator.
-  base::FilePath file_path =
-      GetFilePathFromPredictionModel(*loaded_prediction_model).value();
+  // Make sure the model file path and all additional files still exist before
+  // we send it back to the load initiator.
+  std::vector<base::FilePath> file_paths_to_check;
+  absl::optional<base::FilePath> model_file_path =
+      StringToFilePath(loaded_prediction_model->model().download_url());
+  if (model_file_path) {
+    file_paths_to_check.emplace_back(*model_file_path);
+  }
+  for (const proto::AdditionalModelFile& additional_file :
+       loaded_prediction_model->model_info().additional_files()) {
+    absl::optional<base::FilePath> additional_file_path =
+        StringToFilePath(additional_file.file_path());
+    if (additional_file_path) {
+      file_paths_to_check.emplace_back(*additional_file_path);
+    }
+  }
+
   store_task_runner_->PostTaskAndReplyWithResult(
-      FROM_HERE, base::BindOnce(&base::PathExists, file_path),
+      FROM_HERE, base::BindOnce(&CheckAllPathsExist, file_paths_to_check),
       base::BindOnce(&OptimizationGuideStore::OnModelFilePathVerified,
                      weak_ptr_factory_.GetWeakPtr(),
                      std::move(loaded_prediction_model), std::move(callback)));
@@ -1069,6 +1124,12 @@ void OptimizationGuideStore::OnModelFilePathVerified(
     PredictionModelLoadedCallback callback,
     bool success) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  base::UmaHistogramBoolean(
+      "OptimizationGuide.ModelFilesVerified." +
+          GetStringNameForOptimizationTarget(
+              loaded_model->model_info().optimization_target()),
+      success);
 
   if (success) {
     std::move(callback).Run(std::move(loaded_model));

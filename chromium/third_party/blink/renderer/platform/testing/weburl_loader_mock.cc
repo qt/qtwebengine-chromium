@@ -60,7 +60,8 @@ void WebURLLoaderMock::ServeAsynchronousRequest(
   data.ForEachSegment([this, &delegate, &self](const char* segment,
                                                size_t segment_size,
                                                size_t segment_offset) {
-    delegate->DidReceiveData(client_, segment, segment_size);
+    delegate->DidReceiveData(client_, segment,
+                             base::checked_cast<int>(segment_size));
     // DidReceiveData() may clear the |self| weak ptr.  We stop iterating
     // when that happens.
     return self;
@@ -133,8 +134,8 @@ void WebURLLoaderMock::Cancel() {
   factory_->CancelLoad(this);
 }
 
-void WebURLLoaderMock::SetDefersLoading(DeferType deferred) {
-  is_deferred_ = (deferred != DeferType::kNotDeferred);
+void WebURLLoaderMock::Freeze(WebLoaderFreezeMode mode) {
+  is_deferred_ = (mode != WebLoaderFreezeMode::kNone);
   // Ignores setDefersLoading(false) safely.
   if (!is_deferred_)
     return;

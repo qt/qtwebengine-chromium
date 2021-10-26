@@ -11,7 +11,6 @@
 
 #include "base/callback_helpers.h"
 #include "base/macros.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "components/autofill/core/common/password_generation_util.h"
@@ -134,6 +133,32 @@ TEST(PasswordManagerUtil, GetSignonRealmWithProtocolExcluded) {
       "federation://localhost/accounts.federation.com";
   EXPECT_EQ(GetSignonRealmWithProtocolExcluded(federated_form),
             "localhost/accounts.federation.com");
+}
+
+TEST(PasswordManagerUtil, GetMatchType_Android) {
+  PasswordForm form = GetTestAndroidCredential();
+  form.is_affiliation_based_match = true;
+
+  EXPECT_EQ(GetLoginMatchType::kExact, GetMatchType(form));
+}
+
+TEST(PasswordManagerUtil, GetMatchType_Web) {
+  PasswordForm form = GetTestCredential();
+  form.is_public_suffix_match = true;
+  form.is_affiliation_based_match = true;
+  EXPECT_EQ(GetLoginMatchType::kAffiliated, GetMatchType(form));
+
+  form.is_public_suffix_match = false;
+  form.is_affiliation_based_match = true;
+  EXPECT_EQ(GetLoginMatchType::kAffiliated, GetMatchType(form));
+
+  form.is_public_suffix_match = true;
+  form.is_affiliation_based_match = false;
+  EXPECT_EQ(GetLoginMatchType::kPSL, GetMatchType(form));
+
+  form.is_public_suffix_match = false;
+  form.is_affiliation_based_match = false;
+  EXPECT_EQ(GetLoginMatchType::kExact, GetMatchType(form));
 }
 
 TEST(PasswordManagerUtil, FindBestMatches) {
@@ -290,13 +315,13 @@ TEST(PasswordManagerUtil, FindBestMatchesInProfileAndAccountStores) {
   std::vector<const PasswordForm*> same_scheme_matches;
   FindBestMatches(matches, PasswordForm::Scheme::kHtml, &same_scheme_matches,
                   &best_matches, &preferred_match);
-  // All 4 matches should be returned in best matches.
-  EXPECT_EQ(best_matches.size(), 4U);
+  // |profile_form1| is filtered out because it's the same as |account_form1|.
+  EXPECT_EQ(best_matches.size(), 3U);
   EXPECT_NE(std::find(best_matches.begin(), best_matches.end(), &account_form1),
             best_matches.end());
   EXPECT_NE(std::find(best_matches.begin(), best_matches.end(), &account_form2),
             best_matches.end());
-  EXPECT_NE(std::find(best_matches.begin(), best_matches.end(), &profile_form1),
+  EXPECT_EQ(std::find(best_matches.begin(), best_matches.end(), &profile_form1),
             best_matches.end());
   EXPECT_NE(std::find(best_matches.begin(), best_matches.end(), &profile_form2),
             best_matches.end());
@@ -415,7 +440,7 @@ TEST(PasswordManagerUtil, GetMatchForUpdating_EmptyUsernamePickFirst) {
 
 TEST(PasswordManagerUtil, MakeNormalizedBlocklistedForm_Android) {
   PasswordForm blocklisted_credential = MakeNormalizedBlocklistedForm(
-      password_manager::PasswordStore::FormDigest(GetTestAndroidCredential()));
+      password_manager::PasswordFormDigest(GetTestAndroidCredential()));
   EXPECT_TRUE(blocklisted_credential.blocked_by_user);
   EXPECT_EQ(PasswordForm::Scheme::kHtml, blocklisted_credential.scheme);
   EXPECT_EQ(kTestAndroidRealm, blocklisted_credential.signon_realm);
@@ -424,7 +449,7 @@ TEST(PasswordManagerUtil, MakeNormalizedBlocklistedForm_Android) {
 
 TEST(PasswordManagerUtil, MakeNormalizedBlocklistedForm_Html) {
   PasswordForm blocklisted_credential = MakeNormalizedBlocklistedForm(
-      password_manager::PasswordStore::FormDigest(GetTestCredential()));
+      password_manager::PasswordFormDigest(GetTestCredential()));
   EXPECT_TRUE(blocklisted_credential.blocked_by_user);
   EXPECT_EQ(PasswordForm::Scheme::kHtml, blocklisted_credential.scheme);
   EXPECT_EQ(GURL(kTestURL).GetOrigin().spec(),
@@ -434,7 +459,7 @@ TEST(PasswordManagerUtil, MakeNormalizedBlocklistedForm_Html) {
 
 TEST(PasswordManagerUtil, MakeNormalizedBlocklistedForm_Proxy) {
   PasswordForm blocklisted_credential = MakeNormalizedBlocklistedForm(
-      password_manager::PasswordStore::FormDigest(GetTestProxyCredential()));
+      password_manager::PasswordFormDigest(GetTestProxyCredential()));
   EXPECT_TRUE(blocklisted_credential.blocked_by_user);
   EXPECT_EQ(PasswordForm::Scheme::kBasic, blocklisted_credential.scheme);
   EXPECT_EQ(kTestProxySignonRealm, blocklisted_credential.signon_realm);

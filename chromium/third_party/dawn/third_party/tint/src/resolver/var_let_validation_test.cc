@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "src/ast/struct_block_decoration.h"
 #include "src/resolver/resolver.h"
 #include "src/resolver/resolver_test_helper.h"
 
@@ -30,7 +31,7 @@ TEST_F(ResolverVarLetValidationTest, LetNoInitializer) {
 
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(r()->error(),
-            "12:34 error: let declarations must have initializers");
+            "12:34 error: let declaration must have an initializer");
 }
 
 TEST_F(ResolverVarLetValidationTest, GlobalLetNoInitializer) {
@@ -39,20 +40,56 @@ TEST_F(ResolverVarLetValidationTest, GlobalLetNoInitializer) {
 
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(r()->error(),
-            "12:34 error: let declarations must have initializers");
+            "12:34 error: let declaration must have an initializer");
 }
 
-TEST_F(ResolverVarLetValidationTest, VarConstructorNotStorable) {
+TEST_F(ResolverVarLetValidationTest, VarNoInitializerNoType) {
+  // var a;
+  WrapInFunction(Var(Source{{12, 34}}, "a", nullptr));
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: function scope var declaration requires a type or "
+            "initializer");
+}
+
+TEST_F(ResolverVarLetValidationTest, GlobalVarNoInitializerNoType) {
+  // var a;
+  Global(Source{{12, 34}}, "a", nullptr);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: module scope var declaration requires a type and "
+            "initializer");
+}
+
+TEST_F(ResolverVarLetValidationTest, VarTypeNotStorable) {
   // var i : i32;
   // var p : pointer<function, i32> = &v;
   auto* i = Var("i", ty.i32(), ast::StorageClass::kNone);
-  auto* p = Var("a", ty.i32(), ast::StorageClass::kNone,
-                AddressOf(Source{{12, 34}}, "i"));
+  auto* p =
+      Var(Source{{56, 78}}, "a", ty.pointer<i32>(ast::StorageClass::kFunction),
+          ast::StorageClass::kNone, AddressOf(Source{{12, 34}}, "i"));
   WrapInFunction(i, p);
 
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(r()->error(),
-            "12:34 error: 'ptr<function, i32>' is not storable for assignment");
+            "56:78 error: ptr<function, i32, read_write> cannot be used as the "
+            "type of a var");
+}
+
+TEST_F(ResolverVarLetValidationTest, LetTypeNotConstructible) {
+  // [[group(0), binding(0)]] var t1 : texture_2d<f32>;
+  // let t2 : t1;
+  auto* t1 =
+      Global("t1", ty.sampled_texture(ast::TextureDimension::k2d, ty.f32()),
+             GroupAndBinding(0, 0));
+  auto* t2 = Const(Source{{56, 78}}, "t2", nullptr, Expr(t1));
+  WrapInFunction(t2);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "56:78 error: texture_2d<f32> cannot be used as the type of a let");
 }
 
 TEST_F(ResolverVarLetValidationTest, LetConstructorWrongType) {
@@ -77,9 +114,8 @@ TEST_F(ResolverVarLetValidationTest, VarConstructorWrongType) {
 }
 
 TEST_F(ResolverVarLetValidationTest, LetConstructorWrongTypeViaAlias) {
-  auto* a = ty.alias("I32", ty.i32());
-  AST().AddConstructedType(a);
-  WrapInFunction(Const(Source{{3, 3}}, "v", a, Expr(2u)));
+  auto* a = Alias("I32", ty.i32());
+  WrapInFunction(Const(Source{{3, 3}}, "v", ty.Of(a), Expr(2u)));
 
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(
@@ -88,10 +124,9 @@ TEST_F(ResolverVarLetValidationTest, LetConstructorWrongTypeViaAlias) {
 }
 
 TEST_F(ResolverVarLetValidationTest, VarConstructorWrongTypeViaAlias) {
-  auto* a = ty.alias("I32", ty.i32());
-  AST().AddConstructedType(a);
+  auto* a = Alias("I32", ty.i32());
   WrapInFunction(
-      Var(Source{{3, 3}}, "v", a, ast::StorageClass::kNone, Expr(2u)));
+      Var(Source{{3, 3}}, "v", ty.Of(a), ast::StorageClass::kNone, Expr(2u)));
 
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(
@@ -123,7 +158,9 @@ TEST_F(ResolverVarLetValidationTest, LocalVarRedeclared) {
   WrapInFunction(v1, v2);
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(), "12:34 error v-0014: redeclared identifier 'v'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'v'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, LocalLetRedeclared) {
@@ -134,7 +171,9 @@ TEST_F(ResolverVarLetValidationTest, LocalLetRedeclared) {
   WrapInFunction(l1, l2);
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(), "12:34 error v-0014: redeclared identifier 'l'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'l'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, GlobalVarRedeclared) {
@@ -144,8 +183,9 @@ TEST_F(ResolverVarLetValidationTest, GlobalVarRedeclared) {
   Global(Source{{12, 34}}, "v", ty.i32(), ast::StorageClass::kPrivate);
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error v-0011: redeclared global identifier 'v'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'v'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, GlobalLetRedeclared) {
@@ -155,8 +195,9 @@ TEST_F(ResolverVarLetValidationTest, GlobalLetRedeclared) {
   GlobalConst(Source{{12, 34}}, "l", ty.i32(), Expr(0));
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error v-0011: redeclared global identifier 'l'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'l'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, GlobalVarRedeclaredAsLocal) {
@@ -172,7 +213,9 @@ TEST_F(ResolverVarLetValidationTest, GlobalVarRedeclaredAsLocal) {
                      Expr(2.0f)));
 
   EXPECT_FALSE(r()->Resolve()) << r()->error();
-  EXPECT_EQ(r()->error(), "12:34 error v-0013: redeclared identifier 'v'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'v'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, VarRedeclaredInInnerBlock) {
@@ -189,7 +232,9 @@ TEST_F(ResolverVarLetValidationTest, VarRedeclaredInInnerBlock) {
   WrapInFunction(outer_body);
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(), "12:34 error v-0014: redeclared identifier 'v'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'v'\nnote: previous definition is here");
 }
 
 TEST_F(ResolverVarLetValidationTest, VarRedeclaredInIfBlock) {
@@ -212,7 +257,100 @@ TEST_F(ResolverVarLetValidationTest, VarRedeclaredInIfBlock) {
   WrapInFunction(outer_body);
 
   EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(), "12:34 error v-0014: redeclared identifier 'v'");
+  EXPECT_EQ(
+      r()->error(),
+      "12:34 error: redefinition of 'v'\nnote: previous definition is here");
+}
+
+TEST_F(ResolverVarLetValidationTest, InferredPtrStorageAccessMismatch) {
+  // struct Inner {
+  //    arr: array<i32, 4>;
+  // }
+  // [[block]] struct S {
+  //    inner: Inner;
+  // }
+  // [[group(0), binding(0)]] var<storage> s : S;
+  // fn f() {
+  //   let p : pointer<storage, i32, read_write> = &s.inner.arr[2];
+  // }
+  auto* inner = Structure("Inner", {Member("arr", ty.array<i32, 4>())});
+  auto* buf = Structure("S", {Member("inner", ty.Of(inner))},
+                        {create<ast::StructBlockDecoration>()});
+  auto* storage = Global("s", ty.Of(buf), ast::StorageClass::kStorage,
+                         ast::DecorationList{
+                             create<ast::BindingDecoration>(0),
+                             create<ast::GroupDecoration>(0),
+                         });
+
+  auto* expr =
+      IndexAccessor(MemberAccessor(MemberAccessor(storage, "inner"), "arr"), 4);
+  auto* ptr = Const(
+      Source{{12, 34}}, "p",
+      ty.pointer<i32>(ast::StorageClass::kStorage, ast::Access::kReadWrite),
+      AddressOf(expr));
+
+  WrapInFunction(ptr);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: cannot initialize let of type "
+            "'ptr<storage, i32, read_write>' with value of type "
+            "'ptr<storage, i32, read>'");
+}
+
+TEST_F(ResolverVarLetValidationTest, NonConstructibleType_Atomic) {
+  auto* v = Var("v", ty.atomic(Source{{12, 34}}, ty.i32()));
+  WrapInFunction(v);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: function variable must have a constructible type");
+}
+
+TEST_F(ResolverVarLetValidationTest, NonConstructibleType_RuntimeArray) {
+  auto* s = Structure("S", {Member("m", ty.array(ty.i32()))}, {StructBlock()});
+  auto* v = Var("v", ty.Of(s));
+  WrapInFunction(v);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "error: function variable must have a constructible type");
+}
+
+TEST_F(ResolverVarLetValidationTest, NonConstructibleType_Struct_WithAtomic) {
+  auto* s = Structure("S", {Member("m", ty.atomic(ty.i32()))});
+  auto* v = Var("v", ty.Of(s));
+  WrapInFunction(v);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "error: function variable must have a constructible type");
+}
+
+TEST_F(ResolverVarLetValidationTest, NonConstructibleType_InferredType) {
+  // [[group(0), binding(0)]] var s : sampler;
+  // fn foo() {
+  //   var v = s;
+  // }
+  Global("s", ty.sampler(ast::SamplerKind::kSampler), GroupAndBinding(0, 0));
+  auto* v = Var(Source{{12, 34}}, "v", nullptr, Expr("s"));
+  WrapInFunction(v);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: function variable must have a constructible type");
+}
+
+TEST_F(ResolverVarLetValidationTest, InvalidStorageClassForInitializer) {
+  // var<workgroup> v : f32 = 1.23;
+  Global(Source{{12, 34}}, "v", ty.f32(), ast::StorageClass::kWorkgroup,
+         Expr(1.23f));
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: var of storage class 'workgroup' cannot have "
+            "an initializer. var initializers are only supported for the "
+            "storage classes 'private' and 'function'");
 }
 
 }  // namespace

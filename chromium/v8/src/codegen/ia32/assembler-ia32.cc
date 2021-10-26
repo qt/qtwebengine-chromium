@@ -3341,9 +3341,29 @@ void Assembler::emit_vex_prefix(Register vreg, VectorLength l, SIMDPrefix pp,
   emit_vex_prefix(ivreg, l, pp, mm, w);
 }
 
+void Assembler::FixOnHeapReferences(bool update_embedded_objects) {
+  if (!update_embedded_objects) return;
+  Address base = reinterpret_cast<Address>(buffer_->start());
+  for (auto p : saved_handles_for_raw_object_ptr_) {
+    Handle<HeapObject> object(reinterpret_cast<Address*>(p.second));
+    WriteUnalignedValue(base + p.first, *object);
+  }
+}
+
+void Assembler::FixOnHeapReferencesToHandles() {
+  Address base = reinterpret_cast<Address>(buffer_->start());
+  for (auto p : saved_handles_for_raw_object_ptr_) {
+    WriteUnalignedValue<uint32_t>(base + p.first, p.second);
+  }
+  saved_handles_for_raw_object_ptr_.clear();
+}
+
 void Assembler::GrowBuffer() {
   DCHECK(buffer_overflow());
   DCHECK_EQ(buffer_start_, buffer_->start());
+
+  bool previously_on_heap = buffer_->IsOnHeap();
+  int previous_on_heap_gc_count = OnHeapGCCount();
 
   // Compute new buffer size.
   int old_size = buffer_->size();
@@ -3384,11 +3404,21 @@ void Assembler::GrowBuffer() {
   // Relocate pc-relative references.
   int mode_mask = RelocInfo::ModeMask(RelocInfo::OFF_HEAP_TARGET);
   DCHECK_EQ(mode_mask, RelocInfo::kApplyMask & mode_mask);
-  Vector<byte> instructions{buffer_start_, static_cast<size_t>(pc_offset())};
-  Vector<const byte> reloc_info{reloc_info_writer.pos(), reloc_size};
+  base::Vector<byte> instructions{buffer_start_,
+                                  static_cast<size_t>(pc_offset())};
+  base::Vector<const byte> reloc_info{reloc_info_writer.pos(), reloc_size};
   for (RelocIterator it(instructions, reloc_info, 0, mode_mask); !it.done();
        it.next()) {
     it.rinfo()->apply(pc_delta);
+  }
+
+  // Fix on-heap references.
+  if (previously_on_heap) {
+    if (buffer_->IsOnHeap()) {
+      FixOnHeapReferences(previous_on_heap_gc_count != OnHeapGCCount());
+    } else {
+      FixOnHeapReferencesToHandles();
+    }
   }
 
   DCHECK(!buffer_overflow());
@@ -3483,7 +3513,8 @@ void Assembler::db(uint8_t data) {
 void Assembler::dd(uint32_t data, RelocInfo::Mode rmode) {
   EnsureSpace ensure_space(this);
   if (!RelocInfo::IsNone(rmode)) {
-    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode));
+    DCHECK(RelocInfo::IsDataEmbeddedObject(rmode) ||
+           RelocInfo::IsLiteralConstant(rmode));
     RecordRelocInfo(rmode);
   }
   emit(data);

@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/cursor/cursor.h"
@@ -292,7 +292,7 @@ bool SearchTable(const CursorData* table,
   DCHECK_NE(scale_factor, 0);
 
   bool resource_2x_available =
-      ResourceBundle::GetSharedInstance().GetMaxScaleFactor() ==
+      ResourceBundle::GetSharedInstance().GetMaxResourceScaleFactor() ==
       SCALE_FACTOR_200P;
   for (size_t i = 0; i < table_length; ++i) {
     if (table[i].id == id) {

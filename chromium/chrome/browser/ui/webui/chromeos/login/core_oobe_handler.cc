@@ -26,10 +26,10 @@
 #include "chrome/browser/ash/login/ui/login_display_host.h"
 #include "chrome/browser/ash/login/ui/oobe_dialog_size_utils.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
+#include "chrome/browser/ash/policy/enrollment/enrollment_requisition_manager.h"
 #include "chrome/browser/ash/system/input_device_settings.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
-#include "chrome/browser/chromeos/policy/enrollment_requisition_manager.h"
 #include "chrome/browser/ui/ash/ash_util.h"
 #include "chrome/browser/ui/ash/keyboard/chrome_keyboard_controller_client.h"
 #include "chrome/browser/ui/webui/chromeos/login/demo_setup_screen_handler.h"
@@ -107,8 +107,8 @@ void CoreOobeHandler::GetAdditionalParameters(base::DictionaryValue* dict) {
                base::Value(ash::TabletMode::Get()->InTabletMode()));
   dict->SetKey("isDemoModeEnabled",
                base::Value(DemoSetupController::IsDemoModeAllowed()));
-  dict->SetKey("newLayoutEnabled",
-               base::Value(features::IsNewOobeLayoutEnabled()));
+  // TODO(crbug.com/1202135):: Remove along with JS part.
+  dict->SetKey("newLayoutEnabled", base::Value(true));
   if (policy::EnrollmentRequisitionManager::IsRemoraRequisition()) {
     dict->SetKey("flowType", base::Value("meet"));
   }
@@ -120,8 +120,6 @@ void CoreOobeHandler::RegisterMessages() {
               &CoreOobeHandler::HandleUpdateCurrentScreen);
   AddCallback("skipToLoginForTesting",
               &CoreOobeHandler::HandleSkipToLoginForTesting);
-  AddCallback("skipToUpdateForTesting",
-              &CoreOobeHandler::HandleSkipToUpdateForTesting);
   AddCallback("launchHelpApp", &CoreOobeHandler::HandleLaunchHelpApp);
   AddCallback("toggleResetScreen", &CoreOobeHandler::HandleToggleResetScreen);
   AddCallback("raiseTabKeyEvent", &CoreOobeHandler::HandleRaiseTabKeyEvent);
@@ -218,12 +216,6 @@ void CoreOobeHandler::HandleSkipToLoginForTesting() {
   WizardController* controller = WizardController::default_controller();
   if (controller && controller->is_initialized())
     WizardController::default_controller()->SkipToLoginForTesting();
-}
-
-void CoreOobeHandler::HandleSkipToUpdateForTesting() {
-  WizardController* controller = WizardController::default_controller();
-  if (controller && controller->is_initialized())
-    controller->SkipToUpdateForTesting();
 }
 
 void CoreOobeHandler::HandleToggleResetScreen() {
@@ -333,15 +325,13 @@ void CoreOobeHandler::OnTabletModeEnded() {
 void CoreOobeHandler::UpdateClientAreaSize(const gfx::Size& size) {
   SetClientAreaSize(size.width(), size.height());
   SetShelfHeight(ash::ShelfConfig::Get()->shelf_size());
-  if (features::IsNewOobeLayoutEnabled()) {
-    const gfx::Size display_size =
-        display::Screen::GetScreen()->GetPrimaryDisplay().size();
-    const bool is_horizontal = display_size.width() > display_size.height();
-    SetOrientation(is_horizontal);
-    const gfx::Size dialog_size = CalculateOobeDialogSize(
-        size, ash::ShelfConfig::Get()->shelf_size(), is_horizontal);
-    SetDialogSize(dialog_size.width(), dialog_size.height());
-  }
+  const gfx::Size display_size =
+      display::Screen::GetScreen()->GetPrimaryDisplay().size();
+  const bool is_horizontal = display_size.width() > display_size.height();
+  SetOrientation(is_horizontal);
+  const gfx::Size dialog_size = CalculateOobeDialogSize(
+      size, ash::ShelfConfig::Get()->shelf_size(), is_horizontal);
+  SetDialogSize(dialog_size.width(), dialog_size.height());
 }
 
 void CoreOobeHandler::SetDialogPaddingMode(

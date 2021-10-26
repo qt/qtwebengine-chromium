@@ -61,7 +61,8 @@ std::unique_ptr<protocol::Array<double>> BuildRectForLayout(const int x,
                                                             const int width,
                                                             const int height) {
   return std::make_unique<std::vector<double>, std::initializer_list<double>>(
-      {x, y, width, height});
+      {static_cast<double>(x), static_cast<double>(y),
+       static_cast<double>(width), static_cast<double>(height)});
 }
 
 Document* GetEmbeddedDocument(PaintLayer* layer) {
@@ -398,6 +399,7 @@ void InspectorDOMSnapshotAgent::VisitDocument(Document* document) {
                   .setParentIndex(std::make_unique<protocol::Array<int>>())
                   .setNodeType(std::make_unique<protocol::Array<int>>())
                   .setNodeName(std::make_unique<protocol::Array<int>>())
+                  .setShadowRootType(StringData())
                   .setNodeValue(std::make_unique<protocol::Array<int>>())
                   .setBackendNodeId(std::make_unique<protocol::Array<int>>())
                   .setAttributes(
@@ -464,8 +466,11 @@ void InspectorDOMSnapshotAgent::VisitDocument(Document* document) {
   }
 
   auto* node_names = document_->getNodes()->getNodeName(nullptr);
-  for (DOMTreeIterator it(document, node_names->size()); it.CurrentNode();
-       it.Advance(node_names->size())) {
+  // Note: node_names->size() changes as the loop runs.
+  for (DOMTreeIterator it(document,
+                          base::checked_cast<int>(node_names->size()));
+       it.CurrentNode();
+       it.Advance(base::checked_cast<int>(node_names->size()))) {
     DCHECK(!it.CurrentNode()->IsInUserAgentShadowRoot());
     VisitNode(it.CurrentNode(), it.ParentNodeId(), contrast);
   }
@@ -500,6 +505,10 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node,
       static_cast<int>(node->getNodeType()));
   nodes->getNodeName(nullptr)->emplace_back(AddString(node->nodeName()));
   nodes->getNodeValue(nullptr)->emplace_back(AddString(node_value));
+  if (node->IsInShadowTree()) {
+    SetRare(nodes->getShadowRootType(nullptr), index,
+            InspectorDOMAgent::GetShadowRootType(node->ContainingShadowRoot()));
+  }
   nodes->getBackendNodeId(nullptr)->emplace_back(
       IdentifiersFactory::IntIdForNode(node));
   nodes->getAttributes(nullptr)->emplace_back(
@@ -507,11 +516,13 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node,
   BuildLayoutTreeNode(node->GetLayoutObject(), node, index, contrast);
 
   if (origin_url_map_ && origin_url_map_->Contains(backend_node_id)) {
-    String origin_url = origin_url_map_->at(backend_node_id);
+    String origin_url =
+        origin_url_map_->DeprecatedAtOrEmptyValue(backend_node_id);
     // In common cases, it is implicit that a child node would have the same
     // origin url as its parent, so no need to mark twice.
-    if (!node->parentNode() || origin_url_map_->at(DOMNodeIds::IdForNode(
-                                   node->parentNode())) != origin_url) {
+    if (!node->parentNode() ||
+        origin_url_map_->DeprecatedAtOrEmptyValue(
+            DOMNodeIds::IdForNode(node->parentNode())) != origin_url) {
       SetRare(nodes->getOriginURL(nullptr), index, origin_url);
     }
   }
@@ -524,7 +535,7 @@ void InspectorDOMSnapshotAgent::VisitNode(Node* node,
     if (auto* frame_owner = DynamicTo<HTMLFrameOwnerElement>(node)) {
       if (Document* doc = frame_owner->contentDocument()) {
         SetRare(nodes->getContentDocumentIndex(nullptr), index,
-                document_order_map_.at(doc));
+                document_order_map_.DeprecatedAtOrEmptyValue(doc));
       }
     }
 
@@ -665,7 +676,7 @@ int InspectorDOMSnapshotAgent::BuildLayoutTreeNode(
   if (paint_order_map_) {
     PaintLayer* paint_layer = layout_object->EnclosingLayer();
     DCHECK(paint_order_map_->Contains(paint_layer));
-    int paint_order = paint_order_map_->at(paint_layer);
+    int paint_order = paint_order_map_->DeprecatedAtOrEmptyValue(paint_layer);
     layout_tree_snapshot->getPaintOrders(nullptr)->emplace_back(paint_order);
   }
 

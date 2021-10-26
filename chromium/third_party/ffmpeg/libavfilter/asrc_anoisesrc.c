@@ -18,6 +18,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "audio.h"
 #include "avfilter.h"
@@ -246,7 +247,7 @@ static const AVFilterPad anoisesrc_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_asrc_anoisesrc = {
+const AVFilter ff_asrc_anoisesrc = {
     .name          = "anoisesrc",
     .description   = NULL_IF_CONFIG_SMALL("Generate a noise audio signal."),
     .query_formats = query_formats,

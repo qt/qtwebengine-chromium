@@ -240,12 +240,12 @@ void GetSupportedAudioSdesCryptoSuites(
     const webrtc::CryptoOptions& crypto_options,
     std::vector<int>* crypto_suites) {
   if (crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher) {
-    crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_32);
+    crypto_suites->push_back(rtc::kSrtpAes128CmSha1_32);
   }
-  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
+  crypto_suites->push_back(rtc::kSrtpAes128CmSha1_80);
   if (crypto_options.srtp.enable_gcm_crypto_suites) {
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_256_GCM);
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_128_GCM);
+    crypto_suites->push_back(rtc::kSrtpAeadAes256Gcm);
+    crypto_suites->push_back(rtc::kSrtpAeadAes128Gcm);
   }
 }
 
@@ -259,10 +259,10 @@ void GetSupportedAudioSdesCryptoSuiteNames(
 void GetSupportedVideoSdesCryptoSuites(
     const webrtc::CryptoOptions& crypto_options,
     std::vector<int>* crypto_suites) {
-  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
+  crypto_suites->push_back(rtc::kSrtpAes128CmSha1_80);
   if (crypto_options.srtp.enable_gcm_crypto_suites) {
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_256_GCM);
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_128_GCM);
+    crypto_suites->push_back(rtc::kSrtpAeadAes256Gcm);
+    crypto_suites->push_back(rtc::kSrtpAeadAes128Gcm);
   }
 }
 
@@ -276,10 +276,10 @@ void GetSupportedVideoSdesCryptoSuiteNames(
 void GetSupportedDataSdesCryptoSuites(
     const webrtc::CryptoOptions& crypto_options,
     std::vector<int>* crypto_suites) {
-  crypto_suites->push_back(rtc::SRTP_AES128_CM_SHA1_80);
+  crypto_suites->push_back(rtc::kSrtpAes128CmSha1_80);
   if (crypto_options.srtp.enable_gcm_crypto_suites) {
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_256_GCM);
-    crypto_suites->push_back(rtc::SRTP_AEAD_AES_128_GCM);
+    crypto_suites->push_back(rtc::kSrtpAeadAes256Gcm);
+    crypto_suites->push_back(rtc::kSrtpAeadAes128Gcm);
   }
 }
 
@@ -304,8 +304,8 @@ static bool SelectCrypto(const MediaContentDescription* offer,
   for (const CryptoParams& crypto : cryptos) {
     if ((crypto_options.srtp.enable_gcm_crypto_suites &&
          rtc::IsGcmCryptoSuiteName(crypto.cipher_suite)) ||
-        rtc::CS_AES_CM_128_HMAC_SHA1_80 == crypto.cipher_suite ||
-        (rtc::CS_AES_CM_128_HMAC_SHA1_32 == crypto.cipher_suite && audio &&
+        rtc::kCsAesCm128HmacSha1_80 == crypto.cipher_suite ||
+        (rtc::kCsAesCm128HmacSha1_32 == crypto.cipher_suite && audio &&
          !bundle && crypto_options.srtp.enable_aes128_sha1_32_crypto_cipher)) {
       return CreateCryptoParams(crypto.tag, crypto.cipher_suite, crypto_out);
     }
@@ -421,9 +421,9 @@ static void AddSimulcastToMediaDescription(
   description->set_simulcast_description(simulcast);
 }
 
-// Adds a StreamParams for each SenderOptions in |sender_options| to
+// Adds a StreamParams for each SenderOptions in `sender_options` to
 // content_description.
-// |current_params| - All currently known StreamParams of any media type.
+// `current_params` - All currently known StreamParams of any media type.
 template <class C>
 static bool AddStreamParams(
     const std::vector<SenderOptions>& sender_options,
@@ -476,10 +476,10 @@ static bool AddStreamParams(
   return true;
 }
 
-// Updates the transport infos of the |sdesc| according to the given
-// |bundle_group|. The transport infos of the content names within the
-// |bundle_group| should be updated to use the ufrag, pwd and DTLS role of the
-// first content within the |bundle_group|.
+// Updates the transport infos of the `sdesc` according to the given
+// `bundle_group`. The transport infos of the content names within the
+// `bundle_group` should be updated to use the ufrag, pwd and DTLS role of the
+// first content within the `bundle_group`.
 static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
                                          SessionDescription* sdesc) {
   // The bundle should not be empty.
@@ -513,8 +513,8 @@ static bool UpdateTransportInfoForBundle(const ContentGroup& bundle_group,
   return true;
 }
 
-// Gets the CryptoParamsVec of the given |content_name| from |sdesc|, and
-// sets it to |cryptos|.
+// Gets the CryptoParamsVec of the given `content_name` from `sdesc`, and
+// sets it to `cryptos`.
 static bool GetCryptosByName(const SessionDescription* sdesc,
                              const std::string& content_name,
                              CryptoParamsVec* cryptos) {
@@ -529,8 +529,8 @@ static bool GetCryptosByName(const SessionDescription* sdesc,
   return true;
 }
 
-// Prunes the |target_cryptos| by removing the crypto params (cipher_suite)
-// which are not available in |filter|.
+// Prunes the `target_cryptos` by removing the crypto params (cipher_suite)
+// which are not available in `filter`.
 static void PruneCryptos(const CryptoParamsVec& filter,
                          CryptoParamsVec* target_cryptos) {
   if (!target_cryptos) {
@@ -539,8 +539,8 @@ static void PruneCryptos(const CryptoParamsVec& filter,
 
   target_cryptos->erase(
       std::remove_if(target_cryptos->begin(), target_cryptos->end(),
-                     // Returns true if the |crypto|'s cipher_suite is not
-                     // found in |filter|.
+                     // Returns true if the `crypto`'s cipher_suite is not
+                     // found in `filter`.
                      [&filter](const CryptoParams& crypto) {
                        for (const CryptoParams& entry : filter) {
                          if (entry.cipher_suite == crypto.cipher_suite)
@@ -561,9 +561,9 @@ static bool IsRtpContent(SessionDescription* sdesc,
   return is_rtp;
 }
 
-// Updates the crypto parameters of the |sdesc| according to the given
-// |bundle_group|. The crypto parameters of all the contents within the
-// |bundle_group| should be updated to use the common subset of the
+// Updates the crypto parameters of the `sdesc` according to the given
+// `bundle_group`. The crypto parameters of all the contents within the
+// `bundle_group` should be updated to use the common subset of the
 // available cryptos.
 static bool UpdateCryptoParamsForBundle(const ContentGroup& bundle_group,
                                         SessionDescription* sdesc) {
@@ -673,7 +673,7 @@ static bool IsFlexfecCodec(const C& codec) {
   return absl::EqualsIgnoreCase(codec.name, kFlexfecCodecName);
 }
 
-// Create a media content to be offered for the given |sender_options|,
+// Create a media content to be offered for the given `sender_options`,
 // according to the given options.rtcp_mux, session_options.is_muc, codecs,
 // secure_transport, crypto, and current_streams. If we don't currently have
 // crypto (in current_cryptos) and it is enabled (in secure_policy), crypto is
@@ -828,15 +828,15 @@ static void NegotiateCodecs(const std::vector<C>& local_codecs,
   }
 }
 
-// Finds a codec in |codecs2| that matches |codec_to_match|, which is
-// a member of |codecs1|. If |codec_to_match| is an RTX codec, both
+// Finds a codec in `codecs2` that matches `codec_to_match`, which is
+// a member of `codecs1`. If `codec_to_match` is an RTX codec, both
 // the codecs themselves and their associated codecs must match.
 template <class C>
 static bool FindMatchingCodec(const std::vector<C>& codecs1,
                               const std::vector<C>& codecs2,
                               const C& codec_to_match,
                               C* found_codec) {
-  // |codec_to_match| should be a member of |codecs1|, in order to look up RTX
+  // `codec_to_match` should be a member of `codecs1`, in order to look up RTX
   // codecs' associated codecs correctly. If not, that's a programming error.
   RTC_DCHECK(absl::c_any_of(codecs1, [&codec_to_match](const C& codec) {
     return &codec == &codec_to_match;
@@ -867,7 +867,7 @@ static bool FindMatchingCodec(const std::vector<C>& codecs1,
   return false;
 }
 
-// Find the codec in |codec_list| that |rtx_codec| is associated with.
+// Find the codec in `codec_list` that `rtx_codec` is associated with.
 template <class C>
 static const C* GetAssociatedCodec(const std::vector<C>& codec_list,
                                    const C& rtx_codec) {
@@ -897,8 +897,8 @@ static const C* GetAssociatedCodec(const std::vector<C>& codec_list,
   return associated_codec;
 }
 
-// Adds all codecs from |reference_codecs| to |offered_codecs| that don't
-// already exist in |offered_codecs| and ensure the payload types don't
+// Adds all codecs from `reference_codecs` to `offered_codecs` that don't
+// already exist in `offered_codecs` and ensure the payload types don't
 // collide.
 template <class C>
 static void MergeCodecs(const std::vector<C>& reference_codecs,
@@ -989,75 +989,13 @@ static Codecs MatchCodecPreference(
   return filtered_codecs;
 }
 
-static bool FindByUriAndEncryption(const RtpHeaderExtensions& extensions,
-                                   const webrtc::RtpExtension& ext_to_match,
-                                   webrtc::RtpExtension* found_extension) {
-  auto it = absl::c_find_if(
-      extensions, [&ext_to_match](const webrtc::RtpExtension& extension) {
-        // We assume that all URIs are given in a canonical
-        // format.
-        return extension.uri == ext_to_match.uri &&
-               extension.encrypt == ext_to_match.encrypt;
-      });
-  if (it == extensions.end()) {
-    return false;
-  }
-  if (found_extension) {
-    *found_extension = *it;
-  }
-  return true;
-}
-
-static bool FindByUri(const RtpHeaderExtensions& extensions,
-                      const webrtc::RtpExtension& ext_to_match,
-                      webrtc::RtpExtension* found_extension) {
-  // We assume that all URIs are given in a canonical format.
-  const webrtc::RtpExtension* found =
-      webrtc::RtpExtension::FindHeaderExtensionByUri(extensions,
-                                                     ext_to_match.uri);
-  if (!found) {
-    return false;
-  }
-  if (found_extension) {
-    *found_extension = *found;
-  }
-  return true;
-}
-
-static bool FindByUriWithEncryptionPreference(
-    const RtpHeaderExtensions& extensions,
-    absl::string_view uri_to_match,
-    bool encryption_preference,
-    webrtc::RtpExtension* found_extension) {
-  const webrtc::RtpExtension* unencrypted_extension = nullptr;
-  for (const webrtc::RtpExtension& extension : extensions) {
-    // We assume that all URIs are given in a canonical format.
-    if (extension.uri == uri_to_match) {
-      if (!encryption_preference || extension.encrypt) {
-        if (found_extension) {
-          *found_extension = extension;
-        }
-        return true;
-      }
-      unencrypted_extension = &extension;
-    }
-  }
-  if (unencrypted_extension) {
-    if (found_extension) {
-      *found_extension = *unencrypted_extension;
-    }
-    return true;
-  }
-  return false;
-}
-
-// Adds all extensions from |reference_extensions| to |offered_extensions| that
-// don't already exist in |offered_extensions| and ensure the IDs don't
-// collide. If an extension is added, it's also added to |regular_extensions| or
-// |encrypted_extensions|, and if the extension is in |regular_extensions| or
-// |encrypted_extensions|, its ID is marked as used in |used_ids|.
-// |offered_extensions| is for either audio or video while |regular_extensions|
-// and |encrypted_extensions| are used for both audio and video. There could be
+// Adds all extensions from `reference_extensions` to `offered_extensions` that
+// don't already exist in `offered_extensions` and ensure the IDs don't
+// collide. If an extension is added, it's also added to `regular_extensions` or
+// `encrypted_extensions`, and if the extension is in `regular_extensions` or
+// `encrypted_extensions`, its ID is marked as used in `used_ids`.
+// `offered_extensions` is for either audio or video while `regular_extensions`
+// and `encrypted_extensions` are used for both audio and video. There could be
 // overlap between audio extensions and video extensions.
 static void MergeRtpHdrExts(const RtpHeaderExtensions& reference_extensions,
                             RtpHeaderExtensions* offered_extensions,
@@ -1065,22 +1003,28 @@ static void MergeRtpHdrExts(const RtpHeaderExtensions& reference_extensions,
                             RtpHeaderExtensions* encrypted_extensions,
                             UsedRtpHeaderExtensionIds* used_ids) {
   for (auto reference_extension : reference_extensions) {
-    if (!FindByUriAndEncryption(*offered_extensions, reference_extension,
-                                nullptr)) {
-      webrtc::RtpExtension existing;
+    if (!webrtc::RtpExtension::FindHeaderExtensionByUriAndEncryption(
+            *offered_extensions, reference_extension.uri,
+            reference_extension.encrypt)) {
       if (reference_extension.encrypt) {
-        if (FindByUriAndEncryption(*encrypted_extensions, reference_extension,
-                                   &existing)) {
-          offered_extensions->push_back(existing);
+        const webrtc::RtpExtension* existing =
+            webrtc::RtpExtension::FindHeaderExtensionByUriAndEncryption(
+                *encrypted_extensions, reference_extension.uri,
+                reference_extension.encrypt);
+        if (existing) {
+          offered_extensions->push_back(*existing);
         } else {
           used_ids->FindAndSetIdUsed(&reference_extension);
           encrypted_extensions->push_back(reference_extension);
           offered_extensions->push_back(reference_extension);
         }
       } else {
-        if (FindByUriAndEncryption(*regular_extensions, reference_extension,
-                                   &existing)) {
-          offered_extensions->push_back(existing);
+        const webrtc::RtpExtension* existing =
+            webrtc::RtpExtension::FindHeaderExtensionByUriAndEncryption(
+                *regular_extensions, reference_extension.uri,
+                reference_extension.encrypt);
+        if (existing) {
+          offered_extensions->push_back(*existing);
         } else {
           used_ids->FindAndSetIdUsed(&reference_extension);
           regular_extensions->push_back(reference_extension);
@@ -1091,41 +1035,86 @@ static void MergeRtpHdrExts(const RtpHeaderExtensions& reference_extensions,
   }
 }
 
-static void AddEncryptedVersionsOfHdrExts(RtpHeaderExtensions* extensions,
-                                          RtpHeaderExtensions* all_extensions,
-                                          UsedRtpHeaderExtensionIds* used_ids) {
-  RtpHeaderExtensions encrypted_extensions;
-  for (const webrtc::RtpExtension& extension : *extensions) {
-    webrtc::RtpExtension existing;
-    // Don't add encrypted extensions again that were already included in a
-    // previous offer or regular extensions that are also included as encrypted
-    // extensions.
-    if (extension.encrypt ||
-        !webrtc::RtpExtension::IsEncryptionSupported(extension.uri) ||
-        (FindByUriWithEncryptionPreference(*extensions, extension.uri, true,
-                                           &existing) &&
-         existing.encrypt)) {
+static void AddEncryptedVersionsOfHdrExts(
+    RtpHeaderExtensions* offered_extensions,
+    RtpHeaderExtensions* encrypted_extensions,
+    UsedRtpHeaderExtensionIds* used_ids) {
+  RtpHeaderExtensions encrypted_extensions_to_add;
+  for (const auto& extension : *offered_extensions) {
+    // Skip existing encrypted offered extension
+    if (extension.encrypt) {
       continue;
     }
 
-    if (FindByUri(*all_extensions, extension, &existing)) {
-      encrypted_extensions.push_back(existing);
-    } else {
-      webrtc::RtpExtension encrypted(extension);
-      encrypted.encrypt = true;
-      used_ids->FindAndSetIdUsed(&encrypted);
-      all_extensions->push_back(encrypted);
-      encrypted_extensions.push_back(encrypted);
+    // Skip if we cannot encrypt the extension
+    if (!webrtc::RtpExtension::IsEncryptionSupported(extension.uri)) {
+      continue;
     }
+
+    // Skip if an encrypted extension with that URI already exists in the
+    // offered extensions.
+    const bool have_encrypted_extension =
+        webrtc::RtpExtension::FindHeaderExtensionByUriAndEncryption(
+            *offered_extensions, extension.uri, true);
+    if (have_encrypted_extension) {
+      continue;
+    }
+
+    // Determine if a shared encrypted extension with that URI already exists.
+    const webrtc::RtpExtension* shared_encrypted_extension =
+        webrtc::RtpExtension::FindHeaderExtensionByUriAndEncryption(
+            *encrypted_extensions, extension.uri, true);
+    if (shared_encrypted_extension) {
+      // Re-use the shared encrypted extension
+      encrypted_extensions_to_add.push_back(*shared_encrypted_extension);
+      continue;
+    }
+
+    // None exists. Create a new shared encrypted extension from the
+    // non-encrypted one.
+    webrtc::RtpExtension new_encrypted_extension(extension);
+    new_encrypted_extension.encrypt = true;
+    used_ids->FindAndSetIdUsed(&new_encrypted_extension);
+    encrypted_extensions->push_back(new_encrypted_extension);
+    encrypted_extensions_to_add.push_back(new_encrypted_extension);
   }
-  extensions->insert(extensions->end(), encrypted_extensions.begin(),
-                     encrypted_extensions.end());
+
+  // Append the additional encrypted extensions to be offered
+  offered_extensions->insert(offered_extensions->end(),
+                             encrypted_extensions_to_add.begin(),
+                             encrypted_extensions_to_add.end());
+}
+
+// Mostly identical to RtpExtension::FindHeaderExtensionByUri but discards any
+// encrypted extensions that this implementation cannot encrypt.
+static const webrtc::RtpExtension* FindHeaderExtensionByUriDiscardUnsupported(
+    const std::vector<webrtc::RtpExtension>& extensions,
+    absl::string_view uri,
+    webrtc::RtpExtension::Filter filter) {
+  // Note: While it's technically possible to decrypt extensions that we don't
+  // encrypt, the symmetric API of libsrtp does not allow us to supply
+  // different IDs for encryption/decryption of header extensions depending on
+  // whether the packet is inbound or outbound. Thereby, we are limited to
+  // what we can send in encrypted form.
+  if (!webrtc::RtpExtension::IsEncryptionSupported(uri)) {
+    // If there's no encryption support and we only want encrypted extensions,
+    // there's no point in continuing the search here.
+    if (filter == webrtc::RtpExtension::kRequireEncryptedExtension) {
+      return nullptr;
+    }
+
+    // Instruct to only return non-encrypted extensions
+    filter = webrtc::RtpExtension::Filter::kDiscardEncryptedExtension;
+  }
+
+  return webrtc::RtpExtension::FindHeaderExtensionByUri(extensions, uri,
+                                                        filter);
 }
 
 static void NegotiateRtpHeaderExtensions(
     const RtpHeaderExtensions& local_extensions,
     const RtpHeaderExtensions& offered_extensions,
-    bool enable_encrypted_rtp_header_extensions,
+    webrtc::RtpExtension::Filter filter,
     RtpHeaderExtensions* negotiated_extensions) {
   // TransportSequenceNumberV2 is not offered by default. The special logic for
   // the TransportSequenceNumber extensions works as follows:
@@ -1134,9 +1123,9 @@ static void NegotiateRtpHeaderExtensions(
   // V1 and V2   V2 regardless of local_extensions.
   // V2          V2 regardless of local_extensions.
   const webrtc::RtpExtension* transport_sequence_number_v2_offer =
-      webrtc::RtpExtension::FindHeaderExtensionByUri(
+      FindHeaderExtensionByUriDiscardUnsupported(
           offered_extensions,
-          webrtc::RtpExtension::kTransportSequenceNumberV2Uri);
+          webrtc::RtpExtension::kTransportSequenceNumberV2Uri, filter);
 
   bool frame_descriptor_in_local = false;
   bool dependency_descriptor_in_local = false;
@@ -1149,10 +1138,10 @@ static void NegotiateRtpHeaderExtensions(
       dependency_descriptor_in_local = true;
     else if (ours.uri == webrtc::RtpExtension::kAbsoluteCaptureTimeUri)
       abs_capture_time_in_local = true;
-    webrtc::RtpExtension theirs;
-    if (FindByUriWithEncryptionPreference(
-            offered_extensions, ours.uri,
-            enable_encrypted_rtp_header_extensions, &theirs)) {
+    const webrtc::RtpExtension* theirs =
+        FindHeaderExtensionByUriDiscardUnsupported(offered_extensions, ours.uri,
+                                                   filter);
+    if (theirs) {
       if (transport_sequence_number_v2_offer &&
           ours.uri == webrtc::RtpExtension::kTransportSequenceNumberUri) {
         // Don't respond to
@@ -1162,7 +1151,7 @@ static void NegotiateRtpHeaderExtensions(
         continue;
       } else {
         // We respond with their RTP header extension id.
-        negotiated_extensions->push_back(theirs);
+        negotiated_extensions->push_back(*theirs);
       }
     }
   }
@@ -1174,28 +1163,35 @@ static void NegotiateRtpHeaderExtensions(
 
   // Frame descriptors support. If the extension is not present locally, but is
   // in the offer, we add it to the list.
-  webrtc::RtpExtension theirs;
-  if (!dependency_descriptor_in_local &&
-      FindByUriWithEncryptionPreference(
-          offered_extensions, webrtc::RtpExtension::kDependencyDescriptorUri,
-          enable_encrypted_rtp_header_extensions, &theirs)) {
-    negotiated_extensions->push_back(theirs);
+  if (!dependency_descriptor_in_local) {
+    const webrtc::RtpExtension* theirs =
+        FindHeaderExtensionByUriDiscardUnsupported(
+            offered_extensions, webrtc::RtpExtension::kDependencyDescriptorUri,
+            filter);
+    if (theirs) {
+      negotiated_extensions->push_back(*theirs);
+    }
   }
-  if (!frame_descriptor_in_local &&
-      FindByUriWithEncryptionPreference(
-          offered_extensions,
-          webrtc::RtpExtension::kGenericFrameDescriptorUri00,
-          enable_encrypted_rtp_header_extensions, &theirs)) {
-    negotiated_extensions->push_back(theirs);
+  if (!frame_descriptor_in_local) {
+    const webrtc::RtpExtension* theirs =
+        FindHeaderExtensionByUriDiscardUnsupported(
+            offered_extensions,
+            webrtc::RtpExtension::kGenericFrameDescriptorUri00, filter);
+    if (theirs) {
+      negotiated_extensions->push_back(*theirs);
+    }
   }
 
   // Absolute capture time support. If the extension is not present locally, but
   // is in the offer, we add it to the list.
-  if (!abs_capture_time_in_local &&
-      FindByUriWithEncryptionPreference(
-          offered_extensions, webrtc::RtpExtension::kAbsoluteCaptureTimeUri,
-          enable_encrypted_rtp_header_extensions, &theirs)) {
-    negotiated_extensions->push_back(theirs);
+  if (!abs_capture_time_in_local) {
+    const webrtc::RtpExtension* theirs =
+        FindHeaderExtensionByUriDiscardUnsupported(
+            offered_extensions, webrtc::RtpExtension::kAbsoluteCaptureTimeUri,
+            filter);
+    if (theirs) {
+      negotiated_extensions->push_back(*theirs);
+    }
   }
 }
 
@@ -1230,7 +1226,7 @@ static bool SetCodecsInAnswer(
   return true;
 }
 
-// Create a media content to be answered for the given |sender_options|
+// Create a media content to be answered for the given `sender_options`
 // according to the given session_options.rtcp_mux, session_options.streams,
 // codecs, crypto, and current_streams.  If we don't currently have crypto (in
 // current_cryptos) and it is enabled (in secure_policy), crypto is created
@@ -1250,10 +1246,14 @@ static bool CreateMediaContentAnswer(
     bool bundle_enabled,
     MediaContentDescription* answer) {
   answer->set_extmap_allow_mixed_enum(offer->extmap_allow_mixed_enum());
+  const webrtc::RtpExtension::Filter extensions_filter =
+      enable_encrypted_rtp_header_extensions
+          ? webrtc::RtpExtension::Filter::kPreferEncryptedExtension
+          : webrtc::RtpExtension::Filter::kDiscardEncryptedExtension;
   RtpHeaderExtensions negotiated_rtp_extensions;
-  NegotiateRtpHeaderExtensions(
-      local_rtp_extensions, offer->rtp_header_extensions(),
-      enable_encrypted_rtp_header_extensions, &negotiated_rtp_extensions);
+  NegotiateRtpHeaderExtensions(local_rtp_extensions,
+                               offer->rtp_header_extensions(),
+                               extensions_filter, &negotiated_rtp_extensions);
   answer->set_rtp_header_extensions(negotiated_rtp_extensions);
 
   answer->set_rtcp_mux(session_options.rtcp_mux_enabled && offer->rtcp_mux());
@@ -1290,7 +1290,7 @@ static bool IsMediaProtocolSupported(MediaType type,
                                      const std::string& protocol,
                                      bool secure_transport) {
   // Since not all applications serialize and deserialize the media protocol,
-  // we will have to accept |protocol| to be empty.
+  // we will have to accept `protocol` to be empty.
   if (protocol.empty()) {
     return true;
   }
@@ -1327,8 +1327,8 @@ static void SetMediaProtocol(bool secure_transport,
     desc->set_protocol(kMediaProtocolAvpf);
 }
 
-// Gets the TransportInfo of the given |content_name| from the
-// |current_description|. If doesn't exist, returns a new one.
+// Gets the TransportInfo of the given `content_name` from the
+// `current_description`. If doesn't exist, returns a new one.
 static const TransportDescription* GetTransportDescription(
     const std::string& content_name,
     const SessionDescription* current_description) {
@@ -1523,7 +1523,7 @@ std::unique_ptr<SessionDescription> MediaSessionDescriptionFactory::CreateOffer(
   auto offer = std::make_unique<SessionDescription>();
 
   // Iterate through the media description options, matching with existing media
-  // descriptions in |current_description|.
+  // descriptions in `current_description`.
   size_t msection_index = 0;
   for (const MediaDescriptionOptions& media_description_options :
        session_options.media_description_options) {
@@ -1667,8 +1667,8 @@ MediaSessionDescriptionFactory::CreateAnswer(
   std::vector<const ContentGroup*> offer_bundles =
       offer->GetGroupsByName(GROUP_TYPE_BUNDLE);
   // There are as many answer BUNDLE groups as offer BUNDLE groups (even if
-  // rejected, we respond with an empty group). |offer_bundles|,
-  // |answer_bundles| and |bundle_transports| share the same size and indices.
+  // rejected, we respond with an empty group). `offer_bundles`,
+  // `answer_bundles` and `bundle_transports` share the same size and indices.
   std::vector<ContentGroup> answer_bundles;
   std::vector<std::unique_ptr<TransportInfo>> bundle_transports;
   answer_bundles.reserve(offer_bundles.size());
@@ -1681,7 +1681,7 @@ MediaSessionDescriptionFactory::CreateAnswer(
   answer->set_extmap_allow_mixed(offer->extmap_allow_mixed());
 
   // Iterate through the media description options, matching with existing
-  // media descriptions in |current_description|.
+  // media descriptions in `current_description`.
   size_t msection_index = 0;
   for (const MediaDescriptionOptions& media_description_options :
        session_options.media_description_options) {
@@ -1755,7 +1755,7 @@ MediaSessionDescriptionFactory::CreateAnswer(
     ContentInfo& added = answer->contents().back();
     if (!added.rejected && session_options.bundle_enabled &&
         bundle_index.has_value()) {
-      // The |bundle_index| is for |media_description_options.mid|.
+      // The `bundle_index` is for `media_description_options.mid`.
       RTC_DCHECK_EQ(media_description_options.mid, added.name);
       answer_bundles[bundle_index.value()].AddContentName(added.name);
       bundle_transports[bundle_index.value()].reset(
@@ -1926,7 +1926,7 @@ void MediaSessionDescriptionFactory::GetCodecsForOffer(
     AudioCodecs* audio_codecs,
     VideoCodecs* video_codecs) const {
   // First - get all codecs from the current description if the media type
-  // is used. Add them to |used_pltypes| so the payload type is not reused if a
+  // is used. Add them to `used_pltypes` so the payload type is not reused if a
   // new media type is added.
   UsedPayloadTypes used_pltypes;
   MergeCodecsFromDescription(current_active_contents, audio_codecs,
@@ -1950,7 +1950,7 @@ void MediaSessionDescriptionFactory::GetCodecsForAnswer(
     AudioCodecs* audio_codecs,
     VideoCodecs* video_codecs) const {
   // First - get all codecs from the current description if the media type
-  // is used. Add them to |used_pltypes| so the payload type is not reused if a
+  // is used. Add them to `used_pltypes` so the payload type is not reused if a
   // new media type is added.
   UsedPayloadTypes used_pltypes;
   MergeCodecsFromDescription(current_active_contents, audio_codecs,
@@ -1988,7 +1988,7 @@ void MediaSessionDescriptionFactory::GetCodecsForAnswer(
   }
 
   // Add codecs that are not in the current description but were in
-  // |remote_offer|.
+  // `remote_offer`.
   MergeCodecs<AudioCodec>(filtered_offered_audio_codecs, audio_codecs,
                           &used_pltypes);
   MergeCodecs<VideoCodec>(filtered_offered_video_codecs, video_codecs,
@@ -2017,7 +2017,7 @@ MediaSessionDescriptionFactory::GetOfferedRtpHeaderExtensionsWithIds(
   AudioVideoRtpHeaderExtensions offered_extensions;
   // First - get all extensions from the current description if the media type
   // is used.
-  // Add them to |used_ids| so the local ids are not reused if a new media
+  // Add them to `used_ids` so the local ids are not reused if a new media
   // type is added.
   for (const ContentInfo* content : current_active_contents) {
     if (IsMediaContentOfType(content, MEDIA_TYPE_AUDIO)) {
@@ -2112,10 +2112,10 @@ bool MediaSessionDescriptionFactory::AddTransportAnswer(
   return true;
 }
 
-// |audio_codecs| = set of all possible codecs that can be used, with correct
+// `audio_codecs` = set of all possible codecs that can be used, with correct
 // payload type mappings
 //
-// |supported_audio_codecs| = set of codecs that are supported for the direction
+// `supported_audio_codecs` = set of codecs that are supported for the direction
 // of this m= section
 //
 // acd->codecs() = set of previously negotiated codecs for this m= section
@@ -2168,7 +2168,7 @@ bool MediaSessionDescriptionFactory::AddAudioContentForOffer(
                                         codec, &found_codec) &&
           !FindMatchingCodec<AudioCodec>(supported_audio_codecs,
                                          filtered_codecs, codec, nullptr)) {
-        // Use the |found_codec| from |audio_codecs| because it has the
+        // Use the `found_codec` from `audio_codecs` because it has the
         // correctly mapped payload type.
         filtered_codecs.push_back(found_codec);
       }
@@ -2257,7 +2257,7 @@ bool MediaSessionDescriptionFactory::AddVideoContentForOffer(
                                         codec, &found_codec) &&
           !FindMatchingCodec<VideoCodec>(supported_video_codecs,
                                          filtered_codecs, codec, nullptr)) {
-        // Use the |found_codec| from |video_codecs| because it has the
+        // Use the `found_codec` from `video_codecs` because it has the
         // correctly mapped payload type.
         filtered_codecs.push_back(found_codec);
       }
@@ -2375,10 +2375,10 @@ bool MediaSessionDescriptionFactory::AddUnsupportedContentForOffer(
   return true;
 }
 
-// |audio_codecs| = set of all possible codecs that can be used, with correct
+// `audio_codecs` = set of all possible codecs that can be used, with correct
 // payload type mappings
 //
-// |supported_audio_codecs| = set of codecs that are supported for the direction
+// `supported_audio_codecs` = set of codecs that are supported for the direction
 // of this m= section
 //
 // acd->codecs() = set of previously negotiated codecs for this m= section
@@ -2448,7 +2448,7 @@ bool MediaSessionDescriptionFactory::AddAudioContentForAnswer(
           !FindMatchingCodec<AudioCodec>(supported_audio_codecs,
                                          filtered_codecs, codec, nullptr)) {
         // We should use the local codec with local parameters and the codec id
-        // would be correctly mapped in |NegotiateCodecs|.
+        // would be correctly mapped in `NegotiateCodecs`.
         filtered_codecs.push_back(codec);
       }
     }
@@ -2563,7 +2563,7 @@ bool MediaSessionDescriptionFactory::AddVideoContentForAnswer(
           !FindMatchingCodec<VideoCodec>(supported_video_codecs,
                                          filtered_codecs, codec, nullptr)) {
         // We should use the local codec with local parameters and the codec id
-        // would be correctly mapped in |NegotiateCodecs|.
+        // would be correctly mapped in `NegotiateCodecs`.
         filtered_codecs.push_back(codec);
       }
     }

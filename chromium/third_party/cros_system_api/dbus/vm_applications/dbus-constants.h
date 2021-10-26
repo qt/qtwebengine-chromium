@@ -17,6 +17,7 @@ const char kVmApplicationsServiceUpdateApplicationListMethod[] =
     "UpdateApplicationList";
 const char kVmApplicationsServiceLaunchTerminalMethod[] = "LaunchTerminal";
 const char kVmApplicationsServiceUpdateMimeTypesMethod[] = "UpdateMimeTypes";
+const char kVmApplicationsServiceSelectFileMethod[] = "SelectFile";
 
 }  // namespace apps
 }  // namespace vm_tools

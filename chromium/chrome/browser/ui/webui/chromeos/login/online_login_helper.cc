@@ -9,7 +9,6 @@
 #include "chrome/browser/ash/login/ui/signin_ui.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_process_platform_part.h"
-#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/grit/generated_resources.h"
 #include "chrome/installer/util/google_update_settings.h"
@@ -75,7 +74,7 @@ void SetCookieForPartition(
   const GURL& gaia_url = GaiaUrls::GetInstance()->gaia_url();
   std::unique_ptr<net::CanonicalCookie> cc(net::CanonicalCookie::Create(
       gaia_url, gaps_cookie_value, base::Time::Now(),
-      absl::nullopt /* server_time */));
+      absl::nullopt /* server_time */, net::CookiePartitionKey::Todo()));
   if (!cc)
     return;
 

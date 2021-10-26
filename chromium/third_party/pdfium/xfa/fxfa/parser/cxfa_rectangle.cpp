@@ -6,12 +6,14 @@
 
 #include "xfa/fxfa/parser/cxfa_rectangle.h"
 
-#include <cmath>
+#include <math.h>
+
 #include <utility>
 
 #include "fxjs/xfa/cjx_node.h"
 #include "third_party/base/check.h"
 #include "third_party/base/notreached.h"
+#include "xfa/fgas/graphics/cfgas_gegraphics.h"
 #include "xfa/fxfa/parser/cxfa_corner.h"
 #include "xfa/fxfa/parser/cxfa_document.h"
 #include "xfa/fxfa/parser/cxfa_stroke.h"
@@ -120,7 +122,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
     bool bInverted = corner1->IsInverted();
     bool bRound = corner1->GetJoinType() == XFA_AttributeValue::Round;
     if (bRound) {
-      sy = FX_PI / 2;
+      sy = FXSYS_PI / 2;
     }
     switch (i) {
       case 0:
@@ -131,7 +133,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
         nx = -1;
         ny = 0;
         if (bRound) {
-          sx = bInverted ? FX_PI / 2 : FX_PI;
+          sx = bInverted ? FXSYS_PI / 2 : FXSYS_PI;
         } else {
           sx = 1;
           sy = 0;
@@ -145,7 +147,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
         nx = 0;
         ny = -1;
         if (bRound) {
-          sx = bInverted ? FX_PI : FX_PI * 3 / 2;
+          sx = bInverted ? FXSYS_PI : FXSYS_PI * 3 / 2;
         } else {
           sx = 0;
           sy = 1;
@@ -159,7 +161,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
         nx = 1;
         ny = 0;
         if (bRound) {
-          sx = bInverted ? FX_PI * 3 / 2 : 0;
+          sx = bInverted ? FXSYS_PI * 3 / 2 : 0;
         } else {
           sx = -1;
           sy = 0;
@@ -173,7 +175,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
         nx = 0;
         ny = 1;
         if (bRound) {
-          sx = bInverted ? 0 : FX_PI / 2;
+          sx = bInverted ? 0 : FXSYS_PI / 2;
         } else {
           sx = 0;
           sy = -1;
@@ -185,7 +187,7 @@ void CXFA_Rectangle::GetFillPath(const std::vector<CXFA_Stroke*>& strokes,
 
     if (bRound) {
       if (fRadius1 < 0)
-        sx -= FX_PI;
+        sx -= FXSYS_PI;
       if (bInverted)
         sy *= -1;
 
@@ -226,7 +228,7 @@ void CXFA_Rectangle::Draw(const std::vector<CXFA_Stroke*>& strokes,
     return;
 
   for (int32_t i = 1; i < 8; i += 2) {
-    float fThickness = std::fmax(0.0, strokes[i]->GetThickness());
+    float fThickness = fmax(0.0, strokes[i]->GetThickness());
     float fHalf = fThickness / 2;
     XFA_AttributeValue iHand = GetHand();
     switch (i) {
@@ -503,7 +505,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
   CFX_PointF cp1;
   CFX_PointF cp2;
   if (bRound)
-    sy = FX_PI / 2;
+    sy = FXSYS_PI / 2;
 
   switch (nIndex) {
     case 0:
@@ -524,7 +526,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
       nx = -1;
       ny = 0;
       if (bRound) {
-        sx = bInverted ? FX_PI / 2 : FX_PI;
+        sx = bInverted ? FXSYS_PI / 2 : FXSYS_PI;
       } else {
         sx = 1;
         sy = 0;
@@ -548,7 +550,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
       nx = 0;
       ny = -1;
       if (bRound) {
-        sx = bInverted ? FX_PI : FX_PI * 3 / 2;
+        sx = bInverted ? FXSYS_PI : FXSYS_PI * 3 / 2;
       } else {
         sx = 0;
         sy = 1;
@@ -572,7 +574,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
       nx = 1;
       ny = 0;
       if (bRound) {
-        sx = bInverted ? FX_PI * 3 / 2 : 0;
+        sx = bInverted ? FXSYS_PI * 3 / 2 : 0;
       } else {
         sx = -1;
         sy = 0;
@@ -596,7 +598,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
       nx = 0;
       ny = 1;
       if (bRound) {
-        sx = bInverted ? 0 : FX_PI / 2;
+        sx = bInverted ? 0 : FXSYS_PI / 2;
       } else {
         sx = 0;
         sy = -1;
@@ -613,7 +615,7 @@ void CXFA_Rectangle::GetPath(const std::vector<CXFA_Stroke*>& strokes,
   }
   if (bRound) {
     if (fRadius1 < 0)
-      sx -= FX_PI;
+      sx -= FXSYS_PI;
     if (bInverted)
       sy *= -1;
 

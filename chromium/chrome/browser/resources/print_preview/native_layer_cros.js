@@ -6,16 +6,13 @@ import {assert} from 'chrome://resources/js/assert.m.js';
 import {addSingletonGetter, sendWithPromise} from 'chrome://resources/js/cr.m.js';
 
 import {Cdd} from './data/cdd.js';
-import {DestinationPolicies} from './data/destination_policies.js';
 import {ProvisionalDestinationInfo} from './data/local_parsers.js';
 import {PrinterStatus, PrinterStatusReason} from './data/printer_status_cros.js';
 
 /**
  * @typedef {{
  *   printerId: string,
- *   success: boolean,
  *   capabilities: !Cdd,
- *   policies: (DestinationPolicies | undefined),
  * }}
  */
 export let PrinterSetupResponse;
@@ -90,6 +87,13 @@ export class NativeLayerCros {
   recordPrinterStatusHistogram(statusReason, didUserAttemptPrint) {}
 
   /**
+   * Records the histogram to capture if the retried printer status was
+   * able to get a valid response from the local printer.
+   * @param {boolean} retrySuccessful
+   */
+  recordPrinterStatusRetrySuccessHistogram(retrySuccessful) {}
+
+  /**
    * Selects all print servers with ids in |printServerIds| to query for their
    * printers.
    * @param {!Array<string>} printServerIds
@@ -154,6 +158,13 @@ export class NativeLayerCrosImpl {
     chrome.send(
         'metricsHandler:recordBooleanHistogram',
         [histogram, didUserAttemptPrint]);
+  }
+
+  /** @override */
+  recordPrinterStatusRetrySuccessHistogram(retrySuccessful) {
+    chrome.send(
+        'metricsHandler:recordBooleanHistogram',
+        ['PrinterStatusRetrySuccess', retrySuccessful]);
   }
 
   /** @override */

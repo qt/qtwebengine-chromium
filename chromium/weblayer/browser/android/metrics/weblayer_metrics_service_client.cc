@@ -9,12 +9,13 @@
 #include <memory>
 
 #include "base/base64.h"
+#include "base/files/file_path.h"
 #include "base/no_destructor.h"
-#include "components/metrics/content/content_stability_metrics_provider.h"
-#include "components/metrics/content/extensions_helper.h"
+#include "base/path_service.h"
 #include "components/metrics/metrics_provider.h"
 #include "components/metrics/metrics_service.h"
 #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
+#include "components/prefs/pref_service.h"
 #include "components/ukm/ukm_service.h"
 #include "components/variations/variations_ids_provider.h"
 #include "components/version_info/android/channel_getter.h"
@@ -25,9 +26,9 @@
 #include "weblayer/browser/java/jni/MetricsServiceClient_jni.h"
 #include "weblayer/browser/system_network_context_manager.h"
 #include "weblayer/browser/tab_impl.h"
+#include "weblayer/common/weblayer_paths.h"
 
 namespace weblayer {
-
 namespace {
 
 // IMPORTANT: DO NOT CHANGE sample rates without first ensuring the Chrome
@@ -106,6 +107,12 @@ void WebLayerMetricsServiceClient::RegisterExternalExperiments(
       variations::SyntheticTrialRegistry::kOverrideExistingIds);
 }
 
+void WebLayerMetricsServiceClient::Initialize(PrefService* pref_service) {
+  base::FilePath user_data_dir;
+  base::PathService::Get(DIR_USER_DATA, &user_data_dir);
+  AndroidMetricsServiceClient::Initialize(user_data_dir, pref_service);
+}
+
 int32_t WebLayerMetricsServiceClient::GetProduct() {
   return metrics::ChromeUserMetricsExtension::ANDROID_WEBLAYER;
 }
@@ -157,9 +164,6 @@ int WebLayerMetricsServiceClient::GetPackageNameLimitRatePerMille() {
 
 void WebLayerMetricsServiceClient::RegisterAdditionalMetricsProviders(
     metrics::MetricsService* service) {
-  service->RegisterMetricsProvider(
-      std::make_unique<metrics::ContentStabilityMetricsProvider>(pref_service(),
-                                                                 nullptr));
   service->RegisterMetricsProvider(std::make_unique<PageLoadMetricsProvider>());
 }
 

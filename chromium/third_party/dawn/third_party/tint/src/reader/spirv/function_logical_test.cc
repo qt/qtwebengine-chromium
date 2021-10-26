@@ -28,7 +28,8 @@ std::string Preamble() {
   return R"(
   OpCapability Shader
   OpMemoryModel Logical Simple
-  OpEntryPoint Vertex %100 "main"
+  OpEntryPoint Fragment %100 "main"
+  OpExecutionMode %100 OriginUpperLeft
 
   %void = OpTypeVoid
   %voidfn = OpTypeFunction %void
@@ -210,6 +211,7 @@ TEST_F(SpvUnaryLogicalTest, LogicalNot_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -236,6 +238,7 @@ TEST_F(SpvUnaryLogicalTest, LogicalNot_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -290,6 +293,7 @@ TEST_P(SpvBinaryLogicalTest, EmitExpression) {
   ss << R"(VariableConst{
     x_1
     none
+    undefined
     )"
      << GetParam().ast_type << "\n    {\n      Binary[not set]{"
      << "\n        " << GetParam().ast_lhs << "\n        " << GetParam().ast_op
@@ -436,11 +440,10 @@ INSTANTIATE_TEST_SUITE_P(
     SpvBinaryLogicalTest,
     ::testing::Values(BinaryData{"bool", "true", "OpLogicalAnd", "false",
                                  "__bool", "ScalarConstructor[not set]{true}",
-                                 "logical_and",
-                                 "ScalarConstructor[not set]{false}"},
+                                 "and", "ScalarConstructor[not set]{false}"},
                       BinaryData{"v2bool", "v2bool_t_f", "OpLogicalAnd",
                                  "v2bool_f_t", "__vec_2__bool",
-                                 AstFor("v2bool_t_f"), "logical_and",
+                                 AstFor("v2bool_t_f"), "and",
                                  AstFor("v2bool_f_t")}));
 
 INSTANTIATE_TEST_SUITE_P(
@@ -448,11 +451,10 @@ INSTANTIATE_TEST_SUITE_P(
     SpvBinaryLogicalTest,
     ::testing::Values(BinaryData{"bool", "true", "OpLogicalOr", "false",
                                  "__bool", "ScalarConstructor[not set]{true}",
-                                 "logical_or",
-                                 "ScalarConstructor[not set]{false}"},
+                                 "or", "ScalarConstructor[not set]{false}"},
                       BinaryData{"v2bool", "v2bool_t_f", "OpLogicalOr",
                                  "v2bool_f_t", "__vec_2__bool",
-                                 AstFor("v2bool_t_f"), "logical_or",
+                                 AstFor("v2bool_t_f"), "or",
                                  AstFor("v2bool_f_t")}));
 
 INSTANTIATE_TEST_SUITE_P(
@@ -728,6 +730,7 @@ TEST_F(SpvFUnordTest, FUnordEqual_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -758,6 +761,7 @@ TEST_F(SpvFUnordTest, FUnordEqual_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -796,6 +800,7 @@ TEST_F(SpvFUnordTest, FUnordNotEqual_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -826,6 +831,7 @@ TEST_F(SpvFUnordTest, FUnordNotEqual_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -864,6 +870,7 @@ TEST_F(SpvFUnordTest, FUnordLessThan_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -894,6 +901,7 @@ TEST_F(SpvFUnordTest, FUnordLessThan_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -932,6 +940,7 @@ TEST_F(SpvFUnordTest, FUnordLessThanEqual_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -962,6 +971,7 @@ TEST_F(SpvFUnordTest, FUnordLessThanEqual_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -1000,6 +1010,7 @@ TEST_F(SpvFUnordTest, FUnordGreaterThan_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -1030,6 +1041,7 @@ TEST_F(SpvFUnordTest, FUnordGreaterThan_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -1068,6 +1080,7 @@ TEST_F(SpvFUnordTest, FUnordGreaterThanEqual_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       UnaryOp[not set]{
@@ -1098,6 +1111,7 @@ TEST_F(SpvFUnordTest, FUnordGreaterThanEqual_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       UnaryOp[not set]{
@@ -1139,13 +1153,14 @@ TEST_F(SpvLogicalTest, Select_BoolCond_BoolParams) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       Call[not set]{
         Identifier[not set]{select}
         (
-          ScalarConstructor[not set]{true}
           ScalarConstructor[not set]{false}
+          ScalarConstructor[not set]{true}
           ScalarConstructor[not set]{true}
         )
       }
@@ -1171,13 +1186,14 @@ TEST_F(SpvLogicalTest, Select_BoolCond_IntScalarParams) {
   VariableConst{
     x_1
     none
+    undefined
     __u32
     {
       Call[not set]{
         Identifier[not set]{select}
         (
-          ScalarConstructor[not set]{10u}
           ScalarConstructor[not set]{20u}
+          ScalarConstructor[not set]{10u}
           ScalarConstructor[not set]{true}
         )
       }
@@ -1203,13 +1219,14 @@ TEST_F(SpvLogicalTest, Select_BoolCond_FloatScalarParams) {
   VariableConst{
     x_1
     none
+    undefined
     __f32
     {
       Call[not set]{
         Identifier[not set]{select}
         (
-          ScalarConstructor[not set]{50.000000}
           ScalarConstructor[not set]{60.000000}
+          ScalarConstructor[not set]{50.000000}
           ScalarConstructor[not set]{true}
         )
       }
@@ -1238,6 +1255,7 @@ TEST_F(SpvLogicalTest, Select_BoolCond_VectorParams) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Call[not set]{
@@ -1245,13 +1263,13 @@ TEST_F(SpvLogicalTest, Select_BoolCond_VectorParams) {
         (
           TypeConstructor[not set]{
             __vec_2__u32
-            ScalarConstructor[not set]{10u}
             ScalarConstructor[not set]{20u}
+            ScalarConstructor[not set]{10u}
           }
           TypeConstructor[not set]{
             __vec_2__u32
-            ScalarConstructor[not set]{20u}
             ScalarConstructor[not set]{10u}
+            ScalarConstructor[not set]{20u}
           }
           ScalarConstructor[not set]{true}
         )
@@ -1284,6 +1302,7 @@ TEST_F(SpvLogicalTest, Select_VecBoolCond_VectorParams) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Call[not set]{
@@ -1291,13 +1310,13 @@ TEST_F(SpvLogicalTest, Select_VecBoolCond_VectorParams) {
         (
           TypeConstructor[not set]{
             __vec_2__u32
-            ScalarConstructor[not set]{10u}
             ScalarConstructor[not set]{20u}
+            ScalarConstructor[not set]{10u}
           }
           TypeConstructor[not set]{
             __vec_2__u32
-            ScalarConstructor[not set]{20u}
             ScalarConstructor[not set]{10u}
+            ScalarConstructor[not set]{20u}
           }
           TypeConstructor[not set]{
             __vec_2__bool
@@ -1328,6 +1347,7 @@ TEST_F(SpvLogicalTest, Any) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       Call[not set]{
@@ -1362,6 +1382,7 @@ TEST_F(SpvLogicalTest, All) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       Call[not set]{
@@ -1396,6 +1417,7 @@ TEST_F(SpvLogicalTest, IsNan_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       Call[not set]{
@@ -1426,6 +1448,7 @@ TEST_F(SpvLogicalTest, IsNan_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       Call[not set]{
@@ -1460,6 +1483,7 @@ TEST_F(SpvLogicalTest, IsInf_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __bool
     {
       Call[not set]{
@@ -1490,6 +1514,7 @@ TEST_F(SpvLogicalTest, IsInf_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__bool
     {
       Call[not set]{

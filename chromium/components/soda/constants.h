@@ -14,6 +14,10 @@
 
 namespace speech {
 
+extern const char kUsEnglishLocale[];
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
 enum class LanguageCode {
   kNone = 0,
   kEnUs = 1,
@@ -22,6 +26,7 @@ enum class LanguageCode {
   kEsEs = 4,
   kFrFr = 5,
   kItIt = 6,
+  kMaxValue = kItIt,
 };
 
 // Describes all metadata needed to dynamically install SODA language pack
@@ -135,6 +140,8 @@ absl::optional<SodaLanguagePackComponentConfig> GetLanguageComponentConfig(
 LanguageCode GetLanguageCodeByComponentId(const std::string& component_id);
 
 std::string GetLanguageName(LanguageCode language_code);
+
+LanguageCode GetLanguageCode(const std::string& language_name);
 
 }  // namespace speech
 

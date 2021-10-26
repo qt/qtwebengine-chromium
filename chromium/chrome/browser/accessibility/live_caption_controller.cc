@@ -10,9 +10,7 @@
 #include "base/command_line.h"
 #include "base/metrics/histogram_functions.h"
 #include "chrome/browser/accessibility/live_caption_speech_recognition_host.h"
-#include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/caption_bubble_controller.h"
-#include "chrome/common/pref_names.h"
 #include "components/live_caption/caption_util.h"
 #include "components/live_caption/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
@@ -39,8 +37,9 @@ const char* const kCaptionStylePrefsToObserve[] = {
 
 namespace captions {
 
-LiveCaptionController::LiveCaptionController(PrefService* profile_prefs)
-    : profile_prefs_(profile_prefs) {}
+LiveCaptionController::LiveCaptionController(PrefService* profile_prefs,
+                                             PrefService* global_prefs)
+    : profile_prefs_(profile_prefs), global_prefs_(global_prefs) {}
 
 LiveCaptionController::~LiveCaptionController() {
   if (enabled_) {
@@ -114,8 +113,8 @@ void LiveCaptionController::OnLiveCaptionEnabledChanged() {
     StartLiveCaption();
   } else {
     StopLiveCaption();
-    speech::SodaInstaller::GetInstance()->SetUninstallTimer(
-        profile_prefs_, g_browser_process->local_state());
+    speech::SodaInstaller::GetInstance()->SetUninstallTimer(profile_prefs_,
+                                                            global_prefs_);
   }
 }
 
@@ -123,12 +122,11 @@ void LiveCaptionController::OnLiveCaptionLanguageChanged() {
   if (enabled_)
     speech::SodaInstaller::GetInstance()->InstallLanguage(
         profile_prefs_->GetString(prefs::kLiveCaptionLanguageCode),
-        g_browser_process->local_state());
+        global_prefs_);
 }
 
 bool LiveCaptionController::IsLiveCaptionEnabled() {
-  PrefService* profile_prefs = profile_prefs_;
-  return profile_prefs->GetBoolean(prefs::kLiveCaptionEnabled);
+  return profile_prefs_->GetBoolean(prefs::kLiveCaptionEnabled);
 }
 
 void LiveCaptionController::StartLiveCaption() {
@@ -142,12 +140,14 @@ void LiveCaptionController::StartLiveCaption() {
   // whether or not to download. Once SODA is on the device and ready, the
   // SODAInstaller calls OnSodaInstalled on its observers. The UI is created at
   // that time.
-  if (speech::SodaInstaller::GetInstance()->IsSodaInstalled()) {
+  const std::string locale =
+      profile_prefs_->GetString(prefs::kLiveCaptionLanguageCode);
+  if (speech::SodaInstaller::GetInstance()->IsSodaInstalled(
+          speech::GetLanguageCode(locale))) {
     CreateUI();
   } else {
     speech::SodaInstaller::GetInstance()->AddObserver(this);
-    speech::SodaInstaller::GetInstance()->Init(
-        profile_prefs_, g_browser_process->local_state());
+    speech::SodaInstaller::GetInstance()->Init(profile_prefs_, global_prefs_);
   }
 }
 
@@ -169,8 +169,11 @@ void LiveCaptionController::OnSodaInstalled() {
 void LiveCaptionController::CreateUI() {
   if (is_ui_constructed_)
     return;
+
   DCHECK(!base::FeatureList::IsEnabled(media::kUseSodaForLiveCaption) ||
-         speech::SodaInstaller::GetInstance()->IsSodaInstalled());
+         speech::SodaInstaller::GetInstance()->IsSodaInstalled(
+             speech::GetLanguageCode(
+                 profile_prefs_->GetString(prefs::kLiveCaptionLanguageCode))));
   is_ui_constructed_ = true;
 
   caption_bubble_controller_ = CaptionBubbleController::Create();
@@ -212,7 +215,7 @@ void LiveCaptionController::UpdateAccessibilityCaptionHistograms() {
 
 bool LiveCaptionController::DispatchTranscription(
     LiveCaptionSpeechRecognitionHost* live_caption_speech_recognition_host,
-    const media::mojom::SpeechRecognitionResultPtr& result) {
+    const media::SpeechRecognitionResult& result) {
   if (!caption_bubble_controller_)
     return false;
   return caption_bubble_controller_->OnTranscription(

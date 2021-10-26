@@ -305,12 +305,13 @@ class OutOfLineRecordWrite final : public OutOfLineCode {
       // A direct call to a wasm runtime stub defined in this module.
       // Just encode the stub index. This will be patched when the code
       // is added to the native module and copied into wasm code space.
-      __ CallRecordWriteStub(object_, offset_, remembered_set_action,
-                             save_fp_mode, wasm::WasmCode::kRecordWrite);
+      __ CallRecordWriteStubSaveRegisters(object_, offset_,
+                                          remembered_set_action, save_fp_mode,
+                                          StubCallMode::kCallWasmRuntimeStub);
 #endif  // V8_ENABLE_WEBASSEMBLY
     } else {
-      __ CallRecordWriteStub(object_, offset_, remembered_set_action,
-                             save_fp_mode);
+      __ CallRecordWriteStubSaveRegisters(object_, offset_,
+                                          remembered_set_action, save_fp_mode);
     }
     if (must_save_lr_) {
       __ Pop<TurboAssembler::kAuthLR>(padreg, lr);
@@ -436,7 +437,7 @@ class WasmProtectedInstructionTrap final : public WasmOutOfLineTrap {
       : WasmOutOfLineTrap(gen, instr), pc_(pc) {}
 
   void Generate() override {
-    DCHECK(FLAG_wasm_bounds_checks && FLAG_wasm_trap_handler);
+    DCHECK(FLAG_wasm_bounds_checks && !FLAG_wasm_enforce_bounds_checks);
     gen_->AddProtectedInstructionLanding(pc_, __ pc_offset());
     GenerateWithTrapId(TrapId::kTrapMemOutOfBounds);
   }
@@ -841,7 +842,7 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       static_assert(kJavaScriptCallCodeStartRegister == x2, "ABI mismatch");
       __ LoadTaggedPointerField(x2,
                                 FieldMemOperand(func, JSFunction::kCodeOffset));
-      __ CallCodeObject(x2);
+      __ CallCodeTObject(x2);
       RecordCallPosition(instr);
       frame_access_state()->ClearSPDelta();
       break;
@@ -941,9 +942,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
         // We don't actually want to generate a pile of code for this, so just
         // claim there is a stack frame, without generating one.
         FrameScope scope(tasm(), StackFrame::NONE);
-        __ Call(
-            isolate()->builtins()->builtin_handle(Builtins::kAbortCSAAssert),
-            RelocInfo::CODE_TARGET);
+        __ Call(isolate()->builtins()->code_handle(Builtin::kAbortCSAAssert),
+                RelocInfo::CODE_TARGET);
       }
       __ Debug("kArchAbortCSAAssert", 0, BREAK);
       unwinding_info_writer_.MarkBlockWillExit();
@@ -1202,11 +1202,27 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     case kArm64Mul32:
       __ Mul(i.OutputRegister32(), i.InputRegister32(0), i.InputRegister32(1));
       break;
+    case kArm64Sadalp: {
+      DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
+      __ Sadalp(i.OutputSimd128Register().Format(dst_f),
+                i.InputSimd128Register(1).Format(src_f));
+      break;
+    }
     case kArm64Saddlp: {
       VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
       VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
       __ Saddlp(i.OutputSimd128Register().Format(dst_f),
                 i.InputSimd128Register(0).Format(src_f));
+      break;
+    }
+    case kArm64Uadalp: {
+      DCHECK_EQ(i.OutputSimd128Register(), i.InputSimd128Register(0));
+      VectorFormat dst_f = VectorFormatFillQ(LaneSizeField::decode(opcode));
+      VectorFormat src_f = VectorFormatHalfWidthDoubleLanes(dst_f);
+      __ Uadalp(i.OutputSimd128Register().Format(dst_f),
+                i.InputSimd128Register(1).Format(src_f));
       break;
     }
     case kArm64Uaddlp: {
@@ -2994,7 +3010,7 @@ void CodeGenerator::AssembleArchSelect(Instruction* instr,
                                        FlagsCondition condition) {
   Arm64OperandConverter i(this, instr);
   MachineRepresentation rep =
-    LocationOperand::cast(instr->OutputAt(0))->representation();
+      LocationOperand::cast(instr->OutputAt(0))->representation();
   Condition cc = FlagsConditionToCondition(condition);
   // We don't now how many inputs were consumed by the condition, so we have to
   // calculate the indices of the last two inputs.
@@ -3131,7 +3147,7 @@ void CodeGenerator::AssembleConstructFrame() {
     }
 
 #if V8_ENABLE_WEBASSEMBLY
-    if (info()->IsWasm() && required_slots > 128) {
+    if (info()->IsWasm() && required_slots * kSystemPointerSize > 4 * KB) {
       // For WebAssembly functions with big frames we have to do the stack
       // overflow check before we construct the frame. Otherwise we may not
       // have enough space on the stack to call the runtime for the stack
@@ -3140,7 +3156,7 @@ void CodeGenerator::AssembleConstructFrame() {
       // If the frame is bigger than the stack, we throw the stack overflow
       // exception unconditionally. Thereby we can avoid the integer overflow
       // check in the condition code.
-      if (required_slots * kSystemPointerSize < FLAG_stack_size * 1024) {
+      if (required_slots * kSystemPointerSize < FLAG_stack_size * KB) {
         UseScratchRegisterScope scope(tasm());
         Register scratch = scope.AcquireX();
         __ Ldr(scratch, FieldMemOperand(
@@ -3162,12 +3178,11 @@ void CodeGenerator::AssembleConstructFrame() {
       }
 
       __ Call(wasm::WasmCode::kWasmStackOverflow, RelocInfo::WASM_STUB_CALL);
-      // We come from WebAssembly, there are no references for the GC.
+      // The call does not return, hence we can ignore any references and just
+      // define an empty safepoint.
       ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
       RecordSafepoint(reference_map);
-      if (FLAG_debug_code) {
-        __ Brk(0);
-      }
+      if (FLAG_debug_code) __ Brk(0);
       __ Bind(&done);
     }
 #endif  // V8_ENABLE_WEBASSEMBLY
@@ -3251,8 +3266,6 @@ void CodeGenerator::AssembleConstructFrame() {
   __ PushCPURegList(saves_fp);
 
   // Save registers.
-  DCHECK_IMPLIES(!saves.IsEmpty(),
-                 saves.list() == CPURegList::GetCalleeSaved().list());
   __ PushCPURegList<TurboAssembler::kSignLR>(saves);
 
   if (returns != 0) {
@@ -3280,8 +3293,6 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
 
   unwinding_info_writer_.MarkBlockWillExit();
 
-  // We might need x3 for scratch.
-  DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & x3.bit());
   const int parameter_slots =
       static_cast<int>(call_descriptor->ParameterSlotCount());
   Arm64OperandConverter g(this, nullptr);
@@ -3302,9 +3313,9 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
   // If {parameter_slots} == 0, it means it is a builtin with
   // kDontAdaptArgumentsSentinel, which takes care of JS arguments popping
   // itself.
-  const bool drop_jsargs = frame_access_state()->has_frame() &&
-                           call_descriptor->IsJSFunctionCall() &&
-                           parameter_slots != 0;
+  const bool drop_jsargs = parameter_slots != 0 &&
+                           frame_access_state()->has_frame() &&
+                           call_descriptor->IsJSFunctionCall();
   if (call_descriptor->IsCFunctionCall()) {
     AssembleDeconstructFrame();
   } else if (frame_access_state()->has_frame()) {
@@ -3321,6 +3332,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     }
     if (drop_jsargs) {
       // Get the actual argument count.
+      DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
       __ Ldr(argc_reg, MemOperand(fp, StandardFrameConstants::kArgCOffset));
     }
     AssembleDeconstructFrame();
@@ -3330,6 +3342,7 @@ void CodeGenerator::AssembleReturn(InstructionOperand* additional_pop_count) {
     // We must pop all arguments from the stack (including the receiver). This
     // number of arguments is given by max(1 + argc_reg, parameter_slots).
     Label argc_reg_has_final_count;
+    DCHECK_EQ(0u, call_descriptor->CalleeSavedRegisters() & argc_reg.bit());
     __ Add(argc_reg, argc_reg, 1);  // Consider the receiver.
     if (parameter_slots > 1) {
       __ Cmp(argc_reg, Operand(parameter_slots));
@@ -3369,13 +3382,12 @@ void CodeGenerator::PrepareForDeoptimizationExits(
   // Check which deopt kinds exist in this Code object, to avoid emitting jumps
   // to unused entries.
   bool saw_deopt_kind[kDeoptimizeKindCount] = {false};
-  constexpr auto eager_with_resume_reason = DeoptimizeReason::kDynamicCheckMaps;
+  bool saw_deopt_with_resume_reason[kDeoptimizeReasonCount] = {false};
   for (auto exit : *exits) {
-    // TODO(rmcilroy): If we add any other kinds of kEagerWithResume deoptimize
-    // we will need to create a seperate array for each kEagerWithResume builtin
-    DCHECK_IMPLIES(exit->kind() == DeoptimizeKind::kEagerWithResume,
-                   exit->reason() == eager_with_resume_reason);
     saw_deopt_kind[static_cast<int>(exit->kind())] = true;
+    if (exit->kind() == DeoptimizeKind::kEagerWithResume) {
+      saw_deopt_with_resume_reason[static_cast<int>(exit->reason())] = true;
+    }
   }
 
   // Emit the jumps to deoptimization entries.
@@ -3384,17 +3396,22 @@ void CodeGenerator::PrepareForDeoptimizationExits(
   STATIC_ASSERT(static_cast<int>(kFirstDeoptimizeKind) == 0);
   for (int i = 0; i < kDeoptimizeKindCount; i++) {
     if (!saw_deopt_kind[i]) continue;
-    __ bind(&jump_deoptimization_entry_labels_[i]);
     DeoptimizeKind kind = static_cast<DeoptimizeKind>(i);
     if (kind == DeoptimizeKind::kEagerWithResume) {
-      __ LoadEntryFromBuiltinIndex(
-          Deoptimizer::GetDeoptWithResumeBuiltin(eager_with_resume_reason),
-          scratch);
+      for (int j = 0; j < kDeoptimizeReasonCount; j++) {
+        if (!saw_deopt_with_resume_reason[j]) continue;
+        DeoptimizeReason reason = static_cast<DeoptimizeReason>(j);
+        __ bind(&jump_deoptimization_or_resume_entry_labels_[j]);
+        __ LoadEntryFromBuiltin(Deoptimizer::GetDeoptWithResumeBuiltin(reason),
+                                scratch);
+        __ Jump(scratch);
+      }
     } else {
-      __ LoadEntryFromBuiltinIndex(Deoptimizer::GetDeoptimizationEntry(kind),
-                                   scratch);
+      __ bind(&jump_deoptimization_entry_labels_[i]);
+      __ LoadEntryFromBuiltin(Deoptimizer::GetDeoptimizationEntry(kind),
+                              scratch);
+      __ Jump(scratch);
     }
-    __ Jump(scratch);
   }
 }
 

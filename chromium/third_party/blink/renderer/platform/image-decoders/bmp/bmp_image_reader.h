@@ -33,7 +33,6 @@
 
 #include <stdint.h>
 
-#include "base/macros.h"
 #include "third_party/blink/renderer/platform/image-decoders/fast_shared_buffer_reader.h"
 #include "third_party/blink/renderer/platform/image-decoders/image_decoder.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
@@ -61,9 +60,11 @@ class PLATFORM_EXPORT BMPImageReader final {
   // |buffer| points at an empty ImageFrame that we'll initialize and
   // fill with decoded data.
   BMPImageReader(ImageDecoder* parent,
-                 size_t decoded_and_header_offset,
-                 size_t img_data_offset,
+                 wtf_size_t decoded_and_header_offset,
+                 wtf_size_t img_data_offset,
                  bool is_in_ico);
+  BMPImageReader(const BMPImageReader&) = delete;
+  BMPImageReader& operator=(const BMPImageReader&) = delete;
   ~BMPImageReader();
 
   void SetBuffer(ImageFrame* buffer) { buffer_ = buffer; }
@@ -119,7 +120,7 @@ class PLATFORM_EXPORT BMPImageReader final {
     uint8_t rgb_red;
   };
 
-  inline uint8_t ReadUint8(size_t offset) const {
+  inline uint8_t ReadUint8(wtf_size_t offset) const {
     return fast_reader_.GetOneByte(decoded_offset_ + offset);
   }
 
@@ -322,16 +323,16 @@ class PLATFORM_EXPORT BMPImageReader final {
   FastSharedBufferReader fast_reader_{nullptr};
 
   // An index into |data_| representing how much we've already decoded.
-  size_t decoded_offset_;
+  wtf_size_t decoded_offset_;
 
   // The file offset at which the BMP info header starts.
-  size_t header_offset_;
+  wtf_size_t header_offset_;
 
   // The file offset at which the actual image bits start.  When decoding
   // ICO files, this is set to 0, since it's not stored anywhere in a
   // header; the reader functions expect the image data to start
   // immediately after the header and (if necessary) color table.
-  size_t img_data_offset_;
+  wtf_size_t img_data_offset_;
 
   // The BMP info header.
   BitmapInfoHeader info_header_;
@@ -395,8 +396,6 @@ class PLATFORM_EXPORT BMPImageReader final {
   // header, thus doubling it). If |is_in_ico_| is true, this variable tracks
   // whether we've begun decoding this mask yet.
   bool decoding_and_mask_ = false;
-
-  DISALLOW_COPY_AND_ASSIGN(BMPImageReader);
 };
 
 }  // namespace blink

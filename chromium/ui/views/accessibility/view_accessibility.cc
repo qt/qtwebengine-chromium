@@ -17,6 +17,8 @@
 #include "ui/accessibility/platform/ax_platform_node.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate.h"
 #include "ui/base/buildflags.h"
+#include "ui/display/display.h"
+#include "ui/display/screen.h"
 #include "ui/views/accessibility/views_ax_tree_manager.h"
 #include "ui/views/accessibility/widget_ax_tree_id_map.h"
 #include "ui/views/view.h"
@@ -80,7 +82,8 @@ ViewAccessibility::~ViewAccessibility() = default;
 
 void ViewAccessibility::AddVirtualChildView(
     std::unique_ptr<AXVirtualView> virtual_view) {
-  AddVirtualChildViewAt(std::move(virtual_view), int{virtual_children_.size()});
+  AddVirtualChildViewAt(std::move(virtual_view),
+                        static_cast<int>(virtual_children_.size()));
 }
 
 void ViewAccessibility::AddVirtualChildViewAt(
@@ -88,7 +91,7 @@ void ViewAccessibility::AddVirtualChildViewAt(
     int index) {
   DCHECK(virtual_view);
   DCHECK_GE(index, 0);
-  DCHECK_LE(size_t{index}, virtual_children_.size());
+  DCHECK_LE(static_cast<size_t>(index), virtual_children_.size());
 
   if (virtual_view->parent_view() == this)
     return;
@@ -276,6 +279,15 @@ void ViewAccessibility::GetAccessibleNodeData(ui::AXNodeData* data) const {
          "ViewAccessibility::OverrideChildTreeID.";
   if (child_tree_id_) {
     data->AddChildTreeId(child_tree_id_.value());
+
+    if (widget && widget->GetNativeView() && display::Screen::GetScreen()) {
+      const float scale_factor =
+          display::Screen::GetScreen()
+              ->GetDisplayNearestView(view_->GetWidget()->GetNativeView())
+              .device_scale_factor();
+      data->AddFloatAttribute(ax::mojom::FloatAttribute::kChildTreeScale,
+                              scale_factor);
+    }
   }
 }
 

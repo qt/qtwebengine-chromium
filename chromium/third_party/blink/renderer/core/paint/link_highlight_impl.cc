@@ -32,6 +32,7 @@
 #include "base/memory/ptr_util.h"
 #include "cc/layers/picture_layer.h"
 #include "cc/paint/display_item_list.h"
+#include "skia/ext/skia_matrix_44.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/web/blink.h"
 #include "third_party/blink/renderer/core/dom/layout_tree_builder_traversal.h"
@@ -62,7 +63,6 @@
 #include "third_party/blink/renderer/platform/graphics/paint/transform_paint_property_node.h"
 #include "third_party/blink/renderer/platform/web_test_support.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
-#include "third_party/skia/include/core/SkMatrix44.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 #include "ui/gfx/geometry/size_f.h"
@@ -217,7 +217,9 @@ void LinkHighlightImpl::StartHighlightAnimationIfNeeded() {
       timing_function));
 
   auto keyframe_model = std::make_unique<CompositorKeyframeModel>(
-      *curve, compositor_target_property::OPACITY, 0, 0);
+      *curve, 0, 0,
+      CompositorKeyframeModel::TargetPropertyId(
+          compositor_target_property::OPACITY));
 
   compositor_animation_->AddKeyframeModel(std::move(keyframe_model));
 }
@@ -244,7 +246,7 @@ void LinkHighlightImpl::UpdateAfterPrePaint() {
     return;
   DCHECK(!object->GetFrameView()->ShouldThrottleRendering());
 
-  size_t fragment_count = 0;
+  wtf_size_t fragment_count = 0;
   for (const auto* fragment = &object->FirstFragment(); fragment;
        fragment = fragment->NextFragment())
     ++fragment_count;

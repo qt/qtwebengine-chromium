@@ -11,6 +11,10 @@ constexpr char kAttestationInterface[] = "org.chromium.Attestation";
 constexpr char kAttestationServicePath[] = "/org/chromium/Attestation";
 constexpr char kAttestationServiceName[] = "org.chromium.Attestation";
 
+// 5 minutes timeout for all attestation calls.
+// This is a bit on the long side, but we want to be cautious.
+constexpr int kAttestationServiceTimeoutInMs = 5 * 60 * 1000;
+
 // Methods exported by attestation.
 constexpr char kCreateGoogleAttestedKey[] = "CreateGoogleAttestedKey";
 constexpr char kGetKeyInfo[] = "GetKeyInfo";

@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/cxx17_backports.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
@@ -213,8 +213,9 @@ TEST_F(ProxyResolverV8TracingTest, JavascriptError) {
   EXPECT_EQ("Prepare to DIE!", mock_bindings.GetAlerts()[0]);
   ASSERT_EQ(1u, mock_bindings.GetErrors().size());
   EXPECT_EQ(5, mock_bindings.GetErrors()[0].first);
-  EXPECT_EQ("Uncaught TypeError: Cannot read property 'split' of null",
-            mock_bindings.GetErrors()[0].second);
+  EXPECT_EQ(
+      "Uncaught TypeError: Cannot read properties of null (reading 'split')",
+      mock_bindings.GetErrors()[0].second);
 }
 
 TEST_F(ProxyResolverV8TracingTest, TooManyAlerts) {

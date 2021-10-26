@@ -26,7 +26,6 @@
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
-#include "third_party/blink/public/common/manifest/manifest.h"
 #include "third_party/blink/public/common/manifest/manifest_icon_selector.h"
 #include "third_party/blink/public/mojom/devtools/console_message.mojom.h"
 #include "ui/gfx/geometry/size.h"
@@ -47,7 +46,7 @@ InstallablePaymentAppCrawler::InstallablePaymentAppCrawler(
     : log_(content::WebContents::FromRenderFrameHost(
           initiator_render_frame_host)),
       merchant_origin_(merchant_origin),
-      initiator_frame_routing_id_(content::GlobalFrameRoutingId(
+      initiator_frame_routing_id_(content::GlobalRenderFrameHostId(
           initiator_render_frame_host->GetProcess()->GetID(),
           initiator_render_frame_host->GetRoutingID())),
       downloader_(downloader),
@@ -427,7 +426,7 @@ bool InstallablePaymentAppCrawler::DownloadAndDecodeWebAppIcon(
   // TODO(crbug.com/1058840): Move this sanity check to ManifestIconDownloader
   // after DownloadImage refactor is done.
   auto* rfh = content::RenderFrameHost::FromID(initiator_frame_routing_id_);
-  auto* web_contents = rfh && rfh->IsCurrent()
+  auto* web_contents = rfh && rfh->IsActive()
                            ? content::WebContents::FromRenderFrameHost(rfh)
                            : nullptr;
   if (!web_contents) {

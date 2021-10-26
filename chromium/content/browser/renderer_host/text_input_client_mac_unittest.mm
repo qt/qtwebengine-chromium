@@ -212,9 +212,15 @@ TEST_F(TextInputClientMacTest, GetRectForRange) {
 TEST_F(TextInputClientMacTest, TimeoutRectForRange) {
   base::RunLoop run_loop;
   local_frame()->SetCallback(run_loop.QuitClosure());
+
+  base::TimeDelta old_timeout = service()->wait_timeout_for_tests();
+  service()->set_wait_timeout_for_tests(base::TimeDelta::FromMilliseconds(300));
+
   gfx::Rect rect =
       service()->GetFirstRectForRange(widget(), gfx::Range(NSMakeRange(0, 32)));
   run_loop.Run();
+
+  service()->set_wait_timeout_for_tests(old_timeout);
   EXPECT_EQ(gfx::Rect(), rect);
 }
 

@@ -10,11 +10,10 @@
 
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "components/safe_browsing/core/proto/csd.pb.h"
+#include "components/safe_browsing/core/common/proto/csd.pb.h"
 
 namespace network {
 class SimpleURLLoader;

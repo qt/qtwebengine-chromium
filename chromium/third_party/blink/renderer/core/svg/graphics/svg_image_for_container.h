@@ -69,8 +69,8 @@ class CORE_EXPORT SVGImageForContainer final : public Image {
         image, container_size_without_zoom, zoom, url));
   }
 
-  IntSize Size() const override;
-  FloatSize SizeAsFloat(RespectImageOrientationEnum) const override;
+  IntSize SizeWithConfig(SizeConfig) const override;
+  FloatSize SizeWithConfigAsFloat(SizeConfig) const override;
 
   bool HasIntrinsicSize() const override { return image_->HasIntrinsicSize(); }
 
@@ -80,25 +80,23 @@ class CORE_EXPORT SVGImageForContainer final : public Image {
             const cc::PaintFlags&,
             const FloatRect&,
             const FloatRect&,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override;
 
   // FIXME: Implement this to be less conservative.
   bool CurrentFrameKnownToBeOpaque() override { return false; }
 
+  bool IsSVGImageForContainer() const override { return true; }
+
   PaintImage PaintImageForCurrentFrame() override;
 
  protected:
   void DrawPattern(GraphicsContext&,
-                   const FloatRect&,
-                   const FloatSize&,
-                   const FloatPoint&,
-                   SkBlendMode,
-                   const FloatRect&,
-                   const FloatSize& repeat_spacing,
-                   RespectImageOrientationEnum) override;
+                   const cc::PaintFlags&,
+                   const FloatRect& dest_rect,
+                   const ImageTilingInfo&,
+                   const ImageDrawOptions& draw_options) override;
 
  private:
   SVGImageForContainer(SVGImage* image,

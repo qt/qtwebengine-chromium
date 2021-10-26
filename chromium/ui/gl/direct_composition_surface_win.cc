@@ -394,7 +394,8 @@ DirectCompositionSurfaceWin::DirectCompositionSurfaceWin(
           std::move(vsync_callback),
           settings.use_angle_texture_offset,
           settings.max_pending_frames,
-          settings.force_root_surface_full_damage)),
+          settings.force_root_surface_full_damage,
+          settings.force_root_surface_full_damage_always)),
       layer_tree_(
           std::make_unique<DCLayerTree>(settings.disable_nv12_dynamic_textures,
                                         settings.disable_vp_scaling)) {
@@ -581,6 +582,7 @@ void DirectCompositionSurfaceWin::SetScaledOverlaysSupportedForTesting(
     g_yuy2_overlay_support_flags &= ~DXGI_OVERLAY_SUPPORT_FLAG_SCALING;
     g_rgb10a2_overlay_support_flags &= ~DXGI_OVERLAY_SUPPORT_FLAG_SCALING;
   }
+  g_disable_sw_overlays = !supported;
   SetSupportsHardwareOverlays(supported);
   DCHECK_EQ(supported, AreScaledOverlaysSupported());
 }
@@ -835,8 +837,8 @@ void DirectCompositionSurfaceWin::SetVSyncEnabled(bool enabled) {
 }
 
 bool DirectCompositionSurfaceWin::ScheduleDCLayer(
-    const ui::DCRendererLayerParams& params) {
-  return layer_tree_->ScheduleDCLayer(params);
+    std::unique_ptr<ui::DCRendererLayerParams> params) {
+  return layer_tree_->ScheduleDCLayer(std::move(params));
 }
 
 void DirectCompositionSurfaceWin::SetFrameRate(float frame_rate) {

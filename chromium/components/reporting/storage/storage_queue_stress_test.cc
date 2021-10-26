@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <initializer_list>
 #include <utility>
-#include <vector>
 
 #include "base/containers/flat_map.h"
 #include "base/files/file_path.h"
@@ -19,6 +18,8 @@
 #include "base/task/thread_pool.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "components/reporting/compression/compression_module.h"
+#include "components/reporting/compression/test_compression_module.h"
 #include "components/reporting/encryption/test_encryption_module.h"
 #include "components/reporting/proto/record.pb.h"
 #include "components/reporting/storage/resources/resource_interface.h"
@@ -124,9 +125,9 @@ class TestUploadClient : public UploaderInterface {
 class StorageQueueStressTest : public ::testing::TestWithParam<size_t> {
  public:
   void SetUp() override {
-    // Enable encryption.
+    // Enable compression.
     scoped_feature_list_.InitFromCommandLine(
-        {EncryptionModuleInterface::kEncryptedReporting}, {});
+        {CompressionModule::kCompressReportingFeature}, {});
 
     ASSERT_TRUE(location_.CreateUniqueTempDir());
     options_.set_directory(base::FilePath(location_.GetPath()))
@@ -146,6 +147,8 @@ class StorageQueueStressTest : public ::testing::TestWithParam<size_t> {
     ASSERT_FALSE(storage_queue_) << "StorageQueue already assigned";
     test_encryption_module_ =
         base::MakeRefCounted<test::TestEncryptionModule>();
+    test_compression_module_ =
+        base::MakeRefCounted<test::TestCompressionModule>();
     test::TestEvent<Status> key_update_event;
     test_encryption_module_->UpdateAsymmetricKey("DUMMY KEY", 0,
                                                  key_update_event.cb());
@@ -156,7 +159,8 @@ class StorageQueueStressTest : public ::testing::TestWithParam<size_t> {
         options,
         base::BindRepeating(&StorageQueueStressTest::AsyncStartTestUploader,
                             base::Unretained(this)),
-        test_encryption_module_, storage_queue_create_event.cb());
+        test_encryption_module_, test_compression_module_,
+        storage_queue_create_event.cb());
     StatusOr<scoped_refptr<StorageQueue>> storage_queue_result =
         storage_queue_create_event.result();
     ASSERT_OK(storage_queue_result) << "Failed to create StorageQueue, error="
@@ -211,6 +215,7 @@ class StorageQueueStressTest : public ::testing::TestWithParam<size_t> {
   base::ScopedTempDir location_;
   StorageOptions options_;
   scoped_refptr<test::TestEncryptionModule> test_encryption_module_;
+  scoped_refptr<test::TestCompressionModule> test_compression_module_;
   scoped_refptr<StorageQueue> storage_queue_;
 
   // Test-wide global mapping of <generation id, sequencing id> to record

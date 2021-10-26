@@ -742,6 +742,9 @@ message LxdContainerStartingSignal {
     // One or more steps failed and the container could not be started. No
     // more signals are expected.
     FAILED = 3;
+
+    // Still starting, this is sent as a heartbeat on an interval.
+    STARTING = 4;
   }
 
   // The current status of starting the container.
@@ -1618,4 +1621,22 @@ message GetVshSessionResponse {
 
   // Process ID of shell spawned from vshd running in container.
   int32 container_shell_pid = 3;
+}
+
+// Sent by chrome in response to a SelectFile dialog request.
+message FileSelectedSignal {
+  // Name of the VM.
+  string vm_name = 1;
+
+  // Name of the container within the VM.
+  string container_name = 2;
+
+  // The owner of the VM.
+  string owner_id = 3;
+
+  // Token sent in request to match with response signal.
+  string select_file_token = 4;
+
+  // Files selected by user in SelectFile dialog.
+  repeated string files = 5;
 }

@@ -111,6 +111,7 @@ static av_cold int init(AVFilterContext *ctx)
     ass_set_message_cb(ass->library, ass_log, ctx);
 
     ass_set_fonts_dir(ass->library, ass->fontsdir);
+    ass_set_extract_fonts(ass->library, 1);
 
     ass->renderer = ass_renderer_init(ass->library);
     if (!ass->renderer) {
@@ -246,7 +247,7 @@ static av_cold int init_ass(AVFilterContext *ctx)
     return 0;
 }
 
-AVFilter ff_vf_ass = {
+const AVFilter ff_vf_ass = {
     .name          = "ass",
     .description   = NULL_IF_CONFIG_SMALL("Render ASS subtitles onto input video using the libass library."),
     .priv_size     = sizeof(AssContext),
@@ -480,7 +481,7 @@ end:
     return ret;
 }
 
-AVFilter ff_vf_subtitles = {
+const AVFilter ff_vf_subtitles = {
     .name          = "subtitles",
     .description   = NULL_IF_CONFIG_SMALL("Render text subtitles onto input video using the libass library."),
     .priv_size     = sizeof(AssContext),

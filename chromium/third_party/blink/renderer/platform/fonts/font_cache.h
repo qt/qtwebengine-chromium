@@ -53,8 +53,8 @@
 #include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
-#include "third_party/blink/renderer/platform/wtf/text/unicode.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/wtf_uchar.h"
 #include "third_party/skia/include/core/SkFontMgr.h"
 #include "third_party/skia/include/core/SkRefCnt.h"
 
@@ -250,6 +250,13 @@ class PLATFORM_EXPORT FontCache {
   static AtomicString GetGenericFamilyNameForScript(
       const AtomicString& family_name,
       const FontDescription&);
+  // Locale-specific families can use different |SkTypeface| for a family name
+  // if locale is different.
+  static const char* GetLocaleSpecificFamilyName(
+      const AtomicString& family_name);
+  sk_sp<SkTypeface> CreateLocaleSpecificTypeface(
+      const FontDescription& font_description,
+      const char* locale_family_name);
 #endif  // defined(OS_ANDROID)
 
 #if defined(OS_LINUX) || defined(OS_CHROMEOS)
@@ -273,6 +280,8 @@ class PLATFORM_EXPORT FontCache {
 
   FontFallbackMap& GetFontFallbackMap();
 
+  FontCache(const FontCache&) = delete;
+  FontCache& operator=(const FontCache&) = delete;
   ~FontCache() = default;
 
  private:
@@ -334,6 +343,7 @@ class PLATFORM_EXPORT FontCache {
   static AtomicString GetFamilyNameForCharacter(SkFontMgr*,
                                                 UChar32,
                                                 const FontDescription&,
+                                                const char* family_name,
                                                 FontFallbackPriority);
 #endif  // defined(OS_ANDROID) || defined(OS_LINUX) || defined(OS_CHROMEOS)
 
@@ -402,8 +412,7 @@ class PLATFORM_EXPORT FontCache {
 
   friend class SimpleFontData;  // For fontDataFromFontPlatformData
   friend class FontFallbackList;
-
-  DISALLOW_COPY_AND_ASSIGN(FontCache);
+  FRIEND_TEST_ALL_PREFIXES(FontCacheAndroidTest, LocaleSpecificTypeface);
 };
 
 class PLATFORM_EXPORT FontCachePurgePreventer {
@@ -411,13 +420,23 @@ class PLATFORM_EXPORT FontCachePurgePreventer {
 
  public:
   FontCachePurgePreventer() { FontCache::GetFontCache()->DisablePurging(); }
+  FontCachePurgePreventer(const FontCachePurgePreventer&) = delete;
+  FontCachePurgePreventer& operator=(const FontCachePurgePreventer&) = delete;
   ~FontCachePurgePreventer() { FontCache::GetFontCache()->EnablePurging(); }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(FontCachePurgePreventer);
 };
 
 AtomicString ToAtomicString(const SkString&);
+
+#if defined(OS_ANDROID)
+// static
+inline const char* FontCache::GetLocaleSpecificFamilyName(
+    const AtomicString& family_name) {
+  // Only `serif` has `fallbackFor` according to the current `fonts.xml`.
+  if (family_name == font_family_names::kWebkitSerif)
+    return "serif";
+  return nullptr;
+}
+#endif
 
 }  // namespace blink
 

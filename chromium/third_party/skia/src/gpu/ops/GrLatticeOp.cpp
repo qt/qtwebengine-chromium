@@ -5,11 +5,14 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/ops/GrLatticeOp.h"
+
 #include "include/core/SkBitmap.h"
 #include "include/core/SkRect.h"
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/gpu/GrDrawOpTest.h"
+#include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrGpu.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramInfo.h"
@@ -19,9 +22,7 @@
 #include "src/gpu/SkGr.h"
 #include "src/gpu/glsl/GrGLSLColorSpaceXformHelper.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
-#include "src/gpu/glsl/GrGLSLGeometryProcessor.h"
 #include "src/gpu/glsl/GrGLSLVarying.h"
-#include "src/gpu/ops/GrLatticeOp.h"
 #include "src/gpu/ops/GrMeshDrawOp.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
 
@@ -41,12 +42,12 @@ public:
 
     const char* name() const override { return "LatticeGP"; }
 
-    void getGLSLProcessorKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const override {
+    void addToKey(const GrShaderCaps&, GrProcessorKeyBuilder* b) const override {
         b->add32(GrColorSpaceXform::XformKey(fColorSpaceXform.get()));
     }
 
-    GrGLSLGeometryProcessor* createGLSLInstance(const GrShaderCaps& caps) const override {
-        class GLSLProcessor : public GrGLSLGeometryProcessor {
+    std::unique_ptr<ProgramImpl> makeProgramImpl(const GrShaderCaps&) const override {
+        class Impl : public ProgramImpl {
         public:
             void setData(const GrGLSLProgramDataManager& pdman,
                          const GrShaderCaps&,
@@ -67,13 +68,16 @@ public:
                 gpArgs->fLocalCoordVar = latticeGP.fInTextureCoords.asShaderVar();
 
                 args.fFragBuilder->codeAppend("float2 textureCoords;");
-                args.fVaryingHandler->addPassThroughAttribute(latticeGP.fInTextureCoords,
-                                                              "textureCoords");
+                args.fVaryingHandler->addPassThroughAttribute(
+                        latticeGP.fInTextureCoords.asShaderVar(),
+                        "textureCoords");
                 args.fFragBuilder->codeAppend("float4 textureDomain;");
                 args.fVaryingHandler->addPassThroughAttribute(
-                        latticeGP.fInTextureDomain, "textureDomain", Interpolation::kCanBeFlat);
+                        latticeGP.fInTextureDomain.asShaderVar(),
+                        "textureDomain",
+                        Interpolation::kCanBeFlat);
                 args.fFragBuilder->codeAppendf("half4 %s;", args.fOutputColor);
-                args.fVaryingHandler->addPassThroughAttribute(latticeGP.fInColor,
+                args.fVaryingHandler->addPassThroughAttribute(latticeGP.fInColor.asShaderVar(),
                                                               args.fOutputColor,
                                                               Interpolation::kCanBeFlat);
                 args.fFragBuilder->codeAppendf("%s = ", args.fOutputColor);
@@ -86,9 +90,11 @@ public:
                 args.fFragBuilder->codeAppend(";");
                 args.fFragBuilder->codeAppendf("const half4 %s = half4(1);", args.fOutputCoverage);
             }
+
             GrGLSLColorSpaceXformHelper fColorSpaceXformHelper;
         };
-        return new GLSLProcessor;
+
+        return std::make_unique<Impl>();
     }
 
 private:
@@ -166,7 +172,7 @@ public:
 
     const char* name() const override { return "NonAALatticeOp"; }
 
-    void visitProxies(const VisitProxyFunc& func) const override {
+    void visitProxies(const GrVisitProxyFunc& func) const override {
         func(fView.proxy(), GrMipmapped::kNo);
         if (fProgramInfo) {
             fProgramInfo->visitFPProxies(func);
@@ -197,8 +203,9 @@ private:
     void onCreateProgramInfo(const GrCaps* caps,
                              SkArenaAlloc* arena,
                              const GrSurfaceProxyView& writeView,
+                             bool usesMSAASurface,
                              GrAppliedClip&& appliedClip,
-                             const GrXferProcessor::DstProxyView& dstProxyView,
+                             const GrDstProxyView& dstProxyView,
                              GrXferBarrierFlags renderPassXferBarriers,
                              GrLoadOp colorLoadOp) override {
 
@@ -218,7 +225,7 @@ private:
                                                                    &GrUserStencilSettings::kUnused);
     }
 
-    void onPrepareDraws(Target* target) override {
+    void onPrepareDraws(GrMeshDrawTarget* target) override {
         if (!fProgramInfo) {
             this->createProgramInfo(target);
             if (!fProgramInfo) {

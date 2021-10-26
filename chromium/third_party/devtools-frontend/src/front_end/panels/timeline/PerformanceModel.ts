@@ -6,13 +6,13 @@
 
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
-import type * as Bindings from '../../models/bindings/bindings.js'; // eslint-disable-line no-unused-vars
+import type * as Bindings from '../../models/bindings/bindings.js';
 import * as TimelineModel from '../../models/timeline_model/timeline_model.js';
 
 import {TimelineUIUtils} from './TimelineUIUtils.js';
 
 export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper {
-  _mainTarget: SDK.SDKModel.Target|null;
+  _mainTarget: SDK.Target.Target|null;
   _tracingModel: SDK.TracingModel.TracingModel|null;
   _filters: TimelineModel.TimelineModelFilter.TimelineModelFilter[];
   _timelineModel: TimelineModel.TimelineModel.TimelineModelImpl;
@@ -45,11 +45,11 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper {
     this._recordStartTime = undefined;
   }
 
-  setMainTarget(target: SDK.SDKModel.Target): void {
+  setMainTarget(target: SDK.Target.Target): void {
     this._mainTarget = target;
   }
 
-  mainTarget(): SDK.SDKModel.Target|null {
+  mainTarget(): SDK.Target.Target|null {
     return this._mainTarget;
   }
 
@@ -139,14 +139,14 @@ export class PerformanceModel extends Common.ObjectWrapper.ObjectWrapper {
   }
 
   frames(): TimelineModel.TimelineFrameModel.TimelineFrame[] {
-    return this._frameModel.frames();
+    return this._frameModel.getFrames();
   }
 
   frameModel(): TimelineModel.TimelineFrameModel.TimelineFrameModel {
     return this._frameModel;
   }
 
-  interactionRecords(): Common.SegmentedRange.Segment[] {
+  interactionRecords(): Common.SegmentedRange.Segment<TimelineModel.TimelineIRModel.Phases>[] {
     return this._irModel.interactionRecords();
   }
 

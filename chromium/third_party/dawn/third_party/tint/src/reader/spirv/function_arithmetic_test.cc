@@ -159,6 +159,7 @@ TEST_F(SpvUnaryArithTest, SNegate_Int_Int) {
   VariableConst{
     x_1
     none
+    undefined
     __i32
     {
       UnaryOp[not set]{
@@ -187,6 +188,7 @@ TEST_F(SpvUnaryArithTest, SNegate_Int_Uint) {
   VariableConst{
     x_1
     none
+    undefined
     __i32
     {
       UnaryOp[not set]{
@@ -217,6 +219,7 @@ TEST_F(SpvUnaryArithTest, SNegate_Uint_Int) {
   VariableConst{
     x_1
     none
+    undefined
     __u32
     {
       Bitcast[not set]<__u32>{
@@ -247,6 +250,7 @@ TEST_F(SpvUnaryArithTest, SNegate_Uint_Uint) {
   VariableConst{
     x_1
     none
+    undefined
     __u32
     {
       Bitcast[not set]<__u32>{
@@ -279,6 +283,7 @@ TEST_F(SpvUnaryArithTest, SNegate_SignedVec_SignedVec) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__i32
     {
       UnaryOp[not set]{
@@ -311,6 +316,7 @@ TEST_F(SpvUnaryArithTest, SNegate_SignedVec_UnsignedVec) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__i32
     {
       UnaryOp[not set]{
@@ -345,6 +351,7 @@ TEST_F(SpvUnaryArithTest, SNegate_UnsignedVec_SignedVec) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Bitcast[not set]<__vec_2__u32>{
@@ -379,6 +386,7 @@ TEST_F(SpvUnaryArithTest, SNegate_UnsignedVec_UnsignedVec) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Bitcast[not set]<__vec_2__u32>{
@@ -415,6 +423,7 @@ TEST_F(SpvUnaryArithTest, FNegate_Scalar) {
   VariableConst{
     x_1
     none
+    undefined
     __f32
     {
       UnaryOp[not set]{
@@ -443,6 +452,7 @@ TEST_F(SpvUnaryArithTest, FNegate_Vector) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__f32
     {
       UnaryOp[not set]{
@@ -498,6 +508,7 @@ TEST_P(SpvBinaryArithTest, EmitExpression) {
   ss << R"(VariableConst{
     x_1
     none
+    undefined
     )"
      << GetParam().ast_type << "\n    {\n      Binary[not set]{"
      << "\n        " << GetParam().ast_lhs << "\n        " << GetParam().ast_op
@@ -543,6 +554,7 @@ TEST_P(SpvBinaryArithGeneralTest, EmitExpression) {
   ss << R"(VariableConst{
     x_1
     none
+    undefined
     )"
      << GetParam().expected;
   auto got = ToString(p->builder(), fe.ast_body());
@@ -1021,6 +1033,7 @@ TEST_F(SpvBinaryArithTestBasic, SDiv_Scalar_UnsignedResult) {
   VariableConst{
     x_1
     none
+    undefined
     __u32
     {
       Bitcast[not set]<__u32>{
@@ -1056,6 +1069,7 @@ TEST_F(SpvBinaryArithTestBasic, SDiv_Vector_UnsignedResult) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Bitcast[not set]<__vec_2__u32>{
@@ -1166,6 +1180,7 @@ TEST_F(SpvBinaryArithTestBasic, SMod_Scalar_UnsignedResult) {
   VariableConst{
     x_1
     none
+    undefined
     __u32
     {
       Bitcast[not set]<__u32>{
@@ -1201,6 +1216,7 @@ TEST_F(SpvBinaryArithTestBasic, SMod_Vector_UnsignedResult) {
   VariableConst{
     x_1
     none
+    undefined
     __vec_2__u32
     {
       Bitcast[not set]<__vec_2__u32>{
@@ -1223,17 +1239,119 @@ TEST_F(SpvBinaryArithTestBasic, SMod_Vector_UnsignedResult) {
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    SpvParserTest_FMod,
+    SpvParserTest_FRem,
     SpvBinaryArithTest,
     ::testing::Values(
         // Scalar float
-        BinaryData{"float", "float_50", "OpFMod", "float_60", "__f32",
+        BinaryData{"float", "float_50", "OpFRem", "float_60", "__f32",
                    "ScalarConstructor[not set]{50.000000}", "modulo",
                    "ScalarConstructor[not set]{60.000000}"},
         // Vector float
-        BinaryData{"v2float", "v2float_50_60", "OpFMod", "v2float_60_50",
+        BinaryData{"v2float", "v2float_50_60", "OpFRem", "v2float_60_50",
                    "__vec_2__f32", AstFor("v2float_50_60"), "modulo",
                    AstFor("v2float_60_50")}));
+
+TEST_F(SpvBinaryArithTestBasic, FMod_Scalar) {
+  const auto assembly = Preamble() + R"(
+     %100 = OpFunction %void None %voidfn
+     %entry = OpLabel
+     %1 = OpFMod %float %float_50 %float_60
+     OpReturn
+     OpFunctionEnd
+  )";
+  auto p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions())
+      << p->error() << "\n"
+      << assembly;
+  auto fe = p->function_emitter(100);
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+  EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(
+  VariableConst{
+    x_1
+    none
+    undefined
+    __f32
+    {
+      Binary[not set]{
+        ScalarConstructor[not set]{50.000000}
+        subtract
+        Binary[not set]{
+          ScalarConstructor[not set]{60.000000}
+          multiply
+          Call[not set]{
+            Identifier[not set]{floor}
+            (
+              Binary[not set]{
+                ScalarConstructor[not set]{50.000000}
+                divide
+                ScalarConstructor[not set]{60.000000}
+              }
+            )
+          }
+        }
+      }
+    }
+  })"));
+}
+
+TEST_F(SpvBinaryArithTestBasic, FMod_Vector) {
+  const auto assembly = Preamble() + R"(
+     %100 = OpFunction %void None %voidfn
+     %entry = OpLabel
+     %1 = OpFMod %v2float %v2float_50_60 %v2float_60_50
+     OpReturn
+     OpFunctionEnd
+  )";
+  auto p = parser(test::Assemble(assembly));
+  ASSERT_TRUE(p->BuildAndParseInternalModuleExceptFunctions())
+      << p->error() << "\n"
+      << assembly;
+  auto fe = p->function_emitter(100);
+  EXPECT_TRUE(fe.EmitBody()) << p->error();
+  EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(
+  VariableConst{
+    x_1
+    none
+    undefined
+    __vec_2__f32
+    {
+      Binary[not set]{
+        TypeConstructor[not set]{
+          __vec_2__f32
+          ScalarConstructor[not set]{50.000000}
+          ScalarConstructor[not set]{60.000000}
+        }
+        subtract
+        Binary[not set]{
+          TypeConstructor[not set]{
+            __vec_2__f32
+            ScalarConstructor[not set]{60.000000}
+            ScalarConstructor[not set]{50.000000}
+          }
+          multiply
+          Call[not set]{
+            Identifier[not set]{floor}
+            (
+              Binary[not set]{
+                TypeConstructor[not set]{
+                  __vec_2__f32
+                  ScalarConstructor[not set]{50.000000}
+                  ScalarConstructor[not set]{60.000000}
+                }
+                divide
+                TypeConstructor[not set]{
+                  __vec_2__f32
+                  ScalarConstructor[not set]{60.000000}
+                  ScalarConstructor[not set]{50.000000}
+                }
+              }
+            )
+          }
+        }
+      }
+    }
+  })"));
+}
 
 TEST_F(SpvBinaryArithTestBasic, VectorTimesScalar) {
   const auto assembly = Preamble() + R"(
@@ -1253,6 +1371,7 @@ TEST_F(SpvBinaryArithTestBasic, VectorTimesScalar) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
+    undefined
     __vec_2__f32
     {
       Binary[not set]{
@@ -1282,6 +1401,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesScalar) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
+    undefined
     __mat_2_2__f32
     {
       Binary[not set]{
@@ -1311,6 +1431,7 @@ TEST_F(SpvBinaryArithTestBasic, VectorTimesMatrix) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
+    undefined
     __vec_2__f32
     {
       Binary[not set]{
@@ -1340,6 +1461,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesVector) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
+    undefined
     __vec_2__f32
     {
       Binary[not set]{
@@ -1369,6 +1491,7 @@ TEST_F(SpvBinaryArithTestBasic, MatrixTimesMatrix) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_10
     none
+    undefined
     __mat_2_2__f32
     {
       Binary[not set]{
@@ -1398,6 +1521,7 @@ TEST_F(SpvBinaryArithTestBasic, Dot) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_3
     none
+    undefined
     __f32
     {
       Call[not set]{
@@ -1432,6 +1556,7 @@ TEST_F(SpvBinaryArithTestBasic, OuterProduct) {
   EXPECT_THAT(got, HasSubstr(R"(VariableConst{
     x_3
     none
+    undefined
     __mat_3_2__f32
     {
       TypeConstructor[not set]{
@@ -1560,6 +1685,7 @@ TEST_P(SpvBinaryDerivativeTest, Derivatives) {
   EXPECT_THAT(ToString(p->builder(), fe.ast_body()), HasSubstr(R"(VariableConst{
     x_2
     none
+    undefined
     )" + arg.ast_type + R"(
     {
       Call[not set]{
@@ -1610,6 +1736,7 @@ VariableDeclStatement{
   VariableConst{
     x_2
     none
+    undefined
     __mat_2_2__f32
     {
       Call[not set]{
@@ -1648,6 +1775,7 @@ VariableDeclStatement{
   VariableConst{
     x_2
     none
+    undefined
     __mat_2_3__f32
     {
       Call[not set]{
@@ -1683,6 +1811,7 @@ VariableDeclStatement{
   VariableConst{
     x_2
     none
+    undefined
     __mat_3_2__f32
     {
       Call[not set]{

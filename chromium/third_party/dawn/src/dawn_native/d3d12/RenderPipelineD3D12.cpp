@@ -96,11 +96,11 @@ namespace dawn_native { namespace d3d12 {
             }
         }
 
-        D3D12_INPUT_CLASSIFICATION InputStepModeFunction(wgpu::InputStepMode mode) {
+        D3D12_INPUT_CLASSIFICATION VertexStepModeFunction(wgpu::VertexStepMode mode) {
             switch (mode) {
-                case wgpu::InputStepMode::Vertex:
+                case wgpu::VertexStepMode::Vertex:
                     return D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA;
-                case wgpu::InputStepMode::Instance:
+                case wgpu::VertexStepMode::Instance:
                     return D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA;
             }
         }
@@ -326,21 +326,26 @@ namespace dawn_native { namespace d3d12 {
 
     ResultOrError<Ref<RenderPipeline>> RenderPipeline::Create(
         Device* device,
-        const RenderPipelineDescriptor2* descriptor) {
+        const RenderPipelineDescriptor* descriptor) {
         Ref<RenderPipeline> pipeline = AcquireRef(new RenderPipeline(device, descriptor));
         DAWN_TRY(pipeline->Initialize(descriptor));
         return pipeline;
     }
 
-    MaybeError RenderPipeline::Initialize(const RenderPipelineDescriptor2* descriptor) {
+    MaybeError RenderPipeline::Initialize(const RenderPipelineDescriptor* descriptor) {
         Device* device = ToBackend(GetDevice());
         uint32_t compileFlags = 0;
-#if defined(_DEBUG)
-        // Enable better shader debugging with the graphics debugging tools.
-        compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
-#endif
+
+        if (device->IsToggleEnabled(Toggle::EmitHLSLDebugSymbols)) {
+            compileFlags |= D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+        }
+
         // SPRIV-cross does matrix multiplication expecting row major matrices
         compileFlags |= D3DCOMPILE_PACK_MATRIX_ROW_MAJOR;
+
+        // FXC can miscompile code that depends on special float values (NaN, INF, etc) when IEEE
+        // strictness is not enabled. See crbug.com/tint/976.
+        compileFlags |= D3DCOMPILE_IEEE_STRICTNESS;
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC descriptorD3D12 = {};
 
@@ -458,7 +463,7 @@ namespace dawn_native { namespace d3d12 {
             const VertexBufferInfo& input = GetVertexBuffer(attribute.vertexBufferSlot);
 
             inputElementDescriptor.AlignedByteOffset = attribute.offset;
-            inputElementDescriptor.InputSlotClass = InputStepModeFunction(input.stepMode);
+            inputElementDescriptor.InputSlotClass = VertexStepModeFunction(input.stepMode);
             if (inputElementDescriptor.InputSlotClass ==
                 D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA) {
                 inputElementDescriptor.InstanceDataStepRate = 0;

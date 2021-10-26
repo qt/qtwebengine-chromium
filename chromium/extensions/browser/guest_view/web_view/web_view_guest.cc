@@ -620,8 +620,8 @@ void WebViewGuest::GuestZoomChanged(double old_zoom_level,
   double old_zoom_factor = ConvertZoomLevelToZoomFactor(old_zoom_level);
   double new_zoom_factor = ConvertZoomLevelToZoomFactor(new_zoom_level);
   auto args = std::make_unique<base::DictionaryValue>();
-  args->SetDouble(webview::kOldZoomFactor, old_zoom_factor);
-  args->SetDouble(webview::kNewZoomFactor, new_zoom_factor);
+  args->SetDoubleKey(webview::kOldZoomFactor, old_zoom_factor);
+  args->SetDoubleKey(webview::kNewZoomFactor, new_zoom_factor);
   DispatchEventToView(std::make_unique<GuestViewEvent>(
       webview::kEventZoomChange, std::move(args)));
 }
@@ -862,39 +862,6 @@ WebViewGuest::WebViewGuest(WebContents* owner_web_contents)
 WebViewGuest::~WebViewGuest() {
 }
 
-void WebViewGuest::ReadyToCommitNavigation(
-    content::NavigationHandle* navigation_handle) {
-  // Return early if no declarative content scripts are present.
-  //
-  // Note - more granular checks (e.g. against URL patterns) are desirable for
-  // performance (to avoid creating unnecessary URLLoaderFactory), but not
-  // necessarily for security (because there are anyway no OOPIFs inside the
-  // GuestView process - https://crbug.com/614463).  At the same time, more
-  // granular checks are difficult to achieve, because the UserScript objects
-  // are not retained (i.e. only UserScriptIDs are available) by
-  // WebViewContentScriptManager.
-  WebViewContentScriptManager* script_manager =
-      WebViewContentScriptManager::Get(browser_context());
-  int embedder_process_id =
-      owner_web_contents()->GetMainFrame()->GetProcess()->GetID();
-  std::set<std::string> script_ids = script_manager->GetContentScriptIDSet(
-      embedder_process_id, view_instance_id());
-  if (script_ids.empty())
-    return;
-
-  // At ReadyToCommitNavigation time there is no need to trigger an explicit
-  // push of URLLoaderFactoryBundle to the renderer - it is sufficient if the
-  // factories are pushed slightly later - during the commit.
-  constexpr bool kPushToRendererNow = false;
-
-  // Content scripts run in an isolated world associated with the origin of the
-  // <webview> embedder.
-  navigation_handle->GetRenderFrameHost()
-      ->MarkIsolatedWorldsAsRequiringSeparateURLLoaderFactory(
-          {owner_web_contents()->GetMainFrame()->GetLastCommittedOrigin()},
-          kPushToRendererNow);
-}
-
 void WebViewGuest::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
   if (navigation_handle->IsErrorPage() || !navigation_handle->HasCommitted()) {
@@ -918,7 +885,10 @@ void WebViewGuest::DidFinishNavigation(
       return;
   }
 
-  if (navigation_handle->IsInMainFrame() && pending_zoom_factor_) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (navigation_handle->IsInPrimaryMainFrame() && pending_zoom_factor_) {
     // Handle a pending zoom if one exists.
     SetZoom(pending_zoom_factor_);
     pending_zoom_factor_ = 0.0;
@@ -950,7 +920,7 @@ void WebViewGuest::DidFinishNavigation(
 void WebViewGuest::LoadProgressChanged(double progress) {
   auto args = std::make_unique<base::DictionaryValue>();
   args->SetString(guest_view::kUrl, web_contents()->GetURL().spec());
-  args->SetDouble(webview::kProgress, progress);
+  args->SetDoubleKey(webview::kProgress, progress);
   DispatchEventToView(std::make_unique<GuestViewEvent>(
       webview::kEventLoadProgress, std::move(args)));
 }
@@ -965,7 +935,10 @@ void WebViewGuest::DocumentOnLoadCompletedInMainFrame(
 void WebViewGuest::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
   WebViewGuest* opener = GetOpener();
-  if (opener && navigation_handle->IsInMainFrame()) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (opener && navigation_handle->IsInPrimaryMainFrame()) {
     auto it = opener->pending_new_windows_.find(this);
     if (it != opener->pending_new_windows_.end()) {
       NewWindowInfo& info = it->second;

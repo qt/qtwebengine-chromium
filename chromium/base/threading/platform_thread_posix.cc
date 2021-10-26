@@ -19,7 +19,6 @@
 #include "base/debug/activity_tracker.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/no_destructor.h"
 #include "base/threading/platform_thread_internal_posix.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/threading/thread_id_name_manager.h"
@@ -195,7 +194,7 @@ PlatformThreadId PlatformThread::CurrentId() {
 #if defined(OS_APPLE)
   return pthread_mach_thread_np(pthread_self());
 #elif defined(OS_LINUX) || defined(OS_CHROMEOS)
-  static NoDestructor<InitAtFork> init_at_fork;
+  static InitAtFork init_at_fork;
   if (g_thread_id == -1) {
     g_thread_id = syscall(__NR_gettid);
   } else {
@@ -206,6 +205,11 @@ PlatformThreadId PlatformThread::CurrentId() {
   }
   return g_thread_id;
 #elif defined(OS_ANDROID)
+  // Note: do not cache the return value inside a thread_local variable on
+  // Android (as above). The reasons are:
+  // - thread_local is slow on Android (goes through emutls)
+  // - gettid() is fast, since its return value is cached in pthread (in the
+  //   thread control block of pthread). See gettid.c in bionic.
   return gettid();
 #elif defined(OS_FUCHSIA)
   return zx_thread_self();

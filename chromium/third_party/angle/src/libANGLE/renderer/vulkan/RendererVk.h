@@ -35,6 +35,11 @@
 #include "libANGLE/renderer/vulkan/vk_internal_shaders_autogen.h"
 #include "libANGLE/renderer/vulkan/vk_mem_alloc_wrapper.h"
 
+namespace angle
+{
+class Library;
+}  // namespace angle
+
 namespace egl
 {
 class Display;
@@ -217,17 +222,19 @@ class RendererVk : angle::NonCopyable
 
     ANGLE_INLINE egl::ContextPriority getDriverPriority(egl::ContextPriority priority)
     {
-        return mPriorities[priority];
+        return mCommandQueue.getDriverPriority(priority);
     }
 
     // This command buffer should be submitted immediately via queueSubmitOneOff.
     angle::Result getCommandBufferOneOff(vk::Context *context,
+                                         bool hasProtectedContent,
                                          vk::PrimaryCommandBuffer *commandBufferOut);
 
     // Fire off a single command buffer immediately with default priority.
     // Command buffer must be allocated with getCommandBufferOneOff and is reclaimed.
     angle::Result queueSubmitOneOff(vk::Context *context,
                                     vk::PrimaryCommandBuffer &&primary,
+                                    bool hasProtectedContent,
                                     egl::ContextPriority priority,
                                     const vk::Fence *fence,
                                     vk::SubmitPolicy submitPolicy,
@@ -339,6 +346,7 @@ class RendererVk : angle::NonCopyable
     void cleanupCompletedCommandsGarbage();
 
     angle::Result submitFrame(vk::Context *context,
+                              bool hasProtectedContent,
                               egl::ContextPriority contextPriority,
                               std::vector<VkSemaphore> &&waitSemaphores,
                               std::vector<VkPipelineStageFlags> &&waitSemaphoreStageMasks,
@@ -353,13 +361,15 @@ class RendererVk : angle::NonCopyable
                                                Serial serial,
                                                uint64_t timeout,
                                                VkResult *result);
-    angle::Result finish(vk::Context *context);
+    angle::Result finish(vk::Context *context, bool hasProtectedContent);
     angle::Result checkCompletedCommands(vk::Context *context);
 
     angle::Result flushRenderPassCommands(vk::Context *context,
+                                          bool hasProtectedContent,
                                           const vk::RenderPass &renderPass,
                                           vk::CommandBufferHelper **renderPassCommands);
     angle::Result flushOutsideRPCommands(vk::Context *context,
+                                         bool hasProtectedContent,
                                          vk::CommandBufferHelper **outsideRPCommands);
 
     VkResult queuePresent(vk::Context *context,
@@ -389,6 +399,14 @@ class RendererVk : angle::NonCopyable
         return mSupportedVulkanPipelineStageMask;
     }
 
+    angle::Result getFormatDescriptorCountForVkFormat(ContextVk *contextVk,
+                                                      VkFormat format,
+                                                      uint32_t *descriptorCountOut);
+
+    angle::Result getFormatDescriptorCountForExternalFormat(ContextVk *contextVk,
+                                                            uint64_t format,
+                                                            uint32_t *descriptorCountOut);
+
   private:
     angle::Result initializeDevice(DisplayVk *displayVk, uint32_t queueFamilyIndex);
     void ensureCapsInitialized() const;
@@ -409,6 +427,8 @@ class RendererVk : angle::NonCopyable
                               const VkFormatFeatureFlags featureBits) const;
 
     egl::Display *mDisplay;
+
+    std::unique_ptr<angle::Library> mLibVulkanLibrary;
 
     mutable bool mCapsInitialized;
     mutable gl::Caps mNativeCaps;
@@ -446,14 +466,18 @@ class RendererVk : angle::NonCopyable
     VkPhysicalDeviceDepthStencilResolvePropertiesKHR mDepthStencilResolveProperties;
     VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT
         mMultisampledRenderToSingleSampledFeatures;
+    VkPhysicalDeviceMultiviewFeatures mMultiviewFeatures;
+    VkPhysicalDeviceMultiviewProperties mMultiviewProperties;
     VkPhysicalDeviceDriverPropertiesKHR mDriverProperties;
+    VkPhysicalDeviceCustomBorderColorFeaturesEXT mCustomBorderColorFeatures;
+    VkPhysicalDeviceProtectedMemoryFeatures mProtectedMemoryFeatures;
+    VkPhysicalDeviceProtectedMemoryProperties mProtectedMemoryProperties;
     VkExternalFenceProperties mExternalFenceProperties;
     VkExternalSemaphoreProperties mExternalSemaphoreProperties;
     VkPhysicalDeviceSamplerYcbcrConversionFeatures mSamplerYcbcrConversionFeatures;
     std::vector<VkQueueFamilyProperties> mQueueFamilyProperties;
-    angle::PackedEnumMap<egl::ContextPriority, egl::ContextPriority> mPriorities;
-    uint32_t mCurrentQueueFamilyIndex;
     uint32_t mMaxVertexAttribDivisor;
+    uint32_t mCurrentQueueFamilyIndex;
     VkDeviceSize mMaxVertexAttribStride;
     VkDeviceSize mMinImportedHostPointerAlignment;
     uint32_t mDefaultUniformBufferSize;
@@ -513,6 +537,7 @@ class RendererVk : angle::NonCopyable
     vk::Allocator mAllocator;
     SamplerCache mSamplerCache;
     SamplerYcbcrConversionCache mYuvConversionCache;
+    angle::HashMap<VkFormat, uint32_t> mVkFormatDescriptorCountMap;
     vk::ActiveHandleCounter mActiveHandleCounts;
 
     // Tracks resource serials.

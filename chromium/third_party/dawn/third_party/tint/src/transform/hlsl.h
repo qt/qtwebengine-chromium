@@ -27,8 +27,25 @@ namespace transform {
 /// Hlsl is a transform used to sanitize a Program for use with the Hlsl writer.
 /// Passing a non-sanitized Program to the Hlsl writer will result in undefined
 /// behavior.
-class Hlsl : public Transform {
+class Hlsl : public Castable<Hlsl, Transform> {
  public:
+  /// Configuration options for the Hlsl sanitizer transform.
+  struct Config : public Castable<Data, transform::Data> {
+    /// Constructor
+    /// @param disable_workgroup_init `true` to disable workgroup memory zero
+    ///        initialization
+    explicit Config(bool disable_workgroup_init = false);
+
+    /// Copy constructor
+    Config(const Config&);
+
+    /// Destructor
+    ~Config() override;
+
+    /// Set to `true` to disable workgroup memory zero initialization
+    bool disable_workgroup_init = false;
+  };
+
   /// Constructor
   Hlsl();
   ~Hlsl() override;
@@ -40,10 +57,6 @@ class Hlsl : public Transform {
   Output Run(const Program* program, const DataMap& data = {}) override;
 
  private:
-  /// Hoists the array and structure initializers to a constant variable,
-  /// declared just before the statement of usage. See crbug.com/tint/406 for
-  /// more details
-  void PromoteInitializersToConstVar(CloneContext& ctx) const;
   /// Add an empty shader entry point if none exist in the module.
   void AddEmptyEntryPoint(CloneContext& ctx) const;
 };

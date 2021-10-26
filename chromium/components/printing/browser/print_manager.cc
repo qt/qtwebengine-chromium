@@ -17,6 +17,12 @@ PrintManager::PrintManager(content::WebContents* contents)
 
 PrintManager::~PrintManager() = default;
 
+void PrintManager::BindReceiver(
+    mojo::PendingAssociatedReceiver<mojom::PrintManagerHost> receiver,
+    content::RenderFrameHost* rfh) {
+  print_manager_host_receivers_.Bind(rfh, std::move(receiver));
+}
+
 void PrintManager::RenderFrameDeleted(
     content::RenderFrameHost* render_frame_host) {
   print_render_frames_.erase(render_frame_host);

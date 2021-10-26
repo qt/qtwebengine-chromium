@@ -4,7 +4,7 @@
 
 """Implements commands for running/interacting with Fuchsia on an emulator."""
 
-import amber_repo
+import pkg_repo
 import boot_data
 import logging
 import os
@@ -16,19 +16,16 @@ import tempfile
 
 
 class EmuTarget(target.Target):
-  def __init__(self, out_dir, target_cpu, system_log_file, fuchsia_out_dir):
+  def __init__(self, out_dir, target_cpu, system_log_file):
     """out_dir: The directory which will contain the files that are
                    generated to support the emulator deployment.
     target_cpu: The emulated target CPU architecture.
                 Can be 'x64' or 'arm64'."""
 
-    # fuchsia_out_dir is unused by emulator targets.
-    del fuchsia_out_dir
-
     super(EmuTarget, self).__init__(out_dir, target_cpu)
     self._emu_process = None
     self._system_log_file = system_log_file
-    self._amber_repo = None
+    self._pkg_repo = None
 
   def __enter__(self):
     return self
@@ -68,9 +65,8 @@ class EmuTarget(target.Target):
       temporary_log_file = tempfile.NamedTemporaryFile('w')
       stdout = temporary_log_file
 
-    # TODO(crbug.com/1100402): Delete when no longer needed for debug info.
-    # Log system statistics at the start of the emulator run.
-    _LogSystemStatistics('system_start_statistics_log')
+    LogProcessStatistics('proc_stat_start_log')
+    LogSystemStatistics('system_statistics_start_log')
 
     self._emu_process = subprocess.Popen(emu_command,
                                          stdin=open(os.devnull),
@@ -80,17 +76,18 @@ class EmuTarget(target.Target):
 
     try:
       self._WaitUntilReady()
+      LogProcessStatistics('proc_stat_ready_log')
     except target.FuchsiaTargetException:
       if temporary_log_file:
         logging.info('Kernel logs:\n' +
                      open(temporary_log_file.name, 'r').read())
       raise
 
-  def GetAmberRepo(self):
-    if not self._amber_repo:
-      self._amber_repo = amber_repo.ManagedAmberRepo(self)
+  def GetPkgRepo(self):
+    if not self._pkg_repo:
+      self._pkg_repo = pkg_repo.ManagedPkgRepo(self)
 
-    return self._amber_repo
+    return self._pkg_repo
 
   def Shutdown(self):
     if not self._emu_process:
@@ -109,9 +106,8 @@ class EmuTarget(target.Target):
       logging.error('%s quit unexpectedly with exit code %d' %
                     (self.EMULATOR_NAME, returncode))
 
-    # TODO(crbug.com/1100402): Delete when no longer needed for debug info.
-    # Log system statistics at the end of the emulator run.
-    _LogSystemStatistics('system_end_statistics_log')
+    LogProcessStatistics('proc_stat_end_log')
+    LogSystemStatistics('system_statistics_end_log')
 
 
   def _IsEmuStillRunning(self):
@@ -128,8 +124,7 @@ class EmuTarget(target.Target):
     return boot_data.GetSSHConfigPath(self._out_dir)
 
 
-# TODO(crbug.com/1100402): Delete when no longer needed for debug info.
-def _LogSystemStatistics(log_file_name):
+def LogSystemStatistics(log_file_name):
   statistics_log = runner_logs.FileStreamFor(log_file_name)
   # Log the cpu load and process information.
   subprocess.call(['top', '-b', '-n', '1'],
@@ -137,6 +132,14 @@ def _LogSystemStatistics(log_file_name):
                   stdout=statistics_log,
                   stderr=subprocess.STDOUT)
   subprocess.call(['ps', '-ax'],
+                  stdin=open(os.devnull),
+                  stdout=statistics_log,
+                  stderr=subprocess.STDOUT)
+
+
+def LogProcessStatistics(log_file_name):
+  statistics_log = runner_logs.FileStreamFor(log_file_name)
+  subprocess.call(['cat', '/proc/stat'],
                   stdin=open(os.devnull),
                   stdout=statistics_log,
                   stderr=subprocess.STDOUT)

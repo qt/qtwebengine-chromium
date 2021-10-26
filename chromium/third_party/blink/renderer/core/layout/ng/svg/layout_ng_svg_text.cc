@@ -4,10 +4,19 @@
 
 #include "third_party/blink/renderer/core/layout/ng/svg/layout_ng_svg_text.h"
 
+#include <limits>
+
+#include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/layout/ng/inline/ng_fragment_item.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_physical_box_fragment.h"
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_inline_text.h"
+#include "third_party/blink/renderer/core/layout/svg/layout_svg_resource_container.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
+#include "third_party/blink/renderer/core/layout/svg/svg_resources.h"
+#include "third_party/blink/renderer/core/layout/svg/transformed_hit_test_location.h"
+#include "third_party/blink/renderer/core/paint/paint_info.h"
+#include "third_party/blink/renderer/core/paint/scoped_svg_paint_state.h"
+#include "third_party/blink/renderer/core/paint/svg_model_object_painter.h"
 #include "third_party/blink/renderer/core/svg/svg_text_element.h"
 
 namespace blink {
@@ -17,6 +26,19 @@ LayoutNGSVGText::LayoutNGSVGText(Element* element)
       needs_update_bounding_box_(true),
       needs_text_metrics_update_(true) {
   DCHECK(IsA<SVGTextElement>(element));
+}
+
+void LayoutNGSVGText::StyleDidChange(StyleDifference diff,
+                                     const ComputedStyle* old_style) {
+  NOT_DESTROYED();
+  LayoutNGBlockFlowMixin<LayoutSVGBlock>::StyleDidChange(diff, old_style);
+  SVGResources::UpdatePaints(*GetElement(), old_style, StyleRef());
+}
+
+void LayoutNGSVGText::WillBeDestroyed() {
+  NOT_DESTROYED();
+  SVGResources::ClearPaints(*GetElement(), Style());
+  LayoutNGBlockFlowMixin<LayoutSVGBlock>::WillBeDestroyed();
 }
 
 const char* LayoutNGSVGText::GetName() const {
@@ -64,6 +86,7 @@ void LayoutNGSVGText::SubtreeStructureChanged(
     return;
 
   SetNeedsTextMetricsUpdate();
+  LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(*this);
 }
 
 void LayoutNGSVGText::UpdateFont() {
@@ -71,6 +94,35 @@ void LayoutNGSVGText::UpdateFont() {
        descendant = descendant->NextInPreOrder(this)) {
     if (auto* text = DynamicTo<LayoutSVGInlineText>(descendant))
       text->UpdateScaledFont();
+  }
+}
+
+void LayoutNGSVGText::Paint(const PaintInfo& paint_info) const {
+  if (paint_info.phase != PaintPhase::kForeground &&
+      paint_info.phase != PaintPhase::kForcedColorsModeBackplate &&
+      paint_info.phase != PaintPhase::kSelectionDragImage) {
+    return;
+  }
+
+  PaintInfo block_info(paint_info);
+  if (const auto* properties = FirstFragment().PaintProperties()) {
+    if (const auto* transform = properties->Transform())
+      block_info.TransformCullRect(*transform);
+  }
+  ScopedSVGTransformState transform_state(block_info, *this);
+
+  if (block_info.phase == PaintPhase::kForeground)
+    SVGModelObjectPainter::RecordHitTestData(*this, block_info);
+
+  LayoutNGBlockFlowMixin<LayoutSVGBlock>::Paint(block_info);
+
+  // Svg doesn't follow HTML PaintPhases, but is implemented with HTML classes.
+  // The nearest self-painting layer is the containing <svg> element which is
+  // painted using ReplacedPainter and ignores kDescendantOutlinesOnly.
+  // Begin a fake kOutline to paint outlines, if any.
+  if (paint_info.phase == PaintPhase::kForeground) {
+    block_info.phase = PaintPhase::kOutline;
+    LayoutNGBlockFlowMixin<LayoutSVGBlock>::Paint(block_info);
   }
 }
 
@@ -98,12 +150,15 @@ void LayoutNGSVGText::UpdateBlockLayout(bool relayout_children) {
     needs_text_metrics_update_ = false;
   }
 
+  FloatRect old_boundaries = ObjectBoundingBox();
+
   UpdateNGBlockLayout();
   needs_update_bounding_box_ = true;
 
-  // TODO(crbug.com/1179585): Pass |bounds_changed|, and check the return value
-  // of the function.
-  UpdateTransformAfterLayout(true);
+  const bool bounds_changed = old_boundaries != ObjectBoundingBox();
+  // If our bounds changed, notify the parents.
+  if (UpdateTransformAfterLayout(bounds_changed) || bounds_changed)
+    SetNeedsBoundariesUpdate();
 }
 
 bool LayoutNGSVGText::IsObjectBoundingBoxValid() const {
@@ -124,7 +179,7 @@ FloatRect LayoutNGSVGText::ObjectBoundingBox() const {
       if (!fragment.Items())
         continue;
       for (const auto& item : fragment.Items()->Items()) {
-        if (item.Type() != NGFragmentItem::kSVGText)
+        if (item.Type() != NGFragmentItem::kSvgText)
           continue;
         // Do not use item.RectInContainerFragment() in order to avoid
         // precision loss.
@@ -152,6 +207,39 @@ FloatRect LayoutNGSVGText::VisualRectInLocalSVGCoordinates() const {
   if (box.IsEmpty())
     return FloatRect();
   return SVGLayoutSupport::ComputeVisualRectForText(*this, box);
+}
+
+bool LayoutNGSVGText::NodeAtPoint(HitTestResult& result,
+                                  const HitTestLocation& hit_test_location,
+                                  const PhysicalOffset& accumulated_offset,
+                                  HitTestAction action) {
+  TransformedHitTestLocation local_location(hit_test_location,
+                                            LocalToSVGParentTransform());
+  return local_location &&
+         LayoutNGBlockFlowMixin<LayoutSVGBlock>::NodeAtPoint(
+             result, *local_location, accumulated_offset, action);
+}
+
+PositionWithAffinity LayoutNGSVGText::PositionForPoint(
+    const PhysicalOffset& point_in_contents) const {
+  NOT_DESTROYED();
+  FloatPoint point(point_in_contents.left, point_in_contents.top);
+  float min_distance = std::numeric_limits<float>::max();
+  const LayoutSVGInlineText* closest_inline_text = nullptr;
+  for (const LayoutObject* descendant = FirstChild(); descendant;
+       descendant = descendant->NextInPreOrder(this)) {
+    const auto* text = DynamicTo<LayoutSVGInlineText>(descendant);
+    if (!text)
+      continue;
+    float distance = descendant->ObjectBoundingBox().SquaredDistanceTo(point);
+    if (distance >= min_distance)
+      continue;
+    min_distance = distance;
+    closest_inline_text = text;
+  }
+  if (!closest_inline_text)
+    return CreatePositionWithAffinity(0);
+  return closest_inline_text->PositionForPoint(point_in_contents);
 }
 
 void LayoutNGSVGText::SetNeedsPositioningValuesUpdate() {

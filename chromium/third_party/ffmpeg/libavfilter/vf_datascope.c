@@ -18,7 +18,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
@@ -450,7 +449,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_datascope = {
+const AVFilter ff_vf_datascope = {
     .name          = "datascope",
     .description   = NULL_IF_CONFIG_SMALL("Video data analysis."),
     .priv_size     = sizeof(DatascopeContext),
@@ -739,7 +738,7 @@ static const AVFilterPad pixscope_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_pixscope = {
+const AVFilter ff_vf_pixscope = {
     .name          = "pixscope",
     .description   = NULL_IF_CONFIG_SMALL("Pixel data analysis."),
     .priv_size     = sizeof(PixscopeContext),
@@ -1145,7 +1144,7 @@ static const AVFilterPad oscilloscope_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_oscilloscope = {
+const AVFilter ff_vf_oscilloscope = {
     .name          = "oscilloscope",
     .description   = NULL_IF_CONFIG_SMALL("2D Video Oscilloscope."),
     .priv_size     = sizeof(OscilloscopeContext),

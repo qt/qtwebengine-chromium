@@ -13,6 +13,7 @@
 #include "build/branding_buildflags.h"
 #include "components/autofill/core/browser/autofill_experiments.h"
 #include "components/autofill/core/browser/data_model/credit_card.h"
+#include "components/autofill/core/browser/payments/autofill_save_card_ui_utils_mobile.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
@@ -21,6 +22,7 @@
 #include "components/infobars/core/infobar.h"
 #include "components/infobars/core/infobar_manager.h"
 #include "components/prefs/pref_service.h"
+#include "components/signin/public/identity_manager/account_info.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/window_open_disposition.h"
@@ -36,7 +38,8 @@ AutofillSaveCardInfoBarDelegateMobile::AutofillSaveCardInfoBarDelegateMobile(
     AutofillClient::UploadSaveCardPromptCallback
         upload_save_card_prompt_callback,
     AutofillClient::LocalSaveCardPromptCallback local_save_card_prompt_callback,
-    PrefService* pref_service)
+    PrefService* pref_service,
+    const AccountInfo& displayed_target_account)
     : ConfirmInfoBarDelegate(),
       upload_(upload),
       options_(options),
@@ -53,9 +56,16 @@ AutofillSaveCardInfoBarDelegateMobile::AutofillSaveCardInfoBarDelegateMobile(
       cardholder_name_(card.GetRawInfo(CREDIT_CARD_NAME_FULL)),
       expiration_date_month_(card.Expiration2DigitMonthAsString()),
       expiration_date_year_(card.Expiration4DigitYearAsString()),
-      legal_message_lines_(legal_message_lines) {
+      legal_message_lines_(legal_message_lines),
+      displayed_target_account_email_(
+          base::UTF8ToUTF16((displayed_target_account.email))),
+      displayed_target_account_avatar_(displayed_target_account.account_image) {
   DCHECK_EQ(upload, !upload_save_card_prompt_callback_.is_null());
   DCHECK_EQ(upload, local_save_card_prompt_callback_.is_null());
+  if (!upload) {
+    DCHECK(displayed_target_account_email_.empty());
+    DCHECK(displayed_target_account_avatar_.IsEmpty());
+  }
 
   AutofillMetrics::LogCreditCardInfoBarMetric(
       AutofillMetrics::INFOBAR_SHOWN, upload_, options_,
@@ -106,8 +116,7 @@ std::u16string AutofillSaveCardInfoBarDelegateMobile::GetDescriptionText()
 }
 
 int AutofillSaveCardInfoBarDelegateMobile::GetIconId() const {
-  return IsGooglePayBrandingEnabled() ? IDR_AUTOFILL_GOOGLE_PAY_WITH_DIVIDER
-                                      : IDR_INFOBAR_AUTOFILL_CC;
+  return GetSaveCardIconId(IsGooglePayBrandingEnabled());
 }
 
 std::u16string AutofillSaveCardInfoBarDelegateMobile::GetMessageText() const {
@@ -223,11 +232,8 @@ void AutofillSaveCardInfoBarDelegateMobile::LogUserAction(
       user_action, upload_, options_,
       pref_service_->GetInteger(
           prefs::kAutofillAcceptSaveCreditCardPromptState));
-  pref_service_->SetInteger(
-      prefs::kAutofillAcceptSaveCreditCardPromptState,
-      user_action == AutofillMetrics::INFOBAR_ACCEPTED
-          ? prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_ACCEPTED
-          : prefs::PREVIOUS_SAVE_CREDIT_CARD_PROMPT_USER_DECISION_DENIED);
+  UpdateAutofillAcceptSaveCreditCardPromptState(
+      pref_service_, user_action == AutofillMetrics::INFOBAR_ACCEPTED);
   had_user_interaction_ = true;
 }
 

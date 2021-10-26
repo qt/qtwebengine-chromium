@@ -5,14 +5,12 @@
 #ifndef MEDIA_BASE_VIDEO_FRAME_METADATA_H_
 #define MEDIA_BASE_VIDEO_FRAME_METADATA_H_
 
-#include "base/compiler_specific.h"
-#include "base/macros.h"
 #include "base/time/time.h"
 #include "base/unguessable_token.h"
-#include "base/values.h"
 #include "build/build_config.h"
 #include "media/base/media_export.h"
 #include "media/base/video_transformation.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace media {
@@ -124,6 +122,9 @@ struct MEDIA_EXPORT VideoFrameMetadata {
   // notified about its promotability to an overlay.
   bool wants_promotion_hint = false;
 
+  // Windows only: set when frame is backed by a dcomp surface handle.
+  bool dcomp_surface = false;
+
   // This video frame comes from protected content.
   bool protected_video = false;
 
@@ -141,6 +142,10 @@ struct MEDIA_EXPORT VideoFrameMetadata {
 
   // Whether this frame was decoded in a power efficient way.
   bool power_efficient = false;
+
+  // Implemented only for single texture backed frames, true means the origin of
+  // the texture is top left and false means bottom left.
+  bool texture_origin_is_top_left = true;
 
   // CompositorFrameMetadata variables associated with this frame. Used for
   // remote debugging.

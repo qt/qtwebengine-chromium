@@ -38,6 +38,7 @@
 #include "components/history/core/browser/visit_tracker.h"
 #include "sql/init_status.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
+#include "url/origin.h"
 
 class SkBitmap;
 
@@ -158,11 +159,6 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
     // be forwarded to the HistoryServiceObservers in the correct thread.
     virtual void NotifyURLsModified(const URLRows& changed_urls) = 0;
 
-    // TODO(https://crbug.com/1141501): this is for an experiment, and will be
-    // removed once data is collected from experiment.
-    virtual void NotifyURLsModified(const URLRows& changed_urls,
-                                    UrlsModifiedReason reason);
-
     // Notify HistoryService that some or all of the URLs have been deleted.
     // The event will be forwarded to the HistoryServiceObservers in the correct
     // thread.
@@ -248,6 +244,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   void AddContentModelAnnotationsForVisit(
       VisitID visit_id,
       const VisitContentModelAnnotations& model_annotations);
+  void AddRelatedSearchesForVisit(
+      VisitID visit_id,
+      const std::vector<std::string>& related_searches);
 
   // Querying ------------------------------------------------------------------
 
@@ -324,10 +323,15 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   // Gets the last time any webpage on the given host was visited within the
   // time range [`begin_time`, `end_time`). If the given host has not been
   // visited in the given time range, the result will have a null base::Time,
-  // but still report success.
-  HistoryLastVisitResult GetLastVisitToHost(const GURL& host,
+  // but still report success. Only queries http and https hosts.
+  HistoryLastVisitResult GetLastVisitToHost(const std::string& host,
                                             base::Time begin_time,
                                             base::Time end_time);
+
+  // Same as the above, but for the given origin instead of host.
+  HistoryLastVisitResult GetLastVisitToOrigin(const url::Origin& origin,
+                                              base::Time begin_time,
+                                              base::Time end_time);
 
   // Gets the last time `url` was visited before `end_time`. If the given URL
   // has not been visited in the past, the result will have a null base::Time,
@@ -428,12 +432,27 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
                                     const std::u16string& term);
 
   // Clusters ------------------------------------------------------------------
+  // See `HistoryService`'s comments for details on these functions.
 
   void AddContextAnnotationsForVisit(
       VisitID visit_id,
       const VisitContextAnnotations& visit_context_annotations);
 
-  std::vector<AnnotatedVisit> GetAnnotatedVisits(int max_results);
+  std::vector<AnnotatedVisit> GetAnnotatedVisits(const QueryOptions& options);
+
+  ClusterIdsAndAnnotatedVisitsResult GetRecentClusterIdsAndAnnotatedVisits(
+      base::Time minimum_time,
+      int max_results);
+
+  std::vector<Cluster> GetClusters(int max_results);
+
+  // Finds the 1st visit in the redirect chain containing `visit`. Similar to
+  // `GetRedirectsToSpecificVisit()`, except 1) only returns the 1st visit of
+  // the redirect chain instead of the entire chain, and 2) ignores referrals.
+  // May return an invalid `VisitRow` if there's something wrong with the DB.
+  // The caller is responsible for identifying, by looking at `visit_id`, and
+  // handling this case.
+  VisitRow GetRedirectChainStart(VisitRow visit);
 
   // Observers -----------------------------------------------------------------
 
@@ -623,8 +642,10 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   void GetRedirectsFromSpecificVisit(VisitID cur_visit,
                                      RedirectList* redirects);
 
-  // Similar to the above function except returns a redirect list ending
-  // at `cur_visit`.
+  // Similar to the above function except returns a redirect-or-referral list
+  // ending at `cur_visit`. E.g. if visit A redirected to visit B, which
+  // referred to visit C, then the return list for visit E would include all 3
+  // visits.
   void GetRedirectsToSpecificVisit(VisitID cur_visit, RedirectList* redirects);
 
   // Updates the visit_duration information in visits table.
@@ -644,6 +665,17 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
   void QueryHistoryText(const std::u16string& text_query,
                         const QueryOptions& options,
                         QueryResults* result);
+
+  // Performs a brute force search over the database to find any host names that
+  // match the `host_name` string. Returns any matches.
+  URLRows GetMatchesForHost(const std::u16string& host_name);
+
+  // Clusters ------------------------------------------------------------------
+
+  // Convert `AnnotatedVisitRow`s to `AnnotatedVisit`s. Drops rows without
+  // associated URL or visit rows, though this shouldn't happen usually.
+  std::vector<AnnotatedVisit> AnnotatedVisitsFromRows(
+      const std::vector<AnnotatedVisitRow>& rows);
 
   // Committing ----------------------------------------------------------------
 
@@ -709,8 +741,9 @@ class HistoryBackend : public base::RefCountedThreadSafe<HistoryBackend>,
                         const RedirectList& redirects,
                         base::Time visit_time) override;
   void NotifyURLsModified(const URLRows& changed_urls,
-                          UrlsModifiedReason reason) override;
+                          bool is_from_expiration) override;
   void NotifyURLsDeleted(DeletionInfo deletion_info) override;
+  void NotifyVisitDeleted(const VisitRow& visit) override;
 
   // Deleting all history ------------------------------------------------------
 

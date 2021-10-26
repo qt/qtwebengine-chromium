@@ -7,7 +7,7 @@
 #include "src/api/api.h"
 #include "src/ast/ast-traversal-visitor.h"
 #include "src/ast/prettyprinter.h"
-#include "src/baseline/baseline-osr-inl.h"
+#include "src/baseline/baseline-batch-compiler.h"
 #include "src/baseline/baseline.h"
 #include "src/builtins/builtins.h"
 #include "src/common/message-template.h"
@@ -329,11 +329,12 @@ RUNTIME_FUNCTION(Runtime_StackGuardWithGap) {
   return isolate->stack_guard()->HandleInterrupts();
 }
 
-RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromBytecode) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+namespace {
+
+void BytecodeBudgetInterruptFromBytecode(Isolate* isolate,
+                                         Handle<JSFunction> function) {
   function->SetInterruptBudget();
+  bool should_mark_for_optimization = function->has_feedback_vector();
   if (!function->has_feedback_vector()) {
     IsCompiledScope is_compiled_scope(
         function->shared().is_compiled_scope(isolate));
@@ -342,31 +343,70 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromBytecode) {
     // Also initialize the invocation count here. This is only really needed for
     // OSR. When we OSR functions with lazy feedback allocation we want to have
     // a non zero invocation count so we can inline functions.
-    function->feedback_vector().set_invocation_count(1);
-    if (FLAG_sparkplug) {
-      if (V8_LIKELY(FLAG_use_osr)) {
-        JavaScriptFrameIterator it(isolate);
-        DCHECK(it.frame()->is_unoptimized());
-        UnoptimizedFrame* frame = UnoptimizedFrame::cast(it.frame());
-        OSRInterpreterFrameToBaseline(isolate, function, frame);
-      } else {
-        OSRInterpreterFrameToBaseline(isolate, function, nullptr);
-      }
-    }
-    return ReadOnlyRoots(isolate).undefined_value();
+    function->feedback_vector().set_invocation_count(1, kRelaxedStore);
   }
-  {
+  if (CanCompileWithBaseline(isolate, function->shared()) &&
+      !function->ActiveTierIsBaseline()) {
+    if (FLAG_baseline_batch_compilation) {
+      isolate->baseline_batch_compiler()->EnqueueFunction(function);
+    } else {
+      IsCompiledScope is_compiled_scope(
+          function->shared().is_compiled_scope(isolate));
+      Compiler::CompileBaseline(isolate, function, Compiler::CLEAR_EXCEPTION,
+                                &is_compiled_scope);
+    }
+  }
+  if (should_mark_for_optimization) {
     SealHandleScope shs(isolate);
     isolate->counters()->runtime_profiler_ticks()->Increment();
     isolate->runtime_profiler()->MarkCandidatesForOptimizationFromBytecode();
-    return ReadOnlyRoots(isolate).undefined_value();
   }
+}
+}  // namespace
+
+RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptWithStackCheckFromBytecode) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  TRACE_EVENT0("v8.execute", "V8.BytecodeBudgetInterruptWithStackCheck");
+
+  // Check for stack interrupts here so that we can fold the interrupt check
+  // into bytecode budget interrupts.
+  StackLimitCheck check(isolate);
+  if (check.JsHasOverflowed()) {
+    // We ideally wouldn't actually get StackOverflows here, since we stack
+    // check on bytecode entry, but it's possible that this check fires due to
+    // the runtime function call being what overflows the stack.
+    // if our function entry
+    return isolate->StackOverflow();
+  } else if (check.InterruptRequested()) {
+    Object return_value = isolate->stack_guard()->HandleInterrupts();
+    if (!return_value.IsUndefined(isolate)) {
+      return return_value;
+    }
+  }
+
+  BytecodeBudgetInterruptFromBytecode(isolate, function);
+  return ReadOnlyRoots(isolate).undefined_value();
+}
+
+RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromBytecode) {
+  HandleScope scope(isolate);
+  DCHECK_EQ(1, args.length());
+  CONVERT_ARG_HANDLE_CHECKED(JSFunction, function, 0);
+  TRACE_EVENT0("v8.execute", "V8.BytecodeBudgetInterrupt");
+
+  BytecodeBudgetInterruptFromBytecode(isolate, function);
+  return ReadOnlyRoots(isolate).undefined_value();
 }
 
 RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromCode) {
   HandleScope scope(isolate);
   DCHECK_EQ(1, args.length());
   CONVERT_ARG_HANDLE_CHECKED(FeedbackCell, feedback_cell, 0);
+
+  // TODO(leszeks): Consider checking stack interrupts here, and removing
+  // those checks for code that can have budget interrupts.
 
   DCHECK(feedback_cell->value().IsFeedbackVector());
 

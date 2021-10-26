@@ -60,8 +60,6 @@ list(APPEND AOM_AV1_COMMON_SOURCES
             "${AOM_ROOT}/av1/common/mvref_common.h"
             "${AOM_ROOT}/av1/common/obu_util.c"
             "${AOM_ROOT}/av1/common/obu_util.h"
-            "${AOM_ROOT}/av1/common/odintrin.c"
-            "${AOM_ROOT}/av1/common/odintrin.h"
             "${AOM_ROOT}/av1/common/pred_common.c"
             "${AOM_ROOT}/av1/common/pred_common.h"
             "${AOM_ROOT}/av1/common/quant_common.c"
@@ -99,10 +97,6 @@ if(CONFIG_REALTIME_ONLY)
                    "${AOM_ROOT}/av1/common/warped_motion.h")
 endif()
 
-if(CONFIG_LPF_MASK)
-  list(APPEND AOM_AV1_COMMON_SOURCES "${AOM_ROOT}/av1/common/loopfiltermask.c")
-endif()
-
 list(APPEND AOM_AV1_DECODER_SOURCES
             "${AOM_ROOT}/av1/av1_dx_iface.c"
             "${AOM_ROOT}/av1/decoder/decodeframe.c"
@@ -127,6 +121,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/aq_cyclicrefresh.h"
             "${AOM_ROOT}/av1/encoder/aq_variance.c"
             "${AOM_ROOT}/av1/encoder/aq_variance.h"
+            "${AOM_ROOT}/av1/encoder/allintra_vis.c"
+            "${AOM_ROOT}/av1/encoder/allintra_vis.h"
             "${AOM_ROOT}/av1/encoder/enc_enums.h"
             "${AOM_ROOT}/av1/encoder/av1_fwd_txfm1d.c"
             "${AOM_ROOT}/av1/encoder/av1_fwd_txfm1d.h"
@@ -170,6 +166,8 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/ethread.h"
             "${AOM_ROOT}/av1/encoder/extend.c"
             "${AOM_ROOT}/av1/encoder/extend.h"
+            "${AOM_ROOT}/av1/encoder/external_partition.c"
+            "${AOM_ROOT}/av1/encoder/external_partition.h"
             "${AOM_ROOT}/av1/encoder/firstpass.c"
             "${AOM_ROOT}/av1/encoder/firstpass.h"
             "${AOM_ROOT}/av1/encoder/global_motion.c"
@@ -230,6 +228,7 @@ list(APPEND AOM_AV1_ENCODER_SOURCES
             "${AOM_ROOT}/av1/encoder/reconinter_enc.h"
             "${AOM_ROOT}/av1/encoder/segmentation.c"
             "${AOM_ROOT}/av1/encoder/segmentation.h"
+            "${AOM_ROOT}/av1/encoder/sorting_network.h"
             "${AOM_ROOT}/av1/encoder/speed_features.c"
             "${AOM_ROOT}/av1/encoder/speed_features.h"
             "${AOM_ROOT}/av1/encoder/superres_scale.c"
@@ -489,8 +488,6 @@ list(APPEND AOM_AV1_COMMON_INTRIN_NEON
             "${AOM_ROOT}/av1/common/arm/convolve_neon.c"
             "${AOM_ROOT}/av1/common/arm/convolve_neon.h"
             "${AOM_ROOT}/av1/common/arm/jnt_convolve_neon.c"
-            "${AOM_ROOT}/av1/common/arm/mem_neon.h"
-            "${AOM_ROOT}/av1/common/arm/transpose_neon.h"
             "${AOM_ROOT}/av1/common/arm/blend_a64_hmask_neon.c"
             "${AOM_ROOT}/av1/common/arm/blend_a64_vmask_neon.c"
             "${AOM_ROOT}/av1/common/arm/reconinter_neon.c"

@@ -156,6 +156,15 @@ class CORE_EXPORT CSSSelector {
     // matching a ::part in shadow-including descendant tree for #host in
     // "#host::part(button)".
     kShadowPart,
+
+    // leftmost "Space" combinator of relative selector
+    kRelativeDescendant,
+    // leftmost > combinator of relative selector
+    kRelativeChild,
+    // leftmost + combinator of relative selector
+    kRelativeDirectAdjacent,
+    // leftmost ~ combinator of relative selector
+    kRelativeIndirectAdjacent
   };
 
   enum PseudoType {
@@ -276,6 +285,12 @@ class CORE_EXPORT CSSSelector {
     kPseudoHighlight,
     kPseudoSpellingError,
     kPseudoGrammarError,
+    kPseudoHas,
+    // TODO(blee@igalia.com) Need to clarify the :scope dependency in relative
+    // selector definition.
+    // - spec : https://www.w3.org/TR/selectors-4/#relative
+    // - csswg issue : https://github.com/w3c/csswg-drafts/issues/6399
+    kPseudoRelativeLeftmost,
   };
 
   enum class AttributeMatchType {

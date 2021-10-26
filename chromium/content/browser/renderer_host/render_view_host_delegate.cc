@@ -10,21 +10,6 @@ RenderViewHostDelegateView* RenderViewHostDelegate::GetDelegateView() {
   return nullptr;
 }
 
-bool RenderViewHostDelegate::OnMessageReceived(
-    RenderViewHostImpl* render_view_host,
-    const IPC::Message& message) {
-  return false;
-}
-
-WebContents* RenderViewHostDelegate::GetAsWebContents() {
-  return nullptr;
-}
-
-SessionStorageNamespaceMap
-RenderViewHostDelegate::GetSessionStorageNamespaceMap() {
-  return SessionStorageNamespaceMap();
-}
-
 bool RenderViewHostDelegate::IsNeverComposited() {
   return false;
 }
@@ -43,6 +28,10 @@ bool RenderViewHostDelegate::IsGuest() {
 
 bool RenderViewHostDelegate::IsPortal() {
   return false;
+}
+
+absl::optional<SkColor> RenderViewHostDelegate::GetBaseBackgroundColor() {
+  return absl::nullopt;
 }
 
 }  // namespace content

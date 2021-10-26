@@ -38,11 +38,6 @@ constexpr int kUnassignedWorkspace = -1;
 
 // Alphabetical sort.
 
-// A property key to store whether accessibility focus falls back to widget or
-// not.
-AURA_EXPORT extern const WindowProperty<bool>* const
-    kAccessibilityFocusFallsbackToWidgetKey;
-
 // A property key to store whether accessibility touch exploration gets handled
 // by the window and all touches pass through directly.
 AURA_EXPORT extern const WindowProperty<bool>* const
@@ -93,6 +88,10 @@ AURA_EXPORT extern const WindowProperty<FocusClient*>* const kFocusClientKey;
 // A property key to store the host window of a window. This lets
 // WebContentsViews find the windows that should constrain NPAPI plugins.
 AURA_EXPORT extern const WindowProperty<Window*>* const kHostWindowKey;
+
+// A property key to store menu type of the window. Valid only for the menu
+// windows.
+AURA_EXPORT extern const WindowProperty<ui::MenuType>* const kMenuType;
 
 // The modal parent of a child modal window.
 AURA_EXPORT extern const WindowProperty<Window*>* const kChildModalParentKey;

@@ -10,9 +10,9 @@
 #include "include/v8-util.h"
 #include "include/v8.h"
 #include "src/base/platform/time.h"
+#include "src/base/vector.h"
 #include "src/common/globals.h"
 #include "src/debug/interface-types.h"
-#include "src/utils/vector.h"
 
 namespace v8_inspector {
 class V8Inspector;
@@ -107,8 +107,8 @@ void SetBreakPointsActive(Isolate* isolate, bool is_active);
 
 enum StepAction {
   StepOut = 0,   // Step out of the current function.
-  StepNext = 1,  // Step to the next statement in the current function.
-  StepIn = 2     // Step into new functions invoked or the next statement
+  StepOver = 1,  // Step to the next statement in the current function.
+  StepInto = 2   // Step into new functions invoked or the next statement
                  // in the current function.
 };
 
@@ -520,6 +520,11 @@ using RuntimeCallCounterCallback =
 void EnumerateRuntimeCallCounters(v8::Isolate* isolate,
                                   RuntimeCallCounterCallback callback);
 
+MaybeLocal<Value> CallFunctionOn(Local<Context> context,
+                                 Local<Function> function, Local<Value> recv,
+                                 int argc, Local<Value> argv[],
+                                 bool throw_on_side_effect);
+
 enum class EvaluateGlobalMode {
   kDefault,
   kDisableBreaks,
@@ -568,6 +573,8 @@ class WeakMap : public v8::Object {
   WeakMap() = delete;
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<v8::Value> Get(
       v8::Local<v8::Context> context, v8::Local<v8::Value> key);
+  V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::Maybe<bool> Delete(
+      v8::Local<v8::Context> context, v8::Local<v8::Value> key);
   V8_EXPORT_PRIVATE V8_WARN_UNUSED_RESULT v8::MaybeLocal<WeakMap> Set(
       v8::Local<v8::Context> context, v8::Local<v8::Value> key,
       v8::Local<v8::Value> value);
@@ -607,7 +614,7 @@ struct PropertyDescriptor {
   v8::Local<v8::Value> set;
 };
 
-class PropertyIterator {
+class V8_EXPORT_PRIVATE PropertyIterator {
  public:
   // Creating a PropertyIterator can potentially throw an exception.
   // The returned std::unique_ptr is empty iff that happens.

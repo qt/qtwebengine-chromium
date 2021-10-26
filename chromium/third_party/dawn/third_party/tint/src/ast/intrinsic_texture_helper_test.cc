@@ -62,7 +62,7 @@ TextureOverloadCase::TextureOverloadCase(
 TextureOverloadCase::TextureOverloadCase(
     ValidTextureOverload o,
     const char* d,
-    AccessControl::Access access,
+    Access acc,
     ast::ImageFormat i,
     ast::TextureDimension dims,
     TextureDataType datatype,
@@ -71,7 +71,7 @@ TextureOverloadCase::TextureOverloadCase(
     : overload(o),
       description(d),
       texture_kind(TextureKind::kStorage),
-      access_control(access),
+      access(acc),
       image_format(i),
       texture_dimension(dims),
       texture_data_type(datatype),
@@ -87,6 +87,9 @@ std::ostream& operator<<(std::ostream& out, const TextureKind& kind) {
       break;
     case TextureKind::kDepth:
       out << "depth";
+      break;
+    case TextureKind::kDepthMultisampled:
+      out << "depth-multisampled";
       break;
     case TextureKind::kMultisampled:
       out << "multisampled";
@@ -124,7 +127,7 @@ std::ostream& operator<<(std::ostream& out, const TextureOverloadCase& data) {
     out << "<unused>";
   }
   out << "\n";
-  out << "access_control:    " << data.access_control << "\n";
+  out << "access:    " << data.access << "\n";
   out << "image_format:      " << data.image_format << "\n";
   out << "texture_dimension: " << data.texture_dimension << "\n";
   out << "texture_data_type: " << data.texture_data_type << "\n";
@@ -142,7 +145,7 @@ ast::Type* TextureOverloadCase::buildResultVectorComponentType(
       return b->ty.i32();
   }
 
-  TINT_UNREACHABLE(b->Diagnostics());
+  TINT_UNREACHABLE(AST, b->Diagnostics());
   return {};
 }
 
@@ -157,27 +160,31 @@ ast::Variable* TextureOverloadCase::buildTextureVariable(
       return b->Global("texture",
                        b->ty.sampled_texture(texture_dimension,
                                              buildResultVectorComponentType(b)),
-                       ast::StorageClass::kNone, nullptr, decos);
+                       decos);
 
     case ast::intrinsic::test::TextureKind::kDepth:
       return b->Global("texture", b->ty.depth_texture(texture_dimension),
-                       ast::StorageClass::kNone, nullptr, decos);
+                       decos);
+
+    case ast::intrinsic::test::TextureKind::kDepthMultisampled:
+      return b->Global("texture",
+                       b->ty.depth_multisampled_texture(texture_dimension),
+                       decos);
 
     case ast::intrinsic::test::TextureKind::kMultisampled:
       return b->Global(
           "texture",
           b->ty.multisampled_texture(texture_dimension,
                                      buildResultVectorComponentType(b)),
-          ast::StorageClass::kNone, nullptr, decos);
+          decos);
 
     case ast::intrinsic::test::TextureKind::kStorage: {
-      auto* st = b->ty.storage_texture(texture_dimension, image_format);
-      auto* ac = b->ty.access(access_control, st);
-      return b->Global("texture", ac, ast::StorageClass::kNone, nullptr, decos);
+      auto* st = b->ty.storage_texture(texture_dimension, image_format, access);
+      return b->Global("texture", st, decos);
     }
   }
 
-  TINT_UNREACHABLE(b->Diagnostics());
+  TINT_UNREACHABLE(AST, b->Diagnostics());
   return nullptr;
 }
 
@@ -187,8 +194,7 @@ ast::Variable* TextureOverloadCase::buildSamplerVariable(
       b->create<ast::GroupDecoration>(0),
       b->create<ast::BindingDecoration>(1),
   };
-  return b->Global("sampler", b->ty.sampler(sampler_kind),
-                   ast::StorageClass::kNone, nullptr, decos);
+  return b->Global("sampler", b->ty.sampler(sampler_kind), decos);
 }
 
 std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
@@ -268,7 +274,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       },
       {
           ValidTextureOverload::kDimensionsCube,
-          "textureDimensions(t : texture_cube<f32>) -> vec3<i32>",
+          "textureDimensions(t : texture_cube<f32>) -> vec2<i32>",
           TextureKind::kRegular,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCube,
@@ -279,7 +285,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kDimensionsCubeLevel,
           "textureDimensions(t     : texture_cube<f32>,\n"
-          "                  level : i32) -> vec3<i32>",
+          "                  level : i32) -> vec2<i32>",
           TextureKind::kRegular,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCube,
@@ -289,7 +295,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       },
       {
           ValidTextureOverload::kDimensionsCubeArray,
-          "textureDimensions(t : texture_cube_array<f32>) -> vec3<i32>",
+          "textureDimensions(t : texture_cube_array<f32>) -> vec2<i32>",
           TextureKind::kRegular,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCubeArray,
@@ -300,7 +306,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kDimensionsCubeArrayLevel,
           "textureDimensions(t     : texture_cube_array<f32>,\n"
-          "                  level : i32) -> vec3<i32>",
+          "                  level : i32) -> vec2<i32>",
           TextureKind::kRegular,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCubeArray,
@@ -362,7 +368,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       },
       {
           ValidTextureOverload::kDimensionsDepthCube,
-          "textureDimensions(t : texture_depth_cube) -> vec3<i32>",
+          "textureDimensions(t : texture_depth_cube) -> vec2<i32>",
           TextureKind::kDepth,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCube,
@@ -373,7 +379,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kDimensionsDepthCubeLevel,
           "textureDimensions(t     : texture_depth_cube,\n"
-          "                  level : i32) -> vec3<i32>",
+          "                  level : i32) -> vec2<i32>",
           TextureKind::kDepth,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCube,
@@ -383,7 +389,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       },
       {
           ValidTextureOverload::kDimensionsDepthCubeArray,
-          "textureDimensions(t : texture_depth_cube_array) -> vec3<i32>",
+          "textureDimensions(t : texture_depth_cube_array) -> vec2<i32>",
           TextureKind::kDepth,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCubeArray,
@@ -394,7 +400,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kDimensionsDepthCubeArrayLevel,
           "textureDimensions(t     : texture_depth_cube_array,\n"
-          "                  level : i32) -> vec3<i32>",
+          "                  level : i32) -> vec2<i32>",
           TextureKind::kDepth,
           ast::SamplerKind::kSampler,
           ast::TextureDimension::kCubeArray,
@@ -403,9 +409,19 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           [](ProgramBuilder* b) { return b->ExprList("texture", 1); },
       },
       {
+          ValidTextureOverload::kDimensionsDepthMultisampled2d,
+          "textureDimensions(t : texture_depth_multisampled_2d) -> vec2<i32>",
+          TextureKind::kDepthMultisampled,
+          ast::SamplerKind::kSampler,
+          ast::TextureDimension::k2d,
+          TextureDataType::kF32,
+          "textureDimensions",
+          [](ProgramBuilder* b) { return b->ExprList("texture"); },
+      },
+      {
           ValidTextureOverload::kDimensionsStorageRO1d,
           "textureDimensions(t : texture_storage_1d<rgba32float>) -> i32",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k1d,
           TextureDataType::kF32,
@@ -416,7 +432,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageRO2d,
           "textureDimensions(t : texture_storage_2d<rgba32float>) -> "
           "vec2<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -427,7 +443,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageRO2dArray,
           "textureDimensions(t : texture_storage_2d_array<rgba32float>) -> "
           "vec2<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2dArray,
           TextureDataType::kF32,
@@ -438,7 +454,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageRO3d,
           "textureDimensions(t : texture_storage_3d<rgba32float>) -> "
           "vec3<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k3d,
           TextureDataType::kF32,
@@ -448,7 +464,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kDimensionsStorageWO1d,
           "textureDimensions(t : texture_storage_1d<rgba32float>) -> i32",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k1d,
           TextureDataType::kF32,
@@ -459,7 +475,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageWO2d,
           "textureDimensions(t : texture_storage_2d<rgba32float>) -> "
           "vec2<i32>",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -470,7 +486,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageWO2dArray,
           "textureDimensions(t : texture_storage_2d_array<rgba32float>) -> "
           "vec2<i32>",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2dArray,
           TextureDataType::kF32,
@@ -481,7 +497,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kDimensionsStorageWO3d,
           "textureDimensions(t : texture_storage_3d<rgba32float>) -> "
           "vec3<i32>",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k3d,
           TextureDataType::kF32,
@@ -531,7 +547,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
       {
           ValidTextureOverload::kNumLayersStorageWO2dArray,
           "textureNumLayers(t : texture_storage_2d_array<rgba32float>) -> i32",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2dArray,
           TextureDataType::kF32,
@@ -1369,7 +1385,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
                                b->vec2<f32>(1.f, 2.f),  // coords
                                b->vec2<f32>(3.f, 4.f),  // ddx
                                b->vec2<f32>(5.f, 6.f),  // ddy
-                               b->vec2<i32>(7, 8));     // offset
+                               b->vec2<i32>(7, 7));     // offset
           },
       },
       {
@@ -1415,7 +1431,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
                                3,                       // array_index
                                b->vec2<f32>(4.f, 5.f),  // ddx
                                b->vec2<f32>(6.f, 7.f),  // ddy
-                               b->vec2<i32>(8, 9));     // offset
+                               b->vec2<i32>(6, 7));     // offset
           },
       },
       {
@@ -1457,7 +1473,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
                                b->vec3<f32>(1.f, 2.f, 3.f),  // coords
                                b->vec3<f32>(4.f, 5.f, 6.f),  // ddx
                                b->vec3<f32>(7.f, 8.f, 9.f),  // ddy
-                               b->vec3<i32>(10, 11, 12));    // offset
+                               b->vec3<i32>(0, 1, 2));       // offset
           },
       },
       {
@@ -1887,7 +1903,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO1dRgba32float,
           "textureLoad(t      : texture_storage_1d<rgba32float>,\n"
           "            coords : i32) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k1d,
           TextureDataType::kF32,
@@ -1901,7 +1917,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba8unorm,
           "textureLoad(t           : texture_storage_2d<rgba8unorm>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba8Unorm,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -1915,7 +1931,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba8snorm,
           "textureLoad(t           : texture_storage_2d<rgba8snorm>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba8Snorm,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -1929,7 +1945,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba8uint,
           "textureLoad(t           : texture_storage_2d<rgba8uint>,\n"
           "            coords      : vec2<i32>) -> vec4<u32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba8Uint,
           ast::TextureDimension::k2d,
           TextureDataType::kU32,
@@ -1943,7 +1959,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba8sint,
           "textureLoad(t           : texture_storage_2d<rgba8sint>,\n"
           "            coords      : vec2<i32>) -> vec4<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba8Sint,
           ast::TextureDimension::k2d,
           TextureDataType::kI32,
@@ -1957,7 +1973,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba16uint,
           "textureLoad(t           : texture_storage_2d<rgba16uint>,\n"
           "            coords      : vec2<i32>) -> vec4<u32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba16Uint,
           ast::TextureDimension::k2d,
           TextureDataType::kU32,
@@ -1971,7 +1987,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba16sint,
           "textureLoad(t           : texture_storage_2d<rgba16sint>,\n"
           "            coords      : vec2<i32>) -> vec4<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba16Sint,
           ast::TextureDimension::k2d,
           TextureDataType::kI32,
@@ -1985,7 +2001,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba16float,
           "textureLoad(t           : texture_storage_2d<rgba16float>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba16Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -1999,7 +2015,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dR32uint,
           "textureLoad(t           : texture_storage_2d<r32uint>,\n"
           "            coords      : vec2<i32>) -> vec4<u32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kR32Uint,
           ast::TextureDimension::k2d,
           TextureDataType::kU32,
@@ -2013,7 +2029,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dR32sint,
           "textureLoad(t           : texture_storage_2d<r32sint>,\n"
           "            coords      : vec2<i32>) -> vec4<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kR32Sint,
           ast::TextureDimension::k2d,
           TextureDataType::kI32,
@@ -2027,7 +2043,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dR32float,
           "textureLoad(t           : texture_storage_2d<r32float>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kR32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -2041,7 +2057,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRg32uint,
           "textureLoad(t           : texture_storage_2d<rg32uint>,\n"
           "            coords      : vec2<i32>) -> vec4<u32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRg32Uint,
           ast::TextureDimension::k2d,
           TextureDataType::kU32,
@@ -2055,7 +2071,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRg32sint,
           "textureLoad(t           : texture_storage_2d<rg32sint>,\n"
           "            coords      : vec2<i32>) -> vec4<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRg32Sint,
           ast::TextureDimension::k2d,
           TextureDataType::kI32,
@@ -2069,7 +2085,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRg32float,
           "textureLoad(t           : texture_storage_2d<rg32float>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRg32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -2083,7 +2099,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba32uint,
           "textureLoad(t           : texture_storage_2d<rgba32uint>,\n"
           "            coords      : vec2<i32>) -> vec4<u32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Uint,
           ast::TextureDimension::k2d,
           TextureDataType::kU32,
@@ -2097,7 +2113,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba32sint,
           "textureLoad(t           : texture_storage_2d<rgba32sint>,\n"
           "            coords      : vec2<i32>) -> vec4<i32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Sint,
           ast::TextureDimension::k2d,
           TextureDataType::kI32,
@@ -2111,7 +2127,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO2dRgba32float,
           "textureLoad(t           : texture_storage_2d<rgba32float>,\n"
           "            coords      : vec2<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -2127,7 +2143,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           "texture_storage_2d_array<rgba32float>,\n"
           "            coords      : vec2<i32>,\n"
           "            array_index : i32) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2dArray,
           TextureDataType::kF32,
@@ -2142,7 +2158,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           ValidTextureOverload::kLoadStorageRO3dRgba32float,
           "textureLoad(t      : texture_storage_3d<rgba32float>,\n"
           "            coords : vec3<i32>) -> vec4<f32>",
-          ast::AccessControl::kReadOnly,
+          ast::Access::kRead,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k3d,
           TextureDataType::kF32,
@@ -2157,7 +2173,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           "textureStore(t      : texture_storage_1d<rgba32float>,\n"
           "             coords : i32,\n"
           "             value  : vec4<T>)",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k1d,
           TextureDataType::kF32,
@@ -2173,7 +2189,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           "textureStore(t      : texture_storage_2d<rgba32float>,\n"
           "             coords : vec2<i32>,\n"
           "             value  : vec4<T>)",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2d,
           TextureDataType::kF32,
@@ -2190,7 +2206,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           "             coords      : vec2<i32>,\n"
           "             array_index : i32,\n"
           "             value       : vec4<T>)",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k2dArray,
           TextureDataType::kF32,
@@ -2207,7 +2223,7 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           "textureStore(t      : texture_storage_3d<rgba32float>,\n"
           "             coords : vec3<i32>,\n"
           "             value  : vec4<T>)",
-          ast::AccessControl::kWriteOnly,
+          ast::Access::kWrite,
           ast::ImageFormat::kRgba32Float,
           ast::TextureDimension::k3d,
           TextureDataType::kF32,
@@ -2219,6 +2235,18 @@ std::vector<TextureOverloadCase> TextureOverloadCase::ValidCases() {
           },
       },
   };
+}
+
+bool ReturnsVoid(ValidTextureOverload texture_overload) {
+  switch (texture_overload) {
+    case ValidTextureOverload::kStoreWO1dRgba32float:
+    case ValidTextureOverload::kStoreWO2dRgba32float:
+    case ValidTextureOverload::kStoreWO2dArrayRgba32float:
+    case ValidTextureOverload::kStoreWO3dRgba32float:
+      return true;
+    default:
+      return false;
+  }
 }
 
 }  // namespace test

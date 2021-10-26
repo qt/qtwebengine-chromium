@@ -10,9 +10,9 @@
 #include <string>
 #include <vector>
 
+#include "base/cxx17_backports.h"
 #include "base/format_macros.h"
 #include "base/guid.h"
-#include "base/stl_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
 #include "components/autofill/core/browser/autofill_test_utils.h"
@@ -2412,6 +2412,20 @@ TEST_P(AutofillProfileTest, ShouldSkipFillingOrSuggesting) {
   EXPECT_FALSE(profile.ShouldSkipFillingOrSuggesting(ADDRESS_HOME_COUNTRY));
   EXPECT_FALSE(profile.ShouldSkipFillingOrSuggesting(ADDRESS_HOME_LINE1));
   EXPECT_TRUE(profile.ShouldSkipFillingOrSuggesting(EMAIL_ADDRESS));
+}
+
+// Tests that the |HasStructuredData| returns whether the profile has structured
+// data or not.
+TEST_P(AutofillProfileTest, HasStructuredData) {
+  AutofillProfile profile;
+  profile.SetRawInfoWithVerificationStatus(
+      NAME_FULL, u"marion mitchell morrison", kObserved);
+  EXPECT_FALSE(profile.HasStructuredData());
+
+  profile.SetRawInfoWithVerificationStatus(NAME_FIRST, u"marion", kObserved);
+  profile.SetRawInfoWithVerificationStatus(NAME_MIDDLE, u"mitchell", kObserved);
+  profile.SetRawInfoWithVerificationStatus(NAME_LAST, u"morrison", kObserved);
+  EXPECT_TRUE(profile.HasStructuredData());
 }
 
 enum Expectation { GREATER, LESS, EQUAL };

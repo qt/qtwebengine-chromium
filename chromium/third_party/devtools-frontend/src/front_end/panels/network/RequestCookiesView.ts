@@ -34,7 +34,7 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
-import * as CookieTable from '../../ui/legacy/components/cookie_table/cookie_table.js';  // eslint-disable-line no-unused-vars
+import * as CookieTable from '../../ui/legacy/components/cookie_table/cookie_table.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 const UIStrings = {
@@ -96,7 +96,7 @@ export class RequestCookiesView extends UI.Widget.Widget {
 
   constructor(request: SDK.NetworkRequest.NetworkRequest) {
     super();
-    this.registerRequiredCSS('panels/network/requestCookiesView.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/network/requestCookiesView.css');
     this.element.classList.add('request-cookies-view');
 
     this._request = request;
@@ -275,6 +275,7 @@ export class RequestCookiesView extends UI.Widget.Widget {
   }
 
   wasShown(): void {
+    super.wasShown();
     this._request.addEventListener(
         SDK.NetworkRequest.Events.RequestHeadersChanged, this._refreshRequestCookiesView, this);
     this._request.addEventListener(

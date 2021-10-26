@@ -107,6 +107,10 @@ class MockOAuthConsumer : public OAuth2AccessTokenConsumer {
               OnGetTokenFailure,
               (const GoogleServiceAuthError& error),
               (override));
+
+  std::string GetConsumerName() const override {
+    return "account_manager_facade_impl_unittest";
+  }
 };
 
 class FakeAccountManager : public crosapi::mojom::AccountManager {
@@ -329,8 +333,9 @@ TEST_F(AccountManagerFacadeImplTest, OnAccountRemovedIsPropagatedToObservers) {
   run_loop.Run();
 }
 
-TEST_F(AccountManagerFacadeImplTest,
-       GetAccountsReturnsEmptyListOfAccountsWhenAccountManagerAshIsEmpty) {
+TEST_F(
+    AccountManagerFacadeImplTest,
+    GetAccountsReturnsEmptyListOfAccountsWhenAccountManagerMojoServiceIsEmpty) {
   std::unique_ptr<AccountManagerFacadeImpl> account_manager_facade =
       CreateFacade();
   account_manager().SetAccounts({});

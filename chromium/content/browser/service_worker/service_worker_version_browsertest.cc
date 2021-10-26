@@ -13,10 +13,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/callback_helpers.h"
+#include "base/cxx17_backports.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -24,7 +24,6 @@
 #include "base/test/bind.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "components/services/storage/public/cpp/storage_key.h"
 #include "content/browser/service_worker/embedded_worker_instance.h"
 #include "content/browser/service_worker/embedded_worker_status.h"
 #include "content/browser/service_worker/service_worker_container_host.h"
@@ -59,7 +58,10 @@
 #include "storage/browser/test/blob_test_utils.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
 #include "third_party/blink/public/common/service_worker/service_worker_type_converters.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/common/web_preferences/web_preferences.h"
+#include "third_party/blink/public/mojom/service_worker/service_worker_registration_options.mojom.h"
+#include "url/origin.h"
 
 using blink::mojom::CacheStorageError;
 
@@ -154,6 +156,7 @@ class WorkerActivatedObserver
   // ServiceWorkerContextCoreObserver overrides.
   void OnVersionStateChanged(int64_t version_id,
                              const GURL& scope,
+                             const blink::StorageKey& key,
                              ServiceWorkerVersion::Status) override {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
     const ServiceWorkerVersion* version = context_->GetLiveVersion(version_id);
@@ -410,7 +413,8 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
     options.scope = scope;
     options.type = script_type;
     registration_ = CreateNewServiceWorkerRegistration(
-        wrapper()->context()->registry(), options);
+        wrapper()->context()->registry(), options,
+        blink::StorageKey(url::Origin::Create(scope)));
     // Set the update check time to avoid triggering updates in the middle of
     // tests.
     registration_->set_last_update_check(base::Time::Now());
@@ -504,7 +508,7 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
   }
 
   void FindRegistrationForId(int64_t id,
-                             const storage::StorageKey& key,
+                             const blink::StorageKey& key,
                              blink::ServiceWorkerStatusCode expected_status) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
     blink::ServiceWorkerStatusCode status =
@@ -544,13 +548,14 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
     ASSERT_EQ(blink::ServiceWorkerStatusCode::kOk, start_worker_status);
     version_->SetStatus(ServiceWorkerVersion::INSTALLING);
 
-    auto repeating_done = base::AdaptCallbackForRepeating(std::move(done));
+    auto callback_pair = base::SplitOnceCallback(std::move(done));
     int request_id = version_->StartRequest(
         ServiceWorkerMetrics::EventType::INSTALL,
-        CreateReceiver(BrowserThread::UI, repeating_done, result));
+        CreateReceiver(BrowserThread::UI, std::move(callback_pair.first),
+                       result));
     version_->endpoint()->DispatchInstallEvent(
         base::BindOnce(&self::ReceiveInstallEvent, base::Unretained(this),
-                       repeating_done, result, request_id));
+                       std::move(callback_pair.second), result, request_id));
   }
 
   void ReceiveInstallEvent(
@@ -601,11 +606,11 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
   void Update(int registration_id,
               ServiceWorkerContextCore::UpdateCallback callback) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    ServiceWorkerRegistration* registration =
+    scoped_refptr<ServiceWorkerRegistration> registration =
         wrapper()->context()->GetLiveRegistration(registration_id);
     ASSERT_TRUE(registration);
     wrapper()->context()->UpdateServiceWorker(
-        registration, false /* force_bypass_cache */,
+        registration.get(), false /* force_bypass_cache */,
         false /* skip_script_comparison */,
         blink::mojom::FetchClientSettingsObject::New(), std::move(callback));
   }
@@ -616,7 +621,7 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
                            blink::ServiceWorkerStatusCode status,
                            const std::string& status_message,
                            int64_t registration_id) {
-    ServiceWorkerRegistration* registration =
+    scoped_refptr<ServiceWorkerRegistration> registration =
         wrapper()->context()->GetLiveRegistration(registration_id);
     DCHECK(registration);
 
@@ -648,7 +653,7 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
   }
 
   base::Time GetLastUpdateCheck(int64_t registration_id) {
-    ServiceWorkerRegistration* registration =
+    scoped_refptr<ServiceWorkerRegistration> registration =
         wrapper()->context()->GetLiveRegistration(registration_id);
     return registration->last_update_check();
   }
@@ -657,7 +662,7 @@ class ServiceWorkerVersionBrowserTest : public ContentBrowserTest {
                           base::Time last_update_time,
                           const base::RepeatingClosure& done_on_ui) {
     ASSERT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    ServiceWorkerRegistration* registration =
+    scoped_refptr<ServiceWorkerRegistration> registration =
         wrapper()->context()->GetLiveRegistration(registration_id);
     ASSERT_TRUE(registration);
     registration->set_last_update_check(last_update_time);
@@ -869,8 +874,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest, ReadResourceFailure) {
   EXPECT_EQ(ServiceWorkerVersion::REDUNDANT, version_->status());
 
   // The registration should be deleted from storage.
-  FindRegistrationForId(registration_->id(),
-                        storage::StorageKey(registration_->origin()),
+  FindRegistrationForId(registration_->id(), registration_->key(),
                         blink::ServiceWorkerStatusCode::kErrorNotFound);
   EXPECT_TRUE(registration_->is_uninstalled());
 }
@@ -912,8 +916,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
 
   // The whole registration should be deleted from storage even though the
   // waiting version was not the broken one.
-  FindRegistrationForId(registration_->id(),
-                        storage::StorageKey(registration_->origin()),
+  FindRegistrationForId(registration_->id(), registration_->key(),
                         blink::ServiceWorkerStatusCode::kErrorNotFound);
   EXPECT_TRUE(registration_->is_uninstalled());
 }
@@ -1256,12 +1259,13 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
       embedded_test_server()->GetURL(kScope),
       blink::mojom::ScriptType::kClassic,
       blink::mojom::ServiceWorkerUpdateViaCache::kAll);
+  blink::StorageKey key(url::Origin::Create(options.scope));
 
   // Register and wait for activation.
   auto observer = base::MakeRefCounted<WorkerActivatedObserver>(wrapper());
   observer->Init();
   public_context()->RegisterServiceWorker(
-      embedded_test_server()->GetURL(kWorkerUrl), options,
+      embedded_test_server()->GetURL(kWorkerUrl), key, options,
       base::BindOnce(&ExpectRegisterResultAndRun,
                      blink::ServiceWorkerStatusCode::kOk, base::DoNothing()));
   observer->Wait();
@@ -1309,7 +1313,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   // Tidy up.
   base::RunLoop run_loop;
   public_context()->UnregisterServiceWorker(
-      embedded_test_server()->GetURL(kScope),
+      embedded_test_server()->GetURL(kScope), key,
       base::BindOnce(&ExpectUnregisterResultAndRun, true,
                      run_loop.QuitClosure()));
   run_loop.Run();
@@ -1331,10 +1335,11 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
       embedded_test_server()->GetURL(kScope),
       blink::mojom::ScriptType::kClassic,
       blink::mojom::ServiceWorkerUpdateViaCache::kNone);
+  blink::StorageKey key(url::Origin::Create(options.scope));
   auto observer = base::MakeRefCounted<WorkerActivatedObserver>(wrapper());
   observer->Init();
   public_context()->RegisterServiceWorker(
-      embedded_test_server()->GetURL(kWorkerUrl), options,
+      embedded_test_server()->GetURL(kWorkerUrl), key, options,
       base::BindOnce(&ExpectRegisterResultAndRun,
                      blink::ServiceWorkerStatusCode::kOk, base::DoNothing()));
   observer->Wait();
@@ -1353,7 +1358,7 @@ IN_PROC_BROWSER_TEST_F(ServiceWorkerVersionBrowserTest,
   // Tidy up.
   base::RunLoop run_loop;
   public_context()->UnregisterServiceWorker(
-      embedded_test_server()->GetURL(kScope),
+      embedded_test_server()->GetURL(kScope), key,
       base::BindOnce(&ExpectUnregisterResultAndRun, true,
                      run_loop.QuitClosure()));
   run_loop.Run();

@@ -50,6 +50,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
+#include "base/cxx17_backports.h"
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -59,7 +60,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/ranges/algorithm.h"
 #include "base/single_thread_task_runner.h"
-#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
@@ -182,15 +182,6 @@ struct OrderByCreationTimeDesc {
     return a->second->CreationDate() > b->second->CreationDate();
   }
 };
-
-// Mozilla sorts on the path length (longest first), and then it
-// sorts by creation time (oldest first).
-// The RFC says the sort order for the domain attribute is undefined.
-bool CookieSorter(CanonicalCookie* cc1, CanonicalCookie* cc2) {
-  if (cc1->Path().length() == cc2->Path().length())
-    return cc1->CreationDate() < cc2->CreationDate();
-  return cc1->Path().length() > cc2->Path().length();
-}
 
 bool LRACookieSorter(const CookieMonster::CookieMap::iterator& it1,
                      const CookieMonster::CookieMap::iterator& it2) {
@@ -565,6 +556,17 @@ CookieMonster::~CookieMonster() {
   net_log_.EndEvent(NetLogEventType::COOKIE_STORE_ALIVE);
 }
 
+// static
+bool CookieMonster::CookieSorter(const CanonicalCookie* cc1,
+                                 const CanonicalCookie* cc2) {
+  // Mozilla sorts on the path length (longest first), and then it sorts by
+  // creation time (oldest first).  The RFC says the sort order for the domain
+  // attribute is undefined.
+  if (cc1->Path().length() == cc2->Path().length())
+    return cc1->CreationDate() < cc2->CreationDate();
+  return cc1->Path().length() > cc2->Path().length();
+}
+
 void CookieMonster::GetAllCookies(GetAllCookiesCallback callback) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
@@ -619,7 +621,6 @@ void CookieMonster::GetCookieListWithOptions(const GURL& url,
     std::sort(cookie_ptrs.begin(), cookie_ptrs.end(), CookieSorter);
 
     included_cookies.reserve(cookie_ptrs.size());
-    std::vector<CanonicalCookie*> included_cookie_ptrs;
     FilterCookiesWithOptions(url, options, &cookie_ptrs, &included_cookies,
                              &excluded_cookies);
   }
@@ -794,16 +795,13 @@ void CookieMonster::StoreLoadedCookies(
   // removed, and sync'd.
   CookieItVector cookies_with_control_chars;
 
-  bool dispatch_change = !base::FeatureList::IsEnabled(
-      features::kNoCookieChangeNotificationOnLoad);
-
   for (auto& cookie : cookies) {
     CanonicalCookie* cookie_ptr = cookie.get();
     CookieAccessResult access_result;
     access_result.access_semantics = CookieAccessSemantics::UNKNOWN;
     auto inserted = InternalInsertCookie(
         GetKey(cookie_ptr->Domain()), std::move(cookie),
-        false /* sync_to_store */, access_result, dispatch_change);
+        false /* sync_to_store */, access_result, false /* dispatch_change */);
     const Time cookie_access_time(cookie_ptr->LastAccessDate());
     if (earliest_access_time_.is_null() ||
         cookie_access_time < earliest_access_time_) {
@@ -943,12 +941,14 @@ void CookieMonster::TrimDuplicateCookiesForKey(const std::string& key,
     // duplicates.
     dupes.erase(dupes.begin());
 
+    // TODO(crbug.com/1225444) Include cookie partition key in this log
+    // statement as well if needed.
     LOG(ERROR) << base::StringPrintf(
         "Found %d duplicate cookies for key='%s', "
         "with {name='%s', domain='%s', path='%s'}",
         static_cast<int>(dupes.size()), key.c_str(),
-        std::get<0>(signature).c_str(), std::get<1>(signature).c_str(),
-        std::get<2>(signature).c_str());
+        std::get<1>(signature).c_str(), std::get<2>(signature).c_str(),
+        std::get<3>(signature).c_str());
 
     // Remove all the cookies identified by |dupes|. It is valid to delete our
     // list of iterators one at a time, since |cookies_| is a multimap (they

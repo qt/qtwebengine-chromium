@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/callback.h"
-#include "base/no_destructor.h"
 #include "net/log/net_log_with_source.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
@@ -18,7 +17,6 @@
 #include "services/network/trust_tokens/trust_token_key_commitment_getter.h"
 #include "services/network/trust_tokens/trust_token_request_helper.h"
 #include "services/network/trust_tokens/trust_token_request_issuance_helper.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace network {
 

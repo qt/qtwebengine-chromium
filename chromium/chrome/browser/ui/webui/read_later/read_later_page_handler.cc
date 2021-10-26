@@ -9,22 +9,33 @@
 #include <utility>
 #include <vector>
 
+#include "base/metrics/user_metrics.h"
+#include "base/metrics/user_metrics_action.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/clock.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
+#include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_stats.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/read_later/reading_list_model_factory.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/browser/ui/webui/read_later/read_later_ui.h"
 #include "chrome/common/webui_url_constants.h"
+#include "chrome/grit/generated_resources.h"
+#include "components/profile_metrics/browser_profile_type.h"
 #include "components/reading_list/core/reading_list_entry.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 #include "ui/base/l10n/time_format.h"
+#include "ui/base/models/simple_menu_model.h"
+#include "ui/base/mojom/window_open_disposition.mojom.h"
+#include "ui/base/window_open_disposition.h"
 #include "url/gurl.h"
 
 namespace {
@@ -56,6 +67,89 @@ bool IsActiveTabNTP(Browser* browser) {
   return false;
 }
 
+class ReadLaterItemContextMenu : public ui::SimpleMenuModel,
+                                 public ui::SimpleMenuModel::Delegate {
+ public:
+  ReadLaterItemContextMenu(Browser* browser,
+                           ReadingListModel* reading_list_model,
+                           GURL url)
+      : ui::SimpleMenuModel(this),
+        browser_(browser),
+        reading_list_model_(reading_list_model),
+        url_(url) {
+    AddItemWithStringId(IDC_CONTENT_CONTEXT_OPENLINKNEWTAB,
+                        IDS_CONTENT_CONTEXT_OPENLINKNEWTAB);
+    AddItemWithStringId(IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW,
+                        IDS_CONTENT_CONTEXT_OPENLINKNEWWINDOW);
+    AddItemWithStringId(IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD,
+                        IDS_CONTENT_CONTEXT_OPENLINKOFFTHERECORD);
+    AddSeparator(ui::NORMAL_SEPARATOR);
+
+    if (reading_list_model->GetEntryByURL(url)->IsRead()) {
+      AddItemWithStringId(kMarkAsUnread,
+                          IDS_READ_LATER_CONTEXT_MENU_MARK_AS_UNREAD);
+    } else {
+      AddItemWithStringId(kMarkAsRead,
+                          IDS_READ_LATER_CONTEXT_MENU_MARK_AS_READ);
+    }
+    AddItemWithStringId(kDelete, IDS_READ_LATER_CONTEXT_MENU_DELETE);
+  }
+  ~ReadLaterItemContextMenu() override = default;
+
+  void ExecuteCommand(int command_id, int event_flags) override {
+    switch (command_id) {
+      case IDC_CONTENT_CONTEXT_OPENLINKNEWTAB: {
+        content::OpenURLParams params(url_, content::Referrer(),
+                                      WindowOpenDisposition::NEW_FOREGROUND_TAB,
+                                      ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+        browser_->OpenURL(params);
+        reading_list_model_->SetReadStatus(url_, true);
+        break;
+      }
+
+      case IDC_CONTENT_CONTEXT_OPENLINKNEWWINDOW: {
+        content::OpenURLParams params(url_, content::Referrer(),
+                                      WindowOpenDisposition::NEW_WINDOW,
+                                      ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+        browser_->OpenURL(params);
+        reading_list_model_->SetReadStatus(url_, true);
+        break;
+      }
+
+      case IDC_CONTENT_CONTEXT_OPENLINKOFFTHERECORD: {
+        content::OpenURLParams params(url_, content::Referrer(),
+                                      WindowOpenDisposition::OFF_THE_RECORD,
+                                      ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
+        browser_->OpenURL(params);
+        break;
+      }
+
+      case kMarkAsRead:
+        reading_list_model_->SetReadStatus(url_, true);
+        break;
+      case kMarkAsUnread:
+        reading_list_model_->SetReadStatus(url_, false);
+        break;
+      case kDelete:
+        reading_list_model_->RemoveEntryByURL(url_);
+        break;
+      default:
+        NOTREACHED();
+        break;
+    }
+  }
+
+ private:
+  enum MenuCommands {
+    kMarkAsRead,
+    kMarkAsUnread,
+    kDelete,
+  };
+  Browser* const browser_;
+  ReadingListModel* reading_list_model_;
+  GURL url_;
+};
+
 }  // namespace
 
 ReadLaterPageHandler::ReadLaterPageHandler(
@@ -66,6 +160,7 @@ ReadLaterPageHandler::ReadLaterPageHandler(
     : receiver_(this, std::move(receiver)),
       page_(std::move(page)),
       read_later_ui_(read_later_ui),
+      web_ui_(web_ui),
       web_contents_(web_ui->GetWebContents()),
       clock_(base::DefaultClock::GetInstance()) {
   Profile* profile = Profile::FromWebUI(web_ui);
@@ -82,38 +177,93 @@ void ReadLaterPageHandler::GetReadLaterEntries(
   std::move(callback).Run(CreateReadLaterEntriesByStatusData());
 }
 
-void ReadLaterPageHandler::OpenURL(const GURL& url, bool mark_as_read) {
+void ReadLaterPageHandler::OpenURL(
+    const GURL& url,
+    bool mark_as_read,
+    ui::mojom::ClickModifiersPtr click_modifiers) {
   Browser* browser = chrome::FindLastActive();
   if (!browser)
     return;
 
+  const bool side_panel_enabled =
+      base::FeatureList::IsEnabled(features::kSidePanel);
+
   // Open in active tab if the user is on the NTP.
   WindowOpenDisposition open_location =
-      IsActiveTabNTP(browser) ||
-              base::FeatureList::IsEnabled(features::kSidePanel)
-          ? WindowOpenDisposition::CURRENT_TAB
-          : WindowOpenDisposition::NEW_FOREGROUND_TAB;
+      IsActiveTabNTP(browser) ? WindowOpenDisposition::CURRENT_TAB
+                              : WindowOpenDisposition::NEW_FOREGROUND_TAB;
+  if (side_panel_enabled) {
+    open_location = ui::DispositionFromClick(
+        click_modifiers->middle_button, click_modifiers->alt_key,
+        click_modifiers->ctrl_key, click_modifiers->meta_key,
+        click_modifiers->shift_key);
+  }
 
   content::OpenURLParams params(url, content::Referrer(), open_location,
                                 ui::PAGE_TRANSITION_AUTO_BOOKMARK, false);
   browser->OpenURL(params);
 
-  if (mark_as_read)
+  const ReadingListEntry* entry = reading_list_model_->GetEntryByURL(url);
+  if (entry) {
+    base::RecordAction(base::UserMetricsAction(
+        entry->IsRead() ? "DesktopReadingList.Navigation.FromReadList"
+                        : "DesktopReadingList.Navigation.FromUnreadList"));
+  }
+
+  if (mark_as_read && !side_panel_enabled)
     reading_list_model_->SetReadStatus(url, true);
+
+  base::RecordAction(base::UserMetricsAction(
+      side_panel_enabled ? "SidePanel.ReadingList.Navigation"
+                         : "ReadingList.Dialog.Navigation"));
+  RecordBookmarkLaunch(
+      side_panel_enabled ? BOOKMARK_LAUNCH_LOCATION_SIDE_PANEL_READING_LIST
+                         : BOOKMARK_LAUNCH_LOCATION_READING_LIST_DIALOG,
+      profile_metrics::GetBrowserProfileType(Profile::FromWebUI(web_ui_)));
 }
 
 void ReadLaterPageHandler::UpdateReadStatus(const GURL& url, bool read) {
   reading_list_model_->SetReadStatus(url, read);
+  base::RecordAction(
+      base::UserMetricsAction(read ? "DesktopReadingList.MarkAsRead"
+                                   : "DesktopReadingList.MarkAsUnread"));
+}
+
+void ReadLaterPageHandler::AddCurrentTab() {
+  Browser* browser = chrome::FindLastActive();
+  if (!browser)
+    return;
+
+  chrome::MoveCurrentTabToReadLater(browser);
+
+  base::RecordAction(
+      base::UserMetricsAction(base::FeatureList::IsEnabled(features::kSidePanel)
+                                  ? "SidePanel.ReadingList.AddCurrentPage"
+                                  : "ReadingList.Dialog.AddCurrentPage"));
 }
 
 void ReadLaterPageHandler::RemoveEntry(const GURL& url) {
   reading_list_model_->RemoveEntryByURL(url);
+  base::RecordAction(base::UserMetricsAction("DesktopReadingList.RemoveItem"));
+}
+
+void ReadLaterPageHandler::ShowContextMenuForURL(const GURL& url,
+                                                 int32_t x,
+                                                 int32_t y) {
+  auto embedder = read_later_ui_->embedder();
+  Browser* browser = chrome::FindLastActive();
+  if (embedder)
+    embedder->ShowContextMenu(gfx::Point(x, y),
+                              std::make_unique<ReadLaterItemContextMenu>(
+                                  browser, reading_list_model_, url));
 }
 
 void ReadLaterPageHandler::ShowUI() {
   auto embedder = read_later_ui_->embedder();
-  if (embedder)
+  if (embedder) {
     embedder->ShowUI();
+    UpdateCurrentPageActionButton();
+  }
 }
 
 void ReadLaterPageHandler::CloseUI() {
@@ -128,6 +278,7 @@ void ReadLaterPageHandler::ReadingListModelCompletedBatchUpdates(
   if (web_contents_->GetVisibility() == content::Visibility::HIDDEN)
     return;
   page_->ItemsChanged(CreateReadLaterEntriesByStatusData());
+  UpdateCurrentPageActionButton();
 }
 
 void ReadLaterPageHandler::ReadingListModelBeingDeleted(
@@ -146,6 +297,26 @@ void ReadLaterPageHandler::ReadingListDidApplyChanges(ReadingListModel* model) {
     return;
   }
   page_->ItemsChanged(CreateReadLaterEntriesByStatusData());
+  UpdateCurrentPageActionButton();
+}
+
+const absl::optional<GURL> ReadLaterPageHandler::GetActiveTabURL() {
+  if (active_tab_url_)
+    return active_tab_url_.value();
+  Browser* browser = chrome::FindLastActive();
+  if (browser) {
+    return chrome::GetURLToBookmark(
+        browser->tab_strip_model()->GetActiveWebContents());
+  }
+  return absl::nullopt;
+}
+
+void ReadLaterPageHandler::SetActiveTabURL(const GURL& url) {
+  if (active_tab_url_ && active_tab_url_.value() == url)
+    return;
+
+  active_tab_url_ = url;
+  UpdateCurrentPageActionButton();
 }
 
 read_later::mojom::ReadLaterEntryPtr ReadLaterPageHandler::GetEntryData(
@@ -201,4 +372,27 @@ std::string ReadLaterPageHandler::GetTimeSinceLastUpdate(
   return base::UTF16ToUTF8(
       ui::TimeFormat::Simple(ui::TimeFormat::FORMAT_ELAPSED,
                              ui::TimeFormat::LENGTH_SHORT, elapsed_time));
+}
+
+void ReadLaterPageHandler::UpdateCurrentPageActionButton() {
+  if (web_contents_->GetVisibility() == content::Visibility::HIDDEN)
+    return;
+
+  const absl::optional<GURL> url = GetActiveTabURL();
+  if (!url.has_value())
+    return;
+
+  read_later::mojom::CurrentPageActionButtonState new_state;
+  if (!reading_list_model_->IsUrlSupported(url.value()) ||
+      (reading_list_model_->GetEntryByURL(url.value()) &&
+       !reading_list_model_->GetEntryByURL(url.value())->IsRead())) {
+    new_state = read_later::mojom::CurrentPageActionButtonState::kDisabled;
+  } else {
+    new_state = read_later::mojom::CurrentPageActionButtonState::kAdd;
+  }
+  if (current_page_action_button_state_ != new_state) {
+    current_page_action_button_state_ = new_state;
+    page_->CurrentPageActionButtonStateChanged(
+        current_page_action_button_state_);
+  }
 }

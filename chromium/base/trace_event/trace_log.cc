@@ -13,6 +13,7 @@
 #include "base/base_switches.h"
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/debug/leak_annotations.h"
 #include "base/location.h"
 #include "base/logging.h"
@@ -22,7 +23,6 @@
 #include "base/process/process.h"
 #include "base/process/process_metrics.h"
 #include "base/ranges/algorithm.h"
-#include "base/stl_util.h"
 #include "base/strings/string_piece.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_tokenizer.h"
@@ -39,7 +39,6 @@
 #include "base/trace_event/event_name_filter.h"
 #include "base/trace_event/heap_profiler.h"
 #include "base/trace_event/heap_profiler_allocation_context_tracker.h"
-#include "base/trace_event/heap_profiler_event_filter.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_provider.h"
 #include "base/trace_event/process_memory_dump.h"
@@ -54,6 +53,8 @@
 #include "third_party/perfetto/include/perfetto/ext/trace_processor/export_json.h"  // nogncheck
 #include "third_party/perfetto/include/perfetto/trace_processor/trace_processor_storage.h"  // nogncheck
 #include "third_party/perfetto/protos/perfetto/config/interceptor_config.gen.h"  // nogncheck
+#include "third_party/perfetto/protos/perfetto/trace/track_event/process_descriptor.gen.h"  // nogncheck
+#include "third_party/perfetto/protos/perfetto/trace/track_event/thread_descriptor.gen.h"  // nogncheck
 #endif
 
 #if defined(OS_WIN)
@@ -290,20 +291,102 @@ void OnAddLegacyTraceEvent(TraceEvent* trace_event,
   perfetto::DynamicCategory category(
       TraceLog::GetInstance()->GetCategoryGroupName(
           trace_event->category_group_enabled()));
-  PERFETTO_INTERNAL_TRACK_EVENT(
-      category, trace_event->name(),
-      perfetto::protos::pbzero::TrackEvent::TYPE_UNSPECIFIED,
-      [&](perfetto::EventContext ctx) {
-        WriteDebugAnnotations(trace_event, ctx.event());
-        auto* legacy_event = ctx.event()->set_legacy_event();
-        legacy_event->set_phase(trace_event->phase());
-      });
+  auto write_args = [trace_event](perfetto::EventContext ctx) {
+    WriteDebugAnnotations(trace_event, ctx.event());
+    uint32_t id_flags = trace_event->flags() & (TRACE_EVENT_FLAG_HAS_ID |
+                                                TRACE_EVENT_FLAG_HAS_LOCAL_ID |
+                                                TRACE_EVENT_FLAG_HAS_GLOBAL_ID);
+    if (!id_flags &&
+        perfetto::internal::TrackEventLegacy::PhaseToType(
+            trace_event->phase()) !=
+            perfetto::protos::pbzero::TrackEvent::TYPE_UNSPECIFIED) {
+      return;
+    }
+    auto* legacy_event = ctx.event()->set_legacy_event();
+    legacy_event->set_phase(trace_event->phase());
+    switch (id_flags) {
+      case TRACE_EVENT_FLAG_HAS_ID:
+        legacy_event->set_unscoped_id(trace_event->id());
+        break;
+      case TRACE_EVENT_FLAG_HAS_LOCAL_ID:
+        legacy_event->set_local_id(trace_event->id());
+        break;
+      case TRACE_EVENT_FLAG_HAS_GLOBAL_ID:
+        legacy_event->set_global_id(trace_event->id());
+        break;
+      default:
+        break;
+    }
+  };
+
+  auto phase = trace_event->phase();
+  auto flags = trace_event->flags();
+  base::TimeTicks timestamp = trace_event->timestamp().is_null()
+                                  ? TRACE_TIME_TICKS_NOW()
+                                  : trace_event->timestamp();
+  if (phase == TRACE_EVENT_PHASE_COMPLETE) {
+    phase = TRACE_EVENT_PHASE_BEGIN;
+  } else if (phase == TRACE_EVENT_PHASE_INSTANT) {
+    auto scope = flags & TRACE_EVENT_FLAG_SCOPE_MASK;
+    switch (scope) {
+      case TRACE_EVENT_SCOPE_GLOBAL:
+        PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+            phase, category, trace_event->name(), ::perfetto::Track::Global(0),
+            timestamp, write_args);
+        return;
+      case TRACE_EVENT_SCOPE_PROCESS:
+        PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+            phase, category, trace_event->name(),
+            ::perfetto::ProcessTrack::Current(), timestamp, write_args);
+        return;
+      default:
+      case TRACE_EVENT_SCOPE_THREAD: /* Fallthrough. */
+        break;
+    }
+  }
+  if (trace_event->thread_id() &&
+      trace_event->thread_id() != base::PlatformThread::CurrentId()) {
+    PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+        phase, category, trace_event->name(),
+        perfetto::ThreadTrack::ForThread(trace_event->thread_id()), timestamp,
+        write_args);
+    return;
+  }
+  PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+      phase, category, trace_event->name(),
+      perfetto::internal::TrackEventInternal::kDefaultTrack, timestamp,
+      write_args);
+}
+
+void OnUpdateLegacyTraceEventDuration(
+    const unsigned char* category_group_enabled,
+    const char* name,
+    TraceEventHandle handle,
+    int thread_id,
+    bool explicit_timestamps,
+    const TimeTicks& now,
+    const ThreadTicks& thread_now,
+    ThreadInstructionCount thread_instruction_now) {
+  perfetto::DynamicCategory category(
+      TraceLog::GetInstance()->GetCategoryGroupName(category_group_enabled));
+  auto phase = TRACE_EVENT_PHASE_END;
+  base::TimeTicks timestamp =
+      explicit_timestamps ? now : TRACE_TIME_TICKS_NOW();
+  if (thread_id && thread_id != base::PlatformThread::CurrentId()) {
+    PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+        phase, category, name, perfetto::ThreadTrack::ForThread(thread_id),
+        timestamp);
+    return;
+  }
+  PERFETTO_INTERNAL_LEGACY_EVENT_ON_TRACK(
+      phase, category, name,
+      perfetto::internal::TrackEventInternal::kDefaultTrack, timestamp);
 }
 #endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
 
 }  // namespace
 
-#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && !defined(OS_NACL)
 namespace {
 // Perfetto provides us with a fully formed JSON trace file, while
 // TraceResultBuffer wants individual JSON fragments without a containing
@@ -374,7 +457,7 @@ class JsonStringOutputWriter
   scoped_refptr<RefCountedString> buffer_ = new RefCountedString();
   bool did_strip_prefix_ = false;
 };
-#endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+#endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && !defined(OS_NACL)
 
 // A helper class that allows the lock to be acquired in the middle of the scope
 // and unlocks at the end of scope if locked.
@@ -558,7 +641,7 @@ TraceLogStatus::~TraceLogStatus() = default;
 
 // static
 TraceLog* TraceLog::GetInstance() {
-  static base::NoDestructor<TraceLog> instance;
+  static base::NoDestructor<TraceLog> instance(0);
   return instance.get();
 }
 
@@ -577,12 +660,16 @@ void TraceLog::ResetForTesting() {
     AutoLock lock(g_trace_log_for_testing->lock_);
     CategoryRegistry::ResetForTesting();
   }
+  // Don't reset the generation value back to 0. TraceLog is normally
+  // supposed to be a singleton and the value of generation is never
+  // supposed to decrease.
+  const int generation = g_trace_log_for_testing->generation() + 1;
   g_trace_log_for_testing->~TraceLog();
-  new (g_trace_log_for_testing) TraceLog;
+  new (g_trace_log_for_testing) TraceLog(generation);
 #endif  // !BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
 }
 
-TraceLog::TraceLog()
+TraceLog::TraceLog(int generation)
     : enabled_modes_(0),
       num_traces_recorded_(0),
       process_sort_index_(0),
@@ -591,7 +678,7 @@ TraceLog::TraceLog()
       trace_options_(kInternalRecordUntilFull),
       trace_config_(TraceConfig()),
       thread_shared_chunk_index_(0),
-      generation_(0),
+      generation_(generation),
       use_worker_thread_(false) {
   CategoryRegistry::Initialize();
 
@@ -612,7 +699,8 @@ TraceLog::TraceLog()
   // to Perfetto yet will still be using TRACE_EVENT_API_ADD_TRACE_EVENT, so we
   // need to route these events to Perfetto using an override here. This
   // override is also used to capture internal metadata events.
-  SetAddTraceEventOverrides(&OnAddLegacyTraceEvent, nullptr, nullptr);
+  SetAddTraceEventOverrides(&OnAddLegacyTraceEvent, nullptr,
+                            &OnUpdateLegacyTraceEventDuration);
 #endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
   g_trace_log_for_testing = this;
 }
@@ -773,8 +861,6 @@ void TraceLog::CreateFiltersForTraceConfig() {
       auto whitelist = std::make_unique<std::unordered_set<std::string>>();
       CHECK(filter_config.GetArgAsSet("event_name_allowlist", &*whitelist));
       new_filter = std::make_unique<EventNameFilter>(std::move(whitelist));
-    } else if (predicate_name == HeapProfilerEventFilter::kName) {
-      new_filter = std::make_unique<HeapProfilerEventFilter>();
     } else {
       if (filter_factory_for_testing_)
         new_filter = filter_factory_for_testing_(predicate_name);
@@ -1008,6 +1094,14 @@ MetadataFilterPredicate TraceLog::GetMetadataFilterPredicate() const {
   return metadata_filter_predicate_;
 }
 
+void TraceLog::SetRecordHostAppPackageName(bool record_host_app_package_name) {
+  record_host_app_package_name_ = record_host_app_package_name;
+}
+
+bool TraceLog::ShouldRecordHostAppPackageName() const {
+  return record_host_app_package_name_;
+}
+
 TraceLog::InternalTraceOptions TraceLog::GetInternalOptionsFromTraceConfig(
     const TraceConfig& config) {
   InternalTraceOptions ret = config.IsArgumentFilterEnabled()
@@ -1229,7 +1323,7 @@ void TraceLog::FlushInternal(const TraceLog::OutputCallback& cb,
                              bool discard_events) {
   use_worker_thread_ = use_worker_thread;
 
-#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && !defined(OS_NACL)
   perfetto::TrackEvent::Flush();
 
   if (discard_events) {
@@ -1255,6 +1349,10 @@ void TraceLog::FlushInternal(const TraceLog::OutputCallback& cb,
     auto data = tracing_session_->ReadTraceBlocking();
     OnTraceData(data.data(), data.size(), /*has_more=*/false);
   }
+#elif BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && defined(OS_NACL)
+  // Trace processor isn't built on NaCL, so we can't convert the resulting
+  // trace into JSON.
+  CHECK(false) << "JSON tracing isn't supported on NaCL";
 #else   // !BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
   if (IsEnabled()) {
     // Can't flush when tracing is enabled because otherwise PostTask would
@@ -1307,7 +1405,7 @@ void TraceLog::FlushInternal(const TraceLog::OutputCallback& cb,
 #endif  // !BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
 }
 
-#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && !defined(OS_NACL)
 void TraceLog::OnTraceData(const char* data, size_t size, bool has_more) {
   if (size) {
     std::unique_ptr<uint8_t[]> data_copy(new uint8_t[size]);
@@ -1326,7 +1424,7 @@ void TraceLog::OnTraceData(const char* data, size_t size, bool has_more) {
   tracing_session_.reset();
   json_output_writer_.reset();
 }
-#endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+#endif  // BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY) && !defined(OS_NACL)
 
 // Usually it runs on a different thread.
 void TraceLog::ConvertTraceEventsToTraceFormat(
@@ -2060,6 +2158,19 @@ void TraceLog::SetProcessID(int process_id) {
 void TraceLog::SetProcessSortIndex(int sort_index) {
   AutoLock lock(lock_);
   process_sort_index_ = sort_index;
+}
+
+void TraceLog::set_process_name(const std::string& process_name) {
+  {
+    AutoLock lock(lock_);
+    process_name_ = process_name;
+  }
+#if BUILDFLAG(USE_PERFETTO_CLIENT_LIBRARY)
+  auto track = perfetto::ProcessTrack::Current();
+  auto desc = track.Serialize();
+  desc.mutable_process()->set_process_name(process_name);
+  perfetto::TrackEvent::SetTrackDescriptor(track, std::move(desc));
+#endif
 }
 
 void TraceLog::UpdateProcessLabel(int label_id,

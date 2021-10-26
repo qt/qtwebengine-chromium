@@ -36,7 +36,6 @@
 #include "base/metrics/histogram_macros.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
-#include "third_party/blink/renderer/bindings/core/v8/double_or_scroll_timeline_auto_keyword.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_cssnumericvalue_double.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_double_scrolltimelineautokeyword.h"
 #include "third_party/blink/renderer/core/animation/animation_timeline.h"
@@ -52,6 +51,7 @@
 #include "third_party/blink/renderer/core/animation/scroll_timeline.h"
 #include "third_party/blink/renderer/core/animation/scroll_timeline_util.h"
 #include "third_party/blink/renderer/core/animation/timing_calculations.h"
+#include "third_party/blink/renderer/core/css/cssom/css_unit_values.h"
 #include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/style_change_reason.h"
@@ -186,18 +186,6 @@ bool GreaterThanOrEqualWithinTimeTolerance(const AnimationTimeDelta& a,
   return a_ms > b_ms;
 }
 
-#if !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-V8CSSNumberish* CSSNumberishToV8CSSNumberish(const CSSNumberish& value) {
-  if (value.IsDouble()) {
-    return MakeGarbageCollected<V8CSSNumberish>(value.GetAsDouble());
-  } else if (value.IsCSSNumericValue()) {
-    return MakeGarbageCollected<V8CSSNumberish>(value.GetAsCSSNumericValue());
-  }
-  DCHECK(value.IsNull());
-  return nullptr;
-}
-#endif  // !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-
 }  // namespace
 
 Animation* Animation::Create(AnimationEffect* effect,
@@ -212,29 +200,40 @@ Animation* Animation::Create(AnimationEffect* effect,
   }
   DCHECK(IsA<DocumentTimeline>(timeline) || timeline->IsScrollTimeline());
 
-  // TODO(crbug.com/1097041): Support 'auto' value.
-  if (timeline->IsScrollTimeline()) {
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-    auto* time_range = To<ScrollTimeline>(timeline)->timeRange();
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-    DoubleOrScrollTimelineAutoKeyword time_range;
-    To<ScrollTimeline>(timeline)->timeRange(time_range);
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-    // TODO(crbug.com/1140602): Support progress based animations
-    // We are currently abusing the intended use of the "auto" keyword. We are
-    // using it here as a signal to use progress based timeline instead of
-    // having a range based current time. We are doing this maintain backwards
-    // compatibility with existing tests.
-    if (
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-        time_range->IsScrollTimelineAutoKeyword()
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-        time_range.IsScrollTimelineAutoKeyword()
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-    ) {
-      exception_state.ThrowDOMException(
-          DOMExceptionCode::kNotSupportedError,
-          "progress based animations are not supported");
+  if (effect && timeline->IsProgressBasedTimeline()) {
+    if (effect->timing_.iteration_duration) {
+      if (effect->timing_.iteration_duration->is_inf()) {
+        exception_state.ThrowTypeError(
+            "Effect duration cannot be Infinity when used with Scroll "
+            "Timelines");
+        return nullptr;
+      }
+    } else {
+      // TODO(crbug.com/1216527)
+      // Eventually we hope to be able to be more flexible with
+      // iteration_duration "auto" and its interaction with start_delay and
+      // end_delay. For now we will throw an exception if either delay is set.
+      // Once the spec (https://github.com/w3c/csswg-drafts/pull/6337) has been
+      // ratified, we will be able to better handle mixed scenarios like "auto"
+      // and time based delays.
+
+      // If either delay or end_delay are non-zero, we can't yet handle "auto"
+      if (!effect->timing_.start_delay.is_zero() ||
+          !effect->timing_.end_delay.is_zero()) {
+        exception_state.ThrowDOMException(
+            DOMExceptionCode::kNotSupportedError,
+            "Effect duration \"auto\" with delays is not yet implemented when "
+            "used with Scroll Timelines");
+        return nullptr;
+      }
+    }
+
+    if (effect->timing_.iteration_count ==
+        std::numeric_limits<double>::infinity()) {
+      // iteration count of infinity makes no sense for scroll timelines
+      exception_state.ThrowTypeError(
+          "Effect iterations cannot be Infinity when used with Scroll "
+          "Timelines");
       return nullptr;
     }
   }
@@ -287,7 +286,9 @@ Animation::Animation(ExecutionContext* execution_context,
       compositor_state_(nullptr),
       compositor_pending_(false),
       compositor_group_(0),
-      effect_suppressed_(false) {
+      effect_suppressed_(false),
+      compositor_property_animations_have_no_effect_(false),
+      animation_has_no_effect_(false) {
   if (content_) {
     if (content_->GetAnimation()) {
       content_->GetAnimation()->cancel();
@@ -295,14 +296,16 @@ Animation::Animation(ExecutionContext* execution_context,
     }
     content_->Attach(this);
   }
-  document_ = timeline_ ? timeline_->GetDocument()
-                        : To<LocalDOMWindow>(execution_context)->document();
-  DCHECK(document_);
 
-  if (timeline_)
+  if (timeline_) {
+    document_ = timeline_->GetDocument();
+    DCHECK(document_);
     timeline_->AnimationAttached(this);
-  else
+  } else {
+    document_ = To<LocalDOMWindow>(execution_context)->document();
+    DCHECK(document_);
     document_->Timeline().AnimationAttached(this);
+  }
 
   probe::DidCreateAnimation(document_, sequence_number_);
 }
@@ -323,7 +326,7 @@ void Animation::Dispose() {
 }
 
 AnimationTimeDelta Animation::EffectEnd() const {
-  return content_ ? content_->SpecifiedTiming().EndTimeInternal()
+  return content_ ? content_->NormalizedTiming().end_time
                   : AnimationTimeDelta();
 }
 
@@ -346,6 +349,88 @@ absl::optional<double> Animation::TimelineTime() const {
   return timeline_ ? timeline_->CurrentTimeMilliseconds() : absl::nullopt;
 }
 
+bool Animation::ConvertCSSNumberishToTime(
+    const V8CSSNumberish* numberish,
+    absl::optional<AnimationTimeDelta>& time,
+    String variable_name,
+    ExceptionState& exception_state) {
+  // This function is used to handle the CSSNumberish input for setting
+  // currentTime and startTime. Spec issue can be found here for this process:
+  // https://github.com/w3c/csswg-drafts/issues/6458
+
+  // Handle converting null
+  if (!numberish) {
+    time = absl::nullopt;
+    return true;
+  }
+
+  if (timeline_ && timeline_->IsProgressBasedTimeline()) {
+    // Progress based timeline
+    if (numberish->IsCSSNumericValue()) {
+      CSSUnitValue* numberish_as_percentage =
+          numberish->GetAsCSSNumericValue()->to(
+              CSSPrimitiveValue::UnitType::kPercentage);
+      if (!numberish_as_percentage) {
+        exception_state.ThrowDOMException(
+            DOMExceptionCode::kNotSupportedError,
+            "Invalid " + variable_name +
+                ". CSSNumericValue must be a percentage for "
+                "progress based animations.");
+        return false;
+      }
+      time = (numberish_as_percentage->value() / 100) *
+             timeline_->GetDuration().value();
+      return true;
+    } else {
+      exception_state.ThrowDOMException(
+          DOMExceptionCode::kNotSupportedError,
+          "Invalid " + variable_name + ". Setting " + variable_name +
+              " using absolute time "
+              "values is not supported for progress based animations.");
+      return false;
+    }
+  }
+
+  // Document timeline
+  if (numberish->IsCSSNumericValue()) {
+    CSSUnitValue* numberish_as_number = numberish->GetAsCSSNumericValue()->to(
+        CSSPrimitiveValue::UnitType::kNumber);
+    if (numberish_as_number) {
+      time =
+          AnimationTimeDelta::FromMillisecondsD(numberish_as_number->value());
+      return true;
+    }
+
+    CSSUnitValue* numberish_as_milliseconds =
+        numberish->GetAsCSSNumericValue()->to(
+            CSSPrimitiveValue::UnitType::kMilliseconds);
+    if (numberish_as_milliseconds) {
+      time = AnimationTimeDelta::FromMillisecondsD(
+          numberish_as_milliseconds->value());
+      return true;
+    }
+
+    CSSUnitValue* numberish_as_seconds = numberish->GetAsCSSNumericValue()->to(
+        CSSPrimitiveValue::UnitType::kSeconds);
+    if (numberish_as_seconds) {
+      time = AnimationTimeDelta::FromSecondsD(numberish_as_seconds->value());
+      return true;
+    }
+
+    // TODO (crbug.com/1232181): Look into allowing document timelines to set
+    // currentTime and startTime using CSSNumericValues that are percentages.
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "Invalid " + variable_name +
+            ". CSSNumericValue must be either a number or a time value for "
+            "time based animations.");
+    return false;
+  }
+
+  time = AnimationTimeDelta::FromMillisecondsD(numberish->GetAsDouble());
+  return true;
+}
+
 // https://drafts.csswg.org/web-animations/#setting-the-current-time-of-an-animation.
 void Animation::setCurrentTime(const V8CSSNumberish* current_time,
                                ExceptionState& exception_state) {
@@ -358,18 +443,11 @@ void Animation::setCurrentTime(const V8CSSNumberish* current_time,
     return;
   }
 
-  if (current_time->IsCSSNumericValue()) {
-    // Throw exception for CSSNumberish that is a CSSNumericValue
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kNotSupportedError,
-        "Invalid startTime. CSSNumericValue not yet supported.");
+  absl::optional<AnimationTimeDelta> new_current_time;
+  // Failure to convert results in a thrown exception and returning false.
+  if (!ConvertCSSNumberishToTime(current_time, new_current_time, "currentTime",
+                                 exception_state))
     return;
-  }
-
-  DCHECK(current_time->IsDouble());
-  // Convert from double to AnimationTimeDelta for internal use.
-  absl::optional<AnimationTimeDelta> new_current_time =
-      AnimationTimeDelta::FromMillisecondsD(current_time->GetAsDouble());
 
   DCHECK(new_current_time);
   SetCurrentTimeInternal(new_current_time.value());
@@ -392,22 +470,6 @@ void Animation::setCurrentTime(const V8CSSNumberish* current_time,
   // Notify of potential state change.
   NotifyProbe();
 }
-
-#if !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-
-// https://drafts.csswg.org/web-animations/#setting-the-current-time-of-an-animation.
-void Animation::setCurrentTime(CSSNumberish current_time,
-                               ExceptionState& exception_state) {
-  // Forward to the new implementation.
-  setCurrentTime(CSSNumberishToV8CSSNumberish(current_time), exception_state);
-}
-
-void Animation::setCurrentTime(CSSNumberish current_time) {
-  NonThrowableExceptionState exception_state;
-  setCurrentTime(current_time, exception_state);
-}
-
-#endif  // !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
 // https://drafts.csswg.org/web-animations/#setting-the-current-time-of-an-animation
 // See steps for silently setting the current time. The preliminary step of
@@ -451,31 +513,27 @@ void Animation::ResetHoldTimeAndPhase() {
   hold_phase_ = absl::nullopt;
 }
 
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 V8CSSNumberish* Animation::startTime() const {
   if (start_time_) {
-    return MakeGarbageCollected<V8CSSNumberish>(
-        start_time_.value().InMillisecondsF());
+    return ConvertTimeToCSSNumberish(start_time_.value());
   }
   return nullptr;
 }
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-void Animation::startTime(CSSNumberish& startTime) const {
-  startTime =
-      start_time_
-          ? CSSNumberish::FromDouble(start_time_.value().InMillisecondsF())
-          : CSSNumberish();
-}
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
+V8CSSNumberish* Animation::ConvertTimeToCSSNumberish(
+    AnimationTimeDelta time) const {
+  if (timeline_ && timeline_->IsProgressBasedTimeline()) {
+    return To<ScrollTimeline>(*timeline_).ConvertTimeToProgress(time);
+  }
+  return MakeGarbageCollected<V8CSSNumberish>(time.InMillisecondsF());
+}
+
 // https://drafts.csswg.org/web-animations/#the-current-time-of-an-animation
 V8CSSNumberish* Animation::currentTime() const {
   // 1. If the animation’s hold time is resolved,
   //    The current time is the animation’s hold time.
   if (hold_time_.has_value()) {
-    return MakeGarbageCollected<V8CSSNumberish>(
-        hold_time_.value().InMillisecondsF());
+    return ConvertTimeToCSSNumberish(hold_time_.value());
   }
 
   // 2.  If any of the following are true:
@@ -497,43 +555,8 @@ V8CSSNumberish* Animation::currentTime() const {
   AnimationTimeDelta calculated_current_time =
       (timeline_time.value() - start_time_.value()) * playback_rate_;
 
-  return MakeGarbageCollected<V8CSSNumberish>(
-      calculated_current_time.InMillisecondsF());
+  return ConvertTimeToCSSNumberish(calculated_current_time);
 }
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-// https://drafts.csswg.org/web-animations/#the-current-time-of-an-animation
-void Animation::currentTime(CSSNumberish& currentTime) const {
-  // 1. If the animation’s hold time is resolved,
-  //    The current time is the animation’s hold time.
-  if (hold_time_.has_value()) {
-    currentTime =
-        CSSNumberish::FromDouble(hold_time_.value().InMillisecondsF());
-    return;
-  }
-
-  // 2.  If any of the following are true:
-  //    * the animation has no associated timeline, or
-  //    * the associated timeline is inactive, or
-  //    * the animation’s start time is unresolved.
-  // The current time is an unresolved time value.
-  if (!timeline_ || !timeline_->IsActive() || !start_time_)
-    return;
-
-  // 3. Otherwise,
-  // current time = (timeline time - start time) × playback rate
-  absl::optional<AnimationTimeDelta> timeline_time = timeline_->CurrentTime();
-
-  // An active timeline should always have a value, and since inactive timeline
-  // is handled in step 2 above, make sure that timeline_time has a value.
-  DCHECK(timeline_time.has_value());
-
-  AnimationTimeDelta calculated_current_time =
-      (timeline_time.value() - start_time_.value()) * playback_rate_;
-
-  currentTime =
-      CSSNumberish::FromDouble(calculated_current_time.InMillisecondsF());
-}
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
 bool Animation::ValidateHoldTimeAndPhase() const {
   return hold_phase_ ||
@@ -576,6 +599,9 @@ bool Animation::PreCommit(
        !IsWithinAnimationTimeEpsilon(compositor_state_->start_time.value(),
                                      start_time_.value().InSecondsF()));
 
+  compositor_property_animations_have_no_effect_ = false;
+  animation_has_no_effect_ = false;
+
   // FIXME: softChange && !hardChange should generate a Pause/ThenStart,
   // not a Cancel, but we can't communicate these to the compositor yet.
 
@@ -612,6 +638,14 @@ bool Animation::PreCommit(
       } else {
         CancelIncompatibleAnimationsOnCompositor();
       }
+
+      compositor_property_animations_have_no_effect_ =
+          failure_reasons &
+          CompositorAnimations::kCompositorPropertyAnimationsHaveNoEffect;
+      animation_has_no_effect_ =
+          failure_reasons ==
+          CompositorAnimations::kCompositorPropertyAnimationsHaveNoEffect;
+
       DCHECK_EQ(kRunning, CalculateAnimationPlayState());
       TRACE_EVENT_NESTABLE_ASYNC_INSTANT1(
           "blink.animations,devtools.timeline,benchmark,rail", "Animation",
@@ -880,6 +914,15 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
   AnimationPlayState old_play_state = CalculateAnimationPlayState();
   absl::optional<AnimationTimeDelta> old_current_time = CurrentTimeInternal();
 
+  // In some cases, we need to preserve the progress of the animation between
+  // the old timeline and the new one. We do this by storing the progress using
+  // the old current time and the effect end based on the old timeline. Pending
+  // spec issue: https://github.com/w3c/csswg-drafts/issues/6452
+  double progress = 0;
+  if (old_current_time && !EffectEnd().is_zero()) {
+    progress = old_current_time.value() / EffectEnd();
+  }
+
   CancelAnimationOnCompositor();
 
   // 3. Let the timeline of the animation be the new timeline.
@@ -898,6 +941,11 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
   else
     document_->Timeline().AnimationAttached(this);
   SetOutdated();
+
+  // Update content timing to be based on new timeline type. This ensures that
+  // EffectEnd() is returning a value appropriate to the new timeline.
+  if (content_ && timeline_)
+    content_->InvalidateNormalizedTiming();
 
   reset_current_time_on_resume_ = false;
 
@@ -921,7 +969,8 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
           if (old_current_time) {
             reset_current_time_on_resume_ = true;
             start_time_ = absl::nullopt;
-            SetHoldTimeAndPhase(old_current_time, TimelinePhase::kInactive);
+            SetHoldTimeAndPhase(progress * EffectEnd(),
+                                TimelinePhase::kInactive);
           } else if (PendingInternal()) {
             start_time_ = boundary_time;
           }
@@ -932,7 +981,7 @@ void Animation::setTimeline(AnimationTimeline* timeline) {
       }
     } else if (old_current_time && old_timeline &&
                !old_timeline->IsMonotonicallyIncreasing()) {
-      SetCurrentTimeInternal(old_current_time.value());
+      SetCurrentTimeInternal(progress * EffectEnd());
     }
   }
 
@@ -994,19 +1043,12 @@ TimelinePhase Animation::CalculateCurrentPhase() const {
 // https://drafts.csswg.org/web-animations/#setting-the-start-time-of-an-animation
 void Animation::setStartTime(const V8CSSNumberish* start_time,
                              ExceptionState& exception_state) {
-  if (start_time && start_time->IsCSSNumericValue()) {
-    // Throw exception for CSSNumberish that is a CSSNumericValue
-    exception_state.ThrowDOMException(
-        DOMExceptionCode::kNotSupportedError,
-        "Invalid startTime. CSSNumericValue not yet supported.");
-    return;
-  }
 
   absl::optional<AnimationTimeDelta> new_start_time;
-  if (start_time) {
-    new_start_time =
-        AnimationTimeDelta::FromMillisecondsD(start_time->GetAsDouble());
-  }
+  // Failure to convert results in a thrown exception and returning false.
+  if (!ConvertCSSNumberishToTime(start_time, new_start_time, "startTime",
+                                 exception_state))
+    return;
 
   const bool had_start_time = start_time_.has_value();
 
@@ -1092,22 +1134,6 @@ void Animation::setStartTime(const V8CSSNumberish* start_time,
 
   NotifyProbe();
 }
-
-#if !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-
-// https://drafts.csswg.org/web-animations/#setting-the-start-time-of-an-animation
-void Animation::setStartTime(CSSNumberish start_time,
-                             ExceptionState& exception_state) {
-  // Forward to the new implementation.
-  setStartTime(CSSNumberishToV8CSSNumberish(start_time), exception_state);
-}
-
-void Animation::setStartTime(CSSNumberish start_time) {
-  NonThrowableExceptionState exception_state;
-  setStartTime(start_time, exception_state);
-}
-
-#endif  // !defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
 // https://drafts.csswg.org/web-animations-1/#setting-the-associated-effect
 void Animation::setEffect(AnimationEffect* new_effect) {
@@ -1930,24 +1956,19 @@ void Animation::setPlaybackRate(double playback_rate,
   // 4. If previous time is resolved, set the current time of animation to
   //    previous time
   pending_playback_rate_ = absl::nullopt;
-#if defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
   V8CSSNumberish* previous_current_time = currentTime();
   playback_rate_ = playback_rate;
   if (previous_current_time) {
     setCurrentTime(previous_current_time, exception_state);
   }
-#else   // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
-  CSSNumberish previous_current_time;
-  currentTime(previous_current_time);
-  playback_rate_ = playback_rate;
-  if (!previous_current_time.IsNull()) {
-    setCurrentTime(previous_current_time, exception_state);
-  }
-#endif  // defined(USE_BLINK_V8_BINDING_NEW_IDL_UNION)
 
   // Adds a UseCounter to check if setting playbackRate causes a compensatory
   // seek forcing a change in start_time_
-  if (start_time_before && start_time_ != start_time_before &&
+  // We use an epsilon (1 microsecond) to handle precision issue.
+  double epsilon = 1e-6;
+  if (start_time_before && start_time_ &&
+      fabs(start_time_.value().InMillisecondsF() -
+           start_time_before.value().InMillisecondsF()) > epsilon &&
       CalculateAnimationPlayState() != kFinished) {
     UseCounter::Count(GetExecutionContext(),
                       WebFeature::kAnimationSetPlaybackRateCompensatorySeek);
@@ -2076,6 +2097,34 @@ base::TimeDelta Animation::ComputeCompositorTimeOffset() const {
       reversed ? EffectEnd().InSecondsF() - current_time.value().InSecondsF()
                : current_time.value().InSecondsF();
   return base::TimeDelta::FromSecondsD(time_offset_s / fabs(playback_rate));
+}
+
+void Animation::MarkPendingIfCompositorPropertyAnimationChanges(
+    const PaintArtifactCompositor* paint_artifact_compositor) {
+  // |compositor_property_animations_have_no_effect_| will already be calculated
+  // in |Animation::PreCommit| if the animation is pending.
+  if (compositor_pending_)
+    return;
+
+  bool had_no_effect = compositor_property_animations_have_no_effect_;
+  compositor_property_animations_have_no_effect_ = false;
+
+  auto* keyframe_effect = DynamicTo<KeyframeEffect>(content_.Get());
+  if (!keyframe_effect || !keyframe_effect->IsCurrent()) {
+    // If the animation is not running, we can skip checking for having no
+    // effect. We can also skip the call to |SetCompositorPending| to avoid
+    // marking finished animations as pending.
+    return;
+  }
+
+  Element* target = keyframe_effect->EffectTarget();
+  if (target && keyframe_effect->Model()) {
+    compositor_property_animations_have_no_effect_ =
+        CompositorAnimations::CompositorPropertyAnimationsHaveNoEffect(
+            *target, *keyframe_effect->Model(), paint_artifact_compositor);
+  }
+  if (compositor_property_animations_have_no_effect_ != had_no_effect)
+    SetCompositorPending();
 }
 
 void Animation::StartAnimationOnCompositor(
@@ -2290,9 +2339,11 @@ absl::optional<AnimationTimeDelta> Animation::TimeToEffectChange() {
     return -current_time.value() / playback_rate_;
   }
 
-  if (!HasActiveAnimationsOnCompositor() &&
-      (content_->GetPhase() == Timing::kPhaseActive))
+  // If this animation has no effect, we can skip ticking it on main.
+  if (!HasActiveAnimationsOnCompositor() && !animation_has_no_effect_ &&
+      (content_->GetPhase() == Timing::kPhaseActive)) {
     return AnimationTimeDelta();
+  }
 
   return (playback_rate_ > 0)
              ? (content_->TimeToForwardsEffectChange() / playback_rate_)

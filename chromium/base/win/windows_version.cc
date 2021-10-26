@@ -38,10 +38,10 @@ namespace {
 constexpr wchar_t kRegKeyWindowsNTCurrentVersion[] =
     L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
 
-// Returns the "UBR" (Windows 10 patch number) and "ReleaseId" (Windows 10
-// release number) from the registry. "UBR" is an undocumented value and will be
-// 0 if the value was not found. "ReleaseId" will be an empty string if the
-// value is not found.
+// Returns the "UBR" (Windows 10 patch number) and "DisplayVersion" (or
+// "ReleaseId" on earlier versions) (Windows 10 release number) from registry.
+// "UBR" is an undocumented value and will be 0 if the value was not found.
+// "ReleaseId" will be an empty string if neither new nor old values are found.
 std::pair<int, std::string> GetVersionData() {
   DWORD ubr = 0;
   std::wstring release_id;
@@ -50,19 +50,24 @@ std::pair<int, std::string> GetVersionData() {
   if (key.Open(HKEY_LOCAL_MACHINE, kRegKeyWindowsNTCurrentVersion,
                KEY_QUERY_VALUE) == ERROR_SUCCESS) {
     key.ReadValueDW(L"UBR", &ubr);
-    key.ReadValue(L"ReleaseId", &release_id);
+    // "DisplayVersion" has been introduced in Windows 10 2009
+    // when naming changed to mixed letters and numbers.
+    key.ReadValue(L"DisplayVersion", &release_id);
+    // Use discontinued "ReleaseId" instead, if the former is unavailable.
+    if (release_id.empty())
+      key.ReadValue(L"ReleaseId", &release_id);
   }
 
   return std::make_pair(static_cast<int>(ubr), WideToUTF8(release_id));
 }
 
 const _SYSTEM_INFO& GetSystemInfoStorage() {
-  static const NoDestructor<_SYSTEM_INFO> system_info([] {
+  static const _SYSTEM_INFO system_info = [] {
     _SYSTEM_INFO info = {};
     ::GetNativeSystemInfo(&info);
     return info;
-  }());
-  return *system_info;
+  }();
+  return system_info;
 }
 
 }  // namespace
@@ -156,6 +161,10 @@ OSInfo::OSInfo(const _OSVERSIONINFOEXW& version_info,
       case PRODUCT_BUSINESS:
       case PRODUCT_BUSINESS_N:
         version_type_ = SUITE_ENTERPRISE;
+        break;
+      case PRODUCT_PRO_FOR_EDUCATION:
+      case PRODUCT_PRO_FOR_EDUCATION_N:
+        version_type_ = SUITE_EDUCATION_PRO;
         break;
       case PRODUCT_EDUCATION:
       case PRODUCT_EDUCATION_N:
@@ -254,8 +263,19 @@ OSInfo::WOW64Status OSInfo::GetWOW64StatusForProcess(HANDLE process_handle) {
 // With the exception of Server 2003, server variants are treated the same as
 // the corresponding workstation release.
 // static
-Version OSInfo::MajorMinorBuildToVersion(int major, int minor, int build) {
+Version OSInfo::MajorMinorBuildToVersion(uint32_t major,
+                                         uint32_t minor,
+                                         uint32_t build) {
+  if (major == 11)
+    return Version::WIN11;
+
   if (major == 10) {
+    if (build >= 22000)
+      return Version::WIN11;
+    if (build >= 20348)
+      return Version::SERVER_2022;
+    if (build >= 19044)
+      return Version::WIN10_21H2;
     if (build >= 19043)
       return Version::WIN10_21H1;
     if (build >= 19042)
@@ -282,7 +302,7 @@ Version OSInfo::MajorMinorBuildToVersion(int major, int minor, int build) {
   }
 
   if (major > 6) {
-    // Hitting this likely means that it's time for a >10 block above.
+    // Hitting this likely means that it's time for a >11 block above.
     NOTREACHED() << major << "." << minor << "." << build;
     return Version::WIN_LAST;
   }
@@ -296,7 +316,7 @@ Version OSInfo::MajorMinorBuildToVersion(int major, int minor, int build) {
       case 2:
         return Version::WIN8;
       default:
-        DCHECK_EQ(minor, 3);
+        DCHECK_EQ(minor, 3u);
         return Version::WIN8_1;
     }
   }

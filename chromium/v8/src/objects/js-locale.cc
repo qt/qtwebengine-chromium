@@ -178,12 +178,18 @@ int32_t weekdayFromEDaysOfWeek(icu::Calendar::EDaysOfWeek eDaysOfWeek) {
 }  // namespace
 
 bool JSLocale::Is38AlphaNumList(const std::string& value) {
-  std::size_t found = value.find("-");
-  if (found == std::string::npos) {
+  std::size_t found_dash = value.find("-");
+  std::size_t found_underscore = value.find("_");
+  if (found_dash == std::string::npos &&
+      found_underscore == std::string::npos) {
     return IsAlphanum(value, 3, 8);
   }
-  return IsAlphanum(value.substr(0, found), 3, 8) &&
-         JSLocale::Is38AlphaNumList(value.substr(found + 1));
+  if (found_underscore == std::string::npos || found_dash < found_underscore) {
+    return IsAlphanum(value.substr(0, found_dash), 3, 8) &&
+           JSLocale::Is38AlphaNumList(value.substr(found_dash + 1));
+  }
+  return IsAlphanum(value.substr(0, found_underscore), 3, 8) &&
+         JSLocale::Is38AlphaNumList(value.substr(found_underscore + 1));
 }
 
 bool JSLocale::Is3Alpha(const std::string& value) {
@@ -425,8 +431,13 @@ MaybeHandle<JSLocale> JSLocale::Maximize(Isolate* isolate,
     // Base name is not changed
     result = source;
   }
-  DCHECK(U_SUCCESS(status));
-  DCHECK(!result.isBogus());
+  if (U_FAILURE(status) || result.isBogus()) {
+    // Due to https://unicode-org.atlassian.net/browse/ICU-21639
+    // Valid but super long locale will fail. Just throw here for now.
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kLocaleBadParameters),
+                    JSLocale);
+  }
   return Construct(isolate, result);
 }
 
@@ -455,16 +466,67 @@ MaybeHandle<JSLocale> JSLocale::Minimize(Isolate* isolate,
     // Base name is not changed
     result = source;
   }
-  DCHECK(U_SUCCESS(status));
-  DCHECK(!result.isBogus());
+  if (U_FAILURE(status) || result.isBogus()) {
+    // Due to https://unicode-org.atlassian.net/browse/ICU-21639
+    // Valid but super long locale will fail. Just throw here for now.
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kLocaleBadParameters),
+                    JSLocale);
+  }
   return Construct(isolate, result);
+}
+
+MaybeHandle<JSArray> ToJSArray(Isolate* isolate, const char* unicode_key,
+                               icu::StringEnumeration* enumeration,
+                               const std::set<std::string>& removes) {
+  UErrorCode status = U_ZERO_ERROR;
+  Factory* factory = isolate->factory();
+
+  int32_t count = 0;
+  if (!removes.empty()) {
+    // If we may remove items, then we need to go one pass first to count how
+    // many items we will insert before we allocate the fixed array.
+    for (const char* item = enumeration->next(nullptr, status);
+         U_SUCCESS(status) && item != nullptr;
+         item = enumeration->next(nullptr, status)) {
+      if (unicode_key != nullptr) {
+        item = uloc_toUnicodeLocaleType(unicode_key, item);
+      }
+      if (removes.find(item) == removes.end()) {
+        count++;
+      }
+    }
+    enumeration->reset(status);
+  } else {
+    count = enumeration->count(status);
+  }
+  Handle<FixedArray> fixed_array = factory->NewFixedArray(count);
+
+  int32_t index = 0;
+  for (const char* item = enumeration->next(nullptr, status);
+       U_SUCCESS(status) && item != nullptr;
+       item = enumeration->next(nullptr, status)) {
+    if (unicode_key != nullptr) {
+      item = uloc_toUnicodeLocaleType(unicode_key, item);
+    }
+    if (removes.find(item) != removes.end()) {
+      continue;
+    }
+    Handle<String> str = factory->NewStringFromAsciiChecked(item);
+    fixed_array->set(index++, *str);
+  }
+  CHECK(index == count);
+  if (U_FAILURE(status)) {
+    THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
+                    JSArray);
+  }
+  return factory->NewJSArrayWithElements(fixed_array);
 }
 
 template <typename T>
 MaybeHandle<JSArray> GetKeywordValuesFromLocale(
     Isolate* isolate, const char* key, const char* unicode_key,
-    const icu::Locale& locale,
-    const std::map<std::string, std::string>& substitutions) {
+    const icu::Locale& locale, const std::set<std::string>& removes) {
   Factory* factory = isolate->factory();
   UErrorCode status = U_ZERO_ERROR;
   std::string ext =
@@ -482,50 +544,22 @@ MaybeHandle<JSArray> GetKeywordValuesFromLocale(
     THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
                     JSArray);
   }
-  int32_t count = enumeration->count(status);
-  if (U_FAILURE(status)) {
-    THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
-                    JSArray);
-  }
-  Handle<FixedArray> fixed_array = factory->NewFixedArray(count);
-
-  int32_t index = 0;
-  for (const char* item = enumeration->next(nullptr, status);
-       U_SUCCESS(status) && item != nullptr;
-       item = enumeration->next(nullptr, status)) {
-    auto mapped = substitutions.find(item);
-    if (mapped != substitutions.end()) {
-      item = mapped->second.c_str();
-      if (*item == '\0') {
-        continue;
-      }
-    }
-    Handle<String> str = factory->NewStringFromAsciiChecked(item);
-    fixed_array->set(index++, *str);
-  }
-  if (U_FAILURE(status)) {
-    THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
-                    JSArray);
-  }
-  return factory->NewJSArrayWithElements(fixed_array);
+  return ToJSArray(isolate, unicode_key, enumeration.get(), removes);
 }
 
 MaybeHandle<JSArray> JSLocale::Calendars(Isolate* isolate,
                                          Handle<JSLocale> locale) {
   icu::Locale icu_locale(*(locale->icu_locale().raw()));
-  const std::map<std::string, std::string> substitutions(
-      {{"gregorian", "gregory"}, {"ethiopic-amete-alem", "ethioaa"}});
-  return GetKeywordValuesFromLocale<icu::Calendar>(isolate, "calendar", "ca",
-                                                   icu_locale, substitutions);
+  return GetKeywordValuesFromLocale<icu::Calendar>(
+      isolate, "calendar", "ca", icu_locale, std::set<std::string>());
 }
 
 MaybeHandle<JSArray> JSLocale::Collations(Isolate* isolate,
                                           Handle<JSLocale> locale) {
   icu::Locale icu_locale(*(locale->icu_locale().raw()));
-  const std::map<std::string, std::string> substitutions(
-      {{"standard", ""}, {"search", ""}});
+  const std::set<std::string> removes({"standard", "search"});
   return GetKeywordValuesFromLocale<icu::Collator>(isolate, "collations", "co",
-                                                   icu_locale, substitutions);
+                                                   icu_locale, removes);
 }
 
 MaybeHandle<JSArray> JSLocale::HourCycles(Isolate* isolate,
@@ -646,7 +680,6 @@ MaybeHandle<Object> JSLocale::TimeZones(Isolate* isolate,
   // Let list be a List of 1 or more time zone identifiers, which must be String
   // values indicating a Zone or Link name of the IANA Time Zone Database,
   // sorted in descending preference of those in common use in region.
-  int32_t index = 0;
   UErrorCode status = U_ZERO_ERROR;
   std::unique_ptr<icu::StringEnumeration> enumeration(
       icu::TimeZone::createTimeZoneIDEnumeration(UCAL_ZONE_TYPE_CANONICAL,
@@ -655,26 +688,8 @@ MaybeHandle<Object> JSLocale::TimeZones(Isolate* isolate,
     THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
                     JSArray);
   }
-  int32_t count = enumeration->count(status);
-  if (U_FAILURE(status)) {
-    THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
-                    JSArray);
-  }
-
-  // Return CreateArrayFromList( list ).
-  Handle<FixedArray> fixed_array = factory->NewFixedArray(count);
-  for (const char* item = enumeration->next(nullptr, status);
-       U_SUCCESS(status) && item != nullptr;
-       item = enumeration->next(nullptr, status)) {
-    Handle<String> str = isolate->factory()->NewStringFromAsciiChecked(item);
-    fixed_array->set(index++, *str);
-  }
-  if (U_FAILURE(status)) {
-    THROW_NEW_ERROR(isolate, NewRangeError(MessageTemplate::kIcuError),
-                    JSArray);
-  }
-
-  return factory->NewJSArrayWithElements(fixed_array);
+  return ToJSArray(isolate, nullptr, enumeration.get(),
+                   std::set<std::string>());
 }
 
 MaybeHandle<JSObject> JSLocale::TextInfo(Isolate* isolate,

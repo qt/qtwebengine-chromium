@@ -9,12 +9,14 @@
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/json/json_writer.h"
+#include "build/build_config.h"
 #include "media/base/test_data_util.h"
 #include "media/gpu/test/video.h"
 #include "media/gpu/test/video_player/frame_renderer_dummy.h"
 #include "media/gpu/test/video_player/video_decoder_client.h"
 #include "media/gpu/test/video_player/video_player.h"
 #include "media/gpu/test/video_player/video_player_test_environment.h"
+#include "sandbox/linux/services/resource_limits.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace media {
@@ -28,8 +30,8 @@ namespace {
 constexpr const char* usage_msg =
     "usage: video_decode_accelerator_perf_tests\n"
     "           [-v=<level>] [--vmodule=<config>] [--output_folder]\n"
-    "           ([--use_vd]|[--use_vd_vda]) [--gtest_help] [--help]\n"
-    "           [<video path>] [<video metadata path>]\n";
+    "           ([--use-legacy][--use_vd]|[--use_vd_vda]) [--gtest_help]\n"
+    "           [--help] [<video path>] [<video metadata path>]\n";
 
 // Video decoder perf tests help message.
 constexpr const char* help_msg =
@@ -46,6 +48,8 @@ constexpr const char* help_msg =
     "  --output_folder      overwrite the output folder used to store\n"
     "                       performance metrics, if not specified results\n"
     "                       will be stored in the current working directory.\n"
+    "  --use-legacy         use the legacy VDA-based video decoders.\n"
+    "                       (enabled by default)\n"
     "  --use_vd             use the new VD-based video decoders, instead of\n"
     "                       the default VDA-based video decoders.\n"
     "  --use_vd_vda         use the new VD-based video decoders with a\n"
@@ -321,10 +325,6 @@ class VideoDecoderTest : public ::testing::Test {
     VideoDecoderClientConfig config;
     config.implementation = g_env->GetDecoderImplementation();
 
-    // Force allocate mode if import mode is not supported.
-    if (!g_env->ImportSupported())
-      config.allocation_mode = AllocationMode::kAllocate;
-
     auto video_player = VideoPlayer::Create(
         config, g_env->GetGpuMemoryBufferFactory(), std::move(frame_renderer),
         std::move(frame_processors));
@@ -375,6 +375,42 @@ TEST_F(VideoDecoderTest, MeasureCappedPerformance) {
   EXPECT_EQ(tvp->GetFrameDecodedCount(), g_env->Video()->NumFrames());
 }
 
+// Play multiple videos simultaneously from start to finish.
+TEST_F(VideoDecoderTest,
+       MeasureUncappedPerformance_MultipleConcurrentDecoders) {
+  // Set RLIMIT_NOFILE soft limit to its hard limit value.
+  if (sandbox::ResourceLimits::AdjustCurrent(
+          RLIMIT_NOFILE, std::numeric_limits<long long int>::max())) {
+    DPLOG(ERROR) << "Unable to increase soft limit of RLIMIT_NOFILE";
+  }
+
+// The minimal number of concurrent decoders we expect to be supported on
+// platforms.
+#if defined(ARCH_CPU_X86_FAMILY)
+  constexpr size_t kMinSupportedConcurrentDecoders = 25;
+#elif defined(ARCH_CPU_ARM_FAMILY)
+  constexpr size_t kMinSupportedConcurrentDecoders = 10;
+#endif
+
+  std::vector<std::unique_ptr<VideoPlayer>> players(
+      kMinSupportedConcurrentDecoders);
+  for (auto&& player : players)
+    player = CreateVideoPlayer(g_env->Video());
+
+  performance_evaluator_->StartMeasuring();
+
+  for (auto&& player : players)
+    player->Play();
+
+  for (auto&& player : players) {
+    EXPECT_TRUE(player->WaitForFlushDone());
+    EXPECT_EQ(player->GetFlushDoneCount(), 1u);
+    EXPECT_EQ(player->GetFrameDecodedCount(), g_env->Video()->NumFrames());
+  }
+  performance_evaluator_->StopMeasuring();
+  performance_evaluator_->WriteMetricsToFile();
+}
+
 }  // namespace test
 }  // namespace media
 
@@ -401,6 +437,7 @@ int main(int argc, char** argv) {
 
   // Parse command line arguments.
   base::FilePath::StringType output_folder = media::test::kDefaultOutputFolder;
+  bool use_legacy = false;
   bool use_vd = false;
   bool use_vd_vda = false;
   media::test::DecoderImplementation implementation =
@@ -415,6 +452,9 @@ int main(int argc, char** argv) {
 
     if (it->first == "output_folder") {
       output_folder = it->second;
+    } else if (it->first == "use-legacy") {
+      use_legacy = true;
+      implementation = media::test::DecoderImplementation::kVDA;
     } else if (it->first == "use_vd") {
       use_vd = true;
       implementation = media::test::DecoderImplementation::kVD;
@@ -428,6 +468,16 @@ int main(int argc, char** argv) {
     }
   }
 
+  if (use_legacy && use_vd) {
+    std::cout << "--use-legacy and --use_vd cannot be enabled together.\n"
+              << media::test::usage_msg;
+    return EXIT_FAILURE;
+  }
+  if (use_legacy && use_vd_vda) {
+    std::cout << "--use-legacy and --use_vd_vda cannot be enabled together.\n"
+              << media::test::usage_msg;
+    return EXIT_FAILURE;
+  }
   if (use_vd && use_vd_vda) {
     std::cout << "--use_vd and --use_vd_vda cannot be enabled together.\n"
               << media::test::usage_msg;

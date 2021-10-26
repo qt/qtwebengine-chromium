@@ -142,12 +142,13 @@ RenderProcessImpl::RenderProcessImpl()
   SetV8FlagIfNotFeature(features::kWebAssemblyCodeProtection,
                         "--no-wasm-write-protect-code-memory");
 
-#if defined(OS_LINUX) && defined(ARCH_CPU_X86_64)
+#if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && defined(ARCH_CPU_X86_64)
   SetV8FlagIfFeature(features::kWebAssemblyCodeProtectionPku,
                      "--wasm-memory-protection-keys");
   SetV8FlagIfNotFeature(features::kWebAssemblyCodeProtectionPku,
                         "--no-wasm-memory-protection-keys");
-#endif  // defined(OS_LINUX) && defined(ARCH_CPU_X86_64)
+#endif  // (defined(OS_LINUX) || defined(OS_CHROMEOS)) &&
+        // defined(ARCH_CPU_X86_64)
 
   SetV8FlagIfFeature(features::kWebAssemblyLazyCompilation,
                      "--wasm-lazy-compilation");
@@ -202,11 +203,31 @@ RenderProcessImpl::RenderProcessImpl()
     v8::V8::SetFlagsFromString(kSABPerContextFlag, sizeof(kSABPerContextFlag));
   }
 
+  // The cross-origin-webassembly-module-sharing-allowed flag is used to pass
+  // the kCrossOriginWebAssemblyModuleSharingEnabled enterprise policy from the
+  // browser process to the renderer process. This switch should be enabled by
+  // default for now, but once cross origin module sharing is deprecated, this
+  // switch will only get enabled by the enterprise policy.
+  if (command_line->HasSwitch(
+          switches::kCrossOriginWebAssemblyModuleSharingAllowed)) {
+    blink::WebRuntimeFeatures::EnableCrossOriginWebAssemblyModuleSharingAllowed(
+        true);
+  }
+
+  // The display-capture-permissions-policy-allowed flag is used to pass
+  // the kDisplayCapturePermissionsPolicyEnabled Enterprise policy from the
+  // browser process to the renderer process. This switch should be enabled by
+  // default for now, but after a few milestones that allow enterprises to fix
+  // broken applications, this flag will be removed.
+  // This switch will only be enabled by the Enterprise policy.
+  if (command_line->HasSwitch(
+          switches::kDisplayCapturePermissionsPolicyAllowed)) {
+    blink::WebRuntimeFeatures::EnableDisplayCapturePermissionsPolicy(true);
+  }
+
   SetV8FlagIfFeature(features::kWebAssemblyTiering, "--wasm-tier-up");
   SetV8FlagIfNotFeature(features::kWebAssemblyTiering, "--no-wasm-tier-up");
 
-  SetV8FlagIfNotFeature(features::kWebAssemblyTrapHandler,
-                        "--no-wasm-trap-handler");
 #if (defined(OS_LINUX) || defined(OS_CHROMEOS)) && defined(ARCH_CPU_X86_64)
   if (base::FeatureList::IsEnabled(features::kWebAssemblyTrapHandler)) {
     if (command_line->HasSwitch(switches::kEnableCrashpad) ||

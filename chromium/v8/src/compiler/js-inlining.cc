@@ -219,7 +219,6 @@ Reduction JSInliner::InlineCall(Node* call, Node* new_target, Node* context,
         break;
       default:
         UNREACHABLE();
-        break;
     }
   }
   DCHECK_EQ(values.size(), effects.size());
@@ -306,7 +305,7 @@ base::Optional<SharedFunctionInfoRef> JSInliner::DetermineCallTarget(
     JSFunctionRef function = match.Ref(broker()).AsJSFunction();
 
     // The function might have not been called yet.
-    if (!function.has_feedback_vector()) {
+    if (!function.has_feedback_vector(broker()->dependencies())) {
       return base::nullopt;
     }
 
@@ -356,11 +355,11 @@ FeedbackCellRef JSInliner::DetermineCallContext(Node* node,
   if (match.HasResolvedValue() && match.Ref(broker()).IsJSFunction()) {
     JSFunctionRef function = match.Ref(broker()).AsJSFunction();
     // This was already ensured by DetermineCallTarget
-    CHECK(function.has_feedback_vector());
+    CHECK(function.has_feedback_vector(broker()->dependencies()));
 
     // The inlinee specializes to the context from the JSFunction object.
     *context_out = jsgraph()->Constant(function.context());
-    return function.raw_feedback_cell();
+    return function.raw_feedback_cell(broker()->dependencies());
   }
 
   if (match.IsJSCreateClosure()) {
@@ -498,9 +497,9 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
   // To ensure inlining always terminates, we have an upper limit on inlining
   // the nested calls.
   int nesting_level = 0;
-  for (FrameState frame_state = FrameState{call.frame_state()};
+  for (Node* frame_state = call.frame_state();
        frame_state->opcode() == IrOpcode::kFrameState;
-       frame_state = frame_state.outer_frame_state()) {
+       frame_state = FrameState{frame_state}.outer_frame_state()) {
     nesting_level++;
     if (nesting_level > kMaxDepthForInlining) {
       TRACE("Not inlining "
@@ -521,20 +520,29 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
   // always hold true.
   CHECK(shared_info->is_compiled());
 
-  if (!broker()->is_concurrent_inlining() && info_->source_positions()) {
-    SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate(),
-                                                       shared_info->object());
+  if (info_->source_positions()) {
+    if (broker()->is_concurrent_inlining()) {
+      if (!shared_info->object()->AreSourcePositionsAvailable(
+              broker()->local_isolate_or_isolate())) {
+        // This case is expected to be very rare, since we generate source
+        // positions for all functions when debugging or profiling are turned
+        // on (see Isolate::NeedsDetailedOptimizedCodeLineInfo). Source
+        // positions should only be missing here if there is a race between 1)
+        // enabling/disabling the debugger/profiler, and 2) this compile job.
+        // In that case, we simply don't inline.
+        TRACE("Not inlining " << *shared_info << " into " << outer_shared_info
+                              << " because source positions are missing.");
+        return NoChange();
+      }
+    } else {
+      SharedFunctionInfo::EnsureSourcePositionsAvailable(isolate(),
+                                                         shared_info->object());
+    }
   }
 
   // Determine the target's feedback vector and its context.
   Node* context;
   FeedbackCellRef feedback_cell = DetermineCallContext(node, &context);
-  if (!broker()->IsSerializedForCompilation(*shared_info,
-                                            *feedback_cell.value())) {
-    TRACE("Not inlining " << *shared_info << " into " << outer_shared_info
-                          << " because it wasn't serialized for compilation.");
-    return NoChange();
-  }
 
   TRACE("Inlining " << *shared_info << " into " << outer_shared_info
                     << ((exception_target != nullptr) ? " (inside try-block)"
@@ -557,7 +565,7 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
     // Run the BytecodeGraphBuilder to create the subgraph.
     Graph::SubgraphScope scope(graph());
     BytecodeGraphBuilderFlags flags(
-        BytecodeGraphBuilderFlag::kSkipFirstStackCheck);
+        BytecodeGraphBuilderFlag::kSkipFirstStackAndTierupCheck);
     if (info_->analyze_environment_liveness()) {
       flags |= BytecodeGraphBuilderFlag::kAnalyzeEnvironmentLiveness;
     }
@@ -684,7 +692,7 @@ Reduction JSInliner::ReduceJSCall(Node* node) {
   // passed into this node has to be the callees context (loaded above).
   if (node->opcode() == IrOpcode::kJSCall &&
       is_sloppy(shared_info->language_mode()) && !shared_info->native()) {
-    Node* effect = NodeProperties::GetEffectInput(node);
+    Effect effect{NodeProperties::GetEffectInput(node)};
     if (NodeProperties::CanBePrimitive(broker(), call.receiver(), effect)) {
       CallParameters const& p = CallParametersOf(node->op());
       Node* global_proxy = jsgraph()->Constant(

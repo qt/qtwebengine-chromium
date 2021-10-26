@@ -12,6 +12,7 @@
 #include "base/callback_helpers.h"
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/threading/sequenced_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "cc/base/features.h"
@@ -20,10 +21,12 @@
 #include "components/power_scheduler/power_mode_voter.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
 #include "components/viz/common/quads/compositor_frame.h"
+#include "components/viz/common/quads/compositor_render_pass.h"
 #include "components/viz/common/resources/bitmap_allocation.h"
 #include "components/viz/common/surfaces/surface_info.h"
 #include "components/viz/service/display/display.h"
 #include "components/viz/service/display/shared_bitmap_manager.h"
+#include "components/viz/service/frame_sinks/frame_sink_bundle_impl.h"
 #include "components/viz/service/frame_sinks/frame_sink_manager_impl.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_reference.h"
@@ -142,7 +145,28 @@ void CompositorFrameSinkSupport::SetBeginFrameSource(
     begin_frame_source_->RemoveObserver(this);
     added_frame_observer_ = false;
   }
+  if (bundle_id_ && begin_frame_source_ != nullptr &&
+      begin_frame_source_ != begin_frame_source) {
+    // If we are in a bundle, our previous BeginFrameSource must have been
+    // identical to the bundle's. If that's changing, we're no longer able to
+    // participate in the bundle. Force the client to re-establish a
+    // CompositorFrameSink in this case.
+    ScheduleSelfDestruction();
+    return;
+  }
   begin_frame_source_ = begin_frame_source;
+  UpdateNeedsBeginFramesInternal();
+}
+
+void CompositorFrameSinkSupport::SetBundle(const FrameSinkBundleId& bundle_id) {
+  auto* bundle = frame_sink_manager_->GetFrameSinkBundle(bundle_id);
+  if (!bundle || (begin_frame_source_ &&
+                  begin_frame_source_ != bundle->begin_frame_source())) {
+    ScheduleSelfDestruction();
+    return;
+  }
+
+  bundle_id_ = bundle_id;
   UpdateNeedsBeginFramesInternal();
 }
 
@@ -833,10 +857,11 @@ void CompositorFrameSinkSupport::UpdateNeedsBeginFramesInternal() {
   // We require a begin frame if there's a callback pending, or if the client
   // requested it, or if the client needs to get some frame timing details.
   bool needs_begin_frame =
-      client_needs_begin_frame_ || !frame_timing_details_.empty() ||
-      !pending_surfaces_.empty() ||
-      (compositor_frame_callback_ && !callback_received_begin_frame_) ||
-      surface_animation_manager_.NeedsBeginFrame();
+      (client_needs_begin_frame_ || !frame_timing_details_.empty() ||
+       !pending_surfaces_.empty() ||
+       (compositor_frame_callback_ && !callback_received_begin_frame_) ||
+       surface_animation_manager_.NeedsBeginFrame()) &&
+      !bundle_id_.has_value();
 
   if (needs_begin_frame == added_frame_observer_)
     return;
@@ -896,18 +921,36 @@ void CompositorFrameSinkSupport::OnClientCaptureStopped() {
   }
 }
 
-gfx::Size CompositorFrameSinkSupport::GetActiveFrameSize() {
-  if (last_activated_surface_id_.is_valid()) {
-    Surface* current_surface =
-        surface_manager_->GetSurfaceForId(last_activated_surface_id_);
-    DCHECK(current_surface);
-    if (current_surface->HasActiveFrame()) {
-      DCHECK(current_surface->GetActiveFrame().size_in_pixels() ==
-             current_surface->size_in_pixels());
-      return current_surface->size_in_pixels();
+gfx::Size CompositorFrameSinkSupport::GetCopyOutputRequestSize(
+    SubtreeCaptureId subtree_id) const {
+  if (!last_activated_surface_id_.is_valid()) {
+    return {};
+  }
+
+  Surface* current_surface =
+      surface_manager_->GetSurfaceForId(last_activated_surface_id_);
+  DCHECK(current_surface);
+  if (!current_surface->HasActiveFrame()) {
+    return {};
+  }
+
+  // If a subtree is not specified, use the size of the root (last)
+  // render pass instead.
+  const CompositorFrame& frame = current_surface->GetActiveFrame();
+  if (!subtree_id.is_valid()) {
+    return frame.size_in_pixels();
+  }
+
+  for (auto& render_pass : frame.render_pass_list) {
+    if (render_pass->subtree_capture_id == subtree_id) {
+      return !render_pass->subtree_size.IsEmpty()
+                 ? render_pass->subtree_size
+                 : render_pass->output_rect.size();
     }
   }
-  return gfx::Size();
+
+  // No target exists and no CopyOutputRequest will be added.
+  return {};
 }
 
 void CompositorFrameSinkSupport::RequestCopyOfOutput(
@@ -1076,6 +1119,21 @@ void CompositorFrameSinkSupport::OnCompositorFrameTransitionDirectiveProcessed(
     uint32_t sequence_id) {
   if (client_)
     client_->OnCompositorFrameTransitionDirectiveProcessed(sequence_id);
+}
+
+void CompositorFrameSinkSupport::DestroySelf() {
+  // SUBTLE: We explicitly copy `frame_sink_id_` because
+  // DestroyCompositorFrameSink takes the FrameSinkId by reference and may
+  // dereference it after destroying `this`.
+  FrameSinkId frame_sink_id = frame_sink_id_;
+  frame_sink_manager_->DestroyCompositorFrameSink(frame_sink_id,
+                                                  base::DoNothing());
+}
+
+void CompositorFrameSinkSupport::ScheduleSelfDestruction() {
+  base::SequencedTaskRunnerHandle::Get()->PostTask(
+      FROM_HERE, base::BindOnce(&CompositorFrameSinkSupport::DestroySelf,
+                                weak_factory_.GetWeakPtr()));
 }
 
 }  // namespace viz

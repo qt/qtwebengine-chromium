@@ -12,7 +12,6 @@
 #include "base/task/task_traits.h"
 #include "base/test/bind.h"
 #include "build/build_config.h"
-#include "components/services/storage/public/cpp/storage_key.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/service_worker/service_worker_fetch_dispatcher.h"
 #include "content/browser/service_worker/service_worker_version.h"
@@ -27,7 +26,9 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
+#include "url/origin.h"
 
 namespace content {
 
@@ -231,7 +232,7 @@ class ServiceWorkerOfflineCapabilityCheckBrowserTest
       base::OnceClosure done) {
     DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
     GURL url = embedded_test_server()->GetURL("/service_worker/");
-    storage::StorageKey key = storage::StorageKey(url::Origin::Create(url));
+    blink::StorageKey key = blink::StorageKey(url::Origin::Create(url));
     wrapper()->context()->registry()->FindRegistrationForScope(
         embedded_test_server()->GetURL("/service_worker/"), key,
         base::BindOnce(&ServiceWorkerOfflineCapabilityCheckBrowserTest::
@@ -275,8 +276,9 @@ class ServiceWorkerOfflineCapabilityCheckBrowserTest
   void CheckOfflineCapabilityOnCoreThread(
       const std::string& path,
       ServiceWorkerContext::CheckOfflineCapabilityCallback callback) {
-    wrapper()->CheckOfflineCapability(embedded_test_server()->GetURL(path),
-                                      std::move(callback));
+    GURL url = embedded_test_server()->GetURL(path);
+    wrapper()->CheckOfflineCapability(
+        url, blink::StorageKey(url::Origin::Create(url)), std::move(callback));
   }
 
   OfflineCapability CheckOfflineCapability(const std::string& path) {

@@ -28,6 +28,10 @@ message VirtualMachineSpec {
 
   // Optional path to the initrd that should be used for the VM.
   string initrd = 4;
+
+  // ID of a DLC package that contains the vm_tools.img for this vm. If empty
+  // the vm_tools.img from the above dlc_id is used if available.
+  string tools_dlc_id = 5;
 }
 
 // The type of disk image.
@@ -171,6 +175,9 @@ message StartVmRequest {
   // Enable Vulkan in the started Vm.
   bool enable_vulkan = 18;
 
+  // Enable Big GL rendering for the started Vm (default is GLES).
+  bool enable_big_gl = 19;
+
   enum FdType {
     // Kernel image.
     KERNEL = 0;
@@ -231,6 +238,21 @@ message StartPluginVmRequest {
   NetworkOptions net_options = 8;
 }
 
+// Optional fields for LimitCacheBalloonPolicy configuration.
+message BalloonPolicyOptions {
+  // The maximum amount of page cache the guest should have if ChromeOS is
+  // reclaiming.
+  int64 reclaim_target_cache = 1;
+
+  // The maximum amount of page cache the guest should have if ChromeOS has
+  // critical memory pressure.
+  int64 critical_target_cache = 2;
+
+  // The maximum amount of page cache the guest should have if ChromeOS has
+  // moderate memory pressure.
+  int64 moderate_target_cache = 3;
+}
+
 // Information that must be included with every StartArcVm request.
 message StartArcVmRequest {
   // The VM that should be started.
@@ -266,6 +288,13 @@ message StartArcVmRequest {
 
   // Whether Huge Pages should be used.
   bool use_hugepages = 11;
+
+  // How much memory to give ARCVM, in MiB. Optional.
+  uint32 memory_mib = 12;
+
+  // How to configure the balloon policy. If set, LimitCacheBalloonPolicy is
+  // used, otherwise BalanceAvailableBalloonPolicy is used.
+  BalloonPolicyOptions balloon_policy = 13;
 }
 
 enum VmStatus {
@@ -280,6 +309,9 @@ enum VmStatus {
 
   // The VM failed to startup.
   VM_STATUS_FAILURE = 3;
+
+  // The VM can't start because its disk/image is being manipulated.
+  VM_STATUS_DISK_OP_IN_PROGRESS = 4;
 }
 
 // Information sent back by vm_concierge in response to a StartVm dbus message.
@@ -319,7 +351,12 @@ message StartVmResponse {
 
   // The amount of free space on the stateful partition in bytes. -1 if unable
   // to calculate the amount of free space (e.g. error mounting the partition).
+  // Only valid when free_bytes_has_value is true.
   int64 free_bytes = 6;
+
+  // Whether the free_bytes field has been filled in. If false, ignore whatever
+  // value is in the field.
+  bool free_bytes_has_value = 7;
 }
 
 // Message used in the signal for when a VM has started.
@@ -471,6 +508,24 @@ message GetVmEnterpriseReportingInfoResponse {
   string vm_kernel_version = 3;
 }
 
+// Request for creating RT vCPUs.
+message MakeRtVcpuRequest {
+  // The name of the VM.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
+}
+
+// Response sent back by vm_concierge for a MakeRtVcpuRequest dbus message.
+message MakeRtVcpuResponse {
+  // If true, the request succeeded.
+  bool success = 1;
+
+  // The failure_reason if the request could not be processed.
+  string failure_reason = 2;
+}
+
 // The type of storage location for a disk image.
 enum StorageLocation {
   // Subdirectory under /home/root/<id>/crosvm.
@@ -516,9 +571,8 @@ message CreateDiskImageRequest {
   // The cryptohome id for the user's encrypted storage.
   string cryptohome_id = 1;
 
-  // The path to the disk image. This must be a relative path, and any
-  // directories must already exist.
-  string disk_path = 2;
+  // The name of the VM.
+  string vm_name = 2;
 
   // The logical size of the new disk image, in bytes.
   // If non-zero, the disk will be preallocated and fixed to the given size.
@@ -561,8 +615,8 @@ message DestroyDiskImageRequest {
   // The cryptohome id for the user's encrypted storage.
   string cryptohome_id = 1;
 
-  // The path to the disk image. This must be a relative path.
-  string disk_path = 2;
+  // The name of the VM.
+  string vm_name = 2;
 }
 
 // Response to a DestroyDiskImageRequest.
@@ -601,18 +655,22 @@ message ResizeDiskImageResponse {
 }
 
 // Request to concierge to export a disk image.
-// Must be accompanied by an FD. The contents of `disk_path` will be written to
+// Must be accompanied by an FD, the contents of the image will be written to
 // the passed FD.
 message ExportDiskImageRequest {
   // The cryptohome id for the user's encrypted storage.
   string cryptohome_id = 1;
 
-  // The path to the disk image. This must be a relative path.
-  string disk_path = 2;
+  // The name of the VM.
+  string vm_name = 2;
 
   // Whether we should calculate SHA256 digest of the resulting image. The
   // digest is supposed to be written into the second attached file descriptor.
   bool generate_sha256_digest = 3;
+
+  // Export image even if it may produce inconsistent result because, for
+  // example, VM is not shut down.
+  bool force = 4;
 }
 
 // Response to a ExportDiskImageRequest.
@@ -627,15 +685,13 @@ message ExportDiskImageResponse {
   string command_uuid = 3;
 }
 
-// Request to concierge to import a disk image.
-// Must be accompanied by an FD. The contents will be written at `disk_path`
-// location.
+// Request to concierge to import a disk image. Must be accompanied by an FD.
 message ImportDiskImageRequest {
   // The cryptohome id for the user's encrypted storage.
   string cryptohome_id = 1;
 
-  // The path to the resulting disk image. This must be a relative path.
-  string disk_path = 2;
+  // The name of the VM that's being imported.
+  string vm_name = 2;
 
   // The storage location for the disk image.
   StorageLocation storage_location = 3;

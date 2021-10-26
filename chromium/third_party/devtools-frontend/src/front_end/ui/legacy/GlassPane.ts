@@ -7,7 +7,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 
-import type {Size} from './Geometry.js'; // eslint-disable-line no-unused-vars
+import type {Size} from './Geometry.js';
 import {Icon} from './Icon.js';
 import {deepElementFromEvent} from './UIUtils.js';
 import {measuredScrollbarWidth} from './utils/measured-scrollbar-width.js';
@@ -40,7 +40,7 @@ export class GlassPane extends Common.ObjectWrapper.ObjectWrapper {
       this.element.shadowRoot.appendChild(this._arrowElement);
     }
 
-    this.registerRequiredCSS('ui/legacy/glassPane.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('ui/legacy/glassPane.css');
     this.setPointerEventsBehavior(PointerEventsBehavior.PierceGlassPane);
 
     this._onMouseDownBound = this._onMouseDown.bind(this);
@@ -58,10 +58,8 @@ export class GlassPane extends Common.ObjectWrapper.ObjectWrapper {
     return this._widget.isShowing();
   }
 
-  registerRequiredCSS(cssFile: string, options: {
-    enableLegacyPatching: boolean,
-  }): void {
-    this._widget.registerRequiredCSS(cssFile, options);
+  registerRequiredCSS(cssFile: string): void {
+    this._widget.registerRequiredCSS(cssFile);
   }
 
   setDefaultFocusedElement(element: Element|null): void {

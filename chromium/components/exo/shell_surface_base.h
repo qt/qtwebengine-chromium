@@ -123,9 +123,6 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // Set the miniumum size for the surface.
   void SetMinimumSize(const gfx::Size& size);
 
-  // Set the aspect ratio for the surface.
-  void SetAspectRatio(const gfx::SizeF& aspect_ratio);
-
   // Set the flag if the surface can maximize or not.
   void SetCanMinimize(bool can_minimize);
 
@@ -133,7 +130,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   void DisableMovement();
 
   // Update the resizability for the surface.
-  virtual void UpdateCanResize();
+  virtual void UpdateResizability();
 
   // Rebind a surface as the root surface of the shell surface.
   void RebindRootSurface(Surface* root_surface,
@@ -186,11 +183,17 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   void OnSetServerStartResize() override;
   void SetCanGoBack() override;
   void UnsetCanGoBack() override;
+  void SetPip() override;
+  void UnsetPip() override;
+  void SetAspectRatio(const gfx::SizeF& aspect_ratio) override;
+  void MoveToDesk(int desk_index) override;
+  void SetVisibleOnAllWorkspaces() override;
 
   // SurfaceObserver:
   void OnSurfaceDestroying(Surface* surface) override;
   void OnContentSizeChanged(Surface*) override {}
   void OnFrameLockingChanged(Surface*, bool) override {}
+  void OnDeskChanged(Surface*, int) override {}
 
   // CaptureClientObserver:
   void OnCaptureChanged(aura::Window* lost_capture,
@@ -223,6 +226,8 @@ class ShellSurfaceBase : public SurfaceTreeHost,
                                const void* key,
                                intptr_t old_value) override;
   void OnWindowAddedToRootWindow(aura::Window* window) override;
+  void OnWindowParentChanged(aura::Window* window,
+                             aura::Window* parent) override;
 
   // wm::ActivationChangeObserver:
   void OnWindowActivated(ActivationReason reason,
@@ -273,6 +278,10 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   // |shadow_bounds_|.
   void UpdateShadow();
 
+  // Updates the corner radius depending on whether the |widget_| is in pip or
+  // not.
+  void UpdateCornerRadius();
+
   virtual void UpdateFrameType();
 
   // Applies |system_modal_| to |widget_|.
@@ -304,6 +313,10 @@ class ShellSurfaceBase : public SurfaceTreeHost,
 
   void SetParentInternal(aura::Window* window);
   void SetContainerInternal(int container);
+
+  // Returns the resizability of the window. Useful to get the resizability
+  // without actually updating it.
+  bool CalculateCanResize() const;
 
   views::Widget* widget_ = nullptr;
   bool movement_disabled_ = false;
@@ -365,6 +378,7 @@ class ShellSurfaceBase : public SurfaceTreeHost,
   gfx::Size maximum_size_;
   gfx::Size pending_maximum_size_;
   gfx::SizeF pending_aspect_ratio_;
+  bool pending_pip_ = false;
 
   // Overlay members.
   std::unique_ptr<views::Widget> overlay_widget_;

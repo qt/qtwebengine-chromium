@@ -295,7 +295,16 @@ chrome.fileManagerPrivate.SharesheetLaunchSource = {
 
 /**
  * @typedef {{
- *   taskId: string,
+ *   appId: string,
+ *   taskType: string,
+ *   actionId: string
+ * }}
+ */
+chrome.fileManagerPrivate.FileTaskDescriptor;
+
+/**
+ * @typedef {{
+ *   descriptor: !chrome.fileManagerPrivate.FileTaskDescriptor,
  *   title: string,
  *   verb: (!chrome.fileManagerPrivate.Verb|undefined),
  *   iconUrl: (string|undefined),
@@ -634,27 +643,27 @@ chrome.fileManagerPrivate.logoutUserForReauthentication = function() {};
 chrome.fileManagerPrivate.cancelDialog = function() {};
 
 /**
- * Executes file browser task over selected files. |taskId| The unique
+ * Executes file browser task over selected files. |descriptor| The unique
  * identifier of task to execute. |entries| Array of file entries |callback|
- * @param {string} taskId
+ * @param {!chrome.fileManagerPrivate.FileTaskDescriptor} descriptor
  * @param {!Array<!Entry>} entries
  * @param {function(!chrome.fileManagerPrivate.TaskResult)} callback |result|
  *     Result of the task execution.
  */
-chrome.fileManagerPrivate.executeTask = function(taskId, entries, callback) {};
+chrome.fileManagerPrivate.executeTask = function(descriptor, entries, callback) {};
 
 /**
- * Sets the default task for the supplied MIME types and path extensions.
- * Lists of MIME types and entries may contain duplicates.
- * |taskId| The unique identifier of task to mark as default. |entries| Array
- * of selected file entries to extract path extensions from. |mimeTypes| Array
- * of selected file MIME types. |callback|
- * @param {string} taskId
+ * Sets the default task for the supplied MIME types and path extensions. Lists
+ * of MIME types and entries may contain duplicates. |descriptor| The unique
+ * identifier of task to mark as default. |entries| Array of selected file
+ * entries to extract path extensions from. |mimeTypes| Array of selected file
+ * MIME types. |callback|
+ * @param {!chrome.fileManagerPrivate.FileTaskDescriptor} descriptor
  * @param {!Array<!Entry>} entries
  * @param {!Array<string>} mimeTypes
  * @param {!function()} callback Callback that does not take arguments.
  */
-chrome.fileManagerPrivate.setDefaultTask = function(taskId, entries, mimeTypes,
+chrome.fileManagerPrivate.setDefaultTask = function(descriptor, entries, mimeTypes,
     callback) {};
 
 /**
@@ -830,14 +839,6 @@ chrome.fileManagerPrivate.startCopy = function(entry, parentEntry, newName,
     callback) {};
 
 /**
- * Copies an image to the system clipboard. |entry| Entry of the image to copy
- * to the system clipboard.
- * @param {!Entry} entry
- * @param {function((boolean|undefined))} callback
- */
-chrome.fileManagerPrivate.copyImageToClipboard = function(entry, callback) {};
-
-/**
  * Cancels the running copy task. |copyId| ID of the copy task to be cancelled.
  * |callback| Completion callback of the cancel.
  * @param {number} copyId
@@ -930,18 +931,40 @@ chrome.fileManagerPrivate.searchFilesByHashes = function(volumeId, hashes,
 chrome.fileManagerPrivate.searchFiles = function(searchParams, callback) {};
 
 /**
- * Create a zip file for the selected files. |parentEntry| Entry of the
- * directory containing the selected files. |entries| Selected entries.
- * The files must be under the directory specified by |parentEntry|. |destName|
- * Name of the destination zip file. The zip file will be created under the
- * directory specified by |parentEntry|.
- * @param {!Array<!Entry>} entries
- * @param {!DirectoryEntry} parentEntry
- * @param {string} destName
- * @param {function((boolean|undefined))} callback
+ * Creates a ZIP file for the selected files and folders. Folders are
+ * recursively explored and zipped. Hidden files and folders (with names
+ * starting with a dot) found during recursive exploration are included too.
+ * @param {!Array<!Entry>} entries Entries of the selected files and folders to
+ *     zip. They must be under the |parentEntry| directory.
+ * @param {!DirectoryEntry} parentEntry Entry of the directory containing the
+ *     selected files and folders. This is where the ZIP file will be created,
+ *     too.
+ * @param {string} destName Name of the destination ZIP file. The ZIP file will
+ *     be created in the directory specified by |parentEntry|.
+ * @param {function(number, number)} callback called with (zipId, totalBytes)
+ *     where |zipId| is the ID of the ZIP operation, and |totalBytes| is the
+ *     total number of bytes in all the files that are going to be zipped.
  */
-chrome.fileManagerPrivate.zipSelection = function(entries, parentEntry,
-    destName, callback) {};
+chrome.fileManagerPrivate.zipSelection = function(
+    entries, parentEntry, destName, callback) {};
+
+/**
+ * Cancels an ongoing ZIP operation.
+ * Does nothing if there is no matching ongoing ZIP operation.
+ * @param {number} zipId ID of the ZIP operation.
+ */
+chrome.fileManagerPrivate.cancelZip = function(zipId) {};
+
+/**
+ * Gets the progress of an ongoing ZIP operation.
+ * @param {number} zipId ID of the ZIP operation.
+ * @param {function(number, number)} callback called with progress information
+ *     (result, bytes), where |result| is less than 0 if the operation is still
+ *     in progress, 0 if the operation finished successfully, or greater than 0
+ *     if the operation finished with an error, and |bytes| is the total number
+ *     of bytes having been zipped so far.
+ */
+chrome.fileManagerPrivate.getZipProgress = function(zipId, callback) {};
 
 /**
  * Retrieves the state of the current drive connection. |callback|

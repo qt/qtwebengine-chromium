@@ -24,6 +24,8 @@ source_set("renderers") {
     "remote_playback_client_wrapper.h",
     "renderer_impl.cc",
     "renderer_impl.h",
+    "video_frame_rgba_to_yuva_converter.cc",
+    "video_frame_rgba_to_yuva_converter.h",
     "video_frame_yuv_converter.cc",
     "video_frame_yuv_converter.h",
     "video_frame_yuv_mailboxes_holder.cc",
@@ -57,10 +59,6 @@ source_set("renderers") {
     "//ui/gl",
   ]
 
-  if (is_fuchsia) {
-    deps += [ "//fuchsia/engine:switches" ]
-  }
-
   if (is_win) {
     sources += [
       "win/media_engine_extension.cc",
@@ -93,9 +91,6 @@ source_set("renderers") {
 
   configs += [
     "//media:subcomponent_config",
-
-    # TODO(crbug.com/167187): Fix size_t to int trunctaions.
-    "//build/config/compiler:no_size_t_to_int_warning",
   ]
 }
 

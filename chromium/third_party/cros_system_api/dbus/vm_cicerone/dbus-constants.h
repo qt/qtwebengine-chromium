@@ -44,6 +44,7 @@ const char kAddFileWatchMethod[] = "AddFileWatch";
 const char kRemoveFileWatchMethod[] = "RemoveFileWatch";
 const char kRegisterVshSessionMethod[] = "RegisterVshSession";
 const char kGetVshSessionMethod[] = "GetVshSession";
+const char kFileSelectedMethod[] = "FileSelected";
 
 // Methods to be called from chunneld.
 const char kConnectChunnelMethod[] = "ConnectChunnel";

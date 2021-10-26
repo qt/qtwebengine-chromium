@@ -5,6 +5,7 @@
 module chromeos_camera.mojom;
 
 import "components/arc/mojom/camera_intent.mojom";
+import "ui/gfx/geometry/mojom/geometry.mojom";
 
 // Interface for monitoring tablet mode state of device. The state is detected
 // from Chrome browser process and is notified to Chrome Camera App in renderer
@@ -58,6 +59,18 @@ interface WindowStateMonitor {
   OnWindowStateChanged(array<WindowStateType> states);
 };
 
+// The possible result of the file deletion monitor.
+enum FileMonitorResult {
+  // The file is deleted.
+  DELETED = 0,
+
+  // The request is canceled since there is another monitor request.
+  CANCELED = 1,
+
+  // Fails to monitor the file due to errors.
+  ERROR = 2,
+};
+
 // Interface for window controlling.
 interface WindowStateController {
   // Adds |monitor| for window state changes.
@@ -81,6 +94,11 @@ interface WindowStateController {
 
   // Focus the window.
   Focus() => ();
+};
+
+enum DocumentOutputFormat {
+  JPEG = 0,
+  PDF = 1,
 };
 
 // Interface for communication between Chrome Camera App (Remote) and Chrome
@@ -147,4 +165,35 @@ interface CameraAppHelper {
   // video is captured and false for a picture. |name| is the file name which
   // will be used to generate the URI for the broadcast.
   SendNewCaptureBroadcast(bool is_video, string name);
+
+  // Monitors the deletion for given file |name| in the camera folder. The
+  // function will return when the deletion happens, or when another monitor
+  // request is raised, or when the error occurs. We can determine the cases
+  // by result.
+  MonitorFileDeletion(string name) => (FileMonitorResult result);
+
+  // Returns true if document mode is supported on the device.
+  IsDocumentModeSupported() => (bool is_supported);
+
+  // Returns the detected document corners from given |jpeg_data|.
+  // The amount of corners will be either 0, indicating there are no corners
+  // detected, or 4, which are in top-left => bottom-left => bottom-right =>
+  // top-right order. The value of the coordinate of a corner will be in [0, 1).
+  // If there is non-zero orientation info in EXIF of |jpeg_data|, the output
+  // |corners| will be detected on image with orientation corrected.
+  ScanDocumentCorners(array<uint8> jpeg_data)
+      => (array<gfx.mojom.PointF> corners);
+
+  // Does the post processing for document given by its |jpeg_data|, document
+  // |corners|, and convert the result to the desired |output_format|. The input
+  // |corners| should be the ones based on the image with corrected orientation.
+  // And it is guaranteed that the output |doc_data| will have none or corrected
+  // orientation.
+  ConvertToDocument(array<uint8> jpeg_data,
+                    array<gfx.mojom.PointF, 4> corners,
+                    DocumentOutputFormat output_format)
+      => (array<uint8> doc_data);
+
+  // Converts the given |jpeg_data| to PDF format.
+  ConvertToPdf(array<uint8> jpeg_data) => (array<uint8> pdf_data);
 };

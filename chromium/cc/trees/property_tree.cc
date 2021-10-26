@@ -1495,7 +1495,8 @@ void ScrollTree::CollectScrollDeltas(
     CompositorCommitData* commit_data,
     ElementId inner_viewport_scroll_element_id,
     bool use_fractional_deltas,
-    const base::flat_set<ElementId>& snapped_elements) {
+    const base::flat_map<ElementId, TargetSnapAreaElementIds>&
+        snapped_elements) {
   DCHECK(!property_trees()->is_main_thread);
   TRACE_EVENT0("cc", "ScrollTree::CollectScrollDeltas");
   for (auto map_entry : synced_scroll_offset_map_) {
@@ -1505,13 +1506,8 @@ void ScrollTree::CollectScrollDeltas(
     ElementId id = map_entry.first;
 
     absl::optional<TargetSnapAreaElementIds> snap_target_ids;
-    if (snapped_elements.find(id) != snapped_elements.end()) {
-      ScrollNode* scroll_node = FindNodeFromElementId(id);
-      if (scroll_node && scroll_node->snap_container_data) {
-        snap_target_ids = scroll_node->snap_container_data.value()
-                              .GetTargetSnapAreaElementIds();
-      }
-    }
+    if (snapped_elements.contains(id))
+      snap_target_ids = snapped_elements.at(id);
 
     // Snap targets are set at the end of scroll offset animations (i.e when the
     // animation state is updated to FINISHED). The state can be updated after
@@ -1724,13 +1720,15 @@ void ScrollTree::SetScrollCallbacks(base::WeakPtr<ScrollCallbacks> callbacks) {
   callbacks_ = std::move(callbacks);
 }
 
-void ScrollTree::NotifyDidScroll(
+void ScrollTree::NotifyDidCompositorScroll(
     ElementId scroll_element_id,
     const gfx::ScrollOffset& scroll_offset,
     const absl::optional<TargetSnapAreaElementIds>& snap_target_ids) {
   DCHECK(property_trees()->is_main_thread);
-  if (callbacks_)
-    callbacks_->DidScroll(scroll_element_id, scroll_offset, snap_target_ids);
+  if (callbacks_) {
+    callbacks_->DidCompositorScroll(scroll_element_id, scroll_offset,
+                                    snap_target_ids);
+  }
 }
 
 void ScrollTree::NotifyDidChangeScrollbarsHidden(ElementId scroll_element_id,

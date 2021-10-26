@@ -15,13 +15,13 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
+#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "media/base/audio_parameters.h"
 #include "media/capture/video_capture_types.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/common/mediastream/media_stream_controls.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
-#include "third_party/blink/public/common/widget/screen_info.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_source.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
@@ -53,6 +53,7 @@
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
+#include "ui/display/screen_info.h"
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
@@ -62,6 +63,7 @@ using blink::mojom::MediaStreamType;
 using blink::mojom::StreamSelectionStrategy;
 using EchoCancellationType =
     blink::AudioProcessingProperties::EchoCancellationType;
+using AudioSourceErrorCode = media::AudioCapturerSource::ErrorCode;
 
 namespace {
 
@@ -99,6 +101,8 @@ const char* MediaStreamRequestResultToString(MediaStreamRequestResult value) {
       return "KILL_SWITCH_ON";
     case MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED:
       return "SYSTEM_PERMISSION_DENIED";
+    case MediaStreamRequestResult::DEVICE_IN_USE:
+      return "DEVICE_IN_USE";
     case MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS:
       return "NUM_MEDIA_REQUEST_RESULTS";
     default:
@@ -149,9 +153,7 @@ std::string GetOnTrackStartedLogString(
 void InitializeAudioTrackControls(UserMediaRequest* user_media_request,
                                   TrackControls* track_controls) {
   if (user_media_request->MediaRequestType() ==
-          UserMediaRequest::MediaType::kDisplayMedia ||
-      user_media_request->MediaRequestType() ==
-          UserMediaRequest::MediaType::kGetCurrentBrowsingContextMedia) {
+      UserMediaRequest::MediaType::kDisplayMedia) {
     track_controls->requested = true;
     track_controls->stream_type = MediaStreamType::DISPLAY_AUDIO_CAPTURE;
     return;
@@ -187,13 +189,10 @@ void InitializeVideoTrackControls(UserMediaRequest* user_media_request,
   if (user_media_request->MediaRequestType() ==
       UserMediaRequest::MediaType::kDisplayMedia) {
     track_controls->requested = true;
-    track_controls->stream_type = MediaStreamType::DISPLAY_VIDEO_CAPTURE;
-    return;
-  } else if (user_media_request->MediaRequestType() ==
-             UserMediaRequest::MediaType::kGetCurrentBrowsingContextMedia) {
-    track_controls->requested = true;
     track_controls->stream_type =
-        MediaStreamType::DISPLAY_VIDEO_CAPTURE_THIS_TAB;
+        user_media_request->should_prefer_current_tab()
+            ? MediaStreamType::DISPLAY_VIDEO_CAPTURE_THIS_TAB
+            : MediaStreamType::DISPLAY_VIDEO_CAPTURE;
     return;
   }
 
@@ -1061,7 +1060,8 @@ gfx::Size UserMediaProcessor::GetScreenSize() {
   gfx::Size screen_size(blink::kDefaultScreenCastWidth,
                         blink::kDefaultScreenCastHeight);
   if (frame_) {  // Can be null in tests.
-    const ScreenInfo& info = frame_->GetChromeClient().GetScreenInfo(*frame_);
+    const display::ScreenInfo& info =
+        frame_->GetChromeClient().GetScreenInfo(*frame_);
     screen_size = info.rect.size();
   }
   return screen_size;
@@ -1710,6 +1710,10 @@ void UserMediaProcessor::DelayedGetUserMediaRequestFailed(
       user_media_request->Fail(UserMediaRequest::Error::kSystemPermissionDenied,
                                "Permission denied by system");
       return;
+    case MediaStreamRequestResult::DEVICE_IN_USE:
+      user_media_request->Fail(UserMediaRequest::Error::kDeviceInUse,
+                               "Device in use");
+      return;
   }
   NOTREACHED();
   user_media_request->Fail(UserMediaRequest::Error::kPermissionDenied, "");
@@ -1774,15 +1778,19 @@ bool UserMediaProcessor::RemoveLocalSource(MediaStreamSource* source) {
       String message;
       if (source->GetType() == MediaStreamSource::kTypeAudio) {
         auto error = MediaStreamAudioSource::From(source)->ErrorCode();
-        if (error.has_value() &&
-            error.value() ==
-                media::AudioCapturerSource::ErrorCode::kSystemPermissions) {
-          result = MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED;
-          message =
-              "System Permssions prevented access to audio capture device";
-        } else {
-          result = MediaStreamRequestResult::TRACK_START_FAILURE_AUDIO;
-          message = "Failed to access audio capture device";
+        switch (error.value_or(AudioSourceErrorCode::kUnknown)) {
+          case AudioSourceErrorCode::kSystemPermissions:
+            result = MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED;
+            message =
+                "System Permssions prevented access to audio capture device";
+            break;
+          case AudioSourceErrorCode::kDeviceInUse:
+            result = MediaStreamRequestResult::DEVICE_IN_USE;
+            message = "Audio capture device already in use";
+            break;
+          default:
+            result = MediaStreamRequestResult::TRACK_START_FAILURE_AUDIO;
+            message = "Failed to access audio capture device";
         }
       } else {
         result = MediaStreamRequestResult::TRACK_START_FAILURE_VIDEO;

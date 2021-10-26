@@ -27,6 +27,9 @@ NET_EXPORT extern const base::Feature kAcceptLanguageHeader;
 // https://vasilvv.github.io/httpbis-alps/draft-vvv-httpbis-alps.html.
 NET_EXPORT extern const base::Feature kAlpsForHttp2;
 
+// Disable H2 reprioritization, in order to measure its impact.
+NET_EXPORT extern const base::Feature kAvoidH2Reprioritization;
+
 // When kCapReferrerToOriginOnCrossOrigin is enabled, HTTP referrers on cross-
 // origin requests are restricted to contain at most the source origin.
 NET_EXPORT extern const base::Feature kCapReferrerToOriginOnCrossOrigin;
@@ -44,13 +47,13 @@ NET_EXPORT extern const base::FeatureParam<double>
 NET_EXPORT extern const base::FeatureParam<base::TimeDelta>
     kDnsMinTransactionTimeout;
 
-// Enables DNS queries for HTTPSSVC or INTEGRITY records, depending on feature
-// parameters. These queries will only be made over DoH. HTTPSSVC responses may
-// cause us to upgrade the URL to HTTPS and/or to attempt QUIC.
+// Enables DNS query-only experiments for HTTPSSVC or INTEGRITY records,
+// depending on feature parameters. Received responses never affect Chrome
+// behavior other than metrics.
+//
+// Not to be confused with `kUseDnsHttpsSvcb` which is querying HTTPS in order
+// to affect Chrome connection behavior.
 NET_EXPORT extern const base::Feature kDnsHttpssvc;
-
-// Disable H2 reprioritization, in order to measure its impact.
-NET_EXPORT extern const base::Feature kAvoidH2Reprioritization;
 
 // Determine which kind of record should be queried: HTTPSSVC or INTEGRITY. No
 // more than one of these feature parameters should be enabled at once. In the
@@ -100,6 +103,46 @@ namespace dns_httpssvc_experiment {
 // Get the value of |kDnsHttpssvcExtraTimeMs|.
 NET_EXPORT base::TimeDelta GetExtraTimeAbsolute();
 }  // namespace dns_httpssvc_experiment
+
+// Enables querying HTTPS DNS records that will affect results from HostResolver
+// and may be used to affect connection behavior. Whether or not those results
+// are used (e.g. to connect via ECH) may be controlled by separate features.
+//
+// Not to be confused with `kDnsHttpssvc` which is for experiment-only queries
+// where received HTTPS results do not affect Chrome behavior and are only used
+// for metrics.
+NET_EXPORT extern const base::Feature kUseDnsHttpsSvcb;
+
+// Param to control whether or not presence of an HTTPS record for an HTTP
+// request will force an HTTP->HTTPS upgrade redirect.
+NET_EXPORT extern const base::FeatureParam<bool> kUseDnsHttpsSvcbHttpUpgrade;
+
+// Param to control whether or not HostResolver, when using Secure DNS, will
+// fail the entire connection attempt when receiving an inconclusive response to
+// an HTTPS query (anything except transport error, timeout, or SERVFAIL). Used
+// to prevent certain downgrade attacks against ECH behavior.
+NET_EXPORT extern const base::FeatureParam<bool>
+    kUseDnsHttpsSvcbEnforceSecureResponse;
+
+// Param to control whether HTTPS queries will be allowed via Insecure DNS
+// (instead of just via Secure DNS).
+NET_EXPORT extern const base::FeatureParam<bool> kUseDnsHttpsSvcbEnableInsecure;
+
+// If we are still waiting for an HTTPS query after all the
+// other queries in a DnsTask have completed, we will compute a timeout for the
+// remaining query. The timeout will be the min of:
+//   (a) `kUseDnsHttpsSvcbExtraTimeAbsolute.Get()`
+//   (b) `kUseDnsHttpsSvcbExtraTimePercent.Get() / 100 * t`, where `t` is
+//   the
+//       time delta since the first query began.
+//
+// Either param is ignored if zero. If both are zero, there is no timeout
+// specific to HTTPS queries, only the regular DNS query timeout and server
+// fallback.
+NET_EXPORT extern const base::FeatureParam<base::TimeDelta>
+    kUseDnsHttpsSvcbExtraTimeAbsolute;
+NET_EXPORT extern const base::FeatureParam<int>
+    kUseDnsHttpsSvcbExtraTimePercent;
 
 // Enables optimizing the network quality estimation algorithms in network
 // quality estimator (NQE).
@@ -193,22 +236,6 @@ NET_EXPORT extern const base::FeatureParam<std::string>
 // Changes the timeout after which unused sockets idle sockets are cleaned up.
 NET_EXPORT extern const base::Feature kNetUnusedIdleSocketTimeout;
 
-// When enabled, makes cookies without a SameSite attribute behave like
-// SameSite=Lax cookies by default, and requires SameSite=None to be specified
-// in order to make cookies available in a third-party context. When disabled,
-// the default behavior for cookies without a SameSite attribute specified is no
-// restriction, i.e., available in a third-party context.
-// The "Lax-allow-unsafe" mitigation allows these cookies to be sent on
-// top-level cross-site requests with an unsafe (e.g. POST) HTTP method, if the
-// cookie is no more than 2 minutes old.
-NET_EXPORT extern const base::Feature kSameSiteByDefaultCookies;
-
-// When enabled, cookies without SameSite restrictions that don't specify the
-// Secure attribute will be rejected if set from an insecure context, or treated
-// as secure if set from a secure context. This ONLY has an effect if
-// SameSiteByDefaultCookies is also enabled.
-NET_EXPORT extern const base::Feature kCookiesWithoutSameSiteMustBeSecure;
-
 // When enabled, the time threshold for Lax-allow-unsafe cookies will be lowered
 // from 2 minutes to 10 seconds. This time threshold refers to the age cutoff
 // for which cookies that default into SameSite=Lax, which are newer than the
@@ -241,7 +268,12 @@ NET_EXPORT extern const base::FeatureParam<int> kCertDualVerificationTrialImpl;
 NET_EXPORT extern const base::FeatureParam<int>
     kCertDualVerificationTrialCacheSize;
 #endif /* defined(OS_MAC) */
-#endif /* BUILDFLAG(BUILTIN_CERT_VERIFIER_FEATURE_SUPPORTED) */
+#endif /* BUILDFLAG(TRIAL_COMPARISON_CERT_VERIFIER_SUPPORTED) */
+
+#if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+// When enabled, use the Chrome Root Store instead of the system root store
+NET_EXPORT extern const base::Feature kChromeRootStoreUsed;
+#endif /* BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED) */
 
 // Turns off streaming media caching to disk when on battery power.
 NET_EXPORT extern const base::Feature kTurnOffStreamingMediaCachingOnBattery;
@@ -318,20 +350,6 @@ NET_EXPORT extern const base::Feature kFirstPartySets;
 // feature.
 NET_EXPORT extern const base::FeatureParam<bool> kFirstPartySetsIsDogfooder;
 
-// Controls whether the fix for crbug.com/1166211 is enabled. When this is
-// enabled, SameSite=Lax cookies may only be accessed for cross-site requests if
-// they are top-level navigations. When it is disabled, the (incorrect) previous
-// behavior that allows SameSite=Lax cookies on cross-site, non-top-level
-// requests if all frame ancestors are same-site with the request URL is used
-// instead. This fix is implemented behind a flag (kill switch) due to potential
-// compatibility risk.
-NET_EXPORT extern const base::Feature kSameSiteCookiesBugfix1166211;
-
-// When this feature is enabled, no CookieChangeDispatcher notifications will be
-// sent when loading cookies from the persistent store. All other change
-// notifications are still dispatched as usual.
-NET_EXPORT extern const base::Feature kNoCookieChangeNotificationOnLoad;
-
 #if BUILDFLAG(ENABLE_REPORTING)
 // When enabled this feature will allow a new Reporting-Endpoints header to
 // configure reporting endpoints for report delivery. This is used to support
@@ -355,6 +373,19 @@ NET_EXPORT extern const base::Feature kUdpSocketPosixAlwaysUpdateBytesReceived;
 // site-for-cookies).
 // See spec changes in https://github.com/httpwg/http-extensions/pull/1348
 NET_EXPORT extern const base::Feature kCookieSameSiteConsidersRedirectChain;
+
+// When enabled, cookies with the SameParty attribute are treated as
+// "first-party" when in same-party contexts, for the purposes of third-party
+// cookie blocking. (Note that as a consequence, some cookies may be blocked
+// while others are allowed on a cross-site, same-party request. Additionally,
+// privacy mode is disabled in same-party contexts.)
+NET_EXPORT extern const base::Feature kSamePartyCookiesConsideredFirstParty;
+
+// When enabled, sites can opt-in to having their cookies partitioned by
+// top-level site with the Partitioned attribute. Partitioned cookies will only
+// be sent when the browser is on the same top-level site that it was on when
+// the cookie was set.
+NET_EXPORT extern const base::Feature kPartitionedCookies;
 
 }  // namespace features
 }  // namespace net

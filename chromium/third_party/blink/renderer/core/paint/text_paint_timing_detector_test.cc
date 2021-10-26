@@ -85,7 +85,8 @@ class TextPaintTimingDetectorTest : public testing::Test {
 
   wtf_size_t CountRankingSetSize() {
     DCHECK(GetTextPaintTimingDetector());
-    return GetLargestTextPaintManager()->size_ordered_set_.size();
+    return static_cast<wtf_size_t>(
+        GetLargestTextPaintManager()->size_ordered_set_.size());
   }
 
   wtf_size_t CountInvisibleTexts() {
@@ -326,10 +327,10 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_TraceEvent_Candidate) {
   EXPECT_TRUE(events[0]->HasArg("frame"));
 
   EXPECT_TRUE(events[0]->HasArg("data"));
-  std::unique_ptr<base::Value> arg;
+  base::Value arg;
   EXPECT_TRUE(events[0]->GetArgAsValue("data", &arg));
   base::DictionaryValue* arg_dict;
-  EXPECT_TRUE(arg->GetAsDictionary(&arg_dict));
+  EXPECT_TRUE(arg.GetAsDictionary(&arg_dict));
   DOMNodeId node_id;
   EXPECT_TRUE(arg_dict->GetInteger("DOMNodeId", &node_id));
   EXPECT_GT(node_id, 0);
@@ -395,10 +396,10 @@ TEST_F(TextPaintTimingDetectorTest,
   EXPECT_TRUE(events[0]->HasArg("frame"));
 
   EXPECT_TRUE(events[0]->HasArg("data"));
-  std::unique_ptr<base::Value> arg;
+  base::Value arg;
   EXPECT_TRUE(events[0]->GetArgAsValue("data", &arg));
   base::DictionaryValue* arg_dict;
-  EXPECT_TRUE(arg->GetAsDictionary(&arg_dict));
+  EXPECT_TRUE(arg.GetAsDictionary(&arg_dict));
   DOMNodeId node_id;
   EXPECT_TRUE(arg_dict->GetInteger("DOMNodeId", &node_id));
   EXPECT_GT(node_id, 0);
@@ -463,10 +464,10 @@ TEST_F(TextPaintTimingDetectorTest, LargestTextPaint_TraceEvent_NoCandidate) {
   EXPECT_TRUE(events[0]->HasArg("frame"));
 
   EXPECT_TRUE(events[0]->HasArg("data"));
-  std::unique_ptr<base::Value> arg;
+  base::Value arg;
   EXPECT_TRUE(events[0]->GetArgAsValue("data", &arg));
   base::DictionaryValue* arg_dict;
-  EXPECT_TRUE(arg->GetAsDictionary(&arg_dict));
+  EXPECT_TRUE(arg.GetAsDictionary(&arg_dict));
   DOMNodeId candidate_index;
   EXPECT_TRUE(arg_dict->GetInteger("candidateIndex", &candidate_index));
   EXPECT_EQ(candidate_index, 2);

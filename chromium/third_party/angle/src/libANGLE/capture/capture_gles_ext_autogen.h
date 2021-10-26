@@ -1273,6 +1273,8 @@ angle::CallCapture CapturePrimitiveBoundingBoxEXT(const State &glState,
                                                   GLfloat maxZ,
                                                   GLfloat maxW);
 
+// GL_EXT_protected_textures
+
 // GL_EXT_read_format_bgra
 
 // GL_EXT_robustness
@@ -1303,6 +1305,8 @@ angle::CallCapture CaptureReadnPixelsEXT(const State &glState,
                                          void *data);
 
 // GL_EXT_sRGB
+
+// GL_EXT_sRGB_write_control
 
 // GL_EXT_semaphore
 angle::CallCapture CaptureDeleteSemaphoresEXT(const State &glState,
@@ -2057,6 +2061,14 @@ angle::CallCapture CaptureRenderbufferStorageOES(const State &glState,
                                                  GLenum internalformat,
                                                  GLsizei width,
                                                  GLsizei height);
+
+// GL_OES_geometry_shader
+angle::CallCapture CaptureFramebufferTextureOES(const State &glState,
+                                                bool isCallValid,
+                                                GLenum target,
+                                                GLenum attachment,
+                                                TextureID texturePacked,
+                                                GLint level);
 
 // GL_OES_get_program_binary
 angle::CallCapture CaptureGetProgramBinaryOES(const State &glState,

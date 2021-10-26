@@ -33,7 +33,7 @@
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "chrome/browser/ash/drive/drive_integration_service.h"
 #include "chrome/browser/ash/drive/file_system_util.h"
-#include "chrome/browser/chromeos/file_manager/path_util.h"
+#include "chrome/browser/ash/file_manager/path_util.h"
 #include "chrome/browser/drive/drive_notification_manager_factory.h"
 #include "chrome/browser/file_util_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -54,10 +54,8 @@
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "google_apis/drive/auth_service.h"
-#include "google_apis/drive/drive_api_error_codes.h"
+#include "google_apis/common/time_util.h"
 #include "google_apis/drive/drive_api_parser.h"
-#include "google_apis/drive/time_util.h"
 #include "net/base/filename_util.h"
 
 using content::BrowserThread;
@@ -126,7 +124,7 @@ std::pair<base::ListValue, base::DictionaryValue> GetGCacheContents(
     auto entry = std::make_unique<base::DictionaryValue>();
     entry->SetString("path", current.value());
     // Use double instead of integer for large files.
-    entry->SetDouble("size", size);
+    entry->SetDoubleKey("size", size);
     entry->SetBoolean("is_directory", is_directory);
     entry->SetBoolean("is_symbolic_link", is_symbolic_link);
     entry->SetString(
@@ -144,7 +142,7 @@ std::pair<base::ListValue, base::DictionaryValue> GetGCacheContents(
   // Convert |files| into response.
   for (auto& it : files)
     result.first.Append(std::move(it.second));
-  result.second.SetDouble("total_size", total_size);
+  result.second.SetDoubleKey("total_size", total_size);
   return result;
 }
 
@@ -448,7 +446,8 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
     }
 
     const char* kPathPreferences[] = {
-        prefs::kSelectFileLastDirectory, prefs::kSaveFileDefaultDirectory,
+        prefs::kSelectFileLastDirectory,
+        prefs::kSaveFileDefaultDirectory,
         prefs::kDownloadDefaultDirectory,
     };
     for (size_t i = 0; i < base::size(kPathPreferences); ++i) {
@@ -518,7 +517,7 @@ class DriveInternalsWebUIHandler : public content::WebUIMessageHandler {
   void OnGetFreeDiskSpace(int64_t free_space) {
     DCHECK_CURRENTLY_ON(BrowserThread::UI);
     base::DictionaryValue local_storage_summary;
-    local_storage_summary.SetDouble("free_space", free_space);
+    local_storage_summary.SetDoubleKey("free_space", free_space);
     MaybeCallJavascript("updateLocalStorageUsage",
                         std::move(local_storage_summary));
   }
@@ -841,10 +840,11 @@ class LogsZipper : public download::AllDownloadItemNotifier::Observer {
   static constexpr char kLogsZipName[] = "drivefs_logs.zip";
 
   void ZipLogFiles(const std::vector<base::FilePath>& files) {
-    (new ZipFileCreator(
-         base::BindOnce(&LogsZipper::OnZipDone, base::Unretained(this)),
-         logs_directory_, files, zip_path_))
-        ->Start(LaunchFileUtilService());
+    const scoped_refptr<ZipFileCreator> creator =
+        base::MakeRefCounted<ZipFileCreator>(logs_directory_, files, zip_path_);
+    creator->SetCompletionCallback(base::BindOnce(
+        &LogsZipper::OnZipDone, base::Unretained(this), creator));
+    creator->Start(LaunchFileUtilService());
   }
 
   static std::vector<base::FilePath> EnumerateLogFiles(
@@ -867,8 +867,9 @@ class LogsZipper : public download::AllDownloadItemNotifier::Observer {
     return log_files;
   }
 
-  void OnZipDone(bool success) {
-    if (!drive_internals_ || !success) {
+  void OnZipDone(const scoped_refptr<ZipFileCreator> creator) {
+    DCHECK(creator);
+    if (!drive_internals_ || creator->GetResult() != ZipFileCreator::kSuccess) {
       CleanUp();
       return;
     }

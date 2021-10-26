@@ -14,9 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include "base/cxx17_backports.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/stl_util.h"
 #include "base/time/time.h"
 #include "net/dns/dns_client.h"
 #include "net/dns/dns_config.h"
@@ -270,7 +270,8 @@ struct MockDnsClientRule {
   enum ResultType {
     // Fail asynchronously with ERR_NAME_NOT_RESOLVED and NXDOMAIN.
     NODOMAIN,
-    // Fail asynchronously with ERR_NAME_NOT_RESOLVED.
+    // Fail asynchronously with `net_error` or (if nullopt)
+    // ERR_NAME_NOT_RESOLVED and  `response` if not nullopt.
     FAIL,
     // Fail asynchronously with ERR_DNS_TIMED_OUT.
     TIMEOUT,
@@ -283,6 +284,9 @@ struct MockDnsClientRule {
     EMPTY,
     // "Succeed" but with an unparsable response.
     MALFORMED,
+    // Immediately records a test failure if queried. Used to catch unexpected
+    // queries.
+    UNEXPECTED,
 
     // Results in the response in |Result::response| or, if null, results in a
     // localhost IP response.
@@ -291,7 +295,8 @@ struct MockDnsClientRule {
 
   struct Result {
     explicit Result(ResultType type,
-                    absl::optional<DnsResponse> response = absl::nullopt);
+                    absl::optional<DnsResponse> response = absl::nullopt,
+                    absl::optional<int> net_error = absl::nullopt);
     explicit Result(DnsResponse response);
     Result(Result&& result);
     ~Result();
@@ -300,6 +305,7 @@ struct MockDnsClientRule {
 
     ResultType type;
     absl::optional<DnsResponse> response;
+    absl::optional<int> net_error;
   };
 
   // If |delay| is true, matching transactions will be delayed until triggered
@@ -330,7 +336,7 @@ class MockDnsTransactionFactory : public DnsTransactionFactory {
   ~MockDnsTransactionFactory() override;
 
   std::unique_ptr<DnsTransaction> CreateTransaction(
-      const std::string& hostname,
+      std::string hostname,
       uint16_t qtype,
       DnsTransactionFactory::CallbackType callback,
       const NetLogWithSource&,

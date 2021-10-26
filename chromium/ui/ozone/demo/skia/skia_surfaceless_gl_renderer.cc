@@ -11,7 +11,7 @@
 #include "base/bind.h"
 #include "base/callback_helpers.h"
 #include "base/command_line.h"
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "base/trace_event/trace_event.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkDeferredDisplayListRecorder.h"
@@ -251,6 +251,7 @@ void SurfacelessSkiaGlRenderer::RenderFrame() {
     gl_surface_->ScheduleOverlayPlane(
         0, gfx::OVERLAY_TRANSFORM_NONE, buffers_[back_buffer_]->image(),
         primary_plane_rect_, unity_rect, /* enable_blend */ true,
+        gfx::Rect(buffers_[back_buffer_]->size()),
         /* gpu_fence */ nullptr);
   }
 
@@ -258,6 +259,7 @@ void SurfacelessSkiaGlRenderer::RenderFrame() {
     gl_surface_->ScheduleOverlayPlane(
         1, gfx::OVERLAY_TRANSFORM_NONE, overlay_buffer_[back_buffer_]->image(),
         overlay_rect, unity_rect, /* enable_blend */ true,
+        gfx::Rect(buffers_[back_buffer_]->size()),
         /* gpu_fence */ nullptr);
   }
 
@@ -282,6 +284,7 @@ void SurfacelessSkiaGlRenderer::PostRenderFrameTask(
     case gfx::SwapResult::SWAP_ACK:
       SkiaGlRenderer::PostRenderFrameTask(std::move(result));
       break;
+    case gfx::SwapResult::SWAP_SKIPPED:
     case gfx::SwapResult::SWAP_FAILED:
       LOG(FATAL) << "Failed to swap buffers";
       break;

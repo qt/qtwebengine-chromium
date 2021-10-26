@@ -21,9 +21,21 @@ namespace v8 {
 namespace internal {
 class Assembler;
 
+// For WebAssembly we care about the full floating point register. If we are not
+// running Wasm, we can get away with saving half of those registers.
+#if V8_ENABLE_WEBASSEMBLY
+constexpr int kStackSavedSavedFPSize = 2 * kDoubleSize;
+#else
+constexpr int kStackSavedSavedFPSize = kDoubleSize;
+#endif  // V8_ENABLE_WEBASSEMBLY
+
 class V8_EXPORT_PRIVATE SharedTurboAssembler : public TurboAssemblerBase {
  public:
   using TurboAssemblerBase::TurboAssemblerBase;
+
+  // Move if registers are not identical.
+  void Move(Register dst, Register src);
+  void And(Register dst, Immediate src);
 
   void Movapd(XMMRegister dst, XMMRegister src);
 
@@ -307,6 +319,11 @@ class V8_EXPORT_PRIVATE SharedTurboAssembler : public TurboAssemblerBase {
                 XMMRegister scratch);
   void I64x2GeS(XMMRegister dst, XMMRegister src0, XMMRegister src1,
                 XMMRegister scratch);
+  void I64x2ShrS(XMMRegister dst, XMMRegister src, uint8_t shift,
+                 XMMRegister xmm_tmp);
+  void I64x2ShrS(XMMRegister dst, XMMRegister src, Register shift,
+                 XMMRegister xmm_tmp, XMMRegister xmm_shift,
+                 Register tmp_shift);
   void I64x2ExtMul(XMMRegister dst, XMMRegister src1, XMMRegister src2,
                    XMMRegister scratch, bool low, bool is_signed);
   void I64x2SConvertI32x4High(XMMRegister dst, XMMRegister src);

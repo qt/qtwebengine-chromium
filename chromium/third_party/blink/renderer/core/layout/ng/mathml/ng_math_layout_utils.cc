@@ -20,7 +20,11 @@ NGConstraintSpace CreateConstraintSpaceForMathChild(
     const NGBlockNode& parent_node,
     const LogicalSize& child_available_size,
     const NGConstraintSpace& parent_space,
-    const NGLayoutInputNode& child) {
+    const NGLayoutInputNode& child,
+    NGCacheSlot cache_slot,
+    const absl::optional<NGConstraintSpace::MathTargetStretchBlockSizes>
+        target_stretch_block_sizes,
+    const absl::optional<LayoutUnit> target_stretch_inline_size) {
   const ComputedStyle& parent_style = parent_node.Style();
   const ComputedStyle& child_style = child.Style();
   DCHECK(child.CreatesNewFormattingContext());
@@ -29,8 +33,12 @@ NGConstraintSpace CreateConstraintSpaceForMathChild(
   SetOrthogonalFallbackInlineSizeIfNeeded(parent_style, child, &builder);
   builder.SetAvailableSize(child_available_size);
   builder.SetPercentageResolutionSize(child_available_size);
+  builder.SetCacheSlot(cache_slot);
+  if (target_stretch_block_sizes)
+    builder.SetTargetStretchBlockSizes(*target_stretch_block_sizes);
+  if (target_stretch_inline_size)
+    builder.SetTargetStretchInlineSize(*target_stretch_inline_size);
 
-  // TODO(crbug.com/1124301): add target stretch sizes.
   // TODO(crbug.com/1125137): add ink metrics.
   return builder.ToConstraintSpace();
 }
@@ -90,7 +98,7 @@ static bool IsPrescriptDelimiter(const NGBlockNode& block_node) {
 }
 
 // Valid according to:
-// https://mathml-refresh.github.io/mathml-core/#prescripts-and-tensor-indices-mmultiscripts
+// https://w3c.github.io/mathml-core/#prescripts-and-tensor-indices-mmultiscripts
 inline bool IsValidMultiscript(const NGBlockNode& node) {
   auto child = To<NGBlockNode>(FirstChildInFlow(node));
   if (!child || IsPrescriptDelimiter(child))
@@ -185,7 +193,7 @@ RadicalVerticalParameters GetRadicalVerticalParameters(
 MinMaxSizes GetMinMaxSizesForVerticalStretchyOperator(
     const ComputedStyle& style,
     UChar character) {
-  // https://mathml-refresh.github.io/mathml-core/#dfn-preferred-inline-size-of-a-glyph-stretched-along-the-block-axis
+  // https://w3c.github.io/mathml-core/#dfn-preferred-inline-size-of-a-glyph-stretched-along-the-block-axis
   const SimpleFontData* font_data = style.GetFont().PrimaryFont();
   MinMaxSizes sizes;
   if (!font_data)
@@ -218,20 +226,15 @@ bool IsUnderOverLaidOutAsSubSup(const NGBlockNode& node) {
     return false;
   if (!node.IsBlock() || !node.IsMathML())
     return false;
-  auto base = To<NGBlockNode>(FirstChildInFlow(node));
-  // TODO(crbug.com/1124298)):
-  // https://mathml-refresh.github.io/mathml-core/#embellished-operators
-  if (auto* element =
-          DynamicTo<MathMLOperatorElement>(base.GetDOMNode())) {
-    return element->HasBooleanProperty(MathMLOperatorElement::kMovableLimits);
-  }
-  return false;
+  const auto base = To<NGBlockNode>(FirstChildInFlow(node));
+  const auto base_properties = GetMathMLEmbellishedOperatorProperties(base);
+  return base_properties && base_properties->has_movablelimits;
 }
 
 bool IsOperatorWithSpecialShaping(const NGBlockNode& node) {
   if (!node.IsBlock() || !node.IsMathML() || !node.FirstChild().IsInline())
     return false;
-  // https://mathml-refresh.github.io/mathml-core/#layout-of-operators
+  // https://w3c.github.io/mathml-core/#layout-of-operators
   if (auto* element = DynamicTo<MathMLOperatorElement>(node.GetDOMNode())) {
     UChar32 base_code_point = element->GetOperatorContent().code_point;
     if (base_code_point == kNonCharacter ||
@@ -240,7 +243,8 @@ bool IsOperatorWithSpecialShaping(const NGBlockNode& node) {
             base_code_point))
       return false;
 
-    // TODO(crbug.com/1124301) Implement stretchy operators.
+    if (element->HasBooleanProperty(MathMLOperatorElement::kStretchy))
+      return true;
 
     if (element->HasBooleanProperty(MathMLOperatorElement::kLargeOp) &&
         HasDisplayStyle(node.Style()))
@@ -273,6 +277,57 @@ LayoutUnit FractionLineThickness(const ComputedStyle& style) {
       ValueForLength(style.GetMathFractionBarThickness(),
                      DefaultFractionLineThickness(style)),
       LayoutUnit());
+}
+
+LayoutUnit MathTableBaseline(const ComputedStyle& style,
+                             LayoutUnit block_offset) {
+  // The center of the table is aligned with the math axis.
+  // See: https://w3c.github.io/mathml-core/#table-or-matrix-mtable
+  return LayoutUnit(block_offset / 2 + MathAxisHeight(style));
+}
+
+namespace {
+
+MathMLOperatorElement* GetCoreOperator(const NGBlockNode& node) {
+  if (!node || !node.IsMathML())
+    return nullptr;
+
+  // See https://w3c.github.io/mathml-core/#embellished-operators
+  // TODO(crbug.com/1124298): Implement embellished operators.
+  auto* element = DynamicTo<MathMLElement>(node.GetDOMNode());
+  if (element && element->HasTagName(mathml_names::kMoTag)) {
+    // 1. An <mo> element;
+    return To<MathMLOperatorElement>(element);
+  }
+  return nullptr;
+}
+
+}  // namespace
+
+absl::optional<MathMLEmbellishedOperatorProperties>
+GetMathMLEmbellishedOperatorProperties(const NGBlockNode& node) {
+  auto* core_operator = GetCoreOperator(node);
+  if (!core_operator)
+    return absl::nullopt;
+
+  MathMLEmbellishedOperatorProperties properties;
+
+  properties.has_movablelimits =
+      core_operator->HasBooleanProperty(MathMLOperatorElement::kMovableLimits);
+
+  LayoutUnit leading_space(core_operator->DefaultLeadingSpace() *
+                           node.Style().FontSize());
+  properties.lspace =
+      ValueForLength(node.Style().GetMathLSpace(), leading_space)
+          .ClampNegativeToZero();
+
+  LayoutUnit trailing_space(core_operator->DefaultTrailingSpace() *
+                            node.Style().FontSize());
+  properties.rspace =
+      ValueForLength(node.Style().GetMathRSpace(), trailing_space)
+          .ClampNegativeToZero();
+
+  return properties;
 }
 
 }  // namespace blink

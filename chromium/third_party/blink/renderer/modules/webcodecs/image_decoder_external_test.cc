@@ -9,6 +9,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_tester.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_testing.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_arraybufferallowshared_arraybufferviewallowshared_readablestream.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_image_decode_options.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_image_decode_result.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_image_decoder_init.h"
@@ -45,7 +46,7 @@ class ImageDecoderTest : public testing::Test {
 
     auto data = ReadFile(file_name);
     DCHECK(!data->IsEmpty()) << "Missing file: " << file_name;
-    init->setData(ArrayBufferOrArrayBufferViewOrReadableStream::FromArrayBuffer(
+    init->setData(MakeGarbageCollected<V8ImageBufferSource>(
         DOMArrayBuffer::Create(std::move(data))));
     return ImageDecoderExternal::Create(v8_scope->GetScriptState(), init,
                                         v8_scope->GetExceptionState());
@@ -119,7 +120,7 @@ TEST_F(ImageDecoderTest, DecodeEmpty) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType("image/png");
-  init->setData(ArrayBufferOrArrayBufferViewOrReadableStream::FromArrayBuffer(
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(
       DOMArrayBuffer::Create(SharedBuffer::Create())));
   auto* decoder = ImageDecoderExternal::Create(v8_scope.GetScriptState(), init,
                                                v8_scope.GetExceptionState());
@@ -134,8 +135,7 @@ TEST_F(ImageDecoderTest, DecodeNeuteredAtConstruction) {
   auto* buffer = DOMArrayBuffer::Create(SharedBuffer::Create());
 
   init->setType("image/png");
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromArrayBuffer(buffer));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(buffer));
 
   ArrayBufferContents contents;
   ASSERT_TRUE(buffer->Transfer(v8_scope.GetIsolate(), contents));
@@ -161,8 +161,7 @@ TEST_F(ImageDecoderTest, DecodeNeuteredAtDecodeTime) {
 
   auto* buffer = DOMArrayBuffer::Create(std::move(data));
 
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromArrayBuffer(buffer));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(buffer));
 
   auto* decoder = ImageDecoderExternal::Create(v8_scope.GetScriptState(), init,
                                                v8_scope.GetExceptionState());
@@ -293,6 +292,38 @@ TEST_F(ImageDecoderTest, DecodeCompleted) {
   }
 }
 
+TEST_F(ImageDecoderTest, DecodeAborted) {
+  V8TestingScope v8_scope;
+  constexpr char kImageType[] = "image/avif";
+  EXPECT_TRUE(IsTypeSupported(&v8_scope, kImageType));
+
+  // Use an expensive-to-decode image to try and ensure work exists to abort.
+  auto* decoder = CreateDecoder(
+      &v8_scope,
+      "images/resources/avif/red-at-12-oclock-with-color-profile-12bpc.avif",
+      kImageType);
+
+  ASSERT_TRUE(decoder);
+  ASSERT_FALSE(v8_scope.GetExceptionState().HadException());
+
+  {
+    auto promise = decoder->tracks().ready(v8_scope.GetScriptState());
+    ScriptPromiseTester tester(v8_scope.GetScriptState(), promise);
+    tester.WaitUntilSettled();
+    ASSERT_TRUE(tester.IsFulfilled());
+  }
+
+  // Setup a scenario where there should be work to abort. Since blink tests use
+  // real threads with the base::TaskEnvironment, we can't actually be sure that
+  // work hasn't completed by the time reset() is called.
+  for (int i = 0; i < 10; ++i)
+    decoder->decode();
+  decoder->reset();
+
+  // There's no way to verify work was aborted, so just ensure nothing explodes.
+  base::RunLoop().RunUntilIdle();
+}
+
 TEST_F(ImageDecoderTest, DecoderReset) {
   V8TestingScope v8_scope;
   constexpr char kImageType[] = "image/gif";
@@ -402,6 +433,20 @@ TEST_F(ImageDecoderTest, DecoderContextDestroyed) {
   EXPECT_FALSE(decoder->HasPendingActivity());
 }
 
+TEST_F(ImageDecoderTest, DecoderContextDestroyedBeforeCreation) {
+  V8TestingScope v8_scope;
+  constexpr char kImageType[] = "image/gif";
+  EXPECT_TRUE(IsTypeSupported(&v8_scope, kImageType));
+
+  // Destroying the context prior to construction should fail creation.
+  v8_scope.GetExecutionContext()->NotifyContextDestroyed();
+
+  auto* decoder =
+      CreateDecoder(&v8_scope, "images/resources/animated.gif", kImageType);
+  ASSERT_FALSE(decoder);
+  ASSERT_TRUE(v8_scope.GetExceptionState().HadException());
+}
+
 TEST_F(ImageDecoderTest, DecoderReadableStream) {
   V8TestingScope v8_scope;
   constexpr char kImageType[] = "image/gif";
@@ -417,8 +462,7 @@ TEST_F(ImageDecoderTest, DecoderReadableStream) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType(kImageType);
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromReadableStream(stream));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(stream));
 
   Persistent<ImageDecoderExternal> decoder = ImageDecoderExternal::Create(
       v8_scope.GetScriptState(), init, IGNORE_EXCEPTION_FOR_TESTING);
@@ -518,8 +562,7 @@ TEST_F(ImageDecoderTest, DecoderReadableStreamAvif) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType(kImageType);
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromReadableStream(stream));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(stream));
 
   Persistent<ImageDecoderExternal> decoder = ImageDecoderExternal::Create(
       v8_scope.GetScriptState(), init, IGNORE_EXCEPTION_FOR_TESTING);
@@ -586,8 +629,7 @@ TEST_F(ImageDecoderTest, ReadableStreamAvifStillYuvDecoding) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType(kImageType);
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromReadableStream(stream));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(stream));
 
   Persistent<ImageDecoderExternal> decoder = ImageDecoderExternal::Create(
       v8_scope.GetScriptState(), init, IGNORE_EXCEPTION_FOR_TESTING);
@@ -653,8 +695,7 @@ TEST_F(ImageDecoderTest, DecodePartialImage) {
   auto* array_buffer = DOMArrayBuffer::Create(128, 1);
   ASSERT_TRUE(data->GetBytes(array_buffer->Data(), array_buffer->ByteLength()));
 
-  init->setData(ArrayBufferOrArrayBufferViewOrReadableStream::FromArrayBuffer(
-      array_buffer));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(array_buffer));
   auto* decoder = ImageDecoderExternal::Create(v8_scope.GetScriptState(), init,
                                                v8_scope.GetExceptionState());
   ASSERT_TRUE(decoder);
@@ -699,8 +740,7 @@ TEST_F(ImageDecoderTest, DecodeClosedDuringReadableStream) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType(kImageType);
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromReadableStream(stream));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(stream));
 
   Persistent<ImageDecoderExternal> decoder = ImageDecoderExternal::Create(
       v8_scope.GetScriptState(), init, IGNORE_EXCEPTION_FOR_TESTING);
@@ -747,8 +787,7 @@ TEST_F(ImageDecoderTest, DecodeInvalidFileViaReadableStream) {
 
   auto* init = MakeGarbageCollected<ImageDecoderInit>();
   init->setType(kImageType);
-  init->setData(
-      ArrayBufferOrArrayBufferViewOrReadableStream::FromReadableStream(stream));
+  init->setData(MakeGarbageCollected<V8ImageBufferSource>(stream));
 
   Persistent<ImageDecoderExternal> decoder = ImageDecoderExternal::Create(
       v8_scope.GetScriptState(), init, IGNORE_EXCEPTION_FOR_TESTING);

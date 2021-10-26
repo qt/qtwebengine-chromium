@@ -355,14 +355,16 @@ def VerifyZlibSupport():
   clang = os.path.join(LLVM_BUILD_DIR, 'bin', 'clang')
   test_file = '/dev/null'
   if sys.platform == 'win32':
-    clang += '-cl.exe'
+    clang += '.exe'
     test_file = 'nul'
 
   print('Checking for zlib support')
   clang_out = subprocess.check_output([
-      clang, '--driver-mode=gcc', '-target', 'x86_64-unknown-linux-gnu', '-gz',
-      '-c', '-###', '-x', 'c', test_file ],
-      stderr=subprocess.STDOUT, universal_newlines=True)
+      clang, '-target', 'x86_64-unknown-linux-gnu', '-gz', '-c', '-###', '-x',
+      'c', test_file
+  ],
+                                      stderr=subprocess.STDOUT,
+                                      universal_newlines=True)
   if (re.search(r'--compress-debug-sections', clang_out)):
     print('OK')
   else:
@@ -467,6 +469,8 @@ def main():
                       default=sys.platform in ('linux2', 'darwin'))
   args = parser.parse_args()
 
+  global CLANG_REVISION, PACKAGE_VERSION, LLVM_BUILD_DIR
+
   if (args.pgo or args.thinlto) and not args.bootstrap:
     print('--pgo/--thinlto requires --bootstrap')
     return 1
@@ -522,8 +526,6 @@ def main():
   if sys.platform == 'darwin':
     isysroot = subprocess.check_output(['xcrun', '--show-sdk-path'],
                                        universal_newlines=True).rstrip()
-
-  global CLANG_REVISION, PACKAGE_VERSION, LLVM_BUILD_DIR
 
   if args.build_dir:
     LLVM_BUILD_DIR = args.build_dir
@@ -1130,7 +1132,10 @@ def main():
         # because the asan install changes library RPATHs which CMake only
         # supports on ELF platforms and MacOS uses Mach-O instead of ELF.
         if sys.platform != 'darwin':
-          fuchsia_args.append('-DCOMPILER_RT_BUILD_SANITIZERS=ON')
+          fuchsia_args.extend([
+              '-DCOMPILER_RT_BUILD_SANITIZERS=ON',
+              '-DSANITIZER_NO_UNDEFINED_SYMBOLS=OFF',
+          ])
         build_phase2_dir = os.path.join(LLVM_BUILD_DIR,
                                          'fuchsia-phase2-' + target_arch)
         if not os.path.exists(build_phase2_dir):
@@ -1140,16 +1145,16 @@ def main():
                    fuchsia_args +
                    [COMPILER_RT_DIR])
         profile_a = 'libclang_rt.profile.a'
-        asan_a = 'libclang_rt.asan.a'
+        asan_so = 'libclang_rt.asan.so'
         ninja_command = ['ninja', profile_a]
         if sys.platform != 'darwin':
-          ninja_command.append(asan_a)
+          ninja_command.append(asan_so)
         RunCommand(ninja_command)
         CopyFile(os.path.join(build_phase2_dir, 'lib', target_spec, profile_a),
                               fuchsia_lib_dst_dir)
         if sys.platform != 'darwin':
-          CopyFile(os.path.join(build_phase2_dir, 'lib', target_spec, asan_a),
-                                fuchsia_lib_dst_dir)
+          CopyFile(os.path.join(build_phase2_dir, 'lib', target_spec, asan_so),
+                   fuchsia_lib_dst_dir)
 
   # Run tests.
   if (not args.build_mac_arm and
@@ -1162,17 +1167,6 @@ def main():
       # TODO(thakis): Run check-all on Darwin too, https://crbug.com/959361
       test_targets = [ 'check-llvm', 'check-clang', 'check-lld' ]
     RunCommand(['ninja', '-C', LLVM_BUILD_DIR] + test_targets, msvc_arch='x64')
-
-  if sys.platform == 'darwin':
-    for dylib in glob.glob(os.path.join(rt_lib_dst_dir, '*.dylib')):
-      # Fix LC_ID_DYLIB for the ASan dynamic libraries to be relative to
-      # @executable_path.
-      # Has to happen after running tests.
-      # TODO(glider): this is transitional. We'll need to fix the dylib
-      # name either in our build system, or in Clang. See also
-      # http://crbug.com/344836.
-      subprocess.call(['install_name_tool', '-id',
-                       '@executable_path/' + os.path.basename(dylib), dylib])
 
   WriteStampFile(PACKAGE_VERSION, STAMP_FILE)
   WriteStampFile(PACKAGE_VERSION, FORCE_HEAD_REVISION_FILE)

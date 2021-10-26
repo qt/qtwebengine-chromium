@@ -33,14 +33,22 @@ GbmPixmapWayland::GbmPixmapWayland(WaylandBufferManagerGpu* buffer_manager)
       buffer_id_(buffer_manager->AllocateBufferID()) {}
 
 GbmPixmapWayland::~GbmPixmapWayland() {
-  if (gbm_bo_)
+  if (gbm_bo_ && widget_ != gfx::kNullAcceleratedWidget)
     buffer_manager_->DestroyBuffer(widget_, buffer_id_);
 }
 
-bool GbmPixmapWayland::InitializeBuffer(gfx::Size size,
-                                        gfx::BufferFormat format,
-                                        gfx::BufferUsage usage) {
+bool GbmPixmapWayland::InitializeBuffer(
+    gfx::AcceleratedWidget widget,
+    gfx::Size size,
+    gfx::BufferFormat format,
+    gfx::BufferUsage usage,
+    absl::optional<gfx::Size> visible_area_size) {
+  DCHECK(!visible_area_size ||
+         ((visible_area_size.value().width() <= size.width()) &&
+          (visible_area_size.value().height() <= size.height())));
   TRACE_EVENT0("wayland", "GbmPixmapWayland::InitializeBuffer");
+
+  widget_ = widget;
 
   if (!buffer_manager_->gbm_device())
     return false;
@@ -73,14 +81,11 @@ bool GbmPixmapWayland::InitializeBuffer(gfx::Size size,
 
   DVLOG(3) << "Created gbm bo. format= " << gfx::BufferFormatToString(format)
            << " usage=" << gfx::BufferUsageToString(usage);
-  CreateDmabufBasedBuffer();
-  return true;
-}
 
-void GbmPixmapWayland::SetAcceleratedWiget(gfx::AcceleratedWidget widget) {
-  DCHECK(widget != gfx::kNullAcceleratedWidget);
-  DCHECK(widget_ == gfx::kNullAcceleratedWidget);
-  widget_ = widget;
+  visible_area_size_ = visible_area_size ? visible_area_size.value() : size;
+  if (widget_ != gfx::kNullAcceleratedWidget)
+    CreateDmabufBasedBuffer();
+  return true;
 }
 
 bool GbmPixmapWayland::AreDmaBufFdsValid() const {
@@ -130,6 +135,7 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
     const gfx::Rect& display_bounds,
     const gfx::RectF& crop_rect,
     bool enable_blend,
+    const gfx::Rect& damage_rect,
     std::vector<gfx::GpuFence> acquire_fences,
     std::vector<gfx::GpuFence> release_fences) {
   DCHECK_NE(widget, gfx::kNullAcceleratedWidget);
@@ -141,7 +147,8 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
   //   implemented.
   z_order_ = z_order_set_ ? z_order_ : plane_z_order;
   if (widget_ != widget || z_order_ != plane_z_order) {
-    buffer_manager_->DestroyBuffer(widget_, buffer_id_);
+    if (widget_ != gfx::kNullAcceleratedWidget)
+      buffer_manager_->DestroyBuffer(widget_, buffer_id_);
     CreateDmabufBasedBuffer();
     widget_ = widget;
     z_order_ = plane_z_order;
@@ -162,7 +169,7 @@ bool GbmPixmapWayland::ScheduleOverlayPlane(
                                           : std::make_unique<gfx::GpuFence>(
                                                 std::move(acquire_fences[0])),
                    plane_z_order, plane_transform, display_bounds, crop_rect,
-                   enable_blend),
+                   enable_blend, damage_rect),
       buffer_id_);
   return true;
 }
@@ -213,7 +220,7 @@ void GbmPixmapWayland::CreateDmabufBasedBuffer() {
   }
   // Asks Wayland to create a wl_buffer based on the |file| fd.
   buffer_manager_->CreateDmabufBasedBuffer(
-      std::move(fd), GetBufferSize(), strides, offsets, modifiers,
+      std::move(fd), visible_area_size_, strides, offsets, modifiers,
       gbm_bo_->GetFormat(), plane_count, buffer_id_);
 }
 

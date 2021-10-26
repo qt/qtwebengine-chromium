@@ -849,7 +849,8 @@ rgb_to_xy(double rc,
     *z = m[2][0] * rc + m[2][1] * gc + m[2][2] * bc;
 
     sum = *x + *y + *z;
-
+    if (sum == 0)
+        sum = 1;
     *x = *x / sum;
     *y = *y / sum;
 }
@@ -1503,7 +1504,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_ciescope = {
+const AVFilter ff_vf_ciescope = {
     .name          = "ciescope",
     .description   = NULL_IF_CONFIG_SMALL("Video CIE scope."),
     .priv_size     = sizeof(CiescopeContext),

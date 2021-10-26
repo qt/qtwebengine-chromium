@@ -22,7 +22,7 @@ namespace tint {
 
 /// UniqueVector is an ordered container that only contains unique items.
 /// Attempting to add a duplicate is a no-op.
-template <typename T>
+template <typename T, typename HASH = std::hash<T>>
 struct UniqueVector {
   /// The iterator returned by begin() and end()
   using ConstIterator = typename std::vector<T>::const_iterator;
@@ -37,6 +37,10 @@ struct UniqueVector {
     }
   }
 
+  /// @returns true if the vector contains `item`
+  /// @param item the item
+  bool contains(const T& item) const { return set.count(item); }
+
   /// @returns the number of items in the vector
   size_t size() const { return vector.size(); }
 
@@ -47,11 +51,11 @@ struct UniqueVector {
   ConstIterator end() const { return vector.end(); }
 
   /// @returns a const reference to the internal vector
-  operator const std::vector<T>&() const { return vector; }
+  operator const std::vector<T> &() const { return vector; }
 
  private:
   std::vector<T> vector;
-  std::unordered_set<T> set;
+  std::unordered_set<T, HASH> set;
 };
 
 }  // namespace tint

@@ -5,16 +5,16 @@
 /* eslint-disable rulesdir/no_underscored_properties */
 
 import * as Common from '../../core/common/common.js';
-import type * as SDK from '../../core/sdk/sdk.js'; // eslint-disable-line no-unused-vars
+import type * as SDK from '../../core/sdk/sdk.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
 
-import type {NetworkNode} from './NetworkDataGridNode.js'; // eslint-disable-line no-unused-vars
+import type {NetworkNode} from './NetworkDataGridNode.js';
 import {RequestTimeRangeNameToColor} from './NetworkOverview.js';
-import type {Label, NetworkTimeCalculator} from './NetworkTimeCalculator.js'; // eslint-disable-line no-unused-vars
+import type {Label, NetworkTimeCalculator} from './NetworkTimeCalculator.js';
 import type {RequestTimeRange} from './RequestTimingView.js';
-import {RequestTimeRangeNames, RequestTimingView} from './RequestTimingView.js';  // eslint-disable-line no-unused-vars
+import {RequestTimeRangeNames, RequestTimingView} from './RequestTimingView.js';
 
 const BAR_SPACING = 1;
 
@@ -49,7 +49,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
   constructor(calculator: NetworkTimeCalculator) {
     // TODO(allada) Make this a shadowDOM when the NetworkWaterfallColumn gets moved into NetworkLogViewColumns.
     super(false);
-    this.registerRequiredCSS('panels/network/networkWaterfallColumn.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/network/networkWaterfallColumn.css');
     this._canvas = (this.contentElement.createChild('canvas') as HTMLCanvasElement);
     this._canvas.tabIndex = -1;
     this.setDefaultFocusedElement(this._canvas);
@@ -420,7 +420,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
         }
       }
     }
-    this._drawLayers(context);
+    this._drawLayers(context, useTimingBars);
 
     context.save();
     context.fillStyle =
@@ -447,7 +447,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
     this._didDrawForTest();
   }
 
-  _drawLayers(context: CanvasRenderingContext2D): void {
+  _drawLayers(context: CanvasRenderingContext2D, useTimingBars: boolean): void {
     for (const entry of this._pathForStyle) {
       const style = (entry[0] as _LayerStyle);
       const path = (entry[1] as Path2D);
@@ -461,7 +461,8 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
         context.stroke(path);
       }
       if (style.fillStyle) {
-        context.fillStyle = ThemeSupport.ThemeSupport.instance().getComputedValue(style.fillStyle);
+        context.fillStyle =
+            useTimingBars ? ThemeSupport.ThemeSupport.instance().getComputedValue(style.fillStyle) : style.fillStyle;
         context.fill(path);
       }
       context.restore();

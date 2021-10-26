@@ -26,6 +26,7 @@
 #include <float.h>
 
 #include "libavutil/avstring.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/common.h"
 #include "libavutil/float_dsp.h"
 #include "libavutil/intreadwrite.h"
@@ -948,7 +949,7 @@ static const AVOption afir_options[] = {
 
 AVFILTER_DEFINE_CLASS(afir);
 
-AVFilter ff_af_afir = {
+const AVFilter ff_af_afir = {
     .name          = "afir",
     .description   = NULL_IF_CONFIG_SMALL("Apply Finite Impulse Response filter with supplied coefficients in additional stream(s)."),
     .priv_size     = sizeof(AudioFIRContext),

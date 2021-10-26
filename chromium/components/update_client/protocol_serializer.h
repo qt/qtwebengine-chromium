@@ -14,6 +14,7 @@
 #include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "components/update_client/protocol_definition.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
 class Version;
@@ -65,7 +66,10 @@ protocol_request::App MakeProtocolApp(
     absl::optional<protocol_request::UpdateCheck> update_check,
     absl::optional<protocol_request::Ping> ping);
 
-protocol_request::UpdateCheck MakeProtocolUpdateCheck(bool is_update_disabled);
+protocol_request::UpdateCheck MakeProtocolUpdateCheck(
+    bool is_update_disabled,
+    const std::string& target_version_prefix,
+    bool rollback_allowed);
 
 protocol_request::Ping MakeProtocolPing(const std::string& app_id,
                                         const PersistedData* metadata,

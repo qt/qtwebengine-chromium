@@ -43,6 +43,7 @@
  * HDCD decoding filter
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 #include "libavutil/avassert.h"
 #include "avfilter.h"
@@ -1053,7 +1054,7 @@ static int hdcd_integrate(HDCDContext *ctx, hdcd_state *states, int channels, in
 
     for (j = result - 1; j >= 0; j--) {
         for (i = 0; i < channels; i++)
-            bits[i] |= (*(samples++) & 1) << j;
+            bits[i] |= (*(samples++) & 1U) << j;
         samples += stride - channels;
     }
 
@@ -1210,7 +1211,7 @@ static int hdcd_analyze(int32_t *samples, int count, int stride, int gain, int t
     int32_t *samples_end = samples + stride * count;
 
     for (i = 0; i < count; i++) {
-        samples[i * stride] <<= 15;
+        samples[i * stride] *= 1 << 15;
         if (mode == HDCD_ANA_PE) {
             int pel = (samples[i * stride] >> 16) & 1;
             int32_t sample = samples[i * stride];
@@ -1284,13 +1285,13 @@ static int hdcd_envelope(int32_t *samples, int count, int stride, int vbits, int
                 av_assert0(asample <= max_asample);
                 sample = sample >= 0 ? peaktab[asample] : -peaktab[asample];
             } else
-                sample <<= shft;
+                sample *= (1 << shft);
 
             samples[i * stride] = sample;
         }
     } else {
         for (i = 0; i < count; i++)
-            samples[i * stride] <<= shft;
+            samples[i * stride] *= (1 << shft);
     }
 
     if (gain <= target_gain) {
@@ -1772,7 +1773,7 @@ static const AVFilterPad avfilter_af_hdcd_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_hdcd = {
+const AVFilter ff_af_hdcd = {
     .name          = "hdcd",
     .description   = NULL_IF_CONFIG_SMALL("Apply High Definition Compatible Digital (HDCD) decoding."),
     .priv_size     = sizeof(HDCDContext),

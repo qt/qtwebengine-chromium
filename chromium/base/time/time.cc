@@ -11,13 +11,13 @@
 #pragma clang max_tokens_here 390000
 #endif  // defined(OS_LINUX)
 
+#include <atomic>
 #include <cmath>
 #include <limits>
 #include <ostream>
 #include <tuple>
 #include <utility>
 
-#include "base/no_destructor.h"
 #include "base/strings/stringprintf.h"
 #include "base/third_party/nspr/prtime.h"
 #include "base/time/time_override.h"
@@ -28,16 +28,17 @@ namespace base {
 
 namespace internal {
 
-TimeNowFunction g_time_now_function = &subtle::TimeNowIgnoringOverride;
+std::atomic<TimeNowFunction> g_time_now_function{
+    &subtle::TimeNowIgnoringOverride};
 
-TimeNowFunction g_time_now_from_system_time_function =
-    &subtle::TimeNowFromSystemTimeIgnoringOverride;
+std::atomic<TimeNowFunction> g_time_now_from_system_time_function{
+    &subtle::TimeNowFromSystemTimeIgnoringOverride};
 
-TimeTicksNowFunction g_time_ticks_now_function =
-    &subtle::TimeTicksNowIgnoringOverride;
+std::atomic<TimeTicksNowFunction> g_time_ticks_now_function{
+    &subtle::TimeTicksNowIgnoringOverride};
 
-ThreadTicksNowFunction g_thread_ticks_now_function =
-    &subtle::ThreadTicksNowIgnoringOverride;
+std::atomic<ThreadTicksNowFunction> g_thread_ticks_now_function{
+    &subtle::ThreadTicksNowIgnoringOverride};
 
 }  // namespace internal
 
@@ -63,7 +64,7 @@ int TimeDelta::InDaysFloored() const {
 
 double TimeDelta::InMillisecondsF() const {
   if (!is_inf())
-    return double{delta_} / Time::kMicrosecondsPerMillisecond;
+    return static_cast<double>(delta_) / Time::kMicrosecondsPerMillisecond;
   return (delta_ < 0) ? -std::numeric_limits<double>::infinity()
                       : std::numeric_limits<double>::infinity();
 }
@@ -87,7 +88,7 @@ int64_t TimeDelta::InMillisecondsRoundedUp() const {
 
 double TimeDelta::InMicrosecondsF() const {
   if (!is_inf())
-    return double{delta_};
+    return static_cast<double>(delta_);
   return (delta_ < 0) ? -std::numeric_limits<double>::infinity()
                       : std::numeric_limits<double>::infinity();
 }
@@ -131,13 +132,14 @@ std::ostream& operator<<(std::ostream& os, TimeDelta time_delta) {
 
 // static
 Time Time::Now() {
-  return internal::g_time_now_function();
+  return internal::g_time_now_function.load(std::memory_order_relaxed)();
 }
 
 // static
 Time Time::NowFromSystemTime() {
   // Just use g_time_now_function because it returns the system time.
-  return internal::g_time_now_from_system_time_function();
+  return internal::g_time_now_from_system_time_function.load(
+      std::memory_order_relaxed)();
 }
 
 // static
@@ -188,7 +190,8 @@ double Time::ToDoubleT() const {
 #if defined(OS_POSIX) || defined(OS_FUCHSIA)
 // static
 Time Time::FromTimeSpec(const timespec& ts) {
-  return FromDoubleT(ts.tv_sec + double{ts.tv_nsec} / kNanosecondsPerSecond);
+  return FromDoubleT(ts.tv_sec +
+                     static_cast<double>(ts.tv_nsec) / kNanosecondsPerSecond);
 }
 #endif
 
@@ -328,16 +331,16 @@ std::ostream& operator<<(std::ostream& os, Time time) {
 
 // static
 TimeTicks TimeTicks::Now() {
-  return internal::g_time_ticks_now_function();
+  return internal::g_time_ticks_now_function.load(std::memory_order_relaxed)();
 }
 
 // static
 TimeTicks TimeTicks::UnixEpoch() {
-  static const NoDestructor<TimeTicks> epoch([]() {
+  static const TimeTicks epoch([]() {
     return subtle::TimeTicksNowIgnoringOverride() -
            (subtle::TimeNowIgnoringOverride() - Time::UnixEpoch());
   }());
-  return *epoch;
+  return epoch;
 }
 
 TimeTicks TimeTicks::SnappedToNextTick(TimeTicks tick_phase,
@@ -367,7 +370,8 @@ std::ostream& operator<<(std::ostream& os, TimeTicks time_ticks) {
 
 // static
 ThreadTicks ThreadTicks::Now() {
-  return internal::g_thread_ticks_now_function();
+  return internal::g_thread_ticks_now_function.load(
+      std::memory_order_relaxed)();
 }
 
 std::ostream& operator<<(std::ostream& os, ThreadTicks thread_ticks) {

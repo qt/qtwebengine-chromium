@@ -44,10 +44,6 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
     // On*FrameStart() methods are called after the frame header is completely
     // processed.  At that point it is safe to consume |header_length| bytes.
 
-    // Called when a CANCEL_PUSH frame has been successfully parsed.
-    // TODO(b/171463363): Remove.
-    virtual bool OnCancelPushFrame(const CancelPushFrame& frame) = 0;
-
     // Called when a MAX_PUSH_ID frame has been successfully parsed.
     virtual bool OnMaxPushIdFrame(const MaxPushIdFrame& frame) = 0;
 
@@ -83,24 +79,6 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
     virtual bool OnHeadersFramePayload(absl::string_view payload) = 0;
     // Called when a HEADERS frame has been completely processed.
     virtual bool OnHeadersFrameEnd() = 0;
-
-    // TODO(b/171463363): Remove all.
-    // Called when a PUSH_PROMISE frame has been received.
-    virtual bool OnPushPromiseFrameStart(QuicByteCount header_length) = 0;
-    // Called when the Push ID field of a PUSH_PROMISE frame has been parsed.
-    // Called exactly once for a valid PUSH_PROMISE frame.
-    // |push_id_length| is the length of the push ID field.
-    // |header_block_length| is the length of the compressed header block.
-    virtual bool OnPushPromiseFramePushId(
-        PushId push_id,
-        QuicByteCount push_id_length,
-        QuicByteCount header_block_length) = 0;
-    // Called when part of the header block of a PUSH_PROMISE frame has been
-    // read. May be called multiple times for a single frame.  |payload| is
-    // guaranteed to be non-empty.
-    virtual bool OnPushPromiseFramePayload(absl::string_view payload) = 0;
-    // Called when a PUSH_PROMISE frame has been completely processed.
-    virtual bool OnPushPromiseFrameEnd() = 0;
 
     // Called when a PRIORITY_UPDATE frame has been received.
     // |header_length| contains PRIORITY_UPDATE frame length and payload length.
@@ -193,16 +171,23 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   // if there are any errors.  Returns whether processing should continue.
   bool ReadFrameLength(QuicDataReader* reader);
 
-  // Depending on the frame type, reads and processes the payload of the current
-  // frame from |reader| and calls visitor methods, or calls
-  // BufferOrParsePayload().  Returns whether processing should continue.
+  // Returns whether the current frame is of a buffered type.
+  // The payload of buffered frames is buffered by HttpDecoder, and parsed by
+  // HttpDecoder after the entire frame has been received.  (Copying to the
+  // buffer is skipped if the ProcessInput() call covers the entire payload.)
+  // Frames that are not buffered have every payload fragment synchronously
+  // passed to the Visitor without buffering.
+  bool IsFrameBuffered();
+
+  // For buffered frame types, calls BufferOrParsePayload().  For other frame
+  // types, reads the payload of the current frame from |reader| and calls
+  // visitor methods.  Returns whether processing should continue.
   bool ReadFramePayload(QuicDataReader* reader);
 
-  // For frame types parsed by BufferOrParsePayload(), this method is only
-  // called if frame payload is empty, at it calls BufferOrParsePayload().  For
-  // other frame types, this method directly calls visitor methods to signal
-  // that frame had been parsed completely.  Returns whether processing should
-  // continue.
+  // For buffered frame types, this method is only called if frame payload is
+  // empty, and it calls BufferOrParsePayload().  For other frame types, this
+  // method directly calls visitor methods to signal that frame had been
+  // received completely.  Returns whether processing should continue.
   bool FinishParsing(QuicDataReader* reader);
 
   // Read payload of unknown frame from |reader| and call
@@ -210,18 +195,17 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   // false if it should be paused.
   bool HandleUnknownFramePayload(QuicDataReader* reader);
 
-  // Discards any remaining frame payload from |reader|.
-  void DiscardFramePayload(QuicDataReader* reader);
-
   // Buffers any remaining frame payload from |*reader| into |buffer_| if
   // necessary.  Parses the frame payload if complete.  Parses out of |*reader|
-  // without unnecessary copy if |*reader| has entire payload.
+  // without unnecessary copy if |*reader| contains entire payload.
   // Returns whether processing should continue.
+  // Must only be called when current frame type is buffered.
   bool BufferOrParsePayload(QuicDataReader* reader);
 
   // Parses the entire payload of certain kinds of frames that are parsed in a
   // single pass.  |reader| must have at least |current_frame_length_| bytes.
   // Returns whether processing should continue.
+  // Must only be called when current frame type is buffered.
   bool ParseEntirePayload(QuicDataReader* reader);
 
   // Buffers any remaining frame length field from |reader| into
@@ -231,27 +215,16 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   // Buffers any remaining frame type field from |reader| into |type_buffer_|.
   void BufferFrameType(QuicDataReader* reader);
 
-  // Buffers at most |remaining_push_id_length_| from |reader| to
-  // |push_id_buffer_|.  TODO(b/171463363): Remove.
-  void BufferPushId(QuicDataReader* reader);
-
   // Sets |error_| and |error_detail_| accordingly.
   void RaiseError(QuicErrorCode error, std::string error_detail);
 
   // Parses the payload of a SETTINGS frame from |reader| into |frame|.
   bool ParseSettingsFrame(QuicDataReader* reader, SettingsFrame* frame);
 
-  // Parses the payload of a PRIORITY_UPDATE frame (draft-01, type 0x0f)
-  // from |reader| into |frame|.
-  // TODO(b/147306124): Remove.
-  bool ParsePriorityUpdateFrame(QuicDataReader* reader,
-                                PriorityUpdateFrame* frame);
-
   // Parses the payload of a PRIORITY_UPDATE frame (draft-02, type 0xf0700)
   // from |reader| into |frame|.
-  // TODO(b/147306124): Rename to ParsePriorityUpdateFrame().
-  bool ParseNewPriorityUpdateFrame(QuicDataReader* reader,
-                                   PriorityUpdateFrame* frame);
+  bool ParsePriorityUpdateFrame(QuicDataReader* reader,
+                                PriorityUpdateFrame* frame);
 
   // Parses the payload of an ACCEPT_CH frame from |reader| into |frame|.
   bool ParseAcceptChFrame(QuicDataReader* reader, AcceptChFrame* frame);
@@ -279,12 +252,6 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   QuicByteCount current_type_field_length_;
   // Remaining length that's needed for the frame's type field.
   QuicByteCount remaining_type_field_length_;
-  // Length of PUSH_PROMISE frame's push id.
-  // TODO(b/171463363): Remove.
-  QuicByteCount current_push_id_length_;
-  // Remaining length that's needed for PUSH_PROMISE frame's push id field.
-  // TODO(b/171463363): Remove.
-  QuicByteCount remaining_push_id_length_;
   // Last error.
   QuicErrorCode error_;
   // The issue which caused |error_|
@@ -295,17 +262,6 @@ class QUIC_EXPORT_PRIVATE HttpDecoder {
   std::array<char, sizeof(uint64_t)> length_buffer_;
   // Remaining unparsed type field data.
   std::array<char, sizeof(uint64_t)> type_buffer_;
-  // Remaining unparsed push id data.
-  // TODO(b/171463363): Remove.
-  std::array<char, sizeof(uint64_t)> push_id_buffer_;
-
-  // Latched value of
-  // gfe2_reloadable_flag_quic_ignore_old_priority_update_frame.
-  const bool ignore_old_priority_update_;
-
-  // Latched value of
-  // gfe2_reloadable_flag_quic_error_on_http3_push.
-  const bool error_on_http3_push_;
 };
 
 }  // namespace quic

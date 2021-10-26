@@ -10,7 +10,6 @@
 #include "base/bind.h"
 #include "base/check_op.h"
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
@@ -34,6 +33,8 @@ class AutoTryLock {
  public:
   explicit AutoTryLock(base::Lock& lock)
       : lock_(lock), acquired_(lock_.Try()) {}
+  AutoTryLock(const AutoTryLock&) = delete;
+  AutoTryLock& operator=(const AutoTryLock&) = delete;
 
   bool locked() const { return acquired_; }
 
@@ -47,7 +48,6 @@ class AutoTryLock {
  private:
   base::Lock& lock_;
   const bool acquired_;
-  DISALLOW_COPY_AND_ASSIGN(AutoTryLock);
 };
 
 }  // namespace
@@ -59,6 +59,8 @@ class WebAudioSourceProviderImpl::TeeFilter
     : public AudioRendererSink::RenderCallback {
  public:
   TeeFilter() : copy_required_(false) {}
+  TeeFilter(const TeeFilter&) = delete;
+  TeeFilter& operator=(const TeeFilter&) = delete;
   ~TeeFilter() override = default;
 
   void Initialize(AudioRendererSink::RenderCallback* renderer,
@@ -138,8 +140,6 @@ class WebAudioSourceProviderImpl::TeeFilter
   std::atomic<bool> copy_required_;
   base::Lock copy_lock_;
   CopyAudioCB copy_audio_bus_callback_ GUARDED_BY(copy_lock_);
-
-  DISALLOW_COPY_AND_ASSIGN(TeeFilter);
 };
 
 WebAudioSourceProviderImpl::WebAudioSourceProviderImpl(
@@ -204,15 +204,14 @@ void WebAudioSourceProviderImpl::SetClient(
 
 void WebAudioSourceProviderImpl::ProvideInput(
     const WebVector<float*>& audio_data,
-    size_t number_of_frames) {
+    int number_of_frames) {
   if (!bus_wrapper_ ||
       static_cast<size_t>(bus_wrapper_->channels()) != audio_data.size()) {
     bus_wrapper_ =
         media::AudioBus::CreateWrapper(static_cast<int>(audio_data.size()));
   }
 
-  const int incoming_number_of_frames = static_cast<int>(number_of_frames);
-  bus_wrapper_->set_frames(incoming_number_of_frames);
+  bus_wrapper_->set_frames(number_of_frames);
   for (size_t i = 0; i < audio_data.size(); ++i)
     bus_wrapper_->SetChannelData(static_cast<int>(i), audio_data[i]);
 
@@ -245,8 +244,8 @@ void WebAudioSourceProviderImpl::ProvideInput(
     return;
   }
 
-  if (frames < incoming_number_of_frames)
-    bus_wrapper_->ZeroFramesPartial(frames, incoming_number_of_frames - frames);
+  if (frames < number_of_frames)
+    bus_wrapper_->ZeroFramesPartial(frames, number_of_frames - frames);
 
   bus_wrapper_->Scale(volume_);
 }

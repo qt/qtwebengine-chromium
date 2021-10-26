@@ -10,7 +10,6 @@
 
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/thread_annotations.h"
 #include "third_party/blink/renderer/platform/disk_data_metadata.h"
@@ -65,6 +64,8 @@ class PLATFORM_EXPORT ParkableStringImpl final
       scoped_refptr<StringImpl>&& impl,
       std::unique_ptr<SecureDigest> digest);
 
+  ParkableStringImpl(const ParkableStringImpl&) = delete;
+  ParkableStringImpl& operator=(const ParkableStringImpl&) = delete;
   ~ParkableStringImpl();
 
   void Lock();
@@ -87,7 +88,7 @@ class PLATFORM_EXPORT ParkableStringImpl final
 
     return metadata_->length_;
   }
-  unsigned CharactersSizeInBytes() const;
+  size_t CharactersSizeInBytes() const;
   size_t MemoryFootprintForDump() const;
 
   // Returns true iff the string can be parked. This does not mean that the
@@ -228,6 +229,8 @@ class PLATFORM_EXPORT ParkableStringImpl final
   // Metadata only used for parkable ParkableStrings.
   struct ParkableMetadata {
     ParkableMetadata(String string, std::unique_ptr<SecureDigest> digest);
+    ParkableMetadata(const ParkableMetadata&) = delete;
+    ParkableMetadata& operator=(const ParkableMetadata&) = delete;
 
     Mutex mutex_;
     unsigned int lock_depth_ GUARDED_BY(mutex_);
@@ -253,8 +256,6 @@ class PLATFORM_EXPORT ParkableStringImpl final
     Age age_ : 3 GUARDED_BY(mutex_);
     const bool is_8bit_ : 1;
     const unsigned length_;
-
-    DISALLOW_COPY_AND_ASSIGN(ParkableMetadata);
   };
 
   String string_;
@@ -277,8 +278,6 @@ class PLATFORM_EXPORT ParkableStringImpl final
   FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, LockParkedString);
   FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, ReportMemoryDump);
   FRIEND_TEST_ALL_PREFIXES(ParkableStringTest, MemoryFootprintForDump);
-
-  DISALLOW_COPY_AND_ASSIGN(ParkableStringImpl);
 };
 
 #if !DCHECK_IS_ON()
@@ -320,7 +319,7 @@ class PLATFORM_EXPORT ParkableString final {
   // The string is guaranteed to be valid for
   // max(lifetime of a copy of the returned reference, current thread task).
   const String& ToString() const;
-  wtf_size_t CharactersSizeInBytes() const;
+  size_t CharactersSizeInBytes() const;
 
   // Causes the string to be unparked. Note that the pointer must not be
   // cached.

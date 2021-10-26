@@ -11,7 +11,9 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/post_task.h"
+#include "base/trace_event/trace_event.h"
 #include "media/base/limits.h"
+#include "media/base/media_log.h"
 #include "media/base/video_types.h"
 #include "media/base/video_util.h"
 #include "media/gpu/chromeos/dmabuf_video_frame_pool.h"
@@ -50,9 +52,10 @@ constexpr size_t kDpbOutputBufferExtraCount = limits::kMaxVideoFrames + 1;
 base::AtomicRefCount V4L2VideoDecoder::num_instances_(0);
 
 // static
-std::unique_ptr<DecoderInterface> V4L2VideoDecoder::Create(
+std::unique_ptr<VideoDecoderMixin> V4L2VideoDecoder::Create(
+    std::unique_ptr<MediaLog> media_log,
     scoped_refptr<base::SequencedTaskRunner> decoder_task_runner,
-    base::WeakPtr<DecoderInterface::Client> client) {
+    base::WeakPtr<VideoDecoderMixin::Client> client) {
   DCHECK(decoder_task_runner->RunsTasksInCurrentSequence());
   DCHECK(client);
 
@@ -62,27 +65,35 @@ std::unique_ptr<DecoderInterface> V4L2VideoDecoder::Create(
     return nullptr;
   }
 
-  return base::WrapUnique<DecoderInterface>(new V4L2VideoDecoder(
-      std::move(decoder_task_runner), std::move(client), std::move(device)));
+  return base::WrapUnique<VideoDecoderMixin>(
+      new V4L2VideoDecoder(std::move(media_log), std::move(decoder_task_runner),
+                           std::move(client), std::move(device)));
 }
 
 // static
-SupportedVideoDecoderConfigs V4L2VideoDecoder::GetSupportedConfigs() {
+absl::optional<SupportedVideoDecoderConfigs>
+V4L2VideoDecoder::GetSupportedConfigs() {
   scoped_refptr<V4L2Device> device = V4L2Device::Create();
   if (!device)
-    return SupportedVideoDecoderConfigs();
+    return absl::nullopt;
 
-  return ConvertFromSupportedProfiles(
-      device->GetSupportedDecodeProfiles(base::size(kSupportedInputFourccs),
-                                         kSupportedInputFourccs),
-      false);
+  auto configs = device->GetSupportedDecodeProfiles(
+      base::size(kSupportedInputFourccs), kSupportedInputFourccs);
+
+  if (configs.empty())
+    return absl::nullopt;
+
+  return ConvertFromSupportedProfiles(configs, false);
 }
 
 V4L2VideoDecoder::V4L2VideoDecoder(
+    std::unique_ptr<MediaLog> media_log,
     scoped_refptr<base::SequencedTaskRunner> decoder_task_runner,
-    base::WeakPtr<DecoderInterface::Client> client,
+    base::WeakPtr<VideoDecoderMixin::Client> client,
     scoped_refptr<V4L2Device> device)
-    : DecoderInterface(std::move(decoder_task_runner), std::move(client)),
+    : VideoDecoderMixin(std::move(media_log),
+                        std::move(decoder_task_runner),
+                        std::move(client)),
       device_(std::move(device)),
       weak_this_factory_(this) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
@@ -119,6 +130,7 @@ V4L2VideoDecoder::~V4L2VideoDecoder() {
 }
 
 void V4L2VideoDecoder::Initialize(const VideoDecoderConfig& config,
+                                  bool /*low_delay*/,
                                   CdmContext* cdm_context,
                                   InitCB init_cb,
                                   const OutputCB& output_cb,
@@ -173,7 +185,7 @@ void V4L2VideoDecoder::Initialize(const VideoDecoderConfig& config,
   DCHECK(!output_queue_);
 
   profile_ = config.profile();
-  pixel_aspect_ratio_ = config.GetPixelAspectRatio();
+  aspect_ratio_ = config.aspect_ratio();
 
   if (profile_ == VIDEO_CODEC_PROFILE_UNKNOWN) {
     VLOGF(1) << "Unknown profile.";
@@ -186,6 +198,32 @@ void V4L2VideoDecoder::Initialize(const VideoDecoderConfig& config,
   output_cb_ = std::move(output_cb);
   SetState(State::kInitialized);
   std::move(init_cb).Run(::media::OkStatus());
+}
+
+bool V4L2VideoDecoder::NeedsBitstreamConversion() const {
+  DCHECK(output_cb_) << "V4L2VideoDecoder hasn't been initialized";
+  NOTREACHED();
+  return (profile_ >= H264PROFILE_MIN && profile_ <= H264PROFILE_MAX) ||
+         (profile_ >= HEVCPROFILE_MIN && profile_ <= HEVCPROFILE_MAX);
+}
+
+bool V4L2VideoDecoder::CanReadWithoutStalling() const {
+  NOTIMPLEMENTED();
+  NOTREACHED();
+  return true;
+}
+
+int V4L2VideoDecoder::GetMaxDecodeRequests() const {
+  NOTREACHED();
+  return 4;
+}
+
+VideoDecoderType V4L2VideoDecoder::GetDecoderType() const {
+  return VideoDecoderType::kV4L2;
+}
+
+bool V4L2VideoDecoder::IsPlatformDecoder() const {
+  return true;
 }
 
 StatusCode V4L2VideoDecoder::InitializeBackend() {
@@ -376,7 +414,7 @@ bool V4L2VideoDecoder::SetupOutputFormat(const gfx::Size& size,
   if (pool) {
     absl::optional<GpuBufferLayout> layout = pool->Initialize(
         fourcc, adjusted_size, visible_rect,
-        GetNaturalSize(visible_rect, pixel_aspect_ratio_), num_output_frames_,
+        aspect_ratio_.GetNaturalSize(visible_rect), num_output_frames_,
         /*use_protected=*/false);
     if (!layout) {
       VLOGF(1) << "Failed to setup format to VFPool";
@@ -417,12 +455,18 @@ void V4L2VideoDecoder::Reset(base::OnceClosure closure) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
   DVLOGF(3);
 
+  // In order to preserve the order of the callbacks between Decode() and
+  // Reset(), we also trampoline the callback of Reset().
+  auto trampoline_reset_cb = base::BindOnce(
+      &base::SequencedTaskRunner::PostTask,
+      base::SequencedTaskRunnerHandle::Get(), FROM_HERE, std::move(closure));
+
   // Reset callback for resolution change, because the pipeline won't notify
   // flushed after reset.
   continue_change_resolution_cb_.Reset();
 
   if (state_ == State::kInitialized) {
-    std::move(closure).Run();
+    std::move(trampoline_reset_cb).Run();
     return;
   }
 
@@ -446,7 +490,7 @@ void V4L2VideoDecoder::Reset(base::OnceClosure closure) {
   // Now we are ready to decode new buffer. Go back to decoding state.
   SetState(State::kDecoding);
 
-  std::move(closure).Run();
+  std::move(trampoline_reset_cb).Run();
 }
 
 void V4L2VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
@@ -454,8 +498,17 @@ void V4L2VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
   DCHECK_CALLED_ON_VALID_SEQUENCE(decoder_sequence_checker_);
   DCHECK_NE(state_, State::kUninitialized);
 
+  // VideoDecoder interface: |decode_cb| can't be called from within Decode().
+  auto trampoline_decode_cb = base::BindOnce(
+      [](const scoped_refptr<base::SequencedTaskRunner>& this_sequence_runner,
+         DecodeCB decode_cb, Status status) {
+        this_sequence_runner->PostTask(
+            FROM_HERE, base::BindOnce(std::move(decode_cb), status));
+      },
+      base::SequencedTaskRunnerHandle::Get(), std::move(decode_cb));
+
   if (state_ == State::kError) {
-    std::move(decode_cb).Run(DecodeStatus::DECODE_ERROR);
+    std::move(trampoline_decode_cb).Run(DecodeStatus::DECODE_ERROR);
     return;
   }
 
@@ -463,14 +516,14 @@ void V4L2VideoDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
     const StatusCode status = InitializeBackend();
     if (status != StatusCode::kOk) {
       SetState(State::kError);
-      std::move(decode_cb).Run(status);
+      std::move(trampoline_decode_cb).Run(status);
       return;
     }
   }
 
   const int32_t bitstream_id = bitstream_id_generator_.GetNextBitstreamId();
-  backend_->EnqueueDecodeTask(std::move(buffer), std::move(decode_cb),
-                              bitstream_id);
+  backend_->EnqueueDecodeTask(std::move(buffer),
+                              std::move(trampoline_decode_cb), bitstream_id);
 }
 
 bool V4L2VideoDecoder::StartStreamV4L2Queue(bool start_output_queue) {
@@ -632,6 +685,10 @@ void V4L2VideoDecoder::ServiceDeviceTask(bool event) {
               << input_queue_->QueuedBuffersCount()
               << ", Number of queued output buffers: "
               << output_queue_->QueuedBuffersCount();
+    TRACE_COUNTER_ID2(
+        "media,gpu", "V4L2 queue sizes", this, "input (OUTPUT_queue)",
+        input_queue_->QueuedBuffersCount(), "output (CAPTURE_queue)",
+        output_queue_->QueuedBuffersCount());
   }
 
   if (backend_)
@@ -683,7 +740,7 @@ void V4L2VideoDecoder::OutputFrame(scoped_refptr<VideoFrame> frame,
 
   if (frame->visible_rect() != visible_rect ||
       frame->timestamp() != timestamp) {
-    gfx::Size natural_size = GetNaturalSize(visible_rect, pixel_aspect_ratio_);
+    gfx::Size natural_size = aspect_ratio_.GetNaturalSize(visible_rect);
     scoped_refptr<VideoFrame> wrapped_frame = VideoFrame::WrapVideoFrame(
         frame, frame->format(), visible_rect, natural_size);
     wrapped_frame->set_timestamp(timestamp);

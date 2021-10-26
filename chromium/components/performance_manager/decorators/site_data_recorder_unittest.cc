@@ -88,8 +88,9 @@ class MockDataCache : public SiteDataCache {
   }
   std::unique_ptr<SiteDataWriter> GetWriterForOrigin(
       const url::Origin& origin) override {
-    scoped_refptr<internal::SiteDataImpl> fake_impl = base::WrapRefCounted(
-        new internal::SiteDataImpl(origin, &delegate_, &data_store_));
+    scoped_refptr<internal::SiteDataImpl> fake_impl =
+        base::WrapRefCounted(new internal::SiteDataImpl(
+            origin, delegate_.GetWeakPtr(), &data_store_));
 
     return std::make_unique<MockDataWriter>(origin, fake_impl);
   }
@@ -151,7 +152,7 @@ class SiteDataRecorderTest : public PerformanceManagerTestHarness {
 
     SetContents(CreateTestWebContents());
     base::WeakPtr<PageNode> page_node =
-        PerformanceManager::GetPageNodeForWebContents(web_contents());
+        PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
     RunTaskOnPMSequence(base::BindLambdaForTesting([&]() {
       auto* page_node_impl = PageNodeImpl::FromNode(page_node.get());
       page_node_impl->SetIsAudible(false);
@@ -177,7 +178,7 @@ class SiteDataRecorderTest : public PerformanceManagerTestHarness {
 
 TEST_F(SiteDataRecorderTest, NavigationEventsBasicTests) {
   base::WeakPtr<PageNode> page_node =
-      PerformanceManager::GetPageNodeForWebContents(web_contents());
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
 
   RunTaskOnPMSequence(base::BindLambdaForTesting([&]() {
     EXPECT_TRUE(page_node);
@@ -226,7 +227,7 @@ TEST_F(SiteDataRecorderTest, NavigationEventsBasicTests) {
 // is in background.
 TEST_F(SiteDataRecorderTest, FeatureEventsGetForwardedWhenInBackground) {
   base::WeakPtr<PageNode> page_node =
-      PerformanceManager::GetPageNodeForWebContents(web_contents());
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
 
   NavigatePageNodeOnUIThread(web_contents(), kTestUrl1);
 
@@ -318,7 +319,7 @@ TEST_F(SiteDataRecorderTest, FeatureEventsGetForwardedWhenInBackground) {
 
 TEST_F(SiteDataRecorderTest, FeatureEventsIgnoredWhenLoadingInBackground) {
   base::WeakPtr<PageNode> page_node =
-      PerformanceManager::GetPageNodeForWebContents(web_contents());
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
   NavigatePageNodeOnUIThread(web_contents(), kTestUrl1);
 
   RunTaskOnPMSequence(base::BindLambdaForTesting([&]() {
@@ -339,7 +340,7 @@ TEST_F(SiteDataRecorderTest, FeatureEventsIgnoredWhenLoadingInBackground) {
 
 TEST_F(SiteDataRecorderTest, VisibilityEvent) {
   base::WeakPtr<PageNode> page_node =
-      PerformanceManager::GetPageNodeForWebContents(web_contents());
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
   NavigatePageNodeOnUIThread(web_contents(), kTestUrl1);
 
   RunTaskOnPMSequence(base::BindLambdaForTesting([&]() {
@@ -360,7 +361,7 @@ TEST_F(SiteDataRecorderTest, VisibilityEvent) {
 
 TEST_F(SiteDataRecorderTest, LoadEvent) {
   base::WeakPtr<PageNode> page_node =
-      PerformanceManager::GetPageNodeForWebContents(web_contents());
+      PerformanceManager::GetPrimaryPageNodeForWebContents(web_contents());
   NavigatePageNodeOnUIThread(web_contents(), kTestUrl1);
 
   RunTaskOnPMSequence(base::BindLambdaForTesting([&]() {

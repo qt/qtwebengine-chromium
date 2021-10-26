@@ -40,7 +40,7 @@ import * as TextUtils from '../../models/text_utils/text_utils.js';
 
 import * as ARIAUtils from './ARIAUtils.js';
 import type {SuggestBoxDelegate, Suggestion} from './SuggestBox.js';
-import {SuggestBox} from './SuggestBox.js';  // eslint-disable-line no-unused-vars
+import {SuggestBox} from './SuggestBox.js';
 import {Tooltip} from './Tooltip.js';
 import {ElementFocusRestorer} from './UIUtils.js';
 import {appendStyle} from './utils/append-style.js';
@@ -136,7 +136,7 @@ export class TextPrompt extends Common.ObjectWrapper.ObjectWrapper implements Su
     this._boundOnMouseWheel = this.onMouseWheel.bind(this);
     this._boundClearAutocomplete = this.clearAutocomplete.bind(this);
     this._proxyElement = element.ownerDocument.createElement('span');
-    appendStyle(this._proxyElement, 'ui/legacy/textPrompt.css', {enableLegacyPatching: false});
+    appendStyle(this._proxyElement, 'ui/legacy/textPrompt.css');
     this._contentElement = this._proxyElement.createChild('div', 'text-prompt-root');
     this._proxyElement.style.display = this._proxyElementDisplay;
     if (element.parentElement) {

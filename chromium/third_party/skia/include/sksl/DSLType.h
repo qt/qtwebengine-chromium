@@ -8,6 +8,8 @@
 #ifndef SKSL_DSL_TYPE
 #define SKSL_DSL_TYPE
 
+#include "include/core/SkSpan.h"
+#include "include/private/SkSLString.h"
 #include "include/sksl/DSLExpression.h"
 #include "include/sksl/DSLModifiers.h"
 
@@ -21,6 +23,7 @@ namespace dsl {
 
 class DSLExpression;
 class DSLField;
+class DSLVarBase;
 
 enum TypeConstant : uint8_t {
     kBool_Type,
@@ -82,6 +85,10 @@ public:
     DSLType(const SkSL::Type* type)
         : fSkSLType(type) {}
 
+    DSLType(skstd::string_view name);
+
+    DSLType(skstd::string_view name, const DSLModifiers& modifiers);
+
     /**
      * Returns true if this type is a bool.
      */
@@ -138,42 +145,31 @@ public:
     bool isStruct() const;
 
     template<typename... Args>
-    static DSLExpression Construct(DSLType type, Args&&... args) {
-        SkTArray<DSLExpression> argArray;
-        argArray.reserve_back(sizeof...(args));
-        CollectArgs(argArray, std::forward<Args>(args)...);
-        return Construct(type, std::move(argArray));
+    static DSLExpression Construct(DSLType type, DSLVarBase& var, Args&&... args) {
+        DSLExpression argArray[] = {var, args...};
+        return Construct(type, SkMakeSpan(argArray));
     }
 
-    static DSLExpression Construct(DSLType type, SkTArray<DSLExpression> argArray);
+    template<typename... Args>
+    static DSLExpression Construct(DSLType type, DSLExpression expr, Args&&... args) {
+        DSLExpression argArray[] = {std::move(expr), std::move(args)...};
+        return Construct(type, SkMakeSpan(argArray));
+    }
+
+    static DSLExpression Construct(DSLType type, SkSpan<DSLExpression> argArray);
 
 private:
     const SkSL::Type& skslType() const;
 
     const SkSL::Type* fSkSLType = nullptr;
 
-    static void CollectArgs(SkTArray<DSLExpression>& args) {}
-
-    template<class... RemainingArgs>
-    static void CollectArgs(SkTArray<DSLExpression>& args, DSLVar& var,
-                            RemainingArgs&&... remaining) {
-        args.push_back(var);
-        CollectArgs(args, std::forward<RemainingArgs>(remaining)...);
-    }
-
-    template<class... RemainingArgs>
-    static void CollectArgs(SkTArray<DSLExpression>& args, DSLExpression expr,
-                            RemainingArgs&&... remaining) {
-        args.push_back(std::move(expr));
-        CollectArgs(args, std::forward<RemainingArgs>(remaining)...);
-    }
-
     TypeConstant fTypeConstant;
 
     friend DSLType Array(const DSLType& base, int count);
-    friend DSLType Struct(const char* name, SkTArray<DSLField> fields);
+    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
+    friend class DSLCore;
     friend class DSLFunction;
-    friend class DSLVar;
+    friend class DSLVarBase;
     friend class DSLWriter;
 };
 
@@ -219,34 +215,29 @@ DSLType Array(const DSLType& base, int count);
 
 class DSLField {
 public:
-    DSLField(const DSLType type, const char* name)
+    DSLField(const DSLType type, skstd::string_view name)
         : DSLField(DSLModifiers(), type, name) {}
 
-private:
-    DSLField(DSLModifiers modifiers, const DSLType type, const char* name)
+    DSLField(const DSLModifiers& modifiers, const DSLType type, skstd::string_view name)
         : fModifiers(modifiers)
         , fType(type)
         , fName(name) {}
 
+private:
     DSLModifiers fModifiers;
     const DSLType fType;
-    const char* fName;
+    skstd::string_view fName;
 
-    friend DSLType Struct(const char* name, SkTArray<DSLField> fields);
+    friend class DSLCore;
+    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
 };
 
-DSLType Struct(const char* name, SkTArray<DSLField> fields);
+DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
 
 template<typename... Field>
-DSLType Struct(const char* name, Field... fields) {
-    SkTArray<DSLField> fieldTypes;
-    fieldTypes.reserve_back(sizeof...(fields));
-    // in C++17, we could just do:
-    // (fieldTypes.push_back(std::move(fields)), ...);
-    int unused[] = {0, (fieldTypes.push_back(std::move(fields)), 0)...};
-    static_cast<void>(unused);
-
-    return Struct(name, std::move(fieldTypes));
+DSLType Struct(skstd::string_view name, Field... fields) {
+    DSLField fieldTypes[] = {std::move(fields)...};
+    return Struct(name, SkMakeSpan(fieldTypes));
 }
 
 } // namespace dsl

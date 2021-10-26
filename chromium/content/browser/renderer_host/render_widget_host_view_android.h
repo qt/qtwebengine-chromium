@@ -30,6 +30,7 @@
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_export.h"
+#include "content/public/browser/render_frame_host.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/android/delegated_frame_host_android.h"
 #include "ui/android/view_android.h"
@@ -139,6 +140,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void RenderProcessGone() override;
   void Destroy() override;
   void UpdateTooltipUnderCursor(const std::u16string& tooltip_text) override;
+  void UpdateTooltipFromKeyboard(const std::u16string& tooltip_text,
+                                 const gfx::Rect& bounds) override;
   void TransformPointToRootSurface(gfx::PointF* point) override;
   gfx::Rect GetBoundsInRootWindow() override;
   void ProcessAckedTouchEvent(
@@ -164,6 +167,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void DidStopFlinging() override;
   void OnInterstitialPageAttached() override;
   void OnInterstitialPageGoingAway() override;
+  bool CanSynchronizeVisualProperties() override;
   std::unique_ptr<SyntheticGestureTarget> CreateSyntheticGestureTarget()
       override;
   void OnDidNavigateMainFrameToNewPage() override;
@@ -185,11 +189,12 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   WebContentsAccessibility* GetWebContentsAccessibility() override;
   viz::ScopedSurfaceIdAllocator DidUpdateVisualProperties(
       const cc::RenderFrameMetadata& metadata) override;
-  void GetScreenInfo(blink::ScreenInfo* screen_info) override;
+  void GetScreenInfo(display::ScreenInfo* screen_info) override;
   std::vector<std::unique_ptr<ui::TouchEvent>> ExtractAndCancelActiveTouches()
       override;
   void TransferTouches(
       const std::vector<std::unique_ptr<ui::TouchEvent>>& touches) override;
+  bool ShouldVirtualKeyboardOverlayContent() override;
 
   // ui::EventHandlerAndroid implementation.
   bool OnTouchEvent(const ui::MotionEventAndroid& m) override;
@@ -240,11 +245,6 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   // Non-virtual methods
   void UpdateNativeViewTree(gfx::NativeView parent_native_view);
-  // Returns true if the overlaycontent flag is set in the JS, else false.
-  // This determines whether to fire geometrychange event to JS and also not
-  // resize the visual/layout viewports in response to keyboard visibility
-  // changes.
-  bool ShouldVirtualKeyboardOverlayContent();
 
   // Returns the temporary background color of the underlaying document, for
   // example, returns black during screen rotation.
@@ -253,7 +253,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void SendMouseEvent(const ui::MotionEventAndroid&, int action_button);
   void SendMouseWheelEvent(const blink::WebMouseWheelEvent& event);
   void SendGestureEvent(const blink::WebGestureEvent& event);
-  bool ShowSelectionMenu(const ContextMenuParams& params);
+  bool ShowSelectionMenu(RenderFrameHost* render_frame_host,
+                         const ContextMenuParams& params);
   void set_ime_adapter(ImeAdapterAndroid* ime_adapter) {
     ime_adapter_android_ = ime_adapter;
   }
@@ -395,6 +396,7 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
  private:
   friend class RenderWidgetHostViewAndroidTest;
+  friend class RenderWidgetHostViewAndroidRotationTest;
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            GestureManagerListensToChildFrames);
 
@@ -469,6 +471,10 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   void OnUpdateScopedSelectionHandles();
 
   void HandleSwipeToMoveCursorGestureAck(const blink::WebGestureEvent& event);
+
+  void BeginRotationBatching();
+  void EndRotationBatching();
+  void BeginRotationEmbed();
 
   bool is_showing_;
 
@@ -561,13 +567,19 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
 
   viz::ParentLocalSurfaceIdAllocator local_surface_id_allocator_;
   bool in_rotation_ = false;
+  // Tracks whether rotation was due to a fullscreen transition. Upon exiting
+  // fullscren the subsequent rotation order will be different.
+  bool fullscreen_rotation_ = false;
   // Tracks the time at which rotation started, along with the targeted
   // viz::LocalSurfaceId which would first embed the new rotation. This is a
   // deque because it is possible that one rotation may be interrupted by
   // another before the first has displayed. This can occur on pages that have
   // long layout and rendering time.
   std::deque<std::pair<base::TimeTicks, viz::LocalSurfaceId>> rotation_metrics_;
-  bool is_first_navigation_ = true;
+  // If true, then content was displayed before the completion of the initial
+  // navigation. After any content has been displayed, we need to allocate a new
+  // surface for all subsequent navigations.
+  bool pre_navigation_content_ = false;
   // If true, then the next allocated surface should be embedded.
   bool navigation_while_hidden_ = false;
 
@@ -597,6 +609,8 @@ class CONTENT_EXPORT RenderWidgetHostViewAndroid
   SurfaceIdChangedCallbackList surface_id_changed_callbacks_;
 
   base::android::ScopedJavaGlobalRef<jobject> obj_;
+
+  bool is_surface_sync_throttling_ = false;
 
   base::WeakPtrFactory<RenderWidgetHostViewAndroid> weak_ptr_factory_{this};
 

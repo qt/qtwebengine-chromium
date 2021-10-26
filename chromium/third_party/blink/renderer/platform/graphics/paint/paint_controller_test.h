@@ -45,6 +45,10 @@ class PaintControllerTestBase : public testing::Test {
                              DisplayItem::kUninitializedType),
         paint_controller_(std::make_unique<PaintController>()) {}
 
+  void SetUp() override {
+    testing::FLAGS_gtest_death_test_style = "threadsafe";
+  }
+
   void InitRootChunk() { InitRootChunk(GetPaintController()); }
   void InitRootChunk(PaintController& paint_controller) {
     paint_controller.UpdateCurrentPaintChunkProperties(
@@ -75,11 +79,6 @@ class PaintControllerTestBase : public testing::Test {
 #endif
 
   void InvalidateAll() { paint_controller_->InvalidateAllForTesting(); }
-
-  void CommitAndFinishCycle() {
-    paint_controller_->CommitNewDisplayItems();
-    paint_controller_->FinishCycle();
-  }
 
   using SubsequenceMarkers = PaintController::SubsequenceMarkers;
   const SubsequenceMarkers* GetSubsequenceMarkers(

@@ -5,6 +5,7 @@
 #include "extensions/browser/value_store/testing_value_store.h"
 
 #include <memory>
+#include <ostream>
 #include <utility>
 
 #include "base/notreached.h"
@@ -21,9 +22,8 @@ ValueStore::Status CreateStatusCopy(const ValueStore::Status& status) {
 
 }  // namespace
 
-TestingValueStore::TestingValueStore() : read_count_(0), write_count_(0) {}
-
-TestingValueStore::~TestingValueStore() {}
+TestingValueStore::TestingValueStore() = default;
+TestingValueStore::~TestingValueStore() = default;
 
 void TestingValueStore::set_status_code(StatusCode status_code) {
   status_ = ValueStore::Status(status_code, kGenericErrorMessage);
@@ -59,10 +59,10 @@ ValueStore::ReadResult TestingValueStore::Get(
     return ReadResult(CreateStatusCopy(status_));
 
   auto settings = std::make_unique<base::DictionaryValue>();
-  for (auto it = keys.cbegin(); it != keys.cend(); ++it) {
-    base::Value* value = NULL;
-    if (storage_.GetWithoutPathExpansion(*it, &value)) {
-      settings->SetKey(*it, value->Clone());
+  for (const auto& key : keys) {
+    base::Value* value = storage_.FindKey(key);
+    if (value) {
+      settings->SetKey(key, value->Clone());
     }
   }
   return ReadResult(std::move(settings), CreateStatusCopy(status_));
@@ -91,9 +91,8 @@ ValueStore::WriteResult TestingValueStore::Set(
   ValueStoreChangeList changes;
   for (base::DictionaryValue::Iterator it(settings);
        !it.IsAtEnd(); it.Advance()) {
-    base::Value* old_value = NULL;
-    if (!storage_.GetWithoutPathExpansion(it.key(), &old_value) ||
-        *old_value != it.value()) {
+    base::Value* old_value = storage_.FindKey(it.key());
+    if (!old_value || *old_value != it.value()) {
       changes.emplace_back(it.key(),
                            old_value
                                ? absl::optional<base::Value>(old_value->Clone())
@@ -116,10 +115,10 @@ ValueStore::WriteResult TestingValueStore::Remove(
     return WriteResult(CreateStatusCopy(status_));
 
   ValueStoreChangeList changes;
-  for (auto it = keys.cbegin(); it != keys.cend(); ++it) {
-    std::unique_ptr<base::Value> old_value;
-    if (storage_.RemoveWithoutPathExpansion(*it, &old_value)) {
-      changes.emplace_back(*it, std::move(*old_value), absl::nullopt);
+  for (auto const& key : keys) {
+    absl::optional<base::Value> old_value = storage_.ExtractKey(key);
+    if (old_value.has_value()) {
+      changes.emplace_back(key, std::move(*old_value), absl::nullopt);
     }
   }
   return WriteResult(std::move(changes), CreateStatusCopy(status_));

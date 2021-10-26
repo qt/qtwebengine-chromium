@@ -43,10 +43,12 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/frame/dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/use_counter_impl.h"
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -154,7 +156,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   String UserAgent() const final;
   UserAgentMetadata GetUserAgentMetadata() const final;
   HttpsState GetHttpsState() const final;
-  ResourceFetcher* Fetcher() const final;
+  ResourceFetcher* Fetcher() final;
   bool CanExecuteScripts(ReasonForCallingCanExecuteScripts) final;
   void ExceptionThrown(ErrorEvent*) final;
   void AddInspectorIssue(mojom::blink::InspectorIssueInfoPtr) final;
@@ -192,7 +194,12 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
 
   // Count |feature| only when this window is associated with a cross-site
   // iframe. A "site" is a scheme and registrable domain.
-  void CountUseOnlyInCrossSiteIframe(mojom::blink::WebFeature feature);
+  void CountUseOnlyInCrossSiteIframe(mojom::blink::WebFeature feature) override;
+
+  // Count permissions policy feature usage through use counter.
+  void CountPermissionsPolicyUsage(
+      mojom::blink::PermissionsPolicyFeature feature,
+      UseCounterImpl::PermissionsPolicyUsageType type);
 
   Document* InstallNewDocument(const DocumentInit&);
 
@@ -405,10 +412,11 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   // Returns true if this window is cross-site to the main frame. Defaults to
   // false in a detached window.
   // Note: This uses an outdated definition of "site" which only includes the
-  // registrable domain and not the scheme. For recording metrics in 3rd party
-  // contexts, prefer CountUseOnlyInCrossSiteIframe() which uses HTML's
-  // definition of "site" as a registrable domain and scheme.
+  // registrable domain and not the scheme. IsCrossSiteSubframeIncludingScheme()
+  // uses HTML's definition of "site" as a registrable domain and scheme.
   bool IsCrossSiteSubframe() const;
+
+  bool IsCrossSiteSubframeIncludingScheme() const;
 
   void DispatchPersistedPageshowEvent(base::TimeTicks navigation_start);
 
@@ -431,6 +439,9 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   ukm::UkmRecorder* UkmRecorder() override;
   ukm::SourceId UkmSourceID() const override;
 
+  const BlinkStorageKey& GetStorageKey() const { return storage_key_; }
+  void SetStorageKey(const BlinkStorageKey& storage_key);
+
  protected:
   // EventTarget overrides.
   void AddedEventListener(const AtomicString& event_type,
@@ -439,9 +450,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
                             const RegisteredEventListener&) override;
 
   // Protected DOMWindow overrides.
-  void SchedulePostMessage(MessageEvent*,
-                           scoped_refptr<const SecurityOrigin> target,
-                           LocalDOMWindow* source) override;
+  void SchedulePostMessage(PostedMessage*) override;
 
  private:
   // Intentionally private to prevent redundant checks when the type is
@@ -457,12 +466,6 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
 
   // Return the viewport size including scrollbars.
   IntSize GetViewportSize() const;
-
-  // Count feature disabled by Permissions Policy through use counter.
-  // The method is marked const as its caller |ReportPermissionsPolicyViolation|
-  // is marked const.
-  void CountPermissionsPolicyViolation(
-      mojom::blink::PermissionsPolicyFeature feature) const;
 
   Member<ScriptController> script_controller_;
 
@@ -548,6 +551,9 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   // this UKM is logged.
   // TODO(crbug.com/1112491): Remove when no longer needed.
   Deque<ukm::SourceId> post_message_ukm_recorded_source_ids_;
+
+  // The storage key for this LocalDomWindow.
+  BlinkStorageKey storage_key_;
 };
 
 template <>

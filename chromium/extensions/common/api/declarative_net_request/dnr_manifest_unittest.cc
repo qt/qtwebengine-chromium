@@ -146,13 +146,15 @@ TEST_F(DNRManifestTest, InvalidRulesFileKey) {
 TEST_F(DNRManifestTest, InvalidRulesFileFormat) {
   const char* kRulesetFile = "file1.json";
   std::unique_ptr<base::DictionaryValue> manifest = CreateManifest({});
-  manifest->Set(dnr_api::ManifestKeys::kDeclarativeNetRequest,
-                DictionaryBuilder()
-                    .Set(dnr_api::DNRInfo::kRuleResources,
-                         (ListBuilder().Append(
-                              std::make_unique<base::Value>(kRulesetFile)))
-                             .Build())
-                    .Build());
+  manifest->SetKey(
+      dnr_api::ManifestKeys::kDeclarativeNetRequest,
+      base::Value::FromUniquePtrValue(
+          DictionaryBuilder()
+              .Set(dnr_api::DNRInfo::kRuleResources,
+                   (ListBuilder().Append(
+                        std::make_unique<base::Value>(kRulesetFile)))
+                       .Build())
+              .Build()));
 
   WriteManifestAndRuleset(*manifest, {});
 
@@ -195,8 +197,10 @@ TEST_F(DNRManifestTest, MultipleRulesFileInvalidPath) {
 
 TEST_F(DNRManifestTest, RulesetCountExceeded) {
   std::vector<TestRulesetInfo> rulesets;
-  for (int i = 0; i <= dnr_api::MAX_NUMBER_OF_STATIC_RULESETS; ++i)
-    rulesets.emplace_back(base::NumberToString(i), base::ListValue());
+  for (int i = 0; i <= dnr_api::MAX_NUMBER_OF_STATIC_RULESETS; ++i) {
+    rulesets.emplace_back(base::NumberToString(i), base::ListValue(),
+                          false /* enabled */);
+  }
 
   WriteManifestAndRuleset(*CreateManifest(rulesets), rulesets);
 
@@ -205,6 +209,22 @@ TEST_F(DNRManifestTest, RulesetCountExceeded) {
       dnr_api::ManifestKeys::kDeclarativeNetRequest,
       dnr_api::DNRInfo::kRuleResources,
       base::NumberToString(dnr_api::MAX_NUMBER_OF_STATIC_RULESETS)));
+}
+
+TEST_F(DNRManifestTest, EnabledRulesetCountExceeded) {
+  std::vector<TestRulesetInfo> rulesets;
+  for (int i = 0; i <= dnr_api::MAX_NUMBER_OF_ENABLED_STATIC_RULESETS; ++i) {
+    rulesets.emplace_back(base::NumberToString(i), base::ListValue(),
+                          true /* enabled */);
+  }
+
+  WriteManifestAndRuleset(*CreateManifest(rulesets), rulesets);
+
+  LoadAndExpectError(ErrorUtils::FormatErrorMessage(
+      errors::kEnabledRulesetCountExceeded,
+      dnr_api::ManifestKeys::kDeclarativeNetRequest,
+      dnr_api::DNRInfo::kRuleResources,
+      base::NumberToString(dnr_api::MAX_NUMBER_OF_ENABLED_STATIC_RULESETS)));
 }
 
 TEST_F(DNRManifestTest, NonExistentRulesFile) {
@@ -224,7 +244,7 @@ TEST_F(DNRManifestTest, NeedsDeclarativeNetRequestPermission) {
   std::vector<TestRulesetInfo> rulesets({CreateDefaultRuleset()});
   std::unique_ptr<base::DictionaryValue> manifest = CreateManifest(rulesets);
   // Remove "declarativeNetRequest" permission.
-  manifest->Remove(manifest_keys::kPermissions, nullptr);
+  manifest->RemoveKey(manifest_keys::kPermissions);
 
   WriteManifestAndRuleset(*manifest, rulesets);
 

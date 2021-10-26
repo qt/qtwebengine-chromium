@@ -7,10 +7,18 @@
 #ifndef HELPERS_H
 #define HELPERS_H
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <stdbool.h>
 
 #include "drv.h"
 #include "helpers_array.h"
+
+#ifndef PAGE_SIZE
+#define PAGE_SIZE 0x1000
+#endif
 
 uint32_t drv_height_from_format(uint32_t format, uint32_t height, size_t plane);
 uint32_t drv_vertical_subsampling_from_format(uint32_t format, size_t plane);
@@ -42,4 +50,11 @@ int drv_modify_linear_combinations(struct driver *drv);
 uint64_t drv_pick_modifier(const uint64_t *modifiers, uint32_t count,
 			   const uint64_t *modifier_order, uint32_t order_count);
 bool drv_has_modifier(const uint64_t *list, uint32_t count, uint64_t modifier);
+uint32_t drv_get_standard_fourcc(uint32_t fourcc_internal);
+uint32_t drv_resolve_format_helper(struct driver *drv, uint32_t format, uint64_t use_flags);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif

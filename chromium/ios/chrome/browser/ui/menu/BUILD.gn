@@ -6,6 +6,8 @@ source_set("menu") {
   sources = [
     "action_factory.h",
     "action_factory.mm",
+    "browser_action_factory.h",
+    "browser_action_factory.mm",
     "menu_action_type.h",
     "menu_histograms.h",
     "menu_histograms.mm",
@@ -14,18 +16,23 @@ source_set("menu") {
   deps = [
     "resources:bookmark",
     "resources:close",
+    "resources:copy",
     "resources:copy_link_url",
     "resources:delete",
+    "resources:download",
     "resources:edit",
     "resources:mark_read",
     "resources:move_folder",
     "resources:offline",
     "resources:open",
+    "resources:open_image_in_new_tab",
     "resources:open_in_incognito",
     "resources:open_in_new_tab",
     "resources:open_new_window",
     "resources:read_later",
     "resources:remove",
+    "resources:search_image",
+    "resources:select",
     "resources:share",
     "//base",
     "//ios/chrome/app/strings",
@@ -46,28 +53,38 @@ source_set("context_menu_delegate") {
   configs += [ "//build/config/compiler:enable_arc" ]
 
   sources = [ "tab_context_menu_delegate.h" ]
+
+  deps = [ "//ios/chrome/browser/ui/activity_services" ]
 }
 
 source_set("unit_tests") {
   configs += [ "//build/config/compiler:enable_arc" ]
   testonly = true
-  sources = [ "action_factory_unittest.mm" ]
+  sources = [
+    "action_factory_unittest.mm",
+    "browser_action_factory_unittest.mm",
+  ]
   deps = [
     ":menu",
     "resources:bookmark",
     "resources:close",
+    "resources:copy",
     "resources:copy_link_url",
     "resources:delete",
+    "resources:download",
     "resources:edit",
     "resources:mark_read",
     "resources:move_folder",
     "resources:offline",
     "resources:open",
+    "resources:open_image_in_new_tab",
     "resources:open_in_incognito",
     "resources:open_in_new_tab",
     "resources:open_new_window",
     "resources:read_later",
     "resources:remove",
+    "resources:search_image",
+    "resources:select",
     "resources:share",
     "//base",
     "//base/test:test_support",
@@ -77,6 +94,8 @@ source_set("unit_tests") {
     "//ios/chrome/browser/main:test_support",
     "//ios/chrome/browser/sessions:test_support",
     "//ios/chrome/browser/ui/commands",
+    "//ios/chrome/browser/url_loading",
+    "//ios/chrome/browser/window_activities",
     "//ios/web/public/test",
     "//testing/gtest",
     "//third_party/ocmock",

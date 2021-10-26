@@ -7,21 +7,24 @@
 #ifndef CORE_FXGE_WIN32_CFX_PSRENDERER_H_
 #define CORE_FXGE_WIN32_CFX_PSRENDERER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include <memory>
 #include <vector>
 
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_stream.h"
-#include "core/fxcrt/fx_system.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_graphstatedata.h"
+#include "third_party/base/span.h"
 
 class CFX_DIBBase;
 class CFX_GlyphCache;
 class CFX_Font;
-class CFX_PathData;
+class CFX_Path;
 class CPSFont;
 class TextCharPos;
 struct CFX_FillRenderOptions;
@@ -59,18 +62,18 @@ class CFX_PSRenderer {
             int pslevel,
             int width,
             int height);
-  bool StartRendering();
+  void StartRendering();
   void EndRendering();
   void SaveState();
   void RestoreState(bool bKeepSaved);
-  void SetClip_PathFill(const CFX_PathData* pPathData,
+  void SetClip_PathFill(const CFX_Path* pPath,
                         const CFX_Matrix* pObject2Device,
                         const CFX_FillRenderOptions& fill_options);
-  void SetClip_PathStroke(const CFX_PathData* pPathData,
+  void SetClip_PathStroke(const CFX_Path* pPath,
                           const CFX_Matrix* pObject2Device,
                           const CFX_GraphStateData* pGraphState);
   FX_RECT GetClipBox() { return m_ClipBox; }
-  bool DrawPath(const CFX_PathData* pPathData,
+  bool DrawPath(const CFX_Path* pPath,
                 const CFX_Matrix* pObject2Device,
                 const CFX_GraphStateData* pGraphState,
                 uint32_t fill_color,
@@ -99,8 +102,7 @@ class CFX_PSRenderer {
                 uint32_t color);
 
  private:
-  void OutputPath(const CFX_PathData* pPathData,
-                  const CFX_Matrix* pObject2Device);
+  void OutputPath(const CFX_Path* pPath, const CFX_Matrix* pObject2Device);
   void SetGraphState(const CFX_GraphStateData* pGraphState);
   void SetColor(uint32_t color);
   void FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,
@@ -118,8 +120,9 @@ class CFX_PSRenderer {
                       uint8_t** output_buf,
                       uint32_t* output_size,
                       const char** filter) const;
-  void WritePSBinary(const uint8_t* data, int len);
-  void WriteToStream(std::ostringstream* stringStream);
+  void WritePSBinary(pdfium::span<const uint8_t> data);
+  void WriteStream(std::ostringstream& stream);
+  void WriteString(ByteStringView str);
 
   bool m_bInited = false;
   bool m_bGraphStateSet = false;

@@ -45,6 +45,10 @@ void InitExtensionBehavior(const ShBuiltInResources &resources, TExtensionBehavi
     {
         extBehavior[TExtension::EXT_frag_depth] = EBhUndefined;
     }
+    if (resources.EXT_primitive_bounding_box)
+    {
+        extBehavior[TExtension::EXT_primitive_bounding_box] = EBhUndefined;
+    }
     if (resources.EXT_shader_texture_lod)
     {
         extBehavior[TExtension::EXT_shader_texture_lod] = EBhUndefined;
@@ -84,6 +88,10 @@ void InitExtensionBehavior(const ShBuiltInResources &resources, TExtensionBehavi
     if (resources.EXT_geometry_shader)
     {
         extBehavior[TExtension::EXT_geometry_shader] = EBhUndefined;
+    }
+    if (resources.OES_geometry_shader)
+    {
+        extBehavior[TExtension::OES_geometry_shader] = EBhUndefined;
     }
     if (resources.OES_shader_io_blocks)
     {

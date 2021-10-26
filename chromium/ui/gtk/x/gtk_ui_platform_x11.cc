@@ -6,7 +6,9 @@
 
 #include "base/check.h"
 #include "base/environment.h"
+#include "base/strings/stringprintf.h"
 #include "ui/base/x/x11_util.h"
+#include "ui/events/event_constants.h"
 #include "ui/events/platform/x11/x11_event_source.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/x/x11_atom_cache.h"
@@ -57,6 +59,13 @@ GdkWindow* GtkUiPlatformX11::GetGdkWindow(gfx::AcceleratedWidget window_id) {
     gdk_window = gdk_x11_window_foreign_new_for_display(
         display, static_cast<uint32_t>(window_id));
   return gdk_window;
+}
+
+bool GtkUiPlatformX11::ExportWindowHandle(
+    gfx::AcceleratedWidget window_id,
+    base::OnceCallback<void(std::string)> callback) {
+  std::move(callback).Run(base::StringPrintf("x11:%#x", window_id));
+  return true;
 }
 
 bool GtkUiPlatformX11::SetGtkWidgetTransientFor(GtkWidget* widget,

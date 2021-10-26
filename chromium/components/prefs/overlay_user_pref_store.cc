@@ -5,9 +5,11 @@
 #include "components/prefs/overlay_user_pref_store.h"
 
 #include <memory>
+#include <ostream>
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "base/notreached.h"
 #include "base/values.h"
 #include "components/prefs/in_memory_pref_store.h"
 
@@ -92,10 +94,9 @@ std::unique_ptr<base::DictionaryValue> OverlayUserPrefStore::GetValues() const {
   // overwritten by the content of |persistent_user_pref_store_| (the persistent
   // store).
   for (const auto& key : persistent_names_set_) {
-    std::unique_ptr<base::Value> out_value;
-    persistent_values->Remove(key, &out_value);
-    if (out_value) {
-      values->Set(key, std::move(out_value));
+    absl::optional<base::Value> out_value = persistent_values->ExtractPath(key);
+    if (out_value.has_value()) {
+      values->SetPath(key, std::move(*out_value));
     }
   }
   return values;
@@ -191,6 +192,12 @@ void OverlayUserPrefStore::CommitPendingWrite(
   persistent_user_pref_store_->CommitPendingWrite(
       std::move(reply_callback), std::move(synchronous_done_callback));
   // We do not write our content intentionally.
+}
+
+void OverlayUserPrefStore::CommitPendingWriteSynchronously() {
+  // This function was added for one very specific use case and is intentionally
+  // not implemented for other pref stores.
+  NOTREACHED();
 }
 
 void OverlayUserPrefStore::SchedulePendingLossyWrites() {

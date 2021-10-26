@@ -25,12 +25,16 @@ group("blink") {
     "//third_party/blink/renderer/modules",
     "//third_party/blink/renderer/platform",
   ]
+  if (use_blink_extensions_chromeos) {
+    deps += [ "//third_party/blink/renderer/extensions/chromeos" ]
+  }
 }
 
 group("test_support") {
   testonly = true
   public_deps = [
     ":test_headers",
+    "//third_party/blink/common:test_support",
     "//third_party/blink/renderer/core/exported:test_support",
     "//third_party/blink/renderer/modules/exported:test_support",
     "//third_party/blink/renderer/modules/mediastream:test_support",
@@ -93,6 +97,7 @@ if (is_android) {
 source_set("test_headers") {
   testonly = true
   sources = [
+    "common/origin_trials/scoped_test_origin_trial_policy.h",
     "platform/scheduler/test/renderer_scheduler_test_support.h",
     "platform/scheduler/test/web_fake_thread_scheduler.h",
     "platform/scheduler/test/web_mock_thread_scheduler.h",
@@ -172,7 +177,6 @@ source_set("blink_headers") {
     "platform/web_blob_info.h",
     "platform/web_cache.h",
     "platform/web_callbacks.h",
-    "platform/web_client_hints_type.h",
     "platform/web_code_cache_loader.h",
     "platform/web_common.h",
     "platform/web_computed_ax_tree.h",
@@ -213,7 +217,6 @@ source_set("blink_headers") {
     "platform/web_graphics_context_3d_provider.h",
     "platform/web_http_body.h",
     "platform/web_http_header_visitor.h",
-    "platform/web_http_load_info.h",
     "platform/web_icon_sizes_parser.h",
     "platform/web_image_generator.h",
     "platform/web_impression.h",
@@ -221,6 +224,7 @@ source_set("blink_headers") {
     "platform/web_inband_text_track_client.h",
     "platform/web_input_event_result.h",
     "platform/web_isolated_world_info.h",
+    "platform/web_loader_freeze_mode.h",
     "platform/web_media_key_system_configuration.h",
     "platform/web_media_key_system_media_capability.h",
     "platform/web_media_player.h",
@@ -355,7 +359,6 @@ source_set("blink_headers") {
     "web/web_no_state_prefetch_client.h",
     "web/web_node.h",
     "web/web_non_composited_widget_client.h",
-    "web/web_optimization_guide_hints.h",
     "web/web_option_element.h",
     "web/web_origin_policy.h",
     "web/web_page_popup.h",
@@ -439,6 +442,7 @@ source_set("blink_headers") {
     "//services/service_manager/public/cpp",
     "//skia",
     "//third_party/blink/public/common",
+    "//third_party/blink/public/common:headers",
     "//ui/accessibility:ax_base",
     "//ui/base/cursor:cursor_base",
     "//ui/base/dragdrop/mojom:mojom_shared",

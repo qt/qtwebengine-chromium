@@ -34,7 +34,6 @@
 
 #include "libavutil/imgutils.h"
 #include "libavutil/common.h"
-#include "libavutil/cpu.h"
 #include "libavutil/mem_internal.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
@@ -252,7 +251,7 @@ static const AVFilterPad avfilter_vf_gradfun_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_gradfun = {
+const AVFilter ff_vf_gradfun = {
     .name          = "gradfun",
     .description   = NULL_IF_CONFIG_SMALL("Debands video quickly using gradients."),
     .priv_size     = sizeof(GradFunContext),

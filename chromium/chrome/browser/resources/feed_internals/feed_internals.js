@@ -29,6 +29,24 @@ function updatePageWithProperties() {
     $('enable-webfeed-follow-intro-debug').checked =
         properties.isWebFeedFollowIntroDebugEnabled;
     $('enable-webfeed-follow-intro-debug').disabled = false;
+    $('use-feed-query-requests-for-web-feeds').checked =
+        properties.useFeedQueryRequestsForWebFeeds;
+
+    switch (properties.followingFeedOrder) {
+      case feedInternals.mojom.FeedOrder.kUnspecified:
+        $('following-feed-order-unset').checked = true;
+        break;
+      case feedInternals.mojom.FeedOrder.kGrouped:
+        $('following-feed-order-grouped').checked = true;
+        break;
+      case feedInternals.mojom.FeedOrder.kReverseChron:
+        $('following-feed-order-reverse-chron').checked = true;
+        break;
+    }
+    $('following-feed-order-grouped').disabled = false;
+    $('following-feed-order-reverse-chron').disabled = false;
+    $('following-feed-order-unset').disabled = false;
+
   });
 }
 
@@ -175,6 +193,34 @@ function setupEventListeners() {
         $('enable-webfeed-follow-intro-debug').checked);
     $('enable-webfeed-follow-intro-debug').disabled = true;
   });
+
+  $('use-feed-query-requests-for-web-feeds')
+      .addEventListener('click', function() {
+        pageHandler.setUseFeedQueryRequestsForWebFeeds(
+            $('use-feed-query-requests-for-web-feeds').checked);
+      });
+
+  const orderRadioClickListener = function(order) {
+    $('following-feed-order-grouped').disabled = true;
+    $('following-feed-order-reverse-chron').disabled = true;
+    $('following-feed-order-unset').disabled = true;
+    pageHandler.setFollowingFeedOrder(order);
+  };
+  $('following-feed-order-unset')
+      .addEventListener(
+          'click',
+          () => orderRadioClickListener(
+              feedInternals.mojom.FeedOrder.kUnspecified));
+  $('following-feed-order-grouped')
+      .addEventListener(
+          'click',
+          () =>
+              orderRadioClickListener(feedInternals.mojom.FeedOrder.kGrouped));
+  $('following-feed-order-reverse-chron')
+      .addEventListener(
+          'click',
+          () => orderRadioClickListener(
+              feedInternals.mojom.FeedOrder.kReverseChron));
 }
 
 function updatePage() {

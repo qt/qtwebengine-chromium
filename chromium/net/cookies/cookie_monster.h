@@ -34,7 +34,6 @@
 #include "net/cookies/cookie_monster_change_dispatcher.h"
 #include "net/cookies/cookie_store.h"
 #include "net/log/net_log_with_source.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "url/gurl.h"
 
 namespace net {
@@ -200,6 +199,10 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // well as for PersistentCookieStore::LoadCookiesForKey. See comment on keys
   // before the CookieMap typedef.
   static std::string GetKey(base::StringPiece domain);
+
+  // Exposes the comparison function used when sorting cookies.
+  static bool CookieSorter(const CanonicalCookie* cc1,
+                           const CanonicalCookie* cc2);
 
   // Triggers immediate recording of stats that are typically reported
   // periodically.

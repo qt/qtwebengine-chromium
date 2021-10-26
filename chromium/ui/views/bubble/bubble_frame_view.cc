@@ -33,6 +33,7 @@
 #include "ui/views/controls/button/image_button_factory.h"
 #include "ui/views/controls/highlight_path_generator.h"
 #include "ui/views/controls/image_view.h"
+#include "ui/views/image_model_utils.h"
 #include "ui/views/layout/box_layout.h"
 #include "ui/views/layout/layout_provider.h"
 #include "ui/views/paint_info.h"
@@ -289,9 +290,12 @@ void BubbleFrameView::ResetWindowControls() {
 }
 
 void BubbleFrameView::UpdateWindowIcon() {
+  DCHECK(GetWidget());
   gfx::ImageSkia image;
-  if (GetWidget()->widget_delegate()->ShouldShowWindowIcon())
-    image = GetWidget()->widget_delegate()->GetWindowIcon();
+  if (GetWidget()->widget_delegate()->ShouldShowWindowIcon()) {
+    image = GetImageSkiaFromImageModel(
+        GetWidget()->widget_delegate()->GetWindowIcon(), GetNativeTheme());
+  }
   title_icon_->SetImage(&image);
 }
 
@@ -306,6 +310,13 @@ void BubbleFrameView::UpdateWindowTitle() {
 }
 
 void BubbleFrameView::SizeConstraintsChanged() {}
+
+void BubbleFrameView::InsertClientView(ClientView* client_view) {
+  // Place the client view before any footnote view for focus order.
+  footnote_container_
+      ? AddChildViewAt(client_view, GetIndexOf(footnote_container_))
+      : AddChildView(client_view);
+}
 
 void BubbleFrameView::SetTitleView(std::unique_ptr<View> title_view) {
   DCHECK(title_view);
@@ -436,9 +447,8 @@ void BubbleFrameView::Layout() {
   // TODO(tapted): Layout() should skip more surrounding code when !HasTitle().
   // Currently DCHECKs fail since title_insets is 0 when there is no title.
   if (DCHECK_IS_ON() && HasTitle()) {
-    gfx::Insets title_insets = GetTitleLabelInsetsFromFrame();
-    if (border())
-      title_insets += border()->GetInsets();
+    const gfx::Insets title_insets =
+        GetTitleLabelInsetsFromFrame() + GetInsets();
     DCHECK_EQ(title_insets.left(), title_label_x);
     DCHECK_EQ(title_insets.right(), width() - title_label_right);
   }
@@ -551,13 +561,9 @@ void BubbleFrameView::SetFootnoteView(std::unique_ptr<View> view) {
   delete footnote_container_;
   footnote_container_ = nullptr;
   if (view) {
-    // Insert the footnote container before |close_| so that the footnote is
-    // inserted before caption buttons in the focus cycle.
     int radius = bubble_border_ ? bubble_border_->corner_radius() : 0;
-    footnote_container_ =
-        AddChildViewAt(std::make_unique<FootnoteContainerView>(
-                           footnote_margins_, std::move(view), radius),
-                       GetIndexOf(close_));
+    footnote_container_ = AddChildView(std::make_unique<FootnoteContainerView>(
+        footnote_margins_, std::move(view), radius));
   }
   InvalidateLayout();
 }
@@ -607,6 +613,14 @@ void BubbleFrameView::SetArrow(BubbleBorder::Arrow arrow) {
 
 BubbleBorder::Arrow BubbleFrameView::GetArrow() const {
   return bubble_border_->arrow();
+}
+
+void BubbleFrameView::SetDisplayVisibleArrow(bool display_visible_arrow) {
+  bubble_border_->set_visible_arrow(display_visible_arrow);
+}
+
+bool BubbleFrameView::GetDisplayVisibleArrow() const {
+  return bubble_border_->visible_arrow();
 }
 
 void BubbleFrameView::SetBackgroundColor(SkColor color) {
@@ -936,6 +950,7 @@ ADD_PROPERTY_METADATA(BubbleFrameView::PreferredArrowAdjustment,
                       PreferredArrowAdjustment)
 ADD_PROPERTY_METADATA(int, CornerRadius)
 ADD_PROPERTY_METADATA(BubbleBorder::Arrow, Arrow)
+ADD_PROPERTY_METADATA(bool, DisplayVisibleArrow)
 ADD_PROPERTY_METADATA(SkColor, BackgroundColor, ui::metadata::SkColorConverter)
 END_METADATA
 

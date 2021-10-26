@@ -7,6 +7,7 @@
 
 #include <array>
 
+#include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -26,8 +27,6 @@ namespace ui {
 
 struct GL_EXPORT DCRendererLayerParams {
   DCRendererLayerParams();
-  DCRendererLayerParams(const DCRendererLayerParams& other);
-  DCRendererLayerParams& operator=(const DCRendererLayerParams& other);
   ~DCRendererLayerParams();
 
   // Images to display in overlay.  There can either be two software video

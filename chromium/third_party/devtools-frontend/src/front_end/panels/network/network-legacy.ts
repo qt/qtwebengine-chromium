@@ -4,6 +4,7 @@
 
 // @ts-nocheck
 
+import * as NetworkForwardModule from './forward/forward.js';
 import * as NetworkModule from './network.js';
 
 self.Network = self.Network || {};
@@ -48,12 +49,10 @@ Network.NetworkItemView = NetworkModule.NetworkItemView.NetworkItemView;
 Network.NetworkLogView = NetworkModule.NetworkLogView.NetworkLogView;
 
 Network.NetworkLogView.isRequestFilteredOut = NetworkModule.NetworkLogView.isRequestFilteredOut;
+Network.NetworkLogView.HTTPRequestsFilter = NetworkModule.NetworkLogView.NetworkLogView.getHTTPRequestsFilter;
 
 /** @enum {string} */
-Network.NetworkLogView.FilterType = NetworkModule.NetworkLogView.FilterType;
-
-/** @enum {string} */
-Network.NetworkLogView.MixedContentFilterValues = NetworkModule.NetworkLogView.MixedContentFilterValues;
+Network.NetworkLogView.FilterType = NetworkForwardModule.UIFilter.FilterType;
 
 /**
  * @constructor
@@ -89,16 +88,6 @@ Network.NetworkPanel.RequestRevealer = NetworkModule.NetworkPanel.RequestReveale
  * @constructor
  */
 Network.NetworkPanel.ActionDelegate = NetworkModule.NetworkPanel.ActionDelegate;
-
-/**
- * @constructor
- */
-Network.NetworkPanel.RequestLocationRevealer = NetworkModule.NetworkPanel.RequestLocationRevealer;
-
-/**
- * @constructor
- */
-Network.UIRequestLocation = NetworkModule.NetworkSearchScope.UIRequestLocation;
 
 /**
  * @constructor

@@ -21,13 +21,26 @@ declare_args() {
   # is typically the case on x86-based ChromeOS devices.
   # VA-API should also be compiled by default on x11-using linux devices
   # using x86/x64.
-  use_vaapi = (is_linux || is_chromeos_lacros) && use_x11 &&
-              (target_cpu == "x86" || target_cpu == "x64")
+  use_vaapi =
+      is_linux && use_x11 && (target_cpu == "x86" || target_cpu == "x64")
 
   # Indicates if ChromeOS protected media support exists. This is used
   # to enable the CDM daemon in Chrome OS as well as support for
   # encrypted content with HW video decoders.
+  # TODO(jkardatzke): Enable this for Lacros always, it is determined at runtime
+  # in that configuration.
   use_chromeos_protected_media = false
+
+  # Indicates if ChromeOS protected media supports the AV1 codec. By default
+  # H.264, VP9 and HEVC are enabled if protected media is enabled; AV1 is
+  # optional.
+  use_chromeos_protected_av1 = false
+}
+
+if (use_chromeos_protected_av1) {
+  assert(
+      use_chromeos_protected_media,
+      "use_chromeos_protected_media must be set if use_chromeos_protected_av1 is")
 }
 
 # GN requires args that depend on other args to be declared in successive

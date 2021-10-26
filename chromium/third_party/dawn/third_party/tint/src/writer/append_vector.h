@@ -27,9 +27,8 @@ class TypeConstructorExpression;
 namespace writer {
 
 /// A helper function used to append a vector with an additional scalar.
-/// AppendVector is used to generate texture intrinsic function calls for
-/// backends that expect the texture coordinates to be packed with an additional
-/// mip-level or array-index parameter.
+/// If the scalar's type does not match the target vector element type,
+/// then it is value-converted (via TypeConstructor) before being added.
 /// All types must have been assigned to the expressions and their child nodes
 /// before calling.
 /// @param builder the program builder.

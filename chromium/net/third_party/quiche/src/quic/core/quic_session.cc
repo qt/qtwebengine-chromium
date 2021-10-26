@@ -13,6 +13,7 @@
 #include "absl/strings/string_view.h"
 #include "quic/core/frames/quic_ack_frequency_frame.h"
 #include "quic/core/quic_connection.h"
+#include "quic/core/quic_connection_context.h"
 #include "quic/core/quic_error_codes.h"
 #include "quic/core/quic_flow_controller.h"
 #include "quic/core/quic_types.h"
@@ -22,7 +23,6 @@
 #include "quic/platform/api/quic_flag_utils.h"
 #include "quic/platform/api/quic_flags.h"
 #include "quic/platform/api/quic_logging.h"
-#include "quic/platform/api/quic_map_util.h"
 #include "quic/platform/api/quic_server_stats.h"
 #include "quic/platform/api/quic_stack_trace.h"
 #include "common/quiche_text_utils.h"
@@ -135,11 +135,15 @@ void QuicSession::Initialize() {
   connection_->SetDataProducer(this);
   connection_->SetUnackedMapInitialCapacity();
   connection_->SetFromConfig(config_);
-  if (perspective_ == Perspective::IS_CLIENT &&
-      config_.HasClientRequestedIndependentOption(kAFFE, perspective_) &&
-      version().HasIetfQuicFrames()) {
-    connection_->set_can_receive_ack_frequency_frame();
-    config_.SetMinAckDelayMs(kDefaultMinAckDelayTimeMs);
+  if (perspective_ == Perspective::IS_CLIENT) {
+    if (config_.HasClientRequestedIndependentOption(kAFFE, perspective_) &&
+        version().HasIetfQuicFrames()) {
+      connection_->set_can_receive_ack_frequency_frame();
+      config_.SetMinAckDelayMs(kDefaultMinAckDelayTimeMs);
+    }
+    if (config_.HasClientRequestedIndependentOption(kBPTE, perspective_)) {
+      permutes_tls_extensions_ = true;
+    }
   }
 
   connection_->CreateConnectionIdManager();
@@ -162,7 +166,12 @@ void QuicSession::Initialize() {
                    GetMutableCryptoStream()->id());
 }
 
-QuicSession::~QuicSession() {}
+QuicSession::~QuicSession() {
+  if (GetQuicRestartFlag(quic_alarm_add_permanent_cancel) &&
+      closed_streams_clean_up_alarm_ != nullptr) {
+    closed_streams_clean_up_alarm_->PermanentCancel();
+  }
+}
 
 void QuicSession::PendingStreamOnStreamFrame(const QuicStreamFrame& frame) {
   QUICHE_DCHECK(VersionUsesHttp3(transport_version()));
@@ -563,17 +572,14 @@ bool QuicSession::CheckStreamWriteBlocked(QuicStream* stream) const {
 }
 
 void QuicSession::OnCanWrite() {
-  if (connection_->donot_write_mid_packet_processing()) {
-    QUIC_RELOADABLE_FLAG_COUNT_N(quic_donot_write_mid_packet_processing, 1, 3);
-    if (connection_->framer().is_processing_packet()) {
-      // Do not write data in the middle of packet processing because rest
-      // frames in the packet may change the data to write. For example, lost
-      // data could be acknowledged. Also, connection is going to emit
-      // OnCanWrite signal post packet processing.
-      QUIC_BUG(session_write_mid_packet_processing)
-          << ENDPOINT << "Try to write mid packet processing.";
-      return;
-    }
+  if (connection_->framer().is_processing_packet()) {
+    // Do not write data in the middle of packet processing because rest
+    // frames in the packet may change the data to write. For example, lost
+    // data could be acknowledged. Also, connection is going to emit
+    // OnCanWrite signal post packet processing.
+    QUIC_BUG(session_write_mid_packet_processing)
+        << ENDPOINT << "Try to write mid packet processing.";
+    return;
   }
   if (!RetransmitLostData()) {
     // Cannot finish retransmitting lost data, connection is write blocked.
@@ -739,8 +745,8 @@ bool QuicSession::HasPendingHandshake() const {
     return GetCryptoStream()->HasPendingCryptoRetransmission() ||
            GetCryptoStream()->HasBufferedCryptoFrames();
   }
-  return QuicContainsKey(streams_with_pending_retransmission_,
-                         QuicUtils::GetCryptoStreamId(transport_version())) ||
+  return streams_with_pending_retransmission_.contains(
+             QuicUtils::GetCryptoStreamId(transport_version())) ||
          write_blocked_streams_.IsStreamBlocked(
              QuicUtils::GetCryptoStreamId(transport_version()));
 }
@@ -748,19 +754,17 @@ bool QuicSession::HasPendingHandshake() const {
 void QuicSession::ProcessUdpPacket(const QuicSocketAddress& self_address,
                                    const QuicSocketAddress& peer_address,
                                    const QuicReceivedPacket& packet) {
+  QuicConnectionContextSwitcher cs(connection_->context());
   connection_->ProcessUdpPacket(self_address, peer_address, packet);
 }
 
-QuicConsumedData QuicSession::WritevData(
-    QuicStreamId id,
-    size_t write_length,
-    QuicStreamOffset offset,
-    StreamSendingState state,
-    TransmissionType type,
-    absl::optional<EncryptionLevel> level) {
+QuicConsumedData QuicSession::WritevData(QuicStreamId id, size_t write_length,
+                                         QuicStreamOffset offset,
+                                         StreamSendingState state,
+                                         TransmissionType type,
+                                         EncryptionLevel level) {
   QUICHE_DCHECK(connection_->connected())
       << ENDPOINT << "Try to write stream data when connection is closed.";
-  QUICHE_DCHECK(!use_write_or_buffer_data_at_level_ || level.has_value());
   if (!IsEncryptionEstablished() &&
       !QuicUtils::IsCryptoStreamId(transport_version(), id)) {
     // Do not let streams write without encryption. The calling stream will end
@@ -768,11 +772,10 @@ QuicConsumedData QuicSession::WritevData(
     if (was_zero_rtt_rejected_ && !OneRttKeysAvailable()) {
       QUICHE_DCHECK(version().UsesTls() &&
                     perspective() == Perspective::IS_CLIENT);
-      QUIC_BUG_IF(quic_bug_12435_3, type == NOT_RETRANSMISSION)
-          << ENDPOINT << "Try to send new data on stream " << id
-          << "before 1-RTT keys are available while 0-RTT is rejected. "
-             "Version: "
-          << ParsedQuicVersionToString(version());
+      QUIC_DLOG(INFO) << ENDPOINT
+                      << "Suppress the write while 0-RTT gets rejected and "
+                         "1-RTT keys are not available. Version: "
+                      << ParsedQuicVersionToString(version());
     } else if (version().UsesTls() || perspective() == Perspective::IS_SERVER) {
       QUIC_BUG(quic_bug_10866_2)
           << ENDPOINT << "Try to send data of stream " << id
@@ -793,29 +796,13 @@ QuicConsumedData QuicSession::WritevData(
   }
 
   SetTransmissionType(type);
-  const auto current_level = connection()->encryption_level();
-  if (!use_encryption_level_context()) {
-    if (level.has_value()) {
-      connection()->SetDefaultEncryptionLevel(level.value());
-    }
-  }
-  QuicConnection::ScopedEncryptionLevelContext context(
-      use_encryption_level_context() ? connection() : nullptr,
-      use_encryption_level_context() ? level.value() : NUM_ENCRYPTION_LEVELS);
+  QuicConnection::ScopedEncryptionLevelContext context(connection(), level);
 
   QuicConsumedData data =
       connection_->SendStreamData(id, write_length, offset, state);
   if (type == NOT_RETRANSMISSION) {
     // This is new stream data.
     write_blocked_streams_.UpdateBytesForStream(id, data.bytes_consumed);
-  }
-
-  // Restore the encryption level.
-  if (!use_encryption_level_context()) {
-    // Restore the encryption level.
-    if (level.has_value()) {
-      connection()->SetDefaultEncryptionLevel(current_level);
-    }
   }
 
   return data;
@@ -837,18 +824,9 @@ size_t QuicSession::SendCryptoData(EncryptionLevel level,
     return 0;
   }
   SetTransmissionType(type);
-  const auto current_level = connection()->encryption_level();
-  if (!use_encryption_level_context()) {
-    connection_->SetDefaultEncryptionLevel(level);
-  }
-  QuicConnection::ScopedEncryptionLevelContext context(
-      use_encryption_level_context() ? connection() : nullptr, level);
+  QuicConnection::ScopedEncryptionLevelContext context(connection(), level);
   const auto bytes_consumed =
       connection_->SendCryptoData(level, write_length, offset);
-  if (!use_encryption_level_context()) {
-    // Restores encryption level.
-    connection_->SetDefaultEncryptionLevel(current_level);
-  }
   return bytes_consumed;
 }
 
@@ -863,21 +841,13 @@ bool QuicSession::WriteControlFrame(const QuicFrame& frame,
                                     TransmissionType type) {
   QUICHE_DCHECK(connection()->connected())
       << ENDPOINT << "Try to write control frames when connection is closed.";
-  if (connection_->encrypted_control_frames()) {
-    QUIC_RELOADABLE_FLAG_COUNT(quic_encrypted_control_frames);
-    if (!IsEncryptionEstablished()) {
-      QUIC_BUG(quic_bug_10866_4)
-          << ENDPOINT << "Tried to send control frame " << frame
-          << " before encryption is established. Last decrypted level: "
-          << EncryptionLevelToString(connection_->last_decrypted_level());
-      return false;
-    }
+  if (!IsEncryptionEstablished()) {
+    // Suppress the write before encryption gets established.
+    return false;
   }
   SetTransmissionType(type);
   QuicConnection::ScopedEncryptionLevelContext context(
-      use_encryption_level_context() ? connection() : nullptr,
-      use_encryption_level_context() ? GetEncryptionLevelToSendApplicationData()
-                                     : NUM_ENCRYPTION_LEVELS);
+      connection(), GetEncryptionLevelToSendApplicationData());
   return connection_->SendControlFrame(frame);
 }
 
@@ -1329,8 +1299,7 @@ void QuicSession::OnConfigNegotiated() {
   // Or if this session is configured on TLS enabled QUIC versions,
   // attempt to retransmit 0-RTT data if there's any.
   // TODO(fayang): consider removing this OnCanWrite call.
-  if ((!connection_->donot_write_mid_packet_processing() ||
-       !connection_->framer().is_processing_packet()) &&
+  if (!connection_->framer().is_processing_packet() &&
       (connection_->version().AllowsLowFlowControlLimits() ||
        version().UsesTls())) {
     QUIC_CODE_COUNT(quic_session_on_can_write_on_config_negotiated);
@@ -1637,8 +1606,7 @@ void QuicSession::SetDefaultEncryptionLevel(EncryptionLevel level) {
         // Retransmit old 0-RTT data (if any) with the new 0-RTT keys, since
         // they can't be decrypted by the server.
         connection_->MarkZeroRttPacketsForRetransmission(0);
-        if (!connection_->donot_write_mid_packet_processing() ||
-            !connection_->framer().is_processing_packet()) {
+        if (!connection_->framer().is_processing_packet()) {
           // TODO(fayang): consider removing this OnCanWrite call.
           // Given any streams blocked by encryption a chance to write.
           QUIC_CODE_COUNT(
@@ -1817,7 +1785,7 @@ void QuicSession::ActivateStream(std::unique_ptr<QuicStream> stream) {
   bool is_static = stream->is_static();
   QUIC_DVLOG(1) << ENDPOINT << "num_streams: " << stream_map_.size()
                 << ". activating stream " << stream_id;
-  QUICHE_DCHECK(!QuicContainsKey(stream_map_, stream_id));
+  QUICHE_DCHECK(!stream_map_.contains(stream_id));
   stream_map_[stream_id] = std::move(stream);
   if (is_static) {
     ++num_static_streams_;
@@ -1897,7 +1865,7 @@ QuicStreamCount QuicSession::GetAdvertisedMaxIncomingBidirectionalStreams()
 }
 
 QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
-  QUICHE_DCHECK(!QuicContainsKey(pending_stream_map_, stream_id));
+  QUICHE_DCHECK(!pending_stream_map_.contains(stream_id));
   if (QuicUtils::IsCryptoStreamId(transport_version(), stream_id)) {
     return GetMutableCryptoStream();
   }
@@ -1936,7 +1904,7 @@ QuicStream* QuicSession::GetOrCreateStream(const QuicStreamId stream_id) {
 }
 
 void QuicSession::StreamDraining(QuicStreamId stream_id, bool unidirectional) {
-  QUICHE_DCHECK(QuicContainsKey(stream_map_, stream_id));
+  QUICHE_DCHECK(stream_map_.contains(stream_id));
   QUIC_DVLOG(1) << ENDPOINT << "Stream " << stream_id << " is draining";
   if (VersionHasIetfQuicFrames(transport_version())) {
     ietf_streamid_manager_.OnStreamClosed(stream_id);
@@ -2052,7 +2020,7 @@ bool QuicSession::IsOpenStream(QuicStreamId id) {
   if (it != stream_map_.end()) {
     return !it->second->IsZombie();
   }
-  if (QuicContainsKey(pending_stream_map_, id) ||
+  if (pending_stream_map_.contains(id) ||
       QuicUtils::IsCryptoStreamId(transport_version(), id)) {
     // Stream is active
     return true;
@@ -2106,14 +2074,16 @@ void QuicSession::SendAckFrequency(const QuicAckFrequencyFrame& frame) {
 }
 
 void QuicSession::SendNewConnectionId(const QuicNewConnectionIdFrame& frame) {
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 1, 5);
+  // Count NEW_CONNECTION_ID frames sent to client.
+  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 1, 6);
   control_frame_manager_.WriteOrBufferNewConnectionId(
       frame.connection_id, frame.sequence_number, frame.retire_prior_to,
       frame.stateless_reset_token);
 }
 
 void QuicSession::SendRetireConnectionId(uint64_t sequence_number) {
-  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 2, 5);
+  // Count RETIRE_CONNECTION_ID frames sent to client.
+  QUIC_RELOADABLE_FLAG_COUNT_N(quic_connection_migration_use_new_cid_v2, 2, 6);
   control_frame_manager_.WriteOrBufferRetireConnectionId(sequence_number);
 }
 
@@ -2272,8 +2242,8 @@ void QuicSession::OnFrameLost(const QuicFrame& frame) {
                             frame.stream_frame.data_length,
                             frame.stream_frame.fin);
   if (stream->HasPendingRetransmission() &&
-      !QuicContainsKey(streams_with_pending_retransmission_,
-                       frame.stream_frame.stream_id)) {
+      !streams_with_pending_retransmission_.contains(
+          frame.stream_frame.stream_id)) {
     streams_with_pending_retransmission_.insert(
         std::make_pair(frame.stream_frame.stream_id, true));
   }
@@ -2397,8 +2367,8 @@ bool QuicSession::RetransmitLostData() {
   }
   // Retransmit crypto data in stream 1 frames (version < 47).
   if (!uses_crypto_frames &&
-      QuicContainsKey(streams_with_pending_retransmission_,
-                      QuicUtils::GetCryptoStreamId(transport_version()))) {
+      streams_with_pending_retransmission_.contains(
+          QuicUtils::GetCryptoStreamId(transport_version()))) {
     // Retransmit crypto data first.
     QuicStream* crypto_stream =
         GetStream(QuicUtils::GetCryptoStreamId(transport_version()));
@@ -2463,20 +2433,23 @@ void QuicSession::SetTransmissionType(TransmissionType type) {
   connection_->SetTransmissionType(type);
 }
 
-MessageResult QuicSession::SendMessage(QuicMemSliceSpan message) {
+MessageResult QuicSession::SendMessage(absl::Span<QuicMemSlice> message) {
   return SendMessage(message, /*flush=*/false);
 }
 
-MessageResult QuicSession::SendMessage(QuicMemSliceSpan message, bool flush) {
+MessageResult QuicSession::SendMessage(QuicMemSlice message) {
+  return SendMessage(absl::MakeSpan(&message, 1), /*flush=*/false);
+}
+
+MessageResult QuicSession::SendMessage(absl::Span<QuicMemSlice> message,
+                                       bool flush) {
   QUICHE_DCHECK(connection_->connected())
       << ENDPOINT << "Try to write messages when connection is closed.";
   if (!IsEncryptionEstablished()) {
     return {MESSAGE_STATUS_ENCRYPTION_NOT_ESTABLISHED, 0};
   }
   QuicConnection::ScopedEncryptionLevelContext context(
-      use_encryption_level_context() ? connection() : nullptr,
-      use_encryption_level_context() ? GetEncryptionLevelToSendApplicationData()
-                                     : NUM_ENCRYPTION_LEVELS);
+      connection(), GetEncryptionLevelToSendApplicationData());
   MessageStatus result =
       connection_->SendMessage(last_message_id_ + 1, message, flush);
   if (result == MESSAGE_STATUS_SUCCESS) {

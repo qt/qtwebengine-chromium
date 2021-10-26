@@ -5,10 +5,12 @@
 #ifndef CONTENT_PUBLIC_BROWSER_IDENTITY_REQUEST_DIALOG_CONTROLLER_H_
 #define CONTENT_PUBLIC_BROWSER_IDENTITY_REQUEST_DIALOG_CONTROLLER_H_
 
+#include <string>
+#include <vector>
+
 #include "base/callback.h"
 #include "content/common/content_export.h"
-
-class GURL;
+#include "url/gurl.h"
 
 namespace content {
 class WebContents;
@@ -22,7 +24,7 @@ struct CONTENT_EXPORT IdentityRequestAccount {
                          const std::string& email,
                          const std::string& name,
                          const std::string& given_name,
-                         const std::string& picture);
+                         const GURL& picture);
   IdentityRequestAccount(const IdentityRequestAccount&);
   ~IdentityRequestAccount();
 
@@ -31,7 +33,24 @@ struct CONTENT_EXPORT IdentityRequestAccount {
   std::string email;
   std::string name;
   std::string given_name;
-  std::string picture;
+  GURL picture;
+
+  enum class LoginState {
+    // This is a returning user signing in with RP/IDP in this browser.
+    kSignIn,
+    // This is a new user sign up for RP/IDP in *this browser*. Note that this
+    // is the browser's notion of login state which may not match that of the
+    // IDP. For example the user may actually be a returning user having
+    // previously signed-up with this RP/IDP outside this browser. This is a
+    // consequence of not relying the IDP's login state. This means that we
+    // should be mindful to *NOT* rely on this value to mean definitely a new
+    // user when using it to customize the UI.
+    kSignUp,
+  };
+  // The account login state. Unlike the other fields this one is not populated
+  // by the IDP but instead by the browser based on its stored permission
+  // grants.
+  LoginState login_state;
 };
 
 // IdentityRequestDialogController is in interface for control of the UI
@@ -41,6 +60,11 @@ class CONTENT_EXPORT IdentityRequestDialogController {
   enum class UserApproval {
     kApproved,
     kDenied,
+  };
+
+  enum class PermissionDialogMode {
+    kStateless,
+    kStateful,
   };
 
   using AccountList = std::vector<content::IdentityRequestAccount>;
@@ -65,6 +89,8 @@ class CONTENT_EXPORT IdentityRequestDialogController {
   // - |rp_web_contents| is the RP web contents that has initiated the
   //   identity request.
   // - |idp_url| is the IDP URL that gets displayed to the user.
+  // - |mode| determines whether the dialog should maintain state across
+  //   multiple calls
   // - |approval_callback| callback is called with appropriate status depending
   //   on whether user granted or denied the permission.
   //
@@ -73,6 +99,7 @@ class CONTENT_EXPORT IdentityRequestDialogController {
   virtual void ShowInitialPermissionDialog(
       WebContents* rp_web_contents,
       const GURL& idp_url,
+      PermissionDialogMode mode,
       InitialApprovalCallback approval_callback);
 
   // Shows and accounts selections for the given IDP. The |on_selected| callback

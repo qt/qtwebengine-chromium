@@ -25,7 +25,7 @@
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 
 #include "base/auto_reset.h"
-#include "base/stl_util.h"
+#include "base/cxx17_backports.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_event_handler_for_content_attribute.h"
 #include "third_party/blink/renderer/core/animation/document_animations.h"
 #include "third_party/blink/renderer/core/animation/effect_stack.h"
@@ -460,7 +460,10 @@ CSSPropertyID SVGElement::CssPropertyIdForSVGAttributeName(
     }
   }
 
-  return property_name_to_id_map->at(attr_name.LocalName().Impl());
+  auto it = property_name_to_id_map->find(attr_name.LocalName().Impl());
+  if (it == property_name_to_id_map->end())
+    return CSSPropertyID::kInvalid;
+  return it->value;
 }
 
 void SVGElement::UpdateRelativeLengthsInformation(
@@ -746,7 +749,10 @@ AnimatedPropertyType SVGElement::AnimatedPropertyTypeForCSSAttribute(
     for (size_t i = 0; i < base::size(attr_to_types); i++)
       css_property_map.Set(attr_to_types[i].attr, attr_to_types[i].prop_type);
   }
-  return css_property_map.at(attribute_name);
+  auto it = css_property_map.find(attribute_name);
+  if (it == css_property_map.end())
+    return kAnimatedUnknown;
+  return it->value;
 }
 
 void SVGElement::AddToPropertyMap(SVGAnimatedPropertyBase* property) {

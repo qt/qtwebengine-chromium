@@ -16,7 +16,7 @@ import * as UI from '../../ui/legacy/legacy.js';
 
 import {EditingLocationHistoryManager} from './EditingLocationHistoryManager.js';
 import type {TabbedEditorContainerDelegate} from './TabbedEditorContainer.js';
-import {Events as TabbedEditorContainerEvents, TabbedEditorContainer} from './TabbedEditorContainer.js';  // eslint-disable-line no-unused-vars
+import {Events as TabbedEditorContainerEvents, TabbedEditorContainer} from './TabbedEditorContainer.js';
 import {Events as UISourceCodeFrameEvents, UISourceCodeFrame} from './UISourceCodeFrame.js';
 
 const UIStrings = {
@@ -62,9 +62,9 @@ export class SourcesView extends UI.Widget.VBox implements TabbedEditorContainer
 
   constructor() {
     super();
-    this.registerRequiredCSS('panels/sources/sourcesView.css', {enableLegacyPatching: false});
+    this.registerRequiredCSS('panels/sources/sourcesView.css');
     this.element.id = 'sources-panel-sources-view';
-    this.setMinimumAndPreferredSizes(88, 52, 150, 100);
+    this.setMinimumAndPreferredSizes(250, 52, 250, 100);
 
     this._placeholderOptionArray = [];
     this._selectedIndex = 0;
@@ -90,7 +90,7 @@ export class SourcesView extends UI.Widget.VBox implements TabbedEditorContainer
     if (!Root.Runtime.experiments.isEnabled('sourcesPrettyPrint')) {
       const toolbarEditorActions = new UI.Toolbar.Toolbar('', this._toolbarContainerElement);
       for (const action of getRegisteredEditorActions()) {
-        toolbarEditorActions.appendToolbarItem(action.button(this));
+        toolbarEditorActions.appendToolbarItem(action.getOrCreateButton(this));
       }
     }
     this._scriptViewToolbar = new UI.Toolbar.Toolbar('', this._toolbarContainerElement);
@@ -178,9 +178,8 @@ export class SourcesView extends UI.Widget.VBox implements TabbedEditorContainer
       }
     }
 
-    element.appendChild(UI.XLink.XLink.create(
-        'https://developer.chrome.com/docs/devtools/panels/sources/?utm_source=devtools&utm_campaign=2018Q1',
-        'Learn more about Workspaces'));
+    element.appendChild(
+        UI.XLink.XLink.create('https://developer.chrome.com/docs/devtools/workspaces/', 'Learn more about Workspaces'));
 
     return element;
   }
@@ -449,7 +448,7 @@ export class SourcesView extends UI.Widget.VBox implements TabbedEditorContainer
 
   _removeToolbarChangedListener(): void {
     if (this._toolbarChangedListener) {
-      Common.EventTarget.EventTarget.removeEventListeners([this._toolbarChangedListener]);
+      Common.EventTarget.removeEventListeners([this._toolbarChangedListener]);
     }
     this._toolbarChangedListener = null;
   }
@@ -579,12 +578,11 @@ export  // TODO(crbug.com/1167717): Make this a const enum again
       EditorSelected = 'EditorSelected',
     }
 
-
 /**
  * @interface
  */
 export interface EditorAction {
-  button(sourcesView: SourcesView): UI.Toolbar.ToolbarButton;
+  getOrCreateButton(sourcesView: SourcesView): UI.Toolbar.ToolbarButton;
 }
 
 const registeredEditorActions: (() => EditorAction)[] = [];

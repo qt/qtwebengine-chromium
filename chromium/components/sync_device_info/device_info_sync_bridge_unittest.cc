@@ -16,14 +16,19 @@
 #include "base/test/mock_callback.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/sync/base/model_type.h"
 #include "components/sync/base/time.h"
 #include "components/sync/engine/entity_data.h"
 #include "components/sync/model/data_batch.h"
 #include "components/sync/model/data_type_activation_request.h"
+#include "components/sync/model/entity_change.h"
 #include "components/sync/model/metadata_batch.h"
+#include "components/sync/protocol/device_info_specifics.pb.h"
+#include "components/sync/protocol/entity_specifics.pb.h"
 #include "components/sync/protocol/model_type_state.pb.h"
+#include "components/sync/protocol/sync_enums.pb.h"
 #include "components/sync/test/model/mock_model_type_change_processor.h"
 #include "components/sync/test/model/model_type_store_test_util.h"
 #include "components/sync/test/model/test_matchers.h"
@@ -46,6 +51,7 @@ using sync_pb::EntitySpecifics;
 using sync_pb::ModelTypeState;
 using testing::_;
 using testing::AllOf;
+using testing::InvokeWithoutArgs;
 using testing::IsEmpty;
 using testing::IsNull;
 using testing::Matcher;
@@ -402,6 +408,10 @@ class TestLocalDeviceInfoProvider : public MutableLocalDeviceInfoProvider {
       if (interested_data_types_) {
         local_device_info_->set_interested_data_types(*interested_data_types_);
       }
+      if (paask_info_) {
+        auto copy = *paask_info_;
+        local_device_info_->set_paask_info(std::move(copy));
+      }
     }
     return local_device_info_.get();
   }
@@ -420,10 +430,16 @@ class TestLocalDeviceInfoProvider : public MutableLocalDeviceInfoProvider {
     interested_data_types_ = data_types;
   }
 
+  void UpdatePhoneAsASecurityKeyInfo(
+      const DeviceInfo::PhoneAsASecurityKeyInfo& paask_info) {
+    paask_info_ = paask_info;
+  }
+
  private:
   std::unique_ptr<DeviceInfo> local_device_info_;
   absl::optional<std::string> fcm_registration_token_;
   absl::optional<ModelTypeSet> interested_data_types_;
+  absl::optional<DeviceInfo::PhoneAsASecurityKeyInfo> paask_info_;
 
   DISALLOW_COPY_AND_ASSIGN(TestLocalDeviceInfoProvider);
 };  // namespace
@@ -488,6 +504,14 @@ class DeviceInfoSyncBridgeTest : public testing::Test,
   void InitializeAndPump() {
     InitializeBridge();
     task_environment_.RunUntilIdle();
+  }
+
+  void WaitForReadyToSync() {
+    ON_CALL(*processor(), IsTrackingMetadata).WillByDefault(Return(true));
+    base::RunLoop run_loop;
+    EXPECT_CALL(*processor(), ModelReadyToSync)
+        .WillOnce(InvokeWithoutArgs([&run_loop]() { run_loop.Quit(); }));
+    run_loop.Run();
   }
 
   // Mimics sync being enabled by the user with no remote data. Must be called
@@ -556,9 +580,7 @@ class DeviceInfoSyncBridgeTest : public testing::Test,
 
   void ForcePulse() { bridge()->ForcePulseForTest(); }
 
-  void RefreshLocalDeviceInfo() {
-    bridge()->RefreshLocalDeviceInfoIfNeeded(base::DoNothing());
-  }
+  void RefreshLocalDeviceInfo() { bridge()->RefreshLocalDeviceInfoIfNeeded(); }
 
   void CommitToStoreAndWait(std::unique_ptr<WriteBatch> batch) {
     base::RunLoop loop;
@@ -885,22 +907,14 @@ TEST_F(DeviceInfoSyncBridgeTest, ApplySyncChangesWithLocalGuid) {
       bridge()->GetDeviceInfo(local_device()->GetLocalDeviceInfo()->guid()));
   ASSERT_EQ(1, change_count());
 
-  // The bridge should ignore these changes using this specifics because its
-  // guid will match the local device.
+  // The bridge should ignore updates using this specifics because its guid will
+  // match the local device.
   EXPECT_CALL(*processor(), Put).Times(0);
 
   const DeviceInfoSpecifics specifics = CreateLocalDeviceSpecifics();
   auto error_on_add = bridge()->ApplySyncChanges(
       bridge()->CreateMetadataChangeList(), EntityAddList({specifics}));
   EXPECT_FALSE(error_on_add);
-  EXPECT_EQ(1, change_count());
-
-  syncer::EntityChangeList entity_change_list;
-  entity_change_list.push_back(
-      EntityChange::CreateDelete(specifics.cache_guid()));
-  auto error_on_delete = bridge()->ApplySyncChanges(
-      bridge()->CreateMetadataChangeList(), std::move(entity_change_list));
-  EXPECT_FALSE(error_on_delete);
   EXPECT_EQ(1, change_count());
 }
 
@@ -1319,6 +1333,36 @@ TEST_F(DeviceInfoSyncBridgeTest, RefreshLocalDeviceInfo) {
       SyncInvalidationsInstanceIdTokenForSuffix(kLocalSuffix));
   RefreshLocalDeviceInfo();
   EXPECT_EQ(2, change_count());
+
+  // Setting Phone-as-a-security-key fields should trigger an update.
+  ASSERT_FALSE(local_device()->GetLocalDeviceInfo()->paask_info().has_value());
+  DeviceInfo::PhoneAsASecurityKeyInfo paask_info;
+  paask_info.tunnel_server_domain = 123;
+  paask_info.contact_id = {1, 2, 3, 4};
+  paask_info.secret = {5, 6, 7, 8};
+  paask_info.id = 321;
+  paask_info.peer_public_key_x962 = {10, 11, 12, 13};
+  local_device()->UpdatePhoneAsASecurityKeyInfo(paask_info);
+
+  EXPECT_CALL(*processor(), Put(_, HasSpecifics(HasLastUpdatedAboutNow()), _));
+  RefreshLocalDeviceInfo();
+  EXPECT_EQ(3, change_count());
+
+  // Rotating the PaaSK key should not trigger an update. These fields depend
+  // on the current time and are only updated when an update would be sent
+  // anyway.
+  paask_info.secret = {9, 10, 11, 12};
+  paask_info.id = 322;
+  local_device()->UpdatePhoneAsASecurityKeyInfo(paask_info);
+  RefreshLocalDeviceInfo();
+  EXPECT_EQ(3, change_count());
+
+  // But updating other PaaSK fields does trigger an update.
+  paask_info.tunnel_server_domain = 124;
+  local_device()->UpdatePhoneAsASecurityKeyInfo(paask_info);
+  EXPECT_CALL(*processor(), Put(_, HasSpecifics(HasLastUpdatedAboutNow()), _));
+  RefreshLocalDeviceInfo();
+  EXPECT_EQ(4, change_count());
 }
 
 TEST_F(DeviceInfoSyncBridgeTest, DeviceNameForTransportOnlySyncMode) {
@@ -1422,37 +1466,43 @@ TEST_F(DeviceInfoSyncBridgeTest, ShouldSendInvalidationFields) {
   EnableSyncAndMergeInitialData(SyncMode::kFull);
 }
 
-TEST_F(DeviceInfoSyncBridgeTest, ShouldNotifyWhenDeviceInfoIsSynced) {
-  InitializeAndMergeInitialData(SyncMode::kFull);
+TEST_F(DeviceInfoSyncBridgeTest,
+       ShouldNotifyWhenAdditionalInterestedDataTypesSynced) {
+  InitializeAndPump();
+  local_device()->UpdateInterestedDataTypes({syncer::BOOKMARKS});
+  EnableSyncAndMergeInitialData(SyncMode::kFull);
 
-  base::MockOnceClosure callback;
-  ASSERT_THAT(local_device()->GetLocalDeviceInfo()->fcm_registration_token(),
-              IsEmpty());
-  local_device()->UpdateFCMRegistrationToken(
-      SyncInvalidationsInstanceIdTokenForSuffix(kLocalSuffix));
-  bridge()->RefreshLocalDeviceInfoIfNeeded(callback.Get());
+  base::MockRepeatingCallback<void(const ModelTypeSet&)> callback;
+  bridge()->SetCommittedAdditionalInterestedDataTypesCallback(callback.Get());
+  local_device()->UpdateInterestedDataTypes(
+      {syncer::BOOKMARKS, syncer::SESSIONS});
 
-  std::string guid = local_device()->GetLocalDeviceInfo()->guid();
-  EXPECT_CALL(*processor(), IsEntityUnsynced(guid)).WillOnce(Return(true));
-  EXPECT_CALL(callback, Run()).Times(0);
-  bridge()->ApplySyncChanges(bridge()->CreateMetadataChangeList(),
-                             EntityChangeList());
+  bridge()->RefreshLocalDeviceInfoIfNeeded();
 
+  const std::string guid = local_device()->GetLocalDeviceInfo()->guid();
   EXPECT_CALL(*processor(), IsEntityUnsynced(guid)).WillOnce(Return(false));
-  EXPECT_CALL(callback, Run());
+
+  EXPECT_CALL(callback, Run(ModelTypeSet(syncer::SESSIONS)));
   bridge()->ApplySyncChanges(bridge()->CreateMetadataChangeList(),
                              EntityChangeList());
 }
 
-TEST_F(DeviceInfoSyncBridgeTest, ShouldNotNotifyWhenDeviceInfoIsUnchanged) {
-  InitializeAndMergeInitialData(SyncMode::kFull);
+TEST_F(DeviceInfoSyncBridgeTest,
+       ShouldNotNotifyWithoutAdditionalInterestedDataTypes) {
+  InitializeAndPump();
+  local_device()->UpdateInterestedDataTypes(
+      {syncer::BOOKMARKS, syncer::SESSIONS});
+  EnableSyncAndMergeInitialData(SyncMode::kFull);
 
-  base::MockOnceClosure callback;
-  bridge()->RefreshLocalDeviceInfoIfNeeded(callback.Get());
+  base::MockRepeatingCallback<void(const ModelTypeSet&)> callback;
+  bridge()->SetCommittedAdditionalInterestedDataTypesCallback(callback.Get());
+  local_device()->UpdateInterestedDataTypes({syncer::BOOKMARKS});
+
+  bridge()->RefreshLocalDeviceInfoIfNeeded();
 
   std::string guid = local_device()->GetLocalDeviceInfo()->guid();
   EXPECT_CALL(*processor(), IsEntityUnsynced(guid)).WillOnce(Return(false));
-  EXPECT_CALL(callback, Run()).Times(0);
+  EXPECT_CALL(callback, Run).Times(0);
   bridge()->ApplySyncChanges(bridge()->CreateMetadataChangeList(),
                              EntityChangeList());
 }
@@ -1582,6 +1632,100 @@ TEST_F(DeviceInfoSyncBridgeTest, ShouldInvokeCallbackOnReadAllMetadata) {
   // Check that the bridge has notified observers even if the local data hasn't
   // been changed.
   EXPECT_EQ(1, change_count());
+}
+
+TEST_F(DeviceInfoSyncBridgeTest, ShouldRemoveDeviceInfoOnTombstone) {
+  InitializeAndMergeInitialData(SyncMode::kFull);
+  const DeviceInfoSpecifics specifics = CreateSpecifics(1);
+  absl::optional<ModelError> error = bridge()->ApplySyncChanges(
+      bridge()->CreateMetadataChangeList(), EntityAddList({specifics}));
+  ASSERT_FALSE(error);
+  ASSERT_EQ(2u, bridge()->GetAllDeviceInfo().size());
+
+  EntityChangeList changes;
+  changes.push_back(EntityChange::CreateDelete(specifics.cache_guid()));
+  error = bridge()->ApplySyncChanges(bridge()->CreateMetadataChangeList(),
+                                     std::move(changes));
+  ASSERT_FALSE(error);
+
+  EXPECT_EQ(1u, bridge()->GetAllDeviceInfo().size());
+  EXPECT_NE(bridge()->GetAllDeviceInfo().front()->guid(),
+            specifics.cache_guid());
+}
+
+TEST_F(DeviceInfoSyncBridgeTest,
+       ShouldReuploadOnceAfterLocalDeviceInfoTombstone) {
+  InitializeAndMergeInitialData(SyncMode::kFull);
+  ASSERT_EQ(1u, bridge()->GetAllDeviceInfo().size());
+
+  EntityChangeList changes;
+  changes.push_back(
+      EntityChange::CreateDelete(CacheGuidForSuffix(kLocalSuffix)));
+
+  // An incoming deletion for the local device info should result in a reupload.
+  // The reupload should only be triggered once, to prevent any possible
+  // ping-pong between devices.
+  EXPECT_CALL(*processor(), Put(CacheGuidForSuffix(kLocalSuffix), _, _));
+  absl::optional<ModelError> error = bridge()->ApplySyncChanges(
+      bridge()->CreateMetadataChangeList(), std::move(changes));
+  ASSERT_FALSE(error);
+
+  // The local device info should still exist.
+  EXPECT_EQ(1u, bridge()->GetAllDeviceInfo().size());
+
+  changes.clear();
+  changes.push_back(
+      EntityChange::CreateDelete(CacheGuidForSuffix(kLocalSuffix)));
+  error = bridge()->ApplySyncChanges(bridge()->CreateMetadataChangeList(),
+                                     std::move(changes));
+  ASSERT_FALSE(error);
+
+  EXPECT_EQ(1u, bridge()->GetAllDeviceInfo().size());
+}
+
+TEST_F(DeviceInfoSyncBridgeTest, ShouldForceLocalDeviceInfoUpload) {
+  const DeviceInfoSpecifics specifics = CreateLocalDeviceSpecifics();
+  const ModelTypeState model_type_state = StateWithEncryption("ekn");
+  WriteToStoreWithMetadata({specifics}, model_type_state);
+
+  InitializeBridge();
+
+  bridge()->ForcePulseForTest();
+
+  // Check that the bridge calls SendLocalData() during initialization.
+  EXPECT_CALL(*processor(), Put);
+
+  WaitForReadyToSync();
+}
+
+TEST_F(DeviceInfoSyncBridgeTest, ShouldNotUploadRecentLocalDeviceUponStartup) {
+  const DeviceInfoSpecifics specifics = CreateLocalDeviceSpecifics();
+  const ModelTypeState model_type_state = StateWithEncryption("ekn");
+  WriteToStoreWithMetadata({specifics}, model_type_state);
+
+  InitializeBridge();
+
+  // Check that the bridge doesn't call SendLocalData() during initialization
+  // (because the local device info has recent last update time).
+  EXPECT_CALL(*processor(), Put).Times(0);
+
+  WaitForReadyToSync();
+}
+
+TEST_F(DeviceInfoSyncBridgeTest, ShouldUploadOutdatedLocalDeviceInfo) {
+  // Create an outdated local device info which should be reuploaded during
+  // initialization.
+  const DeviceInfoSpecifics specifics = CreateLocalDeviceSpecifics(
+      base::Time::Now() - base::TimeDelta::FromDays(10));
+  const ModelTypeState model_type_state = StateWithEncryption("ekn");
+  WriteToStoreWithMetadata({specifics}, model_type_state);
+
+  InitializeBridge();
+
+  // Check that the bridge calls SendLocalData() during initialization.
+  EXPECT_CALL(*processor(), Put);
+
+  WaitForReadyToSync();
 }
 
 }  // namespace

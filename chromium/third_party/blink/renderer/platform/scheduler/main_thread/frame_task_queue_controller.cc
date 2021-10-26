@@ -14,7 +14,6 @@
 #include "third_party/blink/renderer/platform/scheduler/main_thread/frame_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_scheduler_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_task_queue.h"
-#include "third_party/blink/renderer/platform/scheduler/main_thread/web_scheduling_task_queue_impl.h"
 #include "third_party/blink/renderer/platform/scheduler/public/web_scheduling_priority.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
@@ -69,7 +68,7 @@ FrameTaskQueueController::NewWebSchedulingTaskQueue(
     QueueTraits queue_traits,
     WebSchedulingPriority priority) {
   // Note: we only track this |task_queue| in |all_task_queues_and_voters_|.
-  // It's interacted with through the WebSchedulingTaskQueueImpl that
+  // It's interacted with through the MainThreadWebSchedulingTaskQueueImpl that
   // will wrap it, rather than through this class like other task queues.
   scoped_refptr<MainThreadTaskQueue> task_queue =
       main_thread_scheduler_impl_->NewTaskQueue(
@@ -80,6 +79,12 @@ FrameTaskQueueController::NewWebSchedulingTaskQueue(
               .SetFrameScheduler(frame_scheduler_impl_));
   TaskQueueCreated(task_queue);
   return task_queue;
+}
+
+void FrameTaskQueueController::RemoveWebSchedulingTaskQueue(
+    MainThreadTaskQueue* queue) {
+  DCHECK(queue);
+  RemoveTaskQueueAndVoter(queue);
 }
 
 void FrameTaskQueueController::CreateTaskQueue(
@@ -128,6 +133,23 @@ void FrameTaskQueueController::TaskQueueCreated(
   }
 }
 
+void FrameTaskQueueController::RemoveTaskQueueAndVoter(
+    MainThreadTaskQueue* queue) {
+  DCHECK(task_queue_enabled_voters_.Contains(queue));
+  task_queue_enabled_voters_.erase(queue);
+
+  bool found_task_queue = false;
+  for (auto* it = all_task_queues_and_voters_.begin();
+       it != all_task_queues_and_voters_.end(); ++it) {
+    if (it->first == queue) {
+      found_task_queue = true;
+      all_task_queues_and_voters_.erase(it);
+      break;
+    }
+  }
+  DCHECK(found_task_queue);
+}
+
 base::sequence_manager::TaskQueue::QueueEnabledVoter*
 FrameTaskQueueController::GetQueueEnabledVoter(
     const scoped_refptr<MainThreadTaskQueue>& task_queue) {
@@ -144,19 +166,7 @@ bool FrameTaskQueueController::RemoveResourceLoadingTaskQueue(
   if (!resource_loading_task_queues_.Contains(task_queue))
     return false;
   resource_loading_task_queues_.erase(task_queue);
-  DCHECK(task_queue_enabled_voters_.Contains(task_queue));
-  task_queue_enabled_voters_.erase(task_queue);
-
-  bool found_task_queue = false;
-  for (auto* it = all_task_queues_and_voters_.begin();
-       it != all_task_queues_and_voters_.end(); ++it) {
-    if (it->first == task_queue.get()) {
-      found_task_queue = true;
-      all_task_queues_and_voters_.erase(it);
-      break;
-    }
-  }
-  DCHECK(found_task_queue);
+  RemoveTaskQueueAndVoter(task_queue.get());
   return true;
 }
 

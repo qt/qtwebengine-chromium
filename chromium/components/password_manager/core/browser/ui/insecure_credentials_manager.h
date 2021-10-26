@@ -21,9 +21,8 @@
 #include "build/build_config.h"
 #include "components/password_manager/core/browser/insecure_credentials_table.h"
 #include "components/password_manager/core/browser/leak_detection/bulk_leak_check.h"
-#include "components/password_manager/core/browser/password_store.h"
+#include "components/password_manager/core/browser/password_store_interface.h"
 #include "components/password_manager/core/browser/ui/credential_utils.h"
-#include "components/password_manager/core/browser/ui/insecure_credentials_reader.h"
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "url/gurl.h"
 
@@ -141,8 +140,7 @@ struct CredentialMetadata;
 // insecure credentials with corresponding autofill::PasswordForms. It supports
 // an observer interface, and clients can register themselves to get notified
 // about changes to the list.
-class InsecureCredentialsManager : public InsecureCredentialsReader::Observer,
-                                   public SavedPasswordsPresenter::Observer {
+class InsecureCredentialsManager : public SavedPasswordsPresenter::Observer {
  public:
   using CredentialsView = base::span<const CredentialWithPassword>;
 
@@ -158,8 +156,8 @@ class InsecureCredentialsManager : public InsecureCredentialsReader::Observer,
 
   InsecureCredentialsManager(
       SavedPasswordsPresenter* presenter,
-      scoped_refptr<PasswordStore> profile_store,
-      scoped_refptr<PasswordStore> account_store = nullptr);
+      scoped_refptr<PasswordStoreInterface> profile_store,
+      scoped_refptr<PasswordStoreInterface> account_store = nullptr);
   ~InsecureCredentialsManager() override;
 
   void Init();
@@ -213,10 +211,6 @@ class InsecureCredentialsManager : public InsecureCredentialsReader::Observer,
   void OnWeakCheckDone(base::ElapsedTimer timer_since_weak_check_start,
                        base::flat_set<std::u16string> weak_passwords);
 
-  // InsecureCredentialsReader::Observer:
-  void OnInsecureCredentialsChanged(
-      const std::vector<InsecureCredential>& insecure_credentials) override;
-
   // SavedPasswordsPresenter::Observer:
   void OnEdited(const PasswordForm& form) override;
   void OnSavedPasswordsChanged(
@@ -230,19 +224,15 @@ class InsecureCredentialsManager : public InsecureCredentialsReader::Observer,
 
   // Returns the `profile_store_` or `account_store_` if `form` is stored in the
   // profile store of the account store accordingly.
-  PasswordStore& GetStoreFor(const PasswordForm& form);
+  PasswordStoreInterface& GetStoreFor(const PasswordForm& form);
 
   // A weak handle to the presenter used to join the list of insecure
   // credentials with saved passwords. Needs to outlive this instance.
   SavedPasswordsPresenter* presenter_ = nullptr;
 
   // The password stores containing the insecure credentials.
-  scoped_refptr<PasswordStore> profile_store_;
-  scoped_refptr<PasswordStore> account_store_;
-
-  // The reader used to read the insecure credentials from the password
-  // stores.
-  InsecureCredentialsReader insecure_credentials_reader_;
+  scoped_refptr<PasswordStoreInterface> profile_store_;
+  scoped_refptr<PasswordStoreInterface> account_store_;
 
   // Cache of the most recently obtained insecure credentials.
   std::vector<InsecureCredential> insecure_credentials_;
@@ -253,12 +243,6 @@ class InsecureCredentialsManager : public InsecureCredentialsReader::Observer,
   // A map that matches CredentialView to corresponding PasswordForms, latest
   // create_type and combined insecure type.
   CredentialPasswordsMap credentials_to_forms_;
-
-  // A scoped observer for |insecure_credentials_reader_| to listen changes
-  // related to InsecureCredential only.
-  base::ScopedObservation<InsecureCredentialsReader,
-                          InsecureCredentialsReader::Observer>
-      observed_insecure_credentials_reader_{this};
 
   // A scoped observer for |presenter_|.
   base::ScopedObservation<SavedPasswordsPresenter,

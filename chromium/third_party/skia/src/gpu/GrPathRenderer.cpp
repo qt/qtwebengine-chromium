@@ -5,20 +5,21 @@
  * found in the LICENSE file.
  */
 
+#include "src/gpu/GrPathRenderer.h"
+
 #include "include/gpu/GrRecordingContext.h"
 #include "src/core/SkDrawProcs.h"
 #include "src/gpu/GrCaps.h"
 #include "src/gpu/GrPaint.h"
-#include "src/gpu/GrPathRenderer.h"
 #include "src/gpu/GrRecordingContextPriv.h"
-#include "src/gpu/GrSurfaceDrawContext.h"
 #include "src/gpu/GrUserStencilSettings.h"
 #include "src/gpu/geometry/GrStyledShape.h"
+#include "src/gpu/v1/SurfaceDrawContext_v1.h"
 
 #ifdef SK_DEBUG
 void GrPathRenderer::StencilPathArgs::validate() const {
     SkASSERT(fContext);
-    SkASSERT(fRenderTargetContext);
+    SkASSERT(fSurfaceDrawContext);
     SkASSERT(fClipConservativeBounds);
     SkASSERT(fViewMatrix);
     SkASSERT(fShape);
@@ -46,12 +47,12 @@ bool GrPathRenderer::drawPath(const DrawPathArgs& args) {
     args.validate();
     CanDrawPathArgs canArgs;
     canArgs.fCaps = args.fContext->priv().caps();
-    canArgs.fProxy = args.fRenderTargetContext->asRenderTargetProxy();
+    canArgs.fProxy = args.fSurfaceDrawContext->asRenderTargetProxy();
     canArgs.fClipConservativeBounds = args.fClipConservativeBounds;
     canArgs.fViewMatrix = args.fViewMatrix;
     canArgs.fShape = args.fShape;
     canArgs.fPaint = &args.fPaint;
-    canArgs.fSurfaceProps = &args.fRenderTargetContext->surfaceProps();
+    canArgs.fSurfaceProps = &args.fSurfaceDrawContext->surfaceProps();
     canArgs.fAAType = args.fAAType;
     canArgs.validate();
 
@@ -65,22 +66,6 @@ bool GrPathRenderer::drawPath(const DrawPathArgs& args) {
     }
 #endif
     return this->onDrawPath(args);
-}
-
-bool GrPathRenderer::IsStrokeHairlineOrEquivalent(const GrStyle& style, const SkMatrix& matrix,
-                                                  SkScalar* outCoverage) {
-    if (style.pathEffect()) {
-        return false;
-    }
-    const SkStrokeRec& stroke = style.strokeRec();
-    if (stroke.isHairlineStyle()) {
-        if (outCoverage) {
-            *outCoverage = SK_Scalar1;
-        }
-        return true;
-    }
-    return stroke.getStyle() == SkStrokeRec::kStroke_Style &&
-           SkDrawTreatAAStrokeAsHairline(stroke.getWidth(), matrix, outCoverage);
 }
 
 void GrPathRenderer::GetPathDevBounds(const SkPath& path,
@@ -110,7 +95,7 @@ void GrPathRenderer::onStencilPath(const StencilPathArgs& args) {
     DrawPathArgs drawArgs{args.fContext,
                           std::move(paint),
                           &kIncrementStencil,
-                          args.fRenderTargetContext,
+                          args.fSurfaceDrawContext,
                           nullptr,  // clip
                           args.fClipConservativeBounds,
                           args.fViewMatrix,

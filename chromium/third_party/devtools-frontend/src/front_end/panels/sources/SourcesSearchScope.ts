@@ -36,7 +36,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
-import type * as Search from '../search/search.js'; // eslint-disable-line no-unused-vars
+import type * as Search from '../search/search.js';
 
 export class SourcesSearchScope implements Search.SearchConfig.SearchScope {
   _searchId: number;
@@ -252,7 +252,7 @@ export class SourcesSearchScope implements Search.SearchConfig.SearchScope {
         return a.lineNumber - b.lineNumber;
       }
 
-      progress.worked(1);
+      progress.incrementWorked(1);
       let matches: TextUtils.ContentProvider.SearchMatch[] = [];
       const searchConfig = (this._searchConfig as Workspace.Workspace.ProjectSearchConfig);
       const queries = searchConfig.queries();
@@ -305,7 +305,7 @@ export class FileBasedSearchResult implements Search.SearchConfig.SearchResult {
 
   matchRevealable(index: number): Object {
     const match = this._searchMatches[index];
-    return this._uiSourceCode.uiLocation(match.lineNumber, undefined);
+    return this._uiSourceCode.uiLocation(match.lineNumber, match.columnNumber);
   }
 
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)

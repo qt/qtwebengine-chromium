@@ -33,6 +33,7 @@
 #include "base/unguessable_token.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#include "components/services/storage/public/mojom/indexed_db_control.mojom.h"
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/browser_context_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -58,11 +59,16 @@
 #include "storage/browser/blob/blob_storage_context.h"
 #include "storage/browser/database/database_tracker.h"
 #include "storage/browser/file_system/external_mount_points.h"
+#include "third_party/blink/public/mojom/push_messaging/push_messaging.mojom.h"
+#include "third_party/perfetto/include/perfetto/tracing/traced_proto.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 
 namespace content {
 
 namespace {
+
+using perfetto::protos::pbzero::ChromeBrowserContext;
+using perfetto::protos::pbzero::ChromeTrackEvent;
 
 void SaveSessionStateOnIOThread(AppCacheServiceImpl* appcache_service) {
   appcache_service->set_force_keep_session_state();
@@ -77,33 +83,23 @@ base::WeakPtr<storage::BlobStorageContext> BlobStorageContextGetterForBrowser(
 }  // namespace
 
 BrowserContext::BrowserContext() {
-  TRACE_EVENT("shutdown", "BrowserContext::BrowserContext",
-              [&](perfetto::EventContext ctx) {
-                auto* event =
-                    ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-                event->set_chrome_browser_context()->set_ptr(
-                    reinterpret_cast<uint64_t>(this));
-              });
-  TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("shutdown", "Browser.BrowserContext", this,
-                                    "browser_context",
-                                    static_cast<void*>(this));
-
   impl_ = std::make_unique<Impl>(this);
+  TRACE_EVENT("shutdown", "BrowserContext::BrowserContext",
+              ChromeTrackEvent::kChromeBrowserContext, *this);
+  TRACE_EVENT_BEGIN("shutdown", "Browser.BrowserContext",
+                    perfetto::Track::FromPointer(this),
+                    ChromeTrackEvent::kChromeBrowserContext, *this);
 }
 
 BrowserContext::~BrowserContext() {
   TRACE_EVENT("shutdown", "BrowserContext::~BrowserContext",
-              [&](perfetto::EventContext ctx) {
-                auto* event =
-                    ctx.event<perfetto::protos::pbzero::ChromeTrackEvent>();
-                event->set_chrome_browser_context()->set_ptr(
-                    reinterpret_cast<uint64_t>(this));
-              });
+              ChromeTrackEvent::kChromeBrowserContext, *this);
+
+  // End for ASYNC event "Browser.BrowserContext".
+  TRACE_EVENT_END("shutdown", perfetto::Track::FromPointer(this),
+                  ChromeTrackEvent::kChromeBrowserContext, *this);
 
   impl_.reset();
-
-  TRACE_EVENT_NESTABLE_ASYNC_END1("shutdown", "Browser.BrowserContext", this,
-                                  "browser_context", static_cast<void*>(this));
 }
 
 DownloadManager* BrowserContext::GetDownloadManager() {
@@ -133,7 +129,7 @@ StoragePartition* BrowserContext::GetStoragePartition(
   auto* site_instance_impl = static_cast<SiteInstanceImpl*>(site_instance);
   auto partition_config =
       site_instance_impl
-          ? site_instance_impl->GetSiteInfo().GetStoragePartitionConfig(this)
+          ? site_instance_impl->GetSiteInfo().storage_partition_config()
           : StoragePartitionConfig::CreateDefault(this);
   return GetStoragePartition(partition_config, can_create);
 }
@@ -345,6 +341,12 @@ void BrowserContext::WriteIntoTrace(perfetto::TracedValue context) {
   // exist when producing traces from underneath the destructor.
   if (impl())
     dict.Add("id", impl()->UniqueId());
+}
+
+void BrowserContext::WriteIntoTrace(
+    perfetto::TracedProto<ChromeBrowserContext> proto) {
+  if (impl())
+    proto->set_id(impl()->UniqueId());
 }
 
 //////////////////////////////////////////////////////////////////////////////

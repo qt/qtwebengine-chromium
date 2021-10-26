@@ -22,7 +22,6 @@
  * @todo switch to dualinput
  */
 
-#include "libavutil/avassert.h"
 #include "libavutil/imgutils.h"
 #include "libavutil/opt.h"
 #include "internal.h"
@@ -248,7 +247,7 @@ static const AVFilterPad cover_rect_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_cover_rect = {
+const AVFilter ff_vf_cover_rect = {
     .name            = "cover_rect",
     .description     = NULL_IF_CONFIG_SMALL("Find and cover a user specified object."),
     .priv_size       = sizeof(CoverContext),

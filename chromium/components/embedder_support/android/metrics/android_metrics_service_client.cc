@@ -27,6 +27,8 @@
 #include "components/metrics/android_metrics_provider.h"
 #include "components/metrics/call_stack_profile_metrics_provider.h"
 #include "components/metrics/content/accessibility_metrics_provider.h"
+#include "components/metrics/content/content_stability_metrics_provider.h"
+#include "components/metrics/content/extensions_helper.h"
 #include "components/metrics/content/gpu_metrics_provider.h"
 #include "components/metrics/content/subprocess_metrics_provider.h"
 #include "components/metrics/cpu_metrics_provider.h"
@@ -238,16 +240,18 @@ void AndroidMetricsServiceClient::RegisterPrefs(PrefRegistrySimple* registry) {
   ukm::UkmService::RegisterPrefs(registry);
 }
 
-void AndroidMetricsServiceClient::Initialize(PrefService* pref_service) {
+void AndroidMetricsServiceClient::Initialize(
+    const base::FilePath& user_data_dir,
+    PrefService* pref_service) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(!init_finished_);
 
   pref_service_ = pref_service;
 
-  metrics_state_manager_ =
-      MetricsStateManager::Create(pref_service_, this, std::wstring(),
-                                  base::BindRepeating(&StoreClientInfo),
-                                  base::BindRepeating(&LoadClientInfo));
+  metrics_state_manager_ = MetricsStateManager::Create(
+      pref_service_, this, std::wstring(), user_data_dir,
+      base::BindRepeating(&StoreClientInfo),
+      base::BindRepeating(&LoadClientInfo));
 
   init_finished_ = true;
 
@@ -337,6 +341,9 @@ void AndroidMetricsServiceClient::RegisterMetricsProvidersAndInitState() {
           GetSampleRatePerMille()));
   metrics_service_->RegisterMetricsProvider(
       std::make_unique<AccessibilityMetricsProvider>());
+  metrics_service_->RegisterMetricsProvider(
+      std::make_unique<ContentStabilityMetricsProvider>(
+          pref_service(), /*extensions_helper=*/nullptr));
   RegisterAdditionalMetricsProviders(metrics_service_.get());
 
   // The file metrics provider performs IO.
@@ -595,8 +602,9 @@ int AndroidMetricsServiceClient::GetSampleBucketValue() const {
 
 bool AndroidMetricsServiceClient::IsInSample() const {
   // Called in MaybeStartMetrics(), after |metrics_service_| is created.
-  // NOTE IsInSample and IsInPackageNameSample deliberately use the same hash to
-  // guarantee we never exceed 10% of total, opted-in clients for PackageNames.
+  // NOTE IsInSample and ShouldRecordPackageName deliberately use the same hash
+  // to guarantee we never exceed 10% of total, opted-in clients for
+  // PackageNames.
   return GetSampleBucketValue() < GetSampleRatePerMille();
 }
 
@@ -607,7 +615,7 @@ bool AndroidMetricsServiceClient::CanRecordPackageNameForAppType() {
   return Java_AndroidMetricsServiceClient_canRecordPackageNameForAppType(env);
 }
 
-bool AndroidMetricsServiceClient::IsInPackageNameSample() {
+bool AndroidMetricsServiceClient::ShouldRecordPackageName() {
   // Check if this client falls within the group for which it's acceptable to
   // log package name. This guarantees we enforce the privacy requirement
   // because we never log package names for more than kPackageNameLimitRate
@@ -620,13 +628,13 @@ bool AndroidMetricsServiceClient::IsInPackageNameSample() {
 void AndroidMetricsServiceClient::RegisterAdditionalMetricsProviders(
     MetricsService* service) {}
 
-std::string AndroidMetricsServiceClient::GetAppPackageName() {
-  if (IsInPackageNameSample() && CanRecordPackageNameForAppType())
-    return GetAppPackageNameInternal();
+std::string AndroidMetricsServiceClient::GetAppPackageNameIfLoggable() {
+  if (ShouldRecordPackageName() && CanRecordPackageNameForAppType())
+    return GetAppPackageName();
   return std::string();
 }
 
-std::string AndroidMetricsServiceClient::GetAppPackageNameInternal() {
+std::string AndroidMetricsServiceClient::GetAppPackageName() {
   JNIEnv* env = base::android::AttachCurrentThread();
   base::android::ScopedJavaLocalRef<jstring> j_app_name =
       Java_AndroidMetricsServiceClient_getAppPackageName(env);

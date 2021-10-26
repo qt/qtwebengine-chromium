@@ -54,11 +54,6 @@ const base::Feature kAutofillCreditCardAuthentication{
 const base::Feature kAutofillCreditCardUploadFeedback{
     "AutofillCreditCardUploadFeedback", base::FEATURE_DISABLED_BY_DEFAULT};
 
-// When enabled, shows the Google Pay logo on CVC prompt on Android.
-const base::Feature kAutofillDownstreamCvcPromptUseGooglePayLogo{
-    "AutofillDownstreamCvcPromptUseGooglePayLogo",
-    base::FEATURE_ENABLED_BY_DEFAULT};
-
 // Controls whether we show a Google-issued card in the suggestions list.
 const base::Feature kAutofillEnableGoogleIssuedCard{
     "AutofillEnableGoogleIssuedCard", base::FEATURE_DISABLED_BY_DEFAULT};
@@ -95,7 +90,7 @@ const base::Feature kAutofillEnableOffersInDownstream{
 // and profile picture will appear at the bottom of SaveCardInfoBar.
 const base::Feature kAutofillEnableSaveCardInfoBarAccountIndicationFooter{
     "AutofillEnableSaveCardInfoBarAccountIndicationFooter",
-    base::FEATURE_DISABLED_BY_DEFAULT};
+    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // When enabled, if the user interacts with the manual fallback bottom sheet
 // on Android, it'll remain sticky until the user dismisses it.
@@ -113,9 +108,21 @@ const base::Feature kAutofillEnableToolbarStatusChip{
 const base::Feature kAutofillEnableVirtualCard{
     "AutofillEnableVirtualCard", base::FEATURE_DISABLED_BY_DEFAULT};
 
+// When enabled, Autofill will attempt to fill merchant promo/coupon/gift code
+// fields when data is available.
+const base::Feature kAutofillFillMerchantPromoCodeFields{
+    "AutofillFillMerchantPromoCodeFields", base::FEATURE_DISABLED_BY_DEFAULT};
+
 // Controls whether to enable the fix for the offer feature in Incognito mode.
 const base::Feature kAutofillFixOfferInIncognito{
     "AutofillFixOfferInIncognito", base::FEATURE_DISABLED_BY_DEFAULT};
+
+// The merchant bound virtual card feature introduces new customized card art
+// images. This parameter defines the expiration of the fetched image in the
+// disk cache of the image fetcher.
+const base::FeatureParam<int> kAutofillImageFetcherDiskCacheExpirationInMinutes{
+    &kAutofillEnableMerchantBoundVirtualCards,
+    "autofill_image_fetcher_disk_cache_expiration_in_minutes", 10};
 
 // When enabled, Autofill will attempt to find merchant promo/coupon/gift code
 // fields when parsing forms.
@@ -142,10 +149,10 @@ const base::Feature kAutofillSortSuggestionsBasedOnOfferPresence{
     "AutofillSortSuggestionsBasedOnOfferPresence",
     base::FEATURE_ENABLED_BY_DEFAULT};
 
-// When enabled, merchant bound virtual cards will be suggested only if we
+// When enabled, merchant bound virtual cards will be suggested even if we don't
 // detect all of the card number, exp date and CVC fields in the payment form.
-const base::Feature kAutofillSuggestVirtualCardsOnlyOnFullFormDetection{
-    "AutofillSuggestVirtualCardsOnlyOnFullFormDetection",
+const base::Feature kAutofillSuggestVirtualCardsOnIncompleteForm{
+    "AutofillSuggestVirtualCardsOnIncompleteForm",
     base::FEATURE_DISABLED_BY_DEFAULT};
 
 // When enabled, if the Autofill Assistant is running, credit card save (both
@@ -166,11 +173,6 @@ const base::Feature kAutofillUpstream{"AutofillUpstream",
 
 const base::Feature kAutofillUpstreamAllowAllEmailDomains{
     "AutofillUpstreamAllowAllEmailDomains", base::FEATURE_DISABLED_BY_DEFAULT};
-
-// Controls whether we should use the new header images for the save card
-// bubble.
-const base::Feature kAutofillUseNewHeaderForSaveCardBubble{
-    "AutofillUseNewHeaderForSaveCardBubble", base::FEATURE_ENABLED_BY_DEFAULT};
 
 bool ShouldShowImprovedUserConsentForCreditCardSave() {
 // TODO(crbug.com/1052397): Revisit the macro expression once build flag switch

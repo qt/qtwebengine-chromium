@@ -17,7 +17,6 @@ group("all") {
     ":system_api-chaps-protos",
     ":system_api-chunneld-protos",
     ":system_api-cryptohome-goprotos",
-    ":system_api-cryptohome-protos",
     ":system_api-dlcservice-protos",
     ":system_api-dlp-protos",
     ":system_api-kerberos-goprotos",
@@ -66,6 +65,7 @@ shared_library("libsystem_api") {
     ":system_api-attestation-protos",
     ":system_api-bootlockbox-protos",
     ":system_api-chaps-protos",
+    ":system_api-cryptohome-protos",
     ":system_api-patchpanel-protos",
     ":system_api-tpm_manager-protos",
   ]
@@ -131,6 +131,10 @@ proto_library("system_api-cryptohome-protos") {
     "${proto_in_dir}/signed_secret.proto",
   ]
   standalone = true
+
+  # system_api-cryptohome-protos is used by a shared_library
+  # object, so we need to build it with "-fPIC" instead of "-fPIE".
+  use_pic = true
 }
 
 goproto_library("system_api-cryptohome-goprotos") {

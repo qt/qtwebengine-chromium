@@ -6,6 +6,10 @@
 
 #include "core/fxge/dib/cfx_bitmapcomposer.h"
 
+#include <string.h>
+
+#include "core/fxcrt/fx_coordinates.h"
+#include "core/fxcrt/fx_safe_types.h"
 #include "core/fxge/cfx_cliprgn.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 
@@ -32,7 +36,7 @@ void CFX_BitmapComposer::Compose(const RetainPtr<CFX_DIBitmap>& pDest,
   m_BitmapAlpha = bitmap_alpha;
   m_MaskColor = mask_color;
   m_pClipMask = nullptr;
-  if (pClipRgn && pClipRgn->GetType() != CFX_ClipRgn::RectI)
+  if (pClipRgn && pClipRgn->GetType() != CFX_ClipRgn::kRectI)
     m_pClipMask = pClipRgn->GetMask();
   m_bVertical = bVertical;
   m_bFlipX = bFlipX;
@@ -110,9 +114,16 @@ void CFX_BitmapComposer::ComposeScanline(int line,
                 (m_DestLeft - m_pClipRgn->GetBox().left);
   }
   uint8_t* dest_scan = m_pBitmap->GetWritableScanline(line + m_DestTop);
-  if (dest_scan)
-    dest_scan += m_DestLeft * m_pBitmap->GetBPP() / 8;
+  if (dest_scan) {
+    FX_SAFE_UINT32 offset = m_DestLeft;
+    offset *= m_pBitmap->GetBPP();
+    offset /= 8;
+    if (!offset.IsValid())
+      return;
 
+    // Help some compilers perform pointer arithmetic against safe numerics.
+    dest_scan += static_cast<uint32_t>(offset.ValueOrDie());
+  }
   uint8_t* dest_alpha_scan =
       m_pBitmap->GetWritableAlphaMaskScanline(line + m_DestTop);
   if (dest_alpha_scan)

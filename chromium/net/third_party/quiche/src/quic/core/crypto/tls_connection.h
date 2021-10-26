@@ -75,11 +75,20 @@ class QUIC_EXPORT_PRIVATE TlsConnection {
     // level |level|.
     virtual void SendAlert(EncryptionLevel level, uint8_t desc) = 0;
 
+    // Informational callback from BoringSSL. This callback is disabled by
+    // default, but can be enabled by TlsConnection::EnableInfoCallback.
+    //
+    // See |SSL_CTX_set_info_callback| for the meaning of |type| and |value|.
+    virtual void InfoCallback(int type, int value) = 0;
+
     friend class TlsConnection;
   };
 
   TlsConnection(const TlsConnection&) = delete;
   TlsConnection& operator=(const TlsConnection&) = delete;
+
+  // Configure the SSL such that delegate_->InfoCallback will be called.
+  void EnableInfoCallback();
 
   // Functions to convert between BoringSSL's enum ssl_encryption_level_t and
   // QUIC's EncryptionLevel.
@@ -89,10 +98,12 @@ class QUIC_EXPORT_PRIVATE TlsConnection {
 
   SSL* ssl() const { return ssl_.get(); }
 
+  const QuicSSLConfig& ssl_config() const { return ssl_config_; }
+
  protected:
-  // TlsConnection does not take ownership of any of its arguments; they must
+  // TlsConnection does not take ownership of |ssl_ctx| or |delegate|; they must
   // outlive the TlsConnection object.
-  TlsConnection(SSL_CTX* ssl_ctx, Delegate* delegate);
+  TlsConnection(SSL_CTX* ssl_ctx, Delegate* delegate, QuicSSLConfig ssl_config);
 
   // Creates an SSL_CTX and configures it with the options that are appropriate
   // for both client and server. The caller is responsible for ownership of the
@@ -141,6 +152,7 @@ class QUIC_EXPORT_PRIVATE TlsConnection {
 
   Delegate* delegate_;
   bssl::UniquePtr<SSL> ssl_;
+  const QuicSSLConfig ssl_config_;
 };
 
 }  // namespace quic

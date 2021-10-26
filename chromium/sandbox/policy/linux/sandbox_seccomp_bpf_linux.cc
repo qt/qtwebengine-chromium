@@ -61,9 +61,9 @@
 #include "sandbox/policy/linux/bpf_tts_policy_linux.h"
 
 #include "chromeos/assistant/buildflags.h"
-#if BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #include "sandbox/policy/linux/bpf_libassistant_policy_linux.h"
-#endif  // BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
 using sandbox::bpf_dsl::Allow;
@@ -199,10 +199,10 @@ std::unique_ptr<BPFBasePolicy> SandboxSeccompBPF::PolicyForSandboxType(
       return std::make_unique<ImeProcessPolicy>();
     case SandboxType::kTts:
       return std::make_unique<TtsProcessPolicy>();
-#if BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
     case SandboxType::kLibassistant:
       return std::make_unique<LibassistantProcessPolicy>();
-#endif  // BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     case SandboxType::kZygoteIntermediateSandbox:
     case SandboxType::kNoSandbox:
@@ -236,7 +236,12 @@ void SandboxSeccompBPF::RunSandboxSanityChecks(
       // open() must be restricted.
       syscall_ret = open("/etc/passwd", O_RDONLY);
       CHECK_EQ(-1, syscall_ret);
-      CHECK_EQ(BPFBasePolicy::GetFSDeniedErrno(), errno);
+      // The broker used with the GPU process sandbox uses EACCES for
+      // invalid filesystem access. See crbug.com/1233028 for more info.
+      CHECK_EQ(sandbox_type == SandboxType::kGpu
+                   ? EACCES
+                   : BPFBasePolicy::GetFSDeniedErrno(),
+               errno);
 
       // We should never allow the creation of netlink sockets.
       syscall_ret = socket(AF_NETLINK, SOCK_DGRAM, 0);
@@ -247,9 +252,9 @@ void SandboxSeccompBPF::RunSandboxSanityChecks(
 #if BUILDFLAG(IS_CHROMEOS_ASH)
     case SandboxType::kIme:
     case SandboxType::kTts:
-#if BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#if BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
     case SandboxType::kLibassistant:
-#endif  // BUILDFLAG(ENABLE_LIBASSISTANT_SANDBOX)
+#endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
     case SandboxType::kAudio:
     case SandboxType::kService:

@@ -12,6 +12,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "build/build_config.h"
+#include "components/optimization_guide/core/insertion_ordered_set.h"
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_switches.h"
 #include "components/optimization_guide/machine_learning_tflite_buildflags.h"
@@ -81,7 +82,7 @@ const base::Feature kPageTextExtraction{
 // Enables the model file to be loaded for each execution, then unloaded on
 // completion.
 const base::Feature kLoadModelFileForEachExecution{
-    "LoadModelFileForEachExecution", base::FEATURE_DISABLED_BY_DEFAULT};
+    "LoadModelFileForEachExecution", base::FEATURE_ENABLED_BY_DEFAULT};
 
 // The default value here is a bit of a guess.
 // TODO(crbug/1163244): This should be tuned once metrics are available.
@@ -97,18 +98,6 @@ bool ShouldBatchUpdateHintsForActiveTabsAndTopHosts() {
                                              true);
   }
   return false;
-}
-
-size_t MaxHintsFetcherTopHostBlocklistSize() {
-  // The blocklist will be limited to the most engaged hosts and will hold twice
-  // (2*N) as many hosts that the HintsFetcher request hints for. The extra N
-  // hosts on the blocklist are meant to cover the case that the engagement
-  // scores on some of the top N host engagement scores decay and they fall out
-  // of the top N.
-  return GetFieldTrialParamByFeatureAsInt(kRemoteOptimizationGuideFetching,
-                                          "top_host_blacklist_size_multiplier",
-                                          3) *
-         MaxHostsForOptimizationGuideServiceHintsFetch();
 }
 
 size_t MaxHostsForOptimizationGuideServiceHintsFetch() {
@@ -129,25 +118,10 @@ size_t MaxHostsForRecordingSuccessfullyCovered() {
       "max_hosts_for_recording_successfully_covered", 200);
 }
 
-double MinTopHostEngagementScoreThreshold() {
-  // The default initial site engagement score for a navigation is 3.0, 1.5
-  // points for a navigation from the omnibox and 1.5 points for the first
-  // navigation of the day.
-  return GetFieldTrialParamByFeatureAsDouble(
-      kRemoteOptimizationGuideFetching,
-      "min_top_host_engagement_score_threshold", 2.0);
-}
-
 base::TimeDelta StoredFetchedHintsFreshnessDuration() {
   return base::TimeDelta::FromDays(GetFieldTrialParamByFeatureAsInt(
       kRemoteOptimizationGuideFetching,
       "max_store_duration_for_featured_hints_in_days", 7));
-}
-
-base::TimeDelta DurationApplyLowEngagementScoreThreshold() {
-  return base::TimeDelta::FromDays(GetFieldTrialParamByFeatureAsInt(
-      kRemoteOptimizationGuideFetching,
-      "duration_apply_low_engagement_score_threshold_in_days", 30));
 }
 
 std::string GetOptimizationGuideServiceAPIKey() {
@@ -225,19 +199,6 @@ int MaxServerBloomFilterByteSize() {
       kOptimizationHints, "max_bloom_filter_byte_size", 250 * 1024 /* 250KB */);
 }
 
-absl::optional<net::EffectiveConnectionType>
-GetMaxEffectiveConnectionTypeForNavigationHintsFetch() {
-  std::string param_value = base::GetFieldTrialParamValueByFeature(
-      kRemoteOptimizationGuideFetching,
-      "max_effective_connection_type_for_navigation_hints_fetch");
-
-  // Use a default value.
-  if (param_value.empty())
-    return net::EFFECTIVE_CONNECTION_TYPE_4G;
-
-  return net::GetEffectiveConnectionTypeForName(param_value);
-}
-
 base::TimeDelta GetHostHintsFetchRefreshDuration() {
   return base::TimeDelta::FromHours(GetFieldTrialParamByFeatureAsInt(
       kRemoteOptimizationGuideFetching, "hints_fetch_refresh_duration_in_hours",
@@ -283,6 +244,10 @@ base::TimeDelta StoredHostModelFeaturesFreshnessDuration() {
 }
 
 base::TimeDelta StoredModelsInactiveDuration() {
+  // TODO(crbug.com/1234054) This field should not be changed without VERY
+  // careful consideration. Any model that is on device and expires will be
+  // removed and triggered to refetch so any feature relying on the model could
+  // have a period of time without a valid model.
   return base::TimeDelta::FromDays(GetFieldTrialParamByFeatureAsInt(
       kOptimizationTargetPrediction, "inactive_duration_for_models_in_days",
       30));
@@ -391,6 +356,46 @@ uint64_t MaxSizeForPageContentTextDump() {
 bool ShouldWriteContentAnnotationsToHistoryService() {
   return base::GetFieldTrialParamByFeatureAsBool(
       kPageContentAnnotations, "write_to_history_service", true);
+}
+
+size_t MaxContentAnnotationRequestsCached() {
+  return GetFieldTrialParamByFeatureAsInt(
+      kPageContentAnnotations, "max_content_annotation_requests_cached", 50);
+}
+
+const base::FeatureParam<bool> kContentAnnotationsExtractRelatedSearchesParam{
+    &kPageContentAnnotations, "extract_related_searches", false};
+
+bool ShouldExtractRelatedSearches() {
+  return kContentAnnotationsExtractRelatedSearchesParam.Get();
+}
+
+std::vector<optimization_guide::proto::OptimizationTarget>
+GetPageContentModelsToExecute() {
+  if (!IsPageContentAnnotationEnabled())
+    return {};
+
+  std::string value = base::GetFieldTrialParamValueByFeature(
+      kPageContentAnnotations, "models_to_execute");
+  if (value.empty()) {
+    // If param not explicitly set, run the page topics model by default.
+    return {optimization_guide::proto::OPTIMIZATION_TARGET_PAGE_TOPICS};
+  }
+
+  optimization_guide::InsertionOrderedSet<
+      optimization_guide::proto::OptimizationTarget>
+      model_targets;
+  std::vector<std::string> model_target_strings = base::SplitString(
+      value, ",", base::TRIM_WHITESPACE, base::SPLIT_WANT_NONEMPTY);
+  for (const auto& model_target_string : model_target_strings) {
+    optimization_guide::proto::OptimizationTarget model_target;
+    if (optimization_guide::proto::OptimizationTarget_Parse(model_target_string,
+                                                            &model_target)) {
+      model_targets.insert(model_target);
+    }
+  }
+
+  return model_targets.vector();
 }
 
 bool LoadModelFileForEachExecution() {

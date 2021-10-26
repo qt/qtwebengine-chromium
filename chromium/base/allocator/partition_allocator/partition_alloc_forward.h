@@ -5,10 +5,10 @@
 #ifndef BASE_ALLOCATOR_PARTITION_ALLOCATOR_PARTITION_ALLOC_FORWARD_H_
 #define BASE_ALLOCATOR_PARTITION_ALLOCATOR_PARTITION_ALLOC_FORWARD_H_
 
+#include "base/allocator/buildflags.h"
 #include "base/base_export.h"
 #include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
-#include "base/partition_alloc_buildflags.h"
 
 namespace base {
 namespace internal {
@@ -19,17 +19,20 @@ struct SlotSpanMetadata;
 constexpr bool ThreadSafe = true;
 constexpr bool NotThreadSafe = false;
 
-#if BUILDFLAG(USE_BACKUP_REF_PTR)
-#if DCHECK_IS_ON()
-BASE_EXPORT void DCheckGetSlotOffsetIsZero(void*);
-#else
-ALWAYS_INLINE void DCheckGetSlotOffsetIsZero(void*) {}
+#if (DCHECK_IS_ON() || BUILDFLAG(ENABLE_BACKUP_REF_PTR_SLOW_CHECKS)) && \
+    BUILDFLAG(USE_BACKUP_REF_PTR)
+BASE_EXPORT void CheckThatSlotOffsetIsZero(void*);
 #endif
-#endif  // BUILDFLAG(USE_BACKUP_REF_PTR)
+
 }  // namespace internal
 
 template <bool thread_safe>
 struct PartitionRoot;
+
+using ThreadSafePartitionRoot = PartitionRoot<internal::ThreadSafe>;
+using ThreadUnsafePartitionRoot = PartitionRoot<internal::NotThreadSafe>;
+
+class PartitionStatsDumper;
 
 }  // namespace base
 

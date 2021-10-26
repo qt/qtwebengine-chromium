@@ -9,7 +9,6 @@
 
 #include <map>
 #include <memory>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -24,6 +23,7 @@
 #include "base/time/time.h"
 #include "media/base/cdm_context.h"
 #include "media/base/supported_video_decoder_config.h"
+#include "media/base/video_aspect_ratio.h"
 #include "media/base/video_types.h"
 #include "media/gpu/chromeos/gpu_buffer_layout.h"
 #include "media/gpu/chromeos/video_decoder_pipeline.h"
@@ -38,26 +38,34 @@ namespace media {
 class DmabufVideoFramePool;
 
 class MEDIA_GPU_EXPORT V4L2VideoDecoder
-    : public DecoderInterface,
+    : public VideoDecoderMixin,
       public V4L2VideoDecoderBackend::Client {
  public:
   // Create V4L2VideoDecoder instance. The success of the creation doesn't
   // ensure V4L2VideoDecoder is available on the device. It will be
   // determined in Initialize().
-  static std::unique_ptr<DecoderInterface> Create(
+  static std::unique_ptr<VideoDecoderMixin> Create(
+      std::unique_ptr<MediaLog> media_log,
       scoped_refptr<base::SequencedTaskRunner> decoder_task_runner,
-      base::WeakPtr<DecoderInterface::Client> client);
+      base::WeakPtr<VideoDecoderMixin::Client> client);
 
-  static SupportedVideoDecoderConfigs GetSupportedConfigs();
+  static absl::optional<SupportedVideoDecoderConfigs> GetSupportedConfigs();
 
-  // DecoderInterface implementation.
+  // VideoDecoderMixin implementation, VideoDecoder part.
   void Initialize(const VideoDecoderConfig& config,
+                  bool low_delay,
                   CdmContext* cdm_context,
                   InitCB init_cb,
                   const OutputCB& output_cb,
                   const WaitingCB& waiting_cb) override;
-  void Reset(base::OnceClosure closure) override;
   void Decode(scoped_refptr<DecoderBuffer> buffer, DecodeCB decode_cb) override;
+  void Reset(base::OnceClosure reset_cb) override;
+  bool NeedsBitstreamConversion() const override;
+  bool CanReadWithoutStalling() const override;
+  int GetMaxDecodeRequests() const override;
+  VideoDecoderType GetDecoderType() const override;
+  bool IsPlatformDecoder() const override;
+  // VideoDecoderMixin implementation, specific part.
   void ApplyResolutionChange() override;
 
   // V4L2VideoDecoderBackend::Client implementation
@@ -76,8 +84,9 @@ class MEDIA_GPU_EXPORT V4L2VideoDecoder
  private:
   friend class V4L2VideoDecoderTest;
 
-  V4L2VideoDecoder(scoped_refptr<base::SequencedTaskRunner> decoder_task_runner,
-                   base::WeakPtr<DecoderInterface::Client> client,
+  V4L2VideoDecoder(std::unique_ptr<MediaLog> media_log,
+                   scoped_refptr<base::SequencedTaskRunner> decoder_task_runner,
+                   base::WeakPtr<VideoDecoderMixin::Client> client,
                    scoped_refptr<V4L2Device> device);
   ~V4L2VideoDecoder() override;
 
@@ -171,8 +180,9 @@ class MEDIA_GPU_EXPORT V4L2VideoDecoder
   // The default value is only used at the first time of
   // DmabufVideoFramePool::Initialize() during Initialize().
   size_t num_output_frames_ = 1;
-  // Ratio of natural_size to visible_rect of the output frame.
-  double pixel_aspect_ratio_ = 0.0;
+
+  // Aspect ratio from config to use for output frames.
+  VideoAspectRatio aspect_ratio_;
 
   // Callbacks passed from Initialize().
   OutputCB output_cb_;

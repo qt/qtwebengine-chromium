@@ -39,6 +39,7 @@ class VIEWS_EXPORT ImageView : public View {
   enum class Alignment { kLeading, kCenter, kTrailing };
 
   ImageView();
+  explicit ImageView(const ui::ImageModel& image_model);
   ~ImageView() override;
 
   // Set the image that should be displayed.
@@ -69,6 +70,8 @@ class VIEWS_EXPORT ImageView : public View {
   // Returns the image currently displayed, which can be empty if not set.
   // TODO(pkasting): Convert to an ImageModel getter.
   gfx::ImageSkia GetImage() const;
+
+  ui::ImageModel GetImageModel() const;
 
   // Set / Get the horizontal alignment.
   void SetHorizontalAlignment(Alignment ha);
@@ -155,7 +158,7 @@ class VIEWS_EXPORT ImageView : public View {
 BEGIN_VIEW_BUILDER(VIEWS_EXPORT, ImageView, View)
 // Explicitly declare the overloaded SetImage methods in order to properly
 // disambiguate between them.
-BuilderT& SetImage(const gfx::ImageSkia& value) {
+BuilderT& SetImage(const gfx::ImageSkia& value) & {
   auto setter = std::make_unique<::views::internal::PropertySetter<
       ViewClass_, gfx::ImageSkia,
       decltype((static_cast<void (ViewClass_::*)(const gfx::ImageSkia&)>(
@@ -164,7 +167,10 @@ BuilderT& SetImage(const gfx::ImageSkia& value) {
   ::views::internal::ViewBuilderCore::AddPropertySetter(std::move(setter));
   return *static_cast<BuilderT*>(this);
 }
-BuilderT& SetImage(const gfx::ImageSkia* value) {
+BuilderT&& SetImage(const gfx::ImageSkia& value) && {
+  return std::move(this->SetImage(value));
+}
+BuilderT& SetImage(const gfx::ImageSkia* value) & {
   auto setter = std::make_unique<::views::internal::PropertySetter<
       ViewClass_, gfx::ImageSkia*,
       decltype((static_cast<void (ViewClass_::*)(const gfx::ImageSkia*)>(
@@ -172,6 +178,9 @@ BuilderT& SetImage(const gfx::ImageSkia* value) {
       &ViewClass_::SetImage>>(value);
   ::views::internal::ViewBuilderCore::AddPropertySetter(std::move(setter));
   return *static_cast<BuilderT*>(this);
+}
+BuilderT&& SetImage(const gfx::ImageSkia* value) && {
+  return std::move(this->SetImage(value));
 }
 VIEW_BUILDER_PROPERTY(gfx::Size, ImageSize)
 VIEW_BUILDER_PROPERTY(ImageView::Alignment, HorizontalAlignment)

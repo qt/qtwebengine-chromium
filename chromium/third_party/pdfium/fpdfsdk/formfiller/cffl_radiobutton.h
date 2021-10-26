@@ -23,17 +23,21 @@ class CFFL_RadioButton final : public CFFL_Button {
       const CPWL_Wnd::CreateParams& cp,
       std::unique_ptr<IPWL_SystemHandler::PerWindowData> pAttachedData)
       override;
-  bool OnKeyDown(uint32_t nKeyCode, uint32_t nFlags) override;
-  bool OnChar(CPDFSDK_Annot* pAnnot, uint32_t nChar, uint32_t nFlags) override;
+  bool OnKeyDown(FWL_VKEYCODE nKeyCode, Mask<FWL_EVENTFLAG> nFlags) override;
+  bool OnChar(CPDFSDK_Annot* pAnnot,
+              uint32_t nChar,
+              Mask<FWL_EVENTFLAG> nFlags) override;
   bool OnLButtonUp(CPDFSDK_PageView* pPageView,
                    CPDFSDK_Annot* pAnnot,
-                   uint32_t nFlags,
+                   Mask<FWL_EVENTFLAG> nFlags,
                    const CFX_PointF& point) override;
-  bool IsDataChanged(CPDFSDK_PageView* pPageView) override;
-  void SaveData(CPDFSDK_PageView* pPageView) override;
+  bool IsDataChanged(const CPDFSDK_PageView* pPageView) override;
+  void SaveData(const CPDFSDK_PageView* pPageView) override;
 
  private:
-  CPWL_RadioButton* GetRadioButton(CPDFSDK_PageView* pPageView, bool bNew);
+  CPWL_RadioButton* GetRadioButton(const CPDFSDK_PageView* pPageView) const;
+  CPWL_RadioButton* CreateOrUpdateRadioButton(
+      const CPDFSDK_PageView* pPageView);
 };
 
 #endif  // FPDFSDK_FORMFILLER_CFFL_RADIOBUTTON_H_

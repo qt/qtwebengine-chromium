@@ -52,7 +52,7 @@
 #include "media/media_buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
-#include "ash/public/cpp/ash_pref_names.h"  // nogncheck
+#include "ash/constants/ash_pref_names.h"  // nogncheck
 #endif
 
 using extensions::mojom::APIPermissionID;
@@ -122,7 +122,7 @@ const PrefMappingEntry kPrefMapping[] = {
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
     {"privacySandboxEnabled", prefs::kPrivacySandboxApisEnabled,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
-    {"translationServiceEnabled", prefs::kOfferTranslateEnabled,
+    {"translationServiceEnabled", translate::prefs::kOfferTranslateEnabled,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},
     {"webRTCIPHandlingPolicy", prefs::kWebRTCIPHandlingPolicy,
      APIPermissionID::kPrivacy, APIPermissionID::kPrivacy},

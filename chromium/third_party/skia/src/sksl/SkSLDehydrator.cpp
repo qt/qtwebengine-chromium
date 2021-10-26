@@ -17,6 +17,7 @@
 #include "src/sksl/ir/SkSLBreakStatement.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorArray.h"
+#include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorCompoundCast.h"
 #include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
@@ -27,7 +28,6 @@
 #include "src/sksl/ir/SkSLContinueStatement.h"
 #include "src/sksl/ir/SkSLDiscardStatement.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
-#include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLField.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
@@ -100,8 +100,6 @@ void Dehydrator::write(Layout l) {
         this->writeS8(l.fPrimitive);
         this->writeS8(l.fMaxVertices);
         this->writeS8(l.fInvocations);
-        this->write(l.fWhen);
-        this->writeS8((int) l.fCType);
     }
 }
 
@@ -121,7 +119,7 @@ void Dehydrator::write(Modifiers m) {
     }
 }
 
-void Dehydrator::write(StringFragment s) {
+void Dehydrator::write(skstd::string_view s) {
     this->write(String(s));
 }
 
@@ -189,11 +187,6 @@ void Dehydrator::write(const Symbol& s) {
                     this->write(t.componentType());
                     this->writeS8(t.columns());
                     break;
-                case Type::TypeKind::kEnum:
-                    this->writeCommand(Rehydrator::kEnumType_Command);
-                    this->writeId(&t);
-                    this->write(t.name());
-                    break;
                 case Type::TypeKind::kStruct:
                     this->writeCommand(Rehydrator::kStructType_Command);
                     this->writeId(&t);
@@ -242,17 +235,17 @@ void Dehydrator::write(const SymbolTable& symbols) {
         this->write(*s);
     }
     this->writeU16(symbols.fSymbols.count());
-    std::map<StringFragment, const Symbol*> ordered;
-    symbols.foreach([&](StringFragment name, const Symbol* symbol) {
+    std::map<skstd::string_view, const Symbol*> ordered;
+    symbols.foreach([&](skstd::string_view name, const Symbol* symbol) {
         ordered.insert({name, symbol});
     });
-    for (std::pair<StringFragment, const Symbol*> p : ordered) {
-        bool found = false;
+    for (std::pair<skstd::string_view, const Symbol*> p : ordered) {
+        SkDEBUGCODE(bool found = false;)
         for (size_t i = 0; i < symbols.fOwnedSymbols.size(); ++i) {
             if (symbols.fOwnedSymbols[i].get() == p.second) {
                 fCommandBreaks.add(fBody.bytesWritten());
                 this->writeU16(i);
-                found = true;
+                SkDEBUGCODE(found = true;)
                 break;
             }
         }
@@ -292,6 +285,12 @@ void Dehydrator::write(const Expression* e) {
                 this->writeCommand(Rehydrator::kConstructorArray_Command);
                 this->write(e->type());
                 this->writeExpressionSpan(e->as<ConstructorArray>().argumentSpan());
+                break;
+
+            case Expression::Kind::kConstructorArrayCast:
+                this->writeCommand(Rehydrator::kConstructorArrayCast_Command);
+                this->write(e->type());
+                this->writeExpressionSpan(e->as<ConstructorArrayCast>().argumentSpan());
                 break;
 
             case Expression::Kind::kConstructorCompound:
@@ -429,6 +428,7 @@ void Dehydrator::write(const Expression* e) {
                 break;
             }
             case Expression::Kind::kFunctionReference:
+            case Expression::Kind::kPoison:
             case Expression::Kind::kTypeReference:
                 SkDEBUGFAIL("this expression shouldn't appear in finished code");
                 break;
@@ -542,19 +542,6 @@ void Dehydrator::write(const Statement* s) {
 
 void Dehydrator::write(const ProgramElement& e) {
     switch (e.kind()) {
-        case ProgramElement::Kind::kEnum: {
-            const Enum& en = e.as<Enum>();
-            this->writeCommand(Rehydrator::kEnum_Command);
-            this->write(en.typeName());
-            AutoDehydratorSymbolTable symbols(this, en.symbols());
-            for (const std::unique_ptr<const Symbol>& s : en.symbols()->fOwnedSymbols) {
-                const Variable& v = s->as<Variable>();
-                SkASSERT(v.initialValue());
-                const IntLiteral& i = v.initialValue()->as<IntLiteral>();
-                this->writeS32(i.value());
-            }
-            break;
-        }
         case ProgramElement::Kind::kExtension:
             SkASSERT(false);
             break;
@@ -589,9 +576,6 @@ void Dehydrator::write(const ProgramElement& e) {
             break;
         }
         case ProgramElement::Kind::kModifiers:
-            SkASSERT(false);
-            break;
-        case ProgramElement::Kind::kSection:
             SkASSERT(false);
             break;
         case ProgramElement::Kind::kStructDefinition: {

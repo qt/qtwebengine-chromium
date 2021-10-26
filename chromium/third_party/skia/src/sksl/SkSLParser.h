@@ -13,6 +13,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include "include/private/SkSLLayout.h"
+#include "include/sksl/DSLCore.h"
 #include "src/sksl/SkSLASTFile.h"
 #include "src/sksl/SkSLASTNode.h"
 #include "src/sksl/SkSLErrorReporter.h"
@@ -48,22 +49,10 @@ public:
         TRIANGLES_ADJACENCY,
         MAX_VERTICES,
         INVOCATIONS,
-        WHEN,
-        KEY,
         SRGB_UNPREMUL,
-        CTYPE,
-        SKPMCOLOR4F,
-        SKV4,
-        SKRECT,
-        SKIRECT,
-        SKPMCOLOR,
-        SKM44,
-        BOOL,
-        INT,
-        FLOAT,
     };
 
-    Parser(const char* text, size_t length, SymbolTable& symbols, ErrorReporter& errors);
+    Parser(skstd::string_view text, SymbolTable& symbols, ErrorReporter& errors);
 
     /**
      * Consumes a complete .sksl file and returns the parse tree. Errors are reported via the
@@ -71,7 +60,7 @@ public:
      */
     std::unique_ptr<ASTFile> compilationUnit();
 
-    StringFragment text(Token token);
+    skstd::string_view text(Token token);
 
     Position position(Token token);
 
@@ -132,7 +121,7 @@ private:
      * Returns true if the 'name' identifier refers to a type name. For instance, isType("int") will
      * always return true.
      */
-    bool isType(StringFragment name);
+    bool isType(skstd::string_view name);
 
     /**
      * Returns true if the passed-in ASTNode is an array type, or false if it is a non-arrayed type.
@@ -153,11 +142,9 @@ private:
 
     ASTNode::ID directive();
 
-    ASTNode::ID section();
-
-    ASTNode::ID enumDeclaration();
-
     ASTNode::ID declaration();
+
+    ASTNode::ID functionDeclarationEnd(Modifiers modifiers, ASTNode::ID type, const Token& name);
 
     struct VarDeclarationsPrefix {
         Modifiers modifiers;
@@ -175,17 +162,13 @@ private:
 
     ASTNode::ID structVarDeclaration(Modifiers modifiers);
 
-    ASTNode::ID varDeclarationEnd(Modifiers modifiers, ASTNode::ID type, StringFragment name);
+    ASTNode::ID varDeclarationEnd(Modifiers modifiers, ASTNode::ID type, skstd::string_view name);
 
     ASTNode::ID parameter();
 
     int layoutInt();
 
-    StringFragment layoutIdentifier();
-
-    StringFragment layoutCode();
-
-    Layout::CType layoutCType();
+    skstd::string_view layoutIdentifier();
 
     Layout layout();
 
@@ -265,7 +248,7 @@ private:
 
     bool boolLiteral(bool* dest);
 
-    bool identifier(StringFragment* dest);
+    bool identifier(skstd::string_view* dest);
 
     template <typename... Args> ASTNode::ID createNode(Args&&... args);
 
@@ -278,35 +261,78 @@ private:
         Checkpoint(Parser* p) : fParser(p) {
             fPushbackCheckpoint = fParser->fPushback;
             fLexerCheckpoint = fParser->fLexer.getCheckpoint();
-            fASTCheckpoint = fParser->fFile->fNodes.size();
-            fErrorCount = fParser->fErrors.errorCount();
+            fOldErrorReporter = fParser->fErrors;
+            fParser->fErrors = &fErrorReporter;
+        }
+
+        ~Checkpoint() {
+            SkASSERTF(fDone, "Checkpoint was not accepted or rewound before destruction");
+        }
+
+        void accept() {
+            this->restoreErrorReporter();
+            // Parser errors should have been fatal, but we can encounter other errors like type
+            // mismatches despite accepting the parse. Forward those messages to the actual error
+            // reporter now.
+            fErrorReporter.forwardErrors(*fParser->fErrors);
         }
 
         void rewind() {
+            this->restoreErrorReporter();
             fParser->fPushback = fPushbackCheckpoint;
             fParser->fLexer.rewindToCheckpoint(fLexerCheckpoint);
-            fParser->fFile->fNodes.resize(fASTCheckpoint);
-            fParser->fErrors.setErrorCount(fErrorCount);
         }
 
     private:
+        class ForwardingErrorReporter : public ErrorReporter {
+        public:
+            void handleError(const char* msg, dsl::PositionInfo pos) override {
+                fErrors.push_back({String(msg), pos});
+            }
+
+            int errorCount() override {
+                return fErrors.count();
+            }
+
+            void forwardErrors(ErrorReporter& target) {
+                for (Error& error : fErrors) {
+                    target.handleError(error.fMsg.c_str(), error.fPos);
+                }
+            }
+
+        private:
+            struct Error {
+                String fMsg;
+                dsl::PositionInfo fPos;
+            };
+
+            SkTArray<Error> fErrors;
+        };
+
+        void restoreErrorReporter() {
+            SkASSERT(!fDone);
+            fParser->fErrors = fOldErrorReporter;
+            fDone = true;
+        }
+
         Parser* fParser;
         Token fPushbackCheckpoint;
         int32_t fLexerCheckpoint;
-        size_t fASTCheckpoint;
-        int fErrorCount;
+        ForwardingErrorReporter fErrorReporter;
+        ErrorReporter* fOldErrorReporter;
+        bool fDone = false;
     };
 
     static std::unordered_map<String, LayoutToken>* layoutTokens;
 
-    StringFragment fText;
+    skstd::string_view fText;
     Lexer fLexer;
     // current parse depth, used to enforce a recursion limit to try to keep us from overflowing the
     // stack on pathological inputs
     int fDepth = 0;
     Token fPushback;
     SymbolTable& fSymbols;
-    ErrorReporter& fErrors;
+    ErrorReporter* fErrors;
 
     std::unique_ptr<ASTFile> fFile;
 

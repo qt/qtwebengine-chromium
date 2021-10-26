@@ -162,7 +162,7 @@ void SimpleFontData::PlatformInit(bool subpixel_ascent_descent,
 
 #if !defined(OS_MAC)
   if (metrics.fAvgCharWidth) {
-    avg_char_width_ = SkScalarRoundToInt(metrics.fAvgCharWidth);
+    avg_char_width_ = SkScalarToFloat(metrics.fAvgCharWidth);
   } else {
 #endif
     avg_char_width_ = x_height;
@@ -179,9 +179,6 @@ void SimpleFontData::PlatformInit(bool subpixel_ascent_descent,
   if (int units_per_em = face->getUnitsPerEm())
     font_metrics_.SetUnitsPerEm(units_per_em);
 
-  advance_override_ = metrics_override.advance_override;
-  advance_override_vertical_upright_ =
-      metrics_override.advance_override_vertical_upright;
 }
 
 void SimpleFontData::PlatformGlyphInit() {

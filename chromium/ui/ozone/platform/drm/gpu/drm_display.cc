@@ -7,8 +7,8 @@
 #include <xf86drmMode.h>
 #include <memory>
 
+#include "base/cxx17_backports.h"
 #include "base/logging.h"
-#include "base/stl_util.h"
 #include "base/trace_event/trace_event.h"
 #include "build/chromeos_buildflags.h"
 #include "ui/display/display_features.h"
@@ -140,7 +140,7 @@ uint32_t DrmDisplay::connector() const {
 
 std::unique_ptr<display::DisplaySnapshot> DrmDisplay::Update(
     HardwareDisplayControllerInfo* info,
-    size_t device_index) {
+    uint8_t device_index) {
   std::unique_ptr<display::DisplaySnapshot> params = CreateDisplaySnapshot(
       info, drm_->get_fd(), drm_->device_path(), device_index, origin_);
   crtc_ = info->crtc()->crtc_id;

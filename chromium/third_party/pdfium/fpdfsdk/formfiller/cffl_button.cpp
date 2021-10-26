@@ -11,7 +11,7 @@
 
 CFFL_Button::CFFL_Button(CPDFSDK_FormFillEnvironment* pFormFillEnv,
                          CPDFSDK_Widget* pWidget)
-    : CFFL_FormFiller(pFormFillEnv, pWidget) {}
+    : CFFL_FormField(pFormFillEnv, pWidget) {}
 
 CFFL_Button::~CFFL_Button() = default;
 
@@ -29,7 +29,7 @@ void CFFL_Button::OnMouseExit(CPDFSDK_PageView* pPageView) {
 
 bool CFFL_Button::OnLButtonDown(CPDFSDK_PageView* pPageView,
                                 CPDFSDK_Annot* pAnnot,
-                                uint32_t nFlags,
+                                Mask<FWL_EVENTFLAG> nFlags,
                                 const CFX_PointF& point) {
   if (!pAnnot->GetRect().Contains(point))
     return false;
@@ -42,7 +42,7 @@ bool CFFL_Button::OnLButtonDown(CPDFSDK_PageView* pPageView,
 
 bool CFFL_Button::OnLButtonUp(CPDFSDK_PageView* pPageView,
                               CPDFSDK_Annot* pAnnot,
-                              uint32_t nFlags,
+                              Mask<FWL_EVENTFLAG> nFlags,
                               const CFX_PointF& point) {
   if (!pAnnot->GetRect().Contains(point))
     return false;
@@ -53,7 +53,7 @@ bool CFFL_Button::OnLButtonUp(CPDFSDK_PageView* pPageView,
 }
 
 bool CFFL_Button::OnMouseMove(CPDFSDK_PageView* pPageView,
-                              uint32_t nFlags,
+                              Mask<FWL_EVENTFLAG> nFlags,
                               const CFX_PointF& point) {
   return true;
 }
@@ -65,7 +65,7 @@ void CFFL_Button::OnDraw(CPDFSDK_PageView* pPageView,
   DCHECK(pPageView);
   CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot);
   CPDF_FormControl* pCtrl = pWidget->GetFormControl();
-  if (pCtrl->GetHighlightingMode() != CPDF_FormControl::Push) {
+  if (pCtrl->GetHighlightingMode() != CPDF_FormControl::kPush) {
     pWidget->DrawAppearance(pDevice, mtUser2Device, CPDF_Annot::Normal,
                             nullptr);
     return;

@@ -13,7 +13,7 @@
 #include "base/callback.h"
 #include "base/command_line.h"
 #include "base/macros.h"
-#include "base/observer_list.h"
+#include "base/observer_list_types.h"
 #include "base/process/process_handle.h"
 #include "base/strings/string_piece.h"
 #include "content/common/content_export.h"
@@ -22,18 +22,25 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "mojo/public/cpp/system/message_pipe.h"
+#include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox_type.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace content {
 
 // Sandbox type for ServiceProcessHost::Launch<remote>() is found by
-// template matching on |remote|. This provides a safe default. For
-// services that use other sandbox types, consult
-// security-dev@chromium.org and add to an appropriate |service_sandbox_type.h|.
+// template matching on |remote|. Consult security-dev@chromium.org and
+// add a [ServiceSandbox=type] mojom attribute, or an appropriate
+// |service_sandbox_type.h|.
 template <typename Interface>
 inline sandbox::policy::SandboxType GetServiceSandboxType() {
-  return sandbox::policy::SandboxType::kUtility;
+  using ProvidedSandboxType = decltype(Interface::kServiceSandbox);
+  static_assert(
+      std::is_same<ProvidedSandboxType, const sandbox::mojom::Sandbox>::value,
+      "This interface does not declare a proper ServiceSandbox attribute. See "
+      "//docs/mojo_and_services.md (Specifying a sandbox).");
+
+  return sandbox::policy::MapToSandboxType(Interface::kServiceSandbox);
 }
 
 // ServiceProcessHost is used to launch new service processes given basic

@@ -20,9 +20,10 @@
 #include "content/browser/devtools/browser_devtools_agent_host.h"
 #include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_manager.h"
+#include "content/browser/devtools/protocol/target_auto_attacher.h"
 #include "content/browser/devtools/render_frame_devtools_agent_host.h"
+#include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
-#include "content/browser/web_contents/web_contents_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/devtools_agent_host_client.h"
 #include "content/public/browser/navigation_throttle.h"
@@ -210,7 +211,8 @@ class BrowserToPageConnector {
     base::DictionaryValue message;
     message.SetInteger("id", page_message_id_++);
     message.SetString("method", method);
-    message.Set("params", std::move(params));
+    message.SetKey("params",
+                   base::Value::FromUniquePtrValue(std::move(params)));
     std::string json_message;
     base::JSONWriter::Write(message, &json_message);
     page_host_->DispatchProtocolMessage(
@@ -323,8 +325,8 @@ class TargetHandler::ResponseThrottle : public TargetHandler::Throttle {
   ThrottleCheckResult MaybeThrottle() {
     if (target_handler_) {
       NavigationRequest* request = NavigationRequest::From(navigation_handle());
-      SetThrottledAgentHost(
-          target_handler_->auto_attacher_.AutoAttachToFrame(request));
+      SetThrottledAgentHost(target_handler_->auto_attacher_->AutoAttachToFrame(
+          request, target_handler_->wait_for_debugger_on_start_));
     }
     is_deferring_ = !!agent_host_;
     return is_deferring_ ? DEFER : PROCEED;
@@ -394,9 +396,7 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
     handler_->frontend_->DetachedFromTarget(id_, agent_host_->GetId());
     if (flatten_protocol_)
       handler_->root_session_->DetachChildSession(id_);
-    if (host_closed)
-      handler_->auto_attacher_.AgentHostClosed(agent_host_.get());
-    else
+    if (!host_closed)
       agent_host_->DetachClient(this);
     handler_->auto_attached_sessions_.erase(agent_host_.get());
     devtools_session_ = nullptr;
@@ -415,10 +415,16 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
   }
 
   void SetThrottle(Throttle* throttle) { throttle_ = throttle; }
+  void SetServiceWorkerThrottle(
+      scoped_refptr<DevToolsThrottleHandle> service_worker_throttle) {
+    service_worker_throttle_ = service_worker_throttle;
+  }
 
   void ResumeIfThrottled() {
     if (throttle_)
       throttle_->Clear();
+    if (service_worker_throttle_)
+      service_worker_throttle_.reset();
   }
 
   void SendMessageToAgentHost(base::span<const uint8_t> message) {
@@ -428,14 +434,14 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
     // method that |message| is JSON.
     DCHECK(!flatten_protocol_);
 
-    if (throttle_) {
+    if (throttle_ || service_worker_throttle_) {
       absl::optional<base::Value> value =
           base::JSONReader::Read(base::StringPiece(
               reinterpret_cast<const char*>(message.data()), message.size()));
       const std::string* method;
       if (value.has_value() && (method = value->FindStringKey(kMethod)) &&
           *method == kResumeMethod) {
-        throttle_->Clear();
+        ResumeIfThrottled();
       }
     }
 
@@ -516,6 +522,7 @@ class TargetHandler::Session : public DevToolsAgentHostClient {
   bool flatten_protocol_;
   DevToolsSession* devtools_session_ = nullptr;
   Throttle* throttle_ = nullptr;
+  scoped_refptr<DevToolsThrottleHandle> service_worker_throttle_;
 
   DISALLOW_COPY_AND_ASSIGN(Session);
 };
@@ -567,10 +574,10 @@ void TargetHandler::Throttle::Clear() {
 
 TargetHandler::TargetHandler(AccessMode access_mode,
                              const std::string& owner_target_id,
-                             DevToolsRendererChannel* renderer_channel,
+                             TargetAutoAttacher* auto_attacher,
                              DevToolsSession* root_session)
     : DevToolsDomainHandler(Target::Metainfo::domainName),
-      auto_attacher_(this, renderer_channel),
+      auto_attacher_(auto_attacher),
       discover_(false),
       access_mode_(access_mode),
       owner_target_id_(owner_target_id),
@@ -587,11 +594,6 @@ std::vector<TargetHandler*> TargetHandler::ForAgentHost(
 void TargetHandler::Wire(UberDispatcher* dispatcher) {
   frontend_ = std::make_unique<Target::Frontend>(dispatcher->channel());
   Target::Dispatcher::wire(dispatcher, this);
-}
-
-void TargetHandler::SetRenderer(int process_host_id,
-                                RenderFrameHostImpl* frame_host) {
-  auto_attacher_.SetRenderFrameHost(frame_host);
 }
 
 Response TargetHandler::Disable() {
@@ -617,14 +619,9 @@ Response TargetHandler::Disable() {
   return Response::Success();
 }
 
-void TargetHandler::DidFinishNavigation(NavigationHandle* navigation_handle) {
-  auto_attacher_.DidFinishNavigation(
-      NavigationRequest::From(navigation_handle));
-}
-
 std::unique_ptr<NavigationThrottle> TargetHandler::CreateThrottleForNavigation(
     NavigationHandle* navigation_handle) {
-  if (!auto_attacher_.ShouldThrottleFramesNavigation())
+  if (!auto_attach_)
     return nullptr;
   if (access_mode_ == AccessMode::kBrowser) {
     FrameTreeNode* frame_tree_node =
@@ -663,10 +660,6 @@ std::unique_ptr<NavigationThrottle> TargetHandler::CreateThrottleForNavigation(
                                             navigation_handle);
 }
 
-void TargetHandler::UpdatePortals() {
-  auto_attacher_.UpdatePortals();
-}
-
 void TargetHandler::ClearThrottles() {
   base::flat_set<Throttle*> copy(throttles_);
   for (Throttle* throttle : copy)
@@ -679,32 +672,39 @@ void TargetHandler::SetAutoAttachInternal(bool auto_attach,
                                           bool flatten,
                                           base::OnceClosure callback) {
   flatten_auto_attach_ = flatten;
-  auto_attacher_.SetAutoAttach(auto_attach, wait_for_debugger_on_start,
-                               std::move(callback));
-  if (!auto_attacher_.ShouldThrottleFramesNavigation())
+  if (auto_attach_)
+    auto_attacher_->RemoveClient(this);
+  auto_attach_ = auto_attach;
+  wait_for_debugger_on_start_ = wait_for_debugger_on_start;
+  if (auto_attach_) {
+    auto_attacher_->AddClient(this, wait_for_debugger_on_start,
+                              std::move(callback));
+  } else {
+    while (!auto_attached_sessions_.empty())
+      AutoDetach(auto_attached_sessions_.begin()->first);
     ClearThrottles();
-
-  UpdateAgentHostObserver();
+    std::move(callback).Run();
+  }
 }
 
 void TargetHandler::UpdateAgentHostObserver() {
-  bool should_observe =
-      discover_ || (access_mode_ == AccessMode::kBrowser &&
-                    auto_attacher_.ShouldThrottleFramesNavigation());
-  if (should_observe == observing_agent_hosts_)
+  if (discover_ == observing_agent_hosts_)
     return;
-  observing_agent_hosts_ = should_observe;
-  if (should_observe)
+  observing_agent_hosts_ = discover_;
+  if (observing_agent_hosts_)
     DevToolsAgentHost::AddObserver(this);
   else
     DevToolsAgentHost::RemoveObserver(this);
 }
 
-void TargetHandler::AutoAttach(DevToolsAgentHost* host,
+bool TargetHandler::AutoAttach(DevToolsAgentHost* host,
                                bool waiting_for_debugger) {
+  if (auto_attached_sessions_.find(host) != auto_attached_sessions_.end())
+    return false;
   std::string session_id =
       Session::Attach(this, host, waiting_for_debugger, flatten_auto_attach_);
   auto_attached_sessions_[host] = attached_sessions_[session_id].get();
+  return true;
 }
 
 void TargetHandler::AutoDetach(DevToolsAgentHost* host) {
@@ -714,8 +714,25 @@ void TargetHandler::AutoDetach(DevToolsAgentHost* host) {
   it->second->Detach(false);
 }
 
+void TargetHandler::SetAttachedTargetsOfType(
+    const base::flat_set<scoped_refptr<DevToolsAgentHost>>& new_hosts,
+    const std::string& type) {
+  DCHECK(!type.empty());
+  auto old_sessions = auto_attached_sessions_;
+  for (auto& entry : old_sessions) {
+    scoped_refptr<DevToolsAgentHost> host(entry.first);
+    bool matches_type = type.empty() || host->GetType() == type;
+    if (matches_type && new_hosts.find(host) == new_hosts.end())
+      AutoDetach(host.get());
+  }
+  for (auto& host : new_hosts) {
+    if (old_sessions.find(host.get()) == old_sessions.end())
+      AutoAttach(host.get(), false);
+  }
+}
+
 bool TargetHandler::ShouldThrottlePopups() const {
-  return auto_attacher_.ShouldThrottleFramesNavigation();
+  return auto_attach_;
 }
 
 Response TargetHandler::FindSession(Maybe<std::string> session_id,
@@ -942,33 +959,13 @@ bool TargetHandler::ShouldForceDevToolsAgentHostCreation() {
   return true;
 }
 
-static bool IsMainFrameHost(DevToolsAgentHost* host) {
-  WebContentsImpl* web_contents =
-      static_cast<WebContentsImpl*>(host->GetWebContents());
-  if (!web_contents)
-    return false;
-  FrameTreeNode* frame_tree_node = web_contents->GetFrameTree()->root();
-  if (!frame_tree_node)
-    return false;
-  return host == RenderFrameDevToolsAgentHost::GetFor(frame_tree_node);
-}
-
 void TargetHandler::DevToolsAgentHostCreated(DevToolsAgentHost* host) {
-  if (discover_) {
-    // If we start discovering late, all existing agent hosts will be reported,
-    // but we could have already attached to some.
-    if (reported_hosts_.find(host) == reported_hosts_.end()) {
-      frontend_->TargetCreated(CreateInfo(host));
-      reported_hosts_.insert(host);
-    }
-  }
-  // In the top level target handler auto-attach to pages as soon as they
-  // are created, otherwise if they don't incur any network activity we'll
-  // never get a chance to throttle them (and auto-attach there).
-  if (access_mode_ == AccessMode::kBrowser &&
-      auto_attacher_.ShouldThrottleFramesNavigation() &&
-      IsMainFrameHost(host)) {
-    auto_attacher_.AttachToAgentHost(host);
+  DCHECK(discover_);
+  // If we start discovering late, all existing agent hosts will be reported,
+  // but we could have already attached to some.
+  if (reported_hosts_.find(host) == reported_hosts_.end()) {
+    frontend_->TargetCreated(CreateInfo(host));
+    reported_hosts_.insert(host);
   }
 }
 
@@ -1129,6 +1126,18 @@ void TargetHandler::ApplyNetworkContextParamsOverrides(
     context_params->initial_proxy_config = net::ProxyConfigWithAnnotation(
         std::move(it->second), kSettingsProxyConfigTrafficAnnotation);
     contexts_with_overridden_proxy_.erase(browser_context->UniqueId());
+  }
+}
+
+void TargetHandler::AddServiceWorkerThrottle(
+    DevToolsAgentHost* agent_host,
+    scoped_refptr<DevToolsThrottleHandle> throttle_handle) {
+  if (!agent_host)
+    return;
+
+  if (auto_attached_sessions_.count(agent_host)) {
+    auto_attached_sessions_[agent_host]->SetServiceWorkerThrottle(
+        std::move(throttle_handle));
   }
 }
 

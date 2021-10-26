@@ -49,11 +49,11 @@ namespace dawn_native { namespace d3d12 {
             if (usage & wgpu::TextureUsage::CopyDst) {
                 resourceState |= D3D12_RESOURCE_STATE_COPY_DEST;
             }
-            if (usage & (wgpu::TextureUsage::Sampled | kReadOnlyStorageTexture)) {
+            if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
                 resourceState |= (D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE |
                                   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
             }
-            if (usage & wgpu::TextureUsage::Storage) {
+            if (usage & wgpu::TextureUsage::StorageBinding) {
                 resourceState |= D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
             }
             if (usage & wgpu::TextureUsage::RenderAttachment) {
@@ -72,7 +72,7 @@ namespace dawn_native { namespace d3d12 {
                                                 bool isMultisampledTexture) {
             D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE;
 
-            if (usage & wgpu::TextureUsage::Storage) {
+            if (usage & wgpu::TextureUsage::StorageBinding) {
                 flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
             }
 
@@ -471,12 +471,17 @@ namespace dawn_native { namespace d3d12 {
         mDxgiKeyedMutex = std::move(dxgiKeyedMutex);
         mSwapChainTexture = isSwapChainTexture;
 
+        D3D12_RESOURCE_DESC desc = d3d12Texture->GetDesc();
+        mD3D12ResourceFlags = desc.Flags;
+
         AllocationInfo info;
         info.mMethod = AllocationMethod::kExternal;
         // When creating the ResourceHeapAllocation, the resource heap is set to nullptr because the
         // texture is owned externally. The texture's owning entity must remain responsible for
         // memory management.
         mResourceAllocation = {info, 0, std::move(d3d12Texture), nullptr};
+
+        DAWN_TRY(mResourceAllocation.SetDebugName("Dawn_ExternalTexture"));
 
         return {};
     }
@@ -494,7 +499,8 @@ namespace dawn_native { namespace d3d12 {
         // This will need to be much more nuanced when WebGPU has
         // texture view compatibility rules.
         const bool needsTypelessFormat =
-            GetFormat().HasDepthOrStencil() && (GetUsage() & wgpu::TextureUsage::Sampled) != 0;
+            GetFormat().HasDepthOrStencil() &&
+            (GetInternalUsage() & wgpu::TextureUsage::TextureBinding) != 0;
 
         DXGI_FORMAT dxgiFormat = needsTypelessFormat
                                      ? D3D12TypelessTextureFormat(GetFormat().format)
@@ -503,16 +509,18 @@ namespace dawn_native { namespace d3d12 {
         resourceDescriptor.MipLevels = static_cast<UINT16>(GetNumMipLevels());
         resourceDescriptor.Format = dxgiFormat;
         resourceDescriptor.SampleDesc.Count = GetSampleCount();
-        // TODO(bryan.bernhart@intel.com): investigate how to specify standard MSAA sample pattern.
         resourceDescriptor.SampleDesc.Quality = 0;
         resourceDescriptor.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
         resourceDescriptor.Flags =
-            D3D12ResourceFlags(GetUsage(), GetFormat(), IsMultisampledTexture());
+            D3D12ResourceFlags(GetInternalUsage(), GetFormat(), IsMultisampledTexture());
+        mD3D12ResourceFlags = resourceDescriptor.Flags;
 
         DAWN_TRY_ASSIGN(mResourceAllocation,
                         ToBackend(GetDevice())
                             ->AllocateMemory(D3D12_HEAP_TYPE_DEFAULT, resourceDescriptor,
                                              D3D12_RESOURCE_STATE_COMMON));
+
+        DAWN_TRY(mResourceAllocation.SetDebugName("Dawn_InternalTexture"));
 
         Device* device = ToBackend(GetDevice());
 
@@ -534,6 +542,8 @@ namespace dawn_native { namespace d3d12 {
         // texture is owned externally. The texture's owning entity must remain responsible for
         // memory management.
         mResourceAllocation = {info, 0, std::move(d3d12Texture), nullptr};
+
+        DAWN_TRY(mResourceAllocation.SetDebugName("Dawn_SwapChainTexture"));
         return {};
     }
 
@@ -656,7 +666,6 @@ namespace dawn_native { namespace d3d12 {
                                              ExecutionSerial pendingCommandSerial) const {
         // Reuse the subresource(s) directly and avoid transition when it isn't needed, and
         // return false.
-        // TODO(cwallez@chromium.org): Need some form of UAV barriers at some point.
         if (state->lastState == newState) {
             return;
         }
@@ -791,8 +800,8 @@ namespace dawn_native { namespace d3d12 {
 
         const ExecutionSerial pendingCommandSerial =
             ToBackend(GetDevice())->GetPendingCommandSerial();
-        // This transitions assume it is a 2D texture
-        ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
+        // TODO(crbug.com/dawn/814): support 1D textures.
+        ASSERT(GetDimension() != wgpu::TextureDimension::e1D);
 
         mSubresourceStateAndDecay.Merge(textureUsages, [&](const SubresourceRange& mergeRange,
                                                            StateAndDecay* state,
@@ -808,15 +817,15 @@ namespace dawn_native { namespace d3d12 {
     }
 
     D3D12_RENDER_TARGET_VIEW_DESC Texture::GetRTVDescriptor(uint32_t mipLevel,
-                                                            uint32_t baseArrayLayer,
-                                                            uint32_t layerCount) const {
+                                                            uint32_t baseSlice,
+                                                            uint32_t sliceCount) const {
         D3D12_RENDER_TARGET_VIEW_DESC rtvDesc;
         rtvDesc.Format = GetD3D12Format();
         if (IsMultisampledTexture()) {
             ASSERT(GetDimension() == wgpu::TextureDimension::e2D);
             ASSERT(GetNumMipLevels() == 1);
-            ASSERT(layerCount == 1);
-            ASSERT(baseArrayLayer == 0);
+            ASSERT(sliceCount == 1);
+            ASSERT(baseSlice == 0);
             ASSERT(mipLevel == 0);
             rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DMS;
             return rtvDesc;
@@ -830,16 +839,16 @@ namespace dawn_native { namespace d3d12 {
                 // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_array
                 // _rtv
                 rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE2DARRAY;
-                rtvDesc.Texture2DArray.FirstArraySlice = baseArrayLayer;
-                rtvDesc.Texture2DArray.ArraySize = layerCount;
+                rtvDesc.Texture2DArray.FirstArraySlice = baseSlice;
+                rtvDesc.Texture2DArray.ArraySize = sliceCount;
                 rtvDesc.Texture2DArray.MipSlice = mipLevel;
                 rtvDesc.Texture2DArray.PlaneSlice = 0;
                 break;
             case wgpu::TextureDimension::e3D:
                 rtvDesc.ViewDimension = D3D12_RTV_DIMENSION_TEXTURE3D;
                 rtvDesc.Texture3D.MipSlice = mipLevel;
-                rtvDesc.Texture3D.FirstWSlice = baseArrayLayer;
-                rtvDesc.Texture3D.WSize = layerCount;
+                rtvDesc.Texture3D.FirstWSlice = baseSlice;
+                rtvDesc.Texture3D.WSize = sliceCount;
                 break;
             case wgpu::TextureDimension::e1D:
                 UNREACHABLE();
@@ -881,82 +890,87 @@ namespace dawn_native { namespace d3d12 {
         uint8_t clearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0 : 1;
         float fClearColor = (clearValue == TextureBase::ClearValue::Zero) ? 0.f : 1.f;
 
-        if ((GetUsage() & wgpu::TextureUsage::RenderAttachment) != 0) {
-            if (GetFormat().HasDepthOrStencil()) {
-                TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_DEPTH_WRITE, range);
+        if ((mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL) != 0) {
+            TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_DEPTH_WRITE, range);
 
-                for (uint32_t level = range.baseMipLevel;
-                     level < range.baseMipLevel + range.levelCount; ++level) {
-                    for (uint32_t layer = range.baseArrayLayer;
-                         layer < range.baseArrayLayer + range.layerCount; ++layer) {
-                        // Iterate the aspects individually to determine which clear flags to use.
-                        D3D12_CLEAR_FLAGS clearFlags = {};
-                        for (Aspect aspect : IterateEnumMask(range.aspects)) {
-                            if (clearValue == TextureBase::ClearValue::Zero &&
-                                IsSubresourceContentInitialized(
-                                    SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
-                                // Skip lazy clears if already initialized.
-                                continue;
-                            }
-
-                            switch (aspect) {
-                                case Aspect::Depth:
-                                    clearFlags |= D3D12_CLEAR_FLAG_DEPTH;
-                                    break;
-                                case Aspect::Stencil:
-                                    clearFlags |= D3D12_CLEAR_FLAG_STENCIL;
-                                    break;
-                                default:
-                                    UNREACHABLE();
-                            }
-                        }
-
-                        if (clearFlags == 0) {
-                            continue;
-                        }
-
-                        CPUDescriptorHeapAllocation dsvHandle;
-                        DAWN_TRY_ASSIGN(dsvHandle, device->GetDepthStencilViewAllocator()
-                                                       ->AllocateTransientCPUDescriptors());
-                        const D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor =
-                            dsvHandle.GetBaseDescriptor();
-                        D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = GetDSVDescriptor(level, layer, 1);
-                        device->GetD3D12Device()->CreateDepthStencilView(GetD3D12Resource(),
-                                                                         &dsvDesc, baseDescriptor);
-
-                        commandList->ClearDepthStencilView(baseDescriptor, clearFlags, fClearColor,
-                                                           clearColor, 0, nullptr);
-                    }
-                }
-            } else {
-                TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_RENDER_TARGET,
-                                           range);
-
-                const float clearColorRGBA[4] = {fClearColor, fClearColor, fClearColor,
-                                                 fClearColor};
-
-                ASSERT(range.aspects == Aspect::Color);
-                for (uint32_t level = range.baseMipLevel;
-                     level < range.baseMipLevel + range.levelCount; ++level) {
-                    for (uint32_t layer = range.baseArrayLayer;
-                         layer < range.baseArrayLayer + range.layerCount; ++layer) {
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
+                for (uint32_t layer = range.baseArrayLayer;
+                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                    // Iterate the aspects individually to determine which clear flags to use.
+                    D3D12_CLEAR_FLAGS clearFlags = {};
+                    for (Aspect aspect : IterateEnumMask(range.aspects)) {
                         if (clearValue == TextureBase::ClearValue::Zero &&
                             IsSubresourceContentInitialized(
-                                SubresourceRange::SingleMipAndLayer(level, layer, Aspect::Color))) {
+                                SubresourceRange::SingleMipAndLayer(level, layer, aspect))) {
                             // Skip lazy clears if already initialized.
                             continue;
                         }
 
-                        CPUDescriptorHeapAllocation rtvHeap;
-                        DAWN_TRY_ASSIGN(rtvHeap, device->GetRenderTargetViewAllocator()
-                                                     ->AllocateTransientCPUDescriptors());
-                        const D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap.GetBaseDescriptor();
-
-                        D3D12_RENDER_TARGET_VIEW_DESC rtvDesc = GetRTVDescriptor(level, layer, 1);
-                        device->GetD3D12Device()->CreateRenderTargetView(GetD3D12Resource(),
-                                                                         &rtvDesc, rtvHandle);
-                        commandList->ClearRenderTargetView(rtvHandle, clearColorRGBA, 0, nullptr);
+                        switch (aspect) {
+                            case Aspect::Depth:
+                                clearFlags |= D3D12_CLEAR_FLAG_DEPTH;
+                                break;
+                            case Aspect::Stencil:
+                                clearFlags |= D3D12_CLEAR_FLAG_STENCIL;
+                                break;
+                            default:
+                                UNREACHABLE();
+                        }
                     }
+
+                    if (clearFlags == 0) {
+                        continue;
+                    }
+
+                    CPUDescriptorHeapAllocation dsvHandle;
+                    DAWN_TRY_ASSIGN(
+                        dsvHandle,
+                        device->GetDepthStencilViewAllocator()->AllocateTransientCPUDescriptors());
+                    const D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor =
+                        dsvHandle.GetBaseDescriptor();
+                    D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc = GetDSVDescriptor(level, layer, 1);
+                    device->GetD3D12Device()->CreateDepthStencilView(GetD3D12Resource(), &dsvDesc,
+                                                                     baseDescriptor);
+
+                    commandList->ClearDepthStencilView(baseDescriptor, clearFlags, fClearColor,
+                                                       clearColor, 0, nullptr);
+                }
+            }
+        } else if ((mD3D12ResourceFlags & D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET) != 0) {
+            TrackUsageAndTransitionNow(commandContext, D3D12_RESOURCE_STATE_RENDER_TARGET, range);
+
+            const float clearColorRGBA[4] = {fClearColor, fClearColor, fClearColor, fClearColor};
+
+            ASSERT(range.aspects == Aspect::Color);
+            for (uint32_t level = range.baseMipLevel; level < range.baseMipLevel + range.levelCount;
+                 ++level) {
+                for (uint32_t layer = range.baseArrayLayer;
+                     layer < range.baseArrayLayer + range.layerCount; ++layer) {
+                    if (clearValue == TextureBase::ClearValue::Zero &&
+                        IsSubresourceContentInitialized(
+                            SubresourceRange::SingleMipAndLayer(level, layer, Aspect::Color))) {
+                        // Skip lazy clears if already initialized.
+                        continue;
+                    }
+
+                    CPUDescriptorHeapAllocation rtvHeap;
+                    DAWN_TRY_ASSIGN(
+                        rtvHeap,
+                        device->GetRenderTargetViewAllocator()->AllocateTransientCPUDescriptors());
+                    const D3D12_CPU_DESCRIPTOR_HANDLE rtvHandle = rtvHeap.GetBaseDescriptor();
+
+                    uint32_t baseSlice = layer;
+                    uint32_t sliceCount = 1;
+                    if (GetDimension() == wgpu::TextureDimension::e3D) {
+                        baseSlice = 0;
+                        sliceCount = std::max(GetDepth() >> level, 1u);
+                    }
+                    D3D12_RENDER_TARGET_VIEW_DESC rtvDesc =
+                        GetRTVDescriptor(level, baseSlice, sliceCount);
+                    device->GetD3D12Device()->CreateRenderTargetView(GetD3D12Resource(), &rtvDesc,
+                                                                     rtvHandle);
+                    commandList->ClearRenderTargetView(rtvHandle, clearColorRGBA, 0, nullptr);
                 }
             }
         } else {
@@ -985,10 +999,8 @@ namespace dawn_native { namespace d3d12 {
                     // compute d3d12 texture copy locations for texture and buffer
                     Extent3D copySize = GetMipLevelPhysicalSize(level);
 
-                    uint32_t rowsPerImage = copySize.height / blockInfo.height;
-                    TextureCopySubresource copySplit = ComputeTextureCopySubresource(
-                        {0, 0, 0}, copySize, blockInfo, uploadHandle.startOffset, bytesPerRow,
-                        rowsPerImage);
+                    TextureCopySubresource copySplit = Compute2DTextureCopySubresource(
+                        {0, 0, 0}, copySize, blockInfo, uploadHandle.startOffset, bytesPerRow);
 
                     for (uint32_t layer = range.baseArrayLayer;
                          layer < range.baseArrayLayer + range.layerCount; ++layer) {
@@ -1106,7 +1118,7 @@ namespace dawn_native { namespace d3d12 {
         // D3D12_SRV_DIMENSION_TEXTURE2DMS.
         // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_srv
         // https://docs.microsoft.com/en-us/windows/desktop/api/d3d12/ns-d3d12-d3d12_tex2d_array_srv
-        // TODO(jiawei.shao@intel.com): support more texture view dimensions.
+        // TODO(crbug.com/dawn/814): support 1D textures.
         if (GetTexture()->IsMultisampledTexture()) {
             switch (descriptor->dimension) {
                 case wgpu::TextureViewDimension::e2DArray:
@@ -1184,11 +1196,30 @@ namespace dawn_native { namespace d3d12 {
         uavDesc.Format = GetD3D12Format();
 
         ASSERT(!GetTexture()->IsMultisampledTexture());
-        uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
-        uavDesc.Texture2DArray.FirstArraySlice = GetBaseArrayLayer();
-        uavDesc.Texture2DArray.ArraySize = GetLayerCount();
-        uavDesc.Texture2DArray.MipSlice = GetBaseMipLevel();
-        uavDesc.Texture2DArray.PlaneSlice = 0;
+        switch (GetDimension()) {
+            case wgpu::TextureViewDimension::e2D:
+            case wgpu::TextureViewDimension::e2DArray:
+                uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2DARRAY;
+                uavDesc.Texture2DArray.FirstArraySlice = GetBaseArrayLayer();
+                uavDesc.Texture2DArray.ArraySize = GetLayerCount();
+                uavDesc.Texture2DArray.MipSlice = GetBaseMipLevel();
+                uavDesc.Texture2DArray.PlaneSlice = 0;
+                break;
+            case wgpu::TextureViewDimension::e3D:
+                uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE3D;
+                uavDesc.Texture3D.FirstWSlice = 0;
+                uavDesc.Texture3D.WSize = GetTexture()->GetDepth() >> GetBaseMipLevel();
+                uavDesc.Texture3D.MipSlice = GetBaseMipLevel();
+                break;
+            // TODO(crbug.com/dawn/814): support 1D textures.
+            case wgpu::TextureViewDimension::e1D:
+            // Cube and Cubemap can't be used as storage texture. So there is no need to create UAV
+            // descriptor for them.
+            case wgpu::TextureViewDimension::Cube:
+            case wgpu::TextureViewDimension::CubeArray:
+            case wgpu::TextureViewDimension::Undefined:
+                UNREACHABLE();
+        }
         return uavDesc;
     }
 

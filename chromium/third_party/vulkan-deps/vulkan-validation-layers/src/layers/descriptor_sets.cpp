@@ -370,6 +370,10 @@ bool cvdescriptorset::ValidateDescriptorSetLayoutCreateInfo(
 
     uint32_t max_binding = 0;
 
+    uint32_t update_after_bind = create_info->bindingCount;
+    uint32_t uniform_buffer_dynamic = create_info->bindingCount;
+    uint32_t storage_buffer_dynamic = create_info->bindingCount;
+
     for (uint32_t i = 0; i < create_info->bindingCount; ++i) {
         const auto &binding_info = create_info->pBindings[i];
         max_binding = std::max(max_binding, binding_info.binding);
@@ -410,6 +414,10 @@ bool cvdescriptorset::ValidateDescriptorSetLayoutCreateInfo(
                                           i, binding_info.descriptorCount, inline_uniform_block_props->maxInlineUniformBlockSize);
                 }
             }
+        } else if (binding_info.descriptorType == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC) {
+            uniform_buffer_dynamic = i;
+        } else if (binding_info.descriptorType == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC) {
+            storage_buffer_dynamic = i;
         }
 
         if ((binding_info.descriptorType == VK_DESCRIPTOR_TYPE_SAMPLER ||
@@ -429,6 +437,13 @@ bool cvdescriptorset::ValidateDescriptorSetLayoutCreateInfo(
             }
         }
 
+        if (binding_info.descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_VALVE && binding_info.pImmutableSamplers != nullptr) {
+            skip |= val_obj->LogError(val_obj->device, "VUID-VkDescriptorSetLayoutBinding-descriptorType-04605",
+                                      "vkCreateDescriptorSetLayout(): pBindings[%u] has descriptorType "
+                                      "VK_DESCRIPTOR_TYPE_MUTABLE_VALVE but pImmutableSamplers is not NULL.",
+                                      i);
+        }
+
         total_descriptors += binding_info.descriptorCount;
     }
 
@@ -445,6 +460,7 @@ bool cvdescriptorset::ValidateDescriptorSetLayoutCreateInfo(
                 const auto &binding_info = create_info->pBindings[i];
 
                 if (flags_create_info->pBindingFlags[i] & VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT) {
+                    update_after_bind = i;
                     if (!update_after_bind_set) {
                         skip |= val_obj->LogError(val_obj->device, "VUID-VkDescriptorSetLayoutCreateInfo-flags-03000",
                                                   "vkCreateDescriptorSetLayout(): pBindings[%u] does not have "
@@ -599,6 +615,25 @@ bool cvdescriptorset::ValidateDescriptorSetLayoutCreateInfo(
                         i);
                 }
             }
+        }
+    }
+
+    if (update_after_bind < create_info->bindingCount) {
+        if (uniform_buffer_dynamic < create_info->bindingCount) {
+            skip |=
+                val_obj->LogError(val_obj->device, "VUID-VkDescriptorSetLayoutCreateInfo-descriptorType-03001",
+                                  "vkCreateDescriptorSetLayout(): binding (%" PRIi32
+                                  ") has VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT "
+                                  "flag, but binding (%" PRIi32 ") has descriptor type VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC.",
+                                  update_after_bind, uniform_buffer_dynamic);
+        }
+        if (storage_buffer_dynamic < create_info->bindingCount) {
+            skip |=
+                val_obj->LogError(val_obj->device, "VUID-VkDescriptorSetLayoutCreateInfo-descriptorType-03001",
+                                  "vkCreateDescriptorSetLayout(): binding (%" PRIi32
+                                  ") has VK_DESCRIPTOR_BINDING_UPDATE_AFTER_BIND_BIT "
+                                  "flag, but binding (%" PRIi32 ") has descriptor type VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC.",
+                                  update_after_bind, storage_buffer_dynamic);
         }
     }
 
@@ -771,7 +806,7 @@ unsigned DescriptorRequirementsBitsFromFormat(VkFormat fmt) {
 // Return true if state is acceptable, or false and write an error message into error string
 bool CoreChecks::ValidateDrawState(const DescriptorSet *descriptor_set, const BindingReqMap &bindings,
                                    const std::vector<uint32_t> &dynamic_offsets, const CMD_BUFFER_STATE *cb_node,
-                                   const std::vector<IMAGE_VIEW_STATE *> *attachments, const std::vector<SUBPASS_INFO> &subpasses,
+                                   const std::vector<IMAGE_VIEW_STATE *> *attachments, const std::vector<SUBPASS_INFO> *subpasses,
                                    const char *caller, const DrawDispatchVuid &vuids) const {
     layer_data::optional<layer_data::unordered_map<VkImageView, VkImageLayout>> checked_layouts;
     if (descriptor_set->GetTotalDescriptorCount() > cvdescriptorset::PrefilterBindRequestMap::kManyDescriptors_) {
@@ -809,7 +844,7 @@ bool CoreChecks::ValidateDescriptorSetBindingData(const CMD_BUFFER_STATE *cb_nod
                                                   const std::vector<uint32_t> &dynamic_offsets,
                                                   const std::pair<const uint32_t, DescriptorRequirement> &binding_info,
                                                   VkFramebuffer framebuffer, const std::vector<IMAGE_VIEW_STATE *> *attachments,
-                                                  const std::vector<SUBPASS_INFO> &subpasses, bool record_time_validate,
+                                                  const std::vector<SUBPASS_INFO> *subpasses, bool record_time_validate,
                                                   const char *caller, const DrawDispatchVuid &vuids,
                                                   layer_data::optional<layer_data::unordered_map<VkImageView, VkImageLayout>> &checked_layouts) const {
     using DescriptorClass = cvdescriptorset::DescriptorClass;
@@ -911,14 +946,16 @@ bool CoreChecks::ValidateGeneralBufferDescriptor(const char *caller, const DrawD
     }
     if (buffer) {
         if (buffer_node && !buffer_node->sparse) {
-            for (const auto *mem_binding : buffer_node->GetBoundMemory()) {
-                if (mem_binding->Destroyed()) {
+            for (const auto &item: buffer_node->GetBoundMemory()) {
+                auto &binding = item.second;
+                if (binding.mem_state->Destroyed()) {
                     auto set = descriptor_set->GetSet();
                     return LogError(set, vuids.descriptor_valid,
                                     "Descriptor set %s encountered the following validation error at %s time: Descriptor in "
                                     "binding #%" PRIu32 " index %" PRIu32 " is uses buffer %s that references invalid memory %s.",
                                     report_data->FormatHandle(set).c_str(), caller, binding_info.first, index,
-                                    report_data->FormatHandle(buffer).c_str(), report_data->FormatHandle(mem_binding->mem()).c_str());
+                                    report_data->FormatHandle(buffer).c_str(),
+                                    report_data->FormatHandle(binding.mem_state->mem()).c_str());
                 }
             }
         }
@@ -942,7 +979,7 @@ bool CoreChecks::ValidateImageDescriptor(const char *caller, const DrawDispatchV
                                          const cvdescriptorset::ImageDescriptor &image_descriptor,
                                          const std::pair<const uint32_t, DescriptorRequirement> &binding_info, uint32_t index,
                                          bool record_time_validate, const std::vector<IMAGE_VIEW_STATE *> *attachments,
-                                         const std::vector<SUBPASS_INFO> &subpasses, VkFramebuffer framebuffer,
+                                         const std::vector<SUBPASS_INFO> *subpasses, VkFramebuffer framebuffer,
                                          VkDescriptorType descriptor_type,
                                          layer_data::optional<layer_data::unordered_map<VkImageView, VkImageLayout>> &checked_layouts) const {
     std::vector<const SAMPLER_STATE *> sampler_states;
@@ -1076,28 +1113,30 @@ bool CoreChecks::ValidateImageDescriptor(const char *caller, const DrawDispatchV
         }
 
         // Verify if attachments are used in DescriptorSet
-        if (attachments && attachments->size() > 0 && (descriptor_type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
-            bool ds_aspect = (image_view_state->create_info.subresourceRange.aspectMask &
+        if (attachments && attachments->size() > 0 && subpasses && (descriptor_type != VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT)) {
+            bool ds_aspect = (image_view_state->normalized_subresource_range.aspectMask &
                               (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
                                  ? true
                                  : false;
             uint32_t att_index = 0;
             for (const auto &view_state : *attachments) {
-                if (!subpasses[att_index].used || !view_state || view_state->Destroyed()) {
+                const SUBPASS_INFO& subpass = (*subpasses)[att_index];
+                if (!subpass.used || !view_state || view_state->Destroyed()) {
                     continue;
                 }
-                if (ds_aspect && subpasses[att_index].usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+                if (ds_aspect && (subpass.usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT ||
+                                  subpass.usage == VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)) {
                     if ((image_layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
                          image_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
                          image_layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) &&
-                        (subpasses[att_index].layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
-                         subpasses[att_index].layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
-                         subpasses[att_index].layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL)) {
+                        (subpass.layout == VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL ||
+                         subpass.layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL ||
+                         subpass.layout == VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL)) {
                         continue;
                     }
                     if ((image_layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL &&
-                         subpasses[att_index].layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL) ||
-                        (subpasses[att_index].layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL &&
+                         subpass.layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL) ||
+                        (subpass.layout == VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL &&
                          image_layout == VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL)) {
                         continue;
                     }
@@ -1441,15 +1480,17 @@ bool CoreChecks::ValidateAccelerationDescriptor(const char *caller, const DrawDi
                                 report_data->FormatHandle(acc).c_str());
             }
         } else {
-            for (const auto *mem_binding : acc_node->GetBoundMemory()) {
-                if (mem_binding->Destroyed()) {
+            for (const auto &item: acc_node->GetBoundMemory()) {
+                auto &mem_binding = item.second;
+                if (mem_binding.mem_state->Destroyed()) {
                     auto set = descriptor_set->GetSet();
                     return LogError(set, vuids.descriptor_valid,
                                     "Descriptor set %s encountered the following validation error at %s time: Descriptor in "
                                     "binding #%" PRIu32 " index %" PRIu32
                                     " is using acceleration structure %s that references invalid memory %s.",
                                     report_data->FormatHandle(set).c_str(), caller, binding, index,
-                                    report_data->FormatHandle(acc).c_str(), report_data->FormatHandle(mem_binding->mem()).c_str());
+                                    report_data->FormatHandle(acc).c_str(),
+                                    report_data->FormatHandle(mem_binding.mem_state->mem()).c_str());
                 }
             }
         }
@@ -1467,15 +1508,17 @@ bool CoreChecks::ValidateAccelerationDescriptor(const char *caller, const DrawDi
                                 report_data->FormatHandle(acc).c_str());
             }
         } else {
-            for (const auto *mem_binding : acc_node->GetBoundMemory()) {
-                if (mem_binding->Destroyed()) {
+            for (const auto &item : acc_node->GetBoundMemory()) {
+                auto &mem_binding = item.second;
+                if (mem_binding.mem_state->Destroyed()) {
                     auto set = descriptor_set->GetSet();
                     return LogError(set, vuids.descriptor_valid,
                                     "Descriptor set %s encountered the following validation error at %s time: Descriptor in "
                                     "binding #%" PRIu32 " index %" PRIu32
                                     " is using acceleration structure %s that references invalid memory %s.",
                                     report_data->FormatHandle(set).c_str(), caller, binding, index,
-                                    report_data->FormatHandle(acc).c_str(), report_data->FormatHandle(mem_binding->mem()).c_str());
+                                    report_data->FormatHandle(acc).c_str(),
+                                    report_data->FormatHandle(mem_binding.mem_state->mem()).c_str());
                 }
             }
         }
@@ -2004,7 +2047,7 @@ bool CoreChecks::ValidateImageUpdate(VkImageView image_view, VkImageLayout image
     // Note that when an imageview is created, we validated that memory is bound so no need to re-check here
     // Validate that imageLayout is compatible with aspect_mask and image format
     //  and validate that image usage bits are correct for given usage
-    VkImageAspectFlags aspect_mask = iv_state->create_info.subresourceRange.aspectMask;
+    VkImageAspectFlags aspect_mask = iv_state->normalized_subresource_range.aspectMask;
     VkImage image = iv_state->create_info.image;
     VkFormat format = VK_FORMAT_MAX_ENUM;
     VkImageUsageFlags usage = 0;
@@ -2138,8 +2181,8 @@ bool CoreChecks::ValidateImageUpdate(VkImageView image_view, VkImageLayout image
             if (!(usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
                 error_usage_bit = "VK_IMAGE_USAGE_STORAGE_BIT";
                 *error_code = "VUID-VkWriteDescriptorSet-descriptorType-00339";
-            } else if ((VK_IMAGE_LAYOUT_GENERAL != image_layout) || ((VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR != image_layout) &&
-                                                                     (device_extensions.vk_khr_shared_presentable_image))) {
+            } else if ((VK_IMAGE_LAYOUT_GENERAL != image_layout) && (!device_extensions.vk_khr_shared_presentable_image ||
+                                                                     (VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR != image_layout))) {
                 *error_code = "VUID-VkWriteDescriptorSet-descriptorType-04152";
                 std::stringstream error_str;
                 error_str << "Descriptor update with descriptorType VK_DESCRIPTOR_TYPE_STORAGE_IMAGE"
@@ -2185,13 +2228,15 @@ bool CoreChecks::ValidateImageUpdate(VkImageView image_view, VkImageLayout image
             VkImageLayout layout;
             ExtEnabled DeviceExtensions::*extension;
         };
-        const static std::array<ExtensionLayout, 5> extended_layouts{{
+        const static std::array<ExtensionLayout, 7> extended_layouts{{
             //  Note double brace req'd for aggregate initialization
             {VK_IMAGE_LAYOUT_SHARED_PRESENT_KHR, &DeviceExtensions::vk_khr_shared_presentable_image},
             {VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL, &DeviceExtensions::vk_khr_maintenance2},
             {VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL, &DeviceExtensions::vk_khr_maintenance2},
-            {VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR, &DeviceExtensions::vk_khr_synchronization_2},
-            {VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR, &DeviceExtensions::vk_khr_synchronization_2},
+            {VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL_KHR, &DeviceExtensions::vk_khr_synchronization2},
+            {VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL_KHR, &DeviceExtensions::vk_khr_synchronization2},
+            {VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL, &DeviceExtensions::vk_khr_separate_depth_stencil_layouts},
+            {VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL, &DeviceExtensions::vk_khr_separate_depth_stencil_layouts},
         }};
         auto is_layout = [image_layout, this](const ExtensionLayout &ext_layout) {
             return device_extensions.*(ext_layout.extension) && (ext_layout.layout == image_layout);
@@ -3042,6 +3087,14 @@ bool CoreChecks::ValidateAllocateDescriptorSets(const VkDescriptorSetAllocateInf
                     device, "VUID-VkDescriptorSetAllocateInfo-pSetLayouts-03044",
                     "vkAllocateDescriptorSets(): Descriptor set layout create flags and pool create flags mismatch for index (%d)",
                     i);
+            }
+            if (layout->GetCreateFlags() & VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_VALVE &&
+                !(pool_state->createInfo.flags & VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_VALVE)) {
+                skip |= LogError(device, "VUID-VkDescriptorSetAllocateInfo-pSetLayouts-04610",
+                                 "vkAllocateDescriptorSets(): pSetLayouts[%d].flags contain "
+                                 "VK_DESCRIPTOR_SET_LAYOUT_CREATE_HOST_ONLY_POOL_BIT_VALVE bit, but the pool was not created "
+                                 "with the VK_DESCRIPTOR_POOL_CREATE_HOST_ONLY_BIT_VALVE bit.",
+                                 i);
             }
         }
     }

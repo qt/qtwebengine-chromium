@@ -23,6 +23,7 @@
 #include "content/browser/background_fetch/background_fetch_test_base.h"
 #include "content/browser/background_fetch/background_fetch_test_data_manager.h"
 #include "content/browser/background_fetch/background_fetch_test_service_worker.h"
+#include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_context_wrapper.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/common/background_fetch/background_fetch_types.h"
@@ -39,8 +40,10 @@
 #include "services/network/public/mojom/fetch_api.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom.h"
 #include "ui/gfx/geometry/size.h"
+#include "url/origin.h"
 
 namespace content {
 namespace {
@@ -95,13 +98,12 @@ class BackgroundFetchServiceTest
   class ScopedCustomBackgroundFetchService {
    public:
     ScopedCustomBackgroundFetchService(BackgroundFetchServiceTest* test,
-                                       const url::Origin& origin)
-        : scoped_service_(&test->service_,
-                          std::make_unique<BackgroundFetchServiceImpl>(
-                              test->context_,
-                              origin,
-                              /* render_frame_tree_node_id= */ 0,
-                              /* wc_getter= */ base::NullCallback())) {}
+                                       const blink::StorageKey& storage_key)
+        : scoped_service_(
+              &test->service_,
+              std::make_unique<BackgroundFetchServiceImpl>(test->context_,
+                                                           storage_key,
+                                                           /*rfhi=*/nullptr)) {}
 
    private:
     base::AutoReset<std::unique_ptr<BackgroundFetchServiceImpl>>
@@ -150,7 +152,7 @@ class BackgroundFetchServiceTest
                   blink::mojom::BackgroundFetchOptionsPtr options,
                   const SkBitmap& icon) {
     BackgroundFetchRegistrationId registration_id(
-        service_worker_registration_id, origin(), developer_id,
+        service_worker_registration_id, storage_key(), developer_id,
         kExampleUniqueId);
 
     base::RunLoop run_loop;
@@ -280,7 +282,7 @@ class BackgroundFetchServiceTest
     BackgroundFetchTestBase::SetUp();
 
     context_ = base::MakeRefCounted<BackgroundFetchContext>(
-        browser_context(), storage_partition(),
+        storage_partition(),
         base::WrapRefCounted(embedded_worker_test_helper()->context_wrapper()),
         /* quota_manager_proxy= */ nullptr, devtools_context());
     context_->SetDataManagerForTesting(
@@ -302,14 +304,10 @@ class BackgroundFetchServiceTest
     browser_context()->SetPermissionControllerDelegate(
         std::move(mock_permission_manager));
 
-    context_->InitializeOnCoreThread();
+    context_->Initialize();
     service_ = std::make_unique<BackgroundFetchServiceImpl>(
-        context_, origin(),
-        /* render_frame_tree_node_id= */ 0,
-        /* wc_getter= */
-        base::BindRepeating(
-            [](content::WebContents* web_contents) { return web_contents; },
-            web_contents_.get()));
+        context_, storage_key(),
+        static_cast<RenderFrameHostImpl*>(web_contents_->GetMainFrame()));
   }
 
   void TearDown() override {
@@ -357,8 +355,10 @@ class BackgroundFetchServiceTest
                     blink::mojom::FetchAPIResponsePtr response));
 
   // ServiceWorkerContextCoreObserver implementation.
-  MOCK_METHOD2(OnRegistrationDeleted,
-               void(int64_t registration_id, const GURL& pattern));
+  MOCK_METHOD3(OnRegistrationDeleted,
+               void(int64_t registration_id,
+                    const GURL& pattern,
+                    const blink::StorageKey& key));
   MOCK_METHOD0(OnStorageWiped, void());
 
   // DevToolsBackgroundServicesContext::EventObserver implementation.
@@ -1107,17 +1107,14 @@ TEST_F(BackgroundFetchServiceTest, GetDeveloperIds) {
   // the service worker registration is correct.
   {
     ScopedCustomBackgroundFetchService scoped_bogus_url_service(
-        this, url::Origin::Create(GURL("https://www.bogus-origin.com")));
+        this, blink::StorageKey(
+                  url::Origin::Create(GURL("https://www.bogus-origin.com"))));
     blink::mojom::BackgroundFetchError error;
     std::vector<std::string> developer_ids;
 
     GetDeveloperIds(service_worker_registration_id, &error, &developer_ids);
-    ASSERT_EQ(error, blink::mojom::BackgroundFetchError::NONE);
-
-    // TODO(crbug.com/850076): The Storage Worker Database access is not
-    // checking the origin. In a non-test environment this won't happen since a
-    // ServiceWorker registration ID is tied to the origin.
-    ASSERT_EQ(developer_ids.size(), 2u);
+    EXPECT_EQ(error, blink::mojom::BackgroundFetchError::STORAGE_ERROR);
+    EXPECT_TRUE(developer_ids.empty());
   }
 
   // Verify that using the wrong service worker id does not return developer ids
@@ -1131,9 +1128,8 @@ TEST_F(BackgroundFetchServiceTest, GetDeveloperIds) {
 
     GetDeveloperIds(bogus_service_worker_registration_id, &error,
                     &developer_ids);
-    ASSERT_EQ(error, blink::mojom::BackgroundFetchError::NONE);
-
-    ASSERT_EQ(developer_ids.size(), 0u);
+    EXPECT_EQ(error, blink::mojom::BackgroundFetchError::STORAGE_ERROR);
+    EXPECT_TRUE(developer_ids.empty());
   }
 }
 
@@ -1163,7 +1159,7 @@ TEST_F(BackgroundFetchServiceTest, UnregisterServiceWorker) {
   {
     using blink::mojom::BackgroundFetchError;
     EXPECT_CALL(*this,
-                OnRegistrationDeleted(service_worker_registration_id, _));
+                OnRegistrationDeleted(service_worker_registration_id, _, _));
     FetchAndUnregisterServiceWorker(service_worker_registration_id,
                                     kExampleDeveloperId, std::move(requests),
                                     std::move(options), SkBitmap(), &error,

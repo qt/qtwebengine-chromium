@@ -7,6 +7,7 @@
 
 #include "base/dcheck_is_on.h"
 #include "base/memory/scoped_refptr.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_size.h"
 #include "third_party/blink/renderer/core/layout/ng/exclusions/ng_exclusion_space.h"
@@ -17,6 +18,7 @@
 #include "third_party/blink/renderer/core/layout/ng/ng_early_break.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_floats_utils.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_fragment_builder.h"
+#include "third_party/blink/renderer/core/layout/ng/ng_layout_result.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_link.h"
 #include "third_party/blink/renderer/core/layout/ng/ng_out_of_flow_positioned_node.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
@@ -126,8 +128,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
       NGLogicalStaticPosition::InlineEdge =
           NGLogicalStaticPosition::kInlineStart,
       NGLogicalStaticPosition::BlockEdge = NGLogicalStaticPosition::kBlockStart,
-      bool needs_block_offset_adjustment = true,
-      const absl::optional<LogicalRect> containing_block_rect = absl::nullopt);
+      bool needs_block_offset_adjustment = true);
 
   void AddOutOfFlowChildCandidate(
       const NGLogicalOutOfFlowPositionedNode& candidate);
@@ -205,7 +206,8 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   // position OOF candidates yet, (as a containing box may be split over
   // multiple lines), instead we bubble all the descendants up to the parent
   // block layout algorithm, to perform the final OOF layout and positioning.
-  void MoveOutOfFlowDescendantCandidatesToDescendants();
+  void MoveOutOfFlowDescendantCandidatesToDescendants(
+      LogicalOffset relative_offset);
 
   // Propagate the OOF descendants from a fragment to the builder. Since the OOF
   // descendants on the fragment are NGPhysicalOutOfFlowPositionedNodes, we
@@ -217,7 +219,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
       LogicalOffset offset,
       LogicalOffset relative_offset,
       LogicalOffset offset_adjustment = LogicalOffset(),
-      const LayoutInline* inline_container = nullptr,
+      const NGInlineContainer<LogicalOffset>* inline_container = nullptr,
       LayoutUnit containing_block_adjustment = LayoutUnit(),
       const NGContainingBlock<LogicalOffset>* fixedpos_containing_block =
           nullptr,
@@ -255,6 +257,23 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
     return is_fragmentation_context_root_;
   }
 
+  // There may be cases where a column spanner was previously found but is no
+  // longer accessible. For example, in simplified OOF layout, we may want to
+  // recreate a spanner break for an existing fragment being relaid out, but
+  // the spanner node is no longer available. In such cases,
+  // |has_column_spanner_| may be true while |column_spanner_| is not set.
+  void SetHasColumnSpanner(bool has_column_spanner) {
+    has_column_spanner_ = has_column_spanner;
+  }
+  void SetColumnSpanner(NGBlockNode spanner) {
+    column_spanner_ = spanner;
+    SetHasColumnSpanner(!!column_spanner_);
+  }
+  bool FoundColumnSpanner() const {
+    DCHECK(has_column_spanner_ || !column_spanner_);
+    return has_column_spanner_;
+  }
+
   // See NGLayoutResult::AnnotationOverflow().
   void SetAnnotationOverflow(LayoutUnit overflow) {
     annotation_overflow_ = overflow;
@@ -270,6 +289,8 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   }
 
   const NGConstraintSpace* ConstraintSpace() const { return space_; }
+
+  scoped_refptr<const NGLayoutResult> Abort(NGLayoutResult::EStatus);
 
 #if DCHECK_IS_ON()
   String ToString() const;
@@ -294,7 +315,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
       const NGPhysicalFragment& child,
       LogicalOffset child_offset,
       LogicalOffset relative_offset,
-      const LayoutInline* inline_container = nullptr,
+      const NGInlineContainer<LogicalOffset>* inline_container = nullptr,
       absl::optional<LayoutUnit> adjustment_for_oof_propagation = LayoutUnit());
 
   void AddChildInternal(scoped_refptr<const NGPhysicalFragment>,
@@ -324,6 +345,8 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   NGBreakTokenVector child_break_tokens_;
   scoped_refptr<const NGInlineBreakToken> last_inline_break_token_;
 
+  NGBlockNode column_spanner_ = nullptr;
+
   scoped_refptr<const NGEarlyBreak> early_break_;
   NGBreakAppeal break_appeal_ = kBreakAppealLastResort;
 
@@ -347,6 +370,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   bool has_descendant_that_depends_on_percentage_block_size_ = false;
   bool has_block_fragmentation_ = false;
   bool is_fragmentation_context_root_ = false;
+  bool has_column_spanner_ = false;
 
   bool has_oof_candidate_that_needs_block_offset_adjustment_ = false;
 };

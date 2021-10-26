@@ -549,6 +549,7 @@ message StartAuthSessionReply {
 }
 
 message AddCredentialsRequest {
+  reserved 4;
   // Serialized form of token that is used to identify Auth Session that needs
   // to be authenticated.
   bytes auth_session_id = 1;
@@ -556,8 +557,6 @@ message AddCredentialsRequest {
   cryptohome.AuthorizationRequest authorization = 2;
   // Adding a new credentials for an existing user?
   bool add_more_credentials = 3;
-  // Do we delete the existing key if it already exists?
-  bool clobber_if_exists = 4;
 }
 
 message AddCredentialsReply {

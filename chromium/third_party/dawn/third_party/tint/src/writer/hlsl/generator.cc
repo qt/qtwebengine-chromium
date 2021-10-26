@@ -14,29 +14,46 @@
 
 #include "src/writer/hlsl/generator.h"
 
+#include "src/transform/hlsl.h"
+#include "src/writer/hlsl/generator_impl.h"
+
 namespace tint {
 namespace writer {
 namespace hlsl {
 
-Generator::Generator(const Program* program)
-    : impl_(std::make_unique<GeneratorImpl>(program)) {}
+Result::Result() = default;
+Result::~Result() = default;
+Result::Result(const Result&) = default;
 
-Generator::~Generator() = default;
+Result Generate(const Program* program, const Options& options) {
+  Result result;
 
-bool Generator::Generate() {
-  auto ret = impl_->Generate(out_);
-  if (!ret) {
-    error_ = impl_->error();
+  // Run the HLSL sanitizer.
+  transform::Hlsl sanitizer;
+  transform::DataMap transform_input;
+  transform_input.Add<transform::Hlsl::Config>(options.disable_workgroup_init);
+  auto output = sanitizer.Run(program, transform_input);
+  if (!output.program.IsValid()) {
+    result.success = false;
+    result.error = output.program.Diagnostics().str();
+    return result;
   }
-  return ret;
-}
 
-std::string Generator::result() const {
-  return out_.str();
-}
+  // Generate the HLSL code.
+  auto impl = std::make_unique<GeneratorImpl>(&output.program);
+  result.success = impl->Generate();
+  result.error = impl->error();
+  result.hlsl = impl->result();
 
-std::string Generator::error() const {
-  return impl_->error();
+  // Collect the list of entry points in the sanitized program.
+  for (auto* func : output.program.AST().Functions()) {
+    if (func->IsEntryPoint()) {
+      auto name = output.program.Symbols().NameFor(func->symbol());
+      result.entry_points.push_back({name, func->pipeline_stage()});
+    }
+  }
+
+  return result;
 }
 
 }  // namespace hlsl

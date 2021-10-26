@@ -25,11 +25,13 @@
 #include "storage/browser/file_system/file_system_backend.h"
 #include "storage/browser/file_system/file_system_context.h"
 #include "storage/browser/file_system/file_system_file_util.h"
+#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/file_system/remove_operation_delegate.h"
 #include "storage/browser/file_system/sandbox_file_system_backend.h"
 #include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/common/file_system/file_system_types.h"
 #include "storage/common/file_system/file_system_util.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace storage {
 
@@ -417,7 +419,8 @@ void FileSystemOperationImpl::GetUsageAndQuotaThenRunTask(
 
   DCHECK(quota_manager_proxy);
   quota_manager_proxy->GetUsageAndQuota(
-      url.origin(), FileSystemTypeToQuotaStorageType(url.type()),
+      blink::StorageKey(url.origin()),
+      FileSystemTypeToQuotaStorageType(url.type()),
       base::SequencedTaskRunnerHandle::Get(),
       base::BindOnce(&FileSystemOperationImpl::DidGetUsageAndQuotaAndRunTask,
                      weak_ptr_, std::move(task), std::move(error_callback)));

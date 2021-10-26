@@ -33,10 +33,10 @@ TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Reference);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Vector);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Matrix);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Array);
-TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::AccessControl);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Sampler);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::Texture);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::DepthTexture);
+TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::DepthMultisampledTexture);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::MultisampledTexture);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::SampledTexture);
 TINT_INSTANTIATE_TYPEINFO(tint::reader::spirv::StorageTexture);
@@ -79,12 +79,6 @@ struct ArrayHasher {
   }
 };
 
-struct AccessControlHasher {
-  size_t operator()(const AccessControl& t) const {
-    return utils::Hash(t.type, t.access);
-  }
-};
-
 struct MultisampledTextureHasher {
   size_t operator()(const MultisampledTexture& t) const {
     return utils::Hash(t.dims, t.type);
@@ -99,7 +93,7 @@ struct SampledTextureHasher {
 
 struct StorageTextureHasher {
   size_t operator()(const StorageTexture& t) const {
-    return utils::Hash(t.dims, t.format);
+    return utils::Hash(t.dims, t.format, t.access);
   }
 };
 }  // namespace
@@ -122,10 +116,6 @@ static bool operator==(const Matrix& a, const Matrix& b) {
 
 static bool operator==(const Array& a, const Array& b) {
   return a.type == b.type && a.size == b.size && a.stride == b.stride;
-}
-
-static bool operator==(const AccessControl& a, const AccessControl& b) {
-  return a.type == b.type && a.access == b.access;
 }
 
 static bool operator==(const MultisampledTexture& a,
@@ -200,14 +190,6 @@ ast::Type* Array::Build(ProgramBuilder& b) const {
   return b.ty.array(type->Build(b), size, stride);
 }
 
-AccessControl::AccessControl(const Type* t, ast::AccessControl::Access a)
-    : type(t), access(a) {}
-AccessControl::AccessControl(const AccessControl&) = default;
-
-ast::Type* AccessControl::Build(ProgramBuilder& b) const {
-  return b.ty.access(access, type->Build(b));
-}
-
 Sampler::Sampler(ast::SamplerKind k) : kind(k) {}
 Sampler::Sampler(const Sampler&) = default;
 
@@ -223,6 +205,15 @@ DepthTexture::DepthTexture(const DepthTexture&) = default;
 
 ast::Type* DepthTexture::Build(ProgramBuilder& b) const {
   return b.ty.depth_texture(dims);
+}
+
+DepthMultisampledTexture::DepthMultisampledTexture(ast::TextureDimension d)
+    : Base(d) {}
+DepthMultisampledTexture::DepthMultisampledTexture(
+    const DepthMultisampledTexture&) = default;
+
+ast::Type* DepthMultisampledTexture::Build(ProgramBuilder& b) const {
+  return b.ty.depth_multisampled_texture(dims);
 }
 
 MultisampledTexture::MultisampledTexture(ast::TextureDimension d, const Type* t)
@@ -241,12 +232,14 @@ ast::Type* SampledTexture::Build(ProgramBuilder& b) const {
   return b.ty.sampled_texture(dims, type->Build(b));
 }
 
-StorageTexture::StorageTexture(ast::TextureDimension d, ast::ImageFormat f)
-    : Base(d), format(f) {}
+StorageTexture::StorageTexture(ast::TextureDimension d,
+                               ast::ImageFormat f,
+                               ast::Access a)
+    : Base(d), format(f), access(a) {}
 StorageTexture::StorageTexture(const StorageTexture&) = default;
 
 ast::Type* StorageTexture::Build(ProgramBuilder& b) const {
-  return b.ty.storage_texture(dims, format);
+  return b.ty.storage_texture(dims, format, access);
 }
 
 Named::Named(Symbol n) : name(n) {}
@@ -296,11 +289,6 @@ struct TypeManager::State {
       matrices_;
   /// Map of Array to the returned Array type instance
   std::unordered_map<spirv::Array, const spirv::Array*, ArrayHasher> arrays_;
-  /// Map of AccessControl to the returned AccessControl type instance
-  std::unordered_map<spirv::AccessControl,
-                     const spirv::AccessControl*,
-                     AccessControlHasher>
-      access_controls_;
   /// Map of type name to returned Alias instance
   std::unordered_map<Symbol, const spirv::Alias*> aliases_;
   /// Map of type name to returned Struct instance
@@ -310,6 +298,10 @@ struct TypeManager::State {
   /// Map of ast::TextureDimension to returned DepthTexture instance
   std::unordered_map<ast::TextureDimension, const spirv::DepthTexture*>
       depth_textures_;
+  /// Map of ast::TextureDimension to returned DepthMultisampledTexture instance
+  std::unordered_map<ast::TextureDimension,
+                     const spirv::DepthMultisampledTexture*>
+      depth_multisampled_textures_;
   /// Map of MultisampledTexture to the returned MultisampledTexture type
   /// instance
   std::unordered_map<spirv::MultisampledTexture,
@@ -336,24 +328,18 @@ const Type* Type::UnwrapPtr() const {
   return type;
 }
 
-const Type* Type::UnwrapAlias() const {
+const Type* Type::UnwrapRef() const {
   const Type* type = this;
-  while (auto* alias = type->As<Alias>()) {
-    type = alias->type;
+  while (auto* ptr = type->As<Reference>()) {
+    type = ptr->type;
   }
   return type;
 }
 
-const Type* Type::UnwrapAliasAndAccess() const {
-  auto* type = this;
-  while (true) {
-    if (auto* alias = type->As<Alias>()) {
-      type = alias->type;
-    } else if (auto* access = type->As<AccessControl>()) {
-      type = access->type;
-    } else {
-      break;
-    }
+const Type* Type::UnwrapAlias() const {
+  const Type* type = this;
+  while (auto* alias = type->As<Alias>()) {
+    type = alias->type;
   }
   return type;
 }
@@ -363,8 +349,6 @@ const Type* Type::UnwrapAll() const {
   while (true) {
     if (auto* alias = type->As<Alias>()) {
       type = alias->type;
-    } else if (auto* access = type->As<AccessControl>()) {
-      type = access->type;
     } else if (auto* ptr = type->As<Pointer>()) {
       type = ptr->type;
     } else {
@@ -492,14 +476,6 @@ const spirv::Array* TypeManager::Array(const Type* el,
       [&] { return state->allocator_.Create<spirv::Array>(el, size, stride); });
 }
 
-const spirv::AccessControl* TypeManager::AccessControl(
-    const Type* ty,
-    ast::AccessControl::Access ac) {
-  return utils::GetOrCreate(
-      state->access_controls_, spirv::AccessControl(ty, ac),
-      [&] { return state->allocator_.Create<spirv::AccessControl>(ty, ac); });
-}
-
 const spirv::Alias* TypeManager::Alias(Symbol name, const Type* ty) {
   return utils::GetOrCreate(state->aliases_, name, [&] {
     return state->allocator_.Create<spirv::Alias>(name, ty);
@@ -525,6 +501,13 @@ const spirv::DepthTexture* TypeManager::DepthTexture(
   });
 }
 
+const spirv::DepthMultisampledTexture* TypeManager::DepthMultisampledTexture(
+    ast::TextureDimension dims) {
+  return utils::GetOrCreate(state->depth_multisampled_textures_, dims, [&] {
+    return state->allocator_.Create<spirv::DepthMultisampledTexture>(dims);
+  });
+}
+
 const spirv::MultisampledTexture* TypeManager::MultisampledTexture(
     ast::TextureDimension dims,
     const Type* ty) {
@@ -545,10 +528,12 @@ const spirv::SampledTexture* TypeManager::SampledTexture(
 
 const spirv::StorageTexture* TypeManager::StorageTexture(
     ast::TextureDimension dims,
-    ast::ImageFormat fmt) {
+    ast::ImageFormat fmt,
+    ast::Access access) {
   return utils::GetOrCreate(
-      state->storage_textures_, spirv::StorageTexture(dims, fmt), [&] {
-        return state->allocator_.Create<spirv::StorageTexture>(dims, fmt);
+      state->storage_textures_, spirv::StorageTexture(dims, fmt, access), [&] {
+        return state->allocator_.Create<spirv::StorageTexture>(dims, fmt,
+                                                               access);
       });
 }
 
@@ -606,12 +591,6 @@ std::string Array::String() const {
   return ss.str();
 }
 
-std::string AccessControl::String() const {
-  std::stringstream ss;
-  ss << "[[access(" << access << ")]] " << type->String();
-  return ss.str();
-}
-
 std::string Sampler::String() const {
   switch (kind) {
     case ast::SamplerKind::kSampler:
@@ -625,6 +604,12 @@ std::string Sampler::String() const {
 std::string DepthTexture::String() const {
   std::stringstream ss;
   ss << "depth_" << dims;
+  return ss.str();
+}
+
+std::string DepthMultisampledTexture::String() const {
+  std::stringstream ss;
+  ss << "depth_multisampled_" << dims;
   return ss.str();
 }
 
@@ -642,7 +627,7 @@ std::string SampledTexture::String() const {
 
 std::string StorageTexture::String() const {
   std::stringstream ss;
-  ss << "texture_storage_" << dims << "<" << format << ">";
+  ss << "texture_storage_" << dims << "<" << format << ", " << access << ">";
   return ss.str();
 }
 

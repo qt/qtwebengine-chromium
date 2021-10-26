@@ -6,10 +6,10 @@
 
 #include <stddef.h>
 
+#include "base/cxx17_backports.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/stl_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
@@ -18,6 +18,7 @@
 #include "storage/browser/file_system/external_mount_points.h"
 #include "storage/browser/file_system/file_system_backend.h"
 #include "storage/browser/file_system/isolated_context.h"
+#include "storage/browser/quota/quota_manager_proxy.h"
 #include "storage/browser/test/mock_quota_manager.h"
 #include "storage/browser/test/mock_special_storage_policy.h"
 #include "storage/browser/test/test_file_system_options.h"
@@ -60,12 +61,12 @@ class FileSystemContextTest : public testing::Test {
   }
 
  protected:
-  FileSystemContext* CreateFileSystemContextForTest(
-      ExternalMountPoints* external_mount_points) {
-    return new FileSystemContext(
-        base::ThreadTaskRunnerHandle::Get().get(),
-        base::ThreadTaskRunnerHandle::Get().get(), external_mount_points,
-        storage_policy_.get(), mock_quota_manager_->proxy(),
+  scoped_refptr<FileSystemContext> CreateFileSystemContextForTest(
+      scoped_refptr<ExternalMountPoints> external_mount_points) {
+    return FileSystemContext::Create(
+        base::ThreadTaskRunnerHandle::Get(),
+        base::ThreadTaskRunnerHandle::Get(), std::move(external_mount_points),
+        storage_policy_, mock_quota_manager_->proxy(),
         std::vector<std::unique_ptr<FileSystemBackend>>(),
         std::vector<URLRequestAutoMountHandler>(), data_dir_.GetPath(),
         CreateAllowFileAccessOptions());
@@ -100,8 +101,8 @@ class FileSystemContextTest : public testing::Test {
 // ChromeOS.
 #if !BUILDFLAG(IS_CHROMEOS_ASH)
 TEST_F(FileSystemContextTest, NullExternalMountPoints) {
-  scoped_refptr<FileSystemContext> file_system_context(
-      CreateFileSystemContextForTest(nullptr));
+  scoped_refptr<FileSystemContext> file_system_context =
+      CreateFileSystemContextForTest(/*external_mount_points=*/nullptr);
 
   // Cracking system external mount and isolated mount points should work.
   std::string isolated_name = "root";
@@ -115,8 +116,9 @@ TEST_F(FileSystemContextTest, NullExternalMountPoints) {
       "system", kFileSystemTypeLocal, FileSystemMountOption(),
       base::FilePath(DRIVE FPL("/test/sys/"))));
 
-  FileSystemURL cracked_isolated = file_system_context->CrackURL(
-      CreateRawFileSystemURL("isolated", isolated_id));
+  FileSystemURL cracked_isolated =
+      file_system_context->CrackURLInFirstPartyContext(
+          CreateRawFileSystemURL("isolated", isolated_id));
 
   ExpectFileSystemURLMatches(
       cracked_isolated, GURL(kTestOrigin), kFileSystemTypeIsolated,
@@ -128,8 +130,9 @@ TEST_F(FileSystemContextTest, NullExternalMountPoints) {
           .NormalizePathSeparators(),
       isolated_id);
 
-  FileSystemURL cracked_external = file_system_context->CrackURL(
-      CreateRawFileSystemURL("external", "system"));
+  FileSystemURL cracked_external =
+      file_system_context->CrackURLInFirstPartyContext(
+          CreateRawFileSystemURL("external", "system"));
 
   ExpectFileSystemURLMatches(
       cracked_external, GURL(kTestOrigin), kFileSystemTypeExternal,
@@ -153,16 +156,14 @@ TEST_F(FileSystemContextTest, FileSystemContextKeepsMountPointsAlive) {
       "system", kFileSystemTypeLocal, FileSystemMountOption(),
       base::FilePath(DRIVE FPL("/test/sys/"))));
 
-  scoped_refptr<FileSystemContext> file_system_context(
-      CreateFileSystemContextForTest(mount_points.get()));
-
-  // Release a MountPoints reference created in the test.
-  mount_points = nullptr;
+  scoped_refptr<FileSystemContext> file_system_context =
+      CreateFileSystemContextForTest(std::move(mount_points));
 
   // FileSystemContext should keep a reference to the |mount_points|, so it
   // should be able to resolve the URL.
-  FileSystemURL cracked_external = file_system_context->CrackURL(
-      CreateRawFileSystemURL("external", "system"));
+  FileSystemURL cracked_external =
+      file_system_context->CrackURLInFirstPartyContext(
+          CreateRawFileSystemURL("external", "system"));
 
   ExpectFileSystemURLMatches(
       cracked_external, GURL(kTestOrigin), kFileSystemTypeExternal,
@@ -177,10 +178,10 @@ TEST_F(FileSystemContextTest, FileSystemContextKeepsMountPointsAlive) {
 }
 
 TEST_F(FileSystemContextTest, CrackFileSystemURL) {
-  scoped_refptr<ExternalMountPoints> external_mount_points(
-      ExternalMountPoints::CreateRefCounted());
-  scoped_refptr<FileSystemContext> file_system_context(
-      CreateFileSystemContextForTest(external_mount_points.get()));
+  scoped_refptr<ExternalMountPoints> external_mount_points =
+      ExternalMountPoints::CreateRefCounted();
+  scoped_refptr<FileSystemContext> file_system_context =
+      CreateFileSystemContextForTest(external_mount_points);
 
   // Register an isolated mount point.
   std::string isolated_file_system_name = "root";
@@ -268,7 +269,8 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
 
     GURL raw_url =
         CreateRawFileSystemURL(kTestCases[i].type_str, kTestCases[i].root);
-    FileSystemURL cracked_url = file_system_context->CrackURL(raw_url);
+    FileSystemURL cracked_url =
+        file_system_context->CrackURLInFirstPartyContext(raw_url);
 
     SCOPED_TRACE(testing::Message() << "Test case " << i << ": "
                                     << "Cracking URL: " << raw_url);
@@ -294,14 +296,14 @@ TEST_F(FileSystemContextTest, CrackFileSystemURL) {
 }
 
 TEST_F(FileSystemContextTest, CanServeURLRequest) {
-  scoped_refptr<ExternalMountPoints> external_mount_points(
-      ExternalMountPoints::CreateRefCounted());
-  scoped_refptr<FileSystemContext> context(
-      CreateFileSystemContextForTest(external_mount_points.get()));
+  scoped_refptr<ExternalMountPoints> external_mount_points =
+      ExternalMountPoints::CreateRefCounted();
+  scoped_refptr<FileSystemContext> context =
+      CreateFileSystemContextForTest(std::move(external_mount_points));
 
   // A request for a sandbox mount point should be served.
-  FileSystemURL cracked_url =
-      context->CrackURL(CreateRawFileSystemURL("persistent", "pers_mount"));
+  FileSystemURL cracked_url = context->CrackURLInFirstPartyContext(
+      CreateRawFileSystemURL("persistent", "pers_mount"));
   EXPECT_EQ(kFileSystemTypePersistent, cracked_url.mount_type());
   EXPECT_TRUE(context->CanServeURLRequest(cracked_url));
 
@@ -312,8 +314,8 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
           kFileSystemTypeLocal, std::string(),
           base::FilePath(DRIVE FPL("/test/isolated/root")), &isolated_fs_name);
   std::string isolated_fs_id = isolated_fs.id();
-  cracked_url =
-      context->CrackURL(CreateRawFileSystemURL("isolated", isolated_fs_id));
+  cracked_url = context->CrackURLInFirstPartyContext(
+      CreateRawFileSystemURL("isolated", isolated_fs_id));
   EXPECT_EQ(kFileSystemTypeIsolated, cracked_url.mount_type());
   EXPECT_FALSE(context->CanServeURLRequest(cracked_url));
 
@@ -322,8 +324,8 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
   ASSERT_TRUE(ExternalMountPoints::GetSystemInstance()->RegisterFileSystem(
       kExternalMountName, kFileSystemTypeLocal, FileSystemMountOption(),
       base::FilePath()));
-  cracked_url =
-      context->CrackURL(CreateRawFileSystemURL("external", kExternalMountName));
+  cracked_url = context->CrackURLInFirstPartyContext(
+      CreateRawFileSystemURL("external", kExternalMountName));
   EXPECT_EQ(kFileSystemTypeExternal, cracked_url.mount_type());
   EXPECT_TRUE(context->CanServeURLRequest(cracked_url));
 
@@ -337,8 +339,8 @@ TEST_F(FileSystemContextTest, CanServeURLRequest) {
 TEST_F(FileSystemContextTest, IsolatedFileSystemsTypesHandled) {
   // This does not provide any "additional" file system handlers. In particular,
   // on Chrome OS it does not provide chromeos::FileSystemBackend.
-  scoped_refptr<FileSystemContext> file_system_context(
-      CreateFileSystemContextForTest(nullptr));
+  scoped_refptr<FileSystemContext> file_system_context =
+      CreateFileSystemContextForTest(/*external_mount_points=*/nullptr);
 
   // Isolated file system types are handled.
   EXPECT_TRUE(

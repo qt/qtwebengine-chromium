@@ -9,6 +9,7 @@
 
 #include "base/macros.h"
 #include "components/history/core/browser/history_types.h"
+#include "url/origin.h"
 
 namespace sql {
 class Database;
@@ -114,12 +115,12 @@ class VisitDatabase {
   // begin time is inclusive, the end time is exclusive. Either time can be
   // is_null(), in which case the times in that direction are unbounded.
   //
-  // Up to `max_count` visits will be returned. If there are more visits than
-  // that, the most recent `max_count` will be returned. If 0, all visits in the
-  // range will be computed.
+  // Use `options.duplicate_policy` to control the URL deduplication policy -
+  // for instance, if only a single visit should be returned for each URL.
   //
-  // Only one visit for each URL will be returned, and it will be the most
-  // recent one in the time range.
+  // Up to `options.max_count` visits will be returned. If there are more visits
+  // than that, the most recent `options.max_count` will be returned. If 0, all
+  // visits in the range will be computed.
   //
   // Returns true if there are more results available, i.e. if the number of
   // results was restricted by `options.max_count`.
@@ -157,7 +158,8 @@ class VisitDatabase {
                             GURL* to_url);
 
   // Similar to the above function except finds a redirect going to a given
-  // `to_visit`.
+  // `to_visit`; or, if there is no such redirect, finds the referral going to
+  // the given `to_visit`.
   bool GetRedirectToVisit(VisitID to_visit,
                           VisitID* from_visit,
                           GURL* from_url);
@@ -187,10 +189,16 @@ class VisitDatabase {
   // visited in the given time range, this will return true and `last_visit`
   // will be set to base::Time(). False will be returned if the host is not a
   // valid HTTP or HTTPS url or for other database errors.
-  bool GetLastVisitToHost(const GURL& host,
+  bool GetLastVisitToHost(const std::string& host,
                           base::Time begin_time,
                           base::Time end_time,
                           base::Time* last_visit);
+
+  // Same as the above, but for the given origin instead of host.
+  bool GetLastVisitToOrigin(const url::Origin& origin,
+                            base::Time begin_time,
+                            base::Time end_time,
+                            base::Time* last_visit);
 
   // Gets the last time `url` was visited before `end_time`. If the given `url`
   // has no past visits, this will return true and `last_visit` will be set to
@@ -229,7 +237,7 @@ class VisitDatabase {
 
   // Convenience to fill a VisitRow. Assumes the visit values are bound starting
   // at index 0.
-  static void FillVisitRow(const sql::Statement& statement, VisitRow* visit);
+  static void FillVisitRow(sql::Statement& statement, VisitRow* visit);
 
   // Convenience to fill a VisitVector. Assumes that statement.step()
   // hasn't happened yet.

@@ -469,7 +469,7 @@
    */
   FT_LOCAL_DEF( void )
   cf2_interpT2CharString( CF2_Font              font,
-                          CF2_Buffer            buf,
+                          const CF2_Buffer      buf,
                           CF2_OutlineCallbacks  callbacks,
                           const FT_Vector*      translation,
                           FT_Bool               doingSeac,
@@ -1670,7 +1670,13 @@
                      */
 
                     count = cf2_stack_count( opStack );
-                    FT_ASSERT( (CF2_UInt)arg_cnt <= count );
+                    if ( (CF2_UInt)arg_cnt > count )
+                    {
+                      FT_ERROR(( "cf2_interpT2CharString (Type 1 mode):"
+                                 " stack underflow\n" ));
+                      lastError = FT_THROW( Invalid_Glyph_Format );
+                      goto exit;
+                    }
 
                     opIdx += count - (CF2_UInt)arg_cnt;
 

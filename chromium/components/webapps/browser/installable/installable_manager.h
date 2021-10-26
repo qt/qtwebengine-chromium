@@ -24,7 +24,7 @@
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/blink/public/common/manifest/manifest.h"
+#include "third_party/blink/public/mojom/manifest/manifest.mojom.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "url/gurl.h"
 
@@ -99,6 +99,12 @@ class InstallableManager
                            CheckWebapp);
   FRIEND_TEST_ALL_PREFIXES(InstallableManagerOfflineCapabilityBrowserTest,
                            CheckNotOfflineCapableStartUrl);
+  FRIEND_TEST_ALL_PREFIXES(InstallableManagerInPrerenderingBrowserTest,
+                           InstallableManagerInPrerendering);
+  FRIEND_TEST_ALL_PREFIXES(InstallableManagerInPrerenderingBrowserTest,
+                           NotifyManifestUrlChangedInActivation);
+  FRIEND_TEST_ALL_PREFIXES(InstallableManagerInPrerenderingBrowserTest,
+                           NotNotifyManifestUrlChangedInActivation);
 
   using IconPurpose = blink::mojom::ManifestImageResource_Purpose;
 
@@ -113,9 +119,12 @@ class InstallableManager
   };
 
   struct ManifestProperty {
+    ManifestProperty();
+    ~ManifestProperty();
+
     InstallableStatusCode error = NO_ERROR_DETECTED;
     GURL url;
-    blink::Manifest manifest;
+    blink::mojom::ManifestPtr manifest = blink::mojom::Manifest::New();
     bool fetched = false;
   };
 
@@ -205,10 +214,10 @@ class InstallableManager
   void CheckEligiblity();
   void FetchManifest();
   void OnDidGetManifest(const GURL& manifest_url,
-                        const blink::Manifest& manifest);
+                        blink::mojom::ManifestPtr manifest);
 
   void CheckManifestValid(bool check_webapp_manifest_display);
-  bool IsManifestValidForWebApp(const blink::Manifest& manifest,
+  bool IsManifestValidForWebApp(const blink::mojom::Manifest& manifest,
                                 bool check_webapp_manifest_display);
   void CheckServiceWorker();
   void OnDidCheckHasServiceWorker(
@@ -237,13 +246,12 @@ class InstallableManager
 
   // content::WebContentsObserver overrides
   void DidFinishNavigation(content::NavigationHandle* handle) override;
-  void DidUpdateWebManifestURL(
-      content::RenderFrameHost* rfh,
-      const absl::optional<GURL>& manifest_url) override;
+  void DidUpdateWebManifestURL(content::RenderFrameHost* rfh,
+                               const GURL& manifest_url) override;
   void WebContentsDestroyed() override;
 
   const GURL& manifest_url() const;
-  const blink::Manifest& manifest() const;
+  const blink::mojom::Manifest& manifest() const;
   bool valid_manifest();
   bool has_worker();
 

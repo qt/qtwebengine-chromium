@@ -36,10 +36,26 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_Deprecated
     "UNASSIGNED-BestPractices-vkCreateInstance-deprecated-extension";
 static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_DeprecatedExtension =
     "UNASSIGNED-BestPractices-vkCreateDevice-deprecated-extension";
-static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension =
-    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension";
-static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension =
-    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension_CADSupport =
+    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-cadsupport";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension_D3DEmulation =
+    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-d3demulation";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension_DevTools =
+    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-devtools";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension_Debugging =
+    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-debugging";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateInstance_SpecialUseExtension_GLEmulation =
+    "UNASSIGNED-BestPractices-vkCreateInstance-specialuse-extension-glemulation";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension_CADSupport =
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension-cadsupport";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension_D3DEmulation =
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension-d3demulation";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension_DevTools =
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension-devtools";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension_Debugging =
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension-debugging";
+static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_SpecialUseExtension_GLEmulation =
+    "UNASSIGNED-BestPractices-vkCreateDevice-specialuse-extension-glemulation";
 static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_API_Mismatch =
     "UNASSIGNED-BestPractices-vkCreateDevice-API-version-mismatch";
 static const char DECORATE_UNUSED *kVUID_BestPractices_SharingModeExclusive =
@@ -98,6 +114,8 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_NonSuccess_Result = "UNAS
 static const char DECORATE_UNUSED *kVUID_BestPractices_SuboptimalSwapchain = "UNASSIGNED-BestPractices-SuboptimalSwapchain";
 static const char DECORATE_UNUSED *kVUID_BestPractices_SuboptimalSwapchainImageCount =
     "UNASSIGNED-BestPractices-vkCreateSwapchainKHR-suboptimal-swapchain-image-count";
+static const char DECORATE_UNUSED *kVUID_BestPractices_Swapchain_InvalidCount = "UNASSIGNED-BestPractices-SwapchainInvalidCount";
+static const char DECORATE_UNUSED *kVUID_BestPractices_DepthBiasNoAttachment = "UNASSIGNED-BestPractices-DepthBiasNoAttachment";
 
 // Arm-specific best practice
 static const char DECORATE_UNUSED *kVUID_BestPractices_AllocateDescriptorSets_SuboptimalReuse =
@@ -147,5 +165,18 @@ static const char DECORATE_UNUSED *kVUID_BestPractices_CreateDevice_RobustBuffer
     "UNASSIGNED-BestPractices-vkCreateDevice-RobustBufferAccess";
 static const char DECORATE_UNUSED *kVUID_BestPractices_EndRenderPass_DepthPrePassUsage =
     "UNASSIGNED-BestPractices-vkCmdEndRenderPass-depth-pre-pass-usage";
-
+static const char DECORATE_UNUSED *kVUID_BestPractices_EndRenderPass_RedundantAttachmentOnTile =
+    "UNASSIGNED-BestPractices-vkCmdEndRenderPass-redundant-attachment-on-tile";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_RedundantStore =
+    "UNASSIGNED-BestPractices-RenderPass-redundant-store";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_RedundantClear =
+    "UNASSIGNED-BestPractices-RenderPass-redundant-clear";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_InefficientClear =
+    "UNASSIGNED-BestPractices-RenderPass-inefficient-clear";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_BlitImage_LoadOpLoad =
+    "UNASSIGNED-BestPractices-RenderPass-blitimage-loadopload";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_CopyImage_LoadOpLoad =
+    "UNASSIGNED-BestPractices-RenderPass-copyimage-loadopload";
+static const char DECORATE_UNUSED *kVUID_BestPractices_RenderPass_ResolveImage_LoadOpLoad =
+    "UNASSIGNED-BestPractices-RenderPass-resolveimage-loadopload";
 #endif

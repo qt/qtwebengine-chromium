@@ -308,6 +308,10 @@ class ThreadGroupImpl::WorkerThreadDelegateImpl : public WorkerThread::Delegate,
     // Time when MayBlockScopeEntered() was last called. Reset when
     // BlockingScopeExited() is called.
     TimeTicks blocking_start_time;
+
+    // Cumulative time spend in MAY_BLOCK since the beginning of the current
+    // task.
+    TimeDelta cumulative_blocking_time;
   } write_worker_read_any_;
 
   WorkerOnly& worker_only() {
@@ -586,9 +590,6 @@ RegisteredTaskSource ThreadGroupImpl::WorkerThreadDelegateImpl::GetWork(
 
   DCHECK(ContainsWorker(outer_->workers_, worker));
 
-  if (!CanGetWorkLockRequired(&executor, worker))
-    return nullptr;
-
   // Use this opportunity, before assigning work to this worker, to create/wake
   // additional workers if needed (doing this here allows us to reduce
   // potentially expensive create/wake directly on PostTask()).
@@ -598,6 +599,9 @@ RegisteredTaskSource ThreadGroupImpl::WorkerThreadDelegateImpl::GetWork(
     outer_->EnsureEnoughWorkersLockRequired(&executor);
     executor.FlushWorkerCreation(&outer_->lock_);
   }
+
+  if (!CanGetWorkLockRequired(&executor, worker))
+    return nullptr;
 
   RegisteredTaskSource task_source;
   TaskPriority priority;
@@ -624,6 +628,7 @@ RegisteredTaskSource ThreadGroupImpl::WorkerThreadDelegateImpl::GetWork(
   outer_->IncrementTasksRunningLockRequired(priority);
   DCHECK(!outer_->idle_workers_stack_.Contains(worker));
   write_worker().current_task_priority = priority;
+  write_worker().cumulative_blocking_time = TimeDelta();
 
   if (outer_->after_start().wakeup_after_getwork &&
       outer_->after_start().wakeup_strategy !=
@@ -854,10 +859,14 @@ void ThreadGroupImpl::WorkerThreadDelegateImpl::BlockingEnded() {
 
   CheckedAutoLock auto_lock(outer_->lock_);
   DCHECK(!read_worker().blocking_start_time.is_null());
-  if (incremented_max_tasks_since_blocked_)
+  if (incremented_max_tasks_since_blocked_) {
     outer_->DecrementMaxTasksLockRequired();
-  else
+  } else {
     --outer_->num_unresolved_may_block_;
+    write_worker().cumulative_blocking_time +=
+        subtle::TimeTicksNowIgnoringOverride() -
+        write_worker().blocking_start_time;
+  }
 
   if (*read_worker().current_task_priority == TaskPriority::BEST_EFFORT) {
     if (incremented_max_best_effort_tasks_since_blocked_)
@@ -904,7 +913,8 @@ bool ThreadGroupImpl::WorkerThreadDelegateImpl::CanGetWorkLockRequired(
 void ThreadGroupImpl::WorkerThreadDelegateImpl::
     MaybeIncrementMaxTasksLockRequired() {
   if (read_any().blocking_start_time.is_null() ||
-      subtle::TimeTicksNowIgnoringOverride() - read_any().blocking_start_time <
+      subtle::TimeTicksNowIgnoringOverride() - read_any().blocking_start_time +
+              read_any().cumulative_blocking_time <
           outer_->after_start().may_block_threshold) {
     return;
   }

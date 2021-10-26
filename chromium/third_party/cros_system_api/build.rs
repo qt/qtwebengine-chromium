@@ -28,6 +28,16 @@ const BINDINGS_TO_GENERATE: &[(&str, &str, BindingsType)] = &[
         BindingsType::Client,
     ),
     (
+        "org_chromium_flimflam_manager",
+        "shill/dbus_bindings/org.chromium.flimflam.Manager.dbus-xml",
+        BindingsType::Client,
+    ),
+    (
+        "org_chromium_flimflam_service",
+        "shill/dbus_bindings/org.chromium.flimflam.Service.dbus-xml",
+        BindingsType::Client,
+    ),
+    (
         "org_chromium_sessionmanagerinterface",
         "login_manager/dbus_bindings/org.chromium.SessionManagerInterface.xml",
         BindingsType::Client,

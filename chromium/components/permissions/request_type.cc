@@ -91,7 +91,7 @@ const gfx::VectorIcon& GetIconIdDesktop(RequestType type) {
       return vector_icons::kFileDownloadIcon;
     case RequestType::kNotifications:
       return vector_icons::kNotificationsIcon;
-#if BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_CHROMEOS) || defined(OS_WIN)
     case RequestType::kProtectedMediaIdentifier:
       // This icon is provided by ChromePermissionsClient::GetOverrideIconId.
       NOTREACHED();
@@ -144,7 +144,7 @@ RequestType ContentSettingsTypeToRequestType(
       return RequestType::kMidiSysex;
     case ContentSettingsType::NOTIFICATIONS:
       return RequestType::kNotifications;
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
     case ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER:
       return RequestType::kProtectedMediaIdentifier;
 #endif
@@ -163,6 +163,57 @@ RequestType ContentSettingsTypeToRequestType(
     default:
       CHECK(false);
       return RequestType::kGeolocation;
+  }
+}
+
+absl::optional<ContentSettingsType> RequestTypeToContentSettingsType(
+    RequestType request_type) {
+  switch (request_type) {
+    case RequestType::kAccessibilityEvents:
+      return ContentSettingsType::ACCESSIBILITY_EVENTS;
+    case RequestType::kArSession:
+      return ContentSettingsType::AR;
+#if !defined(OS_ANDROID)
+    case RequestType::kCameraPanTiltZoom:
+      return ContentSettingsType::CAMERA_PAN_TILT_ZOOM;
+#endif
+    case RequestType::kCameraStream:
+      return ContentSettingsType::MEDIASTREAM_CAMERA;
+    case RequestType::kClipboard:
+      return ContentSettingsType::CLIPBOARD_READ_WRITE;
+#if !defined(OS_ANDROID)
+    case RequestType::kFontAccess:
+      return ContentSettingsType::FONT_ACCESS;
+#endif
+    case RequestType::kGeolocation:
+      return ContentSettingsType::GEOLOCATION;
+    case RequestType::kIdleDetection:
+      return ContentSettingsType::IDLE_DETECTION;
+    case RequestType::kMicStream:
+      return ContentSettingsType::MEDIASTREAM_MIC;
+    case RequestType::kMidiSysex:
+      return ContentSettingsType::MIDI_SYSEX;
+#if defined(OS_ANDROID)
+    case RequestType::kNfcDevice:
+      return ContentSettingsType::NFC;
+#endif
+    case RequestType::kNotifications:
+      return ContentSettingsType::NOTIFICATIONS;
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
+    case RequestType::kProtectedMediaIdentifier:
+      return ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER;
+#endif
+    case RequestType::kStorageAccess:
+      return ContentSettingsType::STORAGE_ACCESS;
+    case RequestType::kVrSession:
+      return ContentSettingsType::VR;
+#if !defined(OS_ANDROID)
+    case RequestType::kWindowPlacement:
+      return ContentSettingsType::WINDOW_PLACEMENT;
+#endif
+    default:
+      // Not associated with a ContentSettingsType.
+      return absl::nullopt;
   }
 }
 
@@ -217,7 +268,7 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
 #endif
     case permissions::RequestType::kNotifications:
       return "notifications";
-#if defined(OS_ANDROID) || BUILDFLAG(IS_CHROMEOS_ASH) || defined(OS_WIN)
+#if defined(OS_ANDROID) || defined(OS_CHROMEOS) || defined(OS_WIN)
     case permissions::RequestType::kProtectedMediaIdentifier:
       return "protected_media_identifier";
 #endif

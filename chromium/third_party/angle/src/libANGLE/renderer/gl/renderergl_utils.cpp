@@ -118,10 +118,22 @@ bool IsAdreno42xOr3xx(const FunctionsGL *functions)
     return number != 0 && getAdrenoNumber(functions) < 430;
 }
 
+bool IsAdreno4xx(const FunctionsGL *functions)
+{
+    int number = getAdrenoNumber(functions);
+    return number != 0 && number >= 400 && number < 500;
+}
+
 bool IsAdreno5xxOrOlder(const FunctionsGL *functions)
 {
     int number = getAdrenoNumber(functions);
     return number != 0 && number < 600;
+}
+
+bool IsAdreno5xx(const FunctionsGL *functions)
+{
+    int number = getAdrenoNumber(functions);
+    return number != 0 && number >= 500 && number < 600;
 }
 
 bool IsMaliT8xxOrOlder(const FunctionsGL *functions)
@@ -156,6 +168,13 @@ bool IsAndroidEmulator(const FunctionsGL *functions)
     constexpr char androidEmulator[] = "Android Emulator";
     const char *nativeGLRenderer     = GetString(functions, GL_RENDERER);
     return angle::BeginsWith(nativeGLRenderer, androidEmulator);
+}
+
+bool IsPowerVrRogue(const FunctionsGL *functions)
+{
+    constexpr char powerVRRogue[] = "PowerVR Rogue";
+    const char *nativeGLRenderer  = GetString(functions, GL_RENDERER);
+    return angle::BeginsWith(nativeGLRenderer, powerVRRogue);
 }
 
 void ClearErrors(const FunctionsGL *functions,
@@ -1383,6 +1402,14 @@ void GenerateCaps(const FunctionsGL *functions,
     extensions->framebufferBlitANGLE =
         extensions->framebufferBlitNV || functions->hasGLESExtension("GL_ANGLE_framebuffer_blit");
     extensions->framebufferMultisample = extensions->framebufferBlitANGLE && caps->maxSamples > 0;
+    extensions->multisampledRenderToTexture =
+        !features.disableMultisampledRenderToTexture.enabled &&
+        (functions->hasGLESExtension("GL_EXT_multisampled_render_to_texture") ||
+         functions->hasGLESExtension("GL_IMG_multisampled_render_to_texture"));
+    extensions->multisampledRenderToTexture2 =
+        !features.disableMultisampledRenderToTexture.enabled &&
+        extensions->multisampledRenderToTexture &&
+        functions->hasGLESExtension("GL_EXT_multisampled_render_to_texture2");
     extensions->standardDerivativesOES = functions->isAtLeastGL(gl::Version(2, 0)) ||
                                          functions->hasGLExtension("GL_ARB_fragment_shader") ||
                                          functions->hasGLESExtension("GL_OES_standard_derivatives");
@@ -1404,10 +1431,8 @@ void GenerateCaps(const FunctionsGL *functions,
         // GL_MAX_ARRAY_TEXTURE_LAYERS is guaranteed to be at least 256.
         const int maxLayers = QuerySingleGLInt(functions, GL_MAX_ARRAY_TEXTURE_LAYERS);
         // GL_MAX_VIEWPORTS is guaranteed to be at least 16.
-        const int maxViewports = QuerySingleGLInt(functions, GL_MAX_VIEWPORTS);
-        extensions->maxViews   = static_cast<GLuint>(
-            std::min(static_cast<int>(gl::IMPLEMENTATION_ANGLE_MULTIVIEW_MAX_VIEWS),
-                     std::min(maxLayers, maxViewports)));
+        const int maxViewports       = QuerySingleGLInt(functions, GL_MAX_VIEWPORTS);
+        extensions->maxViews         = static_cast<GLuint>(std::min(maxLayers, maxViewports));
         *multiviewImplementationType = MultiviewImplementationTypeGL::NV_VIEWPORT_ARRAY2;
     }
 
@@ -1566,21 +1591,25 @@ void GenerateCaps(const FunctionsGL *functions,
             QuerySingleGLInt(functions, GL_MAX_RECTANGLE_TEXTURE_SIZE_ANGLE), textureSizeLimit);
     }
 
-    // OpenGL 4.3 (and above) can support all features and constants defined in
+    // OpenGL 4.3 (and above) and OpenGL ES 3.2 can support all features and constants defined in
     // GL_EXT_geometry_shader.
-    if (functions->isAtLeastGL(gl::Version(4, 3)) || functions->isAtLeastGLES(gl::Version(3, 2)) ||
-        functions->hasGLESExtension("GL_OES_geometry_shader") ||
-        functions->hasGLESExtension("GL_EXT_geometry_shader") ||
-        // OpenGL 4.0 adds the support for instanced geometry shader
-        // GL_ARB_shader_atomic_counters adds atomic counters to geometry shader
-        // GL_ARB_shader_storage_buffer_object adds shader storage buffers to geometry shader
-        // GL_ARB_shader_image_load_store adds images to geometry shader
-        (functions->isAtLeastGL(gl::Version(4, 0)) &&
-         functions->hasGLExtension("GL_ARB_shader_atomic_counters") &&
-         functions->hasGLExtension("GL_ARB_shader_storage_buffer_object") &&
-         functions->hasGLExtension("GL_ARB_shader_image_load_store")))
+    bool hasCoreGSSupport =
+        functions->isAtLeastGL(gl::Version(4, 3)) || functions->isAtLeastGLES(gl::Version(3, 2));
+    // OpenGL 4.0 adds the support for instanced geometry shader
+    // GL_ARB_shader_atomic_counters adds atomic counters to geometry shader
+    // GL_ARB_shader_storage_buffer_object adds shader storage buffers to geometry shader
+    // GL_ARB_shader_image_load_store adds images to geometry shader
+    bool hasInstancedGSSupport = functions->isAtLeastGL(gl::Version(4, 0)) &&
+                                 functions->hasGLExtension("GL_ARB_shader_atomic_counters") &&
+                                 functions->hasGLExtension("GL_ARB_shader_storage_buffer_object") &&
+                                 functions->hasGLExtension("GL_ARB_shader_image_load_store");
+    if (hasCoreGSSupport || functions->hasGLESExtension("GL_OES_geometry_shader") ||
+        functions->hasGLESExtension("GL_EXT_geometry_shader") || hasInstancedGSSupport)
     {
-        extensions->geometryShader = true;
+        extensions->geometryShaderEXT = functions->hasGLESExtension("GL_EXT_geometry_shader") ||
+                                        hasCoreGSSupport || hasInstancedGSSupport;
+        extensions->geometryShaderOES = functions->hasGLESExtension("GL_OES_geometry_shader") ||
+                                        hasCoreGSSupport || hasInstancedGSSupport;
 
         caps->maxFramebufferLayers = QuerySingleGLInt(functions, GL_MAX_FRAMEBUFFER_LAYERS_EXT);
 
@@ -1786,17 +1815,42 @@ bool GetSystemInfoVendorIDAndDeviceID(const FunctionsGL *functions,
                                       angle::VendorID *outVendor,
                                       angle::DeviceID *outDevice)
 {
+    // Get vendor from GL itself, so on multi-GPU systems the correct GPU is selected.
+    *outVendor = GetVendorID(functions);
+    *outDevice = 0;
+
+    // Gather additional information from the system to detect multi-GPU scenarios.
     bool isGetSystemInfoSuccess = angle::GetSystemInfo(outSystemInfo);
+
+    // Get the device id from system info, corresponding to the vendor of the active GPU.
     if (isGetSystemInfoSuccess && !outSystemInfo->gpus.empty())
     {
-        *outVendor = outSystemInfo->gpus[outSystemInfo->activeGPUIndex].vendorId;
-        *outDevice = outSystemInfo->gpus[outSystemInfo->activeGPUIndex].deviceId;
+        if (*outVendor == VENDOR_ID_UNKNOWN)
+        {
+            // If vendor ID is unknown, take the best estimate of the active GPU.  Chances are there
+            // is only one GPU anyway.
+            *outVendor = outSystemInfo->gpus[outSystemInfo->activeGPUIndex].vendorId;
+            *outDevice = outSystemInfo->gpus[outSystemInfo->activeGPUIndex].deviceId;
+        }
+        else
+        {
+            for (const angle::GPUDeviceInfo &gpu : outSystemInfo->gpus)
+            {
+                if (*outVendor == gpu.vendorId)
+                {
+                    // Note that deviceId may not necessarily have been possible to retrieve.
+                    *outDevice = gpu.deviceId;
+                    break;
+                }
+            }
+        }
     }
     else
     {
-        *outVendor = GetVendorID(functions);
+        // If system info is not available, attempt to deduce the device from GL itself.
         *outDevice = GetDeviceID(functions);
     }
+
     return isGetSystemInfoSuccess;
 }
 
@@ -1856,7 +1910,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
         isIntel && IsApple() && IsSkylake(device) && GetMacOSVersion() < OSVersion(10, 13, 2));
 
     ANGLE_FEATURE_CONDITION(features, doesSRGBClearsOnLinearFramebufferAttachments,
-                            functions->standard == STANDARD_GL_DESKTOP && (isIntel || isAMD));
+                            isIntel || isAMD);
 
     ANGLE_FEATURE_CONDITION(features, emulateMaxVertexAttribStride,
                             IsLinux() && functions->standard == STANDARD_GL_DESKTOP && isAMD);
@@ -1905,8 +1959,6 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     ANGLE_FEATURE_CONDITION(features, reapplyUBOBindingsAfterUsingBinaryProgram,
                             isAMD || IsAndroid());
-
-    ANGLE_FEATURE_CONDITION(features, rewriteVectorScalarArithmetic, isNvidia);
 
     // TODO(oetuaho): Make this specific to the affected driver versions. Versions at least up to
     // 390 are known to be affected. Versions after that are expected not to be affected.
@@ -1975,9 +2027,6 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     ANGLE_FEATURE_CONDITION(features, clipSrcRegionBlitFramebuffer,
                             IsApple() || (IsLinux() && isAMD));
 
-    ANGLE_FEATURE_CONDITION(features, resettingTexturesGeneratesErrors,
-                            IsApple() || (IsWindows() && isAMD));
-
     ANGLE_FEATURE_CONDITION(features, rgbDXT1TexturesSampleZeroAlpha, IsApple());
 
     ANGLE_FEATURE_CONDITION(features, unfoldShortCircuits, IsApple());
@@ -2001,7 +2050,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     // Workaround for the widespread OpenGL ES driver implementaion bug
     ANGLE_FEATURE_CONDITION(features, readPixelsUsingImplementationColorReadFormatForNorm16,
-                            functions->standard == STANDARD_GL_ES &&
+                            !isIntel && functions->standard == STANDARD_GL_ES &&
                                 functions->isAtLeastGLES(gl::Version(3, 1)) &&
                                 functions->hasGLESExtension("GL_EXT_texture_norm16"));
 
@@ -2121,6 +2170,34 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // http://crbug.com/1181068 and http://crbug.com/783979
     ANGLE_FEATURE_CONDITION(features, flushOnFramebufferChange,
                             IsApple() && Has9thGenIntelGPU(systemInfo));
+
+    // Disable GL_EXT_multisampled_render_to_texture on a bunch of different configurations:
+
+    // http://crbug.com/490379
+    // http://crbug.com/767913
+    bool isAdreno4xxOnAndroidLessThan51 =
+        IsAndroid() && IsAdreno4xx(functions) && GetAndroidSdkLevel() < 22;
+
+    // http://crbug.com/612474
+    bool isAdreno4xxOnAndroid70 =
+        IsAndroid() && IsAdreno4xx(functions) && GetAndroidSdkLevel() == 24;
+    bool isAdreno5xxOnAndroidLessThan70 =
+        IsAndroid() && IsAdreno5xx(functions) && GetAndroidSdkLevel() < 24;
+
+    // http://crbug.com/663811
+    bool isAdreno5xxOnAndroid71 =
+        IsAndroid() && IsAdreno5xx(functions) && GetAndroidSdkLevel() == 25;
+
+    // http://crbug.com/594016
+    bool isLinuxVivante = IsLinux() && IsVivante(device);
+
+    ANGLE_FEATURE_CONDITION(features, disableMultisampledRenderToTexture,
+                            isAdreno4xxOnAndroidLessThan51 || isAdreno4xxOnAndroid70 ||
+                                isAdreno5xxOnAndroidLessThan70 || isAdreno5xxOnAndroid71 ||
+                                isLinuxVivante);
+
+    // http://crbug.com/1181068
+    ANGLE_FEATURE_CONDITION(features, uploadTextureDataInChunks, IsApple());
 }
 
 void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFeatures *features)
@@ -2131,6 +2208,9 @@ void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFea
     ANGLE_FEATURE_CONDITION(features, disableProgramCachingForTransformFeedback,
                             IsAndroid() && isQualcomm);
     ANGLE_FEATURE_CONDITION(features, syncFramebufferBindingsOnTexImage, false);
+    // https://crbug.com/480992
+    // Disable shader program cache to workaround PowerVR Rogue issues.
+    ANGLE_FEATURE_CONDITION(features, disableProgramBinary, IsPowerVrRogue(functions));
 }
 
 void ReInitializeFeaturesAtGPUSwitch(const FunctionsGL *functions, angle::FeaturesGL *features)

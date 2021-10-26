@@ -303,8 +303,10 @@ bool IsAnyAttachment3DWithoutAllLayers(const RenderTargetCache<RenderTargetVk> &
     {
         RenderTargetVk *colorRenderTarget = colorRenderTargets[colorIndexGL];
         ASSERT(colorRenderTarget);
-        if (colorRenderTarget->getLayerCount() > framebufferLayerCount &&
-            colorRenderTarget->getImageForRenderPass().getType() == VK_IMAGE_TYPE_3D)
+
+        const vk::ImageHelper &image = colorRenderTarget->getImageForRenderPass();
+
+        if (image.getType() == VK_IMAGE_TYPE_3D && image.getExtents().depth > framebufferLayerCount)
         {
             return true;
         }
@@ -499,6 +501,16 @@ angle::Result FramebufferVk::clearImpl(const gl::Context *context,
         vk::Framebuffer *currentFramebuffer = nullptr;
         ANGLE_TRY(getFramebuffer(contextVk, &currentFramebuffer, nullptr));
         ASSERT(contextVk->hasStartedRenderPassWithFramebuffer(currentFramebuffer));
+
+        // Emit debug-util markers for this mid-render-pass clear
+        ANGLE_TRY(
+            contextVk->handleGraphicsEventLog(rx::GraphicsEventCmdBuf::InRenderPassCmdBufQueryCmd));
+    }
+    else
+    {
+        // Emit debug-util markers for this outside-render-pass clear
+        ANGLE_TRY(
+            contextVk->handleGraphicsEventLog(rx::GraphicsEventCmdBuf::InOutsideCmdBufQueryCmd));
     }
 
     const bool preferDrawOverClearAttachments =
@@ -1352,7 +1364,17 @@ void FramebufferVk::updateLayerCount()
         layerCount = mState.getDefaultLayers();
     }
 
+    // While layer count and view count are mutually exclusive, they result in different render
+    // passes (and thus framebuffers).  For multiview, layer count is set to view count and a flag
+    // signifies that the framebuffer is multiview (as opposed to layered).
+    const bool isMultiview = mState.isMultiview();
+    if (isMultiview)
+    {
+        layerCount = mState.getNumViews();
+    }
+
     mCurrentFramebufferDesc.updateLayerCount(layerCount);
+    mCurrentFramebufferDesc.updateIsMultiview(isMultiview);
 }
 
 angle::Result FramebufferVk::resolveColorWithSubpass(ContextVk *contextVk,
@@ -1838,14 +1860,10 @@ angle::Result FramebufferVk::syncState(const gl::Context *context,
     if (shouldUpdateSrgbWriteControlMode)
     {
         // Framebuffer colorspace state has been modified, so refresh the current framebuffer
-        // descriptor to reflect the new state, and notify the context of the state change.
+        // descriptor to reflect the new state.
         gl::SrgbWriteControlMode newSrgbWriteControlMode = mState.getWriteControlMode();
         mCurrentFramebufferDesc.setWriteControlMode(newSrgbWriteControlMode);
         mRenderPassDesc.setWriteControlMode(newSrgbWriteControlMode);
-        mFramebuffer = nullptr;
-
-        angle::Result result = contextVk->onFramebufferChange(this);
-        ANGLE_UNUSED_VARIABLE(result);
     }
 
     if (shouldUpdateColorMask)
@@ -1909,6 +1927,7 @@ void FramebufferVk::updateRenderPassDesc(ContextVk *contextVk)
 {
     mRenderPassDesc = {};
     mRenderPassDesc.setSamples(getSamples());
+    mRenderPassDesc.setViewCount(mState.isMultiview() ? mState.getNumViews() : 0);
 
     // Color attachments.
     const auto &colorRenderTargets               = mRenderTargetCache.getColors();
@@ -2095,7 +2114,11 @@ angle::Result FramebufferVk::getFramebuffer(ContextVk *contextVk,
     framebufferInfo.pAttachments    = attachments.data();
     framebufferInfo.width           = static_cast<uint32_t>(attachmentsSize.width);
     framebufferInfo.height          = static_cast<uint32_t>(attachmentsSize.height);
-    framebufferInfo.layers          = std::max(mCurrentFramebufferDesc.getLayerCount(), 1u);
+    framebufferInfo.layers          = 1;
+    if (!mCurrentFramebufferDesc.isMultiview())
+    {
+        framebufferInfo.layers = std::max(mCurrentFramebufferDesc.getLayerCount(), 1u);
+    }
 
     vk::FramebufferHelper newFramebuffer;
     ANGLE_TRY(newFramebuffer.init(contextVk, framebufferInfo));
@@ -2191,7 +2214,7 @@ angle::Result FramebufferVk::clearWithDraw(ContextVk *contextVk,
         // geometry shader that is instanced layerCount times (or loops layerCount times), each time
         // selecting a different layer.
         // http://anglebug.com/5453
-        ASSERT(colorRenderTarget->getLayerCount() == 1);
+        ASSERT(mCurrentFramebufferDesc.isMultiview() || colorRenderTarget->getLayerCount() == 1);
 
         ANGLE_TRY(contextVk->getUtils().clearFramebuffer(contextVk, this, params));
 

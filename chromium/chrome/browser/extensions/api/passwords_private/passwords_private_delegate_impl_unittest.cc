@@ -36,7 +36,6 @@
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/reauth_purpose.h"
 #include "components/password_manager/core/browser/test_password_store.h"
-#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/browser_task_environment.h"
@@ -67,21 +66,6 @@ constexpr char kHistogramName[] = "PasswordManager.AccessPasswordInSettings";
 
 using MockPlaintextPasswordCallback =
     base::MockCallback<PasswordsPrivateDelegate::PlaintextPasswordCallback>;
-
-scoped_refptr<TestPasswordStore> CreateAndUseTestAccountPasswordStore(
-    Profile* profile) {
-  if (!base::FeatureList::IsEnabled(
-          password_manager::features::kEnablePasswordsAccountStorage)) {
-    return nullptr;
-  }
-  return base::WrapRefCounted(static_cast<TestPasswordStore*>(
-      AccountPasswordStoreFactory::GetInstance()
-          ->SetTestingFactoryAndUse(
-              profile,
-              base::BindRepeating(&password_manager::BuildPasswordStore<
-                                  content::BrowserContext, TestPasswordStore>))
-          .get()));
-}
 
 class MockPasswordManagerClient : public ChromePasswordManagerClient {
  public:
@@ -608,11 +592,11 @@ TEST_F(PasswordsPrivateDelegateImplTest, TestReauthOnGetPlaintextCompPassword) {
   PasswordsPrivateDelegateImpl delegate(&profile_);
 
   password_manager::PasswordForm form = CreateSampleForm();
-  password_manager::InsecureCredential compromised_credentials;
-  compromised_credentials.signon_realm = form.signon_realm;
-  compromised_credentials.username = form.username_value;
+  form.password_issues = {
+      {password_manager::InsecureType::kLeaked,
+       password_manager::InsecurityMetadata(base::Time::FromTimeT(1),
+                                            password_manager::IsMuted(false))}};
   store_->AddLogin(form);
-  store_->AddInsecureCredential(compromised_credentials);
   base::RunLoop().RunUntilIdle();
 
   api::passwords_private::InsecureCredential credential =

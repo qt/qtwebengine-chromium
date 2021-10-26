@@ -13,6 +13,7 @@
 #include "base/command_line.h"
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
@@ -239,6 +240,11 @@ View::~View() {
       if (!child->owned_by_client_)
         delete child;
     }
+
+    // Clear `children_` to prevent UAFs from observers and properties that may
+    // end up looking at children(), directly or indirectly, before ~View() goes
+    // out of scope.
+    children_.clear();
   }
 
   for (ViewObserver& observer : observers_)
@@ -273,7 +279,8 @@ void View::ReorderChildView(View* view, int index) {
   DCHECK(i != children_.end());
 
   // If |view| is already at the desired position, there's nothing to do.
-  const bool move_to_end = (index < 0) || (size_t{index} >= children_.size());
+  const bool move_to_end =
+      (index < 0) || (static_cast<size_t>(index) >= children_.size());
   const auto pos = move_to_end ? std::prev(children_.end())
                                : std::next(children_.begin(), index);
   if (i == pos)
@@ -304,9 +311,15 @@ void View::RemoveChildView(View* view) {
   DoRemoveChildView(view, true, false, nullptr);
 }
 
-void View::RemoveAllChildViews(bool delete_children) {
+void View::RemoveAllChildViews() {
   while (!children_.empty())
-    DoRemoveChildView(children_.front(), false, delete_children, nullptr);
+    DoRemoveChildView(children_.front(), false, true, nullptr);
+  UpdateTooltip();
+}
+
+void View::RemoveAllChildViewsWithoutDeleting() {
+  while (!children_.empty())
+    DoRemoveChildView(children_.front(), false, false, nullptr);
   UpdateTooltip();
 }
 
@@ -1227,6 +1240,10 @@ const ui::NativeTheme* View::GetNativeTheme() const {
   const Widget* widget = GetWidget();
   if (widget)
     return widget->GetNativeTheme();
+
+  // Crash dump here to ensure we catch fallthrough to the global NativeTheme
+  // instance on all Chromium builds (crbug.com/1056756).
+  base::debug::DumpWithoutCrashing();
 
   return ui::NativeTheme::GetInstanceForNativeUi();
 }
@@ -2423,8 +2440,10 @@ void View::PaintFromPaintRoot(const ui::PaintContext& parent_context) {
   PaintInfo paint_info = PaintInfo::CreateRootPaintInfo(
       parent_context, layer() ? layer()->size() : size());
   Paint(paint_info);
-  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDrawViewBoundsRects))
+  static bool draw_view_bounds_rects =
+      base::CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDrawViewBoundsRects);
+  if (draw_view_bounds_rects)
     PaintDebugRects(paint_info);
 }
 
@@ -2472,7 +2491,7 @@ void View::PaintDebugRects(const PaintInfo& parent_paint_info) {
 void View::AddChildViewAtImpl(View* view, int index) {
   CHECK_NE(view, this) << "You cannot add a view as its own child";
   DCHECK_GE(index, 0);
-  DCHECK_LE(size_t{index}, children_.size());
+  DCHECK_LE(static_cast<size_t>(index), children_.size());
 
   // TODO(https://crbug.com/942298): Should just DCHECK(!view->parent_);.
   View* parent = view->parent_;

@@ -30,8 +30,6 @@
 #include <memory>
 
 #include "base/dcheck_is_on.h"
-#include "base/macros.h"
-#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/dom/synchronous_mutation_observer.h"
 #include "third_party/blink/renderer/core/editing/forward.h"
@@ -132,6 +130,8 @@ class CORE_EXPORT FrameSelection final
       public SynchronousMutationObserver {
  public:
   explicit FrameSelection(LocalFrame&);
+  FrameSelection(const FrameSelection&) = delete;
+  FrameSelection& operator=(const FrameSelection&) = delete;
   ~FrameSelection();
 
   bool IsAvailable() const;
@@ -139,7 +139,7 @@ class CORE_EXPORT FrameSelection final
   Document& GetDocument() const;
   LocalFrame* GetFrame() const { return frame_; }
   Element* RootEditableElementOrDocumentElement() const;
-  size_t CharacterIndexForPoint(const IntPoint&) const;
+  wtf_size_t CharacterIndexForPoint(const IntPoint&) const;
 
   // An implementation of |WebFrame::moveCaretSelection()|
   void MoveCaretSelection(const IntPoint&);
@@ -342,8 +342,6 @@ class CORE_EXPORT FrameSelection final
   std::unique_ptr<GranularityStrategy> granularity_strategy_;
 
   const Member<FrameCaret> frame_caret_;
-
-  DISALLOW_COPY_AND_ASSIGN(FrameSelection);
 };
 
 }  // namespace blink

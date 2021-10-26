@@ -20,19 +20,14 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/synchronization/lock.h"
-#include "base/values.h"
 #include "build/build_config.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/base/x/x11_cursor.h"
-#include "ui/events/event_constants.h"
-#include "ui/events/keycodes/keyboard_codes.h"
-#include "ui/events/platform_event.h"
 #include "ui/gfx/icc_profile.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/x/connection.h"
-#include "ui/gfx/x/event.h"
 #include "ui/gfx/x/future.h"
 #include "ui/gfx/x/xproto.h"
-#include "ui/gfx/x/xproto_types.h"
 
 typedef unsigned long Cursor;
 class SkPixmap;
@@ -43,9 +38,7 @@ struct DefaultSingletonTraits;
 }
 
 namespace gfx {
-class Insets;
 class Point;
-class Rect;
 }  // namespace gfx
 
 namespace ui {
@@ -209,21 +202,6 @@ void SetHideTitlebarWhenMaximizedProperty(x11::Window window,
 
 // Returns true if |window| is visible.
 COMPONENT_EXPORT(UI_BASE_X) bool IsWindowVisible(x11::Window window);
-
-// Returns the inner bounds of |window| (excluding the non-client area).
-COMPONENT_EXPORT(UI_BASE_X)
-bool GetInnerWindowBounds(x11::Window window, gfx::Rect* rect);
-
-// Returns the non-client area extents of |window|. This is a negative inset; it
-// represents the negative size of the window border on all sides.
-// InnerWindowBounds.Inset(WindowExtents) = OuterWindowBounds.
-// Returns false if the window manager does not provide extents information.
-COMPONENT_EXPORT(UI_BASE_X)
-bool GetWindowExtents(x11::Window window, gfx::Insets* extents);
-
-// Returns the outer bounds of |window| (including the non-client area).
-COMPONENT_EXPORT(UI_BASE_X)
-bool GetOuterWindowBounds(x11::Window window, gfx::Rect* rect);
 
 // Returns true if |window| contains the point |screen_loc|.
 COMPONENT_EXPORT(UI_BASE_X)

@@ -15,6 +15,28 @@
 
 namespace media {
 
+// Types of media::Renderer.
+// WARNING: These values are reported to metrics. Entries should not be
+// renumbered and numeric values should not be reused. When adding new entries,
+// also update media::mojom::RendererType & tools/metrics/histograms/enums.xml.
+enum class RendererType {
+  kDefault = 0,          // DefaultRendererFactory
+  kMojo = 1,             // MojoRendererFactory
+  kMediaPlayer = 2,      // MediaPlayerRendererClientFactory
+  kCourier = 3,          // CourierRendererFactory
+  kFlinging = 4,         // FlingingRendererClientFactory
+  kCast = 5,             // CastRendererClientFactory
+  kMediaFoundation = 6,  // MediaFoundationRendererClientFactory
+  kFuchsia = 7,          // FuchsiaRendererFactory
+  kRemoting = 8,         // RemotingRendererFactory for remoting::Receiver
+  kCastStreaming = 9,    // CastStreamingRendererFactory
+  kMaxValue = kCastStreaming,
+};
+
+// Get the name of the Renderer for `renderer_type`. The returned name could be
+// the actual Renderer class name or a descriptive name.
+std::string MEDIA_EXPORT GetRendererName(RendererType renderer_type);
+
 // RendererFactorySelector owns RendererFactory instances used within WMPI.
 // Its purpose is to aggregate the signals and centralize the logic behind
 // choosing which RendererFactory should be used when creating a new Renderer.
@@ -34,22 +56,6 @@ namespace media {
 // - Multiple conditional factories are supported but there should be at most
 //   one conditional factory for any factory type. If multiple conditions are
 //   met, it's up to the implementation detail which factory will be returned.
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-enum class RendererType {
-  kDefault = 0,          // DefaultRendererFactory
-  kMojo = 1,             // MojoRendererFactory
-  kMediaPlayer = 2,      // MediaPlayerRendererClientFactory
-  kCourier = 3,          // CourierRendererFactory
-  kFlinging = 4,         // FlingingRendererClientFactory
-  kCast = 5,             // CastRendererClientFactory
-  kMediaFoundation = 6,  // MediaFoundationRendererClientFactory
-  kFuchsia = 7,          // FuchsiaRendererFactory
-  kRemoting = 8,         // RemotingRendererFactory for remoting::Receiver
-  kMaxValue = kRemoting,
-};
-
 class MEDIA_EXPORT RendererFactorySelector {
  public:
   using ConditionalFactoryCB = base::RepeatingCallback<bool()>;

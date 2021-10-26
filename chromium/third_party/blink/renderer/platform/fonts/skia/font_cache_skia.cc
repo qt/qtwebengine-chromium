@@ -69,13 +69,14 @@ AtomicString FontCache::GetFamilyNameForCharacter(
     SkFontMgr* fm,
     UChar32 c,
     const FontDescription& font_description,
+    const char* family_name,
     FontFallbackPriority fallback_priority) {
   DCHECK(fm);
 
   Bcp47Vector locales =
       GetBcp47LocaleForRequest(font_description, fallback_priority);
   sk_sp<SkTypeface> typeface(fm->matchFamilyStyleCharacter(
-      nullptr, SkFontStyle(), locales.data(), locales.size(), c));
+      family_name, SkFontStyle(), locales.data(), locales.size(), c));
   if (!typeface)
     return g_empty_atom;
 
@@ -207,7 +208,7 @@ sk_sp<SkTypeface> FontCache::CreateTypeface(
   }
 #endif
 
-  AtomicString family = creation_params.Family();
+  const AtomicString& family = creation_params.Family();
   DCHECK_NE(family, font_family_names::kSystemUi);
   // If we're creating a fallback font (e.g. "-webkit-monospace"), convert the
   // name into the fallback name (like "monospace") that fontconfig understands.
@@ -217,6 +218,16 @@ sk_sp<SkTypeface> FontCache::CreateTypeface(
     // convert the name to utf8
     name = family.Utf8();
   }
+
+#if defined(OS_ANDROID)
+  // If this is a locale-specific family, try looking up locale-specific
+  // typeface first.
+  if (const char* locale_family = GetLocaleSpecificFamilyName(family)) {
+    if (sk_sp<SkTypeface> typeface =
+            CreateLocaleSpecificTypeface(font_description, locale_family))
+      return typeface;
+  }
+#endif  // defined(OS_ANDROID)
 
 #if defined(OS_WIN)
   // TODO(vmpstr): Deal with paint typeface here.

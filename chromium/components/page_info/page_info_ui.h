@@ -132,11 +132,11 @@ class PageInfoUI {
     // Textual description of the site's connection status that is displayed to
     // the user.
     std::string connection_status_description;
-    // Set when the user has explicitly bypassed an SSL error for this host and
-    // has a flag set to remember ssl decisions (explicit flag or in the
-    // experimental group).  When |show_ssl_decision_revoke_button| is true, the
-    // connection area of the page info will include an option for the user to
-    // revoke their decision to bypass the SSL error for this host.
+    // Set when the user has explicitly bypassed an SSL error for this host
+    // and/or the user has explicitly bypassed an HTTP warning (from HTTPS-First
+    // Mode) for this host. When `show_ssl_decision_revoke_button` is true, the
+    // connection area of the page info UI will include an option for the user
+    // to revoke their decision to bypass warnings for this host.
     bool show_ssl_decision_revoke_button;
     // Set when the user ignored the password reuse modal warning dialog. When
     // |show_change_password_buttons| is true, the page identity area of the
@@ -179,6 +179,29 @@ class PageInfoUI {
       PageInfoUiDelegate* delegate,
       const PageInfo::PermissionInfo& permission);
 
+  static std::u16string PermissionStateToUIString(
+      PageInfoUiDelegate* delegate,
+      const PageInfo::PermissionInfo& permission);
+
+  static std::u16string PermissionMainPageStateToUIString(
+      PageInfoUiDelegate* delegate,
+      const PageInfo::PermissionInfo& permission);
+
+  static std::u16string PermissionManagedTooltipToUIString(
+      PageInfoUiDelegate* delegate,
+      const PageInfo::PermissionInfo& permission);
+
+  static std::u16string PermissionAutoBlockedToUIString(
+      PageInfoUiDelegate* delegate,
+      const PageInfo::PermissionInfo& permission);
+
+  static void ToggleBetweenAllowAndBlock(PageInfo::PermissionInfo& permission);
+
+  static void ToggleBetweenRememberAndForget(
+      PageInfo::PermissionInfo& permission);
+
+  static bool IsToggleOn(const PageInfo::PermissionInfo& permission);
+
   // Returns the color to use for the permission decision reason strings.
   static SkColor GetSecondaryTextColor();
 
@@ -194,42 +217,7 @@ class PageInfoUI {
 
   // Returns the connection icon color ID for the given connection |status|.
   static int GetConnectionIconColorID(PageInfo::SiteConnectionStatus status);
-#else  // !defined(OS_ANDROID)
-  // Returns icons for the given PageInfo::PermissionInfo |info|. If |info|'s
-  // current setting is CONTENT_SETTING_DEFAULT, it will return the icon for
-  // |info|'s default setting.
-  static const ui::ImageModel GetPermissionIcon(
-      const PageInfo::PermissionInfo& info);
-
-  // Returns the icon for the given object |info|.
-  static const ui::ImageModel GetChosenObjectIcon(const ChosenObjectInfo& info,
-                                                  bool deleted);
-
-  // Returns the icon for the page's certificate when it's valid.
-  static const ui::ImageModel GetValidCertificateIcon();
-
-  // Returns the icon for the page's certificate when it's invalid.
-  static const ui::ImageModel GetInvalidCertificateIcon();
-
-  // Returns the icon for the button / link to Site settings.
-  static const ui::ImageModel GetSiteSettingsIcon();
-
-  // Returns the icon for VR settings.
-  static const ui::ImageModel GetVrSettingsIcon();
-
-  // Returns the icon for a button which opens an external dialog or page (ex.
-  // cookies dialog or site settings page).
-  static const ui::ImageModel GetLaunchIcon();
-
-  // Returns the not secure state icon for the SecurityInformationView.
-  static const ui::ImageModel GetConnectionNotSecureIcon();
-
-  // Returns the icon for the secure connection button.
-  static const ui::ImageModel GetConnectionSecureIcon();
-
-  // Returns the icon for a button which opens a subpage within page info.
-  static const ui::ImageModel GetOpenSubpageIcon();
-#endif
+#endif  // defined(OS_ANDROID)
 
   // Return true if the given ContentSettingsType is in PageInfoUI.
   static bool ContentSettingsTypeInPageInfo(ContentSettingsType type);

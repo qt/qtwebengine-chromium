@@ -535,6 +535,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_CONTEXT_FLAG_DEBUG_BIT";
                 case 0x4:
                     return "GL_CONTEXT_FLAG_ROBUST_ACCESS_BIT";
+                case 0x10:
+                    return "GL_CONTEXT_FLAG_PROTECTED_CONTENT_BIT_EXT";
                 default:
                     return UnknownGLenumToString(value);
             }
@@ -671,6 +673,14 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_CREATE_SPARSE_ALIASED_BIT_ANGLE";
                 case 0x8:
                     return "GL_CREATE_MUTABLE_FORMAT_BIT_ANGLE";
+                case 0xA:
+                    return "GL_LINES_ADJACENCY_OES";
+                case 0xB:
+                    return "GL_LINE_STRIP_ADJACENCY_OES";
+                case 0xC:
+                    return "GL_TRIANGLES_ADJACENCY_OES";
+                case 0xD:
+                    return "GL_TRIANGLE_STRIP_ADJACENCY_OES";
                 case 0x10:
                     return "GL_CREATE_CUBE_COMPATIBLE_BIT_ANGLE";
                 case 0x16:
@@ -1165,6 +1175,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES";
                 case 0x8BE7:
                     return "GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT";
+                case 0x8BFA:
+                    return "GL_TEXTURE_PROTECTED_EXT";
                 case 0x8C10:
                     return "GL_TEXTURE_RED_TYPE";
                 case 0x8C11:
@@ -1965,6 +1977,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_POLYGON_OFFSET_FILL";
                 case 0x8074:
                     return "GL_VERTEX_ARRAY";
+                case 0x8DB9:
+                    return "GL_FRAMEBUFFER_SRGB_EXT";
                 default:
                     return UnknownGLenumToString(value);
             }

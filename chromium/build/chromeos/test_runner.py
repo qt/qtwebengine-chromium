@@ -31,8 +31,10 @@ CHROMIUM_SRC_PATH = os.path.abspath(
 # output json ourselves.
 sys.path.insert(0, os.path.join(CHROMIUM_SRC_PATH, 'build', 'android'))
 from pylib.base import base_test_result  # pylint: disable=import-error
-from pylib.base import result_sink  # pylint: disable=import-error
 from pylib.results import json_results  # pylint: disable=import-error
+
+sys.path.insert(0, os.path.join(CHROMIUM_SRC_PATH, 'build', 'util'))
+from lib.results import result_sink  # pylint: disable=import-error
 
 if six.PY2:
   import subprocess32 as subprocess  # pylint: disable=import-error
@@ -239,6 +241,8 @@ class RemoteTest(object):
       run_results.AddResult(suite_result)
       with open(self._test_launcher_summary_output, 'w') as f:
         json.dump(json_results.GenerateResultsDict([run_results]), f)
+      if self._rdb_client:
+        self._rdb_client.Post(self.suite_name, result, None, None, None)
 
   @staticmethod
   def get_artifacts(path):
@@ -431,10 +435,12 @@ class TastTest(RemoteTest):
         result = base_test_result.ResultType.FAIL
       else:
         result = base_test_result.ResultType.PASS
+      primary_error_message = None
       error_log = ''
       if errors:
         # See the link below for the format of these errors:
-        # https://godoc.org/chromium.googlesource.com/chromiumos/platform/tast.git/src/chromiumos/tast/testing#Error
+        # https://source.chromium.org/chromiumos/chromiumos/codesearch/+/main:src/platform/tast/src/chromiumos/tast/cmd/tast/internal/run/resultsjson/resultsjson.go
+        primary_error_message = errors[0]['reason']
         for err in errors:
           error_log += err['stack'] + '\n'
       error_log += (
@@ -450,8 +456,14 @@ class TastTest(RemoteTest):
         # inside as an RDB 'artifact'. (This could include system logs, screen
         # shots, etc.)
         artifacts = self.get_artifacts(test['outDir'])
-        self._rdb_client.Post(test['name'], result, duration_ms, error_log,
-                              artifacts)
+        self._rdb_client.Post(
+            test['name'],
+            result,
+            duration_ms,
+            error_log,
+            None,
+            artifacts=artifacts,
+            failure_reason=primary_error_message)
 
     if self._rdb_client and self._logs_dir:
       # Attach artifacts from the device that don't apply to a single test.
@@ -693,6 +705,23 @@ class GTestTest(RemoteTest):
   def post_run(self, _):
     if self._on_device_script:
       os.remove(self._on_device_script)
+
+    if self._test_launcher_summary_output and self._rdb_client:
+      if not os.path.exists(self._test_launcher_summary_output):
+        logging.error('Unable to locate %s in order to upload results to RDB.',
+                      self._test_launcher_summary_output)
+        return
+      with open(self._test_launcher_summary_output) as f:
+        raw_results = json.load(f)
+      parsed_results = json_results.ParseResultsFromJson(raw_results)
+      for r in parsed_results:
+        self._rdb_client.Post(
+            r.GetName(),
+            r.GetType(),
+            r.GetDuration(),
+            r.GetLog(),
+            None,
+            failure_reason=r.GetFailureReason())
 
 
 def device_test(args, unknown_args):
@@ -961,7 +990,7 @@ def main():
       '-t',
       action='append',
       dest='tests',
-      help='A Tast test to run in the device (eg: "ui.ChromeLogin").')
+      help='A Tast test to run in the device (eg: "login.Chrome").')
   tast_test_parser.add_argument(
       '--gtest_filter',
       type=str,

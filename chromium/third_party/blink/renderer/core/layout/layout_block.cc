@@ -55,6 +55,7 @@
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
 #include "third_party/blink/renderer/core/layout/layout_object_factory.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_table_cell.h"
 #include "third_party/blink/renderer/core/layout/layout_theme.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -1020,12 +1021,13 @@ void LayoutBlock::PaintObject(const PaintInfo& paint_info,
 
 TrackedLayoutBoxListHashSet* LayoutBlock::PositionedObjectsInternal() const {
   NOT_DESTROYED();
-  return GetPositionedDescendantsMap().at(this);
+  auto it = GetPositionedDescendantsMap().find(this);
+  return it != GetPositionedDescendantsMap().end() ? &*it->value : nullptr;
 }
 
 void LayoutBlock::InsertPositionedObject(LayoutBox* o) {
   NOT_DESTROYED();
-  DCHECK(!IsAnonymousBlock());
+  DCHECK(!IsAnonymousBlock() || IsAnonymousNGMulticolInlineWrapper());
   DCHECK_EQ(o->ContainingBlock(), this);
 
   o->ClearOverrideContainingBlockContentSize();
@@ -1042,8 +1044,9 @@ void LayoutBlock::InsertPositionedObject(LayoutBox* o) {
   }
   GetPositionedContainerMap().Set(o, this);
 
+  auto it = GetPositionedDescendantsMap().find(this);
   TrackedLayoutBoxListHashSet* descendant_set =
-      GetPositionedDescendantsMap().at(this);
+      it != GetPositionedDescendantsMap().end() ? &*it->value : nullptr;
   if (!descendant_set) {
     descendant_set = new TrackedLayoutBoxListHashSet;
     GetPositionedDescendantsMap().Set(this, base::WrapUnique(descendant_set));
@@ -1071,7 +1074,7 @@ void LayoutBlock::RemovePositionedObject(LayoutBox* o) {
 
 bool LayoutBlock::IsAnonymousNGFieldsetContentWrapper() const {
   NOT_DESTROYED();
-  return Parent() && Parent()->IsLayoutNGFieldset();
+  return Parent() && Parent()->IsLayoutNGFieldset() && IsAnonymous();
 }
 
 void LayoutBlock::InvalidatePaint(
@@ -1190,8 +1193,9 @@ void LayoutBlock::AddPercentHeightDescendant(LayoutBox* descendant) {
     cb = cb->ContainingBlock();
   }
 
+  auto it = GetPercentHeightDescendantsMap().find(this);
   TrackedLayoutBoxListHashSet* descendant_set =
-      GetPercentHeightDescendantsMap().at(this);
+      it != GetPercentHeightDescendantsMap().end() ? &*it->value : nullptr;
   if (!descendant_set) {
     descendant_set = new TrackedLayoutBoxListHashSet;
     GetPercentHeightDescendantsMap().Set(this,
@@ -1217,7 +1221,8 @@ void LayoutBlock::RemovePercentHeightDescendant(LayoutBox* descendant) {
 TrackedLayoutBoxListHashSet* LayoutBlock::PercentHeightDescendantsInternal()
     const {
   NOT_DESTROYED();
-  return GetPercentHeightDescendantsMap().at(this);
+  auto it = GetPercentHeightDescendantsMap().find(this);
+  return it != GetPercentHeightDescendantsMap().end() ? &*it->value : nullptr;
 }
 
 void LayoutBlock::DirtyForLayoutFromPercentageHeightDescendants(
@@ -1295,12 +1300,6 @@ bool LayoutBlock::HitTestChildren(HitTestResult& result,
         result, hit_test_location, accumulated_offset, hit_test_action);
   }
 
-  // We may use legacy code to hit-test the anonymous fieldset content wrapper
-  // child. The layout object for the rendered legend will be a child of that
-  // one, and has to be skipped here, since its fragment is actually laid out on
-  // the outside and is a sibling of the anonymous wrapper.
-  bool may_contain_rendered_legend = IsAnonymousNGFieldsetContentWrapper();
-
   PhysicalOffset scrolled_offset = accumulated_offset;
   if (IsScrollContainer())
     scrolled_offset -= PhysicalOffset(PixelSnappedScrolledContentOffset());
@@ -1309,8 +1308,7 @@ bool LayoutBlock::HitTestChildren(HitTestResult& result,
     child_hit_test = kHitTestChildBlockBackground;
   for (LayoutBox* child = LastChildBox(); child;
        child = child->PreviousSiblingBox()) {
-    if (child->HasSelfPaintingLayer() || child->IsColumnSpanAll() ||
-        (may_contain_rendered_legend && child->IsRenderedLegend()))
+    if (child->HasSelfPaintingLayer() || child->IsColumnSpanAll())
       continue;
 
     PhysicalOffset child_accumulated_offset =
@@ -2312,11 +2310,11 @@ RecalcLayoutOverflowResult LayoutBlock::RecalcChildLayoutOverflow() {
 }
 
 void LayoutBlock::RebuildFragmentTreeSpine() {
-  DCHECK(PhysicalFragmentCount() && NGBlockNode::CanUseNewLayout(*this));
+  DCHECK(PhysicalFragmentCount());
   // If this box has an associated layout-result, rebuild the spine of the
   // fragment-tree to ensure consistency.
   LayoutBlock* cb = this;
-  while (NGBlockNode::CanUseNewLayout(*cb) && !cb->NeedsLayout()) {
+  while (cb->PhysicalFragmentCount() && !cb->NeedsLayout()) {
     // Create and set a new identical results.
     for (auto& layout_result : cb->layout_results_) {
       layout_result =
@@ -2455,9 +2453,13 @@ void LayoutBlock::CheckPositionedObjectsNeedLayout() {
              positioned_descendant_set->begin();
          it != end; ++it) {
       LayoutBox* curr_box = *it;
-      DCHECK(!curr_box->SelfNeedsLayout());
+      // An OOF positioned object may still need to be laid out in NG once it
+      // reaches its containing block if it is inside a fragmentation context.
+      // In such cases, we wait to perform layout of the OOF at the
+      // fragmentation context root instead.
+      DCHECK(!curr_box->SelfNeedsLayout() || curr_box->IsInsideFlowThread());
       DCHECK(curr_box->ChildLayoutBlockedByDisplayLock() ||
-             !curr_box->NeedsLayout());
+             !curr_box->NeedsLayout() || curr_box->IsInsideFlowThread());
     }
   }
 }

@@ -12,13 +12,17 @@ compile_js_files = [
   "device/camera3_device_info.js",
   "device/constraints_preferrer.js",
   "device/device_info_updater.js",
+  "device/stream_constraints.js",
   "device/stream_manager.js",
   "dom.js",
   "error.js",
+  "expert.js",
   "face.js",
   "focus_ring.js",
   "gallerybutton.js",
+  "geometry.js",
   "h264.js",
+  "i18n_string.js",
   "init.js",
   "intent.js",
   "lib/comlink.js",
@@ -47,6 +51,7 @@ compile_js_files = [
   "mojo/image_capture.js",
   "mojo/util.js",
   "nav.js",
+  "new_feature_toast.js",
   "perf.js",
   "snackbar.js",
   "sound.js",
@@ -57,6 +62,7 @@ compile_js_files = [
   "toast.js",
   "tooltip.js",
   "type.js",
+  "unload.js",
   "untrusted_ga_helper.js",
   "untrusted_helper_interfaces.js",
   "untrusted_script_loader.js",
@@ -70,15 +76,19 @@ compile_js_files = [
   "views/camera/mode/photo.js",
   "views/camera/mode/portrait.js",
   "views/camera/mode/record_time.js",
+  "views/camera/mode/scan.js",
   "views/camera/mode/square.js",
   "views/camera/mode/video.js",
+  "views/camera/document_corner_overlay.js",
   "views/camera/options.js",
   "views/camera/preview.js",
   "views/camera/review_result.js",
+  "views/camera/scan_options.js",
   "views/camera/timertick.js",
   "views/camera/video_encoder_options.js",
   "views/dialog.js",
   "views/ptz_panel.js",
+  "views/review_document.js",
   "views/settings.js",
   "views/view.js",
   "views/warning.js",
@@ -86,10 +96,7 @@ compile_js_files = [
   "window_controller.js",
 ]
 
-no_compile_js_files = [
-  "lib/analytics.js",
-  "dynamic_import.js",
-]
+no_compile_js_files = [ "lib/analytics.js" ]
 
 wasm_files = [ "lib/ffmpeg.wasm" ]
 

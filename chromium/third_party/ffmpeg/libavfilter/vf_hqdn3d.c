@@ -179,7 +179,7 @@ static void precalc_coefs(double dist25, int depth, int16_t *ct)
 
     gamma = log(0.25) / log(1.0 - FFMIN(dist25,252.0)/255.0 - 0.00001);
 
-    for (i = -256<<LUT_BITS; i < 256<<LUT_BITS; i++) {
+    for (i = -(256<<LUT_BITS); i < 256<<LUT_BITS; i++) {
         double f = ((i<<(9-LUT_BITS)) + (1<<(8-LUT_BITS)) - 1) / 512.0; // midpoint of the bin
         simil = FFMAX(0, 1.0 - fabs(f) / 255.0);
         C = pow(simil, gamma) * 256.0 * f;
@@ -398,7 +398,7 @@ static const AVFilterPad avfilter_vf_hqdn3d_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_hqdn3d = {
+const AVFilter ff_vf_hqdn3d = {
     .name          = "hqdn3d",
     .description   = NULL_IF_CONFIG_SMALL("Apply a High Quality 3D Denoiser."),
     .priv_size     = sizeof(HQDN3DContext),

@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/css/media_values.h"
 
-#include "third_party/blink/public/common/widget/screen_info.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_theme_engine.h"
 #include "third_party/blink/renderer/core/css/css_resolution_units.h"
@@ -12,21 +11,35 @@
 #include "third_party/blink/renderer/core/css/media_values.h"
 #include "third_party/blink/renderer/core/css/media_values_cached.h"
 #include "third_party/blink/renderer/core/css/media_values_dynamic.h"
+#include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css_value_keywords.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
-#include "third_party/blink/renderer/core/layout/layout_object.h"
-#include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/graphics/color_space_gamut.h"
 #include "third_party/blink/renderer/platform/network/network_state_notifier.h"
 #include "third_party/blink/renderer/platform/widget/frame_widget.h"
+#include "ui/display/screen_info.h"
 
 namespace blink {
+
+namespace {
+static ForcedColors CSSValueIDToForcedColors(CSSValueID id) {
+  switch (id) {
+    case CSSValueID::kActive:
+      return ForcedColors::kActive;
+    case CSSValueID::kNone:
+      return ForcedColors::kNone;
+    default:
+      NOTREACHED();
+      return ForcedColors::kNone;
+  }
+}
+}  // namespace
 
 mojom::blink::PreferredColorScheme CSSValueIDToPreferredColorScheme(
     CSSValueID id) {
@@ -38,6 +51,22 @@ mojom::blink::PreferredColorScheme CSSValueIDToPreferredColorScheme(
     default:
       NOTREACHED();
       return mojom::blink::PreferredColorScheme::kLight;
+  }
+}
+
+mojom::blink::PreferredContrast CSSValueIDToPreferredContrast(CSSValueID id) {
+  switch (id) {
+    case CSSValueID::kMore:
+      return mojom::blink::PreferredContrast::kMore;
+    case CSSValueID::kLess:
+      return mojom::blink::PreferredContrast::kLess;
+    case CSSValueID::kNoPreference:
+      return mojom::blink::PreferredContrast::kNoPreference;
+    case CSSValueID::kCustom:
+      return mojom::blink::PreferredContrast::kCustom;
+    default:
+      NOTREACHED();
+      return mojom::blink::PreferredContrast::kNoPreference;
   }
 }
 
@@ -63,7 +92,7 @@ double MediaValues::CalculateViewportHeight(LocalFrame* frame) {
 
 int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
-  const ScreenInfo& screen_info =
+  const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   int device_width = screen_info.rect.width();
   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk()) {
@@ -75,7 +104,7 @@ int MediaValues::CalculateDeviceWidth(LocalFrame* frame) {
 
 int MediaValues::CalculateDeviceHeight(LocalFrame* frame) {
   DCHECK(frame && frame->View() && frame->GetSettings() && frame->GetPage());
-  const ScreenInfo& screen_info =
+  const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   int device_height = screen_info.rect.height();
   if (frame->GetSettings()->GetReportScreenSizeInPhysicalPixelsQuirk()) {
@@ -95,10 +124,19 @@ float MediaValues::CalculateDevicePixelRatio(LocalFrame* frame) {
   return frame->DevicePixelRatio();
 }
 
+bool MediaValues::CalculateDeviceSupportsHDR(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->GetPage());
+  return frame->GetPage()
+      ->GetChromeClient()
+      .GetScreenInfo(*frame)
+      .display_color_spaces.SupportsHDR();
+}
+
 int MediaValues::CalculateColorBitsPerComponent(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetPage());
-  const ScreenInfo& screen_info =
+  const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   if (screen_info.is_monochrome)
     return 0;
@@ -108,7 +146,7 @@ int MediaValues::CalculateColorBitsPerComponent(LocalFrame* frame) {
 int MediaValues::CalculateMonochromeBitsPerComponent(LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetPage());
-  const ScreenInfo& screen_info =
+  const display::ScreenInfo& screen_info =
       frame->GetPage()->GetChromeClient().GetScreenInfo(*frame);
   if (!screen_info.is_monochrome)
     return 0;
@@ -215,6 +253,12 @@ mojom::blink::PreferredContrast MediaValues::CalculatePreferredContrast(
     LocalFrame* frame) {
   DCHECK(frame);
   DCHECK(frame->GetSettings());
+  DCHECK(frame->GetPage());
+  if (const auto* overrides = frame->GetPage()->GetMediaFeatureOverrides()) {
+    MediaQueryExpValue value = overrides->GetOverride("prefers-contrast");
+    if (value.IsValid())
+      return CSSValueIDToPreferredContrast(value.id);
+  }
   return frame->GetSettings()->GetPreferredContrast();
 }
 
@@ -241,7 +285,14 @@ bool MediaValues::CalculatePrefersReducedData(LocalFrame* frame) {
           !frame->GetSettings()->GetDataSaverHoldbackWebApi());
 }
 
-ForcedColors MediaValues::CalculateForcedColors() {
+ForcedColors MediaValues::CalculateForcedColors(LocalFrame* frame) {
+  DCHECK(frame);
+  DCHECK(frame->GetSettings());
+  if (const auto* overrides = frame->GetPage()->GetMediaFeatureOverrides()) {
+    MediaQueryExpValue value = overrides->GetOverride("forced-colors");
+    if (value.IsValid())
+      return CSSValueIDToForcedColors(value.id);
+  }
   if (Platform::Current() && Platform::Current()->ThemeEngine())
     return Platform::Current()->ThemeEngine()->GetForcedColors();
   else
@@ -277,9 +328,9 @@ ScreenSpanning MediaValues::CalculateScreenSpanning(LocalFrame* frame) {
   return ScreenSpanning::kNone;
 }
 
-DevicePosture MediaValues::CalculateDevicePosture(LocalFrame* frame) {
-  // TODO(darktears): Retrieve information from the host.
-  return DevicePosture::kNoFold;
+device::mojom::blink::DevicePostureType MediaValues::CalculateDevicePosture(
+    LocalFrame* frame) {
+  return frame->GetDevicePosture();
 }
 
 bool MediaValues::ComputeLengthImpl(double value,

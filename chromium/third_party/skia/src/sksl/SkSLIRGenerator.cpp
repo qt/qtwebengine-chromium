@@ -29,7 +29,6 @@
 #include "src/sksl/ir/SkSLContinueStatement.h"
 #include "src/sksl/ir/SkSLDiscardStatement.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
-#include "src/sksl/ir/SkSLEnum.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLExternalFunctionCall.h"
 #include "src/sksl/ir/SkSLExternalFunctionReference.h"
@@ -124,7 +123,7 @@ bool IRGenerator::detectVarDeclarationWithoutScope(const Statement& stmt) {
     return true;
 }
 
-std::unique_ptr<Extension> IRGenerator::convertExtension(int offset, StringFragment name) {
+std::unique_ptr<Extension> IRGenerator::convertExtension(int offset, skstd::string_view name) {
     if (this->programKind() != ProgramKind::kFragment &&
         this->programKind() != ProgramKind::kVertex &&
         this->programKind() != ProgramKind::kGeometry) {
@@ -260,31 +259,13 @@ void IRGenerator::checkVarDeclaration(int offset, const Modifiers& modifiers, co
                 offset,
                 "variables of type '" + baseType->displayName() + "' must be global");
     }
-    if (this->programKind() != ProgramKind::kFragmentProcessor) {
-        if ((modifiers.fFlags & Modifiers::kIn_Flag) && baseType->isMatrix()) {
-            this->errorReporter().error(offset, "'in' variables may not have matrix type");
-        }
-        if ((modifiers.fFlags & Modifiers::kIn_Flag) &&
-            (modifiers.fFlags & Modifiers::kUniform_Flag)) {
-            this->errorReporter().error(
-                    offset,
-                    "'in uniform' variables only permitted within fragment processors");
-        }
-        if (modifiers.fLayout.fWhen.fLength) {
-            this->errorReporter().error(offset,
-                                        "'when' is only permitted within fragment processors");
-        }
-        if (modifiers.fLayout.fCType != Layout::CType::kDefault) {
-            this->errorReporter().error(offset,
-                                        "'ctype' is only permitted within fragment processors");
-        }
-        if (modifiers.fLayout.fFlags & Layout::kKey_Flag) {
-            this->errorReporter().error(offset,
-                                        "'key' is only permitted within fragment processors");
-        }
+    if ((modifiers.fFlags & Modifiers::kIn_Flag) && baseType->isMatrix()) {
+        this->errorReporter().error(offset, "'in' variables may not have matrix type");
     }
-    if (this->programKind() == ProgramKind::kRuntimeColorFilter ||
-        this->programKind() == ProgramKind::kRuntimeShader) {
+    if ((modifiers.fFlags & Modifiers::kIn_Flag) && (modifiers.fFlags & Modifiers::kUniform_Flag)) {
+        this->errorReporter().error(offset, "'in uniform' variables not permitted");
+    }
+    if (this->isRuntimeEffect()) {
         if (modifiers.fFlags & Modifiers::kIn_Flag) {
             this->errorReporter().error(offset, "'in' variables not permitted in runtime effects");
         }
@@ -293,13 +274,8 @@ void IRGenerator::checkVarDeclaration(int offset, const Modifiers& modifiers, co
         this->errorReporter().error(
                 offset, "variables of type '" + baseType->displayName() + "' must be uniform");
     }
-    if ((modifiers.fLayout.fFlags & Layout::kKey_Flag) &&
-        (modifiers.fFlags & Modifiers::kUniform_Flag)) {
-        this->errorReporter().error(offset, "'key' is not permitted on 'uniform' variables");
-    }
     if (modifiers.fLayout.fFlags & Layout::kSRGBUnpremul_Flag) {
-        if (this->programKind() != ProgramKind::kRuntimeColorFilter &&
-            this->programKind() != ProgramKind::kRuntimeShader) {
+        if (!this->isRuntimeEffect()) {
             this->errorReporter().error(offset,
                                         "'srgb_unpremul' is only permitted in runtime effects");
         }
@@ -318,7 +294,8 @@ void IRGenerator::checkVarDeclaration(int offset, const Modifiers& modifiers, co
                                         "float3, or float4 variables");
         }
     }
-    int permitted = Modifiers::kConst_Flag;
+    int permitted = Modifiers::kConst_Flag | Modifiers::kHighp_Flag | Modifiers::kMediump_Flag |
+                    Modifiers::kLowp_Flag;
     if (storage == Variable::Storage::kGlobal) {
         permitted |= Modifiers::kIn_Flag | Modifiers::kOut_Flag | Modifiers::kUniform_Flag |
                      Modifiers::kFlat_Flag | Modifiers::kNoPerspective_Flag;
@@ -328,7 +305,7 @@ void IRGenerator::checkVarDeclaration(int offset, const Modifiers& modifiers, co
 }
 
 std::unique_ptr<Variable> IRGenerator::convertVar(int offset, const Modifiers& modifiers,
-                                                  const Type* baseType, StringFragment name,
+                                                  const Type* baseType, skstd::string_view name,
                                                   bool isArray,
                                                   std::unique_ptr<Expression> arraySize,
                                                   Variable::Storage storage) {
@@ -353,7 +330,8 @@ std::unique_ptr<Variable> IRGenerator::convertVar(int offset, const Modifiers& m
 }
 
 std::unique_ptr<Statement> IRGenerator::convertVarDeclaration(std::unique_ptr<Variable> var,
-                                                              std::unique_ptr<Expression> value) {
+                                                              std::unique_ptr<Expression> value,
+                                                              bool addToSymbolTable) {
     std::unique_ptr<Statement> varDecl = VarDeclaration::Convert(fContext, var.get(),
                                                                  std::move(value));
     if (!varDecl) {
@@ -382,14 +360,18 @@ std::unique_ptr<Statement> IRGenerator::convertVarDeclaration(std::unique_ptr<Va
         fRTAdjust = var.get();
     }
 
-    fSymbolTable->add(std::move(var));
+    if (addToSymbolTable) {
+        fSymbolTable->add(std::move(var));
+    } else {
+        fSymbolTable->takeOwnershipOfSymbol(std::move(var));
+    }
     return varDecl;
 }
 
 std::unique_ptr<Statement> IRGenerator::convertVarDeclaration(int offset,
                                                               const Modifiers& modifiers,
                                                               const Type* baseType,
-                                                              StringFragment name,
+                                                              skstd::string_view name,
                                                               bool isArray,
                                                               std::unique_ptr<Expression> arraySize,
                                                               std::unique_ptr<Expression> value,
@@ -409,6 +391,11 @@ StatementArray IRGenerator::convertVarDeclarations(const ASTNode& decls,
     const Modifiers& modifiers = declarationsIter++->getModifiers();
     const ASTNode& rawType = *(declarationsIter++);
     const Type* baseType = this->convertType(rawType);
+    if (!baseType) {
+        return {};
+    }
+    baseType = baseType->applyPrecisionQualifiers(fContext, modifiers, fSymbolTable.get(),
+                                                  decls.fOffset);
     if (!baseType) {
         return {};
     }
@@ -663,8 +650,7 @@ std::unique_ptr<Statement> IRGenerator::convertContinue(const ASTNode& c) {
 
 std::unique_ptr<Statement> IRGenerator::convertDiscard(const ASTNode& d) {
     SkASSERT(d.fKind == ASTNode::Kind::kDiscard);
-    if (this->programKind() != ProgramKind::kFragment &&
-        this->programKind() != ProgramKind::kFragmentProcessor) {
+    if (this->programKind() != ProgramKind::kFragment) {
         this->errorReporter().error(d.fOffset,
                                     "discard statement is only permitted in fragment shaders");
         return nullptr;
@@ -688,7 +674,7 @@ std::unique_ptr<Block> IRGenerator::applyInvocationIDWorkaround(std::unique_ptr<
     fProgramElements->push_back(std::move(invokeDef));
 
     using namespace SkSL::dsl;
-    DSLVar loopIdx = DSLVar("sk_InvocationID");
+    DSLGlobalVar loopIdx("sk_InvocationID");
     std::unique_ptr<Expression> endPrimitive = this->convertIdentifier(/*offset=*/-1,
                                                                        "EndPrimitive");
     SkASSERT(endPrimitive);
@@ -708,8 +694,8 @@ std::unique_ptr<Statement> IRGenerator::getNormalizeSkPositionCode() {
 
     const Variable* skPerVertex = nullptr;
     if (const ProgramElement* perVertexDecl = fIntrinsics->find(Compiler::PERVERTEX_NAME)) {
-        SkASSERT(perVertexDecl->is<InterfaceBlock>());
-        skPerVertex = &perVertexDecl->as<InterfaceBlock>().variable();
+        SkASSERT(perVertexDecl->is<SkSL::InterfaceBlock>());
+        skPerVertex = &perVertexDecl->as<SkSL::InterfaceBlock>().variable();
     }
 
     SkASSERT(skPerVertex && fRTAdjust);
@@ -743,60 +729,64 @@ void IRGenerator::CheckModifiers(const Context& context,
                                  const Modifiers& modifiers,
                                  int permittedModifierFlags,
                                  int permittedLayoutFlags) {
-    ErrorReporter& errorReporter = context.fErrors;
-    int flags = modifiers.fFlags;
-    auto checkModifier = [&](Modifiers::Flag flag, const char* name) {
-        if (flags & flag) {
-            if (!(permittedModifierFlags & flag)) {
-                errorReporter.error(offset, "'" + String(name) + "' is not permitted here");
-            }
-            flags &= ~flag;
-        }
+    static constexpr struct { Modifiers::Flag flag; const char* name; } kModifierFlags[] = {
+        { Modifiers::kConst_Flag,          "const" },
+        { Modifiers::kIn_Flag,             "in" },
+        { Modifiers::kOut_Flag,            "out" },
+        { Modifiers::kUniform_Flag,        "uniform" },
+        { Modifiers::kFlat_Flag,           "flat" },
+        { Modifiers::kNoPerspective_Flag,  "noperspective" },
+        { Modifiers::kHasSideEffects_Flag, "sk_has_side_effects" },
+        { Modifiers::kInline_Flag,         "inline" },
+        { Modifiers::kNoInline_Flag,       "noinline" },
+        { Modifiers::kHighp_Flag,          "highp" },
+        { Modifiers::kMediump_Flag,        "mediump" },
+        { Modifiers::kLowp_Flag,           "lowp" },
     };
 
-    checkModifier(Modifiers::kConst_Flag,          "const");
-    checkModifier(Modifiers::kIn_Flag,             "in");
-    checkModifier(Modifiers::kOut_Flag,            "out");
-    checkModifier(Modifiers::kUniform_Flag,        "uniform");
-    checkModifier(Modifiers::kFlat_Flag,           "flat");
-    checkModifier(Modifiers::kNoPerspective_Flag,  "noperspective");
-    checkModifier(Modifiers::kHasSideEffects_Flag, "sk_has_side_effects");
-    checkModifier(Modifiers::kInline_Flag,         "inline");
-    checkModifier(Modifiers::kNoInline_Flag,       "noinline");
-    SkASSERT(flags == 0);
+    int modifierFlags = modifiers.fFlags;
+    for (const auto& f : kModifierFlags) {
+        if (modifierFlags & f.flag) {
+            if (!(permittedModifierFlags & f.flag)) {
+                context.errors().error(offset, "'" + String(f.name) + "' is not permitted here");
+            }
+            modifierFlags &= ~f.flag;
+        }
+    }
+    SkASSERT(modifierFlags == 0);
+
+    static constexpr struct { Layout::Flag flag; const char* name; } kLayoutFlags[] = {
+        { Layout::kOriginUpperLeft_Flag,          "origin_upper_left"},
+        { Layout::kPushConstant_Flag,             "push_constant"},
+        { Layout::kBlendSupportAllEquations_Flag, "blend_support_all_equations"},
+        { Layout::kSRGBUnpremul_Flag,             "srgb_unpremul"},
+        { Layout::kLocation_Flag,                 "location"},
+        { Layout::kOffset_Flag,                   "offset"},
+        { Layout::kBinding_Flag,                  "binding"},
+        { Layout::kIndex_Flag,                    "index"},
+        { Layout::kSet_Flag,                      "set"},
+        { Layout::kBuiltin_Flag,                  "builtin"},
+        { Layout::kInputAttachmentIndex_Flag,     "input_attachment_index"},
+        { Layout::kPrimitive_Flag,                "primitive-type"},
+        { Layout::kMaxVertices_Flag,              "max_vertices"},
+        { Layout::kInvocations_Flag,              "invocations"},
+    };
 
     int layoutFlags = modifiers.fLayout.fFlags;
-    auto checkLayout = [&](Layout::Flag flag, const char* name) {
-        if (layoutFlags & flag) {
-            if (!(permittedLayoutFlags & flag)) {
-                errorReporter.error(offset, "layout qualifier '" + String(name) +
-                                            "' is not permitted here");
+    for (const auto& lf : kLayoutFlags) {
+        if (layoutFlags & lf.flag) {
+            if (!(permittedLayoutFlags & lf.flag)) {
+                context.errors().error(
+                        offset, "layout qualifier '" + String(lf.name) + "' is not permitted here");
             }
-            layoutFlags &= ~flag;
+            layoutFlags &= ~lf.flag;
         }
-    };
-
-    checkLayout(Layout::kOriginUpperLeft_Flag,          "origin_upper_left");
-    checkLayout(Layout::kPushConstant_Flag,             "push_constant");
-    checkLayout(Layout::kBlendSupportAllEquations_Flag, "blend_support_all_equations");
-    checkLayout(Layout::kSRGBUnpremul_Flag,             "srgb_unpremul");
-    checkLayout(Layout::kKey_Flag,                      "key");
-    checkLayout(Layout::kLocation_Flag,                 "location");
-    checkLayout(Layout::kOffset_Flag,                   "offset");
-    checkLayout(Layout::kBinding_Flag,                  "binding");
-    checkLayout(Layout::kIndex_Flag,                    "index");
-    checkLayout(Layout::kSet_Flag,                      "set");
-    checkLayout(Layout::kBuiltin_Flag,                  "builtin");
-    checkLayout(Layout::kInputAttachmentIndex_Flag,     "input_attachment_index");
-    checkLayout(Layout::kPrimitive_Flag,                "primitive-type");
-    checkLayout(Layout::kMaxVertices_Flag,              "max_vertices");
-    checkLayout(Layout::kInvocations_Flag,              "invocations");
-    checkLayout(Layout::kWhen_Flag,                     "when");
-    checkLayout(Layout::kCType_Flag,                    "ctype");
+    }
     SkASSERT(layoutFlags == 0);
 }
 
-void IRGenerator::finalizeFunction(const FunctionDeclaration& funcDecl, Statement* body) {
+std::unique_ptr<Block> IRGenerator::finalizeFunction(const FunctionDeclaration& funcDecl,
+                                                     std::unique_ptr<Block> body) {
     class Finalizer : public ProgramWriter {
     public:
         Finalizer(IRGenerator* irGenerator, const FunctionDeclaration* function)
@@ -894,6 +884,16 @@ void IRGenerator::finalizeFunction(const FunctionDeclaration& funcDecl, Statemen
         using INHERITED = ProgramWriter;
     };
 
+    bool isMain = funcDecl.isMain();
+    bool needInvocationIDWorkaround = fInvocations != -1 && isMain &&
+                                      !this->caps().gsInvocationsSupport();
+    if (needInvocationIDWorkaround) {
+        body = this->applyInvocationIDWorkaround(std::move(body));
+    }
+    if (ProgramKind::kVertex == this->programKind() && isMain && fRTAdjust) {
+        body->children().push_back(this->getNormalizeSkPositionCode());
+    }
+
     Finalizer finalizer{this, &funcDecl};
     finalizer.visitStatement(*body);
 
@@ -901,6 +901,7 @@ void IRGenerator::finalizeFunction(const FunctionDeclaration& funcDecl, Statemen
         this->errorReporter().error(funcDecl.fOffset, "function '" + funcDecl.name() +
                                                       "' can exit without returning a value");
     }
+    return body;
 }
 
 void IRGenerator::convertFunction(const ASTNode& f) {
@@ -913,8 +914,6 @@ void IRGenerator::convertFunction(const ASTNode& f) {
         return;
     }
     const ASTNode::FunctionData& funcData = f.getFunctionData();
-    bool isMain = (funcData.fName == "main");
-
     std::vector<std::unique_ptr<Variable>> parameters;
     parameters.reserve(funcData.fParameterCount);
     for (size_t i = 0; i < funcData.fParameterCount; ++i) {
@@ -977,19 +976,11 @@ void IRGenerator::convertFunction(const ASTNode& f) {
         for (const Variable* param : decl->parameters()) {
             fSymbolTable->addWithoutOwnership(param);
         }
-        bool needInvocationIDWorkaround = fInvocations != -1 && isMain &&
-                                          !this->caps().gsInvocationsSupport();
         std::unique_ptr<Block> body = this->convertBlock(*iter);
         if (!body) {
             return;
         }
-        if (needInvocationIDWorkaround) {
-            body = this->applyInvocationIDWorkaround(std::move(body));
-        }
-        if (ProgramKind::kVertex == this->programKind() && isMain && fRTAdjust) {
-            body->children().push_back(this->getNormalizeSkPositionCode());
-        }
-        this->finalizeFunction(*decl, body.get());
+        body = this->finalizeFunction(*decl, std::move(body));
         auto result = std::make_unique<FunctionDefinition>(
                 f.fOffset, decl, fIsBuiltinCode, std::move(body), std::move(fReferencedIntrinsics));
         decl->setDefinition(result.get());
@@ -1015,7 +1006,7 @@ std::unique_ptr<StructDefinition> IRGenerator::convertStructDefinition(const AST
     return std::make_unique<StructDefinition>(node.fOffset, *type);
 }
 
-std::unique_ptr<InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTNode& intf) {
+std::unique_ptr<SkSL::InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTNode& intf) {
     if (this->programKind() != ProgramKind::kFragment &&
         this->programKind() != ProgramKind::kVertex &&
         this->programKind() != ProgramKind::kGeometry) {
@@ -1061,7 +1052,8 @@ std::unique_ptr<InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTNode
             }
         }
     }
-    const Type* type = old->takeOwnershipOfSymbol(Type::MakeStructType(intf.fOffset, id.fTypeName,
+    const Type* type = old->takeOwnershipOfSymbol(Type::MakeStructType(intf.fOffset,
+                                                                       id.fTypeName,
                                                                        fields));
     int arraySize = 0;
     if (id.fIsArray) {
@@ -1082,26 +1074,26 @@ std::unique_ptr<InterfaceBlock> IRGenerator::convertInterfaceBlock(const ASTNode
     const Variable* var = old->takeOwnershipOfSymbol(
             std::make_unique<Variable>(intf.fOffset,
                                        this->modifiersPool().add(id.fModifiers),
-                                       id.fInstanceName.fLength ? id.fInstanceName : id.fTypeName,
+                                       id.fInstanceName.length() ? id.fInstanceName : id.fTypeName,
                                        type,
                                        fIsBuiltinCode,
                                        Variable::Storage::kGlobal));
     if (foundRTAdjust) {
         fRTAdjustInterfaceBlock = var;
     }
-    if (id.fInstanceName.fLength) {
+    if (id.fInstanceName.length()) {
         old->addWithoutOwnership(var);
     } else {
         for (size_t i = 0; i < fields.size(); i++) {
             old->add(std::make_unique<Field>(intf.fOffset, var, (int)i));
         }
     }
-    return std::make_unique<InterfaceBlock>(intf.fOffset,
-                                            var,
-                                            id.fTypeName,
-                                            id.fInstanceName,
-                                            arraySize,
-                                            symbols);
+    return std::make_unique<SkSL::InterfaceBlock>(intf.fOffset,
+                                                  var,
+                                                  id.fTypeName,
+                                                  id.fInstanceName,
+                                                  arraySize,
+                                                  symbols);
 }
 
 void IRGenerator::convertGlobalVarDeclarations(const ASTNode& decl) {
@@ -1117,57 +1109,6 @@ void IRGenerator::convertGlobalVarDeclarations(const ASTNode& decl) {
         }
         fProgramElements->push_back(std::make_unique<GlobalVarDeclaration>(std::move(stmt)));
     }
-}
-
-void IRGenerator::convertEnum(const ASTNode& e) {
-    if (this->strictES2Mode()) {
-        this->errorReporter().error(e.fOffset, "enum is not allowed here");
-        return;
-    }
-
-    SkASSERT(e.fKind == ASTNode::Kind::kEnum);
-    SKSL_INT currentValue = 0;
-    Layout layout;
-    ASTNode enumType(e.fNodes, e.fOffset, ASTNode::Kind::kType, e.getString());
-    const Type* type = this->convertType(enumType);
-    Modifiers modifiers(layout, Modifiers::kConst_Flag);
-    std::shared_ptr<SymbolTable> oldTable = fSymbolTable;
-    fSymbolTable = std::make_shared<SymbolTable>(fSymbolTable, fIsBuiltinCode);
-    for (auto iter = e.begin(); iter != e.end(); ++iter) {
-        const ASTNode& child = *iter;
-        SkASSERT(child.fKind == ASTNode::Kind::kEnumCase);
-        std::unique_ptr<Expression> value;
-        if (child.begin() != child.end()) {
-            value = this->convertExpression(*child.begin());
-            if (!value) {
-                fSymbolTable = oldTable;
-                return;
-            }
-            if (!ConstantFolder::GetConstantInt(*value, &currentValue)) {
-                this->errorReporter().error(value->fOffset,
-                                            "enum value must be a constant integer");
-                fSymbolTable = oldTable;
-                return;
-            }
-        }
-        value = IntLiteral::Make(fContext, e.fOffset, currentValue);
-        ++currentValue;
-        auto var = std::make_unique<Variable>(e.fOffset, this->modifiersPool().add(modifiers),
-                                              child.getString(), type, fIsBuiltinCode,
-                                              Variable::Storage::kGlobal);
-        // enum variables aren't really 'declared', but we have to create a declaration to store
-        // the value
-        auto declaration = VarDeclaration::Make(fContext, var.get(), &var->type(), /*arraySize=*/0,
-                                                std::move(value));
-        fSymbolTable->add(std::move(var));
-        fSymbolTable->takeOwnershipOfIRNode(std::move(declaration));
-    }
-    // Now we orphanize the Enum's symbol table, so that future lookups in it are strict
-    fSymbolTable->fParent = nullptr;
-    fProgramElements->push_back(std::make_unique<Enum>(e.fOffset, e.getString(), fSymbolTable,
-                                                       /*isSharedWithCpp=*/fIsBuiltinCode,
-                                                       /*isBuiltin=*/fIsBuiltinCode));
-    fSymbolTable = oldTable;
 }
 
 bool IRGenerator::typeContainsPrivateFields(const Type& type) {
@@ -1186,7 +1127,7 @@ bool IRGenerator::typeContainsPrivateFields(const Type& type) {
 }
 
 const Type* IRGenerator::convertType(const ASTNode& type, bool allowVoid) {
-    StringFragment name = type.getString();
+    skstd::string_view name = type.getStringView();
     const Symbol* symbol = (*fSymbolTable)[name];
     if (!symbol || !symbol->is<Type>()) {
         this->errorReporter().error(type.fOffset, "unknown type '" + name + "'");
@@ -1236,8 +1177,6 @@ std::unique_ptr<Expression> IRGenerator::convertExpression(const ASTNode& expr) 
             return this->convertPostfixExpression(expr);
         case ASTNode::Kind::kPrefix:
             return this->convertPrefixExpression(expr);
-        case ASTNode::Kind::kScope:
-            return this->convertScopeExpression(expr);
         case ASTNode::Kind::kTernary:
             return this->convertTernaryExpression(expr);
         default:
@@ -1246,7 +1185,7 @@ std::unique_ptr<Expression> IRGenerator::convertExpression(const ASTNode& expr) 
     }
 }
 
-std::unique_ptr<Expression> IRGenerator::convertIdentifier(int offset, StringFragment name) {
+std::unique_ptr<Expression> IRGenerator::convertIdentifier(int offset, skstd::string_view name) {
     const Symbol* result = (*fSymbolTable)[name];
     if (!result) {
         this->errorReporter().error(offset, "unknown identifier '" + name + "'");
@@ -1267,38 +1206,14 @@ std::unique_ptr<Expression> IRGenerator::convertIdentifier(int offset, StringFra
             const Variable* var = &result->as<Variable>();
             const Modifiers& modifiers = var->modifiers();
             switch (modifiers.fLayout.fBuiltin) {
-#ifndef SKSL_STANDALONE
                 case SK_FRAGCOORD_BUILTIN:
-                    fInputs.fFlipY = true;
-                    if (this->settings().fFlipY &&
-                        !this->caps().fragCoordConventionsExtensionString()) {
-                        fInputs.fRTHeight = true;
+                    if (caps().canUseFragCoord()) {
+                        fInputs.fUseFlipRTUniform = true;
                     }
-#endif
-            }
-            if (this->programKind() == ProgramKind::kFragmentProcessor &&
-                (modifiers.fFlags & Modifiers::kIn_Flag) &&
-                !(modifiers.fFlags & Modifiers::kUniform_Flag) &&
-                !(modifiers.fLayout.fFlags & Layout::kKey_Flag) &&
-                modifiers.fLayout.fBuiltin == -1 &&
-                !var->type().isFragmentProcessor() &&
-                var->type().typeKind() != Type::TypeKind::kSampler) {
-                bool valid = false;
-                for (const auto& decl : fFile->root()) {
-                    if (decl.fKind == ASTNode::Kind::kSection) {
-                        const ASTNode::SectionData& section = decl.getSectionData();
-                        if (section.fName == "setData") {
-                            valid = true;
-                            break;
-                        }
-                    }
-                }
-                if (!valid) {
-                    this->errorReporter().error(
-                            offset,
-                            "'in' variable must be either 'uniform' or 'layout(key)', or there "
-                            "must be a custom @setData function");
-                }
+                    break;
+                case SK_CLOCKWISE_BUILTIN:
+                    fInputs.fUseFlipRTUniform = true;
+                    break;
             }
             // default to kRead_RefKind; this will be corrected later if the variable is written to
             return VariableReference::Make(offset, var, VariableReference::RefKind::kRead);
@@ -1324,18 +1239,7 @@ std::unique_ptr<Expression> IRGenerator::convertIdentifier(int offset, StringFra
 }
 
 std::unique_ptr<Expression> IRGenerator::convertIdentifier(const ASTNode& identifier) {
-    return this->convertIdentifier(identifier.fOffset, identifier.getString());
-}
-
-std::unique_ptr<Section> IRGenerator::convertSection(const ASTNode& s) {
-    if (this->programKind() != ProgramKind::kFragmentProcessor) {
-        this->errorReporter().error(s.fOffset, "syntax error");
-        return nullptr;
-    }
-
-    const ASTNode::SectionData& section = s.getSectionData();
-    return std::make_unique<Section>(s.fOffset, section.fName, section.fArgument,
-                                                section.fText);
+    return this->convertIdentifier(identifier.fOffset, identifier.getStringView());
 }
 
 std::unique_ptr<Expression> IRGenerator::coerce(std::unique_ptr<Expression> expr,
@@ -1410,6 +1314,9 @@ std::unique_ptr<Expression> IRGenerator::call(int offset,
                                               const FunctionDeclaration& function,
                                               ExpressionArray arguments) {
     if (function.isBuiltin()) {
+        if (function.intrinsicKind() == k_dFdy_IntrinsicKind) {
+            fInputs.fUseFlipRTUniform = true;
+        }
         if (function.definition()) {
             fReferencedIntrinsics.insert(&function);
         }
@@ -1517,135 +1424,9 @@ std::unique_ptr<Expression> IRGenerator::convertPrefixExpression(const ASTNode& 
     return PrefixExpression::Convert(fContext, expression.getOperator(), std::move(base));
 }
 
-// Swizzles are complicated due to constant components. The most difficult case is a mask like
-// '.x1w0'. A naive approach might turn that into 'float4(base.x, 1, base.w, 0)', but that evaluates
-// 'base' twice. We instead group the swizzle mask ('xw') and constants ('1, 0') together and use a
-// secondary swizzle to put them back into the right order, so in this case we end up with
-// 'float4(base.xw, 1, 0).xzyw'.
 std::unique_ptr<Expression> IRGenerator::convertSwizzle(std::unique_ptr<Expression> base,
-                                                        String fields) {
-    const int offset = base->fOffset;
-    const Type& baseType = base->type();
-    if (!baseType.isVector() && !baseType.isNumber()) {
-        this->errorReporter().error(
-                offset, "cannot swizzle value of type '" + baseType.displayName() + "'");
-        return nullptr;
-    }
-
-    if (fields.length() > 4) {
-        this->errorReporter().error(offset, "too many components in swizzle mask '" + fields + "'");
-        return nullptr;
-    }
-
-    ComponentArray components;
-    bool foundXYZW = false;
-    for (char field : fields) {
-        switch (field) {
-            case '0':
-                components.push_back(SwizzleComponent::ZERO);
-                break;
-            case '1':
-                components.push_back(SwizzleComponent::ONE);
-                break;
-            case 'x':
-            case 'r':
-            case 's':
-            case 'L':
-                components.push_back(SwizzleComponent::X);
-                foundXYZW = true;
-                break;
-            case 'y':
-            case 'g':
-            case 't':
-            case 'T':
-                if (baseType.columns() >= 2) {
-                    components.push_back(SwizzleComponent::Y);
-                    foundXYZW = true;
-                    break;
-                }
-                [[fallthrough]];
-            case 'z':
-            case 'b':
-            case 'p':
-            case 'R':
-                if (baseType.columns() >= 3) {
-                    components.push_back(SwizzleComponent::Z);
-                    foundXYZW = true;
-                    break;
-                }
-                [[fallthrough]];
-            case 'w':
-            case 'a':
-            case 'q':
-            case 'B':
-                if (baseType.columns() >= 4) {
-                    components.push_back(SwizzleComponent::W);
-                    foundXYZW = true;
-                    break;
-                }
-                [[fallthrough]];
-            default:
-                this->errorReporter().error(
-                        offset, String::printf("invalid swizzle component '%c'", field));
-                return nullptr;
-        }
-    }
-
-    if (!foundXYZW) {
-        this->errorReporter().error(offset, "swizzle must refer to base expression");
-        return nullptr;
-    }
-
-    return Swizzle::Convert(fContext, std::move(base), components);
-}
-
-std::unique_ptr<Expression> IRGenerator::convertTypeField(int offset, const Type& type,
-                                                          StringFragment field) {
-    const ProgramElement* enumElement = nullptr;
-    // Find the Enum element that this type refers to, start by searching our elements
-    for (const std::unique_ptr<ProgramElement>& e : *fProgramElements) {
-        if (e->is<Enum>() && type.name() == e->as<Enum>().typeName()) {
-            enumElement = e.get();
-            break;
-        }
-    }
-    // ... if that fails, look in our shared elements
-    if (!enumElement) {
-        for (const ProgramElement* e : *fSharedElements) {
-            if (e->is<Enum>() && type.name() == e->as<Enum>().typeName()) {
-                enumElement = e;
-                break;
-            }
-        }
-    }
-    // ... and if that fails, check the intrinsics, add it to our shared elements
-    if (!enumElement && !fIsBuiltinCode && fIntrinsics) {
-        if (const ProgramElement* found = fIntrinsics->findAndInclude(type.name())) {
-            fSharedElements->push_back(found);
-            enumElement = found;
-        }
-    }
-    if (!enumElement) {
-        this->errorReporter().error(offset,
-                                    "type '" + type.displayName() + "' is not a known enum");
-        return nullptr;
-    }
-
-    // We found the Enum element. Look for 'field' as a member.
-    std::shared_ptr<SymbolTable> old = fSymbolTable;
-    fSymbolTable = enumElement->as<Enum>().symbols();
-    std::unique_ptr<Expression> result =
-            convertIdentifier(ASTNode(&fFile->fNodes, offset, ASTNode::Kind::kIdentifier, field));
-    if (result) {
-        const Variable& v = *result->as<VariableReference>().variable();
-        SkASSERT(v.initialValue());
-        result = IntLiteral::Make(offset, v.initialValue()->as<IntLiteral>().value(), &type);
-    } else {
-        this->errorReporter().error(
-                offset, "type '" + type.name() + "' does not contain enumerator '" + field + "'");
-    }
-    fSymbolTable = old;
-    return result;
+                                                        skstd::string_view fields) {
+    return Swizzle::Convert(fContext, std::move(base), fields);
 }
 
 std::unique_ptr<Expression> IRGenerator::convertIndexExpression(const ASTNode& index) {
@@ -1655,30 +1436,20 @@ std::unique_ptr<Expression> IRGenerator::convertIndexExpression(const ASTNode& i
     if (!base) {
         return nullptr;
     }
-    if (base->is<TypeReference>()) {
-        // Convert an index expression starting with a type name: `int[12]`
-        if (iter == index.end()) {
-            this->errorReporter().error(index.fOffset, "array must have a size");
-            return nullptr;
-        }
-        const Type* type = &base->as<TypeReference>().value();
-        int arraySize = this->convertArraySize(*type, index.fOffset, *iter);
-        if (!arraySize) {
-            return nullptr;
-        }
-        type = fSymbolTable->addArrayDimension(type, arraySize);
-        return std::make_unique<TypeReference>(fContext, base->fOffset, type);
-    }
-
     if (iter == index.end()) {
-        this->errorReporter().error(base->fOffset, "missing index in '[]'");
+        if (base->is<TypeReference>()) {
+            this->errorReporter().error(index.fOffset, "array must have a size");
+        } else {
+            this->errorReporter().error(base->fOffset, "missing index in '[]'");
+        }
         return nullptr;
     }
     std::unique_ptr<Expression> converted = this->convertExpression(*(iter++));
     if (!converted) {
         return nullptr;
     }
-    return IndexExpression::Convert(fContext, std::move(base), std::move(converted));
+    return IndexExpression::Convert(fContext, *fSymbolTable, std::move(base),
+                                    std::move(converted));
 }
 
 std::unique_ptr<Expression> IRGenerator::convertCallExpression(const ASTNode& callNode) {
@@ -1704,28 +1475,12 @@ std::unique_ptr<Expression> IRGenerator::convertFieldExpression(const ASTNode& f
     if (!base) {
         return nullptr;
     }
-    const StringFragment& field = fieldNode.getString();
+    const skstd::string_view& field = fieldNode.getStringView();
     const Type& baseType = base->type();
-    if (baseType == *fContext.fTypes.fSkCaps) {
-        return Setting::Convert(fContext, fieldNode.fOffset, field);
-    }
-    if (baseType.isStruct()) {
+    if (baseType == *fContext.fTypes.fSkCaps || baseType.isStruct()) {
         return FieldAccess::Convert(fContext, std::move(base), field);
     }
     return this->convertSwizzle(std::move(base), field);
-}
-
-std::unique_ptr<Expression> IRGenerator::convertScopeExpression(const ASTNode& scopeNode) {
-    std::unique_ptr<Expression> base = this->convertExpression(*scopeNode.begin());
-    if (!base) {
-        return nullptr;
-    }
-    if (!base->is<TypeReference>()) {
-        this->errorReporter().error(scopeNode.fOffset, "'::' must follow a type name");
-        return nullptr;
-    }
-    const StringFragment& member = scopeNode.getString();
-    return this->convertTypeField(base->fOffset, base->as<TypeReference>().value(), member);
 }
 
 std::unique_ptr<Expression> IRGenerator::convertPostfixExpression(const ASTNode& expression) {
@@ -1769,7 +1524,7 @@ void IRGenerator::findAndDeclareBuiltinVariables() {
             // If this is the *first* time we've seen this builtin, findAndInclude will return
             // the corresponding ProgramElement.
             if (const ProgramElement* decl = fGenerator->fIntrinsics->findAndInclude(name)) {
-                SkASSERT(decl->is<GlobalVarDeclaration>() || decl->is<InterfaceBlock>());
+                SkASSERT(decl->is<GlobalVarDeclaration>() || decl->is<SkSL::InterfaceBlock>());
                 fNewElements.push_back(decl);
             }
         }
@@ -1789,7 +1544,7 @@ void IRGenerator::findAndDeclareBuiltinVariables() {
 
         bool visitExpression(const Expression& e) override {
             if (e.is<VariableReference>() && e.as<VariableReference>().variable()->isBuiltin()) {
-                this->addDeclaringElement(e.as<VariableReference>().variable()->name());
+                this->addDeclaringElement(String(e.as<VariableReference>().variable()->name()));
             }
             return INHERITED::visitExpression(e);
         }
@@ -1841,7 +1596,7 @@ void IRGenerator::start(const ParsedModule& base,
     }
     fIsBuiltinCode = isBuiltinCode;
 
-    fInputs.reset();
+    fInputs = {};
     fInvocations = -1;
     fRTAdjust = nullptr;
     fRTAdjustInterfaceBlock = nullptr;
@@ -1873,11 +1628,9 @@ void IRGenerator::start(const ParsedModule& base,
         }
     }
 
-    if (!fContext.fConfig->fSettings.fEnforceES2Restrictions &&
-        (this->programKind() == ProgramKind::kRuntimeColorFilter ||
-         this->programKind() == ProgramKind::kRuntimeShader)) {
+    if (this->isRuntimeEffect() && !fContext.fConfig->fSettings.fEnforceES2Restrictions) {
         // We're compiling a runtime effect, but we're not enforcing ES2 restrictions. Add various
-        // non-ES2  types to our symbol table to allow them to be tested.
+        // non-ES2 types to our symbol table to allow them to be tested.
         fSymbolTable->addAlias("mat2x2", fContext.fTypes.fFloat2x2.get());
         fSymbolTable->addAlias("mat2x3", fContext.fTypes.fFloat2x3.get());
         fSymbolTable->addAlias("mat2x4", fContext.fTypes.fFloat2x4.get());
@@ -1906,6 +1659,16 @@ void IRGenerator::start(const ParsedModule& base,
         fSymbolTable->addAlias("uint2", fContext.fTypes.fUInt2.get());
         fSymbolTable->addAlias("uint3", fContext.fTypes.fUInt3.get());
         fSymbolTable->addAlias("uint4", fContext.fTypes.fUInt4.get());
+
+        fSymbolTable->addAlias("short", fContext.fTypes.fShort.get());
+        fSymbolTable->addAlias("short2", fContext.fTypes.fShort2.get());
+        fSymbolTable->addAlias("short3", fContext.fTypes.fShort3.get());
+        fSymbolTable->addAlias("short4", fContext.fTypes.fShort4.get());
+
+        fSymbolTable->addAlias("ushort", fContext.fTypes.fUShort.get());
+        fSymbolTable->addAlias("ushort2", fContext.fTypes.fUShort2.get());
+        fSymbolTable->addAlias("ushort3", fContext.fTypes.fUShort3.get());
+        fSymbolTable->addAlias("ushort4", fContext.fTypes.fUShort4.get());
     }
 }
 
@@ -1942,6 +1705,10 @@ IRGenerator::IRBundle IRGenerator::finish() {
         }
     }
 
+    if (this->strictES2Mode()) {
+        Analysis::DetectStaticRecursion(SkMakeSpan(*fProgramElements), this->errorReporter());
+    }
+
     return IRBundle{std::move(*fProgramElements),
                     std::move(*fSharedElements),
                     std::move(fSymbolTable),
@@ -1951,9 +1718,8 @@ IRGenerator::IRBundle IRGenerator::finish() {
 IRGenerator::IRBundle IRGenerator::convertProgram(
         const ParsedModule& base,
         bool isBuiltinCode,
-        const char* text,
-        size_t length) {
-    Parser parser(text, length, *fSymbolTable, this->errorReporter());
+        skstd::string_view text) {
+    Parser parser(text, *fSymbolTable, this->errorReporter());
     fFile = parser.compilationUnit();
     if (this->errorReporter().errorCount() == 0) {
         SkASSERT(fFile);
@@ -1961,10 +1727,6 @@ IRGenerator::IRBundle IRGenerator::convertProgram(
             switch (decl.fKind) {
                 case ASTNode::Kind::kVarDeclarations:
                     this->convertGlobalVarDeclarations(decl);
-                    break;
-
-                case ASTNode::Kind::kEnum:
-                    this->convertEnum(decl);
                     break;
 
                 case ASTNode::Kind::kFunction:
@@ -1980,7 +1742,7 @@ IRGenerator::IRBundle IRGenerator::convertProgram(
                     break;
                 }
                 case ASTNode::Kind::kInterfaceBlock: {
-                    std::unique_ptr<InterfaceBlock> i = this->convertInterfaceBlock(decl);
+                    std::unique_ptr<SkSL::InterfaceBlock> i = this->convertInterfaceBlock(decl);
                     if (i) {
                         fProgramElements->push_back(std::move(i));
                     }
@@ -1988,16 +1750,9 @@ IRGenerator::IRBundle IRGenerator::convertProgram(
                 }
                 case ASTNode::Kind::kExtension: {
                     std::unique_ptr<Extension> e = this->convertExtension(decl.fOffset,
-                                                                          decl.getString());
+                                                                          decl.getStringView());
                     if (e) {
                         fProgramElements->push_back(std::move(e));
-                    }
-                    break;
-                }
-                case ASTNode::Kind::kSection: {
-                    std::unique_ptr<Section> s = this->convertSection(decl);
-                    if (s) {
-                        fProgramElements->push_back(std::move(s));
                     }
                     break;
                 }

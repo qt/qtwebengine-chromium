@@ -44,7 +44,6 @@ std::string TextDumpEventToString(mojom::TextDumpEvent event) {
   switch (event) {
     case mojom::TextDumpEvent::kFirstLayout:
       return "FirstLayout";
-      break;
     case mojom::TextDumpEvent::kFinishedLoad:
       return "FinishedLoad";
   }
@@ -223,7 +222,7 @@ class RequestMediator : public base::RefCounted<RequestMediator> {
     mojo::AssociatedRemote<mojom::PageTextService> renderer_text_service;
     rfh->GetRemoteAssociatedInterfaces()->GetInterface(&renderer_text_service);
 
-    auto rfh_id = rfh->GetGlobalFrameRoutingId();
+    auto rfh_id = rfh->GetGlobalId();
     bool is_subframe = rfh->GetMainFrame() != rfh;
     int nav_id = content::WebContents::FromRenderFrameHost(rfh)
                      ->GetController()
@@ -333,7 +332,10 @@ PageTextObserver* PageTextObserver::GetOrCreateForWebContents(
 }
 
 void PageTextObserver::DidStartNavigation(content::NavigationHandle* handle) {
-  if (!handle->IsInMainFrame()) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!handle->IsInPrimaryMainFrame()) {
     return;
   }
 
@@ -345,7 +347,10 @@ void PageTextObserver::DidStartNavigation(content::NavigationHandle* handle) {
 
 void PageTextObserver::DidFinishNavigation(content::NavigationHandle* handle) {
   // Only main frames are supported for right now.
-  if (!handle->IsInMainFrame()) {
+  // TODO(https://crbug.com/1218946): With MPArch there may be multiple main
+  // frames. This caller was converted automatically to the primary main frame
+  // to preserve its semantics. Follow up to confirm correctness.
+  if (!handle->IsInPrimaryMainFrame()) {
     return;
   }
 

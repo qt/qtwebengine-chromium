@@ -52,7 +52,7 @@ module.exports = function (grunt) {
           '--only=src/common/runtime/wpt.ts',
           '--only=src/webgpu/',
           // These files will be generated, instead of compiled from TypeScript.
-          '--ignore=src/common/framework/version.ts',
+          '--ignore=src/common/internal/version.ts',
           '--ignore=src/webgpu/listing.ts',
         ],
       },
@@ -66,6 +66,24 @@ module.exports = function (grunt) {
           '--declaration', 'false'
         ],
       },
+      'copy-assets': {
+        cmd: 'node',
+        args: [
+          'node_modules/@babel/cli/bin/babel',
+          'src/resources/',
+          '--out-dir=out/resources/',
+          '--copy-files'
+        ],
+      },
+      'copy-assets-wpt': {
+        cmd: 'node',
+        args: [
+          'node_modules/@babel/cli/bin/babel',
+          'src/resources/',
+          '--out-dir=out-wpt/resources/',
+          '--copy-files'
+        ],
+      },
       lint: {
         cmd: 'node',
         args: ['node_modules/eslint/bin/eslint', 'src/**/*.ts', '--max-warnings=0'],
@@ -77,13 +95,17 @@ module.exports = function (grunt) {
       'autoformat-out-wpt': {
         cmd: 'node',
         args: ['node_modules/prettier/bin-prettier', '--loglevel=warn', '--write', 'out-wpt/**/*.js'],
-      }
+      },
+      tsdoc: {
+        cmd: 'node',
+        args: ['node_modules/typedoc/bin/typedoc'],
+      },
     },
 
     copy: {
       'out-wpt-generated': {
         files: [
-          { expand: true, cwd: 'out', src: 'common/framework/version.js', dest: 'out-wpt/' },
+          { expand: true, cwd: 'out', src: 'common/internal/version.js', dest: 'out-wpt/' },
           { expand: true, cwd: 'out', src: 'webgpu/listing.js', dest: 'out-wpt/' },
         ],
       },
@@ -135,11 +157,13 @@ module.exports = function (grunt) {
 
   grunt.registerTask('build-standalone', 'Build out/ (no checks, no WPT)', [
     'run:build-out',
+    'run:copy-assets',
     'run:generate-version',
     'run:generate-listings',
   ]);
   grunt.registerTask('build-wpt', 'Build out/ (no checks)', [
     'run:build-out-wpt',
+    'run:copy-assets-wpt',
     'run:autoformat-out-wpt',
     'run:generate-version',
     'run:generate-listings',
@@ -161,6 +185,7 @@ module.exports = function (grunt) {
     'ts:check',
     'run:unittest',
     'run:lint',
+    'run:tsdoc',
   ]);
   registerTaskAndAddToHelp('standalone', 'Build standalone and typecheck', [
     'set-quiet-mode',

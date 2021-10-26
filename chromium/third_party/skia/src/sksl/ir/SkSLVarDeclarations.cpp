@@ -39,37 +39,36 @@ std::unique_ptr<Statement> VarDeclaration::Convert(const Context& context,
                                                    std::unique_ptr<Expression> value) {
     if (var->modifiers().fFlags & Modifiers::kConst_Flag) {
         if (!value) {
-            context.fErrors.error(var->fOffset, "'const' variables must be initialized");
+            context.errors().error(var->fOffset, "'const' variables must be initialized");
             return nullptr;
         }
         if (!Analysis::IsConstantExpression(*value)) {
-            context.fErrors.error(value->fOffset,
-                                  "'const' variable initializer must be a constant expression");
+            context.errors().error(value->fOffset,
+                                   "'const' variable initializer must be a constant expression");
             return nullptr;
         }
     }
     if (value) {
         if (var->storage() == Variable::Storage::kGlobal &&
-            context.fConfig->fKind != ProgramKind::kFragmentProcessor &&
             !Analysis::IsConstantExpression(*value)) {
-            context.fErrors.error(value->fOffset,
-                                  "global variable initializer must be a constant expression");
+            context.errors().error(value->fOffset,
+                                   "global variable initializer must be a constant expression");
             return nullptr;
         }
         if (var->type().isOpaque()) {
-            context.fErrors.error(
+            context.errors().error(
                     value->fOffset,
                     "opaque type '" + var->type().name() + "' cannot use initializer expressions");
             return nullptr;
         }
         if (var->modifiers().fFlags & Modifiers::kIn_Flag) {
-            context.fErrors.error(value->fOffset,
-                                  "'in' variables cannot use initializer expressions");
+            context.errors().error(value->fOffset,
+                                   "'in' variables cannot use initializer expressions");
             return nullptr;
         }
         if (var->modifiers().fFlags & Modifiers::kUniform_Flag) {
-            context.fErrors.error(value->fOffset,
-                                  "'uniform' variables cannot use initializer expressions");
+            context.errors().error(value->fOffset,
+                                   "'uniform' variables cannot use initializer expressions");
             return nullptr;
         }
         value = var->type().coerceExpression(std::move(value), context);
@@ -99,7 +98,6 @@ std::unique_ptr<Statement> VarDeclaration::Make(const Context& context,
              Analysis::IsConstantExpression(*value));
     // global variable initializer must be a constant expression
     SkASSERT(!(value && var->storage() == Variable::Storage::kGlobal &&
-               context.fConfig->fKind != ProgramKind::kFragmentProcessor &&
                !Analysis::IsConstantExpression(*value)));
     // opaque type cannot use initializer expressions
     SkASSERT(!(value && var->type().isOpaque()));
@@ -107,6 +105,11 @@ std::unique_ptr<Statement> VarDeclaration::Make(const Context& context,
     SkASSERT(!(value && (var->modifiers().fFlags & Modifiers::kIn_Flag)));
     // 'uniform' variables cannot use initializer expressions
     SkASSERT(!(value && (var->modifiers().fFlags & Modifiers::kUniform_Flag)));
+
+    // Detect and report out-of-range initial-values for this variable.
+    if (value) {
+        var->type().checkForOutOfRangeLiteral(context, *value);
+    }
 
     auto result = std::make_unique<VarDeclaration>(var, baseType, arraySize, std::move(value));
     var->setDeclaration(result.get());

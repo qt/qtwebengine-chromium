@@ -79,7 +79,7 @@ static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidPipelineCreateSta
 static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidQuery = "UNASSIGNED-CoreValidation-DrawState-InvalidQuery";
 static const char DECORATE_UNUSED *kVUID_Core_DrawState_QueryNotReset = "UNASSIGNED-CoreValidation-DrawState-QueryNotReset";
 // static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidQueueFamily = "UNASSIGNED-CoreValidation-DrawState-InvalidQueueFamily";
-static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidRenderArea = "UNASSIGNED-CoreValidation-DrawState-InvalidRenderArea";
+// static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidRenderArea = "UNASSIGNED-CoreValidation-DrawState-InvalidRenderArea";
 static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidRenderpass = "UNASSIGNED-CoreValidation-DrawState-InvalidRenderpass";
 static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidSecondaryCommandBuffer = "UNASSIGNED-CoreValidation-DrawState-InvalidSecondaryCommandBuffer";
 // static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidSet = "UNASSIGNED-CoreValidation-DrawState-InvalidSet";
@@ -171,6 +171,7 @@ static const char DECORATE_UNUSED *kVUID_Core_DrawState_InvalidImageView = "UNAS
 
 //static const char DECORATE_UNUSED *kVUID_Core_Shader_DescriptorNotAccessibleFromStage = "UNASSIGNED-CoreValidation-Shader-DescriptorNotAccessibleFromStage";
 //static const char DECORATE_UNUSED *kVUID_Core_Shader_DescriptorTypeMismatch = "UNASSIGNED-CoreValidation-Shader-DescriptorTypeMismatch";
+static const char DECORATE_UNUSED *kVUID_Core_Shader_MaxComputeSharedMemorySize = "UNASSIGNED-CoreValidation-Shader-MaxComputeSharedMemorySize";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_ExceedDeviceLimit = "UNASSIGNED-CoreValidation-Shader-ExceedDeviceLimit";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_FeatureNotEnabled = "UNASSIGNED-CoreValidation-Shader-FeatureNotEnabled";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_InconsistentSpirv = "UNASSIGNED-CoreValidation-Shader-InconsistentSpirv";
@@ -178,6 +179,7 @@ static const char DECORATE_UNUSED *kVUID_Core_Shader_InconsistentVi = "UNASSIGNE
 static const char DECORATE_UNUSED *kVUID_Core_Shader_InputAttachmentTypeMismatch = "UNASSIGNED-CoreValidation-Shader-InputAttachmentTypeMismatch";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_InputNotProduced = "UNASSIGNED-CoreValidation-Shader-InputNotProduced";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_InterfaceTypeMismatch = "UNASSIGNED-CoreValidation-Shader-InterfaceTypeMismatch";
+static const char DECORATE_UNUSED *kVUID_Core_Shader_AtomicFeature = "UNASSIGNED-CoreValidation-Shader-AtomicFeature";
 //static const char DECORATE_UNUSED *kVUID_Core_Shader_MissingDescriptor = "UNASSIGNED-CoreValidation-Shader-MissingDescriptor";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_MissingInputAttachment = "UNASSIGNED-CoreValidation-Shader-MissingInputAttachment";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_OutputNotConsumed = "UNASSIGNED-CoreValidation-Shader-OutputNotConsumed";
@@ -190,6 +192,7 @@ static const char DECORATE_UNUSED *kVUID_Core_Shader_CooperativeMatrixSupportedS
 static const char DECORATE_UNUSED *kVUID_Core_Shader_CooperativeMatrixType = "UNASSIGNED-CoreValidation-Shader-CooperativeMatrixType";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_CooperativeMatrixMulAdd = "UNASSIGNED-CoreValidation-Shader-CooperativeMatrixMulAdd";
 static const char DECORATE_UNUSED *kVUID_Core_Shader_InvalidExtension = "UNASSIGNED-CoreValidation-Shader-InvalidSpirvExtension";
+static const char DECORATE_UNUSED *kVUID_Core_Shader_ResolveQCOM_InvalidCapability = "UNASSIGNED-CoreValidation-Shader-ResolveQCOM-InvalidCapability";
 // Previously defined but unused - uncomment as needed
 //static const char DECORATE_UNUSED *kVUID_Core_Shader_BadCapability = "UNASSIGNED-CoreValidation-Shader-BadCapability";
 //static const char DECORATE_UNUSED *kVUID_Core_Shader_BadSpecialization = "UNASSIGNED-CoreValidation-Shader-BadSpecialization";
@@ -206,7 +209,7 @@ static const char DECORATE_UNUSED *kVUID_Core_DevLimit_MustQueryCount = "UNASSIG
 //static const char DECORATE_UNUSED *kVUID_Core_DevLimit_InvalidPhysicalDevice = "UNASSIGNED-CoreValidation-DevLimit-InvalidPhysicalDevice";
 
 // static const char DECORATE_UNUSED *kVUID_Core_Swapchain_GetSupportedDisplaysWithoutQuery = "UNASSIGNED-CoreValidation-Swapchain-GetSupportedDisplaysWithoutQuery";
-static const char DECORATE_UNUSED *kVUID_Core_Swapchain_InvalidCount = "UNASSIGNED-CoreValidation-SwapchainInvalidCount";
+// static const char DECORATE_UNUSED *kVUID_Core_Swapchain_InvalidCount = "UNASSIGNED-CoreValidation-SwapchainInvalidCount";
 static const char DECORATE_UNUSED *kVUID_Core_Swapchain_PriorCount = "UNASSIGNED-CoreValidation-SwapchainPriorCount";
 static const char DECORATE_UNUSED *kVUID_Core_Swapchain_PreTransform = "UNASSIGNED-CoreValidation-SwapchainPreTransform";
 static const char DECORATE_UNUSED *kVUID_Core_BindImageMemory_Swapchain = "UNASSIGNED-CoreValidation-BindImageMemory-Swapchain";
@@ -266,7 +269,9 @@ static const char DECORATE_UNUSED *kVUID_Portability_InterpolationFunction = "UN
 
 // Pending VUIDs from https://gitlab.khronos.org/vulkan/vulkan/-/merge_requests/4585
 static const char DECORATE_UNUSED *kVUID_Core_CmdDraw_VertexInput = "UNASSIGNED-vkCmdDraw-vertexInput-not-specified";
+static const char DECORATE_UNUSED *kVUID_Core_CmdDrawMultiEXT_VertexInput = "UNASSIGNED-vkCmdDrawMultiEXT-vertexInput-not-specified";
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawIndexed_VertexInput = "UNASSIGNED-vkCmdDrawIndexed-vertexInput-not-specified";
+static const char DECORATE_UNUSED *kVUID_Core_CmdDrawMultiIndexedEXT_VertexInput = "UNASSIGNED-vkCmdDrawMultiIndexedEXT-vertexInput-not-specified";
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawIndirect_VertexInput = "UNASSIGNED-vkCmdDrawIndirect-vertexInput-not-specified";
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawIndexedIndirect_VertexInput = "UNASSIGNED-vkCmdDrawIndexedIndirect-vertexInput-not-specified";
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawIndirectCount_VertexInput = "UNASSIGNED-vkCmdDrawIndirectCount-vertexInput-not-specified";
@@ -276,6 +281,14 @@ static const char DECORATE_UNUSED *kVUID_Core_CmdDrawMeshTasksIndirectNV_VertexI
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawMeshTasksIndirectCountNV_VertexInput = "UNASSIGNED-vkCmdDrawMeshTasksIndirectCountNV-vertexInput-not-specified";
 static const char DECORATE_UNUSED *kVUID_Core_CmdDrawIndirectByteCountEXT_VertexInput = "UNASSIGNED-vkCmdDrawIndirectByteCountEXT-vertexInput-not-specified";
 
+// Format features VUs
+static const char DECORATE_UNUSED *kVUID_Features_shaderStorageImageReadWithoutFormat = "UNASSIGNED-features-shaderStorageImageReadWithoutFormat";
+static const char DECORATE_UNUSED *kVUID_Features_shaderStorageImageWriteWithoutFormat = "UNASSIGNED-features-shaderStorageImageWriteWithoutFormat";
+static const char DECORATE_UNUSED *kVUID_Features_shaderStorageImageReadWithoutFormat_NonReadable = "UNASSIGNED-features-shaderStorageImageReadWithoutFormat-NonReadable";
+static const char DECORATE_UNUSED *kVUID_Features_shaderStorageImageWriteWithoutFormat_NonWritable = "UNASSIGNED-features-shaderStorageImageWriteWithoutFormat-NonWritable";
+
+static const char DECORATE_UNUSED *kVUID_Features_PresentIdKHR = "UNASSIGNED-features-VkPresentIdKHR";
+static const char DECORATE_UNUSED *kVUID_Features_PresentWaitKHR = "UNASSIGNED-features-VkPresentWaitKHR";
 
 // clang-format on
 

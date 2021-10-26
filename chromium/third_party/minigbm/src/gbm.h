@@ -72,7 +72,7 @@ union gbm_bo_handle {
 /** Format of the allocated buffer */
 enum gbm_bo_format {
    /** RGB with 8 bits per channel in a 32 bit value */
-   GBM_BO_FORMAT_XRGB8888, 
+   GBM_BO_FORMAT_XRGB8888,
    /** ARGB with 8 bits per channel in a 32 bit value */
    GBM_BO_FORMAT_ARGB8888
 };
@@ -179,6 +179,8 @@ enum gbm_bo_format {
 #define GBM_FORMAT_NV16		__gbm_fourcc_code('N', 'V', '1', '6') /* 2x1 subsampled Cr:Cb plane */
 #define GBM_FORMAT_NV61		__gbm_fourcc_code('N', 'V', '6', '1') /* 2x1 subsampled Cb:Cr plane */
 
+#define GBM_FORMAT_P010		__gbm_fourcc_code('P', '0', '1', '0') /* 2x2 subsampled Cr:Cb plane */
+
 /*
  * 3 plane YCbCr
  * index 0: Y plane, [7:0] Y
@@ -280,6 +282,14 @@ enum gbm_bo_flags {
     * which would otherwise access the underlying buffer will fail.
     */
    GBM_TEST_ALLOC = (1 << 15),
+
+   /**
+    * The buffer will be used for front buffer rendering.  On some
+    * platforms this may (for example) disable framebuffer compression
+    * to avoid problems with compression flags data being out of sync
+    * with pixel data.
+    */
+   GBM_BO_USE_FRONT_RENDERING = (1 << 16),
 };
 
 int
@@ -419,6 +429,9 @@ gbm_bo_get_plane_count(struct gbm_bo *bo);
 
 union gbm_bo_handle
 gbm_bo_get_handle_for_plane(struct gbm_bo *bo, size_t plane);
+
+int
+gbm_bo_get_fd_for_plane(struct gbm_bo *bo, int plane);
 
 int
 gbm_bo_write(struct gbm_bo *bo, const void *buf, size_t count);

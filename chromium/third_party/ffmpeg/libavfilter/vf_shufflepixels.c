@@ -377,6 +377,11 @@ static int filter_frame(AVFilterLink *inlink, AVFrame *in)
     ThreadData td;
     int ret;
 
+    if (!out) {
+        ret = AVERROR(ENOMEM);
+        goto fail;
+    }
+
     ret = av_frame_copy_props(out, in);
     if (ret < 0) {
         av_frame_free(&out);
@@ -443,7 +448,7 @@ static const AVFilterPad shufflepixels_outputs[] = {
     { NULL },
 };
 
-AVFilter ff_vf_shufflepixels = {
+const AVFilter ff_vf_shufflepixels = {
     .name          = "shufflepixels",
     .description   = NULL_IF_CONFIG_SMALL("Shuffle video pixels."),
     .priv_size     = sizeof(ShufflePixelsContext),

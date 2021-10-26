@@ -99,8 +99,8 @@ void ShapeResultBloberizer::CommitText() {
   DVLOG(4) << "   CommitText cluster starts: "
            << base::make_span(current_character_indexes_);
 
-  size_t pending_utf8_original_size = pending_utf8_.size();
-  size_t pending_utf8_character_indexes_original_size =
+  wtf_size_t pending_utf8_original_size = pending_utf8_.size();
+  wtf_size_t pending_utf8_character_indexes_original_size =
       pending_utf8_character_indexes_.size();
 
   // Do the UTF-8 conversion here.
@@ -114,7 +114,7 @@ void ShapeResultBloberizer::CommitText() {
   if (current_text_.Is8Bit()) {
     const LChar* latin1 = current_text_.Characters8();
     wtf_size_t utf8_size = pending_utf8_.size();
-    for (size_t i = from; i < to;) {
+    for (unsigned i = from; i < to;) {
       pending_utf8_character_index_from_character_index[i - from] = utf8_size;
 
       LChar cp = latin1[i++];
@@ -124,7 +124,7 @@ void ShapeResultBloberizer::CommitText() {
   } else {
     const UChar* utf16 = current_text_.Characters16();
     wtf_size_t utf8_size = pending_utf8_.size();
-    for (size_t i = from; i < to;) {
+    for (unsigned i = from; i < to;) {
       pending_utf8_character_index_from_character_index[i - from] = utf8_size;
 
       UChar32 cp;
@@ -264,11 +264,11 @@ class GlyphCallbackContext {
   STACK_ALLOCATED();
 
  public:
+  GlyphCallbackContext(const GlyphCallbackContext&) = delete;
+  GlyphCallbackContext& operator=(const GlyphCallbackContext&) = delete;
+
   ShapeResultBloberizer* bloberizer;
   const StringView& text;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(GlyphCallbackContext);
 };
 }  // namespace
 
@@ -328,13 +328,13 @@ class ClusterCallbackContext {
   STACK_ALLOCATED();
 
  public:
+  ClusterCallbackContext(const ClusterCallbackContext&) = delete;
+  ClusterCallbackContext& operator=(const ClusterCallbackContext&) = delete;
+
   ShapeResultBloberizer* bloberizer;
   const StringView& text;
   const GlyphData& emphasis_data;
   FloatPoint glyph_center;
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(ClusterCallbackContext);
 };
 }  // namespace
 
@@ -378,6 +378,8 @@ class ClusterStarts {
 
  public:
   ClusterStarts() = default;
+  ClusterStarts(const ClusterStarts&) = delete;
+  ClusterStarts& operator=(const ClusterStarts&) = delete;
 
   static void Accumulate(void* context,
                          unsigned character_index,
@@ -413,8 +415,6 @@ class ClusterStarts {
   base::span<const unsigned> Data() { return cluster_starts_; }
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(ClusterStarts);
-
   Vector<unsigned, 256> cluster_starts_;
   unsigned last_seen_character_index_ = 0;
 };

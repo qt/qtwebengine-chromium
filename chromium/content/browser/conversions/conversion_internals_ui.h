@@ -24,10 +24,12 @@ class CONTENT_EXPORT ConversionInternalsUI : public WebUIController {
   explicit ConversionInternalsUI(WebUI* web_ui);
   ConversionInternalsUI(const ConversionInternalsUI& other) = delete;
   ConversionInternalsUI& operator=(const ConversionInternalsUI& other) = delete;
+  ConversionInternalsUI(ConversionInternalsUI&& other) = delete;
+  ConversionInternalsUI& operator=(ConversionInternalsUI&& other) = delete;
   ~ConversionInternalsUI() override;
 
   // WebUIController overrides:
-  void RenderFrameCreated(RenderFrameHost* render_frame_host) override;
+  void WebUIRenderFrameCreated(RenderFrameHost* render_frame_host) override;
 
   void BindInterface(
       mojo::PendingReceiver<::mojom::ConversionInternalsHandler> receiver);

@@ -34,7 +34,6 @@
 #include <utility>
 
 #include "base/containers/span.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
 #include "net/base/ip_address.h"
@@ -82,7 +81,6 @@
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_error.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
-#include "third_party/blink/renderer/platform/loader/fetch/resource_load_info.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_timing.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
@@ -190,6 +188,11 @@ class InspectorFileReaderLoaderClient final : public FileReaderLoaderClient {
         FileReaderLoader::kReadByClient, this, std::move(task_runner));
   }
 
+  InspectorFileReaderLoaderClient(const InspectorFileReaderLoaderClient&) =
+      delete;
+  InspectorFileReaderLoaderClient& operator=(
+      const InspectorFileReaderLoaderClient&) = delete;
+
   ~InspectorFileReaderLoaderClient() override = default;
 
   void Start() {
@@ -222,7 +225,6 @@ class InspectorFileReaderLoaderClient final : public FileReaderLoaderClient {
   base::OnceCallback<void(scoped_refptr<SharedBuffer>)> callback_;
   std::unique_ptr<FileReaderLoader> loader_;
   scoped_refptr<SharedBuffer> raw_data_;
-  DISALLOW_COPY_AND_ASSIGN(InspectorFileReaderLoaderClient);
 };
 
 static void ResponseBodyFileReaderLoaderDone(
@@ -253,6 +255,9 @@ class InspectorPostBodyParser
       : callback_(std::move(callback)),
         task_runner_(std::move(task_runner)),
         error_(false) {}
+
+  InspectorPostBodyParser(const InspectorPostBodyParser&) = delete;
+  InspectorPostBodyParser& operator=(const InspectorPostBodyParser&) = delete;
 
   void Parse(EncodedFormData* request_body) {
     if (!request_body || request_body->IsEmpty())
@@ -314,7 +319,6 @@ class InspectorPostBodyParser
   const scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
   bool error_;
   Vector<String> parts_;
-  DISALLOW_COPY_AND_ASSIGN(InspectorPostBodyParser);
 };
 
 KURL UrlWithoutFragment(const KURL& url) {
@@ -799,22 +803,9 @@ BuildObjectForResourceResponse(const ResourceResponse& response,
   if (response.IsNull())
     return nullptr;
 
-  int status;
-  String status_text;
-  if (response.GetResourceLoadInfo() &&
-      response.GetResourceLoadInfo()->http_status_code) {
-    status = response.GetResourceLoadInfo()->http_status_code;
-    status_text = response.GetResourceLoadInfo()->http_status_text;
-  } else {
-    status = response.HttpStatusCode();
-    status_text = response.HttpStatusText();
-  }
-  HTTPHeaderMap headers_map;
-  if (response.GetResourceLoadInfo() &&
-      response.GetResourceLoadInfo()->response_headers.size())
-    headers_map = response.GetResourceLoadInfo()->response_headers;
-  else
-    headers_map = response.HttpHeaderFields();
+  int status = response.HttpStatusCode();
+  String status_text = response.HttpStatusText();
+  HTTPHeaderMap headers_map = response.HttpHeaderFields();
 
   int64_t encoded_data_length = response.EncodedDataLength();
 
@@ -878,21 +869,6 @@ BuildObjectForResourceResponse(const ResourceResponse& response,
   if (response.GetResourceLoadTiming())
     response_object->setTiming(
         BuildObjectForTiming(*response.GetResourceLoadTiming()));
-
-  if (response.GetResourceLoadInfo()) {
-    if (!response.GetResourceLoadInfo()->response_headers_text.IsEmpty()) {
-      response_object->setHeadersText(
-          response.GetResourceLoadInfo()->response_headers_text);
-    }
-    if (response.GetResourceLoadInfo()->request_headers.size()) {
-      response_object->setRequestHeaders(BuildObjectForHeaders(
-          response.GetResourceLoadInfo()->request_headers));
-    }
-    if (!response.GetResourceLoadInfo()->request_headers_text.IsEmpty()) {
-      response_object->setRequestHeadersText(
-          response.GetResourceLoadInfo()->request_headers_text);
-    }
-  }
 
   const net::IPEndPoint& remote_ip_endpoint = response.RemoteIPEndpoint();
   if (remote_ip_endpoint.address().IsValid()) {
@@ -1127,6 +1103,11 @@ void InspectorNetworkAgent::WillSendRequestInternal(
   Maybe<String> maybe_frame_id;
   if (!frame_id.IsEmpty())
     maybe_frame_id = frame_id;
+  if (loader && loader->GetFrame() && loader->GetFrame()->GetDocument()) {
+    request_info->setIsSameSite(
+        loader->GetFrame()->GetDocument()->SiteForCookies().IsFirstParty(
+            request.Url()));
+  }
   GetFrontend()->requestWillBeSent(
       request_id, loader_id, documentURL, std::move(request_info),
       timestamp.since_origin().InSecondsF(), base::Time::Now().ToDoubleT(),
@@ -1210,8 +1191,6 @@ void InspectorNetworkAgent::PrepareRequest(DocumentLoader* loader,
       }
     }
   }
-
-  request.SetReportRawHeaders(true);
 
   if (cache_disabled_.Get()) {
     if (LoadsFromCacheOnly(request) &&
@@ -1610,11 +1589,13 @@ InspectorNetworkAgent::BuildInitiatorObject(
       .build();
 }
 
-void InspectorNetworkAgent::DidCreateWebSocket(
+void InspectorNetworkAgent::WillCreateWebSocket(
     ExecutionContext* execution_context,
     uint64_t identifier,
     const KURL& request_url,
-    const String&) {
+    const String&,
+    absl::optional<base::UnguessableToken>* devtools_token) {
+  *devtools_token = devtools_token_;
   std::unique_ptr<v8_inspector::protocol::Runtime::API::StackTrace>
       current_stack_trace =
           SourceLocation::Capture(execution_context)->BuildInspectorObject();
@@ -2012,12 +1993,6 @@ Response InspectorNetworkAgent::setCacheDisabled(bool cache_disabled) {
 
 Response InspectorNetworkAgent::setBypassServiceWorker(bool bypass) {
   bypass_service_worker_.Set(bypass);
-  return Response::Success();
-}
-
-Response InspectorNetworkAgent::setDataSizeLimitsForTest(int max_total,
-                                                         int max_resource) {
-  resources_data_->SetResourcesDataSizeLimits(max_total, max_resource);
   return Response::Success();
 }
 

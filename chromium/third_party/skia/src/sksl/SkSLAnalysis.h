@@ -8,6 +8,7 @@
 #ifndef SkSLAnalysis_DEFINED
 #define SkSLAnalysis_DEFINED
 
+#include "include/core/SkSpan.h"
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkSLSampleUsage.h"
 
@@ -37,15 +38,26 @@ struct Analysis {
      * Determines how `program` samples `fp`. By default, assumes that the sample coords
      * (SK_MAIN_COORDS_BUILTIN) might be modified, so `sample(fp, sampleCoords)` is treated as
      * Explicit. If writesToSampleCoords is false, treats that as PassThrough, instead.
+     * If elidedSampleCoordCount is provided, the pointed to value will be incremented by the
+     * number of sample calls where the above rewrite was performed.
      */
     static SampleUsage GetSampleUsage(const Program& program,
                                       const Variable& fp,
-                                      bool writesToSampleCoords = true);
+                                      bool writesToSampleCoords = true,
+                                      int* elidedSampleCoordCount = nullptr);
 
     static bool ReferencesBuiltin(const Program& program, int builtin);
 
     static bool ReferencesSampleCoords(const Program& program);
     static bool ReferencesFragCoords(const Program& program);
+
+    static bool CallsSampleOutsideMain(const Program& program);
+
+    /*
+     * Does the function call graph of the program include any cycles? If so, emits an error.
+     */
+    static bool DetectStaticRecursion(SkSpan<std::unique_ptr<ProgramElement>> programElements,
+                                      ErrorReporter& errors);
 
     static int NodeCountUpToLimit(const FunctionDefinition& function, int limit);
 

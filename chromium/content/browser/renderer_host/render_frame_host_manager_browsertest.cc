@@ -31,9 +31,9 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
+#include "content/browser/renderer_host/navigation_entry_restore_context_impl.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/renderer_host/render_frame_proxy_host.h"
@@ -63,6 +63,7 @@
 #include "content/public/test/commit_message_delayer.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/content_mock_cert_verifier.h"
 #include "content/public/test/navigation_handle_observer.h"
 #include "content/public/test/test_frame_navigation_observer.h"
 #include "content/public/test/test_navigation_observer.h"
@@ -73,6 +74,7 @@
 #include "content/shell/browser/shell.h"
 #include "content/test/content_browser_test_utils_internal.h"
 #include "content/test/render_document_feature.h"
+#include "content/test/storage_partition_test_helpers.h"
 #include "content/test/test_content_browser_client.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
@@ -2084,7 +2086,7 @@ IN_PROC_BROWSER_TEST_P(
     EXPECT_EQ(kOriginalSiteInfo,
               speculative_rfh->GetSiteInstance()->GetSiteInfo());
   }
-  int site_instance_id = speculative_rfh->GetSiteInstance()->GetId();
+  auto site_instance_id = speculative_rfh->GetSiteInstance()->GetId();
 
   // The user starts a navigation towards the redirected URL, for which we have
   // a speculative RenderFrameHost. This shouldn't delete the speculative
@@ -3006,7 +3008,10 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
               shell()->web_contents()->GetBrowserContext(),
               nullptr /* blob_url_loader_factory */));
   prev_entry = shell()->web_contents()->GetController().GetEntryAtIndex(0);
-  cloned_entry->SetPageState(prev_entry->GetPageState());
+
+  std::unique_ptr<NavigationEntryRestoreContextImpl> context =
+      std::make_unique<NavigationEntryRestoreContextImpl>();
+  cloned_entry->SetPageState(prev_entry->GetPageState(), context.get());
   const std::vector<base::FilePath>& cloned_files =
       cloned_entry->GetPageState().GetReferencedFiles();
   ASSERT_EQ(1U, cloned_files.size());
@@ -3068,7 +3073,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
                             ->GetFrameTree()
                             ->root();
-  int32_t orig_site_instance_id =
+  auto orig_site_instance_id =
       root->current_frame_host()->GetSiteInstance()->GetId();
   int initial_process_id =
       root->current_frame_host()->GetSiteInstance()->GetProcess()->GetID();
@@ -3779,12 +3784,27 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   web_contents->SetWebPreferences(prefs);
 
   GURL file_url = GetTestUrl("", "title1.html");
+  ASSERT_TRUE(file_url.SchemeIsFile());
   ASSERT_TRUE(NavigateToURL(shell(), file_url));
   EXPECT_EQ(1, web_contents->GetController().GetEntryCount());
-  EXPECT_TRUE(ExecuteScript(
-      root, "window.history.pushState({}, '', 'https://chromium.org');"));
+  EXPECT_TRUE(
+      ExecJs(root, "history.pushState({}, '', 'https://chromium.org');"));
+  ASSERT_TRUE(web_contents->GetMainFrame()->IsRenderFrameLive());
   EXPECT_EQ(2, web_contents->GetController().GetEntryCount());
-  EXPECT_TRUE(web_contents->GetMainFrame()->IsRenderFrameLive());
+
+  // At this point, we should still consider the current origin to be file://,
+  // so that subsequent web or file URLs would still be legal for same-document
+  // navigations.  See https://crbug.com/553418.
+  const url::Origin file_origin = url::Origin::Create(file_url);
+  EXPECT_TRUE(file_origin.IsSameOriginWith(
+      web_contents->GetMainFrame()->GetLastCommittedOrigin()));
+  EXPECT_TRUE(ExecJs(root, "history.pushState({}, '', 'https://foo.com');"));
+  ASSERT_TRUE(web_contents->GetMainFrame()->IsRenderFrameLive());
+  EXPECT_EQ(3, web_contents->GetController().GetEntryCount());
+  EXPECT_TRUE(
+      ExecJs(root, JsReplace("history.pushState({}, '', $1);", file_url)));
+  ASSERT_TRUE(web_contents->GetMainFrame()->IsRenderFrameLive());
+  EXPECT_EQ(4, web_contents->GetController().GetEntryCount());
 }
 
 // Ensure that navigating back from a sad tab to an existing process works
@@ -3885,7 +3905,7 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest, LastCommittedOrigin) {
   GURL url_b_with_frame(embedded_test_server()->GetURL(
       "b.com", "/navigation_controller/page_with_iframe.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url_b_with_frame));
-  if (CanSameSiteMainFrameNavigationsChangeRenderFrameHosts()) {
+  if (IsProactivelySwapBrowsingInstanceOnSameSiteNavigationEnabled()) {
     // If same-site ProactivelySwapBrowsingInstance or main-frame RenderDocument
     // is enabled, the navigation will result in a new RFH.
     EXPECT_NE(rfh_b, web_contents->GetMainFrame());
@@ -4059,7 +4079,14 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   EXPECT_EQ(GURL(url::kAboutBlankURL),
             root->child_at(0)->child_at(0)->current_url());
 
+  // The frame is no longer on the initial empty document, but we don't consider
+  // it as having committed a real load.  The FrameTreeVisualizer test should be
+  // enough to ensure that the childmost frame is not loaded.
   EXPECT_FALSE(root->child_at(0)->child_at(0)->has_committed_real_load());
+  EXPECT_FALSE(
+      root->child_at(0)
+          ->child_at(0)
+          ->is_on_initial_empty_document_or_subsequent_empty_documents());
 }
 
 // Ensure that navigating a subframe to the same URL as its parent twice in a
@@ -4342,6 +4369,96 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
   }
 }
 
+// Verifies that a renderer-initiated navigation from a site in the default
+// StoragePartition to one that ContentBrowserClient places in a non-default
+// StoragePartition will swap to a new BrowsingInstance.
+IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
+                       NavigationToDifferentPartitionSwapsBrowsingInstance) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Set up a ContentBrowserClient that maps b.com to a non-default partition.
+  CustomStoragePartitionForSomeSites modified_client(GURL("http://b.com/"));
+  ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&modified_client);
+
+  // Load a page on a.com and verify that it uses the default partition.
+  GURL a_url(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), a_url));
+  RenderFrameHostImpl* rfh =
+      static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+  SiteInstanceImpl* a_site_instance = rfh->GetSiteInstance();
+  EXPECT_TRUE(
+      a_site_instance->GetSiteInfo().storage_partition_config().is_default());
+
+  // Make sure proactive BrowserInstance swapping doesn't interfere.
+  rfh->DisableProactiveBrowsingInstanceSwapForTesting();
+
+  // Do a renderer-initiated navigation to a page on b.com and verify that we
+  // swapped BrowsingInstances.
+  GURL b_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURLFromRenderer(shell(), b_url));
+  rfh = static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+  SiteInstanceImpl* b_site_instance = rfh->GetSiteInstance();
+  EXPECT_FALSE(
+      b_site_instance->GetSiteInfo().storage_partition_config().is_default());
+  EXPECT_FALSE(a_site_instance->IsRelatedSiteInstance(b_site_instance));
+
+  // Restore the original ContentBrowserClient.
+  SetBrowserClientForTesting(old_client);
+}
+
+// Verifies that iframes inherit their StoragePartition, even if
+// ContentBrowserClient would normally place the iframe's URL in a dedicated
+// StoragePartition.
+IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
+                       SubframeInheritsStoragePartition) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  // Set up a ContentBrowserClient that maps b.com to a non-default partition.
+  CustomStoragePartitionForSomeSites modified_client(GURL("http://b.com/"));
+  ContentBrowserClient* old_client =
+      SetBrowserClientForTesting(&modified_client);
+
+  // Load a page on b.com to verify that it uses the correct partition.
+  GURL b_url(embedded_test_server()->GetURL("b.com", "/title1.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), b_url));
+  RenderFrameHostImpl* rfh =
+      static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+  EXPECT_FALSE(rfh->GetSiteInstance()
+                   ->GetSiteInfo()
+                   .storage_partition_config()
+                   .is_default());
+
+  // Load a page on a.com that iframes a b.com page.
+  GURL a_url(embedded_test_server()->GetURL(
+      "a.com", "/cross_site_iframe_factory.html?a(b)"));
+  EXPECT_TRUE(NavigateToURL(shell(), a_url));
+  rfh = static_cast<WebContentsImpl*>(shell()->web_contents())->GetMainFrame();
+  SiteInstanceImpl* a_site_instance = rfh->GetSiteInstance();
+  if (AreDefaultSiteInstancesEnabled()) {
+    EXPECT_TRUE(a_site_instance->IsDefaultSiteInstance());
+  } else {
+    EXPECT_EQ("http://a.com/", a_site_instance->GetSiteURL());
+  }
+  EXPECT_TRUE(
+      a_site_instance->GetSiteInfo().storage_partition_config().is_default());
+
+  // Verify that the iframe uses the default StoragePartition.
+  EXPECT_EQ(2UL, rfh->GetFramesInSubtree().size());
+  SiteInstanceImpl* b_site_instance = static_cast<SiteInstanceImpl*>(
+      rfh->GetFramesInSubtree()[1]->GetSiteInstance());
+  if (AreDefaultSiteInstancesEnabled()) {
+    EXPECT_TRUE(b_site_instance->IsDefaultSiteInstance());
+  } else {
+    EXPECT_EQ("http://b.com/", b_site_instance->GetSiteURL());
+  }
+  EXPECT_TRUE(
+      b_site_instance->GetSiteInfo().storage_partition_config().is_default());
+
+  // Restore the original ContentBrowserClient.
+  SetBrowserClientForTesting(old_client);
+}
+
 // Ensure that these two browser-initiated navigations:
 //   foo.com -> about:blank -> foo.com
 // stay in the same SiteInstance.  This isn't technically required for
@@ -4356,9 +4473,14 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
       shell()->web_contents()->GetSiteInstance());
 
   // Navigate to about:blank from address bar.  This stays in the foo.com
-  // SiteInstance.
+  // SiteInstance, unless we do a proactive BrowsingInstance swap due to
+  // back/forward cache.
   EXPECT_TRUE(NavigateToURL(shell(), GURL(url::kAboutBlankURL)));
-  EXPECT_EQ(site_instance, shell()->web_contents()->GetSiteInstance());
+  if (IsSameSiteBackForwardCacheEnabled()) {
+    site_instance = shell()->web_contents()->GetSiteInstance();
+  } else {
+    EXPECT_EQ(site_instance, shell()->web_contents()->GetSiteInstance());
+  }
 
   // Perform a browser-initiated navigation to foo.com.  This should also stay
   // in the original foo.com SiteInstance and BrowsingInstance.
@@ -6531,19 +6653,18 @@ class ProactivelySwapBrowsingInstancesSameSiteCoopTest
         {
             network::features::kCrossOriginOpenerPolicy,
             network::features::kCrossOriginOpenerPolicyReporting,
-            network::features::kCrossOriginIsolated,
         },
         {});
-    base::CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kIgnoreCertificateErrors);
   }
 
   ~ProactivelySwapBrowsingInstancesSameSiteCoopTest() override = default;
 
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
- protected:
+ private:
   void SetUpOnMainThread() override {
+    ProactivelySwapBrowsingInstancesSameSiteTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
     host_resolver()->AddRule("*", "127.0.0.1");
     ASSERT_TRUE(embedded_test_server()->Start());
     https_server()->ServeFilesFromSourceDirectory(GetTestDataFilePath());
@@ -6555,12 +6676,24 @@ class ProactivelySwapBrowsingInstancesSameSiteCoopTest
   void SetUpCommandLine(base::CommandLine* command_line) override {
     ProactivelySwapBrowsingInstancesSameSiteTest::SetUpCommandLine(
         command_line);
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
   }
 
- private:
+  void SetUpInProcessBrowserTestFixture() override {
+    ProactivelySwapBrowsingInstancesSameSiteTest::
+        SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    ProactivelySwapBrowsingInstancesSameSiteTest::
+        TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
   base::test::ScopedFeatureList feature_list_;
   net::EmbeddedTestServer https_server_;
+  content::ContentMockCertVerifier mock_cert_verifier_;
 };
 
 // Tests history same-site process reuse:
@@ -7646,7 +7779,7 @@ class RenderFrameHostManagerUnloadBrowserTest
  public:
   RenderFrameHostManagerUnloadBrowserTest() = default;
 
-  // Starts monitoring requests made to the embedded_http_server() looking for
+  // Starts monitoring requests made to the embedded_test_server() looking for
   // one made to |url|.  To be used together with WaitForMonitoredRequest().
   void StartMonitoringRequestsFor(const GURL& url) {
     base::AutoLock lock(lock_);
@@ -8479,14 +8612,20 @@ IN_PROC_BROWSER_TEST_P(RenderFrameHostManagerTest,
 
   // The foo.com navigation should've used a different process, locked to
   // foo.com.
+  BrowserContext* browser_context = web_contents->GetBrowserContext();
   RenderProcessHost* process2 = web_contents->GetMainFrame()->GetProcess();
   EXPECT_NE(process1, process2);
   EXPECT_EQ(GURL("http://foo.com"),
             web_contents->GetMainFrame()->GetSiteInstance()->GetSiteURL());
-  EXPECT_EQ(ProcessLock(SiteInfo(GURL("http://foo.com"), GURL("http://foo.com"),
-                                 false /* is_origin_keyed */,
-                                 WebExposedIsolationInfo::CreateNonIsolated())),
-            policy->GetProcessLock(process2->GetID()));
+  EXPECT_EQ(
+      ProcessLock(SiteInfo(
+          GURL("http://foo.com"), GURL("http://foo.com"),
+          false /* is_origin_keyed */,
+          StoragePartitionConfig::CreateDefault(browser_context),
+          WebExposedIsolationInfo::CreateNonIsolated(), false /* is_guest */,
+          false /* does_site_request_dedicated_process_for_coop */,
+          false /* is_jit_disabled */)),
+      policy->GetProcessLock(process2->GetID()));
 
   // Ensure also that the foo.com process didn't change midway through the
   // navigation.

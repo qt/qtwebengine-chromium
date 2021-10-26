@@ -191,7 +191,11 @@ std::unique_ptr<QuicPacket> BuildUnsizedDataPacket(
   EncryptionLevel level = HeaderToEncryptionLevel(header);
   size_t length =
       framer->BuildDataPacket(header, frames, buffer, packet_size, level);
-  QUICHE_DCHECK_NE(0u, length);
+
+  if (length == 0) {
+    delete[] buffer;
+    return nullptr;
+  }
   // Re-construct the data packet with data ownership.
   return std::make_unique<QuicPacket>(
       buffer, length, /* owns_buffer */ true,
@@ -1323,10 +1327,12 @@ QuicMemSliceSpan MakeSpan(QuicBufferAllocator* allocator,
 }
 
 QuicMemSlice MemSliceFromString(absl::string_view data) {
+  if (data.empty()) {
+    return QuicMemSlice();
+  }
+
   static SimpleBufferAllocator* allocator = new SimpleBufferAllocator();
-  QuicUniqueBufferPtr buffer = MakeUniqueBuffer(allocator, data.size());
-  memcpy(buffer.get(), data.data(), data.size());
-  return QuicMemSlice(std::move(buffer), data.size());
+  return QuicMemSlice(QuicBuffer::Copy(allocator, data));
 }
 
 bool TaggingEncrypter::EncryptPacket(uint64_t /*packet_number*/,

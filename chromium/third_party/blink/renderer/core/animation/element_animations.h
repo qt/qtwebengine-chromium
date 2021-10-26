@@ -31,7 +31,6 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_ELEMENT_ANIMATIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_ELEMENT_ANIMATIONS_H_
 
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/core/animation/css/css_animations.h"
 #include "third_party/blink/renderer/core/animation/effect_stack.h"
@@ -51,6 +50,8 @@ class CORE_EXPORT ElementAnimations final
     : public GarbageCollected<ElementAnimations> {
  public:
   ElementAnimations();
+  ElementAnimations(const ElementAnimations&) = delete;
+  ElementAnimations& operator=(const ElementAnimations&) = delete;
   ~ElementAnimations();
 
   // Animations that are currently active for this element, their effects will
@@ -82,12 +83,6 @@ class CORE_EXPORT ElementAnimations final
   }
   bool IsAnimationStyleChange() const { return animation_style_change_; }
 
-  const ComputedStyle* BaseComputedStyle() const;
-  const CSSBitset* BaseImportantSet() const;
-  void UpdateBaseComputedStyle(const ComputedStyle*,
-                               std::unique_ptr<CSSBitset> base_important_set);
-  void ClearBaseComputedStyle();
-
   bool UpdateBoxSizeAndCheckTransformAxisAlignment(const FloatSize& box_size);
   bool IsIdentityOrTranslation() const;
 
@@ -105,24 +100,9 @@ class CORE_EXPORT ElementAnimations final
   // style, we store a cached value of the 'base' computed style (e.g. with no
   // change from the running animations) and use that during style recalc,
   // applying only the animation changes on top of it.
+  //
+  // See also StyleBaseData.
   bool animation_style_change_;
-  scoped_refptr<ComputedStyle> base_computed_style_;
-  // Keeps track of the !important declarations used to build the base
-  // computed style. These declarations must not be overwritten by animation
-  // effects, hence we have to disable the base computed style optimization when
-  // !important declarations conflict with active animations.
-  //
-  // If there were no !important declarations in the base style, this field
-  // will be nullptr.
-  //
-  // TODO(andruud): We should be able to simply skip applying the animation
-  // for properties in this set instead of disabling the optimization.
-  // However, we currently need the cascade to handle the case where
-  // an !important declaration appears in a :visited selector.
-  // See https://crbug.com/1062217.
-  std::unique_ptr<CSSBitset> base_important_set_;
-
-  DISALLOW_COPY_AND_ASSIGN(ElementAnimations);
 
   FRIEND_TEST_ALL_PREFIXES(StyleEngineTest, PseudoElementBaseComputedStyle);
 };

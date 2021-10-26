@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {AggregationAttrs, PivotAttrs} from './pivot_table_query_generator';
+
 /**
  * A plain js object, holding objects of type |Class| keyed by string id.
  * We use this instead of using |Map| object since it is simpler and faster to
@@ -52,7 +54,9 @@ export interface Area {
 export const MAX_TIME = 180;
 
 // 3: TrackKindPriority and related sorting changes.
-export const STATE_VERSION = 3;
+// 5: Move a large number of items off frontendLocalState and onto state
+// 6: Common PivotTableConfig and pivot table specific PivotTableState.
+export const STATE_VERSION = 6;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -80,6 +84,7 @@ export interface CallsiteInfo {
   mapping: string;
   merged: boolean;
   highlighted: boolean;
+  location?: string;
 }
 
 export interface TraceFileSource {
@@ -162,7 +167,7 @@ export interface Status {
 }
 
 export interface Note {
-  noteType: 'DEFAULT'|'MOVIE';
+  noteType: 'DEFAULT';
   id: string;
   timestamp: number;
   color: string;
@@ -266,11 +271,32 @@ export interface MetricsState {
   requestedMetric?: string;  // Unset after metric request is handled.
 }
 
+export interface PivotTableConfig {
+  availableColumns?: Array<{
+    tableName: string,
+    columns: string[]
+  }>;                                // Undefined until list is loaded.
+  totalColumnsCount?: number;        // Total columns in all tables.
+  availableAggregations?: string[];  // Undefined until list is loaded.
+}
+
+export interface PivotTableState {
+  id: string;
+  name: string;
+  selectedPivots: PivotAttrs[];
+  selectedAggregations: AggregationAttrs[];
+  selectedColumnIndex?: number;
+  selectedAggregationIndex?: number;
+  isPivot: boolean;
+  requestedAction?:
+      string;  // Unset after pivot table column request is handled.
+}
+
 export interface State {
   // tslint:disable-next-line:no-any
   [key: string]: any;
   version: number;
-  route: string|null;
+  route?: string;
   nextId: number;
   nextNoteId: number;
   nextAreaId: number;
@@ -287,6 +313,7 @@ export interface State {
   newEngineMode: NewEngineMode;
   engines: ObjectById<EngineConfig>;
   traceTime: TraceTime;
+  traceUuid?: string;
   trackGroups: ObjectById<TrackGroupState>;
   tracks: ObjectById<TrackState>;
   areas: ObjectById<AreaById>;
@@ -305,6 +332,8 @@ export interface State {
   currentHeapProfileFlamegraph: HeapProfileFlamegraph|null;
   logsPagination: LogsPagination;
   traceConversionInProgress: boolean;
+  pivotTableConfig: PivotTableConfig;
+  pivotTable: ObjectById<PivotTableState>;
 
   /**
    * This state is updated on the frontend at 60Hz and eventually syncronised to
@@ -314,12 +343,23 @@ export interface State {
    */
   frontendLocalState: FrontendLocalState;
 
-  video: string | null;
-  videoEnabled: boolean;
-  videoOffset: number;
-  videoNoteIds: string[];
-  scrubbingEnabled: boolean;
-  flagPauseEnabled: boolean;
+  // Show track perf debugging overlay
+  perfDebug: boolean;
+
+  // Show the sidebar extended
+  sidebarVisible: boolean;
+
+  // Hovered and focused events
+  hoveredUtid: number;
+  hoveredPid: number;
+  hoveredLogsTimestamp: number;
+  hoveredNoteTimestamp: number;
+  highlightedSliceId: number;
+  focusedFlowIdLeft: number;
+  focusedFlowIdRight: number;
+
+  searchIndex: number;
+  currentTab?: string;
 
   /**
    * Trace recording
@@ -401,8 +441,6 @@ export interface RecordConfig {
   cpuCoarsePollMs: number;
   cpuSyscall: boolean;
 
-  screenRecord: boolean;
-
   gpuFreq: boolean;
   gpuMemTotal: boolean;
 
@@ -450,6 +488,15 @@ export interface RecordConfig {
   procStatsPeriodMs: number;
 
   chromeCategoriesSelected: string[];
+
+  chromeLogs: boolean;
+  taskScheduling: boolean;
+  ipcFlows: boolean;
+  jsExecution: boolean;
+  webContentRendering: boolean;
+  uiRendering: boolean;
+  inputEvents: boolean;
+  navigationAndLoading: boolean;
 }
 
 export function createEmptyRecordConfig(): RecordConfig {
@@ -464,7 +511,6 @@ export function createEmptyRecordConfig(): RecordConfig {
     cpuFreq: false,
     cpuSyscall: false,
 
-    screenRecord: false,
 
     gpuFreq: false,
     gpuMemTotal: false,
@@ -517,6 +563,15 @@ export function createEmptyRecordConfig(): RecordConfig {
     procStatsPeriodMs: 1000,
 
     chromeCategoriesSelected: [],
+
+    chromeLogs: false,
+    taskScheduling: false,
+    ipcFlows: false,
+    jsExecution: false,
+    webContentRendering: false,
+    uiRendering: false,
+    inputEvents: false,
+    navigationAndLoading: false,
   };
 }
 
@@ -779,7 +834,6 @@ export function getBuiltinChromeCategoryList(): string[] {
 export function createEmptyState(): State {
   return {
     version: STATE_VERSION,
-    route: null,
     nextId: 0,
     nextNoteId: 1,  // 0 is reserved for ephemeral area marking.
     nextAreaId: 0,
@@ -797,6 +851,8 @@ export function createEmptyState(): State {
     metrics: {},
     permalink: {},
     notes: {},
+    pivotTableConfig: {},
+    pivotTable: {},
 
     recordConfig: createEmptyRecordConfig(),
     displayConfigAsPbtxt: false,
@@ -825,12 +881,17 @@ export function createEmptyState(): State {
     currentHeapProfileFlamegraph: null,
     traceConversionInProgress: false,
 
-    video: null,
-    videoEnabled: false,
-    videoOffset: 0,
-    videoNoteIds: [],
-    scrubbingEnabled: false,
-    flagPauseEnabled: false,
+    perfDebug: false,
+    sidebarVisible: true,
+    hoveredUtid: -1,
+    hoveredPid: -1,
+    hoveredLogsTimestamp: -1,
+    hoveredNoteTimestamp: -1,
+    highlightedSliceId: -1,
+    focusedFlowIdLeft: -1,
+    focusedFlowIdRight: -1,
+    searchIndex: -1,
+
     recordingInProgress: false,
     recordingCancelled: false,
     extensionInstalled: false,

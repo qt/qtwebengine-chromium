@@ -2,7 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <cmath>
+#include <math.h>
+
 #include <limits>
 #include <memory>
 #include <string>
@@ -23,7 +24,7 @@
 #include "testing/utils/hash.h"
 #include "testing/utils/path_service.h"
 #include "third_party/base/check.h"
-#include "third_party/base/stl_util.h"
+#include "third_party/base/cxx17_backports.h"
 
 using pdfium::kManyRectanglesChecksum;
 

@@ -21,9 +21,10 @@
 #include "src/core/SkStringUtils.h"
 #include "src/core/SkTLazy.h"
 #include "src/gpu/GrAppliedClip.h"
+#include "src/gpu/GrDstProxyView.h"
 #include "src/gpu/GrGeometryProcessor.h"
+#include "src/gpu/GrProcessorSet.h"
 #include "src/gpu/GrRenderTask.h"
-#include "src/gpu/ops/GrDrawOp.h"
 #include "src/gpu/ops/GrOp.h"
 
 class GrAuditTrail;
@@ -31,11 +32,9 @@ class GrCaps;
 class GrClearOp;
 class GrGpuBuffer;
 class GrRenderTargetProxy;
+namespace skgpu { namespace v1 { class SurfaceDrawContext; }}
 
 class GrOpsTask : public GrRenderTask {
-private:
-    using DstProxyView = GrXferProcessor::DstProxyView;
-
 public:
     // Manage the arenas life time by maintaining are reference to it.
     GrOpsTask(GrDrawingManager*, GrSurfaceProxyView, GrAuditTrail*, sk_sp<GrArenas>);
@@ -45,6 +44,7 @@ public:
 
     bool isEmpty() const { return fOpChains.empty(); }
     bool usesMSAASurface() const { return fUsesMSAASurface; }
+    GrXferBarrierFlags renderPassXferBarriers() const { return fRenderPassXferBarriers; }
 
     /**
      * Empties the draw buffer of any queued up draws.
@@ -71,9 +71,8 @@ public:
 
     void addOp(GrDrawingManager*, GrOp::Owner, GrTextureResolveManager, const GrCaps&);
 
-    void addDrawOp(GrDrawingManager*, GrOp::Owner, GrDrawOp::FixedFunctionFlags,
-                   const GrProcessorSet::Analysis&, GrAppliedClip&&, const DstProxyView&,
-                   GrTextureResolveManager, const GrCaps&);
+    void addDrawOp(GrDrawingManager*, GrOp::Owner, bool usesMSAA, const GrProcessorSet::Analysis&,
+                   GrAppliedClip&&, const GrDstProxyView&, GrTextureResolveManager, const GrCaps&);
 
     void discard();
 
@@ -90,13 +89,16 @@ public:
     // Must only be called if native color buffer clearing is enabled.
     void setColorLoadOp(GrLoadOp op, std::array<float, 4> color = {0, 0, 0, 0});
 
+    // Returns whether the given opsTask can be appended at the end of this one.
+    bool canMerge(const GrOpsTask*) const;
+
     // Merge as many opsTasks as possible from the head of 'tasks'. They should all be
     // renderPass compatible. Return the number of tasks merged into 'this'.
     int mergeFrom(SkSpan<const sk_sp<GrRenderTask>> tasks);
 
 #ifdef SK_DEBUG
     int numClips() const override { return fNumClips; }
-    void visitProxies_debugOnly(const GrOp::VisitProxyFunc&) const override;
+    void visitProxies_debugOnly(const GrVisitProxyFunc&) const override;
 #endif
 
 #if GR_TEST_UTILS
@@ -109,18 +111,7 @@ public:
     const GrOp* getChain(int index) const { return fOpChains[index].head(); }
 #endif
 
-private:
-    bool isNoOp() const {
-        // TODO: GrLoadOp::kDiscard (i.e., storing a discard) should also be grounds for skipping
-        // execution. We currently don't because of Vulkan. See http://skbug.com/9373.
-        //
-        // TODO: We should also consider stencil load/store here. We get away with it for now
-        // because we never discard stencil buffers.
-        return fOpChains.empty() && GrLoadOp::kLoad == fColorLoadOp;
-    }
-
-    void deleteOps();
-
+protected:
     enum class StencilContent {
         kDontCare,
         kUserBitsCleared,  // User bits: cleared
@@ -133,7 +124,7 @@ private:
     //
     // When requesting kClear: Tilers will load the stencil buffer with a "clear" op; non-tilers
     // will clear the stencil on first load, and then preserve it on subsequent loads. (Preserving
-    // works because renderTargetContexts are required to leave the user bits in a cleared state
+    // works because SurfaceDrawContexts are required to leave the user bits in a cleared state
     // once finished.)
     //
     // NOTE: initialContent must not be kClear if caps.performStencilClearsAsDraws() is true.
@@ -141,13 +132,32 @@ private:
         fInitialStencilContent = initialContent;
     }
 
+    void recordOp(GrOp::Owner, bool usesMSAA, GrProcessorSet::Analysis, GrAppliedClip*,
+                  const GrDstProxyView*, const GrCaps&);
+
+    ExpectedOutcome onMakeClosed(GrRecordingContext*, SkIRect* targetUpdateBounds) override;
+
+private:
+    bool isColorNoOp() const {
+        // TODO: GrLoadOp::kDiscard (i.e., storing a discard) should also be grounds for skipping
+        // execution. We currently don't because of Vulkan. See http://skbug.com/9373.
+        return fOpChains.empty() && GrLoadOp::kLoad == fColorLoadOp;
+    }
+
+    void deleteOps();
+
     // If a surfaceDrawContext splits its opsTask, it uses this method to guarantee stencil values
     // get preserved across its split tasks.
     void setMustPreserveStencil() { fMustPreserveStencil = true; }
 
+    // Prevents this opsTask from merging backward. This is used by DMSAA when a non-multisampled
+    // opsTask cannot be promoted to MSAA, or when we split a multisampled opsTask in order to
+    // resolve its texture.
+    void setCannotMergeBackward() { fCannotMergeBackward = true; }
+
     class OpChain {
     public:
-        OpChain(GrOp::Owner, GrProcessorSet::Analysis, GrAppliedClip*, const DstProxyView*);
+        OpChain(GrOp::Owner, GrProcessorSet::Analysis, GrAppliedClip*, const GrDstProxyView*);
         ~OpChain() {
             // The ops are stored in a GrMemoryPool and must be explicitly deleted via the pool.
             SkASSERT(fList.empty());
@@ -158,12 +168,12 @@ private:
         OpChain(OpChain&&) = default;
         OpChain& operator=(OpChain&&) = default;
 
-        void visitProxies(const GrOp::VisitProxyFunc&) const;
+        void visitProxies(const GrVisitProxyFunc&) const;
 
         GrOp* head() const { return fList.head(); }
 
         GrAppliedClip* appliedClip() const { return fAppliedClip; }
-        const DstProxyView& dstProxyView() const { return fDstProxyView; }
+        const GrDstProxyView& dstProxyView() const { return fDstProxyView; }
         const SkRect& bounds() const { return fBounds; }
 
         // Deletes all the ops in the chain.
@@ -177,7 +187,7 @@ private:
         // Attempts to add 'op' to this chain either by merging or adding to the tail. Returns
         // 'op' to the caller upon failure, otherwise null. Fails when the op and chain aren't of
         // the same op type, have different clips or dst proxies.
-        GrOp::Owner appendOp(GrOp::Owner op, GrProcessorSet::Analysis, const DstProxyView*,
+        GrOp::Owner appendOp(GrOp::Owner op, GrProcessorSet::Analysis, const GrDstProxyView*,
                              const GrAppliedClip*, const GrCaps&, SkArenaAlloc* opsTaskArena,
                              GrAuditTrail*);
 
@@ -211,14 +221,14 @@ private:
 
         void validate() const;
 
-        bool tryConcat(List*, GrProcessorSet::Analysis, const DstProxyView&, const GrAppliedClip*,
+        bool tryConcat(List*, GrProcessorSet::Analysis, const GrDstProxyView&, const GrAppliedClip*,
                        const SkRect& bounds, const GrCaps&, SkArenaAlloc* opsTaskArena,
                        GrAuditTrail*);
         static List DoConcat(List, List, const GrCaps&, SkArenaAlloc* opsTaskArena, GrAuditTrail*);
 
         List fList;
         GrProcessorSet::Analysis fProcessorAnalysis;
-        DstProxyView fDstProxyView;
+        GrDstProxyView fDstProxyView;
         GrAppliedClip* fAppliedClip;
         SkRect fBounds;
     };
@@ -229,23 +239,18 @@ private:
 
     void gatherProxyIntervals(GrResourceAllocator*) const override;
 
-    void recordOp(GrOp::Owner, GrProcessorSet::Analysis, GrAppliedClip*,
-                  const DstProxyView*, const GrCaps&);
-
     void forwardCombine(const GrCaps&);
-
-    ExpectedOutcome onMakeClosed(const GrCaps& caps, SkIRect* targetUpdateBounds) override;
 
     // Remove all ops, proxies, etc. Used in the merging algorithm when tasks can be skipped.
     void reset();
 
     friend class OpsTaskTestingAccess;
 
-    // The RTC and OpsTask have to work together to handle buffer clears. In most cases, buffer
+    // The SDC and OpsTask have to work together to handle buffer clears. In most cases, buffer
     // clearing can be done natively, in which case the op list's load ops are sufficient. In other
-    // cases, draw ops must be used, which makes the RTC the best place for those decisions. This,
-    // however, requires that the RTC be able to coordinate with the op list to achieve similar ends
-    friend class GrSurfaceDrawContext;
+    // cases, draw ops must be used, which makes the SDC the best place for those decisions. This,
+    // however, requires that the SDC be able to coordinate with the op list to achieve similar ends
+    friend class skgpu::v1::SurfaceDrawContext;
 
     GrAuditTrail* fAuditTrail;
 
@@ -257,6 +262,7 @@ private:
     std::array<float, 4> fLoadClearColor = {0, 0, 0, 0};
     StencilContent fInitialStencilContent = StencilContent::kDontCare;
     bool fMustPreserveStencil = false;
+    bool fCannotMergeBackward = false;
 
     uint32_t fLastClipStackGenID = SK_InvalidUniqueID;
     SkIRect fLastDevClipBounds;

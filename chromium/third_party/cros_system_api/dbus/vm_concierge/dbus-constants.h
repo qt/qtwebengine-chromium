@@ -41,6 +41,7 @@ const char kSetVmCpuRestrictionMethod[] = "SetVmCpuRestriction";
 const char kAdjustVmMethod[] = "AdjustVm";
 const char kSetVmIdMethod[] = "SetVmId";
 const char kReclaimVmMemoryMethod[] = "ReclaimVmMemory";
+const char kMakeRtVcpuMethod[] = "MakeRtVcpu";
 
 const char kContainerStartupFailedSignal[] = "ContainerStartupFailed";
 const char kDiskImageProgressSignal[] = "DiskImageProgress";

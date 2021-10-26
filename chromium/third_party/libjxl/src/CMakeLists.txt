@@ -1,16 +1,7 @@
-# Copyright (c) the JPEG XL Project
+# Copyright (c) the JPEG XL Project Authors. All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#      http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+# Use of this source code is governed by a BSD-style
+# license that can be found in the LICENSE file.
 
 # Ubuntu bionic ships with cmake 3.10.
 cmake_minimum_required(VERSION 3.10)
@@ -29,7 +20,7 @@ if(POLICY CMP0083)
   cmake_policy(SET CMP0083 NEW)
 endif()
 
-project(JPEGXL LANGUAGES C CXX)
+project(LIBJXL LANGUAGES C CXX)
 
 include(CheckCXXSourceCompiles)
 check_cxx_source_compiles(
@@ -106,6 +97,10 @@ set(JPEGXL_ENABLE_COVERAGE false CACHE BOOL
     "Enable code coverage tracking for libjxl. This also enables debug and disables optimizations.")
 set(JPEGXL_ENABLE_PROFILER false CACHE BOOL
     "Builds in support for profiling (printed by tools if extra flags given")
+set(JPEGXL_ENABLE_TRANSCODE_JPEG true CACHE BOOL
+    "Builds in support for decoding transcoded JXL files back to JPEG,\
+ disabling it makes the decoder reject JXL_DEC_JPEG_RECONSTRUCTION events,\
+ (default enabled)")
 set(JPEGXL_STATIC false CACHE BOOL
     "Build tools as static binaries.")
 set(JPEGXL_WARNINGS_AS_ERRORS ${WARNINGS_AS_ERRORS_DEFAULT} CACHE BOOL

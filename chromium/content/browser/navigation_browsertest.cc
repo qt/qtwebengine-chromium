@@ -23,7 +23,6 @@
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread_restrictions.h"
 #include "build/build_config.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/browser/browser_url_handler_impl.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/network_service_instance_impl.h"
@@ -33,7 +32,6 @@
 #include "content/common/frame_messages.mojom-forward.h"
 #include "content/common/navigation_client.mojom-forward.h"
 #include "content/common/navigation_client.mojom.h"
-#include "content/common/navigation_params.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -44,16 +42,19 @@
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/network_service_util.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/test/back_forward_cache_util.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/content_mock_cert_verifier.h"
 #include "content/public/test/download_test_observer.h"
 #include "content/public/test/hit_test_region_observer.h"
 #include "content/public/test/navigation_handle_observer.h"
@@ -208,16 +209,16 @@ class EmbedderVisibleUrlTracker : public WebContentsDelegate {
 };
 
 // Helper class. Immediately run a callback when a navigation starts.
-class DidStartNavigationCallback : public WebContentsObserver {
+class DidStartNavigationCallback final : public WebContentsObserver {
  public:
   explicit DidStartNavigationCallback(
       WebContents* web_contents,
       base::OnceCallback<void(NavigationHandle*)> callback)
       : WebContentsObserver(web_contents), callback_(std::move(callback)) {}
-  ~DidStartNavigationCallback() final = default;
+  ~DidStartNavigationCallback() override = default;
 
  private:
-  void DidStartNavigation(NavigationHandle* navigation_handle) final {
+  void DidStartNavigation(NavigationHandle* navigation_handle) override {
     if (callback_)
       std::move(callback_).Run(navigation_handle);
   }
@@ -225,16 +226,16 @@ class DidStartNavigationCallback : public WebContentsObserver {
 };
 
 // Helper class. Immediately run a callback when a navigation finishes.
-class DidFinishNavigationCallback : public WebContentsObserver {
+class DidFinishNavigationCallback final : public WebContentsObserver {
  public:
   explicit DidFinishNavigationCallback(
       WebContents* web_contents,
       base::OnceCallback<void(NavigationHandle*)> callback)
       : WebContentsObserver(web_contents), callback_(std::move(callback)) {}
-  ~DidFinishNavigationCallback() final = default;
+  ~DidFinishNavigationCallback() override = default;
 
  private:
-  void DidFinishNavigation(NavigationHandle* navigation_handle) final {
+  void DidFinishNavigation(NavigationHandle* navigation_handle) override {
     if (callback_)
       std::move(callback_).Run(navigation_handle);
   }
@@ -1667,7 +1668,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, IPCFlood_GoToEntryAtOffset) {
   WebContentsConsoleObserver console_observer(web_contents());
   console_observer.SetPattern(
       "Throttling navigation to prevent the browser from hanging. See "
-      "https://crbug.com/882238. Command line switch "
+      "https://crbug.com/1038223. Command line switch "
       "--disable-ipc-flooding-protection can be used to bypass the "
       "protection");
 
@@ -1694,7 +1695,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, IPCFlood_Navigation) {
   WebContentsConsoleObserver console_observer(web_contents());
   console_observer.SetPattern(
       "Throttling navigation to prevent the browser from hanging. See "
-      "https://crbug.com/882238. Command line switch "
+      "https://crbug.com/1038223. Command line switch "
       "--disable-ipc-flooding-protection can be used to bypass the "
       "protection");
 
@@ -2694,25 +2695,33 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
 // Tests for cookies. Provides an HTTPS server.
 class NavigationCookiesBrowserTest : public NavigationBaseBrowserTest {
  protected:
-  NavigationCookiesBrowserTest()
-      : https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {}
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    NavigationBaseBrowserTest::SetUpCommandLine(command_line);
-
-    // This is necessary to use https with arbitrary hostnames.
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
-  }
-
-  void SetUpOnMainThread() override {
-    https_server()->AddDefaultHandlers(GetTestDataFilePath());
-    NavigationBaseBrowserTest::SetUpOnMainThread();
-  }
-
+  NavigationCookiesBrowserTest() = default;
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
  private:
-  net::EmbeddedTestServer https_server_;
+  void SetUpOnMainThread() override {
+    NavigationBaseBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
+    https_server()->AddDefaultHandlers(GetTestDataFilePath());
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    NavigationBaseBrowserTest::SetUpCommandLine(command_line);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
+  }
+
+  void SetUpInProcessBrowserTestFixture() override {
+    NavigationBaseBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    NavigationBaseBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+  content::ContentMockCertVerifier mock_cert_verifier_;
+  net::EmbeddedTestServer https_server_{net::EmbeddedTestServer::TYPE_HTTPS};
 };
 
 // Test how cookies are inherited in about:srcdoc iframes.
@@ -4026,6 +4035,11 @@ IN_PROC_BROWSER_TEST_F(DocumentPolicyBrowserTest,
   GURL url(embedded_test_server()->GetURL("/target.html"));
   RenderFrameSubmissionObserver frame_observer(web_contents());
   TestNavigationManager navigation_manager(web_contents(), url);
+  // This test expects the document is freshly loaded on the back navigation
+  // so that the document policy to force-load-at-top will run. This will not
+  // happen if the document is back-forward cached, so we need to disable it.
+  DisableBackForwardCacheForTesting(web_contents(),
+                                    BackForwardCache::TEST_ASSUMES_NO_CACHING);
 
   // Load the document with document policy force-load-at-top
   shell()->LoadURL(url);
@@ -4218,7 +4232,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, OriginToCommitBasic) {
   shell()->LoadURL(url);
   EXPECT_TRUE(manager.WaitForResponse());
   NavigationRequest* navigation = main_frame()->navigation_request();
-  url::Origin origin_to_commit = navigation->GetOriginForURLLoaderFactory();
+  url::Origin origin_to_commit = navigation->GetOriginToCommit();
   manager.WaitForNavigationFinished();
   url::Origin origin_committed = current_frame_host()->GetLastCommittedOrigin();
 
@@ -4236,7 +4250,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   shell()->LoadURL(url);
   EXPECT_TRUE(manager.WaitForResponse());
   NavigationRequest* navigation = main_frame()->navigation_request();
-  url::Origin origin_to_commit = navigation->GetOriginForURLLoaderFactory();
+  url::Origin origin_to_commit = navigation->GetOriginToCommit();
   manager.WaitForNavigationFinished();
   url::Origin origin_committed = current_frame_host()->GetLastCommittedOrigin();
 
@@ -4261,7 +4275,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest,
   EXPECT_TRUE(manager.WaitForResponse());
   FrameTreeNode* iframe = current_frame_host()->child_at(0);
   NavigationRequest* navigation = iframe->navigation_request();
-  url::Origin origin_to_commit = navigation->GetOriginForURLLoaderFactory();
+  url::Origin origin_to_commit = navigation->GetOriginToCommit();
   manager.WaitForNavigationFinished();
   url::Origin origin_committed =
       iframe->current_frame_host()->GetLastCommittedOrigin();
@@ -4451,7 +4465,7 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, OriginToCommitSandboxFromFrame) {
   EXPECT_TRUE(manager.WaitForResponse());
   FrameTreeNode* iframe = current_frame_host()->child_at(0);
   NavigationRequest* navigation = iframe->navigation_request();
-  url::Origin origin_to_commit = navigation->GetOriginForURLLoaderFactory();
+  url::Origin origin_to_commit = navigation->GetOriginToCommit();
   manager.WaitForNavigationFinished();
   url::Origin origin_committed =
       iframe->current_frame_host()->GetLastCommittedOrigin();
@@ -4641,19 +4655,60 @@ class SubresourceLoadingTest : public NavigationBrowserTest {
   void VerifyImageSubresourceLoads(
       const ToRenderFrameHost& target,
       const std::string& target_document = "document") {
-    VerifySingleImageSubresourceLoad(target, target_document);
+    RenderFrameHostImpl* target_frame =
+        static_cast<RenderFrameHostImpl*>(target.render_frame_host());
+    VerifySingleImageSubresourceLoad(target_frame, target_document);
 
     // Verify detecting and recovering from a NetworkService crash (e.g. via the
     // `network_service_disconnect_handler_holder_mojo` field and the
     // UpdateSubresourceLoaderFactories method of RenderFrameHostImpl).
     if (!IsInProcessNetworkService() && test_network_service_crashes_) {
       SimulateNetworkServiceCrash();
-      VerifySingleImageSubresourceLoad(target, target_document);
+
+      // In addition to waiting (inside SimulateNetworkServiceCrash above) for
+      // getting notified about being disconnected from
+      // network::mojom::NetworkServiceTest, we also want to make sure that the
+      // relevant RenderFrameHost realizes that the NetworkService has crashed.
+      // Which RenderFrameHost is relevant varies from test to test, so we
+      // flush multiple frames and use kDoNothingIfNoNetworkServiceConnection.
+      FlushNetworkInterfacesInOpenerChain(target_frame);
+
+      // Rerun the test after the NetworkService crash.
+      VerifySingleImageSubresourceLoad(target_frame, target_document);
     }
   }
 
  private:
-  void VerifySingleImageSubresourceLoad(const ToRenderFrameHost& target,
+  void FlushNetworkInterfacesInOpenerChain(RenderFrameHostImpl* current_frame) {
+    std::set<WebContents*> visited_contents;
+    while (true) {
+      // Check if we've already visited the current frame tree.
+      DCHECK(current_frame);
+      WebContents* current_contents =
+          WebContents::FromRenderFrameHost(current_frame);
+      DCHECK(current_contents);
+      if (base::Contains(visited_contents, current_contents))
+        break;
+      visited_contents.insert(current_contents);
+
+      // Flush all the frames in the `current_frame`'s frame tree.
+      for (RenderFrameHost* frame_to_flush : current_contents->GetAllFrames()) {
+        constexpr bool kDoNothingIfNoNetworkServiceConnection = true;
+        frame_to_flush->FlushNetworkAndNavigationInterfacesForTesting(
+            kDoNothingIfNoNetworkServiceConnection);
+      }
+
+      // Traverse the `current_frame`'s opener chain.
+      if (FrameTreeNode* opener_node =
+              current_frame->frame_tree_node()->opener()) {
+        current_frame = opener_node->current_frame_host();
+      } else {
+        break;  // Break out of the loop if there is no opener.
+      }
+    }
+  }
+
+  void VerifySingleImageSubresourceLoad(RenderFrameHost* target,
                                         const std::string& target_document) {
     // Use a random, GUID-based hostname, to avoid hitting the network cache.
     GURL image_url = embedded_test_server()->GetURL(
@@ -5502,8 +5557,9 @@ class NavigationBrowserTestWithPerformanceManager
   }
 };
 
-// TODO(crbug.com/1233836): Test is flaky on Mac 11.
-#if defined(OS_MAC)
+// TODO(crbug.com/1233836, crbug.com/1238886): Test is flaky on Mac 11, Linux
+// and ChromeOS.
+#if defined(OS_MAC) || defined(OS_LINUX) || defined(OS_CHROMEOS)
 #define MAYBE_BeginNewNavigationAfterCommitNavigationInMainFrame \
   DISABLED_BeginNewNavigationAfterCommitNavigationInMainFrame
 #else
@@ -5639,7 +5695,13 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTestWithPerformanceManager,
 // new NavigationRequest, because it was trying to access the current
 // RenderFrameHost's PolicyContainerHost, which had not been set up yet by
 // RenderFrameHostImpl::DidNavigate.
-IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, Bug1210234) {
+#if defined(OS_ANDROID)
+// Flaky on Android: https://crbug.com/1222320.
+#define MAYBE_Bug1210234 DISABLED_Bug1210234
+#else
+#define MAYBE_Bug1210234 Bug1210234
+#endif  // defined(OS_ANDROID)
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, MAYBE_Bug1210234) {
   class NavigationWebContentsDelegate : public WebContentsDelegate {
    public:
     NavigationWebContentsDelegate(const GURL& url_to_intercept,
@@ -5675,11 +5737,173 @@ IN_PROC_BROWSER_TEST_F(NavigationBrowserTest, Bug1210234) {
   // Since we committed a navigation, the next cross-origin navigation will
   // create a speculative RenderFrameHost.
 
-  // We use ASSERT_FALSE here since this will be redirected to "c.com".
-  ASSERT_FALSE(NavigateToURL(
-      shell(), embedded_test_server()->GetURL("b.com", "/title1.html")));
-
+  NavigateToURLBlockUntilNavigationsComplete(
+      web_contents(), initial_url, /*number_of_navigations=*/1,
+      /*ignore_uncommitted_navigations=*/true);
+  EXPECT_TRUE(IsLastCommittedEntryOfPageType(web_contents(), PAGE_TYPE_NORMAL));
   EXPECT_EQ(redirection_url, web_contents()->GetLastCommittedURL());
+}
+
+class NavigationBrowserTestAnonymousIframe : public NavigationBrowserTest {
+ public:
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    NavigationBrowserTest::SetUpCommandLine(command_line);
+
+    command_line->AppendSwitch(switches::kEnableBlinkTestFeatures);
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(NavigationBrowserTestAnonymousIframe,
+                       AnonymousAttributeIsHonoredByNavigation) {
+  GURL main_url = embedded_test_server()->GetURL("/page_with_iframe.html");
+  GURL iframe_url_1 = embedded_test_server()->GetURL("/title1.html");
+  GURL iframe_url_2 = embedded_test_server()->GetURL("/title2.html");
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // The main page has a child iframe with url `iframe_url_1`.
+  EXPECT_EQ(1U, main_frame()->child_count());
+  FrameTreeNode* child = main_frame()->child_at(0);
+  EXPECT_EQ(iframe_url_1, child->current_url());
+  EXPECT_FALSE(child->anonymous());
+  EXPECT_FALSE(child->current_frame_host()->anonymous());
+
+  // Changes to the iframe 'anonymous' attribute are propagated to the
+  // FrameTreeNode. The RenderFrameHost, however, is updated only on navigation.
+  EXPECT_TRUE(
+      ExecJs(main_frame(),
+             "document.getElementById('test_iframe').anonymous = true;"));
+  EXPECT_TRUE(child->anonymous());
+  EXPECT_FALSE(child->current_frame_host()->anonymous());
+
+  // Create a grandchild iframe.
+  EXPECT_TRUE(ExecJs(
+      child, JsReplace("let grandchild = document.createElement('iframe');"
+                       "grandchild.src = $1;"
+                       "document.body.appendChild(grandchild);",
+                       iframe_url_2)));
+  WaitForLoadStop(web_contents());
+  EXPECT_EQ(1U, child->child_count());
+  FrameTreeNode* grandchild = child->child_at(0);
+
+  // The grandchild FrameTreeNode does not set the 'anonymous' attribute. The
+  // grandchild RenderFrameHost is not anonymous, since its parent
+  // RenderFrameHost is not anonymous.
+  EXPECT_FALSE(grandchild->anonymous());
+  EXPECT_FALSE(grandchild->current_frame_host()->anonymous());
+
+  // Navigate the child iframe same-document. This does not change anything.
+  EXPECT_TRUE(ExecJs(main_frame(),
+                     JsReplace("document.getElementById('test_iframe')"
+                               "        .contentWindow.location.href = $1;",
+                               iframe_url_1.Resolve("#here").spec())));
+  WaitForLoadStop(web_contents());
+  EXPECT_TRUE(child->anonymous());
+  EXPECT_FALSE(child->current_frame_host()->anonymous());
+
+  // Now navigate the child iframe cross-document.
+  EXPECT_TRUE(ExecJs(
+      main_frame(), JsReplace("document.getElementById('test_iframe').src = $1",
+                              iframe_url_2)));
+  WaitForLoadStop(web_contents());
+  EXPECT_TRUE(child->anonymous());
+  EXPECT_TRUE(child->current_frame_host()->anonymous());
+  // An anonymous document has a storage key with a nonce.
+  EXPECT_TRUE(child->current_frame_host()->storage_key().nonce().has_value());
+  base::UnguessableToken anonymous_nonce =
+      current_frame_host()->GetPage().anonymous_iframes_nonce();
+  EXPECT_EQ(anonymous_nonce,
+            child->current_frame_host()->storage_key().nonce().value());
+
+  // Create a grandchild iframe.
+  EXPECT_TRUE(ExecJs(
+      child, JsReplace("let grandchild = document.createElement('iframe');"
+                       "grandchild.id = 'grandchild_iframe';"
+                       "document.body.appendChild(grandchild);",
+                       iframe_url_1)));
+  EXPECT_EQ(1U, child->child_count());
+  grandchild = child->child_at(0);
+
+  // The grandchild does not set the 'anonymous' attribute, but the grandchild
+  // document is anonymous.
+  EXPECT_FALSE(grandchild->anonymous());
+  EXPECT_TRUE(grandchild->current_frame_host()->anonymous());
+
+  // The storage key's nonce is the same for all anonymous documents in the same
+  // page.
+  EXPECT_TRUE(child->current_frame_host()->storage_key().nonce().has_value());
+  EXPECT_EQ(anonymous_nonce,
+            child->current_frame_host()->storage_key().nonce().value());
+
+  // Now navigate the grandchild iframe.
+  EXPECT_TRUE(ExecJs(
+      child, JsReplace("document.getElementById('grandchild_iframe').src = $1",
+                       iframe_url_2)));
+  WaitForLoadStop(web_contents());
+  EXPECT_TRUE(grandchild->current_frame_host()->anonymous());
+
+  // The storage key's nonce is still the same.
+  EXPECT_TRUE(child->current_frame_host()->storage_key().nonce().has_value());
+  EXPECT_EQ(anonymous_nonce,
+            child->current_frame_host()->storage_key().nonce().value());
+
+  // Remove the 'anonymous' attribute from the iframe. This propagates to the
+  // FrameTreeNode. The RenderFrameHost, however, is updated only on navigation.
+  EXPECT_TRUE(
+      ExecJs(main_frame(),
+             "document.getElementById('test_iframe').anonymous = false;"));
+  EXPECT_FALSE(child->anonymous());
+  EXPECT_TRUE(child->current_frame_host()->anonymous());
+  EXPECT_TRUE(child->current_frame_host()->storage_key().nonce().has_value());
+  EXPECT_EQ(anonymous_nonce,
+            child->current_frame_host()->storage_key().nonce().value());
+
+  // Create another grandchild iframe. Even if the parent iframe element does
+  // not have the 'anonymous' attribute anymore, the grandchild document is
+  // still loaded inside of an anonymous RenderFrameHost, so it will be
+  // anonymous.
+  EXPECT_TRUE(ExecJs(
+      child, JsReplace("let grandchild2 = document.createElement('iframe');"
+                       "document.body.appendChild(grandchild2);",
+                       iframe_url_1)));
+  EXPECT_EQ(2U, child->child_count());
+  FrameTreeNode* grandchild2 = child->child_at(1);
+  EXPECT_FALSE(grandchild2->anonymous());
+  EXPECT_TRUE(grandchild2->current_frame_host()->anonymous());
+  EXPECT_TRUE(
+      grandchild2->current_frame_host()->storage_key().nonce().has_value());
+  EXPECT_EQ(anonymous_nonce,
+            grandchild2->current_frame_host()->storage_key().nonce().value());
+
+  // Navigate the child iframe. Since the iframe element does not set the
+  // 'anonymous' attribute, the resulting RenderFrameHost will not be anonymous.
+  EXPECT_TRUE(
+      ExecJs(main_frame(),
+             JsReplace("document.getElementById('test_iframe').src = $1;",
+                       iframe_url_2)));
+  WaitForLoadStop(web_contents());
+  EXPECT_FALSE(child->anonymous());
+  EXPECT_FALSE(child->current_frame_host()->anonymous());
+  EXPECT_FALSE(child->current_frame_host()->storage_key().nonce().has_value());
+
+  // Now navigate the whole page away.
+  GURL main_url_b = embedded_test_server()->GetURL(
+      "b.com", "/page_with_anonymous_iframe.html");
+  GURL iframe_url_b = embedded_test_server()->GetURL("b.com", "/title1.html");
+  EXPECT_TRUE(NavigateToURL(shell(), main_url_b));
+
+  // The main page has an anonymous child iframe with url `iframe_url_b`.
+  EXPECT_EQ(1U, main_frame()->child_count());
+  FrameTreeNode* child_b = main_frame()->child_at(0);
+  EXPECT_EQ(iframe_url_b, child_b->current_url());
+  EXPECT_TRUE(child_b->anonymous());
+  EXPECT_TRUE(child_b->current_frame_host()->anonymous());
+
+  EXPECT_TRUE(child_b->current_frame_host()->storage_key().nonce().has_value());
+  base::UnguessableToken anonymous_nonce_b =
+      current_frame_host()->GetPage().anonymous_iframes_nonce();
+  EXPECT_NE(anonymous_nonce, anonymous_nonce_b);
+  EXPECT_EQ(anonymous_nonce_b,
+            child_b->current_frame_host()->storage_key().nonce().value());
 }
 
 }  // namespace content

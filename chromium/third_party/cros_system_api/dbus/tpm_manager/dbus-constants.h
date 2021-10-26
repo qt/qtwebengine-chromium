@@ -12,10 +12,15 @@ constexpr char kTpmManagerInterface[] = "org.chromium.TpmManager";
 constexpr char kTpmManagerServiceName[] = "org.chromium.TpmManager";
 constexpr char kTpmManagerServicePath[] = "/org/chromium/TpmManager";
 
+// 5 minutes timeout for all tpm_manager calls.
+// This is a bit on the long side, but we want to be cautious.
+constexpr int kTpmManagerServiceTimeoutInMs = 5 * 60 * 1000;
+
 // Methods exported by tpm_manager.
 constexpr char kGetTpmStatus[] = "GetTpmStatus";
 constexpr char kGetTpmNonsensitiveStatus[] = "GetTpmNonsensitiveStatus";
 constexpr char kGetVersionInfo[] = "GetVersionInfo";
+constexpr char kGetSupportedFeatures[] = "GetSupportedFeatures";
 constexpr char kGetDictionaryAttackInfo[] = "GetDictionaryAttackInfo";
 constexpr char kResetDictionaryAttackLock[] = "ResetDictionaryAttackLock";
 constexpr char kTakeOwnership[] = "TakeOwnership";

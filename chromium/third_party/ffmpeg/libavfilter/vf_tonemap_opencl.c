@@ -20,7 +20,6 @@
 #include "libavutil/avassert.h"
 #include "libavutil/common.h"
 #include "libavutil/imgutils.h"
-#include "libavutil/mem.h"
 #include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 
@@ -540,7 +539,7 @@ static const AVFilterPad tonemap_opencl_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_tonemap_opencl = {
+const AVFilter ff_vf_tonemap_opencl = {
     .name           = "tonemap_opencl",
     .description    = NULL_IF_CONFIG_SMALL("Perform HDR to SDR conversion with tonemapping."),
     .priv_size      = sizeof(TonemapOpenCLContext),

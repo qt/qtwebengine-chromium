@@ -164,17 +164,6 @@ Polymer({
 
     /** @private {!Array<string>} */
     users_: Array,
-
-    // <if expr="chromeos or lacros">
-    /** @private */
-    printerStatusFlagEnabled_: {
-      type: Boolean,
-      value() {
-        return loadTimeData.getBoolean('showPrinterStatus');
-      },
-      readOnly: true,
-    },
-    // </if>
   },
 
   /** @private {string} */
@@ -264,32 +253,6 @@ Polymer({
     this.destinationStore_.selectDefaultDestination();
   },
 
-  filterRecentDestinations_(recentDestinations) {
-    let filteredDestinations = recentDestinations;
-    // Remove unsupported privet printers from the sticky settings,
-    // to free up these spots for supported printers.
-    // TODO(rbpotter): Remove this logic a milestone after the policy and flag
-    // have been removed.
-    if (!loadTimeData.getBoolean('forceEnablePrivetPrinting')) {
-      filteredDestinations = recentDestinations.filter(d => {
-        return d.origin !== DestinationOrigin.PRIVET;
-      });
-    }
-
-    // <if expr="chromeos or lacros">
-    // Remove Cloud Print Drive destination. The Chrome OS version will always
-    // be shown in the dropdown and is still supported.
-    filteredDestinations = filteredDestinations.filter(d => {
-      return d.id !== Destination.GooglePromotedId.DOCS;
-    });
-    // </if>
-
-    if (filteredDestinations.length !== recentDestinations.length) {
-      this.setSetting('recentDestinations', filteredDestinations);
-    }
-    return filteredDestinations;
-  },
-
   /**
    * @param {string} defaultPrinter The system default printer ID.
    * @param {boolean} pdfPrinterDisabled Whether the PDF printer is disabled.
@@ -316,7 +279,6 @@ Polymer({
       this.destinationStore_.setCloudPrintInterface(cloudPrintInterface);
       beforeNextRender(this, () => {
         this.shadowRoot.querySelector('#userManager').initUserAccounts();
-        recentDestinations = this.filterRecentDestinations_(recentDestinations);
         recentDestinations = recentDestinations.slice(
             0, this.getRecentDestinationsDisplayCount_(recentDestinations));
         this.destinationStore_.init(
@@ -326,7 +288,6 @@ Polymer({
       return;
     }
 
-    recentDestinations = this.filterRecentDestinations_(recentDestinations);
     recentDestinations = recentDestinations.slice(
         0, this.getRecentDestinationsDisplayCount_(recentDestinations));
     this.destinationStore_.init(

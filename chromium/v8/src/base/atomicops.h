@@ -41,10 +41,6 @@
 
 #if defined(V8_OS_STARBOARD)
 #include "starboard/atomic.h"
-
-#if SB_API_VERSION < 10
-#error Your version of Starboard must support SbAtomic8 in order to use V8.
-#endif  // SB_API_VERSION < 10
 #endif  // V8_OS_STARBOARD
 
 namespace v8 {
@@ -316,6 +312,43 @@ inline void Relaxed_Memcpy(volatile Atomic8* dst, volatile const Atomic8* src,
   }
   while (bytes > 0) {
     Relaxed_Store(dst++, Relaxed_Load(src++));
+    --bytes;
+  }
+}
+
+inline void Relaxed_Memmove(volatile Atomic8* dst, volatile const Atomic8* src,
+                            size_t bytes) {
+  // Use Relaxed_Memcpy if copying forwards is safe. This is the case if there
+  // is no overlap, or {dst} lies before {src}.
+  // This single check checks for both:
+  if (reinterpret_cast<uintptr_t>(dst) - reinterpret_cast<uintptr_t>(src) >=
+      bytes) {
+    Relaxed_Memcpy(dst, src, bytes);
+    return;
+  }
+
+  // Otherwise copy backwards.
+  dst += bytes;
+  src += bytes;
+  constexpr size_t kAtomicWordSize = sizeof(AtomicWord);
+  while (bytes > 0 &&
+         !IsAligned(reinterpret_cast<uintptr_t>(dst), kAtomicWordSize)) {
+    Relaxed_Store(--dst, Relaxed_Load(--src));
+    --bytes;
+  }
+  if (IsAligned(reinterpret_cast<uintptr_t>(src), kAtomicWordSize) &&
+      IsAligned(reinterpret_cast<uintptr_t>(dst), kAtomicWordSize)) {
+    while (bytes >= kAtomicWordSize) {
+      dst -= kAtomicWordSize;
+      src -= kAtomicWordSize;
+      bytes -= kAtomicWordSize;
+      Relaxed_Store(
+          reinterpret_cast<volatile AtomicWord*>(dst),
+          Relaxed_Load(reinterpret_cast<const volatile AtomicWord*>(src)));
+    }
+  }
+  while (bytes > 0) {
+    Relaxed_Store(--dst, Relaxed_Load(--src));
     --bytes;
   }
 }

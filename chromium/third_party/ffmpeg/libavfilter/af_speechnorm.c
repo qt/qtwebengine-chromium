@@ -28,6 +28,7 @@
 #include <float.h>
 
 #include "libavutil/avassert.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/opt.h"
 
 #define FF_BUFQUEUE_SIZE (1024)
@@ -565,7 +566,7 @@ static const AVFilterPad outputs[] = {
     { NULL }
 };
 
-AVFilter ff_af_speechnorm = {
+const AVFilter ff_af_speechnorm = {
     .name            = "speechnorm",
     .description     = NULL_IF_CONFIG_SMALL("Speech Normalizer."),
     .query_formats   = query_formats,

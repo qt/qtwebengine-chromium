@@ -3,8 +3,10 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/modules/accessibility/ax_sparse_attribute_setter.h"
+
 #include "third_party/blink/public/mojom/web_feature/web_feature.mojom-blink.h"
 #include "third_party/blink/renderer/core/dom/qualified_name.h"
+#include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -70,6 +72,10 @@ void SetObjectAttribute(ax::mojom::blink::IntAttribute attribute,
       !ax_target->IsVisible()) {
     return;
   }
+  if (attribute == ax::mojom::blink::IntAttribute::kErrormessageId &&
+      object->GetInvalidState() == ax::mojom::blink::InvalidState::kFalse) {
+    return;
+  }
 
   node_data->AddIntAttribute(attribute, ax_target->AXObjectID());
 }
@@ -82,13 +88,13 @@ void SetIntListAttribute(ax::mojom::blink::IntListAttribute attribute,
   Element* element = object->GetElement();
   if (!element)
     return;
-  absl::optional<HeapVector<Member<Element>>> attr_associated_elements =
+  HeapVector<Member<Element>>* attr_associated_elements =
       element->GetElementArrayAttribute(qualified_name);
-  if (!attr_associated_elements || attr_associated_elements.value().IsEmpty())
+  if (!attr_associated_elements || attr_associated_elements->IsEmpty())
     return;
   std::vector<int32_t> ax_ids;
 
-  for (const auto& associated_element : attr_associated_elements.value()) {
+  for (const auto& associated_element : *attr_associated_elements) {
     AXObject* ax_element =
         object->AXObjectCache().GetOrCreate(associated_element);
     if (!ax_element)

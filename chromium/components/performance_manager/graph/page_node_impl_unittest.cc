@@ -61,9 +61,9 @@ TEST_F(PageNodeImplTest, AddFrameBasic) {
   auto parent_frame =
       CreateFrameNodeAutoId(process_node.get(), page_node.get());
   auto child1_frame = CreateFrameNodeAutoId(process_node.get(), page_node.get(),
-                                            parent_frame.get(), 1);
+                                            parent_frame.get());
   auto child2_frame = CreateFrameNodeAutoId(process_node.get(), page_node.get(),
-                                            parent_frame.get(), 2);
+                                            parent_frame.get());
 
   // Validate that all frames are tallied to the page.
   EXPECT_EQ(3u, GraphImplOperations::GetFrameNodes(page_node.get()).size());
@@ -73,7 +73,7 @@ TEST_F(PageNodeImplTest, RemoveFrame) {
   auto process_node = CreateNode<ProcessNodeImpl>();
   auto page_node = CreateNode<PageNodeImpl>();
   auto frame_node =
-      CreateFrameNodeAutoId(process_node.get(), page_node.get(), nullptr, 0);
+      CreateFrameNodeAutoId(process_node.get(), page_node.get(), nullptr);
 
   // Ensure correct page-frame relationship has been established.
   auto frame_nodes = GraphImplOperations::GetFrameNodes(page_node.get());
@@ -244,6 +244,7 @@ class LenientMockObserver : public PageNodeImpl::Observer {
   MOCK_METHOD1(OnHadFormInteractionChanged, void(const PageNode*));
   MOCK_METHOD2(OnFreezingVoteChanged,
                void(const PageNode*, absl::optional<freezing::FreezingVote>));
+  MOCK_METHOD2(OnPageStateChanged, void(const PageNode*, PageNode::PageState));
 
   void SetNotifiedPageNode(const PageNode* page_node) {
     notified_page_node_ = page_node;
@@ -410,6 +411,43 @@ TEST_F(PageNodeImplTest, VisitMainFrameNodes) {
               },
               base::Unretained(&visited))));
   EXPECT_EQ(1u, visited.size());
+}
+
+TEST_F(PageNodeImplTest, BackForwardCache) {
+  auto process = CreateNode<ProcessNodeImpl>();
+  auto page = CreateNode<PageNodeImpl>();
+  EXPECT_EQ(PageNode::PageState::kActive, page->page_state());
+
+  MockObserver obs;
+  graph()->AddPageNodeObserver(&obs);
+
+  EXPECT_CALL(obs, OnPageStateChanged(_, PageNode::PageState::kActive));
+  page->set_page_state(PageNode::PageState::kBackForwardCache);
+  EXPECT_EQ(PageNode::PageState::kBackForwardCache, page->page_state());
+
+  graph()->RemovePageNodeObserver(&obs);
+}
+
+TEST_F(PageNodeImplTest, Prerendering) {
+  auto process = CreateNode<ProcessNodeImpl>();
+  auto page = CreateNode<PageNodeImpl>(
+      WebContentsProxy(),                   // wc_proxy
+      std::string(),                        // browser_context_id
+      GURL(),                               // url
+      false,                                // is_visible
+      false,                                // is_audible
+      base::TimeTicks::Now(),               // visibility_change_time
+      PageNode::PageState::kPrerendering);  // page_state
+  EXPECT_EQ(PageNode::PageState::kPrerendering, page->page_state());
+
+  MockObserver obs;
+  graph()->AddPageNodeObserver(&obs);
+
+  EXPECT_CALL(obs, OnPageStateChanged(_, PageNode::PageState::kPrerendering));
+  page->set_page_state(PageNode::PageState::kActive);
+  EXPECT_EQ(PageNode::PageState::kActive, page->page_state());
+
+  graph()->RemovePageNodeObserver(&obs);
 }
 
 }  // namespace performance_manager

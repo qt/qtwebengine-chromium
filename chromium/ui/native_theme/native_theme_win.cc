@@ -16,7 +16,6 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
@@ -762,10 +761,15 @@ NativeTheme::PreferredContrast NativeThemeWin::CalculatePreferredContrast()
   if (!InForcedColorsMode())
     return NativeTheme::CalculatePreferredContrast();
 
-  // According to the spec [1], "when the user agent can determine whether the
-  // forced color palette chosen by the user has a high or low contrast, one of
-  // 'prefers-contrast: more' or 'prefers-contrast: less' must match in addition
-  // to 'prefers-contrast: forced'."
+  // TODO(sartang@microsoft.com): Update the spec page at
+  // https://www.w3.org/TR/css-color-adjust-1/#forced, it currently does not
+  // mention the relation between forced-colors-active and prefers-contrast.
+  //
+  // According to spec [1], "in addition to forced-colors: active, the user
+  // agent must also match one of prefers-contrast: more or
+  // prefers-contrast: less if it can determine that the forced color
+  // palette chosen by the user has a particularly high or low contrast,
+  // and must make prefers-contrast: custom match otherwise".
   //
   // Using WCAG definitions [2], we have decided to match 'more' in Forced
   // Colors Mode if the contrast ratio between the foreground and background
@@ -779,7 +783,8 @@ NativeTheme::PreferredContrast NativeThemeWin::CalculatePreferredContrast()
   // These ratios will act as an experimental baseline that we can adjust based
   // on user feedback.
   //
-  // [1] https://www.w3.org/TR/css-color-adjust-1/#forced
+  // [1]
+  // https://drafts.csswg.org/mediaqueries-5/#valdef-media-forced-colors-active
   // [2] https://www.w3.org/WAI/WCAG21/Understanding/contrast-enhanced
   SkColor bg_color = system_colors_[SystemThemeColor::kWindow];
   SkColor fg_color = system_colors_[SystemThemeColor::kWindowText];
@@ -787,7 +792,7 @@ NativeTheme::PreferredContrast NativeThemeWin::CalculatePreferredContrast()
   if (contrast_ratio >= 7)
     return NativeTheme::PreferredContrast::kMore;
   return contrast_ratio <= 2.5 ? NativeTheme::PreferredContrast::kLess
-                               : NativeTheme::PreferredContrast::kNoPreference;
+                               : NativeTheme::PreferredContrast::kCustom;
 }
 
 NativeTheme::ColorScheme NativeThemeWin::GetDefaultSystemColorScheme() const {
@@ -1525,13 +1530,17 @@ int NativeThemeWin::GetWindowsState(Part part,
     case kInnerSpinButton:
       switch (state) {
         case kDisabled:
-          return extra.inner_spin.spin_up ? UPS_DISABLED : DNS_DISABLED;
+          return extra.inner_spin.spin_up ? static_cast<int>(UPS_DISABLED)
+                                          : static_cast<int>(DNS_DISABLED);
         case kHovered:
-          return extra.inner_spin.spin_up ? UPS_HOT : DNS_HOT;
+          return extra.inner_spin.spin_up ? static_cast<int>(UPS_HOT)
+                                          : static_cast<int>(DNS_HOT);
         case kNormal:
-          return extra.inner_spin.spin_up ? UPS_NORMAL : DNS_NORMAL;
+          return extra.inner_spin.spin_up ? static_cast<int>(UPS_NORMAL)
+                                          : static_cast<int>(DNS_NORMAL);
         case kPressed:
-          return extra.inner_spin.spin_up ? UPS_PRESSED : DNS_PRESSED;
+          return extra.inner_spin.spin_up ? static_cast<int>(UPS_PRESSED)
+                                          : static_cast<int>(DNS_PRESSED);
         case kNumStates:
           NOTREACHED();
           return 0;

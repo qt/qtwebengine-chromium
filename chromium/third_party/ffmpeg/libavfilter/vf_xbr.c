@@ -29,7 +29,6 @@
  */
 
 #include "libavutil/opt.h"
-#include "libavutil/avassert.h"
 #include "libavutil/pixdesc.h"
 #include "internal.h"
 
@@ -425,7 +424,7 @@ static const AVFilterPad xbr_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_xbr = {
+const AVFilter ff_vf_xbr = {
     .name          = "xbr",
     .description   = NULL_IF_CONFIG_SMALL("Scale the input using xBR algorithm."),
     .inputs        = xbr_inputs,

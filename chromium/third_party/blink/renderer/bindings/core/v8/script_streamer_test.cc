@@ -78,7 +78,7 @@ class NoopLoaderFactory final : public ResourceFetcher::LoaderFactory {
     return std::make_unique<NoopWebURLLoader>();
   }
   std::unique_ptr<WebCodeCacheLoader> CreateCodeCacheLoader() override {
-    return Platform::Current()->CreateCodeCacheLoader();
+    return std::make_unique<CodeCacheLoaderMock>();
   }
 
   class NoopWebURLLoader final : public WebURLLoader {
@@ -108,7 +108,7 @@ class NoopLoaderFactory final : public ResourceFetcher::LoaderFactory {
         std::unique_ptr<blink::ResourceLoadInfoNotifierWrapper>
             resource_load_info_notifier_wrapper,
         WebURLLoaderClient*) override {}
-    void SetDefersLoading(WebURLLoader::DeferType) override {}
+    void Freeze(WebLoaderFreezeMode) override {}
     void DidChangePriority(WebURLRequest::Priority, int) override {
       NOTREACHED();
     }
@@ -175,7 +175,7 @@ class ScriptStreamingTest : public testing::Test {
 
  protected:
   void AppendData(const char* data) {
-    uint32_t data_len = strlen(data);
+    uint32_t data_len = base::checked_cast<uint32_t>(strlen(data));
     MojoResult result = producer_handle_->WriteData(
         data, &data_len, MOJO_WRITE_DATA_FLAG_ALL_OR_NONE);
     EXPECT_EQ(result, MOJO_RESULT_OK);
@@ -359,7 +359,10 @@ TEST_F(ScriptStreamingTest, DISABLED_SuppressingStreaming) {
   SingleCachedMetadataHandler* cache_handler = resource_->CacheHandler();
   EXPECT_TRUE(cache_handler);
   cache_handler->DisableSendToPlatformForTesting();
-  cache_handler->SetCachedMetadata(V8CodeCache::TagForCodeCache(cache_handler),
+  // CodeCacheHost can be nullptr since we disabled sending data to
+  // GeneratedCodeCacheHost for testing.
+  cache_handler->SetCachedMetadata(/*code_cache_host*/ nullptr,
+                                   V8CodeCache::TagForCodeCache(cache_handler),
                                    reinterpret_cast<const uint8_t*>("X"), 1);
 
   AppendData("function foo() {");

@@ -8,26 +8,22 @@
 #include <memory>
 #include <vector>
 
-#include "base/callback.h"
+#include "base/callback_forward.h"
+#include "base/compiler_specific.h"
 #include "base/containers/circular_deque.h"
-#include "base/files/file_path.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/sequence_bound.h"
-#include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "content/browser/conversions/conversion_manager.h"
-#include "content/browser/conversions/conversion_policy.h"
-#include "content/browser/conversions/conversion_storage.h"
+#include "content/browser/conversions/sent_report_info.h"
 #include "storage/browser/quota/special_storage_policy.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace base {
-
 class Clock;
 class FilePath;
-
 }  // namespace base
 
 namespace content {
@@ -37,7 +33,8 @@ namespace content {
 extern CONTENT_EXPORT const base::TimeDelta
     kConversionManagerQueueReportsInterval;
 
-class StoragePartition;
+class ConversionStorage;
+class StoragePartitionImpl;
 
 // Provides access to the manager owned by the default StoragePartition.
 class ConversionManagerProviderImpl : public ConversionManager::Provider {
@@ -47,6 +44,9 @@ class ConversionManagerProviderImpl : public ConversionManager::Provider {
       delete;
   ConversionManagerProviderImpl& operator=(
       const ConversionManagerProviderImpl& other) = delete;
+  ConversionManagerProviderImpl(ConversionManagerProviderImpl&& other) = delete;
+  ConversionManagerProviderImpl& operator=(
+      ConversionManagerProviderImpl&& other) = delete;
   ~ConversionManagerProviderImpl() override = default;
 
   // ConversionManagerProvider:
@@ -65,12 +65,11 @@ class CONTENT_EXPORT ConversionManagerImpl : public ConversionManager {
 
     // Adds |reports| to a shared queue of reports that need to be sent. Runs
     // |report_sent_callback| for every report that is sent, with the associated
-    // |conversion_id| of the report. |SentReportInfo| is not available if the
-    // report was not sent.
+    // |conversion_id| of the report and the time the report was originally
+    // supposed to be sent.
     virtual void AddReportsToQueue(
         std::vector<ConversionReport> reports,
-        base::RepeatingCallback<void(int64_t, absl::optional<SentReportInfo>)>
-            report_sent_callback) = 0;
+        base::RepeatingCallback<void(SentReportInfo)> report_sent_callback) = 0;
   };
 
   // Configures underlying storage to be setup in memory, rather than on
@@ -83,26 +82,29 @@ class CONTENT_EXPORT ConversionManagerImpl : public ConversionManager {
       const base::Clock* clock,
       const base::FilePath& user_data_directory,
       scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy,
-      size_t max_sent_reports_to_store);
+      size_t max_sent_reports_to_store) WARN_UNUSED_RESULT;
 
   ConversionManagerImpl(
-      StoragePartition* storage_partition,
+      StoragePartitionImpl* storage_partition,
       const base::FilePath& user_data_directory,
       scoped_refptr<storage::SpecialStoragePolicy> special_storage_policy);
   ConversionManagerImpl(const ConversionManagerImpl& other) = delete;
   ConversionManagerImpl& operator=(const ConversionManagerImpl& other) = delete;
+  ConversionManagerImpl(ConversionManagerImpl&& other) = delete;
+  ConversionManagerImpl& operator=(ConversionManagerImpl&& other) = delete;
   ~ConversionManagerImpl() override;
 
   // ConversionManager:
-  void HandleImpression(const StorableImpression& impression) override;
-  void HandleConversion(const StorableConversion& conversion) override;
+  void HandleImpression(StorableImpression impression) override;
+  void HandleConversion(StorableConversion conversion) override;
   void GetActiveImpressionsForWebUI(
       base::OnceCallback<void(std::vector<StorableImpression>)> callback)
       override;
   void GetPendingReportsForWebUI(
       base::OnceCallback<void(std::vector<ConversionReport>)> callback,
       base::Time max_report_time) override;
-  const base::circular_deque<SentReportInfo>& GetSentReportsForWebUI() override;
+  const base::circular_deque<SentReportInfo>& GetSentReportsForWebUI()
+      const override;
   void SendReportsForWebUI(base::OnceClosure done) override;
   const ConversionPolicy& GetConversionPolicy() const override;
   void ClearData(base::Time delete_begin,
@@ -136,22 +138,19 @@ class CONTENT_EXPORT ConversionManagerImpl : public ConversionManager {
   // Queue the given |reports| on |reporter_|.
   void QueueReports(std::vector<ConversionReport> reports);
 
-  void HandleReportsExpiredAtStartup(std::vector<ConversionReport> reports);
-
   void HandleReportsSentFromWebUI(base::OnceClosure done,
                                   std::vector<ConversionReport> reports);
 
-  void MaybeStoreSentReportInfo(absl::optional<SentReportInfo> info);
+  void MaybeStoreSentReportInfo(SentReportInfo info);
 
-  // Notify storage to delete the given |conversion_id| when its associated
+  // Notifies storage to delete the given |conversion_id| when its associated
   // report has been sent.
-  void OnReportSent(int64_t conversion_id, absl::optional<SentReportInfo> info);
+  void OnReportSent(SentReportInfo info);
 
   // Similar to OnReportSent, but invokes |reports_sent_barrier| when the
   // report has been removed from storage.
   void OnReportSentFromWebUI(base::OnceClosure reports_sent_barrier,
-                             int64_t conversion_id,
-                             absl::optional<SentReportInfo> info);
+                             SentReportInfo info);
 
   // Friend to expose the ConversionStorage for certain tests.
   friend std::vector<ConversionReport> GetConversionsToReportForTesting(

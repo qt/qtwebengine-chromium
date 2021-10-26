@@ -203,6 +203,8 @@ GL_FUNCTIONS = [
 { 'return_type': 'void',
   'versions' : [{'name': 'glBlitFramebuffer',
                  'extensions': ['GL_ARB_framebuffer_object']},
+                {'name': 'glBlitFramebufferNV',
+                 'extensions': ['GL_NV_framebuffer_blit']},
                 {'name': 'glBlitFramebufferANGLE'},
                 {'name': 'glBlitFramebufferEXT'}],
   'arguments': 'GLint srcX0, GLint srcY0, GLint srcX1, GLint srcY1, '
@@ -2923,6 +2925,7 @@ FUNCTION_SETS = [
       'GLES2/gl2extchromium.h'
     ], [
       "GL_ANGLE_robust_resource_initialization",
+      "GL_ANGLE_webgl_compatibility",
       "GL_ARB_texture_swizzle",
       "GL_EXT_texture_swizzle",
       "GL_EXT_texture_format_BGRA8888",
@@ -3083,7 +3086,7 @@ class GLContext;
         (func['known_as'], set_name.lower(), func['known_as']))
 
   file.write('\n')
-  file.write('#endif  //  UI_GL_GL_BINDINGS_AUTOGEN_%s_H_\n' %
+  file.write('#endif  // UI_GL_GL_BINDINGS_AUTOGEN_%s_H_\n' %
       set_name.upper())
 
 
@@ -3149,8 +3152,8 @@ def GenerateStubHeader(file, functions):
   file.write(LICENSE_AND_HEADER +
 """
 
-#ifndef UI_GL_GL_STUB_AUTOGEN_H_
-#define UI_GL_GL_STUB_AUTOGEN_H_
+#ifndef UI_GL_GL_STUB_AUTOGEN_GL_H_
+#define UI_GL_GL_STUB_AUTOGEN_GL_H_
 
 """)
 
@@ -3169,7 +3172,7 @@ def GenerateStubHeader(file, functions):
       file.write(';\n');
 
   file.write('\n')
-  file.write('#endif  //  UI_GL_GL_STUB_AUTOGEN_H_')
+  file.write('#endif  //  UI_GL_GL_STUB_AUTOGEN_GL_H_')
 
 def GenerateStubSource(file, functions):
   """Generates gl_stub_autogen_gl.cc"""

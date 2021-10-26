@@ -288,13 +288,21 @@ namespace dawn_native { namespace d3d12 {
     }
 
     ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
-        ExecutionSerial completeSerial = ExecutionSerial(mFence->GetCompletedValue());
+        ExecutionSerial completedSerial = ExecutionSerial(mFence->GetCompletedValue());
+        if (DAWN_UNLIKELY(completedSerial == ExecutionSerial(UINT64_MAX))) {
+            // GetCompletedValue returns UINT64_MAX if the device was removed.
+            // Try to query the failure reason.
+            DAWN_TRY(CheckHRESULT(mD3d12Device->GetDeviceRemovedReason(),
+                                  "ID3D12Device::GetDeviceRemovedReason"));
+            // Otherwise, return a generic device lost error.
+            return DAWN_DEVICE_LOST_ERROR("Device lost");
+        }
 
-        if (completeSerial <= GetCompletedCommandSerial()) {
+        if (completedSerial <= GetCompletedCommandSerial()) {
             return ExecutionSerial(0);
         }
 
-        return completeSerial;
+        return completedSerial;
     }
 
     void Device::ReferenceUntilUnused(ComPtr<IUnknown> object) {
@@ -334,7 +342,7 @@ namespace dawn_native { namespace d3d12 {
         return QuerySet::Create(this, descriptor);
     }
     ResultOrError<Ref<RenderPipelineBase>> Device::CreateRenderPipelineImpl(
-        const RenderPipelineDescriptor2* descriptor) {
+        const RenderPipelineDescriptor* descriptor) {
         return RenderPipeline::Create(this, descriptor);
     }
     ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
@@ -362,6 +370,12 @@ namespace dawn_native { namespace d3d12 {
         TextureBase* texture,
         const TextureViewDescriptor* descriptor) {
         return TextureView::Create(texture, descriptor);
+    }
+    void Device::CreateComputePipelineAsyncImpl(const ComputePipelineDescriptor* descriptor,
+                                                size_t blueprintHash,
+                                                WGPUCreateComputePipelineAsyncCallback callback,
+                                                void* userdata) {
+        ComputePipeline::CreateAsync(this, descriptor, blueprintHash, callback, userdata);
     }
 
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
@@ -540,7 +554,11 @@ namespace dawn_native { namespace d3d12 {
         SetToggle(Toggle::UseD3D12RenderPass, GetDeviceInfo().supportsRenderPass);
         SetToggle(Toggle::UseD3D12ResidencyManagement, true);
         SetToggle(Toggle::UseDXC, false);
-        SetToggle(Toggle::UseTintGenerator, false);
+
+#if defined(_DEBUG)
+        // Enable better shader debugging with the graphics debugging tools.
+        SetToggle(Toggle::EmitHLSLDebugSymbols, true);
+#endif
 
         // By default use the maximum shader-visible heap size allowed.
         SetToggle(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
@@ -552,14 +570,9 @@ namespace dawn_native { namespace d3d12 {
         if (gpu_info::IsIntel(pciInfo.vendorId) &&
             (gpu_info::IsSkylake(pciInfo.deviceId) || gpu_info::IsKabylake(pciInfo.deviceId) ||
              gpu_info::IsCoffeelake(pciInfo.deviceId))) {
-            constexpr gpu_info::D3DDriverVersion kFirstDriverVersionWithFix = {27, 20, 100, 9466};
-            if (gpu_info::CompareD3DDriverVersion(pciInfo.vendorId,
-                                                  ToBackend(GetAdapter())->GetDriverVersion(),
-                                                  kFirstDriverVersionWithFix) < 0) {
-                SetToggle(
-                    Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
-                    true);
-            }
+            SetToggle(
+                Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
+                true);
         }
     }
 

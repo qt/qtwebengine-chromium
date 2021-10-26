@@ -51,14 +51,15 @@
 #include "chrome/browser/ui/webui/extensions/extension_icon_source.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/web_applications/components/app_registry_controller.h"
-#include "chrome/browser/web_applications/components/install_finalizer.h"
 #include "chrome/browser/web_applications/components/web_app_constants.h"
-#include "chrome/browser/web_applications/components/web_app_provider_base.h"
 #include "chrome/browser/web_applications/components/web_application_info.h"
-#include "chrome/browser/web_applications/extensions/bookmark_app_finalizer_utils.h"
 #include "chrome/browser/web_applications/extensions/bookmark_app_util.h"
 #include "chrome/browser/web_applications/web_app_icon_manager.h"
+#include "chrome/browser/web_applications/web_app_install_finalizer.h"
+#include "chrome/browser/web_applications/web_app_install_manager.h"
+#include "chrome/browser/web_applications/web_app_install_params.h"
 #include "chrome/browser/web_applications/web_app_provider.h"
+#include "chrome/browser/web_applications/web_app_registrar.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
@@ -149,7 +150,7 @@ bool IsYoutubeExtension(const std::string& extension_id) {
 }
 
 void GetWebAppBasicInfo(const web_app::AppId& app_id,
-                        const web_app::AppRegistrar& app_registrar,
+                        const web_app::WebAppRegistrar& app_registrar,
                         base::DictionaryValue* info) {
   info->SetString(kInfoIdKey, app_id);
   info->SetString(kInfoNameKey, app_registrar.GetAppShortName(app_id));
@@ -183,7 +184,8 @@ AppLauncherHandler::AppLauncherHandler(
       has_loaded_apps_(false) {}
 
 AppLauncherHandler::~AppLauncherHandler() {
-  ExtensionRegistry::Get(Profile::FromWebUI(web_ui()))->RemoveObserver(this);
+  Profile* webui_profile = Profile::FromWebUI(web_ui());
+  ExtensionRegistry::Get(webui_profile)->RemoveObserver(this);
 }
 
 void AppLauncherHandler::CreateWebAppInfo(const web_app::AppId& app_id,
@@ -474,39 +476,29 @@ void AppLauncherHandler::RegisterMessages() {
                           base::Unretained(this)));
 }
 
-void AppLauncherHandler::Observe(int type,
-                                 const content::NotificationSource& source,
-                                 const content::NotificationDetails& details) {
+void AppLauncherHandler::OnAppsReordered(
+    const absl::optional<std::string>& extension_id) {
   if (ignore_changes_ || !has_loaded_apps_)
     return;
 
-  switch (type) {
-    case chrome::NOTIFICATION_APP_LAUNCHER_REORDERED: {
-      const std::string* id =
-          content::Details<const std::string>(details).ptr();
-      if (id) {
-        base::DictionaryValue app_info;
-        if (web_app_provider_->registrar().IsInstalled(*id)) {
-          CreateWebAppInfo(*id, &app_info);
-        } else {
-          const Extension* extension =
-              ExtensionRegistry::Get(extension_service_->profile())
-                  ->GetInstalledExtension(*id);
-          if (!extension) {
-            // Extension could still be downloading or installing.
-            return;
-          }
-
-          CreateExtensionInfo(extension, &app_info);
-        }
-        web_ui()->CallJavascriptFunctionUnsafe("ntp.appMoved", app_info);
-      } else {
-        HandleGetApps(nullptr);
+  if (extension_id) {
+    base::DictionaryValue app_info;
+    if (web_app_provider_->registrar().IsInstalled(*extension_id)) {
+      CreateWebAppInfo(*extension_id, &app_info);
+    } else {
+      const Extension* extension =
+          ExtensionRegistry::Get(extension_service_->profile())
+              ->GetInstalledExtension(*extension_id);
+      if (!extension) {
+        // Extension could still be downloading or installing.
+        return;
       }
-      break;
+
+      CreateExtensionInfo(extension, &app_info);
     }
-    default:
-      NOTREACHED();
+    web_ui()->CallJavascriptFunctionUnsafe("ntp.appMoved", app_info);
+  } else {
+    HandleGetApps(nullptr);
   }
 }
 
@@ -611,7 +603,7 @@ void AppLauncherHandler::FillAppDictionary(base::DictionaryValue* dictionary) {
   PrefService* prefs = profile->GetPrefs();
 
   std::set<web_app::AppId> web_app_ids;
-  web_app::AppRegistrar& registrar = web_app_provider_->registrar();
+  web_app::WebAppRegistrar& registrar = web_app_provider_->registrar();
   for (const web_app::AppId& web_app_id : registrar.GetAppIds()) {
     // The Youtube app is harded to be a 'bookmark app', however it is not, it
     // is a platform app.
@@ -728,9 +720,8 @@ void AppLauncherHandler::HandleGetApps(const base::ListValue* args) {
     extension_pref_change_registrar_.Add(prefs::kNtpAppPageNames, callback);
 
     ExtensionRegistry::Get(profile)->AddObserver(this);
-    registrar_.Add(this, chrome::NOTIFICATION_APP_LAUNCHER_REORDERED,
-                   content::Source<AppSorting>(
-                       ExtensionSystem::Get(profile)->app_sorting()));
+    install_tracker_observation_.Observe(
+        extensions::InstallTracker::Get(profile));
     web_apps_observation_.Observe(&web_app_provider_->registrar());
     web_apps_policy_manager_observation_.Observe(
         &web_app_provider_->policy_manager());
@@ -740,10 +731,8 @@ void AppLauncherHandler::HandleGetApps(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandleLaunchApp(const base::ListValue* args) {
-  std::string extension_id;
-  CHECK(args->GetString(0, &extension_id));
-  double source = -1.0;
-  CHECK(args->GetDouble(1, &source));
+  const std::string& extension_id = args->GetList()[0].GetString();
+  double source = args->GetList()[1].GetDouble();
   GURL override_url;
 
   extension_misc::AppLaunchBucket launch_bucket =
@@ -758,7 +747,7 @@ void AppLauncherHandler::HandleLaunchApp(const base::ListValue* args) {
   GURL full_launch_url;
   apps::mojom::LaunchContainer launch_container;
 
-  web_app::AppRegistrar& registrar = web_app_provider_->registrar();
+  web_app::WebAppRegistrar& registrar = web_app_provider_->registrar();
   if (registrar.IsInstalled(extension_id) &&
       !IsYoutubeExtension(extension_id)) {
     type = extensions::Manifest::Type::TYPE_HOSTED_APP;
@@ -845,10 +834,8 @@ void AppLauncherHandler::HandleLaunchApp(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandleSetLaunchType(const base::ListValue* args) {
-  std::string app_id;
-  double launch_type_double;
-  CHECK(args->GetString(0, &app_id));
-  CHECK(args->GetDouble(1, &launch_type_double));
+  const std::string& app_id = args->GetList()[0].GetString();
+  double launch_type_double = args->GetList()[1].GetDouble();
   extensions::LaunchType launch_type =
       static_cast<extensions::LaunchType>(static_cast<int>(launch_type_double));
 
@@ -926,7 +913,7 @@ void AppLauncherHandler::HandleUninstallApp(const base::ListValue* args) {
     } else {
       Browser* browser =
           chrome::FindBrowserWithWebContents(web_ui()->GetWebContents());
-      web_app::WebAppUiManagerImpl::Get(Profile::FromWebUI(web_ui()))
+      web_app::WebAppUiManagerImpl::Get(web_app_provider_)
           ->dialog_manager()
           .UninstallWebApp(extension_id_prompting_,
                            webapps::WebappUninstallSource::kAppsPage,
@@ -1055,22 +1042,21 @@ void AppLauncherHandler::HandleShowAppInfo(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandleReorderApps(const base::ListValue* args) {
-  CHECK(args->GetSize() == 2);
+  base::Value::ConstListView args_list = args->GetList();
+  CHECK_EQ(args_list.size(), 2u);
 
-  std::string dragged_app_id;
-  const base::ListValue* app_order;
-  CHECK(args->GetString(0, &dragged_app_id));
-  CHECK(args->GetList(1, &app_order));
+  const std::string& dragged_app_id = args_list[0].GetString();
+  base::Value::ConstListView app_order = args_list[1].GetList();
 
   std::string predecessor_to_moved_ext;
   std::string successor_to_moved_ext;
-  for (size_t i = 0; i < app_order->GetSize(); ++i) {
-    std::string value;
-    if (app_order->GetString(i, &value) && value == dragged_app_id) {
+  for (size_t i = 0; i < app_order.size(); ++i) {
+    const std::string* value = app_order[i].GetIfString();
+    if (value && *value == dragged_app_id) {
       if (i > 0)
-        CHECK(app_order->GetString(i - 1, &predecessor_to_moved_ext));
-      if (i + 1 < app_order->GetSize())
-        CHECK(app_order->GetString(i + 1, &successor_to_moved_ext));
+        predecessor_to_moved_ext = app_order[i - 1].GetString();
+      if (i + 1 < app_order.size())
+        successor_to_moved_ext = app_order[i + 1].GetString();
       break;
     }
   }
@@ -1086,10 +1072,8 @@ void AppLauncherHandler::HandleReorderApps(const base::ListValue* args) {
 void AppLauncherHandler::HandleSetPageIndex(const base::ListValue* args) {
   AppSorting* app_sorting =
       ExtensionSystem::Get(extension_service_->profile())->app_sorting();
-  std::string extension_id;
-  double page_index;
-  CHECK(args->GetString(0, &extension_id));
-  CHECK(args->GetDouble(1, &page_index));
+  const std::string& extension_id = args->GetList()[0].GetString();
+  double page_index = args->GetList()[1].GetDouble();
   const syncer::StringOrdinal& page_ordinal =
       app_sorting->PageIntegerAsStringOrdinal(static_cast<size_t>(page_index));
 
@@ -1099,11 +1083,8 @@ void AppLauncherHandler::HandleSetPageIndex(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandleSaveAppPageName(const base::ListValue* args) {
-  std::string name;
-  CHECK(args->GetString(0, &name));
-
-  double page_index;
-  CHECK(args->GetDouble(1, &page_index));
+  const std::string& name = args->GetList()[0].GetString();
+  double page_index = args->GetList()[1].GetDouble();
 
   base::AutoReset<bool> auto_reset(&ignore_changes_, true);
   PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
@@ -1114,9 +1095,8 @@ void AppLauncherHandler::HandleSaveAppPageName(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
-  std::string url;
-  CHECK(args->GetString(0, &url));
-  GURL launch_url(url);
+  base::Value::ConstListView list = args->GetList();
+  GURL launch_url(list[0].GetString());
   // Do not install app for invalid url.
   if (!launch_url.SchemeIsHTTPOrHTTPS())
     return;
@@ -1124,11 +1104,9 @@ void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
   if (attempting_web_app_install_page_ordinal_.has_value())
     return;
 
-  std::u16string title;
-  CHECK(args->GetString(1, &title));
+  std::u16string title = base::UTF8ToUTF16(list[1].GetString());
 
-  double page_index;
-  CHECK(args->GetDouble(2, &page_index));
+  double page_index = list[2].GetDouble();
   AppSorting* app_sorting =
       ExtensionSystem::Get(extension_service_->profile())->app_sorting();
   const syncer::StringOrdinal& page_ordinal =
@@ -1157,8 +1135,7 @@ void AppLauncherHandler::HandleGenerateAppForLink(const base::ListValue* args) {
 }
 
 void AppLauncherHandler::HandlePageSelected(const base::ListValue* args) {
-  double index_double;
-  CHECK(args->GetDouble(0, &index_double));
+  double index_double = args->GetList()[0].GetDouble();
   int index = static_cast<int>(index_double);
 
   PrefService* prefs = Profile::FromWebUI(web_ui())->GetPrefs();
@@ -1218,7 +1195,7 @@ void AppLauncherHandler::OnFaviconForAppInstallFromLink(
 
   attempting_web_app_install_page_ordinal_ = install_info->page_ordinal;
 
-  web_app::InstallManager::OnceInstallCallback install_complete_callback =
+  web_app::OnceInstallCallback install_complete_callback =
       base::BindOnce(
           [](base::WeakPtr<AppLauncherHandler> app_launcher_handler,
              const web_app::AppId& app_id,
@@ -1311,19 +1288,6 @@ void AppLauncherHandler::ExtensionEnableFlowAborted(bool user_initiated) {
     NOTIMPLEMENTED();
     return;
   }
-
-  // We record the histograms here because ExtensionUninstallCanceled is also
-  // called when the extension uninstall dialog is canceled.
-  const Extension* extension =
-      extensions::ExtensionRegistry::Get(extension_service_->profile())
-          ->GetExtensionById(extension_id_prompting_,
-                             extensions::ExtensionRegistry::ENABLED |
-                                 extensions::ExtensionRegistry::DISABLED |
-                                 extensions::ExtensionRegistry::TERMINATED);
-  std::string histogram_name = user_initiated ? "ReEnableCancel"
-                                              : "ReEnableAbort";
-  extensions::ExtensionService::RecordPermissionMessagesHistogram(
-      extension, histogram_name.c_str());
 
   extension_enable_flow_.reset();
   CleanupAfterUninstall();

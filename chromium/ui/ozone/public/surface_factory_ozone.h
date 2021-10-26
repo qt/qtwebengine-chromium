@@ -15,6 +15,7 @@
 #include "base/memory/ref_counted.h"
 #include "base/native_library.h"
 #include "gpu/vulkan/buildflags.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/native_pixmap.h"
@@ -69,7 +70,7 @@ class COMPONENT_EXPORT(OZONE_BASE) SurfaceFactoryOzone {
  public:
   // Returns a list of allowed GL implementations. The default implementation
   // will be the first item.
-  virtual std::vector<gl::GLImplementation> GetAllowedGLImplementations();
+  virtual std::vector<gl::GLImplementationParts> GetAllowedGLImplementations();
 
   // Returns the GLOzone to use for the specified GL implementation, or null if
   // GL implementation doesn't exist.

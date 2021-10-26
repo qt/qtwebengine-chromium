@@ -6,6 +6,8 @@
 
 #include "core/fpdfapi/parser/cpdf_parser.h"
 
+#include <ctype.h>
+
 #include <algorithm>
 #include <utility>
 #include <vector>
@@ -31,8 +33,8 @@
 #include "core/fxcrt/scoped_set_insertion.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
+#include "third_party/base/containers/contains.h"
 #include "third_party/base/notreached.h"
-#include "third_party/base/stl_util.h"
 
 namespace {
 
@@ -119,12 +121,13 @@ void CPDF_Parser::ShrinkObjectMap(uint32_t size) {
 bool CPDF_Parser::InitSyntaxParser(
     const RetainPtr<CPDF_ReadValidator>& validator) {
   const Optional<FX_FILESIZE> header_offset = GetHeaderOffset(validator);
-  if (!header_offset)
+  if (!header_offset.has_value())
     return false;
-  if (validator->GetSize() < *header_offset + kPDFHeaderSize)
+  if (validator->GetSize() < header_offset.value() + kPDFHeaderSize)
     return false;
 
-  m_pSyntax = std::make_unique<CPDF_SyntaxParser>(validator, *header_offset);
+  m_pSyntax =
+      std::make_unique<CPDF_SyntaxParser>(validator, header_offset.value());
   return ParseFileVersion();
 }
 
@@ -134,20 +137,20 @@ bool CPDF_Parser::ParseFileVersion() {
   if (!m_pSyntax->GetCharAt(5, ch))
     return false;
 
-  if (std::isdigit(ch))
+  if (isdigit(ch))
     m_FileVersion = FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch)) * 10;
 
   if (!m_pSyntax->GetCharAt(7, ch))
     return false;
 
-  if (std::isdigit(ch))
+  if (isdigit(ch))
     m_FileVersion += FXSYS_DecimalCharToInt(static_cast<wchar_t>(ch));
   return true;
 }
 
 CPDF_Parser::Error CPDF_Parser::StartParse(
     const RetainPtr<IFX_SeekableReadStream>& pFileAccess,
-    const char* password) {
+    const ByteString& password) {
   if (!InitSyntaxParser(
           pdfium::MakeRetain<CPDF_ReadValidator>(pFileAccess, nullptr)))
     return FORMAT_ERROR;
@@ -480,7 +483,7 @@ bool CPDF_Parser::ParseAndAppendCrossRefSubsectionData(
 
         if (offset.ValueOrDie() == 0) {
           for (int32_t c = 0; c < 10; c++) {
-            if (!std::isdigit(pEntry[c]))
+            if (!isdigit(pEntry[c]))
               return false;
           }
         }
@@ -964,7 +967,7 @@ std::unique_ptr<CPDF_LinearizedHeader> CPDF_Parser::ParseLinearizedHeader() {
 
 CPDF_Parser::Error CPDF_Parser::StartLinearizedParse(
     const RetainPtr<CPDF_ReadValidator>& validator,
-    const char* password) {
+    const ByteString& password) {
   DCHECK(!m_bHasParsed);
   DCHECK(!m_bXRefTableRebuilt);
   SetPassword(password);

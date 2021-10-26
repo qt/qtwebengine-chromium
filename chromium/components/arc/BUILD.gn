@@ -22,12 +22,20 @@ static_library("arc") {
     "compat_mode/arc_resize_lock_pref_delegate.h",
     "compat_mode/arc_splash_screen_dialog_view.cc",
     "compat_mode/arc_splash_screen_dialog_view.h",
+    "compat_mode/arc_window_property_util.cc",
+    "compat_mode/arc_window_property_util.h",
+    "compat_mode/metrics.cc",
+    "compat_mode/metrics.h",
+    "compat_mode/overlay_dialog.cc",
+    "compat_mode/overlay_dialog.h",
     "compat_mode/resize_confirmation_dialog_view.cc",
     "compat_mode/resize_confirmation_dialog_view.h",
     "compat_mode/resize_toggle_menu.cc",
     "compat_mode/resize_toggle_menu.h",
     "compat_mode/resize_util.cc",
     "compat_mode/resize_util.h",
+    "compat_mode/style/arc_color_provider.cc",
+    "compat_mode/style/arc_color_provider.h",
     "crash_collector/arc_crash_collector_bridge.cc",
     "crash_collector/arc_crash_collector_bridge.h",
     "dark_theme/arc_dark_theme_bridge.cc",
@@ -59,8 +67,14 @@ static_library("arc") {
     "intent_helper/link_handler_model.cc",
     "intent_helper/link_handler_model.h",
     "intent_helper/open_url_delegate.h",
+    "keyboard_shortcut/arc_keyboard_shortcut_bridge.cc",
+    "keyboard_shortcut/arc_keyboard_shortcut_bridge.h",
     "lock_screen/arc_lock_screen_bridge.cc",
     "lock_screen/arc_lock_screen_bridge.h",
+    "memory/arc_memory_bridge.cc",
+    "memory/arc_memory_bridge.h",
+    "memory_pressure/arc_memory_pressure_bridge.cc",
+    "memory_pressure/arc_memory_pressure_bridge.h",
     "metrics/arc_metrics_service.cc",
     "metrics/arc_metrics_service.h",
     "metrics/stability_metrics_manager.cc",
@@ -120,6 +134,7 @@ static_library("arc") {
     "//chromeos/dbus/permission_broker",
     "//chromeos/dbus/power",
     "//chromeos/dbus/power:power_manager_proto",
+    "//chromeos/dbus/resourced:resourced",
     "//chromeos/dbus/session_manager",
     "//chromeos/dbus/session_manager:login_manager_proto",
     "//chromeos/dbus/upstart:upstart",
@@ -128,6 +143,8 @@ static_library("arc") {
     "//chromeos/disks",
     "//chromeos/login/login_state",
     "//chromeos/network",
+    "//chromeos/ui/base",
+    "//chromeos/ui/frame",
     "//components/account_id",
     "//components/arc/enterprise",
     "//components/arc/vector_icons",
@@ -193,10 +210,10 @@ static_library("arc_base_enums") {
   sources = [
     "session/arc_instance_mode.cc",
     "session/arc_instance_mode.h",
+    "session/arc_management_transition.cc",
+    "session/arc_management_transition.h",
     "session/arc_stop_reason.cc",
     "session/arc_stop_reason.h",
-    "session/arc_supervision_transition.cc",
-    "session/arc_supervision_transition.h",
   ]
 
   deps = [ "//base" ]
@@ -321,6 +338,26 @@ source_set("connection_holder") {
   ]
 }
 
+static_library("compat_mode_test_support") {
+  testonly = true
+  sources = [
+    "compat_mode/test/compat_mode_test_base.cc",
+    "compat_mode/test/compat_mode_test_base.h",
+  ]
+
+  deps = [
+    ":arc",
+    "//ash/constants",
+    "//ash/public/cpp",
+    "//base",
+    "//ui/aura",
+    "//ui/display:test_support",
+    "//ui/events:test_support",
+    "//ui/views",
+    "//ui/views:test_support",
+  ]
+}
+
 static_library("notification_test_support") {
   testonly = true
   sources = [
@@ -346,6 +383,8 @@ static_library("arc_test_support") {
     "test/fake_accessibility_helper_instance.h",
     "test/fake_adbd_monitor_instance.cc",
     "test/fake_adbd_monitor_instance.h",
+    "test/fake_app_host.cc",
+    "test/fake_app_host.h",
     "test/fake_app_instance.cc",
     "test/fake_app_instance.h",
     "test/fake_apps_tracker.cc",
@@ -372,12 +411,20 @@ static_library("arc_test_support") {
     "test/fake_intent_helper_instance.h",
     "test/fake_lock_screen_instance.cc",
     "test/fake_lock_screen_instance.h",
+    "test/fake_memory_instance.cc",
+    "test/fake_memory_instance.h",
+    "test/fake_nearby_share_instance.cc",
+    "test/fake_nearby_share_instance.h",
+    "test/fake_net_instance.cc",
+    "test/fake_net_instance.h",
     "test/fake_pip_instance.cc",
     "test/fake_pip_instance.h",
     "test/fake_policy_instance.cc",
     "test/fake_policy_instance.h",
     "test/fake_power_instance.cc",
     "test/fake_power_instance.h",
+    "test/fake_process_instance.cc",
+    "test/fake_process_instance.h",
     "test/fake_sharesheet_instance.cc",
     "test/fake_sharesheet_instance.h",
     "test/fake_snapshot_reboot_notification.cc",
@@ -398,10 +445,12 @@ static_library("arc_test_support") {
 
   public_deps = [
     ":arc",
+    ":compat_mode_test_support",
     ":notification_test_support",
   ]
 
   deps = [
+    "//ash/constants",
     "//base",
     "//components/arc/enterprise",
     "//components/keyed_service/content",
@@ -430,6 +479,7 @@ source_set("unit_tests") {
     "clipboard/arc_clipboard_bridge_unittest.cc",
     "compat_mode/arc_resize_lock_manager_unittest.cc",
     "compat_mode/arc_splash_screen_dialog_view_unittest.cc",
+    "compat_mode/overlay_dialog_unittest.cc",
     "compat_mode/resize_confirmation_dialog_view_unittest.cc",
     "compat_mode/resize_toggle_menu_unittest.cc",
     "compat_mode/resize_util_unittest.cc",
@@ -451,6 +501,8 @@ source_set("unit_tests") {
     "intent_helper/link_handler_model_unittest.cc",
     "lock_screen/arc_lock_screen_bridge_unittest.cc",
     "media_session/arc_media_session_bridge_unittest.cc",
+    "memory/arc_memory_bridge_unittest.cc",
+    "memory_pressure/arc_memory_pressure_bridge_unittest.cc",
     "metrics/arc_metrics_service_unittest.cc",
     "metrics/stability_metrics_manager_unittest.cc",
     "midis/arc_midis_bridge_unittest.cc",
@@ -486,13 +538,13 @@ source_set("unit_tests") {
     "//ash/public/cpp",
     "//base",
     "//base/test:test_support",
-    "//base/util/timer",
     "//chromeos",
     "//chromeos/cryptohome:cryptohome",
     "//chromeos/dbus:test_support",
     "//chromeos/dbus/permission_broker",
     "//chromeos/dbus/power",
     "//chromeos/dbus/power:power_manager_proto",
+    "//chromeos/dbus/resourced:resourced",
     "//chromeos/dbus/session_manager",
     "//chromeos/dbus/session_manager:login_manager_proto",
     "//chromeos/dbus/upstart",
@@ -503,6 +555,7 @@ source_set("unit_tests") {
     "//components/arc/enterprise",
     "//components/arc/media_session",
     "//components/arc/video_accelerator:common",
+    "//components/exo",
     "//components/exo:test_support",
     "//components/keyed_service/content",
     "//components/prefs:test_support",
@@ -525,7 +578,6 @@ source_set("unit_tests") {
     "//ui/base/ime",
     "//ui/events",
     "//ui/events:dom_keycode_converter",
-    "//ui/events:test_support",
     "//ui/ozone",
     "//ui/views",
     "//ui/views:test_support",

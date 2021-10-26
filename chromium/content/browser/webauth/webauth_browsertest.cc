@@ -18,7 +18,6 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "components/network_session_configurator/common/network_switches.h"
 #include "content/browser/renderer_host/back_forward_cache_disable.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/webauth/authenticator_environment_impl.h"
@@ -36,6 +35,7 @@
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/content_mock_cert_verifier.h"
 #include "content/public/test/test_utils.h"
 #include "content/shell/browser/shell.h"
 #include "content/test/did_commit_navigation_interceptor.h"
@@ -83,8 +83,10 @@ using TestGetCallbackReceiver = ::device::test::StatusAndValueCallbackReceiver<
 constexpr char kOkMessage[] = "webauth: OK";
 
 constexpr char kPublicKeyErrorMessage[] =
-    "webauth: NotSupportedError: Required parameters missing in "
-    "`options.publicKey`.";
+    "webauth: TypeError: Failed to execute 'create' on 'CredentialsContainer': "
+    "Failed to read the 'publicKey' property from 'CredentialCreationOptions': "
+    "Failed to read the 'rp' property from 'PublicKeyCredentialCreationOptions'"
+    ": The provided value is not of type 'PublicKeyCredentialRpEntity'.";
 
 constexpr char kNotAllowedErrorMessage[] =
     "webauth: NotAllowedError: The operation either timed out or was not "
@@ -426,6 +428,7 @@ class WebAuthBrowserTestBase : public content::ContentBrowserTest {
 
   void SetUpOnMainThread() override {
     ContentBrowserTest::SetUpOnMainThread();
+    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
 
     host_resolver()->AddRule("*", "127.0.0.1");
     https_server().ServeFilesFromSourceDirectory(GetTestDataFilePath());
@@ -465,10 +468,24 @@ class WebAuthBrowserTestBase : public content::ContentBrowserTest {
 
  private:
   void SetUpCommandLine(base::CommandLine* command_line) override {
+    ContentBrowserTest::SetUpCommandLine(command_line);
+    mock_cert_verifier_.SetUpCommandLine(command_line);
     command_line->AppendSwitch(
         switches::kEnableExperimentalWebPlatformFeatures);
-    command_line->AppendSwitch(switches::kIgnoreCertificateErrors);
   }
+
+  void SetUpInProcessBrowserTestFixture() override {
+    ContentBrowserTest::SetUpInProcessBrowserTestFixture();
+    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
+  }
+
+  void TearDownInProcessBrowserTestFixture() override {
+    ContentBrowserTest::TearDownInProcessBrowserTestFixture();
+    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
+  }
+
+ private:
+  content::ContentMockCertVerifier mock_cert_verifier_;
 
   net::EmbeddedTestServer https_server_{net::EmbeddedTestServer::TYPE_HTTPS};
   std::unique_ptr<WebAuthBrowserTestContentBrowserClient> test_client_;
@@ -534,7 +551,8 @@ class WebAuthLocalClientBrowserTest : public WebAuthBrowserTestBase {
         blink::mojom::ProtectionPolicy::UNSPECIFIED,
         /*enforce_protection_policy=*/false, /*appid_exclude=*/absl::nullopt,
         /*cred_props=*/false, device::LargeBlobSupport::kNotRequested,
-        /*is_payment_credential_creation=*/false, /*cred_blob=*/absl::nullopt);
+        /*is_payment_credential_creation=*/false, /*cred_blob=*/absl::nullopt,
+        /*google_legacy_app_id_support=*/false);
 
     return mojo_options;
   }

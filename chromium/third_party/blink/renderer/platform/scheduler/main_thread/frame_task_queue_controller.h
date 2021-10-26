@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "base/callback.h"
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
 #include "third_party/blink/renderer/platform/scheduler/main_thread/main_thread_task_queue.h"
@@ -53,19 +52,20 @@ class PLATFORM_EXPORT FrameTaskQueueController {
   class Delegate {
    public:
     Delegate() = default;
+    Delegate(const Delegate&) = delete;
+    Delegate& operator=(const Delegate&) = delete;
     virtual ~Delegate() = default;
 
     virtual void OnTaskQueueCreated(
         MainThreadTaskQueue*,
         base::sequence_manager::TaskQueue::QueueEnabledVoter*) = 0;
-
-   private:
-    DISALLOW_COPY_AND_ASSIGN(Delegate);
   };
 
   FrameTaskQueueController(MainThreadSchedulerImpl*,
                            FrameSchedulerImpl*,
                            Delegate*);
+  FrameTaskQueueController(const FrameTaskQueueController&) = delete;
+  FrameTaskQueueController& operator=(const FrameTaskQueueController&) = delete;
   ~FrameTaskQueueController();
 
   // Return the task queue associated with the given queue traits,
@@ -78,6 +78,8 @@ class PLATFORM_EXPORT FrameTaskQueueController {
   scoped_refptr<MainThreadTaskQueue> NewWebSchedulingTaskQueue(
       MainThreadTaskQueue::QueueTraits,
       WebSchedulingPriority);
+
+  void RemoveWebSchedulingTaskQueue(MainThreadTaskQueue*);
 
   // Get the list of all task queue and voter pairs.
   const Vector<TaskQueueAndEnabledVoterPair>& GetAllTaskQueuesAndVoters() const;
@@ -104,6 +106,12 @@ class PLATFORM_EXPORT FrameTaskQueueController {
   void CreateTaskQueue(MainThreadTaskQueue::QueueTraits);
 
   void TaskQueueCreated(const scoped_refptr<MainThreadTaskQueue>&);
+
+  // Removes a queue from |all_task_queues_and_voters_| and
+  // |task_queue_enabled_voters_|. This method enforces that the queue is in the
+  // collection before removal. Removes are linear in the total number of task
+  // queues.
+  void RemoveTaskQueueAndVoter(MainThreadTaskQueue*);
 
   // Map a set of QueueTraits to a QueueType.
   // TODO(crbug.com/877245): Consider creating a new queue type kFrameNonLoading
@@ -137,8 +145,6 @@ class PLATFORM_EXPORT FrameTaskQueueController {
   // The list of all task queue and voter pairs for all QueueTypeInternal queue
   // types.
   Vector<TaskQueueAndEnabledVoterPair> all_task_queues_and_voters_;
-
-  DISALLOW_COPY_AND_ASSIGN(FrameTaskQueueController);
 };
 
 }  // namespace scheduler

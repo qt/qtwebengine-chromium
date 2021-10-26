@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/command_line.h"
+#include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
@@ -41,6 +42,10 @@ class TestClient : public AndroidMetricsServiceClient {
 
   ~TestClient() override = default;
 
+  void Initialize(PrefService* pref_service) {
+    AndroidMetricsServiceClient::Initialize(base::FilePath(), pref_service);
+  }
+
   bool IsRecordingActive() {
     auto* service = GetMetricsService();
     if (service)
@@ -71,9 +76,8 @@ class TestClient : public AndroidMetricsServiceClient {
   void SetSampleBucketValue(int per_mille) { sample_bucket_value_ = per_mille; }
 
   // Expose the super class implementation for testing.
-  using AndroidMetricsServiceClient::GetAppPackageNameInternal;
-  using AndroidMetricsServiceClient::IsInPackageNameSample;
   using AndroidMetricsServiceClient::IsInSample;
+  using AndroidMetricsServiceClient::ShouldRecordPackageName;
 
  protected:
   void OnMetricsStart() override {}
@@ -227,7 +231,7 @@ TEST_F(AndroidMetricsServiceClientTest,
   client->SetHaveMetricsConsent(true, true);
   client->SetRecordPackageNameForAppType(false);
   client->SetInPackageNameSample(true);
-  std::string package_name = client->GetAppPackageName();
+  std::string package_name = client->GetAppPackageNameIfLoggable();
   EXPECT_TRUE(package_name.empty());
 }
 
@@ -239,7 +243,7 @@ TEST_F(AndroidMetricsServiceClientTest,
   client->SetHaveMetricsConsent(true, true);
   client->SetRecordPackageNameForAppType(true);
   client->SetInPackageNameSample(false);
-  std::string package_name = client->GetAppPackageName();
+  std::string package_name = client->GetAppPackageNameIfLoggable();
   EXPECT_TRUE(package_name.empty());
 }
 
@@ -250,7 +254,7 @@ TEST_F(AndroidMetricsServiceClientTest, TestCanUploadPackageName) {
   client->SetHaveMetricsConsent(true, true);
   client->SetRecordPackageNameForAppType(true);
   client->SetInPackageNameSample(true);
-  std::string package_name = client->GetAppPackageName();
+  std::string package_name = client->GetAppPackageNameIfLoggable();
   EXPECT_FALSE(package_name.empty());
 }
 
@@ -258,8 +262,8 @@ TEST_F(AndroidMetricsServiceClientTest, TestGetPackageNameInternal) {
   auto prefs = CreateTestPrefs();
   prefs->SetString(metrics::prefs::kMetricsClientID, kTestClientId);
   auto client = CreateAndInitTestClient(prefs.get());
-  // Make sure GetPackageNameInternal returns a non-empty string.
-  EXPECT_FALSE(client->GetAppPackageNameInternal().empty());
+  // Make sure GetPackageName returns a non-empty string.
+  EXPECT_FALSE(client->GetAppPackageName().empty());
 }
 
 TEST_F(AndroidMetricsServiceClientTest,
@@ -276,7 +280,7 @@ TEST_F(AndroidMetricsServiceClientTest,
     client->SetSampleBucketValue(value);
     EXPECT_TRUE(client->IsInSample())
         << "Value " << value << " should be in-sample";
-    EXPECT_TRUE(client->IsInPackageNameSample())
+    EXPECT_TRUE(client->ShouldRecordPackageName())
         << "Value " << value << " should be in the package name sample";
   }
   // After this, the only thing we care about is that we're out of sample (the
@@ -303,7 +307,7 @@ TEST_F(AndroidMetricsServiceClientTest,
     client->SetSampleBucketValue(value);
     EXPECT_TRUE(client->IsInSample())
         << "Value " << value << " should be in-sample";
-    EXPECT_TRUE(client->IsInPackageNameSample())
+    EXPECT_TRUE(client->ShouldRecordPackageName())
         << "Value " << value << " should be in the package name sample";
   }
   // After this (but until we hit the sample rate), clients should be in sample
@@ -312,7 +316,7 @@ TEST_F(AndroidMetricsServiceClientTest,
     client->SetSampleBucketValue(value);
     EXPECT_TRUE(client->IsInSample())
         << "Value " << value << " should be in-sample";
-    EXPECT_FALSE(client->IsInPackageNameSample())
+    EXPECT_FALSE(client->ShouldRecordPackageName())
         << "Value " << value << " should be out of the package name sample";
   }
   // After this, the only thing we care about is that we're out of sample (the

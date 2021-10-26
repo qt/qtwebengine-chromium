@@ -96,7 +96,7 @@ class OzonePlatformScenic : public OzonePlatform,
     BindInMainProcessIfNecessary();
 
     // Allow tests to create a view themselves.
-    if (!properties.view_token.value) {
+    if (!properties.view_token) {
       CHECK(properties.allow_null_view_token_for_test);
       ui::fuchsia::InitializeViewTokenAndPresentView(&properties);
     }
@@ -128,10 +128,13 @@ class OzonePlatformScenic : public OzonePlatform,
     return window_manager_->CreateScreen();
   }
 
+  void InitScreen(PlatformScreen* screen) override {}
+
   std::unique_ptr<InputMethod> CreateInputMethod(
       internal::InputMethodDelegate* delegate,
       gfx::AcceleratedWidget widget) override {
     return std::make_unique<InputMethodFuchsia>(
+        window_manager_->GetWindow(widget)->virtual_keyboard_enabled(),
         delegate, window_manager_->GetWindow(widget)->CloneViewRef());
   }
 

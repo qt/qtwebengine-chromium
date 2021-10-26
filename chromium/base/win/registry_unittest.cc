@@ -9,12 +9,11 @@
 #include <stdint.h>
 
 #include <cstring>
-#include <vector>
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/cxx17_backports.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_reg_util_win.h"
 #include "base/win/windows_version.h"

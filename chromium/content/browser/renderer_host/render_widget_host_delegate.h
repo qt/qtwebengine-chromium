@@ -16,6 +16,7 @@
 #include "content/common/content_export.h"
 #include "content/public/common/drop_data.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/blink/public/common/input/web_input_event.h"
 #include "third_party/blink/public/common/page/drag_operation.h"
 #include "third_party/blink/public/mojom/frame/lifecycle.mojom.h"
@@ -37,8 +38,6 @@ class Size;
 namespace content {
 
 class BrowserAccessibilityManager;
-class FrameTree;
-class RenderFrameHostImpl;
 class RenderWidgetHostImpl;
 class RenderWidgetHostInputEventRouter;
 class RenderViewHostDelegateView;
@@ -122,9 +121,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // Returns true if the |event| was handled.
   virtual bool PreHandleGestureEvent(const blink::WebGestureEvent& event);
 
-  // Notifies that screen rects were sent to renderer process.
-  virtual void DidSendScreenRects(RenderWidgetHostImpl* rwh) {}
-
   // Get the root BrowserAccessibilityManager for this frame tree.
   virtual BrowserAccessibilityManager* GetRootBrowserAccessibilityManager();
 
@@ -157,10 +153,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
   virtual RenderWidgetHostInputEventRouter* GetInputEventRouter();
 
-  // Send page-level focus state to all SiteInstances involved in rendering the
-  // current FrameTree, not including the main frame's SiteInstance.
-  virtual void ReplicatePageFocus(bool is_focused) {}
-
   // Get the focused RenderWidgetHost associated with |receiving_widget|. A
   // RenderWidgetHostView, upon receiving a keyboard event, will pass its
   // RenderWidgetHost to this function to determine who should ultimately
@@ -185,12 +177,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // warning shown to the user.
   virtual void RendererResponsive(RenderWidgetHostImpl* render_widget_host) {}
 
-  // Notification that a cross-process subframe on this page has crashed, and a
-  // sad frame is shown if the subframe was visible.  |frame_visibility|
-  // specifies whether the subframe is visible, scrolled out of view, or hidden
-  // (e.g., with "display: none").
-  virtual void SubframeCrashed(blink::mojom::FrameVisibility visibility) {}
-
   // Requests to lock the mouse. Once the request is approved or rejected,
   // GotResponseToLockMouseRequest() will be called on the requesting render
   // widget host. |privileged| means that the request is always granted, used
@@ -214,8 +200,9 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
   // to frame-based widgets. Other widgets are always kBrowser.
   virtual blink::mojom::DisplayMode GetDisplayMode() const;
 
-  // Notification that the widget has lost capture.
-  virtual void LostCapture(RenderWidgetHostImpl* render_widget_host) {}
+  // Returns the Window Control Overlay rectangle. Only applies to an
+  // outermost main frame's widget. Other widgets always returns an empty rect.
+  virtual gfx::Rect GetWindowsControlsOverlayRect() const;
 
   // Notification that the widget has lost the mouse lock.
   virtual void LostMouseLock(RenderWidgetHostImpl* render_widget_host) {}
@@ -288,9 +275,6 @@ class CONTENT_EXPORT RenderWidgetHostDelegate {
 
   // Returns true if there is context menu shown on page.
   virtual bool IsShowingContextMenuOnPage() const;
-
-  // Returns the focused frame across all delegates, or nullptr if none.
-  virtual RenderFrameHostImpl* GetFocusedFrameFromFocusedDelegate();
 
   // Invoked when the vertical scroll direction of the root layer changes. Note
   // that if a scroll in a given direction occurs, the scroll is completed, and

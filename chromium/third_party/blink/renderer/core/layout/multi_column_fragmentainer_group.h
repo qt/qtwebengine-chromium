@@ -87,6 +87,9 @@ class CORE_EXPORT MultiColumnFragmentainerGroup {
   void SetLogicalBottomInFlowThread(LayoutUnit logical_bottom_in_flow_thread) {
     logical_bottom_in_flow_thread_ = logical_bottom_in_flow_thread;
   }
+  void ExtendLogicalBottomInFlowThread(LayoutUnit block_size) {
+    logical_bottom_in_flow_thread_ += block_size;
+  }
 
   // The height of the flow thread portion for the entire fragmentainer group.
   LayoutUnit LogicalHeightInFlowThread() const {
@@ -160,6 +163,7 @@ class CORE_EXPORT MultiColumnFragmentainerGroup {
   unsigned ActualColumnCount() const;
 
   void SetColumnBlockSizeFromNG(LayoutUnit);
+  void ExtendColumnBlockSizeFromNG(LayoutUnit);
 
  private:
   LayoutUnit HeightAdjustedForRowOffset(LayoutUnit height) const;

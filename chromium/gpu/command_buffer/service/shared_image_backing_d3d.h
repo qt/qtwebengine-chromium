@@ -96,7 +96,8 @@ class GPU_GLES2_EXPORT SharedImageBackingD3D
   std::unique_ptr<SharedImageRepresentationDawn> ProduceDawn(
       SharedImageManager* manager,
       MemoryTypeTracker* tracker,
-      WGPUDevice device) override;
+      WGPUDevice device,
+      WGPUBackendType backend_type) override;
 
   void OnMemoryDump(const std::string& dump_name,
                     base::trace_event::MemoryAllocatorDump* dump,
@@ -178,6 +179,8 @@ class GPU_GLES2_EXPORT SharedImageBackingD3D
 
   // Texture could be nullptr if an empty backing is needed for testing.
   Microsoft::WRL::ComPtr<ID3D11Texture2D> d3d11_texture_;
+
+  // Can be null for backings owned by non-GL producers e.g. WebGPU.
   scoped_refptr<gles2::TexturePassthrough> gl_texture_;
 
   Microsoft::WRL::ComPtr<IDXGISwapChain1> swap_chain_;

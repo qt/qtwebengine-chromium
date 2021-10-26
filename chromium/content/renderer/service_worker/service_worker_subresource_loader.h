@@ -17,6 +17,7 @@
 #include "mojo/public/cpp/bindings/remote.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
 #include "net/url_request/redirect_info.h"
+#include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -151,8 +152,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
 
   void TransitionToStatus(Status new_status);
 
-  network::mojom::URLResponseHeadPtr response_head_ =
-      network::mojom::URLResponseHead::New();
+  network::mojom::URLResponseHeadPtr response_head_;
   absl::optional<net::RedirectInfo> redirect_info_;
   int redirect_limit_;
 
@@ -223,7 +223,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoaderFactory
 
   // |controller_connector| is used to get a connection to the controller
   // ServiceWorker.
-  // |network_loader_factory| is used to get the associated loading context's
+  // |fallback_factory| is used to get the associated loading context's
   // default URLLoaderFactory for network fallback. This should be the
   // URLLoaderFactory that directly goes to network without going through
   // any custom URLLoader factories.

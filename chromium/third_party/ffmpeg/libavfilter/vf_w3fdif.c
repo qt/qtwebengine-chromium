@@ -334,10 +334,8 @@ static int config_output(AVFilterLink *outlink)
 {
     AVFilterLink *inlink = outlink->src->inputs[0];
 
-    outlink->time_base.num = inlink->time_base.num;
-    outlink->time_base.den = inlink->time_base.den * 2;
-    outlink->frame_rate.num = inlink->frame_rate.num * 2;
-    outlink->frame_rate.den = inlink->frame_rate.den;
+    outlink->time_base = av_mul_q(inlink->time_base, (AVRational){1, 2});
+    outlink->frame_rate = av_mul_q(inlink->frame_rate, (AVRational){2, 1});
 
     return 0;
 }
@@ -615,7 +613,7 @@ static const AVFilterPad w3fdif_outputs[] = {
     { NULL }
 };
 
-AVFilter ff_vf_w3fdif = {
+const AVFilter ff_vf_w3fdif = {
     .name          = "w3fdif",
     .description   = NULL_IF_CONFIG_SMALL("Apply Martin Weston three field deinterlace."),
     .priv_size     = sizeof(W3FDIFContext),

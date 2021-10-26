@@ -9,8 +9,10 @@
 #include "base/time/time.h"
 #include "components/media_router/common/media_route_provider_helper.h"
 #include "components/media_router/common/media_source.h"
+#include "components/media_router/common/mojom/media_router.mojom-forward.h"
 #include "components/media_router/common/route_request_result.h"
 #include "media/base/container_names.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 class GURL;
 
@@ -66,9 +68,10 @@ enum class MediaRouterDialogOpenOrigin {
   CONTEXTUAL_MENU = 2,
   PAGE = 3,
   APP_MENU = 4,
+  SYSTEM_TRAY = 5,
 
   // NOTE: Add entries only immediately above this line.
-  TOTAL_COUNT = 5
+  TOTAL_COUNT = 6
 };
 
 // The possible outcomes from a route creation response.
@@ -137,6 +140,10 @@ class MediaRouterMetrics {
   static const char kHistogramUiFirstAction[];
   static const char kHistogramUiIconStateAtInit[];
 
+  // When recording the number of devices shown in UI we record after a delay
+  // because discovering devices can take some time after the UI is shown.
+  static const base::TimeDelta kDeviceCountMetricDelay;
+
   // Records where the user clicked to open the Media Router dialog.
   static void RecordMediaRouterDialogOrigin(MediaRouterDialogOpenOrigin origin);
 
@@ -178,6 +185,17 @@ class MediaRouterMetrics {
   // may be 0.
   static void RecordDeviceCount(int device_count);
 
+  // Records the number of sinks in |is_available| state, provided by |provider|
+  // that was opened via |origin|.
+  static void RecordGmcDeviceCount(MediaRouterDialogOpenOrigin origin,
+                                   mojom::MediaRouteProviderId provider,
+                                   bool is_available,
+                                   int count);
+  static void RecordCastDialogDeviceCount(MediaRouterDialogOpenOrigin origin,
+                                          mojom::MediaRouteProviderId provider,
+                                          bool is_available,
+                                          int count);
+
   // Records the index of the device the user has started casting to on the
   // devices list. The index starts at 0.
   static void RecordStartRouteDeviceIndex(int index);
@@ -214,19 +232,19 @@ class MediaRouterMetrics {
   // This and the following methods that record ResultCode use per-provider
   // histograms.
   static void RecordCreateRouteResultCode(
-      MediaRouteProviderId provider_id,
-      RouteRequestResult::ResultCode result_code);
+      RouteRequestResult::ResultCode result_code,
+      absl::optional<mojom::MediaRouteProviderId> provider_id = absl::nullopt);
 
   // Records the outcome of a join route request to a Media Route Provider.
   static void RecordJoinRouteResultCode(
-      MediaRouteProviderId provider_id,
-      RouteRequestResult::ResultCode result_code);
+      RouteRequestResult::ResultCode result_code,
+      absl::optional<mojom::MediaRouteProviderId> provider_id = absl::nullopt);
 
   // Records the outcome of a call to terminateRoute() on a Media Route
   // Provider.
   static void RecordMediaRouteProviderTerminateRoute(
-      MediaRouteProviderId provider_id,
-      RouteRequestResult::ResultCode result_code);
+      RouteRequestResult::ResultCode result_code,
+      absl::optional<mojom::MediaRouteProviderId> provider_id = absl::nullopt);
 };
 
 }  // namespace media_router

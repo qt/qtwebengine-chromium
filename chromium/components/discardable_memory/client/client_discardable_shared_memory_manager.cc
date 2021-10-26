@@ -9,7 +9,6 @@
 
 #include "base/atomic_sequence_num.h"
 #include "base/bind.h"
-#include "base/feature_list.h"
 #include "base/format_macros.h"
 #include "base/macros.h"
 #include "base/memory/discardable_memory.h"
@@ -28,22 +27,6 @@
 #include "components/crash/core/common/crash_key.h"
 
 namespace discardable_memory {
-
-// This controls whether unlocked memory is released when |ReleaseFreeMemory| is
-// called. Enabling this causes |ReleaseFreeMemory| to release all
-// unlocked memory instances, as well as release all free memory (as opposed to
-// merely releasing all free memory).
-const base::Feature kPurgeUnlockedMemory{"PurgeUnlockedMemory",
-                                         base::FEATURE_DISABLED_BY_DEFAULT};
-
-// This controls whether unlocked memory is periodically purged from the
-// foreground process. Enabling this causes a task to be scheduled at regular
-// intervals to purge unlocked memory that hasn't been touched in a while. This
-// task is stopped if no discardable memory is left, and restarted at the next
-// allocation.
-const base::Feature kSchedulePeriodicPurge{"SchedulePeriodicPurge",
-                                           base::FEATURE_DISABLED_BY_DEFAULT};
-
 namespace {
 
 // Global atomic to generate unique discardable shared memory IDs.
@@ -204,9 +187,7 @@ ClientDiscardableSharedMemoryManager::ClientDiscardableSharedMemoryManager(
       task_runner_(base::ThreadTaskRunnerHandle::Get()),
       heap_(std::make_unique<DiscardableSharedMemoryHeap>()),
       io_task_runner_(std::move(io_task_runner)),
-      manager_mojo_(nullptr),
-      may_schedule_periodic_purge_(
-          base::FeatureList::IsEnabled(kSchedulePeriodicPurge)) {
+      manager_mojo_(nullptr) {
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "ClientDiscardableSharedMemoryManager",
       base::ThreadTaskRunnerHandle::Get());
@@ -251,7 +232,7 @@ ClientDiscardableSharedMemoryManager::AllocateLockedDiscardableMemory(
     size_t size) {
   base::AutoLock lock(lock_);
 
-  if (may_schedule_periodic_purge_ && !is_purge_scheduled_) {
+  if (!is_purge_scheduled_) {
     task_runner_->PostDelayedTask(
         FROM_HERE,
         base::BindOnce(&ClientDiscardableSharedMemoryManager::ScheduledPurge,
@@ -483,17 +464,10 @@ void ClientDiscardableSharedMemoryManager::PurgeUnlockedMemory(
     }
   }
 
-  ReleaseFreeMemoryImpl();
+  ReleaseFreeMemory();
 }
 
 void ClientDiscardableSharedMemoryManager::ReleaseFreeMemory() {
-  if (base::FeatureList::IsEnabled(kPurgeUnlockedMemory))
-    BackgroundPurge();
-  else
-    ReleaseFreeMemoryImpl();
-}
-
-void ClientDiscardableSharedMemoryManager::ReleaseFreeMemoryImpl() {
   TRACE_EVENT0("blink",
                "ClientDiscardableSharedMemoryManager::ReleaseFreeMemory()");
   base::AutoLock lock(lock_);

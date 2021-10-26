@@ -15,6 +15,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/sanitize_script_errors.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_code_cache.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/script/import_map_error.h"
 #include "third_party/blink/renderer/core/script/module_import_meta.h"
 #include "third_party/blink/renderer/platform/bindings/name_client.h"
 #include "third_party/blink/renderer/platform/bindings/script_wrappable.h"
@@ -37,7 +38,6 @@ class ResourceFetcher;
 class ModuleRecordResolver;
 class ScriptPromiseResolver;
 class ScriptState;
-class ScriptValue;
 enum class ModuleType;
 
 // A SingleModuleClient is notified when single module script node (node as in a
@@ -47,7 +47,7 @@ class CORE_EXPORT SingleModuleClient
     : public GarbageCollected<SingleModuleClient>,
       public NameClient {
  public:
-  virtual ~SingleModuleClient() = default;
+  ~SingleModuleClient() override = default;
   virtual void Trace(Visitor* visitor) const {}
   const char* NameInHeapSnapshot() const override {
     return "SingleModuleClient";
@@ -61,7 +61,7 @@ class CORE_EXPORT SingleModuleClient
 class CORE_EXPORT ModuleTreeClient : public GarbageCollected<ModuleTreeClient>,
                                      public NameClient {
  public:
-  virtual ~ModuleTreeClient() = default;
+  ~ModuleTreeClient() override = default;
   virtual void Trace(Visitor* visitor) const {}
   const char* NameInHeapSnapshot() const override { return "ModuleTreeClient"; }
 
@@ -103,7 +103,7 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
                               public NameClient {
  public:
   static Modulator* From(ScriptState*);
-  virtual ~Modulator();
+  ~Modulator() override;
 
   static void SetModulator(ScriptState*, Modulator*);
   static void ClearModulator(ScriptState*);
@@ -121,8 +121,6 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
   // https://html.spec.whatwg.org/C/#concept-bc-noscript
   // "scripting is disabled for settings's responsible browsing context"
   virtual bool IsScriptingDisabled() const = 0;
-
-  virtual bool ImportMapsEnabled() const = 0;
 
   // https://html.spec.whatwg.org/C/#fetch-a-module-script-tree
   // https://html.spec.whatwg.org/C/#fetch-a-module-worker-script-tree
@@ -176,18 +174,15 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
 
   // https://tc39.github.io/proposal-dynamic-import/#sec-hostimportmoduledynamically
   virtual void ResolveDynamically(const ModuleRequest& module_request,
-                                  const KURL&,
                                   const ReferrerScriptInfo&,
                                   ScriptPromiseResolver*) = 0;
-
-  virtual ScriptValue CreateTypeError(const String& message) const = 0;
-  virtual ScriptValue CreateSyntaxError(const String& message) const = 0;
 
   // Import maps. https://github.com/WICG/import-maps
 
   // https://wicg.github.io/import-maps/#register-an-import-map
-  virtual void RegisterImportMap(const ImportMap*,
-                                 ScriptValue error_to_rethrow) = 0;
+  virtual void RegisterImportMap(
+      const ImportMap*,
+      absl::optional<ImportMapError> error_to_rethrow) = 0;
   virtual const ImportMap* GetImportMapForTest() const = 0;
 
   // https://wicg.github.io/import-maps/#document-acquiring-import-maps
@@ -209,11 +204,6 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
       v8::Local<v8::Module>) const = 0;
 
   virtual bool HasValidContext() = 0;
-
-  virtual ScriptValue InstantiateModule(v8::Local<v8::Module>, const KURL&) = 0;
-
-  virtual Vector<ModuleRequest> ModuleRequestsFromModuleRecord(
-      v8::Local<v8::Module>) = 0;
 
   virtual ModuleType ModuleTypeFromRequest(
       const ModuleRequest& module_request) const = 0;

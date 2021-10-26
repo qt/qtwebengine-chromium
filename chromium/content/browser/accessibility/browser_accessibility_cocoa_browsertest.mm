@@ -292,7 +292,8 @@ IN_PROC_BROWSER_TEST_F(BrowserAccessibilityCocoaBrowserTest,
   std::unique_ptr<BrowserAccessibilityManagerMac> manager(
       new BrowserAccessibilityManagerMac(tree, nullptr));
 
-  for (int child_index = 0; child_index < int{tree.nodes[0].child_ids.size()};
+  for (int child_index = 0;
+       child_index < static_cast<int>(tree.nodes[0].child_ids.size());
        ++child_index) {
     BrowserAccessibility* child =
         manager->GetRoot()->PlatformGetChild(child_index);
@@ -607,8 +608,8 @@ IN_PROC_BROWSER_TEST_F(BrowserAccessibilityCocoaBrowserTest,
   ASSERT_NSEQ(@"AXRow", [tree_children[1] role]);
 
   auto menu_interceptor = std::make_unique<ContextMenuInterceptor>(
+      shell()->web_contents()->GetMainFrame(),
       ContextMenuInterceptor::ShowBehavior::kPreventShow);
-  menu_interceptor->Init(shell()->web_contents()->GetMainFrame());
 
   gfx::Point tree_point =
       TriggerContextMenuAndGetMenuLocation(cocoa_tree, menu_interceptor.get());

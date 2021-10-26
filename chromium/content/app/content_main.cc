@@ -8,6 +8,7 @@
 #include "base/at_exit.h"
 #include "base/base_switches.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/debug/activity_tracker.h"
 #include "base/debug/debugger.h"
 #include "base/debug/stack_trace.h"
@@ -19,13 +20,13 @@
 #include "base/process/memory.h"
 #include "base/process/process.h"
 #include "base/run_loop.h"
-#include "base/stl_util.h"
 #include "base/task/single_thread_task_executor.h"
 #include "base/task/thread_pool/thread_pool_instance.h"
 #include "base/threading/thread.h"
 #include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_log.h"
 #include "build/build_config.h"
+#include "build/chromeos_buildflags.h"
 #include "components/tracing/common/trace_to_console.h"
 #include "components/tracing/common/tracing_switches.h"
 #include "content/app/content_main_runner_impl.h"
@@ -168,12 +169,18 @@ void InitializeMojo(mojo::core::Configuration* config) {
   const auto& command_line = *base::CommandLine::ForCurrentProcess();
   const bool is_browser = !command_line.HasSwitch(switches::kProcessType);
   if (is_browser) {
-    if (mojo::PlatformChannel::CommandLineHasPassedEndpoint(command_line)) {
-      config->is_broker_process = false;
+    // On Lacros, Chrome is not always the broker, because ash-chrome is.
+    // Otherwise, look at the command line flag to decide whether it is
+    // a broker.
+    config->is_broker_process =
+#if BUILDFLAG(IS_CHROMEOS_LACROS)
+        false
+#else
+        !mojo::PlatformChannel::CommandLineHasPassedEndpoint(command_line)
+#endif
+        ;
+    if (!config->is_broker_process)
       config->force_direct_shared_memory_allocation = true;
-    } else {
-      config->is_broker_process = true;
-    }
   } else {
 #if defined(OS_WIN)
     if (base::win::GetVersion() >= base::win::Version::WIN8_1) {
@@ -209,8 +216,11 @@ void InitializeMojo(mojo::core::Configuration* config) {
 
 }  // namespace
 
-int RunContentProcess(const ContentMainParams& params,
-                      ContentMainRunner* content_main_runner) {
+// This function must be marked with NO_STACK_PROTECTOR or it may crash on
+// return, see the --change-stack-guard-on-fork command line flag.
+int NO_STACK_PROTECTOR
+RunContentProcess(const ContentMainParams& params,
+                  ContentMainRunner* content_main_runner) {
   ContentMainParams content_main_params(params);
 
   int exit_code = -1;
@@ -401,7 +411,9 @@ int RunContentProcess(const ContentMainParams& params,
   return exit_code;
 }
 
-int ContentMain(const ContentMainParams& params) {
+// This function must be marked with NO_STACK_PROTECTOR or it may crash on
+// return, see the --change-stack-guard-on-fork command line flag.
+int NO_STACK_PROTECTOR ContentMain(const ContentMainParams& params) {
   auto runner = ContentMainRunner::Create();
   return RunContentProcess(params, runner.get());
 }

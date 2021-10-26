@@ -63,6 +63,14 @@ void MojoVideoEncodeAcceleratorService::Initialize(
     return;
   }
 
+  if (gpu_workarounds_.disable_accelerated_vp9_encode &&
+      config.output_profile >= VP9PROFILE_PROFILE0 &&
+      config.output_profile <= VP9PROFILE_PROFILE3) {
+    LOG(ERROR) << __func__ << " VP9 encoding disabled by GPU policy";
+    std::move(success_callback).Run(false);
+    return;
+  }
+
   if (encoder_) {
     DLOG(ERROR) << __func__ << " VEA is already initialized";
     std::move(success_callback).Run(false);
@@ -159,9 +167,10 @@ void MojoVideoEncodeAcceleratorService::UseOutputBitstreamBuffer(
       BitstreamBuffer(bitstream_buffer_id, std::move(region), memory_size));
 }
 
-void MojoVideoEncodeAcceleratorService::RequestEncodingParametersChange(
-    const media::VideoBitrateAllocation& bitrate_allocation,
-    uint32_t framerate) {
+void MojoVideoEncodeAcceleratorService::
+    RequestEncodingParametersChangeWithLayers(
+        const media::VideoBitrateAllocation& bitrate_allocation,
+        uint32_t framerate) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!encoder_)
@@ -171,6 +180,20 @@ void MojoVideoEncodeAcceleratorService::RequestEncodingParametersChange(
            << " framerate=" << framerate;
 
   encoder_->RequestEncodingParametersChange(bitrate_allocation, framerate);
+}
+
+void MojoVideoEncodeAcceleratorService::
+    RequestEncodingParametersChangeWithBitrate(const media::Bitrate& bitrate,
+                                               uint32_t framerate) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (!encoder_)
+    return;
+
+  DVLOG(2) << __func__ << " bitrate=" << bitrate.target()
+           << " framerate=" << framerate;
+
+  encoder_->RequestEncodingParametersChange(bitrate, framerate);
 }
 
 void MojoVideoEncodeAcceleratorService::IsFlushSupported(

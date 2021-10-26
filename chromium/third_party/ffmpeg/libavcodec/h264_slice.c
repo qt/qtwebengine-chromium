@@ -28,7 +28,9 @@
 #include "libavutil/avassert.h"
 #include "libavutil/display.h"
 #include "libavutil/imgutils.h"
+#include "libavutil/film_grain_params.h"
 #include "libavutil/stereo3d.h"
+#include "libavutil/timecode.h"
 #include "internal.h"
 #include "cabac.h"
 #include "cabac_functions.h"
@@ -43,7 +45,6 @@
 #include "golomb.h"
 #include "mathops.h"
 #include "mpegutils.h"
-#include "mpegvideo.h"
 #include "rectangle.h"
 #include "thread.h"
 
@@ -304,9 +305,8 @@ int ff_h264_update_thread_context(AVCodecContext *dst,
     if (dst == src)
         return 0;
 
-    // We can't fail if SPS isn't set at it breaks current skip_frame code
-    //if (!h1->ps.sps)
-    //    return AVERROR_INVALIDDATA;
+    if (inited && !h1->ps.sps)
+        return AVERROR_INVALIDDATA;
 
     if (inited &&
         (h->width                 != h1->width                 ||
@@ -463,6 +463,18 @@ int ff_h264_update_thread_context(AVCodecContext *dst,
     h->recovery_frame        = h1->recovery_frame;
 
     return err;
+}
+
+int ff_h264_update_thread_context_for_user(AVCodecContext *dst,
+                                           const AVCodecContext *src)
+{
+    H264Context *h = dst->priv_data;
+    const H264Context *h1 = src->priv_data;
+
+    h->is_avc = h1->is_avc;
+    h->nal_length_size = h1->nal_length_size;
+
+    return 0;
 }
 
 static int h264_frame_start(H264Context *h)
@@ -922,6 +934,11 @@ static int h264_slice_header_init(H264Context *h)
     const SPS *sps = h->ps.sps;
     int i, ret;
 
+    if (!sps) {
+        ret = AVERROR_INVALIDDATA;
+        goto fail;
+    }
+
     ff_set_sar(h->avctx, sps->sar);
     av_pix_fmt_get_chroma_sub_sample(h->avctx->pix_fmt,
                                      &h->chroma_x_shift, &h->chroma_y_shift);
@@ -1314,6 +1331,59 @@ static int h264_export_frame_props(H264Context *h)
     }
     h->sei.unregistered.nb_buf_ref = 0;
 
+    if (h->sei.film_grain_characteristics.present &&
+        (h->avctx->export_side_data & AV_CODEC_EXPORT_DATA_FILM_GRAIN)) {
+        H264SEIFilmGrainCharacteristics *fgc = &h->sei.film_grain_characteristics;
+        AVFilmGrainParams *fgp = av_film_grain_params_create_side_data(out);
+        if (!fgp)
+            return AVERROR(ENOMEM);
+
+        fgp->type = AV_FILM_GRAIN_PARAMS_H274;
+
+        fgp->codec.h274.model_id = fgc->model_id;
+        if (fgc->separate_colour_description_present_flag) {
+            fgp->codec.h274.bit_depth_luma = fgc->bit_depth_luma;
+            fgp->codec.h274.bit_depth_chroma = fgc->bit_depth_chroma;
+            fgp->codec.h274.color_range = fgc->full_range + 1;
+            fgp->codec.h274.color_primaries = fgc->color_primaries;
+            fgp->codec.h274.color_trc = fgc->transfer_characteristics;
+            fgp->codec.h274.color_space = fgc->matrix_coeffs;
+        } else {
+            fgp->codec.h274.bit_depth_luma = sps->bit_depth_luma;
+            fgp->codec.h274.bit_depth_chroma = sps->bit_depth_chroma;
+            if (sps->video_signal_type_present_flag)
+                fgp->codec.h274.color_range = sps->full_range + 1;
+            else
+                fgp->codec.h274.color_range = AVCOL_RANGE_UNSPECIFIED;
+            if (sps->colour_description_present_flag) {
+                fgp->codec.h274.color_primaries = sps->color_primaries;
+                fgp->codec.h274.color_trc = sps->color_trc;
+                fgp->codec.h274.color_space = sps->colorspace;
+            } else {
+                fgp->codec.h274.color_primaries = AVCOL_PRI_UNSPECIFIED;
+                fgp->codec.h274.color_trc = AVCOL_TRC_UNSPECIFIED;
+                fgp->codec.h274.color_space = AVCOL_SPC_UNSPECIFIED;
+            }
+        }
+        fgp->codec.h274.blending_mode_id = fgc->blending_mode_id;
+        fgp->codec.h274.log2_scale_factor = fgc->log2_scale_factor;
+
+        memcpy(&fgp->codec.h274.component_model_present, &fgc->comp_model_present_flag,
+               sizeof(fgp->codec.h274.component_model_present));
+        memcpy(&fgp->codec.h274.num_intensity_intervals, &fgc->num_intensity_intervals,
+               sizeof(fgp->codec.h274.num_intensity_intervals));
+        memcpy(&fgp->codec.h274.num_model_values, &fgc->num_model_values,
+               sizeof(fgp->codec.h274.num_model_values));
+        memcpy(&fgp->codec.h274.intensity_interval_lower_bound, &fgc->intensity_interval_lower_bound,
+               sizeof(fgp->codec.h274.intensity_interval_lower_bound));
+        memcpy(&fgp->codec.h274.intensity_interval_upper_bound, &fgc->intensity_interval_upper_bound,
+               sizeof(fgp->codec.h274.intensity_interval_upper_bound));
+        memcpy(&fgp->codec.h274.comp_model_value, &fgc->comp_model_value,
+               sizeof(fgp->codec.h274.comp_model_value));
+
+        fgc->present = !!fgc->repetition_period;
+    }
+
     if (h->sei.picture_timing.timecode_cnt > 0) {
         uint32_t *tc_sd;
         char tcbuf[AV_TIMECODE_STR_SIZE];
@@ -1599,14 +1669,15 @@ static int h264_field_start(H264Context *h, const H264SliceContext *sl,
                 ff_thread_await_progress(&prev->tf, INT_MAX, 0);
                 if (prev->field_picture)
                     ff_thread_await_progress(&prev->tf, INT_MAX, 1);
-                av_image_copy(h->short_ref[0]->f->data,
-                              h->short_ref[0]->f->linesize,
-                              (const uint8_t **)prev->f->data,
-                              prev->f->linesize,
-                              prev->f->format,
-                              prev->f->width,
-                              prev->f->height);
+                ff_thread_release_buffer(h->avctx, &h->short_ref[0]->tf);
+                h->short_ref[0]->tf.f = h->short_ref[0]->f;
+                ret = ff_thread_ref_frame(&h->short_ref[0]->tf, &prev->tf);
+                if (ret < 0)
+                    return ret;
                 h->short_ref[0]->poc = prev->poc + 2U;
+                ff_thread_report_progress(&h->short_ref[0]->tf, INT_MAX, 0);
+                if (h->short_ref[0]->field_picture)
+                    ff_thread_report_progress(&h->short_ref[0]->tf, INT_MAX, 1);
             } else if (!h->frame_recovered && !h->avctx->hwaccel)
                 ff_color_frame(h->short_ref[0]->f, c);
             h->short_ref[0]->frame_num = h->poc.prev_frame_num;

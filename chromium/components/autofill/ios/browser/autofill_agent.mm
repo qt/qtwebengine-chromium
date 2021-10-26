@@ -327,9 +327,9 @@ void GetFormField(autofill::FormFieldData* field,
 
   // Query the BrowserAutofillManager for suggestions. Results will arrive in
   // -showAutofillPopup:popupDelegate:.
-  autofillManager->OnQueryFormFieldAutofill(
-      ++_lastQueryID, form, field, gfx::RectF(),
-      /*autoselect_first_suggestion=*/false);
+  autofillManager->OnAskForValuesToFill(++_lastQueryID, form, field,
+                                        gfx::RectF(),
+                                        /*autoselect_first_suggestion=*/false);
 }
 
 - (void)checkIfSuggestionsAvailableForForm:
@@ -421,7 +421,8 @@ void GetFormField(autofill::FormFieldData* field,
     if (_popupDelegate) {
       // TODO(966411): Replace 0 with the index of the selected suggestion.
       _popupDelegate->DidAcceptSuggestion(SysNSStringToUTF16(suggestion.value),
-                                          suggestion.identifier, 0);
+                                          suggestion.identifier, std::string(),
+                                          0);
     }
     return;
   }

@@ -8,6 +8,8 @@
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/stringprintf.h"
+#include "components/password_manager/core/browser/password_form.h"
+#include "components/password_manager/core/browser/password_store_sync.h"
 #include "sql/database.h"
 #include "sql/statement.h"
 
@@ -61,6 +63,11 @@ InsecureCredential& InsecureCredential::operator=(InsecureCredential&& rhs) =
 
 InsecureCredential::~InsecureCredential() = default;
 
+bool InsecureCredential::SameMetadata(
+    const InsecurityMetadata& metadata) const {
+  return create_time == metadata.create_time && is_muted == metadata.is_muted;
+}
+
 bool operator==(const InsecureCredential& lhs, const InsecureCredential& rhs) {
   return lhs.signon_realm == rhs.signon_realm && lhs.username == rhs.username &&
          lhs.create_time == rhs.create_time &&
@@ -81,9 +88,6 @@ bool InsecureCredentialsTable::AddRow(
     return false;
 
   DCHECK(db_->DoesTableExist(kTableName));
-
-  base::UmaHistogramEnumeration("PasswordManager.CompromisedCredentials.Add",
-                                compromised_credentials.insecure_type);
 
   // In case there is an error, expect it to be a constraint violation.
   db_->set_error_callback(base::BindRepeating([](int error, sql::Statement*) {
@@ -115,7 +119,48 @@ bool InsecureCredentialsTable::AddRow(
   return result && db_->GetLastChangeCount();
 }
 
-bool InsecureCredentialsTable::RemoveRow(
+bool InsecureCredentialsTable::InsertOrReplace(FormPrimaryKey parent_key,
+                                               InsecureType type,
+                                               InsecurityMetadata metadata) {
+  DCHECK(db_);
+  DCHECK(db_->DoesTableExist(kTableName));
+
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      base::StringPrintf("INSERT OR REPLACE INTO %s (parent_id, "
+                         "insecurity_type, create_time, is_muted) "
+                         "VALUES (?, ?, ?, ?)",
+                         kTableName)
+          .c_str()));
+  s.BindInt(0, parent_key.value());
+  s.BindInt(1, static_cast<int>(type));
+  s.BindInt64(2,
+              metadata.create_time.ToDeltaSinceWindowsEpoch().InMicroseconds());
+  s.BindBool(3, metadata.is_muted.value());
+
+  bool result = s.Run();
+  return result && db_->GetLastChangeCount();
+}
+
+bool InsecureCredentialsTable::RemoveRow(FormPrimaryKey parent_key,
+                                         InsecureType insecure_type) {
+  DCHECK(db_);
+  DCHECK(db_->DoesTableExist(kTableName));
+
+  sql::Statement s(db_->GetCachedStatement(
+      SQL_FROM_HERE,
+      base::StringPrintf(
+          "DELETE FROM %s WHERE parent_id = ? AND insecurity_type = ?",
+          kTableName)
+          .c_str()));
+  s.BindInt(0, parent_key.value());
+  s.BindInt(1, static_cast<int>(insecure_type));
+
+  bool result = s.Run();
+  return result && db_->GetLastChangeCount();
+}
+
+bool InsecureCredentialsTable::RemoveRows(
     const std::string& signon_realm,
     const std::u16string& username,
     RemoveInsecureCredentialsReason reason) {
@@ -130,15 +175,6 @@ bool InsecureCredentialsTable::RemoveRow(
       GetRows(signon_realm);
   if (compromised_credentials.empty())
     return false;
-  for (const auto& compromised_credential : compromised_credentials) {
-    if (username == compromised_credential.username) {
-      base::UmaHistogramEnumeration(
-          "PasswordManager.CompromisedCredentials.Remove",
-          compromised_credential.insecure_type);
-      base::UmaHistogramEnumeration(
-          "PasswordManager.RemoveCompromisedCredentials.RemoveReason", reason);
-    }
-  }
 
   sql::Statement s(db_->GetCachedStatement(
       SQL_FROM_HERE,

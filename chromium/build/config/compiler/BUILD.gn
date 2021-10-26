@@ -75,9 +75,7 @@ declare_args() {
 
   # Enable fatal linker warnings. Building Chromium with certain versions
   # of binutils can cause linker warning.
-  # TODO(thakis): Set this to true unconditionally once lld/MachO bring-up
-  # is along far enough that it no longer emits linker warnings.
-  fatal_linker_warnings = !(is_apple && use_lld)
+  fatal_linker_warnings = true
 
   # Build with C++ RTTI enabled. Chromium builds without RTTI by default,
   # but some sanitizers are known to require it, like CFI diagnostics
@@ -141,10 +139,7 @@ declare_args() {
   #
   # TODO(crbug.com/1131993): Enabling this when 'is_android' is true breaks
   # content_shell_test_apk on both ARM and x86.
-  #
-  # TODO(crbug.com/977230): Enabling this when 'use_xcode_clang' is true may
-  # call an old clang that doesn't support auto-init.
-  init_stack_vars = !is_android && !use_xcode_clang
+  init_stack_vars = !is_android
 
   # This argument is to control whether enabling text section splitting in the
   # final binary. When enabled, the separated text sections with prefix
@@ -158,7 +153,7 @@ declare_args() {
   # Token limits may not be accurate for build configs not covered by the CQ,
   # so only enable them by default for mainstream build configs.
   enable_wmax_tokens =
-      !is_official_build &&
+      !is_official_build && !(is_component_build && !is_debug) &&
       ((is_mac && target_cpu == "x64" && !use_system_xcode) ||
        (is_linux && !is_chromeos && target_cpu == "x64") ||
        (is_win && target_cpu == "x86") || (is_win && target_cpu == "x64") ||
@@ -238,6 +233,18 @@ config("default_include_dirs") {
     "//",
     root_gen_dir,
   ]
+}
+
+# Compiler instrumentation can introduce dependencies in DSOs to symbols in
+# the executable they are loaded into, so they are unresolved at link-time.
+config("no_unresolved_symbols") {
+  if (!using_sanitizer &&
+      (is_linux || is_chromeos || is_android || is_fuchsia)) {
+    ldflags = [
+      "-Wl,-z,defs",
+      "-Wl,--as-needed",
+    ]
+  }
 }
 
 # compiler ---------------------------------------------------------------------
@@ -439,15 +446,6 @@ config("compiler") {
     if (!is_component_build) {
       ldflags += [ "-Wl,-z,now" ]
     }
-
-    # Compiler instrumentation can introduce dependencies in DSOs to symbols in
-    # the executable they are loaded into, so they are unresolved at link-time.
-    if (!using_sanitizer) {
-      ldflags += [
-        "-Wl,-z,defs",
-        "-Wl,--as-needed",
-      ]
-    }
   }
 
   # Linux-specific compiler flags setup.
@@ -547,6 +545,13 @@ config("compiler") {
       } else {
         ldflags += [ "-Wl,-mllvm,-instcombine-lower-dbg-declare=0" ]
       }
+    }
+
+    # TODO(crbug.com/1235145): Investigate why/if this should be needed.
+    if (is_win) {
+      cflags += [ "/clang:-ffp-contract=off" ]
+    } else {
+      cflags += [ "-ffp-contract=off" ]
     }
   }
 
@@ -676,12 +681,17 @@ config("compiler") {
       # TODO(thakis): Check if '=0' (that is, number of cores, instead
       # of "all" which means number of hardware threads) is faster.
       ldflags += [ "-Wl,--thinlto-jobs=all" ]
+      if (is_mac) {
+        ldflags +=
+            [ "-Wl,-cache_path_lto," +
+              rebase_path("$root_out_dir/thinlto-cache", root_build_dir) ]
+      } else {
+        ldflags +=
+            [ "-Wl,--thinlto-cache-dir=" +
+              rebase_path("$root_out_dir/thinlto-cache", root_build_dir) ]
+      }
 
-      ldflags += [
-        "-Wl,--thinlto-cache-dir=" +
-            rebase_path("$root_out_dir/thinlto-cache", root_build_dir),
-        "-Wl,--thinlto-cache-policy,$cache_policy",
-      ]
+      ldflags += [ "-Wl,--thinlto-cache-policy=$cache_policy" ]
 
       if (is_chromeos_ash) {
         # Not much performance difference was noted between the default (100)
@@ -749,11 +759,19 @@ config("compiler") {
   }
 
   if (is_clang && !is_nacl && show_includes) {
-    assert(!is_win, "show_includes is not supported on Windows")
-    cflags += [
-      "-H",
-      "-fshow-skipped-includes",
-    ]
+    if (is_win) {
+      # TODO(crbug.com/1223741): Goma mixes the -H and /showIncludes output.
+      assert(!use_goma, "show_includes on Windows is not reliable with goma")
+      cflags += [
+        "/clang:-H",
+        "/clang:-fshow-skipped-includes",
+      ]
+    } else {
+      cflags += [
+        "-H",
+        "-fshow-skipped-includes",
+      ]
+    }
   }
 
   # This flag enforces that member pointer base types are complete. It helps
@@ -1205,12 +1223,19 @@ config("compiler_deterministic") {
     # different build directory like "out/feature_a" and "out/feature_b" if
     # we build same files with same compile flag.
     # Other paths are already given in relative, no need to normalize them.
-    cflags += [
-      "-Xclang",
-      "-fdebug-compilation-dir",
-      "-Xclang",
-      ".",
-    ]
+    if (is_nacl) {
+      # TODO(https://crbug.com/1231236): Use -ffile-compilation-dir= here.
+      cflags += [
+        "-Xclang",
+        "-fdebug-compilation-dir",
+        "-Xclang",
+        ".",
+      ]
+    } else {
+      # -ffile-compilation-dir is an alias for both -fdebug-compilation-dir=
+      # and -fcoverage-compilation-dir=.
+      cflags += [ "-ffile-compilation-dir=." ]
+    }
     if (!is_win) {
       # We don't use clang -cc1as on Windows (yet? https://crbug.com/762167)
       asmflags = [ "-Wa,-fdebug-compilation-dir,." ]
@@ -1565,14 +1590,7 @@ config("default_warnings") {
 
   if (is_clang) {
     cflags += [
-      # TODO(thakis): Consider -Wloop-analysis (turns on
-      # -Wrange-loop-analysis too).
-
-      # This warns on using ints as initializers for floats in
-      # initializer lists (e.g. |int a = f(); CGSize s = { a, a };|),
-      # which happens in several places in chrome code. Not sure if
-      # this is worth fixing.
-      "-Wno-c++11-narrowing",
+      "-Wloop-analysis",
 
       # TODO(thakis): This used to be implied by -Wno-unused-function,
       # which we no longer use. Check if it makes sense to remove
@@ -1583,21 +1601,21 @@ config("default_warnings") {
     # use_xcode_clang only refers to the iOS toolchain, host binaries use
     # chromium's clang always.
     if (!is_nacl) {
-      cflags += [
-        # TODO(thakis): https://crbug.com/604888
-        "-Wno-undefined-var-template",
-      ]
-
       if (is_win) {
         # TODO(thakis): https://crbug.com/617318
         # Currently goma can not handle case sensitiveness for windows well.
         cflags += [ "-Wno-nonportable-include-path" ]
+
+        # Warns in ATL headers; see https://crbug.com/1208419.
+        cflags += [ "-Wno-null-pointer-subtraction" ]
       }
 
       if (current_toolchain == host_toolchain || !use_xcode_clang) {
         # Flags NaCl (Clang 3.7) and Xcode 9.2 (Clang clang-900.0.39.2) do not
         # recognize.
         cflags += [
+          "-Wenum-compare-conditional",
+
           # An ABI compat warning we don't care about, https://crbug.com/1102157
           # TODO(thakis): Push this to the (few) targets that need it,
           # instead of having a global flag.
@@ -1607,32 +1625,22 @@ config("default_warnings") {
           # TODO(thakis): Only for no_chromium_code? http://crbug.com/912662
           "-Wno-ignored-pragma-optimize",
 
-          # TODO(https://crbug.com/989932): Evaluate and possibly enable.
-          "-Wno-implicit-int-float-conversion",
-
-          # TODO(https://crbug.com/999886): Clean up, enable.
-          "-Wno-final-dtor-non-final-class",
-
           # TODO(https://crbug.com/1016945) Clean up, enable.
           "-Wno-builtin-assume-aligned-alignment",
 
           # TODO(https://crbug.com/1028110): Evaluate and possible enable.
           "-Wno-deprecated-copy",
 
-          # TODO(https://crbug.com/1050281): Clean up, enable.
-          "-Wno-non-c-typedef-for-linkage",
-        ]
+          # TODO(https://crbug.com/1203071): Clean up and enable.
+          "-Wno-unused-but-set-parameter",
+          "-Wno-unused-but-set-variable",
 
-        cflags_c += [
-          # TODO(https://crbug.com/995993): Clean up and enable.
-          "-Wno-implicit-fallthrough",
+          # TODO(https://crbug.com/1239077): Fix and re-enable.
+          "-Wno-inline-asm",
         ]
 
         if (enable_wmax_tokens) {
           cflags += [ "-Wmax-tokens" ]
-        } else {
-          # TODO(https://crbug.com/1049569): Remove after Clang 87b235db.
-          cflags += [ "-Wno-max-tokens" ]
         }
       }
     }
@@ -1768,6 +1776,10 @@ config("no_chromium_code") {
       # Lots of third-party libraries have unused variables. Instead of
       # suppressing them individually, we just blanket suppress them here.
       "-Wno-unused-variable",
+
+      # Similarly, we're not going to fix all the C++11 narrowing issues in
+      # third-party libraries.
+      "-Wno-c++11-narrowing",
     ]
     if (!is_nacl && (current_toolchain == host_toolchain || !use_xcode_clang)) {
       cflags += [
@@ -1847,7 +1859,9 @@ config("export_dynamic") {
 config("thin_archive") {
   # The macOS and iOS default linker ld64 does not support reading thin
   # archives.
-  if ((is_posix && !is_nacl && (!is_apple || use_lld)) || is_fuchsia) {
+  # TODO(crbug.com/1221615): Enable on is_apple if use_lld once that no longer
+  # confuses lldb.
+  if ((is_posix && !is_nacl && !is_apple) || is_fuchsia) {
     arflags = [ "-T" ]
   } else if (is_win && use_lld) {
     arflags = [ "/llvmlibthin" ]
@@ -1906,50 +1920,6 @@ config("wglobal_constructors") {
 config("wexit_time_destructors") {
   if (is_clang) {
     cflags = [ "-Wexit-time-destructors" ]
-  }
-}
-
-# On Windows compiling on x64, VC will issue a warning when converting
-# size_t to int because it will truncate the value. Our code should not have
-# these warnings and one should use a static_cast or a checked_cast for the
-# conversion depending on the case. However, a lot of code still needs to be
-# fixed. Apply this config to such targets to disable the warning.
-#
-# Note that this can be applied regardless of platform and architecture to
-# clean up the call sites. This will only apply the flag when necessary.
-#
-# This config is just an alias to no_shorten_64_warnings and will
-# suppress a superset of warning 4267 and any 64-bit -> 32-bit implicit
-# conversions. Having both for a time means not having to go through and
-# update all references to no_size_t_to_int_warning throughout the codebase
-# atomically.
-#
-# Any new warning suppressions should use the no_shorten_64_warnings
-# config below and not this.
-#
-# TODO(jschuh): crbug.com/167187 fix this and delete this config.
-config("no_size_t_to_int_warning") {
-  configs = [ ":no_shorten_64_warnings" ]
-}
-
-# As part of re-enabling -Wconversion (see issue 588506) some code
-# will continue to generate warnings.
-# The first warning to be enabled will be -Wshorten-64-to-32.
-#
-# Code that currently generates warnings for this can include this
-# config to disable them.
-config("no_shorten_64_warnings") {
-  if (current_cpu == "x64" || current_cpu == "arm64") {
-    if (is_clang) {
-      cflags = [ "-Wno-shorten-64-to-32" ]
-    } else {
-      if (is_win) {
-        # MSVC does not have an explicit warning equivalent to
-        # -Wshorten-64-to-32 but 4267 warns for size_t -> int
-        # on 64-bit builds, so is the closest.
-        cflags = [ "/wd4267" ]
-      }
-    }
   }
 }
 
@@ -2045,6 +2015,11 @@ if (is_win) {
       "-fdata-sections",
       "-ffunction-sections",
     ]
+    if (!is_nacl && is_clang) {
+      # We don't care about unique section names, this makes object files a bit
+      # smaller.
+      common_optimize_on_cflags += [ "-fno-unique-section-names" ]
+    }
 
     common_optimize_on_ldflags += [
       # Specifically tell the linker to perform optimizations.
@@ -2351,9 +2326,6 @@ config("symbols") {
 
     # All configs using /DEBUG should include this:
     configs = [ ":win_pdbaltpath" ]
-
-    # TODO(crbug.com/1138553): Re-enable constructor homing on windows after
-    # libc++ fix is in.
   } else {
     cflags = []
     if (is_mac && enable_dsyms) {
@@ -2382,14 +2354,6 @@ config("symbols") {
     # gcc nacl is is_nacl && !is_clang, pnacl and nacl-clang are && is_clang.
     if (!is_nacl || is_clang) {
       cflags += [ "-g2" ]
-    }
-
-    # TODO(https://crbug.com/1050118): Investigate missing debug info on mac.
-    if (is_clang && !is_nacl && !use_xcode_clang && !is_apple) {
-      cflags += [
-        "-Xclang",
-        "-debug-info-kind=constructor",
-      ]
     }
 
     if (is_apple) {
@@ -2423,6 +2387,24 @@ config("symbols") {
         cflags += [ "-ggnu-pubnames" ]
       }
       ldflags += [ "-Wl,--gdb-index" ]
+    }
+  }
+
+  if (is_clang && !is_nacl && !use_xcode_clang) {
+    if (is_apple) {
+      # TODO(https://crbug.com/1050118): Investigate missing debug info on mac.
+      # Make sure we don't use constructor homing on mac.
+      cflags += [
+        "-Xclang",
+        "-debug-info-kind=limited",
+      ]
+    } else {
+      # Use constructor homing for debug info. This option reduces debug info
+      # by emitting class type info only when constructors are emitted.
+      cflags += [
+        "-Xclang",
+        "-fuse-ctor-homing",
+      ]
     }
   }
 }

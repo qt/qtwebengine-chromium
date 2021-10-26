@@ -161,13 +161,25 @@ transitioning macro ConstructByArrayLike(implicit context: Context)(
         ThrowTypeError(MessageTemplate::kDetachedOperation, 'Construct');
 
       } else if (src.elements_kind != elementsInfo.kind) {
-        goto IfSlow;
+        goto IfElementsKindMismatch(src.elements_kind);
 
       } else if (length > 0) {
         const byteLength = typedArray.byte_length;
         assert(byteLength <= kArrayBufferMaxByteLength);
-        typed_array::CallCMemcpy(typedArray.data_ptr, src.data_ptr, byteLength);
+        if (IsSharedArrayBuffer(src.buffer)) {
+          typed_array::CallCRelaxedMemcpy(
+              typedArray.data_ptr, src.data_ptr, byteLength);
+        } else {
+          typed_array::CallCMemcpy(
+              typedArray.data_ptr, src.data_ptr, byteLength);
+        }
       }
+    } label IfElementsKindMismatch(srcKind: ElementsKind) deferred {
+      if (IsBigInt64ElementsKind(srcKind) !=
+          IsBigInt64ElementsKind(elementsInfo.kind)) {
+        ThrowTypeError(MessageTemplate::kBigIntMixedTypes);
+      }
+      goto IfSlow;
     } label IfSlow deferred {
       if (length > 0) {
         TypedArrayCopyElements(

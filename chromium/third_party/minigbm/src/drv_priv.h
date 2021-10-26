@@ -24,9 +24,20 @@ struct bo_metadata {
 	uint32_t offsets[DRV_MAX_PLANES];
 	uint32_t sizes[DRV_MAX_PLANES];
 	uint32_t strides[DRV_MAX_PLANES];
-	uint64_t format_modifiers[DRV_MAX_PLANES];
+	uint64_t format_modifier;
 	uint64_t use_flags;
 	size_t total_size;
+
+	/*
+	 * Most of the following metadata is virtgpu cross_domain specific.  However, that backend
+	 * needs to know traditional metadata (strides, offsets) in addition to this backend
+	 * specific metadata.  It's easiest just to stuff all the metadata here rather than
+	 * having two metadata structs.
+	 */
+	uint64_t blob_id;
+	uint32_t map_info;
+	int32_t memory_idx;
+	int32_t physical_device_idx;
 };
 
 struct bo {
@@ -82,20 +93,20 @@ struct backend {
 	uint32_t (*resolve_format)(struct driver *drv, uint32_t format, uint64_t use_flags);
 	size_t (*num_planes_from_modifier)(struct driver *drv, uint32_t format, uint64_t modifier);
 	int (*resource_info)(struct bo *bo, uint32_t strides[DRV_MAX_PLANES],
-			     uint32_t offsets[DRV_MAX_PLANES]);
+			     uint32_t offsets[DRV_MAX_PLANES], uint64_t *format_modifier);
 };
 
 // clang-format off
 #define BO_USE_RENDER_MASK (BO_USE_LINEAR | BO_USE_RENDERING | BO_USE_RENDERSCRIPT | \
 			    BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
-			    BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE)
+			    BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE | BO_USE_FRONT_RENDERING)
 
 #define BO_USE_TEXTURE_MASK (BO_USE_LINEAR | BO_USE_RENDERSCRIPT | BO_USE_SW_READ_OFTEN | \
 			     BO_USE_SW_WRITE_OFTEN | BO_USE_SW_READ_RARELY | \
-			     BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE)
+			     BO_USE_SW_WRITE_RARELY | BO_USE_TEXTURE | BO_USE_FRONT_RENDERING)
 
 #define BO_USE_SW_MASK (BO_USE_SW_READ_OFTEN | BO_USE_SW_WRITE_OFTEN | \
-			BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY)
+			BO_USE_SW_READ_RARELY | BO_USE_SW_WRITE_RARELY | BO_USE_FRONT_RENDERING)
 
 #define BO_USE_NON_GPU_HW (BO_USE_SCANOUT | BO_USE_CAMERA_WRITE | BO_USE_CAMERA_READ | \
 			   BO_USE_HW_VIDEO_ENCODER | BO_USE_HW_VIDEO_DECODER)

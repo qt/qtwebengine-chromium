@@ -33,6 +33,26 @@ static std::unique_ptr<Expression> convert_compound_constructor(const Context& c
     // GLSL/SkSL, depending on the argument type.
     if (args.size() == 1) {
         std::unique_ptr<Expression>& argument = args.front();
+        if (type.isVector() && argument->type().isVector() &&
+            argument->type().componentType() == type.componentType() &&
+            argument->type().slotCount() > type.slotCount()) {
+            // Casting a vector-type into a smaller matching vector-type is a slice in GLSL.
+            // We don't allow those casts in SkSL; recommend a swizzle instead.
+            // Only `.xy` and `.xyz` are valid recommendations here, because `.x` would imply a
+            // scalar(vector) cast, and nothing has more slots than `.xyzw`.
+            const char* swizzleHint;
+            switch (type.slotCount()) {
+                case 2:  swizzleHint = "; use '.xy' instead"; break;
+                case 3:  swizzleHint = "; use '.xyz' instead"; break;
+                default: swizzleHint = ""; SkDEBUGFAIL("unexpected slicing cast"); break;
+            }
+
+            context.errors().error(offset, "'" + argument->type().displayName() +
+                                           "' is not a valid parameter to '" + type.displayName() +
+                                           "' constructor" + swizzleHint);
+            return nullptr;
+        }
+
         if (argument->type().isScalar()) {
             // A constructor containing a single scalar is a splat (for vectors) or diagonal matrix
             // (for matrices). It's legal regardless of the scalar's type, so synthesize an explicit
@@ -61,12 +81,28 @@ static std::unique_ptr<Expression> convert_compound_constructor(const Context& c
                         context,
                         argument->type().columns(),
                         argument->type().rows());
-                std::unique_ptr<Expression> typecast = ConstructorCompoundCast::Make(
-                        context, offset, typecastType, std::move(argument));
+                argument = ConstructorCompoundCast::Make(context, offset, typecastType,
+                                                         std::move(argument));
 
-                // Next, wrap the typecasted expression in a matrix-resize constructor if the
-                // sizes differ. (This will be a no-op if it's already the right size.)
-                return ConstructorMatrixResize::Make(context, offset, type, std::move(typecast));
+                // Casting a matrix type into another matrix type is a resize.
+                return ConstructorMatrixResize::Make(context, offset, type,
+                                                     std::move(argument));
+            }
+
+            // A vector constructor containing a single matrix can be compound construction if the
+            // matrix is 2x2 and the vector is 4-slot.
+            if (type.isVector() && type.columns() == 4 && argument->type().slotCount() == 4) {
+                // Casting a 2x2 matrix to a vector is a form of compound construction.
+                // First, reshape the matrix into a 4-slot vector of the same type.
+                const Type& vectorType = argument->type().componentType().toCompound(context,
+                                                                                     /*columns=*/4,
+                                                                                     /*rows=*/1);
+                std::unique_ptr<Expression> vecCtor =
+                        ConstructorCompound::Make(context, offset, vectorType, std::move(args));
+
+                // Then, add a typecast to the result expression to ensure the types match.
+                // This will be a no-op if no typecasting is needed.
+                return ConstructorCompoundCast::Make(context, offset, type, std::move(vecCtor));
             }
         }
     }
@@ -76,9 +112,9 @@ static std::unique_ptr<Expression> convert_compound_constructor(const Context& c
     int actual = 0;
     for (std::unique_ptr<Expression>& arg : args) {
         if (!arg->type().isScalar() && !arg->type().isVector()) {
-            context.fErrors.error(offset, "'" + arg->type().displayName() +
-                                          "' is not a valid parameter to '" +
-                                          type.displayName() + "' constructor");
+            context.errors().error(offset, "'" + arg->type().displayName() +
+                                           "' is not a valid parameter to '" +
+                                           type.displayName() + "' constructor");
             return nullptr;
         }
 
@@ -86,12 +122,12 @@ static std::unique_ptr<Expression> convert_compound_constructor(const Context& c
         // literal, this will make sure it's the right type of literal. If an expression of matching
         // type, the expression will be returned as-is. If it's an expression of mismatched type,
         // this adds a cast.
-        int offset = arg->fOffset;
+        int ctorOffset = arg->fOffset;
         const Type& ctorType = type.componentType().toCompound(context, arg->type().columns(),
                                                                /*rows=*/1);
         ExpressionArray ctorArg;
         ctorArg.push_back(std::move(arg));
-        arg = Constructor::Convert(context, offset, ctorType, std::move(ctorArg));
+        arg = Constructor::Convert(context, ctorOffset, ctorType, std::move(ctorArg));
         if (!arg) {
             return nullptr;
         }
@@ -99,9 +135,9 @@ static std::unique_ptr<Expression> convert_compound_constructor(const Context& c
     }
 
     if (actual != expected) {
-        context.fErrors.error(offset, "invalid arguments to '" + type.displayName() +
-                                      "' constructor (expected " + to_string(expected) +
-                                      " scalars, but found " + to_string(actual) + ")");
+        context.errors().error(offset, "invalid arguments to '" + type.displayName() +
+                                       "' constructor (expected " + to_string(expected) +
+                                       " scalars, but found " + to_string(actual) + ")");
         return nullptr;
     }
 
@@ -130,7 +166,7 @@ std::unique_ptr<Expression> Constructor::Convert(const Context& context,
         return ConstructorStruct::Convert(context, offset, type, std::move(args));
     }
 
-    context.fErrors.error(offset, "cannot construct '" + type.displayName() + "'");
+    context.errors().error(offset, "cannot construct '" + type.displayName() + "'");
     return nullptr;
 }
 

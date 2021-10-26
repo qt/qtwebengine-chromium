@@ -67,7 +67,6 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
       viz::ReleaseCallback release_callback);
 
   bool CurrentFrameKnownToBeOpaque() override;
-  IntSize Size() const override;
   bool IsTextureBacked() const override { return true; }
   scoped_refptr<StaticBitmapImage> ConvertToColorSpace(sk_sp<SkColorSpace>,
                                                        SkColorType) override;
@@ -76,8 +75,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
             const cc::PaintFlags&,
             const FloatRect& dst_rect,
             const FloatRect& src_rect,
-            const SkSamplingOptions&,
-            RespectImageOrientationEnum,
+            const ImageDrawOptions& draw_options,
             ImageClampingMode,
             ImageDecodingMode) override;
 
@@ -95,6 +93,10 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
                      bool unpack_flip_y,
                      const IntPoint& dest_point,
                      const IntRect& source_sub_rectangle) override;
+
+  bool CopyToResourceProvider(
+      CanvasResourceProvider* resource_provider) override;
+
   // To be called on sender thread before performing a transfer to a different
   // thread.
   void Transfer() final;
@@ -140,6 +142,8 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
 
   void CreateImageFromMailboxIfNeeded();
   void InitializeTextureBacking(GLuint shared_image_texture_id);
+
+  IntSize SizeInternal() const override;
 
   const gpu::Mailbox mailbox_;
   const SkImageInfo sk_image_info_;

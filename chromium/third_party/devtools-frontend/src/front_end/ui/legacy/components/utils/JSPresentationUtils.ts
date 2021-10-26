@@ -35,7 +35,7 @@
 
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
-import type * as SDK from '../../../../core/sdk/sdk.js'; // eslint-disable-line no-unused-vars
+import type * as SDK from '../../../../core/sdk/sdk.js';
 import * as Bindings from '../../../../models/bindings/bindings.js';
 import type * as Protocol from '../../../../generated/protocol.js';
 import * as UI from '../../legacy.js';
@@ -87,7 +87,7 @@ function populateContextMenu(link: Element, event: Event): void {
 
 export function buildStackTraceRows(
     stackTrace: Protocol.Runtime.StackTrace,
-    target: SDK.SDKModel.Target|null,
+    target: SDK.Target.Target|null,
     linkifier: Linkifier,
     tabStops: boolean|undefined,
     updateCallback?: (arg0: (StackTraceRegularRow|StackTraceAsyncRow)[]) => void,
@@ -193,7 +193,7 @@ function updateHiddenRows(
 }
 
 export function buildStackTracePreviewContents(
-    target: SDK.SDKModel.Target|null, linkifier: Linkifier, options: Options = {
+    target: SDK.Target.Target|null, linkifier: Linkifier, options: Options = {
       stackTrace: undefined,
       tabStops: undefined,
     }): {element: HTMLElement, links: HTMLElement[]} {
@@ -202,8 +202,7 @@ export function buildStackTracePreviewContents(
   element.classList.add('monospace');
   element.style.display = 'inline-block';
   const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
-      element,
-      {cssFile: 'ui/legacy/components/utils/jsUtils.css', enableLegacyPatching: false, delegatesFocus: undefined});
+      element, {cssFile: 'ui/legacy/components/utils/jsUtils.css', delegatesFocus: undefined});
   const contentElement = shadowRoot.createChild('table', 'stack-preview-container');
   if (!stackTrace) {
     return {element, links: []};

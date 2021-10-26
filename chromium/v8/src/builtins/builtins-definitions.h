@@ -33,8 +33,28 @@ namespace internal {
 
 #define BUILTIN_LIST_BASE(CPP, TFJ, TFC, TFS, TFH, ASM)                        \
   /* GC write barrirer */                                                      \
-  TFC(RecordWrite, RecordWrite)                                                \
-  TFC(EphemeronKeyBarrier, EphemeronKeyBarrier)                                \
+  TFC(RecordWriteEmitRememberedSetSaveFP, WriteBarrier)                        \
+  TFC(RecordWriteOmitRememberedSetSaveFP, WriteBarrier)                        \
+  TFC(RecordWriteEmitRememberedSetIgnoreFP, WriteBarrier)                      \
+  TFC(RecordWriteOmitRememberedSetIgnoreFP, WriteBarrier)                      \
+  TFC(EphemeronKeyBarrierSaveFP, WriteBarrier)                                 \
+  TFC(EphemeronKeyBarrierIgnoreFP, WriteBarrier)                               \
+                                                                               \
+  /* TSAN support for stores in generated code.*/                              \
+  IF_TSAN(TFC, TSANRelaxedStore8IgnoreFP, TSANRelaxedStore)                    \
+  IF_TSAN(TFC, TSANRelaxedStore8SaveFP, TSANRelaxedStore)                      \
+  IF_TSAN(TFC, TSANRelaxedStore16IgnoreFP, TSANRelaxedStore)                   \
+  IF_TSAN(TFC, TSANRelaxedStore16SaveFP, TSANRelaxedStore)                     \
+  IF_TSAN(TFC, TSANRelaxedStore32IgnoreFP, TSANRelaxedStore)                   \
+  IF_TSAN(TFC, TSANRelaxedStore32SaveFP, TSANRelaxedStore)                     \
+  IF_TSAN(TFC, TSANRelaxedStore64IgnoreFP, TSANRelaxedStore)                   \
+  IF_TSAN(TFC, TSANRelaxedStore64SaveFP, TSANRelaxedStore)                     \
+                                                                               \
+  /* TSAN support for loads in generated code.*/                               \
+  IF_TSAN(TFC, TSANRelaxedLoad32IgnoreFP, TSANRelaxedLoad)                     \
+  IF_TSAN(TFC, TSANRelaxedLoad32SaveFP, TSANRelaxedLoad)                       \
+  IF_TSAN(TFC, TSANRelaxedLoad64IgnoreFP, TSANRelaxedLoad)                     \
+  IF_TSAN(TFC, TSANRelaxedLoad64SaveFP, TSANRelaxedLoad)                       \
                                                                                \
   /* Adaptor for CPP builtin */                                                \
   TFC(AdaptorWithBuiltinExitFrame, CppBuiltinAdaptor)                          \
@@ -111,7 +131,9 @@ namespace internal {
   ASM(JSEntry, Dummy)                                                          \
   ASM(JSConstructEntry, Dummy)                                                 \
   ASM(JSRunMicrotasksEntry, RunMicrotasksEntry)                                \
+  /* Call a JSValue. */                                                        \
   ASM(JSEntryTrampoline, JSTrampoline)                                         \
+  /* Construct a JSValue. */                                                   \
   ASM(JSConstructEntryTrampoline, JSTrampoline)                                \
   ASM(ResumeGeneratorTrampoline, ResumeGenerator)                              \
                                                                                \
@@ -129,6 +151,8 @@ namespace internal {
   TFS(OrderedHashTableHealIndex, kTable, kIndex)                               \
                                                                                \
   /* Interpreter */                                                            \
+  /* InterpreterEntryTrampoline dispatches to the interpreter to run a */      \
+  /* JSFunction in the form of bytecodes */                                    \
   ASM(InterpreterEntryTrampoline, JSTrampoline)                                \
   ASM(InterpreterPushArgsThenCall, InterpreterPushArgsThenCall)                \
   ASM(InterpreterPushUndefinedAndArgsThenCall, InterpreterPushArgsThenCall)    \
@@ -146,8 +170,8 @@ namespace internal {
   ASM(BaselineOutOfLinePrologue, BaselineOutOfLinePrologue)                    \
   ASM(BaselineOnStackReplacement, Void)                                        \
   ASM(BaselineLeaveFrame, BaselineLeaveFrame)                                  \
-  ASM(BaselineEnterAtBytecode, Void)                                           \
-  ASM(BaselineEnterAtNextBytecode, Void)                                       \
+  ASM(BaselineOrInterpreterEnterAtBytecode, Void)                              \
+  ASM(BaselineOrInterpreterEnterAtNextBytecode, Void)                          \
   ASM(InterpreterOnStackReplacement_ToBaseline, Void)                          \
                                                                                \
   /* Code life-cycle */                                                        \
@@ -221,8 +245,6 @@ namespace internal {
   /* Type conversions continuations */                                         \
   TFC(ToBooleanLazyDeoptContinuation, SingleParameterOnStack)                  \
                                                                                \
-  ASM(TailCallOptimizedCodeSlot, TailCallOptimizedCodeSlot)                    \
-                                                                               \
   /* Handlers */                                                               \
   TFH(KeyedLoadIC_PolymorphicName, LoadWithVector)                             \
   TFH(KeyedStoreIC_Megamorphic, Store)                                         \
@@ -254,6 +276,9 @@ namespace internal {
   /* Dynamic check maps */                                                     \
   ASM(DynamicCheckMapsTrampoline, DynamicCheckMaps)                            \
   TFC(DynamicCheckMaps, DynamicCheckMaps)                                      \
+  ASM(DynamicCheckMapsWithFeedbackVectorTrampoline,                            \
+      DynamicCheckMapsWithFeedbackVector)                                      \
+  TFC(DynamicCheckMapsWithFeedbackVector, DynamicCheckMapsWithFeedbackVector)  \
                                                                                \
   /* Microtask helpers */                                                      \
   TFS(EnqueueMicrotask, kMicrotask)                                            \
@@ -369,6 +394,8 @@ namespace internal {
   CPP(ArrayBufferConstructor)                                                  \
   CPP(ArrayBufferConstructor_DoNotInitialize)                                  \
   CPP(ArrayBufferPrototypeSlice)                                               \
+  /* https://tc39.es/proposal-resizablearraybuffer/ */                         \
+  CPP(ArrayBufferPrototypeResize)                                              \
                                                                                \
   /* AsyncFunction */                                                          \
   TFS(AsyncFunctionEnter, kClosure, kReceiver)                                 \
@@ -710,6 +737,7 @@ namespace internal {
   CPP(ObjectGetOwnPropertyDescriptors)                                         \
   TFJ(ObjectGetOwnPropertyNames, 1, kReceiver, kObject)                        \
   CPP(ObjectGetOwnPropertySymbols)                                             \
+  TFJ(ObjectHasOwn, 2, kReceiver, kObject, kKey)                               \
   TFJ(ObjectIs, 2, kReceiver, kLeft, kRight)                                   \
   CPP(ObjectIsFrozen)                                                          \
   CPP(ObjectIsSealed)                                                          \
@@ -773,11 +801,6 @@ namespace internal {
   ASM(RegExpInterpreterTrampoline, CCall)                                      \
   ASM(RegExpExperimentalTrampoline, CCall)                                     \
                                                                                \
-  /* ResizableArrayBuffer & GrowableSharedArrayBuffer */                       \
-  CPP(ResizableArrayBufferPrototypeResize)                                     \
-  CPP(GrowableSharedArrayBufferPrototypeGrow)                                  \
-  CPP(GrowableSharedArrayBufferPrototypeGetByteLength)                         \
-                                                                               \
   /* Set */                                                                    \
   TFJ(SetConstructor, kDontAdaptArgumentsSentinel)                             \
   TFJ(SetPrototypeHas, 1, kReceiver, kKey)                                     \
@@ -797,7 +820,11 @@ namespace internal {
   TFS(SetOrSetIteratorToList, kSource)                                         \
                                                                                \
   /* SharedArrayBuffer */                                                      \
+  CPP(SharedArrayBufferPrototypeGetByteLength)                                 \
   CPP(SharedArrayBufferPrototypeSlice)                                         \
+  /* https://tc39.es/proposal-resizablearraybuffer/ */                         \
+  CPP(SharedArrayBufferPrototypeGrow)                                          \
+                                                                               \
   TFJ(AtomicsLoad, 2, kReceiver, kArray, kIndex)                               \
   TFJ(AtomicsStore, 3, kReceiver, kArray, kIndex, kValue)                      \
   TFJ(AtomicsExchange, 3, kReceiver, kArray, kIndex, kValue)                   \

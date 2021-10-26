@@ -8,7 +8,6 @@
 
 #include "base/check.h"
 #include "base/notreached.h"
-#include "base/stl_util.h"
 #include "components/history/core/browser/page_usage_data.h"
 
 namespace history {
@@ -156,6 +155,16 @@ void QueryResults::AdjustResultMap(size_t begin, size_t end, ptrdiff_t delta) {
 // QueryOptions ----------------------------------------------------------------
 
 QueryOptions::QueryOptions() = default;
+
+QueryOptions::~QueryOptions() = default;
+
+QueryOptions::QueryOptions(const QueryOptions&) = default;
+
+QueryOptions::QueryOptions(QueryOptions&&) noexcept = default;
+
+QueryOptions& QueryOptions::operator=(const QueryOptions&) = default;
+
+QueryOptions& QueryOptions::operator=(QueryOptions&&) noexcept = default;
 
 void QueryOptions::SetRecentDayRange(int days_ago) {
   end_time = base::Time::Now();
@@ -365,16 +374,45 @@ AnnotatedVisit::AnnotatedVisit() = default;
 AnnotatedVisit::AnnotatedVisit(URLRow url_row,
                                VisitRow visit_row,
                                VisitContextAnnotations context_annotations,
-                               VisitContentAnnotations content_annotations)
+                               VisitContentAnnotations content_annotations,
+                               VisitID referring_visit_of_redirect_chain_start)
     : url_row(url_row),
       visit_row(visit_row),
       context_annotations(context_annotations),
-      content_annotations(content_annotations) {}
+      content_annotations(content_annotations),
+      referring_visit_of_redirect_chain_start(
+          referring_visit_of_redirect_chain_start) {}
 AnnotatedVisit::AnnotatedVisit(const AnnotatedVisit&) = default;
+AnnotatedVisit& AnnotatedVisit::operator=(const AnnotatedVisit&) = default;
 AnnotatedVisit::~AnnotatedVisit() = default;
 
 Cluster::Cluster() = default;
+Cluster::Cluster(
+    int64_t cluster_id,
+    const std::vector<ScoredAnnotatedVisit>& scored_annotated_visits,
+    const std::vector<std::u16string>& keywords)
+    : cluster_id(cluster_id),
+      scored_annotated_visits(scored_annotated_visits),
+      keywords(keywords) {}
 Cluster::Cluster(const Cluster&) = default;
+Cluster& Cluster::operator=(const Cluster&) = default;
 Cluster::~Cluster() = default;
+
+ClusterRow::ClusterRow() = default;
+ClusterRow::ClusterRow(int64_t cluster_id) : cluster_id(cluster_id) {}
+ClusterRow::ClusterRow(const ClusterRow&) = default;
+ClusterRow& ClusterRow::operator=(const ClusterRow&) = default;
+ClusterRow::~ClusterRow() = default;
+
+ClusterIdsAndAnnotatedVisitsResult::ClusterIdsAndAnnotatedVisitsResult() =
+    default;
+ClusterIdsAndAnnotatedVisitsResult::ClusterIdsAndAnnotatedVisitsResult(
+    std::vector<int64_t> cluster_ids,
+    std::vector<AnnotatedVisit> annotated_visits)
+    : cluster_ids(cluster_ids), annotated_visits(annotated_visits) {}
+ClusterIdsAndAnnotatedVisitsResult::ClusterIdsAndAnnotatedVisitsResult(
+    const ClusterIdsAndAnnotatedVisitsResult&) = default;
+ClusterIdsAndAnnotatedVisitsResult::~ClusterIdsAndAnnotatedVisitsResult() =
+    default;
 
 }  // namespace history

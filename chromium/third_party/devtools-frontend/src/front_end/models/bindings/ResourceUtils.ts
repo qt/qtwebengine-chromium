@@ -32,15 +32,13 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Workspace from '../workspace/workspace.js';
 
 export function resourceForURL(url: string): SDK.Resource.Resource|null {
-  for (const resourceTreeModel of SDK.SDKModel.TargetManager.instance().models(
+  for (const resourceTreeModel of SDK.TargetManager.TargetManager.instance().models(
            SDK.ResourceTreeModel.ResourceTreeModel)) {
     const resource = resourceTreeModel.resourceForURL(url);
     if (resource) {
@@ -65,7 +63,7 @@ export function displayNameForURL(url: string): string {
     return uiSourceCode.displayName();
   }
 
-  const mainTarget = SDK.SDKModel.TargetManager.instance().mainTarget();
+  const mainTarget = SDK.TargetManager.TargetManager.instance().mainTarget();
   const inspectedURL = mainTarget && mainTarget.inspectedURL();
   if (!inspectedURL) {
     return Platform.StringUtilities.trimURL(url, '');
@@ -90,7 +88,7 @@ export function displayNameForURL(url: string): string {
 }
 
 export function metadataForURL(
-    target: SDK.SDKModel.Target, frameId: string, url: string): Workspace.UISourceCode.UISourceCodeMetadata|null {
+    target: SDK.Target.Target, frameId: string, url: string): Workspace.UISourceCode.UISourceCodeMetadata|null {
   const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
   if (!resourceTreeModel) {
     return null;

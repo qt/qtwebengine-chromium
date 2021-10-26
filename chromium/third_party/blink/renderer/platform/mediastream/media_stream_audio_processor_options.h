@@ -8,25 +8,12 @@
 #include <string>
 
 #include "base/files/file.h"
-#include "base/macros.h"
-#include "base/threading/thread_checker.h"
 #include "build/build_config.h"
-#include "media/base/audio_point.h"
 #include "media/base/audio_processing.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
-#include "third_party/blink/public/common/mediastream/media_stream_request.h"
-#include "third_party/blink/renderer/platform/mediastream/media_constraints.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
-#include "third_party/webrtc/api/media_stream_interface.h"
-#include "third_party/webrtc/media/base/media_channel.h"
 #include "third_party/webrtc/modules/audio_processing/include/audio_processing.h"
 #include "third_party/webrtc/rtc_base/task_queue.h"
-
-namespace webrtc {
-
-class TypingDetection;
-
-}
 
 namespace blink {
 
@@ -67,14 +54,13 @@ struct PLATFORM_EXPORT AudioProcessingProperties {
       const AudioProcessingProperties& other) const;
 
   // Converts this struct to an equivalent media::AudioProcessingSettings.
-  // TODO(https://crbug.com/878757): Eliminate this class in favor of the media
-  // one.
-  media::AudioProcessingSettings ToAudioProcessingSettings() const;
+  media::AudioProcessingSettings ToAudioProcessingSettings(
+      bool multi_channel_capture_processing) const;
 
   EchoCancellationType echo_cancellation_type =
       EchoCancellationType::kEchoCancellationAec3;
   // Indicates whether system-level gain control and noise suppression
-  // functionalities are present that fill a role comparable to the browser
+  // functionalities are active that fill a role comparable to the browser
   // counterparts.
   bool system_gain_control_activated = false;
   bool system_noise_suppression_activated = false;
@@ -89,23 +75,34 @@ struct PLATFORM_EXPORT AudioProcessingProperties {
 
   bool goog_audio_mirroring = false;
   bool goog_auto_gain_control = true;
+  // TODO(https://crbug.com/1215061): Deprecate this constraint. The flag no
+  // longer toggles meaningful processing effects, but it still forces the audio
+  // processing module to be created and used.
   bool goog_experimental_echo_cancellation =
 #if defined(OS_ANDROID)
       false;
 #else
       true;
 #endif
-  bool goog_typing_noise_detection = false;
   bool goog_noise_suppression = true;
+  // Experimental noise suppression maps to transient suppression (keytap
+  // removal).
   bool goog_experimental_noise_suppression = true;
   bool goog_highpass_filter = true;
+  // TODO(bugs.webrtc.org/7494): Effectively a no-op, remove this flag.
   bool goog_experimental_auto_gain_control = true;
 };
 
-// Enables the typing detection with the given detector.
-PLATFORM_EXPORT void EnableTypingDetection(
-    AudioProcessing::Config* apm_config,
-    webrtc::TypingDetection* typing_detector);
+// Creates and configures a webrtc::AudioProcessing audio processing module
+// (APM), based on the provided parameters. The optional parameters
+// |audio_processing_platform_config_json| and |agc_startup_min_volume| contain
+// specific parameter tunings provided by the platform. If possible, it is
+// preferred to instead use field trials for testing new parameter sets.
+PLATFORM_EXPORT rtc::scoped_refptr<AudioProcessing>
+CreateWebRtcAudioProcessingModule(
+    const media::AudioProcessingSettings& settings,
+    absl::optional<std::string> audio_processing_platform_config_json,
+    absl::optional<int> agc_startup_min_volume);
 
 // Starts the echo cancellation dump in
 // |audio_processing|. |worker_queue| must be kept alive until either
@@ -150,20 +147,17 @@ struct PLATFORM_EXPORT WebRtcAnalogAgcClippingControlParams {
   int clipped_level_step;
   float clipped_ratio_threshold;
   int clipped_wait_frames;
+  bool use_predicted_step;
 };
 
-// Changes the automatic gain control configuration in `apm_config` if
-// `properties.goog_auto_gain_control` or
-// `properties.goog_experimental_auto_gain_control` are true. If both are true
-// and `hybrid_agc_params` is specified, the hybrid AGC configuration will be
-// used - i.e., analog AGC1 and adaptive digital AGC2.
-// When `properties.goog_auto_gain_control` is true,
-// `properties.goog_experimental_auto_gain_control` is false and
-// `compression_gain_db` is specified, the AGC2 fixed digital controller is
-// enabled.
+// Configures automatic gain control in `apm_config`. If analog gain control is
+// enabled and `hybrid_agc_params` is specified, then the hybrid AGC
+// configuration will be used - i.e., analog AGC1 and adaptive digital AGC2.
+// When only digital gain control is enabled and `compression_gain_db` is
+// specified, the AGC2 fixed digital controller is enabled.
 // TODO(bugs.webrtc.org/7494): Clean up once hybrid AGC experiment finalized.
 PLATFORM_EXPORT void ConfigAutomaticGainControl(
-    const AudioProcessingProperties& properties,
+    const media::AudioProcessingSettings& settings,
     const absl::optional<WebRtcHybridAgcParams>& hybrid_agc_params,
     const absl::optional<WebRtcAnalogAgcClippingControlParams>&
         clipping_control_params,
@@ -172,7 +166,7 @@ PLATFORM_EXPORT void ConfigAutomaticGainControl(
 
 PLATFORM_EXPORT void PopulateApmConfig(
     AudioProcessing::Config* apm_config,
-    const AudioProcessingProperties& properties,
+    const media::AudioProcessingSettings& settings,
     const absl::optional<std::string>& audio_processing_platform_config_json,
     absl::optional<double>* gain_control_compression_gain_db);
 

@@ -75,16 +75,21 @@ gfx::Point X11ScreenOzone::GetCursorScreenPoint() const {
 
 gfx::AcceleratedWidget X11ScreenOzone::GetAcceleratedWidgetAtScreenPoint(
     const gfx::Point& point) const {
+  gfx::Point point_in_pixels = gfx::ToFlooredPoint(
+      gfx::ConvertPointToPixels(point, GetXDisplayScaleFactor()));
   X11TopmostWindowFinder finder;
-  return static_cast<gfx::AcceleratedWidget>(finder.FindWindowAt(point));
+  return static_cast<gfx::AcceleratedWidget>(
+      finder.FindWindowAt(point_in_pixels));
 }
 
 gfx::AcceleratedWidget X11ScreenOzone::GetLocalProcessWidgetAtPoint(
     const gfx::Point& point,
     const std::set<gfx::AcceleratedWidget>& ignore) const {
+  gfx::Point point_in_pixels = gfx::ToFlooredPoint(
+      gfx::ConvertPointToPixels(point, GetXDisplayScaleFactor()));
   X11TopmostWindowFinder finder;
   return static_cast<gfx::AcceleratedWidget>(
-      finder.FindLocalProcessWindowAt(point, ignore));
+      finder.FindLocalProcessWindowAt(point_in_pixels, ignore));
 }
 
 display::Display X11ScreenOzone::GetDisplayNearestPoint(
@@ -131,10 +136,10 @@ std::string X11ScreenOzone::GetCurrentWorkspace() {
   return x11_display_manager_->GetCurrentWorkspace();
 }
 
-base::Value X11ScreenOzone::GetGpuExtraInfoAsListValue(
+std::vector<base::Value> X11ScreenOzone::GetGpuExtraInfo(
     const gfx::GpuExtraInfo& gpu_extra_info) {
-  auto result = GetDesktopEnvironmentInfoAsListValue();
-  StorePlatformNameIntoListValue(result, "x11");
+  auto result = GetDesktopEnvironmentInfo();
+  StorePlatformNameIntoListOfValues(result, "x11");
   return result;
 }
 

@@ -66,7 +66,7 @@ class CORE_EXPORT Range final : public AbstractRange {
 
   void Dispose();
 
-  Document& OwnerDocument() const {
+  Document& OwnerDocument() const override {
     DCHECK(owner_document_);
     return *owner_document_.Get();
   }
@@ -172,6 +172,7 @@ class CORE_EXPORT Range final : public AbstractRange {
 
   static Node* CheckNodeWOffset(Node*, unsigned offset, ExceptionState&);
 
+  bool IsStaticRange() const override { return false; }
   void Trace(Visitor*) const override;
 
  private:
@@ -205,6 +206,7 @@ class CORE_EXPORT Range final : public AbstractRange {
                                                 Node* common_root,
                                                 ExceptionState&);
   void UpdateSelectionIfAddedToSelection();
+  void ScheduleVisualUpdateIfInRegisteredHighlight();
   void RemoveFromSelectionIfInDifferentRoot(Document& old_document);
 
   Member<Document> owner_document_;  // Cannot be null.

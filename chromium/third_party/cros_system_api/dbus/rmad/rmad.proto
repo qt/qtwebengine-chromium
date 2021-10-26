@@ -17,107 +17,181 @@ enum RmadErrorCode {
   // No error.
   RMAD_ERROR_OK = 1;
 
+  // No error, and wait for a signal.
+  RMAD_ERROR_WAIT = 2;
+
+  // TODO(chenghan): Deprecated, remove it in the future.
+  // Need a reboot to continue.
+  RMAD_ERROR_NEED_REBOOT = 3;
+
+  // Expect a reboot soon.
+  RMAD_ERROR_EXPECT_REBOOT = 4;
+
+  // Expect a shutdown soon.
+  RMAD_ERROR_EXPECT_SHUTDOWN = 5;
+
   // The device is not in RMA mode.
-  RMAD_ERROR_RMA_NOT_REQUIRED = 2;
+  RMAD_ERROR_RMA_NOT_REQUIRED = 6;
+
+  // No corresponding state handler for a state.
+  RMAD_ERROR_STATE_HANDLER_MISSING = 7;
+
+  // State handler initialization failed.
+  RMAD_ERROR_STATE_HANDLER_INITIALIZATION_FAILED = 8;
 
   // The request could not be processed (e.g. bad proto).
-  RMAD_ERROR_REQUEST_INVALID = 3;
+  RMAD_ERROR_REQUEST_INVALID = 9;
 
   // The request is missing mandatory arguments.
-  RMAD_ERROR_REQUEST_ARGS_MISSING = 4;
+  RMAD_ERROR_REQUEST_ARGS_MISSING = 10;
 
   // The request arguments are violating some rules of the state.
-  RMAD_ERROR_REQUEST_ARGS_VIOLATION = 5;
-
-  // An expected component was not found.
-  RMAD_ERROR_MISSING_COMPONENT = 6;
-
-  // Cannot get the RSU challenge code.
-  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_NO_CHALLENGE = 7;
-
-  // The RSU code was incorrect.
-  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_CODE_INVALID = 8;
-
-  // The battery was not disconnected when WP disable was required.
-  RMAD_ERROR_WRITE_PROTECT_DISABLE_BATTERY_NOT_DISCONNECTED = 9;
-
-  // WP was not disabled when required.
-  RMAD_ERROR_WRITE_PROTECT_DISABLE_SIGNAL_NOT_DETECTED = 10;
-
-  // File could not be downloaded because a network connection was unavailable.
-  RMAD_ERROR_REIMAGING_DOWNLOAD_NO_NETWORK = 11;
-
-  // File download did not complete because of a network error.
-  RMAD_ERROR_REIMAGING_DOWNLOAD_NETWORK_ERROR = 12;
-
-  // The user cancelled the file download.
-  RMAD_ERROR_REIMAGING_DOWNLOAD_CANCELLED = 13;
-
-  // No valid USB device with a Chrome OS image was found.
-  RMAD_ERROR_REIMAGING_USB_NOT_FOUND = 14;
-
-  // More than one USB device with a Chrome OS image was found.
-  RMAD_ERROR_REIMAGING_USB_TOO_MANY_FOUND = 15;
-
-  // The Chrome OS image found was corrupt.
-  RMAD_ERROR_REIMAGING_USB_INVALID_IMAGE = 16;
-
-  // The image could not be written.
-  RMAD_ERROR_REIMAGING_IMAGING_FAILED = 17;
-
-  // An unexpected failure prevented imaging from completing.
-  RMAD_ERROR_REIMAGING_UNKNOWN_FAILURE = 18;
-
-  // The device info is incorrect.
-  RMAD_ERROR_DEVICE_INFO_INVALID = 19;
-
-  // Calibration failed for a component.
-  RMAD_ERROR_CALIBRATION_FAILED = 20;
-
-  // Provisioning failed for the device.
-  RMAD_ERROR_PROVISIONING_FAILED = 21;
-
-  // Device could not be powerwashed.
-  RMAD_ERROR_POWERWASH_FAILED = 22;
-
-  // Device finalization failed.
-  RMAD_ERROR_FINALIZATION_FAILED = 23;
-
-  // Logs failed to upload because the server could not be reached.
-  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CANNOT_CONNECT = 24;
-
-  // Logs failed to upload because the server refused the connection.
-  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CONNECTION_REJECTED = 25;
-
-  // Logs failed to upload because the connection was interrupted.
-  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_TRANSFER_FAILED = 26;
-
-  // It is not possible to cancel RMA finalization process at this point.
-  RMAD_ERROR_CANNOT_CANCEL_RMA = 27;
+  RMAD_ERROR_REQUEST_ARGS_VIOLATION = 11;
 
   // It is not possible to transition state at this point.
-  RMAD_ERROR_TRANSITION_FAILED = 28;
+  RMAD_ERROR_TRANSITION_FAILED = 12;
 
   // Failed to abort the RMA process.
-  RMAD_ERROR_ABORT_FAILED = 29;
+  RMAD_ERROR_ABORT_FAILED = 13;
+
+  // An expected component was not found.
+  RMAD_ERROR_MISSING_COMPONENT = 14;
+
+  // Cannot get the RSU challenge code.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_NO_CHALLENGE = 15;
+
+  // The RSU code was incorrect.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_RSU_CODE_INVALID = 16;
+
+  // The battery was not disconnected when WP disable was required.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_BATTERY_NOT_DISCONNECTED = 17;
+
+  // WP was not disabled when required.
+  RMAD_ERROR_WRITE_PROTECT_DISABLE_SIGNAL_NOT_DETECTED = 18;
+
+  // File could not be downloaded because a network connection was unavailable.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_NO_NETWORK = 19;
+
+  // File download did not complete because of a network error.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_NETWORK_ERROR = 20;
+
+  // The user cancelled the file download.
+  RMAD_ERROR_REIMAGING_DOWNLOAD_CANCELLED = 21;
+
+  // No valid USB device with a Chrome OS image was found.
+  RMAD_ERROR_REIMAGING_USB_NOT_FOUND = 22;
+
+  // More than one USB device with a Chrome OS image was found.
+  RMAD_ERROR_REIMAGING_USB_TOO_MANY_FOUND = 23;
+
+  // The Chrome OS image found was corrupt.
+  RMAD_ERROR_REIMAGING_USB_INVALID_IMAGE = 24;
+
+  // The image could not be written.
+  RMAD_ERROR_REIMAGING_IMAGING_FAILED = 25;
+
+  // An unexpected failure prevented imaging from completing.
+  RMAD_ERROR_REIMAGING_UNKNOWN_FAILURE = 26;
+
+  // The device info is incorrect.
+  RMAD_ERROR_DEVICE_INFO_INVALID = 27;
+
+  // Calibration component is missing.
+  RMAD_ERROR_CALIBRATION_COMPONENT_MISSING = 28;
+
+  // Calibration status is missing.
+  RMAD_ERROR_CALIBRATION_STATUS_MISSING = 29;
+
+  // Calibration component cannot be calibrated.
+  RMAD_ERROR_CALIBRATION_COMPONENT_INVALID = 30;
+
+  // Calibration failed for a component.
+  RMAD_ERROR_CALIBRATION_FAILED = 31;
+
+  // Provisioning failed for the device.
+  RMAD_ERROR_PROVISIONING_FAILED = 32;
+
+  // Device could not be powerwashed.
+  RMAD_ERROR_POWERWASH_FAILED = 33;
+
+  // Device finalization failed.
+  RMAD_ERROR_FINALIZATION_FAILED = 34;
+
+  // Logs failed to upload because the server could not be reached.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CANNOT_CONNECT = 35;
+
+  // Logs failed to upload because the server refused the connection.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_CONNECTION_REJECTED = 36;
+
+  // Logs failed to upload because the connection was interrupted.
+  RMAD_ERROR_LOG_UPLOAD_FTP_SERVER_TRANSFER_FAILED = 37;
+
+  // It is not possible to cancel RMA finalization process at this point.
+  RMAD_ERROR_CANNOT_CANCEL_RMA = 38;
+
+  // Failed to get logs.
+  RMAD_ERROR_CANNOT_GET_LOG = 39;
+
+  // TODO(genechang): Legacy, remove it in the future.
+  RMAD_ERROR_MISSING_CALIBRATION_COMPONENT = 40;
+}
+
+// Defined Rmad components.
+enum RmadComponent {
+  RMAD_COMPONENT_UNKNOWN = 0;
+  // runtime_probe supported components.
+  RMAD_COMPONENT_AUDIO_CODEC = 1;
+  RMAD_COMPONENT_BATTERY = 2;
+  RMAD_COMPONENT_STORAGE = 3;
+  RMAD_COMPONENT_VPD_CACHED = 4;
+  RMAD_COMPONENT_NETWORK = 5;  // Obsolete in M91.
+  RMAD_COMPONENT_CAMERA = 6;
+  RMAD_COMPONENT_STYLUS = 7;
+  RMAD_COMPONENT_TOUCHPAD = 8;
+  RMAD_COMPONENT_TOUCHSCREEN = 9;
+  RMAD_COMPONENT_DRAM = 10;
+  RMAD_COMPONENT_DISPLAY_PANEL = 11;
+  RMAD_COMPONENT_CELLULAR = 12;
+  RMAD_COMPONENT_ETHERNET = 13;
+  RMAD_COMPONENT_WIRELESS = 14;
+  // Additional rmad components.
+  RMAD_COMPONENT_SCREEN = 15;
+  RMAD_COMPONENT_BASE_ACCELEROMETER = 16;
+  RMAD_COMPONENT_LID_ACCELEROMETER = 17;
+  RMAD_COMPONENT_GYROSCOPE = 18;
+  // Reserved for additional runtime_probe supported components.
+  reserved 19 to 32;
+  // Mainboard rework is a special case.
+  RMAD_COMPONENT_MAINBOARD_REWORK = 33;
+  // Irrelevant components.
+  // TODO(chenghan): Do we really need these?
+  RMAD_COMPONENT_KEYBOARD = 34;
+  RMAD_COMPONENT_POWER_BUTTON = 35;
+
+  // TODO(genechang): Remove legacy part
+  RMAD_COMPONENT_ACCELEROMETER = 36;  // Legacy
 }
 
 // Defined Rmad states.
 
 // Confirm RMA is required.
 message WelcomeState {
+  // This enum is not really necessary. This acts as a confirmation that the
+  // client wants to start RMA, To cancel RMA, the client should call |AbortRma|
+  // method instead.
   enum FinalizeChoice {
     RMAD_CHOICE_UNKNOWN = 0;
     RMAD_CHOICE_FINALIZE_REPAIR = 1;
+    // TODO(chenghan): Deprecated. Remove it in the future.
     RMAD_CHOICE_CANCEL = 2;
   }
   FinalizeChoice choice = 1;
 }
 
+// Legacy state. Keep it to be compatible with Chrome.
+// TODO(gavindodd): Remove it in the future.
 // Request for optional connection to Wifi when no network is connected.
 message SelectNetworkState {
-  // TODO(gavindodd): How does network connection work? Once the user logs in to
-  // wifi does some other system preserve the connection information?
   enum Network {
     RMAD_NETWORK_UNKNOWN = 0;
     RMAD_NETWORK_USER_DECLINED = 1;
@@ -126,6 +200,8 @@ message SelectNetworkState {
   Network connection_state = 1;
 }
 
+// Legacy state. Keep it to be compatible with Chrome.
+// TODO(gavindodd): Remove it in the future.
 // Update Chrome
 message UpdateChromeState {
   enum UpdateState {
@@ -137,34 +213,66 @@ message UpdateChromeState {
   UpdateState update = 1;
 }
 
-// Component data
-// TODO(gavindodd): Platform should query all components to check if they are
-// missing before they are selected as replacements.
-// This information can be displayed to the tech to validate expected hardware.
-message ComponentRepairState {
-  enum Component {
-    RMAD_COMPONENT_UNKNOWN = 0;
-    // NOTE: This is a special case.
-    RMAD_COMPONENT_MAINBOARD_REWORK = 1;
-    RMAD_COMPONENT_KEYBOARD = 2;
-    RMAD_COMPONENT_SCREEN = 3;
-    RMAD_COMPONENT_TRACKPAD = 4;
-    RMAD_COMPONENT_POWER_BUTTON = 5;
-    RMAD_COMPONENT_THUMB_READER = 6;
-  }
-  enum RepairState {
-    RMAD_REPAIR_UNKNOWN = 0;
-    RMAD_REPAIR_ORIGINAL = 1;
-    RMAD_REPAIR_REPLACED = 2;
-    RMAD_REPAIR_MISSING = 3;
-  }
-  Component name = 1;
-  RepairState repair_state = 2;
-}
-
 // Select components that have been repaired.
 message ComponentsRepairState {
-  repeated ComponentRepairState components = 1;
+  message ComponentRepairStatus {
+    // Legacy enum. Keep it to be compatible with Chrome.
+    // TODO(chenghan): Remove it in the future.
+    enum Component {
+      RMAD_COMPONENT_UNKNOWN = 0;
+      // runtime_probe supported components.
+      RMAD_COMPONENT_AUDIO_CODEC = 1;
+      RMAD_COMPONENT_BATTERY = 2;
+      RMAD_COMPONENT_STORAGE = 3;
+      RMAD_COMPONENT_VPD_CACHED = 4;
+      RMAD_COMPONENT_NETWORK = 5;  // Obsolete in M91.
+      RMAD_COMPONENT_CAMERA = 6;
+      RMAD_COMPONENT_STYLUS = 7;
+      RMAD_COMPONENT_TOUCHPAD = 8;
+      RMAD_COMPONENT_TOUCHSCREEN = 9;
+      RMAD_COMPONENT_DRAM = 10;
+      RMAD_COMPONENT_DISPLAY_PANEL = 11;
+      RMAD_COMPONENT_CELLULAR = 12;
+      RMAD_COMPONENT_ETHERNET = 13;
+      RMAD_COMPONENT_WIRELESS = 14;
+      // Additional rmad components.
+      RMAD_COMPONENT_GYROSCOPE = 15;
+      RMAD_COMPONENT_ACCELEROMETER = 16;
+      RMAD_COMPONENT_SCREEN = 17;
+      // Reserved for additional runtime_probe supported components.
+      reserved 18 to 32;
+      // TODO(chenghan): Deprecated; Mainboard rework is a special case.
+      RMAD_COMPONENT_MAINBOARD_REWORK = 33;
+      // Irrelevant components.
+      // TODO(chenghan): Do we really need these?
+      RMAD_COMPONENT_KEYBOARD = 34;
+      RMAD_COMPONENT_POWER_BUTTON = 35;
+    }
+    enum RepairStatus {
+      RMAD_REPAIR_STATUS_UNKNOWN = 0;
+      RMAD_REPAIR_STATUS_ORIGINAL = 1;
+      RMAD_REPAIR_STATUS_REPLACED = 2;
+      RMAD_REPAIR_STATUS_MISSING = 3;
+    }
+    RmadComponent component = 1;
+    RepairStatus repair_status = 2;
+    // TODO(chenghan): The followings are for compatibility. Remove them in the
+    //                 future.
+    enum RepairState {
+      RMAD_REPAIR_UNKNOWN = 0;
+      RMAD_REPAIR_ORIGINAL = 1;
+      RMAD_REPAIR_REPLACED = 2;
+      RMAD_REPAIR_MISSING = 3;
+    }
+    Component name = 3;
+    RepairState repair_state = 4;
+  }
+  // TODO(chenghan): Rename back to |components|.
+  repeated ComponentRepairStatus component_repair = 1;
+  // TODO(chenghan): Legacy, remove it in the future.
+  repeated ComponentRepairState components = 2;
+
+  bool mainboard_rework = 3;
 }
 
 // Select whether the device is returning to original owner or being wiped for
@@ -191,8 +299,18 @@ message WriteProtectDisableMethodState {
 
 // Disable HWWP with an RSU unlock code.
 message WriteProtectDisableRsuState {
-  string challenge_code = 1;
-  string unlock_code = 2;
+  // Provided by daemon.
+  bool rsu_done = 1;
+  string challenge_code = 2;
+  string hwid = 3;
+  string challenge_url = 4;
+  // Provided by client.
+  string unlock_code = 5;
+}
+
+// Verify if RSU succeeds.
+message VerifyRsuState {
+  bool success = 1;
 }
 
 // Wait for tech to physically disable HWWP.
@@ -202,7 +320,8 @@ message WriteProtectDisablePhysicalState {
 
 // Display confirmation that HWWP has been disabled.
 message WriteProtectDisableCompleteState {
-  // No state. Waits for user to click next?
+  // Provided by daemon.
+  bool keep_device_open = 1;
 }
 
 // Select method to update firmware.
@@ -251,15 +370,69 @@ message UpdateDeviceInfoState {
   uint32 original_sku_index = 8;
 }
 
-// Calibrate devices such as accelerometer.
-message CalibrateComponentsState {
-  // Enum for CalibrationProgress signal.
-  enum CalibrationComponent {
-    RMAD_CALIBRATION_COMPONENT_UNKNOWN = 0;
-    RMAD_CALIBRATION_COMPONENT_ACCELEROMETER = 1;
+// Calibration Component and status used in all calibration-related
+// states (CheckCalibration, SetupCalibration, RunCalibration).
+message CalibrationComponentStatus {
+  enum CalibrationStatus {
+    RMAD_CALIBRATION_UNKNOWN = 0;
+    RMAD_CALIBRATION_WAITING = 1;
+    RMAD_CALIBRATION_IN_PROGRESS = 2;
+    RMAD_CALIBRATION_COMPLETE = 3;
+    RMAD_CALIBRATION_FAILED = 4;
+    RMAD_CALIBRATION_SKIP = 5;
   }
 
-  // No state. Waits for signal that calibration is complete.
+  RmadComponent component = 1;
+  CalibrationStatus status = 2;
+
+  // The progress of calibration.
+  // Waitting: 0.0, In progress: [0.0, 1.0),
+  // Complete: 1.0, Failed: -1.0, Skip: 1.0
+  double progress = 3;
+}
+
+message CheckCalibrationState {
+  // Legacy. Keep it to be compatible with Chrome.
+  message CalibrationStatus {
+    enum Component {
+      RMAD_CALIBRATION_COMPONENT_UNKNOWN = 0;
+      // Legacy state. Keep it to be compatible with Chrome.
+      // TODO(genechang): Remove it in the future.
+      RMAD_CALIBRATION_COMPONENT_ACCELEROMETER = 1;
+
+      // TODO(genechang): Migrate to generic component
+      RMAD_CALIBRATION_COMPONENT_GYROSCOPE = 2;
+      RMAD_CALIBRATION_COMPONENT_BASE_ACCELEROMETER = 3;
+      RMAD_CALIBRATION_COMPONENT_LID_ACCELEROMETER = 4;
+    }
+
+    enum Status {
+      RMAD_CALIBRATE_UNKNOWN = 0;
+      RMAD_CALIBRATE_WAITING = 1;
+      RMAD_CALIBRATE_IN_PROGRESS = 2;
+      RMAD_CALIBRATE_COMPLETE = 3;
+      RMAD_CALIBRATE_FAILED = 4;
+      RMAD_CALIBRATE_SKIP = 5;
+    }
+
+    Component name = 1;
+    Status status = 2;
+  }
+
+  // TODO(genechang): Legacy, remove it in the future.
+  repeated CalibrationStatus components = 1;
+  // TODO(genechang): Rename back to |components|.
+  repeated CalibrationComponentStatus calibration_components = 2;
+}
+
+// Wait for technician to setup device to be ready for calibration.
+message SetupCalibrationState {
+  // No state. Waits for the technician to check the setup.
+}
+
+// Wait for calibration.
+message RunCalibrationState {
+  // No state. Waits for the calibration of the devices.
 }
 
 // Provision the device.
@@ -293,24 +466,87 @@ message FinalizeState {
   // this proto, or it could be a separate d-bus method.
 }
 
+// Legacy state. Keep it to be compatible with Chrome.
+// TODO(chenghan): Remove it in the future.
+message ComponentRepairState {
+  enum Component {
+    RMAD_COMPONENT_UNKNOWN = 0;
+    // runtime_probe supported components.
+    RMAD_COMPONENT_AUDIO_CODEC = 1;
+    RMAD_COMPONENT_BATTERY = 2;
+    RMAD_COMPONENT_STORAGE = 3;
+    RMAD_COMPONENT_VPD_CACHED = 4;
+    RMAD_COMPONENT_NETWORK = 5;  // Obsolete in M91.
+    RMAD_COMPONENT_CAMERA = 6;
+    RMAD_COMPONENT_STYLUS = 7;
+    RMAD_COMPONENT_TOUCHPAD = 8;
+    RMAD_COMPONENT_TOUCHSCREEN = 9;
+    RMAD_COMPONENT_DRAM = 10;
+    RMAD_COMPONENT_DISPLAY_PANEL = 11;
+    RMAD_COMPONENT_CELLULAR = 12;
+    RMAD_COMPONENT_ETHERNET = 13;
+    RMAD_COMPONENT_WIRELESS = 14;
+    // Additional rmad components.
+    RMAD_COMPONENT_GYROSCOPE = 15;
+    RMAD_COMPONENT_ACCELEROMETER = 16;
+    RMAD_COMPONENT_SCREEN = 17;
+    // Reserved for additional runtime_probe supported components.
+    reserved 18 to 32;
+    // Mainboard rework is a special case.
+    RMAD_COMPONENT_MAINBOARD_REWORK = 33;
+    // Irrelevant components.
+    // TODO(chenghan): Do we really need these?
+    RMAD_COMPONENT_KEYBOARD = 34;
+    RMAD_COMPONENT_POWER_BUTTON = 35;
+    RMAD_COMPONENT_TRACKPAD = 36;
+    RMAD_COMPONENT_THUMB_READER = 37;
+  }
+  enum RepairState {
+    RMAD_REPAIR_UNKNOWN = 0;
+    RMAD_REPAIR_ORIGINAL = 1;
+    RMAD_REPAIR_REPLACED = 2;
+    RMAD_REPAIR_MISSING = 3;
+  }
+  Component name = 1;
+  RepairState repair_state = 2;
+}
+
+// Legacy state. Keep it to be compatible with Chrome.
+// TODO(chenghan): Remove it in the future.
+message CalibrateComponentsState {
+  enum CalibrationComponent {
+    RMAD_CALIBRATION_COMPONENT_UNKNOWN = 0;
+    RMAD_CALIBRATION_COMPONENT_ACCELEROMETER = 1;
+  }
+}
+
 message RmadState {
   oneof state {
     WelcomeState welcome = 1;
+    // Legacy state. Keep it to be compatible with Chrome.
+    // TODO(gavindodd): Remove it in the future.
     SelectNetworkState select_network = 2;
+    // Legacy state. Keep it to be compatible with Chrome.
+    // TODO(gavindodd): Remove it in the future.
     UpdateChromeState update_chrome = 3;
     ComponentsRepairState components_repair = 4;
     DeviceDestinationState device_destination = 5;
     WriteProtectDisableMethodState wp_disable_method = 6;
     WriteProtectDisableRsuState wp_disable_rsu = 7;
-    WriteProtectDisablePhysicalState wp_disable_physical = 8;
-    WriteProtectDisableCompleteState wp_disable_complete = 9;
-    UpdateRoFirmwareState update_ro_firmware = 10;
-    RestockState restock = 11;
-    UpdateDeviceInfoState update_device_info = 12;
-    CalibrateComponentsState calibrate_components = 13;
-    ProvisionDeviceState provision_device = 14;
-    WriteProtectEnablePhysicalState wp_enable_physical = 15;
-    FinalizeState finalize = 16;
+    VerifyRsuState verify_rsu = 8;
+    WriteProtectDisablePhysicalState wp_disable_physical = 9;
+    WriteProtectDisableCompleteState wp_disable_complete = 10;
+    UpdateRoFirmwareState update_ro_firmware = 11;
+    RestockState restock = 12;
+    UpdateDeviceInfoState update_device_info = 13;
+    CheckCalibrationState check_calibration = 14;
+    SetupCalibrationState setup_calibration = 15;
+    RunCalibrationState run_calibration = 16;
+    ProvisionDeviceState provision_device = 17;
+    WriteProtectEnablePhysicalState wp_enable_physical = 18;
+    FinalizeState finalize = 19;
+    // Legacy state.
+    CalibrateComponentsState calibrate_components = 20;
   }
 }
 
@@ -322,11 +558,18 @@ message TransitionNextStateRequest {
 // Reply for GetCurrentState, GetNextState, GetPreviousState.
 message GetStateReply {
   RmadErrorCode error = 1;
-  bool can_go_back = 2;
-  RmadState state = 3;
+  RmadState state = 2;
+  bool can_go_back = 3;
+  bool can_abort = 4;
 }
 
 // Reply for AbortRma.
 message AbortRmaReply {
   RmadErrorCode error = 1;
+}
+
+// Reply for GetLog.
+message GetLogReply {
+  RmadErrorCode error = 1;
+  string log = 2;
 }

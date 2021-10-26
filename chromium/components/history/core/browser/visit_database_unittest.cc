@@ -8,15 +8,14 @@
 #include <vector>
 
 #include "base/strings/string_util.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/time/time.h"
-#include "components/history/core/browser/features.h"
 #include "components/history/core/browser/url_database.h"
 #include "components/history/core/browser/visit_database.h"
 #include "sql/database.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
+#include "url/origin.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -430,50 +429,6 @@ TEST_F(VisitDatabaseTest, GetVisibleVisitsForURL) {
   EXPECT_TRUE(IsVisitInfoEqual(results[2], test_visit_rows[0]));
 }
 
-TEST_F(VisitDatabaseTest, Api3HandledCorrectly) {
-  const ui::PageTransition transition_link_and_api3 = ui::PageTransitionFromInt(
-      ui::PAGE_TRANSITION_LINK | ui::PAGE_TRANSITION_FROM_API_3 |
-      ui::PAGE_TRANSITION_CHAIN_END);
-  const URLID url_id = 1;
-  VisitRow visit(url_id, Time::Now(), 0, transition_link_and_api3, 0, false,
-                 false);
-  EXPECT_TRUE(AddVisit(&visit, SOURCE_BROWSED));
-
-  // Query the visits for the first url id. FROM_API_3 is not considered visible
-  // and should be excluded.
-  VisitVector results;
-  QueryOptions options;
-  GetVisibleVisitsForURL(url_id, options, &results);
-  ASSERT_EQ(0u, results.size());
-
-  GetVisitsForURL(url_id, &results);
-  ASSERT_EQ(1u, results.size());
-  EXPECT_TRUE(IsVisitInfoEqual(results[0], visit));
-}
-
-TEST_F(VisitDatabaseTest, Api3TransitionFeatureDisabled) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndDisableFeature(kHideFromApi3Transitions);
-  const ui::PageTransition transition_link_and_api3 = ui::PageTransitionFromInt(
-      ui::PAGE_TRANSITION_LINK | ui::PAGE_TRANSITION_FROM_API_3 |
-      ui::PAGE_TRANSITION_CHAIN_END);
-  const URLID url_id = 1;
-  VisitRow visit(url_id, Time::Now(), 0, transition_link_and_api3, 0, false,
-                 false);
-  EXPECT_TRUE(AddVisit(&visit, SOURCE_BROWSED));
-
-  // Query the visits for the first url id, as kHideFromApi3Transitions is
-  // disabled FROM_API_3 should not be excluded.
-  VisitVector results;
-  QueryOptions options;
-  GetVisibleVisitsForURL(url_id, options, &results);
-  ASSERT_EQ(1u, results.size());
-
-  GetVisitsForURL(url_id, &results);
-  ASSERT_EQ(1u, results.size());
-  EXPECT_TRUE(IsVisitInfoEqual(results[0], visit));
-}
-
 TEST_F(VisitDatabaseTest, GetHistoryCount) {
   // Start with a day in the middle of summer, so that we are nowhere near
   // DST shifts.
@@ -647,29 +602,30 @@ TEST_F(VisitDatabaseTest, GetHistoryCount) {
   }
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_BadURL) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_BadURL) {
   base::Time last_visit;
-  EXPECT_FALSE(GetLastVisitToHost(GURL(), base::Time::Min(), base::Time::Max(),
-                                  &last_visit));
+  EXPECT_FALSE(GetLastVisitToOrigin(url::Origin(), base::Time::Min(),
+                                    base::Time::Max(), &last_visit));
   EXPECT_EQ(last_visit, base::Time());
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_NonHttpURL) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_NonHttpURL) {
   base::Time last_visit;
-  EXPECT_FALSE(GetLastVisitToHost(GURL("ftp://host/"), base::Time::Min(),
-                                  base::Time::Max(), &last_visit));
+  EXPECT_FALSE(GetLastVisitToOrigin(url::Origin::Create(GURL("ftp://host/")),
+                                    base::Time::Min(), base::Time::Max(),
+                                    &last_visit));
   EXPECT_EQ(last_visit, base::Time());
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_NoVisits) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_NoVisits) {
   base::Time last_visit;
-  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org"),
-                                 base::Time::Min(), base::Time::Max(),
-                                 &last_visit));
+  EXPECT_TRUE(GetLastVisitToOrigin(
+      url::Origin::Create(GURL("https://www.chromium.org")), base::Time::Min(),
+      base::Time::Max(), &last_visit));
   EXPECT_EQ(last_visit, base::Time());
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_VisitsOutsideRange) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_VisitsOutsideRange) {
   base::Time begin_time = base::Time::Now();
   base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
 
@@ -691,12 +647,13 @@ TEST_F(VisitDatabaseTest, GetLastVisitToHost_VisitsOutsideRange) {
   AddVisit(&row2, SOURCE_BROWSED);
 
   base::Time last_visit;
-  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org"), begin_time,
-                                 end_time, &last_visit));
+  EXPECT_TRUE(GetLastVisitToOrigin(
+      url::Origin::Create(GURL("https://www.chromium.org")), begin_time,
+      end_time, &last_visit));
   EXPECT_EQ(last_visit, base::Time());
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_EndTimeNotIncluded) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_EndTimeNotIncluded) {
   base::Time begin_time = base::Time::Now();
   base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
 
@@ -718,12 +675,13 @@ TEST_F(VisitDatabaseTest, GetLastVisitToHost_EndTimeNotIncluded) {
   AddVisit(&row2, SOURCE_BROWSED);
 
   base::Time last_visit;
-  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org"), begin_time,
-                                 end_time, &last_visit));
+  EXPECT_TRUE(GetLastVisitToOrigin(
+      url::Origin::Create(GURL("https://www.chromium.org")), begin_time,
+      end_time, &last_visit));
   EXPECT_EQ(last_visit, begin_time);
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_SameOriginOnly) {
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_SameOriginOnly) {
   base::Time begin_time = base::Time::Now();
   base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
 
@@ -745,12 +703,107 @@ TEST_F(VisitDatabaseTest, GetLastVisitToHost_SameOriginOnly) {
   AddVisit(&row2, SOURCE_BROWSED);
 
   base::Time last_visit;
-  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org"), begin_time,
-                                 end_time, &last_visit));
+  EXPECT_TRUE(GetLastVisitToOrigin(
+      url::Origin::Create(GURL("https://www.chromium.org")), begin_time,
+      end_time, &last_visit));
   EXPECT_EQ(last_visit, begin_time + base::TimeDelta::FromMinutes(1));
 }
 
-TEST_F(VisitDatabaseTest, GetLastVisitToHost_MostRecentVisitTime) {
+TEST_F(VisitDatabaseTest, GetLastVisitToHost_DifferentScheme) {
+  base::Time begin_time = base::Time::Now();
+  base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
+
+  VisitRow row1{AddURL(URLRow(GURL("https://www.chromium.org"))),
+                begin_time,
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row1, SOURCE_BROWSED);
+  VisitRow row2{AddURL(URLRow(GURL("http://www.chromium.org"))),
+                begin_time + base::TimeDelta::FromMinutes(1),
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row2, SOURCE_BROWSED);
+
+  base::Time last_visit;
+  VisitRow row;
+  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org").host(),
+                                 begin_time, end_time, &last_visit));
+  EXPECT_EQ(last_visit, begin_time + base::TimeDelta::FromMinutes(1));
+}
+
+TEST_F(VisitDatabaseTest, GetLastVisitToHost_IncludePort) {
+  base::Time begin_time = base::Time::Now();
+  base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
+
+  VisitRow row1{AddURL(URLRow(GURL("https://www.chromium.org"))),
+                begin_time,
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row1, SOURCE_BROWSED);
+  VisitRow row2{AddURL(URLRow(GURL("https://www.chromium.org:8080"))),
+                begin_time + base::TimeDelta::FromMinutes(1),
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row2, SOURCE_BROWSED);
+
+  base::Time last_visit;
+  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org").host(),
+                                 begin_time, end_time, &last_visit));
+  EXPECT_EQ(last_visit, begin_time + base::TimeDelta::FromMinutes(1));
+}
+
+TEST_F(VisitDatabaseTest, GetLastVisitToHost_DifferentPorts) {
+  base::Time begin_time = base::Time::Now();
+  base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
+
+  VisitRow row1{AddURL(URLRow(GURL("https://www.chromium.org:8080"))),
+                begin_time,
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row1, SOURCE_BROWSED);
+  VisitRow row2{AddURL(URLRow(GURL("https://www.chromium.org:32256"))),
+                begin_time + base::TimeDelta::FromMinutes(1),
+                0,
+                ui::PageTransitionFromInt(ui::PAGE_TRANSITION_TYPED |
+                                          ui::PAGE_TRANSITION_CHAIN_START |
+                                          ui::PAGE_TRANSITION_CHAIN_END),
+                0,
+                false,
+                false};
+  AddVisit(&row2, SOURCE_BROWSED);
+
+  base::Time last_visit;
+  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org:8080").host(),
+                                 begin_time, end_time, &last_visit));
+  EXPECT_EQ(last_visit, begin_time + base::TimeDelta::FromMinutes(1));
+}
+
+TEST_F(VisitDatabaseTest, GetLastVisitToOrigin_MostRecentVisitTime) {
   base::Time begin_time = base::Time::Now();
   base::Time end_time = begin_time + base::TimeDelta::FromHours(1);
 
@@ -780,8 +833,9 @@ TEST_F(VisitDatabaseTest, GetLastVisitToHost_MostRecentVisitTime) {
   AddVisit(&row3, SOURCE_BROWSED);
 
   base::Time last_visit;
-  EXPECT_TRUE(GetLastVisitToHost(GURL("https://www.chromium.org"), begin_time,
-                                 end_time, &last_visit));
+  EXPECT_TRUE(GetLastVisitToOrigin(
+      url::Origin::Create(GURL("https://www.chromium.org")), begin_time,
+      end_time, &last_visit));
   EXPECT_EQ(last_visit, begin_time + base::TimeDelta::FromMinutes(2));
 }
 
