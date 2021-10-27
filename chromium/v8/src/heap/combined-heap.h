@@ -33,9 +33,9 @@ class V8_EXPORT_PRIVATE CombinedHeapObjectIterator final {
 
 V8_WARN_UNUSED_RESULT inline bool IsValidHeapObject(Heap* heap,
                                                     HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     return third_party_heap::Heap::IsValidHeapObject(object);
-  }
+#endif
   return ReadOnlyHeap::Contains(object) || heap->Contains(object) ||
          heap->SharedHeapContains(object);
 }
@@ -43,9 +43,9 @@ V8_WARN_UNUSED_RESULT inline bool IsValidHeapObject(Heap* heap,
 V8_WARN_UNUSED_RESULT inline bool IsValidCodeObject(Heap* heap,
                                                     HeapObject object) {
   CHECK(V8_EXTERNAL_CODE_SPACE_BOOL);
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     return third_party_heap::Heap::IsValidCodeObject(object);
-  }
+#endif
   return heap->ContainsCode(object);
 }
 

@@ -339,7 +339,9 @@ size_t Heap::SemiSpaceSizeFromYoungGenerationSize(
 size_t Heap::Capacity() {
   if (!HasBeenSetUp()) return 0;
 
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
   if (FLAG_enable_third_party_heap) return tp_heap_->Capacity();
+#endif
 
   return NewSpaceCapacity() + OldGenerationCapacity();
 }
@@ -3267,17 +3269,19 @@ bool Heap::CanMoveObjectStart(HeapObject object) {
 }
 
 bool Heap::IsImmovable(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     return third_party_heap::Heap::IsImmovable(object);
-
+#else
   BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(object);
   return chunk->NeverEvacuate() || IsLargeObject(object);
+#endif
 }
 
 bool Heap::IsLargeObject(HeapObject object) {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL)
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
     return third_party_heap::Heap::InLargeObjectSpace(object.address()) ||
            third_party_heap::Heap::InSpace(object.address(), CODE_LO_SPACE);
+#endif
   return BasicMemoryChunk::FromHeapObject(object)->IsLargePage();
 }
 
@@ -6479,7 +6483,9 @@ HeapObjectIterator::HeapObjectIterator(
       break;
   }
   object_iterator_ = space_iterator_->Next()->GetObjectIterator(heap_);
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) heap_->tp_heap_->ResetIterator();
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
+  heap_->tp_heap_->ResetIterator();
+#endif
 }
 
 HeapObjectIterator::~HeapObjectIterator() {
@@ -6503,7 +6509,9 @@ HeapObject HeapObjectIterator::Next() {
 }
 
 HeapObject HeapObjectIterator::NextObject() {
-  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) return heap_->tp_heap_->NextObject();
+#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
+  return heap_->tp_heap_->NextObject();
+#endif
   // No iterator means we are done.
   if (object_iterator_.get() == nullptr) return HeapObject();
 
@@ -7031,10 +7039,12 @@ Code Heap::GcSafeFindCodeForInnerPointer(Address inner_pointer) {
     return builtin(maybe_builtin);
   }
 
+#ifdef V8_ENABLE_THIRD_PARTY_HEAP
   if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     Address start = tp_heap_->GetObjectFromInnerPointer(inner_pointer);
     return GcSafeCastToCode(HeapObject::FromAddress(start), inner_pointer);
   }
+#endif
 
   // Check if the inner pointer points into a large object chunk.
   LargePage* large_page = code_lo_space()->FindPage(inner_pointer);
