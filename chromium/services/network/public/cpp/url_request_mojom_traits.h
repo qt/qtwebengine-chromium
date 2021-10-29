@@ -294,6 +294,10 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   static bool obey_origin_policy(const network::ResourceRequest& request) {
     return request.obey_origin_policy;
   }
+  static network::mojom::RequestDestination original_destination(
+      const network::ResourceRequest& request) {
+    return request.original_destination;
+  }
   static const base::Optional<network::ResourceRequest::TrustedParams>&
   trusted_params(const network::ResourceRequest& request) {
     return request.trusted_params;

@@ -567,6 +567,18 @@ URLLoader::URLLoader(
   if (require_network_isolation_key)
     DCHECK(!url_request_->isolation_info().IsEmpty());
 
+  // When a service worker forwards a navigation request it uses the
+  // service worker's IsolationInfo.  This causes the cookie code to fail
+  // to send SameSite=Lax cookies for main-frame navigations passed through
+  // a service worker.  To fix this we check to see if the original destination
+  // of the request was a main frame document and then set a flag indicating
+  // SameSite cookies should treat it as a main frame navigation.
+  if (request.mode == mojom::RequestMode::kNavigate &&
+      request.destination == mojom::RequestDestination::kEmpty &&
+      request.original_destination == mojom::RequestDestination::kDocument) {
+    url_request_->set_force_main_frame_for_same_site_cookies(true);
+  }
+
   if (factory_params_->disable_secure_dns) {
     url_request_->SetDisableSecureDns(true);
   } else if (request.trusted_params) {
