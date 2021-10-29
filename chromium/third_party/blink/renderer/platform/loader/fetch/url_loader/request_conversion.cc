@@ -376,6 +376,8 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
     dest->headers.SetHeaderIfMissing(net::HttpRequestHeaders::kAccept,
                                      network::kDefaultAcceptHeaderValue);
   }
+
+  dest->original_destination = src.GetOriginalDestination();
 }
 
 }  // namespace blink

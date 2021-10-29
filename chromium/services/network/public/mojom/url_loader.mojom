@@ -386,6 +386,10 @@ struct URLRequest {
   // Spec: https://wicg.github.io/origin-policy/
   bool obey_origin_policy;
 
+  // The original destination of a request that was passed through by a service
+  // worker.
+  RequestDestination original_destination;
+
   // Setting these from an untrusted URLLoader will cause the request to fail.
   TrustedUrlRequestParams? trusted_params;
 
