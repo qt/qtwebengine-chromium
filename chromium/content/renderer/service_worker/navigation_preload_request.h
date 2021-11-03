@@ -33,7 +33,8 @@ class NavigationPreloadRequest final : public network::mojom::URLLoaderClient {
       ServiceWorkerContextClient* owner,
       int fetch_event_id,
       const GURL& url,
-      blink::mojom::FetchEventPreloadHandlePtr preload_handle);
+      mojo::PendingReceiver<network::mojom::URLLoaderClient>
+          preload_url_loader_client_receiver);
   ~NavigationPreloadRequest() override;
 
   // network::mojom::URLLoaderClient:
@@ -56,11 +57,10 @@ class NavigationPreloadRequest final : public network::mojom::URLLoaderClient {
   void ReportErrorToOwner(const std::string& message,
                           const std::string& unsanitized_message);
 
-  ServiceWorkerContextClient* owner_;
+  ServiceWorkerContextClient* owner_ = nullptr;
 
-  const int fetch_event_id_;
+  const int fetch_event_id_ = -1;
   const GURL url_;
-  mojo::Remote<network::mojom::URLLoader> url_loader_;
   mojo::Receiver<network::mojom::URLLoaderClient> receiver_;
 
   std::unique_ptr<blink::WebURLResponse> response_;
