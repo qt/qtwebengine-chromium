@@ -16,7 +16,7 @@ bool ShouldOfferLinkToText(const GURL& url) {
     // If a URL's host matches a key in this map, then the path will be tested
     // against the RE stored in the value. For example, {"foo.com", ".*"} means
     // any page on the foo.com domain.
-    static constexpr auto kBlocklist =
+    static const auto kBlocklist =
         base::MakeFixedFlatMap<base::StringPiece, base::StringPiece>(
             {{"facebook.com", ".*"},
              // TODO(crbug.com/1157981): special case this to cover other Google
@@ -44,7 +44,7 @@ bool ShouldOfferLinkToText(const GURL& url) {
       return true;
     }
 
-    auto* it = kBlocklist.find(domain);
+    auto it = kBlocklist.find(domain);
     if (it != kBlocklist.end()) {
       return !re2::RE2::FullMatch(url.path(), it->second.data());
     }

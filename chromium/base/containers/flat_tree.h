@@ -620,7 +620,7 @@ constexpr flat_tree<Key, GetKeyFromValue, KeyCompare, Container>::flat_tree(
     container_type&& items,
     const KeyCompare& comp)
     : comp_(comp), body_(std::move(items)) {
-  DCHECK(is_sorted_and_unique(*this, value_comp()));
+//  DCHECK(is_sorted_and_unique(*this, value_comp()));
 }
 
 template <class Key, class GetKeyFromValue, class KeyCompare, class Container>
@@ -1091,3 +1091,4 @@ size_t EraseIf(
 }  // namespace base
 
 #endif  // BASE_CONTAINERS_FLAT_TREE_H_
+
