@@ -772,9 +772,11 @@ const char* LifecycleStateToString(RenderFrameHostImpl::LifecycleState state) {
 }
 
 bool ValidateCSPAttribute(const std::string& value) {
+  static const size_t kMaxLengthCSPAttribute = 4096;
   if (!base::IsStringASCII(value))
     return false;
-  if (value.find('\n') != std::string::npos ||
+  if (value.length() > kMaxLengthCSPAttribute ||
+      value.find('\n') != std::string::npos ||
       value.find('\r') != std::string::npos) {
     return false;
   }
