@@ -224,7 +224,8 @@ bool StructTraits<
       !data.ReadDevtoolsRequestId(&out->devtools_request_id) ||
       !data.ReadDevtoolsStackId(&out->devtools_stack_id) ||
       !data.ReadRecursivePrefetchToken(&out->recursive_prefetch_token) ||
-      !data.ReadWebBundleTokenParams(&out->web_bundle_token_params)) {
+      !data.ReadWebBundleTokenParams(&out->web_bundle_token_params) ||
+      !data.ReadNavigationRedirectChain(&out->navigation_redirect_chain)) {
     // Note that data.ReadTrustTokenParams is temporarily handled below.
     return false;
   }

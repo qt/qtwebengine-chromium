@@ -392,6 +392,16 @@ bool CorsURLLoaderFactory::IsValidRequest(const ResourceRequest& request,
     return false;
   }
 
+  // Validate that a navigation redirect chain is not sent for a non-navigation
+  // request.
+  if (!request.navigation_redirect_chain.empty() &&
+      request.mode != mojom::RequestMode::kNavigate) {
+    mojo::ReportBadMessage(
+        "CorsURLLoaderFactory: navigation redirect chain set for a "
+        "non-navigation");
+    return false;
+  }
+
   // By default we compare the `request_initiator` to the lock below.  This is
   // overridden for renderer navigations, however.
   base::Optional<url::Origin> origin_to_validate = request.request_initiator;
@@ -427,6 +437,15 @@ bool CorsURLLoaderFactory::IsValidRequest(const ResourceRequest& request,
           mojo::ReportBadMessage(
               "CorsURLLoaderFactory: navigate from non-browser-process with "
               "redirect_mode set to 'follow'");
+          return false;
+        }
+
+        // Validate that a navigation redirect chain is always provided for a
+        // navigation request.
+        if (request.navigation_redirect_chain.empty()) {
+          mojo::ReportBadMessage(
+              "CorsURLLoaderFactory: navigate from non-browser-process without "
+              "a redirect chain provided");
           return false;
         }
 
