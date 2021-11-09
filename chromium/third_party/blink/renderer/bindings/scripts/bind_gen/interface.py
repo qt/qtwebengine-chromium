@@ -756,8 +756,7 @@ def _make_blink_api_call(code_node,
     expr = _format("{_1}({_2})", _1=func_designator, _2=", ".join(arguments))
     if cg_context.no_alloc_direct_call_for_testing:
         expr = "\n".join([
-            # GCC extension: a compound statement enclosed in parentheses
-            "({",
+            "[&](){",
             "ThreadState::NoAllocationScope nadc_no_allocation_scope"
             "(ThreadState::Current());",
             "v8::Isolate::DisallowJavascriptExecutionScope "
@@ -766,8 +765,8 @@ def _make_blink_api_call(code_node,
             "v8::Isolate::DisallowJavascriptExecutionScope::CRASH_ON_FAILURE);",
             "blink::NoAllocDirectCallScope nadc_nadc_scope"
             "(${blink_receiver}, &${v8_fast_api_callback_options});",
-            _format("{};", expr),
-            "})",
+            _format("return {};", expr),
+            "}()",
         ])
         code_node.accumulate(
             CodeGenAccumulator.require_include_headers([
