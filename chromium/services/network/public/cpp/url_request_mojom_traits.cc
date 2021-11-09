@@ -158,7 +158,8 @@ bool StructTraits<
       !data.ReadRecursivePrefetchToken(&out->recursive_prefetch_token) ||
       !data.ReadWebBundleTokenParams(&out->web_bundle_token_params) ||
       !data.ReadDevtoolsAcceptedStreamTypes(
-          &out->devtools_accepted_stream_types)) {
+          &out->devtools_accepted_stream_types) ||
+      !data.ReadNavigationRedirectChain(&out->navigation_redirect_chain)) {
     // Note that data.ReadTrustTokenParams is temporarily handled below.
     return false;
   }
