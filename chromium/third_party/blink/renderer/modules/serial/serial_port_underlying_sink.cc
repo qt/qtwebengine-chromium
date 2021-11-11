@@ -175,6 +175,16 @@ void SerialPortUnderlyingSink::WriteData() {
   size_t byte_size = 0;
   if (buffer_source_.IsArrayBuffer()) {
     DOMArrayBuffer* array = buffer_source_.GetAsArrayBuffer();
+    // From https://webidl.spec.whatwg.org/#dfn-get-buffer-source-copy, if the
+    // buffer source is detached then an empty byte sequence is returned, which
+    // means the write is complete.
+    if (array->IsDetached()) {
+      buffer_source_ = ArrayBufferOrArrayBufferView();
+      offset_ = 0;
+      pending_operation_->Resolve();
+      pending_operation_ = nullptr;
+      return;
+    }
     byte_size = array->ByteLength();
     data = static_cast<const uint8_t*>(array->Data());
   } else {
@@ -182,8 +192,10 @@ void SerialPortUnderlyingSink::WriteData() {
     byte_size = view->byteLength();
     data = static_cast<const uint8_t*>(view->BaseAddress());
   }
+
   if (byte_size > std::numeric_limits<uint32_t>::max()) {
-    pending_exception_ = DOMException::Create(
+    pending_exception_ = MakeGarbageCollected<DOMException>(
+        DOMExceptionCode::kDataError,
         "Buffer size exceeds maximum heap object size.", "DataError");
     PipeClosed();
     return;
