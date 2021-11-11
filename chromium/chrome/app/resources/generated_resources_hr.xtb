@@ -1094,7 +1094,7 @@ Postavkama računa možete upravljati tako da instalirate aplikaciju Family Link
 <translation id="2136476978468204130">Šifra koju ste unijeli nije točna</translation>
 <translation id="2138398485845393913">Povezivanje s uređajem "<ph name="DEVICE_NAME" />" još je u tijeku</translation>
 <translation id="2139919072249842737">Gumb za postavljanje</translation>
-<translation id="2140788884185208305">Stanje baterije</translation>
+<translation id="2140788884185208305">Status baterije</translation>
 <translation id="214169863967063661">Otvorite postavke izgleda</translation>
 <translation id="2142328300403846845">Otvori vezu kao</translation>
 <translation id="2142582065325732898">Uključite <ph name="LINK1_BEGIN" />Chrome sinkronizaciju<ph name="LINK1_END" /> da biste vidjeli nedavne Chromeove kartice. <ph name="LINK2_BEGIN" />Saznajte više<ph name="LINK2_END" /></translation>
@@ -7004,7 +7004,7 @@ Pritisnite dodijeljeni prekidač da biste uklonili dodjelu</translation>
 <translation id="8512396579636492893">{COUNT,plural, =0{Nije pronađena nijedna slaba zaporka}=1{Pronađena je {COUNT} slaba zaporka}one{Pronađena je {COUNT} slaba zaporka}few{Pronađene su {COUNT} slabe zaporke}other{Pronađeno je {COUNT} slabih zaporki}}</translation>
 <translation id="8512476990829870887">Završi proces</translation>
 <translation id="851263357009351303">Uvijek dopusti da web-lokacija <ph name="HOST" /> prikazuje slike</translation>
-<translation id="8513108775083588393">Aut. zakret.</translation>
+<translation id="8513108775083588393">Autom. zakret.</translation>
 <translation id="8514746246728959655">Pokušajte s nekim drugim sigurnosnim ključem</translation>
 <translation id="8523493869875972733">Zadrži promjene</translation>
 <translation id="8523849605371521713">Dodala pravila</translation>
