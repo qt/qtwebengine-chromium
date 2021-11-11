@@ -1514,7 +1514,7 @@ void BaseRenderingContext2D::drawImage(ScriptState* script_state,
         DrawImageInternal(c, image_source, image.get(), src_rect, dst_rect,
                           sampling, flags);
       },
-      [this, &dst_rect](const SkIRect& clip_bounds)  // overdraw test lambda
+      [this, dst_rect](const SkIRect& clip_bounds)  // overdraw test lambda
       { return RectContainsTransformedRect(dst_rect, clip_bounds); },
       dst_rect, CanvasRenderingContext2DState::kImagePaintType,
       image_source->IsOpaque()
