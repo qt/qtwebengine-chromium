@@ -1713,7 +1713,8 @@ bool Compiler::CollectSourcePositions(Isolate* isolate,
 // static
 bool Compiler::Compile(Handle<SharedFunctionInfo> shared_info,
                        ClearExceptionFlag flag,
-                       IsCompiledScope* is_compiled_scope) {
+                       IsCompiledScope* is_compiled_scope,
+                       CreateSourcePositions create_source_positions_flag) {
   // We should never reach here if the function is already compiled.
   DCHECK(!shared_info->is_compiled());
   DCHECK(!is_compiled_scope->is_compiled());
@@ -1737,6 +1738,10 @@ bool Compiler::Compile(Handle<SharedFunctionInfo> shared_info,
   UnoptimizedCompileFlags flags =
       UnoptimizedCompileFlags::ForFunctionCompile(isolate, *shared_info);
   flags.set_is_lazy_compile(true);
+
+  if (create_source_positions_flag == CreateSourcePositions::kYes) {
+    flags.set_collect_source_positions(true);
+  }
 
   UnoptimizedCompileState compile_state(isolate);
   ParseInfo parse_info(isolate, flags, &compile_state);

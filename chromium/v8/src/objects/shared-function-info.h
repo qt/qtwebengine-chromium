@@ -38,6 +38,10 @@ class WasmCapiFunctionData;
 class WasmExportedFunctionData;
 class WasmJSFunctionData;
 
+// Defines whether the source positions should be created during function
+// compilation.
+enum class CreateSourcePositions { kNo, kYes };
+
 // Data collected by the pre-parser storing information about scopes and inner
 // functions.
 //
@@ -586,6 +590,11 @@ class SharedFunctionInfo : public HeapObject {
   // start position.
   void SetFunctionTokenPosition(int function_token_position,
                                 int start_position);
+
+  static void EnsureBytecodeArrayAvailable(
+      Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
+      IsCompiledScope* is_compiled,
+      CreateSourcePositions flag = CreateSourcePositions::kNo);
 
   static void EnsureSourcePositionsAvailable(
       Isolate* isolate, Handle<SharedFunctionInfo> shared_info);

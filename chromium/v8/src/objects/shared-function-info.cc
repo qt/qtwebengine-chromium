@@ -662,6 +662,19 @@ void SharedFunctionInfo::SetPosition(int start_position, int end_position) {
   }
 }
 
+// static
+void SharedFunctionInfo::EnsureBytecodeArrayAvailable(
+    Isolate* isolate, Handle<SharedFunctionInfo> shared_info,
+    IsCompiledScope* is_compiled_scope, CreateSourcePositions flag) {
+  if (!shared_info->HasBytecodeArray()) {
+    if (!Compiler::Compile(shared_info, Compiler::CLEAR_EXCEPTION,
+                           is_compiled_scope, flag)) {
+      FATAL("Failed to compile shared info that was already compiled before");
+    }
+    DCHECK(shared_info->GetBytecodeArray().HasSourcePositionTable());
+  }
+}
+
 bool SharedFunctionInfo::AreSourcePositionsAvailable() const {
   if (FLAG_enable_lazy_source_positions) {
     return !HasBytecodeArray() || GetBytecodeArray().HasSourcePositionTable();
