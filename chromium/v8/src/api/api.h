@@ -459,6 +459,7 @@ bool HandleScopeImplementer::HasSavedContexts() {
 }
 
 void HandleScopeImplementer::EnterContext(Context context) {
+  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
   DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
   entered_contexts_.push_back(context);
   is_microtask_context_.push_back(0);
@@ -466,6 +467,7 @@ void HandleScopeImplementer::EnterContext(Context context) {
 
 void HandleScopeImplementer::LeaveContext() {
   DCHECK(!entered_contexts_.empty());
+  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
   DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
   entered_contexts_.pop_back();
   is_microtask_context_.pop_back();
@@ -476,6 +478,7 @@ bool HandleScopeImplementer::LastEnteredContextWas(Context context) {
 }
 
 void HandleScopeImplementer::EnterMicrotaskContext(Context context) {
+  DCHECK_EQ(entered_contexts_.capacity(), is_microtask_context_.capacity());
   DCHECK_EQ(entered_contexts_.size(), is_microtask_context_.size());
   entered_contexts_.push_back(context);
   is_microtask_context_.push_back(1);
