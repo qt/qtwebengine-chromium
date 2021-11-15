@@ -53,6 +53,9 @@
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
+// To avoid conflicts with the DrawText macro from the Windows SDK...
+#undef DrawText
+
 namespace blink {
 
 namespace {

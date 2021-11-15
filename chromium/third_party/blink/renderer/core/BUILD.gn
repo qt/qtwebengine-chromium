@@ -323,6 +323,9 @@ jumbo_component("core") {
     "//third_party/blink/renderer/core/probe",
     "//third_party/blink/renderer/core/xml:xpath_generated",
   ]
+  jumbo_excluded_sources = [ ]
+  jumbo_excluded_sources += rebase_path([ "create_window.cc" ], "", "page")
+  jumbo_excluded_sources += rebase_path([ "link_highlight_impl.cc" ], "", "paint")
 
   public_configs = [ ":core_include_dirs" ]
 

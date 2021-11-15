@@ -36,7 +36,7 @@ namespace {
 // updates, so don't let this get too large.
 constexpr size_t kMaxUpdateSize = 10 * 1024;
 
-constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotation =
+constexpr net::NetworkTrafficAnnotationTag kTrafficAnnotationIGM =
     net::DefineNetworkTrafficAnnotation("interest_group_update_fetcher", R"(
         semantics {
           sender: "Interest group periodic update fetcher"
@@ -160,7 +160,7 @@ void InterestGroupManager::DidUpdateInterestGroupsOfOwnerDbLoad(
     resource_request->trusted_params->isolation_info =
         per_update_isolation_info;
     auto simple_url_loader = network::SimpleURLLoader::Create(
-        std::move(resource_request), kTrafficAnnotation);
+        std::move(resource_request), kTrafficAnnotationIGM);
     network::SimpleURLLoader* simple_url_loader_ptr = simple_url_loader.get();
     url_loaders_.insert(std::move(simple_url_loader));
     // TODO(crbug.com/1186444): Time out these requests if they take too long.

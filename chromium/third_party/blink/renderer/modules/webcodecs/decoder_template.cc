@@ -742,7 +742,7 @@ void DecoderTemplate<Traits>::Trace(Visitor* visitor) const {
 
 template <typename Traits>
 void DecoderTemplate<Traits>::OnCodecReclaimed(DOMException* exception) {
-  TRACE_EVENT0(kCategory, GetTraceNames()->reclaimed.c_str());
+  TRACE_EVENT0(kCategory2, GetTraceNames()->reclaimed.c_str());
   Shutdown(exception);
 }
 

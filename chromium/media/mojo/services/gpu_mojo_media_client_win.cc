@@ -6,6 +6,7 @@
 
 #include "base/win/windows_version.h"
 #include "media/base/audio_decoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/base/media_switches.h"
 #include "media/gpu/ipc/service/vda_video_decoder.h"
 #include "media/gpu/windows/d3d11_video_decoder.h"
@@ -83,7 +84,7 @@ VideoDecoderType GetPlatformDecoderImplementationType(
 }
 
 // There is no CdmFactory on windows, so just stub it out.
-class CdmFactory {};
+//class CdmFactory {};
 std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
     mojom::FrameInterfaceFactory* frame_interfaces) {
   return nullptr;

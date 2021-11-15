@@ -334,7 +334,7 @@ void EncoderBase<Traits>::ProcessFlush(Request* request) {
 
 template <typename Traits>
 void EncoderBase<Traits>::OnCodecReclaimed(DOMException* exception) {
-  TRACE_EVENT0(kCategory, GetTraceNames()->reclaimed.c_str());
+  TRACE_EVENT0(kCategory3, GetTraceNames()->reclaimed.c_str());
   HandleError(exception);
 }
 

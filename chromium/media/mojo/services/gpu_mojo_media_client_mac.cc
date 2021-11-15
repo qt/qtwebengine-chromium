@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "media/base/audio_decoder.h"
+#include "media/base/cdm_factory.h"
 #include "media/gpu/ipc/service/vda_video_decoder.h"
 #include "media/mojo/services/gpu_mojo_media_client.h"
 
@@ -30,7 +31,7 @@ std::unique_ptr<AudioDecoder> CreatePlatformAudioDecoder(
 }
 
 // This class doesn't exist on mac, so we need a stub for unique_ptr.
-class CdmFactory {};
+//class CdmFactory {};
 
 std::unique_ptr<CdmFactory> CreatePlatformCdmFactory(
     mojom::FrameInterfaceFactory* frame_interfaces) {

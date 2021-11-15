@@ -188,6 +188,10 @@ jumbo_component("base") {
 
   libs = []
 
+  jumbo_excluded_sources = [
+    "resource/resource_bundle.cc",
+  ]
+
   if (is_android) {
     sources += [
       "device_form_factor_android.cc",
