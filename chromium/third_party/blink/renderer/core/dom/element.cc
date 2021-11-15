@@ -117,6 +117,7 @@
 #include "third_party/blink/renderer/core/html/custom/v0_custom_element_registration_context.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_controls_collection.h"
 #include "third_party/blink/renderer/core/html/forms/html_options_collection.h"
+#include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/html_body_element.h"
 #include "third_party/blink/renderer/core/html/html_collection.h"
 #include "third_party/blink/renderer/core/html/html_document.h"
@@ -1424,6 +1425,13 @@ double Element::scrollTop() {
   if (GetDocument().ScrollingElementNoLayout() == this) {
     if (GetDocument().domWindow())
       return GetDocument().domWindow()->scrollY();
+    return 0;
+  }
+
+  // Don't disclose scroll position in preview state. See crbug.com/1261689.
+  auto* select_element = DynamicTo<HTMLSelectElement>(this);
+  if (select_element && !select_element->UsesMenuList() &&
+      !select_element->SuggestedValue().IsEmpty()) {
     return 0;
   }
 
