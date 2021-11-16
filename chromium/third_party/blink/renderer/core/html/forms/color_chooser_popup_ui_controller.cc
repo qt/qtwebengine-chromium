@@ -70,7 +70,11 @@ void ColorChooserPopupUIController::Trace(Visitor* visitor) const {
 }
 
 void ColorChooserPopupUIController::OpenUI() {
+#if !defined(TOOLKIT_QT)
   OpenPopup();
+#else
+  OpenColorChooser();
+#endif
 }
 
 void ColorChooserPopupUIController::EndChooser() {
