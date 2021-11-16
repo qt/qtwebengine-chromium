@@ -71,7 +71,11 @@ void ColorChooserPopupUIController::Trace(Visitor* visitor) const {
 }
 
 void ColorChooserPopupUIController::OpenUI() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   OpenPopup();
+#else
+  OpenColorChooser();
+#endif
 }
 
 void ColorChooserPopupUIController::EndChooser() {
