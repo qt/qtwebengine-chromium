@@ -64,7 +64,7 @@ class CORE_EXPORT ColorChooserUIController
   void DidChooseColor(uint32_t color) final;
 
  protected:
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC) || defined(TOOLKIT_QT)
   void OpenColorChooser();
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
   GC_PLUGIN_IGNORE("https://crbug.com/1381979")
