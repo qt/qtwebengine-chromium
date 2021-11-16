@@ -770,7 +770,7 @@ ColorChooser* ChromeClientImpl::OpenColorChooser(
     controller = MakeGarbageCollected<ColorChooserPopupUIController>(
         frame, this, chooser_client);
   } else {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_QTWEBENGINE)
     NOTREACHED() << "Page popups should be enabled on all but Android or iOS";
 #else
     controller =
