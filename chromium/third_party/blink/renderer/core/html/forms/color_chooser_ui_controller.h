@@ -63,7 +63,7 @@ class CORE_EXPORT ColorChooserUIController
   void DidChooseColor(uint32_t color) final;
 
  protected:
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(TOOLKIT_QT)
   void OpenColorChooser();
 #endif
   mojo::Remote<mojom::blink::ColorChooser> chooser_;
