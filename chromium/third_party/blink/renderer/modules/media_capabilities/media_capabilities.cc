@@ -79,7 +79,7 @@
 
 #if BUILDFLAG(ENABLE_WEBRTC)
 #include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
-#include "third_party/blink/renderer/platform/peerconnection/webrtc_decoding_info_handler.h"
+#include "third_party/blink/renderer/platform/peerconnection/webrtc_encoding_info_handler.h"
 #endif
 
 namespace blink {
@@ -941,8 +941,8 @@ ScriptPromise MediaCapabilities::encodingInfo(
   // it in the code that follows. Otherwise the promise returned to JS will be
   // undefined. See comment above Promise() in script_promise_resolver.h
   ScriptPromise promise = resolver->Promise();
-
   if (is_webrtc) {
+#if BUILDFLAG(ENABLE_WEBRTC)
     if (auto* handler = WebrtcEncodingInfoHandler::Instance()) {
       const int callback_id = CreateCallbackId();
       pending_cb_map_.insert(
