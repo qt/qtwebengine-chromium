@@ -13,6 +13,14 @@
 
 namespace v8 {
 namespace internal {
+template <ArgumentsType T>
+Arguments<T>::ChangeValueScope::ChangeValueScope(Isolate* isolate,
+                                                 Arguments* args, int index,
+                                                 Object value)
+    : location_(args->address_of_arg_at(index)) {
+  old_value_ = handle(Object(*location_), isolate);
+  *location_ = value.ptr();
+}
 
 template <ArgumentsType T>
 int Arguments<T>::smi_at(int index) const {
