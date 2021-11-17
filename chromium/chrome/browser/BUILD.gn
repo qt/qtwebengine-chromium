@@ -1792,7 +1792,6 @@ static_library("browser") {
 
   allow_circular_includes_from = [
     "//chrome/browser/devtools",
-    "//chrome/browser/profiling_host",
     "//chrome/browser/ui",
     "//chrome/browser/ui/webui/bluetooth_internals",
     "//chrome/browser/storage_access_api:permissions",
@@ -6091,6 +6090,7 @@ static_library("browser") {
     ]
     allow_circular_includes_from += [
       "//chrome/browser/apps/platform_apps",
+      "//chrome/browser/profiling_host",
 
       # TODO(https://crbug.com/883570): This is unfortunate, but not easy to
       # fix. Ideally, //chrome/browser:browser shouldn't depend on these APIs

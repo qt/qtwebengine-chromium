@@ -1034,7 +1034,7 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/devtools:test_support",
       "//chrome/browser/image_decoder:browser_tests",
       "//chrome/browser/media/router:media_router_feature",
-      "//chrome/browser/media/router:test_support",
+#      "//chrome/browser/media/router:test_support",
       "//chrome/browser/metrics:test_support",
       "//chrome/browser/notifications/scheduler:factory",
       "//chrome/browser/notifications/scheduler/public",
@@ -3493,7 +3493,7 @@ if (!is_android && !is_fuchsia) {
         "//chrome/browser/chromeos:key_permissions_proto",
         "//chrome/browser/chromeos:test_support",
         "//chrome/browser/image_decoder",
-        "//chrome/browser/media/router:test_support",
+#        "//chrome/browser/media/router:test_support",
         "//chrome/browser/nearby_sharing/common",
         "//chrome/browser/resources/chromeos/accessibility:browser_tests",
         "//chrome/browser/ui:ash_test_support",
@@ -3650,7 +3650,7 @@ if (!is_android && !is_fuchsia) {
         "../browser/media/webrtc/webrtc_video_quality_browsertest.cc",
         "../browser/media/webrtc/webrtc_webcam_browsertest.cc",
       ]
-      deps -= [ "//chrome/browser/media/router:test_support" ]
+#      deps -= [ "//chrome/browser/media/router:test_support" ]
       if (enable_extensions) {
         sources -= [
           "../browser/extensions/api/webrtc_audio_private/webrtc_audio_private_browsertest.cc",
@@ -5971,7 +5971,7 @@ test("unit_tests") {
     deps += [
       "//chrome:packed_resources_integrity_hash",
       "//chrome/browser:cart_db_content_proto",
-      "//chrome/browser/media/router:test_support",
+#      "//chrome/browser/media/router:test_support",
       "//chrome/browser/promo_browser_command:mojo_bindings",
       "//chrome/browser/resource_coordinator:intervention_policy_database_proto",
       "//chrome/browser/resource_coordinator:tab_manager_features",
@@ -6007,9 +6007,9 @@ test("unit_tests") {
     if (is_win) {
       deps += [ "//components/chrome_cleaner/public/proto:test_only_proto" ]
     }
-    if (!enable_webrtc) {
-      deps -= [ "//chrome/browser/media/router:test_support" ]
-    }
+#    if (!enable_webrtc) {
+#      deps -= [ "//chrome/browser/media/router:test_support" ]
+#    }
     if (enable_extensions) {
       deps += [ "//chrome/browser/web_applications:web_applications_test_support" ]
     }
@@ -8272,7 +8272,7 @@ if (!is_android && !is_fuchsia && !use_qt) {
       if (!is_chromeos_ash) {
         sources += [ "../browser/ui/views/global_media_controls/media_dialog_view_interactive_browsertest.cc" ]
         deps += [
-          "../browser/media/router:test_support",
+#          "../browser/media/router:test_support",
           "//components/media_router/browser:test_support",
         ]
       }
@@ -8304,7 +8304,7 @@ if (!is_android && !is_fuchsia && !use_qt) {
     if (is_chromeos_ash) {
       deps += [
         "//chrome/browser/chromeos:test_support",
-        "//chrome/browser/media/router:test_support",
+#        "//chrome/browser/media/router:test_support",
         "//chromeos/dbus",
         "//chromeos/login/auth",
         "//chromeos/ui/frame:test_support",

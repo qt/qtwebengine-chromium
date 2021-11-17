@@ -6,7 +6,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/browser/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions)
+# assert(enable_extensions)
 
 group("web_app_group") {
   public_configs = [ "//build/config/compiler:wexit_time_destructors" ]
