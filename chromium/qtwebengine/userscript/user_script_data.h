@@ -41,6 +41,7 @@
 #define USER_SCRIPT_DATA_H
 
 #include <string>
+#include <vector>
 #include "url/gurl.h"
 
 namespace QtWebEngineCore {
