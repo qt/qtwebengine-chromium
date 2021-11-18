@@ -13,7 +13,7 @@
 
 #if (defined(OS_WIN) || defined(OS_MAC) || defined(OS_LINUX) || \
      defined(OS_CHROMEOS)) &&                                   \
-    BUILDFLAG(ENABLE_PRINTING)
+    BUILDFLAG(ENABLE_PRINTING) && !defined(TOOLKIT_QT)
 #include "chrome/browser/printing/print_backend_service_manager.h"
 #endif
 
@@ -175,7 +175,7 @@ content::GetServiceSandboxType<printing::mojom::PrintingService>() {
 // printing::mojom::PrintBackendService
 #if (defined(OS_WIN) || defined(OS_MAC) || defined(OS_LINUX) || \
      defined(OS_CHROMEOS)) &&                                   \
-    BUILDFLAG(ENABLE_PRINTING)
+    BUILDFLAG(ENABLE_PRINTING) && !defined(TOOLKIT_QT)
 namespace printing {
 namespace mojom {
 class PrintBackendService;
