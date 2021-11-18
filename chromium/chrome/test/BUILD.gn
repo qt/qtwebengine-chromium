@@ -3658,7 +3658,7 @@ if (!is_android && !is_fuchsia) {
         ]
       }
     }
-    if (is_mac) {
+    if (is_mac && !use_qt) {
       deps += [ "//third_party/ocmock" ]
       data_deps += [
         "//chrome",
@@ -5344,7 +5344,7 @@ test("unit_tests") {
     deps += [ "//chrome/browser/paint_preview:services" ]
   }
 
-  if (is_mac) {
+  if (is_mac && !use_qt) {
     data_deps += [ "//chrome:chrome_framework" ]
     deps += [
       "//chrome/app_shim",
@@ -7929,7 +7929,7 @@ if (!is_android) {
   }
 }
 
-if (!is_android && !is_fuchsia) {
+if (!is_android && !is_fuchsia && !use_qt) {
   test("interactive_ui_tests") {
     use_xvfb = use_xvfb_in_this_config
 
@@ -9592,7 +9592,7 @@ if (is_chromeos_ash) {
   }
 }
 
-if (is_linux) {
+if (is_linux && !use_qt) {
   script_test("variations_smoke_tests") {
     run_under_python2 = true
 
