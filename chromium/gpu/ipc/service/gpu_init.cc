@@ -844,7 +844,7 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
     gpu_preferences_.use_vulkan = VulkanImplementationName::kNone;
     gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] =
         kGpuFeatureStatusDisabled;
-    if (gpu_preferences->gr_context_type == GrContextType::kVulkan)
+    if (gpu_preferences.gr_context_type == GrContextType::kVulkan)
       gpu_preferences_.gr_context_type = GrContextType::kGL;
   }
 #else
