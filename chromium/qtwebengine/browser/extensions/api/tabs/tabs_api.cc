@@ -45,6 +45,7 @@
 #include "qtwebengine/browser/extensions/api/tabs/tabs_api.h"
 #include "qtwebengine/common/extensions/api/tabs.h"
 
+#include "base/containers/contains.h"
 #include "base/metrics/histogram_macros.h"
 #include "chrome/common/url_constants.h"
 #include "components/guest_view/browser/guest_view_base.h"
