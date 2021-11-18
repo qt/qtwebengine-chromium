@@ -86,7 +86,7 @@ class PrintManager : public content::WebContentsObserver,
   }
 #endif
 
- private:
+ protected:
   uint32_t number_pages_ = 0;  // Number of pages to print in the print job.
   int cookie_ = 0;        // The current document cookie.
 
