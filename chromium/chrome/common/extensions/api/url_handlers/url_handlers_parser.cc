@@ -17,7 +17,6 @@
 #include "net/base/network_change_notifier.h"
 #include "url/gurl.h"
 
-using base::ASCIIToUTF16;
 using net::NetworkChangeNotifier;
 
 // TODO(sergeygs): Use the same strategy that externally_connectable does for
@@ -119,7 +118,7 @@ bool ParseUrlHandler(const std::string& handler_id,
   handler.id = handler_id;
 
   if (!handler_info.GetString(mkeys::kUrlHandlerTitle, &handler.title)) {
-    *error = base::ASCIIToUTF16(merrors::kInvalidURLHandlerTitle);
+    *error = merrors::kInvalidURLHandlerTitle;
     return false;
   }
 
@@ -161,14 +160,14 @@ bool ParseUrlHandler(const std::string& handler_id,
 bool UrlHandlersParser::Parse(Extension* extension, std::u16string* error) {
   if (extension->GetType() == Manifest::TYPE_HOSTED_APP &&
       !extension->from_bookmark()) {
-    *error = base::ASCIIToUTF16(merrors::kUrlHandlersInHostedApps);
+    *error = merrors::kUrlHandlersInHostedApps;
     return false;
   }
   std::unique_ptr<UrlHandlers> info(new UrlHandlers);
   const base::DictionaryValue* all_handlers = NULL;
   if (!extension->manifest()->GetDictionary(
         mkeys::kUrlHandlers, &all_handlers)) {
-    *error = base::ASCIIToUTF16(merrors::kInvalidURLHandlers);
+    *error = merrors::kInvalidURLHandlers;
     return false;
   }
 
@@ -179,7 +178,7 @@ bool UrlHandlersParser::Parse(Extension* extension, std::u16string* error) {
     // A URL handler entry is a title and a list of URL patterns to handle.
     const base::DictionaryValue* handler = NULL;
     if (!iter.value().GetAsDictionary(&handler)) {
-      *error = base::ASCIIToUTF16(merrors::kInvalidURLHandlerPatternElement);
+      *error = merrors::kInvalidURLHandlerPatternElement;
       return false;
     }
 
