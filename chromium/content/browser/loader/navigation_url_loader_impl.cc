@@ -619,7 +619,7 @@ NavigationURLLoaderImpl::PrepareForNonInterceptedRequest(
     if (known_schemes_.find(resource_request_->url.scheme()) ==
         known_schemes_.end()) {
       mojo::PendingRemote<network::mojom::URLLoaderFactory> loader_factory;
-      absl::optional<url::Origin> initiating_origin;
+      base::Optional<url::Origin> initiating_origin;
       if (url_chain_.size() > 1) {
         initiating_origin =
             url::Origin::Create(url_chain_[url_chain_.size() - 2]);
