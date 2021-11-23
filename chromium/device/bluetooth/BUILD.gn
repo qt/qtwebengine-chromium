@@ -516,7 +516,7 @@ component("bluetooth") {
 
     # force_cast_bluetooth is used to compile with both cast & BlueZ, by
     # omitting the stubs that would otherwise be added in.
-    if (!use_dbus || force_cast_bluetooth) {
+    if (!use_dbus || force_cast_bluetooth || use_qt) {
       if (is_chromecast && (is_linux || is_chromeos)) {
         sources += [
           "cast/bluetooth_adapter_cast.cc",
