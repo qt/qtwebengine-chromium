@@ -71,6 +71,8 @@ void BackForwardCachePageLoadMetricsObserver::
     OnFirstPaintAfterBackForwardCacheRestoreInPage(
         const page_load_metrics::mojom::BackForwardCacheTiming& timing,
         size_t index) {
+  if (index >= back_forward_cache_navigation_ids_.size())
+    return;
   auto first_paint = timing.first_paint_after_back_forward_cache_restore;
   DCHECK(!first_paint.is_zero());
   if (page_load_metrics::
@@ -101,6 +103,8 @@ void BackForwardCachePageLoadMetricsObserver::
     OnFirstInputAfterBackForwardCacheRestoreInPage(
         const page_load_metrics::mojom::BackForwardCacheTiming& timing,
         size_t index) {
+  if (index >= back_forward_cache_navigation_ids_.size())
+    return;
   auto first_input_delay =
       timing.first_input_delay_after_back_forward_cache_restore;
   DCHECK(first_input_delay.has_value());
