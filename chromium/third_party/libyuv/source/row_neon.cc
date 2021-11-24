@@ -2346,7 +2346,7 @@ void ARGBToAB64Row_NEON(const uint8_t* src_argb,
                         uint16_t* dst_ab64,
                         int width) {
   asm volatile(
-      "vld1.8      q4, %3                        \n"  // shuffler
+      "vld1.8      {q4}, [%3]                    \n"  // shuffler
       "1:                                        \n"
       "vld1.8      {q0}, [%0]!                   \n"
       "vld1.8      {q2}, [%0]!                   \n"
@@ -2363,7 +2363,7 @@ void ARGBToAB64Row_NEON(const uint8_t* src_argb,
       : "+r"(src_argb),          // %0
         "+r"(dst_ab64),          // %1
         "+r"(width)              // %2
-      : "m"(kShuffleARGBToABGR)  // %3
+      : "rm"(kShuffleARGBToABGR)  // %3
       : "cc", "memory", "q0", "q1", "q2", "q3", "q4");
 }
 
