@@ -108,6 +108,8 @@ class VizProcessTransportFactory : public ui::ContextFactory,
   // Provided as a callback when the GPU process has crashed.
   void OnGpuProcessLost();
 
+  void EstablishGpuChannel(base::WeakPtr<ui::Compositor> compositor);
+
   // Finishes creation of LayerTreeFrameSink after GPU channel has been
   // established.
   void OnEstablishedGpuChannel(
