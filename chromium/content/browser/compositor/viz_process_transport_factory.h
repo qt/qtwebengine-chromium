@@ -101,6 +101,8 @@ class VizProcessTransportFactory : public ui::ContextFactory,
   // retry for every 150 ms.
   scoped_refptr<gpu::GpuChannelHost> GetGpuChannelHostForSoftwareCompositing();
 
+  void EstablishGpuChannel(base::WeakPtr<ui::Compositor> compositor);
+
   // Finishes creation of LayerTreeFrameSink after GPU channel has been
   // established.
   void OnEstablishedGpuChannel(
