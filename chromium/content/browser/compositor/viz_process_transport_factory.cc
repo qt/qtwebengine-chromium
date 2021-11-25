@@ -220,9 +220,7 @@ void VizProcessTransportFactory::CreateLayerTreeFrameSink(
     OnEstablishedGpuChannel(compositor, nullptr);
     return;
   }
-  gpu_channel_establish_factory_->EstablishGpuChannel(
-      base::BindOnce(&VizProcessTransportFactory::OnEstablishedGpuChannel,
-                     weak_ptr_factory_.GetWeakPtr(), compositor));
+  EstablishGpuChannel(std::move(compositor));
 }
 
 scoped_refptr<viz::ContextProvider>
@@ -361,6 +359,13 @@ void VizProcessTransportFactory::PrepareForShutDown() {
   shutdown_=true;
 }
 
+void VizProcessTransportFactory::EstablishGpuChannel(base::WeakPtr<ui::Compositor> compositor)
+{
+  gpu_channel_establish_factory_->EstablishGpuChannel(
+      base::BindOnce(&VizProcessTransportFactory::OnEstablishedGpuChannel,
+                     weak_ptr_factory_.GetWeakPtr(), std::move(compositor)));
+}
+
 void VizProcessTransportFactory::OnEstablishedGpuChannel(
     base::WeakPtr<ui::Compositor> compositor_weak_ptr,
     scoped_refptr<gpu::GpuChannelHost> gpu_channel_host) {
@@ -376,9 +381,13 @@ void VizProcessTransportFactory::OnEstablishedGpuChannel(
         TryCreateContextsForGpuCompositing(std::move(gpu_channel_host));
     if (context_result == gpu::ContextResult::kTransientFailure) {
       // Get a new GpuChannelHost and retry context creation.
-      gpu_channel_establish_factory_->EstablishGpuChannel(
-          base::BindOnce(&VizProcessTransportFactory::OnEstablishedGpuChannel,
-                         weak_ptr_factory_.GetWeakPtr(), compositor_weak_ptr));
+      // MEMO: do this async, since callback may be called down the stack
+      // (with in proc gpu), leading to recursive retries and stack overflow
+      GetUIThreadTaskRunner({})->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&VizProcessTransportFactory::EstablishGpuChannel,
+          weak_ptr_factory_.GetWeakPtr(), std::move(compositor_weak_ptr)),
+        base::TimeDelta::FromMilliseconds(16));
       return;
     } else if (gpu::IsFatalOrSurfaceFailure(context_result)) {
       DisableGpuCompositing(compositor);
