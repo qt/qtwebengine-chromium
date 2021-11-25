@@ -71,6 +71,7 @@ target(link_target_type, "gpu_sources") {
     # component build, determine if it should not be included here.
     # http://crbug.com/702833.
     "//components/viz/service/main",
+    "//components/services/quarantine/public/mojom",
     "//media/gpu/ipc/service",
     "//media/mojo/clients:clients",
     "//sandbox/policy:chromecast_sandbox_allowlist_buildflags",
