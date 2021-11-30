@@ -1316,7 +1316,7 @@ bool InternalFormat::computeRowPitch(GLenum formatType,
                                      GLint rowLength,
                                      GLuint *resultOut) const
 {
-    // Compressed images do not use pack/unpack parameters.
+    // Compressed images do not use pack/unpack parameters (rowLength).
     if (compressed)
     {
         ASSERT(rowLength == 0);
@@ -1337,8 +1337,10 @@ bool InternalFormat::computeDepthPitch(GLsizei height,
                                        GLuint rowPitch,
                                        GLuint *resultOut) const
 {
-    CheckedNumeric<GLuint> pixelsHeight(imageHeight > 0 ? static_cast<GLuint>(imageHeight)
-                                                        : static_cast<GLuint>(height));
+    // Compressed images do not use pack/unpack parameters (imageHeight).
+    CheckedNumeric<GLuint> pixelsHeight(!compressed && (imageHeight > 0)
+                                            ? static_cast<GLuint>(imageHeight)
+                                            : static_cast<GLuint>(height));
 
     CheckedNumeric<GLuint> rowCount;
     if (compressed)
