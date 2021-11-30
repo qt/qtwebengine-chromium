@@ -139,6 +139,14 @@ CrossOriginOpenerPolicyStatus::EnforceCOOP(
           network::mojom::CrossOriginOpenerPolicyValue::kUnsafeNone &&
       (frame_tree_node_->pending_frame_policy().sandbox_flags !=
        network::mojom::WebSandboxFlags::kNone)) {
+    // We should force a COOP browsing instance swap to avoid certain
+    // opener+error pages exploits, see https://crbug.com/1256823 and
+    // https://github.com/whatwg/html/issues/7345.
+    require_browsing_instance_swap_ = true;
+    virtual_browsing_context_group_ =
+        CrossOriginOpenerPolicyReporter::
+            NextVirtualBrowsingContextGroup();
+
     return network::mojom::BlockedByResponseReason::
         kCoopSandboxedIFrameCannotNavigateToCoopPage;
   }
