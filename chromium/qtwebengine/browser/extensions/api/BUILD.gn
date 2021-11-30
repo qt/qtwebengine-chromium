@@ -25,6 +25,10 @@ source_set("tabs") {
 
   deps = [
     "//content/public/browser",
+    "//extensions/browser",
+    "//extensions/common",
+    "//extensions/common:mojom",
+    "//extensions/common/api",
   ]
 }
 
