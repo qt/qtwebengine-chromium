@@ -438,7 +438,7 @@ bool ThreadPoolImpl::PostTaskWithSequence(Task task,
   CHECK(task.task);
   DCHECK(sequence);
 
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   // Force reading |task.posted_from.file_name()| to produce a useful crash
   // report if the address is invalid. A crash report generated later when the
   // task is executed would not contain the PostTask stack.
