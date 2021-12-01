@@ -5571,6 +5571,9 @@ void ImageHelper::stageSelfForBaseLevel()
     // Move the necessary information for staged update to work, and keep the rest as part of this
     // object.
 
+    // Usage info
+    prevImage->get().Resource::operator=(std::move(*this));
+
     // Vulkan objects
     prevImage->mImage        = std::move(mImage);
     prevImage->mDeviceMemory = std::move(mDeviceMemory);
