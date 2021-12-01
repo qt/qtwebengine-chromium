@@ -169,7 +169,7 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper {
     this._currentDockStateSetting.set(dockSide);
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.setIsDocked(
         dockSide !== State.Undocked, this._setIsDockedResponse.bind(this, eventData));
-    this._closeButton.setVisible(this._dockSide !== State.Undocked);
+//     this._closeButton.setVisible(this._dockSide !== State.Undocked);
     this.dispatchEventToListeners(Events.DockSideChanged, eventData);
   }
 
