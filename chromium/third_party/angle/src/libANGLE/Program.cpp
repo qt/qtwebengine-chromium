@@ -3051,6 +3051,18 @@ bool Program::validateSamplersImpl(InfoLog *infoLog, const Caps &caps)
             mCachedValidateSamplersResult = false;
             return false;
         }
+
+        if (executable->mActiveSamplerFormats[textureUnit] == SamplerFormat::InvalidEnum)
+        {
+            if (infoLog)
+            {
+                (*infoLog) << "Samplers of conflicting formats refer to the same texture "
+                              "image unit ("
+                           << textureUnit << ").";
+            }
+            mCachedValidateSamplersResult = false;
+            return false;
+        }
     }
 
     mCachedValidateSamplersResult = true;
