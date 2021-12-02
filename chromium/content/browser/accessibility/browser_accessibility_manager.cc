@@ -242,6 +242,9 @@ bool BrowserAccessibilityManager::never_suppress_or_delay_events_for_testing_ =
 // A flag for use in tests to indicate that extra mac nodes are disabled.
 bool BrowserAccessibilityManager::disable_extra_mac_nodes_for_testing_ = false;
 
+// A flag to ensure that accessibility fatal errors crash immediately.
+bool BrowserAccessibilityManager::is_fail_fast_mode_ = false;
+
 // static
 base::Optional<int32_t> BrowserAccessibilityManager::last_focused_node_id_ = {};
 

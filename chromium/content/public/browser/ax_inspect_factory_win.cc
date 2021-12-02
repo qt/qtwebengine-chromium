@@ -12,6 +12,7 @@
 #include "content/browser/accessibility/accessibility_tree_formatter_blink.h"
 #include "content/browser/accessibility/accessibility_tree_formatter_uia_win.h"
 #include "content/browser/accessibility/accessibility_tree_formatter_win.h"
+#include "content/browser/accessibility/browser_accessibility_manager.h"
 
 namespace content {
 
@@ -32,6 +33,11 @@ std::unique_ptr<ui::AXEventRecorder> AXInspectFactory::CreatePlatformRecorder(
 // static
 std::unique_ptr<ui::AXTreeFormatter> AXInspectFactory::CreateFormatter(
     AXInspectFactory::Type type) {
+  // Developer mode: crash immediately on any accessibility fatal error.
+  // This only runs during integration tests, or if a developer is
+  // using an inspection tool, e.g. chrome://accessibility.
+  BrowserAccessibilityManager::AlwaysFailFast();
+
   switch (type) {
     case kBlink:
       return std::make_unique<AccessibilityTreeFormatterBlink>();
@@ -53,6 +59,11 @@ std::unique_ptr<ui::AXEventRecorder> AXInspectFactory::CreateRecorder(
     BrowserAccessibilityManager* manager,
     base::ProcessId pid,
     const ui::AXTreeSelector& selector) {
+  // Developer mode: crash immediately on any accessibility fatal error.
+  // This only runs during integration tests, or if a developer is
+  // using an inspection tool, e.g. chrome://accessibility.
+  BrowserAccessibilityManager::AlwaysFailFast();
+
   if (!selector.pattern.empty()) {
     LOG(FATAL) << "Recording accessibility events from an application name "
                   "match pattern not supported on this platform yet.";
