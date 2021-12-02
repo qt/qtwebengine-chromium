@@ -1091,6 +1091,10 @@ angle::Result TextureVk::setStorageMultisample(const gl::Context *context,
     {
         releaseAndDeleteImage(contextVk);
     }
+    else if (mImage)
+    {
+        mImage->releaseStagingBuffer(contextVk->getRenderer());
+    }
 
     const vk::Format &format = renderer->getFormat(internalformat);
     ANGLE_TRY(ensureImageAllocated(contextVk, format));
