@@ -86,7 +86,7 @@ static const char kTypeField[] = "type";
 static const char kUrlField[] = "url";
 static const char kWidgetsField[] = "widgets";
 
-#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if defined(USE_AURA) && !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
 static const char kWidgetIdField[] = "widgetId";
 static const char kWidget[] = "widget";
 #endif
