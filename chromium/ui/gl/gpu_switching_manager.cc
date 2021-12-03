@@ -45,6 +45,7 @@ void GpuSwitchingManager::NotifyDisplayRemoved() {
 }
 
 void GpuSwitchingManager::NotifyDisplayMetricsChanged() {
+  base::AutoLock auto_lock(lock_);
   for (GpuSwitchingObserver& observer : observer_list_)
     observer.OnDisplayMetricsChanged();
 }
