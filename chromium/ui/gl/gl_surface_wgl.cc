@@ -13,6 +13,7 @@
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_wgl_api_implementation.h"
+#include "ui/gl/init/gl_initializer.h"
 
 namespace gl {
 
@@ -74,7 +75,7 @@ class DisplayWGL {
                       module_handle_);
   }
 
-  bool Init() {
+  bool Init(bool software_rendering) {
     // We must initialize a GL context before we can bind to extension entry
     // points. This requires the device context for a window.
     if (!GetModuleHandleEx(GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT |
@@ -127,27 +128,28 @@ class DisplayWGL {
       return false;
     }
 
-#ifdef TOOLKIT_QT
-    // wglSetPixelFormat needs to be called instead of SetPixelFormat to allow a differently
-    // named software GL implementation library to set up its internal data.
-    // The windows gdi.dll SetPixelFormat call directly calls into the stock opengl32.dll,
-    // instead of opengl32sw.dll for example.
-    typedef BOOL (WINAPI *wglSetPixelFormatProc)(HDC, int, const PIXELFORMATDESCRIPTOR *);
-    wglSetPixelFormatProc wglSetPixelFormatFn =
-        reinterpret_cast<wglSetPixelFormatProc>(
-            GetGLProcAddress("wglSetPixelFormat"));
+    bool result = false;
+    if (software_rendering) {
+      // wglSetPixelFormat needs to be called instead of SetPixelFormat to allow
+      // a differently named software GL implementation library to set up its
+      // internal data. The windows gdi.dll SetPixelFormat call directly calls
+      // into the stock opengl32.dll, instead of opengl32sw.dll for example.
+      typedef BOOL(WINAPI * wglSetPixelFormatProc)(
+          HDC, int, const PIXELFORMATDESCRIPTOR*);
+      wglSetPixelFormatProc wglSetPixelFormatFn =
+          reinterpret_cast<wglSetPixelFormatProc>(
+              GetGLProcAddress("wglSetPixelFormat"));
 
-    if (!wglSetPixelFormatFn(device_context_,
-
-#else
-    if (!SetPixelFormat(device_context_,
-#endif
-                        pixel_format_,
-                        &kPixelFormatDescriptor)) {
+      result = wglSetPixelFormatFn(device_context_, pixel_format_,
+                                   &kPixelFormatDescriptor);
+    } else {
+      result = SetPixelFormat(device_context_, pixel_format_,
+                              &kPixelFormatDescriptor);
+    }
+    if (!result) {
       LOG(ERROR) << "Unable to set the pixel format for temporary GL context.";
       return false;
     }
-
     return true;
   }
 
@@ -185,7 +187,7 @@ bool GLSurfaceWGL::InitializeOneOff() {
 
   DCHECK(g_wgl_display == NULL);
   std::unique_ptr<DisplayWGL> wgl_display(new DisplayWGL);
-  if (!wgl_display->Init())
+  if (!wgl_display->Init(init::usingSoftwareDynamicGL()))
     return false;
 
   g_wgl_display = wgl_display.release();
