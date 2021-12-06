@@ -2297,6 +2297,8 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
         case angle::SubjectMessage::BindingChanged:
             ASSERT(index == kBufferSubjectIndex);
             break;
+        case angle::SubjectMessage::BufferVkStorageChanged:
+            break;
         default:
             UNREACHABLE();
             break;

@@ -381,6 +381,11 @@ angle::Result Buffer::getSubData(const gl::Context *context,
 
 void Buffer::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMessage message)
 {
+    if (message == angle::SubjectMessage::BufferVkStorageChanged)
+    {
+        return;
+    }
+
     // Pass it along!
     ASSERT(index == kImplementationSubjectIndex);
     ASSERT(message == angle::SubjectMessage::SubjectChanged);
