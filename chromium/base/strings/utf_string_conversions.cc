@@ -15,6 +15,14 @@
 #include "base/third_party/icu/icu_utf.h"
 #include "build/build_config.h"
 
+#if defined(OS_MAC)
+namespace std {
+inline namespace __1 {
+template class basic_string<base::char16, base::string16_internals::string16_char_traits>;
+} // namespace __1
+} // namespace std
+#endif // defined(OS_MAC)
+
 namespace base {
 
 namespace {
