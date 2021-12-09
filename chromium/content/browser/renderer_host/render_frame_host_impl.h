@@ -1535,10 +1535,12 @@ class CONTENT_EXPORT RenderFrameHostImpl
   CrossOriginEmbedderPolicyReporter* coep_reporter() {
     return coep_reporter_.get();
   }
+#if BUILDFLAG(ENABLE_REPORTING)
   void set_coop_reporter(
       std::unique_ptr<CrossOriginOpenerPolicyReporter>&& reporter) {
     coop_reporter_ = std::move(reporter);
   }
+#endif
 
   // Semi-formal definition of COOP:
   // https://gist.github.com/annevk/6f2dd8c79c77123f39797f6bdac43f3e

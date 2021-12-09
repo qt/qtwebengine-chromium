@@ -5430,6 +5430,7 @@ void RenderFrameHostImpl::CreateNewWindow(
   main_frame->virtual_browsing_context_group_ =
       popup_virtual_browsing_context_group;
 
+#if BUILDFLAG(ENABLE_REPORTING)
   // If inheriting coop (checking this via |opener_suppressed|) and the original
   // coop page has a reporter we make sure the the newly created popup also has
   // a reporter.
@@ -5440,6 +5441,7 @@ void RenderFrameHostImpl::CreateNewWindow(
             params->referrer->url, popup_coop,
             isolation_info_.network_isolation_key()));
   }
+#endif
 
   mojo::PendingAssociatedRemote<mojom::Frame> pending_frame_remote;
   mojo::PendingAssociatedReceiver<mojom::Frame> pending_frame_receiver =
@@ -9021,7 +9023,9 @@ void RenderFrameHostImpl::TakeNewDocumentPropertiesFromNavigation(
   cross_origin_opener_policy_ =
       navigation_request->coop_status().current_coop();
 
+#if BUILDFLAG(ENABLE_REPORTING)
   coop_reporter_ = navigation_request->coop_status().TakeCoopReporter();
+#endif
   virtual_browsing_context_group_ =
       navigation_request->coop_status().virtual_browsing_context_group();
 
@@ -9029,6 +9033,7 @@ void RenderFrameHostImpl::TakeNewDocumentPropertiesFromNavigation(
   // this frame embeds a subframe when that subframe navigates).
   required_csp_ = navigation_request->TakeRequiredCSP();
 
+#if BUILDFLAG(ENABLE_REPORTING)
   coep_reporter_ = navigation_request->TakeCoepReporter();
   if (coep_reporter_) {
     mojo::PendingRemote<blink::mojom::ReportingObserver> remote;
@@ -9042,6 +9047,7 @@ void RenderFrameHostImpl::TakeNewDocumentPropertiesFromNavigation(
         base::BindOnce(&RenderFrameHostImpl::BindReportingObserver,
                        weak_ptr_factory_.GetWeakPtr(), std::move(receiver)));
   }
+#endif
 
   // Set the state whether this navigation is to an MHTML document, since there
   // are certain security checks that we cannot apply to subframes in MHTML
