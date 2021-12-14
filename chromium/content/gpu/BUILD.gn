@@ -50,6 +50,7 @@ target(link_target_type, "gpu_sources") {
     "//base",
     "//build:branding_buildflags",
     "//build:chromeos_buildflags",
+    "//components/services/storage/public/mojom",
     "//components/viz/service",
     "//content:export",
     "//content/child",
