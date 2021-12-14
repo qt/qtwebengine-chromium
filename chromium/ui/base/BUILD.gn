@@ -451,6 +451,7 @@ jumbo_component("base") {
     "//base:i18n",
     "//base/third_party/dynamic_annotations",
     "//build:chromeos_buildflags",
+    "//media:media_buildflags",
     "//net",
     "//third_party/brotli:dec",
     "//third_party/icu",
