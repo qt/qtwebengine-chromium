@@ -487,6 +487,7 @@ component("base") {
     "//build:blink_buildflags",
     "//build:branding_buildflags",
     "//content/public/common:buildflags",
+    "//media:media_buildflags",
     "//net",
     "//third_party/brotli:dec",
     "//third_party/icu",
