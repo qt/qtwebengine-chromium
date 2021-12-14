@@ -48,6 +48,7 @@ target(link_target_type, "gpu_sources") {
   deps = [
     "//base",
     "//build:branding_buildflags",
+    "//components/services/storage/public/mojom",
     "//components/viz/service",
     "//content:export",
     "//content/child",
