@@ -18,5 +18,5 @@ declare_args() {
   enable_freetype = true
 
   use_qt_freetype = false
-  qt_freetype_includes = ""
+  qt_freetype_config = ""
 }
