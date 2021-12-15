@@ -12,5 +12,5 @@ declare_args() {
   # RENDERING AND SECURITY REGRESSIONS.
   use_system_freetype = false
   use_qt_freetype = false
-  qt_freetype_includes = ""
+  qt_freetype_config = ""
 }
