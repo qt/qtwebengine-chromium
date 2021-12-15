@@ -10,5 +10,5 @@ declare_args() {
   # ChromeOS can build against the system lib and keep binary sizes smaller.
   use_system_harfbuzz = false
   use_qt_harfbuzz = false
-  qt_harfbuzz_includes = ""
+  qt_harfbuzz_config = ""
 }
