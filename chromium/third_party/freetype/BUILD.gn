@@ -21,13 +21,7 @@ if (use_system_freetype) {
     packages = [ "freetype2" ]
   }
 } else if (use_qt_freetype) {
-   config("freetype_from_qt") {
-     visibility = [
-       "//third_party:freetype_harfbuzz",
-       "//third_party/harfbuzz-ng:harfbuzz_source",
-     ]
-     include_dirs = [ qt_freetype_includes ]
-   }
+  # see root BUILD.gn
 } else {
 
 assert(!use_system_freetype, "Not used when using system freetype.")
@@ -171,7 +165,7 @@ source_set("freetype_source") {
   if (use_system_harfbuzz) {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_pkgconfig" ]
   } else if (use_qt_harfbuzz) {
-    configs += [ "//third_party/harfbuzz-ng:harfbuzz_from_qt" ]
+    configs += [ qt_harfbuzz_config ]
   } else {
     configs += [ "//third_party/harfbuzz-ng:harfbuzz_config" ]
   }
