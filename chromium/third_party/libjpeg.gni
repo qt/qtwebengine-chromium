@@ -11,5 +11,5 @@ declare_args() {
   use_libjpeg_turbo = true
 
   use_qt_libjpeg = false
-  qt_libjpeg_includes = ""
+  qt_libjpeg_config = ""
 }
