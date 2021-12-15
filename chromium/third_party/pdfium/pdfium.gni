@@ -72,7 +72,7 @@ declare_args() {
   msvc_use_sse2 = true
 
   pdfium_use_qt_libpng = false
-  pdfium_qt_libpng_includes = ""
+  qt_libpng_config = ""
 }
 
 if (pdf_use_skia && pdf_use_skia_paths) {

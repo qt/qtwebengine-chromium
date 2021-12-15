@@ -23,13 +23,7 @@ if (use_system_harfbuzz) {
     ]
   }
 } else if (use_qt_harfbuzz) {
-  config("harfbuzz_from_qt") {
-    visibility = [
-      "//third_party:freetype_harfbuzz",
-      "//third_party/freetype:freetype_source",
-    ]
-    include_dirs = [ qt_harfbuzz_includes ]
-  }
+  # see root BUILD.gn
 } else {
   config("harfbuzz_config") {
     include_dirs = [ "src/src" ]
@@ -375,7 +369,7 @@ if (use_system_harfbuzz) {
     if (use_system_freetype) {
       configs += [ "//third_party/freetype:freetype_from_pkgconfig" ]
     } else if (use_qt_freetype) {
-      configs += [ "//third_party/freetype:freetype_from_qt" ]
+      configs += [ qt_freetype_config ]
     } else {
       configs += [ "//third_party/freetype:freetype_component_config" ]
     }
