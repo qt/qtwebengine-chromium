@@ -6,7 +6,9 @@
 
 #include "base/command_line.h"
 #include "base/strings/stringprintf.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/devtools/url_constants.h"
+#endif
 #include "chrome/browser/ui/webui/devtools_ui_data_source.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
@@ -38,9 +40,13 @@ GURL DevToolsUI::GetProxyURL(const std::string& frontend_url) {
 
 // static
 GURL DevToolsUI::GetRemoteBaseURL() {
+#ifndef TOOLKIT_QT
   return GURL(base::StringPrintf("%s%s/%s/", kRemoteFrontendBase,
                                  kRemoteFrontendPath,
                                  content::GetChromiumGitRevision().c_str()));
+#else
+  return GURL();
+#endif
 }
 
 // static
