@@ -25,8 +25,7 @@ VkSemaphore ImportVkSemaphoreHandle(VkDevice vk_device,
     return VK_NULL_HANDLE;
 
   auto win32_handle = handle.TakeHandle();
-  VkImportSemaphoreWin32HandleInfoKHR import;
-  import.sType = VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR;
+  VkImportSemaphoreWin32HandleInfoKHR import = {VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR};
   import.semaphore = semaphore;
   import.handleType = handle_type;
   import.handle = win32_handle.Get();
@@ -47,8 +46,7 @@ SemaphoreHandle GetVkSemaphoreHandle(
     VkDevice vk_device,
     VkSemaphore vk_semaphore,
     VkExternalSemaphoreHandleTypeFlagBits handle_type) {
-  VkSemaphoreGetWin32HandleInfoKHR info;
-      info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR;
+  VkSemaphoreGetWin32HandleInfoKHR info = {VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR};
       info.semaphore = vk_semaphore;
       info.handleType = handle_type;
 

@@ -1326,7 +1326,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DVideoProcessing(
   }
 
   // Input/output framerates are dummy values for passthrough.
-  D3D11_VIDEO_PROCESSOR_CONTENT_DESC vp_desc;
+  D3D11_VIDEO_PROCESSOR_CONTENT_DESC vp_desc{};
       vp_desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
       vp_desc.InputFrameRate = {60, 1};
       vp_desc.InputWidth = input_desc.Width;
@@ -1363,7 +1363,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::InitializeD3DVideoProcessing(
   video_context->VideoProcessorSetStreamAutoProcessingMode(
       video_processor.Get(), 0, FALSE);
 
-  D3D11_TEXTURE2D_DESC scaled_desc;
+  D3D11_TEXTURE2D_DESC scaled_desc{};
       scaled_desc.Width = static_cast<UINT>(input_visible_size_.width());
       scaled_desc.Height = static_cast<UINT>(input_visible_size_.height());
       scaled_desc.MipLevels = 1;
@@ -1442,7 +1442,7 @@ HRESULT MediaFoundationVideoEncodeAccelerator::PerformD3DScaling(
         &input_view);
     RETURN_ON_HR_FAILURE(hr, "CreateVideoProcessorInputView failed", hr);
 
-    D3D11_VIDEO_PROCESSOR_STREAM stream;
+    D3D11_VIDEO_PROCESSOR_STREAM stream{};
         stream.Enable = true;
         stream.OutputIndex = 0;
         stream.InputFrameOrField = 0;

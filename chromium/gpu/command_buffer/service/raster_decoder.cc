@@ -2874,9 +2874,10 @@ void RasterDecoderImpl::DoReadbackARGBImagePixelsINTERNAL(
   if (!end_semaphores.empty()) {
     // Ask skia to signal |end_semaphores| here, since we will synchronized
     // read pixels from the shared image.
-    GrFlushInfo flush_info;
-        flush_info.fNumSemaphores = end_semaphores.size();
-        flush_info.fSignalSemaphores = end_semaphores.data();
+    GrFlushInfo flush_info = {
+        end_semaphores.size(),
+        end_semaphores.data()
+    };
 
     AddVulkanCleanupTaskForSkiaFlush(
         shared_context_state_->vk_context_provider(), &flush_info);

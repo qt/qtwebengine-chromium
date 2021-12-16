@@ -171,8 +171,7 @@ bool VulkanSwapChain::InitializeSwapChain(
   VkDevice device = device_queue_->GetVulkanDevice();
   VkResult result = VK_SUCCESS;
 
-  VkSwapchainCreateInfoKHR swap_chain_create_info;
-      swap_chain_create_info.sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
+  VkSwapchainCreateInfoKHR swap_chain_create_info = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
       swap_chain_create_info.flags = 0;
       swap_chain_create_info.surface = surface;
       swap_chain_create_info.minImageCount = min_image_count;
@@ -360,24 +359,23 @@ bool VulkanSwapChain::PresentBuffer(const gfx::Rect& rect) {
   auto& current_image_data = images_[*acquired_image_];
   DCHECK(current_image_data.present_semaphore != VK_NULL_HANDLE);
 
-  VkRectLayerKHR rect_layer;
-      rect_layer.offset = {rect.x(), rect.y()};
-      rect_layer.extent = {static_cast<uint32_t>(rect.width()),
-                           static_cast<uint32_t>(rect.height())};
-      rect_layer.layer = 0;
+  VkRectLayerKHR rect_layer = {
+      /*.offset =*/ {rect.x(), rect.y()},
+      /*.extent =*/ {static_cast<uint32_t>(rect.width()),
+                     static_cast<uint32_t>(rect.height())},
+      /*.layer =*/ 0
+  };
 
   VkPresentRegionKHR present_region = {
       /* .rectangleCount = */ 1,
       /* .pRectangles = */ &rect_layer,
   };
 
-  VkPresentRegionsKHR present_regions;
-      present_regions.sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR;
+  VkPresentRegionsKHR present_regions = { VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR };
       present_regions.swapchainCount = 1;
       present_regions.pRegions = &present_region;
 
-  VkPresentInfoKHR present_info;
-      present_info.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
+  VkPresentInfoKHR present_info = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
       present_info.pNext = is_incremental_present_supported_ ? &present_regions : nullptr;
       present_info.waitSemaphoreCount = 1;
       present_info.pWaitSemaphores = &current_image_data.present_semaphore;

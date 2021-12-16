@@ -290,11 +290,9 @@ bool VulkanInstance::CollectInfo() {
     // non-null.
     static_assert(kVulkanRequiredApiVersion >= VK_API_VERSION_1_1, "");
     if (info.properties.apiVersion >= kVulkanRequiredApiVersion) {
-      info.driver_properties = VkPhysicalDeviceDriverProperties{};
-          info.driver_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES;
+      info.driver_properties = VkPhysicalDeviceDriverProperties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES};
 
-      VkPhysicalDeviceProperties2 properties2;
-          properties2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+      VkPhysicalDeviceProperties2 properties2 = {VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
           properties2.pNext = &info.driver_properties;
 
       vkGetPhysicalDeviceProperties2(device, &properties2);

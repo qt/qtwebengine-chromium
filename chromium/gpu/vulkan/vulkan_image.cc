@@ -192,8 +192,7 @@ bool VulkanImage::Initialize(VulkanDeviceQueue* device_queue,
   flags_ = flags;
   image_tiling_ = image_tiling;
 
-  VkImageCreateInfo create_info;
-      create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+  VkImageCreateInfo create_info = { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
       create_info.pNext = vk_image_create_info_next;
       create_info.flags = flags_;
       create_info.imageType = VK_IMAGE_TYPE_2D;

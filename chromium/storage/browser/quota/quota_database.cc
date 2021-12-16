@@ -862,7 +862,7 @@ bool QuotaDatabase::DumpQuotaTable(const QuotaTableCallback& callback) {
   sql::Statement statement(db_->GetCachedStatement(SQL_FROM_HERE, kSql));
 
   while (statement.Step()) {
-    QuotaTableEntry entry;
+    QuotaTableEntry entry{};
         entry.host = statement.ColumnString(0);
         entry.type = static_cast<StorageType>(statement.ColumnInt(1));
         entry.quota = statement.ColumnInt64(2);

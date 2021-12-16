@@ -510,7 +510,7 @@ PP_PdfPageCharacterIndex ToPdfPageCharacterIndex(
 
 PP_PdfAccessibilityActionData ToPdfAccessibilityActionData(
     const chrome_pdf::AccessibilityActionData& action_data) {
-  PP_PdfAccessibilityActionData data;
+  PP_PdfAccessibilityActionData data{};
       data.action = static_cast<PP_PdfAccessibilityAction>(action_data.action);
       data.annotation_type = static_cast<PP_PdfAccessibilityAnnotationType>(
           action_data.annotation_type);

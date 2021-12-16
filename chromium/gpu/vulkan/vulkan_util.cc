@@ -89,12 +89,10 @@ bool SubmitWaitVkSemaphore(VkQueue vk_queue,
 VkSemaphore CreateExternalVkSemaphore(
     VkDevice vk_device,
     VkExternalSemaphoreHandleTypeFlags handle_types) {
-  VkExportSemaphoreCreateInfo export_info;
-      export_info.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO;
+  VkExportSemaphoreCreateInfo export_info = {VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO};
       export_info.handleTypes = handle_types;
 
-  VkSemaphoreCreateInfo sem_info;
-      sem_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+  VkSemaphoreCreateInfo sem_info = {VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
       sem_info.pNext = &export_info;
 
   VkSemaphore semaphore = VK_NULL_HANDLE;

@@ -905,8 +905,7 @@ bool ExternalVkImageBacking::ReadPixelsWithCallback(
     ReadBufferCallback callback) {
   DCHECK(stride == 0 || size().height() * stride <= data_size);
 
-  VkBufferCreateInfo buffer_create_info;
-      buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+  VkBufferCreateInfo buffer_create_info = {VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
       buffer_create_info.size = data_size;
       buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
       buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
