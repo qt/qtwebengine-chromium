@@ -645,6 +645,7 @@ void BlobRegistryImpl::URLStoreForOrigin(
   if (!origin.opaque() && !delegate->CanCommitURL(origin.GetURL())) {
     mojo::ReportBadMessage(
         "Non committable origin passed to BlobRegistryImpl::URLStoreForOrigin");
+    return;
   }
   auto self_owned_associated_receiver = mojo::MakeSelfOwnedAssociatedReceiver(
       std::make_unique<BlobURLStoreImpl>(origin, url_registry_),
