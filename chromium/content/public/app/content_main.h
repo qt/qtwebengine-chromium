@@ -66,6 +66,8 @@ struct CONTENT_EXPORT ContentMainParams {
   // are left uninitialized.
   bool minimal_browser_mode = false;
 
+  bool setup_signal_handlers = true;
+
 #if BUILDFLAG(IS_MAC)
   // The outermost autorelease pool to pass to main entry points.
   base::mac::ScopedNSAutoreleasePool* autorelease_pool = nullptr;
