@@ -303,7 +303,8 @@ RunContentProcess(const ContentMainParams& params,
     // default, "C", locale.
     setlocale(LC_NUMERIC, "C");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers)
+      SetupSignalHandlers();
 #endif
 
 #if defined(OS_WIN)
