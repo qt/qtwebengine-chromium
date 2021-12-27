@@ -289,7 +289,8 @@ NO_STACK_PROTECTOR int RunContentProcess(
     // default, "C", locale.
     setlocale(LC_NUMERIC, "C");
 
-    SetupSignalHandlers();
+    if (params.setup_signal_handlers)
+      SetupSignalHandlers();
 #endif
 
 #if BUILDFLAG(IS_WIN)
