@@ -4142,7 +4142,7 @@ void PDFiumEngine::SetLinkUnderCursorForAnnotation(FPDF_ANNOTATION annot,
 void PDFiumEngine::RequestThumbnail(int page_index,
                                     float device_pixel_ratio,
                                     SendThumbnailCallback send_callback) {
-  DCHECK(PageIndexInBounds(page_index));
+  CHECK(PageIndexInBounds(page_index));
   pages_[page_index]->RequestThumbnail(device_pixel_ratio,
                                        std::move(send_callback));
 }
