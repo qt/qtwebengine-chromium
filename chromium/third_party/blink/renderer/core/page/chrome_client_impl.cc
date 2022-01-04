@@ -166,7 +166,9 @@ class CompositorAnimationTimeline;
 ChromeClientImpl::ChromeClientImpl(WebViewImpl* web_view)
     : web_view_(web_view),
       cursor_overridden_(false),
-      did_request_non_empty_tool_tip_(false) {}
+      did_request_non_empty_tool_tip_(false) {
+  DCHECK(web_view_);
+}
 
 ChromeClientImpl::~ChromeClientImpl() {
   DCHECK(file_chooser_queue_.IsEmpty());
@@ -183,10 +185,13 @@ WebViewImpl* ChromeClientImpl::GetWebView() const {
 }
 
 void ChromeClientImpl::ChromeDestroyed() {
-  // Our lifetime is bound to the WebViewImpl.
+  // Clear |web_view_| since it is refcounted and this class is a GC'd object
+  // and may outlive the WebViewImpl.
+  web_view_ = nullptr;
 }
 
 void ChromeClientImpl::SetWindowRect(const IntRect& r, LocalFrame& frame) {
+  DCHECK(web_view_);
   DCHECK_EQ(&frame, web_view_->MainFrameImpl()->GetFrame());
   web_view_->MainFrameViewWidget()->SetWindowRect(r);
 }
@@ -199,10 +204,12 @@ IntRect ChromeClientImpl::RootWindowRect(LocalFrame& frame) {
 }
 
 void ChromeClientImpl::FocusPage() {
+  DCHECK(web_view_);
   web_view_->Focus();
 }
 
 void ChromeClientImpl::DidFocusPage() {
+  DCHECK(web_view_);
   if (web_view_->Client())
     web_view_->Client()->DidFocus();
 }
@@ -214,6 +221,7 @@ bool ChromeClientImpl::CanTakeFocus(mojom::blink::FocusType) {
 }
 
 void ChromeClientImpl::TakeFocus(mojom::blink::FocusType type) {
+  DCHECK(web_view_);
   if (!web_view_->Client())
     return;
   if (type == mojom::blink::FocusType::kBackward)
@@ -223,6 +231,7 @@ void ChromeClientImpl::TakeFocus(mojom::blink::FocusType type) {
 }
 
 void ChromeClientImpl::SetKeyboardFocusURL(Element* new_focus_element) {
+  DCHECK(web_view_);
   KURL focus_url;
   if (new_focus_element && new_focus_element->IsLiveLink() &&
       new_focus_element->ShouldHaveFocusAppearance())
@@ -241,6 +250,7 @@ void ChromeClientImpl::StartDragging(LocalFrame* frame,
 }
 
 bool ChromeClientImpl::AcceptsLoadDrops() const {
+  DCHECK(web_view_);
   return !web_view_->Client() || web_view_->Client()->AcceptsLoadDrops();
 }
 
@@ -252,6 +262,7 @@ Page* ChromeClientImpl::CreateWindowDelegate(
     network::mojom::blink::WebSandboxFlags sandbox_flags,
     const FeaturePolicyFeatureState& opener_feature_state,
     const SessionStorageNamespaceId& session_storage_namespace_id) {
+  DCHECK(web_view_);
   if (!web_view_->Client())
     return nullptr;
 
@@ -277,6 +288,7 @@ void ChromeClientImpl::DidOverscroll(
     const gfx::Vector2dF& accumulated_overscroll,
     const gfx::PointF& position_in_viewport,
     const gfx::Vector2dF& velocity_in_viewport) {
+  DCHECK(web_view_);
   // WebWidgetClient can be null when not compositing, and this behaviour only
   // applies when compositing is enabled.
   if (!web_view_->does_composite())
@@ -308,6 +320,7 @@ void ChromeClientImpl::SetOverscrollBehavior(
 }
 
 void ChromeClientImpl::Show(NavigationPolicy navigation_policy) {
+  DCHECK(web_view_);
   // TODO(darin): Change caller to pass LocalFrame.
   WebLocalFrameImpl* main_frame = web_view_->MainFrameImpl();
   DCHECK(main_frame);
@@ -342,6 +355,7 @@ void ChromeClientImpl::AddMessageToConsole(LocalFrame* local_frame,
 }
 
 bool ChromeClientImpl::CanOpenBeforeUnloadConfirmPanel() {
+  DCHECK(web_view_);
   return !!web_view_->Client();
 }
 
@@ -366,6 +380,7 @@ void ChromeClientImpl::SetBeforeUnloadConfirmPanelResultForTesting(
 }
 
 void ChromeClientImpl::CloseWindowSoon() {
+  DCHECK(web_view_);
   web_view_->CloseWindowSoon();
 }
 
@@ -402,12 +417,15 @@ bool ChromeClientImpl::OpenJavaScriptPromptDelegate(LocalFrame* frame,
   return success;
 }
 bool ChromeClientImpl::TabsToLinks() {
+  DCHECK(web_view_);
   return web_view_->TabsToLinks();
 }
 
 void ChromeClientImpl::InvalidateRect(const IntRect& update_rect) {
-  if (!update_rect.IsEmpty())
+  if (!update_rect.IsEmpty()) {
+    DCHECK(web_view_);
     web_view_->InvalidateRect(update_rect);
+  }
 }
 
 void ChromeClientImpl::ScheduleAnimation(const LocalFrameView* frame_view,
@@ -465,17 +483,20 @@ ScreenInfo ChromeClientImpl::GetScreenInfo(LocalFrame& frame) const {
 void ChromeClientImpl::OverrideVisibleRectForMainFrame(
     LocalFrame& frame,
     IntRect* visible_rect) const {
+  DCHECK(web_view_);
   DCHECK(frame.IsMainFrame());
   return web_view_->GetDevToolsEmulator()->OverrideVisibleRect(
       IntRect(frame.GetWidgetForLocalRoot()->ViewRect()).Size(), visible_rect);
 }
 
 float ChromeClientImpl::InputEventsScaleForEmulation() const {
+  DCHECK(web_view_);
   return web_view_->GetDevToolsEmulator()->InputEventsScaleForEmulation();
 }
 
 void ChromeClientImpl::ContentsSizeChanged(LocalFrame* frame,
                                            const IntSize& size) const {
+  DCHECK(web_view_);
   web_view_->DidChangeContentsSize();
 
   WebLocalFrameImpl* webframe = WebLocalFrameImpl::FromFrame(frame);
@@ -483,40 +504,49 @@ void ChromeClientImpl::ContentsSizeChanged(LocalFrame* frame,
 }
 
 bool ChromeClientImpl::DoubleTapToZoomEnabled() const {
+  DCHECK(web_view_);
   return web_view_->SettingsImpl()->DoubleTapToZoomEnabled();
 }
 
 void ChromeClientImpl::EnablePreferredSizeChangedMode() {
+  DCHECK(web_view_);
   web_view_->EnablePreferredSizeChangedMode();
 }
 
 void ChromeClientImpl::ZoomToFindInPageRect(const WebRect& rect_in_root_frame) {
+  DCHECK(web_view_);
   web_view_->ZoomToFindInPageRect(rect_in_root_frame);
 }
 
 void ChromeClientImpl::PageScaleFactorChanged() const {
+  DCHECK(web_view_);
   web_view_->PageScaleFactorChanged();
 }
 
 void ChromeClientImpl::MainFrameScrollOffsetChanged(
     LocalFrame& main_frame) const {
+  DCHECK(web_view_);
   DCHECK(main_frame.IsMainFrame());
   web_view_->MainFrameScrollOffsetChanged();
 }
 
 float ChromeClientImpl::ClampPageScaleFactorToLimits(float scale) const {
+  DCHECK(web_view_);
   return web_view_->ClampPageScaleFactorToLimits(scale);
 }
 
 void ChromeClientImpl::ResizeAfterLayout() const {
+  DCHECK(web_view_);
   web_view_->ResizeAfterLayout();
 }
 
 void ChromeClientImpl::MainFrameLayoutUpdated() const {
+  DCHECK(web_view_);
   web_view_->MainFrameLayoutUpdated();
 }
 
 void ChromeClientImpl::ShowMouseOverURL(const HitTestResult& result) {
+  DCHECK(web_view_);
   if (!web_view_->Client())
     return;
 
@@ -566,6 +596,7 @@ void ChromeClientImpl::SetToolTip(LocalFrame& frame,
 
 void ChromeClientImpl::DispatchViewportPropertiesDidChange(
     const ViewportDescription& description) const {
+  DCHECK(web_view_);
   web_view_->UpdatePageDefinedViewportConstraints(description);
 }
 
@@ -690,6 +721,7 @@ void ChromeClientImpl::SetCursor(const ui::Cursor& cursor,
 
 void ChromeClientImpl::SetCursorInternal(const ui::Cursor& cursor,
                                          LocalFrame* local_frame) {
+  DCHECK(web_view_);
   if (cursor_overridden_)
     return;
 
@@ -738,6 +770,7 @@ void ChromeClientImpl::AutoscrollEnd(LocalFrame* local_frame) {
 }
 
 String ChromeClientImpl::AcceptLanguages() {
+  DCHECK(web_view_);
   return web_view_->Client()->AcceptLanguages();
 }
 
@@ -777,20 +810,24 @@ void ChromeClientImpl::DetachCompositorAnimationTimeline(
 void ChromeClientImpl::EnterFullscreen(LocalFrame& frame,
                                        const FullscreenOptions* options,
                                        FullscreenRequestType request_type) {
+  DCHECK(web_view_);
   web_view_->EnterFullscreen(frame, options, request_type);
 }
 
 void ChromeClientImpl::ExitFullscreen(LocalFrame& frame) {
+  DCHECK(web_view_);
   web_view_->ExitFullscreen(frame);
 }
 
 void ChromeClientImpl::FullscreenElementChanged(Element* old_element,
                                                 Element* new_element) {
+  DCHECK(web_view_);
   web_view_->FullscreenElementChanged(old_element, new_element);
 }
 
 void ChromeClientImpl::AnimateDoubleTapZoom(const gfx::Point& point,
                                             const gfx::Rect& rect) {
+  DCHECK(web_view_);
   web_view_->AnimateDoubleTapZoom(point, WebRect(rect));
 }
 
@@ -805,6 +842,7 @@ void ChromeClientImpl::UpdateLayerSelection(
 }
 
 bool ChromeClientImpl::HasOpenedPopup() const {
+  DCHECK(web_view_);
   return web_view_->HasOpenedPopup();
 }
 
@@ -819,20 +857,24 @@ PopupMenu* ChromeClientImpl::OpenPopupMenu(LocalFrame& frame,
 }
 
 PagePopup* ChromeClientImpl::OpenPagePopup(PagePopupClient* client) {
+  DCHECK(web_view_);
   return web_view_->OpenPagePopup(client);
 }
 
 void ChromeClientImpl::ClosePagePopup(PagePopup* popup) {
+  DCHECK(web_view_);
   web_view_->ClosePagePopup(popup);
 }
 
 DOMWindow* ChromeClientImpl::PagePopupWindowForTesting() const {
+  DCHECK(web_view_);
   return web_view_->PagePopupWindow();
 }
 
 void ChromeClientImpl::SetBrowserControlsState(float top_height,
                                                float bottom_height,
                                                bool shrinks_layout) {
+  DCHECK(web_view_);
   DCHECK(web_view_->MainFrameWidget());
   WebSize size = web_view_->MainFrameWidget()->Size();
   if (shrinks_layout)
@@ -844,6 +886,7 @@ void ChromeClientImpl::SetBrowserControlsState(float top_height,
 
 void ChromeClientImpl::SetBrowserControlsShownRatio(float top_ratio,
                                                     float bottom_ratio) {
+  DCHECK(web_view_);
   web_view_->GetBrowserControls().SetShownRatio(top_ratio, bottom_ratio);
 }
 
@@ -911,6 +954,7 @@ void ChromeClientImpl::SetEventListenerProperties(
     LocalFrame* frame,
     cc::EventListenerClass event_class,
     cc::EventListenerProperties properties) {
+  DCHECK(web_view_);
   // This method is only useful when compositing is enabled.
   if (!web_view_->does_composite())
     return;
@@ -953,6 +997,7 @@ cc::EventListenerProperties ChromeClientImpl::EventListenerProperties(
 }
 
 void ChromeClientImpl::BeginLifecycleUpdates(LocalFrame& main_frame) {
+  DCHECK(web_view_);
   DCHECK(main_frame.IsMainFrame());
   web_view_->StopDeferringMainFrameUpdate();
 }
@@ -1152,10 +1197,12 @@ void ChromeClientImpl::AjaxSucceeded(LocalFrame* frame) {
 }
 
 TransformationMatrix ChromeClientImpl::GetDeviceEmulationTransform() const {
+  DCHECK(web_view_);
   return web_view_->GetDeviceEmulationTransform();
 }
 
 void ChromeClientImpl::DidUpdateBrowserControls() const {
+  DCHECK(web_view_);
   web_view_->DidUpdateBrowserControls();
 }
 
@@ -1179,6 +1226,7 @@ void ChromeClientImpl::NotifyPopupOpeningObservers() const {
 }
 
 FloatSize ChromeClientImpl::ElasticOverscroll() const {
+  DCHECK(web_view_);
   return web_view_->ElasticOverscroll();
 }
 
@@ -1195,6 +1243,7 @@ WebAutofillClient* ChromeClientImpl::AutofillClientFromFrame(
 
 void ChromeClientImpl::DidUpdateTextAutosizerPageInfo(
     const mojom::blink::TextAutosizerPageInfo& page_info) {
+  DCHECK(web_view_);
   web_view_->TextAutosizerPageInfoChanged(page_info);
 }
 
@@ -1206,6 +1255,7 @@ void ChromeClientImpl::DocumentDetached(Document& document) {
 }
 
 double ChromeClientImpl::UserZoomFactor() const {
+  DCHECK(web_view_);
   return PageZoomLevelToZoomFactor(web_view_->ZoomLevel());
 }
 

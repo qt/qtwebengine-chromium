@@ -1410,6 +1410,10 @@ void WebViewImpl::Close() {
   DCHECK(AllInstances().Contains(this));
   AllInstances().erase(this);
 
+  // Ensure if we have a page popup we cancel it immediately as we do not
+  // want page popups to re-enter WebViewImpl during our shutdown.
+  CancelPagePopup();
+
   // Initiate shutdown for the entire frameset.  This will cause a lot of
   // notifications to be sent. This will detach all frames in this WebView's
   // frame tree.
