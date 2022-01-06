@@ -170,7 +170,7 @@ class ThreatDetails : public content::WebContentsObserver {
 
   void OnReceivedThreatDOMDetails(
       mojo::Remote<mojom::ThreatReporter> threat_reporter,
-      content::GlobalRenderFrameHostId sender_id,
+      content::GlobalFrameRoutingId sender_id,
       std::vector<mojom::ThreatDOMDetailsNodePtr> params);
 
   void AddRedirectUrlList(const std::vector<GURL>& urls);
