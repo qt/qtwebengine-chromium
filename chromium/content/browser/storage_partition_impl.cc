@@ -1337,7 +1337,7 @@ void StoragePartitionImpl::Initialize(
       blob_context, filesystem_context_, fallback_blob_registry);
 
   prefetch_url_loader_service_ =
-      base::MakeRefCounted<PrefetchURLLoaderService>(browser_context_);
+      std::make_unique<PrefetchURLLoaderService>(browser_context_);
 
   cookie_store_context_ = base::MakeRefCounted<CookieStoreContext>();
   // Unit tests use the Initialize() callback to crash early if restoring the
