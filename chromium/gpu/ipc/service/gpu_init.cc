@@ -842,7 +842,7 @@ void GpuInit::InitializeInProcess(base::CommandLine* command_line,
   if (gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] !=
           kGpuFeatureStatusEnabled ||
       !InitializeVulkan()) {
-    LOG(ERROR) << "Vulkan disabled or failed to initialize";
+    VLOG(1) << "Vulkan disabled or failed to initialize";
     gpu_preferences_.use_vulkan = VulkanImplementationName::kNone;
     gpu_feature_info_.status_values[GPU_FEATURE_TYPE_VULKAN] =
         kGpuFeatureStatusDisabled;
