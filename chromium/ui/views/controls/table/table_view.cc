@@ -1415,7 +1415,11 @@ void TableView::UpdateVirtualAccessibilityChildrenBounds() {
 
   // Update the bounds for the table's content rows.
   for (int row_index = 0; row_index < GetRowCount(); row_index++) {
-    auto& ax_row = virtual_children[header_ ? row_index + 1 : row_index];
+    const size_t ax_row_index = header_ ? row_index + 1 : row_index;
+    if (ax_row_index >= virtual_children.size())
+      break;
+
+    auto& ax_row = virtual_children[ax_row_index];
     ui::AXNodeData& row_data = ax_row->GetCustomData();
     DCHECK_EQ(ax_row->GetData().role, ax::mojom::Role::kRow);
     row_data.relative_bounds.bounds =
