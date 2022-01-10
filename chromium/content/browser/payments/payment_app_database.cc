@@ -728,7 +728,7 @@ void PaymentAppDatabase::DidReadAllPaymentInstruments(
     blink::ServiceWorkerStatusCode status) {
   DCHECK_CURRENTLY_ON(ServiceWorkerContext::GetCoreThreadId());
   if (status != blink::ServiceWorkerStatusCode::kOk) {
-    std::move(callback).Run(std::move(apps));
+    std::move(callback).Run(PaymentApps());
     return;
   }
 
