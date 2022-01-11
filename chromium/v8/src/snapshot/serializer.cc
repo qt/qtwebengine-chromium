@@ -720,7 +720,7 @@ void Serializer::ObjectSerializer::Serialize() {
 
 namespace {
 SnapshotSpace GetSnapshotSpace(Handle<HeapObject> object) {
-#if V8_ENABLE_THIRD_PARTY_HEAP_BOOL
+  if (V8_ENABLE_THIRD_PARTY_HEAP_BOOL) {
     if (object->IsCode()) {
       return SnapshotSpace::kCode;
     } else if (ReadOnlyHeap::Contains(*object)) {
@@ -730,8 +730,7 @@ SnapshotSpace GetSnapshotSpace(Handle<HeapObject> object) {
     } else {
       return SnapshotSpace::kOld;
     }
-#else
-  if (ReadOnlyHeap::Contains(*object)) {
+  } else if (ReadOnlyHeap::Contains(*object)) {
     return SnapshotSpace::kReadOnlyHeap;
   } else {
     AllocationSpace heap_space =
@@ -759,7 +758,6 @@ SnapshotSpace GetSnapshotSpace(Handle<HeapObject> object) {
         UNREACHABLE();
     }
   }
-#endif
 }
 }  // namespace
 
