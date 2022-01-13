@@ -122,6 +122,8 @@ class DesktopCaptureDevice::Core : public webrtc::DesktopCapturer::Callback {
       scoped_refptr<base::SingleThreadTaskRunner> task_runner,
       const base::TickClock* tick_clock);
 
+  base::WeakPtr<Core> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
  private:
   // webrtc::DesktopCapturer::Callback interface.
   void OnCaptureResult(
@@ -570,9 +572,8 @@ void DesktopCaptureDevice::AllocateAndStart(
     const media::VideoCaptureParams& params,
     std::unique_ptr<Client> client) {
   thread_.task_runner()->PostTask(
-      FROM_HERE,
-      base::BindOnce(&Core::AllocateAndStart, base::Unretained(core_.get()),
-                     params, std::move(client)));
+      FROM_HERE, base::BindOnce(&Core::AllocateAndStart, core_->GetWeakPtr(),
+                                params, std::move(client)));
 }
 
 void DesktopCaptureDevice::StopAndDeAllocate() {
@@ -592,7 +593,7 @@ void DesktopCaptureDevice::SetNotificationWindowId(
     return;
   thread_.task_runner()->PostTask(
       FROM_HERE, base::BindOnce(&Core::SetNotificationWindowId,
-                                base::Unretained(core_.get()), window_id));
+                                core_->GetWeakPtr(), window_id));
 }
 
 DesktopCaptureDevice::DesktopCaptureDevice(
