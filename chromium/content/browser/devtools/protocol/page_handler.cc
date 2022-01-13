@@ -185,8 +185,9 @@ bool CanExecuteGlobalCommands(
 
 PageHandler::PageHandler(EmulationHandler* emulation_handler,
                          BrowserHandler* browser_handler,
-                         bool allow_file_access)
+                         bool allow_unsafe_operations)
     : DevToolsDomainHandler(Page::Metainfo::domainName),
+      allow_unsafe_operations_(allow_unsafe_operations),
       enabled_(false),
       screencast_enabled_(false),
       screencast_quality_(kDefaultScreenshotQuality),
@@ -1253,6 +1254,15 @@ void PageHandler::GetManifestIcons(
   // TODO: Use InstallableManager once it moves into content/.
   // Until then, this code is only used to return no image data in the tests.
   callback->sendSuccess(Maybe<Binary>());
+}
+
+Response PageHandler::AddCompilationCache(const std::string& url,
+                                          const Binary& data) {
+  // We're just checking a permission here, the real business happens
+  // in the renderer, if we fall through.
+  if (allow_unsafe_operations_)
+    return Response::FallThrough();
+  return Response::ServerError("Permission denied");
 }
 
 }  // namespace protocol
