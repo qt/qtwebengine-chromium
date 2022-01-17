@@ -455,8 +455,8 @@ SI Vec<1,D> cast(const Vec<1,S>& src) { return (D)src.val; }
 
 template <typename D, int N, typename S>
 SI Vec<N,D> cast(const Vec<N,S>& src) {
-#if !defined(SKNX_NO_SIMD) && defined(__clang__)
-    return to_vec(__builtin_convertvector(to_vext(src), VExt<N,D>));
+#if !defined(SKNX_NO_SIMD) && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 9))
+    return to_vec<N,D>(__builtin_convertvector(to_vext<N,S>(src), VExt<N,D>));
 #else
     return join(cast<D>(src.lo), cast<D>(src.hi));
 #endif
@@ -491,10 +491,22 @@ SINT Vec<N,T> pin(const Vec<N,T>& x, const Vec<N,T>& lo, const Vec<N,T>& hi) {
 // The only real restriction is that the output also be a legal N=power-of-two sknx::Vec.
 template <int... Ix, int N, typename T>
 SI Vec<sizeof...(Ix),T> shuffle(const Vec<N,T>& x) {
-#if !defined(SKNX_NO_SIMD) && defined(__clang__)
+#if !defined(SKNX_NO_SIMD) && (defined(__clang__) || (defined(__GNUC__) && __GNUC__ >= 12))
     // TODO: can we just always use { x[Ix]... }?
     return to_vec<sizeof...(Ix),T>(__builtin_shufflevector(to_vext(x), to_vext(x), Ix...));
 #else
+#if !defined(SKNX_NO_SIMD) && defined(__GNUC__)
+    if constexpr(sizeof...(Ix) == N) {
+        if constexpr(sizeof(T) == 1)
+            return to_vec<N,T>(__builtin_shuffle(to_vext(x), VExt<N,char>{Ix...}));
+        else if constexpr(sizeof(T) == 2)
+            return to_vec<N,T>(__builtin_shuffle(to_vext(x), VExt<N,short>{Ix...}));
+        else if constexpr(sizeof(T) == 4)
+            return to_vec<N,T>(__builtin_shuffle(to_vext(x), VExt<N,int>{Ix...}));
+        else if constexpr(sizeof(T) == 8)
+            return to_vec<N,T>(__builtin_shuffle(to_vext(x), VExt<N,long long>{Ix...}));
+    } else
+#endif
     return { x[Ix]... };
 #endif
 }
