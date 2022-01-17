@@ -34,7 +34,7 @@ namespace base {
 template<typename T, size_t stack_capacity>
 class StackAllocator : public std::allocator<T> {
  public:
-  typedef typename std::allocator<T>::pointer pointer;
+  typedef typename std::allocator_traits<std::allocator<T>>::pointer pointer;
   typedef typename std::allocator<T>::size_type size_type;
 
   // Backing store for the allocator. The container owner is responsible for
