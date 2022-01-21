@@ -6,6 +6,7 @@
 
 #include "base/bind.h"
 #include "base/macros.h"
+#include "base/memory/weak_ptr.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -94,6 +95,8 @@ class TemplateURLFetcher::RequestDelegate {
 
   std::unique_ptr<TemplateURLService::Subscription> template_url_subscription_;
 
+  base::WeakPtrFactory<RequestDelegate> weak_factory_{this};
+
   DISALLOW_COPY_AND_ASSIGN(RequestDelegate);
 };
 
@@ -118,7 +121,7 @@ TemplateURLFetcher::RequestDelegate::RequestDelegate(
     // Start the model load and set-up waiting for it.
     template_url_subscription_ = model->RegisterOnLoadedCallback(
         base::Bind(&TemplateURLFetcher::RequestDelegate::OnLoaded,
-                   base::Unretained(this)));
+                   weak_factory_.GetWeakPtr()));
     model->Load();
   }
 
@@ -140,7 +143,7 @@ TemplateURLFetcher::RequestDelegate::RequestDelegate(
       url_loader_factory,
       base::BindOnce(
           &TemplateURLFetcher::RequestDelegate::OnSimpleLoaderComplete,
-          base::Unretained(this)),
+          weak_factory_.GetWeakPtr()),
       50000 /* max_body_size */);
 }
 
@@ -185,7 +188,7 @@ void TemplateURLFetcher::RequestDelegate::OnSimpleLoaderComplete(
       &fetcher_->template_url_service_->search_terms_data(),
       *response_body.get(), TemplateURLParser::ParameterFilter(),
       base::BindOnce(&RequestDelegate::OnTemplateURLParsed,
-                     base::Unretained(this)));
+                     weak_factory_.GetWeakPtr()));
 }
 
 void TemplateURLFetcher::RequestDelegate::AddSearchProvider() {
