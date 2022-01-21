@@ -58,6 +58,7 @@
 #include "services/network/public/mojom/url_response_head.mojom.h"
 #include "storage/common/file_system/file_system_util.h"
 #include "url/gurl.h"
+#include "url/url_util_qt.h"
 
 #if defined(OS_WIN)
 #include "base/win/shortcut.h"
@@ -840,13 +841,17 @@ void FileURLLoaderFactory::CreateLoaderAndStartInternal(
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
   if (response_type == network::mojom::FetchResponseType::kCors) {
-    // FileURLLoader doesn't support CORS and it's not covered by CorsURLLoader,
-    // so we need to reject requests that need CORS manually.
-    mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
-        ->OnComplete(
-            network::URLLoaderCompletionStatus(network::CorsErrorStatus(
-                network::mojom::CorsError::kCorsDisabledScheme)));
-    return;
+    std::string fromScheme = request.request_initiator->GetTupleOrPrecursorTupleIfOpaque().scheme();
+    bool hasLocalAccess = false;
+    if (const url::CustomScheme *cs = url::CustomScheme::FindScheme(fromScheme))
+      hasLocalAccess = cs->flags & (url::CustomScheme::LocalAccessAllowed | url::CustomScheme::Local);
+    if (!hasLocalAccess) {
+      mojo::Remote<network::mojom::URLLoaderClient>(std::move(client))
+          ->OnComplete(
+             network::URLLoaderCompletionStatus(network::CorsErrorStatus(
+                  network::mojom::CorsError::kCorsDisabledScheme)));
+      return;
+    }
   }
 
   // Check file path just after all CORS flag checks are handled.

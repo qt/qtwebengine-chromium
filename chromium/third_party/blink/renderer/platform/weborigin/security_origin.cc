@@ -174,7 +174,7 @@ SecurityOrigin::SecurityOrigin(const String& protocol,
     } else {
       port_ = 0;
     }
-    can_load_local_resources_ = cs->flags & url::CustomScheme::LocalAccessAllowed;
+    can_load_local_resources_ = cs->flags & (url::CustomScheme::LocalAccessAllowed | url::CustomScheme::Local);
     return;
   }
   DCHECK(url::SchemeHostPort(protocol.Utf8(), host.Utf8(), port,
