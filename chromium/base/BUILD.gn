@@ -1125,6 +1125,7 @@ jumbo_component("base") {
     ]
     jumbo_excluded_sources += [
       "logging_win.cc",
+      "profiler/module_cache_win.cc",
     ]
   }
 
