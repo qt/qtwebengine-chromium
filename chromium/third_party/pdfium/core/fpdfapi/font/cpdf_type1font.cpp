@@ -18,7 +18,7 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
 
-#if defined(OS_APPLE)
+#if defined(OS_APPLE) && !defined(OS_IOS)
 #include <Carbon/Carbon.h>
 #endif  // defined(OS_APPLE)
 
