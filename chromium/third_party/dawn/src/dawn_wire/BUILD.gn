@@ -53,8 +53,11 @@ dawn_component("dawn_wire") {
 
   deps = [
     ":dawn_wire_gen",
-    "${dawn_root}/src/common",
   ]
+
+  if (!is_ios) {
+    deps += [ "${dawn_root}/src/common" ]
+  }
 
   configs = [ "${dawn_root}/src/common:dawn_internal" ]
   sources = get_target_outputs(":dawn_wire_gen")

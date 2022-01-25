@@ -550,7 +550,7 @@ test("components_unittests") {
     assert_no_deps = [ "//chrome/*" ]
   }
 
-  if (is_ios) {
+  if (is_ios && !use_qt) {
     assert_no_deps += ios_assert_no_deps
   }
 }

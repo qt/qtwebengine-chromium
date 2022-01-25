@@ -258,8 +258,11 @@ if (!is_android && !is_fuchsia && !is_chromeos_ash) {
       ":gl_lpm_shader_to_string",
       "//base/test:run_all_unittests",
       "//testing/gtest",
-      "//third_party/protobuf:protobuf_full",
     ]
+
+    if(!is_ios) {
+      deps += [ "//third_party/protobuf:protobuf_full" ]
+    }
   }
 
   fuzzer_test("gl_lpm_fuzzer") {
