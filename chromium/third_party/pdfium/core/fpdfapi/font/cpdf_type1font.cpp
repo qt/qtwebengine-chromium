@@ -18,7 +18,7 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/fx_freetype.h"
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_IOS)
 #include <Carbon/Carbon.h>
 #endif  // BUILDFLAG(IS_APPLE)
 
