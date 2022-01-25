@@ -53,8 +53,11 @@ dawn_component("wire") {
 
   deps = [
     ":gen",
-    "${dawn_root}/src/dawn/common",
   ]
+
+  if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
+    deps += [ "${dawn_root}/src/dawn/common" ]
+  }
 
   configs = [ "${dawn_root}/src/dawn/common:internal_config" ]
   sources = get_target_outputs(":gen")
