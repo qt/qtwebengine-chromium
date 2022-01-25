@@ -22,6 +22,10 @@
 #include "core/fxge/text_char_pos.h"
 #include "third_party/base/span.h"
 
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 #if !defined(_SKIA_SUPPORT_)
 #include "core/fxge/agg/fx_agg_driver.h"
 #endif
