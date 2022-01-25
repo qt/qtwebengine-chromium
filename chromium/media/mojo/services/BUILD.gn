@@ -225,13 +225,16 @@ source_set("unit_tests") {
     "//media/mojo/common",
     "//media/mojo/mojom",
     "//mojo/core/embedder",
-    "//mojo/public/interfaces/bindings/tests:test_interfaces",
     "//services/metrics/public/cpp:ukm_builders",
     "//services/service_manager/public/cpp",
     "//services/service_manager/public/cpp/test:test_support",
     "//testing/gmock",
     "//testing/gtest",
   ]
+
+  if (!is_ios) {
+    deps += ["//mojo/public/interfaces/bindings/tests:test_interfaces"]
+  }
 
   if (enable_library_cdms) {
     sources += [
