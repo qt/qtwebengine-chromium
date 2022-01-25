@@ -22,7 +22,6 @@ declare_args() {
   # That is not a limitation for now as Xcode mandates the presence of bitcode
   # only when building bitcode-enabled projects for real devices (ARM CPUs).
   enable_ios_bitcode = false
-  use_qt_fat_lib = false
 }
 
 # This is included by reference in the //build/config/compiler config that
@@ -31,8 +30,6 @@ config("compiler") {
   # These flags are shared between the C compiler and linker.
   common_flags = []
 
-  fatlib_cpu = ""
-
   # CPU architecture.
   if (current_cpu == "x64") {
     triplet_cpu = "x86_64"
@@ -40,14 +37,8 @@ config("compiler") {
     triplet_cpu = "i386"
   } else if (current_cpu == "arm" || current_cpu == "armv7") {
     triplet_cpu = "armv7"
-    if (use_qt_fat_lib) {
-      fatlib_cpu = "i386"
-    }
   } else if (current_cpu == "arm64") {
     triplet_cpu = "arm64"
-    if (use_qt_fat_lib) {
-      fatlib_cpu = "x86_64"
-    }
   } else {
     assert(false, "unsupported cpu: $current_cpu")
   }
@@ -71,12 +62,6 @@ config("compiler") {
     "-target",
     "$triplet_cpu-$triplet_os$ios_deployment_target$triplet_environment",
   ]
-  if (fatlib_cpu != "") {
-    common_flags += [
-        "-target",
-        "$fatlib_cpu-$triplet_os$ios_deployment_target-simulator",
-    ]
-  }
 
   # This is here so that all files get recompiled after an Xcode update.
   # (defines are passed via the command line, and build system rebuild things
@@ -113,24 +98,15 @@ config("runtime_library") {
     _sdk_root = rebase_path(ios_sdk_path, root_build_dir)
   }
 
+  common_flags = [
+    "-isysroot",
+    _sdk_root,
+  ]
+
   swiftflags = [
     "-sdk",
     _sdk_root,
   ]
-
-  if (use_qt_fat_lib) {
-    common_flags = [
-      "-Xarch_arm64",
-      "-isysroot" + _sdk_root,
-      "-Xarch_x86_64",
-      "-isysroot" + additional_target_sysroot[0],
-    ]
-  } else {
-    common_flags = [
-      "-isysroot",
-      _sdk_root,
-    ]
-  }
 
   if (target_environment == "catalyst") {
     common_flags += [
