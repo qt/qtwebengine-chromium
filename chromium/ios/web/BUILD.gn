@@ -9,10 +9,13 @@ import("//tools/grit/grit_rule.gni")
 
 group("all_tests") {
   testonly = true
-  deps = [
-    ":ios_web_inttests",
-    ":ios_web_unittests",
-  ]
+  deps = []
+  if (!is_qtwebengine) {
+    deps += [
+      ":ios_web_inttests",
+      ":ios_web_unittests",
+    ]
+  }
 }
 
 source_set("web") {
@@ -183,8 +186,9 @@ test("ios_web_unittests") {
     "//ios/web/test:packed_resources",
     "//ios/web/web_view:unittests",
   ]
-
-  assert_no_deps = ios_assert_no_deps
+  if (!is_qtwebengine) {
+    assert_no_deps = ios_assert_no_deps
+  }
   configs += [ "//build/config/compiler:enable_arc" ]
 }
 
@@ -635,8 +639,9 @@ test("ios_web_inttests") {
     "webui/web_ui_inttest.mm",
     "webui/web_ui_mojo_inttest.mm",
   ]
-
-  assert_no_deps = ios_assert_no_deps
+  if (!is_qtwebengine) {
+      assert_no_deps = ios_assert_no_deps
+  }
 }
 
 optimize_js("plugin_placeholder_js") {
