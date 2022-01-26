@@ -585,7 +585,7 @@ SIN Vec<N,float>   fma(const Vec<N,float>& x,
 #elif defined(__aarch64__)
     SI Vec<4,float> fma(const Vec<4,float>& x, const Vec<4,float>& y, const Vec<4,float>& z) {
         // These instructions tend to work like z += xy, so the order here is z,x,y.
-        return to_vec<4,float>(vfmaq_f32(to_vext<4,float>(z)
+        return to_vec<4,float>(vfmaq_f32(to_vext<4,float>(z),
                                          to_vext<4,float>(x),
                                          to_vext<4,float>(y)));
     }
