@@ -157,7 +157,7 @@ SoftwareImageDecodeCacheUtils::GenerateCacheEntryFromCandidate(
     result = decoded_pixmap.scalePixels(
         target_pixmap,
         SkSamplingOptions(filter_quality,
-                          SkSamplingOptions::kMedium_asMipmapLinear));
+                          SkSamplingOptions::kMedium_asMipmapNearest));
   }
   DCHECK(result) << key.ToString();
 
