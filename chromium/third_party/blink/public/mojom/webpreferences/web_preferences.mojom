@@ -143,6 +143,7 @@ struct WebPreferences {
   bool hyperlink_auditing_enabled;
   bool allow_universal_access_from_file_urls;
   bool allow_file_access_from_file_urls;
+  bool allow_remote_access_from_local_urls;
   bool webgl1_enabled;
   bool webgl2_enabled;
   bool pepper_3d_enabled;
