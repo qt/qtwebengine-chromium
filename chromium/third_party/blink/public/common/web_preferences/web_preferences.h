@@ -79,6 +79,7 @@ struct BLINK_COMMON_EXPORT WebPreferences {
   bool hyperlink_auditing_enabled = true;
   bool allow_universal_access_from_file_urls = false;
   bool allow_file_access_from_file_urls = false;
+  bool allow_remote_access_from_local_urls = true;
   bool webgl1_enabled = true;
   bool webgl2_enabled = true;
   bool pepper_3d_enabled = false;
