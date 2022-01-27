@@ -169,6 +169,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.allow_file_access_from_file_urls;
   }
 
+  static bool allow_remote_access_from_local_urls(
+      const blink::web_pref::WebPreferences& r) {
+    return r.allow_remote_access_from_local_urls;
+  }
+
   static bool webgl1_enabled(const blink::web_pref::WebPreferences& r) {
     return r.webgl1_enabled;
   }
