@@ -562,7 +562,7 @@ SIN Vec<N,float>   fma(const Vec<N,float>& x,
 #endif
 }
 
-#if !defined(SKNX_NO_SIMD)
+#if !defined(SKNX_NO_SIMD) && (defined(__GNUC__) || defined(__clang__))
 #if defined(__AVX2__)
     SI Vec<4,float> fma(const Vec<4,float>& x, const Vec<4,float>& y, const Vec<4,float>& z) {
         return to_vec<4,float>(_mm_fmadd_ps(to_vext<4,float>(x),
