@@ -66,6 +66,7 @@ WebPreferences::WebPreferences()
       hyperlink_auditing_enabled(true),
       allow_universal_access_from_file_urls(false),
       allow_file_access_from_file_urls(false),
+      allow_remote_access_from_local_urls(true),
       webgl1_enabled(true),
       webgl2_enabled(true),
       pepper_3d_enabled(false),
