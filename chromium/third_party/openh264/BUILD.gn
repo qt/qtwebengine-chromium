@@ -3,15 +3,9 @@
 # found in the LICENSE file.
 
 import("//build/config/chromeos/ui_mode.gni")
-import("//build/config/linux/pkg_config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
-import("//build/shim_headers.gni")
 import("//third_party/nasm/nasm_assemble.gni")
 import("//third_party/openh264/openh264_sources.gni")
-
-declare_args() {
-  use_system_openh264 = false
-}
 
 # Config shared by all openh264 targets.
 config("config") {
@@ -135,7 +129,7 @@ if (use_assembler) {
   }
 }  # if (is_win || is_linux || is_chromeos)
 
-source_set("bundled_common") {
+source_set("common") {
   sources = openh264_common_sources
   if (is_chromeos_ash && current_cpu == "arm") {
     sources += openh264_common_sources_asm_arm
@@ -161,7 +155,7 @@ source_set("bundled_common") {
   }
 }
 
-source_set("bundled_processing") {
+source_set("processing") {
   sources = openh264_processing_sources
   if (is_chromeos_ash && current_cpu == "arm") {
     sources += openh264_processing_sources_asm_arm
@@ -171,16 +165,14 @@ source_set("bundled_processing") {
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
   configs += [ ":config" ]
-  deps = [
-    ":bundled_common",
-  ]
+  deps = [ ":common" ]
   if (use_assembler) {
     defines = [ "X86_ASM" ]
     deps += [ ":openh264_processing_asm" ]
   }
 }
 
-source_set("bundled_encoder") {
+source_set("encoder") {
   sources = openh264_encoder_sources
   if (is_chromeos_ash && current_cpu == "arm") {
     sources += openh264_encoder_sources_asm_arm
@@ -197,55 +189,11 @@ source_set("bundled_encoder") {
     configs -= [ "//build/config/clang:extra_warnings" ]
   }
   deps = [
-    ":bundled_common",
-    ":bundled_processing",
+    ":common",
+    ":processing",
   ]
   if (use_assembler) {
     defines = [ "X86_ASM" ]
     deps += [ ":openh264_encoder_asm" ]
-  }
-}
-
-if (use_system_openh264) {
-  pkg_config("system_openh264") {
-    packages = [ "openh264" ]
-  }
-}
-
-shim_headers("openh264_shim") {
-  prefix = "wels/"
-  root_path = "src/codec/api/svc"
-  headers = [
-    "codec_api.h",
-    "codec_app_def.h",
-    "codec_def.h",
-    "codec_ver.h",
-  ]
-}
-
-group("common") {
-  if (use_system_openh264) {
-    deps = [ ":openh264_shim" ]
-    public_configs = [ ":system_openh264" ]
-  } else {
-    public_deps = [ ":bundled_common" ]
-  }
-}
-
-group("processing") {
-  if (use_system_openh264) {
-    deps = [ ":openh264_shim" ]
-    public_configs = [ ":system_openh264" ]
-  } else {
-    public_deps = [ ":bundled_processing" ]
-  }
-}
-
-group("encoder") {
-  if (use_system_openh264) {
-    deps = [ ":openh264_shim" ]
-    public_configs = [ ":system_openh264" ]
-  } else {
-    public_deps = [ ":bundled_encoder" ]
   }
 }
