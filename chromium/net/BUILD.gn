@@ -62,6 +62,10 @@ use_remote_test_server = !enable_python_utils && !is_ios
 #              https://www.chromium.org/developers/design-documents/http-authentication/writing-a-spnego-authenticator-for-chrome-on-android
 use_external_gssapi = use_kerberos && !is_android && !is_win
 
+declare_args() {
+  external_gssapi_include_dir = ""
+}
+
 config("net_test_config") {
   if (use_remote_test_server) {
     defines = [ "USE_REMOTE_TEST_SERVER" ]
@@ -103,6 +107,13 @@ net_configs = [
 
 if (is_linux || is_chromeos) {
   net_configs += [ "//build/config/linux:libresolv" ]
+}
+
+if (is_linux && use_external_gssapi && external_gssapi_include_dir != "") {
+  config("external_gssapi") {
+    include_dirs = [ external_gssapi_include_dir ]
+  }
+  net_configs += [ ":external_gssapi" ]
 }
 
 source_set("constants") {
