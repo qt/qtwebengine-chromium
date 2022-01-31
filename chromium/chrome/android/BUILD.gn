@@ -251,6 +251,10 @@ if (_is_default_toolchain) {
       "//third_party/androidx:androidx_preference_preference_java",
     ]
 
+    if (is_qtpdf) {
+      deps -= [ "//components/policy:app_restrictions_resources" ]
+    }
+
     if (autofill_use_internal_android_resources) {
       deps += [ "//clank/components/autofill:java_resources" ]
     } else {
