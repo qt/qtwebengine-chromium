@@ -1,7 +1,7 @@
 # Generated from '.DEPS.git'
 build_with_chromium = true
 checkout_android = false
-checkout_android_native_support = false
+checkout_android_native_support = true
 checkout_google_benchmark = false
 checkout_ios_webkit = false
 checkout_nacl = false

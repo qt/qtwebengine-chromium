@@ -347,7 +347,7 @@ if (!is_qtwebengine){
     deps += [ "//tools/android/md5sum" ]
   }
 
-  if (is_android) {
+  if (is_android && !is_qtwebengine) {
     deps += [
       "//android_webview/js_sandbox/javatests:webview_js_sandbox_test_app",
       "//base:base_junit_tests",

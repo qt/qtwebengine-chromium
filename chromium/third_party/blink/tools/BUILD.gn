@@ -3,6 +3,8 @@
 # found in the LICENSE file.
 
 # WPT codebase for running webplatform tests
+import("//build/config/features.gni")
+
 group("wpt_tests_isolate") {
   testonly = true
   data = [
@@ -73,6 +75,13 @@ group("wpt_tests_base_mojo_bindings") {
     "//mojo/public/js/ts/bindings/tests:test_interfaces_js_data_deps",
     "//mojo/public/mojom/base:base_js_data_deps",
   ]
+
+  if(is_qtwebengine && is_android) {
+    data_deps -= [
+      "//:layout_test_data_mojo_bindings",
+      "//:layout_test_data_mojo_bindings_lite",
+    ]
+  }
 }
 
 group("wpt_tests_mojo_bindings") {
