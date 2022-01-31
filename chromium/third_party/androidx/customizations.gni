@@ -89,6 +89,7 @@ template("_androidx_prebuilt") {
       # Target has AIDL, but we do not support it yet: http://crbug.com/644439
       ignore_aidl = true
     } else if (target_name == "androidx_window_window_java") {
+      if (!is_qtpdf){
       deps += [
         # This library has a <uses-library> to enable some extra OS APIs, so ensure the
         # .jar file is made available to R8 via this dep.
@@ -98,6 +99,7 @@ template("_androidx_prebuilt") {
         # onto sidecar.
         "//third_party/androidx:androidx_window_sidecar_sidecar_java",
       ]
+      }
     } else if (target_name == "androidx_webkit_webkit_java") {
       visibility = [
         "//android_webview/tools/system_webview_shell:*",

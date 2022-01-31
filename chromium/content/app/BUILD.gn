@@ -6,6 +6,7 @@ import("//build/config/apple/mobile_config.gni")
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
 import("//third_party/tflite/features.gni")
+import("//third_party/jni_zero/jni_zero.gni")
 
 extra_configs = [
   "//build/config/compiler:wexit_time_destructors",

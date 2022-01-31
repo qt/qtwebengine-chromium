@@ -110,6 +110,10 @@ if (is_android) {
       "//ui/android:ui_java",
       "//url:url_java",
     ]
+
+    if (is_qtpdf) {
+      deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
+    }
   }
 
   android_library("recent_activity_java") {
@@ -237,6 +241,10 @@ if (is_android) {
       "//ui/android:ui_utils_java",
       "//url:url_java",
     ]
+
+    if (is_qtpdf) {
+      deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
+    }
   }
 
   android_library("shared_image_tiles_java") {
