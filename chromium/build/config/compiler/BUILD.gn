@@ -2707,7 +2707,7 @@ if (is_clang && is_a_target_toolchain) {
            "Our default profiles currently only apply to Chromium")
     assert(is_android || is_chromeos || is_castos,
            "The current platform has no default profile")
-    if (is_android || is_castos) {
+    if (!is_qtwebengine &&(is_android || is_castos)) {
       _clang_sample_profile = "//chrome/android/profiles/afdo.prof"
     } else {
       assert(
