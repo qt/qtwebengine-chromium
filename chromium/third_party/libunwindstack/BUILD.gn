@@ -249,6 +249,9 @@ source_set("libunwindstack") {
     "//third_party/zlib:zlib",
     "//third_party/zstd:decompress",
   ]
+  if (is_qtpdf) {
+    deps -= [ "//third_party/rust/rustc_demangle_capi/v0_1:lib" ]
+  }
   public_configs = [ ":libunwindstack_config" ]
   configs += [
     ":libdexfile_defines",

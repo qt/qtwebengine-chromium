@@ -19,6 +19,9 @@ android_library("androidx_window_shims_java") {
     "//third_party/androidx:androidx_core_core_java",
     "//third_party/androidx:androidx_window_window_java",
   ]
+  if (is_qtpdf) {
+    deps -= [ "//third_party/androidx:androidx_window_window_java" ]
+  }
 }
 
 # Helpers to use in place of androidx.window APIs.
@@ -28,5 +31,7 @@ android_library("window_util_java") {
     "java/org/chromium/window/WindowApiCheck.java",
     "java/org/chromium/window/WindowUtil.java",
   ]
-  deps = [ "//third_party/android_sdk:android_window_extensions_java" ]
+  if (!is_qtpdf) {
+    deps = [ "//third_party/android_sdk:android_window_extensions_java" ]
+  }
 }
