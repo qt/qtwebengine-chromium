@@ -7,6 +7,7 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//build/config/features.gni")
 import("//ppapi/buildflags/buildflags.gni")
 import("//third_party/tflite/features.gni")
+import("//third_party/jni_zero/jni_zero.gni")
 
 extra_configs = [
   "//build/config/compiler:wexit_time_destructors",

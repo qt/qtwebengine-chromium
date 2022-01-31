@@ -277,6 +277,10 @@ if (current_toolchain == default_toolchain) {
       "//third_party/androidx:androidx_preference_preference_java",
     ]
 
+    if (is_qtwebengine) {
+      deps -= [ "//components/policy:app_restrictions_resources" ]
+    }
+
     if (plus_addresses_use_internal_android_resources) {
       deps += [ "//clank/components/plus_addresses:java_resources" ]
     } else {

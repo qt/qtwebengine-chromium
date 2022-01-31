@@ -179,6 +179,12 @@ template("single_gcc_toolchain") {
       toolchain_uses_reclient_links = use_reclient_links
     }
 
+    if (defined(toolchain_args.is_mingw)) {
+      toolchain_is_mingw = toolchain_args.is_mingw
+    } else {
+      toolchain_is_mingw = is_mingw
+    }
+
     if (defined(toolchain_args.cc_wrapper)) {
       toolchain_cc_wrapper = toolchain_args.cc_wrapper
     } else {
@@ -307,7 +313,7 @@ template("single_gcc_toolchain") {
     if (defined(invoker.executable_extension)) {
       default_executable_extension = invoker.executable_extension
     } else {
-      if (is_mingw) {
+      if (toolchain_is_mingw) {
         default_executable_extension = ".exe"
       } else {
         default_executable_extension = ""
@@ -496,7 +502,7 @@ template("single_gcc_toolchain") {
 
       default_output_dir = "{{root_out_dir}}${default_shlib_subdir}"
 
-      if (is_mingw) {
+      if (toolchain_is_mingw) {
         output_prefix = ""
       } else {
         output_prefix = "lib"

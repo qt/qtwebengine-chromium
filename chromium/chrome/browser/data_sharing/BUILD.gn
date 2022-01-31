@@ -74,6 +74,10 @@ if (is_android) {
       "//ui/android:ui_java",
       "//url:url_java",
     ]
+
+    if (is_qtwebengine) {
+      deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
+    }
   }
 
   android_library("java") {
@@ -92,6 +96,10 @@ if (is_android) {
       "//third_party/android_sdk:android_window_extensions_java",
       "//url:url_java",
     ]
+
+    if (is_qtwebengine) {
+      deps -= [ "//third_party/android_sdk:android_window_extensions_java", ]
+    }
 
     public_deps = [ ":delegate_java" ]
   }
@@ -118,7 +126,7 @@ if (is_android) {
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//ui/android:ui_no_recycler_view_java",
     ]
-  }
+ }
 
   android_library("invitation_dialog_java") {
     resources_package =

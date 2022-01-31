@@ -42,7 +42,7 @@ if (is_android) {
     # heavily but don't write gclient args files.
 
     import("//build/config/gclient_args.gni")
-    if (defined(checkout_android)) {
+    if (defined(checkout_android) && !is_qtwebengine) {
       n = "$0x0A"  # Newline
       assert(checkout_android,
              "Missing native Android toolchain support. |target_os| in your " +
@@ -356,6 +356,8 @@ if (is_android) {
     android_host_os = "linux"
   } else if (host_os == "mac") {
     android_host_os = "darwin"
+  } else if (host_os == "win") {
+    android_host_os = "windows"
   } else {
     assert(false, "Need Android toolchain support for your build OS.")
   }

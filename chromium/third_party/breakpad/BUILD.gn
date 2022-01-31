@@ -200,7 +200,7 @@ if (use_fuzzing_engine) {
 
 # {micro,mini}dump_stackwalk and minidump_dump are tool-type executables
 # that do not build on Windows.
-if (!is_win) {
+if (!is_win || target_os == "android") {
   if (current_toolchain == host_system_allocator_toolchain ||
       current_toolchain == default_system_allocator_toolchain) {
     # Contains the code shared by both {micro,mini}dump_stackwalk.
@@ -906,8 +906,9 @@ if (is_linux || is_chromeos || is_android) {
       "//testing/gtest:gtest_main",
     ]
 
-    data_deps = [ ":linux_dumper_unittest_helper" ]
-
+    if (!is_android) {
+      data_deps = [ ":linux_dumper_unittest_helper" ]
+    }
     include_dirs = [
       "chromium",  # Use our copy of breakpad_googletest_includes.h
       ".",
@@ -934,7 +935,7 @@ if (is_linux || is_chromeos || is_android) {
     # Add the breakpad unittest config at the end to override all configs.
     configs += [ ":breakpad_unittest_config" ]
   }
-
+if(!is_android) {
   if (current_toolchain == host_system_allocator_toolchain ||
       current_toolchain == default_system_allocator_toolchain) {
     executable("linux_dumper_unittest_helper") {
@@ -1019,7 +1020,7 @@ if (is_linux || is_chromeos || is_android) {
     }
   }
 }
-
+}
 if (is_win) {
   if (current_toolchain == host_system_allocator_toolchain ||
       current_toolchain == default_system_allocator_toolchain) {

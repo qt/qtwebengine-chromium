@@ -3424,6 +3424,10 @@ test("content_unittests") {
       "//ui/android:android",
     ]
 
+    if (is_qtwebengine) {
+      deps -= [ "//content/browser:fontations_name_table_ffi" ]
+    }
+
     if (enable_chrome_android_internal) {
       data_deps += [ "//clank/build/bot/filters:content_unittests_filters" ]
     }

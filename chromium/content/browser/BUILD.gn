@@ -34,7 +34,8 @@ if (is_mac) {
 }
 if (is_android) {
   import("//third_party/jni_zero/jni_zero.gni")
-
+}
+if (is_android && !is_qtwebengine) {
   rust_static_library("fontations_name_table_ffi") {
     allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
     crate_root = "font_unique_name_lookup/name_table_ffi.rs"
@@ -3363,6 +3364,9 @@ jumbo_source_set("browser") {
       deps += [ "//gpu/vulkan/init" ]
     }
     libs += [ "jnigraphics" ]
+    if (is_qtwebengine) {
+      deps -= [ ":fontations_name_table_ffi" ]
+    }
   } else {
     # Not Android.
     sources += [
