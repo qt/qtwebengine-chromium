@@ -270,8 +270,10 @@ if (host_toolchain == "") {
 _default_toolchain = ""
 
 if (target_os == "android") {
-  # Targeting android on Mac is best-effort and not guaranteed to work.
-  assert(host_os == "linux", "Android builds are only supported on Linux.")
+  if (!is_qtpdf) {
+    # Targeting android on Mac is best-effort and not guaranteed to work.
+    assert(host_os == "linux", "Android builds are only supported on Linux.")
+  }
   _default_toolchain = "//build/toolchain/android:android_clang_$target_cpu"
 } else if (target_os == "chromeos" || target_os == "linux") {
   # See comments in build/toolchain/cros/BUILD.gn about board compiles.
@@ -610,7 +612,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang && !is_mingw
+        use_libcxx_modules = is_clang && !is_mingw && !is_robolectric
       }
 
       if (filter_include(
@@ -740,7 +742,7 @@ foreach(_target_type,
       }
 
       if (!defined(use_libcxx_modules)) {
-        use_libcxx_modules = is_clang && !is_mingw
+        use_libcxx_modules = is_clang && !is_mingw && !is_robolectric
       }
 
       if (filter_include(

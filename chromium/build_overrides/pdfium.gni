@@ -22,7 +22,7 @@ pdf_bundle_freetype_override = false
 pdf_use_partition_alloc_override = use_partition_alloc
 
 # Allow to use Skia backend at run time.
-pdf_use_skia_override = true
+pdf_use_skia_override = false
 
 # Define a custom font manager target to avoid using Freetype.
 # Temporarily unset due to https://crbug.com/438906414
@@ -36,4 +36,4 @@ pdf_enable_fontations_override = false
 pdf_enable_rust_bmp_override = false
 
 # Enable Rust-based PNG decoder and encoder in PDFium.
-pdf_enable_rust_png_override = true
+pdf_enable_rust_png_override = pdf_use_skia_override

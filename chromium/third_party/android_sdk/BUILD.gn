@@ -68,7 +68,7 @@ if (enable_java_templates) {
     input_jars_paths = [ "//third_party/android_deps/autorolled/cipd/libs/com_android_extensions_xr_extensions_xr/extensions-xr.jar" ]
     required = false
   }
-  if (!limit_android_deps) {
+  if (!limit_android_deps && !is_qtpdf) {
     android_sdk_optional_library("android_window_extensions_java") {
       library_name = "androidx.window.extensions"
       required = false
