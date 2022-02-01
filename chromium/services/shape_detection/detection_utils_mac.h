@@ -18,10 +18,6 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/gfx/geometry/rect_f.h"
 
-#if defined(MAC_OS_X_VERSION_10_13) && MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_13
-#import <Vision/Vision.h>
-#endif
-
 namespace shape_detection {
 
 // Takes a ScopedSharedBufferHandle with dimensions and produces a new CIImage
