@@ -61,7 +61,8 @@ void NinjaBinaryTargetWriter::Run() {
       const RspTargetWriter::Type& type = RspTargetWriter::strToType(str_type);
       RspTargetWriter p_writer(&writer, target_, type, p_stream);
       p_writer.Run();
-      WriteFileIfChanged(p_file, p_stream.str(), nullptr);
+      if (p_stream.tellp() != std::streampos(0))
+          WriteFileIfChanged(p_file, p_stream.str(), nullptr);
     }
   }
 }
