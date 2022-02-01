@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/core/frame/reporting_context.h"
 
-#include "net/net_buildflags.h"
 #include "third_party/blink/public/common/browser_interface_broker_proxy.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -143,13 +142,11 @@ void ReportingContext::CountReport(Report* report) {
 
 const HeapMojoRemote<mojom::blink::ReportingServiceProxy>&
 ReportingContext::GetReportingService() const {
-#if BUILDFLAG(ENABLE_REPORTING)
   if (!reporting_service_.is_bound()) {
     execution_context_->GetBrowserInterfaceBroker().GetInterface(
         reporting_service_.BindNewPipeAndPassReceiver(
             execution_context_->GetTaskRunner(TaskType::kMiscPlatformAPI)));
   }
-#endif
   return reporting_service_;
 }
 
@@ -182,7 +179,6 @@ void ReportingContext::SendToReportingAPI(Report* report,
     return;
   }
 
-#if BUILDFLAG(ENABLE_REPORTING)
   const LocationReportBody* location_body =
       static_cast<LocationReportBody*>(report->body());
   int line_number = location_body->lineNumber().value_or(0);
@@ -230,7 +226,6 @@ void ReportingContext::SendToReportingAPI(Report* report,
         url, endpoint, body->featureId(), body->disposition(), body->message(),
         body->sourceFile(), line_number, column_number);
   }
-#endif
 }
 
 }  // namespace blink

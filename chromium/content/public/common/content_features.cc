@@ -7,7 +7,6 @@
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "content/common/buildflags.h"
-#include "net/net_buildflags.h"
 
 #if defined(OS_WIN)
 #include "base/win/windows_version.h"
@@ -214,12 +213,7 @@ const base::Feature kCooperativeScheduling{"CooperativeScheduling",
 // Enables crash reporting via Reporting API.
 // https://www.w3.org/TR/reporting/#crash-report
 const base::Feature kCrashReporting{"CrashReporting",
-#if BUILDFLAG(ENABLE_REPORTING)
-                                    base::FEATURE_ENABLED_BY_DEFAULT
-#else
-                                    base::FEATURE_DISABLED_BY_DEFAULT
-#endif
-};
+                                    base::FEATURE_ENABLED_BY_DEFAULT};
 
 // Enables support for the `Critical-CH` response header.
 // https://github.com/WICG/client-hints-infrastructure/blob/master/reliability.md#critical-ch
