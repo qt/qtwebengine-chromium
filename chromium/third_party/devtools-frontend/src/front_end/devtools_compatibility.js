@@ -27,6 +27,11 @@
        * @type {?function(!ExtensionDescriptor)}
        */
       this._addExtensionCallback = null;
+
+      /**
+       * @type {!Array<string>}
+       */
+      this._originsForbiddenForExtensions = [];
     }
 
     /**
@@ -86,6 +91,20 @@
           this._pendingExtensionDescriptors.push(...extensions);
         }
       }
+    }
+
+    /**
+     * @param {!Array<string>} forbiddenOrigins
+     */
+    setOriginsForbiddenForExtensions(forbiddenOrigins) {
+      this._originsForbiddenForExtensions = forbiddenOrigins;
+    }
+
+    /**
+     * @return {!Array<string>}
+     */
+    getOriginsForbiddenForExtensions() {
+      return this._originsForbiddenForExtensions;
     }
 
     /**

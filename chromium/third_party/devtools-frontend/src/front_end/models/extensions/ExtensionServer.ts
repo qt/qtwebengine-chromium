@@ -57,7 +57,7 @@ const extensionOrigins: WeakMap<MessagePort, string> = new WeakMap();
 
 declare global {
   interface Window {
-    DevToolsAPI?: {getInspectedTabId?(): string|undefined};
+    DevToolsAPI?: {getInspectedTabId?(): string|undefined, getOriginsForbiddenForExtensions?(): string[]};
   }
 }
 
@@ -1097,6 +1097,12 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper {
     }
     if (parsedURL.protocol.startsWith('http') && parsedURL.hostname === 'chrome.google.com' &&
         parsedURL.pathname.startsWith('/webstore')) {
+      return false;
+    }
+
+    if ((window.DevToolsAPI && window.DevToolsAPI.getOriginsForbiddenForExtensions &&
+             window.DevToolsAPI.getOriginsForbiddenForExtensions() ||
+         []).includes(parsedURL.origin)) {
       return false;
     }
     return true;
