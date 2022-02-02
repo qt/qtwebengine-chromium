@@ -779,7 +779,11 @@ size_t NetworkContext::GetNumOutstandingResolveHostRequestsForTesting() const {
 }
 
 bool NetworkContext::SkipReportingPermissionCheck() const {
+#if BUILDFLAG(ENABLE_REPORTING)
   return params_ && params_->skip_reporting_send_permission_check;
+#else
+  return false;
+#endif
 }
 
 void NetworkContext::ClearTrustTokenData(mojom::ClearDataFilterPtr filter,
@@ -865,10 +869,10 @@ void NetworkContext::ClearHttpAuthCache(base::Time start_time,
   std::move(callback).Run();
 }
 
-#if BUILDFLAG(ENABLE_REPORTING)
 void NetworkContext::ClearReportingCacheReports(
     mojom::ClearDataFilterPtr filter,
     ClearReportingCacheReportsCallback callback) {
+#if BUILDFLAG(ENABLE_REPORTING)
   net::ReportingService* reporting_service =
       url_request_context_->reporting_service();
   if (reporting_service) {
@@ -881,6 +885,7 @@ void NetworkContext::ClearReportingCacheReports(
           net::ReportingBrowsingDataRemover::DATA_TYPE_REPORTS);
     }
   }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
   std::move(callback).Run();
 }
@@ -888,6 +893,7 @@ void NetworkContext::ClearReportingCacheReports(
 void NetworkContext::ClearReportingCacheClients(
     mojom::ClearDataFilterPtr filter,
     ClearReportingCacheClientsCallback callback) {
+#if BUILDFLAG(ENABLE_REPORTING)
   net::ReportingService* reporting_service =
       url_request_context_->reporting_service();
   if (reporting_service) {
@@ -900,6 +906,7 @@ void NetworkContext::ClearReportingCacheClients(
           net::ReportingBrowsingDataRemover::DATA_TYPE_CLIENTS);
     }
   }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
   std::move(callback).Run();
 }
@@ -907,6 +914,7 @@ void NetworkContext::ClearReportingCacheClients(
 void NetworkContext::ClearNetworkErrorLogging(
     mojom::ClearDataFilterPtr filter,
     ClearNetworkErrorLoggingCallback callback) {
+#if BUILDFLAG(ENABLE_REPORTING)
   net::NetworkErrorLoggingService* logging_service =
       url_request_context_->network_error_logging_service();
   if (logging_service) {
@@ -916,6 +924,7 @@ void NetworkContext::ClearNetworkErrorLogging(
       logging_service->RemoveAllBrowsingData();
     }
   }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 
   std::move(callback).Run();
 }
@@ -924,12 +933,14 @@ void NetworkContext::SetDocumentReportingEndpoints(
     const url::Origin& origin,
     const net::NetworkIsolationKey& network_isolation_key,
     const base::flat_map<std::string, std::string>& endpoints) {
+#if BUILDFLAG(ENABLE_REPORTING)
   net::ReportingService* reporting_service =
       url_request_context()->reporting_service();
   if (reporting_service) {
     reporting_service->SetDocumentReportingEndpoints(
         origin, network_isolation_key, endpoints);
   }
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 }
 
 void NetworkContext::QueueReport(
@@ -939,6 +950,7 @@ void NetworkContext::QueueReport(
     const net::NetworkIsolationKey& network_isolation_key,
     const absl::optional<std::string>& user_agent,
     base::Value body) {
+#if BUILDFLAG(ENABLE_REPORTING)
   if (require_network_isolation_key_)
     DCHECK(!network_isolation_key.IsEmpty());
 
@@ -965,11 +977,13 @@ void NetworkContext::QueueReport(
   reporting_service->QueueReport(
       url, network_isolation_key, reported_user_agent, group, type,
       base::Value::ToUniquePtrValue(std::move(body)), 0 /* depth */);
+#endif  // BUILDFLAG(ENABLE_REPORTING)
 }
 
 void NetworkContext::QueueSignedExchangeReport(
     mojom::SignedExchangeReportPtr report,
     const net::NetworkIsolationKey& network_isolation_key) {
+#if BUILDFLAG(ENABLE_REPORTING)
   if (require_network_isolation_key_)
     DCHECK(!network_isolation_key.IsEmpty());
 
@@ -997,50 +1011,8 @@ void NetworkContext::QueueSignedExchangeReport(
   details.elapsed_time = report->elapsed_time;
   details.user_agent = std::move(user_agent);
   logging_service->QueueSignedExchangeReport(std::move(details));
-}
-
-#else   // BUILDFLAG(ENABLE_REPORTING)
-void NetworkContext::ClearReportingCacheReports(
-    mojom::ClearDataFilterPtr filter,
-    ClearReportingCacheReportsCallback callback) {
-  NOTREACHED();
-}
-
-void NetworkContext::ClearReportingCacheClients(
-    mojom::ClearDataFilterPtr filter,
-    ClearReportingCacheClientsCallback callback) {
-  NOTREACHED();
-}
-
-void NetworkContext::ClearNetworkErrorLogging(
-    mojom::ClearDataFilterPtr filter,
-    ClearNetworkErrorLoggingCallback callback) {
-  NOTREACHED();
-}
-
-void NetworkContext::SetDocumentReportingEndpoints(
-    const url::Origin& origin,
-    const net::NetworkIsolationKey& network_isolation_key,
-    const base::flat_map<std::string, std::string>& endpoints) {
-  NOTREACHED();
-}
-
-void NetworkContext::QueueReport(
-    const std::string& type,
-    const std::string& group,
-    const GURL& url,
-    const net::NetworkIsolationKey& network_isolation_key,
-    const absl::optional<std::string>& user_agent,
-    base::Value body) {
-  NOTREACHED();
-}
-
-void NetworkContext::QueueSignedExchangeReport(
-    mojom::SignedExchangeReportPtr report,
-    const net::NetworkIsolationKey& network_isolation_key) {
-  NOTREACHED();
-}
 #endif  // BUILDFLAG(ENABLE_REPORTING)
+}
 
 void NetworkContext::ClearDomainReliability(
     mojom::ClearDataFilterPtr filter,
