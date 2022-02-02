@@ -12,8 +12,6 @@
 #include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size.h"
 
-#include <algorithm>
-
 namespace chrome_pdf {
 
 namespace {

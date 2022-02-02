@@ -10,8 +10,6 @@
 #include "build/build_config.h"
 #include "ui/gfx/platform_font.h"
 
-#include <algorithm>
-
 namespace gfx {
 
 ////////////////////////////////////////////////////////////////////////////////

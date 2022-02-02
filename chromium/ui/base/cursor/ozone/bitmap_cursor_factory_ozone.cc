@@ -13,8 +13,6 @@
 #include "build/chromeos_buildflags.h"
 #include "ui/base/cursor/mojom/cursor_type.mojom-shared.h"
 
-#include <algorithm>
-
 namespace ui {
 
 namespace {
