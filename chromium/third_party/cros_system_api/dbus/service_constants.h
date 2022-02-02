@@ -24,6 +24,8 @@
 #include "debugd/dbus-constants.h"
 #include "dlp/dbus-constants.h"
 #include "drivefs/dbus-constants.h"
+#include "featured/dbus-constants.h"
+#include "fusebox/dbus-constants.h"
 #include "hammerd/dbus-constants.h"
 #include "hermes/dbus-constants.h"
 #include "hps/dbus-constants.h"
@@ -37,6 +39,7 @@
 #include "patchpanel/dbus-constants.h"
 #include "permission_broker/dbus-constants.h"
 #include "power_manager/dbus-constants.h"
+#include "privacy_screen/dbus-constants.h"
 #include "resource_manager/dbus-constants.h"
 #include "rmad/dbus-constants.h"
 #include "runtime_probe/dbus-constants.h"
@@ -44,6 +47,7 @@
 #include "shill/dbus-constants.h"
 #include "smbfs/dbus-constants.h"
 #include "smbprovider/dbus-constants.h"
+#include "spaced/dbus-constants.h"
 #include "update_engine/dbus-constants.h"
 #include "usbguard/dbus-constants.h"
 #include "vm_applications/dbus-constants.h"
@@ -549,9 +553,10 @@ const char kCdmFactoryDaemonServiceInterface[] =
 const char kCdmFactoryDaemonServiceName[] = "org.chromium.CdmFactoryDaemon";
 const char kCdmFactoryDaemonServicePath[] = "/org/chromium/CdmFactoryDaemon";
 // Methods
-const char kBootstrapMojoConnection[] = "BootstrapMojoConnection";
 const char kBootstrapCdmFactoryDaemonMojoConnection[] =
     "BootstrapCdmFactoryDaemonMojoConnection";
+const char kGetFactoryTransportKeyMaterial[] = "GetFactoryTransportKeyMaterial";
+const char kWrapFactoryKeybox[] = "WrapFactoryKeybox";
 }  // namespace cdm_oemcrypto
 
 namespace midis {

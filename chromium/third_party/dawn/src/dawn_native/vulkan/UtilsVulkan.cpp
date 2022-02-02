@@ -17,8 +17,12 @@
 #include "common/Assert.h"
 #include "dawn_native/EnumMaskIterator.h"
 #include "dawn_native/Format.h"
+#include "dawn_native/Pipeline.h"
+#include "dawn_native/ShaderModule.h"
+#include "dawn_native/vulkan/DeviceVk.h"
 #include "dawn_native/vulkan/Forward.h"
 #include "dawn_native/vulkan/TextureVk.h"
+#include "dawn_native/vulkan/VulkanError.h"
 
 namespace dawn_native { namespace vulkan {
 
@@ -42,8 +46,9 @@ namespace dawn_native { namespace vulkan {
                 return VK_COMPARE_OP_ALWAYS;
 
             case wgpu::CompareFunction::Undefined:
-                UNREACHABLE();
+                break;
         }
+        UNREACHABLE();
     }
 
     // Convert Dawn texture aspects to  Vulkan texture aspect flags
@@ -162,4 +167,93 @@ namespace dawn_native { namespace vulkan {
 
         return region;
     }
+
+    void SetDebugName(Device* device,
+                      VkObjectType objectType,
+                      uint64_t objectHandle,
+                      const char* prefix,
+                      std::string label) {
+        if (!objectHandle) {
+            return;
+        }
+
+        if (device->GetGlobalInfo().HasExt(InstanceExt::DebugUtils)) {
+            VkDebugUtilsObjectNameInfoEXT objectNameInfo;
+            objectNameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+            objectNameInfo.pNext = nullptr;
+            objectNameInfo.objectType = objectType;
+            objectNameInfo.objectHandle = objectHandle;
+
+            if (label.empty() || !device->IsToggleEnabled(Toggle::UseUserDefinedLabelsInBackend)) {
+                objectNameInfo.pObjectName = prefix;
+                device->fn.SetDebugUtilsObjectNameEXT(device->GetVkDevice(), &objectNameInfo);
+                return;
+            }
+
+            std::string objectName = prefix;
+            objectName += "_";
+            objectName += label;
+            objectNameInfo.pObjectName = objectName.c_str();
+            device->fn.SetDebugUtilsObjectNameEXT(device->GetVkDevice(), &objectNameInfo);
+        }
+    }
+
+    VkSpecializationInfo* GetVkSpecializationInfo(
+        const ProgrammableStage& programmableStage,
+        VkSpecializationInfo* specializationInfo,
+        std::vector<SpecializationDataEntry>* specializationDataEntries,
+        std::vector<VkSpecializationMapEntry>* specializationMapEntries) {
+        ASSERT(specializationInfo);
+        ASSERT(specializationDataEntries);
+        ASSERT(specializationMapEntries);
+
+        if (programmableStage.constants.size() == 0) {
+            return nullptr;
+        }
+
+        const EntryPointMetadata& entryPointMetaData =
+            programmableStage.module->GetEntryPoint(programmableStage.entryPoint);
+
+        for (const auto& pipelineConstant : programmableStage.constants) {
+            const std::string& name = pipelineConstant.first;
+            double value = pipelineConstant.second;
+
+            // This is already validated so `name` must exist
+            const auto& moduleConstant = entryPointMetaData.overridableConstants.at(name);
+
+            specializationMapEntries->push_back(
+                VkSpecializationMapEntry{moduleConstant.id,
+                                         static_cast<uint32_t>(specializationDataEntries->size() *
+                                                               sizeof(SpecializationDataEntry)),
+                                         sizeof(SpecializationDataEntry)});
+
+            SpecializationDataEntry entry;
+            switch (moduleConstant.type) {
+                case EntryPointMetadata::OverridableConstant::Type::Boolean:
+                    entry.b = static_cast<bool>(value);
+                    break;
+                case EntryPointMetadata::OverridableConstant::Type::Float32:
+                    entry.f32 = static_cast<float>(value);
+                    break;
+                case EntryPointMetadata::OverridableConstant::Type::Int32:
+                    entry.i32 = static_cast<int32_t>(value);
+                    break;
+                case EntryPointMetadata::OverridableConstant::Type::Uint32:
+                    entry.u32 = static_cast<uint32_t>(value);
+                    break;
+                default:
+                    UNREACHABLE();
+            }
+            specializationDataEntries->push_back(entry);
+        }
+
+        specializationInfo->mapEntryCount = static_cast<uint32_t>(specializationMapEntries->size());
+        specializationInfo->pMapEntries = specializationMapEntries->data();
+        specializationInfo->dataSize =
+            specializationDataEntries->size() * sizeof(SpecializationDataEntry);
+        specializationInfo->pData = specializationDataEntries->data();
+
+        return specializationInfo;
+    }
+
 }}  // namespace dawn_native::vulkan

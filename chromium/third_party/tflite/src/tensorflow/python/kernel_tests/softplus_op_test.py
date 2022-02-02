@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for Softplus and SoftplusGrad."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -128,7 +124,7 @@ class SoftplusTest(test.TestCase):
   @test_util.run_deprecated_v1
   def testNoInts(self):
     with self.cached_session():
-      with self.assertRaisesRegexp(
+      with self.assertRaisesRegex(
           TypeError,
           "'features' has DataType int32 not in list of allowed values"):
         nn_ops.softplus(constant_op.constant(42)).eval()

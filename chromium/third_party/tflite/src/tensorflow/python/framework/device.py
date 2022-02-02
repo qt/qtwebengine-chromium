@@ -14,10 +14,6 @@
 # ==============================================================================
 
 """Class to represent a device."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import threading
 
 from tensorflow.python import tf2
@@ -111,6 +107,8 @@ class MergeDevice(object):
   exposes a `shortcut_string_merge` method which can significantly improve
   performance of device placement.
   """
+
+  __slots__ = ["_spec"]
 
   def __init__(self, spec):
     if isinstance(spec, device_spec.DeviceSpecV2):

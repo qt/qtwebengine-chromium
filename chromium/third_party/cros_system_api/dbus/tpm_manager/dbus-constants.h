@@ -22,6 +22,7 @@ constexpr char kGetTpmNonsensitiveStatus[] = "GetTpmNonsensitiveStatus";
 constexpr char kGetVersionInfo[] = "GetVersionInfo";
 constexpr char kGetSupportedFeatures[] = "GetSupportedFeatures";
 constexpr char kGetDictionaryAttackInfo[] = "GetDictionaryAttackInfo";
+constexpr char kGetRoVerificationStatus[] = "GetRoVerificationStatus";
 constexpr char kResetDictionaryAttackLock[] = "ResetDictionaryAttackLock";
 constexpr char kTakeOwnership[] = "TakeOwnership";
 constexpr char kRemoveOwnerDependency[] = "RemoveOwnerDependency";

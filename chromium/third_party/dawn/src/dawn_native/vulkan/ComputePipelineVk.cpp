@@ -29,16 +29,16 @@ namespace dawn_native { namespace vulkan {
         Device* device,
         const ComputePipelineDescriptor* descriptor) {
         Ref<ComputePipeline> pipeline = AcquireRef(new ComputePipeline(device, descriptor));
-        DAWN_TRY(pipeline->Initialize(descriptor));
+        DAWN_TRY(pipeline->Initialize());
         return pipeline;
     }
 
-    MaybeError ComputePipeline::Initialize(const ComputePipelineDescriptor* descriptor) {
+    MaybeError ComputePipeline::Initialize() {
         VkComputePipelineCreateInfo createInfo;
         createInfo.sType = VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO;
         createInfo.pNext = nullptr;
         createInfo.flags = 0;
-        createInfo.layout = ToBackend(descriptor->layout)->GetHandle();
+        createInfo.layout = ToBackend(GetLayout())->GetHandle();
         createInfo.basePipelineHandle = ::VK_NULL_HANDLE;
         createInfo.basePipelineIndex = -1;
 
@@ -47,12 +47,20 @@ namespace dawn_native { namespace vulkan {
         createInfo.stage.flags = 0;
         createInfo.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
         // Generate a new VkShaderModule with BindingRemapper tint transform for each pipeline
+        const ProgrammableStage& computeStage = GetStage(SingleShaderStage::Compute);
         DAWN_TRY_ASSIGN(createInfo.stage.module,
-                        ToBackend(descriptor->compute.module)
-                            ->GetTransformedModuleHandle(descriptor->compute.entryPoint,
+                        ToBackend(computeStage.module.Get())
+                            ->GetTransformedModuleHandle(computeStage.entryPoint.c_str(),
                                                          ToBackend(GetLayout())));
-        createInfo.stage.pName = descriptor->compute.entryPoint;
-        createInfo.stage.pSpecializationInfo = nullptr;
+
+        createInfo.stage.pName = computeStage.entryPoint.c_str();
+
+        std::vector<SpecializationDataEntry> specializationDataEntries;
+        std::vector<VkSpecializationMapEntry> specializationMapEntries;
+        VkSpecializationInfo specializationInfo{};
+        createInfo.stage.pSpecializationInfo =
+            GetVkSpecializationInfo(computeStage, &specializationInfo, &specializationDataEntries,
+                                    &specializationMapEntries);
 
         Device* device = ToBackend(GetDevice());
 
@@ -68,10 +76,19 @@ namespace dawn_native { namespace vulkan {
                 VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO_EXT);
         }
 
-        return CheckVkSuccess(
+        DAWN_TRY(CheckVkSuccess(
             device->fn.CreateComputePipelines(device->GetVkDevice(), ::VK_NULL_HANDLE, 1,
                                               &createInfo, nullptr, &*mHandle),
-            "CreateComputePipeline");
+            "CreateComputePipeline"));
+
+        SetLabelImpl();
+
+        return {};
+    }
+
+    void ComputePipeline::SetLabelImpl() {
+        SetDebugName(ToBackend(GetDevice()), VK_OBJECT_TYPE_PIPELINE,
+                     reinterpret_cast<uint64_t&>(mHandle), "Dawn_ComputePipeline", GetLabel());
     }
 
     ComputePipeline::~ComputePipeline() {
@@ -92,8 +109,8 @@ namespace dawn_native { namespace vulkan {
                                       void* userdata) {
         Ref<ComputePipeline> pipeline = AcquireRef(new ComputePipeline(device, descriptor));
         std::unique_ptr<CreateComputePipelineAsyncTask> asyncTask =
-            std::make_unique<CreateComputePipelineAsyncTask>(pipeline, descriptor, blueprintHash,
-                                                             callback, userdata);
+            std::make_unique<CreateComputePipelineAsyncTask>(pipeline, blueprintHash, callback,
+                                                             userdata);
         CreateComputePipelineAsyncTask::RunAsync(std::move(asyncTask));
     }
 

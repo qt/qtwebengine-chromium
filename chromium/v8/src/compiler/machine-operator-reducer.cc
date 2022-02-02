@@ -947,6 +947,20 @@ Reduction MachineOperatorReducer::Reduce(Node* node) {
       }
       return ReduceWord64Comparisons(node);
     }
+    case IrOpcode::kFloat32Select:
+    case IrOpcode::kFloat64Select:
+    case IrOpcode::kWord32Select:
+    case IrOpcode::kWord64Select: {
+      Int32Matcher match(node->InputAt(0));
+      if (match.HasResolvedValue()) {
+        if (match.Is(0)) {
+          return Replace(node->InputAt(2));
+        } else {
+          return Replace(node->InputAt(1));
+        }
+      }
+      break;
+    }
     default:
       break;
   }
@@ -1240,17 +1254,12 @@ Reduction MachineOperatorReducer::ReduceUint32Mod(Node* node) {
 
 Reduction MachineOperatorReducer::ReduceStore(Node* node) {
   NodeMatcher nm(node);
-  MachineRepresentation rep;
-  int value_input;
-  if (nm.IsStore()) {
-    rep = StoreRepresentationOf(node->op()).representation();
-    value_input = 2;
-  } else {
-    DCHECK(nm.IsUnalignedStore());
-    rep = UnalignedStoreRepresentationOf(node->op());
-    value_input = 2;
-  }
+  DCHECK(nm.IsStore() || nm.IsUnalignedStore());
+  MachineRepresentation rep =
+      nm.IsStore() ? StoreRepresentationOf(node->op()).representation()
+                   : UnalignedStoreRepresentationOf(node->op());
 
+  const int value_input = 2;
   Node* const value = node->InputAt(value_input);
 
   switch (value->opcode()) {
@@ -2060,7 +2069,6 @@ bool IsFloat64RepresentableAsFloat32(const Float64Matcher& m) {
 }
 
 }  // namespace
-
 
 Reduction MachineOperatorReducer::ReduceFloat64Compare(Node* node) {
   DCHECK(IrOpcode::kFloat64Equal == node->opcode() ||

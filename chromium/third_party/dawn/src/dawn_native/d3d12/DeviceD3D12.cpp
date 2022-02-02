@@ -23,6 +23,7 @@
 #include "dawn_native/d3d12/CommandAllocatorManager.h"
 #include "dawn_native/d3d12/CommandBufferD3D12.h"
 #include "dawn_native/d3d12/ComputePipelineD3D12.h"
+#include "dawn_native/d3d12/D3D11on12Util.h"
 #include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/PipelineLayoutD3D12.h"
 #include "dawn_native/d3d12/PlatformFunctions.h"
@@ -72,14 +73,17 @@ namespace dawn_native { namespace d3d12 {
             CheckHRESULT(mD3d12Device->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)),
                          "D3D12 create command queue"));
 
-        // Get GPU timestamp counter frequency (in ticks/second). This fails if the specified
-        // command queue doesn't support timestamps, D3D12_COMMAND_LIST_TYPE_DIRECT always support
-        // timestamps.
-        uint64_t frequency;
-        DAWN_TRY(CheckHRESULT(mCommandQueue->GetTimestampFrequency(&frequency),
-                              "D3D12 get timestamp frequency"));
-        // Calculate the period in nanoseconds by the frequency.
-        mTimestampPeriod = static_cast<float>(1e9) / frequency;
+        if (IsFeatureEnabled(Feature::TimestampQuery)) {
+            // Get GPU timestamp counter frequency (in ticks/second). This fails if the specified
+            // command queue doesn't support timestamps. D3D12_COMMAND_LIST_TYPE_DIRECT queues
+            // always support timestamps except where there are bugs in Windows container and vGPU
+            // implementations.
+            uint64_t frequency;
+            DAWN_TRY(CheckHRESULT(mCommandQueue->GetTimestampFrequency(&frequency),
+                                  "D3D12 get timestamp frequency"));
+            // Calculate the period in nanoseconds by the frequency.
+            mTimestampPeriod = static_cast<float>(1e9) / frequency;
+        }
 
         // If PIX is not attached, the QueryInterface fails. Hence, no need to check the return
         // value.
@@ -199,7 +203,7 @@ namespace dawn_native { namespace d3d12 {
     MaybeError Device::ApplyUseDxcToggle() {
         if (!ToBackend(GetAdapter())->GetBackend()->GetFunctions()->IsDXCAvailable()) {
             ForceSetToggle(Toggle::UseDXC, false);
-        } else if (IsExtensionEnabled(Extension::ShaderFloat16)) {
+        } else if (IsFeatureEnabled(Feature::ShaderFloat16)) {
             // Currently we can only use DXC to compile HLSL shaders using float16.
             ForceSetToggle(Toggle::UseDXC, true);
         }
@@ -318,8 +322,9 @@ namespace dawn_native { namespace d3d12 {
         return BindGroup::Create(this, descriptor);
     }
     ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor) {
-        return BindGroupLayout::Create(this, descriptor);
+        const BindGroupLayoutDescriptor* descriptor,
+        PipelineCompatibilityToken pipelineCompatibilityToken) {
+        return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
     }
     ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return Buffer::Create(this, descriptor);
@@ -341,9 +346,9 @@ namespace dawn_native { namespace d3d12 {
         const QuerySetDescriptor* descriptor) {
         return QuerySet::Create(this, descriptor);
     }
-    ResultOrError<Ref<RenderPipelineBase>> Device::CreateRenderPipelineImpl(
+    Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
-        return RenderPipeline::Create(this, descriptor);
+        return RenderPipeline::CreateUninitialized(this, descriptor);
     }
     ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
         return Sampler::Create(this, descriptor);
@@ -376,6 +381,11 @@ namespace dawn_native { namespace d3d12 {
                                                 WGPUCreateComputePipelineAsyncCallback callback,
                                                 void* userdata) {
         ComputePipeline::CreateAsync(this, descriptor, blueprintHash, callback, userdata);
+    }
+    void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
+                                                   WGPUCreateRenderPipelineAsyncCallback callback,
+                                                   void* userdata) {
+        RenderPipeline::InitializeAsync(renderPipeline, callback, userdata);
     }
 
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
@@ -458,90 +468,43 @@ namespace dawn_native { namespace d3d12 {
                                                          initialUsage);
     }
 
-    Ref<TextureBase> Device::CreateExternalTexture(const TextureDescriptor* descriptor,
-                                                   ComPtr<ID3D12Resource> d3d12Texture,
-                                                   ExternalMutexSerial acquireMutexKey,
-                                                   ExternalMutexSerial releaseMutexKey,
-                                                   bool isSwapChainTexture,
-                                                   bool isInitialized) {
+    Ref<TextureBase> Device::CreateExternalTexture(
+        const TextureDescriptor* descriptor,
+        ComPtr<ID3D12Resource> d3d12Texture,
+        Ref<D3D11on12ResourceCacheEntry> d3d11on12Resource,
+        ExternalMutexSerial acquireMutexKey,
+        ExternalMutexSerial releaseMutexKey,
+        bool isSwapChainTexture,
+        bool isInitialized) {
         Ref<Texture> dawnTexture;
-        if (ConsumedError(Texture::CreateExternalImage(this, descriptor, std::move(d3d12Texture),
-                                                       acquireMutexKey, releaseMutexKey,
-                                                       isSwapChainTexture, isInitialized),
-                          &dawnTexture)) {
+        if (ConsumedError(
+                Texture::CreateExternalImage(this, descriptor, std::move(d3d12Texture),
+                                             std::move(d3d11on12Resource), acquireMutexKey,
+                                             releaseMutexKey, isSwapChainTexture, isInitialized),
+                &dawnTexture)) {
             return nullptr;
         }
         return {dawnTexture};
     }
 
-    // We use IDXGIKeyedMutexes to synchronize access between D3D11 and D3D12. D3D11/12 fences
-    // are a viable alternative but are, unfortunately, not available on all versions of Windows
-    // 10. Since D3D12 does not directly support keyed mutexes, we need to wrap the D3D12
-    // resource using 11on12 and QueryInterface the D3D11 representation for the keyed mutex.
-    ResultOrError<ComPtr<IDXGIKeyedMutex>> Device::CreateKeyedMutexForTexture(
-        ID3D12Resource* d3d12Resource) {
+    ComPtr<ID3D11On12Device> Device::GetOrCreateD3D11on12Device() {
         if (mD3d11On12Device == nullptr) {
             ComPtr<ID3D11Device> d3d11Device;
-            ComPtr<ID3D11DeviceContext> d3d11DeviceContext;
             D3D_FEATURE_LEVEL d3dFeatureLevel;
             IUnknown* const iUnknownQueue = mCommandQueue.Get();
-            DAWN_TRY(CheckHRESULT(GetFunctions()->d3d11on12CreateDevice(
-                                      mD3d12Device.Get(), 0, nullptr, 0, &iUnknownQueue, 1, 1,
-                                      &d3d11Device, &d3d11DeviceContext, &d3dFeatureLevel),
-                                  "D3D12 11on12 device create"));
+            if (FAILED(GetFunctions()->d3d11on12CreateDevice(mD3d12Device.Get(), 0, nullptr, 0,
+                                                             &iUnknownQueue, 1, 1, &d3d11Device,
+                                                             nullptr, &d3dFeatureLevel))) {
+                return nullptr;
+            }
 
             ComPtr<ID3D11On12Device> d3d11on12Device;
-            DAWN_TRY(CheckHRESULT(d3d11Device.As(&d3d11on12Device),
-                                  "D3D12 QueryInterface ID3D11Device to ID3D11On12Device"));
+            HRESULT hr = d3d11Device.As(&d3d11on12Device);
+            ASSERT(SUCCEEDED(hr));
 
-            ComPtr<ID3D11DeviceContext2> d3d11DeviceContext2;
-            DAWN_TRY(
-                CheckHRESULT(d3d11DeviceContext.As(&d3d11DeviceContext2),
-                             "D3D12 QueryInterface ID3D11DeviceContext to ID3D11DeviceContext2"));
-
-            mD3d11On12DeviceContext = std::move(d3d11DeviceContext2);
             mD3d11On12Device = std::move(d3d11on12Device);
         }
-
-        ComPtr<ID3D11Texture2D> d3d11Texture;
-        D3D11_RESOURCE_FLAGS resourceFlags;
-        resourceFlags.BindFlags = 0;
-        resourceFlags.MiscFlags = D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-        resourceFlags.CPUAccessFlags = 0;
-        resourceFlags.StructureByteStride = 0;
-        DAWN_TRY(CheckHRESULT(mD3d11On12Device->CreateWrappedResource(
-                                  d3d12Resource, &resourceFlags, D3D12_RESOURCE_STATE_COMMON,
-                                  D3D12_RESOURCE_STATE_COMMON, IID_PPV_ARGS(&d3d11Texture)),
-                              "D3D12 creating a wrapped resource"));
-
-        ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex;
-        DAWN_TRY(CheckHRESULT(d3d11Texture.As(&dxgiKeyedMutex),
-                              "D3D12 QueryInterface ID3D11Texture2D to IDXGIKeyedMutex"));
-
-        return std::move(dxgiKeyedMutex);
-    }
-
-    void Device::ReleaseKeyedMutexForTexture(ComPtr<IDXGIKeyedMutex> dxgiKeyedMutex) {
-        ComPtr<ID3D11Resource> d3d11Resource;
-        HRESULT hr = dxgiKeyedMutex.As(&d3d11Resource);
-        if (FAILED(hr)) {
-            return;
-        }
-
-        ID3D11Resource* d3d11ResourceRaw = d3d11Resource.Get();
-        mD3d11On12Device->ReleaseWrappedResources(&d3d11ResourceRaw, 1);
-
-        d3d11Resource.Reset();
-        dxgiKeyedMutex.Reset();
-
-        // 11on12 has a bug where D3D12 resources used only for keyed shared mutexes
-        // are not released until work is submitted to the device context and flushed.
-        // The most minimal work we can get away with is issuing a TiledResourceBarrier.
-
-        // ID3D11DeviceContext2 is available in Win8.1 and above. This suffices for a
-        // D3D12 backend since both D3D12 and 11on12 first appeared in Windows 10.
-        mD3d11On12DeviceContext->TiledResourceBarrier(nullptr, nullptr);
-        mD3d11On12DeviceContext->Flush();
+        return mD3d11On12Device;
     }
 
     const D3D12DeviceInfo& Device::GetDeviceInfo() const {
@@ -570,9 +533,14 @@ namespace dawn_native { namespace d3d12 {
         if (gpu_info::IsIntel(pciInfo.vendorId) &&
             (gpu_info::IsSkylake(pciInfo.deviceId) || gpu_info::IsKabylake(pciInfo.deviceId) ||
              gpu_info::IsCoffeelake(pciInfo.deviceId))) {
-            SetToggle(
-                Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
-                true);
+            constexpr gpu_info::D3DDriverVersion kFirstDriverVersionWithFix = {30, 0, 100, 9864};
+            if (gpu_info::CompareD3DDriverVersion(pciInfo.vendorId,
+                                                  ToBackend(GetAdapter())->GetDriverVersion(),
+                                                  kFirstDriverVersionWithFix) < 0) {
+                SetToggle(
+                    Toggle::UseTempBufferInSmallFormatTextureToTextureCopyFromGreaterToLessMipLevel,
+                    true);
+            }
         }
     }
 

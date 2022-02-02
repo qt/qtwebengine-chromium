@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for SparseAdd."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import timeit
 
 import numpy as np
@@ -207,8 +203,8 @@ class SparseAddTest(test.TestCase):
         sparse = sparse_tensor.SparseTensorValue(bad_idx, val, shape)
         s = sparse_ops.sparse_add(sparse, dense)
 
-        with self.assertRaisesRegexp(errors_impl.InvalidArgumentError,
-                                     "invalid index"):
+        with self.assertRaisesRegex(errors_impl.InvalidArgumentError,
+                                    "invalid index"):
           self.evaluate(s)
 
 ######################## Benchmarking code

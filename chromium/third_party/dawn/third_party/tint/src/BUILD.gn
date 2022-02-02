@@ -67,6 +67,12 @@ config("tint_public_config") {
     defines += [ "TINT_BUILD_HLSL_WRITER=0" ]
   }
 
+  if (tint_build_glsl_writer) {
+    defines += [ "TINT_BUILD_GLSL_WRITER=1" ]
+  } else {
+    defines += [ "TINT_BUILD_GLSL_WRITER=0" ]
+  }
+
   include_dirs = [
     "${tint_root_dir}/",
     "${tint_root_dir}/include/",
@@ -143,10 +149,10 @@ template("libtint_source_set") {
       "${tint_spirv_headers_dir}:spv_headers",
       "${tint_spirv_tools_dir}:spvtools_core_enums_unified1",
       "${tint_spirv_tools_dir}:spvtools_core_tables_unified1",
-      "${tint_spirv_tools_dir}:spvtools_language_header_cldebuginfo100",
-      "${tint_spirv_tools_dir}:spvtools_language_header_vkdebuginfo100",
-      "${tint_spirv_tools_dir}:spvtools_language_header_debuginfo",
       "${tint_spirv_tools_dir}:spvtools_headers",
+      "${tint_spirv_tools_dir}:spvtools_language_header_cldebuginfo100",
+      "${tint_spirv_tools_dir}:spvtools_language_header_debuginfo",
+      "${tint_spirv_tools_dir}:spvtools_language_header_vkdebuginfo100",
     ]
 
     if (defined(invoker.configs)) {
@@ -369,8 +375,8 @@ libtint_source_set("libtint_core_all_src") {
     "reader/reader.cc",
     "reader/reader.h",
     "resolver/resolver.cc",
-    "resolver/resolver_constants.cc",
     "resolver/resolver.h",
+    "resolver/resolver_constants.cc",
     "scope_stack.h",
     "sem/array.h",
     "sem/atomic_type.h",
@@ -416,6 +422,8 @@ libtint_source_set("libtint_core_all_src") {
     "symbol_table.cc",
     "symbol_table.h",
     "traits.h",
+    "transform/add_empty_entry_point.cc",
+    "transform/add_empty_entry_point.h",
     "transform/array_length_from_uniform.cc",
     "transform/array_length_from_uniform.h",
     "transform/binding_remapper.cc",
@@ -444,6 +452,10 @@ libtint_source_set("libtint_core_all_src") {
     "transform/loop_to_for_loop.h",
     "transform/manager.cc",
     "transform/manager.h",
+    "transform/module_scope_var_to_entry_point_param.cc",
+    "transform/module_scope_var_to_entry_point_param.h",
+    "transform/num_workgroups_from_uniform.cc",
+    "transform/num_workgroups_from_uniform.h",
     "transform/pad_array_elements.cc",
     "transform/pad_array_elements.h",
     "transform/promote_initializers_to_const_var.cc",
@@ -610,15 +622,11 @@ libtint_source_set("libtint_spv_reader_src") {
     "${tint_spirv_tools_dir}/:spvtools_opt",
   ]
 
-  public_configs = [
-    "${tint_spirv_tools_dir}/:spvtools_internal_config"
-  ]
+  public_configs = [ "${tint_spirv_tools_dir}/:spvtools_internal_config" ]
 }
 
 libtint_source_set("libtint_spv_writer_src") {
   sources = [
-    "transform/spirv.cc",
-    "transform/spirv.h",
     "writer/spirv/binary_writer.cc",
     "writer/spirv/binary_writer.h",
     "writer/spirv/builder.cc",
@@ -666,8 +674,6 @@ libtint_source_set("libtint_wgsl_writer_src") {
 
 libtint_source_set("libtint_msl_writer_src") {
   sources = [
-    "transform/msl.cc",
-    "transform/msl.h",
     "writer/msl/generator.cc",
     "writer/msl/generator.h",
     "writer/msl/generator_impl.cc",
@@ -679,12 +685,23 @@ libtint_source_set("libtint_msl_writer_src") {
 
 libtint_source_set("libtint_hlsl_writer_src") {
   sources = [
-    "transform/hlsl.cc",
-    "transform/hlsl.h",
     "writer/hlsl/generator.cc",
     "writer/hlsl/generator.h",
     "writer/hlsl/generator_impl.cc",
     "writer/hlsl/generator_impl.h",
+  ]
+
+  public_deps = [ ":libtint_core_src" ]
+}
+
+libtint_source_set("libtint_glsl_writer_src") {
+  sources = [
+    "transform/glsl.cc",
+    "transform/glsl.h",
+    "writer/glsl/generator.cc",
+    "writer/glsl/generator.h",
+    "writer/glsl/generator_impl.cc",
+    "writer/glsl/generator_impl.h",
   ]
 
   public_deps = [ ":libtint_core_src" ]
@@ -715,6 +732,10 @@ source_set("libtint") {
 
   if (tint_build_hlsl_writer) {
     public_deps += [ ":libtint_hlsl_writer_src" ]
+  }
+
+  if (tint_build_glsl_writer) {
+    public_deps += [ ":libtint_glsl_writer_src" ]
   }
 
   configs += [ ":tint_common_config" ]

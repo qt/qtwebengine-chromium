@@ -10,7 +10,7 @@
 #include <stdint.h>
 
 #include "core/fxcrt/fx_string.h"
-#include "v8/include/v8.h"
+#include "v8/include/v8-forward.h"
 
 namespace pdfium {
 namespace fxjse {
@@ -26,6 +26,12 @@ extern const char kClassTag[];
 class CFXJSE_FormCalcContext;
 class CJS_Result;
 class CJX_Object;
+
+enum class FXJSE_ClassPropType {
+  kNone,
+  kProperty,
+  kMethod,
+};
 
 // C++ object which is retrieved from v8 object's slot.
 class CFXJSE_HostObject {
@@ -44,29 +50,24 @@ class CFXJSE_HostObject {
   CFXJSE_HostObject();
 };
 
-typedef CJS_Result (*FXJSE_MethodCallback)(
-    const v8::FunctionCallbackInfo<v8::Value>& info,
-    const WideString& functionName);
-typedef void (*FXJSE_FuncCallback)(
-    CFXJSE_HostObject* pThis,
-    const v8::FunctionCallbackInfo<v8::Value>& info);
-typedef v8::Local<v8::Value> (*FXJSE_PropGetter)(v8::Isolate* pIsolate,
-                                                 v8::Local<v8::Object> pObject,
-                                                 ByteStringView szPropName);
-typedef void (*FXJSE_PropSetter)(v8::Isolate* pIsolate,
-                                 v8::Local<v8::Object> pObject,
-                                 ByteStringView szPropName,
-                                 v8::Local<v8::Value> pValue);
-typedef int32_t (*FXJSE_PropTypeGetter)(v8::Isolate* pIsolate,
-                                        v8::Local<v8::Object> pObject,
-                                        ByteStringView szPropName,
-                                        bool bQueryIn);
-
-enum FXJSE_ClassPropTypes {
-  FXJSE_ClassPropType_None,
-  FXJSE_ClassPropType_Property,
-  FXJSE_ClassPropType_Method
-};
+using FXJSE_MethodCallback =
+    CJS_Result (*)(const v8::FunctionCallbackInfo<v8::Value>& info,
+                   const WideString& functionName);
+using FXJSE_FuncCallback =
+    void (*)(CFXJSE_HostObject* pThis,
+             const v8::FunctionCallbackInfo<v8::Value>& info);
+using FXJSE_PropGetter = v8::Local<v8::Value> (*)(v8::Isolate* pIsolate,
+                                                  v8::Local<v8::Object> pObject,
+                                                  ByteStringView szPropName);
+using FXJSE_PropSetter = void (*)(v8::Isolate* pIsolate,
+                                  v8::Local<v8::Object> pObject,
+                                  ByteStringView szPropName,
+                                  v8::Local<v8::Value> pValue);
+using FXJSE_PropTypeGetter =
+    FXJSE_ClassPropType (*)(v8::Isolate* pIsolate,
+                            v8::Local<v8::Object> pObject,
+                            ByteStringView szPropName,
+                            bool bQueryIn);
 
 struct FXJSE_FUNCTION_DESCRIPTOR {
   const char* tag;  // `pdfium::fxjse::kFuncTag` always.

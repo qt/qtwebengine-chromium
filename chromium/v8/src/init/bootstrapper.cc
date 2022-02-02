@@ -281,7 +281,7 @@ class Genesis {
                                     Handle<Context> native_context);
   bool ConfigureApiObject(Handle<JSObject> object,
                           Handle<ObjectTemplateInfo> object_template);
-  bool ConfigureGlobalObjects(
+  bool ConfigureGlobalObject(
       v8::Local<v8::ObjectTemplate> global_proxy_template);
 
   // Migrates all properties from the 'from' object to the 'to'
@@ -355,26 +355,6 @@ void Bootstrapper::LogAllMaps() {
   // logging happens during deserialization in order to avoid printing Maps
   // multiple times during partial deserialization.
   LOG(isolate_, LogAllMaps());
-}
-
-void Bootstrapper::DetachGlobal(Handle<Context> env) {
-  isolate_->counters()->errors_thrown_per_context()->AddSample(
-      env->native_context().GetErrorsThrown());
-
-  ReadOnlyRoots roots(isolate_);
-  Handle<JSGlobalProxy> global_proxy(env->global_proxy(), isolate_);
-  global_proxy->set_native_context(roots.null_value());
-  // NOTE: Turbofan's JSNativeContextSpecialization depends on DetachGlobal
-  // causing a map change.
-  JSObject::ForceSetPrototype(isolate_, global_proxy,
-                              isolate_->factory()->null_value());
-  global_proxy->map().SetConstructor(roots.null_value());
-  if (FLAG_track_detached_contexts) {
-    isolate_->AddDetachedContext(env);
-  }
-  DCHECK(global_proxy->IsDetached());
-
-  env->native_context().set_microtask_queue(isolate_, nullptr);
 }
 
 namespace {
@@ -551,7 +531,7 @@ V8_NOINLINE Handle<JSFunction> SimpleCreateFunction(Isolate* isolate,
   fun->shared().set_native(true);
 
   if (adapt) {
-    fun->shared().set_internal_formal_parameter_count(len);
+    fun->shared().set_internal_formal_parameter_count(JSParameterCount(len));
   } else {
     fun->shared().DontAdaptArguments();
   }
@@ -1338,9 +1318,8 @@ Handle<JSGlobalObject> Genesis::CreateNewGlobals(
   global_proxy_function->initial_map().set_may_have_interesting_symbols(true);
   native_context()->set_global_proxy_function(*global_proxy_function);
 
-  // Set global_proxy.__proto__ to js_global after ConfigureGlobalObjects
-  // Return the global proxy.
-
+  // Set the global object as the (hidden) __proto__ of the global proxy after
+  // ConfigureGlobalObject
   factory()->ReinitializeJSGlobalProxy(global_proxy, global_proxy_function);
 
   // Set the native context for the global object.
@@ -1548,9 +1527,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     SimpleInstallFunction(isolate_, object_function, "seal",
                           Builtin::kObjectSeal, 1, false);
 
-    Handle<JSFunction> object_create = SimpleInstallFunction(
-        isolate_, object_function, "create", Builtin::kObjectCreate, 2, false);
-    native_context()->set_object_create(*object_create);
+    SimpleInstallFunction(isolate_, object_function, "create",
+                          Builtin::kObjectCreate, 2, false);
 
     SimpleInstallFunction(isolate_, object_function, "defineProperties",
                           Builtin::kObjectDefineProperties, 2, true);
@@ -2375,7 +2353,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                                      Context::PROMISE_FUNCTION_INDEX);
 
     Handle<SharedFunctionInfo> shared(promise_fun->shared(), isolate_);
-    shared->set_internal_formal_parameter_count(1);
+    shared->set_internal_formal_parameter_count(JSParameterCount(1));
     shared->set_length(1);
 
     InstallSpeciesGetter(isolate_, promise_fun);
@@ -2438,7 +2416,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     InstallWithIntrinsicDefaultProto(isolate_, regexp_fun,
                                      Context::REGEXP_FUNCTION_INDEX);
     Handle<SharedFunctionInfo> shared(regexp_fun->shared(), isolate_);
-    shared->set_internal_formal_parameter_count(2);
+    shared->set_internal_formal_parameter_count(JSParameterCount(2));
     shared->set_length(2);
 
     {
@@ -2462,7 +2440,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                           Builtin::kRegExpPrototypeFlagsGetter, true);
       SimpleInstallGetter(isolate_, prototype, factory->global_string(),
                           Builtin::kRegExpPrototypeGlobalGetter, true);
-      SimpleInstallGetter(isolate(), prototype, factory->has_indices_string(),
+      SimpleInstallGetter(isolate(), prototype, factory->hasIndices_string(),
                           Builtin::kRegExpPrototypeHasIndicesGetter, true);
       SimpleInstallGetter(isolate_, prototype, factory->ignoreCase_string(),
                           Builtin::kRegExpPrototypeIgnoreCaseGetter, true);
@@ -2746,9 +2724,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
     SimpleInstallFunction(isolate_, math, "cos", Builtin::kMathCos, 1, true);
     SimpleInstallFunction(isolate_, math, "cosh", Builtin::kMathCosh, 1, true);
     SimpleInstallFunction(isolate_, math, "exp", Builtin::kMathExp, 1, true);
-    Handle<JSFunction> math_floor = SimpleInstallFunction(
-        isolate_, math, "floor", Builtin::kMathFloor, 1, true);
-    native_context()->set_math_floor(*math_floor);
+    SimpleInstallFunction(isolate_, math, "floor", Builtin::kMathFloor, 1,
+                          true);
     SimpleInstallFunction(isolate_, math, "fround", Builtin::kMathFround, 1,
                           true);
     SimpleInstallFunction(isolate_, math, "hypot", Builtin::kMathHypot, 2,
@@ -2762,9 +2739,7 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
                           true);
     SimpleInstallFunction(isolate_, math, "max", Builtin::kMathMax, 2, false);
     SimpleInstallFunction(isolate_, math, "min", Builtin::kMathMin, 2, false);
-    Handle<JSFunction> math_pow = SimpleInstallFunction(
-        isolate_, math, "pow", Builtin::kMathPow, 2, true);
-    native_context()->set_math_pow(*math_pow);
+    SimpleInstallFunction(isolate_, math, "pow", Builtin::kMathPow, 2, true);
     SimpleInstallFunction(isolate_, math, "random", Builtin::kMathRandom, 0,
                           true);
     SimpleInstallFunction(isolate_, math, "round", Builtin::kMathRound, 1,
@@ -3780,7 +3755,8 @@ void Genesis::InitializeGlobal(Handle<JSGlobalObject> global_object,
 
     isolate_->proxy_map()->SetConstructor(*proxy_function);
 
-    proxy_function->shared().set_internal_formal_parameter_count(2);
+    proxy_function->shared().set_internal_formal_parameter_count(
+        JSParameterCount(2));
     proxy_function->shared().set_length(2);
 
     native_context()->set_proxy_function(*proxy_function);
@@ -4129,10 +4105,9 @@ bool Genesis::CompileExtension(Isolate* isolate, v8::Extension* extension) {
     Handle<String> script_name =
         factory->NewStringFromUtf8(name).ToHandleChecked();
     MaybeHandle<SharedFunctionInfo> maybe_function_info =
-        Compiler::GetSharedFunctionInfoForScript(
-            isolate, source, ScriptDetails(script_name), extension, nullptr,
-            ScriptCompiler::kNoCompileOptions,
-            ScriptCompiler::kNoCacheBecauseV8Extension, EXTENSION_CODE);
+        Compiler::GetSharedFunctionInfoForScriptWithExtension(
+            isolate, source, ScriptDetails(script_name), extension,
+            ScriptCompiler::kNoCompileOptions, EXTENSION_CODE);
     if (!maybe_function_info.ToHandle(&function_info)) return false;
     cache->Add(isolate, name, function_info);
   }
@@ -4393,7 +4368,6 @@ void Genesis::InitializeCallSiteBuiltins() {
 #define EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(id) \
   void Genesis::InitializeGlobal_##id() {}
 
-EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_regexp_sequence)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_top_level_await)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_import_assertions)
 EMPTY_INITIALIZE_GLOBAL_FOR_FEATURE(harmony_private_brand_checks)
@@ -4592,6 +4566,20 @@ void Genesis::InitializeGlobal_harmony_intl_locale_info() {
                       Builtin::kLocalePrototypeTimeZones, true);
   SimpleInstallGetter(isolate(), prototype, factory()->weekInfo_string(),
                       Builtin::kLocalePrototypeWeekInfo, true);
+}
+
+void Genesis::InitializeGlobal_harmony_intl_enumeration() {
+  if (!FLAG_harmony_intl_enumeration) return;
+
+  Handle<JSObject> intl = Handle<JSObject>::cast(
+      JSReceiver::GetProperty(
+          isolate(),
+          Handle<JSReceiver>(native_context()->global_object(), isolate()),
+          factory()->InternalizeUtf8String("Intl"))
+          .ToHandleChecked());
+
+  SimpleInstallFunction(isolate(), intl, "supportedValuesOf",
+                        Builtin::kIntlSupportedValuesOf, 1, false);
 }
 
 #endif  // V8_INTL_SUPPORT
@@ -5182,7 +5170,7 @@ bool Genesis::InstallExtension(Isolate* isolate,
   return result;
 }
 
-bool Genesis::ConfigureGlobalObjects(
+bool Genesis::ConfigureGlobalObject(
     v8::Local<v8::ObjectTemplate> global_proxy_template) {
   Handle<JSObject> global_proxy(native_context()->global_proxy(), isolate());
   Handle<JSObject> global_object(native_context()->global_object(), isolate());
@@ -5250,7 +5238,7 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
         from->map().instance_descriptors(isolate()), isolate());
     for (InternalIndex i : from->map().IterateOwnDescriptors()) {
       PropertyDetails details = descs->GetDetails(i);
-      if (details.location() == kField) {
+      if (details.location() == PropertyLocation::kField) {
         if (details.kind() == kData) {
           HandleScope inner(isolate());
           Handle<Name> key = Handle<Name>(descs->GetKey(i), isolate());
@@ -5267,7 +5255,7 @@ void Genesis::TransferNamedProperties(Handle<JSObject> from,
         }
 
       } else {
-        DCHECK_EQ(kDescriptor, details.location());
+        DCHECK_EQ(PropertyLocation::kDescriptor, details.location());
         DCHECK_EQ(kAccessor, details.kind());
         Handle<Name> key(descs->GetKey(i), isolate());
         // If the property is already there we skip it.
@@ -5470,16 +5458,20 @@ Genesis::Genesis(
     isolate->set_context(*native_context());
     isolate->counters()->contexts_created_by_snapshot()->Increment();
 
-    if (context_snapshot_index == 0) {
+    // If no global proxy template was passed in, simply use the global in the
+    // snapshot. If a global proxy template was passed in it's used to recreate
+    // the global object and its protype chain, and the data properties from the
+    // deserialized global are copied onto it.
+    if (context_snapshot_index == 0 && !global_proxy_template.IsEmpty()) {
       Handle<JSGlobalObject> global_object =
           CreateNewGlobals(global_proxy_template, global_proxy);
       HookUpGlobalObject(global_object);
-
-      if (!ConfigureGlobalObjects(global_proxy_template)) return;
+      if (!ConfigureGlobalObject(global_proxy_template)) return;
     } else {
       // The global proxy needs to be integrated into the native context.
       HookUpGlobalProxy(global_proxy);
     }
+    DCHECK_EQ(global_proxy->native_context(), *native_context());
     DCHECK(!global_proxy->IsDetachedFrom(native_context()->global_object()));
   } else {
     DCHECK(native_context().is_null());
@@ -5506,7 +5498,7 @@ Genesis::Genesis(
 
     if (!InstallABunchOfRandomThings()) return;
     if (!InstallExtrasBindings()) return;
-    if (!ConfigureGlobalObjects(global_proxy_template)) return;
+    if (!ConfigureGlobalObject(global_proxy_template)) return;
 
     isolate->counters()->contexts_created_from_scratch()->Increment();
 

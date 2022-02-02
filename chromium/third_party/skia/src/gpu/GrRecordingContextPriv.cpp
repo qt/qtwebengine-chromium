@@ -108,8 +108,8 @@ std::unique_ptr<skgpu::SurfaceContext> GrRecordingContextPriv::makeSC(GrSurfaceP
 #if SK_GPU_V1
         // It is probably not necessary to check if the context is abandoned here since uses of the
         // SurfaceContext which need the context will mostly likely fail later on w/o an issue.
-        // However having this hear adds some reassurance in case there is a path doesn't handle an
-        // abandoned context correctly. It also lets us early out of some extra work.
+        // However having this here adds some reassurance in case there is a path that doesn't
+        // handle an abandoned context correctly. It also lets us early out of some extra work.
         if (this->context()->abandoned()) {
             return nullptr;
         }
@@ -151,6 +151,41 @@ std::unique_ptr<skgpu::SurfaceContext> GrRecordingContextPriv::makeSC(GrSurfaceP
     }
 
     return nullptr;
+}
+
+std::unique_ptr<skgpu::SurfaceContext> GrRecordingContextPriv::makeSC(const GrImageInfo& info,
+                                                                      const GrBackendFormat& format,
+                                                                      SkBackingFit fit,
+                                                                      GrSurfaceOrigin origin,
+                                                                      GrRenderable renderable,
+                                                                      int sampleCount,
+                                                                      GrMipmapped mipmapped,
+                                                                      GrProtected isProtected,
+                                                                      SkBudgeted budgeted) {
+    SkASSERT(renderable == GrRenderable::kYes || sampleCount == 1);
+    if (this->abandoned()) {
+        return nullptr;
+    }
+    sk_sp<GrTextureProxy> proxy = this->proxyProvider()->createProxy(format,
+                                                                     info.dimensions(),
+                                                                     renderable,
+                                                                     sampleCount,
+                                                                     mipmapped,
+                                                                     fit,
+                                                                     budgeted,
+                                                                     isProtected);
+    if (!proxy) {
+        return nullptr;
+    }
+
+    GrSwizzle swizzle;
+    if (info.colorType() != GrColorType::kUnknown &&
+        !this->caps()->isFormatCompressed(format)) {
+        swizzle = this->caps()->getReadSwizzle(format, info.colorType());
+    }
+
+    GrSurfaceProxyView view(std::move(proxy), origin, swizzle);
+    return this->makeSC(std::move(view), info.colorInfo());
 }
 
 std::unique_ptr<skgpu::SurfaceFillContext> GrRecordingContextPriv::makeSFC(GrImageInfo info,
@@ -362,15 +397,17 @@ std::unique_ptr<skgpu::SurfaceFillContext> GrRecordingContextPriv::makeSFCFromBa
                                                                          SkSurfaceProps(),
                                                                          std::move(releaseHelper));
         }
-        const GrBackendFormat& format = tex.getBackendFormat();
-        GrSwizzle readSwizzle, writeSwizzle;
-        if (info.colorType() != GrColorType::kUnknown) {
-            if (!this->caps()->areColorTypeAndFormatCompatible(info.colorType(), format)) {
-                return nullptr;
-            }
-            readSwizzle  = this->caps()->getReadSwizzle (format, info.colorType());
-            writeSwizzle = this->caps()->getWriteSwizzle(format, info.colorType());
+
+        if (info.colorType() == GrColorType::kUnknown) {
+            return nullptr;
         }
+
+        const GrBackendFormat& format = tex.getBackendFormat();
+        if (!this->caps()->areColorTypeAndFormatCompatible(info.colorType(), format)) {
+            return nullptr;
+        }
+        GrSwizzle readSwizzle  = this->caps()->getReadSwizzle (format, info.colorType());
+        GrSwizzle writeSwizzle = this->caps()->getWriteSwizzle(format, info.colorType());
 
         sk_sp<GrTextureProxy> proxy(this->proxyProvider()->wrapRenderableBackendTexture(
                 tex, sampleCount, kBorrow_GrWrapOwnership, GrWrapCacheable::kNo,

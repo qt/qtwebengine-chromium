@@ -111,6 +111,11 @@ enum WifiRegDomainDbus {
   WIFI_REG_DOMAIN_REST_OF_WORLD = 2,
   WIFI_REG_DOMAIN_NONE = 3,
 };
+enum RequestSuspendFlavor {
+  REQUEST_SUSPEND_DEFAULT = 0,
+  REQUEST_SUSPEND_TO_RAM = 1,
+  REQUEST_SUSPEND_TO_DISK = 2,
+};
 
 }  // namespace power_manager
 

@@ -13,10 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 """Test configs for tile."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import tensorflow.compat.v1 as tf
 from tensorflow.lite.testing.zip_test_utils import create_tensor_data
 from tensorflow.lite.testing.zip_test_utils import make_zip_of_tests
@@ -31,6 +27,11 @@ def make_tile_tests(options):
       "input_shape": [[3, 2, 1], [2, 2, 2]],
       "multiplier_dtype": [tf.int32, tf.int64],
       "multiplier_shape": [[3]]
+  }, {
+      "input_dtype": [tf.float32, tf.int32],
+      "input_shape": [[]],
+      "multiplier_dtype": [tf.int32, tf.int64],
+      "multiplier_shape": [[0]]
   }]
 
   def build_graph(parameters):

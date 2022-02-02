@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.data_flow_ops.PriorityQueue."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import copy
 import random
 import threading
@@ -332,7 +328,7 @@ class PriorityQueueTest(test.TestCase):
       input_other = array_ops.placeholder(dtypes.string)
       q = data_flow_ops.PriorityQueue(2000, (dtypes.string,), (()))
 
-      with self.assertRaisesRegexp(
+      with self.assertRaisesRegex(
           errors_impl.InvalidArgumentError,
           r"Shape mismatch in tuple component 0. Expected \[\], got \[2\]"):
         sess.run([q.enqueue((input_priority, input_other))],
@@ -342,7 +338,7 @@ class PriorityQueueTest(test.TestCase):
                      input_other: np.random.rand(3, 5).astype(bytes)
                  })
 
-      with self.assertRaisesRegexp(
+      with self.assertRaisesRegex(
           errors_impl.InvalidArgumentError,
           r"Shape mismatch in tuple component 0. Expected \[2\], got \[2,2\]"):
         sess.run(

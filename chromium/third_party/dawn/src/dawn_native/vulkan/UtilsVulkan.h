@@ -19,7 +19,13 @@
 #include "dawn_native/Commands.h"
 #include "dawn_native/dawn_platform.h"
 
+namespace dawn_native {
+    struct ProgrammableStage;
+}  // namespace dawn_native
+
 namespace dawn_native { namespace vulkan {
+
+    class Device;
 
     // A Helper type used to build a pNext chain of extension structs.
     // Usage is:
@@ -98,6 +104,30 @@ namespace dawn_native { namespace vulkan {
     VkBufferImageCopy ComputeBufferImageCopyRegion(const TextureDataLayout& dataLayout,
                                                    const TextureCopy& textureCopy,
                                                    const Extent3D& copySize);
+
+    void SetDebugName(Device* device,
+                      VkObjectType objectType,
+                      uint64_t objectHandle,
+                      const char* prefix,
+                      std::string label = "");
+
+    // Helpers for creating VkSpecializationInfo
+    // The WebGPU overridable constants only support these scalar types
+    union SpecializationDataEntry {
+        bool b;
+        float f32;
+        int32_t i32;
+        uint32_t u32;
+    };
+
+    // Returns nullptr or &specializationInfo
+    // specializationInfo, specializationDataEntries, specializationMapEntries needs to
+    // be alive at least until VkSpecializationInfo is passed into Vulkan Create*Pipelines
+    VkSpecializationInfo* GetVkSpecializationInfo(
+        const ProgrammableStage& programmableStage,
+        VkSpecializationInfo* specializationInfo,
+        std::vector<SpecializationDataEntry>* specializationDataEntries,
+        std::vector<VkSpecializationMapEntry>* specializationMapEntries);
 
 }}  // namespace dawn_native::vulkan
 

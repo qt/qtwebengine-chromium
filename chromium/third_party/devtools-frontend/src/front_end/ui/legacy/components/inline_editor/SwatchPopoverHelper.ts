@@ -8,7 +8,7 @@ import * as UI from '../../legacy.js';
 
 import {ColorSwatch} from './ColorSwatch.js';
 
-export class SwatchPopoverHelper extends Common.ObjectWrapper.ObjectWrapper {
+export class SwatchPopoverHelper extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   private readonly popover: UI.GlassPane.GlassPane;
   private readonly hideProxy: () => void;
   private readonly boundOnKeyDown: (event: KeyboardEvent) => void;
@@ -42,8 +42,12 @@ export class SwatchPopoverHelper extends Common.ObjectWrapper.ObjectWrapper {
     this.hideProxy();
   }
 
-  isShowing(): boolean {
-    return this.popover.isShowing();
+  setAnchorElement(anchorElement: Element): void {
+    this.anchorElement = anchorElement;
+  }
+
+  isShowing(view?: UI.Widget.Widget): boolean {
+    return this.popover.isShowing() && ((view && this.view === view) || !view);
   }
 
   show(view: UI.Widget.Widget, anchorElement: Element, hiddenCallback?: ((arg0: boolean) => void)): void {
@@ -147,3 +151,7 @@ export class SwatchPopoverHelper extends Common.ObjectWrapper.ObjectWrapper {
 export enum Events {
   WillShowPopover = 'WillShowPopover',
 }
+
+export type EventTypes = {
+  [Events.WillShowPopover]: void,
+};

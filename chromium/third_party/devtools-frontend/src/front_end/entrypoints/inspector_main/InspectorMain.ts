@@ -10,6 +10,9 @@ import * as SDK from '../../core/sdk/sdk.js';
 import * as MobileThrottling from '../../panels/mobile_throttling/mobile_throttling.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+
+import nodeIconStyles from './nodeIcon.css.js';
+
 import type * as Protocol from '../../generated/protocol.js';
 
 const UIStrings = {
@@ -34,7 +37,7 @@ const str_ = i18n.i18n.registerUIStrings('entrypoints/inspector_main/InspectorMa
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let inspectorMainImplInstance: InspectorMainImpl;
 
-export class InspectorMainImpl extends Common.ObjectWrapper.ObjectWrapper implements Common.Runnable.Runnable {
+export class InspectorMainImpl implements Common.Runnable.Runnable {
   static instance(opts: {
     forceNew: boolean|null,
   } = {forceNew: null}): InspectorMainImpl {
@@ -81,8 +84,7 @@ export class InspectorMainImpl extends Common.ObjectWrapper.ObjectWrapper implem
     new MobileThrottling.NetworkPanelIndicator.NetworkPanelIndicator();
 
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
-        Host.InspectorFrontendHostAPI.Events.ReloadInspectedPage, event => {
-          const hard = (event.data as boolean);
+        Host.InspectorFrontendHostAPI.Events.ReloadInspectedPage, ({data: hard}) => {
           SDK.ResourceTreeModel.ResourceTreeModel.reloadAllPages(hard);
         });
   }
@@ -147,8 +149,8 @@ export class NodeIndicator implements UI.Toolbar.Provider {
   private readonly button: UI.Toolbar.ToolbarItem;
   private constructor() {
     const element = document.createElement('div');
-    const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(
-        element, {cssFile: 'entrypoints/inspector_main/nodeIcon.css', delegatesFocus: undefined});
+    const shadowRoot =
+        UI.Utils.createShadowRootWithCoreStyles(element, {cssFile: [nodeIconStyles], delegatesFocus: undefined});
     this.element = shadowRoot.createChild('div', 'node-icon');
     element.addEventListener(
         'click', () => Host.InspectorFrontendHost.InspectorFrontendHostInstance.openNodeFrontend(), false);

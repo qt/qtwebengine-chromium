@@ -122,21 +122,33 @@ const UIStrings = {
     */
   userAgentClientHintsInfo:
       'User agent client hints are an alternative to the user agent string that identify the browser and the device in a more structured way with better privacy accounting. Click the button to learn more.',
+  /**
+    * @description Success message when brand row is successfully added in client hints form.
+    * Brands here relate to different browser brands/vendors like Google Chrome, Microsoft Edge etc.
+    */
+  addedBrand: 'Added brand row',
+  /**
+    * @description Success message when brand row is successfully deleted in client hints form.
+    * Brands here relate to different browser brands/vendors like Google Chrome, Microsoft Edge etc.
+    */
+  deletedBrand: 'Deleted brand row',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/settings/emulation/components/UserAgentClientHintsForm.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class ClientHintsChangeEvent extends Event {
+  static readonly eventName = 'clienthintschange';
   constructor() {
-    super('clienthintschange');
+    super(ClientHintsChangeEvent.eventName);
   }
 }
 
 export class ClientHintsSubmitEvent extends Event {
+  static readonly eventName = 'clienthintssubmit';
   detail: {value: Protocol.Emulation.UserAgentMetadata};
 
   constructor(value: Protocol.Emulation.UserAgentMetadata) {
-    super('clienthintssubmit');
+    super(ClientHintsSubmitEvent.eventName);
     this.detail = {value};
   }
 }
@@ -176,6 +188,7 @@ export class UserAgentClientHintsForm extends HTMLElement {
   private metaData: Protocol.Emulation.UserAgentMetadata = DEFAULT_METADATA;
   private showMobileCheckbox: boolean = false;
   private showSubmitButton: boolean = false;
+  private brandsModifiedAriaMessage: string = '';
 
   connectedCallback(): void {
     this.shadow.adoptedStyleSheets = [userAgentClientHintsFormStyles];
@@ -209,14 +222,17 @@ export class UserAgentClientHintsForm extends HTMLElement {
   }
 
   private handleTreeExpand = (event: KeyboardEvent): void => {
-    if (event.code === 'Space' || event.code === 'Enter') {
-      event.preventDefault();
-      this.handleTreeClick();
+    if (event.code === 'Space' || event.code === 'Enter' || event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+      event.stopPropagation();
+      this.handleTreeClick(event.code);
     }
   };
 
-  private handleTreeClick = (): void => {
+  private handleTreeClick = (key: string): void => {
     if (this.isFormDisabled) {
+      return;
+    }
+    if ((key === 'ArrowLeft' && !this.isFormOpened) || (key === 'ArrowRight' && this.isFormOpened)) {
       return;
     }
     this.isFormOpened = !this.isFormOpened;
@@ -256,7 +272,16 @@ export class UserAgentClientHintsForm extends HTMLElement {
       brands,
     };
     this.dispatchEvent(new ClientHintsChangeEvent());
+    this.brandsModifiedAriaMessage = i18nString(UIStrings.deletedBrand);
     this.render();
+
+    // after deleting a brand row, focus on next Brand input if available,
+    // otherwise focus on the "Add Brand" button
+    let nextFocusElement = this.shadowRoot?.getElementById(`brand-${index + 1}-input`);
+    if (!nextFocusElement) {
+      nextFocusElement = this.shadowRoot?.getElementById('add-brand-button');
+    }
+    (nextFocusElement as HTMLElement)?.focus();
   };
 
   private handleAddBrandClick = (): void => {
@@ -272,6 +297,7 @@ export class UserAgentClientHintsForm extends HTMLElement {
       ],
     };
     this.dispatchEvent(new ClientHintsChangeEvent());
+    this.brandsModifiedAriaMessage = i18nString(UIStrings.addedBrand);
     this.render();
     const brandInputElements = this.shadowRoot?.querySelectorAll('.brand-name-input');
     if (brandInputElements) {
@@ -437,6 +463,7 @@ export class UserAgentClientHintsForm extends HTMLElement {
             type="text"
             @input="${handleBrandBrowserChange}"
             .value="${brand}"
+            id="brand-${index + 1}-input"
             placeholder="${i18nString(UIStrings.brandName)}"
             aria-label="${i18nString(UIStrings.brandNameAriaLabel, {
         PH1: index + 1,
@@ -477,6 +504,8 @@ export class UserAgentClientHintsForm extends HTMLElement {
         class="add-container full-row"
         role="button"
         tabindex="0"
+        id="add-brand-button"
+        aria-label="${i18nString(UIStrings.addBrand)}"
         @click="${this.handleAddBrandClick}"
         @keypress="${this.handleAddBrandKeyPress}"
       >
@@ -518,7 +547,7 @@ export class UserAgentClientHintsForm extends HTMLElement {
           role="button"
           @click="${this.handleTreeClick}"
           tabindex="0"
-          @keypress="${this.handleTreeExpand}"
+          @keydown="${this.handleTreeExpand}"
           aria-expanded="${this.isFormOpened}"
           aria-controls="form-container"
           @disabled="${this.isFormDisabled}"
@@ -560,10 +589,11 @@ export class UserAgentClientHintsForm extends HTMLElement {
           ${deviceModelSection}
           ${submitButton}
         </form>
+        <div aria-live="polite" aria-label="${this.brandsModifiedAriaMessage}"></div>
       </section>
     `;
     // clang-format off
-    LitHtml.render(output, this.shadow);
+    LitHtml.render(output, this.shadow, {host: this});
     // clang-format on
   }
 

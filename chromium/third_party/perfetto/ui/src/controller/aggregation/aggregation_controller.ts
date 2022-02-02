@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import {Actions} from '../../common/actions';
 import {
   AggregateData,
   Column,
@@ -19,6 +20,9 @@ import {
   ThreadStateExtra,
 } from '../../common/aggregation_data';
 import {Engine} from '../../common/engine';
+import {
+  SLICE_AGGREGATION_PIVOT_TABLE_ID
+} from '../../common/pivot_table_common';
 import {NUM} from '../../common/query_result';
 import {Area, Sorting} from '../../common/state';
 import {publishAggregateData} from '../../frontend/publish';
@@ -32,6 +36,14 @@ export interface AggregationControllerArgs {
 
 function isStringColumn(column: Column): boolean {
   return column.kind === 'STRING' || column.kind === 'STATE';
+}
+
+function isAreaEqual(area: Area, previousArea?: Area) {
+  if (previousArea === undefined || area.startSec !== previousArea.startSec ||
+      area.endSec !== previousArea.endSec) {
+    return false;
+  }
+  return area.tracks.every((element, i) => element === previousArea.tracks[i]);
 }
 
 export abstract class AggregationController extends Controller<'main'> {
@@ -57,6 +69,8 @@ export abstract class AggregationController extends Controller<'main'> {
   run() {
     const selection = globals.state.currentSelection;
     if (selection === null || selection.kind !== 'AREA') {
+      globals.dispatch(Actions.deletePivotTable(
+          {pivotTableId: SLICE_AGGREGATION_PIVOT_TABLE_ID}));
       publishAggregateData({
         data: {
           tabName: this.getTabName(),
@@ -72,7 +86,7 @@ export abstract class AggregationController extends Controller<'main'> {
     const aggregatePreferences =
         globals.state.aggregatePreferences[this.args.kind];
 
-    const areaChanged = this.previousArea !== selectedArea;
+    const areaChanged = !isAreaEqual(selectedArea, this.previousArea);
     const sortingChanged = aggregatePreferences &&
         this.previousSorting !== aggregatePreferences.sorting;
     if (!areaChanged && !sortingChanged) return;
@@ -118,7 +132,7 @@ export abstract class AggregationController extends Controller<'main'> {
       sorting = `${pref.sorting.column} ${pref.sorting.direction}`;
     }
     const query = `select ${colIds} from ${this.kind} order by ${sorting}`;
-    const result = await this.args.engine.queryV2(query);
+    const result = await this.args.engine.query(query);
 
     const numRows = result.numRows();
     const columns = defs.map(def => this.columnFromColumnDef(def, numRows));
@@ -157,7 +171,7 @@ export abstract class AggregationController extends Controller<'main'> {
 
   async getSum(def: ColumnDef): Promise<string> {
     if (!def.sum) return '';
-    const result = await this.args.engine.queryV2(
+    const result = await this.args.engine.query(
         `select ifnull(sum(${def.columnId}), 0) as s from ${this.kind}`);
     let sum = result.firstRow({s: NUM}).s;
     if (def.kind === 'TIMESTAMP_NS') {

@@ -100,14 +100,15 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
         kind_specific_flags_ == 0
             ? roots.trampoline_trivial_code_data_container_handle()
             : roots.trampoline_promise_rejection_code_data_container_handle());
-    DCHECK_EQ(canonical_code_data_container->kind_specific_flags(),
+    DCHECK_EQ(canonical_code_data_container->kind_specific_flags(kRelaxedLoad),
               kind_specific_flags_);
     data_container = canonical_code_data_container;
   } else {
     data_container = factory->NewCodeDataContainer(
         0, read_only_data_container_ ? AllocationType::kReadOnly
                                      : AllocationType::kOld);
-    data_container->set_kind_specific_flags(kind_specific_flags_);
+    data_container->set_kind_specific_flags(kind_specific_flags_,
+                                            kRelaxedStore);
   }
 
   // Basic block profiling data for builtins is stored in the JS heap rather
@@ -161,10 +162,11 @@ MaybeHandle<Code> Factory::CodeBuilder::BuildInternal(
     // passing IsPendingAllocation).
     raw_code.set_inlined_bytecode_size(inlined_bytecode_size_);
     raw_code.set_code_data_container(*data_container, kReleaseStore);
-    raw_code.set_deoptimization_data(*deoptimization_data_);
     if (kind_ == CodeKind::BASELINE) {
+      raw_code.set_bytecode_or_interpreter_data(*interpreter_data_);
       raw_code.set_bytecode_offset_table(*position_table_);
     } else {
+      raw_code.set_deoptimization_data(*deoptimization_data_);
       raw_code.set_source_position_table(*position_table_);
     }
     raw_code.set_handler_table_offset(
@@ -312,7 +314,8 @@ void Factory::CodeBuilder::FinalizeOnHeapCode(Handle<Code> code,
       Code::SizeFor(code_desc_.instruction_size() + code_desc_.metadata_size());
   int size_to_trim = old_object_size - new_object_size;
   DCHECK_GE(size_to_trim, 0);
-  heap->UndoLastAllocationAt(code->address() + new_object_size, size_to_trim);
+  heap->CreateFillerObjectAt(code->address() + new_object_size, size_to_trim,
+                             ClearRecordedSlots::kNo);
 }
 
 MaybeHandle<Code> Factory::NewEmptyCode(CodeKind kind, int buffer_size) {
@@ -456,16 +459,6 @@ Handle<Tuple2> Factory::NewTuple2(Handle<Object> value1, Handle<Object> value2,
   return handle(result, isolate());
 }
 
-Handle<BaselineData> Factory::NewBaselineData(
-    Handle<Code> code, Handle<HeapObject> function_data) {
-  auto baseline_data =
-      NewStructInternal<BaselineData>(BASELINE_DATA_TYPE, AllocationType::kOld);
-  DisallowGarbageCollection no_gc;
-  baseline_data.set_baseline_code(*code);
-  baseline_data.set_data(*function_data);
-  return handle(baseline_data, isolate());
-}
-
 Handle<Oddball> Factory::NewOddball(Handle<Map> map, const char* to_string,
                                     Handle<Object> to_number,
                                     const char* type_of, byte kind) {
@@ -512,8 +505,7 @@ MaybeHandle<FixedArray> Factory::TryNewFixedArray(
   if (!allocation.To(&result)) return MaybeHandle<FixedArray>();
   if ((size > heap->MaxRegularHeapObjectSize(allocation_type)) &&
       FLAG_use_marking_progress_bar) {
-    BasicMemoryChunk* chunk = BasicMemoryChunk::FromHeapObject(result);
-    chunk->SetFlag<AccessMode::ATOMIC>(MemoryChunk::HAS_PROGRESS_BAR);
+    LargePage::FromHeapObject(result)->ProgressBar().Enable();
   }
   DisallowGarbageCollection no_gc;
   result.set_map_after_allocation(*fixed_array_map(), SKIP_WRITE_BARRIER);
@@ -1029,14 +1021,14 @@ Handle<String> Factory::NewProperSubString(Handle<String> str, int begin,
           NewRawOneByteString(length).ToHandleChecked();
       DisallowGarbageCollection no_gc;
       uint8_t* dest = result->GetChars(no_gc);
-      String::WriteToFlat(*str, dest, begin, end);
+      String::WriteToFlat(*str, dest, begin, length);
       return result;
     } else {
       Handle<SeqTwoByteString> result =
           NewRawTwoByteString(length).ToHandleChecked();
       DisallowGarbageCollection no_gc;
       base::uc16* dest = result->GetChars(no_gc);
-      String::WriteToFlat(*str, dest, begin, end);
+      String::WriteToFlat(*str, dest, begin, length);
       return result;
     }
   }
@@ -1580,14 +1572,17 @@ Handle<WasmArray> Factory::NewWasmArray(
   WasmArray result = WasmArray::cast(raw);
   result.set_raw_properties_or_hash(*empty_fixed_array(), kRelaxedStore);
   result.set_length(length);
-  for (uint32_t i = 0; i < length; i++) {
-    Address address = result.ElementAddress(i);
-    if (type->element_type().is_numeric()) {
+  if (type->element_type().is_numeric()) {
+    for (uint32_t i = 0; i < length; i++) {
+      Address address = result.ElementAddress(i);
       elements[i]
           .Packed(type->element_type())
           .CopyTo(reinterpret_cast<byte*>(address));
-    } else {
-      base::WriteUnalignedValue<Object>(address, *elements[i].to_ref());
+    }
+  } else {
+    for (uint32_t i = 0; i < length; i++) {
+      int offset = result.element_offset(i);
+      TaggedField<Object>::store(result, offset, *elements[i].to_ref());
     }
   }
   return handle(result, isolate());
@@ -1602,11 +1597,13 @@ Handle<WasmStruct> Factory::NewWasmStruct(const wasm::StructType* type,
   WasmStruct result = WasmStruct::cast(raw);
   result.set_raw_properties_or_hash(*empty_fixed_array(), kRelaxedStore);
   for (uint32_t i = 0; i < type->field_count(); i++) {
-    Address address = result.RawFieldAddress(type->field_offset(i));
+    int offset = type->field_offset(i);
     if (type->field(i).is_numeric()) {
+      Address address = result.RawFieldAddress(offset);
       args[i].Packed(type->field(i)).CopyTo(reinterpret_cast<byte*>(address));
     } else {
-      base::WriteUnalignedValue<Object>(address, *args[i].to_ref());
+      offset += WasmStruct::kHeaderSize;
+      TaggedField<Object>::store(result, offset, *args[i].to_ref());
     }
   }
   return handle(result, isolate());
@@ -2178,7 +2175,7 @@ Handle<CodeDataContainer> Factory::NewCodeDataContainer(
       CodeDataContainer::cast(New(code_data_container_map(), allocation));
   DisallowGarbageCollection no_gc;
   data_container.set_next_code_link(*undefined_value(), SKIP_WRITE_BARRIER);
-  data_container.set_kind_specific_flags(flags);
+  data_container.set_kind_specific_flags(flags, kRelaxedStore);
   if (V8_EXTERNAL_CODE_SPACE_BOOL) {
     data_container.AllocateExternalPointerEntries(isolate());
     data_container.set_raw_code(Smi::zero(), SKIP_WRITE_BARRIER);
@@ -2198,7 +2195,7 @@ Handle<Code> Factory::NewOffHeapTrampolineFor(Handle<Code> code,
       Builtins::CodeObjectIsExecutable(code->builtin_id());
   Handle<Code> result = Builtins::GenerateOffHeapTrampolineFor(
       isolate(), off_heap_entry,
-      code->code_data_container(kAcquireLoad).kind_specific_flags(),
+      code->code_data_container(kAcquireLoad).kind_specific_flags(kRelaxedLoad),
       generate_jump_to_instruction_stream);
 
   // Trampolines may not contain any metadata since all metadata offsets,
@@ -2256,7 +2253,7 @@ Handle<Code> Factory::NewOffHeapTrampolineFor(Handle<Code> code,
 
 Handle<Code> Factory::CopyCode(Handle<Code> code) {
   Handle<CodeDataContainer> data_container = NewCodeDataContainer(
-      code->code_data_container(kAcquireLoad).kind_specific_flags(),
+      code->code_data_container(kAcquireLoad).kind_specific_flags(kRelaxedLoad),
       AllocationType::kOld);
 
   Heap* heap = isolate()->heap();
@@ -2872,7 +2869,6 @@ Handle<JSTypedArray> Factory::NewJSTypedArray(ExternalArrayType type,
           map, empty_byte_array(), buffer, byte_offset, byte_length));
   JSTypedArray raw = *typed_array;
   DisallowGarbageCollection no_gc;
-  raw.AllocateExternalPointerEntries(isolate());
   raw.set_length(length);
   raw.SetOffHeapDataPtr(isolate(), buffer->backing_store(), byte_offset);
   raw.set_is_length_tracking(false);
@@ -2887,7 +2883,6 @@ Handle<JSDataView> Factory::NewJSDataView(Handle<JSArrayBuffer> buffer,
                   isolate());
   Handle<JSDataView> obj = Handle<JSDataView>::cast(NewJSArrayBufferView(
       map, empty_fixed_array(), buffer, byte_offset, byte_length));
-  obj->AllocateExternalPointerEntries(isolate());
   obj->set_data_pointer(
       isolate(), static_cast<uint8_t*>(buffer->backing_store()) + byte_offset);
   return obj;
@@ -3664,7 +3659,8 @@ Handle<Map> Factory::CreateStrictFunctionMap(
 }
 
 Handle<Map> Factory::CreateClassFunctionMap(Handle<JSFunction> empty_function) {
-  Handle<Map> map = NewMap(JS_FUNCTION_TYPE, JSFunction::kSizeWithPrototype);
+  Handle<Map> map =
+      NewMap(JS_CLASS_CONSTRUCTOR_TYPE, JSFunction::kSizeWithPrototype);
   {
     DisallowGarbageCollection no_gc;
     Map raw_map = *map;

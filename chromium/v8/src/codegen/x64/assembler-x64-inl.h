@@ -42,8 +42,7 @@ void Assembler::emit_runtime_entry(Address entry, RelocInfo::Mode rmode) {
   RecordRelocInfo(rmode);
   uint32_t offset = static_cast<uint32_t>(entry - options().code_range_start);
   if (IsOnHeap()) {
-    saved_offsets_for_runtime_entries_.push_back(
-        std::make_pair(pc_offset(), offset));
+    saved_offsets_for_runtime_entries_.emplace_back(pc_offset(), offset);
     emitl(relative_target_offset(entry, reinterpret_cast<Address>(pc_)));
     // We must ensure that `emitl` is not growing the assembler buffer
     // and falling back to off-heap compilation.
@@ -66,8 +65,7 @@ void Assembler::emit(Immediate64 x) {
     if (x.rmode_ == RelocInfo::FULL_EMBEDDED_OBJECT && IsOnHeap()) {
       int offset = pc_offset();
       Handle<HeapObject> object(reinterpret_cast<Address*>(x.value_));
-      saved_handles_for_raw_object_ptr_.push_back(
-          std::make_pair(offset, x.value_));
+      saved_handles_for_raw_object_ptr_.emplace_back(offset, x.value_);
       emitq(static_cast<uint64_t>(object->ptr()));
       DCHECK(EmbeddedObjectMatches(offset, object));
       return;
@@ -344,12 +342,12 @@ HeapObject RelocInfo::target_object() {
   return HeapObject::cast(Object(ReadUnalignedValue<Address>(pc_)));
 }
 
-HeapObject RelocInfo::target_object_no_host(Isolate* isolate) {
+HeapObject RelocInfo::target_object_no_host(PtrComprCageBase cage_base) {
   DCHECK(IsCodeTarget(rmode_) || IsEmbeddedObjectMode(rmode_));
   if (IsCompressedEmbeddedObject(rmode_)) {
     Tagged_t compressed = ReadUnalignedValue<Tagged_t>(pc_);
     DCHECK(!HAS_SMI_TAG(compressed));
-    Object obj(DecompressTaggedPointer(isolate, compressed));
+    Object obj(DecompressTaggedPointer(cage_base, compressed));
     return HeapObject::cast(obj);
   }
   DCHECK(IsFullEmbeddedObject(rmode_) || IsDataEmbeddedObject(rmode_));

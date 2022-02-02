@@ -14,9 +14,6 @@ lucicfg.check_version(
     message = "Update depot_tools",
 )
 
-# Enable LUCI Realms support.
-lucicfg.enable_experiment("crbug.com/1085650")
-
 # Tell lucicfg what files it is allowed to touch
 lucicfg.config(
     config_dir = "generated",
@@ -26,6 +23,7 @@ lucicfg.config(
         "cq-usage/default.cfg",
         "cq-usage/full.cfg",
         "luci/commit-queue.cfg",
+        "luci/chops-weetbix.cfg",
         "luci/cr-buildbucket.cfg",
         "luci/luci-logdog.cfg",
         "luci/luci-milo.cfg",
@@ -54,6 +52,13 @@ lucicfg.config(
 lucicfg.emit(
     dest = "luci/tricium-prod.cfg",
     data = io.read_file("tricium-prod.cfg"),
+)
+
+# Weetbix configuration is also copied verbatim to generated
+# outputs.
+lucicfg.emit(
+    dest = "luci/chops-weetbix.cfg",
+    data = io.read_file("chops-weetbix.cfg"),
 )
 
 luci.project(

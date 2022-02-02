@@ -1,3 +1,1 @@
-monorail {
-  component: "Blink>WebGL"
-}
+mixins: "//third_party/blink/renderer/modules/webgl/COMMON_METADATA"

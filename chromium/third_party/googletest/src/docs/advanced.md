@@ -557,7 +557,7 @@ The automated testing framework does not set the style flag. You can choose a
 particular style of death tests by setting the flag programmatically:
 
 ```c++
-testing::FLAGS_gtest_death_test_style="threadsafe"
+GTEST_FLAG_SET(death_test_style, "threadsafe")
 ```
 
 You can do this in `main()` to set the style for all death tests in the binary,
@@ -567,12 +567,12 @@ restored afterwards, so you need not do that yourself. For example:
 ```c++
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
-  GTEST_FLAG_SET(gtest_death_test_style, "fast");
+  GTEST_FLAG_SET(death_test_style, "fast");
   return RUN_ALL_TESTS();
 }
 
 TEST(MyDeathTest, TestOne) {
-  GTEST_FLAG_SET(gtest_death_test_style, "threadsafe");
+  GTEST_FLAG_SET(death_test_style, "threadsafe");
   // This test is run in the "threadsafe" style:
   ASSERT_DEATH(ThisShouldDie(), "");
 }
@@ -887,6 +887,12 @@ preceding or following another. Also, the tests must either not modify the state
 of any shared resource, or, if they do modify the state, they must restore the
 state to its original value before passing control to the next test.
 
+Note that `SetUpTestSuite()` may be called multiple times for a test fixture
+class that has derived classes, so you should not expect code in the function
+body to be run only once. Also, derived classes still have access to shared
+resources defined as static members, so careful consideration is needed when
+managing shared resources to avoid memory leaks.
+
 Here's an example of per-test-suite set-up and tear-down:
 
 ```c++
@@ -896,7 +902,10 @@ class FooTest : public testing::Test {
   // Called before the first test in this test suite.
   // Can be omitted if not needed.
   static void SetUpTestSuite() {
-    shared_resource_ = new ...;
+    // Avoid reallocating static objects if called in subclasses of FooTest.
+    if (shared_resource_ == nullptr) {
+      shared_resource_ = new ...;
+    }
   }
 
   // Per-test-suite tear-down.

@@ -23,11 +23,13 @@ class ProfileDataFromFile;
 class RegisterConfiguration;
 
 namespace wasm {
+struct CompilationEnv;
 struct FunctionBody;
 class NativeModule;
 struct WasmCompilationResult;
 class WasmEngine;
 struct WasmModule;
+class WireBytesStorage;
 }  // namespace wasm
 
 namespace compiler {
@@ -54,7 +56,8 @@ class Pipeline : public AllStatic {
 
   // Run the pipeline for the WebAssembly compilation info.
   static void GenerateCodeForWasmFunction(
-      OptimizedCompilationInfo* info, MachineGraph* mcgraph,
+      OptimizedCompilationInfo* info, wasm::CompilationEnv* env,
+      const wasm::WireBytesStorage* wire_bytes_storage, MachineGraph* mcgraph,
       CallDescriptor* call_descriptor, SourcePositionTable* source_positions,
       NodeOriginTable* node_origins, wasm::FunctionBody function_body,
       const wasm::WasmModule* module, int function_index,
@@ -63,8 +66,7 @@ class Pipeline : public AllStatic {
   // Run the pipeline on a machine graph and generate code.
   static wasm::WasmCompilationResult GenerateCodeForWasmNativeStub(
       CallDescriptor* call_descriptor, MachineGraph* mcgraph, CodeKind kind,
-      int wasm_kind, const char* debug_name,
-      const AssemblerOptions& assembler_options,
+      const char* debug_name, const AssemblerOptions& assembler_options,
       SourcePositionTable* source_positions = nullptr);
 
   // Returns a new compilation job for a wasm heap stub.
@@ -78,8 +80,7 @@ class Pipeline : public AllStatic {
   static MaybeHandle<Code> GenerateCodeForCodeStub(
       Isolate* isolate, CallDescriptor* call_descriptor, Graph* graph,
       JSGraph* jsgraph, SourcePositionTable* source_positions, CodeKind kind,
-      const char* debug_name, Builtin builtin,
-      PoisoningMitigationLevel poisoning_level, const AssemblerOptions& options,
+      const char* debug_name, Builtin builtin, const AssemblerOptions& options,
       const ProfileDataFromFile* profile_data);
 
   // ---------------------------------------------------------------------------

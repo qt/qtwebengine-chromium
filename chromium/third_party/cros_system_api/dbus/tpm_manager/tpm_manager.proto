@@ -99,6 +99,24 @@ enum NvramSpacePolicy {
   NVRAM_POLICY_PCR0 = 1;
 }
 
+enum GscVersion {
+  GSC_VERSION_NOT_GSC = 0;
+  GSC_VERSION_CR50 = 1;
+  GSC_VERSION_TI50 = 2;
+}
+
+// The status of whether last AP reboot is triggered by RO verification.
+enum RoVerificationStatus {
+  // Not triggered by RO verification.
+  RO_STATUS_NOT_TRIGGERED = 0;
+  // Triggered by RO verification, and it passed.
+  RO_STATUS_PASS = 1;
+  // Triggered by RO verification, and it failed.
+  RO_STATUS_FAIL = 2;
+  // There is not data to tell the RO verification status.
+  RO_STATUS_UNSUPPORTED = 3;
+}
+
 // Tracks the expected policy for a particular NVRAM space.
 message NvramPolicyRecord {
   optional uint32 index = 1;
@@ -136,6 +154,11 @@ message LocalData {
   optional bytes lockout_password = 5;
   repeated NvramPolicyRecord nvram_policy = 6;
   optional AuthDelegate owner_delegate = 7;
+  // Whether the SRK can't be used with default auth or not.
+  // If this is true, we should prevent using SRK related commands.
+  // This value should be reset after the TPM had been cleared and only
+  // applicable on TPM1.2 devices.
+  optional bool no_srk_auth = 8;
 }
 
 // The format of the ownership taken signal payload.
@@ -201,8 +224,7 @@ message LockSpaceReply {
   optional NvramResult result = 1;
 }
 
-message ListSpacesRequest {
-}
+message ListSpacesRequest {}
 
 message ListSpacesReply {
   optional NvramResult result = 1;
@@ -259,16 +281,18 @@ message GetTpmNonsensitiveStatusReply {
   optional TpmManagerStatus status = 1;
   // Whether a TPM is enabled on the system.
   optional bool is_enabled = 2;
-  // Whether the TPM has been owned.
+  // Whether the TPM has been owned by tpm_manager or not.
   optional bool is_owned = 3;
   // Whether the owner password is still retained.
   optional bool is_owner_password_present = 4;
   // Whether tpm manager is capable of reset DA.
   optional bool has_reset_lock_permissions = 5;
+  // Whether the SRK can be used with default auth or not.
+  // This should be true when the TPM is owned by tpm_manaber.
+  optional bool is_srk_default_auth = 6;
 }
 
-message GetVersionInfoRequest {
-}
+message GetVersionInfoRequest {}
 
 message GetVersionInfoReply {
   // The success or error code of the call GetVersionInfo.
@@ -288,6 +312,8 @@ message GetVersionInfoReply {
   optional uint64 firmware_version = 6;
   // Vendor specific information.
   optional bytes vendor_specific = 7;
+  // The GSC version.
+  optional GscVersion gsc_version = 8;
 }
 
 message GetSupportedFeaturesRequest {}
@@ -298,10 +324,18 @@ message GetSupportedFeaturesReply {
 
   // Whether the u2f is supported or not.
   optional bool support_u2f = 2;
+
+  // Whether the pinweaver is supported or not.
+  optional bool support_pinweaver = 3;
+
+  // Whether the platform supports runtime TPM selection or not.
+  optional bool support_runtime_selection = 4;
+
+  // Whether the TPM is allowed to use or not.
+  optional bool is_allowed = 5;
 }
 
-message GetDictionaryAttackInfoRequest {
-}
+message GetDictionaryAttackInfoRequest {}
 
 message GetDictionaryAttackInfoReply {
   // The success or error code of the call GetDictionaryAttackInfo.
@@ -315,6 +349,16 @@ message GetDictionaryAttackInfoReply {
   optional bool dictionary_attack_lockout_in_effect = 4;
   // The number of seconds remaining in the lockout.
   optional uint32 dictionary_attack_lockout_seconds_remaining = 5;
+}
+
+message GetRoVerificationStatusRequest {}
+
+message GetRoVerificationStatusReply {
+  // The success or error code of the call GetRoVerificationStatus.
+  optional TpmManagerStatus status = 1;
+
+  // The status about if the last reboot was triggered by RO verification.
+  optional RoVerificationStatus ro_verification_status = 2;
 }
 
 message ResetDictionaryAttackLockRequest {
@@ -345,8 +389,7 @@ message RemoveOwnerDependencyReply {
   optional TpmManagerStatus status = 1;
 }
 
-message ClearStoredOwnerPasswordRequest {
-}
+message ClearStoredOwnerPasswordRequest {}
 
 message ClearStoredOwnerPasswordReply {
   optional TpmManagerStatus status = 1;

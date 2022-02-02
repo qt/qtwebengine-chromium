@@ -111,6 +111,11 @@ bool PrintViewManager::PrintForSystemDialogNow(
   on_print_dialog_shown_callback_ = std::move(dialog_shown_callback);
   is_switching_to_system_dialog_ = true;
 
+  // Remember the ID for `print_preview_rfh_`, to enable checking that the
+  // `RenderFrameHost` is still valid after a possible inner message loop runs
+  // in `DisconnectFromCurrentPrintJob()`.
+  content::GlobalRenderFrameHostId rfh_id = print_preview_rfh_->GetGlobalId();
+
   auto weak_this = weak_factory_.GetWeakPtr();
   DisconnectFromCurrentPrintJob();
   if (!weak_this)
@@ -119,6 +124,12 @@ bool PrintViewManager::PrintForSystemDialogNow(
   // Don't print / print preview crashed tabs.
   if (IsCrashed())
     return false;
+
+  // Don't print if `print_preview_rfh_` is no longer live.
+  if (!content::RenderFrameHost::FromID(rfh_id) ||
+      !print_preview_rfh_->IsRenderFrameLive()) {
+    return false;
+  }
 
   // TODO(crbug.com/809738)  Register with `PrintBackendServiceManager` when
   // system print is enabled out-of-process.
@@ -158,6 +169,9 @@ void PrintViewManager::PrintPreviewForWebNode(content::RenderFrameHost* rfh) {
     return;
 
   DCHECK(rfh);
+  // All callers should already ensure this condition holds; CHECK to
+  // aggressively protect against future unsafety.
+  CHECK(rfh->IsRenderFrameLive());
   DCHECK(!print_preview_rfh_);
   print_preview_rfh_ = rfh;
   print_preview_state_ = USER_INITIATED_PREVIEW;
@@ -189,9 +203,16 @@ void PrintViewManager::PrintPreviewDone() {
   bool send_message = !is_switching_to_system_dialog_;
 #endif
   if (send_message) {
-    // Only send a message about having closed if it is still connected.
-    if (IsPrintRenderFrameConnected(print_preview_rfh_))
+    // Only send a message about having closed if the RenderFrame is live and
+    // PrintRenderFrame is connected. Normally IsPrintRenderFrameConnected()
+    // implies  IsRenderFrameLive(). However, when a renderer process exits
+    // (e.g. due to a crash), RenderFrameDeleted() and PrintPreviewDone() are
+    // triggered by independent observers. Since there is no guarantee which
+    // observer will run first, both conditions are explicitly checked here.
+    if (print_preview_rfh_->IsRenderFrameLive() &&
+        IsPrintRenderFrameConnected(print_preview_rfh_)) {
       GetPrintRenderFrame(print_preview_rfh_)->OnPrintPreviewDialogClosed();
+    }
   }
   is_switching_to_system_dialog_ = false;
 
@@ -215,19 +236,11 @@ void PrintViewManager::RejectPrintPreviewRequestIfRestricted(
     base::OnceClosure on_print_preview_allowed_cb,
     base::OnceClosure on_print_preview_rejected_cb) {
   if (IsPrintingRestricted()) {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    policy::ShowDlpPrintDisabledNotification();
-#else
-    NOTREACHED();
-#endif
+    ShowBlockedNotification();
     std::move(on_print_preview_rejected_cb).Run();
   } else if (ShouldWarnBeforePrinting()) {
-#if BUILDFLAG(IS_CHROMEOS_ASH)
-    policy::ShowDlpPrintWarningDialog(std::move(on_print_preview_allowed_cb),
-                                      std::move(on_print_preview_rejected_cb));
-#else
-    NOTREACHED();
-#endif
+    ShowWarning(std::move(on_print_preview_allowed_cb),
+                std::move(on_print_preview_rejected_cb));
   } else {
     std::move(on_print_preview_allowed_cb).Run();
   }
@@ -240,8 +253,8 @@ void PrintViewManager::OnPrintPreviewRequestRejected(int render_process_id,
   if (!rfh) {
     return;
   }
-  GetPrintRenderFrame(rfh)->OnPrintPreviewDialogClosed();
   PrintPreviewDone();
+  PrintPreviewRejectedForTesting();
 }
 
 void PrintViewManager::RenderFrameCreated(
@@ -276,7 +289,7 @@ bool PrintViewManager::PrintPreview(
     return false;
 
   // Don't print / print preview crashed tabs.
-  if (IsCrashed())
+  if (IsCrashed() || !rfh->IsRenderFrameLive())
     return false;
 
   GetPrintRenderFrame(rfh)->InitiatePrintPreview(std::move(print_renderer),
@@ -285,6 +298,10 @@ bool PrintViewManager::PrintPreview(
   DCHECK(!print_preview_rfh_);
   print_preview_rfh_ = rfh;
   print_preview_state_ = USER_INITIATED_PREVIEW;
+
+  for (auto& observer : GetObservers())
+    observer.OnPrintPreview(print_preview_rfh_);
+
   return true;
 }
 
@@ -301,6 +318,9 @@ void PrintViewManager::SetupScriptedPrintPreview(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   auto& map = g_scripted_print_preview_closure_map.Get();
   content::RenderFrameHost* rfh = GetCurrentTargetFrame();
+  // The Mojo receiver endpoint is owned by a RenderFrameHostReceiverSet, so
+  // this DCHECK should always hold.
+  DCHECK(rfh->IsRenderFrameLive());
   content::RenderProcessHost* rph = rfh->GetProcess();
 
   if (base::Contains(map, rph)) {
@@ -389,6 +409,7 @@ void PrintViewManager::OnScriptedPrintPreviewAllowed(bool source_is_modifiable,
   params.is_modifiable = source_is_modifiable;
   PrintPreviewUI::SetInitialParams(
       dialog_controller->GetPrintPreviewForContents(web_contents()), params);
+  PrintPreviewAllowedForTesting();
 }
 
 void PrintViewManager::RequestPrintPreview(
@@ -411,9 +432,11 @@ void PrintViewManager::OnRequestPrintPreviewAllowed(
     mojom::RequestPrintPreviewParamsPtr params,
     int render_process_id,
     int render_frame_id) {
+  // Double-check that the RenderFrameHost is still alive and has a live
+  // RenderFrame, since the DLP check is potentially asynchronous.
   auto* render_frame_host =
       content::RenderFrameHost::FromID(render_process_id, render_frame_id);
-  if (!render_frame_host) {
+  if (!render_frame_host || !render_frame_host->IsRenderFrameLive()) {
     return;
   }
   if (params->webnode_only) {
@@ -422,6 +445,7 @@ void PrintViewManager::OnRequestPrintPreviewAllowed(
   PrintPreviewDialogController::PrintPreview(web_contents());
   PrintPreviewUI::SetInitialParams(GetPrintPreviewDialog(web_contents()),
                                    *params);
+  PrintPreviewAllowedForTesting();
 }
 
 void PrintViewManager::CheckForCancel(int32_t preview_ui_id,
@@ -462,6 +486,33 @@ bool PrintViewManager::ShouldWarnBeforePrinting() const {
 #endif
 }
 
-WEB_CONTENTS_USER_DATA_KEY_IMPL(PrintViewManager)
+void PrintViewManager::ShowWarning(
+    base::OnceClosure on_print_preview_allowed_cb,
+    base::OnceClosure on_print_preview_rejected_cb) const {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  policy::ShowDlpPrintWarningDialog(std::move(on_print_preview_allowed_cb),
+                                    std::move(on_print_preview_rejected_cb));
+#else
+  NOTREACHED();
+#endif
+}
+
+void PrintViewManager::ShowBlockedNotification() const {
+#if BUILDFLAG(IS_CHROMEOS_ASH)
+  policy::ShowDlpPrintDisabledNotification();
+#else
+  NOTREACHED();
+#endif
+}
+
+void PrintViewManager::PrintPreviewRejectedForTesting() {
+  // Note: This is only used for testing.
+}
+
+void PrintViewManager::PrintPreviewAllowedForTesting() {
+  // Note: This is only used for testing.
+}
+
+WEB_CONTENTS_USER_DATA_KEY_IMPL(PrintViewManager);
 
 }  // namespace printing

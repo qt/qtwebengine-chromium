@@ -13,15 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 """Tests for bincount_ops.bincount."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 import numpy as np
 
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import errors
+from tensorflow.python.framework import errors_impl
 from tensorflow.python.framework import ops
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
@@ -36,7 +33,7 @@ from tensorflow.python.platform import googletest
 class BincountTest(test_util.TensorFlowTestCase):
 
   def test_empty(self):
-    with self.session(use_gpu=True):
+    with self.session():
       self.assertAllEqual(
           self.evaluate(bincount_ops.bincount([], minlength=5)),
           [0, 0, 0, 0, 0])
@@ -54,7 +51,7 @@ class BincountTest(test_util.TensorFlowTestCase):
           np.float64)
 
   def test_values(self):
-    with self.session(use_gpu=True):
+    with self.session():
       self.assertAllEqual(
           self.evaluate(bincount_ops.bincount([1, 1, 1, 2, 2, 3])),
           [0, 3, 2, 1])
@@ -74,7 +71,7 @@ class BincountTest(test_util.TensorFlowTestCase):
           np.ones(10000))
 
   def test_maxlength(self):
-    with self.session(use_gpu=True):
+    with self.session():
       self.assertAllEqual(
           self.evaluate(bincount_ops.bincount([5], maxlength=3)), [0, 0, 0])
       self.assertAllEqual(
@@ -84,7 +81,7 @@ class BincountTest(test_util.TensorFlowTestCase):
 
   def test_random_with_weights(self):
     num_samples = 10000
-    with self.session(use_gpu=True):
+    with self.session():
       np.random.seed(42)
       for dtype in [dtypes.int32, dtypes.int64, dtypes.float32, dtypes.float64]:
         arr = np.random.randint(0, 1000, num_samples)
@@ -98,7 +95,7 @@ class BincountTest(test_util.TensorFlowTestCase):
 
   def test_random_without_weights(self):
     num_samples = 10000
-    with self.session(use_gpu=True):
+    with self.session():
       np.random.seed(42)
       for dtype in [np.int32, np.float32]:
         arr = np.random.randint(0, 1000, num_samples)
@@ -107,8 +104,22 @@ class BincountTest(test_util.TensorFlowTestCase):
             self.evaluate(bincount_ops.bincount(arr, None)),
             np.bincount(arr, weights))
 
+  @test_util.run_gpu_only
+  def test_bincount_determinism_error(self):
+    arr = np.random.randint(0, 1000, size=1000)
+    with test_util.deterministic_ops(), self.assertRaisesRegex(
+        errors_impl.UnimplementedError,
+        "Determinism is not yet supported in GPU implementation of Bincount."):
+      self.evaluate(bincount_ops.bincount(arr, None, axis=None))
+    arr = np.random.randint(0, 1000, size=(100, 100))
+    with test_util.deterministic_ops(), self.assertRaisesRegex(
+        errors_impl.UnimplementedError,
+        "Determinism is not yet supported in GPU implementation of "
+        "DenseBincount."):
+      self.evaluate(bincount_ops.bincount(arr, None, axis=-1))
+
   def test_zero_weights(self):
-    with self.session(use_gpu=True):
+    with self.session():
       self.assertAllEqual(
           self.evaluate(bincount_ops.bincount(np.arange(1000), np.zeros(1000))),
           np.zeros(1000))
@@ -119,22 +130,25 @@ class BincountTest(test_util.TensorFlowTestCase):
       with self.assertRaises(errors.InvalidArgumentError):
         self.evaluate(bincount_ops.bincount([1, 2, 3, -1, 6, 8]))
 
-  @test_util.run_deprecated_v1
+  @test_util.run_in_graph_and_eager_modes
   def test_shape_function(self):
     # size must be scalar.
-    with self.assertRaisesRegexp(
-        ValueError, "Shape must be rank 0 but is rank 1 for .*Bincount"):
-      gen_math_ops.bincount([1, 2, 3, -1, 6, 8], [1], [])
+    with self.assertRaisesRegex(
+        (ValueError, errors.InvalidArgumentError),
+        "Shape must be rank 0 but is rank 1(?s).*Bincount"):
+      gen_math_ops.bincount([1, 2, 3, 1, 6, 8], [1], [])
     # size must be positive.
-    with self.assertRaisesRegexp(ValueError, "must be non-negative"):
-      gen_math_ops.bincount([1, 2, 3, -1, 6, 8], -5, [])
+    with self.assertRaisesRegex((ValueError, errors.InvalidArgumentError),
+                                "must be non-negative"):
+      gen_math_ops.bincount([1, 2, 3, 1, 6, 8], -5, [])
     # if size is a constant then the shape is known.
-    v1 = gen_math_ops.bincount([1, 2, 3, -1, 6, 8], 5, [])
+    v1 = gen_math_ops.bincount([1, 2, 3, 1, 6, 8], 5, [])
     self.assertAllEqual(v1.get_shape().as_list(), [5])
     # if size is a placeholder then the shape is unknown.
-    s = array_ops.placeholder(dtype=dtypes.int32)
-    v2 = gen_math_ops.bincount([1, 2, 3, -1, 6, 8], s, [])
-    self.assertAllEqual(v2.get_shape().as_list(), [None])
+    with ops.Graph().as_default():
+      s = array_ops.placeholder(dtype=dtypes.int32)
+      v2 = gen_math_ops.bincount([1, 2, 3, 1, 6, 8], s, [])
+      self.assertAllEqual(v2.get_shape().as_list(), [None])
 
 
 class BincountOpTest(test_util.TensorFlowTestCase, parameterized.TestCase):
@@ -322,9 +336,9 @@ class BincountOpTest(test_util.TensorFlowTestCase, parameterized.TestCase):
     size = 10
     self._test_bincount_col_binary(num_rows, num_cols, size, dtype)
 
-  @test_util.run_deprecated_v1
   def test_invalid_rank(self):
-    with self.assertRaisesRegexp(ValueError, "at most rank 2"):
+    with self.assertRaisesRegex((ValueError, errors.InvalidArgumentError),
+                                "at most rank 2"):
       with test_util.use_gpu():
         self.evaluate(
             gen_math_ops.dense_bincount(

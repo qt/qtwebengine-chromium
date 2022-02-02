@@ -37,6 +37,8 @@ public:
 	const VkPhysicalDeviceFeatures &getFeatures() const;
 	void getFeatures2(VkPhysicalDeviceFeatures2 *features) const;
 	bool hasFeatures(const VkPhysicalDeviceFeatures &requestedFeatures) const;
+	template<typename T>
+	bool hasExtendedFeatures(const T *requestedFeature) const;
 
 	const VkPhysicalDeviceProperties &getProperties() const;
 	void getProperties(VkPhysicalDeviceIDProperties *properties) const;
@@ -56,7 +58,7 @@ public:
 	void getProperties(const VkPhysicalDeviceExternalFenceInfo *pExternalFenceInfo, VkExternalFenceProperties *pExternalFenceProperties) const;
 	void getProperties(const VkPhysicalDeviceExternalSemaphoreInfo *pExternalSemaphoreInfo, VkExternalSemaphoreProperties *pExternalSemaphoreProperties) const;
 	void getProperties(VkPhysicalDeviceExternalMemoryHostPropertiesEXT *properties) const;
-	void getProperties(VkPhysicalDeviceDriverPropertiesKHR *properties) const;
+	void getProperties(VkPhysicalDeviceDriverProperties *properties) const;
 	void getProperties(VkPhysicalDeviceLineRasterizationPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceProvokingVertexPropertiesEXT *properties) const;
 	void getProperties(VkPhysicalDeviceFloatControlsProperties *) const;

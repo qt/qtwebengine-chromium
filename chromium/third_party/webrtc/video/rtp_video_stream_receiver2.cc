@@ -861,8 +861,7 @@ void RtpVideoStreamReceiver2::OnAssembledFrame(
 void RtpVideoStreamReceiver2::OnCompleteFrames(
     RtpFrameReferenceFinder::ReturnVector frames) {
   for (auto& frame : frames) {
-    RtpFrameObject* rtp_frame = static_cast<RtpFrameObject*>(frame.get());
-    last_seq_num_for_pic_id_[rtp_frame->Id()] = rtp_frame->last_seq_num();
+    last_seq_num_for_pic_id_[frame->Id()] = frame->last_seq_num();
 
     last_completed_picture_id_ =
         std::max(last_completed_picture_id_, frame->Id());
@@ -905,6 +904,12 @@ void RtpVideoStreamReceiver2::SetDepacketizerToDecoderFrameTransformer(
           this, std::move(frame_transformer), rtc::Thread::Current(),
           config_.rtp.remote_ssrc);
   frame_transformer_delegate_->Init();
+}
+
+void RtpVideoStreamReceiver2::SetRtpExtensions(
+    const std::vector<RtpExtension>& extensions) {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  rtp_header_extensions_.Reset(extensions);
 }
 
 void RtpVideoStreamReceiver2::UpdateRtt(int64_t max_rtt_ms) {

@@ -43,13 +43,6 @@ struct FeaturesVk : FeatureSetBase
                                "Enable provoking vertex mode via VK_EXT_provoking_vertex extension",
                                &members};
 
-    // Add an extra copy region when using vkCmdCopyBuffer as the Windows Intel driver seems
-    // to have a bug where the last region is ignored.
-    Feature extraCopyBufferRegion = {
-        "extraCopyBufferRegion", FeatureCategory::VulkanWorkarounds,
-        "Some drivers seem to have a bug where the last copy region in vkCmdCopyBuffer is ignored",
-        &members};
-
     // This flag is added for the sole purpose of end2end tests, to test the correctness
     // of various algorithms when a fallback format is used, such as using a packed format to
     // emulate a depth- or stencil-only format.
@@ -89,14 +82,6 @@ struct FeaturesVk : FeatureSetBase
     Feature supportsIncrementalPresent = {
         "supportsIncrementalPresent", FeatureCategory::VulkanFeatures,
         "VkDevice supports the VK_KHR_incremental_present extension", &members};
-
-    // Whether texture copies on cube map targets should be done on GPU.  This is a workaround for
-    // Intel drivers on windows that have an issue with creating single-layer views on cube map
-    // textures.
-    Feature forceCPUPathForCubeMapCopy = {
-        "forceCPUPathForCubeMapCopy", FeatureCategory::VulkanWorkarounds,
-        "Some drivers have an issue with creating single-layer views on cube map textures",
-        &members};
 
     // Whether the VkDevice supports the VK_ANDROID_external_memory_android_hardware_buffer
     // extension, on which the EGL_ANDROID_image_native_buffer extension can be layered.
@@ -197,6 +182,11 @@ struct FeaturesVk : FeatureSetBase
     Feature supportsTransformFeedbackExtension = {
         "supportsTransformFeedbackExtension", FeatureCategory::VulkanFeatures,
         "Transform feedback uses the VK_EXT_transform_feedback extension.", &members,
+        "http://anglebug.com/3206"};
+
+    Feature supportsGeometryStreamsCapability = {
+        "supportsGeometryStreamsCapability", FeatureCategory::VulkanFeatures,
+        "Implementation supports the GeometryStreams SPIR-V capability.", &members,
         "http://anglebug.com/3206"};
 
     // Whether the VkDevice supports the VK_EXT_index_type_uint8 extension
@@ -304,6 +294,15 @@ struct FeaturesVk : FeatureSetBase
         "VkDevice supports the VK_EXT_swapchain_colorspace extension", &members,
         "http://anglebug.com/2514"};
 
+    // Whether the VkDevice supports the VK_EXT_external_memory_dma_buf and
+    // VK_EXT_image_drm_format_modifier extensions.  These extensions are always used together to
+    // implement EGL_EXT_image_dma_buf_import and EGL_EXT_image_dma_buf_import_modifiers.
+    Feature supportsExternalMemoryDmaBufAndModifiers = {
+        "supportsExternalMemoryDmaBufAndModifiers", FeatureCategory::VulkanFeatures,
+        "VkDevice supports the VK_EXT_external_memory_dma_buf and VK_EXT_image_drm_format_modifier "
+        "extensions",
+        &members, "http://anglebug.com/6248"};
+
     // Whether the VkDevice supports the VK_EXT_external_memory_host extension, on which the
     // ANGLE_iosurface_client_buffer extension can be layered.
     Feature supportsExternalMemoryHost = {
@@ -392,6 +391,13 @@ struct FeaturesVk : FeatureSetBase
         "supportsRenderPassStoreOpNoneQCOM", FeatureCategory::VulkanFeatures,
         "VkDevice supports VK_QCOM_render_pass_store_ops extension.", &members,
         "http://anglebug.com/5055"};
+
+    // Whether the VkDevice supports the VK_EXT_load_store_op_none extension
+    // http://anglebug.com/5371
+    Feature supportsRenderPassLoadStoreOpNone = {
+        "supportsRenderPassLoadStoreOpNone", FeatureCategory::VulkanFeatures,
+        "VkDevice supports VK_EXT_load_store_op_none extension.", &members,
+        "http://anglebug.com/5371"};
 
     // Force maxUniformBufferSize to 16K on Qualcomm's Adreno 540. Pixel2's Adreno540 reports
     // maxUniformBufferSize 64k but various tests failed with that size. For that specific

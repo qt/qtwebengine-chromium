@@ -7,9 +7,11 @@
 #include "src/api/api.h"
 #include "src/base/ieee754.h"
 #include "src/codegen/cpu-features.h"
+#include "src/common/globals.h"
 #include "src/date/date.h"
 #include "src/debug/debug.h"
 #include "src/deoptimizer/deoptimizer.h"
+#include "src/execution/isolate-utils.h"
 #include "src/execution/isolate.h"
 #include "src/execution/microtask-queue.h"
 #include "src/execution/simulator-base.h"
@@ -145,6 +147,19 @@ constexpr struct alignas(16) {
 } wasm_uint32_max_as_double = {uint64_t{0x41efffffffe00000},
                                uint64_t{0x41efffffffe00000}};
 
+// This is 2147483648.0, which is 1 more than INT32_MAX.
+constexpr struct alignas(16) {
+  uint32_t a;
+  uint32_t b;
+  uint32_t c;
+  uint32_t d;
+} wasm_int32_overflow_as_float = {
+    uint32_t{0x4f00'0000},
+    uint32_t{0x4f00'0000},
+    uint32_t{0x4f00'0000},
+    uint32_t{0x4f00'0000},
+};
+
 // Implementation of ExternalReference
 
 static ExternalReference::Type BuiltinCallTypeForResultSize(int result_size) {
@@ -175,8 +190,8 @@ ExternalReference ExternalReference::Create(const Runtime::Function* f) {
 }
 
 // static
-ExternalReference ExternalReference::Create(Address address) {
-  return ExternalReference(Redirect(address));
+ExternalReference ExternalReference::Create(Address address, Type type) {
+  return ExternalReference(Redirect(address, type));
 }
 
 ExternalReference ExternalReference::isolate_address(Isolate* isolate) {
@@ -400,6 +415,7 @@ IF_WASM(FUNCTION_REFERENCE, wasm_memory_fill, wasm::memory_fill_wrapper)
 IF_WASM(FUNCTION_REFERENCE, wasm_float64_pow, wasm::float64_pow_wrapper)
 IF_WASM(FUNCTION_REFERENCE, wasm_call_trap_callback_for_testing,
         wasm::call_trap_callback_for_testing)
+IF_WASM(FUNCTION_REFERENCE, wasm_array_copy, wasm::array_copy_wrapper)
 
 static void f64_acos_wrapper(Address data) {
   double input = ReadUnalignedValue<double>(data);
@@ -618,6 +634,11 @@ ExternalReference ExternalReference::address_of_wasm_uint32_max_as_double() {
       reinterpret_cast<Address>(&wasm_uint32_max_as_double));
 }
 
+ExternalReference ExternalReference::address_of_wasm_int32_overflow_as_float() {
+  return ExternalReference(
+      reinterpret_cast<Address>(&wasm_int32_overflow_as_float));
+}
+
 ExternalReference
 ExternalReference::address_of_enable_experimental_regexp_engine() {
   return ExternalReference(&FLAG_enable_experimental_regexp_engine);
@@ -688,6 +709,8 @@ ExternalReference ExternalReference::invoke_accessor_getter_callback() {
 #define re_stack_check_func RegExpMacroAssemblerMIPS::CheckStackGuardState
 #elif V8_TARGET_ARCH_MIPS64
 #define re_stack_check_func RegExpMacroAssemblerMIPS::CheckStackGuardState
+#elif V8_TARGET_ARCH_LOONG64
+#define re_stack_check_func RegExpMacroAssemblerLOONG64::CheckStackGuardState
 #elif V8_TARGET_ARCH_S390
 #define re_stack_check_func RegExpMacroAssemblerS390::CheckStackGuardState
 #elif V8_TARGET_ARCH_RISCV64
@@ -736,6 +759,11 @@ ExternalReference ExternalReference::address_of_regexp_stack_memory_top_address(
     Isolate* isolate) {
   return ExternalReference(
       isolate->regexp_stack()->memory_top_address_address());
+}
+
+ExternalReference ExternalReference::address_of_regexp_stack_stack_pointer(
+    Isolate* isolate) {
+  return ExternalReference(isolate->regexp_stack()->stack_pointer_address());
 }
 
 ExternalReference ExternalReference::javascript_execution_assert(
@@ -861,35 +889,37 @@ ExternalReference ExternalReference::search_string_raw_two_two() {
 
 namespace {
 
-void StringWriteToFlatOneByte(Address source, uint8_t* sink, int32_t from,
-                              int32_t to) {
-  return String::WriteToFlat<uint8_t>(String::cast(Object(source)), sink, from,
-                                      to);
+void StringWriteToFlatOneByte(Address source, uint8_t* sink, int32_t start,
+                              int32_t length) {
+  return String::WriteToFlat<uint8_t>(String::cast(Object(source)), sink, start,
+                                      length);
 }
 
-void StringWriteToFlatTwoByte(Address source, uint16_t* sink, int32_t from,
-                              int32_t to) {
-  return String::WriteToFlat<uint16_t>(String::cast(Object(source)), sink, from,
-                                       to);
+void StringWriteToFlatTwoByte(Address source, uint16_t* sink, int32_t start,
+                              int32_t length) {
+  return String::WriteToFlat<uint16_t>(String::cast(Object(source)), sink,
+                                       start, length);
 }
 
 const uint8_t* ExternalOneByteStringGetChars(Address string) {
+  PtrComprCageBase cage_base = GetPtrComprCageBaseFromOnHeapAddress(string);
   // The following CHECK is a workaround to prevent a CFI bug where
   // ExternalOneByteStringGetChars() and ExternalTwoByteStringGetChars() are
   // merged by the linker, resulting in one of the input type's vtable address
   // failing the address range check.
   // TODO(chromium:1160961): Consider removing the CHECK when CFI is fixed.
-  CHECK(Object(string).IsExternalOneByteString());
-  return ExternalOneByteString::cast(Object(string)).GetChars();
+  CHECK(Object(string).IsExternalOneByteString(cage_base));
+  return ExternalOneByteString::cast(Object(string)).GetChars(cage_base);
 }
 const uint16_t* ExternalTwoByteStringGetChars(Address string) {
+  PtrComprCageBase cage_base = GetPtrComprCageBaseFromOnHeapAddress(string);
   // The following CHECK is a workaround to prevent a CFI bug where
   // ExternalOneByteStringGetChars() and ExternalTwoByteStringGetChars() are
   // merged by the linker, resulting in one of the input type's vtable address
   // failing the address range check.
   // TODO(chromium:1160961): Consider removing the CHECK when CFI is fixed.
-  CHECK(Object(string).IsExternalTwoByteString());
-  return ExternalTwoByteString::cast(Object(string)).GetChars();
+  CHECK(Object(string).IsExternalTwoByteString(cage_base));
+  return ExternalTwoByteString::cast(Object(string)).GetChars(cage_base);
 }
 
 }  // namespace
@@ -1180,7 +1210,7 @@ namespace {
 // address, with the same value. This is done in order for TSAN to see these
 // stores from generated code.
 // Note that {value} is an int64_t irrespective of the store size. This is on
-// purpose to keep the function signatures the same accross stores. The
+// purpose to keep the function signatures the same across stores. The
 // static_cast inside the method will ignore the bits which will not be stored.
 void tsan_relaxed_store_8_bits(Address addr, int64_t value) {
 #if V8_TARGET_ARCH_X64
@@ -1218,6 +1248,44 @@ void tsan_relaxed_store_64_bits(Address addr, int64_t value) {
 #endif  // V8_TARGET_ARCH_X64
 }
 
+// Same as above, for sequentially consistent stores.
+void tsan_seq_cst_store_8_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::SeqCst_Store(reinterpret_cast<base::Atomic8*>(addr),
+                     static_cast<base::Atomic8>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+void tsan_seq_cst_store_16_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::SeqCst_Store(reinterpret_cast<base::Atomic16*>(addr),
+                     static_cast<base::Atomic16>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+void tsan_seq_cst_store_32_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::SeqCst_Store(reinterpret_cast<base::Atomic32*>(addr),
+                     static_cast<base::Atomic32>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+void tsan_seq_cst_store_64_bits(Address addr, int64_t value) {
+#if V8_TARGET_ARCH_X64
+  base::SeqCst_Store(reinterpret_cast<base::Atomic64*>(addr),
+                     static_cast<base::Atomic64>(value));
+#else
+  UNREACHABLE();
+#endif  // V8_TARGET_ARCH_X64
+}
+
+// Same as above, for relaxed loads.
 base::Atomic32 tsan_relaxed_load_32_bits(Address addr, int64_t value) {
 #if V8_TARGET_ARCH_X64
   return base::Relaxed_Load(reinterpret_cast<base::Atomic32*>(addr));
@@ -1245,6 +1313,14 @@ IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_32_bits,
         tsan_relaxed_store_32_bits)
 IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_store_function_64_bits,
         tsan_relaxed_store_64_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_seq_cst_store_function_8_bits,
+        tsan_seq_cst_store_8_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_seq_cst_store_function_16_bits,
+        tsan_seq_cst_store_16_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_seq_cst_store_function_32_bits,
+        tsan_seq_cst_store_32_bits)
+IF_TSAN(FUNCTION_REFERENCE, tsan_seq_cst_store_function_64_bits,
+        tsan_seq_cst_store_64_bits)
 IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_load_function_32_bits,
         tsan_relaxed_load_32_bits)
 IF_TSAN(FUNCTION_REFERENCE, tsan_relaxed_load_function_64_bits,

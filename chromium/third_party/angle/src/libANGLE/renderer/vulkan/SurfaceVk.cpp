@@ -124,7 +124,7 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
                               bool hasProtectedContent,
                               vk::ImageHelper *imageHelper)
 {
-    const angle::Format &textureFormat = vkFormat.actualImageFormat();
+    const angle::Format &textureFormat = vkFormat.getActualRenderableImageFormat();
     bool isDepthOrStencilFormat   = textureFormat.depthBits > 0 || textureFormat.stencilBits > 0;
     const VkImageUsageFlags usage = isDepthOrStencilFormat ? kSurfaceVkDepthStencilImageUsageFlags
                                                            : kSurfaceVkColorImageUsageFlags;
@@ -134,10 +134,11 @@ angle::Result InitImageHelper(DisplayVk *displayVk,
 
     VkImageCreateFlags imageCreateFlags =
         hasProtectedContent ? VK_IMAGE_CREATE_PROTECTED_BIT : vk::kVkImageCreateFlagsNone;
-    ANGLE_TRY(imageHelper->initExternal(displayVk, gl::TextureType::_2D, extents, vkFormat, samples,
-                                        usage, imageCreateFlags, vk::ImageLayout::Undefined,
-                                        nullptr, gl::LevelIndex(0), 1, 1,
-                                        isRobustResourceInitEnabled, nullptr, hasProtectedContent));
+    ANGLE_TRY(imageHelper->initExternal(
+        displayVk, gl::TextureType::_2D, extents, vkFormat.getIntendedFormatID(),
+        vkFormat.getActualRenderableImageFormatID(), samples, usage, imageCreateFlags,
+        vk::ImageLayout::Undefined, nullptr, gl::LevelIndex(0), 1, 1, isRobustResourceInitEnabled,
+        nullptr, hasProtectedContent));
 
     return angle::Result::Continue;
 }
@@ -234,7 +235,8 @@ angle::Result OffscreenSurfaceVk::AttachmentImage::initializeWithExternalMemory(
     importMemoryHostPointerInfo.pNext = nullptr;
     importMemoryHostPointerInfo.handleType =
         VK_EXTERNAL_MEMORY_HANDLE_TYPE_HOST_MAPPED_FOREIGN_MEMORY_BIT_EXT;
-    importMemoryHostPointerInfo.pHostPointer = buffer;
+    importMemoryHostPointerInfo.pHostPointer   = buffer;
+    const void *importMemoryHostPointerInfoPtr = &importMemoryHostPointerInfo;
 
     VkMemoryRequirements externalMemoryRequirements;
     image.getImage().getMemoryRequirements(renderer->getDevice(), &externalMemoryRequirements);
@@ -245,8 +247,8 @@ angle::Result OffscreenSurfaceVk::AttachmentImage::initializeWithExternalMemory(
         flags |= VK_MEMORY_PROPERTY_PROTECTED_BIT;
     }
     ANGLE_TRY(image.initExternalMemory(
-        displayVk, renderer->getMemoryProperties(), externalMemoryRequirements, nullptr,
-        &importMemoryHostPointerInfo, VK_QUEUE_FAMILY_EXTERNAL, flags));
+        displayVk, renderer->getMemoryProperties(), externalMemoryRequirements, nullptr, 1,
+        &importMemoryHostPointerInfoPtr, VK_QUEUE_FAMILY_EXTERNAL, flags));
 
     imageViews.init(renderer);
 
@@ -740,9 +742,14 @@ angle::Result WindowSurfaceVk::initializeImpl(DisplayVk *displayVk)
     ANGLE_VK_TRY(displayVk, vkGetPhysicalDeviceSurfacePresentModesKHR(
                                 physicalDevice, mSurface, &presentModeCount, mPresentModes.data()));
 
-    // Select appropriate present mode based on vsync parameter.  Default to 1 (FIFO), though it
+    // Select appropriate present mode based on vsync parameter. Default to 1 (FIFO), though it
     // will get clamped to the min/max values specified at display creation time.
-    setSwapInterval(renderer->getFeatures().disableFifoPresentMode.enabled ? 0 : 1);
+    EGLint preferredSwapInterval = mState.getPreferredSwapInterval();
+    if (renderer->getFeatures().disableFifoPresentMode.enabled)
+    {
+        preferredSwapInterval = 0;
+    }
+    setSwapInterval(preferredSwapInterval);
 
     uint32_t surfaceFormatCount = 0;
     ANGLE_VK_TRY(displayVk, vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, mSurface,
@@ -754,7 +761,7 @@ angle::Result WindowSurfaceVk::initializeImpl(DisplayVk *displayVk)
                                                       surfaceFormats.data()));
 
     const vk::Format &format = renderer->getFormat(mState.config->renderTargetFormat);
-    VkFormat nativeFormat    = format.actualImageVkFormat();
+    VkFormat nativeFormat    = format.getActualRenderableImageVkFormat();
 
     if (surfaceFormatCount == 1u && surfaceFormats[0].format == VK_FORMAT_UNDEFINED)
     {
@@ -791,11 +798,8 @@ angle::Result WindowSurfaceVk::initializeImpl(DisplayVk *displayVk)
     ANGLE_TRY(createSwapChain(displayVk, extents, VK_NULL_HANDLE));
 
     VkResult vkResult = acquireNextSwapchainImage(displayVk);
-    // VK_SUBOPTIMAL_KHR is ok since we still have an Image that can be presented successfully
-    if (ANGLE_UNLIKELY((vkResult != VK_SUCCESS) && (vkResult != VK_SUBOPTIMAL_KHR)))
-    {
-        ANGLE_VK_TRY(displayVk, vkResult);
-    }
+    ASSERT(vkResult != VK_SUBOPTIMAL_KHR);
+    ANGLE_VK_TRY(displayVk, vkResult);
 
     return angle::Result::Continue;
 }
@@ -1004,7 +1008,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     VkDevice device      = renderer->getDevice();
 
     const vk::Format &format = renderer->getFormat(mState.config->renderTargetFormat);
-    VkFormat nativeFormat    = format.actualImageVkFormat();
+    VkFormat nativeFormat    = format.getActualRenderableImageVkFormat();
 
     gl::Extents rotatedExtents = extents;
     if (Is90DegreeRotation(getPreTransform()))
@@ -1026,7 +1030,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     if (kEnableOverlay)
     {
         VkFormatFeatureFlags featureBits = renderer->getImageFormatFeatureBits(
-            format.actualImageFormatID, VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
+            format.getActualRenderableImageFormatID(), VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT);
         if ((featureBits & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT) != 0)
         {
             imageUsageFlags |= VK_IMAGE_USAGE_STORAGE_BIT;
@@ -1069,7 +1073,7 @@ angle::Result WindowSurfaceVk::createSwapChain(vk::Context *context,
     mSwapchain            = newSwapChain;
     mSwapchainPresentMode = mDesiredSwapchainPresentMode;
 
-    // Intialize the swapchain image views.
+    // Initialize the swapchain image views.
     uint32_t imageCount = 0;
     ANGLE_VK_TRY(context, vkGetSwapchainImagesKHR(device, mSwapchain, &imageCount, nullptr));
 
@@ -1581,9 +1585,11 @@ angle::Result WindowSurfaceVk::doDeferredAcquireNextImage(const gl::Context *con
         // Get the next available swapchain image.
 
         VkResult result = acquireNextSwapchainImage(contextVk);
-        // If SUBOPTIMAL/OUT_OF_DATE is returned, it's ok, we just need to recreate the swapchain
-        // before continuing.
-        if (ANGLE_UNLIKELY((result == VK_ERROR_OUT_OF_DATE_KHR) || (result == VK_SUBOPTIMAL_KHR)))
+
+        ASSERT(result != VK_SUBOPTIMAL_KHR);
+        // If OUT_OF_DATE is returned, it's ok, we just need to recreate the swapchain before
+        // continuing.
+        if (ANGLE_UNLIKELY(result == VK_ERROR_OUT_OF_DATE_KHR))
         {
             ANGLE_TRY(checkForOutOfDateSwapchain(contextVk, true));
             // Try one more time and bail if we fail
@@ -1598,6 +1604,8 @@ angle::Result WindowSurfaceVk::doDeferredAcquireNextImage(const gl::Context *con
     return angle::Result::Continue;
 }
 
+// This method will either return VK_SUCCESS or VK_ERROR_*.  Thus, it is appropriate to ASSERT that
+// the return value won't be VK_SUBOPTIMAL_KHR.
 VkResult WindowSurfaceVk::acquireNextSwapchainImage(vk::Context *context)
 {
     VkDevice device = context->getDevice();
@@ -1612,7 +1620,8 @@ VkResult WindowSurfaceVk::acquireNextSwapchainImage(vk::Context *context)
     result = vkAcquireNextImageKHR(device, mSwapchain, UINT64_MAX,
                                    acquireImageSemaphore.get().getHandle(), VK_NULL_HANDLE,
                                    &mCurrentSwapchainImageIndex);
-    if (ANGLE_UNLIKELY(result != VK_SUCCESS))
+    // VK_SUBOPTIMAL_KHR is ok since we still have an Image that can be presented successfully
+    if (ANGLE_UNLIKELY(result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR))
     {
         return result;
     }

@@ -14,10 +14,6 @@
 # ==============================================================================
 
 """Operations for clipping (gradient, weight) tensors to min/max values."""
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import six
 
 from tensorflow.python.framework import constant_op
@@ -34,6 +30,7 @@ from tensorflow.python.util.tf_export import tf_export
 
 
 @tf_export("clip_by_value")
+@dispatch.register_unary_elementwise_api
 @dispatch.add_dispatch_support
 def clip_by_value(t, clip_value_min, clip_value_max,
                   name=None):
@@ -89,7 +86,7 @@ def clip_by_value(t, clip_value_min, clip_value_max,
     t: A `Tensor` or `IndexedSlices`.
     clip_value_min: The minimum value to clip to. A scalar `Tensor` or one that
       is broadcastable to the shape of `t`.
-    clip_value_max: The minimum value to clip to. A scalar `Tensor` or one that
+    clip_value_max: The maximum value to clip to. A scalar `Tensor` or one that
       is broadcastable to the shape of `t`.
     name: A name for the operation (optional).
 
@@ -111,10 +108,10 @@ def clip_by_value(t, clip_value_min, clip_value_max,
     t_min = math_ops.minimum(values, clip_value_max)
     # Assert that the shape is compatible with the initial shape,
     # to prevent unintentional broadcasting.
-    _ = values.shape.merge_with(t_min.shape)
+    values.shape.assert_is_compatible_with(t_min.shape)
 
     t_max = math_ops.maximum(t_min, clip_value_min, name=name)
-    _ = values.shape.merge_with(t_max.shape)
+    values.shape.assert_is_compatible_with(t_max.shape)
 
     if isinstance(t, ops.IndexedSlices):
       t_max = ops.IndexedSlices(t_max, t.indices, t.dense_shape)
@@ -225,7 +222,7 @@ def clip_by_norm(t, clip_norm, axes=None, name=None):
     intermediate = values * clip_norm
     # Assert that the shape is compatible with the initial shape,
     # to prevent unintentional broadcasting.
-    _ = values.shape.merge_with(intermediate.shape)
+    values.shape.assert_is_compatible_with(intermediate.shape)
     values_clip = array_ops.identity(
         intermediate / math_ops.maximum(l2norm, clip_norm), name=name)
 
@@ -261,7 +258,8 @@ def global_norm(t_list, name=None):
   """
   if (not isinstance(t_list, collections_abc.Sequence) or
       isinstance(t_list, six.string_types)):
-    raise TypeError("t_list should be a sequence")
+    raise TypeError("`t_list` should be a sequence of tensors. Received "
+                    f"{type(t_list)}.")
   t_list = list(t_list)
   with ops.name_scope(name, "global_norm", t_list) as name:
     values = [
@@ -339,7 +337,8 @@ def clip_by_global_norm(t_list, clip_norm, use_norm=None, name=None):
   """
   if (not isinstance(t_list, collections_abc.Sequence) or
       isinstance(t_list, six.string_types)):
-    raise TypeError("t_list should be a sequence")
+    raise TypeError("`t_list` should be a sequence of tensors. Received "
+                    f"{type(t_list)}.")
   t_list = list(t_list)
   if use_norm is None:
     use_norm = global_norm(t_list, name)

@@ -53,6 +53,11 @@ bool SurfaceState::hasProtectedContent() const
     return attributes.get(EGL_PROTECTED_CONTENT_EXT, EGL_FALSE) == EGL_TRUE;
 }
 
+EGLint SurfaceState::getPreferredSwapInterval() const
+{
+    return attributes.getAsInt(EGL_SWAP_INTERVAL_ANGLE, 1);
+}
+
 Surface::Surface(EGLint surfaceType,
                  const egl::Config *config,
                  const AttributeMap &attributes,
@@ -93,8 +98,6 @@ Surface::Surface(EGLint surfaceType,
 {
     mPostSubBufferRequested =
         (attributes.get(EGL_POST_SUB_BUFFER_SUPPORTED_NV, EGL_FALSE) == EGL_TRUE);
-    mFlexibleSurfaceCompatibilityRequested =
-        (attributes.get(EGL_FLEXIBLE_SURFACE_COMPATIBILITY_SUPPORTED_ANGLE, EGL_FALSE) == EGL_TRUE);
 
     if (mType == EGL_PBUFFER_BIT)
     {

@@ -135,11 +135,6 @@
 #define EGL_X11_VISUAL_ID_ANGLE 0x33A3
 #endif /* EGL_ANGLE_x11_visual */
 
-#ifndef EGL_ANGLE_flexible_surface_compatibility
-#define EGL_ANGLE_flexible_surface_compatibility 1
-#define EGL_FLEXIBLE_SURFACE_COMPATIBILITY_SUPPORTED_ANGLE 0x33A6
-#endif /* EGL_ANGLE_flexible_surface_compatibility */
-
 #ifndef EGL_ANGLE_surface_orientation
 #define EGL_ANGLE_surface_orientation
 #define EGL_OPTIMAL_SURFACE_ORIENTATION_ANGLE 0x33A7
@@ -354,6 +349,11 @@ EGLAPI EGLBoolean EGLAPIENTRY eglSwapBuffersWithFrameTokenANGLE(EGLDisplay dpy, 
 #define EGL_EXTERNAL_SURFACE_ANGLE 0x348F
 #define EGL_EXTERNAL_CONTEXT_SAVE_STATE_ANGLE 0x3490
 #endif /* EGL_ANGLE_external_context_and_surface */
+
+#ifndef EGL_ANGLE_create_surface_swap_interval
+#define EGL_ANGLE_create_surface_swap_interval 1
+#define EGL_SWAP_INTERVAL_ANGLE 0x322F
+#endif /* EGL_ANGLE_create_surface_swap_interval */
 
 // clang-format on
 

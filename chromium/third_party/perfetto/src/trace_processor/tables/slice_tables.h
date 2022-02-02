@@ -26,6 +26,8 @@ namespace tables {
 
 // @name slice
 // @tablegroup Events
+// @param ts timestamp of the start of the slice (in nanoseconds)
+// @param dur duration of the slice (in nanoseconds)
 // @param arg_set_id {@joinable args.arg_set_id}
 #define PERFETTO_TP_SLICE_TABLE_DEF(NAME, PARENT, C) \
   NAME(SliceTable, "internal_slice")                 \
@@ -33,8 +35,8 @@ namespace tables {
   C(int64_t, ts, Column::Flag::kSorted)              \
   C(int64_t, dur)                                    \
   C(TrackTable::Id, track_id)                        \
-  C(StringPool::Id, category)                        \
-  C(StringPool::Id, name)                            \
+  C(base::Optional<StringPool::Id>, category)        \
+  C(base::Optional<StringPool::Id>, name)            \
   C(uint32_t, depth)                                 \
   C(int64_t, stack_id)                               \
   C(int64_t, parent_stack_id)                        \
@@ -44,6 +46,7 @@ namespace tables {
 PERFETTO_TP_TABLE(PERFETTO_TP_SLICE_TABLE_DEF);
 
 // @tablegroup Events
+// @param ts timestamp of the start of the slice (in nanoseconds)
 // @param arg_set_id {@joinable args.arg_set_id}
 #define PERFETTO_TP_INSTANT_TABLE_DEF(NAME, PARENT, C) \
   NAME(InstantTable, "instant")                        \
@@ -57,6 +60,8 @@ PERFETTO_TP_TABLE(PERFETTO_TP_SLICE_TABLE_DEF);
 PERFETTO_TP_TABLE(PERFETTO_TP_INSTANT_TABLE_DEF);
 
 // @tablegroup Events
+// @param ts timestamp of the start of the slice (in nanoseconds)
+// @param dur duration of the slice (in nanoseconds)
 // @param utid {@joinable thread.utid}
 #define PERFETTO_TP_SCHED_SLICE_TABLE_DEF(NAME, PARENT, C) \
   NAME(SchedSliceTable, "sched_slice")                     \
@@ -170,8 +175,8 @@ PERFETTO_TP_TABLE(PERFETTO_TP_THREAD_SLICE_DEF);
   C(int64_t, ts)                                                       \
   C(int64_t, dur)                                                      \
   C(TrackTable::Id, track_id)                                          \
-  C(StringPool::Id, category)                                          \
-  C(StringPool::Id, name)                                              \
+  C(base::Optional<StringPool::Id>, category)                          \
+  C(base::Optional<StringPool::Id>, name)                              \
   C(uint32_t, arg_set_id)                                              \
   C(base::Optional<SliceTable::Id>, source_id)                         \
   C(int64_t, start_bound, Column::Flag::kHidden)                       \

@@ -618,6 +618,7 @@ if (skia_compile_sksl_tests) {
       "SK_ENABLE_SPIRV_VALIDATION",
     ]
     sources = [
+      "src/core/SkBlockAllocator.cpp",
       "src/core/SkCpu.cpp",
       "src/core/SkData.cpp",
       "src/core/SkHalf.cpp",
@@ -632,7 +633,6 @@ if (skia_compile_sksl_tests) {
       "src/core/SkThreadID.cpp",
       "src/core/SkUtils.cpp",
       "src/core/SkVM.cpp",
-      "src/gpu/GrBlockAllocator.cpp",
       "src/gpu/GrMemoryPool.cpp",
       "src/gpu/GrShaderUtils.cpp",
       "src/ports/SkMemory_malloc.cpp",
@@ -667,11 +667,8 @@ if (skia_compile_sksl_tests) {
   copy("sksl_pre_includes") {
     sources = [
       "src/sksl/sksl_frag.sksl",
-      "src/sksl/sksl_geom.sksl",
       "src/sksl/sksl_gpu.sksl",
       "src/sksl/sksl_public.sksl",
-      "src/sksl/sksl_rt_blend.sksl",
-      "src/sksl/sksl_rt_colorfilter.sksl",
       "src/sksl/sksl_rt_shader.sksl",
       "src/sksl/sksl_vert.sksl",
     ]
@@ -755,11 +752,9 @@ if (skia_compile_sksl_tests) {
         sources += [ src ]
 
         foreach(outExtension, invoker.outExtensions) {
-          # SPIR-V uses separate extensions for .vert and .geom shaders.
+          # SPIR-V uses separate extensions for .vert shaders.
           if (ext == "vert" && outExtension == ".asm.frag") {
             outExtension = ".asm.vert"
-          } else if (ext == "geom" && outExtension == ".asm.frag") {
-            outExtension = ".asm.geom"
           }
           outputs +=
               [ target_out_dir + "/" +
@@ -1030,6 +1025,25 @@ optional("ndk_images") {
   libs = [ "jnigraphics" ]
 }
 
+optional("graphite") {
+  libs = []
+  frameworks = []
+
+  enabled = skia_enable_graphite
+  public_defines = [ "SK_GRAPHITE_ENABLED" ]
+  public = skia_graphite_public
+  sources = skia_graphite_sources
+  if (skia_use_metal) {
+    public_defines += [ "SK_METAL" ]
+    sources += skia_graphite_mtl_sources
+    if (skia_enable_metal_debug_info) {
+      public_defines += [ "SK_ENABLE_MTL_DEBUG_INFO" ]
+    }
+    frameworks += [ "Metal.framework" ]
+    frameworks += [ "Foundation.framework" ]
+  }
+}
+
 optional("pdf") {
   enabled = skia_use_zlib && skia_enable_pdf
   public_defines = [ "SK_SUPPORT_PDF" ]
@@ -1209,6 +1223,7 @@ skia_component("skia") {
     ":fontmgr_win",
     ":fontmgr_win_gdi",
     ":gpu",
+    ":graphite",
     ":pdf",
     ":skcms",
     ":xps",
@@ -1342,6 +1357,7 @@ skia_component("skia") {
   }
 
   if (is_mac) {
+    public += [ "include/ports/SkCFObject.h" ]
     sources += [
       "src/ports/SkDebug_stdio.cpp",
       "src/ports/SkImageEncoder_CG.cpp",
@@ -1354,6 +1370,7 @@ skia_component("skia") {
   }
 
   if (is_ios) {
+    public += [ "include/ports/SkCFObject.h" ]
     sources += [
       "src/ports/SkDebug_stdio.cpp",
       "src/ports/SkImageEncoder_CG.cpp",
@@ -1784,6 +1801,16 @@ if (skia_enable_tools) {
       sources -= [ "tools/gpu/TestOps.cpp" ]
       sources -= [ "tools/gpu/TestOps.h" ]
     }
+    if (skia_enable_graphite) {
+      sources += [ "tools/graphite/ContextFactory.h" ]
+      sources += [ "tools/graphite/ContextFactory.cpp" ]
+      sources += [ "tools/graphite/GraphiteTestContext.h" ]
+      sources += [ "tools/graphite/GraphiteTestContext.cpp" ]
+      if (skia_use_metal) {
+        sources += [ "tools/graphite/mtl/GraphiteMtlTestContext.h" ]
+        sources += [ "tools/graphite/mtl/MtlTestContext.mm" ]
+      }
+    }
 
     if (is_fuchsia && using_fuchsia_sdk) {
       libs +=
@@ -1986,6 +2013,7 @@ if (skia_enable_tools) {
       ":test",
       ":tool_utils",
       "experimental/skrive:tests",
+      "experimental/sktext:tests",
       "modules/skottie:tests",
       "modules/skparagraph:tests",
       "modules/sksg:tests",
@@ -2464,6 +2492,7 @@ if (skia_enable_tools) {
         "modules/androidkit/src/AndroidKit.cpp",
         "modules/androidkit/src/Canvas.cpp",
         "modules/androidkit/src/ColorFilters.cpp",
+        "modules/androidkit/src/Font.cpp",
         "modules/androidkit/src/Gradients.cpp",
         "modules/androidkit/src/Image.cpp",
         "modules/androidkit/src/ImageFilter.cpp",
@@ -2478,6 +2507,7 @@ if (skia_enable_tools) {
         "modules/androidkit/src/Surface.h",
         "modules/androidkit/src/SurfaceThread.cpp",
         "modules/androidkit/src/SurfaceThread.h",
+        "modules/androidkit/src/Text.cpp",
         "modules/androidkit/src/Utils.cpp",
       ]
       libs = [
@@ -2488,6 +2518,7 @@ if (skia_enable_tools) {
       deps = [
         ":sk_app",
         ":skia",
+        "experimental/sktext:sktext",
         "modules/skottie:skottie",
       ]
     }
@@ -2626,8 +2657,15 @@ if (skia_enable_tools) {
     if (skia_use_metal) {
       sources += [ "tools/sk_app/MetalWindowContext.mm" ]
       sources += [ "tools/sk_app/MetalWindowContext.h" ]
+      if (skia_enable_graphite) {
+        sources += [ "tools/sk_app/GraphiteMetalWindowContext.mm" ]
+        sources += [ "tools/sk_app/GraphiteMetalWindowContext.h" ]
+      }
       if (is_mac) {
         sources += [ "tools/sk_app/mac/MetalWindowContext_mac.mm" ]
+        if (skia_enable_graphite) {
+          sources += [ "tools/sk_app/mac/GraphiteMetalWindowContext_mac.mm" ]
+        }
       } else if (is_ios) {
         sources += [ "tools/sk_app/ios/MetalWindowContext_ios.mm" ]
       }

@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as i18n from '../../../core/i18n/i18n.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import * as Coordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as LitHtml from '../../../ui/lit-html/lit-html.js';
+
 import elementsBreadcrumbsStyles from './elementsBreadcrumbs.css.js';
 
 import type {UserScrollPosition} from './ElementsBreadcrumbsUtils.js';
@@ -15,12 +17,23 @@ import type {DOMNode} from './Helper.js';
 import {NodeText} from './NodeText.js';
 import type {NodeTextData} from './NodeText.js';
 
+const UIStrings = {
+  /**
+  * @description Accessible name for DOM tree breadcrumb navigation.
+  */
+  breadcrumbs: 'DOM tree breadcrumbs',
+};
+
+const str_ = i18n.i18n.registerUIStrings('panels/elements/components/ElementsBreadcrumbs.ts', UIStrings);
+const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
 export class NodeSelectedEvent extends Event {
-  data: SDK.DOMModel.DOMNode;
+  static readonly eventName = 'breadcrumbsnodeselected';
+  legacyDomNode: SDK.DOMModel.DOMNode;
 
   constructor(node: DOMNode) {
-    super('breadcrumbsnodeselected', {});
-    this.data = node.legacyDomNode;
+    super(NodeSelectedEvent.eventName, {});
+    this.legacyDomNode = node.legacyDomNode;
   }
 }
 
@@ -263,7 +276,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       LitHtml.render(LitHtml.html`
-        <nav class="crumbs">
+        <nav class="crumbs" aria-label="${i18nString(UIStrings.breadcrumbs)}">
           ${this.renderOverflowButton('left', this.userScrollPosition === 'start')}
 
           <div class="crumbs-window" @scroll=${this.onCrumbsWindowScroll}>
@@ -297,9 +310,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
           </div>
           ${this.renderOverflowButton('right', this.userScrollPosition === 'end')}
         </nav>
-      `, this.shadow, {
-        host: this,
-      });
+      `, this.shadow, { host: this });
       // clang-format on
     });
 
@@ -341,6 +352,6 @@ declare global {
   }
 
   interface HTMLElementEventMap {
-    'breadcrumbsnodeselected': NodeSelectedEvent;
+    [NodeSelectedEvent.eventName]: NodeSelectedEvent;
   }
 }

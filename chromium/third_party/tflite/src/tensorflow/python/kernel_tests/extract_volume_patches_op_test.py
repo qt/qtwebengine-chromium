@@ -14,10 +14,6 @@
 # ==============================================================================
 """Functional tests for ExtractVolumePatches op."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -45,13 +41,14 @@ class ExtractVolumePatches(test.TestCase):
     ksizes = [1] + ksizes + [1]
     strides = [1] + strides + [1]
 
-    out_tensor = array_ops.extract_volume_patches(
-        constant_op.constant(image),
-        ksizes=ksizes,
-        strides=strides,
-        padding=padding,
-        name="im2col_3d")
-    self.assertAllClose(patches, self.evaluate(out_tensor))
+    for dtype in [np.float16, np.float32, np.float64]:
+      out_tensor = array_ops.extract_volume_patches(
+          constant_op.constant(image.astype(dtype)),
+          ksizes=ksizes,
+          strides=strides,
+          padding=padding,
+          name="im2col_3d")
+      self.assertAllClose(patches.astype(dtype), self.evaluate(out_tensor))
 
   # pylint: disable=bad-whitespace
   def testKsize1x1x1Stride1x1x1(self):

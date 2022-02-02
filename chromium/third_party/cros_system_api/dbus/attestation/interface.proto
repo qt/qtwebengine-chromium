@@ -385,6 +385,8 @@ message SignEnterpriseChallengeRequest {
   // the same key used to sign the challenge response (EMK or EUK) will be used
   // for SignedPublicKeyAndChallenge.
   optional string key_name_for_spkac = 8;
+  // Device Trust Signals
+  optional DeviceTrustSignals device_trust_signals = 9;
 }
 
 message SignEnterpriseChallengeReply {

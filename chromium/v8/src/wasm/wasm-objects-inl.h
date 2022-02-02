@@ -186,7 +186,6 @@ bool WasmGlobalObject::SetFuncRef(Isolate* isolate, Handle<Object> value) {
 // WasmInstanceObject
 PRIMITIVE_ACCESSORS(WasmInstanceObject, memory_start, byte*, kMemoryStartOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, memory_size, size_t, kMemorySizeOffset)
-PRIMITIVE_ACCESSORS(WasmInstanceObject, memory_mask, size_t, kMemoryMaskOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, isolate_root, Address,
                     kIsolateRootOffset)
 PRIMITIVE_ACCESSORS(WasmInstanceObject, stack_limit_address, Address,
@@ -559,10 +558,25 @@ int WasmStruct::Size(const wasm::StructType* type) {
                   Heap::kMinObjectSizeInTaggedWords * kTaggedSize);
 }
 
-int WasmStruct::GcSafeSize(Map map) {
-  wasm::StructType* type = GcSafeType(map);
-  return Size(type);
+// static
+void WasmStruct::EncodeInstanceSizeInMap(int instance_size, Map map) {
+  // WasmStructs can be bigger than the {map.instance_size_in_words} field
+  // can describe; yet we have to store the instance size somewhere on the
+  // map so that the GC can read it without relying on any other objects
+  // still being around. To solve this problem, we store the instance size
+  // in two other fields that are otherwise unused for WasmStructs.
+  STATIC_ASSERT(0xFFFF - kHeaderSize >
+                wasm::kMaxValueTypeSize * wasm::kV8MaxWasmStructFields);
+  map.SetWasmByte1(instance_size & 0xFF);
+  map.SetWasmByte2(instance_size >> 8);
 }
+
+// static
+int WasmStruct::DecodeInstanceSizeFromMap(Map map) {
+  return (map.WasmByte2() << 8) | map.WasmByte1();
+}
+
+int WasmStruct::GcSafeSize(Map map) { return DecodeInstanceSizeFromMap(map); }
 
 wasm::StructType* WasmStruct::type() const { return type(map()); }
 
@@ -614,13 +628,24 @@ wasm::ArrayType* WasmArray::GcSafeType(Map map) {
 wasm::ArrayType* WasmArray::type() const { return type(map()); }
 
 int WasmArray::SizeFor(Map map, int length) {
-  int element_size = type(map)->element_type().element_size_bytes();
+  int element_size = DecodeElementSizeFromMap(map);
   return kHeaderSize + RoundUp(element_size * length, kTaggedSize);
 }
 
-int WasmArray::GcSafeSizeFor(Map map, int length) {
-  int element_size = GcSafeType(map)->element_type().element_size_bytes();
-  return kHeaderSize + RoundUp(element_size * length, kTaggedSize);
+uint32_t WasmArray::element_offset(uint32_t index) {
+  DCHECK_LE(index, length());
+  return WasmArray::kHeaderSize +
+         index * type()->element_type().element_size_bytes();
+}
+
+Address WasmArray::ElementAddress(uint32_t index) {
+  return ptr() + element_offset(index) - kHeapObjectTag;
+}
+
+ObjectSlot WasmArray::ElementSlot(uint32_t index) {
+  DCHECK_LE(index, length());
+  DCHECK(type()->element_type().is_reference());
+  return RawField(kHeaderSize + kTaggedSize * index);
 }
 
 // static
@@ -630,10 +655,17 @@ Handle<Object> WasmArray::GetElement(Isolate* isolate, Handle<WasmArray> array,
     return isolate->factory()->undefined_value();
   }
   wasm::ValueType element_type = array->type()->element_type();
-  uint32_t offset =
-      WasmArray::kHeaderSize + index * element_type.element_size_bytes();
-  return ReadValueAt(isolate, array, element_type, offset);
+  return ReadValueAt(isolate, array, element_type,
+                     array->element_offset(index));
 }
+
+// static
+void WasmArray::EncodeElementSizeInMap(int element_size, Map map) {
+  map.SetWasmByte1(element_size);
+}
+
+// static
+int WasmArray::DecodeElementSizeFromMap(Map map) { return map.WasmByte1(); }
 
 void WasmTypeInfo::clear_foreign_address(Isolate* isolate) {
 #ifdef V8_HEAP_SANDBOX

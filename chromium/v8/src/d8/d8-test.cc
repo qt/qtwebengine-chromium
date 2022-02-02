@@ -5,6 +5,7 @@
 #include "src/d8/d8.h"
 
 #include "include/v8-fast-api-calls.h"
+#include "include/v8-template.h"
 #include "src/api/api-inl.h"
 
 // This file exposes a d8.test.fast_c_api object, which adds testing facility
@@ -16,7 +17,8 @@
 // and resetting these counters.
 
 // Make sure to sync the following with src/compiler/globals.h.
-#if defined(V8_TARGET_ARCH_X64)
+#if defined(V8_TARGET_ARCH_X64) || \
+    (defined(V8_TARGET_ARCH_ARM64) && !defined(USE_SIMULATOR))
 #define V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
 #endif
 
@@ -94,10 +96,8 @@ class FastCApiObject {
 
 #ifdef V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
   typedef double Type;
-  static constexpr CTypeInfo type_info = CTypeInfo(CTypeInfo::Type::kFloat64);
 #else
   typedef int32_t Type;
-  static constexpr CTypeInfo type_info = CTypeInfo(CTypeInfo::Type::kInt32);
 #endif  // V8_ENABLE_FP_PARAMS_IN_C_LINKAGE
   static Type AddAllSequenceFastCallback(Local<Object> receiver,
                                          bool should_fallback,
@@ -119,8 +119,9 @@ class FastCApiObject {
     }
 
     Type buffer[1024];
-    bool result = TryCopyAndConvertArrayToCppBuffer<&type_info, Type>(
-        seq_arg, buffer, 1024);
+    bool result = TryToCopyAndConvertArrayToCppBuffer<
+        i::CTypeInfoBuilder<Type>::Build().GetId(), Type>(seq_arg, buffer,
+                                                          1024);
     if (!result) {
       options.fallback = 1;
       return 0;
@@ -630,16 +631,19 @@ Local<FunctionTemplate> Shell::CreateTestFastCApiTemplate(Isolate* isolate) {
             SideEffectType::kHasSideEffect, &is_valid_api_object_c_func));
     api_obj_ctor->PrototypeTemplate()->Set(
         isolate, "fast_call_count",
-        FunctionTemplate::New(isolate, FastCApiObject::FastCallCount,
-                              Local<Value>(), signature));
+        FunctionTemplate::New(
+            isolate, FastCApiObject::FastCallCount, Local<Value>(), signature,
+            1, ConstructorBehavior::kThrow, SideEffectType::kHasNoSideEffect));
     api_obj_ctor->PrototypeTemplate()->Set(
         isolate, "slow_call_count",
-        FunctionTemplate::New(isolate, FastCApiObject::SlowCallCount,
-                              Local<Value>(), signature));
+        FunctionTemplate::New(
+            isolate, FastCApiObject::SlowCallCount, Local<Value>(), signature,
+            1, ConstructorBehavior::kThrow, SideEffectType::kHasNoSideEffect));
     api_obj_ctor->PrototypeTemplate()->Set(
         isolate, "reset_counts",
         FunctionTemplate::New(isolate, FastCApiObject::ResetCounts,
-                              Local<Value>(), signature));
+                              Local<Value>(), signature, 1,
+                              ConstructorBehavior::kThrow));
   }
   api_obj_ctor->InstanceTemplate()->SetInternalFieldCount(
       FastCApiObject::kV8WrapperObjectIndex + 1);

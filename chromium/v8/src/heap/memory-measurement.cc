@@ -4,9 +4,10 @@
 
 #include "src/heap/memory-measurement.h"
 
-#include "include/v8.h"
+#include "include/v8-local-handle.h"
 #include "src/api/api-inl.h"
 #include "src/execution/isolate-inl.h"
+#include "src/handles/global-handles-inl.h"
 #include "src/heap/factory-inl.h"
 #include "src/heap/incremental-marking.h"
 #include "src/heap/marking-worklist.h"

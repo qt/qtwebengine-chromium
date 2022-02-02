@@ -28,6 +28,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 class OptimizationGuideNavigationData;
+class OptimizationGuideTestAppInterfaceWrapper;
 class PrefService;
 
 namespace network {
@@ -54,9 +55,9 @@ class HintsManager : public OptimizationHintsComponentObserver,
       bool is_off_the_record,
       const std::string& application_locale,
       PrefService* pref_service,
-      optimization_guide::OptimizationGuideStore* hint_store,
-      optimization_guide::TopHostProvider* top_host_provider,
-      optimization_guide::TabUrlProvider* tab_url_provider,
+      base::WeakPtr<OptimizationGuideStore> hint_store,
+      TopHostProvider* top_host_provider,
+      TabUrlProvider* tab_url_provider,
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       network::NetworkConnectionTracker* network_connection_tracker,
       std::unique_ptr<optimization_guide::PushNotificationManager>
@@ -108,7 +109,6 @@ class HintsManager : public OptimizationHintsComponentObserver,
   // |optimization_metadata| will be populated, if applicable.
   optimization_guide::OptimizationTypeDecision CanApplyOptimization(
       const GURL& navigation_url,
-      const absl::optional<int64_t>& navigation_id,
       optimization_guide::proto::OptimizationType optimization_type,
       optimization_guide::OptimizationMetadata* optimization_metadata);
 
@@ -117,7 +117,6 @@ class HintsManager : public OptimizationHintsComponentObserver,
   // |this| to make the decision. Virtual for testing.
   virtual void CanApplyOptimizationAsync(
       const GURL& navigation_url,
-      const absl::optional<int64_t>& navigation_id,
       optimization_guide::proto::OptimizationType optimization_type,
       optimization_guide::OptimizationGuideDecisionCallback callback);
 
@@ -176,7 +175,7 @@ class HintsManager : public OptimizationHintsComponentObserver,
   optimization_guide::HintCache* hint_cache();
 
   // Returns the persistent store for |this|.
-  optimization_guide::OptimizationGuideStore* hint_store();
+  base::WeakPtr<OptimizationGuideStore> hint_store();
 
   // Returns the push notification manager for |this|. May be nullptr;
   optimization_guide::PushNotificationManager* push_notification_manager();
@@ -188,6 +187,8 @@ class HintsManager : public OptimizationHintsComponentObserver,
       const absl::optional<optimization_guide::OptimizationMetadata>& metadata);
 
  private:
+  friend class ::OptimizationGuideTestAppInterfaceWrapper;
+
   // Processes the optimization filters contained in the hints component.
   void ProcessOptimizationFilters(
       const google::protobuf::RepeatedPtrField<
@@ -331,6 +332,8 @@ class HintsManager : public OptimizationHintsComponentObserver,
       const GURL& navigation_url,
       optimization_guide::proto::OptimizationType optimization_type);
 
+  optimization_guide::HintsFetcherFactory* GetHintsFetcherFactory();
+
   // The information of the latest component delivered by
   // |optimization_guide_service_|.
   absl::optional<optimization_guide::HintsComponentInfo> hints_component_info_;
@@ -362,15 +365,12 @@ class HintsManager : public OptimizationHintsComponentObserver,
                  std::unique_ptr<optimization_guide::OptimizationFilter>>
       blocklist_optimization_filters_;
 
-  // A map from URL to a map of callbacks (along with the navigation IDs that
-  // they were called for) keyed by their optimization type.
+  // A map from URL to a map of callbacks keyed by their optimization type.
   base::flat_map<
       GURL,
       base::flat_map<
           optimization_guide::proto::OptimizationType,
-          std::vector<std::pair<
-              absl::optional<int64_t>,
-              optimization_guide::OptimizationGuideDecisionCallback>>>>
+          std::vector<optimization_guide::OptimizationGuideDecisionCallback>>>
       registered_callbacks_;
 
   // Whether |this| was created for an off the record profile.

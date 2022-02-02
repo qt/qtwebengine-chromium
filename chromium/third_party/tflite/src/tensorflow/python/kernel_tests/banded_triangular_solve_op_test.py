@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.math_ops.banded_triangular_solve."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import test_util
@@ -86,7 +82,7 @@ class BandedTriangularSolveOpTest(test.TestCase):
         a_np = np.tile(a_np, batch_dims + [1, 1])
         b = np.tile(b, batch_dims + [1, 1])
 
-      with self.cached_session(use_gpu=True):
+      with self.cached_session():
         a_tf = a
         b_tf = b
         if use_placeholder:
@@ -142,10 +138,11 @@ class BandedTriangularSolveOpTest(test.TestCase):
     matrix = 2. * np.random.uniform(size=[3, 6]) + 1.
     self._verifySolveAllWaysReal(matrix, rhs0)
 
+  @test.disable_with_predicate(
+      pred=test.is_built_with_rocm,
+      skip_message="ROCm does not support BLAS operations for complex types")
   @test_util.run_deprecated_v1
   def testSolveComplex(self):
-    if test.is_built_with_rocm():
-      self.skipTest("ROCm does not support BLAS operations for complex types")
     # 1x1 matrix, single rhs.
     matrix = np.array([[0.1 + 1j * 0.1]])
     rhs0 = np.array([[1. + 1j]])
@@ -180,10 +177,11 @@ class BandedTriangularSolveOpTest(test.TestCase):
     # Batch of 3x2x4x4 matrices with 3 bands, 3x2x4x2 right-hand sides.
     self._verifySolveAllWaysReal(matrix, rhs, batch_dims=[3, 2])
 
+  @test.disable_with_predicate(
+      pred=test.is_built_with_rocm,
+      skip_message="ROCm does not support BLAS operations for complex types")
   @test_util.run_deprecated_v1
   def testSolveBatchComplex(self):
-    if test.is_built_with_rocm():
-      self.skipTest("ROCm does not support BLAS operations for complex types")
     matrix = np.array([[1., 2.], [3., 4.]]).astype(np.complex64)
     matrix += 1j * matrix
     rhs = np.array([[1., 0., 1.], [0., 1., 1.]]).astype(np.complex64)
@@ -199,7 +197,7 @@ class BandedTriangularSolveOpTest(test.TestCase):
     # right-hand sides.
     matrix = np.array([[1., 1.], [1., 1.]])
     rhs = np.array([[1., 0.]])
-    with self.cached_session(use_gpu=True):
+    with self.cached_session():
       with self.assertRaises(ValueError):
         self._verifySolve(matrix, rhs)
       with self.assertRaises(ValueError):
@@ -208,7 +206,7 @@ class BandedTriangularSolveOpTest(test.TestCase):
     # Number of bands exceeds the dimension of the matrix.
     matrix = np.ones((6, 4))
     rhs = np.ones((4, 2))
-    with self.cached_session(use_gpu=True):
+    with self.cached_session():
       with self.assertRaises(ValueError):
         self._verifySolve(matrix, rhs)
       with self.assertRaises(ValueError):

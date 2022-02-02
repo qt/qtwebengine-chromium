@@ -23,6 +23,9 @@
 #include "fxjs/xfa/cfxjse_value.h"
 #include "fxjs/xfa/cjx_object.h"
 #include "third_party/base/containers/contains.h"
+#include "v8/include/v8-function-callback.h"
+#include "v8/include/v8-function.h"
+#include "v8/include/v8-object.h"
 #include "xfa/fxfa/cxfa_eventparam.h"
 #include "xfa/fxfa/cxfa_ffdoc.h"
 #include "xfa/fxfa/cxfa_ffnotify.h"
@@ -336,21 +339,22 @@ v8::Local<v8::Value> CFXJSE_Engine::GlobalPropertyGetter(
 }
 
 // static
-int32_t CFXJSE_Engine::GlobalPropTypeGetter(v8::Isolate* pIsolate,
-                                            v8::Local<v8::Object> pHolder,
-                                            ByteStringView szPropName,
-                                            bool bQueryIn) {
+FXJSE_ClassPropType CFXJSE_Engine::GlobalPropTypeGetter(
+    v8::Isolate* pIsolate,
+    v8::Local<v8::Object> pHolder,
+    ByteStringView szPropName,
+    bool bQueryIn) {
   CXFA_Object* pObject = ToObject(pIsolate, pHolder);
   if (!pObject)
-    return FXJSE_ClassPropType_None;
+    return FXJSE_ClassPropType::kNone;
 
   CFXJSE_Engine* pScriptContext = pObject->GetDocument()->GetScriptContext();
   pObject = pScriptContext->GetVariablesThis(pObject);
   WideString wsPropName = WideString::FromUTF8(szPropName);
   if (pObject->JSObject()->HasMethod(wsPropName))
-    return FXJSE_ClassPropType_Method;
+    return FXJSE_ClassPropType::kMethod;
 
-  return FXJSE_ClassPropType_Property;
+  return FXJSE_ClassPropType::kProperty;
 }
 
 // static
@@ -480,28 +484,29 @@ void CFXJSE_Engine::NormalPropertySetter(v8::Isolate* pIsolate,
   }
 }
 
-int32_t CFXJSE_Engine::NormalPropTypeGetter(v8::Isolate* pIsolate,
-                                            v8::Local<v8::Object> pHolder,
-                                            ByteStringView szPropName,
-                                            bool bQueryIn) {
+FXJSE_ClassPropType CFXJSE_Engine::NormalPropTypeGetter(
+    v8::Isolate* pIsolate,
+    v8::Local<v8::Object> pHolder,
+    ByteStringView szPropName,
+    bool bQueryIn) {
   CXFA_Object* pObject = ToObject(pIsolate, pHolder);
   if (!pObject)
-    return FXJSE_ClassPropType_None;
+    return FXJSE_ClassPropType::kNone;
 
   CFXJSE_Engine* pScriptContext = pObject->GetDocument()->GetScriptContext();
   pObject = pScriptContext->GetVariablesThis(pObject);
   XFA_Element eType = pObject->GetElementType();
   WideString wsPropName = WideString::FromUTF8(szPropName);
   if (pObject->JSObject()->HasMethod(wsPropName))
-    return FXJSE_ClassPropType_Method;
+    return FXJSE_ClassPropType::kMethod;
 
   if (bQueryIn) {
     Optional<XFA_SCRIPTATTRIBUTEINFO> maybe_info =
         XFA_GetScriptAttributeByName(eType, wsPropName.AsStringView());
     if (!maybe_info.has_value())
-      return FXJSE_ClassPropType_None;
+      return FXJSE_ClassPropType::kNone;
   }
-  return FXJSE_ClassPropType_Property;
+  return FXJSE_ClassPropType::kProperty;
 }
 
 CJS_Result CFXJSE_Engine::NormalMethodCall(

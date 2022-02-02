@@ -76,7 +76,7 @@ void MemoryChunk::SetReadAndExecutable() {
       PageAllocator::kReadExecute);
 }
 
-void MemoryChunk::SetReadAndWritable() {
+void MemoryChunk::SetCodeModificationPermissions() {
   DCHECK(IsFlagSet(MemoryChunk::IS_EXECUTABLE));
   DCHECK(owner_identity() == CODE_SPACE || owner_identity() == CODE_LO_SPACE);
   // Incrementing the write_unprotect_counter_ and changing the page
@@ -97,6 +97,14 @@ void MemoryChunk::SetReadAndWritable() {
                                       FLAG_write_code_using_rwx
                                           ? PageAllocator::kReadWriteExecute
                                           : PageAllocator::kReadWrite));
+  }
+}
+
+void MemoryChunk::SetDefaultCodePermissions() {
+  if (FLAG_jitless) {
+    SetReadable();
+  } else {
+    SetReadAndExecutable();
   }
 }
 
@@ -130,7 +138,7 @@ MemoryChunk* MemoryChunk::Initialize(BasicMemoryChunk* basic_chunk, Heap* heap,
     // Not actually used but initialize anyway for predictability.
     chunk->invalidated_slots_[OLD_TO_CODE] = nullptr;
   }
-  chunk->progress_bar_ = 0;
+  chunk->progress_bar_.Initialize();
   chunk->set_concurrent_sweeping_state(ConcurrentSweepingState::kDone);
   chunk->page_protection_change_mutex_ = new base::Mutex();
   chunk->write_unprotect_counter_ = 0;

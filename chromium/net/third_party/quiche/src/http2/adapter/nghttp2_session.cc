@@ -10,7 +10,7 @@ NgHttp2Session::NgHttp2Session(Perspective perspective,
                                const nghttp2_option* options, void* userdata)
     : session_(MakeSessionPtr(nullptr)), perspective_(perspective) {
   nghttp2_session* session;
-  switch (perspective) {
+  switch (perspective_) {
     case Perspective::kClient:
       nghttp2_session_client_new2(&session, callbacks.get(), userdata, options);
       break;
@@ -30,7 +30,7 @@ NgHttp2Session::~NgHttp2Session() {
       << " or pending writes: " << pending_writes;
 }
 
-ssize_t NgHttp2Session::ProcessBytes(absl::string_view bytes) {
+int64_t NgHttp2Session::ProcessBytes(absl::string_view bytes) {
   return nghttp2_session_mem_recv(
       session_.get(), reinterpret_cast<const uint8_t*>(bytes.data()),
       bytes.size());

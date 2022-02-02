@@ -9,7 +9,6 @@
 
 #include <stdint.h>
 
-#include <memory>
 #include <set>
 #include <type_traits>
 
@@ -49,6 +48,7 @@ class CPDF_Object : public Retainable {
   uint32_t GetGenNum() const { return m_GenNum; }
   void SetGenNum(uint32_t gennum) { m_GenNum = gennum; }
   bool IsInline() const { return m_ObjNum == 0; }
+  uint64_t KeyForCache() const;
 
   // Create a deep copy of the object.
   virtual RetainPtr<CPDF_Object> Clone() const = 0;

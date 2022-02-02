@@ -42,11 +42,12 @@ namespace dawn_native { namespace metal {
 
       private:
         using ComputePipelineBase::ComputePipelineBase;
-        MaybeError Initialize(const ComputePipelineDescriptor* descriptor) override;
+        MaybeError Initialize() override;
 
         NSPRef<id<MTLComputePipelineState>> mMtlComputePipelineState;
         MTLSize mLocalWorkgroupSize;
         bool mRequiresStorageBufferLength;
+        std::vector<uint32_t> mWorkgroupAllocations;
     };
 
 }}  // namespace dawn_native::metal

@@ -6,12 +6,14 @@
 #define V8_REGEXP_REGEXP_MACRO_ASSEMBLER_H_
 
 #include "src/base/strings.h"
-#include "src/codegen/label.h"
 #include "src/regexp/regexp-ast.h"
 #include "src/regexp/regexp.h"
 
 namespace v8 {
 namespace internal {
+
+class ByteArray;
+class Label;
 
 static const base::uc32 kLeadSurrogateStart = 0xd800;
 static const base::uc32 kLeadSurrogateEnd = 0xdbff;
@@ -45,6 +47,7 @@ class RegExpMacroAssembler {
   V(ARM)                        \
   V(ARM64)                      \
   V(MIPS)                       \
+  V(LOONG64)                    \
   V(RISCV)                      \
   V(S390)                       \
   V(PPC)                        \
@@ -230,20 +233,18 @@ class RegExpMacroAssembler {
   Zone* zone() const { return zone_; }
 
  protected:
-  bool has_backtrack_limit() const {
-    return backtrack_limit_ != JSRegExp::kNoBacktrackLimit;
-  }
+  bool has_backtrack_limit() const;
   uint32_t backtrack_limit() const { return backtrack_limit_; }
 
   bool can_fallback() const { return can_fallback_; }
 
  private:
   bool slow_safe_compiler_;
-  uint32_t backtrack_limit_ = JSRegExp::kNoBacktrackLimit;
+  uint32_t backtrack_limit_;
   bool can_fallback_ = false;
   GlobalMode global_mode_;
-  Isolate* isolate_;
-  Zone* zone_;
+  Isolate* const isolate_;
+  Zone* const zone_;
 };
 
 class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
@@ -280,13 +281,11 @@ class NativeRegExpMacroAssembler: public RegExpMacroAssembler {
                    int* offsets_vector, int offsets_vector_length,
                    int previous_index, Isolate* isolate);
 
-  // Called from RegExp if the backtrack stack limit is hit.
-  // Tries to expand the stack. Returns the new stack-pointer if
-  // successful, and updates the stack_top address, or returns 0 if unable
-  // to grow the stack.
+  // Called from RegExp if the backtrack stack limit is hit. Tries to expand
+  // the stack. Returns the new stack-pointer if successful, or returns 0 if
+  // unable to grow the stack.
   // This function must not trigger a garbage collection.
-  static Address GrowStack(Address stack_pointer, Address* stack_top,
-                           Isolate* isolate);
+  static Address GrowStack(Isolate* isolate);
 
   static int CheckStackGuardState(Isolate* isolate, int start_index,
                                   RegExp::CallOrigin call_origin,

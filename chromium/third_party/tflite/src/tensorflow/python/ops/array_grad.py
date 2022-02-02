@@ -14,10 +14,6 @@
 # ==============================================================================
 """Gradients for operators defined in array_ops.py."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tensorflow.compiler.tf2xla.ops import gen_xla_ops
 from tensorflow.python import pywrap_tfe
 from tensorflow.python.client import pywrap_tf_session
@@ -77,10 +73,11 @@ def _ConcatGradHelper(op, grad, start_value_index, end_value_index, dim_index):
     # with 0's everywhere and 1 in the concat dim position.
     # Note: Can't use sparse_to_dense since it isn't GPU-capable (for now)
     mask = array_ops.concat([
-        array_ops.fill(array_ops.expand_dims(concat_dim, 0), 0), [1],
-        array_ops.fill(shape_of_shape - concat_dim - 1, 0)
+        array_ops.zeros(
+            array_ops.expand_dims(concat_dim, 0), dtype=dtypes.int32), [1],
+        array_ops.zeros(shape_of_shape - concat_dim - 1, dtype=dtypes.int32)
     ], 0)
-    begin = array_ops.fill(shape_of_shape, 0)
+    begin = array_ops.zeros(shape_of_shape, dtype=dtypes.int32)
     return mask, begin
 
   def _ExtractInputShapes(inputs):
@@ -314,6 +311,30 @@ def _StridedSliceGradGrad(op, grad):
       shrink_axis_mask=op.get_attr("shrink_axis_mask"))
 
 
+@ops.RegisterGradient("TensorStridedSliceUpdate")
+def _TensorStridedSliceUpdateGrad(op, grad):  # pylint:disable=missing-function-docstring
+  begin = op.inputs[1]
+  end = op.inputs[2]
+  strides = op.inputs[3]
+  begin_mask = op.get_attr("begin_mask")
+  end_mask = op.get_attr("end_mask")
+  ellipsis_mask = op.get_attr("ellipsis_mask")
+  new_axis_mask = op.get_attr("new_axis_mask")
+  shrink_axis_mask = op.get_attr("shrink_axis_mask")
+  def Apply(f, *args):
+    return f(*args,
+             begin_mask=begin_mask,
+             end_mask=end_mask,
+             shrink_axis_mask=shrink_axis_mask,
+             new_axis_mask=new_axis_mask,
+             ellipsis_mask=ellipsis_mask)
+  dy = Apply(array_ops.strided_slice,
+             grad, begin, end, strides)
+  dx = Apply(array_ops.tensor_strided_slice_update,
+             grad, begin, end, strides, array_ops.zeros_like(dy))
+  return dx, None, None, None, dy
+
+
 @ops.RegisterGradient("Split")
 def _SplitGrad(op, *grads):
   return None, array_ops.concat(list(grads), op.inputs[0])
@@ -544,15 +565,9 @@ def _IndexedSlicesToTensorNoWarning(indexed_slices):
 def _GatherGrad(op, grad):
   """Gradient for Gather op."""
   # params can be large, so colocate the shape calculation with it.
-  #
-  # params can be very large for sparse model, array_ops.shape raises
-  # exception on the Windows platform when any dimension is larger than
-  # int32. params_shape is not used in optimizer apply_sparse gradients,
-  # so it's fine to convert it back to int32 regardless of truncation.
   params = op.inputs[0]
   with ops.colocate_with(params):
-    params_shape = array_ops.shape(params, out_type=ops.dtypes.int64)
-    params_shape = math_ops.cast(params_shape, dtypes.int32)
+    params_shape = array_ops.shape(params)
 
   # Build appropriately shaped IndexedSlices
   indices = op.inputs[1]
@@ -567,7 +582,6 @@ def _GatherGrad(op, grad):
 def _GetBatchIndices(params_shape, indices, batch_dims):
   """Addds the batch offsets to the given indices and returns the results."""
   batch_indices = indices
-  indices_ndims = indices.shape.ndims
   indices_dtype = indices.dtype.base_dtype
   casted_params_shape = math_ops.cast(params_shape, indices_dtype)
   accum_dim_value = array_ops.ones((), dtype=indices_dtype)
@@ -578,8 +592,10 @@ def _GetBatchIndices(params_shape, indices, batch_dims):
     step = array_ops.ones((), dtype=indices_dtype)
     dim_indices = math_ops.range(start, dim_value, step)
     dim_indices *= accum_dim_value
-    dim_shape = array_ops.stack(
-        [1] * (dim - 1) + [dim_value] + [1] * (indices_ndims - dim), axis=0)
+    dim_shape = array_ops.concat([
+        array_ops.tile([1], [dim - 1]), [dim_value],
+        array_ops.tile([1], [array_ops.rank(indices) - dim])
+    ], axis=0)
     batch_indices += array_ops.reshape(dim_indices, dim_shape)
 
   return batch_indices
@@ -636,12 +652,19 @@ def _GatherV2Grad(op, grad):
   batch_dims = int(op.get_attr("batch_dims"))
 
   if batch_dims < 0:
+    if indices.shape.ndims is None:
+      raise ValueError(
+          f"Currently, it is unsupported to take the gradient of tf.gather "
+          f"when batch_dims < 0 and the rank of the indices is unknown. Please "
+          f"pass a positive batch_dims or use tf.ensure_shape to update the "
+          f"shape of indices when calling tf.gather. Got "
+          f"batch_dims={batch_dims} and indices={indices}")
     batch_dims += indices.shape.ndims
 
   # For axis 0 gathers, build an appropriately shaped IndexedSlices.
   if axis_static == 0:
     if context.executing_eagerly():
-      with ops.device("/cpu:0"):
+      with ops.device(indices_size.device):
         params_tail_shape = array_ops.identity(params_shape)[1:]
     else:
       params_tail_shape = params_shape[1:]
@@ -673,9 +696,10 @@ def _GatherV2Grad(op, grad):
         inner_axes_indices
     ], 0)
     values_transpose = array_ops.transpose(values, transpose_dims)
+    params_shape_transpose = array_ops.gather(params_shape, transpose_dims)
 
-    params_grad = _BatchGatherGrad(params_shape, values_transpose, indices,
-                                   batch_dims, params_shape[axis])
+    params_grad = _BatchGatherGrad(params_shape_transpose, values_transpose,
+                                   indices, batch_dims, params_shape[axis])
 
     # Inverts the above transpose by moving dimension batch_dims back to its
     # original position.
@@ -736,6 +760,12 @@ def _CheckNumericsV2Grad(op, grad):
 @ops.RegisterGradient("Identity")
 def _IdGrad(_, grad):
   return grad
+
+
+@ops.RegisterGradient("_EagerConst")
+def _EagerConstGrad(_, grad):
+  raise AssertionError(
+      "This op should never interact with gradient APIs. Please file a bug.")
 
 
 @ops.RegisterGradient("RefIdentity")
@@ -847,7 +877,7 @@ def _PadGrad(op, grad):
                                array_ops.stack([array_ops.rank(x), 1]))
   # Make it a 1-D tensor.
   begin = array_ops.reshape(pad_before, [-1])
-  sizes = array_ops.shape(x)
+  sizes = array_ops.shape(x, out_type=begin.dtype)
   x_grad = array_ops.slice(grad, begin, sizes)
   if len(op.inputs) == 3:
     return x_grad, None, None
@@ -1114,6 +1144,37 @@ def _TensorScatterAddGrad(op, grad):
   updates_grad = array_ops.gather_nd(grad, indices)
   tensor_grad = array_ops.identity(grad)
   return [tensor_grad, None, updates_grad]
+
+
+def _TensorScatterMinOrMaxGrad(op, grad):
+  """Gradient for TensorScatterMin and TensorScatterMax."""
+  indices = op.inputs[1]
+  x = op.inputs[0]
+  y = op.inputs[2]
+  output = op.outputs[0]
+  x_indicators = math_ops.cast(math_ops.equal(x, output), grad.dtype)
+  y_output = array_ops.gather_nd(output, indices)
+  y_indicators = math_ops.cast(math_ops.equal(y, y_output), grad.dtype)
+  ys_indicators = array_ops.scatter_nd(indices, y_indicators,
+                                       array_ops.shape(x))
+  indicators = x_indicators + ys_indicators  # All elements are >= 1.
+  # If there are multiple minimum or maximum elements then the gradient will be
+  # divided between them.
+  x_grad = grad * x_indicators / indicators
+  y_grad = array_ops.gather_nd(grad / indicators, indices) * y_indicators
+  return [x_grad, None, y_grad]
+
+
+@ops.RegisterGradient("TensorScatterMax")
+def _TensorScatterMaxGrad(op, grad):
+  """Gradient for TensorScatterMax op."""
+  return _TensorScatterMinOrMaxGrad(op, grad)
+
+
+@ops.RegisterGradient("TensorScatterMin")
+def _TensorScatterMinGrad(op, grad):
+  """Gradient for TensorScatterMin op."""
+  return _TensorScatterMinOrMaxGrad(op, grad)
 
 
 @ops.RegisterGradient("TensorScatterSub")

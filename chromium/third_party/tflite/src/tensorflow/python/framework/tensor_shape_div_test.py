@@ -14,10 +14,7 @@
 # ==============================================================================
 
 """Test that old style division works for Dimension."""
-from __future__ import absolute_import
 # from __future__ import division  # Intentionally skip this import
-from __future__ import print_function
-
 import six
 
 from tensorflow.python.framework import tensor_shape
@@ -42,7 +39,7 @@ class DimensionDivTest(test_util.TensorFlowTestCase):
       two = tensor_shape.Dimension(2)
       message = (r"unsupported operand type\(s\) for /: "
                  r"'int' and 'Dimension', please use // instead")
-      with self.assertRaisesRegexp(TypeError, message):
+      with self.assertRaisesRegex(TypeError, message):
         _ = 6 / two
 
 

@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.data_flow_ops.{,parallel_}dynamic_stitch."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -62,6 +58,7 @@ class DynamicStitchTestBase(object):
         # length.
         self.assertEqual([None], stitched_t.get_shape().as_list())
 
+  @test_util.disable_tfrt("b/169901260")
   def testSimpleOneDimensional(self):
     # Test various datatypes in the simple case to ensure that the op was
     # registered under those types.

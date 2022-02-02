@@ -200,8 +200,8 @@ export class Linkifier implements SDK.TargetManager.Observer {
   }
 
   maybeLinkifyScriptLocation(
-      target: SDK.Target.Target|null, scriptId: string|null, sourceURL: string, lineNumber: number|undefined,
-      options?: LinkifyOptions): HTMLElement|null {
+      target: SDK.Target.Target|null, scriptId: Protocol.Runtime.ScriptId|null, sourceURL: string,
+      lineNumber: number|undefined, options?: LinkifyOptions): HTMLElement|null {
     let fallbackAnchor: HTMLElement|null = null;
     const linkifyURLOptions = {
       lineNumber,
@@ -288,8 +288,8 @@ export class Linkifier implements SDK.TargetManager.Observer {
   }
 
   linkifyScriptLocation(
-      target: SDK.Target.Target|null, scriptId: string|null, sourceURL: string, lineNumber: number|undefined,
-      options?: LinkifyOptions): HTMLElement {
+      target: SDK.Target.Target|null, scriptId: Protocol.Runtime.ScriptId|null, sourceURL: string,
+      lineNumber: number|undefined, options?: LinkifyOptions): HTMLElement {
     const scriptLink = this.maybeLinkifyScriptLocation(target, scriptId, sourceURL, lineNumber, options);
     const linkifyURLOptions = {
       lineNumber,
@@ -828,7 +828,7 @@ export class Linkifier implements SDK.TargetManager.Observer {
   }
 }
 
-export interface LinkDecorator extends Common.EventTarget.EventTarget {
+export interface LinkDecorator extends Common.EventTarget.EventTarget<LinkDecorator.EventTypes> {
   linkIcon(uiSourceCode: Workspace.UISourceCode.UISourceCode): UI.Icon.Icon|null;
 }
 
@@ -838,6 +838,10 @@ export namespace LinkDecorator {
   export enum Events {
     LinkIconChanged = 'LinkIconChanged',
   }
+
+  export type EventTypes = {
+    [Events.LinkIconChanged]: Workspace.UISourceCode.UISourceCode,
+  };
 }
 
 let linkContextMenuProviderInstance: LinkContextMenuProvider;

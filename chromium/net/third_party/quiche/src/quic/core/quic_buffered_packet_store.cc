@@ -24,7 +24,7 @@ static const size_t kMaxConnectionsWithoutCHLO =
 namespace {
 
 // This alarm removes expired entries in map each time this alarm fires.
-class ConnectionExpireAlarm : public QuicAlarm::Delegate {
+class ConnectionExpireAlarm : public QuicAlarm::DelegateWithoutContext {
  public:
   explicit ConnectionExpireAlarm(QuicBufferedPacketStore* store)
       : connection_store_(store) {}
@@ -77,8 +77,7 @@ QuicBufferedPacketStore::QuicBufferedPacketStore(
           alarm_factory->CreateAlarm(new ConnectionExpireAlarm(this))) {}
 
 QuicBufferedPacketStore::~QuicBufferedPacketStore() {
-  if (GetQuicRestartFlag(quic_alarm_add_permanent_cancel) &&
-      expiration_alarm_ != nullptr) {
+  if (expiration_alarm_ != nullptr) {
     expiration_alarm_->PermanentCancel();
   }
 }

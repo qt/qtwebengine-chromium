@@ -491,7 +491,7 @@ fn frag_main() -> FragOutput {
 
 [[builtin(frag_depth), internal(disable_validation__ignore_storage_class)]] var<out> depth_1 : f32;
 
-[[builtin(sample_mask), internal(disable_validation__ignore_storage_class)]] var<out> mask_1 : u32;
+[[builtin(sample_mask), internal(disable_validation__ignore_storage_class)]] var<out> mask_1 : array<u32, 1>;
 
 struct FragOutput {
   color : vec4<f32>;
@@ -512,7 +512,7 @@ fn frag_main() {
   let inner_result = frag_main_inner();
   color_1 = inner_result.color;
   depth_1 = inner_result.depth;
-  mask_1 = inner_result.mask;
+  mask_1[0] = inner_result.mask;
 }
 )";
 
@@ -2062,18 +2062,31 @@ var<private> vertex_point_size : f32;
 var<private> vertex_point_size_1 : f32;
 var<private> vertex_point_size_2 : f32;
 
+struct VertIn1 {
+  [[location(0)]] collide : f32;
+};
+
+struct VertIn2 {
+  [[location(1)]] collide : f32;
+};
+
 struct VertOut {
   [[location(0)]] vertex_point_size : f32;
   [[builtin(position)]] vertex_point_size_1 : vec4<f32>;
 };
 
 [[stage(vertex)]]
-fn vert_main() -> VertOut {
+fn vert_main(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = collide.collide + collide_1.collide;
   return VertOut();
 }
 )";
 
   auto* expect = R"(
+[[location(0), internal(disable_validation__ignore_storage_class)]] var<in> collide_2 : f32;
+
+[[location(1), internal(disable_validation__ignore_storage_class)]] var<in> collide_3 : f32;
+
 [[location(0), internal(disable_validation__ignore_storage_class)]] var<out> vertex_point_size_3 : f32;
 
 [[builtin(position), internal(disable_validation__ignore_storage_class)]] var<out> vertex_point_size_1_1 : vec4<f32>;
@@ -2086,18 +2099,27 @@ var<private> vertex_point_size_1 : f32;
 
 var<private> vertex_point_size_2 : f32;
 
+struct VertIn1 {
+  collide : f32;
+};
+
+struct VertIn2 {
+  collide : f32;
+};
+
 struct VertOut {
   vertex_point_size : f32;
   vertex_point_size_1 : vec4<f32>;
 };
 
-fn vert_main_inner() -> VertOut {
+fn vert_main_inner(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = (collide.collide + collide_1.collide);
   return VertOut();
 }
 
 [[stage(vertex)]]
 fn vert_main() {
-  let inner_result = vert_main_inner();
+  let inner_result = vert_main_inner(VertIn1(collide_2), VertIn2(collide_3));
   vertex_point_size_3 = inner_result.vertex_point_size;
   vertex_point_size_1_1 = inner_result.vertex_point_size_1;
   vertex_point_size_4 = 1.0;
@@ -2114,24 +2136,48 @@ fn vert_main() {
 
 TEST_F(CanonicalizeEntryPointIOTest, EmitVertexPointSize_AvoidNameClash_Msl) {
   auto* src = R"(
+struct VertIn1 {
+  [[location(0)]] collide : f32;
+};
+
+struct VertIn2 {
+  [[location(1)]] collide : f32;
+};
+
 struct VertOut {
   [[location(0)]] vertex_point_size : vec4<f32>;
   [[builtin(position)]] vertex_point_size_1 : vec4<f32>;
 };
 
 [[stage(vertex)]]
-fn vert_main() -> VertOut {
+fn vert_main(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = collide.collide + collide_1.collide;
   return VertOut();
 }
 )";
 
   auto* expect = R"(
+struct VertIn1 {
+  collide : f32;
+};
+
+struct VertIn2 {
+  collide : f32;
+};
+
 struct VertOut {
   vertex_point_size : vec4<f32>;
   vertex_point_size_1 : vec4<f32>;
 };
 
-struct tint_symbol {
+struct tint_symbol_1 {
+  [[location(0)]]
+  collide : f32;
+  [[location(1)]]
+  collide_2 : f32;
+};
+
+struct tint_symbol_2 {
   [[location(0)]]
   vertex_point_size : vec4<f32>;
   [[builtin(position)]]
@@ -2140,14 +2186,15 @@ struct tint_symbol {
   vertex_point_size_2 : f32;
 };
 
-fn vert_main_inner() -> VertOut {
+fn vert_main_inner(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = (collide.collide + collide_1.collide);
   return VertOut();
 }
 
 [[stage(vertex)]]
-fn vert_main() -> tint_symbol {
-  let inner_result = vert_main_inner();
-  var wrapper_result : tint_symbol;
+fn vert_main(tint_symbol : tint_symbol_1) -> tint_symbol_2 {
+  let inner_result = vert_main_inner(VertIn1(tint_symbol.collide), VertIn2(tint_symbol.collide_2));
+  var wrapper_result : tint_symbol_2;
   wrapper_result.vertex_point_size = inner_result.vertex_point_size;
   wrapper_result.vertex_point_size_1 = inner_result.vertex_point_size_1;
   wrapper_result.vertex_point_size_2 = 1.0;
@@ -2158,6 +2205,118 @@ fn vert_main() -> tint_symbol {
   DataMap data;
   data.Add<CanonicalizeEntryPointIO::Config>(
       CanonicalizeEntryPointIO::ShaderStyle::kMsl, 0xFFFFFFFF, true);
+  auto got = Run<CanonicalizeEntryPointIO>(src, data);
+
+  EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CanonicalizeEntryPointIOTest, EmitVertexPointSize_AvoidNameClash_Hlsl) {
+  auto* src = R"(
+struct VertIn1 {
+  [[location(0)]] collide : f32;
+};
+
+struct VertIn2 {
+  [[location(1)]] collide : f32;
+};
+
+struct VertOut {
+  [[location(0)]] vertex_point_size : vec4<f32>;
+  [[builtin(position)]] vertex_point_size_1 : vec4<f32>;
+};
+
+[[stage(vertex)]]
+fn vert_main(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = collide.collide + collide_1.collide;
+  return VertOut();
+}
+)";
+
+  auto* expect = R"(
+struct VertIn1 {
+  collide : f32;
+};
+
+struct VertIn2 {
+  collide : f32;
+};
+
+struct VertOut {
+  vertex_point_size : vec4<f32>;
+  vertex_point_size_1 : vec4<f32>;
+};
+
+struct tint_symbol_1 {
+  [[location(0)]]
+  collide : f32;
+  [[location(1)]]
+  collide_2 : f32;
+};
+
+struct tint_symbol_2 {
+  [[location(0)]]
+  vertex_point_size : vec4<f32>;
+  [[builtin(position)]]
+  vertex_point_size_1 : vec4<f32>;
+  [[builtin(pointsize)]]
+  vertex_point_size_2 : f32;
+};
+
+fn vert_main_inner(collide : VertIn1, collide_1 : VertIn2) -> VertOut {
+  let x = (collide.collide + collide_1.collide);
+  return VertOut();
+}
+
+[[stage(vertex)]]
+fn vert_main(tint_symbol : tint_symbol_1) -> tint_symbol_2 {
+  let inner_result = vert_main_inner(VertIn1(tint_symbol.collide), VertIn2(tint_symbol.collide_2));
+  var wrapper_result : tint_symbol_2;
+  wrapper_result.vertex_point_size = inner_result.vertex_point_size;
+  wrapper_result.vertex_point_size_1 = inner_result.vertex_point_size_1;
+  wrapper_result.vertex_point_size_2 = 1.0;
+  return wrapper_result;
+}
+)";
+
+  DataMap data;
+  data.Add<CanonicalizeEntryPointIO::Config>(
+      CanonicalizeEntryPointIO::ShaderStyle::kHlsl, 0xFFFFFFFF, true);
+  auto got = Run<CanonicalizeEntryPointIO>(src, data);
+
+  EXPECT_EQ(expect, str(got));
+}
+
+TEST_F(CanonicalizeEntryPointIOTest, SpirvSampleMaskBuiltins) {
+  auto* src = R"(
+[[stage(fragment)]]
+fn main([[builtin(sample_index)]] sample_index : u32,
+        [[builtin(sample_mask)]] mask_in : u32
+        ) -> [[builtin(sample_mask)]] u32 {
+  return mask_in;
+}
+)";
+
+  auto* expect = R"(
+[[builtin(sample_index), internal(disable_validation__ignore_storage_class)]] var<in> sample_index_1 : u32;
+
+[[builtin(sample_mask), internal(disable_validation__ignore_storage_class)]] var<in> mask_in_1 : array<u32, 1>;
+
+[[builtin(sample_mask), internal(disable_validation__ignore_storage_class)]] var<out> value : array<u32, 1>;
+
+fn main_inner(sample_index : u32, mask_in : u32) -> u32 {
+  return mask_in;
+}
+
+[[stage(fragment)]]
+fn main() {
+  let inner_result = main_inner(sample_index_1, mask_in_1[0]);
+  value[0] = inner_result;
+}
+)";
+
+  DataMap data;
+  data.Add<CanonicalizeEntryPointIO::Config>(
+      CanonicalizeEntryPointIO::ShaderStyle::kSpirv);
   auto got = Run<CanonicalizeEntryPointIO>(src, data);
 
   EXPECT_EQ(expect, str(got));

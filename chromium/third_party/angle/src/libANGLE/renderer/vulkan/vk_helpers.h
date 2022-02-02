@@ -12,6 +12,7 @@
 #include "common/MemoryBuffer.h"
 #include "libANGLE/renderer/vulkan/ResourceVk.h"
 #include "libANGLE/renderer/vulkan/vk_cache_utils.h"
+#include "libANGLE/renderer/vulkan/vk_format_utils.h"
 
 namespace gl
 {
@@ -844,7 +845,7 @@ class BufferMemory : angle::NonCopyable
     uint8_t *mMappedMemory;
 };
 
-class BufferHelper final : public Resource
+class BufferHelper final : public ReadWriteResource
 {
   public:
     BufferHelper();
@@ -1023,7 +1024,9 @@ class CommandBufferHelper : angle::NonCopyable
     ~CommandBufferHelper();
 
     // General Functions (non-renderPass specific)
-    void initialize(bool isRenderPassCommandBuffer);
+    angle::Result initialize(Context *context,
+                             bool isRenderPassCommandBuffer,
+                             CommandPool *commandPool);
 
     void bufferRead(ContextVk *contextVk,
                     VkAccessFlags readAccessType,
@@ -1060,8 +1063,9 @@ class CommandBufferHelper : angle::NonCopyable
                                 ImageHelper *resolveImage);
 
     CommandBuffer &getCommandBuffer() { return mCommandBuffer; }
+    CommandPool *getCommandPool() { return mCommandPool; }
 
-    angle::Result flushToPrimary(const angle::FeaturesVk &features,
+    angle::Result flushToPrimary(Context *context,
                                  PrimaryCommandBuffer *primary,
                                  const RenderPass *renderPass);
 
@@ -1080,7 +1084,7 @@ class CommandBufferHelper : angle::NonCopyable
     void markClosed() {}
 #endif
 
-    void reset();
+    angle::Result reset(Context *context);
 
     // Returns true if we have no work to execute. For renderpass command buffer, even if the
     // underlying command buffer is empty, we may still have a renderpass with an empty command
@@ -1100,16 +1104,17 @@ class CommandBufferHelper : angle::NonCopyable
     // Finalize the layout if image has any deferred layout transition.
     void finalizeImageLayout(Context *context, const ImageHelper *image);
 
-    void beginRenderPass(const Framebuffer &framebuffer,
-                         const gl::Rectangle &renderArea,
-                         const RenderPassDesc &renderPassDesc,
-                         const AttachmentOpsArray &renderPassAttachmentOps,
-                         const vk::PackedAttachmentCount colorAttachmentCount,
-                         const PackedAttachmentIndex depthStencilAttachmentIndex,
-                         const PackedClearValuesArray &clearValues,
-                         CommandBuffer **commandBufferOut);
+    angle::Result beginRenderPass(ContextVk *contextVk,
+                                  const Framebuffer &framebuffer,
+                                  const gl::Rectangle &renderArea,
+                                  const RenderPassDesc &renderPassDesc,
+                                  const AttachmentOpsArray &renderPassAttachmentOps,
+                                  const vk::PackedAttachmentCount colorAttachmentCount,
+                                  const PackedAttachmentIndex depthStencilAttachmentIndex,
+                                  const PackedClearValuesArray &clearValues,
+                                  CommandBuffer **commandBufferOut);
 
-    void endRenderPass(ContextVk *contextVk);
+    angle::Result endRenderPass(ContextVk *contextVk);
 
     void updateStartedRenderPassWithDepthMode(bool readOnlyDepthStencilMode);
 
@@ -1217,6 +1222,8 @@ class CommandBufferHelper : angle::NonCopyable
     void setImageOptimizeForPresent(ImageHelper *image) { mImageOptimizeForPresent = image; }
 
   private:
+    angle::Result initializeCommandBuffer(Context *context);
+
     bool onDepthStencilAccess(ResourceAccess access,
                               uint32_t *cmdCountInvalidated,
                               uint32_t *cmdCountDisabled);
@@ -1233,6 +1240,10 @@ class CommandBufferHelper : angle::NonCopyable
     void finalizeDepthStencilImageLayout(Context *context);
     void finalizeDepthStencilResolveImageLayout(Context *context);
     void finalizeDepthStencilLoadStore(Context *context);
+    void finalizeDepthStencilLoadStoreOps(Context *context,
+                                          ResourceAccess access,
+                                          RenderPassLoadOp *loadOp,
+                                          RenderPassStoreOp *storeOp);
     void finalizeDepthStencilImageLayoutAndLoadStore(Context *context);
 
     void updateImageLayoutAndBarrier(Context *context,
@@ -1248,6 +1259,9 @@ class CommandBufferHelper : angle::NonCopyable
     PipelineBarrierArray mPipelineBarriers;
     PipelineStagesMask mPipelineBarrierMask;
     CommandBuffer mCommandBuffer;
+    // The command pool mCommandBuffer is allocated from.  Only used with Vulkan secondary command
+    // buffers (as opposed to ANGLE's SecondaryCommandBuffer).
+    CommandPool *mCommandPool;
 
     // RenderPass state
     uint32_t mCounter;
@@ -1315,6 +1329,37 @@ class CommandBufferHelper : angle::NonCopyable
     // This is last renderpass before present and this is the image will be presented. We can use
     // final layout of the renderpass to transit it to the presentable layout
     ImageHelper *mImageOptimizeForPresent;
+};
+
+// The following class helps support both Vulkan and ANGLE secondary command buffers by
+// encapsulating their differences.
+class CommandBufferRecycler
+{
+  public:
+    CommandBufferRecycler();
+    ~CommandBufferRecycler();
+
+    void onDestroy();
+
+    angle::Result getCommandBufferHelper(Context *context,
+                                         bool hasRenderPass,
+                                         CommandPool *commandPool,
+                                         CommandBufferHelper **commandBufferHelperOut);
+
+    void recycleCommandBufferHelper(VkDevice device, CommandBufferHelper **commandBuffer);
+
+    void resetCommandBufferHelper(CommandBuffer &&commandBuffer);
+
+    SecondaryCommandBufferList &&getCommandBuffersToReset()
+    {
+        return std::move(mSecondaryCommandBuffersToReset);
+    }
+
+  private:
+    void recycleImpl(VkDevice device, CommandBufferHelper **commandBuffer);
+
+    std::vector<vk::CommandBufferHelper *> mCommandBufferHelperFreeList;
+    SecondaryCommandBufferList mSecondaryCommandBuffersToReset;
 };
 
 // Imagine an image going through a few layout transitions:
@@ -1410,9 +1455,9 @@ bool FormatHasNecessaryFeature(RendererVk *renderer,
                                VkFormatFeatureFlags featureBits);
 
 bool CanCopyWithTransfer(RendererVk *renderer,
-                         const Format &srcFormat,
+                         angle::FormatID srcFormatID,
                          VkImageTiling srcTilingMode,
-                         const Format &destFormat,
+                         angle::FormatID destFormatID,
                          VkImageTiling destTilingMode);
 
 class ImageHelper final : public Resource, public angle::Subject
@@ -1453,7 +1498,8 @@ class ImageHelper final : public Resource, public angle::Subject
     angle::Result initExternal(Context *context,
                                gl::TextureType textureType,
                                const VkExtent3D &extents,
-                               const Format &format,
+                               angle::FormatID intendedFormatID,
+                               angle::FormatID actualFormatID,
                                GLint samples,
                                VkImageUsageFlags usage,
                                VkImageCreateFlags additionalCreateFlags,
@@ -1474,7 +1520,8 @@ class ImageHelper final : public Resource, public angle::Subject
         const MemoryProperties &memoryProperties,
         const VkMemoryRequirements &memoryRequirements,
         const VkSamplerYcbcrConversionCreateInfo *samplerYcbcrConversionCreateInfo,
-        const void *extraAllocationInfo,
+        uint32_t extraAllocationInfoCount,
+        const void **extraAllocationInfo,
         uint32_t currentQueueFamilyIndex,
         VkMemoryPropertyFlags flags);
     angle::Result initLayerImageView(Context *context,
@@ -1489,7 +1536,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                      gl::SrgbWriteControlMode mode) const;
     angle::Result initLayerImageViewWithFormat(Context *context,
                                                gl::TextureType textureType,
-                                               const Format &format,
+                                               VkFormat imageFormat,
                                                VkImageAspectFlags aspectMask,
                                                const gl::SwizzleState &swizzleMap,
                                                ImageView *imageViewOut,
@@ -1524,7 +1571,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                 bool hasProtectedContent,
                                 const MemoryProperties &memoryProperties,
                                 const gl::Extents &glExtents,
-                                const Format &format,
+                                angle::FormatID intendedFormatID,
+                                angle::FormatID actualFormatID,
                                 VkImageUsageFlags usage,
                                 uint32_t layerCount);
     // Create an image for staging purposes.  Used by:
@@ -1536,7 +1584,8 @@ class ImageHelper final : public Resource, public angle::Subject
                               const MemoryProperties &memoryProperties,
                               VkImageType imageType,
                               const VkExtent3D &extents,
-                              const Format &format,
+                              angle::FormatID intendedFormatID,
+                              angle::FormatID actualFormatID,
                               GLint samples,
                               VkImageUsageFlags usage,
                               uint32_t mipLevels,
@@ -1586,7 +1635,13 @@ class ImageHelper final : public Resource, public angle::Subject
     const VkExtent3D getRotatedExtents() const;
     uint32_t getLayerCount() const { return mLayerCount; }
     uint32_t getLevelCount() const { return mLevelCount; }
-    const Format &getFormat() const { return *mFormat; }
+    angle::FormatID getIntendedFormatID() const { return mIntendedFormatID; }
+    const angle::Format &getIntendedFormat() const { return angle::Format::Get(mIntendedFormatID); }
+    angle::FormatID getActualFormatID() const { return mActualFormatID; }
+    VkFormat getActualVkFormat() const { return GetVkFormatFromFormatID(mActualFormatID); }
+    const angle::Format &getActualFormat() const { return angle::Format::Get(mActualFormatID); }
+    bool hasEmulatedImageChannels() const;
+    bool hasEmulatedImageFormat() const { return mActualFormatID != mIntendedFormatID; }
     GLint getSamples() const { return mSamples; }
 
     ImageSerial getImageSerial() const
@@ -1612,14 +1667,6 @@ class ImageHelper final : public Resource, public angle::Subject
     void resetRenderPassUsageFlags();
     bool hasRenderPassUsageFlag(RenderPassUsage flag) const;
     bool usedByCurrentRenderPassAsAttachmentAndSampler() const;
-
-    // Clear either color or depth/stencil based on image format.
-    void clear(VkImageAspectFlags aspectFlags,
-               const VkClearValue &value,
-               LevelIndex mipLevel,
-               uint32_t baseArrayLayer,
-               uint32_t layerCount,
-               CommandBuffer *commandBuffer);
 
     static void Copy(ImageHelper *srcImage,
                      ImageHelper *dstImage,
@@ -1673,6 +1720,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                              GLenum type,
                                              const uint8_t *pixels,
                                              const Format &vkFormat,
+                                             ImageAccess access,
                                              const GLuint inputRowPitch,
                                              const GLuint inputDepthPitch,
                                              const GLuint inputSkipBytes);
@@ -1686,7 +1734,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                          DynamicBuffer *stagingBufferOverride,
                                          GLenum type,
                                          const uint8_t *pixels,
-                                         const Format &vkFormat);
+                                         const Format &vkFormat,
+                                         ImageAccess access);
 
     angle::Result stageSubresourceUpdateAndGetData(ContextVk *contextVk,
                                                    size_t allocationSize,
@@ -1694,7 +1743,8 @@ class ImageHelper final : public Resource, public angle::Subject
                                                    const gl::Extents &glExtents,
                                                    const gl::Offset &offset,
                                                    uint8_t **destData,
-                                                   DynamicBuffer *stagingBufferOverride);
+                                                   DynamicBuffer *stagingBufferOverride,
+                                                   angle::FormatID formatID);
 
     angle::Result stageSubresourceUpdateFromFramebuffer(const gl::Context *context,
                                                         const gl::ImageIndex &index,
@@ -1702,6 +1752,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                                         const gl::Offset &dstOffset,
                                                         const gl::Extents &dstExtent,
                                                         const gl::InternalFormat &formatInfo,
+                                                        ImageAccess access,
                                                         FramebufferVk *framebufferVk,
                                                         DynamicBuffer *stagingBufferOverride);
 
@@ -1726,7 +1777,8 @@ class ImageHelper final : public Resource, public angle::Subject
     angle::Result stageRobustResourceClearWithFormat(ContextVk *contextVk,
                                                      const gl::ImageIndex &index,
                                                      const gl::Extents &glExtents,
-                                                     const Format &format);
+                                                     const angle::Format &intendedFormat,
+                                                     const angle::Format &actualFormat);
     void stageRobustResourceClear(const gl::ImageIndex &index);
 
     // Stage the currently allocated image as updates to base level and on, making this !valid().
@@ -1856,6 +1908,7 @@ class ImageHelper final : public Resource, public angle::Subject
                                         gl::Buffer *packBuffer,
                                         gl::LevelIndex levelGL,
                                         uint32_t layer,
+                                        uint32_t layerCount,
                                         GLenum format,
                                         GLenum type,
                                         void *pixels);
@@ -1909,12 +1962,25 @@ class ImageHelper final : public Resource, public angle::Subject
     void restoreSubresourceStencilContent(gl::LevelIndex level,
                                           uint32_t layerIndex,
                                           uint32_t layerCount);
+    angle::Result reformatStagedUpdate(ContextVk *contextVk,
+                                       angle::FormatID srcFormatID,
+                                       angle::FormatID dstFormatID);
 
   private:
     enum class UpdateSource
     {
+        // Clear an image subresource.
         Clear,
+        // Clear only the emulated channels of the subresource.  This operation is more expensive
+        // than Clear, and so is only used for emulated color formats and only for external images.
+        // Color only because depth or stencil clear is already per channel, so Clear works for
+        // them.  External only because they may contain data that needs to be preserved.
+        // Additionally, this is a one-time only clear.  Once the emulated channels are cleared,
+        // ANGLE ensures that they remain untouched.
+        ClearEmulatedChannelsOnly,
+        // The source of the copy is a buffer.
         Buffer,
+        // The source of the copy is an image.
         Image,
     };
     ANGLE_ENABLE_STRUCT_PADDING_WARNINGS
@@ -1929,26 +1995,37 @@ class ImageHelper final : public Resource, public angle::Subject
         uint32_t levelIndex;
         uint32_t layerIndex;
         uint32_t layerCount;
+        // For ClearEmulatedChannelsOnly, mask of which channels to clear.
+        VkColorComponentFlags colorMaskFlags;
     };
     ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
     struct BufferUpdate
     {
         BufferHelper *bufferHelper;
         VkBufferImageCopy copyRegion;
+        angle::FormatID formatID;
     };
     struct ImageUpdate
     {
         VkImageCopy copyRegion;
+        angle::FormatID formatID;
     };
 
     struct SubresourceUpdate : angle::NonCopyable
     {
         SubresourceUpdate();
         ~SubresourceUpdate();
-        SubresourceUpdate(BufferHelper *bufferHelperIn, const VkBufferImageCopy &copyRegion);
-        SubresourceUpdate(RefCounted<ImageHelper> *imageIn, const VkImageCopy &copyRegion);
+        SubresourceUpdate(BufferHelper *bufferHelperIn,
+                          const VkBufferImageCopy &copyRegion,
+                          angle::FormatID formatID);
+        SubresourceUpdate(RefCounted<ImageHelper> *imageIn,
+                          const VkImageCopy &copyRegion,
+                          angle::FormatID formatID);
         SubresourceUpdate(VkImageAspectFlags aspectFlags,
                           const VkClearValue &clearValue,
+                          const gl::ImageIndex &imageIndex);
+        SubresourceUpdate(VkColorComponentFlags colorMaskFlags,
+                          const VkClearColorValue &clearValue,
                           const gl::ImageIndex &imageIndex);
         SubresourceUpdate(SubresourceUpdate &&other);
 
@@ -1992,7 +2069,17 @@ class ImageHelper final : public Resource, public angle::Subject
 
     // If the image has emulated channels, we clear them once so as not to leave garbage on those
     // channels.
-    void stageClearIfEmulatedFormat(bool isRobustResourceInitEnabled);
+    VkColorComponentFlags getEmulatedChannelsMask() const;
+    void stageClearIfEmulatedFormat(bool isRobustResourceInitEnabled, bool isExternalImage);
+    bool verifyEmulatedClearsAreBeforeOtherUpdates(const std::vector<SubresourceUpdate> &updates);
+
+    // Clear either color or depth/stencil based on image format.
+    void clear(VkImageAspectFlags aspectFlags,
+               const VkClearValue &value,
+               LevelIndex mipLevel,
+               uint32_t baseArrayLayer,
+               uint32_t layerCount,
+               CommandBuffer *commandBuffer);
 
     void clearColor(const VkClearColorValue &color,
                     LevelIndex baseMipLevelVk,
@@ -2008,6 +2095,13 @@ class ImageHelper final : public Resource, public angle::Subject
                            uint32_t baseArrayLayer,
                            uint32_t layerCount,
                            CommandBuffer *commandBuffer);
+
+    angle::Result clearEmulatedChannels(ContextVk *contextVk,
+                                        VkColorComponentFlags colorMaskFlags,
+                                        const VkClearValue &value,
+                                        LevelIndex mipLevel,
+                                        uint32_t baseArrayLayer,
+                                        uint32_t layerCount);
 
     angle::Result initializeNonZeroMemory(Context *context,
                                           bool hasProtectedContent,
@@ -2067,6 +2161,8 @@ class ImageHelper final : public Resource, public angle::Subject
         VkFormat imageFormat,
         const VkImageViewUsageCreateInfo *imageViewUsageCreateInfo) const;
 
+    bool canCopyWithTransformForReadPixels(const PackPixelsParams &packPixelsParams,
+                                           const angle::Format *readFormat);
     // Vulkan objects.
     Image mImage;
     DeviceMemory mDeviceMemory;
@@ -2083,7 +2179,8 @@ class ImageHelper final : public Resource, public angle::Subject
     // different between the rotated and non-rotated extents.
     VkExtent3D mExtents;
     bool mRotatedAspectRatio;
-    const Format *mFormat;
+    angle::FormatID mIntendedFormatID;
+    angle::FormatID mActualFormatID;
     GLint mSamples;
     ImageSerial mImageSerial;
 
@@ -2250,7 +2347,7 @@ class ImageViewHelper final : public Resource
     angle::Result initReadViews(ContextVk *contextVk,
                                 gl::TextureType viewType,
                                 const ImageHelper &image,
-                                const Format &format,
+                                const angle::Format &format,
                                 const gl::SwizzleState &formatSwizzle,
                                 const gl::SwizzleState &readSwizzle,
                                 LevelIndex baseLevel,
@@ -2348,7 +2445,7 @@ class ImageViewHelper final : public Resource
     angle::Result initReadViewsImpl(ContextVk *contextVk,
                                     gl::TextureType viewType,
                                     const ImageHelper &image,
-                                    const Format &format,
+                                    const angle::Format &format,
                                     const gl::SwizzleState &formatSwizzle,
                                     const gl::SwizzleState &readSwizzle,
                                     LevelIndex baseLevel,
@@ -2360,7 +2457,7 @@ class ImageViewHelper final : public Resource
     angle::Result initSRGBReadViewsImpl(ContextVk *contextVk,
                                         gl::TextureType viewType,
                                         const ImageHelper &image,
-                                        const Format &format,
+                                        const angle::Format &format,
                                         const gl::SwizzleState &formatSwizzle,
                                         const gl::SwizzleState &readSwizzle,
                                         LevelIndex baseLevel,

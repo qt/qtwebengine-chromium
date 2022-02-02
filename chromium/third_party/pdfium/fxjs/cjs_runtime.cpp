@@ -21,7 +21,6 @@
 #include "fxjs/cjs_document.h"
 #include "fxjs/cjs_event.h"
 #include "fxjs/cjs_event_context.h"
-#include "fxjs/cjs_eventrecorder.h"
 #include "fxjs/cjs_field.h"
 #include "fxjs/cjs_font.h"
 #include "fxjs/cjs_global.h"
@@ -41,6 +40,9 @@
 #include "fxjs/fxv8.h"
 #include "fxjs/js_define.h"
 #include "third_party/base/check_op.h"
+#include "v8/include/v8-context.h"
+#include "v8/include/v8-exception.h"
+#include "v8/include/v8-isolate.h"
 
 CJS_Runtime::CJS_Runtime(CPDFSDK_FormFillEnvironment* pFormFillEnv)
     : m_pFormFillEnv(pFormFillEnv) {

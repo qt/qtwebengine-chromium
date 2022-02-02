@@ -85,3 +85,29 @@ message StatusResult {
   // Indicates how important an update is.
   UpdateUrgency update_urgency = 12;
 }
+
+// This is the message flags that influences how updates are performed.
+message UpdateFlags {
+  // Indicates if the update is interactive or not.
+  bool non_interactive = 1;
+}
+
+// This is the message transferred into update_engine to perform updates in a
+// certain manner.
+message UpdateParams {
+  // Version to update to. An empty string indicates that update engine should
+  // pick the most recent image on the current channel.
+  string app_version = 1;
+
+  // The omaha URL to force. Usually leave empty.
+  // Force update engine to look for updates from the given server. An empty
+  // string indicates update engine should get this parameter from the release
+  // file. This field will be ignored in production builds for security.
+  string omaha_url = 2;
+
+  // Additional fields that update_engine keeps track of during update requests.
+  UpdateFlags update_flags = 3;
+
+  // Checks for an update, but does not apply it.
+  bool skip_applying = 4;
+}

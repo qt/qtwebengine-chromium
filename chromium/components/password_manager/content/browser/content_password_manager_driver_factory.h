@@ -29,11 +29,16 @@ namespace password_manager {
 class ContentPasswordManagerDriver;
 
 // Creates and owns ContentPasswordManagerDrivers. There is one
-// factory per WebContents, and one driver per render frame.
+// factory per WebContents, and one driver per RenderFrameHost.
 class ContentPasswordManagerDriverFactory
     : public content::WebContentsObserver,
       public content::WebContentsUserData<ContentPasswordManagerDriverFactory> {
  public:
+  ContentPasswordManagerDriverFactory(
+      const ContentPasswordManagerDriverFactory&) = delete;
+  ContentPasswordManagerDriverFactory& operator=(
+      const ContentPasswordManagerDriverFactory&) = delete;
+
   ~ContentPasswordManagerDriverFactory() override;
 
   static void BindPasswordManagerDriver(
@@ -41,6 +46,8 @@ class ContentPasswordManagerDriverFactory
           pending_receiver,
       content::RenderFrameHost* render_frame_host);
 
+  // Note that this may return null if the RenderFrameHost does not have a
+  // live RenderFrame (e.g. it represents a crashed RenderFrameHost).
   ContentPasswordManagerDriver* GetDriverForFrame(
       content::RenderFrameHost* render_frame_host);
 
@@ -69,8 +76,6 @@ class ContentPasswordManagerDriverFactory
   autofill::AutofillClient* autofill_client_;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
-
-  DISALLOW_COPY_AND_ASSIGN(ContentPasswordManagerDriverFactory);
 };
 
 }  // namespace password_manager

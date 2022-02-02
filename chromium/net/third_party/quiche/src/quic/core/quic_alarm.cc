@@ -4,6 +4,8 @@
 
 #include "quic/core/quic_alarm.h"
 
+#include <atomic>
+
 #include "quic/platform/api/quic_bug_tracker.h"
 #include "quic/platform/api/quic_flag_utils.h"
 #include "quic/platform/api/quic_flags.h"
@@ -15,14 +17,8 @@ QuicAlarm::QuicAlarm(QuicArenaScopedPtr<Delegate> delegate)
     : delegate_(std::move(delegate)), deadline_(QuicTime::Zero()) {}
 
 QuicAlarm::~QuicAlarm() {
-  if (GetQuicRestartFlag(quic_alarm_add_permanent_cancel) && IsSet()) {
+  if (IsSet()) {
     QUIC_CODE_COUNT(quic_alarm_not_cancelled_in_dtor);
-    static uint64_t hit_count = 0;
-    ++hit_count;
-    if ((hit_count & (hit_count - 1)) == 0) {
-      QUIC_LOG(ERROR) << "QuicAlarm not cancelled at destruction. "
-                      << QuicStackTrace();
-    }
   }
 }
 
@@ -42,16 +38,6 @@ void QuicAlarm::Set(QuicTime new_deadline) {
 }
 
 void QuicAlarm::CancelInternal(bool permanent) {
-  if (!GetQuicRestartFlag(quic_alarm_add_permanent_cancel)) {
-    if (!IsSet()) {
-      // Don't try to cancel an alarm that hasn't been set.
-      return;
-    }
-    deadline_ = QuicTime::Zero();
-    CancelImpl();
-    return;
-  }
-
   if (IsSet()) {
     deadline_ = QuicTime::Zero();
     CancelImpl();
@@ -100,6 +86,11 @@ void QuicAlarm::Fire() {
 
   deadline_ = QuicTime::Zero();
   if (!IsPermanentlyCancelled()) {
+    absl::optional<QuicConnectionContextSwitcher> context_switcher;
+    if (GetQuicReloadableFlag(quic_restore_connection_context_in_alarms)) {
+      QUIC_RELOADABLE_FLAG_COUNT(quic_restore_connection_context_in_alarms);
+      context_switcher.emplace(delegate_->GetConnectionContext());
+    }
     delegate_->OnAlarm();
   }
 }

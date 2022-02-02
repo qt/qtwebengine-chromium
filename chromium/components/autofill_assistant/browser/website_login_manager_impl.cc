@@ -19,6 +19,7 @@
 #include "components/password_manager/core/browser/votes_uploader.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 
 namespace autofill_assistant {
 
@@ -70,6 +71,9 @@ class WebsiteLoginManagerImpl::PendingRequest
         notify_finished_callback_(std::move(notify_finished_callback)),
         weak_ptr_factory_(this) {}
 
+  PendingRequest(const PendingRequest&) = delete;
+  PendingRequest& operator=(const PendingRequest&) = delete;
+
   ~PendingRequest() override = default;
   void Start() {
     // Note: Currently, |FormFetcherImpl| has the default state NOT_WAITING.
@@ -105,7 +109,6 @@ class WebsiteLoginManagerImpl::PendingRequest
 
   base::OnceCallback<void(const PendingRequest*)> notify_finished_callback_;
   base::WeakPtrFactory<PendingRequest> weak_ptr_factory_;
-  DISALLOW_COPY_AND_ASSIGN(PendingRequest);
 };
 
 // A pending request to fetch all logins that match the specified |form_digest|.
@@ -189,7 +192,7 @@ class WebsiteLoginManagerImpl::PendingDeletePasswordRequest
                        std::move(notify_finished_callback)),
         login_(login),
         callback_(std::move(callback)),
-        store_(client->GetProfilePasswordStoreInterface()) {}
+        store_(client->GetProfilePasswordStore()) {}
 
  protected:
   // From PendingRequest:
@@ -229,7 +232,7 @@ class WebsiteLoginManagerImpl::PendingEditPasswordRequest
         new_password_(new_password),
         callback_(std::move(callback)),
         form_saver_(std::make_unique<password_manager::FormSaverImpl>(
-            client->GetProfilePasswordStoreInterface())) {}
+            client->GetProfilePasswordStore())) {}
 
  protected:
   // From PendingRequest:
@@ -270,8 +273,9 @@ class WebsiteLoginManagerImpl::UpdatePasswordRequest
         form_data_(form_data),
         client_(client),
         presaving_completed_callback_(std::move(presaving_completed_callback)),
-        password_save_manager_(password_manager::PasswordSaveManagerImpl::
-                                   CreatePasswordSaveManagerImpl(client)),
+        password_save_manager_(
+            std::make_unique<password_manager::PasswordSaveManagerImpl>(
+                client)),
         metrics_recorder_(
             base::MakeRefCounted<password_manager::PasswordFormMetricsRecorder>(
                 client->IsCommittedMainFrameSecure(),
@@ -390,7 +394,7 @@ void WebsiteLoginManagerImpl::EditPasswordForLogin(
                      weak_ptr_factory_.GetWeakPtr())));
   pending_requests_.back()->Start();
 }
-std::string WebsiteLoginManagerImpl::GeneratePassword(
+absl::optional<std::string> WebsiteLoginManagerImpl::GeneratePassword(
     autofill::FormSignature form_signature,
     autofill::FieldSignature field_signature,
     uint64_t max_length) {
@@ -402,7 +406,9 @@ std::string WebsiteLoginManagerImpl::GeneratePassword(
   // frame has a different origin than the main frame, passwords-related
   // features may not work.
   auto* driver = factory->GetDriverForFrame(web_contents_->GetMainFrame());
-  DCHECK(driver);
+  if (!driver) {
+    return absl::nullopt;
+  }
 
   return base::UTF16ToUTF8(
       driver->GetPasswordGenerationHelper()->GeneratePassword(

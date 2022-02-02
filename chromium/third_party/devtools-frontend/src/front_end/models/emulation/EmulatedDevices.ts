@@ -7,7 +7,6 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
 
@@ -29,6 +28,12 @@ const UIStrings = {
 };
 const str_ = i18n.i18n.registerUIStrings('models/emulation/EmulatedDevices.ts', UIStrings);
 const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined, str_);
+
+export function computeRelativeImageURL(cssURLValue: string): string {
+  return cssURLValue.replace(/@url\(([^\)]*?)\)/g, (_match: string, url: string) => {
+    return new URL(`../../emulated_devices/${url}`, import.meta.url).toString();
+  });
+}
 
 export class EmulatedDevice {
   title: string;
@@ -412,7 +417,7 @@ export class EmulatedDevice {
     if (!mode.image) {
       return '';
     }
-    return Root.Runtime.Runtime.instance().module('emulated_devices').substituteURL(mode.image);
+    return computeRelativeImageURL(mode.image);
   }
 
   outlineImage(mode: Mode): string {
@@ -420,7 +425,7 @@ export class EmulatedDevice {
     if (!orientation.outlineImage) {
       return '';
     }
-    return Root.Runtime.Runtime.instance().module('emulated_devices').substituteURL(orientation.outlineImage);
+    return computeRelativeImageURL(orientation.outlineImage);
   }
 
   orientationByName(name: string): Orientation {
@@ -489,7 +494,7 @@ export const _Show = {
 // eslint-disable-next-line @typescript-eslint/naming-convention
 let _instance: EmulatedDevicesList;
 
-export class EmulatedDevicesList extends Common.ObjectWrapper.ObjectWrapper {
+export class EmulatedDevicesList extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   private readonly standardSetting: Common.Settings.Setting<any[]>;
   private standardInternal: Set<EmulatedDevice>;
   private readonly customSetting: Common.Settings.Setting<any[]>;
@@ -606,6 +611,11 @@ export const enum Events {
   CustomDevicesUpdated = 'CustomDevicesUpdated',
   StandardDevicesUpdated = 'StandardDevicesUpdated',
 }
+
+export type EventTypes = {
+  [Events.CustomDevicesUpdated]: void,
+  [Events.StandardDevicesUpdated]: void,
+};
 
 export interface Mode {
   title: string;
@@ -1033,6 +1043,36 @@ const emulatedDevices = [
   },
   {
     'show-by-default': false,
+    'title': 'Pixel 3',
+    'screen': {
+      'horizontal': {'width': 786, 'height': 393},
+      'device-pixel-ratio': 2.75,
+      'vertical': {'width': 393, 'height': 786},
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 9; Pixel 3 Build/PQ1A.181105.017.A1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.158 Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '9', 'architecture': '', 'model': 'Pixel 3', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
+    'title': 'Pixel 4',
+    'screen': {
+      'horizontal': {'width': 745, 'height': 353},
+      'device-pixel-ratio': 3,
+      'vertical': {'width': 353, 'height': 745},
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 10; Pixel 4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '10', 'architecture': '', 'model': 'Pixel 4', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
     'title': 'LG Optimus L70',
     'screen': {
       'horizontal': {'width': 640, 'height': 384},
@@ -1127,6 +1167,51 @@ const emulatedDevices = [
         'Mozilla/5.0 (Linux; Android 5.0; SM-G900P Build/LRX21T) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/%s Mobile Safari/537.36',
     'user-agent-metadata':
         {'platform': 'Android', 'platformVersion': '5.0', 'architecture': '', 'model': 'SM-G900P', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
+    'title': 'Galaxy S8',
+    'screen': {
+      'horizontal': {'width': 740, 'height': 360},
+      'device-pixel-ratio': 3,
+      'vertical': {'width': 360, 'height': 740},
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 7.0; SM-G950U Build/NRD90M) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/62.0.3202.84 Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '7.0', 'architecture': '', 'model': 'SM-G950U', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
+    'title': 'Galaxy S9+',
+    'screen': {
+      'horizontal': {'width': 658, 'height': 320},
+      'device-pixel-ratio': 4.5,
+      'vertical': {'width': 320, 'height': 658},
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 8.0.0; SM-G965U Build/R16NW) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/63.0.3239.111 Mobile Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '8.0.0', 'architecture': '', 'model': 'SM-G965U', 'mobile': true},
+    'type': 'phone',
+  },
+  {
+    'show-by-default': false,
+    'title': 'Galaxy Tab S4',
+    'screen': {
+      'horizontal': {'width': 1138, 'height': 712},
+      'device-pixel-ratio': 2.25,
+      'vertical': {'width': 712, 'height': 1138},
+    },
+    'capabilities': ['touch', 'mobile'],
+    'user-agent':
+        'Mozilla/5.0 (Linux; Android 8.1.0; SM-T837A) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3538.80 Safari/537.36',
+    'user-agent-metadata':
+        {'platform': 'Android', 'platformVersion': '8.1.0', 'architecture': '', 'model': 'SM-T837A', 'mobile': true},
     'type': 'phone',
   },
   {

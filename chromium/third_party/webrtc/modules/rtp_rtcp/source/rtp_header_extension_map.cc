@@ -10,6 +10,7 @@
 
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
 
+#include "absl/strings/string_view.h"
 #include "modules/rtp_rtcp/source/rtp_dependency_descriptor_extension.h"
 #include "modules/rtp_rtcp/source/rtp_generic_frame_descriptor_extension.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
@@ -23,12 +24,12 @@ namespace {
 
 struct ExtensionInfo {
   RTPExtensionType type;
-  const char* uri;
+  absl::string_view uri;
 };
 
 template <typename Extension>
 constexpr ExtensionInfo CreateExtensionInfo() {
-  return {Extension::kId, Extension::kUri};
+  return {Extension::kId, Extension::Uri()};
 }
 
 constexpr ExtensionInfo kExtensions[] = {
@@ -80,6 +81,14 @@ RtpHeaderExtensionMap::RtpHeaderExtensionMap(
     RegisterByUri(extension.id, extension.uri);
 }
 
+void RtpHeaderExtensionMap::Reset(
+    rtc::ArrayView<const RtpExtension> extensions) {
+  for (auto& id : ids_)
+    id = kInvalidId;
+  for (const RtpExtension& extension : extensions)
+    RegisterByUri(extension.id, extension.uri);
+}
+
 bool RtpHeaderExtensionMap::RegisterByType(int id, RTPExtensionType type) {
   for (const ExtensionInfo& extension : kExtensions)
     if (type == extension.type)
@@ -127,7 +136,7 @@ void RtpHeaderExtensionMap::Deregister(absl::string_view uri) {
 
 bool RtpHeaderExtensionMap::Register(int id,
                                      RTPExtensionType type,
-                                     const char* uri) {
+                                     absl::string_view uri) {
   RTC_DCHECK_GT(type, kRtpExtensionNone);
   RTC_DCHECK_LT(type, kRtpExtensionNumberOfExtensions);
 

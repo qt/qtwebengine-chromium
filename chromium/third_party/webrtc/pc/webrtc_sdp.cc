@@ -256,6 +256,9 @@ static const char kDefaultSctpmapProtocol[] = "webrtc-datachannel";
 // types.
 const int kWildcardPayloadType = -1;
 
+// Maximum number of channels allowed.
+static const size_t kMaxNumberOfChannels = 24;
+
 struct SsrcInfo {
   uint32_t ssrc_id;
   std::string cname;
@@ -415,7 +418,9 @@ static bool ParseFailed(absl::string_view message,
   RTC_LOG(LS_ERROR) << "Failed to parse: \"" << first_line
                     << "\". Reason: " << description;
   if (error) {
-    error->line = std::string(first_line);
+    // TODO(bugs.webrtc.org/13220): In C++17, we can use plain assignment, with
+    // a string_view on the right hand side.
+    error->line.assign(first_line.data(), first_line.size());
     error->description = std::move(description);
   }
   return false;
@@ -2264,7 +2269,6 @@ bool ParseSessionDescription(const std::string& message,
       session_extmaps->push_back(extmap);
     }
   }
-
   return true;
 }
 
@@ -3626,6 +3630,10 @@ bool ParseRtpmapAttribute(const std::string& line,
         return false;
       }
     }
+    if (channels > kMaxNumberOfChannels) {
+      return ParseFailed(line, "At most 24 channels are supported.", error);
+    }
+
     AudioContentDescription* audio_desc = media_desc->as_audio();
     UpdateCodec(payload_type, encoding_name, clock_rate, 0, channels,
                 audio_desc);

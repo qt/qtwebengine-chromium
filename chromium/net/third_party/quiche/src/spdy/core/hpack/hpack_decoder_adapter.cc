@@ -29,6 +29,10 @@ void HpackDecoderAdapter::ApplyHeaderTableSizeSetting(size_t size_setting) {
   hpack_decoder_.ApplyHeaderTableSizeSetting(size_setting);
 }
 
+size_t HpackDecoderAdapter::GetCurrentHeaderTableSizeSetting() const {
+  return hpack_decoder_.GetCurrentHeaderTableSizeSetting();
+}
+
 void HpackDecoderAdapter::HandleControlFrameHeadersStart(
     SpdyHeadersHandlerInterface* handler) {
   QUICHE_DVLOG(2) << "HpackDecoderAdapter::HandleControlFrameHeadersStart";
@@ -85,12 +89,8 @@ bool HpackDecoderAdapter::HandleControlFrameHeadersData(
   return true;
 }
 
-bool HpackDecoderAdapter::HandleControlFrameHeadersComplete(
-    size_t* compressed_len) {
+bool HpackDecoderAdapter::HandleControlFrameHeadersComplete() {
   QUICHE_DVLOG(2) << "HpackDecoderAdapter::HandleControlFrameHeadersComplete";
-  if (compressed_len != nullptr) {
-    *compressed_len = listener_adapter_.total_hpack_bytes();
-  }
   if (!hpack_decoder_.EndDecodingBlock()) {
     QUICHE_DVLOG(3) << "EndDecodingBlock returned false";
     error_ = hpack_decoder_.error();

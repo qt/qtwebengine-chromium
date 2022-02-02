@@ -70,15 +70,16 @@ export class PersistenceUtils {
   }
 }
 
-export class LinkDecorator extends Common.ObjectWrapper.ObjectWrapper implements Components.Linkifier.LinkDecorator {
+export class LinkDecorator extends Common.ObjectWrapper.ObjectWrapper<Components.Linkifier.LinkDecorator.EventTypes>
+    implements Components.Linkifier.LinkDecorator {
   constructor(persistence: PersistenceImpl) {
     super();
     persistence.addEventListener(Events.BindingCreated, this.bindingChanged, this);
     persistence.addEventListener(Events.BindingRemoved, this.bindingChanged, this);
   }
 
-  private bindingChanged(event: Common.EventTarget.EventTargetEvent): void {
-    const binding = event.data as PersistenceBinding;
+  private bindingChanged(event: Common.EventTarget.EventTargetEvent<PersistenceBinding>): void {
+    const binding = event.data;
     this.dispatchEventToListeners(Components.Linkifier.LinkDecorator.Events.LinkIconChanged, binding.network);
   }
 

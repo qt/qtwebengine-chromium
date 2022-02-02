@@ -11,6 +11,8 @@
 #include "src/gpu/GrProxyProvider.h"
 #include "src/gpu/GrRecordingContextPriv.h"
 #include "src/gpu/GrSurfaceProxyView.h"
+#include "src/gpu/SurfaceContext.h"
+#include "src/gpu/SurfaceFillContext.h"
 
 #define ASSERT_SINGLE_OWNER GR_ASSERT_SINGLE_OWNER(fContext->priv().singleOwner())
 
@@ -21,6 +23,39 @@ BaseDevice::BaseDevice(sk_sp<GrRecordingContext> rContext,
                        const SkSurfaceProps& props)
     : INHERITED(ii, props)
     , fContext(std::move(rContext)) {
+}
+
+GrSurfaceProxyView BaseDevice::readSurfaceView() {
+    return this->surfaceFillContext()->readSurfaceView();
+}
+
+/** Checks that the alpha type is legal and gets constructor flags. Returns false if device creation
+    should fail. */
+bool BaseDevice::CheckAlphaTypeAndGetFlags(SkAlphaType alphaType,
+                                           InitContents init,
+                                           DeviceFlags* flags) {
+    *flags = DeviceFlags::kNone;
+    switch (alphaType) {
+        case kPremul_SkAlphaType:
+            break;
+        case kOpaque_SkAlphaType:
+            *flags |= DeviceFlags::kIsOpaque;
+            break;
+        default: // If it is unpremul or unknown don't try to render
+            return false;
+    }
+    if (InitContents::kClear == init) {
+        *flags |= DeviceFlags::kNeedClear;
+    }
+    return true;
+}
+
+SkImageInfo BaseDevice::MakeInfo(SurfaceContext* sc, DeviceFlags flags) {
+    SkColorType colorType = GrColorTypeToSkColorType(sc->colorInfo().colorType());
+    return SkImageInfo::Make(sc->width(), sc->height(), colorType,
+                             flags & DeviceFlags::kIsOpaque ? kOpaque_SkAlphaType
+                                                            : kPremul_SkAlphaType,
+                             sc->colorInfo().refColorSpace());
 }
 
 GrRenderTargetProxy* BaseDevice::targetProxy() {

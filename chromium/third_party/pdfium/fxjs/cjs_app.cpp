@@ -9,12 +9,14 @@
 #include <utility>
 
 #include "core/fxcrt/stl_util.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fxjs/cjs_document.h"
 #include "fxjs/cjs_timerobj.h"
 #include "fxjs/global_timer.h"
 #include "fxjs/ijs_event_context.h"
 #include "fxjs/js_resources.h"
+#include "v8/include/v8-container.h"
 
 namespace {
 

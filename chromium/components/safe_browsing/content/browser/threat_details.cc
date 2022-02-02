@@ -321,6 +321,9 @@ void TrimElements(const std::set<int> target_ids,
 // don't leak it.
 class ThreatDetailsFactoryImpl : public ThreatDetailsFactory {
  public:
+  ThreatDetailsFactoryImpl(const ThreatDetailsFactoryImpl&) = delete;
+  ThreatDetailsFactoryImpl& operator=(const ThreatDetailsFactoryImpl&) = delete;
+
   std::unique_ptr<ThreatDetails> CreateThreatDetails(
       BaseUIManager* ui_manager,
       WebContents* web_contents,
@@ -345,8 +348,6 @@ class ThreatDetailsFactoryImpl : public ThreatDetailsFactory {
   friend struct base::LazyInstanceTraitsBase<ThreatDetailsFactoryImpl>;
 
   ThreatDetailsFactoryImpl() {}
-
-  DISALLOW_COPY_AND_ASSIGN(ThreatDetailsFactoryImpl);
 };
 
 static base::LazyInstance<ThreatDetailsFactoryImpl>::DestructorAtExit
@@ -664,16 +665,20 @@ void ThreatDetails::RequestThreatDOMDetails(content::RenderFrameHost* frame) {
   pending_render_frame_hosts_.push_back(frame);
   raw_threat_report->GetThreatDOMDetails(
       base::BindOnce(&ThreatDetails::OnReceivedThreatDOMDetails, GetWeakPtr(),
-                     std::move(threat_reporter), frame));
+                     std::move(threat_reporter), frame->GetGlobalId()));
 }
 
 // When the renderer is done, this is called.
 void ThreatDetails::OnReceivedThreatDOMDetails(
     mojo::Remote<mojom::ThreatReporter> threat_reporter,
-    content::RenderFrameHost* sender,
+    content::GlobalRenderFrameHostId sender_id,
     std::vector<mojom::ThreatDOMDetailsNodePtr> params) {
   // If the RenderFrameHost was closed between sending the IPC and this callback
   // running, |sender| will be invalid.
+  auto* sender = content::RenderFrameHost::FromID(sender_id);
+  if (!sender) {
+    return;
+  }
   const auto sender_it = std::find(pending_render_frame_hosts_.begin(),
                                    pending_render_frame_hosts_.end(), sender);
   if (sender_it == pending_render_frame_hosts_.end()) {

@@ -16,7 +16,7 @@
 
 #include "dawn_native/Device.h"
 #include "dawn_native/EnumMaskIterator.h"
-#include "dawn_native/Extensions.h"
+#include "dawn_native/Features.h"
 #include "dawn_native/Texture.h"
 
 #include <bitset>
@@ -37,6 +37,7 @@ namespace dawn_native {
             case wgpu::TextureComponentType::DepthComparison:
                 return SampleTypeBit::Depth;
         }
+        UNREACHABLE();
     }
 
     SampleTypeBit SampleTypeToSampleTypeBit(wgpu::TextureSampleType sampleType) {
@@ -121,7 +122,7 @@ namespace dawn_native {
 
     // Implementation details of the format table of the DeviceBase
 
-    // For the enum for formats are packed but this might change when we have a broader extension
+    // For the enum for formats are packed but this might change when we have a broader feature
     // mechanism for webgpu.h. Formats start at 1 because 0 is the undefined format.
     size_t ComputeFormatIndex(wgpu::TextureFormat format) {
         // This takes advantage of overflows to make the index of TextureFormat::Undefined outside
@@ -195,12 +196,13 @@ namespace dawn_native {
             AddFormat(internalFormat);
         };
 
-        auto AddDepthFormat = [&AddFormat](wgpu::TextureFormat format, uint32_t byteSize) {
+        auto AddDepthFormat = [&AddFormat](wgpu::TextureFormat format, uint32_t byteSize,
+                                           bool isSupported) {
             Format internalFormat;
             internalFormat.format = format;
             internalFormat.isRenderable = true;
             internalFormat.isCompressed = false;
-            internalFormat.isSupported = true;
+            internalFormat.isSupported = isSupported;
             internalFormat.supportsStorageUsage = false;
             internalFormat.aspects = Aspect::Depth;
             internalFormat.componentCount = 1;
@@ -214,12 +216,12 @@ namespace dawn_native {
             AddFormat(internalFormat);
         };
 
-        auto AddStencilFormat = [&AddFormat](wgpu::TextureFormat format) {
+        auto AddStencilFormat = [&AddFormat](wgpu::TextureFormat format, bool isSupported) {
             Format internalFormat;
             internalFormat.format = format;
             internalFormat.isRenderable = true;
             internalFormat.isCompressed = false;
-            internalFormat.isSupported = false;
+            internalFormat.isSupported = isSupported;
             internalFormat.supportsStorageUsage = false;
             internalFormat.aspects = Aspect::Stencil;
             internalFormat.componentCount = 1;
@@ -324,19 +326,21 @@ namespace dawn_native {
         AddColorFormat(wgpu::TextureFormat::RGBA32Float, true, true, 16, SampleTypeBit::UnfilterableFloat, 4);
 
         // Depth-stencil formats
-        AddDepthFormat(wgpu::TextureFormat::Depth32Float, 4);
+        // TODO(dawn:666): Implement the stencil8 format
+        AddStencilFormat(wgpu::TextureFormat::Stencil8, false);
+        // TODO(dawn:570): Implement the depth16unorm format
+        AddDepthFormat(wgpu::TextureFormat::Depth16Unorm, 2, false);
         // TODO(crbug.com/dawn/843): This is 4 because we read this to perform zero initialization,
         // and textures are always use depth32float. We should improve this to be more robust. Perhaps,
         // using 0 here to mean "unsized" and adding a backend-specific query for the block size.
-        AddDepthFormat(wgpu::TextureFormat::Depth24Plus, 4);
-        // TODO(dawn:666): Implement the stencil8 format
-        AddStencilFormat(wgpu::TextureFormat::Stencil8);
+        AddDepthFormat(wgpu::TextureFormat::Depth24Plus, 4, true);
         AddMultiAspectFormat(wgpu::TextureFormat::Depth24PlusStencil8,
                               Aspect::Depth | Aspect::Stencil, wgpu::TextureFormat::Depth24Plus, wgpu::TextureFormat::Stencil8, true, true, 2);
-        // TODO(dawn:690): Implement Depth16Unorm, Depth24UnormStencil8, Depth32FloatStencil8.
+        AddDepthFormat(wgpu::TextureFormat::Depth32Float, 4, true);
+        // TODO(dawn:690): Implement Depth24UnormStencil8, Depth32FloatStencil8.
 
         // BC compressed formats
-        bool isBCFormatSupported = device->IsExtensionEnabled(Extension::TextureCompressionBC);
+        bool isBCFormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionBC);
         AddCompressedFormat(wgpu::TextureFormat::BC1RGBAUnorm, 8, 4, 4, isBCFormatSupported, 4);
         AddCompressedFormat(wgpu::TextureFormat::BC1RGBAUnormSrgb, 8, 4, 4, isBCFormatSupported, 4);
         AddCompressedFormat(wgpu::TextureFormat::BC4RSnorm, 8, 4, 4, isBCFormatSupported, 1);
@@ -352,8 +356,52 @@ namespace dawn_native {
         AddCompressedFormat(wgpu::TextureFormat::BC7RGBAUnorm, 16, 4, 4, isBCFormatSupported, 4);
         AddCompressedFormat(wgpu::TextureFormat::BC7RGBAUnormSrgb, 16, 4, 4, isBCFormatSupported, 4);
 
+        // ETC2/EAC compressed formats
+        bool isETC2FormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionETC2);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8Unorm, 8, 4, 4, isETC2FormatSupported, 3);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8UnormSrgb, 8, 4, 4, isETC2FormatSupported, 3);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8A1Unorm, 8, 4, 4, isETC2FormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGB8A1UnormSrgb, 8, 4, 4, isETC2FormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGBA8Unorm, 16, 4, 4, isETC2FormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ETC2RGBA8UnormSrgb, 16, 4, 4, isETC2FormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::EACR11Unorm, 8, 4, 4, isETC2FormatSupported, 1);
+        AddCompressedFormat(wgpu::TextureFormat::EACR11Snorm, 8, 4, 4, isETC2FormatSupported, 1);
+        AddCompressedFormat(wgpu::TextureFormat::EACRG11Unorm, 16, 4, 4, isETC2FormatSupported, 2);
+        AddCompressedFormat(wgpu::TextureFormat::EACRG11Snorm, 16, 4, 4, isETC2FormatSupported, 2);
+
+        // ASTC compressed formats
+        bool isASTCFormatSupported = device->IsFeatureEnabled(Feature::TextureCompressionASTC);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC4x4Unorm, 16, 4, 4, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC4x4UnormSrgb, 16, 4, 4, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC5x4Unorm, 16, 5, 4, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC5x4UnormSrgb, 16, 5, 4, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC5x5Unorm, 16, 5, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC5x5UnormSrgb, 16, 5, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC6x5Unorm, 16, 6, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC6x5UnormSrgb, 16, 6, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC6x6Unorm, 16, 6, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC6x6UnormSrgb, 16, 6, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x5Unorm, 16, 8, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x5UnormSrgb, 16, 8, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x6Unorm, 16, 8, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x6UnormSrgb, 16, 8, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x8Unorm, 16, 8, 8, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC8x8UnormSrgb, 16, 8, 8, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x5Unorm, 16, 10, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x5UnormSrgb, 16, 10, 5, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x6Unorm, 16, 10, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x6UnormSrgb, 16, 10, 6, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x8Unorm, 16, 10, 8, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x8UnormSrgb, 16, 10, 8, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x10Unorm, 16, 10, 10, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC10x10UnormSrgb, 16, 10, 10, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC12x10Unorm, 16, 12, 10, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC12x10UnormSrgb, 16, 12, 10, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC12x12Unorm, 16, 12, 12, isASTCFormatSupported, 4);
+        AddCompressedFormat(wgpu::TextureFormat::ASTC12x12UnormSrgb, 16, 12, 12, isASTCFormatSupported, 4);
+
         // multi-planar formats
-        const bool isMultiPlanarFormatSupported = device->IsExtensionEnabled(Extension::MultiPlanarFormats);
+        const bool isMultiPlanarFormatSupported = device->IsFeatureEnabled(Feature::MultiPlanarFormats);
         AddMultiAspectFormat(wgpu::TextureFormat::R8BG8Biplanar420Unorm, Aspect::Plane0 | Aspect::Plane1,
             wgpu::TextureFormat::R8Unorm, wgpu::TextureFormat::RG8Unorm, false, isMultiPlanarFormatSupported, 3);
 

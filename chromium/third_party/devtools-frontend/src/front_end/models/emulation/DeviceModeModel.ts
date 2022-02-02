@@ -71,7 +71,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 let deviceModeModelInstance: DeviceModeModel;
 
-export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper implements
+export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements
     SDK.TargetManager.SDKModelObserver<SDK.EmulationModel.EmulationModel> {
   private screenRectInternal: Rect;
   private visiblePageRectInternal: Rect;
@@ -113,7 +113,7 @@ export class DeviceModeModel extends Common.ObjectWrapper.ObjectWrapper implemen
     this.appliedDeviceScaleFactorInternal = window.devicePixelRatio;
     this.appliedUserAgentTypeInternal = UA.Desktop;
     this.experimentDualScreenSupport = Root.Runtime.experiments.isEnabled('dualScreenSupport');
-    this.webPlatformExperimentalFeaturesEnabledInternal = Boolean(eval('window.getWindowSegments'));
+    this.webPlatformExperimentalFeaturesEnabledInternal = Boolean(eval('"segments" in window.visualViewport'));
 
     this.scaleSettingInternal = Common.Settings.Settings.instance().createSetting('emulation.deviceScale', 1);
     // We've used to allow zero before.
@@ -854,6 +854,10 @@ export class Rect {
 export const enum Events {
   Updated = 'Updated',
 }
+
+export type EventTypes = {
+  [Events.Updated]: void,
+};
 
 // TODO(crbug.com/1167717): Make this a const enum again
 // eslint-disable-next-line rulesdir/const_enum

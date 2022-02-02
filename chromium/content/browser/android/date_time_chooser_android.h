@@ -21,6 +21,10 @@ class DateTimeChooserAndroid
       public WebContentsUserData<DateTimeChooserAndroid> {
  public:
   explicit DateTimeChooserAndroid(WebContents* web_contents);
+
+  DateTimeChooserAndroid(const DateTimeChooserAndroid&) = delete;
+  DateTimeChooserAndroid& operator=(const DateTimeChooserAndroid&) = delete;
+
   ~DateTimeChooserAndroid() override;
 
   void OnDateTimeChooserReceiver(
@@ -32,6 +36,8 @@ class DateTimeChooserAndroid
   void OpenDateTimeDialog(blink::mojom::DateTimeDialogValuePtr value,
                           OpenDateTimeDialogCallback callback) override;
 
+  void CloseDateTimeDialog() override;
+
   // Replaces the current value.
   void ReplaceDateTime(JNIEnv* env,
                        const base::android::JavaRef<jobject>&,
@@ -41,6 +47,8 @@ class DateTimeChooserAndroid
   void CancelDialog(JNIEnv* env, const base::android::JavaRef<jobject>&);
 
  private:
+  void DismissAndDestroyJavaObject();
+
   friend class content::WebContentsUserData<DateTimeChooserAndroid>;
   content::WebContents* web_contents_;
 
@@ -51,8 +59,6 @@ class DateTimeChooserAndroid
   mojo::Receiver<blink::mojom::DateTimeChooser> date_time_chooser_receiver_;
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
-
-  DISALLOW_COPY_AND_ASSIGN(DateTimeChooserAndroid);
 };
 
 }  // namespace content

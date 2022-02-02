@@ -8,7 +8,6 @@
 #define CORE_FPDFAPI_PARSER_CPDF_DICTIONARY_H_
 
 #include <map>
-#include <memory>
 #include <set>
 #include <utility>
 #include <vector>
@@ -40,9 +39,6 @@ class CPDF_Dictionary final : public CPDF_Object {
   const CPDF_Dictionary* AsDictionary() const override;
   bool WriteTo(IFX_ArchiveStream* archive,
                const CPDF_Encryptor* encryptor) const override;
-
-  // `key` must be non-empty and ASCII, per PDF 32000 standard, section 7.2.1.
-  static bool IsValidKey(const ByteString& key);
 
   bool IsLocked() const { return !!m_LockCount; }
 

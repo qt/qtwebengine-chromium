@@ -1299,9 +1299,15 @@ message UpgradeContainerRequest {
 
     // Debian 10 AKA Buster.
     DEBIAN_BUSTER = 2;
+
+    // Debian 11 AKA Bullseye.
+    DEBIAN_BULLSEYE = 3;
   }
+
   // Version from which the container will upgrade.
-  Version source_version = 4;
+  // Ignored, since tremplin is in a better place to determine this
+  // then the caller.
+  Version source_version = 4 [deprecated = true];
 
   // Version to which the container will be upgraded.
   Version target_version = 5;

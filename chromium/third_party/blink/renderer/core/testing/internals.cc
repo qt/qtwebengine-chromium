@@ -880,9 +880,9 @@ bool Internals::isLoadingFromMemoryCache(const String& url) {
   return resource && resource->GetStatus() == ResourceStatus::kCached;
 }
 
-ScriptPromise Internals::getResourcePriority(ScriptState* script_state,
-                                             const String& url,
-                                             Document* document) {
+ScriptPromise Internals::getInitialResourcePriority(ScriptState* script_state,
+                                                    const String& url,
+                                                    Document* document) {
   ScriptPromiseResolver* resolver =
       MakeGarbageCollected<ScriptPromiseResolver>(script_state);
   ScriptPromise promise = resolver->Promise();
@@ -1743,8 +1743,14 @@ void Internals::setSuggestedValue(Element* element,
   if (auto* textarea = DynamicTo<HTMLTextAreaElement>(*element))
     textarea->SetSuggestedValue(value);
 
-  if (auto* select = DynamicTo<HTMLSelectElement>(*element))
-    select->SetSuggestedValue(value);
+  if (auto* select = DynamicTo<HTMLSelectElement>(*element)) {
+    // A Null string resets the suggested value.
+    select->SetSuggestedValue(value.IsEmpty() ? String() : value);
+  }
+
+  To<HTMLFormControlElement>(element)->SetAutofillState(
+      value.IsEmpty() ? WebAutofillState::kNotFilled
+                      : WebAutofillState::kPreviewed);
 }
 
 void Internals::setAutofilledValue(Element* element,
@@ -1773,11 +1779,16 @@ void Internals::setAutofilledValue(Element* element,
         *Event::CreateBubble(event_type_names::kKeyup));
   }
 
-  if (auto* select = DynamicTo<HTMLSelectElement>(*element))
-    select->setValue(value, true /* send_events */);
+  if (auto* select = DynamicTo<HTMLSelectElement>(*element)) {
+    select->setValue(value.IsEmpty()
+                         ? String()  // Null string resets the autofill state.
+                         : value,
+                     true /* send_events */);
+  }
 
   To<HTMLFormControlElement>(element)->SetAutofillState(
-      blink::WebAutofillState::kAutofilled);
+      value.IsEmpty() ? WebAutofillState::kNotFilled
+                      : blink::WebAutofillState::kAutofilled);
 }
 
 void Internals::setEditingValue(Element* element,
@@ -3671,8 +3682,8 @@ double Internals::monotonicTimeToZeroBasedDocumentTime(
     ExceptionState& exception_state) {
   return document_->Loader()
       ->GetTiming()
-      .MonotonicTimeToZeroBasedDocumentTime(
-          base::TimeTicks() + base::TimeDelta::FromSecondsD(platform_time))
+      .MonotonicTimeToZeroBasedDocumentTime(base::TimeTicks() +
+                                            base::Seconds(platform_time))
       .InSecondsF();
 }
 

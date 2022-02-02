@@ -82,7 +82,7 @@ private:
 class Stretch {
 public:
 
-    Stretch() : fGlyphStart(), fGlyphEnd(), fWidth(0), fTextRange(0, 0), fTextMetrics() { }
+    Stretch() : fGlyphStart(), fGlyphEnd(), fWidth(0), fTextRange(EMPTY_RANGE), fTextMetrics() { }
 
     Stretch(GlyphPos glyphStart, size_t textIndex, const TextMetrics& metrics)
         : fGlyphStart(glyphStart)
@@ -97,14 +97,10 @@ public:
     Stretch& operator=(const Stretch&) = default;
 
     bool isEmpty() const {
-        if (this->fGlyphStart.isEmpty()) {
-            SkASSERT(this->fGlyphEnd.isEmpty());
+        if (fGlyphStart.isEmpty() || fGlyphEnd.isEmpty()) {
             return true;
         } else {
-            SkASSERT(!this->fGlyphEnd.isEmpty());
-            return false;
-            //return (this->fGlyphStart.runIndex() == this->fGlyphEnd.runIndex() &&
-            //        this->fGlyphStart.glyphIndex() == this->fGlyphEnd.glyphIndex());
+            return fGlyphStart == fGlyphEnd;
         }
     }
 
@@ -166,10 +162,10 @@ private:
     TextMetrics fTextMetrics;
 };
 
-class Line {
+class LogicalLine {
 public:
-    Line(const Stretch& stretch, const Stretch& spaces, SkSTArray<1, size_t, true> visualOrder, SkScalar verticalOffset, bool hardLineBreak);
-    ~Line() = default;
+    LogicalLine(const Stretch& stretch, const Stretch& spaces, SkScalar verticalOffset, bool hardLineBreak);
+    ~LogicalLine() = default;
 
     TextMetrics getMetrics() const { return fTextMetrics; }
     GlyphPos glyphStart() const { return fTextStart; }
@@ -179,18 +175,11 @@ public:
     SkScalar withWithTrailingSpaces() const { return fTextWidth + fSpacesWidth; }
     SkScalar horizontalOffset() const { return fHorizontalOffset; }
     SkScalar verticalOffset() const { return fVerticalOffset; }
-    size_t runsNumber() const { return fRunsInVisualOrder.size(); }
-    size_t visualRun(size_t index) const { return fRunsInVisualOrder[index]; }
     SkScalar height() const { return fTextMetrics.height(); }
     SkScalar baseline() const { return fTextMetrics.baseline(); }
     TextRange text() const { return fText; }
     TextRange whitespaces() const { return fWhitespaces; }
     bool isHardLineBreak() const { return fHardLineBreak; }
-    GlyphRange glyphRange(size_t runIndex, size_t runSize) const {
-        GlyphIndex start = runIndex == this->glyphStart().runIndex() ? this->glyphStart().glyphIndex() : 0;
-        GlyphIndex end = runIndex == this->glyphTrailingEnd().runIndex() ? this->glyphTrailingEnd().glyphIndex() : runSize;
-        return GlyphRange(start, end);
-    }
 
 private:
     friend class WrappedText;
@@ -206,7 +195,6 @@ private:
     SkScalar fVerticalOffset;
     TextMetrics fTextMetrics;
     bool fHardLineBreak;
-    SkSTArray<1, size_t, true> fRunsInVisualOrder;
 };
 
 } // namespace text

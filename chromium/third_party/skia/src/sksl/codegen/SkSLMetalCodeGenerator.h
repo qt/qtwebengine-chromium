@@ -20,14 +20,12 @@
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/codegen/SkSLCodeGenerator.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
-#include "src/sksl/ir/SkSLBoolLiteral.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
 #include "src/sksl/ir/SkSLConstructorMatrixResize.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExtension.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
-#include "src/sksl/ir/SkSLFloatLiteral.h"
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
@@ -36,8 +34,8 @@
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLInlineMarker.h"
-#include "src/sksl/ir/SkSLIntLiteral.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
@@ -58,12 +56,10 @@ public:
     static constexpr const char* SAMPLER_SUFFIX = "Smplr";
     static constexpr const char* PACKED_PREFIX = "packed_";
 
-    MetalCodeGenerator(const Context* context, const Program* program, ErrorReporter* errors,
-                      OutputStream* out)
-    : INHERITED(program, errors, out)
+    MetalCodeGenerator(const Context* context, const Program* program, OutputStream* out)
+    : INHERITED(context, program, out)
     , fReservedWords({"atan2", "rsqrt", "rint", "dfdx", "dfdy", "vertex", "fragment"})
-    , fLineEnding("\n")
-    , fContext(*context) {}
+    , fLineEnding("\n") {}
 
     bool generateCode() override;
 
@@ -101,7 +97,7 @@ protected:
 
     void writeStructDefinitions();
 
-    void writeFields(const std::vector<Type::Field>& fields, int parentOffset,
+    void writeFields(const std::vector<Type::Field>& fields, int parentLine,
                      const InterfaceBlock* parentIntf = nullptr);
 
     int size(const Type* type, bool isPacked) const;
@@ -174,13 +170,15 @@ protected:
 
     void writeMatrixCompMult();
 
+    void writeOuterProduct();
+
     void writeMatrixTimesEqualHelper(const Type& left, const Type& right, const Type& result);
 
     void writeMatrixDivisionHelpers(const Type& type);
 
     void writeMatrixEqualityHelpers(const Type& left, const Type& right);
 
-    void writeVectorFromMat2x2ConstructorHelper();
+    String getVectorFromMat2x2ConstructorHelper(const Type& matrixType);
 
     void writeArrayEqualityHelpers(const Type& type);
 
@@ -232,11 +230,7 @@ protected:
 
     void writePostfixExpression(const PostfixExpression& p, Precedence parentPrecedence);
 
-    void writeBoolLiteral(const BoolLiteral& b);
-
-    void writeIntLiteral(const IntLiteral& i);
-
-    void writeFloatLiteral(const FloatLiteral& f);
+    void writeLiteral(const Literal& f);
 
     void writeSetting(const Setting& s);
 
@@ -276,7 +270,6 @@ protected:
     int fAnonInterfaceCount = 0;
     int fPaddingCount = 0;
     const char* fLineEnding;
-    const Context& fContext;
     String fFunctionHeader;
     StringStream fExtraFunctions;
     StringStream fExtraFunctionPrototypes;

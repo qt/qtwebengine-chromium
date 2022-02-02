@@ -27,6 +27,13 @@
        * @type {?function(!ExtensionDescriptor)}
        */
       this._addExtensionCallback = null;
+
+      /**
+       * @type {!Promise<string>}
+       */
+      this._initialTargetIdPromise = new Promise(resolve => {
+        this._setInitialTargetId = resolve;
+      });
     }
 
     /**
@@ -302,6 +309,13 @@
     }
 
     /**
+     * @param {string} targetId
+     */
+    setInitialTargetId(targetId) {
+      this._setInitialTargetId(targetId);
+    }
+
+    /**
      * @return {string|undefined}
      */
     getInspectedTabId() {
@@ -356,13 +370,12 @@
    * Enum for recordPerformanceHistogram
    * Warning: There is another definition of this enum in the DevTools code
    * base, keep them in sync:
-   * front_end/host/InspectorFrontendHostAPI.js
+   * front_end/core/host/InspectorFrontendHostAPI.ts
    * @readonly
    * @enum {string}
    */
   const EnumeratedHistogram = {
     ActionTaken: 'DevTools.ActionTaken',
-    ColorPickerFixedColor: 'DevTools.ColorPicker.FixedColor',
     PanelClosed: 'DevTools.PanelClosed',
     PanelShown: 'DevTools.PanelShown',
     SidebarPaneShown: 'DevTools.SidebarPaneShown',
@@ -381,6 +394,8 @@
     DeveloperResourceScheme: 'DevTools.DeveloperResourceScheme',
     LinearMemoryInspectorRevealedFrom: 'DevTools.LinearMemoryInspector.RevealedFrom',
     LinearMemoryInspectorTarget: 'DevTools.LinearMemoryInspector.Target',
+    Language: 'DevTools.Language',
+    ConsoleShowsCorsErrors: 'DevTools.ConsoleShowsCorsErrors',
   };
 
   /**
@@ -504,6 +519,15 @@
     loadNetworkResource(url, headers, streamId, callback) {
       DevToolsAPI.sendMessageToEmbedder(
           'loadNetworkResource', [url, headers, streamId], /** @type {function(?Object)} */ (callback));
+    }
+
+    /**
+     * @override
+     * @param {string} name
+     * @param {!{synced: (boolean|undefined)}} options
+     */
+    registerPreference(name, options) {
+      DevToolsAPI.sendMessageToEmbedder('registerPreference', [name, options], null);
     }
 
     /**
@@ -941,6 +965,13 @@
      */
     recordPanelShown(panelCode) {
       // Do not record actions, as that may crash the DevTools renderer.
+    }
+
+    /**
+     * @return {!Promise<string>}
+     */
+    initialTargetId() {
+      return DevToolsAPI._initialTargetIdPromise;
     }
   };
 

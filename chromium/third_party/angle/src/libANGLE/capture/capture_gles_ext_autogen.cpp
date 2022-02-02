@@ -437,6 +437,35 @@ CallCapture CaptureGetTexImageANGLE(const State &glState,
     return CallCapture(angle::EntryPoint::GLGetTexImageANGLE, std::move(paramBuffer));
 }
 
+CallCapture CaptureGetCompressedTexImageANGLE(const State &glState,
+                                              bool isCallValid,
+                                              TextureTarget targetPacked,
+                                              GLint level,
+                                              void *pixels)
+{
+    ParamBuffer paramBuffer;
+
+    paramBuffer.addValueParam("targetPacked", ParamType::TTextureTarget, targetPacked);
+    paramBuffer.addValueParam("level", ParamType::TGLint, level);
+
+    if (isCallValid)
+    {
+        ParamCapture pixelsParam("pixels", ParamType::TvoidPointer);
+        InitParamValue(ParamType::TvoidPointer, pixels, &pixelsParam.value);
+        CaptureGetCompressedTexImageANGLE_pixels(glState, isCallValid, targetPacked, level, pixels,
+                                                 &pixelsParam);
+        paramBuffer.addParam(std::move(pixelsParam));
+    }
+    else
+    {
+        ParamCapture pixelsParam("pixels", ParamType::TvoidPointer);
+        InitParamValue(ParamType::TvoidPointer, static_cast<void *>(nullptr), &pixelsParam.value);
+        paramBuffer.addParam(std::move(pixelsParam));
+    }
+
+    return CallCapture(angle::EntryPoint::GLGetCompressedTexImageANGLE, std::move(paramBuffer));
+}
+
 CallCapture CaptureGetRenderbufferImageANGLE(const State &glState,
                                              bool isCallValid,
                                              GLenum target,
@@ -4411,6 +4440,67 @@ CallCapture CaptureLoseContextCHROMIUM(const State &glState,
     paramBuffer.addValueParam("otherPacked", ParamType::TGraphicsResetStatus, otherPacked);
 
     return CallCapture(angle::EntryPoint::GLLoseContextCHROMIUM, std::move(paramBuffer));
+}
+
+CallCapture CaptureEGLImageTargetTexStorageEXT(const State &glState,
+                                               bool isCallValid,
+                                               GLenum target,
+                                               GLeglImageOES image,
+                                               const GLint *attrib_list)
+{
+    ParamBuffer paramBuffer;
+
+    paramBuffer.addEnumParam("target", GLenumGroup::DefaultGroup, ParamType::TGLenum, target);
+    paramBuffer.addValueParam("image", ParamType::TGLeglImageOES, image);
+
+    if (isCallValid)
+    {
+        ParamCapture attrib_listParam("attrib_list", ParamType::TGLintConstPointer);
+        InitParamValue(ParamType::TGLintConstPointer, attrib_list, &attrib_listParam.value);
+        CaptureEGLImageTargetTexStorageEXT_attrib_list(glState, isCallValid, target, image,
+                                                       attrib_list, &attrib_listParam);
+        paramBuffer.addParam(std::move(attrib_listParam));
+    }
+    else
+    {
+        ParamCapture attrib_listParam("attrib_list", ParamType::TGLintConstPointer);
+        InitParamValue(ParamType::TGLintConstPointer, static_cast<const GLint *>(nullptr),
+                       &attrib_listParam.value);
+        paramBuffer.addParam(std::move(attrib_listParam));
+    }
+
+    return CallCapture(angle::EntryPoint::GLEGLImageTargetTexStorageEXT, std::move(paramBuffer));
+}
+
+CallCapture CaptureEGLImageTargetTextureStorageEXT(const State &glState,
+                                                   bool isCallValid,
+                                                   GLuint texture,
+                                                   GLeglImageOES image,
+                                                   const GLint *attrib_list)
+{
+    ParamBuffer paramBuffer;
+
+    paramBuffer.addValueParam("texture", ParamType::TGLuint, texture);
+    paramBuffer.addValueParam("image", ParamType::TGLeglImageOES, image);
+
+    if (isCallValid)
+    {
+        ParamCapture attrib_listParam("attrib_list", ParamType::TGLintConstPointer);
+        InitParamValue(ParamType::TGLintConstPointer, attrib_list, &attrib_listParam.value);
+        CaptureEGLImageTargetTextureStorageEXT_attrib_list(glState, isCallValid, texture, image,
+                                                           attrib_list, &attrib_listParam);
+        paramBuffer.addParam(std::move(attrib_listParam));
+    }
+    else
+    {
+        ParamCapture attrib_listParam("attrib_list", ParamType::TGLintConstPointer);
+        InitParamValue(ParamType::TGLintConstPointer, static_cast<const GLint *>(nullptr),
+                       &attrib_listParam.value);
+        paramBuffer.addParam(std::move(attrib_listParam));
+    }
+
+    return CallCapture(angle::EntryPoint::GLEGLImageTargetTextureStorageEXT,
+                       std::move(paramBuffer));
 }
 
 CallCapture CaptureBindFragDataLocationEXT(const State &glState,

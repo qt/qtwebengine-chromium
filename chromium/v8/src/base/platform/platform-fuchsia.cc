@@ -133,6 +133,14 @@ bool OS::DiscardSystemPages(void* address, size_t size) {
   return status == ZX_OK;
 }
 
+bool OS::DecommitPages(void* address, size_t size) {
+  // We rely on DiscardSystemPages decommitting the pages immediately (via
+  // ZX_VMO_OP_DECOMMIT) so that they are guaranteed to be zero-initialized
+  // should they be accessed again later on.
+  return SetPermissions(address, size, MemoryPermission::kNoAccess) &&
+         DiscardSystemPages(address, size);
+}
+
 // static
 bool OS::HasLazyCommits() {
   // TODO(scottmg): Port, https://crbug.com/731217.

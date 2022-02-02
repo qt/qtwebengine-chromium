@@ -25,6 +25,7 @@
   left: 0;
   right: 0;
   overflow-x: hidden;
+  background-color: var(--color-background);
 }
 
 .data-grid .header-container {
@@ -170,6 +171,11 @@
 .data-grid th.sort-ascending .sort-order-icon,
 .data-grid th.sort-descending .sort-order-icon {
   display: block;
+}
+
+.data-grid th.sort-ascending,
+.data-grid th.sort-descending {
+  padding-right: 14px;
 }
 
 .data-grid th.sortable:hover {

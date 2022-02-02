@@ -12,7 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import {AggregationAttrs, PivotAttrs} from './pivot_table_query_generator';
+import {validateRecordConfig} from '../controller/validate_config';
+import {
+  AggregationAttrs,
+  PivotAttrs,
+  SubQueryAttrs,
+  TableAttrs
+} from './pivot_table_common';
 
 /**
  * A plain js object, holding objects of type |Class| keyed by string id.
@@ -25,8 +31,9 @@ export type Timestamped<T> = {
   [P in keyof T]: T[P];
 }&{lastUpdate: number};
 
-export type OmniboxState =
-    Timestamped<{omnibox: string; mode: 'SEARCH' | 'COMMAND'}>;
+export type OmniboxMode = 'SEARCH'|'COMMAND';
+
+export type OmniboxState = Timestamped<{omnibox: string; mode: OmniboxMode}>;
 
 export type VisibleState =
     Timestamped<{startSec: number; endSec: number; resolution: number;}>;
@@ -54,9 +61,13 @@ export interface Area {
 export const MAX_TIME = 180;
 
 // 3: TrackKindPriority and related sorting changes.
-// 5: Move a large number of items off frontendLocalState and onto state
+// 5: Move a large number of items off frontendLocalState and onto state.
 // 6: Common PivotTableConfig and pivot table specific PivotTableState.
-export const STATE_VERSION = 6;
+// 7: Split Chrome categories in two and add 'symbolize ksyms' flag.
+// 8: Rename several variables
+// 9: Add a field to track last loaded recording profile name
+// "[...]HeapProfileFlamegraph[...]" -> "[...]Flamegraph[...]".
+export const STATE_VERSION = 9;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -71,8 +82,8 @@ export enum TrackKindPriority {
   'ORDINARY' = 3
 }
 
-export type HeapProfileFlamegraphViewingOption =
-    'SPACE'|'ALLOC_SPACE'|'OBJECTS'|'ALLOC_OBJECTS';
+export type FlamegraphStateViewingOption =
+    'SPACE'|'ALLOC_SPACE'|'OBJECTS'|'ALLOC_OBJECTS'|'PERF_SAMPLES';
 
 export interface CallsiteInfo {
   id: number;
@@ -94,10 +105,20 @@ export interface TraceFileSource {
 
 export interface TraceArrayBufferSource {
   type: 'ARRAY_BUFFER';
+  buffer: ArrayBuffer;
   title: string;
   url?: string;
   fileName?: string;
-  buffer: ArrayBuffer;
+
+  // |uuid| is set only when loading from the cache via ?trace_id=123. When set,
+  // this matches global.state.traceUuid, with the exception of the following
+  // time window: When a trace T1 is loaded and the user loads another trace T2,
+  // this |uuid| will be == T2, but the globals.state.traceUuid will be
+  // temporarily == T1 until T2 has been loaded (consistently to what happens
+  // with all other state fields).
+  uuid?: string;
+  // if |localOnly| is true then the trace should not be shared or downloaded.
+  localOnly?: boolean;
 }
 
 export interface TraceUrlSource {
@@ -207,13 +228,21 @@ export interface HeapProfileSelection {
   type: string;
 }
 
-export interface HeapProfileFlamegraph {
-  kind: 'HEAP_PROFILE_FLAMEGRAPH';
+export interface PerfSamplesSelection {
+  kind: 'PERF_SAMPLES';
   id: number;
   upid: number;
   ts: number;
   type: string;
-  viewingOption: HeapProfileFlamegraphViewingOption;
+}
+
+export interface FlamegraphState {
+  kind: 'FLAMEGRAPH_STATE';
+  id: number;
+  upid: number;
+  ts: number;
+  type: string;
+  viewingOption: FlamegraphStateViewingOption;
   focusRegex: string;
   expandedCallsite?: CallsiteInfo;
 }
@@ -239,7 +268,7 @@ export interface ThreadStateSelection {
 type Selection =
     (NoteSelection|SliceSelection|CounterSelection|HeapProfileSelection|
      CpuProfileSampleSelection|ChromeSliceSelection|ThreadStateSelection|
-     AreaSelection)&{trackId?: string};
+     AreaSelection|PerfSamplesSelection)&{trackId?: string};
 
 export interface LogsPagination {
   offset: number;
@@ -272,11 +301,7 @@ export interface MetricsState {
 }
 
 export interface PivotTableConfig {
-  availableColumns?: Array<{
-    tableName: string,
-    columns: string[]
-  }>;                                // Undefined until list is loaded.
-  totalColumnsCount?: number;        // Total columns in all tables.
+  availableColumns?: TableAttrs[];   // Undefined until list is loaded.
   availableAggregations?: string[];  // Undefined until list is loaded.
 }
 
@@ -285,18 +310,17 @@ export interface PivotTableState {
   name: string;
   selectedPivots: PivotAttrs[];
   selectedAggregations: AggregationAttrs[];
-  selectedColumnIndex?: number;
-  selectedAggregationIndex?: number;
-  isPivot: boolean;
-  requestedAction?:
-      string;  // Unset after pivot table column request is handled.
+  requestedAction?:  // Unset after pivot table column request is handled.
+      {action: string, attrs?: SubQueryAttrs};
+  isLoadingQuery: boolean;
+  traceTime?: TraceTime;
+  selectedTrackIds?: number[];
 }
 
 export interface State {
   // tslint:disable-next-line:no-any
   [key: string]: any;
   version: number;
-  route?: string;
   nextId: number;
   nextNoteId: number;
   nextAreaId: number;
@@ -306,6 +330,7 @@ export interface State {
    */
   recordConfig: RecordConfig;
   displayConfigAsPbtxt: boolean;
+  lastLoadedConfigTitle: string|null;
 
   /**
    * Open traces.
@@ -329,7 +354,7 @@ export interface State {
   notes: ObjectById<Note|AreaNote>;
   status: Status;
   currentSelection: Selection|null;
-  currentHeapProfileFlamegraph: HeapProfileFlamegraph|null;
+  currentFlamegraphState: FlamegraphState|null;
   logsPagination: LogsPagination;
   traceConversionInProgress: boolean;
   pivotTableConfig: PivotTableConfig;
@@ -410,24 +435,28 @@ export function isLinuxTarget(target: RecordingTarget) {
 
 export function isAdbTarget(target: RecordingTarget):
     target is AdbRecordingTarget {
-  if ((target as AdbRecordingTarget).serial) return true;
-  return false;
+  return !!(target as AdbRecordingTarget).serial;
 }
 
 export function hasActiveProbes(config: RecordConfig) {
   const fieldsWithEmptyResult = new Set<string>(['hpBlockClient']);
-  for (const key in config) {
+  let key: keyof RecordConfig;
+  for (key in config) {
     if (typeof (config[key]) === 'boolean' && config[key] === true &&
         !fieldsWithEmptyResult.has(key)) {
       return true;
     }
   }
+  if (config.chromeCategoriesSelected.length > 0) {
+    return true;
+  }
+  if (config.chromeHighOverheadCategoriesSelected.length > 0) {
+    return true;
+  }
   return false;
 }
 
 export interface RecordConfig {
-  [key: string]: null|number|boolean|string|string[];
-
   // Global settings
   mode: RecordMode;
   durationMs: number;
@@ -488,6 +517,7 @@ export interface RecordConfig {
   procStatsPeriodMs: number;
 
   chromeCategoriesSelected: string[];
+  chromeHighOverheadCategoriesSelected: string[];
 
   chromeLogs: boolean;
   taskScheduling: boolean;
@@ -497,82 +527,12 @@ export interface RecordConfig {
   uiRendering: boolean;
   inputEvents: boolean;
   navigationAndLoading: boolean;
+
+  symbolizeKsyms: boolean;
 }
 
 export function createEmptyRecordConfig(): RecordConfig {
-  return {
-    mode: 'STOP_WHEN_FULL',
-    durationMs: 10000.0,
-    maxFileSizeMb: 100,
-    fileWritePeriodMs: 2500,
-    bufferSizeMb: 64.0,
-
-    cpuSched: false,
-    cpuFreq: false,
-    cpuSyscall: false,
-
-
-    gpuFreq: false,
-    gpuMemTotal: false,
-
-    ftrace: false,
-    atrace: false,
-    ftraceEvents: [],
-    ftraceExtraEvents: '',
-    atraceCats: [],
-    atraceApps: '',
-    ftraceBufferSizeKb: 2 * 1024,
-    ftraceDrainPeriodMs: 250,
-    androidLogs: false,
-    androidLogBuffers: [],
-    androidFrameTimeline: false,
-
-    cpuCoarse: false,
-    cpuCoarsePollMs: 1000,
-
-    batteryDrain: false,
-    batteryDrainPollMs: 1000,
-
-    boardSensors: false,
-
-    memHiFreq: false,
-    meminfo: false,
-    meminfoPeriodMs: 1000,
-    meminfoCounters: [],
-
-    vmstat: false,
-    vmstatPeriodMs: 1000,
-    vmstatCounters: [],
-
-    heapProfiling: false,
-    hpSamplingIntervalBytes: 4096,
-    hpProcesses: '',
-    hpContinuousDumpsPhase: 0,
-    hpContinuousDumpsInterval: 0,
-    hpSharedMemoryBuffer: 8 * 1048576,
-    hpBlockClient: true,
-    hpAllHeaps: false,
-
-    javaHeapDump: false,
-    jpProcesses: '',
-    jpContinuousDumpsPhase: 0,
-    jpContinuousDumpsInterval: 0,
-
-    memLmk: false,
-    procStats: false,
-    procStatsPeriodMs: 1000,
-
-    chromeCategoriesSelected: [],
-
-    chromeLogs: false,
-    taskScheduling: false,
-    ipcFlows: false,
-    jsExecution: false,
-    webContentRendering: false,
-    uiRendering: false,
-    inputEvents: false,
-    navigationAndLoading: false,
-  };
+  return validateRecordConfig({});
 }
 
 export function getDefaultRecordingTargets(): RecordingTarget[] {
@@ -587,7 +547,7 @@ export function getDefaultRecordingTargets(): RecordingTarget[] {
 }
 
 export function getBuiltinChromeCategoryList(): string[] {
-  // List of static Chrome categories, last updated at Chromium 81.0.4021.0 from
+  // List of static Chrome categories, last updated at 2021-09-09 from HEAD of
   // Chromium's //base/trace_event/builtin_categories.h.
   return [
     'accessibility',
@@ -601,11 +561,12 @@ export function getBuiltinChromeCategoryList(): string[] {
     'blink.animations',
     'blink.bindings',
     'blink.console',
-    'blink_gc',
     'blink.net',
-    'blink_style',
+    'blink.resource',
     'blink.user_timing',
     'blink.worker',
+    'blink_gc',
+    'blink_style',
     'Blob',
     'browser',
     'browsing_data',
@@ -637,10 +598,10 @@ export function getBuiltinChromeCategoryList(): string[] {
     'drmcursor',
     'dwrite',
     'DXVA_Decoding',
-    'EarlyJava',
     'evdev',
     'event',
     'exo',
+    'extensions',
     'explore_sites',
     'FileSystem',
     'file_system_provider',
@@ -698,6 +659,7 @@ export function getBuiltinChromeCategoryList(): string[] {
     'RLZ',
     'safe_browsing',
     'screenlock_monitor',
+    'segmentation_platform',
     'sequence_manager',
     'service_manager',
     'ServiceWorker',
@@ -712,7 +674,7 @@ export function getBuiltinChromeCategoryList(): string[] {
     'stadia_rtc',
     'startup',
     'sync',
-    'sync_lock_contention',
+    'system_apps',
     'test_gpu',
     'thread_pool',
     'toplevel',
@@ -735,6 +697,7 @@ export function getBuiltinChromeCategoryList(): string[] {
     'disabled-by-default-animation-worklet',
     'disabled-by-default-audio',
     'disabled-by-default-audio-worklet',
+    'disabled-by-default-base',
     'disabled-by-default-blink.debug',
     'disabled-by-default-blink.debug.display_lock',
     'disabled-by-default-blink.debug.layout',
@@ -771,7 +734,6 @@ export function getBuiltinChromeCategoryList(): string[] {
     'disabled-by-default-gpu.service',
     'disabled-by-default-gpu.vulkan.vma',
     'disabled-by-default-histogram_samples',
-    'disabled-by-default-ipc.flow',
     'disabled-by-default-java-heap-profiler',
     'disabled-by-default-layer-element',
     'disabled-by-default-layout_shift.debug',
@@ -798,12 +760,10 @@ export function getBuiltinChromeCategoryList(): string[] {
     'disabled-by-default-SyncFileSystem',
     'disabled-by-default-system_stats',
     'disabled-by-default-thread_pool_diagnostics',
-    'disabled-by-default-toplevel.flow',
     'disabled-by-default-toplevel.ipc',
     'disabled-by-default-user_action_samples',
     'disabled-by-default-v8.compile',
     'disabled-by-default-v8.cpu_profiler',
-    'disabled-by-default-v8.cpu_profiler.hires',
     'disabled-by-default-v8.gc',
     'disabled-by-default-v8.gc_stats',
     'disabled-by-default-v8.ic_stats',
@@ -812,12 +772,11 @@ export function getBuiltinChromeCategoryList(): string[] {
     'disabled-by-default-v8.runtime_stats_sampling',
     'disabled-by-default-v8.stack_trace',
     'disabled-by-default-v8.turbofan',
-    'disabled-by-default-v8.wasm',
     'disabled-by-default-v8.wasm.detailed',
     'disabled-by-default-v8.wasm.turbofan',
     'disabled-by-default-video_and_image_capture',
-    'disabled-by-default-viz.debug.overlay_planes',
     'disabled-by-default-viz.gpu_composite_time',
+    'disabled-by-default-viz.debug.overlay_planes',
     'disabled-by-default-viz.hit_testing_flow',
     'disabled-by-default-viz.overdraw',
     'disabled-by-default-viz.quads',
@@ -856,6 +815,7 @@ export function createEmptyState(): State {
 
     recordConfig: createEmptyRecordConfig(),
     displayConfigAsPbtxt: false,
+    lastLoadedConfigTitle: null,
 
     frontendLocalState: {
       omniboxState: {
@@ -878,7 +838,7 @@ export function createEmptyState(): State {
 
     status: {msg: '', timestamp: 0},
     currentSelection: null,
-    currentHeapProfileFlamegraph: null,
+    currentFlamegraphState: null,
     traceConversionInProgress: false,
 
     perfDebug: false,

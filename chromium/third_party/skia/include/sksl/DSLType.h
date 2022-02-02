@@ -75,6 +75,7 @@ enum TypeConstant : uint8_t {
     kUShort3_Type,
     kUShort4_Type,
     kVoid_Type,
+    kPoison_Type,
 };
 
 class DSLType {
@@ -82,12 +83,13 @@ public:
     DSLType(TypeConstant tc)
         : fTypeConstant(tc) {}
 
-    DSLType(const SkSL::Type* type)
-        : fSkSLType(type) {}
+    DSLType(const SkSL::Type* type);
 
     DSLType(skstd::string_view name);
 
-    DSLType(skstd::string_view name, const DSLModifiers& modifiers);
+    DSLType(skstd::string_view name,
+            DSLModifiers* modifiers,
+            PositionInfo pos = PositionInfo::Capture());
 
     /**
      * Returns true if this type is a bool.
@@ -144,29 +146,34 @@ public:
      */
     bool isStruct() const;
 
+    /**
+     * Returns true if this is a Skia object type (shader, colorFilter, blender).
+     */
+    bool isEffectChild() const;
+
     template<typename... Args>
-    static DSLExpression Construct(DSLType type, DSLVarBase& var, Args&&... args) {
+    static DSLPossibleExpression Construct(DSLType type, DSLVarBase& var, Args&&... args) {
         DSLExpression argArray[] = {var, args...};
         return Construct(type, SkMakeSpan(argArray));
     }
 
     template<typename... Args>
-    static DSLExpression Construct(DSLType type, DSLExpression expr, Args&&... args) {
+    static DSLPossibleExpression Construct(DSLType type, DSLExpression expr, Args&&... args) {
         DSLExpression argArray[] = {std::move(expr), std::move(args)...};
         return Construct(type, SkMakeSpan(argArray));
     }
 
-    static DSLExpression Construct(DSLType type, SkSpan<DSLExpression> argArray);
+    static DSLPossibleExpression Construct(DSLType type, SkSpan<DSLExpression> argArray);
 
 private:
     const SkSL::Type& skslType() const;
 
     const SkSL::Type* fSkSLType = nullptr;
 
-    TypeConstant fTypeConstant;
+    TypeConstant fTypeConstant = kPoison_Type;
 
-    friend DSLType Array(const DSLType& base, int count);
-    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
+    friend DSLType Array(const DSLType& base, int count, PositionInfo pos);
+    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields, PositionInfo pos);
     friend class DSLCore;
     friend class DSLFunction;
     friend class DSLVarBase;
@@ -211,33 +218,38 @@ MATRIX_TYPE(Half)
 #undef VECTOR_TYPE
 #undef MATRIX_TYPE
 
-DSLType Array(const DSLType& base, int count);
+DSLType Array(const DSLType& base, int count, PositionInfo pos = PositionInfo::Capture());
 
 class DSLField {
 public:
-    DSLField(const DSLType type, skstd::string_view name)
-        : DSLField(DSLModifiers(), type, name) {}
+    DSLField(const DSLType type, skstd::string_view name,
+             PositionInfo pos = PositionInfo::Capture())
+        : DSLField(DSLModifiers(), type, name, pos) {}
 
-    DSLField(const DSLModifiers& modifiers, const DSLType type, skstd::string_view name)
+    DSLField(const DSLModifiers& modifiers, const DSLType type, skstd::string_view name,
+             PositionInfo pos = PositionInfo::Capture())
         : fModifiers(modifiers)
         , fType(type)
-        , fName(name) {}
+        , fName(name)
+        , fPosition(pos) {}
 
 private:
     DSLModifiers fModifiers;
     const DSLType fType;
     skstd::string_view fName;
+    PositionInfo fPosition;
 
     friend class DSLCore;
-    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
+    friend DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields, PositionInfo pos);
 };
 
-DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields);
+DSLType Struct(skstd::string_view name, SkSpan<DSLField> fields,
+               PositionInfo pos = PositionInfo::Capture());
 
 template<typename... Field>
 DSLType Struct(skstd::string_view name, Field... fields) {
     DSLField fieldTypes[] = {std::move(fields)...};
-    return Struct(name, SkMakeSpan(fieldTypes));
+    return Struct(name, SkMakeSpan(fieldTypes), PositionInfo());
 }
 
 } // namespace dsl

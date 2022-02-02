@@ -293,7 +293,8 @@ export class ObjectEventListenerBar extends UI.TreeOutline.TreeElement {
     if (typeof eventListener.handler() !== 'undefined') {
       properties.push(new SDK.RemoteObject.RemoteObjectProperty('handler', eventListener.handler()));
     }
-    ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement.populateWithProperties(this, properties, [], true, null);
+    ObjectUI.ObjectPropertiesSection.ObjectPropertyTreeElement.populateWithProperties(
+        this, properties, [], true, true, null);
   }
 
   private setTitle(object: SDK.RemoteObject.RemoteObject, linkifier: Components.Linkifier.Linkifier): void {
@@ -383,6 +384,15 @@ export class ObjectEventListenerBar extends UI.TreeOutline.TreeElement {
   onenter(): boolean {
     if (this.valueTitle) {
       (this.valueTitle as HTMLElement).click();
+      return true;
+    }
+
+    return false;
+  }
+
+  ondelete(): boolean {
+    if (this.eventListenerInternal.canRemove()) {
+      this.removeListener();
       return true;
     }
 

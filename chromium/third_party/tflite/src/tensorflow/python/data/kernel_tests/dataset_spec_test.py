@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for `tf.data.DatasetSpec`."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 import numpy as np
 
@@ -48,6 +44,12 @@ class DatasetSpecTest(test_base.DatasetTestBase, parameterized.TestCase):
       pass
 
     fn(dataset)
+
+  @combinations.generate(test_base.default_test_combinations())
+  def testDatasetSpecInnerSpec(self):
+    inner_spec = tensor_spec.TensorSpec(shape=(), dtype=dtypes.int32)
+    ds_spec = dataset_ops.DatasetSpec(inner_spec)
+    self.assertEqual(ds_spec.element_spec, inner_spec)
 
 
 if __name__ == "__main__":

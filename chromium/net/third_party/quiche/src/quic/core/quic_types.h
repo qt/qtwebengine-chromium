@@ -56,6 +56,10 @@ using StatelessResetToken = std::array<char, kStatelessResetTokenLength>;
 
 // WebTransport session IDs are stream IDs.
 using WebTransportSessionId = uint64_t;
+// WebTransport stream reset codes are 8-bit.
+using WebTransportStreamError = uint8_t;
+// WebTransport session error codes are 32-bit.
+using WebTransportSessionError = uint32_t;
 
 enum : size_t { kQuicPathFrameBufferSize = 8 };
 using QuicPathFrameBuffer = std::array<uint8_t, kQuicPathFrameBufferSize>;
@@ -79,8 +83,7 @@ struct QUIC_EXPORT_PRIVATE QuicConsumedData {
   // default gtest object printer to read uninitialize memory. So we need
   // to teach gtest how to print this object.
   QUIC_EXPORT_PRIVATE friend std::ostream& operator<<(
-      std::ostream& os,
-      const QuicConsumedData& s);
+      std::ostream& os, const QuicConsumedData& s);
 
   // How many bytes were consumed.
   size_t bytes_consumed;
@@ -198,8 +201,7 @@ QUIC_EXPORT_PRIVATE std::string TransmissionTypeToString(
     TransmissionType transmission_type);
 
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-    std::ostream& os,
-    TransmissionType transmission_type);
+    std::ostream& os, TransmissionType transmission_type);
 
 enum HasRetransmittableData : uint8_t {
   NO_RETRANSMITTABLE_DATA,
@@ -220,8 +222,7 @@ enum class ConnectionCloseSource { FROM_PEER, FROM_SELF };
 QUIC_EXPORT_PRIVATE std::string ConnectionCloseSourceToString(
     ConnectionCloseSource connection_close_source);
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-    std::ostream& os,
-    const ConnectionCloseSource& connection_close_source);
+    std::ostream& os, const ConnectionCloseSource& connection_close_source);
 
 // Should a connection be closed silently or not.
 enum class ConnectionCloseBehavior {
@@ -233,8 +234,7 @@ enum class ConnectionCloseBehavior {
 QUIC_EXPORT_PRIVATE std::string ConnectionCloseBehaviorToString(
     ConnectionCloseBehavior connection_close_behavior);
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-    std::ostream& os,
-    const ConnectionCloseBehavior& connection_close_behavior);
+    std::ostream& os, const ConnectionCloseBehavior& connection_close_behavior);
 
 enum QuicFrameType : uint8_t {
   // Regular frame types. The values set here cannot change without the
@@ -338,7 +338,12 @@ enum QuicIetfFrameType : uint64_t {
   IETF_EXTENSION_MESSAGE_V99 = 0x31,
 
   // An QUIC extension frame for sender control of acknowledgement delays
-  IETF_ACK_FREQUENCY = 0xaf
+  IETF_ACK_FREQUENCY = 0xaf,
+
+  // A QUIC extension frame which augments the IETF_ACK frame definition with
+  // packet receive timestamps.
+  // TODO(ianswett): Determine a proper value to replace this temporary value.
+  IETF_ACK_RECEIVE_TIMESTAMPS = 0x22,
 };
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(std::ostream& os,
                                              const QuicIetfFrameType& c);
@@ -574,8 +579,7 @@ struct QUIC_EXPORT_PRIVATE AckedPacket {
         receive_timestamp(receive_timestamp) {}
 
   friend QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-      std::ostream& os,
-      const AckedPacket& acked_packet);
+      std::ostream& os, const AckedPacket& acked_packet);
 
   QuicPacketNumber packet_number;
   // Number of bytes sent in the packet that was acknowledged.
@@ -595,8 +599,7 @@ struct QUIC_EXPORT_PRIVATE LostPacket {
       : packet_number(packet_number), bytes_lost(bytes_lost) {}
 
   friend QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-      std::ostream& os,
-      const LostPacket& lost_packet);
+      std::ostream& os, const LostPacket& lost_packet);
 
   QuicPacketNumber packet_number;
   // Number of bytes sent in the packet that was lost.
@@ -681,7 +684,7 @@ enum WriteStreamDataResult {
   WRITE_FAILED,    // Trying to write nonexistent data of a stream
 };
 
-enum StreamType {
+enum StreamType : uint8_t {
   // Bidirectional streams allow for data to be sent in both directions.
   BIDIRECTIONAL,
 
@@ -744,8 +747,7 @@ enum QuicConnectionCloseType {
 };
 
 QUIC_EXPORT_PRIVATE std::ostream& operator<<(
-    std::ostream& os,
-    const QuicConnectionCloseType type);
+    std::ostream& os, const QuicConnectionCloseType type);
 
 QUIC_EXPORT_PRIVATE std::string QuicConnectionCloseTypeString(
     QuicConnectionCloseType type);
@@ -838,6 +840,9 @@ QUIC_EXPORT_PRIVATE std::string KeyUpdateReasonString(KeyUpdateReason reason);
 struct QUIC_NO_EXPORT QuicSSLConfig {
   // Whether TLS early data should be enabled. If not set, default to enabled.
   absl::optional<bool> early_data_enabled;
+  // Whether TLS session tickets are supported. If not set, default to
+  // supported.
+  absl::optional<bool> disable_ticket_support;
   // If set, used to configure the SSL object with
   // SSL_set_signing_algorithm_prefs.
   absl::optional<absl::InlinedVector<uint16_t, 8>> signing_algorithm_prefs;

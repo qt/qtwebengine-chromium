@@ -519,10 +519,12 @@ message LowDiskSpace {
 // These flags will define any requests from the caller for how to run an
 // AuthSession.
 enum AuthSessionFlags {
-  // Default Value
+  // Default Value.
   AUTH_SESSION_FLAGS_NONE = 0;
-  // Is the user a kiosk user?
+  // This flag is set when auth session is used for a kiosk user.
   AUTH_SESSION_FLAGS_KIOSK_USER = 1;
+  // This flag is set when auth session is used for an ephemeral user.
+  AUTH_SESSION_FLAGS_EPHEMERAL_USER = 2;
 }
 
 message StartAuthSessionRequest {
@@ -657,8 +659,23 @@ message SetProjectIdRequest {
 
 // Output parameters for SetProjectId().
 message SetProjectIdReply {
-  // Set to true if ioctl syscall for setting the proect ID succeeds.
+  // Set to true if ioctl syscall for setting the project ID succeeds.
   bool success = 1;
+}
+
+// Input parameters to SetMediaRWDataFileProjectId().
+message SetMediaRWDataFileProjectIdRequest {
+  // The project ID.
+  uint32 project_id = 1;
+}
+
+// Output parameters for SetMediaRWDataFileProjectId().
+message SetMediaRWDataFileProjectIdReply {
+  // Set to true if ioctl syscall for setting the project ID succeeds.
+  bool success = 1;
+
+  // Errno if success == false.
+  int32 error = 2;
 }
 
 // ------------------------- PKCS#11 Interface -------------------------

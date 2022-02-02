@@ -356,13 +356,14 @@ void LocalFrameClientImpl::DispatchWillSendRequest(ResourceRequest& request) {
   }
 }
 
-void LocalFrameClientImpl::DispatchDidFinishDocumentLoad() {
+void LocalFrameClientImpl::DispatchDidDispatchDOMContentLoadedEvent() {
   // TODO(dglazkov): Sadly, workers are WebLocalFrameClients, and they can
-  // totally destroy themselves when didFinishDocumentLoad is invoked, and in
-  // turn destroy the fake WebLocalFrame that they create, which means that you
-  // should not put any code touching `this` after the two lines below.
+  // totally destroy themselves when DidDispatchDOMContentLoadedEvent is
+  // invoked, and in turn destroy the fake WebLocalFrame that they create, which
+  // means that you should not put any code touching `this` after the two lines
+  // below.
   if (web_frame_->Client())
-    web_frame_->Client()->DidFinishDocumentLoad();
+    web_frame_->Client()->DidDispatchDOMContentLoadedEvent();
 }
 
 void LocalFrameClientImpl::DispatchDidLoadResourceFromMemoryCache(
@@ -573,9 +574,6 @@ void LocalFrameClientImpl::BeginNavigation(
     navigation_info->initiator_frame_is_ad = frame->IsAdSubframe();
   }
 
-  navigation_info->blocking_downloads_in_sandbox_enabled =
-      RuntimeEnabledFeatures::BlockingDownloadsInSandboxEnabled();
-
   // The frame has navigated either by itself or by the action of the
   // |origin_window| when it is defined. |source_location| represents the
   // line of code that has initiated the navigation. It is used to let web
@@ -691,6 +689,14 @@ void LocalFrameClientImpl::DidObserveInputDelay(base::TimeDelta input_delay) {
   }
 }
 
+void LocalFrameClientImpl::DidObserveUserInteraction(
+    base::TimeDelta max_event_duration,
+    base::TimeDelta total_event_duration,
+    UserInteractionType interaction_type) {
+  web_frame_->Client()->DidObserveUserInteraction(
+      max_event_duration, total_event_duration, interaction_type);
+}
+
 void LocalFrameClientImpl::DidChangeCpuTiming(base::TimeDelta time) {
   if (web_frame_->Client())
     web_frame_->Client()->DidChangeCpuTiming(time);
@@ -789,6 +795,17 @@ String LocalFrameClientImpl::UserAgent() {
   return user_agent_;
 }
 
+String LocalFrameClientImpl::ReducedUserAgent() {
+  WebString override =
+      web_frame_->Client() ? web_frame_->Client()->UserAgentOverride() : "";
+  if (!override.IsEmpty())
+    return override;
+
+  if (reduced_user_agent_.IsEmpty())
+    reduced_user_agent_ = Platform::Current()->ReducedUserAgent();
+  return reduced_user_agent_;
+}
+
 absl::optional<UserAgentMetadata> LocalFrameClientImpl::UserAgentMetadata() {
   bool ua_override_on = web_frame_->Client() &&
                         !web_frame_->Client()->UserAgentOverride().IsEmpty();
@@ -835,8 +852,10 @@ RemoteFrame* LocalFrameClientImpl::AdoptPortal(HTMLPortalElement* portal) {
 }
 
 RemoteFrame* LocalFrameClientImpl::CreateFencedFrame(
-    HTMLFencedFrameElement* fenced_frame) {
-  return web_frame_->CreateFencedFrame(fenced_frame);
+    HTMLFencedFrameElement* fenced_frame,
+    mojo::PendingAssociatedReceiver<mojom::blink::FencedFrameOwnerHost>
+        receiver) {
+  return web_frame_->CreateFencedFrame(fenced_frame, std::move(receiver));
 }
 
 WebPluginContainerImpl* LocalFrameClientImpl::CreatePlugin(
@@ -1059,14 +1078,6 @@ std::unique_ptr<WebContentSettingsClient>
 LocalFrameClientImpl::CreateWorkerContentSettingsClient() {
   DCHECK(web_frame_->Client());
   return web_frame_->Client()->CreateWorkerContentSettingsClient();
-}
-
-std::unique_ptr<media::SpeechRecognitionClient>
-LocalFrameClientImpl::CreateSpeechRecognitionClient(
-    media::SpeechRecognitionClient::OnReadyCallback callback) {
-  DCHECK(web_frame_->Client());
-  return web_frame_->Client()->CreateSpeechRecognitionClient(
-      std::move(callback));
 }
 
 void LocalFrameClientImpl::SetMouseCapture(bool capture) {

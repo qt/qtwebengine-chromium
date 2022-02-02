@@ -20,7 +20,7 @@ luci.bucket(
         ),
         acl.entry(
             roles = acl.BUILDBUCKET_OWNER,
-            groups = "google/luci-task-force@google.com",
+            groups = "project-chromium-admins",
         ),
     ],
 )
@@ -67,6 +67,20 @@ def fyi_reclient_staging_builder(
         **kwargs
     )
 
+def fyi_reclient_test_builder(
+        *,
+        name,
+        **kwargs):
+    return fyi_reclient_staging_builder(
+        name = name,
+        reclient_instance = "goma-foundry-experiments",
+        **kwargs
+    )
+
 fyi_reclient_staging_builder(
-    name = "Linux Builder Re-Client Staging",
+    name = "Linux Builder reclient staging",
+)
+
+fyi_reclient_test_builder(
+    name = "Linux Builder reclient test",
 )

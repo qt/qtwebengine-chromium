@@ -6,10 +6,6 @@
 
 #include "fpdfsdk/cpdfsdk_widget.h"
 
-#include <memory>
-#include <sstream>
-#include <utility>
-
 #include "constants/annotation_common.h"
 #include "constants/appearance.h"
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -30,10 +26,10 @@
 #include "core/fxge/cfx_renderdevice.h"
 #include "fpdfsdk/cpdfsdk_actionhandler.h"
 #include "fpdfsdk/cpdfsdk_appstream.h"
-#include "fpdfsdk/cpdfsdk_fieldaction.h"
 #include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
+#include "fpdfsdk/formfiller/cffl_fieldaction.h"
 #include "fpdfsdk/pwl/cpwl_edit.h"
 #include "third_party/base/check.h"
 #include "third_party/base/notreached.h"
@@ -206,7 +202,7 @@ bool CPDFSDK_Widget::HasXFAAAction(PDFSDK_XFAAActionType eXFAAAT) const {
 }
 
 bool CPDFSDK_Widget::OnXFAAAction(PDFSDK_XFAAActionType eXFAAAT,
-                                  CPDFSDK_FieldAction* data,
+                                  CFFL_FieldAction* data,
                                   const CPDFSDK_PageView* pPageView) {
   auto* pContext = static_cast<CPDFXFA_Context*>(
       m_pPageView->GetFormFillEnv()->GetDocExtension());
@@ -300,7 +296,7 @@ void CPDFSDK_Widget::Synchronize(bool bSynchronizeElse) {
 
 bool CPDFSDK_Widget::HandleXFAAAction(
     CPDF_AAction::AActionType type,
-    CPDFSDK_FieldAction* data,
+    CFFL_FieldAction* data,
     CPDFSDK_FormFillEnvironment* pFormFillEnv) {
   auto* pContext =
       static_cast<CPDFXFA_Context*>(pFormFillEnv->GetDocExtension());
@@ -347,9 +343,9 @@ bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
 
   // Choose the right sub-ap
   const char* ap_entry = "N";
-  if (mode == CPDF_Annot::Down)
+  if (mode == CPDF_Annot::AppearanceMode::kDown)
     ap_entry = "D";
-  else if (mode == CPDF_Annot::Rollover)
+  else if (mode == CPDF_Annot::AppearanceMode::kRollover)
     ap_entry = "R";
   if (!pAP->KeyExist(ap_entry))
     ap_entry = "N";
@@ -381,6 +377,12 @@ bool CPDFSDK_Widget::IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode mode) {
 FormFieldType CPDFSDK_Widget::GetFieldType() const {
   CPDF_FormField* pField = GetFormField();
   return pField ? pField->GetFieldType() : FormFieldType::kUnknown;
+}
+
+void CPDFSDK_Widget::SetRect(const CFX_FloatRect& rect) {
+  DCHECK(rect.right - rect.left >= 1.0f);
+  DCHECK(rect.top - rect.bottom >= 1.0f);
+  GetAnnotDict()->SetRectFor(pdfium::annotation::kRect, rect);
 }
 
 bool CPDFSDK_Widget::IsAppearanceValid() {
@@ -557,7 +559,7 @@ void CPDFSDK_Widget::SetCheck(bool bChecked) {
   pFormField->CheckControl(pFormField->GetControlIndex(pFormCtrl), bChecked,
                            NotificationOption::kDoNotNotify);
 #ifdef PDF_ENABLE_XFA
-  if (!IsWidgetAppearanceValid(CPDF_Annot::Normal))
+  if (!IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode::kNormal))
     ResetXFAAppearance(CPDFSDK_Widget::kValueChanged);
   Synchronize(true);
 #endif  // PDF_ENABLE_XFA
@@ -671,8 +673,8 @@ void CPDFSDK_Widget::DrawAppearance(CFX_RenderDevice* pDevice,
 
   if ((fieldType == FormFieldType::kCheckBox ||
        fieldType == FormFieldType::kRadioButton) &&
-      mode == CPDF_Annot::Normal &&
-      !IsWidgetAppearanceValid(CPDF_Annot::Normal)) {
+      mode == CPDF_Annot::AppearanceMode::kNormal &&
+      !IsWidgetAppearanceValid(CPDF_Annot::AppearanceMode::kNormal)) {
     CFX_GraphStateData gsd;
     gsd.m_LineWidth = 0.0f;
 
@@ -794,7 +796,7 @@ CFX_Color CPDFSDK_Widget::GetFillPWLColor() const {
 }
 
 bool CPDFSDK_Widget::OnAAction(CPDF_AAction::AActionType type,
-                               CPDFSDK_FieldAction* data,
+                               CFFL_FieldAction* data,
                                const CPDFSDK_PageView* pPageView) {
   CPDFSDK_FormFillEnvironment* pFormFillEnv = pPageView->GetFormFillEnv();
 

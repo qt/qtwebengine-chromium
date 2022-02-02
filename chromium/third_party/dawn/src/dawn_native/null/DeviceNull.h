@@ -48,7 +48,7 @@ namespace dawn_native { namespace null {
     using PipelineLayout = PipelineLayoutBase;
     class QuerySet;
     class Queue;
-    using RenderPipeline = RenderPipelineBase;
+    class RenderPipeline;
     using Sampler = SamplerBase;
     class ShaderModule;
     class SwapChain;
@@ -125,7 +125,8 @@ namespace dawn_native { namespace null {
         ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
             const BindGroupDescriptor* descriptor) override;
         ResultOrError<Ref<BindGroupLayoutBase>> CreateBindGroupLayoutImpl(
-            const BindGroupLayoutDescriptor* descriptor) override;
+            const BindGroupLayoutDescriptor* descriptor,
+            PipelineCompatibilityToken pipelineCompatibilityToken) override;
         ResultOrError<Ref<BufferBase>> CreateBufferImpl(
             const BufferDescriptor* descriptor) override;
         ResultOrError<Ref<ComputePipelineBase>> CreateComputePipelineImpl(
@@ -134,7 +135,7 @@ namespace dawn_native { namespace null {
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
             const QuerySetDescriptor* descriptor) override;
-        ResultOrError<Ref<RenderPipelineBase>> CreateRenderPipelineImpl(
+        Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
             const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(
             const SamplerDescriptor* descriptor) override;
@@ -172,8 +173,8 @@ namespace dawn_native { namespace null {
         // AdapterBase Implementation
         bool SupportsExternalImages() const override;
 
-        // Used for the tests that intend to use an adapter without all extensions enabled.
-        void SetSupportedExtensions(const std::vector<const char*>& requiredExtensions);
+        // Used for the tests that intend to use an adapter without all features enabled.
+        void SetSupportedFeatures(const std::vector<const char*>& requiredFeatures);
 
       private:
         ResultOrError<DeviceBase*> CreateDeviceImpl(const DeviceDescriptor* descriptor) override;
@@ -248,6 +249,13 @@ namespace dawn_native { namespace null {
                                    uint64_t bufferOffset,
                                    const void* data,
                                    size_t size) override;
+    };
+
+    class RenderPipeline final : public RenderPipelineBase {
+      public:
+        using RenderPipelineBase::RenderPipelineBase;
+
+        MaybeError Initialize() override;
     };
 
     class ShaderModule final : public ShaderModuleBase {

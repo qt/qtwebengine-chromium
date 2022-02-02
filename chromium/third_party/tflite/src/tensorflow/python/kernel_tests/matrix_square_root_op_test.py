@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.math_ops.matrix_square_root."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -29,6 +25,7 @@ from tensorflow.python.ops import stateless_random_ops
 from tensorflow.python.platform import test
 
 
+@test_util.run_all_without_tensor_float_32
 class SquareRootOpTest(test.TestCase):
 
   def _verifySquareRoot(self, matrix, np_type):
@@ -36,7 +33,7 @@ class SquareRootOpTest(test.TestCase):
 
     # Verify that matmul(sqrtm(A), sqrtm(A)) = A
     sqrt = gen_linalg_ops.matrix_square_root(matrix)
-    square = math_ops.matmul(sqrt, sqrt)
+    square = test_util.matmul_without_tf32(sqrt, sqrt)
     self.assertShapeEqual(matrix, square)
     self.assertAllClose(matrix, square, rtol=1e-4, atol=1e-3)
 

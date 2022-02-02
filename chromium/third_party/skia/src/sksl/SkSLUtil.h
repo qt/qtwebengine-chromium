@@ -75,11 +75,6 @@ public:
         return fMustForceNegatedLdexpParamToMultiply;
     }
 
-    bool fGeometryShaderSupport = true;
-    bool geometryShaderSupport() const {
-        return fGeometryShaderSupport;
-    }
-
     bool fShaderDerivativeSupport = true;
     bool shaderDerivativeSupport() const {
         return fShaderDerivativeSupport;
@@ -94,7 +89,7 @@ public:
         return fGLSLGeneration > k110_GrGLSLGeneration;
     }
 
-    bool fFBFetchSupport = true;
+    bool fFBFetchSupport = false;
     bool fbFetchSupport() const {
         return fFBFetchSupport;
     }
@@ -174,6 +169,11 @@ public:
         return fNonsquareMatrixSupport;
     }
 
+    bool fInverseHyperbolicSupport = false;
+    bool inverseHyperbolicSupport() const {
+        return fInverseHyperbolicSupport;
+    }
+
     bool fBuiltinFMASupport = false;
     bool builtinFMASupport() const {
         return fBuiltinFMASupport;
@@ -207,16 +207,6 @@ public:
         return fFragCoordConventionsExtensionString;
     }
 
-    const char* fGeometryShaderExtensionString = nullptr;
-    const char* geometryShaderExtensionString() const {
-        return fGeometryShaderExtensionString;
-    }
-
-    const char* fGSInvocationsExtensionString = nullptr;
-    const char* gsInvocationsExtensionString() const {
-        return fGSInvocationsExtensionString;
-    }
-
     const char* fExternalTextureExtensionString = nullptr;
     const char* externalTextureExtensionString() const {
         return fExternalTextureExtensionString;
@@ -230,11 +220,6 @@ public:
     const char* fVersionDeclString = "";
     const char* versionDeclString() const {
         return fVersionDeclString;
-    }
-
-    bool fGSInvocationsSupport = true;
-    bool gsInvocationsSupport() const {
-        return fGSInvocationsSupport;
     }
 
     bool fCanUseFractForNegativeValues = true;
@@ -270,6 +255,11 @@ public:
     bool fRewriteDoWhileLoops = false;
     bool rewriteDoWhileLoops() const {
         return fRewriteDoWhileLoops;
+    }
+
+    bool fRewriteSwitchStatements = false;
+    bool rewriteSwitchStatements() const {
+        return fRewriteSwitchStatements;
     }
 
     bool fRemovePowWithConstantExponent = false;
@@ -361,29 +351,10 @@ public:
         return result;
     }
 
-    static ShaderCapsPointer GeometryShaderExtensionString() {
+    static ShaderCapsPointer FramebufferFetchSupport() {
         ShaderCapsPointer result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 310es";
-        result->fGeometryShaderSupport = true;
-        result->fGeometryShaderExtensionString = "GL_EXT_geometry_shader";
-        result->fGSInvocationsSupport = true;
-        return result;
-    }
-
-    static ShaderCapsPointer GeometryShaderSupport() {
-        ShaderCapsPointer result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fGeometryShaderSupport = true;
-        result->fGSInvocationsSupport = true;
-        return result;
-    }
-
-    static ShaderCapsPointer GSInvocationsExtensionString() {
-        ShaderCapsPointer result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fGeometryShaderSupport = true;
-        result->fGSInvocationsSupport = true;
-        result->fGSInvocationsExtensionString = "GL_ARB_gpu_shader5";
+        result->fFBFetchSupport = true;
+        result->fFBFetchColorName = "gl_LastFragData[0]";
         return result;
     }
 
@@ -415,14 +386,6 @@ public:
         return result;
     }
 
-    static ShaderCapsPointer NoGSInvocationsSupport() {
-        ShaderCapsPointer result = MakeShaderCaps();
-        result->fVersionDeclString = "#version 400";
-        result->fGeometryShaderSupport = true;
-        result->fGSInvocationsSupport = false;
-        return result;
-    }
-
     static ShaderCapsPointer RemovePowWithConstantExponent() {
         ShaderCapsPointer result = MakeShaderCaps();
         result->fVersionDeclString = "#version 400";
@@ -448,6 +411,13 @@ public:
         ShaderCapsPointer result = MakeShaderCaps();
         result->fVersionDeclString = "#version 400";
         result->fRewriteMatrixVectorMultiply = true;
+        return result;
+    }
+
+    static ShaderCapsPointer RewriteSwitchStatements() {
+        ShaderCapsPointer result = MakeShaderCaps();
+        result->fVersionDeclString = "#version 400";
+        result->fRewriteSwitchStatements = true;
         return result;
     }
 

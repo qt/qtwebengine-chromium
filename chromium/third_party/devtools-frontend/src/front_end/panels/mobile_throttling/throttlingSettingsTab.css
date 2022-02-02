@@ -48,6 +48,15 @@
   position: relative;
 }
 
+.conditions-list-text:last-child {
+  flex-basis: 140px;
+  text-align: left;
+}
+
+.conditions-edit-row .conditions-list-text:last-child {
+  text-align: right;
+}
+
 .conditions-list-title {
   text-align: start;
   display: flex;
@@ -91,4 +100,8 @@
   bottom: -20px;
   right: 0;
   color: var(--color-text-disabled);
+}
+
+.editor-buttons {
+  margin-top: 10px;
 }

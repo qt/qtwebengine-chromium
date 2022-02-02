@@ -213,11 +213,9 @@ uint32_t GetFormatFlags(const angle::Format &format,
     return floatFlag;
 }
 
-uint32_t GetImageCopyFlags(const vk::Format &srcFormat, const vk::Format &dstFormat)
+uint32_t GetImageCopyFlags(const angle::Format &srcIntendedFormat,
+                           const angle::Format &dstIntendedFormat)
 {
-    const angle::Format &srcIntendedFormat = srcFormat.intendedFormat();
-    const angle::Format &dstIntendedFormat = dstFormat.intendedFormat();
-
     uint32_t flags = 0;
 
     flags |= GetFormatFlags(srcIntendedFormat, ImageCopy_frag::kSrcIsSint,
@@ -231,12 +229,10 @@ uint32_t GetImageCopyFlags(const vk::Format &srcFormat, const vk::Format &dstFor
 uint32_t GetBlitResolveFlags(bool blitColor,
                              bool blitDepth,
                              bool blitStencil,
-                             const vk::Format &format)
+                             const angle::Format &intendedFormat)
 {
     if (blitColor)
     {
-        const angle::Format &intendedFormat = format.intendedFormat();
-
         return GetFormatFlags(intendedFormat, BlitResolve_frag::kBlitColorInt,
                               BlitResolve_frag::kBlitColorUint, BlitResolve_frag::kBlitColorFloat);
     }
@@ -274,10 +270,8 @@ uint32_t GetConvertIndexIndirectLineLoopFlag(uint32_t indicesBitsWidth)
     }
 }
 
-uint32_t GetGenerateMipmapFlags(ContextVk *contextVk, const vk::Format &format)
+uint32_t GetGenerateMipmapFlags(ContextVk *contextVk, const angle::Format &actualFormat)
 {
-    const angle::Format &actualFormat = format.actualImageFormat();
-
     uint32_t flags = 0;
 
     // Note: If bits-per-component is 8 or 16 and float16 is supported in the shader, use that for
@@ -325,7 +319,7 @@ uint32_t GetUnresolveFlags(uint32_t colorAttachmentCount,
 
     for (uint32_t attachmentIndex = 0; attachmentIndex < colorAttachmentCount; ++attachmentIndex)
     {
-        const angle::Format &format = colorSrc[attachmentIndex]->getFormat().intendedFormat();
+        const angle::Format &format = colorSrc[attachmentIndex]->getIntendedFormat();
 
         UnresolveColorAttachmentType type = kUnresolveTypeFloat;
         if (format.isSint())
@@ -360,19 +354,18 @@ uint32_t GetUnresolveFlags(uint32_t colorAttachmentCount,
     return flags;
 }
 
-uint32_t GetFormatDefaultChannelMask(const vk::Format &format)
+uint32_t GetFormatDefaultChannelMask(const angle::Format &intendedImageFormat,
+                                     const angle::Format &actualImageFormat)
 {
     uint32_t mask = 0;
 
-    const angle::Format &intendedFormat = format.intendedFormat();
-    const angle::Format &imageFormat    = format.actualImageFormat();
-
     // Red can never be introduced due to format emulation (except for luma which is handled
     // especially)
-    ASSERT(((intendedFormat.redBits > 0) == (imageFormat.redBits > 0)) || intendedFormat.isLUMA());
-    mask |= intendedFormat.greenBits == 0 && imageFormat.greenBits > 0 ? 2 : 0;
-    mask |= intendedFormat.blueBits == 0 && imageFormat.blueBits > 0 ? 4 : 0;
-    mask |= intendedFormat.alphaBits == 0 && imageFormat.alphaBits > 0 ? 8 : 0;
+    ASSERT(((intendedImageFormat.redBits > 0) == (actualImageFormat.redBits > 0)) ||
+           intendedImageFormat.isLUMA());
+    mask |= intendedImageFormat.greenBits == 0 && actualImageFormat.greenBits > 0 ? 2 : 0;
+    mask |= intendedImageFormat.blueBits == 0 && actualImageFormat.blueBits > 0 ? 4 : 0;
+    mask |= intendedImageFormat.alphaBits == 0 && actualImageFormat.alphaBits > 0 ? 8 : 0;
 
     return mask;
 }
@@ -1067,7 +1060,7 @@ void UtilsVk::destroy(RendererVk *renderer)
         program.destroy(renderer);
     }
     mImageClearProgramVSOnly.destroy(renderer);
-    for (vk::ShaderProgramHelper &program : mImageClearProgram)
+    for (vk::ShaderProgramHelper &program : mImageClearPrograms)
     {
         program.destroy(renderer);
     }
@@ -2088,23 +2081,25 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = nullptr;
     vk::ShaderProgramHelper *imageClearProgram          = &mImageClearProgramVSOnly;
 
-    ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(shaderLibrary.getFullScreenTri_vert(contextVk, 0, &vertexShader));
     if (params.clearColor)
     {
-        uint32_t flags = GetImageClearFlags(*params.colorFormat, params.colorAttachmentIndexGL,
-                                            params.clearDepth && !supportsDepthClamp);
+        const uint32_t flags =
+            GetImageClearFlags(*params.colorFormat, params.colorAttachmentIndexGL,
+                               params.clearDepth && !supportsDepthClamp);
         ANGLE_TRY(shaderLibrary.getImageClear_frag(contextVk, flags, &fragmentShader));
-        imageClearProgram = &mImageClearProgram[flags];
+        imageClearProgram = &mImageClearPrograms[flags];
     }
+
+    // Make sure transform feedback is paused.  Needs to be done before binding the pipeline as
+    // that's not allowed in Vulkan.
+    const bool isTransformFeedbackActiveUnpaused =
+        contextVk->getStartedRenderPassCommands().isTransformFeedbackActiveUnpaused();
+    contextVk->pauseTransformFeedbackIfActiveUnpaused();
 
     ANGLE_TRY(setupProgram(contextVk, Function::ImageClear, fragmentShader, vertexShader,
                            imageClearProgram, &pipelineDesc, VK_NULL_HANDLE, &shaderParams,
                            sizeof(shaderParams), commandBuffer));
-
-    // Make sure transform feedback is paused
-    bool isTransformFeedbackActiveUnpaused =
-        contextVk->getStartedRenderPassCommands().isTransformFeedbackActiveUnpaused();
-    contextVk->pauseTransformFeedbackIfActiveUnpaused();
 
     // Make sure this draw call doesn't count towards occlusion query results.
     contextVk->pauseRenderPassQueriesIfActive();
@@ -2123,12 +2118,116 @@ angle::Result UtilsVk::clearFramebuffer(ContextVk *contextVk,
     return angle::Result::Continue;
 }
 
+angle::Result UtilsVk::clearImage(ContextVk *contextVk,
+                                  vk::ImageHelper *dest,
+                                  const ClearImageParameters &params)
+{
+    ANGLE_TRY(ensureImageClearResourcesInitialized(contextVk));
+
+    const angle::Format &dstActualFormat = dest->getActualFormat();
+
+    // Currently, this function is only used to clear emulated channels of color images.
+    ASSERT(!dstActualFormat.hasDepthOrStencilBits());
+
+    // TODO: currently this function is only implemented for images that are drawable.  If needed,
+    // for images that are not drawable, the following algorithm can be used.
+    //
+    // - Copy image to temp buffer
+    // - Use convertVertexBufferImpl to overwrite the alpha channel
+    // - Copy the result back to the image
+    //
+    // Note that the following check is not enough; if the image is AHB-imported, then the draw path
+    // cannot be taken if AHARDWAREBUFFER_USAGE_GPU_FRAMEBUFFER hasn't been specified, even if the
+    // format is renderable.
+    //
+    // http://anglebug.com/6151
+    if (!vk::FormatHasNecessaryFeature(contextVk->getRenderer(), dstActualFormat.id,
+                                       dest->getTilingMode(),
+                                       VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT))
+    {
+        UNIMPLEMENTED();
+        return angle::Result::Continue;
+    }
+
+    vk::DeviceScoped<vk::ImageView> destView(contextVk->getDevice());
+    const gl::TextureType destViewType = vk::Get2DTextureType(1, dest->getSamples());
+
+    ANGLE_TRY(dest->initLayerImageView(contextVk, destViewType, VK_IMAGE_ASPECT_COLOR_BIT,
+                                       gl::SwizzleState(), &destView.get(), params.dstMip, 1,
+                                       params.dstLayer, 1, gl::SrgbWriteControlMode::Default));
+
+    const gl::Rectangle &renderArea = params.clearArea;
+
+    ImageClearShaderParams shaderParams;
+    shaderParams.clearValue = params.colorClearValue;
+    shaderParams.clearDepth = 0;
+
+    vk::RenderPassDesc renderPassDesc;
+    renderPassDesc.setSamples(dest->getSamples());
+    renderPassDesc.packColorAttachment(0, dstActualFormat.id);
+
+    vk::GraphicsPipelineDesc pipelineDesc;
+    pipelineDesc.initDefaults(contextVk);
+    pipelineDesc.setCullMode(VK_CULL_MODE_NONE);
+    pipelineDesc.setSingleColorWriteMask(0, params.colorMaskFlags);
+    pipelineDesc.setRasterizationSamples(dest->getSamples());
+    pipelineDesc.setRenderPassDesc(renderPassDesc);
+
+    vk::CommandBuffer *commandBuffer;
+    ANGLE_TRY(startRenderPass(contextVk, dest, &destView.get(), renderPassDesc, renderArea,
+                              &commandBuffer));
+
+    VkViewport viewport;
+    gl_vk::GetViewport(renderArea, 0.0f, 1.0f, false, false, dest->getExtents().height, &viewport);
+    commandBuffer->setViewport(0, 1, &viewport);
+
+    VkRect2D scissor = gl_vk::GetRect(renderArea);
+    commandBuffer->setScissor(0, 1, &scissor);
+
+    contextVk->invalidateViewportAndScissor();
+
+    contextVk->onImageRenderPassWrite(dest->toGLLevel(params.dstMip), params.dstLayer, 1,
+                                      VK_IMAGE_ASPECT_COLOR_BIT, vk::ImageLayout::ColorAttachment,
+                                      dest);
+
+    const uint32_t flags = GetImageClearFlags(dstActualFormat, 0, false);
+
+    vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
+    vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
+    vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = nullptr;
+    ANGLE_TRY(shaderLibrary.getFullScreenTri_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(shaderLibrary.getImageClear_frag(contextVk, flags, &fragmentShader));
+
+    ANGLE_TRY(setupProgram(contextVk, Function::ImageClear, fragmentShader, vertexShader,
+                           &mImageClearPrograms[flags], &pipelineDesc, VK_NULL_HANDLE,
+                           &shaderParams, sizeof(shaderParams), commandBuffer));
+
+    // Note: this utility creates its own framebuffer, thus bypassing ContextVk::startRenderPass.
+    // As such, occlusion queries are not enabled.
+    commandBuffer->draw(3, 0);
+
+    vk::ImageView destViewObject = destView.release();
+    contextVk->addGarbage(&destViewObject);
+
+    // Close the render pass for this temporary framebuffer.
+    return contextVk->flushCommandsAndEndRenderPass();
+}
+
 angle::Result UtilsVk::colorBlitResolve(ContextVk *contextVk,
                                         FramebufferVk *framebuffer,
                                         vk::ImageHelper *src,
                                         const vk::ImageView *srcView,
                                         const BlitResolveParameters &params)
 {
+    // The views passed to this function are already retained, so a render pass cannot be already
+    // open.  Otherwise, this function closes the render pass, which may incur a vkQueueSubmit and
+    // then the views are used in a new command buffer without having been retained for it.
+    // http://crbug.com/1272266#c22
+    //
+    // Note that depth/stencil views for blit are not derived from a ResourceVk object and are
+    // retained differently.
+    ASSERT(!contextVk->hasStartedRenderPass());
+
     return blitResolveImpl(contextVk, framebuffer, src, srcView, nullptr, nullptr, params);
 }
 
@@ -2263,7 +2362,8 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     // Linear sampling is only valid with color blitting.
     ASSERT((blitColor && !isResolve) || !params.linear);
 
-    uint32_t flags = GetBlitResolveFlags(blitColor, blitDepth, blitStencil, src->getFormat());
+    uint32_t flags =
+        GetBlitResolveFlags(blitColor, blitDepth, blitStencil, src->getIntendedFormat());
     flags |= src->getLayerCount() > 1 ? BlitResolve_frag::kSrcIsArray : 0;
     flags |= isResolve ? BlitResolve_frag::kIsResolve : 0;
 
@@ -2391,7 +2491,7 @@ angle::Result UtilsVk::blitResolveImpl(ContextVk *contextVk,
     vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
     vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
     vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = nullptr;
-    ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(shaderLibrary.getFullScreenTri_vert(contextVk, 0, &vertexShader));
     ANGLE_TRY(shaderLibrary.getBlitResolve_frag(contextVk, flags, &fragmentShader));
 
     ANGLE_TRY(setupProgram(contextVk, Function::BlitResolve, fragmentShader, vertexShader,
@@ -2442,7 +2542,7 @@ angle::Result UtilsVk::stencilBlitResolveNoShaderExport(ContextVk *contextVk,
 
     ANGLE_TRY(
         blitBuffer.get().init(contextVk, blitBufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
-    blitBuffer.get().retain(&contextVk->getResourceUseList());
+    blitBuffer.get().retainReadWrite(&contextVk->getResourceUseList());
 
     BlitResolveStencilNoExportShaderParams shaderParams;
     // Note: adjustments made for pre-rotatation in FramebufferVk::blit() affect these
@@ -2619,11 +2719,16 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
                                  const vk::ImageView *srcView,
                                  const CopyImageParameters &params)
 {
+    // The views passed to this function are already retained, so a render pass cannot be already
+    // open.  Otherwise, this function closes the render pass, which may incur a vkQueueSubmit and
+    // then the views are used in a new command buffer without having been retained for it.
+    // http://crbug.com/1272266#c22
+    ASSERT(!contextVk->hasStartedRenderPass());
+
     ANGLE_TRY(ensureImageCopyResourcesInitialized(contextVk));
 
-    const vk::Format &srcFormat            = src->getFormat();
-    const vk::Format &dstFormat            = dest->getFormat();
-    const angle::Format &dstIntendedFormat = dstFormat.intendedFormat();
+    const angle::Format &srcIntendedFormat = src->getIntendedFormat();
+    const angle::Format &dstIntendedFormat = dest->getIntendedFormat();
 
     ImageCopyShaderParams shaderParams;
     shaderParams.flipX            = 0;
@@ -2632,19 +2737,18 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     shaderParams.unmultiplyAlpha  = params.srcUnmultiplyAlpha;
     shaderParams.destHasLuminance = dstIntendedFormat.luminanceBits > 0;
     shaderParams.destIsAlpha      = dstIntendedFormat.isLUMA() && dstIntendedFormat.alphaBits > 0;
-    shaderParams.destDefaultChannelsMask = GetFormatDefaultChannelMask(dstFormat);
-    shaderParams.srcMip                  = params.srcMip;
-    shaderParams.srcLayer                = params.srcLayer;
-    shaderParams.srcOffset[0]            = params.srcOffset[0];
-    shaderParams.srcOffset[1]            = params.srcOffset[1];
-    shaderParams.destOffset[0]           = params.destOffset[0];
-    shaderParams.destOffset[1]           = params.destOffset[1];
-    shaderParams.rotateXY                = 0;
+    shaderParams.destDefaultChannelsMask =
+        GetFormatDefaultChannelMask(dest->getIntendedFormat(), dest->getActualFormat());
+    shaderParams.srcMip        = params.srcMip;
+    shaderParams.srcLayer      = params.srcLayer;
+    shaderParams.srcOffset[0]  = params.srcOffset[0];
+    shaderParams.srcOffset[1]  = params.srcOffset[1];
+    shaderParams.destOffset[0] = params.destOffset[0];
+    shaderParams.destOffset[1] = params.destOffset[1];
+    shaderParams.rotateXY      = 0;
 
-    shaderParams.srcIsSRGB =
-        gl::GetSizedInternalFormatInfo(srcFormat.intendedGLFormat).colorEncoding == GL_SRGB;
-    shaderParams.destIsSRGB =
-        gl::GetSizedInternalFormatInfo(dstFormat.intendedGLFormat).colorEncoding == GL_SRGB;
+    shaderParams.srcIsSRGB  = params.srcColorEncoding == GL_SRGB;
+    shaderParams.destIsSRGB = params.destColorEncoding == GL_SRGB;
 
     // If both src and dest are sRGB, and there is no alpha multiplication/division necessary, then
     // the shader can work with sRGB data and pretend they are linear.
@@ -2696,7 +2800,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
             break;
     }
 
-    uint32_t flags = GetImageCopyFlags(srcFormat, dstFormat);
+    uint32_t flags = GetImageCopyFlags(srcIntendedFormat, dstIntendedFormat);
     if (src->getType() == VK_IMAGE_TYPE_3D)
     {
         flags |= ImageCopy_frag::kSrcIs3D;
@@ -2717,7 +2821,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
 
     vk::RenderPassDesc renderPassDesc;
     renderPassDesc.setSamples(dest->getSamples());
-    renderPassDesc.packColorAttachment(0, dstFormat.intendedFormatID);
+    renderPassDesc.packColorAttachment(0, dest->getActualFormatID());
 
     // Copy from multisampled image is not supported.
     ASSERT(src->getSamples() == 1);
@@ -2777,7 +2881,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
     vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
     vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = nullptr;
-    ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(shaderLibrary.getFullScreenTri_vert(contextVk, 0, &vertexShader));
     ANGLE_TRY(shaderLibrary.getImageCopy_frag(contextVk, flags, &fragmentShader));
 
     ANGLE_TRY(setupProgram(contextVk, Function::ImageCopy, fragmentShader, vertexShader,
@@ -2791,9 +2895,7 @@ angle::Result UtilsVk::copyImage(ContextVk *contextVk,
     descriptorPoolBinding.reset();
 
     // Close the render pass for this temporary framebuffer.
-    ANGLE_TRY(contextVk->flushCommandsAndEndRenderPass());
-
-    return angle::Result::Continue;
+    return contextVk->flushCommandsAndEndRenderPass();
 }
 
 angle::Result UtilsVk::copyImageBits(ContextVk *contextVk,
@@ -2823,16 +2925,13 @@ angle::Result UtilsVk::copyImageBits(ContextVk *contextVk,
     // new shader is necessary.  The srcEmulatedAlpha parameter is used to make sure the destination
     // alpha value is correct, if dest is RGBA.
 
-    const vk::Format &srcFormat = src->getFormat();
-    const vk::Format &dstFormat = dest->getFormat();
-
     // This path should only be necessary for when RGBA is used as fallback for RGB.  No other
     // format which can be used with EXT_copy_image has a fallback.
-    ASSERT(srcFormat.intendedFormat().blueBits > 0 && srcFormat.intendedFormat().alphaBits == 0);
-    ASSERT(dstFormat.intendedFormat().blueBits > 0 && dstFormat.intendedFormat().alphaBits == 0);
+    ASSERT(src->getIntendedFormat().blueBits > 0 && src->getIntendedFormat().alphaBits == 0);
+    ASSERT(dest->getIntendedFormat().blueBits > 0 && dest->getIntendedFormat().alphaBits == 0);
 
-    const angle::Format &srcImageFormat = srcFormat.actualImageFormat();
-    const angle::Format &dstImageFormat = dstFormat.actualImageFormat();
+    const angle::Format &srcImageFormat = src->getActualFormat();
+    const angle::Format &dstImageFormat = dest->getActualFormat();
 
     // Create temporary buffers.
     vk::RendererScoped<vk::BufferHelper> srcBuffer(contextVk->getRenderer());
@@ -2866,8 +2965,8 @@ angle::Result UtilsVk::copyImageBits(ContextVk *contextVk,
 
     ANGLE_TRY(dstBuffer.get().init(contextVk, bufferInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT));
 
-    srcBuffer.get().retain(&contextVk->getResourceUseList());
-    dstBuffer.get().retain(&contextVk->getResourceUseList());
+    srcBuffer.get().retainReadOnly(&contextVk->getResourceUseList());
+    dstBuffer.get().retainReadWrite(&contextVk->getResourceUseList());
 
     bool isSrc3D = src->getType() == VK_IMAGE_TYPE_3D;
     bool isDst3D = dest->getType() == VK_IMAGE_TYPE_3D;
@@ -3049,7 +3148,7 @@ angle::Result UtilsVk::generateMipmap(ContextVk *contextVk,
     shaderParams.invSrcExtent[1] = 1.0f / srcExtents.height;
     shaderParams.levelCount      = params.destLevelCount;
 
-    uint32_t flags = GetGenerateMipmapFlags(contextVk, src->getFormat());
+    uint32_t flags = GetGenerateMipmapFlags(contextVk, src->getActualFormat());
 
     VkDescriptorSet descriptorSet;
     vk::RefCountedDescriptorPoolBinding descriptorPoolBinding;
@@ -3256,7 +3355,7 @@ angle::Result UtilsVk::unresolve(ContextVk *contextVk,
     vk::ShaderLibrary &shaderLibrary                    = contextVk->getShaderLibrary();
     vk::RefCounted<vk::ShaderAndSerial> *vertexShader   = nullptr;
     vk::RefCounted<vk::ShaderAndSerial> *fragmentShader = &mUnresolveFragShaders[flags];
-    ANGLE_TRY(shaderLibrary.getFullScreenQuad_vert(contextVk, 0, &vertexShader));
+    ANGLE_TRY(shaderLibrary.getFullScreenTri_vert(contextVk, 0, &vertexShader));
     ANGLE_TRY(GetUnresolveFrag(contextVk, colorAttachmentCount, colorAttachmentTypes,
                                params.unresolveDepth, params.unresolveStencil, fragmentShader));
 

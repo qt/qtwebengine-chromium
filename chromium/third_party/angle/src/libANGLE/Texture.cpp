@@ -141,6 +141,7 @@ TextureState::TextureState(TextureType type)
       mMaxLevel(kInitialMaxLevel),
       mDepthStencilTextureMode(GL_DEPTH_COMPONENT),
       mHasBeenBoundAsImage(false),
+      mHasBeenBoundAsAttachment(false),
       mImmutableFormat(false),
       mImmutableLevels(0),
       mUsage(GL_NONE),
@@ -357,7 +358,7 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
     {
         return false;
     }
-    bool npotSupport = state.getExtensions().textureNPOTOES || state.getClientMajorVersion() >= 3;
+    bool npotSupport = state.getExtensions().textureNpotOES || state.getClientMajorVersion() >= 3;
     if (!npotSupport)
     {
         if ((samplerState.getWrapS() != GL_CLAMP_TO_EDGE &&
@@ -404,7 +405,7 @@ bool TextureState::computeSamplerCompleteness(const SamplerState &samplerState,
     // completeness.
     if (mType == TextureType::External)
     {
-        if (!state.getExtensions().eglImageExternalWrapModesEXT)
+        if (!state.getExtensions().EGLImageExternalWrapModesEXT)
         {
             if (samplerState.getWrapS() != GL_CLAMP_TO_EDGE ||
                 samplerState.getWrapT() != GL_CLAMP_TO_EDGE)
@@ -785,7 +786,11 @@ Texture::~Texture()
 void Texture::setLabel(const Context *context, const std::string &label)
 {
     mState.mLabel = label;
-    signalDirtyState(DIRTY_BIT_LABEL);
+
+    if (mTexture)
+    {
+        mTexture->onLabelUpdate();
+    }
 }
 
 const std::string &Texture::getLabel() const
@@ -1697,8 +1702,6 @@ angle::Result Texture::generateMipmap(Context *context)
         return angle::Result::Continue;
     }
 
-    ANGLE_TRY(syncState(context, Command::GenerateMipmap));
-
     // Clear the base image(s) immediately if needed
     if (context->isRobustResourceInitEnabled())
     {
@@ -1717,6 +1720,7 @@ angle::Result Texture::generateMipmap(Context *context)
         }
     }
 
+    ANGLE_TRY(syncState(context, Command::GenerateMipmap));
     ANGLE_TRY(mTexture->generateMipmap(context));
 
     // Propagate the format and size of the base mip to the smaller ones. Cube maps are guaranteed
@@ -2036,6 +2040,12 @@ void Texture::onAttach(const Context *context, rx::Serial framebufferSerial)
 
     // Duplicates allowed for multiple attachment points. See the comment in the header.
     mBoundFramebufferSerials.push_back(framebufferSerial);
+
+    if (!mState.mHasBeenBoundAsAttachment)
+    {
+        mDirtyBits.set(DIRTY_BIT_BOUND_AS_ATTACHMENT);
+        mState.mHasBeenBoundAsAttachment = true;
+    }
 }
 
 void Texture::onDetach(const Context *context, rx::Serial framebufferSerial)
@@ -2062,6 +2072,7 @@ angle::Result Texture::syncState(const Context *context, Command source)
     ASSERT(hasAnyDirtyBit() || source == Command::GenerateMipmap);
     ANGLE_TRY(mTexture->syncState(context, mDirtyBits, source));
     mDirtyBits.reset();
+    mState.mInitState = InitState::Initialized;
     return angle::Result::Continue;
 }
 
@@ -2175,7 +2186,7 @@ void Texture::setInitState(InitState initState)
 {
     for (ImageDesc &imageDesc : mState.mImageDescs)
     {
-        // Only modifiy defined images, undefined images will remain in the initialized state
+        // Only modify defined images, undefined images will remain in the initialized state
         if (!imageDesc.size.empty())
         {
             imageDesc.initState = initState;
@@ -2233,14 +2244,7 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
     switch (message)
     {
         case angle::SubjectMessage::ContentsChanged:
-            if (index == kBufferSubjectIndex)
-            {
-                // If the contents of the buffer attached to a texture buffer has changed, mark the
-                // texture dirty.
-                signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
-                onStateChange(angle::SubjectMessage::ContentsChanged);
-            }
-            else
+            if (index != kBufferSubjectIndex)
             {
                 // ContentsChange originates from TextureStorage11::resolveAndReleaseTexture
                 // which resolves the underlying multisampled texture if it exists and so
@@ -2297,6 +2301,18 @@ void Texture::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
         case angle::SubjectMessage::BindingChanged:
             ASSERT(index == kBufferSubjectIndex);
             break;
+        case angle::SubjectMessage::InitializationComplete:
+            ASSERT(index == rx::kTextureImageImplObserverMessageIndex);
+            setInitState(InitState::Initialized);
+            break;
+        case angle::SubjectMessage::InternalMemoryAllocationChanged:
+            // Need to mark the texture dirty to give the back end a chance to handle the new
+            // buffer. For example, the Vulkan back end needs to create a new buffer view that
+            // points to the newly allocated buffer and update the texture descriptor set.
+            signalDirtyState(DIRTY_BIT_IMPLEMENTATION);
+            break;
+        case angle::SubjectMessage::BufferVkStorageChanged:
+            break;
         default:
             UNREACHABLE();
             break;
@@ -2322,13 +2338,30 @@ angle::Result Texture::getTexImage(const Context *context,
                                    GLenum type,
                                    void *pixels)
 {
-    if (hasAnyDirtyBit())
+    // No-op if the image level is empty.
+    if (getExtents(target, level).empty())
     {
-        ANGLE_TRY(syncState(context, Command::Other));
+        return angle::Result::Continue;
     }
 
     return mTexture->getTexImage(context, packState, packBuffer, target, level, format, type,
                                  pixels);
+}
+
+angle::Result Texture::getCompressedTexImage(const Context *context,
+                                             const PixelPackState &packState,
+                                             Buffer *packBuffer,
+                                             TextureTarget target,
+                                             GLint level,
+                                             void *pixels)
+{
+    // No-op if the image level is empty.
+    if (getExtents(target, level).empty())
+    {
+        return angle::Result::Continue;
+    }
+
+    return mTexture->getCompressedTexImage(context, packState, packBuffer, target, level, pixels);
 }
 
 void Texture::onBindAsImageTexture()

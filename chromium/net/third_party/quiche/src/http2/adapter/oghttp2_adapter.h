@@ -1,6 +1,7 @@
 #ifndef QUICHE_HTTP2_ADAPTER_OGHTTP2_ADAPTER_H_
 #define QUICHE_HTTP2_ADAPTER_OGHTTP2_ADAPTER_H_
 
+#include <cstdint>
 #include <memory>
 
 #include "http2/adapter/http2_adapter.h"
@@ -17,11 +18,13 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Adapter : public Http2Adapter {
   static std::unique_ptr<OgHttp2Adapter> Create(Http2VisitorInterface& visitor,
                                                 Options options);
 
-  ~OgHttp2Adapter();
+  ~OgHttp2Adapter() override;
 
   // From Http2Adapter.
   bool IsServerSession() const override;
-  ssize_t ProcessBytes(absl::string_view bytes) override;
+  bool want_read() const override { return session_->want_read(); }
+  bool want_write() const override { return session_->want_write(); }
+  int64_t ProcessBytes(absl::string_view bytes) override;
   void SubmitSettings(absl::Span<const Http2Setting> settings) override;
   void SubmitPriorityForStream(Http2StreamId stream_id,
                                Http2StreamId parent_stream_id,
@@ -34,7 +37,7 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Adapter : public Http2Adapter {
                     absl::string_view opaque_data) override;
   void SubmitWindowUpdate(Http2StreamId stream_id,
                           int window_increment) override;
-  void SubmitMetadata(Http2StreamId stream_id,
+  void SubmitMetadata(Http2StreamId stream_id, size_t max_frame_size,
                       std::unique_ptr<MetadataSource> source) override;
   int Send() override;
   int GetSendWindowSize() const override;
@@ -60,8 +63,6 @@ class QUICHE_EXPORT_PRIVATE OgHttp2Adapter : public Http2Adapter {
   void SetStreamUserData(Http2StreamId stream_id, void* user_data) override;
   void* GetStreamUserData(Http2StreamId stream_id) override;
   bool ResumeStream(Http2StreamId stream_id) override;
-
-  const Http2Session& session() const;
 
  private:
   OgHttp2Adapter(Http2VisitorInterface& visitor, Options options);

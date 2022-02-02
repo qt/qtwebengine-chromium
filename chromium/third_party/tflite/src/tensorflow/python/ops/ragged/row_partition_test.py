@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tf.ragged.RowPartition."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 import numpy as np
 
@@ -77,24 +73,23 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
   def testRaggedTensorConstructionErrors(self):
     row_splits = constant_op.constant([0, 2, 2, 5, 6, 7], dtypes.int64)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 'RaggedTensor constructor is private'):
+    with self.assertRaisesRegex(ValueError,
+                                'RaggedTensor constructor is private'):
       RowPartition(row_splits=row_splits)
 
-    with self.assertRaisesRegexp(TypeError,
-                                 'Row-partitioning argument must be a Tensor'):
+    with self.assertRaisesRegex(TypeError,
+                                'Row-partitioning argument must be a Tensor'):
       RowPartition(
           row_splits=[0, 2, 2, 5, 6, 7],
           internal=row_partition._row_partition_factory_key)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 r'Shape \(6, 1\) must have rank 1'):
+    with self.assertRaisesRegex(ValueError, r'Shape \(6, 1\) must have rank 1'):
       RowPartition(
           row_splits=array_ops.expand_dims(row_splits, 1),
           internal=row_partition._row_partition_factory_key)
 
-    with self.assertRaisesRegexp(TypeError,
-                                 'Cached value must be a Tensor or None.'):
+    with self.assertRaisesRegex(TypeError,
+                                'Cached value must be a Tensor or None.'):
       RowPartition(
           row_splits=row_splits,
           row_lengths=[2, 3, 4],
@@ -202,7 +197,7 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
 
   def testFromRowSplitsWithEmptySplits(self):
     err_msg = 'row_splits tensor may not be empty'
-    with self.assertRaisesRegexp(ValueError, err_msg):
+    with self.assertRaisesRegex(ValueError, err_msg):
       RowPartition.from_row_splits([])
 
   def testFromRowStarts(self):
@@ -280,27 +275,26 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
     value_rowids = constant_op.constant([0, 0, 2, 2, 2, 3, 4], dtypes.int64)
     nrows = constant_op.constant(5, dtypes.int64)
 
-    with self.assertRaisesRegexp(ValueError, r'Expected nrows >= 0; got -2'):
+    with self.assertRaisesRegex(ValueError, r'Expected nrows >= 0; got -2'):
       RowPartition.from_value_rowids(
           value_rowids=array_ops.placeholder_with_default(value_rowids, None),
           nrows=-2)
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         ValueError, r'Expected nrows >= value_rowids\[-1\] \+ 1; got nrows=2, '
         r'value_rowids\[-1\]=4'):
       RowPartition.from_value_rowids(value_rowids=value_rowids, nrows=2)
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         ValueError, r'Expected nrows >= value_rowids\[-1\] \+ 1; got nrows=4, '
         r'value_rowids\[-1\]=4'):
       RowPartition.from_value_rowids(value_rowids=value_rowids, nrows=4)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 r'Shape \(7, 1\) must have rank 1'):
+    with self.assertRaisesRegex(ValueError, r'Shape \(7, 1\) must have rank 1'):
       RowPartition.from_value_rowids(
           value_rowids=array_ops.expand_dims(value_rowids, 1), nrows=nrows)
 
-    with self.assertRaisesRegexp(ValueError, r'Shape \(1,\) must have rank 0'):
+    with self.assertRaisesRegex(ValueError, r'Shape \(1,\) must have rank 0'):
       RowPartition.from_value_rowids(
           value_rowids=value_rowids, nrows=array_ops.expand_dims(nrows, 0))
 
@@ -310,14 +304,26 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
   def testRowPartitionStr(self):
     row_splits = [0, 2, 5, 6, 6, 7]
     rp = RowPartition.from_row_splits(row_splits, validate=False)
-    splits_type = 'int64'
     if context.executing_eagerly():
-      expected_repr = ('tf.RowPartition(row_splits=tf.Tensor([0 2 5 6 6 7], '
-                       'shape=(6,), dtype=int64))')
+      expected_repr = 'tf.RowPartition(row_splits=[0 2 5 6 6 7])'
     else:
       expected_repr = ('tf.RowPartition(row_splits='
                        'Tensor("RowPartitionFromRowSplits/row_splits:0", '
-                       'shape=(6,), dtype={}))').format(splits_type)
+                       'shape=(6,), dtype=int64))')
+    self.assertEqual(repr(rp), expected_repr)
+    self.assertEqual(str(rp), expected_repr)
+
+  def testRowPartitionStrUniformRowLength(self):
+    rp = RowPartition.from_uniform_row_length(5, nvals=10, nrows=2)
+    if context.executing_eagerly():
+      expected_repr = ('tf.RowPartition(nrows=2, uniform_row_length=5)')
+    else:
+      expected_repr = (
+          'tf.RowPartition(nrows='
+          'Tensor("RowPartitionFromUniformRowLength/'
+          'nrows:0", shape=(), dtype=int64), '
+          'uniform_row_length=Tensor("RowPartitionFromUniformRowLength/'
+          'uniform_row_length:0", shape=(), dtype=int64))')
     self.assertEqual(repr(rp), expected_repr)
     self.assertEqual(str(rp), expected_repr)
 
@@ -626,9 +632,9 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
     # Errors that are caught by static shape checks.
     x = x()
     y = y()
-    with self.assertRaisesRegexp(ValueError, message):
+    with self.assertRaisesRegex(ValueError, message):
       x.merge_precomputed_encodings(y).row_splits()
-    with self.assertRaisesRegexp(ValueError, message):
+    with self.assertRaisesRegex(ValueError, message):
       y.merge_precomputed_encodings(x).row_splits()
 
   @parameterized.named_parameters([
@@ -662,10 +668,51 @@ class RowPartitionTest(test_util.TensorFlowTestCase, parameterized.TestCase):
     # Errors that are caught by runtime value checks.
     x = x()
     y = y()
-    with self.assertRaisesRegexp(errors.InvalidArgumentError, message):
+    with self.assertRaisesRegex(errors.InvalidArgumentError, message):
       self.evaluate(x.merge_precomputed_encodings(y).row_splits())
-    with self.assertRaisesRegexp(errors.InvalidArgumentError, message):
+    with self.assertRaisesRegex(errors.InvalidArgumentError, message):
       self.evaluate(y.merge_precomputed_encodings(x).row_splits())
+
+  @parameterized.named_parameters([
+      dict(
+          testcase_name='from_uniform_row_length',
+          x=lambda: RowPartition.from_uniform_row_length(5, nvals=20),
+          expected=True),
+      dict(
+          testcase_name='from_row_splits',
+          x=lambda: RowPartition.from_row_splits([0, 3, 8]),
+          expected=False),
+      dict(
+          testcase_name='from_row_lengths',
+          x=lambda: RowPartition.from_row_lengths([2, 0, 2]),
+          expected=False),
+      dict(
+          testcase_name='from_row_lengths_uniform',
+          x=lambda: RowPartition.from_row_lengths([3, 3, 3]),
+          expected=False),
+  ])
+  def testIsUniform(self, x, expected):
+    x = x()
+    self.assertEqual(expected, x.is_uniform())
+
+  @parameterized.named_parameters([
+      dict(
+          testcase_name='doc_example',
+          x=lambda: RowPartition.from_row_lengths([3, 2, 0, 2]),
+          expected=[0, 1, 2, 0, 1, 0, 1]),
+      dict(
+          testcase_name='from_uniform_row_length',
+          x=lambda: RowPartition.from_uniform_row_length(4, nvals=12),
+          expected=[0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]),
+      dict(
+          testcase_name='from_row_splits',
+          x=lambda: RowPartition.from_row_splits([0, 3, 8]),
+          expected=[0, 1, 2, 0, 1, 2, 3, 4]),
+  ])
+  def testOffsetsInRows(self, x, expected):
+    x = x()
+    actual = x.offsets_in_rows()
+    self.assertAllEqual(expected, actual)
 
 
 @test_util.run_all_in_graph_and_eager_modes
@@ -713,7 +760,7 @@ class RowPartitionSpecTest(test_util.TensorFlowTestCase,
                             uniform_row_length=None,
                             dtype=dtypes.int64,
                             error=None):
-    with self.assertRaisesRegexp(ValueError, error):
+    with self.assertRaisesRegex(ValueError, error):
       RowPartitionSpec(nrows, nvals, uniform_row_length, dtype)
 
   def testValueType(self):
@@ -841,7 +888,7 @@ class RowPartitionSpecTest(test_util.TensorFlowTestCase,
       (RowPartitionSpec(), RowPartitionSpec(dtype=dtypes.int32)),
   ])
   def testMostSpecificCompatibleTypeError(self, spec1, spec2):
-    with self.assertRaisesRegexp(ValueError, 'not compatible'):
+    with self.assertRaisesRegex(ValueError, 'Encountered incompatible types'):
       spec1.most_specific_compatible_type(spec2)
 
   def testFromValue(self):

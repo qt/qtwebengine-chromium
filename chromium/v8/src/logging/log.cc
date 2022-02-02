@@ -9,6 +9,7 @@
 #include <memory>
 #include <sstream>
 
+#include "include/v8-locker.h"
 #include "src/api/api-inl.h"
 #include "src/base/platform/mutex.h"
 #include "src/base/platform/platform.h"
@@ -102,7 +103,7 @@ static const char* ComputeMarker(SharedFunctionInfo shared, AbstractCode code) {
 #if V8_ENABLE_WEBASSEMBLY
 static const char* ComputeMarker(const wasm::WasmCode* code) {
   switch (code->kind()) {
-    case wasm::WasmCode::kFunction:
+    case wasm::WasmCode::kWasmFunction:
       return code->is_liftoff() ? "" : "*";
     default:
       return "";
@@ -614,6 +615,8 @@ void LowLevelLogger::LogCodeInfo() {
   const char arch[] = "ppc64";
 #elif V8_TARGET_ARCH_MIPS
   const char arch[] = "mips";
+#elif V8_TARGET_ARCH_LOONG64
+  const char arch[] = "loong64";
 #elif V8_TARGET_ARCH_ARM64
   const char arch[] = "arm64";
 #elif V8_TARGET_ARCH_S390
@@ -730,7 +733,7 @@ void JitLogger::LogRecordedBuffer(const wasm::WasmCode* code, const char* name,
                                   int length) {
   JitCodeEvent event = {};
   event.type = JitCodeEvent::CODE_ADDED;
-  event.code_type = JitCodeEvent::JIT_CODE;
+  event.code_type = JitCodeEvent::WASM_CODE;
   event.code_start = code->instructions().begin();
   event.code_len = code->instructions().length();
   event.name.str = name;
@@ -941,9 +944,10 @@ class Ticker : public sampler::Sampler {
   void SampleStack(const v8::RegisterState& state) override {
     if (!profiler_) return;
     Isolate* isolate = reinterpret_cast<Isolate*>(this->isolate());
-    if (v8::Locker::IsActive() && (!isolate->thread_manager()->IsLockedByThread(
-                                       perThreadData_->thread_id()) ||
-                                   perThreadData_->thread_state() != nullptr))
+    if (v8::Locker::WasEverUsed() &&
+        (!isolate->thread_manager()->IsLockedByThread(
+             perThreadData_->thread_id()) ||
+         perThreadData_->thread_state() != nullptr))
       return;
     TickSample sample;
     sample.Init(isolate, state, TickSample::kIncludeCEntryFrame, true);
@@ -1558,12 +1562,14 @@ void Logger::CodeLinePosInfoRecordEvent(Address code_start,
   CodeLinePosEvent(*jit_logger_, code_start, iter, code_type);
 }
 
-void Logger::CodeLinePosInfoRecordEvent(
+#if V8_ENABLE_WEBASSEMBLY
+void Logger::WasmCodeLinePosInfoRecordEvent(
     Address code_start, base::Vector<const byte> source_position_table) {
   if (!jit_logger_) return;
   SourcePositionTableIterator iter(source_position_table);
-  CodeLinePosEvent(*jit_logger_, code_start, iter, JitCodeEvent::JIT_CODE);
+  CodeLinePosEvent(*jit_logger_, code_start, iter, JitCodeEvent::WASM_CODE);
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void Logger::CodeNameEvent(Address addr, int pos, const char* code_name) {
   if (code_name == nullptr) return;  // Not a code object.
@@ -2217,12 +2223,11 @@ void ExistingCodeLogger::LogCompiledFunctions() {
           Handle<AbstractCode>(
               AbstractCode::cast(shared->InterpreterTrampoline()), isolate_));
     }
-    if (shared->HasBaselineData()) {
+    if (shared->HasBaselineCode()) {
       LogExistingFunction(
-          shared,
-          Handle<AbstractCode>(
-              AbstractCode::cast(shared->baseline_data().baseline_code()),
-              isolate_));
+          shared, Handle<AbstractCode>(
+                      AbstractCode::cast(shared->baseline_code(kAcquireLoad)),
+                      isolate_));
     }
     if (pair.second.is_identical_to(BUILTIN_CODE(isolate_, CompileLazy)))
       continue;

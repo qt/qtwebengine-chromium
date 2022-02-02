@@ -160,6 +160,14 @@ void GrD3DCaps::init(const GrContextOptions& contextOptions, IDXGIAdapter1* adap
         fMaxPerStageShaderResourceViews = 2032;
     }
 
+    fStandardSwizzleLayoutSupport = (optionsDesc.StandardSwizzle64KBSupported);
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS2 optionsDesc2;
+    GR_D3D_CALL_ERRCHECK(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &optionsDesc2,
+                                                     sizeof(optionsDesc2)));
+    fResolveSubresourceRegionSupport = (optionsDesc2.ProgrammableSamplePositionsTier !=
+                                        D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED);
+
     this->initGrCaps(optionsDesc, device);
     this->initShaderCaps(adapterDesc.VendorId, optionsDesc);
 
@@ -180,17 +188,6 @@ void GrD3DCaps::initGrCaps(const D3D12_FEATURE_DATA_D3D12_OPTIONS& optionsDesc,
 
     // Can use standard sample locations
     fSampleLocationsSupport = true;
-
-#if 0
-    D3D12_FEATURE_DATA_D3D12_OPTIONS2 options2Desc;
-    if (SUCCEEDED(device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS2, &options2Desc,
-                                              sizeof(options2Desc))) &&
-        options2Desc.ProgrammableSamplePositionsTier !=
-                D3D12_PROGRAMMABLE_SAMPLE_POSITIONS_TIER_NOT_SUPPORTED) {
-        // We "disable" multisample by colocating all samples at pixel center.
-        fMultisampleDisableSupport = true;
-    }
-#endif
 
     if (D3D12_CONSERVATIVE_RASTERIZATION_TIER_NOT_SUPPORTED !=
             optionsDesc.ConservativeRasterizationTier) {
@@ -240,11 +237,12 @@ void GrD3DCaps::initShaderCaps(int vendorID, const D3D12_FEATURE_DATA_D3D12_OPTI
 
     shaderCaps->fShaderDerivativeSupport = true;
 
-    shaderCaps->fGeometryShaderSupport = shaderCaps->fGSInvocationsSupport = true;
-
     shaderCaps->fDualSourceBlendingSupport = true;
 
     shaderCaps->fIntegerSupport = true;
+    shaderCaps->fNonsquareMatrixSupport = true;
+    // TODO(skia:12352) HLSL does not expose asinh/acosh/atanh
+    shaderCaps->fInverseHyperbolicSupport = false;
     shaderCaps->fVertexIDSupport = true;
     shaderCaps->fInfinitySupport = true;
     shaderCaps->fBitManipulationSupport = true;
@@ -783,7 +781,7 @@ bool GrD3DCaps::isFormatSRGB(const GrBackendFormat& format) const {
     }
 }
 
-bool GrD3DCaps::isFormatTexturable(const GrBackendFormat& format) const {
+bool GrD3DCaps::isFormatTexturable(const GrBackendFormat& format, GrTextureType) const {
     DXGI_FORMAT dxgiFormat;
     if (!format.asDxgiFormat(&dxgiFormat)) {
         return false;

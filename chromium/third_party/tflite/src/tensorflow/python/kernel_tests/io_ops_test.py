@@ -15,10 +15,6 @@
 # ==============================================================================
 """Tests for tensorflow.python.ops.io_ops."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import os
 import shutil
 import tempfile
@@ -42,7 +38,7 @@ class IoOpsTest(test.TestCase):
       with self.cached_session():
         read = io_ops.read_file(temp.name)
         self.assertEqual([], read.get_shape())
-        self.assertEqual(read.eval(), contents)
+        self.assertEqual(self.evaluate(read), contents)
       os.remove(temp.name)
 
   def testWriteFile(self):

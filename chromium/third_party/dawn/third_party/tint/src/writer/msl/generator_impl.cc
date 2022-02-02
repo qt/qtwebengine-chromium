@@ -55,7 +55,17 @@
 #include "src/sem/variable.h"
 #include "src/sem/vector_type.h"
 #include "src/sem/void_type.h"
-#include "src/transform/msl.h"
+#include "src/transform/array_length_from_uniform.h"
+#include "src/transform/canonicalize_entry_point_io.h"
+#include "src/transform/external_texture_transform.h"
+#include "src/transform/inline_pointer_lets.h"
+#include "src/transform/manager.h"
+#include "src/transform/module_scope_var_to_entry_point_param.h"
+#include "src/transform/pad_array_elements.h"
+#include "src/transform/promote_initializers_to_const_var.h"
+#include "src/transform/simplify.h"
+#include "src/transform/wrap_arrays_in_structs.h"
+#include "src/transform/zero_init_workgroup_memory.h"
 #include "src/utils/defer.h"
 #include "src/utils/get_or_create.h"
 #include "src/utils/scoped_assignment.h"
@@ -103,19 +113,66 @@ class ScopedBitCast {
 };
 }  // namespace
 
+SanitizedResult Sanitize(const Program* in,
+                         uint32_t buffer_size_ubo_index,
+                         uint32_t fixed_sample_mask,
+                         bool emit_vertex_point_size,
+                         bool disable_workgroup_init) {
+  transform::Manager manager;
+  transform::DataMap internal_inputs;
+
+  // Build the configs for the internal transforms.
+  auto array_length_from_uniform_cfg =
+      transform::ArrayLengthFromUniform::Config(
+          sem::BindingPoint{0, buffer_size_ubo_index});
+  auto entry_point_io_cfg = transform::CanonicalizeEntryPointIO::Config(
+      transform::CanonicalizeEntryPointIO::ShaderStyle::kMsl, fixed_sample_mask,
+      emit_vertex_point_size);
+
+  // Use the SSBO binding numbers as the indices for the buffer size lookups.
+  for (auto* var : in->AST().GlobalVariables()) {
+    auto* global = in->Sem().Get<sem::GlobalVariable>(var);
+    if (global && global->StorageClass() == ast::StorageClass::kStorage) {
+      array_length_from_uniform_cfg.bindpoint_to_size_index.emplace(
+          global->BindingPoint(), global->BindingPoint().binding);
+    }
+  }
+
+  if (!disable_workgroup_init) {
+    // ZeroInitWorkgroupMemory must come before CanonicalizeEntryPointIO as
+    // ZeroInitWorkgroupMemory may inject new builtin parameters.
+    manager.Add<transform::ZeroInitWorkgroupMemory>();
+  }
+  manager.Add<transform::CanonicalizeEntryPointIO>();
+  manager.Add<transform::ExternalTextureTransform>();
+  manager.Add<transform::PromoteInitializersToConstVar>();
+  manager.Add<transform::WrapArraysInStructs>();
+  manager.Add<transform::PadArrayElements>();
+  manager.Add<transform::ModuleScopeVarToEntryPointParam>();
+  manager.Add<transform::InlinePointerLets>();
+  manager.Add<transform::Simplify>();
+  // ArrayLengthFromUniform must come after InlinePointerLets and Simplify, as
+  // it assumes that the form of the array length argument is &var.array.
+  manager.Add<transform::ArrayLengthFromUniform>();
+  internal_inputs.Add<transform::ArrayLengthFromUniform::Config>(
+      std::move(array_length_from_uniform_cfg));
+  internal_inputs.Add<transform::CanonicalizeEntryPointIO::Config>(
+      std::move(entry_point_io_cfg));
+  auto out = manager.Run(in, internal_inputs);
+  if (!out.program.IsValid()) {
+    return {std::move(out.program)};
+  }
+
+  return {std::move(out.program),
+          out.data.Get<transform::ArrayLengthFromUniform::Result>()
+              ->needs_buffer_sizes};
+}
+
 GeneratorImpl::GeneratorImpl(const Program* program) : TextGenerator(program) {}
 
 GeneratorImpl::~GeneratorImpl() = default;
 
 bool GeneratorImpl::Generate() {
-  if (!program_->HasTransformApplied<transform::Msl>()) {
-    diagnostics_.add_error(
-        diag::System::Writer,
-        "MSL writer requires the transform::Msl sanitizer to have been "
-        "applied to the input program");
-    return false;
-  }
-
   line() << "#include <metal_stdlib>";
   line();
   line() << "using namespace metal;";
@@ -633,6 +690,9 @@ bool GeneratorImpl::EmitAtomicCall(std::ostream& out,
 
     case sem::IntrinsicType::kAtomicAdd:
       return call("atomic_fetch_add_explicit", true);
+
+    case sem::IntrinsicType::kAtomicSub:
+      return call("atomic_fetch_sub_explicit", true);
 
     case sem::IntrinsicType::kAtomicMax:
       return call("atomic_fetch_max_explicit", true);
@@ -1527,6 +1587,8 @@ std::string GeneratorImpl::builtin_to_attribute(ast::Builtin builtin) const {
       return "thread_position_in_grid";
     case ast::Builtin::kWorkgroupId:
       return "threadgroup_position_in_grid";
+    case ast::Builtin::kNumWorkgroups:
+      return "threadgroups_per_grid";
     case ast::Builtin::kSampleIndex:
       return "sample_id";
     case ast::Builtin::kSampleMask:
@@ -1572,13 +1634,14 @@ std::string GeneratorImpl::interpolation_to_attribute(
 
 bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   auto* func_sem = program_->Sem().Get(func);
+  auto func_name = program_->Symbols().NameFor(func->symbol());
 
   {
     auto out = line();
 
     EmitStage(out, func->pipeline_stage());
     out << " " << func->return_type()->FriendlyName(program_->Symbols());
-    out << " " << program_->Symbols().NameFor(func->symbol()) << "(";
+    out << " " << func_name << "(";
 
     // Emit entry point parameters.
     bool first = true;
@@ -1590,11 +1653,14 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
 
       auto* type = program_->Sem().Get(var)->Type()->UnwrapRef();
 
-      if (!EmitType(out, type, "")) {
+      auto param_name = program_->Symbols().NameFor(var->symbol());
+      if (!EmitType(out, type, param_name)) {
         return false;
       }
-
-      out << " " << program_->Symbols().NameFor(var->symbol());
+      // Parameter name is output as part of the type for arrays and pointers.
+      if (!type->Is<sem::Array>() && !type->Is<sem::Pointer>()) {
+        out << " " << param_name;
+      }
 
       if (type->Is<sem::Struct>()) {
         out << " [[stage_in]]";
@@ -1618,6 +1684,16 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
         } else {
           TINT_ICE(Writer, diagnostics_)
               << "invalid handle type entry point parameter";
+          return false;
+        }
+      } else if (auto* ptr = var->type()->As<ast::Pointer>()) {
+        if (ptr->storage_class() == ast::StorageClass::kWorkgroup) {
+          auto& allocations = workgroup_allocations_[func_name];
+          out << " [[threadgroup(" << allocations.size() << ")]]";
+          allocations.push_back(program_->Sem().Get(ptr->type())->Size());
+        } else {
+          TINT_ICE(Writer, diagnostics_)
+              << "invalid pointer storage class for entry point parameter";
           return false;
         }
       } else {

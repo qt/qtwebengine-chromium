@@ -9,9 +9,6 @@ import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 
 import {AffectedItem, AffectedResourcesView} from './AffectedResourcesView.js';
 
-import type {AggregatedIssue} from './IssueAggregator.js';
-import type {IssueView} from './IssueView.js';
-
 const UIStrings = {
   /**
    * @description Label for number of rows in the issue details table.
@@ -45,15 +42,16 @@ const UIStrings = {
    * parameter.
    */
   invalidTriggerData: 'Invalid `trigger-data`',
+  /**
+   * @description Label for the column showing the invalid value used for the
+   * 'event-source-trigger-data' query parameter.
+   */
+  invalidEventSourceTriggerData: 'Invalid `event-source-trigger-data`',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/issues/AttributionReportingIssueDetailsView.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class AttributionReportingIssueDetailsView extends AffectedResourcesView {
-  constructor(parentView: IssueView, private issue: AggregatedIssue) {
-    super(parentView);
-  }
-
   protected override getResourceNameWithCount(count: number): string {
     return i18nString(UIStrings.nViolations, {n: count});
   }
@@ -92,8 +90,13 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
         this.appendColumnTitle(header, i18nString(UIStrings.untrustworthyOrigin));
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidAttributionData:
+      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionTriggerDataTooLarge:
         this.appendColumnTitle(header, i18nString(UIStrings.request));
         this.appendColumnTitle(header, i18nString(UIStrings.invalidTriggerData));
+        break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionEventSourceTriggerDataTooLarge:
+        this.appendColumnTitle(header, i18nString(UIStrings.request));
+        this.appendColumnTitle(header, i18nString(UIStrings.invalidEventSourceTriggerData));
         break;
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidAttributionSourceEventId:
         this.appendColumnTitle(header, i18nString(UIStrings.frame));
@@ -137,6 +140,8 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
         await this.appendElementOrEmptyCell(element, issue);
         this.appendIssueDetailCell(element, details.invalidParameter || '');
         break;
+      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionTriggerDataTooLarge:
+      case IssuesManager.AttributionReportingIssue.IssueCode.AttributionEventSourceTriggerDataTooLarge:
       case IssuesManager.AttributionReportingIssue.IssueCode.AttributionUntrustworthyOrigin:
       case IssuesManager.AttributionReportingIssue.IssueCode.InvalidAttributionData:
         this.appendRequestOrEmptyCell(element, details.request);
@@ -165,7 +170,7 @@ export class AttributionReportingIssueDetailsView extends AffectedResourcesView 
       parent: HTMLElement, issue: IssuesManager.AttributionReportingIssue.AttributionReportingIssue): void {
     const details = issue.issueDetails;
     if (details.frame) {
-      parent.appendChild(this.createFrameCell(details.frame.frameId, issue));
+      parent.appendChild(this.createFrameCell(details.frame.frameId, issue.getCategory()));
     } else {
       this.appendIssueDetailCell(parent, '');
     }

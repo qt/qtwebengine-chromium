@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for unicode_transcode op."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 
 from tensorflow.python.framework import constant_op
@@ -325,7 +321,7 @@ class UnicodeTranscodeOpTest(test.TestCase, parameterized.TestCase):
     with self.test_session():
       output = string_ops.unicode_transcode(
           string, input_encoding=input_encoding, output_encoding="UTF-8")
-      self.assertAllEqual(output.eval(), expected)
+      self.assertAllEqual(output, expected)
 
   @test_util.run_deprecated_v1
   def test_invalid_encoding_causes_errors(self):
@@ -343,7 +339,7 @@ class UnicodeTranscodeOpTest(test.TestCase, parameterized.TestCase):
           "Could not create converter for input encoding: invalid"):
         self.evaluate(outputs)
 
-    with self.assertRaisesRegexp(ValueError, "Op passed string 'invalid'"):
+    with self.assertRaisesRegex(ValueError, "Op passed string 'invalid'"):
       with self.cached_session() as sess:
         outputs = string_ops.unicode_transcode(
             strings,
@@ -358,7 +354,7 @@ class UnicodeTranscodeOpTest(test.TestCase, parameterized.TestCase):
   def test_invalid_error_policy_causes_errors(self):
     strings = [[b"a", b"abc"], [b"ABC", b"DEF"]]
 
-    with self.assertRaisesRegexp(
+    with self.assertRaisesRegex(
         ValueError, "'invalid' not in: \"strict\", \"replace\", \"ignore\"."):
       with self.cached_session() as sess:
         outputs = string_ops.unicode_transcode(

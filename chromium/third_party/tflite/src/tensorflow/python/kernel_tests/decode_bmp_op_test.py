@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for DecodeBmpOp."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.ops import array_ops
@@ -25,14 +21,14 @@ from tensorflow.python.ops import image_ops
 from tensorflow.python.platform import test
 
 
-
 class DecodeBmpOpTest(test.TestCase):
 
   def testex1(self):
     img_bytes = [[[0, 0, 255], [0, 255, 0]], [[255, 0, 0], [255, 255, 255]]]
     # Encoded BMP bytes from Wikipedia
+    # BMP header bytes: https://en.wikipedia.org/wiki/List_of_file_signatures
     encoded_bytes = [
-        0x42, 0x40,
+        0x42, 0x4d,
         0x46, 0, 0, 0,
         0, 0,
         0, 0,
@@ -66,9 +62,10 @@ class DecodeBmpOpTest(test.TestCase):
 
   def testGrayscale(self):
     img_bytes = [[[255], [0]], [[255], [0]]]
+    # BMP header bytes: https://en.wikipedia.org/wiki/List_of_file_signatures
     encoded_bytes = [
         0x42,
-        0x40,
+        0x4d,
         0x3d,
         0,
         0,
@@ -133,6 +130,8 @@ class DecodeBmpOpTest(test.TestCase):
 
     byte_string = bytes(bytearray(encoded_bytes))
     img_in = constant_op.constant(byte_string, dtype=dtypes.string)
+    # TODO(b/159600494): Currently, `decode_bmp` op does not validate input
+    # magic bytes.
     decode = image_ops.decode_bmp(img_in)
 
     with self.cached_session():

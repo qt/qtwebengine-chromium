@@ -545,9 +545,7 @@ void GrGLGpu::onResetContext(uint32_t resetBits) {
     }
 
     if (resetBits & kMSAAEnable_GrGLBackendState) {
-        if (this->caps()->multisampleDisableSupport()) {
-            fMSAAEnabled = kUnknown_TriState;
-        } else if (this->glCaps().clientCanDisableMultisample()) {
+        if (this->glCaps().clientCanDisableMultisample()) {
             // Restore GL_MULTISAMPLE to its initial state. It being enabled has no effect on draws
             // to non-MSAA targets.
             GL_CALL(Enable(GR_GL_MULTISAMPLE));
@@ -1219,18 +1217,19 @@ bool GrGLGpu::createRenderTargetObjects(const GrGLTexture::Desc& desc,
     // rendered from.
     if (sampleCount <= 1) {
         rtIDs->fMultisampleFBOID = GrGLRenderTarget::kUnresolvableFBOID;
+    } else if (this->glCaps().usesImplicitMSAAResolve()) {
+        // GrGLRenderTarget target will configure the FBO as multisample or not base on need.
+        rtIDs->fMultisampleFBOID = rtIDs->fSingleSampleFBOID;
     } else {
         GL_CALL(GenFramebuffers(1, &rtIDs->fMultisampleFBOID));
         if (!rtIDs->fMultisampleFBOID) {
             goto FAILED;
         }
-        if (!this->glCaps().usesImplicitMSAAResolve()) {
-            GL_CALL(GenRenderbuffers(1, &rtIDs->fMSColorRenderbufferID));
-            if (!rtIDs->fMSColorRenderbufferID) {
-                goto FAILED;
-            }
-            colorRenderbufferFormat = this->glCaps().getRenderbufferInternalFormat(desc.fFormat);
+        GL_CALL(GenRenderbuffers(1, &rtIDs->fMSColorRenderbufferID));
+        if (!rtIDs->fMSColorRenderbufferID) {
+            goto FAILED;
         }
+        colorRenderbufferFormat = this->glCaps().getRenderbufferInternalFormat(desc.fFormat);
     }
 
     // below here we may bind the FBO
@@ -1248,16 +1247,6 @@ bool GrGLGpu::createRenderTargetObjects(const GrGLTexture::Desc& desc,
                                         GR_GL_RENDERBUFFER,
                                         rtIDs->fMSColorRenderbufferID));
         rtIDs->fTotalMemorySamplesPerPixel += sampleCount;
-    } else if (sampleCount > 1) {
-        // multisampled_render_to_texture
-        SkASSERT(this->glCaps().usesImplicitMSAAResolve());  // Otherwise fMSColorRenderbufferID!=0.
-        this->bindFramebuffer(GR_GL_FRAMEBUFFER, rtIDs->fMultisampleFBOID);
-        GL_CALL(FramebufferTexture2DMultisample(GR_GL_FRAMEBUFFER,
-                                                GR_GL_COLOR_ATTACHMENT0,
-                                                desc.fTarget,
-                                                desc.fID,
-                                                0,
-                                                sampleCount));
     }
 
     this->bindFramebuffer(GR_GL_FRAMEBUFFER, rtIDs->fSingleSampleFBOID);
@@ -1723,7 +1712,9 @@ sk_sp<GrAttachment> GrGLGpu::makeStencilAttachment(const GrBackendFormat& colorF
 }
 
 sk_sp<GrAttachment> GrGLGpu::makeMSAAAttachment(SkISize dimensions, const GrBackendFormat& format,
-                                                int numSamples, GrProtected isProtected) {
+                                                int numSamples, GrProtected isProtected,
+                                                GrMemoryless isMemoryless) {
+    SkASSERT(isMemoryless == GrMemoryless::kNo);
     return GrGLAttachment::MakeMSAA(this, dimensions, numSamples, format.asGLFormat());
 }
 
@@ -1843,7 +1834,6 @@ bool GrGLGpu::flushGLState(GrRenderTarget* renderTarget, bool useMultisampleFBO,
     this->flushScissorTest(GrScissorTest(programInfo.pipeline().isScissorTestEnabled()));
     this->flushWindowRectangles(programInfo.pipeline().getWindowRectsState(),
                                 glRT, programInfo.origin());
-    this->flushHWAAState(glRT, programInfo.pipeline().isHWAntialiasState());
     this->flushConservativeRasterState(programInfo.pipeline().usesConservativeRaster());
     this->flushWireframeState(programInfo.pipeline().isWireframe());
 
@@ -1999,15 +1989,12 @@ void GrGLGpu::endCommandBuffer(GrGLRenderTarget* rt, bool useMultisampleFBO,
     if (GrGLCaps::kNone_InvalidateFBType != this->glCaps().invalidateFBType()) {
         SkSTArray<2, GrGLenum> discardAttachments;
         if (GrStoreOp::kDiscard == colorLoadStore.fStoreOp) {
-            GrGLuint renderFBOID = (useMultisampleFBO) ? rt->multisampleFBOID()
-                                                       : rt->singleSampleFBOID();
-            discardAttachments.push_back((!renderFBOID) ? GR_GL_COLOR : GR_GL_COLOR_ATTACHMENT0);
+            discardAttachments.push_back(
+                    rt->isFBO0(useMultisampleFBO) ? GR_GL_COLOR : GR_GL_COLOR_ATTACHMENT0);
         }
         if (GrStoreOp::kDiscard == stencilLoadStore.fStoreOp) {
-            GrGLuint renderFBOID = (useMultisampleFBO) ? rt->multisampleFBOID()
-                                                       : rt->singleSampleFBOID();
-            discardAttachments.push_back((!renderFBOID) ? GR_GL_STENCIL : GR_GL_STENCIL_ATTACHMENT);
-
+            discardAttachments.push_back(
+                    rt->isFBO0(useMultisampleFBO) ? GR_GL_STENCIL : GR_GL_STENCIL_ATTACHMENT);
         }
 
         if (!discardAttachments.empty()) {
@@ -2055,7 +2042,7 @@ void GrGLGpu::clearStencilClip(const GrScissorState& scissor, bool insideStencil
 #else
     // we could just clear the clip bit but when we go through
     // ANGLE a partial stencil mask will cause clears to be
-    // turned into draws. Our contract on GrOpsTask says that
+    // turned into draws. Our contract on OpsTask says that
     // changing the clip between stencil passes may or may not
     // zero the client's clip bits. So we just clear the whole thing.
     static const GrGLint clipStencilMask  = ~0;
@@ -2104,11 +2091,11 @@ bool GrGLGpu::readOrTransferPixelsFrom(GrSurface* surface,
 
     if (renderTarget) {
         // Always bind the single sample FBO since we can't read pixels from an MSAA framebuffer.
-        if (renderTarget->numSamples() > 1 &&
-            renderTarget->singleSampleFBOID() == GrGLRenderTarget::kUnresolvableFBOID) {
+        constexpr bool useMultisampleFBO = false;
+        if (renderTarget->numSamples() > 1 && renderTarget->isFBO0(useMultisampleFBO)) {
             return false;
         }
-        this->flushRenderTargetNoColorWrites(renderTarget, false/*useMultisampleFBO*/);
+        this->flushRenderTargetNoColorWrites(renderTarget, useMultisampleFBO);
     } else {
         // Use a temporary FBO.
         this->bindSurfaceFBOForPixelOps(surface, 0, GR_GL_FRAMEBUFFER, kSrc_TempFBOTarget);
@@ -2208,9 +2195,10 @@ void GrGLGpu::flushRenderTarget(GrGLRenderTarget* target, bool useMultisampleFBO
 void GrGLGpu::flushRenderTargetNoColorWrites(GrGLRenderTarget* target, bool useMultisampleFBO) {
     SkASSERT(target);
     GrGpuResource::UniqueID rtID = target->uniqueID();
-    if (fHWBoundRenderTargetUniqueID != rtID || fHWBoundFramebufferIsMSAA != useMultisampleFBO) {
-        this->bindFramebuffer(GR_GL_FRAMEBUFFER, (useMultisampleFBO) ? target->multisampleFBOID()
-                                                                     : target->singleSampleFBOID());
+    if (fHWBoundRenderTargetUniqueID != rtID           ||
+        fHWBoundFramebufferIsMSAA != useMultisampleFBO ||
+        target->mustRebind(useMultisampleFBO)) {
+        target->bind(useMultisampleFBO);
 #ifdef SK_DEBUG
         // don't do this check in Chromium -- this is causing
         // lots of repeated command buffer flushes when the compositor is
@@ -2313,22 +2301,9 @@ void GrGLGpu::resolveRenderFBOs(GrGLRenderTarget* rt, const SkIRect& resolveRect
                                 ResolveDirection resolveDirection,
                                 bool invalidateReadBufferAfterBlit) {
     this->handleDirtyContext();
-
-    // If the multisample FBO is nonzero, it means we always have something to resolve (even if the
-    // single sample buffer is FBO 0). If it's zero, then there's nothing to resolve.
-    SkASSERT(rt->multisampleFBOID() != 0);
+    rt->bindForResolve(resolveDirection);
 
     const GrGLCaps& caps = this->glCaps();
-
-    if (resolveDirection == ResolveDirection::kMSAAToSingle) {
-        this->bindFramebuffer(GR_GL_READ_FRAMEBUFFER, rt->multisampleFBOID());
-        this->bindFramebuffer(GR_GL_DRAW_FRAMEBUFFER, rt->singleSampleFBOID());
-    } else {
-        SkASSERT(resolveDirection == ResolveDirection::kSingleToMSAA);
-        SkASSERT(this->glCaps().canResolveSingleToMSAA());
-        this->bindFramebuffer(GR_GL_READ_FRAMEBUFFER, rt->singleSampleFBOID());
-        this->bindFramebuffer(GR_GL_DRAW_FRAMEBUFFER, rt->multisampleFBOID());
-    }
 
     // make sure we go through flushRenderTarget() since we've modified
     // the bound DRAW FBO ID.
@@ -2363,16 +2338,15 @@ void GrGLGpu::resolveRenderFBOs(GrGLRenderTarget* rt, const SkIRect& resolveRect
         invalidateReadBufferAfterBlit) {
         // Invalidate the read FBO attachment after the blit, in hopes that this allows the driver
         // to perform tiling optimizations.
-        GrGLenum colorDiscardAttachment = (rt->multisampleFBOID() == 0) ? GR_GL_COLOR
-                                                                        : GR_GL_COLOR_ATTACHMENT0;
+        bool readBufferIsMSAA = resolveDirection == ResolveDirection::kMSAAToSingle;
+        GrGLenum colorDiscardAttachment = rt->isFBO0(readBufferIsMSAA) ? GR_GL_COLOR
+                                                                       : GR_GL_COLOR_ATTACHMENT0;
         if (caps.invalidateFBType() == GrGLCaps::kInvalidate_InvalidateFBType) {
             GL_CALL(InvalidateFramebuffer(GR_GL_READ_FRAMEBUFFER, 1, &colorDiscardAttachment));
         } else {
             SkASSERT(caps.invalidateFBType() == GrGLCaps::kDiscard_InvalidateFBType);
             // glDiscardFramebuffer only accepts GL_FRAMEBUFFER.
-            GrGLuint discardFBO = (resolveDirection == ResolveDirection::kMSAAToSingle)
-                    ? rt->multisampleFBOID() : rt->singleSampleFBOID();
-            this->bindFramebuffer(GR_GL_FRAMEBUFFER, discardFBO);
+            rt->bind(readBufferIsMSAA);
             GL_CALL(DiscardFramebuffer(GR_GL_FRAMEBUFFER, 1, &colorDiscardAttachment));
         }
     }
@@ -2462,27 +2436,6 @@ void GrGLGpu::disableStencil() {
     }
 }
 
-void GrGLGpu::flushHWAAState(GrRenderTarget* rt, bool useHWAA) {
-    // rt is only optional if useHWAA is false.
-    SkASSERT(rt || !useHWAA);
-    SkASSERT(!useHWAA || rt->numSamples() > 1 ||
-             static_cast<GrGLRenderTarget*>(rt)->multisampleFBOID());
-
-    if (this->caps()->multisampleDisableSupport()) {
-        if (useHWAA) {
-            if (kYes_TriState != fMSAAEnabled) {
-                GL_CALL(Enable(GR_GL_MULTISAMPLE));
-                fMSAAEnabled = kYes_TriState;
-            }
-        } else {
-            if (kNo_TriState != fMSAAEnabled) {
-                GL_CALL(Disable(GR_GL_MULTISAMPLE));
-                fMSAAEnabled = kNo_TriState;
-            }
-        }
-    }
-}
-
 void GrGLGpu::flushConservativeRasterState(bool enabled) {
     if (this->caps()->conservativeRasterSupport()) {
         if (enabled) {
@@ -2551,6 +2504,21 @@ void GrGLGpu::flushBlendAndColorWrite(
                 fHWBlendState.fEquation = blend_equation;
             }
 
+            // Workaround for Adreno 5xx BlendFunc bug. See crbug.com/1241134.
+            // We must also check to see if the blend coeffs are invalid because the client may have
+            // reset our gl state and thus we will have forgotten if the previous use was a coeff
+            // that referenced src2.
+            if (this->glCaps().mustResetBlendFuncBetweenDualSourceAndDisable() &&
+                (GrBlendCoeffRefsSrc2(fHWBlendState.fSrcCoeff) ||
+                 GrBlendCoeffRefsSrc2(fHWBlendState.fDstCoeff) ||
+                 fHWBlendState.fSrcCoeff == kIllegal_GrBlendCoeff ||
+                 fHWBlendState.fDstCoeff == kIllegal_GrBlendCoeff)) {
+                // We just reset the blend func to anything that doesn't reference src2
+                GL_CALL(BlendFunc(GR_GL_ONE, GR_GL_ZERO));
+                fHWBlendState.fSrcCoeff = kOne_GrBlendCoeff;
+                fHWBlendState.fDstCoeff = kZero_GrBlendCoeff;
+            }
+
             fHWBlendState.fEnabled = kNo_TriState;
         }
     } else {
@@ -2578,7 +2546,7 @@ void GrGLGpu::flushBlendAndColorWrite(
             fHWBlendState.fDstCoeff = dstCoeff;
         }
 
-        if ((GrBlendCoeffRefsConstant(srcCoeff) || GrBlendCoeffRefsConstant(dstCoeff))) {
+        if (GrBlendCoeffRefsConstant(srcCoeff) || GrBlendCoeffRefsConstant(dstCoeff)) {
             SkPMColor4f blendConst = swizzle.applyTo(blendInfo.fBlendConstant);
             if (!fHWBlendState.fConstColorValid || fHWBlendState.fConstColor != blendConst) {
                 GL_CALL(BlendColor(blendConst.fR, blendConst.fG, blendConst.fB, blendConst.fA));
@@ -2867,7 +2835,7 @@ static bool rt_has_msaa_render_buffer(const GrGLRenderTarget* rt, const GrGLCaps
     // 1) It's multisampled
     // 2) We're using an extension with separate MSAA renderbuffers
     // 3) It's not FBO 0, which is special and always auto-resolves
-    return rt->numSamples() > 1 && glCaps.usesMSAARenderBuffers() && rt->multisampleFBOID() != 0;
+    return rt->numSamples() > 1 && glCaps.usesMSAARenderBuffers() && !rt->isFBO0(true/*msaa*/);
 }
 
 static inline bool can_copy_texsubimage(const GrSurface* dst, const GrSurface* src,
@@ -2923,10 +2891,8 @@ void GrGLGpu::bindSurfaceFBOForPixelOps(GrSurface* surface, int mipLevel, GrGLen
         if (mipLevel == 0) {
             texture->baseLevelWasBoundToFBO();
         }
-    } else if (rt->numSamples() > 1) {
-        this->bindFramebuffer(fboTarget, rt->multisampleFBOID());
     } else {
-        this->bindFramebuffer(fboTarget, rt->singleSampleFBOID());
+        rt->bindForPixelOps(fboTarget);
     }
 }
 
@@ -3354,7 +3320,6 @@ bool GrGLGpu::copySurfaceAsDraw(GrSurface* dst, bool drawToMultisampleFBO, GrSur
                       sx1 - sx0, sy1 - sy0, sx0, sy0));
     GL_CALL(Uniform1i(fCopyPrograms[progIdx].fTextureUniform, 0));
     this->flushBlendAndColorWrite(GrXferProcessor::BlendInfo(), GrSwizzle::RGBA());
-    this->flushHWAAState(nullptr, false);
     this->flushConservativeRasterState(false);
     this->flushWireframeState(false);
     this->flushScissorTest(GrScissorTest::kDisabled);
@@ -3489,7 +3454,6 @@ bool GrGLGpu::onRegenerateMipMapLevels(GrTexture* texture) {
 
     // Set "simple" state once:
     this->flushBlendAndColorWrite(GrXferProcessor::BlendInfo(), GrSwizzle::RGBA());
-    this->flushHWAAState(nullptr, false);
     this->flushScissorTest(GrScissorTest::kDisabled);
     this->disableWindowRectangles();
     this->disableStencil();
@@ -3551,7 +3515,7 @@ void GrGLGpu::xferBarrier(GrRenderTarget* rt, GrXferBarrierType type) {
         case kTexture_GrXferBarrierType: {
             GrGLRenderTarget* glrt = static_cast<GrGLRenderTarget*>(rt);
             SkASSERT(glrt->asTexture());
-            SkASSERT(glrt->singleSampleFBOID() != 0);
+            SkASSERT(!glrt->isFBO0(false/*multisample*/));
             if (glrt->requiresManualMSAAResolve()) {
                 // The render target uses separate storage so no need for glTextureBarrier.
                 // FIXME: The render target will resolve automatically when its texture is bound,

@@ -52,6 +52,7 @@
 #include "hb-ot-layout-gpos-table.hh"
 #include "hb-ot-var-gvar-table.hh"
 #include "hb-ot-var-hvar-table.hh"
+#include "hb-ot-math-table.hh"
 #include "hb-repacker.hh"
 
 /**
@@ -109,7 +110,7 @@ _repack (hb_tag_t tag, const hb_serialize_context_t& c)
     return nullptr;
 
   hb_serialize_context_t repacked ((void *) buf, buf_size);
-  hb_resolve_overflows (c.object_graph (), &repacked);
+  hb_resolve_overflows (c.object_graph (), tag, &repacked);
 
   if (unlikely (repacked.in_error ()))
     // TODO(garretrieger): refactor so we can share the resize/retry logic with the subset
@@ -305,6 +306,7 @@ _subset_table (hb_subset_plan_t *plan, hb_tag_t tag)
   case HB_OT_TAG_CPAL: return _subset<const OT::CPAL> (plan);
   case HB_OT_TAG_CBLC: return _subset<const OT::CBLC> (plan);
   case HB_OT_TAG_CBDT: return true; /* skip CBDT, handled by CBLC */
+  case HB_OT_TAG_MATH: return _subset<const OT::MATH> (plan);
 
 #ifndef HB_NO_SUBSET_CFF
   case HB_OT_TAG_cff1: return _subset<const OT::cff1> (plan);
@@ -338,7 +340,7 @@ _subset_table (hb_subset_plan_t *plan, hb_tag_t tag)
  * Subsets a font according to provided input. Returns nullptr
  * if the subset operation fails.
  *
- * Since: REPLACE
+ * Since: 2.9.0
  **/
 hb_face_t *
 hb_subset_or_fail (hb_face_t *source, const hb_subset_input_t *input)

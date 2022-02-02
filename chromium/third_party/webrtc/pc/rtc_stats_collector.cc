@@ -436,6 +436,14 @@ CreateRemoteOutboundAudioStreamStats(
   stats->remote_timestamp = static_cast<double>(
       voice_receiver_info.last_sender_report_remote_timestamp_ms.value());
   stats->reports_sent = voice_receiver_info.sender_reports_reports_count;
+  if (voice_receiver_info.round_trip_time) {
+    stats->round_trip_time =
+        voice_receiver_info.round_trip_time->seconds<double>();
+  }
+  stats->round_trip_time_measurements =
+      voice_receiver_info.round_trip_time_measurements;
+  stats->total_round_trip_time =
+      voice_receiver_info.total_round_trip_time.seconds<double>();
 
   return stats;
 }
@@ -1544,8 +1552,18 @@ void RTCStatsCollector::ProduceIceCandidateAndPairStats_n(
         // false after a certain amount of time without a response passes.
         // https://crbug.com/633550
         candidate_pair_stats->writable = info.writable;
+        // Note that sent_total_packets includes discarded packets but
+        // sent_total_bytes does not.
+        candidate_pair_stats->packets_sent = static_cast<uint64_t>(
+            info.sent_total_packets - info.sent_discarded_packets);
+        candidate_pair_stats->packets_discarded_on_send =
+            static_cast<uint64_t>(info.sent_discarded_packets);
+        candidate_pair_stats->packets_received =
+            static_cast<uint64_t>(info.packets_received);
         candidate_pair_stats->bytes_sent =
             static_cast<uint64_t>(info.sent_total_bytes);
+        candidate_pair_stats->bytes_discarded_on_send =
+            static_cast<uint64_t>(info.sent_discarded_bytes);
         candidate_pair_stats->bytes_received =
             static_cast<uint64_t>(info.recv_total_bytes);
         candidate_pair_stats->total_round_trip_time =

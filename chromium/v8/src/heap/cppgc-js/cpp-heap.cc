@@ -10,8 +10,8 @@
 
 #include "include/cppgc/heap-consistency.h"
 #include "include/cppgc/platform.h"
+#include "include/v8-local-handle.h"
 #include "include/v8-platform.h"
-#include "include/v8.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
 #include "src/base/platform/platform.h"
@@ -217,6 +217,14 @@ void UnifiedHeapMarker::AddObject(void* object) {
       cppgc::internal::HeapObjectHeader::FromObject(object));
 }
 
+void FatalOutOfMemoryHandlerImpl(const std::string& reason,
+                                 const SourceLocation&, HeapBase* heap) {
+  FatalProcessOutOfMemory(
+      reinterpret_cast<v8::internal::Isolate*>(
+          static_cast<v8::internal::CppHeap*>(heap)->isolate()),
+      reason.c_str());
+}
+
 }  // namespace
 
 void CppHeap::MetricRecorderAdapter::AddMainThreadEvent(
@@ -246,6 +254,7 @@ void CppHeap::MetricRecorderAdapter::AddMainThreadEvent(
   if (incremental_mark_batched_events_.events.size() == kMaxBatchedEvents) {
     recorder->AddMainThreadEvent(std::move(incremental_mark_batched_events_),
                                  GetContextId());
+    incremental_mark_batched_events_ = {};
   }
 }
 
@@ -264,6 +273,7 @@ void CppHeap::MetricRecorderAdapter::AddMainThreadEvent(
   if (incremental_sweep_batched_events_.events.size() == kMaxBatchedEvents) {
     recorder->AddMainThreadEvent(std::move(incremental_sweep_batched_events_),
                                  GetContextId());
+    incremental_sweep_batched_events_ = {};
   }
 }
 
@@ -274,10 +284,12 @@ void CppHeap::MetricRecorderAdapter::FlushBatchedIncrementalEvents() {
   if (!incremental_mark_batched_events_.events.empty()) {
     recorder->AddMainThreadEvent(std::move(incremental_mark_batched_events_),
                                  GetContextId());
+    incremental_mark_batched_events_ = {};
   }
   if (!incremental_sweep_batched_events_.events.empty()) {
     recorder->AddMainThreadEvent(std::move(incremental_sweep_batched_events_),
                                  GetContextId());
+    incremental_sweep_batched_events_ = {};
   }
 }
 
@@ -355,6 +367,7 @@ void CppHeap::AttachIsolate(Isolate* isolate) {
       wrapper_descriptor_);
   SetMetricRecorder(std::make_unique<MetricRecorderAdapter>(*this));
   SetStackStart(base::Stack::GetStackStart());
+  oom_handler().SetCustomHandler(&FatalOutOfMemoryHandlerImpl);
   no_gc_scope_--;
 }
 
@@ -376,6 +389,7 @@ void CppHeap::DetachIsolate() {
   isolate_ = nullptr;
   // Any future garbage collections will ignore the V8->C++ references.
   isolate()->SetEmbedderHeapTracer(nullptr);
+  oom_handler().SetCustomHandler(nullptr);
   // Enter no GC scope.
   no_gc_scope_++;
 }
@@ -483,13 +497,14 @@ void CppHeap::TraceEpilogue(TraceSummary* trace_summary) {
   // The allocated bytes counter in v8 was reset to the current marked bytes, so
   // any pending allocated bytes updates should be discarded.
   buffered_allocated_bytes_ = 0;
-  ExecutePreFinalizers();
-  // TODO(chromium:1056170): replace build flag with dedicated flag.
-#if DEBUG
+  const size_t bytes_allocated_in_prefinalizers = ExecutePreFinalizers();
+#if CPPGC_VERIFY_HEAP
   UnifiedHeapMarkingVerifier verifier(*this);
-  verifier.Run(stack_state_of_prev_gc(), stack_end_of_current_gc(),
-               stats_collector()->marked_bytes());
-#endif
+  verifier.Run(
+      stack_state_of_prev_gc(), stack_end_of_current_gc(),
+      stats_collector()->marked_bytes() + bytes_allocated_in_prefinalizers);
+#endif  // CPPGC_VERIFY_HEAP
+  USE(bytes_allocated_in_prefinalizers);
 
   {
     cppgc::subtle::NoGarbageCollectionScope no_gc(*this);

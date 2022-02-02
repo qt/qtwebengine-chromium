@@ -1,3 +1,1 @@
-monorail {
-  component: "Internals>Images"
-}
+mixins: "//components/image_fetcher/COMMON_METADATA"

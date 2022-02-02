@@ -559,7 +559,7 @@ half4 main(float2 p) {
       }
 
       half4 main(float2 p) {
-        float3 norm = convert_normal_sample(sample(normal_map, p));
+        float3 norm = convert_normal_sample(normal_map.eval(p));
         float3 plane_norm = normalize(localToWorldAdjInv * float4(norm, 0)).xyz;
 
         float3 plane_pos = (localToWorld * float4(p, 0, 1)).xyz;
@@ -569,7 +569,7 @@ half4 main(float2 p) {
         float dp = dot(plane_norm, light_dir);
         float scale = min(ambient + max(dp, 0), 1);
 
-        return sample(color_map, p) * half4(float4(scale, scale, scale, 1));
+        return color_map.eval(p) * half4(float4(scale, scale, scale, 1));
       }
 `;
 
@@ -819,6 +819,6 @@ Test your code on our [CanvasKit Fiddle](https://jsfiddle.skia.org/canvaskit)
 Get [CanvasKit on NPM](https://www.npmjs.com/package/canvaskit-wasm).
 Documentation and Typescript definitions are available in the `types/` subfolder
 of the npm package or from the
-[Skia repo](https://github.com/google/skia/tree/master/modules/canvaskit/npm_build/types).
+[Skia repo](https://github.com/google/skia/tree/main/modules/canvaskit/npm_build/types).
 
 Check out the [quickstart guide](../quickstart) as well.

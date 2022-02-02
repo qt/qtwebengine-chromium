@@ -19,7 +19,6 @@
 #include <string>
 #include <vector>
 
-#include "rtc_base/async_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/message_handler.h"
 #ifdef OPENSSL_IS_BORINGSSL
@@ -49,7 +48,7 @@ class OpenSSLAdapter final : public SSLAdapter,
   // SSLCertificateVerifier which can override any existing trusted roots to
   // validate a peer certificate. The cache and verifier are effectively
   // immutable after the the SSL connection starts.
-  explicit OpenSSLAdapter(AsyncSocket* socket,
+  explicit OpenSSLAdapter(Socket* socket,
                           OpenSSLSessionCache* ssl_session_cache = nullptr,
                           SSLCertificateVerifier* ssl_cert_verifier = nullptr);
   ~OpenSSLAdapter() override;
@@ -61,7 +60,7 @@ class OpenSSLAdapter final : public SSLAdapter,
   void SetCertVerifier(SSLCertificateVerifier* ssl_cert_verifier) override;
   void SetIdentity(std::unique_ptr<SSLIdentity> identity) override;
   void SetRole(SSLRole role) override;
-  AsyncSocket* Accept(SocketAddress* paddr) override;
+  Socket* Accept(SocketAddress* paddr) override;
   int StartSSL(const char* hostname) override;
   int Send(const void* pv, size_t cb) override;
   int SendTo(const void* pv, size_t cb, const SocketAddress& addr) override;
@@ -83,10 +82,10 @@ class OpenSSLAdapter final : public SSLAdapter,
   static SSL_CTX* CreateContext(SSLMode mode, bool enable_cache);
 
  protected:
-  void OnConnectEvent(AsyncSocket* socket) override;
-  void OnReadEvent(AsyncSocket* socket) override;
-  void OnWriteEvent(AsyncSocket* socket) override;
-  void OnCloseEvent(AsyncSocket* socket, int err) override;
+  void OnConnectEvent(Socket* socket) override;
+  void OnReadEvent(Socket* socket) override;
+  void OnWriteEvent(Socket* socket) override;
+  void OnCloseEvent(Socket* socket, int err) override;
 
  private:
   class EarlyExitCatcher {
@@ -132,7 +131,9 @@ class OpenSSLAdapter final : public SSLAdapter,
   enum ssl_verify_result_t SSLVerifyInternal(SSL* ssl, uint8_t* out_alert);
 #else
   static int SSLVerifyCallback(int ok, X509_STORE_CTX* store);
-  int SSLVerifyInternal(int ok, SSL* ssl, X509_STORE_CTX* store);
+  // Call a custom verifier, if installed.
+  // Returns 1 on success, `status_on_error` on error or verification failure.
+  int SSLVerifyInternal(int status_on_error, SSL* ssl, X509_STORE_CTX* store);
 #endif
   friend class OpenSSLStreamAdapter;  // for custom_verify_callback_;
 
@@ -197,7 +198,7 @@ class OpenSSLAdapterFactory : public SSLAdapterFactory {
   // Constructs a new socket using the shared OpenSSLSessionCache. This means
   // existing SSLSessions already in the cache will be reused instead of
   // re-created for improved performance.
-  OpenSSLAdapter* CreateAdapter(AsyncSocket* socket) override;
+  OpenSSLAdapter* CreateAdapter(Socket* socket) override;
 
  private:
   // Holds the SSLMode (DTLS,TLS) that will be used to set the session cache.

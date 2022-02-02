@@ -1,4 +1,1 @@
-monorail {
-  component: "Blink>Network"
-}
-team_email: "blink-network-dev@chromium.org"
+mixins: "//third_party/blink/renderer/modules/beacon/COMMON_METADATA"

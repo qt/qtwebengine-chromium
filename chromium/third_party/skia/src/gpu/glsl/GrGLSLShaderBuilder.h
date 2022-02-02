@@ -12,8 +12,8 @@
 #include "include/private/SkSLStatement.h"
 #include "include/private/SkSLString.h"
 #include "include/private/SkTDArray.h"
+#include "src/core/SkTBlockList.h"
 #include "src/gpu/GrShaderVar.h"
-#include "src/gpu/GrTBlockList.h"
 #include "src/gpu/glsl/GrGLSLUniformHandler.h"
 
 #include <stdarg.h>
@@ -21,9 +21,7 @@
 class GrGLSLColorSpaceXformHelper;
 
 namespace SkSL {
-    namespace dsl {
-        class DSLWriter;
-    }
+    class ThreadContext;
 }
 
 /**
@@ -143,6 +141,8 @@ public:
                                const char* mangledName,
                                SkSpan<const GrShaderVar> args);
 
+    void emitFunctionPrototype(const char* declaration);
+
     /** Emits a helper function outside of main() in the fragment shader. */
     void emitFunction(GrSLType returnType,
                       const char* mangledName,
@@ -179,7 +179,7 @@ public:
     };
 
 protected:
-    typedef GrTBlockList<GrShaderVar> VarArray;
+    typedef SkTBlockList<GrShaderVar> VarArray;
     void appendDecls(const VarArray& vars, SkString* out) const;
 
     void appendFunctionDecl(GrSLType returnType,
@@ -288,6 +288,6 @@ protected:
     friend class GrGLPathProgramBuilder; // to access fInputs.
     friend class GrVkPipelineStateBuilder;
     friend class GrMtlPipelineStateBuilder;
-    friend class SkSL::dsl::DSLWriter;
+    friend class SkSL::ThreadContext;
 };
 #endif

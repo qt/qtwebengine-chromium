@@ -53,7 +53,7 @@ namespace dawn_native { namespace vulkan {
                 "Vulkan driver version: " + std::to_string(mDeviceInfo.properties.driverVersion);
         }
 
-        InitializeSupportedExtensions();
+        InitializeSupportedFeatures();
 
         mPCIInfo.deviceId = mDeviceInfo.properties.deviceID;
         mPCIInfo.vendorId = mDeviceInfo.properties.vendorID;
@@ -88,9 +88,12 @@ namespace dawn_native { namespace vulkan {
             return DAWN_INTERNAL_ERROR("Vulkan robustBufferAccess feature required.");
         }
 
-        // TODO(crbug.com/dawn/955): Require BC || (ETC && ASTC) instead.
-        if (!mDeviceInfo.features.textureCompressionBC) {
-            return DAWN_INTERNAL_ERROR("Vulkan textureCompressionBC feature required.");
+        if (!mDeviceInfo.features.textureCompressionBC &&
+            !(mDeviceInfo.features.textureCompressionETC2 &&
+              mDeviceInfo.features.textureCompressionASTC_LDR)) {
+            return DAWN_INTERNAL_ERROR(
+                "Vulkan textureCompressionBC feature required or both textureCompressionETC2 and "
+                "textureCompressionASTC required.");
         }
 
         // Needed for the respective WebGPU features.
@@ -143,10 +146,6 @@ namespace dawn_native { namespace vulkan {
         }
         if (limits.maxDescriptorSetStorageBuffersDynamic <
             kMaxDynamicStorageBuffersPerPipelineLayout) {
-            return DAWN_INTERNAL_ERROR(
-                "Insufficient Vulkan limits for maxDynamicStorageBuffersPerPipelineLayout");
-        }
-        if (limits.maxPerStageDescriptorSampledImages < kMaxSampledTexturesPerShaderStage) {
             return DAWN_INTERNAL_ERROR(
                 "Insufficient Vulkan limits for maxDynamicStorageBuffersPerPipelineLayout");
         }
@@ -258,17 +257,29 @@ namespace dawn_native { namespace vulkan {
                                                          mBackend->GetFunctions());
     }
 
-    void Adapter::InitializeSupportedExtensions() {
+    void Adapter::InitializeSupportedFeatures() {
         if (mDeviceInfo.features.textureCompressionBC == VK_TRUE) {
-            mSupportedExtensions.EnableExtension(Extension::TextureCompressionBC);
+            mSupportedFeatures.EnableFeature(Feature::TextureCompressionBC);
+        }
+
+        if (mDeviceInfo.features.textureCompressionETC2 == VK_TRUE) {
+            mSupportedFeatures.EnableFeature(Feature::TextureCompressionETC2);
+        }
+
+        if (mDeviceInfo.features.textureCompressionASTC_LDR == VK_TRUE) {
+            mSupportedFeatures.EnableFeature(Feature::TextureCompressionASTC);
         }
 
         if (mDeviceInfo.features.pipelineStatisticsQuery == VK_TRUE) {
-            mSupportedExtensions.EnableExtension(Extension::PipelineStatisticsQuery);
+            mSupportedFeatures.EnableFeature(Feature::PipelineStatisticsQuery);
+        }
+
+        if (mDeviceInfo.features.depthClamp == VK_TRUE) {
+            mSupportedFeatures.EnableFeature(Feature::DepthClamping);
         }
 
         if (mDeviceInfo.properties.limits.timestampComputeAndGraphics == VK_TRUE) {
-            mSupportedExtensions.EnableExtension(Extension::TimestampQuery);
+            mSupportedFeatures.EnableFeature(Feature::TimestampQuery);
         }
     }
 

@@ -67,6 +67,7 @@
 #include "content/common/content_constants_internal.h"
 #include "content/common/partition_alloc_support.h"
 #include "content/common/process_visibility_tracker.h"
+#include "content/common/pseudonymization_salt.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_paths.h"
@@ -156,6 +157,7 @@
 #include "ui/base/ui_base_switches_util.h"
 #include "ui/display/display_switches.h"
 #include "ui/gfx/rendering_pipeline.h"
+#include "v8/include/v8-extension.h"
 
 #if defined(OS_ANDROID)
 #include <cpu-features.h>
@@ -198,7 +200,6 @@ namespace content {
 namespace {
 
 using ::base::PassKey;
-using ::base::ThreadRestrictions;
 using ::blink::WebDocument;
 using ::blink::WebFrame;
 using ::blink::WebNetworkStateNotifier;
@@ -881,10 +882,8 @@ void RenderThreadImpl::InitializeCompositorThread() {
   blink_platform_impl_->CreateAndSetCompositorThread();
   compositor_task_runner_ = blink_platform_impl_->CompositorThreadTaskRunner();
 
-  compositor_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(base::IgnoreResult(&ThreadRestrictions::SetIOAllowed),
-                     false));
+  compositor_task_runner_->PostTask(FROM_HERE,
+                                    base::BindOnce(&base::DisallowBlocking));
   GetContentClient()->renderer()->PostCompositorThreadCreated(
       compositor_task_runner_.get());
 }
@@ -1185,17 +1184,10 @@ RenderThreadImpl::SharedMainThreadContextProvider() {
 
   bool support_locking = false;
   bool support_raster_interface = true;
-
-  // Only support OOPR on this context if the general feature is enabled in
-  // addition to OOPR for canvas. Otherwise this context will raster canvas
-  // through Skia's GrContext.
   bool support_oop_rasterization =
       gpu_channel_host->gpu_feature_info()
-              .status_values[gpu::GPU_FEATURE_TYPE_OOP_RASTERIZATION] ==
-          gpu::kGpuFeatureStatusEnabled &&
-      !gpu_channel_host->gpu_feature_info().IsWorkaroundEnabled(
-          gpu::DISABLE_CANVAS_OOP_RASTERIZATION) &&
-      base::FeatureList::IsEnabled(features::kCanvasOopRasterization);
+          .status_values[gpu::GPU_FEATURE_TYPE_CANVAS_OOP_RASTERIZATION] ==
+      gpu::kGpuFeatureStatusEnabled;
   bool support_gles2_interface = false;
   bool support_grcontext = !support_oop_rasterization;
   // Enable automatic flushes to improve canvas throughput.
@@ -1264,7 +1256,14 @@ void RenderThreadImpl::SetRendererProcessType(
 
 blink::WebString RenderThreadImpl::GetUserAgent() {
   DCHECK(!user_agent_.IsNull());
+
   return user_agent_;
+}
+
+blink::WebString RenderThreadImpl::GetReducedUserAgent() {
+  DCHECK(!reduced_user_agent_.IsNull());
+
+  return reduced_user_agent_;
 }
 
 const blink::UserAgentMetadata& RenderThreadImpl::GetUserAgentMetadata() {
@@ -1273,6 +1272,12 @@ const blink::UserAgentMetadata& RenderThreadImpl::GetUserAgentMetadata() {
 
 bool RenderThreadImpl::IsUseZoomForDSF() {
   return is_zoom_for_dsf_enabled_;
+}
+
+void RenderThreadImpl::WriteIntoTrace(
+    perfetto::TracedProto<perfetto::protos::pbzero::RenderProcessHost> proto) {
+  int id = GetClientId();
+  proto->set_id(id);
 }
 
 void RenderThreadImpl::OnAssociatedInterfaceRequest(
@@ -1356,10 +1361,6 @@ bool RenderThreadImpl::OnControlMessageReceived(const IPC::Message& msg) {
   }
 
   return false;
-}
-
-void RenderThreadImpl::SetSchedulerKeepActive(bool keep_active) {
-  main_thread_scheduler_->SetSchedulerKeepActive(keep_active);
 }
 
 void RenderThreadImpl::SetProcessState(
@@ -1572,21 +1573,21 @@ void RenderThreadImpl::RecordMetricsForBackgroundedRendererPurge() {
           &RenderThreadImpl::
               OnRecordMetricsForBackgroundedRendererPurgeTimerExpired,
           base::Unretained(this), "30min", process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(30));
+      base::Minutes(30));
   GetWebMainThreadScheduler()->DefaultTaskRunner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(
           &RenderThreadImpl::
               OnRecordMetricsForBackgroundedRendererPurgeTimerExpired,
           base::Unretained(this), "60min", process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(60));
+      base::Minutes(60));
   GetWebMainThreadScheduler()->DefaultTaskRunner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(
           &RenderThreadImpl::
               OnRecordMetricsForBackgroundedRendererPurgeTimerExpired,
           base::Unretained(this), "90min", process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(90));
+      base::Minutes(90));
 }
 
 void RenderThreadImpl::CompositingModeFallbackToSoftware() {
@@ -1672,6 +1673,11 @@ void RenderThreadImpl::SetUserAgent(const std::string& user_agent) {
   DCHECK(user_agent_.IsNull());
   user_agent_ = WebString::FromUTF8(user_agent);
   GetContentClient()->renderer()->DidSetUserAgent(user_agent);
+}
+
+void RenderThreadImpl::SetReducedUserAgent(const std::string& user_agent) {
+  DCHECK(reduced_user_agent_.IsNull());
+  reduced_user_agent_ = WebString::FromUTF8(user_agent);
 }
 
 void RenderThreadImpl::SetUserAgentMetadata(
@@ -1899,19 +1905,19 @@ void RenderThreadImpl::OnRendererBackgrounded() {
       base::BindOnce(&RenderThreadImpl::RecordMemoryUsageAfterBackgrounded,
                      base::Unretained(this), "5min",
                      process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(5));
+      base::Minutes(5));
   GetWebMainThreadScheduler()->DefaultTaskRunner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&RenderThreadImpl::RecordMemoryUsageAfterBackgrounded,
                      base::Unretained(this), "10min",
                      process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(10));
+      base::Minutes(10));
   GetWebMainThreadScheduler()->DefaultTaskRunner()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&RenderThreadImpl::RecordMemoryUsageAfterBackgrounded,
                      base::Unretained(this), "15min",
                      process_foregrounded_count_),
-      base::TimeDelta::FromMinutes(15));
+      base::Minutes(15));
 }
 
 void RenderThreadImpl::OnRendererForegrounded() {

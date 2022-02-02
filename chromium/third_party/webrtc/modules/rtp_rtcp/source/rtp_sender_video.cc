@@ -175,9 +175,9 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
                     rtp_sender_->SSRC(),
                     config.send_transport_queue)
               : nullptr),
-      include_capture_clock_offset_(absl::StartsWith(
+      include_capture_clock_offset_(!absl::StartsWith(
           config.field_trials->Lookup(kIncludeCaptureClockOffset),
-          "Enabled")) {
+          "Disabled")) {
   if (frame_transformer_delegate_)
     frame_transformer_delegate_->Init();
 }
@@ -706,12 +706,6 @@ bool RTPSenderVideo::SendVideo(
             << "Sent last RTP packet of the first video frame (pre-pacer)";
       }
     }
-  }
-
-  if (!rtp_sender_->deferred_sequence_numbering() &&
-      !rtp_sender_->AssignSequenceNumbersAndStoreLastPacketState(rtp_packets)) {
-    // Media not being sent.
-    return false;
   }
 
   LogAndSendToNetwork(std::move(rtp_packets), payload.size());

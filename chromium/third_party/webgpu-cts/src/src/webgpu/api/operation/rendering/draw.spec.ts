@@ -57,7 +57,12 @@ Params:
       .expand('index_buffer_offset', p => (p.indexed ? ([0, 16] as const) : [undefined]))
       .expand('base_vertex', p => (p.indexed ? ([0, 9] as const) : [undefined]))
   )
-  .fn(t => {
+  .fn(async t => {
+    if (t.params.first_instance > 0 && t.params.indirect) {
+      // TODO: 'as' cast because types don't have this feature name yet
+      await t.selectDeviceOrSkipTestCase('indirect-first-instance' as GPUFeatureName);
+    }
+
     const renderTargetSize = [72, 36];
 
     // The test will split up the render target into a grid where triangles of
@@ -643,5 +648,23 @@ g.test('vertex_attributes,formats')
       - vertex_format_1={...all_vertex_formats}
       - vertex_format_2={...all_vertex_formats}
   `
+  )
+  .unimplemented();
+
+g.test(`largeish_buffer`)
+  .desc(
+    `
+    Test a very large range of buffer is bound.
+    For a render pipeline that use a vertex step mode and a instance step mode vertex buffer, test
+    that :
+    - For draw, drawIndirect, drawIndexed and drawIndexedIndirect:
+        - The bound range of vertex step mode vertex buffer is significantly larger than necessary
+        - The bound range of instance step mode vertex buffer is significantly larger than necessary
+        - A large buffer is bound to an unused slot
+    - For drawIndexed and drawIndexedIndirect:
+        - The bound range of index buffer is significantly larger than necessary
+    - For drawIndirect and drawIndexedIndirect:
+        - The indirect buffer is significantly larger than necessary
+`
   )
   .unimplemented();

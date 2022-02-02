@@ -22,6 +22,7 @@
 #include "src/gpu/GrUtil.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/vk/GrVkGpu.h"
+#include "src/gpu/vk/GrVkImage.h"
 #include "src/gpu/vk/GrVkInterface.h"
 #include "src/gpu/vk/GrVkRenderTarget.h"
 #include "src/gpu/vk/GrVkTexture.h"
@@ -395,6 +396,7 @@ void GrVkCaps::init(const GrContextOptions& contextOptions, const GrVkInterface*
     // On ARM devices we are seeing an average perf win of around 50%-60% across the board.
     if (kARM_VkVendor == properties.vendorID) {
         fPreferDiscardableMSAAAttachment = true;
+        fSupportsMemorylessAttachments = true;
     }
 
     this->initGrCaps(vkInterface, physDev, properties, memoryProperties, features, extensions);
@@ -515,6 +517,7 @@ void GrVkCaps::applyDriverCorrectnessWorkarounds(const VkPhysicalDevicePropertie
     // feature for those devices.
     if (properties.vendorID == kQualcomm_VkVendor && androidAPIVersion <= 28) {
         fPreferDiscardableMSAAAttachment = false;
+        fSupportsDiscardableMSAAForDMSAA = false;
     }
 
     // On Mali G series GPUs, applying transfer functions in the fragment shader with half-floats
@@ -611,14 +614,6 @@ void GrVkCaps::initGrCaps(const GrVkInterface* vkInterface,
         fSampleLocationsSupport = true;
     }
 
-    // See skbug.com/10346
-#if 0
-    if (extensions.hasExtension(VK_EXT_SAMPLE_LOCATIONS_EXTENSION_NAME, 1)) {
-        // We "disable" multisample by colocating all samples at pixel center.
-        fMultisampleDisableSupport = true;
-    }
-#endif
-
     if (extensions.hasExtension(VK_EXT_CONSERVATIVE_RASTERIZATION_EXTENSION_NAME, 1)) {
         fConservativeRasterSupport = true;
     }
@@ -707,14 +702,11 @@ void GrVkCaps::initShaderCaps(const VkPhysicalDeviceProperties& properties,
     // RelaxedPrecision. Rewriting the multiply as a sum of vector*scalar fixes this. (skia:11769)
     shaderCaps->fRewriteMatrixVectorMultiply = (kARM_VkVendor == properties.vendorID);
 
-    // FIXME: http://skbug.com/7733: Disable geometry shaders until Intel/Radeon GMs draw correctly.
-    // shaderCaps->fGeometryShaderSupport =
-    //         shaderCaps->fGSInvocationsSupport = features.features.geometryShader;
-
     shaderCaps->fDualSourceBlendingSupport = features.features.dualSrcBlend;
 
     shaderCaps->fIntegerSupport = true;
     shaderCaps->fNonsquareMatrixSupport = true;
+    shaderCaps->fInverseHyperbolicSupport = true;
     shaderCaps->fVertexIDSupport = true;
     shaderCaps->fInfinitySupport = true;
     shaderCaps->fBitManipulationSupport = true;
@@ -1411,7 +1403,7 @@ bool GrVkCaps::isFormatSRGB(const GrBackendFormat& format) const {
     return format_is_srgb(vkFormat);
 }
 
-bool GrVkCaps::isFormatTexturable(const GrBackendFormat& format) const {
+bool GrVkCaps::isFormatTexturable(const GrBackendFormat& format, GrTextureType) const {
     VkFormat vkFormat;
     if (!format.asVkFormat(&vkFormat)) {
         return false;
@@ -1553,16 +1545,16 @@ GrCaps::SurfaceReadPixelsSupport GrVkCaps::surfaceSupportsReadPixels(
         return SurfaceReadPixelsSupport::kUnsupported;
     }
     if (auto tex = static_cast<const GrVkTexture*>(surface->asTexture())) {
-        auto texAttachment = tex->textureAttachment();
-        if (!texAttachment) {
+        auto texImage = tex->textureImage();
+        if (!texImage) {
             return SurfaceReadPixelsSupport::kUnsupported;
         }
         // We can't directly read from a VkImage that has a ycbcr sampler.
-        if (texAttachment->ycbcrConversionInfo().isValid()) {
+        if (texImage->ycbcrConversionInfo().isValid()) {
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
         }
         // We can't directly read from a compressed format
-        if (GrVkFormatIsCompressed(texAttachment->imageFormat())) {
+        if (GrVkFormatIsCompressed(texImage->imageFormat())) {
             return SurfaceReadPixelsSupport::kCopyToTexture2D;
         }
         return SurfaceReadPixelsSupport::kSupported;
@@ -1591,12 +1583,12 @@ bool GrVkCaps::onSurfaceSupportsWritePixels(const GrSurface* surface) const {
     }
     // We can't write to a texture that has a ycbcr sampler.
     if (auto tex = static_cast<const GrVkTexture*>(surface->asTexture())) {
-        auto texAttachment = tex->textureAttachment();
-        if (!texAttachment) {
+        auto texImage = tex->textureImage();
+        if (!texImage) {
             return false;
         }
         // We can't directly read from a VkImage that has a ycbcr sampler.
-        if (texAttachment->ycbcrConversionInfo().isValid()) {
+        if (texImage->ycbcrConversionInfo().isValid()) {
             return false;
         }
     }
@@ -1635,6 +1627,29 @@ GrBackendFormat GrVkCaps::onGetDefaultBackendFormat(GrColorType ct) const {
         return {};
     }
     return GrBackendFormat::MakeVk(format);
+}
+
+bool GrVkCaps::onSupportsDynamicMSAA(const GrRenderTargetProxy* rtProxy) const {
+    // We must be able to use the rtProxy as an input attachment to load into the discardable msaa
+    // attachment. Also the rtProxy should have a sample count of 1 so that it can be used as a
+    // resolve attachment.
+    return this->supportsDiscardableMSAAForDMSAA() &&
+           rtProxy->supportsVkInputAttachment() &&
+           rtProxy->numSamples() == 1;
+}
+
+bool GrVkCaps::renderTargetSupportsDiscardableMSAA(const GrVkRenderTarget* rt) const {
+    return rt->resolveAttachment() &&
+           rt->resolveAttachment()->supportsInputAttachmentUsage() &&
+           ((rt->numSamples() > 1 && this->preferDiscardableMSAAAttachment()) ||
+            (rt->numSamples() == 1 && this->supportsDiscardableMSAAForDMSAA()));
+}
+
+bool GrVkCaps::programInfoWillUseDiscardableMSAA(const GrProgramInfo& programInfo) const {
+    return programInfo.targetHasVkResolveAttachmentWithInput() &&
+           programInfo.numSamples() > 1 &&
+           ((programInfo.targetsNumSamples() > 1 && this->preferDiscardableMSAAAttachment()) ||
+            (programInfo.targetsNumSamples() == 1 && this->supportsDiscardableMSAAForDMSAA()));
 }
 
 GrBackendFormat GrVkCaps::getBackendFormatFromCompressionType(
@@ -1820,8 +1835,7 @@ GrProgramDesc GrVkCaps::makeDesc(GrRenderTarget* rt,
         selfDepFlags |= GrVkRenderPass::SelfDependencyFlags::kForInputAttachment;
     }
 
-    bool needsResolve = programInfo.targetSupportsVkResolveLoad() &&
-                        this->preferDiscardableMSAAAttachment();
+    bool needsResolve = this->programInfoWillUseDiscardableMSAA(programInfo);
 
     bool forceLoadFromResolve =
             overrideFlags & GrCaps::ProgramDescOverrideFlags::kVulkanHasResolveLoadSubpass;
@@ -1892,9 +1906,6 @@ GrInternalSurfaceFlags GrVkCaps::getExtraSurfaceFlagsForDeferredRT() const {
 
 VkShaderStageFlags GrVkCaps::getPushConstantStageFlags() const {
     VkShaderStageFlags stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
-    if (this->shaderCaps()->geometryShaderSupport()) {
-        stageFlags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-    }
     return stageFlags;
 }
 

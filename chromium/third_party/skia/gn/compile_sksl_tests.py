@@ -28,11 +28,12 @@ def executeWorklist(input, worklist):
     # Invoke skslc, passing in the worklist.
     worklist.close()
     try:
-        output = subprocess.check_output([skslc, worklist.name], stderr=subprocess.STDOUT)
+        output = subprocess.check_output([
+            skslc, worklist.name], stderr=subprocess.STDOUT).decode('utf-8')
     except subprocess.CalledProcessError as err:
         if err.returncode != 1:
             print("### " + input + " skslc error:\n")
-            print("\n".join(err.output.splitlines()))
+            print("\n".join(err.output.decode('utf-8').splitlines()))
             sys.exit(err.returncode)
         pass  # Compile errors (exit code 1) are expected and normal in test code
 
@@ -46,7 +47,7 @@ def makeEmptyFile(path):
         pass
 
 def extensionForSpirvAsm(ext):
-    return ext if (ext == '.frag' or ext == '.vert' or ext == '.geom') else '.frag'
+    return ext if (ext == '.frag' or ext == '.vert') else '.frag'
 
 if settings != "--settings" and settings != "--nosettings":
     sys.exit("### Expected --settings or --nosettings, got " + settings)

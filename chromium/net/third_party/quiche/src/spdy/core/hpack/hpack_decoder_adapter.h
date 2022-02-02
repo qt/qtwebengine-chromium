@@ -39,6 +39,9 @@ class QUICHE_EXPORT_PRIVATE HpackDecoderAdapter {
   // Called upon acknowledgement of SETTINGS_HEADER_TABLE_SIZE.
   void ApplyHeaderTableSizeSetting(size_t size_setting);
 
+  // Returns the most recently applied value of SETTINGS_HEADER_TABLE_SIZE.
+  size_t GetCurrentHeaderTableSizeSetting() const;
+
   // If a SpdyHeadersHandlerInterface is provided, the decoder will emit
   // headers to it rather than accumulating them in a SpdyHeaderBlock.
   // Does not take ownership of the handler, but does use the pointer until
@@ -56,10 +59,7 @@ class QUICHE_EXPORT_PRIVATE HpackDecoderAdapter {
   // buffered block that was accumulated in HandleControlFrameHeadersData(),
   // to support subsequent calculation of compression percentage.
   // Discards the handler supplied at the start of decoding the block.
-  // TODO(jamessynge): Determine if compressed_len is needed; it is used to
-  // produce UUMA stat Net.SpdyHpackDecompressionPercentage, but only for
-  // deprecated SPDY3.
-  bool HandleControlFrameHeadersComplete(size_t* compressed_len);
+  bool HandleControlFrameHeadersComplete();
 
   // Accessor for the most recently decoded headers block. Valid until the next
   // call to HandleControlFrameHeadersData().

@@ -4,21 +4,41 @@
 
 #include "quic/core/quic_alarm.h"
 
+#include "quic/core/quic_connection_context.h"
 #include "quic/platform/api/quic_expect_bug.h"
 #include "quic/platform/api/quic_test.h"
 
+using testing::ElementsAre;
 using testing::Invoke;
+using testing::Return;
 
 namespace quic {
 namespace test {
 namespace {
 
+class TraceCollector : public QuicConnectionTracer {
+ public:
+  ~TraceCollector() override = default;
+
+  void PrintLiteral(const char* literal) override { trace_.push_back(literal); }
+
+  void PrintString(absl::string_view s) override {
+    trace_.push_back(std::string(s));
+  }
+
+  const std::vector<std::string>& trace() const { return trace_; }
+
+ private:
+  std::vector<std::string> trace_;
+};
+
 class MockDelegate : public QuicAlarm::Delegate {
  public:
+  MOCK_METHOD(QuicConnectionContext*, GetConnectionContext, (), (override));
   MOCK_METHOD(void, OnAlarm, (), (override));
 };
 
-class DestructiveDelegate : public QuicAlarm::Delegate {
+class DestructiveDelegate : public QuicAlarm::DelegateWithoutContext {
  public:
   DestructiveDelegate() : alarm_(nullptr) {}
 
@@ -120,35 +140,16 @@ TEST_F(QuicAlarmTest, PermanentCancel) {
   EXPECT_FALSE(alarm_.scheduled());
   EXPECT_EQ(QuicTime::Zero(), alarm_.deadline());
 
-  if (!GetQuicRestartFlag(quic_alarm_add_permanent_cancel)) {
-    alarm_.Set(deadline);
-    // When flag is false, PermanentCancel should work like a normal Cancel.
-    EXPECT_TRUE(alarm_.IsSet());
-    EXPECT_TRUE(alarm_.scheduled());
-    EXPECT_EQ(deadline, alarm_.deadline());
-    EXPECT_FALSE(alarm_.IsPermanentlyCancelled());
-    alarm_.PermanentCancel();
-  } else {
-    EXPECT_QUIC_BUG(alarm_.Set(deadline),
-                    "Set called after alarm is permanently cancelled");
-    EXPECT_TRUE(alarm_.IsPermanentlyCancelled());
-  }
+  EXPECT_QUIC_BUG(alarm_.Set(deadline),
+                  "Set called after alarm is permanently cancelled");
+  EXPECT_TRUE(alarm_.IsPermanentlyCancelled());
   EXPECT_FALSE(alarm_.IsSet());
   EXPECT_FALSE(alarm_.scheduled());
   EXPECT_EQ(QuicTime::Zero(), alarm_.deadline());
 
-  if (!GetQuicRestartFlag(quic_alarm_add_permanent_cancel)) {
-    alarm_.Update(deadline, QuicTime::Delta::Zero());
-    EXPECT_TRUE(alarm_.IsSet());
-    EXPECT_TRUE(alarm_.scheduled());
-    EXPECT_EQ(deadline, alarm_.deadline());
-    EXPECT_FALSE(alarm_.IsPermanentlyCancelled());
-    alarm_.PermanentCancel();
-  } else {
-    EXPECT_QUIC_BUG(alarm_.Update(deadline, QuicTime::Delta::Zero()),
-                    "Update called after alarm is permanently cancelled");
-    EXPECT_TRUE(alarm_.IsPermanentlyCancelled());
-  }
+  EXPECT_QUIC_BUG(alarm_.Update(deadline, QuicTime::Delta::Zero()),
+                  "Update called after alarm is permanently cancelled");
+  EXPECT_TRUE(alarm_.IsPermanentlyCancelled());
   EXPECT_FALSE(alarm_.IsSet());
   EXPECT_FALSE(alarm_.scheduled());
   EXPECT_EQ(QuicTime::Zero(), alarm_.deadline());
@@ -202,6 +203,67 @@ TEST_F(QuicAlarmTest, FireDestroysAlarm) {
   alarm->Set(deadline);
   // This should not crash, even though it will destroy alarm.
   alarm->FireAlarm();
+}
+
+TEST_F(QuicAlarmTest, NullAlarmContext) {
+  QuicTime deadline = QuicTime::Zero() + QuicTime::Delta::FromSeconds(7);
+  alarm_.Set(deadline);
+
+  if (GetQuicReloadableFlag(quic_restore_connection_context_in_alarms)) {
+    EXPECT_CALL(*delegate_, GetConnectionContext()).WillOnce(Return(nullptr));
+  }
+
+  EXPECT_CALL(*delegate_, OnAlarm()).WillOnce(Invoke([] {
+    QUIC_TRACELITERAL("Alarm fired.");
+  }));
+  alarm_.FireAlarm();
+}
+
+TEST_F(QuicAlarmTest, AlarmContextWithNullTracer) {
+  QuicConnectionContext context;
+  ASSERT_EQ(context.tracer, nullptr);
+
+  QuicTime deadline = QuicTime::Zero() + QuicTime::Delta::FromSeconds(7);
+  alarm_.Set(deadline);
+
+  if (GetQuicReloadableFlag(quic_restore_connection_context_in_alarms)) {
+    EXPECT_CALL(*delegate_, GetConnectionContext()).WillOnce(Return(&context));
+  }
+
+  EXPECT_CALL(*delegate_, OnAlarm()).WillOnce(Invoke([] {
+    QUIC_TRACELITERAL("Alarm fired.");
+  }));
+  alarm_.FireAlarm();
+}
+
+TEST_F(QuicAlarmTest, AlarmContextWithTracer) {
+  QuicConnectionContext context;
+  std::unique_ptr<TraceCollector> tracer = std::make_unique<TraceCollector>();
+  const TraceCollector& tracer_ref = *tracer;
+  context.tracer = std::move(tracer);
+
+  QuicTime deadline = QuicTime::Zero() + QuicTime::Delta::FromSeconds(7);
+  alarm_.Set(deadline);
+
+  if (GetQuicReloadableFlag(quic_restore_connection_context_in_alarms)) {
+    EXPECT_CALL(*delegate_, GetConnectionContext()).WillOnce(Return(&context));
+  }
+
+  EXPECT_CALL(*delegate_, OnAlarm()).WillOnce(Invoke([] {
+    QUIC_TRACELITERAL("Alarm fired.");
+  }));
+
+  // Since |context| is not installed in the current thread, the messages before
+  // and after FireAlarm() should not be collected by |tracer|.
+  QUIC_TRACELITERAL("Should not be collected before alarm.");
+  alarm_.FireAlarm();
+  QUIC_TRACELITERAL("Should not be collected after alarm.");
+
+  if (GetQuicReloadableFlag(quic_restore_connection_context_in_alarms)) {
+    EXPECT_THAT(tracer_ref.trace(), ElementsAre("Alarm fired."));
+  } else {
+    EXPECT_TRUE(tracer_ref.trace().empty());
+  }
 }
 
 }  // namespace

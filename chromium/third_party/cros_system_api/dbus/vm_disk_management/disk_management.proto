@@ -34,6 +34,9 @@ message GetDiskInfoResponse {
 
   // How much the disk can be expanded by in bytes.
   uint64 expandable_space = 3;
+
+  // The size of the disk.
+  uint64 disk_size = 4;
 }
 
 // Used by the container to request for additional space.

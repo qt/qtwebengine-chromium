@@ -22,6 +22,10 @@ class WebsiteLoginManagerImpl : public WebsiteLoginManager {
  public:
   WebsiteLoginManagerImpl(password_manager::PasswordManagerClient* client,
                           content::WebContents* web_contents);
+
+  WebsiteLoginManagerImpl(const WebsiteLoginManagerImpl&) = delete;
+  WebsiteLoginManagerImpl& operator=(const WebsiteLoginManagerImpl&) = delete;
+
   ~WebsiteLoginManagerImpl() override;
 
   // From WebsiteLoginManager:
@@ -36,9 +40,10 @@ class WebsiteLoginManagerImpl : public WebsiteLoginManager {
   void EditPasswordForLogin(const Login& login,
                             const std::string& new_password,
                             base::OnceCallback<void(bool)> callback) override;
-  std::string GeneratePassword(autofill::FormSignature form_signature,
-                               autofill::FieldSignature field_signature,
-                               uint64_t max_length) override;
+  absl::optional<std::string> GeneratePassword(
+      autofill::FormSignature form_signature,
+      autofill::FieldSignature field_signature,
+      uint64_t max_length) override;
 
   void PresaveGeneratedPassword(const Login& login,
                                 const std::string& password,
@@ -80,8 +85,6 @@ class WebsiteLoginManagerImpl : public WebsiteLoginManager {
 
   // Needs to be the last member.
   base::WeakPtrFactory<WebsiteLoginManagerImpl> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebsiteLoginManagerImpl);
 };
 
 }  // namespace autofill_assistant

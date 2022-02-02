@@ -15,10 +15,6 @@
 
 """Tests for EncodeBase64 and DecodeBase64."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import base64
 
 import numpy as np
@@ -107,7 +103,7 @@ class Base64OpsTest(test_util.TensorFlowTestCase):
       # Invalid length.
       msg = np.random.bytes(99)
       enc = base64.urlsafe_b64encode(msg)
-      with self.assertRaisesRegexp(errors.InvalidArgumentError, "1 modulo 4"):
+      with self.assertRaisesRegex(errors.InvalidArgumentError, "1 modulo 4"):
         try_decode(enc + b"a")
 
       # Invalid char used in encoding.

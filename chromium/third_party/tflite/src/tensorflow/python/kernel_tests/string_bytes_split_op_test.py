@@ -15,10 +15,6 @@
 # ==============================================================================
 """Tests for tf.strings.to_bytes op."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from absl.testing import parameterized
 
 
@@ -72,8 +68,8 @@ class StringsToBytesOpTest(test_util.TensorFlowTestCase,
     def f(v):
       return ragged_string_ops.string_bytes_split(v)
 
-    with self.assertRaisesRegexp(ValueError,
-                                 'input must have a statically-known rank'):
+    with self.assertRaisesRegex(ValueError,
+                                'input must have a statically-known rank'):
       f(['foo'])
 
 

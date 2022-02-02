@@ -1,4 +1,1 @@
-monorail {
-  component: "Blink>ContentIndexing"
-}
-team_email: "platform-capabilities@chromium.org"
+mixins: "//content/browser/content_index/COMMON_METADATA"

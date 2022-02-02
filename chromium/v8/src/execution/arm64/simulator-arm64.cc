@@ -538,6 +538,17 @@ void Simulator::DoRuntimeCall(Instruction* instr) {
       TraceSim("Type: Unknown.\n");
       UNREACHABLE();
 
+    // FAST_C_CALL is temporarily handled here as well, because we lack
+    // proper support for direct C calls with FP params in the simulator.
+    // The generic BUILTIN_CALL path assumes all parameters are passed in
+    // the GP registers, thus supporting calling the slow callback without
+    // crashing. The reason for that is that in the mjsunit tests we check
+    // the `fast_c_api.supports_fp_params` (which is false on non-simulator
+    // builds for arm/arm64), thus we expect that the slow path will be
+    // called. And since the slow path passes the arguments as a `const
+    // FunctionCallbackInfo<Value>&` (which is a GP argument), the call is
+    // made correctly.
+    case ExternalReference::FAST_C_CALL:
     case ExternalReference::BUILTIN_CALL:
 #if defined(V8_OS_WIN)
     {
@@ -1517,7 +1528,6 @@ void Simulator::VisitPCRelAddressing(Instruction* instr) {
       break;
     case ADRP:  // Not implemented in the assembler.
       UNIMPLEMENTED();
-      break;
     default:
       UNREACHABLE();
   }
@@ -2212,7 +2222,6 @@ Simulator::TransactionSize Simulator::get_transaction_size(unsigned size) {
     default:
       UNREACHABLE();
   }
-  return TransactionSize::None;
 }
 
 void Simulator::VisitLoadStoreAcquireRelease(Instruction* instr) {
@@ -5210,7 +5219,6 @@ void Simulator::VisitNEONScalar2RegMisc(Instruction* instr) {
         break;
       default:
         UNIMPLEMENTED();
-        break;
     }
   } else {
     VectorFormat fpf = nfd.GetVectorFormat(nfd.FPScalarFormatMap());

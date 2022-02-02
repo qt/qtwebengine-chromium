@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests and benchmarks for the ResNet50 model, executed eagerly."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import gc
 import os
 import tempfile
@@ -108,16 +104,12 @@ class ResNet50Test(tf.test.TestCase):
   def test_apply(self):
     self._apply(defun=False)
 
-  @test_util.disable_tfrt(
-      'TFE_ContextGetExecutorForThread not implemented b/156188669')
   def test_apply_async(self):
     self._apply(defun=False, execution_mode=context.ASYNC)
 
-  @test_util.disable_tfrt('Graph is not supported yet. b/156187905')
   def test_apply_with_defun(self):
     self._apply(defun=True)
 
-  @test_util.disable_tfrt('Graph is not supported yet. b/156187905')
   def test_apply_with_defun_async(self):
     self._apply(defun=True, execution_mode=context.ASYNC)
 
@@ -270,8 +262,8 @@ class ResNet50Benchmarks(tf.test.Benchmark):
 
   def _report(self, label, start, num_iters, device, batch_size, data_format,
               num_replicas=1):
-    resnet50_test_util.report(self, label, start, num_iters, device,
-                              batch_size, data_format, num_replicas=1)
+    resnet50_test_util.report(self, label, start, num_iters, device, batch_size,
+                              data_format, num_replicas)
 
   def _train_batch_sizes(self):
     """Choose batch sizes based on GPU capability."""
@@ -286,6 +278,9 @@ class ResNet50Benchmarks(tf.test.Benchmark):
         # during the test seems to exclude the amount TensorFlow has allocated,
         # which isn't useful.
         if 'K20' in device.physical_device_desc:
+          return (16,)
+        # Quardro P1000.
+        if 'P1000' in device.physical_device_desc:
           return (16,)
         if 'P100' in device.physical_device_desc:
           return (16, 32, 64)
@@ -337,7 +332,6 @@ class ResNet50Benchmarks(tf.test.Benchmark):
         defun=False,
         execution_mode=context.ASYNC)
 
-  @test_util.disable_tfrt('Graph is not supported yet. b/156187905')
   def benchmark_eager_apply_with_defun(self):
     self._benchmark_eager_apply(
         'eager_apply_with_defun',
@@ -355,7 +349,9 @@ class ResNet50Benchmarks(tf.test.Benchmark):
         (images, labels) = resnet50_test_util.random_batch(
             batch_size, data_format)
         model = resnet50.ResNet50(data_format)
-        optimizer = tf.keras.optimizers.SGD(0.1)
+        # TODO(b/161911585): tf_to_corert MLIR lowering pipeline should handle
+        # case when momentum is not set.
+        optimizer = tf.keras.optimizers.SGD(0.1, 0.1)
         apply_grads = apply_gradients
         if defun:
           model.call = tf.function(model.call)
@@ -397,7 +393,6 @@ class ResNet50Benchmarks(tf.test.Benchmark):
         defun=False,
         execution_mode=context.ASYNC)
 
-  @test_util.disable_tfrt('Graph is not supported yet. b/156187905')
   def benchmark_eager_train_with_defun(self):
     self._benchmark_eager_train(
         'eager_train_with_defun', MockIterator,
@@ -416,7 +411,6 @@ class ResNet50Benchmarks(tf.test.Benchmark):
         resnet50_test_util.device_and_data_format(),
         defun=False)
 
-  @test_util.disable_tfrt('Graph is not supported yet. b/156187905')
   def benchmark_eager_train_datasets_with_defun(self):
 
     def make_iterator(tensors):

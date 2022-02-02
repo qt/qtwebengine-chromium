@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.math_ops.matrix_solve."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.client import session
@@ -124,7 +120,7 @@ class MatrixSolveLsOpTest(test_lib.TestCase):
         feed_dict = None
         self.assertEqual(np_ans.shape, tf_ans.get_shape())
       if feed_dict:
-        with self.session(use_gpu=True) as sess:
+        with self.session() as sess:
           tf_ans_val = sess.run(tf_ans, feed_dict=feed_dict)
       else:
         tf_ans_val = self.evaluate(tf_ans)
@@ -137,7 +133,7 @@ class MatrixSolveLsOpTest(test_lib.TestCase):
         tf_r = math_ops.matmul(a, tf_r, adjoint_a=True)
         tf_r_norm = linalg_ops.norm(tf_r, ord="fro", axis=[-2, -1])
         if feed_dict:
-          with self.session(use_gpu=True) as sess:
+          with self.session() as sess:
             tf_ans_val, tf_r_norm_val = sess.run([tf_ans, tf_r_norm],
                                                  feed_dict=feed_dict)
         else:
@@ -147,7 +143,7 @@ class MatrixSolveLsOpTest(test_lib.TestCase):
   @test_util.run_in_graph_and_eager_modes(use_gpu=True)
   def testWrongDimensions(self):
     # The matrix and right-hand sides should have the same number of rows.
-    with self.session(use_gpu=True):
+    with self.session():
       matrix = constant_op.constant([[1., 0.], [0., 1.]])
       rhs = constant_op.constant([[1., 0.]])
       with self.assertRaises((ValueError, errors_impl.InvalidArgumentError)):
@@ -175,8 +171,8 @@ class MatrixSolveLsOpTest(test_lib.TestCase):
   @test_util.run_in_graph_and_eager_modes(use_gpu=True)
   def testBatchResultSize(self):
     # 3x3x3 matrices, 3x3x1 right-hand sides.
-    matrix = np.array([1., 0., 0., 0., 1., 0., 0., 0., 1.] * 3).reshape(3, 3, 3)
-    rhs = np.array([1., 2., 3.] * 3).reshape(3, 3, 1)
+    matrix = np.array([1., 0., 0., 0., 1., 0., 0., 0., 1.] * 3).reshape(3, 3, 3)  # pylint: disable=too-many-function-args
+    rhs = np.array([1., 2., 3.] * 3).reshape(3, 3, 1)  # pylint: disable=too-many-function-args
     answer = linalg_ops.matrix_solve(matrix, rhs)
     ls_answer = linalg_ops.matrix_solve_ls(matrix, rhs)
     self.assertEqual(ls_answer.get_shape(), [3, 3, 1])
@@ -335,7 +331,7 @@ class MatrixSolveLsBenchmark(test_lib.Benchmark):
             ops.device("/cpu:0"):
           matrix, rhs = _GenerateTestData(matrix_shape, num_rhs)
           x = linalg_ops.matrix_solve_ls(matrix, rhs, regularizer)
-          variables.global_variables_initializer().run()
+          self.evaluate(variables.global_variables_initializer())
           self.run_op_benchmark(
               sess,
               control_flow_ops.group(x),
@@ -350,7 +346,7 @@ class MatrixSolveLsBenchmark(test_lib.Benchmark):
                 ops.device("/gpu:0"):
             matrix, rhs = _GenerateTestData(matrix_shape, num_rhs)
             x = linalg_ops.matrix_solve_ls(matrix, rhs, regularizer)
-            variables.global_variables_initializer().run()
+            self.evaluate(variables.global_variables_initializer())
             self.run_op_benchmark(
                 sess,
                 control_flow_ops.group(x),
@@ -362,10 +358,7 @@ class MatrixSolveLsBenchmark(test_lib.Benchmark):
 
 
 if __name__ == "__main__":
-  dtypes_to_test = [np.float32, np.float64]
-  if not test_lib.is_built_with_rocm():
-    # ROCm does not support BLAS operations for complex types
-    dtypes_to_test += [np.complex64, np.complex128]
+  dtypes_to_test = [np.float32, np.float64, np.complex64, np.complex128]
   for dtype_ in dtypes_to_test:
     for use_placeholder_ in set([False, True]):
       for fast_ in [True, False]:

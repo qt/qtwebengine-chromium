@@ -382,14 +382,18 @@ bool V4L2VideoDecoder::SetupOutputFormat(const gfx::Size& size,
   }
 
   // Ask the pipeline to pick the output format.
-  const absl::optional<std::pair<Fourcc, gfx::Size>> output_format =
-      client_->PickDecoderOutputFormat(candidates, visible_rect);
-  if (!output_format) {
+  StatusOr<std::pair<Fourcc, gfx::Size>> status_or_output_format =
+      client_->PickDecoderOutputFormat(
+          candidates, visible_rect, aspect_ratio_.GetNaturalSize(visible_rect),
+          /*output_size=*/absl::nullopt, num_output_frames_,
+          /*use+protected=*/false, /*need_aux_frame_pool=*/false);
+  if (status_or_output_format.has_error()) {
     VLOGF(1) << "Failed to pick an output format.";
     return false;
   }
-  Fourcc fourcc = std::move(output_format->first);
-  gfx::Size picked_size = std::move(output_format->second);
+  const auto output_format = std::move(status_or_output_format).value();
+  Fourcc fourcc = std::move(output_format.first);
+  gfx::Size picked_size = std::move(output_format.second);
 
   // We successfully picked the output format. Now setup output format again.
   absl::optional<struct v4l2_format> format =
@@ -412,27 +416,34 @@ bool V4L2VideoDecoder::SetupOutputFormat(const gfx::Size& size,
   // created by VideoFramePool.
   DmabufVideoFramePool* pool = client_->GetVideoFramePool();
   if (pool) {
-    absl::optional<GpuBufferLayout> layout = pool->Initialize(
+    // TODO(andrescj): the call to PickDecoderOutputFormat() should have already
+    // initialized the frame pool, so this call to Initialize() is redundant.
+    // However, we still have to get the GpuBufferLayout to find out the
+    // modifier that we need to give to the driver. We should add a
+    // GetGpuBufferLayout() method to DmabufVideoFramePool to query that without
+    // having to re-initialize the pool.
+    StatusOr<GpuBufferLayout> status_or_layout = pool->Initialize(
         fourcc, adjusted_size, visible_rect,
         aspect_ratio_.GetNaturalSize(visible_rect), num_output_frames_,
         /*use_protected=*/false);
-    if (!layout) {
+    if (status_or_layout.has_error()) {
       VLOGF(1) << "Failed to setup format to VFPool";
       return false;
     }
-    if (layout->size() != adjusted_size) {
+    const GpuBufferLayout layout = std::move(status_or_layout).value();
+    if (layout.size() != adjusted_size) {
       VLOGF(1) << "The size adjusted by VFPool is different from one "
                << "adjusted by a video driver. fourcc: " << fourcc.ToString()
                << ", (video driver v.s. VFPool) " << adjusted_size.ToString()
-               << " != " << layout->size().ToString();
+               << " != " << layout.size().ToString();
       return false;
     }
 
-    VLOGF(1) << "buffer modifier: " << std::hex << layout->modifier();
-    if (layout->modifier() &&
-        layout->modifier() != gfx::NativePixmapHandle::kNoModifier) {
+    VLOGF(1) << "buffer modifier: " << std::hex << layout.modifier();
+    if (layout.modifier() &&
+        layout.modifier() != gfx::NativePixmapHandle::kNoModifier) {
       absl::optional<struct v4l2_format> modifier_format =
-          output_queue_->SetModifierFormat(layout->modifier(), picked_size);
+          output_queue_->SetModifierFormat(layout.modifier(), picked_size);
       if (!modifier_format)
         return false;
 

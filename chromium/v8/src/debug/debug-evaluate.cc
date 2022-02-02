@@ -34,9 +34,8 @@ static MaybeHandle<SharedFunctionInfo> GetFunctionInfo(Isolate* isolate,
                                ScriptOriginOptions(false, true));
   script_details.repl_mode = repl_mode;
   return Compiler::GetSharedFunctionInfoForScript(
-      isolate, source, script_details, nullptr, nullptr,
-      ScriptCompiler::kNoCompileOptions, ScriptCompiler::kNoCacheNoReason,
-      NOT_NATIVES_CODE);
+      isolate, source, script_details, ScriptCompiler::kNoCompileOptions,
+      ScriptCompiler::kNoCacheNoReason, NOT_NATIVES_CODE);
 }
 }  // namespace
 
@@ -289,9 +288,8 @@ void DebugEvaluate::ContextBuilder::UpdateValues() {
   }
 }
 
-namespace {
-
-bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
+// static
+bool DebugEvaluate::IsSideEffectFreeIntrinsic(Runtime::FunctionId id) {
 // Use macro to include only the non-inlined version of an intrinsic.
 #define INTRINSIC_ALLOWLIST(V)                \
   /* Conversions */                           \
@@ -386,18 +384,15 @@ bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
   V(StringMaxLength)                          \
   V(StringToArray)                            \
   V(AsyncFunctionEnter)                       \
-  V(AsyncFunctionReject)                      \
   V(AsyncFunctionResolve)                     \
   /* Test */                                  \
   V(GetOptimizationStatus)                    \
   V(OptimizeFunctionOnNextCall)               \
-  V(OptimizeOsr)                              \
-  V(UnblockConcurrentRecompilation)
+  V(OptimizeOsr)
 
 // Intrinsics with inline versions have to be allowlisted here a second time.
 #define INLINE_INTRINSIC_ALLOWLIST(V) \
   V(AsyncFunctionEnter)               \
-  V(AsyncFunctionReject)              \
   V(AsyncFunctionResolve)
 
 #define CASE(Name) case Runtime::k##Name:
@@ -419,6 +414,8 @@ bool IntrinsicHasNoSideEffect(Runtime::FunctionId id) {
 #undef INTRINSIC_ALLOWLIST
 #undef INLINE_INTRINSIC_ALLOWLIST
 }
+
+namespace {
 
 bool BytecodeHasNoSideEffect(interpreter::Bytecode bytecode) {
   using interpreter::Bytecode;
@@ -755,6 +752,7 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kStringFromCharCode:
     case Builtin::kStringFromCodePoint:
     case Builtin::kStringConstructor:
+    case Builtin::kStringListFromIterable:
     case Builtin::kStringPrototypeAnchor:
     case Builtin::kStringPrototypeAt:
     case Builtin::kStringPrototypeBig:
@@ -833,6 +831,78 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kAllocateRegularInOldGeneration:
       return DebugInfo::kHasNoSideEffect;
 
+#ifdef V8_INTL_SUPPORT
+    // Intl builtins.
+    case Builtin::kIntlGetCanonicalLocales:
+    // Intl.Collator builtins.
+    case Builtin::kCollatorConstructor:
+    case Builtin::kCollatorInternalCompare:
+    case Builtin::kCollatorPrototypeCompare:
+    case Builtin::kCollatorPrototypeResolvedOptions:
+    case Builtin::kCollatorSupportedLocalesOf:
+    // Intl.DateTimeFormat builtins.
+    case Builtin::kDateTimeFormatConstructor:
+    case Builtin::kDateTimeFormatInternalFormat:
+    case Builtin::kDateTimeFormatPrototypeFormat:
+    case Builtin::kDateTimeFormatPrototypeFormatRange:
+    case Builtin::kDateTimeFormatPrototypeFormatRangeToParts:
+    case Builtin::kDateTimeFormatPrototypeFormatToParts:
+    case Builtin::kDateTimeFormatPrototypeResolvedOptions:
+    case Builtin::kDateTimeFormatSupportedLocalesOf:
+    // Intl.DisplayNames builtins.
+    case Builtin::kDisplayNamesConstructor:
+    case Builtin::kDisplayNamesPrototypeOf:
+    case Builtin::kDisplayNamesPrototypeResolvedOptions:
+    case Builtin::kDisplayNamesSupportedLocalesOf:
+    // Intl.ListFormat builtins.
+    case Builtin::kListFormatConstructor:
+    case Builtin::kListFormatPrototypeFormat:
+    case Builtin::kListFormatPrototypeFormatToParts:
+    case Builtin::kListFormatPrototypeResolvedOptions:
+    case Builtin::kListFormatSupportedLocalesOf:
+    // Intl.Locale builtins.
+    case Builtin::kLocaleConstructor:
+    case Builtin::kLocalePrototypeBaseName:
+    case Builtin::kLocalePrototypeCalendar:
+    case Builtin::kLocalePrototypeCalendars:
+    case Builtin::kLocalePrototypeCaseFirst:
+    case Builtin::kLocalePrototypeCollation:
+    case Builtin::kLocalePrototypeCollations:
+    case Builtin::kLocalePrototypeHourCycle:
+    case Builtin::kLocalePrototypeHourCycles:
+    case Builtin::kLocalePrototypeLanguage:
+    case Builtin::kLocalePrototypeMaximize:
+    case Builtin::kLocalePrototypeMinimize:
+    case Builtin::kLocalePrototypeNumeric:
+    case Builtin::kLocalePrototypeNumberingSystem:
+    case Builtin::kLocalePrototypeNumberingSystems:
+    case Builtin::kLocalePrototypeRegion:
+    case Builtin::kLocalePrototypeScript:
+    case Builtin::kLocalePrototypeTextInfo:
+    case Builtin::kLocalePrototypeTimeZones:
+    case Builtin::kLocalePrototypeToString:
+    case Builtin::kLocalePrototypeWeekInfo:
+    // Intl.NumberFormat builtins.
+    case Builtin::kNumberFormatConstructor:
+    case Builtin::kNumberFormatInternalFormatNumber:
+    case Builtin::kNumberFormatPrototypeFormatNumber:
+    case Builtin::kNumberFormatPrototypeFormatToParts:
+    case Builtin::kNumberFormatPrototypeResolvedOptions:
+    case Builtin::kNumberFormatSupportedLocalesOf:
+    // Intl.PluralRules builtins.
+    case Builtin::kPluralRulesConstructor:
+    case Builtin::kPluralRulesPrototypeResolvedOptions:
+    case Builtin::kPluralRulesPrototypeSelect:
+    case Builtin::kPluralRulesSupportedLocalesOf:
+    // Intl.RelativeTimeFormat builtins.
+    case Builtin::kRelativeTimeFormatConstructor:
+    case Builtin::kRelativeTimeFormatPrototypeFormat:
+    case Builtin::kRelativeTimeFormatPrototypeFormatToParts:
+    case Builtin::kRelativeTimeFormatPrototypeResolvedOptions:
+    case Builtin::kRelativeTimeFormatSupportedLocalesOf:
+      return DebugInfo::kHasNoSideEffect;
+#endif  // V8_INTL_SUPPORT
+
     // Set builtins.
     case Builtin::kSetIteratorPrototypeNext:
     case Builtin::kSetPrototypeAdd:
@@ -884,6 +954,7 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
     case Builtin::kRegExpPrototypeUnicodeGetter:
     case Builtin::kRegExpPrototypeStickyGetter:
       return DebugInfo::kRequiresRuntimeChecks;
+
     default:
       if (FLAG_trace_side_effect_free_debug_evaluate) {
         PrintF("[debug-evaluate] built-in %s may cause side effect.\n",
@@ -904,7 +975,7 @@ bool BytecodeRequiresRuntimeCheck(interpreter::Bytecode bytecode) {
     case Bytecode::kStaCurrentContextSlot:
       return true;
     default:
-      return false;
+      return interpreter::Bytecodes::IsCallRuntime(bytecode);
   }
 }
 
@@ -931,16 +1002,6 @@ DebugInfo::SideEffectState DebugEvaluate::FunctionGetSideEffectState(
     for (interpreter::BytecodeArrayIterator it(bytecode_array); !it.done();
          it.Advance()) {
       interpreter::Bytecode bytecode = it.current_bytecode();
-
-      if (interpreter::Bytecodes::IsCallRuntime(bytecode)) {
-        Runtime::FunctionId id =
-            (bytecode == interpreter::Bytecode::kInvokeIntrinsic)
-                ? it.GetIntrinsicIdOperand(0)
-                : it.GetRuntimeIdOperand(0);
-        if (IntrinsicHasNoSideEffect(id)) continue;
-        return DebugInfo::kHasSideEffects;
-      }
-
       if (BytecodeHasNoSideEffect(bytecode)) continue;
       if (BytecodeRequiresRuntimeCheck(bytecode)) {
         requires_runtime_checks = true;
@@ -981,7 +1042,7 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtin caller,
   switch (callee) {
       // Transitively called Builtins:
     case Builtin::kAbort:
-    case Builtin::kAbortCSAAssert:
+    case Builtin::kAbortCSADcheck:
     case Builtin::kAdaptorWithBuiltinExitFrame:
     case Builtin::kArrayConstructorImpl:
     case Builtin::kArrayEveryLoopContinuation:
@@ -1061,6 +1122,14 @@ static bool TransitivelyCalledBuiltinHasNoSideEffect(Builtin caller,
     case Builtin::kTSANRelaxedStore32SaveFP:
     case Builtin::kTSANRelaxedStore64IgnoreFP:
     case Builtin::kTSANRelaxedStore64SaveFP:
+    case Builtin::kTSANSeqCstStore8IgnoreFP:
+    case Builtin::kTSANSeqCstStore8SaveFP:
+    case Builtin::kTSANSeqCstStore16IgnoreFP:
+    case Builtin::kTSANSeqCstStore16SaveFP:
+    case Builtin::kTSANSeqCstStore32IgnoreFP:
+    case Builtin::kTSANSeqCstStore32SaveFP:
+    case Builtin::kTSANSeqCstStore64IgnoreFP:
+    case Builtin::kTSANSeqCstStore64SaveFP:
     case Builtin::kTSANRelaxedLoad32IgnoreFP:
     case Builtin::kTSANRelaxedLoad32SaveFP:
     case Builtin::kTSANRelaxedLoad64IgnoreFP:

@@ -214,15 +214,13 @@ class V8_EXPORT_PRIVATE CallDescriptor final
     kInitializeRootRegister = 1u << 3,
     // Does not ever try to allocate space on our heap.
     kNoAllocate = 1u << 4,
-    // Use retpoline for this call if indirect.
-    kRetpoline = 1u << 5,
     // Use the kJavaScriptCallCodeStartRegister (fixed) register for the
     // indirect target address when calling.
-    kFixedTargetRegister = 1u << 6,
-    kCallerSavedRegisters = 1u << 7,
+    kFixedTargetRegister = 1u << 5,
+    kCallerSavedRegisters = 1u << 6,
     // The kCallerSavedFPRegisters only matters (and set) when the more general
     // flag for kCallerSavedRegisters above is also set.
-    kCallerSavedFPRegisters = 1u << 8,
+    kCallerSavedFPRegisters = 1u << 7,
     // Tail calls for tier up are special (in fact they are different enough
     // from normal tail calls to warrant a dedicated opcode; but they also have
     // enough similar aspects that reusing the TailCall opcode is pragmatic).
@@ -238,15 +236,15 @@ class V8_EXPORT_PRIVATE CallDescriptor final
     //
     // In other words, behavior is identical to a jmp instruction prior caller
     // frame construction.
-    kIsTailCallForTierUp = 1u << 9,
+    kIsTailCallForTierUp = 1u << 8,
+
+    // AIX has a function descriptor by default but it can be disabled for a
+    // certain CFunction call (only used for Kind::kCallAddress).
+    kNoFunctionDescriptor = 1u << 9,
 
     // Flags past here are *not* encoded in InstructionCode and are thus not
     // accessible from the code generator. See also
     // kFlagsBitsEncodedInInstructionCode.
-
-    // AIX has a function descriptor by default but it can be disabled for a
-    // certain CFunction call (only used for Kind::kCallAddress).
-    kNoFunctionDescriptor = 1u << 10,
   };
   using Flags = base::Flags<Flag>;
 
@@ -307,8 +305,26 @@ class V8_EXPORT_PRIVATE CallDescriptor final
   // The number of return values from this call.
   size_t ReturnCount() const { return location_sig_->return_count(); }
 
-  // The number of C parameters to this call.
+  // The number of C parameters to this call. The following invariant
+  // should hold true:
+  // ParameterCount() == GPParameterCount() + FPParameterCount()
   size_t ParameterCount() const { return location_sig_->parameter_count(); }
+
+  // The number of general purpose C parameters to this call.
+  size_t GPParameterCount() const {
+    if (!gp_param_count_) {
+      ComputeParamCounts();
+    }
+    return gp_param_count_.value();
+  }
+
+  // The number of floating point C parameters to this call.
+  size_t FPParameterCount() const {
+    if (!fp_param_count_) {
+      ComputeParamCounts();
+    }
+    return fp_param_count_.value();
+  }
 
   // The number of stack parameter slots to the call.
   size_t ParameterSlotCount() const { return param_slot_count_; }
@@ -419,6 +435,8 @@ class V8_EXPORT_PRIVATE CallDescriptor final
   }
 
  private:
+  void ComputeParamCounts() const;
+
   friend class Linkage;
 
   const Kind kind_;
@@ -436,6 +454,9 @@ class V8_EXPORT_PRIVATE CallDescriptor final
   const Flags flags_;
   const StackArgumentOrder stack_order_;
   const char* const debug_name_;
+
+  mutable base::Optional<size_t> gp_param_count_;
+  mutable base::Optional<size_t> fp_param_count_;
 };
 
 DEFINE_OPERATORS_FOR_FLAGS(CallDescriptor::Flags)

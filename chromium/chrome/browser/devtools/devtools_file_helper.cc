@@ -40,8 +40,11 @@
 #include "storage/browser/file_system/file_system_url.h"
 #include "storage/browser/file_system/isolated_context.h"
 #include "storage/common/file_system/file_system_util.h"
+#include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/shell_dialogs/select_file_dialog.h"
+#include "url/gurl.h"
+#include "url/origin.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -64,6 +67,9 @@ typedef base::OnceCallback<void(void)> CanceledCallback;
 
 class SelectFileDialog : public ui::SelectFileDialog::Listener {
  public:
+  SelectFileDialog(const SelectFileDialog&) = delete;
+  SelectFileDialog& operator=(const SelectFileDialog&) = delete;
+
   static void Show(SelectedCallback selected_callback,
                    CanceledCallback canceled_callback,
                    WebContents* web_contents,
@@ -124,8 +130,6 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener {
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
   SelectedCallback selected_callback_;
   CanceledCallback canceled_callback_;
-
-  DISALLOW_COPY_AND_ASSIGN(SelectFileDialog);
 };
 
 void WriteToFile(const base::FilePath& path, const std::string& content) {
@@ -323,8 +327,9 @@ void DevToolsFileHelper::AddFileSystem(
 void DevToolsFileHelper::UpgradeDraggedFileSystemPermissions(
     const std::string& file_system_url,
     const ShowInfoBarCallback& show_info_bar_callback) {
-  storage::FileSystemURL root_url =
-      isolated_context()->CrackURL(GURL(file_system_url));
+  const GURL gurl(file_system_url);
+  storage::FileSystemURL root_url = isolated_context()->CrackURL(
+      gurl, blink::StorageKey(url::Origin::Create(gurl)));
   if (!root_url.is_valid() || !root_url.path().empty())
     return;
 

@@ -75,7 +75,7 @@ export class SearchResultsPane extends UI.Widget.VBox {
   }
 }
 
-export const matchesExpandedByDefault = 20;
+export const matchesExpandedByDefault = 200;
 export const matchesShownAtOnce = 20;
 
 export class SearchResultsTreeElement extends UI.TreeOutline.TreeElement {
@@ -217,7 +217,7 @@ export class SearchResultsTreeElement extends UI.TreeOutline.TreeElement {
     contentSpan.className = 'search-match-content';
     contentSpan.textContent = lineContent;
     UI.ARIAUtils.setAccessibleName(contentSpan, `${lineContent} line`);
-    UI.UIUtils.highlightRangesWithStyleClass(contentSpan, matchRanges, 'highlighted-match');
+    UI.UIUtils.highlightRangesWithStyleClass(contentSpan, matchRanges, 'highlighted-search-result');
     return contentSpan;
   }
 

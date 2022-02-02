@@ -16,12 +16,11 @@
 GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fGLSLGeneration = k330_GrGLSLGeneration;
     fShaderDerivativeSupport = false;
-    fGeometryShaderSupport = false;
-    fGSInvocationsSupport = false;
     fDstReadInShaderSupport = false;
     fDualSourceBlendingSupport = false;
     fIntegerSupport = false;
     fNonsquareMatrixSupport = false;
+    fInverseHyperbolicSupport = false;
     fFBFetchSupport = false;
     fFBFetchNeedsCustomOutput = false;
     fUsesPrecisionModifiers = false;
@@ -42,6 +41,7 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
     fUnfoldShortCircuitAsTernary = false;
     fEmulateAbsIntFunction = false;
     fRewriteDoWhileLoops = false;
+    fRewriteSwitchStatements = false;
     fRemovePowWithConstantExponent = false;
     fMustWriteToFragColor = false;
     fNoDefaultPrecisionForExternalSamplers = false;
@@ -69,8 +69,6 @@ GrShaderCaps::GrShaderCaps(const GrContextOptions& options) {
 
     fVersionDeclString = nullptr;
     fShaderDerivativeExtensionString = nullptr;
-    fGeometryShaderExtensionString = nullptr;
-    fGSInvocationsExtensionString = nullptr;
     fSecondaryOutputExtensionString = nullptr;
     fExternalTextureExtensionString = nullptr;
     fSecondExternalTextureExtensionString = nullptr;
@@ -89,12 +87,11 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->beginObject();
 
     writer->appendBool("Shader Derivative Support", fShaderDerivativeSupport);
-    writer->appendBool("Geometry Shader Support", fGeometryShaderSupport);
-    writer->appendBool("Geometry Shader Invocations Support", fGSInvocationsSupport);
     writer->appendBool("Dst Read In Shader Support", fDstReadInShaderSupport);
     writer->appendBool("Dual Source Blending Support", fDualSourceBlendingSupport);
     writer->appendBool("Integer Support", fIntegerSupport);
     writer->appendBool("Nonsquare Matrix Support", fNonsquareMatrixSupport);
+    writer->appendBool("Inverse Hyperbolic Support", fInverseHyperbolicSupport);
 
     static const char* kAdvBlendEqInteractionStr[] = {
         "Not Supported",
@@ -128,6 +125,7 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Unfold short circuit as ternary", fUnfoldShortCircuitAsTernary);
     writer->appendBool("Emulate abs(int) function", fEmulateAbsIntFunction);
     writer->appendBool("Rewrite do while loops", fRewriteDoWhileLoops);
+    writer->appendBool("Rewrite switch statements", fRewriteSwitchStatements);
     writer->appendBool("Rewrite pow with constant exponent", fRemovePowWithConstantExponent);
     writer->appendBool("Must write to sk_FragColor [workaround]", fMustWriteToFragColor);
     writer->appendBool("Don't add default precision statement for samplerExternalOES",
@@ -181,6 +179,7 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fUnfoldShortCircuitAsTernary);
         SkASSERT(!fEmulateAbsIntFunction);
         SkASSERT(!fRewriteDoWhileLoops);
+        SkASSERT(!fRewriteSwitchStatements);
         SkASSERT(!fRemovePowWithConstantExponent);
         SkASSERT(!fMustWriteToFragColor);
         SkASSERT(!fNoDefaultPrecisionForExternalSamplers);
@@ -199,9 +198,6 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
     }
     if (options.fSuppressFramebufferFetch) {
         fFBFetchSupport = false;
-    }
-    if (options.fSuppressGeometryShaders) {
-        fGeometryShaderSupport = false;
     }
     if (options.fMaxTessellationSegmentsOverride > 0) {
         fMaxTessellationSegments = std::min(options.fMaxTessellationSegmentsOverride,

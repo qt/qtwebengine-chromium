@@ -24,6 +24,7 @@
 #include "dawn_native/CachedObject.h"
 #include "dawn_native/Error.h"
 #include "dawn_native/Forward.h"
+#include "dawn_native/ObjectBase.h"
 
 #include "dawn_native/dawn_platform.h"
 
@@ -39,12 +40,16 @@ namespace dawn_native {
     // Bindings are specified as a |BindingNumber| in the BindGroupLayoutDescriptor.
     // These numbers may be arbitrary and sparse. Internally, Dawn packs these numbers
     // into a packed range of |BindingIndex| integers.
-    class BindGroupLayoutBase : public CachedObject {
+    class BindGroupLayoutBase : public ApiObjectBase, public CachedObject {
       public:
-        BindGroupLayoutBase(DeviceBase* device, const BindGroupLayoutDescriptor* descriptor);
+        BindGroupLayoutBase(DeviceBase* device,
+                            const BindGroupLayoutDescriptor* descriptor,
+                            PipelineCompatibilityToken pipelineCompatibilityToken);
         ~BindGroupLayoutBase() override;
 
         static BindGroupLayoutBase* MakeError(DeviceBase* device);
+
+        ObjectType GetType() const override;
 
         // A map from the BindingNumber to its packed BindingIndex.
         using BindingMap = std::map<BindingNumber, BindingIndex>;
@@ -75,6 +80,13 @@ namespace dawn_native {
         // Used to get counts and validate them in pipeline layout creation. Other getters
         // should be used to get typed integer counts.
         const BindingCounts& GetBindingCountInfo() const;
+
+        // Tests that the BindingInfo of two bind groups are equal,
+        // ignoring their compatibility groups.
+        bool IsLayoutEqual(const BindGroupLayoutBase* other,
+                           bool excludePipelineCompatibiltyToken = false) const;
+
+        PipelineCompatibilityToken GetPipelineCompatibilityToken() const;
 
         struct BufferBindingData {
             uint64_t offset;
@@ -115,6 +127,10 @@ namespace dawn_native {
 
         // Map from BindGroupLayoutEntry.binding to packed indices.
         BindingMap mBindingMap;
+
+        // Non-0 if this BindGroupLayout was created as part of a default PipelineLayout.
+        const PipelineCompatibilityToken mPipelineCompatibilityToken =
+            PipelineCompatibilityToken(0);
     };
 
 }  // namespace dawn_native

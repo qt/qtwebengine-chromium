@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 export const generatedProperties = [
-  {'name': '-webkit-app-region', 'keywords': ['none', 'drag', 'no-drag']},
   {'name': '-webkit-border-horizontal-spacing', 'inherited': true},
   {'name': '-webkit-border-image'},
   {'name': '-webkit-border-vertical-spacing', 'inherited': true},
@@ -129,6 +128,7 @@ export const generatedProperties = [
       'step-start', 'step-end'
     ]
   },
+  {'name': 'app-region', 'keywords': ['none', 'drag', 'no-drag']},
   {'name': 'appearance'},
   {'name': 'ascent-override'},
   {'name': 'aspect-ratio', 'keywords': ['auto']},
@@ -332,10 +332,14 @@ export const generatedProperties = [
     'name': 'contain',
     'keywords': ['none', 'strict', 'content', 'size', 'layout', 'style', 'paint', 'inline-size', 'block-size']
   },
-  {'name': 'contain-intrinsic-size', 'keywords': ['auto']},
+  {'name': 'contain-intrinsic-block-size'},
+  {'name': 'contain-intrinsic-height', 'keywords': ['auto', 'none']},
+  {'name': 'contain-intrinsic-inline-size'},
+  {'longhands': ['contain-intrinsic-width', 'contain-intrinsic-height'], 'name': 'contain-intrinsic-size'},
+  {'name': 'contain-intrinsic-width', 'keywords': ['auto', 'none']},
   {'longhands': ['container-type', 'container-name'], 'name': 'container'},
   {'name': 'container-name', 'keywords': ['none']},
-  {'name': 'container-type', 'keywords': ['none', 'block-size', 'inline-size']},
+  {'name': 'container-type', 'keywords': ['none', 'block-size', 'inline-size', 'size']},
   {'name': 'content'},
   {'name': 'content-visibility', 'keywords': ['visible', 'auto', 'hidden', 'hidden-matchable']},
   {'name': 'counter-increment', 'keywords': ['none']},
@@ -401,7 +405,7 @@ export const generatedProperties = [
   {'name': 'fill-rule', 'inherited': true, 'keywords': ['nonzero', 'evenodd']},
   {'name': 'filter', 'keywords': ['none']},
   {'longhands': ['flex-grow', 'flex-shrink', 'flex-basis'], 'name': 'flex'},
-  {'name': 'flex-basis', 'keywords': ['auto']},
+  {'name': 'flex-basis', 'keywords': ['auto', 'fit-content', 'min-content', 'max-content', 'content']},
   {'name': 'flex-direction', 'keywords': ['row', 'row-reverse', 'column', 'column-reverse']},
   {'longhands': ['flex-direction', 'flex-wrap'], 'name': 'flex-flow'},
   {'name': 'flex-grow'},
@@ -441,6 +445,14 @@ export const generatedProperties = [
     ]
   },
   {'name': 'font-style', 'inherited': true, 'keywords': ['normal', 'italic', 'oblique']},
+  {
+    'longhands': ['font-synthesis-weight', 'font-synthesis-style', 'font-synthesis-small-caps'],
+    'name': 'font-synthesis',
+    'inherited': true
+  },
+  {'name': 'font-synthesis-small-caps', 'inherited': true, 'keywords': ['auto', 'none']},
+  {'name': 'font-synthesis-style', 'inherited': true, 'keywords': ['auto', 'none']},
+  {'name': 'font-synthesis-weight', 'inherited': true, 'keywords': ['auto', 'none']},
   {
     'longhands': ['font-variant-ligatures', 'font-variant-caps', 'font-variant-numeric', 'font-variant-east-asian'],
     'name': 'font-variant',
@@ -774,7 +786,6 @@ export const generatedProperties = [
   },
   {'name': 'text-underline-offset', 'inherited': true, 'keywords': ['auto']},
   {'name': 'text-underline-position', 'inherited': true, 'keywords': ['auto', 'from-font', 'under', 'left', 'right']},
-  {'name': 'time-range'},
   {'name': 'top', 'keywords': ['auto']},
   {
     'name': 'touch-action',
@@ -828,7 +839,6 @@ export const generatedProperties = [
   {'name': 'zoom'}
 ];
 export const generatedPropertyValues = {
-  '-webkit-app-region': {'values': ['none', 'drag', 'no-drag']},
   '-webkit-box-align': {'values': ['stretch', 'start', 'center', 'end', 'baseline']},
   '-webkit-box-decoration-break': {'values': ['slice', 'clone']},
   '-webkit-box-direction': {'values': ['normal', 'reverse']},
@@ -860,6 +870,7 @@ export const generatedPropertyValues = {
       'step-start', 'step-end'
     ]
   },
+  'app-region': {'values': ['none', 'drag', 'no-drag']},
   'aspect-ratio': {'values': ['auto']},
   'backdrop-filter': {'values': ['none']},
   'backface-visibility': {'values': ['visible', 'hidden']},
@@ -927,9 +938,10 @@ export const generatedPropertyValues = {
   'column-span': {'values': ['none', 'all']},
   'column-width': {'values': ['auto']},
   'contain': {'values': ['none', 'strict', 'content', 'size', 'layout', 'style', 'paint', 'inline-size', 'block-size']},
-  'contain-intrinsic-size': {'values': ['auto']},
+  'contain-intrinsic-height': {'values': ['auto', 'none']},
+  'contain-intrinsic-width': {'values': ['auto', 'none']},
   'container-name': {'values': ['none']},
-  'container-type': {'values': ['none', 'block-size', 'inline-size']},
+  'container-type': {'values': ['none', 'block-size', 'inline-size', 'size']},
   'content-visibility': {'values': ['visible', 'auto', 'hidden', 'hidden-matchable']},
   'counter-increment': {'values': ['none']},
   'counter-reset': {'values': ['none']},
@@ -981,7 +993,7 @@ export const generatedPropertyValues = {
   'empty-cells': {'values': ['show', 'hide']},
   'fill-rule': {'values': ['nonzero', 'evenodd']},
   'filter': {'values': ['none']},
-  'flex-basis': {'values': ['auto']},
+  'flex-basis': {'values': ['auto', 'fit-content', 'min-content', 'max-content', 'content']},
   'flex-direction': {'values': ['row', 'row-reverse', 'column', 'column-reverse']},
   'flex-wrap': {'values': ['nowrap', 'wrap', 'wrap-reverse']},
   'float': {'values': ['none', 'left', 'right', 'inline-start', 'inline-end']},
@@ -1003,6 +1015,9 @@ export const generatedPropertyValues = {
     ]
   },
   'font-style': {'values': ['normal', 'italic', 'oblique']},
+  'font-synthesis-small-caps': {'values': ['auto', 'none']},
+  'font-synthesis-style': {'values': ['auto', 'none']},
+  'font-synthesis-weight': {'values': ['auto', 'none']},
   'font-variant-caps': {
     'values': ['normal', 'small-caps', 'all-small-caps', 'petite-caps', 'all-petite-caps', 'unicase', 'titling-caps']
   },
@@ -1201,6 +1216,7 @@ export const generatedAliasesFor = new Map([
   ['-webkit-animation-name', 'animation-name'],
   ['-webkit-animation-play-state', 'animation-play-state'],
   ['-webkit-animation-timing-function', 'animation-timing-function'],
+  ['-webkit-app-region', 'app-region'],
   ['-webkit-appearance', 'appearance'],
   ['-webkit-backface-visibility', 'backface-visibility'],
   ['-webkit-background-clip', 'background-clip'],

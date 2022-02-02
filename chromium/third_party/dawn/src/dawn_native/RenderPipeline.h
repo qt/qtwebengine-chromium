@@ -17,6 +17,7 @@
 
 #include "common/TypedInteger.h"
 #include "dawn_native/AttachmentState.h"
+#include "dawn_native/Forward.h"
 #include "dawn_native/IntegerTypes.h"
 #include "dawn_native/Pipeline.h"
 
@@ -32,7 +33,9 @@ namespace dawn_native {
     MaybeError ValidateRenderPipelineDescriptor(DeviceBase* device,
                                                 const RenderPipelineDescriptor* descriptor);
 
-    std::vector<StageAndDescriptor> GetStages(const RenderPipelineDescriptor* descriptor);
+    std::vector<StageAndDescriptor> GetRenderStagesAndSetDummyShader(
+        DeviceBase* device,
+        const RenderPipelineDescriptor* descriptor);
 
     size_t IndexFormatSize(wgpu::IndexFormat format);
 
@@ -59,6 +62,8 @@ namespace dawn_native {
         ~RenderPipelineBase() override;
 
         static RenderPipelineBase* MakeError(DeviceBase* device);
+
+        ObjectType GetType() const override;
 
         const ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes>&
         GetAttributeLocationsUsed() const;
@@ -99,6 +104,9 @@ namespace dawn_native {
         struct EqualityFunc {
             bool operator()(const RenderPipelineBase* a, const RenderPipelineBase* b) const;
         };
+
+        // Initialize() should only be called once by the frontend.
+        virtual MaybeError Initialize() = 0;
 
       private:
         RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag);

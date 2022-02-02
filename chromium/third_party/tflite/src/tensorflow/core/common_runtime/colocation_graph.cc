@@ -140,6 +140,31 @@ bool IsCompositeDevice(absl::string_view device_type) {
   return device_type == kCompositeDeviceType;
 }
 
+bool IsVariantWithUnsupportedDeviceCopy(const Node* node) {
+  bool is_mutex_lock_op = node->op_def().name() == "MutexLock";
+  bool is_dataset_op = data::DatasetOpKernel::IsDatasetOp(node->op_def());
+  return is_mutex_lock_op || is_dataset_op;
+}
+
+bool HasNoCopyReturns(const Node& node) {
+  if (!node.def().has_experimental_type()) {
+    return false;
+  }
+  const FullTypeDef& ft = node.def().experimental_type();
+  DCHECK(ft.type_id() == TFT_PRODUCT) << ft.DebugString();
+
+  for (const auto& arg : ft.args()) {
+    switch (arg.type_id()) {
+      case TFT_DATASET:
+        return true;
+      default:
+        continue;
+    }
+  }
+
+  return false;
+}
+
 }  // namespace
 
 Status Member::SetParentAndSupportedDevices(
@@ -609,7 +634,6 @@ ColocationGraph::ColocationGraph(const Graph* graph, const FunctionStack& stack,
                                  bool log_device_placement)
     : graph_(*graph),
       stack_(stack),
-      flib_def_(*flib_def),
       inspecting_placer_(stack, flib_def, device_set, default_local_device,
                          allow_soft_placement, log_device_placement),
       inspection_required_checker_(graph, flib_def),
@@ -702,13 +726,43 @@ Status ColocationGraph::ColocateResourceOrRefEdge(const Node* src,
   Status status = ColocateNodes(*src, src_root_id, *dst, dst_root_id);
   if (!status.ok()) {
     return AttachDef(
-        errors::InvalidArgument("Nodes were connected by a "
-                                "reference connection (requiring them to "
-                                "be on the same device), but the two nodes "
-                                "were assigned two different devices: ",
-                                status.error_message()),
+        errors::InvalidArgument(
+            "Nodes were connected by a reference or resource connection "
+            "(requiring them to be on the same device), but the two nodes "
+            "were assigned two different devices: ",
+            status.error_message()),
         *dst);
   }
+  return Status::OK();
+}
+
+Status ColocationGraph::ColocateUncopiableTypeEdges(
+    std::unordered_set<Node*>* inspection_required) {
+  for (const Edge* edge : graph_.edges()) {
+    if (edge->IsControlEdge()) {
+      continue;
+    }
+    Node* src = edge->src();
+    Node* dst = edge->dst();
+    bool needs_inspection;
+    TF_RETURN_IF_ERROR(inspection_required_checker_.IsPlacerInspectionRequired(
+        *src, &needs_inspection));
+    if (needs_inspection) {
+      inspection_required->insert(src);
+      continue;
+    }
+    TF_RETURN_IF_ERROR(inspection_required_checker_.IsPlacerInspectionRequired(
+        *dst, &needs_inspection));
+    if (needs_inspection) {
+      inspection_required->insert(dst);
+      continue;
+    }
+
+    if (HasNoCopyReturns(*src)) {
+      TF_RETURN_IF_ERROR(ColocateResourceOrRefEdge(src, dst));
+    }
+  }
+
   return Status::OK();
 }
 
@@ -741,8 +795,8 @@ Status ColocationGraph::ColocateResourceAndRefEdges(
     // Colocate two DatasetOp nodes connected by edge of dtype=DT_VARIANT.
     // This is needed to get around the issue in b/135705778.
     if (input_type == DT_VARIANT &&
-        data::DatasetOpKernel::IsDatasetOp(&src->op_def()) &&
-        data::DatasetOpKernel::IsDatasetOp(&dst->op_def())) {
+        data::DatasetOpKernel::IsDatasetOp(src->op_def()) &&
+        data::DatasetOpKernel::IsDatasetOp(dst->op_def())) {
       TF_RETURN_IF_ERROR(ColocateResourceOrRefEdge(src, dst));
       continue;
     }
@@ -765,6 +819,7 @@ Status ColocationGraph::ColocateResourceAndRefEdges(
 namespace {
 // Returns tensor list element data type, if the node is one of the ops that
 // operate with TensorLists. Otherwise returns DT_INVALID.
+// TODO(b/199443424): Don't use op names, use FullType here.
 DataType GetElementDataType(const Node& node) {
   static absl::flat_hash_set<std::string>* tensor_list_ops =
       new absl::flat_hash_set<std::string>(
@@ -795,25 +850,48 @@ Status ColocationGraph::AddHostOnlyDataTypesConstraints() {
 
   for (Node* node : graph_.nodes()) {
     // Skip nodes that do not have DT_VARIANT inputs.
-    if (absl::c_none_of(node->input_types(), is_variant)) continue;
+    if (absl::c_none_of(node->input_types(), is_variant)) {
+      continue;
+    }
 
     // Skip nodes that can't be placed on GPU anyway.
     Member& root = members_[FindAndUpdateRoot(node->id())];
-    if (absl::c_all_of(root.supported_device_types(), is_cpu_device)) continue;
+    if (absl::c_all_of(root.supported_device_types(), is_cpu_device)) {
+      continue;
+    }
 
     // Stop DFS traversal when found the underlying data type of a variant.
     absl::optional<bool> is_host_data_type;
 
     auto edge_filter = [&](const Edge& edge) -> bool {
-      return !is_host_data_type.has_value();
+      // We already found the underlying data type.
+      if (is_host_data_type.has_value()) return false;
+
+      // Otherwise follow only DT_VARIANT data edges.
+      auto edge_dtype = [&]() -> DataType {
+        return edge.src()->output_type(edge.src_output());
+      };
+      return !edge.IsControlEdge() && edge_dtype() == DT_VARIANT;
     };
 
     auto enter = [&](Node* n) -> void {
-      DataType element_type = GetElementDataType(*n);
-      // To handle nested lists continue traversal after finding a TensorList
-      // operation that uses DT_VARIANT for element type.
-      if (element_type == DT_INVALID || element_type == DT_VARIANT) return;
-      is_host_data_type = DataTypeAlwaysOnHost(element_type);
+      // TODO(b/199443424): Replace this logic with propagated type information.
+      if (IsVariantWithUnsupportedDeviceCopy(n)) {
+        // NOTE: Datasets are expected to live on the host. This code should be
+        // updated if that changes. Under this assumption, however, we must
+        // locate some ops on the host when the input is a dataset variant.
+        if (node->IsRetval() || node->IsIdentity() || node->IsControlFlow()) {
+          is_host_data_type = true;
+        }
+      } else {
+        DataType element_type = GetElementDataType(*n);
+        // To handle nested lists continue traversal after finding a TensorList
+        // operation that uses DT_VARIANT for element type.
+        if (element_type == DT_INVALID || element_type == DT_VARIANT) {
+          return;
+        }
+        is_host_data_type = DataTypeAlwaysOnHost(element_type);
+      }
     };
 
     ReverseDFSFrom(graph_, {node}, enter, /*leave=*/nullptr,
@@ -856,6 +934,7 @@ Status ColocationGraph::Initialize() {
 
   std::unordered_set<Node*> inspection_required;
   TF_RETURN_IF_ERROR(ColocateResourceAndRefEdges(&inspection_required));
+  TF_RETURN_IF_ERROR(ColocateUncopiableTypeEdges(&inspection_required));
   TF_RETURN_IF_ERROR(AddHostOnlyDataTypesConstraints());
   TF_RETURN_IF_ERROR(AddInspectionConstraints(inspection_required));
   TF_RETURN_IF_ERROR(ColocateAllNodes());

@@ -35,7 +35,7 @@ class V8_EXPORT_PRIVATE AsyncStreamingDecoder : public StreamingDecoder {
   // The buffer passed into OnBytesReceived is owned by the caller.
   void OnBytesReceived(base::Vector<const uint8_t> bytes) override;
 
-  void Finish() override;
+  void Finish(bool can_use_compiled_module) override;
 
   void Abort() override;
 
@@ -258,7 +258,7 @@ size_t AsyncStreamingDecoder::DecodingState::ReadBytes(
   return num_bytes;
 }
 
-void AsyncStreamingDecoder::Finish() {
+void AsyncStreamingDecoder::Finish(bool can_use_compiled_module) {
   TRACE_STREAMING("Finish\n");
   DCHECK(!stream_finished_);
   stream_finished_ = true;
@@ -268,9 +268,12 @@ void AsyncStreamingDecoder::Finish() {
     base::Vector<const uint8_t> wire_bytes =
         base::VectorOf(wire_bytes_for_deserializing_);
     // Try to deserialize the module from wire bytes and module bytes.
-    if (processor_->Deserialize(compiled_module_bytes_, wire_bytes)) return;
+    if (can_use_compiled_module &&
+        processor_->Deserialize(compiled_module_bytes_, wire_bytes))
+      return;
 
-    // Deserialization failed. Restart decoding using |wire_bytes|.
+    // Compiled module bytes are invalidated by can_use_compiled_module = false
+    // or the deserialization failed. Restart decoding using |wire_bytes|.
     compiled_module_bytes_ = {};
     DCHECK(!deserializing());
     OnBytesReceived(wire_bytes);
@@ -312,33 +315,29 @@ void AsyncStreamingDecoder::Abort() {
 
 namespace {
 
-class TopTierCompiledCallback {
+class CompilationChunkFinishedCallback {
  public:
-  TopTierCompiledCallback(
+  CompilationChunkFinishedCallback(
       std::weak_ptr<NativeModule> native_module,
       AsyncStreamingDecoder::ModuleCompiledCallback callback)
       : native_module_(std::move(native_module)),
         callback_(std::move(callback)) {}
 
   void operator()(CompilationEvent event) const {
-    if (event != CompilationEvent::kFinishedTopTierCompilation) return;
+    if (event != CompilationEvent::kFinishedCompilationChunk &&
+        event != CompilationEvent::kFinishedTopTierCompilation) {
+      return;
+    }
     // If the native module is still alive, get back a shared ptr and call the
     // callback.
     if (std::shared_ptr<NativeModule> native_module = native_module_.lock()) {
       callback_(native_module);
     }
-#ifdef DEBUG
-    DCHECK(!called_);
-    called_ = true;
-#endif
   }
 
  private:
   const std::weak_ptr<NativeModule> native_module_;
   const AsyncStreamingDecoder::ModuleCompiledCallback callback_;
-#ifdef DEBUG
-  mutable bool called_ = false;
-#endif
 };
 
 }  // namespace
@@ -347,7 +346,7 @@ void AsyncStreamingDecoder::NotifyNativeModuleCreated(
     const std::shared_ptr<NativeModule>& native_module) {
   if (!module_compiled_callback_) return;
   auto* comp_state = native_module->compilation_state();
-  comp_state->AddCallback(TopTierCompiledCallback{
+  comp_state->AddCallback(CompilationChunkFinishedCallback{
       std::move(native_module), std::move(module_compiled_callback_)});
   module_compiled_callback_ = {};
 }

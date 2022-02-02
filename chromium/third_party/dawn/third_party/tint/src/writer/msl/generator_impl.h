@@ -17,6 +17,7 @@
 
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "src/ast/array_accessor_expression.h"
 #include "src/ast/assignment_statement.h"
@@ -50,6 +51,26 @@ class Intrinsic;
 namespace writer {
 namespace msl {
 
+/// The result of sanitizing a program for generation.
+struct SanitizedResult {
+  /// The sanitized program.
+  Program program;
+  /// True if the shader needs a UBO of buffer sizes.
+  bool needs_storage_buffer_sizes = false;
+};
+
+/// Sanitize a program in preparation for generating MSL.
+/// @param buffer_size_ubo_index the index to use for the buffer size UBO
+/// @param fixed_sample_mask the fixed sample mask to use for fragment shaders
+/// @param emit_vertex_point_size `true` to emit a vertex point size builtin
+/// @param disable_workgroup_init `true` to disable workgroup memory zero
+/// @returns the sanitized program and any supplementary information
+SanitizedResult Sanitize(const Program* program,
+                         uint32_t buffer_size_ubo_index,
+                         uint32_t fixed_sample_mask = 0xFFFFFFFF,
+                         bool emit_vertex_point_size = false,
+                         bool disable_workgroup_init = false);
+
 /// Implementation class for MSL generator
 class GeneratorImpl : public TextGenerator {
  public:
@@ -63,6 +84,12 @@ class GeneratorImpl : public TextGenerator {
 
   /// @returns true if an invariant attribute was generated
   bool HasInvariant() { return has_invariant_; }
+
+  /// @returns a map from entry point to list of required workgroup allocations
+  const std::unordered_map<std::string, std::vector<uint32_t>>&
+  DynamicWorkgroupAllocations() const {
+    return workgroup_allocations_;
+  }
 
   /// Handles generating a declared type
   /// @param ty the declared type to generate
@@ -357,6 +384,11 @@ class GeneratorImpl : public TextGenerator {
 
   /// True if matrix-packed_vector operator overloads have been generated.
   bool matrix_packed_vector_overloads_ = false;
+
+  /// A map from entry point name to a list of dynamic workgroup allocations.
+  /// Each entry in the vector is the size of the workgroup allocation that
+  /// should be created for that index.
+  std::unordered_map<std::string, std::vector<uint32_t>> workgroup_allocations_;
 
   std::unordered_map<const sem::Intrinsic*, std::string> intrinsics_;
   std::unordered_map<const sem::Type*, std::string> unary_minus_funcs_;

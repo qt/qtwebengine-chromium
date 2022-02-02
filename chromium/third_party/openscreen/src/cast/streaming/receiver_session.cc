@@ -21,6 +21,7 @@
 #include "cast/streaming/sender_message.h"
 #include "util/json/json_helpers.h"
 #include "util/osp_logging.h"
+#include "util/std_util.h"
 
 namespace openscreen {
 namespace cast {
@@ -85,7 +86,7 @@ bool IsMissingCodecs(const std::vector<T>& first,
   }
 
   for (auto codec : second) {
-    if (std::find(first.begin(), first.end(), codec) == first.end()) {
+    if (!Contains(first, codec)) {
       return true;
     }
   }
@@ -302,6 +303,7 @@ void ReceiverSession::OnOffer(SenderMessage message) {
   properties->sequence_number = message.sequence_number;
 
   const Offer& offer = absl::get<Offer>(message.body);
+
   if (offer.cast_mode == CastMode::kRemoting) {
     if (!preferences_.remoting) {
       SendErrorAnswerReply(message.sequence_number,

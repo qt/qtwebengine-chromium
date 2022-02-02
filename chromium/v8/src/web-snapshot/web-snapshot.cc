@@ -6,7 +6,11 @@
 
 #include <limits>
 
-#include "include/v8.h"
+#include "include/v8-isolate.h"
+#include "include/v8-local-handle.h"
+#include "include/v8-object.h"
+#include "include/v8-primitive.h"
+#include "include/v8-script.h"
 #include "src/api/api-inl.h"
 #include "src/base/platform/wrappers.h"
 #include "src/handles/handles.h"
@@ -388,7 +392,7 @@ void WebSnapshotSerializer::SerializeMap(Handle<Map> map, uint32_t& id) {
     PropertyDetails details =
         map->instance_descriptors(kRelaxedLoad).GetDetails(i);
 
-    if (details.location() != kField) {
+    if (details.location() != PropertyLocation::kField) {
       Throw("Web snapshot: Properties which are not fields not supported");
       return;
     }
@@ -690,19 +694,16 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
       serializer.WriteUint32(ValueType::DOUBLE);
       serializer.WriteDouble(HeapNumber::cast(*object).value());
       break;
-    case JS_FUNCTION_TYPE: {
-      Handle<JSFunction> function = Handle<JSFunction>::cast(object);
-      FunctionKind kind = function->shared().kind();
-      if (IsClassConstructor(kind)) {
-        SerializeClass(function, id);
-        serializer.WriteUint32(ValueType::CLASS_ID);
-      } else {
-        SerializeFunction(function, id);
-        serializer.WriteUint32(ValueType::FUNCTION_ID);
-      }
+    case JS_FUNCTION_TYPE:
+      SerializeFunction(Handle<JSFunction>::cast(object), id);
+      serializer.WriteUint32(ValueType::FUNCTION_ID);
       serializer.WriteUint32(id);
       break;
-    }
+    case JS_CLASS_CONSTRUCTOR_TYPE:
+      SerializeClass(Handle<JSFunction>::cast(object), id);
+      serializer.WriteUint32(ValueType::CLASS_ID);
+      serializer.WriteUint32(id);
+      break;
     case JS_OBJECT_TYPE:
       SerializeObject(Handle<JSObject>::cast(object), id);
       serializer.WriteUint32(ValueType::OBJECT_ID);
@@ -720,9 +721,9 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
         return;
       }
       uint32_t pattern_id, flags_id;
-      Handle<String> pattern = handle(regexp->Pattern(), isolate_);
+      Handle<String> pattern = handle(regexp->source(), isolate_);
       Handle<String> flags_string =
-          JSRegExp::StringFromFlags(isolate_, regexp->GetFlags());
+          JSRegExp::StringFromFlags(isolate_, regexp->flags());
       SerializeString(pattern, pattern_id);
       SerializeString(flags_string, flags_id);
       serializer.WriteUint32(ValueType::REGEXP);
@@ -1281,7 +1282,7 @@ void WebSnapshotDeserializer::DeserializeObjects() {
       ReadValue(value, wanted_representation, property_array, i);
       // Read the representation from the map.
       PropertyDetails details = descriptors->GetDetails(InternalIndex(i));
-      CHECK_EQ(details.location(), kField);
+      CHECK_EQ(details.location(), PropertyLocation::kField);
       CHECK_EQ(kData, details.kind());
       Representation r = details.representation();
       if (r.IsNone()) {
@@ -1513,15 +1514,14 @@ void WebSnapshotDeserializer::ReadValue(
     case ValueType::REGEXP: {
       Handle<String> pattern = ReadString(false);
       Handle<String> flags_string = ReadString(false);
-      bool success = false;
-      JSRegExp::Flags flags =
-          JSRegExp::FlagsFromString(isolate_, flags_string, &success);
-      if (!success) {
+      base::Optional<JSRegExp::Flags> flags =
+          JSRegExp::FlagsFromString(isolate_, flags_string);
+      if (!flags.has_value()) {
         Throw("Web snapshot: Malformed flags in regular expression");
         return;
       }
       MaybeHandle<JSRegExp> maybe_regexp =
-          JSRegExp::New(isolate_, pattern, flags);
+          JSRegExp::New(isolate_, pattern, flags.value());
       if (!maybe_regexp.ToHandle(&value)) {
         Throw("Web snapshot: Malformed RegExp");
         return;

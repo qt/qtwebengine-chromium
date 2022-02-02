@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for metrics."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import functools
 import math
 
@@ -160,9 +156,9 @@ def _assert_nan(test_case, actual):
 
 
 def _assert_metric_variables(test_case, expected):
-  test_case.assertEquals(
+  test_case.assertEqual(
       set(expected), set(v.name for v in variables.local_variables()))
-  test_case.assertEquals(
+  test_case.assertEqual(
       set(expected),
       set(v.name for v in ops.get_collection(ops.GraphKeys.METRIC_VARIABLES)))
 
@@ -264,8 +260,8 @@ class MeanTest(test.TestCase):
       variables.local_variables_initializer().run()
       for mean_result in mean_results:
         mean, update_op = mean_result
-        self.assertAlmostEqual(expected, update_op.eval())
-        self.assertAlmostEqual(expected, mean.eval())
+        self.assertAlmostEqual(expected, self.evaluate(update_op))
+        self.assertAlmostEqual(expected, self.evaluate(mean))
 
   def _test_3d_weighted(self, values, weights):
     expected = (
@@ -275,8 +271,8 @@ class MeanTest(test.TestCase):
     mean, update_op = metrics.mean(values, weights=weights)
     with self.cached_session():
       variables.local_variables_initializer().run()
-      self.assertAlmostEqual(expected, update_op.eval(), places=5)
-      self.assertAlmostEqual(expected, mean.eval(), places=5)
+      self.assertAlmostEqual(expected, self.evaluate(update_op), places=5)
+      self.assertAlmostEqual(expected, self.evaluate(mean), places=5)
 
   @test_util.run_deprecated_v1
   def test1x1x1Weighted(self):
@@ -340,11 +336,11 @@ class MeanTest(test.TestCase):
     expected_error_msg = 'weights can not be broadcast to values'
     for invalid_weight in invalid_weights:
       # Static shapes.
-      with self.assertRaisesRegexp(ValueError, expected_error_msg):
+      with self.assertRaisesRegex(ValueError, expected_error_msg):
         metrics.mean(values, invalid_weight)
 
       # Dynamic shapes.
-      with self.assertRaisesRegexp(errors_impl.OpError, expected_error_msg):
+      with self.assertRaisesRegex(errors_impl.OpError, expected_error_msg):
         with self.cached_session():
           _, update_op = metrics.mean(values_placeholder, invalid_weight)
           variables.local_variables_initializer().run()
@@ -615,9 +611,9 @@ class AccuracyTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_accuracy = accuracy.eval()
+      initial_accuracy = self.evaluate(accuracy)
       for _ in range(10):
-        self.assertEqual(initial_accuracy, accuracy.eval())
+        self.assertEqual(initial_accuracy, self.evaluate(accuracy))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdates(self):
@@ -646,7 +642,7 @@ class AccuracyTest(test.TestCase):
       for _ in xrange(3):
         self.evaluate(update_op)
       self.assertEqual(0.5, self.evaluate(update_op))
-      self.assertEqual(0.5, accuracy.eval())
+      self.assertEqual(0.5, self.evaluate(accuracy))
 
   @test_util.run_deprecated_v1
   def testEffectivelyEquivalentSizes(self):
@@ -656,8 +652,8 @@ class AccuracyTest(test.TestCase):
       accuracy, update_op = metrics.accuracy(labels, predictions)
 
       self.evaluate(variables.local_variables_initializer())
-      self.assertEqual(1.0, update_op.eval())
-      self.assertEqual(1.0, accuracy.eval())
+      self.assertEqual(1.0, self.evaluate(update_op))
+      self.assertEqual(1.0, self.evaluate(accuracy))
 
   @test_util.run_deprecated_v1
   def testEffectivelyEquivalentSizesWithScalarWeight(self):
@@ -667,8 +663,8 @@ class AccuracyTest(test.TestCase):
       accuracy, update_op = metrics.accuracy(labels, predictions, weights=2.0)
 
       self.evaluate(variables.local_variables_initializer())
-      self.assertEqual(1.0, update_op.eval())
-      self.assertEqual(1.0, accuracy.eval())
+      self.assertEqual(1.0, self.evaluate(update_op))
+      self.assertEqual(1.0, self.evaluate(accuracy))
 
   @test_util.run_deprecated_v1
   def testEffectivelyEquivalentSizesWithStaticShapedWeight(self):
@@ -685,8 +681,8 @@ class AccuracyTest(test.TestCase):
       # if streaming_accuracy does not flatten the weight, accuracy would be
       # 0.33333334 due to an intended broadcast of weight. Due to flattening,
       # it will be higher than .95
-      self.assertGreater(update_op.eval(), .95)
-      self.assertGreater(accuracy.eval(), .95)
+      self.assertGreater(self.evaluate(update_op), .95)
+      self.assertGreater(self.evaluate(accuracy), .95)
 
   @test_util.run_deprecated_v1
   def testEffectivelyEquivalentSizesWithDynamicallyShapedWeight(self):
@@ -746,7 +742,7 @@ class AccuracyTest(test.TestCase):
       for _ in xrange(3):
         self.evaluate(update_op)
       self.assertEqual(1.0, self.evaluate(update_op))
-      self.assertEqual(1.0, accuracy.eval())
+      self.assertEqual(1.0, self.evaluate(accuracy))
 
 
 class PrecisionTest(test.TestCase):
@@ -796,9 +792,9 @@ class PrecisionTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_precision = precision.eval()
+      initial_precision = self.evaluate(precision)
       for _ in range(10):
-        self.assertEqual(initial_precision, precision.eval())
+        self.assertEqual(initial_precision, self.evaluate(precision))
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -811,7 +807,7 @@ class PrecisionTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1.0, self.evaluate(update_op), 6)
-      self.assertAlmostEqual(1.0, precision.eval(), 6)
+      self.assertAlmostEqual(1.0, self.evaluate(precision), 6)
 
   @test_util.run_deprecated_v1
   def testSomeCorrect_multipleInputDtypes(self):
@@ -824,8 +820,8 @@ class PrecisionTest(test.TestCase):
 
       with self.cached_session():
         self.evaluate(variables.local_variables_initializer())
-        self.assertAlmostEqual(0.5, update_op.eval())
-        self.assertAlmostEqual(0.5, precision.eval())
+        self.assertAlmostEqual(0.5, self.evaluate(update_op))
+        self.assertAlmostEqual(0.5, self.evaluate(precision))
 
   @test_util.run_deprecated_v1
   def testWeighted1d(self):
@@ -839,8 +835,8 @@ class PrecisionTest(test.TestCase):
       weighted_tp = 2.0 + 5.0
       weighted_positives = (2.0 + 2.0) + (5.0 + 5.0)
       expected_precision = weighted_tp / weighted_positives
-      self.assertAlmostEqual(expected_precision, update_op.eval())
-      self.assertAlmostEqual(expected_precision, precision.eval())
+      self.assertAlmostEqual(expected_precision, self.evaluate(update_op))
+      self.assertAlmostEqual(expected_precision, self.evaluate(precision))
 
   @test_util.run_deprecated_v1
   def testWeightedScalar_placeholders(self):
@@ -897,8 +893,8 @@ class PrecisionTest(test.TestCase):
       weighted_tp = 3.0 + 4.0
       weighted_positives = (1.0 + 3.0) + (4.0 + 2.0)
       expected_precision = weighted_tp / weighted_positives
-      self.assertAlmostEqual(expected_precision, update_op.eval())
-      self.assertAlmostEqual(expected_precision, precision.eval())
+      self.assertAlmostEqual(expected_precision, self.evaluate(update_op))
+      self.assertAlmostEqual(expected_precision, self.evaluate(precision))
 
   @test_util.run_deprecated_v1
   def testWeighted2d_placeholders(self):
@@ -934,7 +930,7 @@ class PrecisionTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.evaluate(update_op)
-      self.assertAlmostEqual(0, precision.eval())
+      self.assertAlmostEqual(0, self.evaluate(precision))
 
   @test_util.run_deprecated_v1
   def testZeroTrueAndFalsePositivesGivesZeroPrecision(self):
@@ -945,7 +941,7 @@ class PrecisionTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.evaluate(update_op)
-      self.assertEqual(0.0, precision.eval())
+      self.assertEqual(0.0, self.evaluate(precision))
 
 
 class RecallTest(test.TestCase):
@@ -996,9 +992,9 @@ class RecallTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_recall = recall.eval()
+      initial_recall = self.evaluate(recall)
       for _ in range(10):
-        self.assertEqual(initial_recall, recall.eval())
+        self.assertEqual(initial_recall, self.evaluate(recall))
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -1011,7 +1007,7 @@ class RecallTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.evaluate(update_op)
-      self.assertAlmostEqual(1.0, recall.eval(), 6)
+      self.assertAlmostEqual(1.0, self.evaluate(recall), 6)
 
   @test_util.run_deprecated_v1
   def testSomeCorrect_multipleInputDtypes(self):
@@ -1024,8 +1020,8 @@ class RecallTest(test.TestCase):
 
       with self.cached_session():
         self.evaluate(variables.local_variables_initializer())
-        self.assertAlmostEqual(0.5, update_op.eval())
-        self.assertAlmostEqual(0.5, recall.eval())
+        self.assertAlmostEqual(0.5, self.evaluate(update_op))
+        self.assertAlmostEqual(0.5, self.evaluate(recall))
 
   @test_util.run_deprecated_v1
   def testWeighted1d(self):
@@ -1039,8 +1035,8 @@ class RecallTest(test.TestCase):
       weighted_tp = 2.0 + 5.0
       weighted_t = (2.0 + 2.0) + (5.0 + 5.0)
       expected_precision = weighted_tp / weighted_t
-      self.assertAlmostEqual(expected_precision, update_op.eval())
-      self.assertAlmostEqual(expected_precision, recall.eval())
+      self.assertAlmostEqual(expected_precision, self.evaluate(update_op))
+      self.assertAlmostEqual(expected_precision, self.evaluate(recall))
 
   @test_util.run_deprecated_v1
   def testWeighted2d(self):
@@ -1054,8 +1050,8 @@ class RecallTest(test.TestCase):
       weighted_tp = 3.0 + 1.0
       weighted_t = (2.0 + 3.0) + (4.0 + 1.0)
       expected_precision = weighted_tp / weighted_t
-      self.assertAlmostEqual(expected_precision, update_op.eval())
-      self.assertAlmostEqual(expected_precision, recall.eval())
+      self.assertAlmostEqual(expected_precision, self.evaluate(update_op))
+      self.assertAlmostEqual(expected_precision, self.evaluate(recall))
 
   @test_util.run_deprecated_v1
   def testAllIncorrect(self):
@@ -1068,7 +1064,7 @@ class RecallTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.evaluate(update_op)
-      self.assertEqual(0, recall.eval())
+      self.assertEqual(0, self.evaluate(recall))
 
   @test_util.run_deprecated_v1
   def testZeroTruePositivesAndFalseNegativesGivesZeroRecall(self):
@@ -1079,7 +1075,7 @@ class RecallTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.evaluate(update_op)
-      self.assertEqual(0, recall.eval())
+      self.assertEqual(0, self.evaluate(recall))
 
 
 class AUCTest(test.TestCase):
@@ -1128,9 +1124,9 @@ class AUCTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_auc = auc.eval()
+      initial_auc = self.evaluate(auc)
       for _ in range(10):
-        self.assertAlmostEqual(initial_auc, auc.eval(), 5)
+        self.assertAlmostEqual(initial_auc, self.evaluate(auc), 5)
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -1147,7 +1143,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(1, self.evaluate(update_op))
 
-      self.assertEqual(1, auc.eval())
+      self.assertEqual(1, self.evaluate(auc))
 
   @test_util.run_deprecated_v1
   def testSomeCorrect_multipleLabelDtypes(self):
@@ -1163,7 +1159,7 @@ class AUCTest(test.TestCase):
         self.evaluate(variables.local_variables_initializer())
         self.assertAlmostEqual(0.5, self.evaluate(update_op))
 
-        self.assertAlmostEqual(0.5, auc.eval())
+        self.assertAlmostEqual(0.5, self.evaluate(auc))
 
   @test_util.run_deprecated_v1
   def testWeighted1d(self):
@@ -1177,7 +1173,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.5, self.evaluate(update_op), 5)
 
-      self.assertAlmostEqual(0.5, auc.eval(), 5)
+      self.assertAlmostEqual(0.5, self.evaluate(auc), 5)
 
   @test_util.run_deprecated_v1
   def testWeighted2d(self):
@@ -1191,7 +1187,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.7, self.evaluate(update_op), 5)
 
-      self.assertAlmostEqual(0.7, auc.eval(), 5)
+      self.assertAlmostEqual(0.7, self.evaluate(auc), 5)
 
   @test_util.run_deprecated_v1
   def testManualThresholds(self):
@@ -1216,10 +1212,10 @@ class AUCTest(test.TestCase):
 
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.875, self.evaluate(default_update_op), 3)
-      self.assertAlmostEqual(0.875, default_auc.eval(), 3)
+      self.assertAlmostEqual(0.875, self.evaluate(default_auc), 3)
 
       self.assertAlmostEqual(0.75, self.evaluate(manual_update_op), 3)
-      self.assertAlmostEqual(0.75, manual_auc.eval(), 3)
+      self.assertAlmostEqual(0.75, self.evaluate(manual_auc), 3)
 
   # Regarding the AUC-PR tests: note that the preferred method when
   # calculating AUC-PR is summation_method='careful_interpolation'.
@@ -1236,7 +1232,7 @@ class AUCTest(test.TestCase):
       # expected ~= 0.79726744594
       expected = 1 - math.log(1.5) / 2
       self.assertAlmostEqual(expected, self.evaluate(update_op), delta=1e-3)
-      self.assertAlmostEqual(expected, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(expected, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testCorrectAnotherAUCPRSpecialCase(self):
@@ -1253,7 +1249,7 @@ class AUCTest(test.TestCase):
       # expected ~= 0.61350593198
       expected = (2.5 - 2 * math.log(4./3) - 0.25 * math.log(7./5)) / 3
       self.assertAlmostEqual(expected, self.evaluate(update_op), delta=1e-3)
-      self.assertAlmostEqual(expected, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(expected, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testThirdCorrectAUCPRSpecialCase(self):
@@ -1270,7 +1266,7 @@ class AUCTest(test.TestCase):
       # expected ~= 0.90410597584
       expected = 1 - math.log(4./3) / 3
       self.assertAlmostEqual(expected, self.evaluate(update_op), delta=1e-3)
-      self.assertAlmostEqual(expected, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(expected, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testIncorrectAUCPRSpecialCase(self):
@@ -1284,7 +1280,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.79166, self.evaluate(update_op), delta=1e-3)
 
-      self.assertAlmostEqual(0.79166, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(0.79166, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testAnotherIncorrectAUCPRSpecialCase(self):
@@ -1300,7 +1296,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.610317, self.evaluate(update_op), delta=1e-3)
 
-      self.assertAlmostEqual(0.610317, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(0.610317, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testThirdIncorrectAUCPRSpecialCase(self):
@@ -1316,7 +1312,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.90277, self.evaluate(update_op), delta=1e-3)
 
-      self.assertAlmostEqual(0.90277, auc.eval(), delta=1e-3)
+      self.assertAlmostEqual(0.90277, self.evaluate(auc), delta=1e-3)
 
   @test_util.run_deprecated_v1
   def testAllIncorrect(self):
@@ -1330,7 +1326,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0, self.evaluate(update_op))
 
-      self.assertAlmostEqual(0, auc.eval())
+      self.assertAlmostEqual(0, self.evaluate(auc))
 
   @test_util.run_deprecated_v1
   def testZeroTruePositivesAndFalseNegativesGivesOneAUC(self):
@@ -1342,7 +1338,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1, self.evaluate(update_op), 6)
 
-      self.assertAlmostEqual(1, auc.eval(), 6)
+      self.assertAlmostEqual(1, self.evaluate(auc), 6)
 
   @test_util.run_deprecated_v1
   def testRecallOneAndPrecisionOneGivesOnePRAUC(self):
@@ -1354,7 +1350,7 @@ class AUCTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1, self.evaluate(update_op), 6)
 
-      self.assertAlmostEqual(1, auc.eval(), 6)
+      self.assertAlmostEqual(1, self.evaluate(auc), 6)
 
   def np_auc(self, predictions, labels, weights):
     """Computes the AUC explicitly using Numpy.
@@ -1431,7 +1427,7 @@ class AUCTest(test.TestCase):
         # Since this is only approximate, we can't expect a 6 digits match.
         # Although with higher number of samples/thresholds we should see the
         # accuracy improving
-        self.assertAlmostEqual(expected_auc, auc.eval(), 2)
+        self.assertAlmostEqual(expected_auc, self.evaluate(auc), 2)
 
 
 class SpecificityAtSensitivityTest(test.TestCase):
@@ -1489,9 +1485,10 @@ class SpecificityAtSensitivityTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_specificity = specificity.eval()
+      initial_specificity = self.evaluate(specificity)
       for _ in range(10):
-        self.assertAlmostEqual(initial_specificity, specificity.eval(), 5)
+        self.assertAlmostEqual(initial_specificity, self.evaluate(specificity),
+                               5)
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -1505,7 +1502,7 @@ class SpecificityAtSensitivityTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(1, self.evaluate(update_op))
-      self.assertEqual(1, specificity.eval())
+      self.assertEqual(1, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testSomeCorrectHighSensitivity(self):
@@ -1521,7 +1518,7 @@ class SpecificityAtSensitivityTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1.0, self.evaluate(update_op))
-      self.assertAlmostEqual(1.0, specificity.eval())
+      self.assertAlmostEqual(1.0, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testSomeCorrectLowSensitivity(self):
@@ -1538,7 +1535,7 @@ class SpecificityAtSensitivityTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
 
       self.assertAlmostEqual(0.6, self.evaluate(update_op))
-      self.assertAlmostEqual(0.6, specificity.eval())
+      self.assertAlmostEqual(0.6, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testWeighted1d_multipleLabelDtypes(self):
@@ -1558,7 +1555,7 @@ class SpecificityAtSensitivityTest(test.TestCase):
         self.evaluate(variables.local_variables_initializer())
 
         self.assertAlmostEqual(0.6, self.evaluate(update_op))
-        self.assertAlmostEqual(0.6, specificity.eval())
+        self.assertAlmostEqual(0.6, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testWeighted2d(self):
@@ -1577,7 +1574,7 @@ class SpecificityAtSensitivityTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
 
       self.assertAlmostEqual(8.0 / 15.0, self.evaluate(update_op))
-      self.assertAlmostEqual(8.0 / 15.0, specificity.eval())
+      self.assertAlmostEqual(8.0 / 15.0, self.evaluate(specificity))
 
 
 class SensitivityAtSpecificityTest(test.TestCase):
@@ -1635,9 +1632,10 @@ class SensitivityAtSpecificityTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_sensitivity = sensitivity.eval()
+      initial_sensitivity = self.evaluate(sensitivity)
       for _ in range(10):
-        self.assertAlmostEqual(initial_sensitivity, sensitivity.eval(), 5)
+        self.assertAlmostEqual(initial_sensitivity, self.evaluate(sensitivity),
+                               5)
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -1651,7 +1649,7 @@ class SensitivityAtSpecificityTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1.0, self.evaluate(update_op), 6)
-      self.assertAlmostEqual(1.0, specificity.eval(), 6)
+      self.assertAlmostEqual(1.0, self.evaluate(specificity), 6)
 
   @test_util.run_deprecated_v1
   def testSomeCorrectHighSpecificity(self):
@@ -1667,7 +1665,7 @@ class SensitivityAtSpecificityTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.8, self.evaluate(update_op))
-      self.assertAlmostEqual(0.8, specificity.eval())
+      self.assertAlmostEqual(0.8, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testSomeCorrectLowSpecificity(self):
@@ -1683,7 +1681,7 @@ class SensitivityAtSpecificityTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(0.6, self.evaluate(update_op))
-      self.assertAlmostEqual(0.6, specificity.eval())
+      self.assertAlmostEqual(0.6, self.evaluate(specificity))
 
   @test_util.run_deprecated_v1
   def testWeighted_multipleLabelDtypes(self):
@@ -1703,7 +1701,7 @@ class SensitivityAtSpecificityTest(test.TestCase):
       with self.cached_session():
         self.evaluate(variables.local_variables_initializer())
         self.assertAlmostEqual(0.675, self.evaluate(update_op))
-        self.assertAlmostEqual(0.675, specificity.eval())
+        self.assertAlmostEqual(0.675, self.evaluate(specificity))
 
 
 # TODO(nsilberman): Break this up into two sets of tests.
@@ -1771,12 +1769,12 @@ class PrecisionRecallThresholdsTest(test.TestCase):
 
       # Run several updates, then verify idempotency.
       self.evaluate([prec_op, rec_op])
-      initial_prec = prec.eval()
-      initial_rec = rec.eval()
+      initial_prec = self.evaluate(prec)
+      initial_rec = self.evaluate(rec)
       for _ in range(10):
         self.evaluate([prec_op, rec_op])
-        self.assertAllClose(initial_prec, prec.eval())
-        self.assertAllClose(initial_rec, rec.eval())
+        self.assertAllClose(initial_prec, prec)
+        self.assertAllClose(initial_rec, rec)
 
   # TODO(nsilberman): fix tests (passing but incorrect).
   @test_util.run_deprecated_v1
@@ -1795,8 +1793,8 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertEqual(1, prec.eval())
-      self.assertEqual(1, rec.eval())
+      self.assertEqual(1, self.evaluate(prec))
+      self.assertEqual(1, self.evaluate(rec))
 
   @test_util.run_deprecated_v1
   def testSomeCorrect_multipleLabelDtypes(self):
@@ -1816,8 +1814,8 @@ class PrecisionRecallThresholdsTest(test.TestCase):
         self.evaluate(variables.local_variables_initializer())
         self.evaluate([prec_op, rec_op])
 
-        self.assertAlmostEqual(0.5, prec.eval())
-        self.assertAlmostEqual(0.5, rec.eval())
+        self.assertAlmostEqual(0.5, self.evaluate(prec))
+        self.assertAlmostEqual(0.5, self.evaluate(rec))
 
   @test_util.run_deprecated_v1
   def testAllIncorrect(self):
@@ -1835,8 +1833,8 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertAlmostEqual(0, prec.eval())
-      self.assertAlmostEqual(0, rec.eval())
+      self.assertAlmostEqual(0, self.evaluate(prec))
+      self.assertAlmostEqual(0, self.evaluate(rec))
 
   @test_util.run_deprecated_v1
   def testWeights1d(self):
@@ -1864,10 +1862,10 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertAlmostEqual(1.0, prec_low.eval(), places=5)
-      self.assertAlmostEqual(0.0, prec_high.eval(), places=5)
-      self.assertAlmostEqual(1.0, rec_low.eval(), places=5)
-      self.assertAlmostEqual(0.0, rec_high.eval(), places=5)
+      self.assertAlmostEqual(1.0, self.evaluate(prec_low), places=5)
+      self.assertAlmostEqual(0.0, self.evaluate(prec_high), places=5)
+      self.assertAlmostEqual(1.0, self.evaluate(rec_low), places=5)
+      self.assertAlmostEqual(0.0, self.evaluate(rec_high), places=5)
 
   @test_util.run_deprecated_v1
   def testWeights2d(self):
@@ -1895,10 +1893,10 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertAlmostEqual(1.0, prec_low.eval(), places=5)
-      self.assertAlmostEqual(0.0, prec_high.eval(), places=5)
-      self.assertAlmostEqual(1.0, rec_low.eval(), places=5)
-      self.assertAlmostEqual(0.0, rec_high.eval(), places=5)
+      self.assertAlmostEqual(1.0, self.evaluate(prec_low), places=5)
+      self.assertAlmostEqual(0.0, self.evaluate(prec_high), places=5)
+      self.assertAlmostEqual(1.0, self.evaluate(rec_low), places=5)
+      self.assertAlmostEqual(0.0, self.evaluate(rec_high), places=5)
 
   @test_util.run_deprecated_v1
   def testExtremeThresholds(self):
@@ -1920,10 +1918,10 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertAlmostEqual(0.75, prec_low.eval())
-      self.assertAlmostEqual(0.0, prec_high.eval())
-      self.assertAlmostEqual(1.0, rec_low.eval())
-      self.assertAlmostEqual(0.0, rec_high.eval())
+      self.assertAlmostEqual(0.75, self.evaluate(prec_low))
+      self.assertAlmostEqual(0.0, self.evaluate(prec_high))
+      self.assertAlmostEqual(1.0, self.evaluate(rec_low))
+      self.assertAlmostEqual(0.0, self.evaluate(rec_high))
 
   @test_util.run_deprecated_v1
   def testZeroLabelsPredictions(self):
@@ -1939,8 +1937,8 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.evaluate([prec_op, rec_op])
 
-      self.assertAlmostEqual(0, prec.eval(), 6)
-      self.assertAlmostEqual(0, rec.eval(), 6)
+      self.assertAlmostEqual(0, self.evaluate(prec), 6)
+      self.assertAlmostEqual(0, self.evaluate(rec), 6)
 
   @test_util.run_deprecated_v1
   def testWithMultipleUpdates(self):
@@ -2011,8 +2009,8 @@ class PrecisionRecallThresholdsTest(test.TestCase):
       # Since this is only approximate, we can't expect a 6 digits match.
       # Although with higher number of samples/thresholds we should see the
       # accuracy improving
-      self.assertAlmostEqual(expected_prec, prec.eval(), 2)
-      self.assertAlmostEqual(expected_rec, rec.eval(), 2)
+      self.assertAlmostEqual(expected_prec, self.evaluate(prec), 2)
+      self.assertAlmostEqual(expected_rec, self.evaluate(rec), 2)
 
 
 def _test_precision_at_k(predictions,
@@ -3001,9 +2999,9 @@ class MeanAbsoluteErrorTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_error = error.eval()
+      initial_error = self.evaluate(error)
       for _ in range(10):
-        self.assertEqual(initial_error, error.eval())
+        self.assertEqual(initial_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithErrorAndWeights(self):
@@ -3018,7 +3016,7 @@ class MeanAbsoluteErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(3, self.evaluate(update_op))
-      self.assertEqual(3, error.eval())
+      self.assertEqual(3, self.evaluate(error))
 
 
 class MeanRelativeErrorTest(test.TestCase):
@@ -3071,9 +3069,9 @@ class MeanRelativeErrorTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_error = error.eval()
+      initial_error = self.evaluate(error)
       for _ in range(10):
-        self.assertEqual(initial_error, error.eval())
+        self.assertEqual(initial_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateNormalizedByLabels(self):
@@ -3092,7 +3090,7 @@ class MeanRelativeErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(expected_error, self.evaluate(update_op))
-      self.assertEqual(expected_error, error.eval())
+      self.assertEqual(expected_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateNormalizedByZeros(self):
@@ -3109,7 +3107,7 @@ class MeanRelativeErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(0.0, self.evaluate(update_op))
-      self.assertEqual(0.0, error.eval())
+      self.assertEqual(0.0, self.evaluate(error))
 
 
 class MeanSquaredErrorTest(test.TestCase):
@@ -3156,9 +3154,9 @@ class MeanSquaredErrorTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_error = error.eval()
+      initial_error = self.evaluate(error)
       for _ in range(10):
-        self.assertEqual(initial_error, error.eval())
+        self.assertEqual(initial_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateZeroError(self):
@@ -3170,7 +3168,7 @@ class MeanSquaredErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(0, self.evaluate(update_op))
-      self.assertEqual(0, error.eval())
+      self.assertEqual(0, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithError(self):
@@ -3184,7 +3182,7 @@ class MeanSquaredErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(6, self.evaluate(update_op))
-      self.assertEqual(6, error.eval())
+      self.assertEqual(6, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithErrorAndWeights(self):
@@ -3199,7 +3197,7 @@ class MeanSquaredErrorTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(13, self.evaluate(update_op))
-      self.assertEqual(13, error.eval())
+      self.assertEqual(13, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testMultipleBatchesOfSizeOne(self):
@@ -3224,7 +3222,7 @@ class MeanSquaredErrorTest(test.TestCase):
       self.evaluate(update_op)
       self.assertAlmostEqual(208.0 / 6, self.evaluate(update_op), 5)
 
-      self.assertAlmostEqual(208.0 / 6, error.eval(), 5)
+      self.assertAlmostEqual(208.0 / 6, self.evaluate(error), 5)
 
   @test_util.run_deprecated_v1
   def testMetricsComputedConcurrently(self):
@@ -3294,8 +3292,8 @@ class MeanSquaredErrorTest(test.TestCase):
       self.evaluate([ma_update_op, ms_update_op])
       self.evaluate([ma_update_op, ms_update_op])
 
-      self.assertAlmostEqual(32.0 / 6, mae.eval(), 5)
-      self.assertAlmostEqual(208.0 / 6, mse.eval(), 5)
+      self.assertAlmostEqual(32.0 / 6, self.evaluate(mae), 5)
+      self.assertAlmostEqual(208.0 / 6, self.evaluate(mse), 5)
 
 
 class RootMeanSquaredErrorTest(test.TestCase):
@@ -3343,9 +3341,9 @@ class RootMeanSquaredErrorTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_error = error.eval()
+      initial_error = self.evaluate(error)
       for _ in range(10):
-        self.assertEqual(initial_error, error.eval())
+        self.assertEqual(initial_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateZeroError(self):
@@ -3359,7 +3357,7 @@ class RootMeanSquaredErrorTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(0, self.evaluate(update_op))
 
-      self.assertEqual(0, rmse.eval())
+      self.assertEqual(0, self.evaluate(rmse))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithError(self):
@@ -3372,8 +3370,8 @@ class RootMeanSquaredErrorTest(test.TestCase):
       rmse, update_op = metrics.root_mean_squared_error(labels, predictions)
 
       self.evaluate(variables.local_variables_initializer())
-      self.assertAlmostEqual(math.sqrt(6), update_op.eval(), 5)
-      self.assertAlmostEqual(math.sqrt(6), rmse.eval(), 5)
+      self.assertAlmostEqual(math.sqrt(6), self.evaluate(update_op), 5)
+      self.assertAlmostEqual(math.sqrt(6), self.evaluate(rmse), 5)
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithErrorAndWeights(self):
@@ -3390,7 +3388,7 @@ class RootMeanSquaredErrorTest(test.TestCase):
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(math.sqrt(13), self.evaluate(update_op))
 
-      self.assertAlmostEqual(math.sqrt(13), rmse.eval(), 5)
+      self.assertAlmostEqual(math.sqrt(13), self.evaluate(rmse), 5)
 
 
 def _reweight(predictions, labels, weights):
@@ -3448,9 +3446,9 @@ class MeanCosineDistanceTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_error = error.eval()
+      initial_error = self.evaluate(error)
       for _ in range(10):
-        self.assertEqual(initial_error, error.eval())
+        self.assertEqual(initial_error, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateZeroError(self):
@@ -3466,7 +3464,7 @@ class MeanCosineDistanceTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(0, self.evaluate(update_op))
-      self.assertEqual(0, error.eval())
+      self.assertEqual(0, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithError1(self):
@@ -3483,7 +3481,7 @@ class MeanCosineDistanceTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1, self.evaluate(update_op), 5)
-      self.assertAlmostEqual(1, error.eval(), 5)
+      self.assertAlmostEqual(1, self.evaluate(error), 5)
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithError2(self):
@@ -3505,7 +3503,7 @@ class MeanCosineDistanceTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertAlmostEqual(1.0, self.evaluate(update_op), 5)
-      self.assertAlmostEqual(1.0, error.eval(), 5)
+      self.assertAlmostEqual(1.0, self.evaluate(error), 5)
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithErrorAndWeights1(self):
@@ -3525,7 +3523,7 @@ class MeanCosineDistanceTest(test.TestCase):
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
       self.assertEqual(0, self.evaluate(update_op))
-      self.assertEqual(0, error.eval())
+      self.assertEqual(0, self.evaluate(error))
 
   @test_util.run_deprecated_v1
   def testSingleUpdateWithErrorAndWeights2(self):
@@ -3544,8 +3542,8 @@ class MeanCosineDistanceTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertEqual(1.5, update_op.eval())
-      self.assertEqual(1.5, error.eval())
+      self.assertEqual(1.5, self.evaluate(update_op))
+      self.assertEqual(1.5, self.evaluate(error))
 
 
 class PcntBelowThreshTest(test.TestCase):
@@ -3689,9 +3687,9 @@ class MeanIOUTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_mean_iou = mean_iou.eval()
+      initial_mean_iou = self.evaluate(mean_iou)
       for _ in range(10):
-        self.assertEqual(initial_mean_iou, mean_iou.eval())
+        self.assertEqual(initial_mean_iou, self.evaluate(mean_iou))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdates(self):
@@ -3723,7 +3721,7 @@ class MeanIOUTest(test.TestCase):
       for _ in range(5):
         self.evaluate(update_op)
       desired_output = np.mean([1.0 / 2.0, 1.0 / 4.0, 0.])
-      self.assertEqual(desired_output, miou.eval())
+      self.assertEqual(desired_output, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdatesWithWeights(self):
@@ -3769,7 +3767,7 @@ class MeanIOUTest(test.TestCase):
       for _ in range(6):
         self.evaluate(update_op)
       desired_output = np.mean([2.0 / 3.0, 1.0 / 2.0])
-      self.assertAlmostEqual(desired_output, mean_iou.eval())
+      self.assertAlmostEqual(desired_output, self.evaluate(mean_iou))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdatesWithMissingClass(self):
@@ -3806,7 +3804,7 @@ class MeanIOUTest(test.TestCase):
       for _ in range(5):
         self.evaluate(update_op)
       desired_output = np.mean([1.0 / 3.0, 2.0 / 4.0])
-      self.assertAlmostEqual(desired_output, miou.eval())
+      self.assertAlmostEqual(desired_output, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testUpdateOpEvalIsAccumulatedConfusionMatrix(self):
@@ -3828,10 +3826,10 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      confusion_matrix = update_op.eval()
+      confusion_matrix = self.evaluate(update_op)
       self.assertAllEqual([[3, 0], [2, 5]], confusion_matrix)
       desired_miou = np.mean([3. / 5., 5. / 7.])
-      self.assertAlmostEqual(desired_miou, miou.eval())
+      self.assertAlmostEqual(desired_miou, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -3841,8 +3839,8 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertEqual(40, update_op.eval()[0])
-      self.assertEqual(1.0, miou.eval())
+      self.assertEqual(40, self.evaluate(update_op)[0])
+      self.assertEqual(1.0, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testAllWrong(self):
@@ -3852,8 +3850,8 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([[0, 0], [40, 0]], update_op.eval())
-      self.assertEqual(0., miou.eval())
+      self.assertAllEqual([[0, 0], [40, 0]], update_op)
+      self.assertEqual(0., self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testResultsWithSomeMissing(self):
@@ -3884,9 +3882,9 @@ class MeanIOUTest(test.TestCase):
       miou, update_op = metrics.mean_iou(
           labels, predictions, num_classes, weights=weights)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([[2, 0], [2, 4]], update_op.eval())
+      self.assertAllEqual([[2, 0], [2, 4]], update_op)
       desired_miou = np.mean([2. / 4., 4. / 6.])
-      self.assertAlmostEqual(desired_miou, miou.eval())
+      self.assertAlmostEqual(desired_miou, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testMissingClassInLabels(self):
@@ -3904,10 +3902,10 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([[7, 4, 3], [3, 5, 2], [0, 0, 0]], update_op.eval())
+      self.assertAllEqual([[7, 4, 3], [3, 5, 2], [0, 0, 0]], update_op)
       self.assertAlmostEqual(
           1 / 3 * (7 / (7 + 3 + 7) + 5 / (5 + 4 + 5) + 0 / (0 + 5 + 0)),
-          miou.eval())
+          self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testMissingClassOverallSmall(self):
@@ -3917,8 +3915,8 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([[1, 0], [0, 0]], update_op.eval())
-      self.assertAlmostEqual(1, miou.eval())
+      self.assertAllEqual([[1, 0], [0, 0]], update_op)
+      self.assertAlmostEqual(1, self.evaluate(miou))
 
   @test_util.run_deprecated_v1
   def testMissingClassOverallLarge(self):
@@ -3936,9 +3934,9 @@ class MeanIOUTest(test.TestCase):
     with self.cached_session():
       miou, update_op = metrics.mean_iou(labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([[9, 5, 0], [3, 7, 0], [0, 0, 0]], update_op.eval())
-      self.assertAlmostEqual(
-          1 / 2 * (9 / (9 + 3 + 5) + 7 / (7 + 5 + 3)), miou.eval())
+      self.assertAllEqual([[9, 5, 0], [3, 7, 0], [0, 0, 0]], update_op)
+      self.assertAlmostEqual(1 / 2 * (9 / (9 + 3 + 5) + 7 / (7 + 5 + 3)),
+                             self.evaluate(miou))
 
 
 class MeanPerClassAccuracyTest(test.TestCase):
@@ -4011,9 +4009,9 @@ class MeanPerClassAccuracyTest(test.TestCase):
         self.evaluate(update_op)
 
       # Then verify idempotency.
-      initial_mean_accuracy = mean_accuracy.eval()
+      initial_mean_accuracy = self.evaluate(mean_accuracy)
       for _ in range(10):
-        self.assertEqual(initial_mean_accuracy, mean_accuracy.eval())
+        self.assertEqual(initial_mean_accuracy, self.evaluate(mean_accuracy))
 
     num_classes = 3
     with self.cached_session() as sess:
@@ -4044,7 +4042,7 @@ class MeanPerClassAccuracyTest(test.TestCase):
       for _ in range(5):
         self.evaluate(update_op)
       desired_output = np.mean([1.0, 1.0 / 3.0, 0.0])
-      self.assertAlmostEqual(desired_output, mean_accuracy.eval())
+      self.assertAlmostEqual(desired_output, self.evaluate(mean_accuracy))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdatesWithWeights(self):
@@ -4090,7 +4088,7 @@ class MeanPerClassAccuracyTest(test.TestCase):
       for _ in range(6):
         self.evaluate(update_op)
       desired_output = np.mean([2.0 / 2.0, 0.5 / 1.5])
-      self.assertAlmostEqual(desired_output, mean_accuracy.eval())
+      self.assertAlmostEqual(desired_output, self.evaluate(mean_accuracy))
 
   @test_util.run_deprecated_v1
   def testMultipleUpdatesWithMissingClass(self):
@@ -4128,7 +4126,7 @@ class MeanPerClassAccuracyTest(test.TestCase):
       for _ in range(5):
         self.evaluate(update_op)
       desired_output = np.mean([1.0 / 2.0, 2.0 / 3.0, 0.])
-      self.assertAlmostEqual(desired_output, mean_accuracy.eval())
+      self.assertAlmostEqual(desired_output, self.evaluate(mean_accuracy))
 
   @test_util.run_deprecated_v1
   def testAllCorrect(self):
@@ -4139,8 +4137,8 @@ class MeanPerClassAccuracyTest(test.TestCase):
       mean_accuracy, update_op = metrics.mean_per_class_accuracy(
           labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertEqual(1.0, update_op.eval()[0])
-      self.assertEqual(1.0, mean_accuracy.eval())
+      self.assertEqual(1.0, self.evaluate(update_op)[0])
+      self.assertEqual(1.0, self.evaluate(mean_accuracy))
 
   @test_util.run_deprecated_v1
   def testAllWrong(self):
@@ -4151,8 +4149,8 @@ class MeanPerClassAccuracyTest(test.TestCase):
       mean_accuracy, update_op = metrics.mean_per_class_accuracy(
           labels, predictions, num_classes)
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual([0.0, 0.0], update_op.eval())
-      self.assertEqual(0., mean_accuracy.eval())
+      self.assertAllEqual([0.0, 0.0], update_op)
+      self.assertEqual(0., self.evaluate(mean_accuracy))
 
   @test_util.run_deprecated_v1
   def testResultsWithSomeMissing(self):
@@ -4172,9 +4170,10 @@ class MeanPerClassAccuracyTest(test.TestCase):
           labels, predictions, num_classes, weights=weights)
       self.evaluate(variables.local_variables_initializer())
       desired_accuracy = np.array([2. / 2., 4. / 6.], dtype=np.float32)
-      self.assertAllEqual(desired_accuracy, update_op.eval())
+      self.assertAllEqual(desired_accuracy, update_op)
       desired_mean_accuracy = np.mean(desired_accuracy)
-      self.assertAlmostEqual(desired_mean_accuracy, mean_accuracy.eval())
+      self.assertAlmostEqual(desired_mean_accuracy,
+                             self.evaluate(mean_accuracy))
 
 
 class FalseNegativesTest(test.TestCase):
@@ -4205,9 +4204,9 @@ class FalseNegativesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(3., tn_update_op.eval())
-      self.assertAllClose(3., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(3., tn_update_op)
+      self.assertAllClose(3., tn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4225,9 +4224,9 @@ class FalseNegativesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(5., tn_update_op.eval())
-      self.assertAllClose(5., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(5., tn_update_op)
+      self.assertAllClose(5., tn)
 
 
 class FalseNegativesAtThresholdsTest(test.TestCase):
@@ -4257,9 +4256,9 @@ class FalseNegativesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0, 0, 0), fn.eval())
-      self.assertAllEqual((0, 2, 3), fn_update_op.eval())
-      self.assertAllEqual((0, 2, 3), fn.eval())
+      self.assertAllEqual((0, 0, 0), fn)
+      self.assertAllEqual((0, 2, 3), fn_update_op)
+      self.assertAllEqual((0, 2, 3), fn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4277,9 +4276,9 @@ class FalseNegativesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0.0, 0.0, 0.0), fn.eval())
-      self.assertAllEqual((0.0, 8.0, 11.0), fn_update_op.eval())
-      self.assertAllEqual((0.0, 8.0, 11.0), fn.eval())
+      self.assertAllEqual((0.0, 0.0, 0.0), fn)
+      self.assertAllEqual((0.0, 8.0, 11.0), fn_update_op)
+      self.assertAllEqual((0.0, 8.0, 11.0), fn)
 
 
 class FalsePositivesTest(test.TestCase):
@@ -4310,9 +4309,9 @@ class FalsePositivesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(7., tn_update_op.eval())
-      self.assertAllClose(7., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(7., tn_update_op)
+      self.assertAllClose(7., tn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4330,9 +4329,9 @@ class FalsePositivesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(14., tn_update_op.eval())
-      self.assertAllClose(14., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(14., tn_update_op)
+      self.assertAllClose(14., tn)
 
 
 class FalsePositivesAtThresholdsTest(test.TestCase):
@@ -4362,9 +4361,9 @@ class FalsePositivesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0, 0, 0), fp.eval())
-      self.assertAllEqual((7, 4, 2), fp_update_op.eval())
-      self.assertAllEqual((7, 4, 2), fp.eval())
+      self.assertAllEqual((0, 0, 0), fp)
+      self.assertAllEqual((7, 4, 2), fp_update_op)
+      self.assertAllEqual((7, 4, 2), fp)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4384,9 +4383,9 @@ class FalsePositivesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0.0, 0.0, 0.0), fp.eval())
-      self.assertAllEqual((125.0, 42.0, 12.0), fp_update_op.eval())
-      self.assertAllEqual((125.0, 42.0, 12.0), fp.eval())
+      self.assertAllEqual((0.0, 0.0, 0.0), fp)
+      self.assertAllEqual((125.0, 42.0, 12.0), fp_update_op)
+      self.assertAllEqual((125.0, 42.0, 12.0), fp)
 
 
 class TrueNegativesTest(test.TestCase):
@@ -4417,9 +4416,9 @@ class TrueNegativesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(3., tn_update_op.eval())
-      self.assertAllClose(3., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(3., tn_update_op)
+      self.assertAllClose(3., tn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4437,9 +4436,9 @@ class TrueNegativesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(4., tn_update_op.eval())
-      self.assertAllClose(4., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(4., tn_update_op)
+      self.assertAllClose(4., tn)
 
 
 class TrueNegativesAtThresholdsTest(test.TestCase):
@@ -4469,9 +4468,9 @@ class TrueNegativesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0, 0, 0), tn.eval())
-      self.assertAllEqual((2, 5, 7), tn_update_op.eval())
-      self.assertAllEqual((2, 5, 7), tn.eval())
+      self.assertAllEqual((0, 0, 0), tn)
+      self.assertAllEqual((2, 5, 7), tn_update_op)
+      self.assertAllEqual((2, 5, 7), tn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4489,9 +4488,9 @@ class TrueNegativesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0.0, 0.0, 0.0), tn.eval())
-      self.assertAllEqual((5.0, 15.0, 23.0), tn_update_op.eval())
-      self.assertAllEqual((5.0, 15.0, 23.0), tn.eval())
+      self.assertAllEqual((0.0, 0.0, 0.0), tn)
+      self.assertAllEqual((5.0, 15.0, 23.0), tn_update_op)
+      self.assertAllEqual((5.0, 15.0, 23.0), tn)
 
 
 class TruePositivesTest(test.TestCase):
@@ -4522,9 +4521,9 @@ class TruePositivesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(7., tn_update_op.eval())
-      self.assertAllClose(7., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(7., tn_update_op)
+      self.assertAllClose(7., tn)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4542,9 +4541,9 @@ class TruePositivesTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllClose(0., tn.eval())
-      self.assertAllClose(12., tn_update_op.eval())
-      self.assertAllClose(12., tn.eval())
+      self.assertAllClose(0., tn)
+      self.assertAllClose(12., tn_update_op)
+      self.assertAllClose(12., tn)
 
 
 class TruePositivesAtThresholdsTest(test.TestCase):
@@ -4574,9 +4573,9 @@ class TruePositivesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0, 0, 0), tp.eval())
-      self.assertAllEqual((3, 1, 0), tp_update_op.eval())
-      self.assertAllEqual((3, 1, 0), tp.eval())
+      self.assertAllEqual((0, 0, 0), tp)
+      self.assertAllEqual((3, 1, 0), tp_update_op)
+      self.assertAllEqual((3, 1, 0), tp)
 
   @test_util.run_deprecated_v1
   def testWeighted(self):
@@ -4592,9 +4591,9 @@ class TruePositivesAtThresholdsTest(test.TestCase):
 
     with self.cached_session():
       self.evaluate(variables.local_variables_initializer())
-      self.assertAllEqual((0.0, 0.0, 0.0), tp.eval())
-      self.assertAllEqual((111.0, 37.0, 0.0), tp_update_op.eval())
-      self.assertAllEqual((111.0, 37.0, 0.0), tp.eval())
+      self.assertAllEqual((0.0, 0.0, 0.0), tp)
+      self.assertAllEqual((111.0, 37.0, 0.0), tp_update_op)
+      self.assertAllEqual((111.0, 37.0, 0.0), tp)
 
 
 if __name__ == '__main__':

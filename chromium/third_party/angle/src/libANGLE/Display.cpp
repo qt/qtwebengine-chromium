@@ -532,6 +532,22 @@ ShareGroup::ShareGroup(rx::EGLImplFactory *factory)
       mFrameCaptureShared(new angle::FrameCaptureShared)
 {}
 
+void ShareGroup::finishAllContexts()
+{
+    for (gl::Context *shareContext : mContexts)
+    {
+        if (shareContext->hasBeenCurrent())
+        {
+            shareContext->finish();
+        }
+    }
+}
+
+void ShareGroup::addSharedContext(gl::Context *context)
+{
+    mContexts.insert(context);
+}
+
 ShareGroup::~ShareGroup()
 {
     SafeDelete(mImplementation);
@@ -736,14 +752,12 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mBlobCache(gl::kDefaultMaxProgramCacheMemoryBytes),
       mMemoryProgramCache(mBlobCache),
       mGlobalTextureShareGroupUsers(0),
-      mGlobalSemaphoreShareGroupUsers(0)
+      mGlobalSemaphoreShareGroupUsers(0),
+      mIsTerminated(false)
 {}
 
 Display::~Display()
 {
-    // TODO(jmadill): When is this called?
-    // terminate();
-
     if (mPlatform == EGL_PLATFORM_ANGLE_ANGLE)
     {
         ANGLEPlatformDisplayMap *displays      = GetANGLEPlatformDisplayMap();
@@ -848,6 +862,8 @@ void Display::updateAttribsFromEnvironment(const AttributeMap &attribMap)
 
 Error Display::initialize()
 {
+    mIsTerminated = false;
+
     ASSERT(mImplementation != nullptr);
     mImplementation->setBlobCache(&mBlobCache);
 
@@ -885,7 +901,7 @@ Error Display::initialize()
     if (mConfigSet.size() == 0)
     {
         mImplementation->terminate();
-        return EglNotInitialized();
+        return EglNotInitialized() << "No configs were generated.";
     }
 
     // OpenGL ES1 is implemented in the frontend, explicitly add ES1 support to all configs
@@ -929,6 +945,8 @@ Error Display::initialize()
             mImplementation->terminate();
             return error;
         }
+        // Don't leak Device memory.
+        ASSERT(mDevice == nullptr);
         mDevice = new Device(this, impl.release());
     }
     else
@@ -943,46 +961,37 @@ Error Display::initialize()
 
 Error Display::terminate(Thread *thread)
 {
+    mIsTerminated = true;
+
     if (!mInitialized)
     {
         return NoError();
     }
 
-    mMemoryProgramCache.clear();
-    mBlobCache.setBlobCacheFuncs(nullptr, nullptr);
-
-    if (auto *context = thread->getContext())
+    // EGL 1.5 Specification
+    // 3.2 Initialization
+    // If contexts or surfaces, created with respect to dpy are current (see section 3.7.3) to any
+    // thread, then they are not actually destroyed while they remain current. If other resources
+    // created with respect to dpy are in use by any current context or surface, then they are also
+    // not destroyed until the corresponding context or surface is no longer current.
+    for (const gl::Context *context : mContextSet)
     {
-        auto refCount = context->getRefCount();
-        ASSERT(refCount <= 2);
-        // If eglDestroyContext is not called for the current context, we destroy the context.
-        if (context->getRefCount() == 2)
+        if (context->getRefCount() > 0)
         {
-            ANGLE_TRY(destroyContext(thread, context));
+            return NoError();
         }
-        // unMakeCurrent the context, so it will be released.
-        ANGLE_TRY(makeCurrent(thread, thread->getContext(), nullptr, nullptr, nullptr));
-        ASSERT(!thread->getContext());
     }
 
+    // Destroy all of the Contexts for this Display, since none of them are current anymore.
     while (!mContextSet.empty())
     {
-        auto *context = *mContextSet.begin();
-        // If the context is never be current, so context resources are not allocated,
-        // and we don't need to make the context current for releasing resources.
-        if (!context->isExternal() && context->hasBeenCurrent())
-        {
-            ANGLE_TRY(mImplementation->makeCurrent(this, nullptr, nullptr, context));
-        }
-
-        // Force to release all refs, since the context could be current on other threads.
-        while (context->getRefCount())
-        {
-            context->release();
-        }
-
-        ANGLE_TRY(releaseContext(context));
+        gl::Context *context = *mContextSet.begin();
+        context->setIsDestroyed();
+        ANGLE_TRY(releaseContext(context, thread));
     }
+
+    mMemoryProgramCache.clear();
+    mBlobCache.setBlobCacheFuncs(nullptr, nullptr);
 
     // The global texture and semaphore managers should be deleted with the last context that uses
     // it.
@@ -1244,6 +1253,7 @@ Error Display::createContext(const Config *configuration,
                              const AttributeMap &attribs,
                              gl::Context **outContext)
 {
+    ASSERT(!mIsTerminated);
     ASSERT(isInitialized());
 
     if (mImplementation->testDeviceLost())
@@ -1320,7 +1330,6 @@ Error Display::createContext(const Config *configuration,
     }
 
     ASSERT(context != nullptr);
-    context->addRef();
     mContextSet.insert(context);
 
     ASSERT(outContext != nullptr);
@@ -1365,9 +1374,6 @@ Error Display::makeCurrent(Thread *thread,
         return NoError();
     }
 
-    // If the context is changing we need to update the reference counts. If it's not, e.g. just
-    // changing the surfaces leave the reference count alone. Otherwise the reference count might go
-    // to zero even though we know we are not done with the context.
     bool contextChanged = context != previousContext;
     if (previousContext != nullptr && contextChanged)
     {
@@ -1375,24 +1381,26 @@ Error Display::makeCurrent(Thread *thread,
         thread->setCurrent(nullptr);
 
         auto error = previousContext->unMakeCurrent(this);
-        if (previousContext->getRefCount() == 0)
+        if (previousContext->getRefCount() == 0 && previousContext->isDestroyed())
         {
-            ANGLE_TRY(releaseContext(previousContext));
+            // The previous Context may have been created with a different Display.
+            Display *previousDisplay = previousContext->getDisplay();
+            ANGLE_TRY(previousDisplay->releaseContext(previousContext, thread));
         }
         ANGLE_TRY(error);
     }
+
+    thread->setCurrent(context);
 
     ANGLE_TRY(mImplementation->makeCurrent(this, drawSurface, readSurface, context));
 
     if (context != nullptr)
     {
         ANGLE_TRY(context->makeCurrent(this, drawSurface, readSurface));
-        thread->setCurrent(context);
-    }
-
-    if (context != nullptr && contextChanged)
-    {
-        context->addRef();
+        if (contextChanged)
+        {
+            context->addRef();
+        }
     }
 
     // Tick all the scratch buffers to make sure they get cleaned up eventually if they stop being
@@ -1473,7 +1481,7 @@ void Display::destroyStream(egl::Stream *stream)
 // To do that we can only call this in two places, Display::makeCurrent at the point where this
 // context is being made uncurrent and in Display::destroyContext where we make the context current
 // as part of destruction.
-Error Display::releaseContext(gl::Context *context)
+Error Display::releaseContext(gl::Context *context, Thread *thread)
 {
     ASSERT(context->getRefCount() == 0);
 
@@ -1517,27 +1525,24 @@ Error Display::releaseContext(gl::Context *context)
 
 Error Display::destroyContext(Thread *thread, gl::Context *context)
 {
-    context->release();
-
     auto *currentContext     = thread->getContext();
     auto *currentDrawSurface = thread->getCurrentDrawSurface();
     auto *currentReadSurface = thread->getCurrentReadSurface();
 
-    if (context->isCurrent())
+    context->setIsDestroyed();
+
+    // If the context is still current on at least 1 thread, just return since it'll be released
+    // once no threads have it current anymore.
+    if (context->getRefCount() > 0)
     {
-        ASSERT(context->getRefCount() == 1);
-        // If the context is current, we just return, since the context has been marked destroyed,
-        // so the context will be destroyed when the context is released from the current.
         return NoError();
     }
-
-    ASSERT(context->getRefCount() == 0);
 
     // For external context, we cannot change the current native context, and the API user should
     // make sure the native context is current.
     if (context->isExternal())
     {
-        ANGLE_TRY(releaseContext(context));
+        ANGLE_TRY(releaseContext(context, thread));
     }
     else
     {
@@ -1546,10 +1551,28 @@ Error Display::destroyContext(Thread *thread, gl::Context *context)
 
         // Make the context current, so we can release resources belong to the context, and then
         // when context is released from the current, it will be destroyed.
+        // TODO(http://www.anglebug.com/6322): Don't require a Context to be current in order to
+        // destroy it.
         ANGLE_TRY(makeCurrent(thread, currentContext, nullptr, nullptr, context));
         ANGLE_TRY(
             makeCurrent(thread, context, currentDrawSurface, currentReadSurface, currentContext));
     }
+
+    // If eglTerminate() has previously been called and this is the last Context the Display owns,
+    // we can now fully terminate the display and release all of its resources.
+    if (mIsTerminated)
+    {
+        for (const gl::Context *ctx : mContextSet)
+        {
+            if (ctx->getRefCount() > 0)
+            {
+                return NoError();
+            }
+        }
+
+        return terminate(thread);
+    }
+
     return NoError();
 }
 
@@ -1805,7 +1828,7 @@ void Display::initDisplayExtensions()
     mDisplayExtensions.getAllProcAddresses = true;
 
     // Enable program cache control since it is not back-end dependent.
-    mDisplayExtensions.programCacheControl = true;
+    mDisplayExtensions.programCacheControlANGLE = true;
 
     // Request extension is implemented in the ANGLE frontend
     mDisplayExtensions.createContextExtensionsEnabled = true;

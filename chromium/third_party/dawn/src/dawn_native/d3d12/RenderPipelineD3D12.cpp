@@ -16,6 +16,7 @@
 
 #include "common/Assert.h"
 #include "common/Log.h"
+#include "dawn_native/CreatePipelineAsyncTask.h"
 #include "dawn_native/d3d12/D3D12Error.h"
 #include "dawn_native/d3d12/DeviceD3D12.h"
 #include "dawn_native/d3d12/PipelineLayoutD3D12.h"
@@ -173,15 +174,6 @@ namespace dawn_native { namespace d3d12 {
                     return D3D12_BLEND_BLEND_FACTOR;
                 case wgpu::BlendFactor::OneMinusConstant:
                     return D3D12_BLEND_INV_BLEND_FACTOR;
-
-                // Deprecated blend factors should be normalized prior to this call.
-                case wgpu::BlendFactor::SrcColor:
-                case wgpu::BlendFactor::OneMinusSrcColor:
-                case wgpu::BlendFactor::DstColor:
-                case wgpu::BlendFactor::OneMinusDstColor:
-                case wgpu::BlendFactor::BlendColor:
-                case wgpu::BlendFactor::OneMinusBlendColor:
-                    UNREACHABLE();
             }
         }
 
@@ -274,7 +266,7 @@ namespace dawn_native { namespace d3d12 {
             }
         }
 
-        D3D12_DEPTH_STENCILOP_DESC StencilOpDesc(const StencilStateFaceDescriptor descriptor) {
+        D3D12_DEPTH_STENCILOP_DESC StencilOpDesc(const StencilFaceState& descriptor) {
             D3D12_DEPTH_STENCILOP_DESC desc;
 
             desc.StencilFailOp = StencilOp(descriptor.failOp);
@@ -324,15 +316,13 @@ namespace dawn_native { namespace d3d12 {
 
     }  // anonymous namespace
 
-    ResultOrError<Ref<RenderPipeline>> RenderPipeline::Create(
+    Ref<RenderPipeline> RenderPipeline::CreateUninitialized(
         Device* device,
         const RenderPipelineDescriptor* descriptor) {
-        Ref<RenderPipeline> pipeline = AcquireRef(new RenderPipeline(device, descriptor));
-        DAWN_TRY(pipeline->Initialize(descriptor));
-        return pipeline;
+        return AcquireRef(new RenderPipeline(device, descriptor));
     }
 
-    MaybeError RenderPipeline::Initialize(const RenderPipelineDescriptor* descriptor) {
+    MaybeError RenderPipeline::Initialize() {
         Device* device = ToBackend(GetDevice());
         uint32_t compileFlags = 0;
 
@@ -349,24 +339,19 @@ namespace dawn_native { namespace d3d12 {
 
         D3D12_GRAPHICS_PIPELINE_STATE_DESC descriptorD3D12 = {};
 
-        PerStage<const char*> entryPoints;
-        entryPoints[SingleShaderStage::Vertex] = descriptor->vertex.entryPoint;
-        entryPoints[SingleShaderStage::Fragment] = descriptor->fragment->entryPoint;
-
-        PerStage<ShaderModule*> modules;
-        modules[SingleShaderStage::Vertex] = ToBackend(descriptor->vertex.module);
-        modules[SingleShaderStage::Fragment] = ToBackend(descriptor->fragment->module);
+        PerStage<ProgrammableStage> pipelineStages = GetAllStages();
 
         PerStage<D3D12_SHADER_BYTECODE*> shaders;
         shaders[SingleShaderStage::Vertex] = &descriptorD3D12.VS;
         shaders[SingleShaderStage::Fragment] = &descriptorD3D12.PS;
 
         PerStage<CompiledShader> compiledShader;
-        wgpu::ShaderStage renderStages = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
-        for (auto stage : IterateStages(renderStages)) {
+
+        for (auto stage : IterateStages(GetStageMask())) {
             DAWN_TRY_ASSIGN(compiledShader[stage],
-                            modules[stage]->Compile(entryPoints[stage], stage,
-                                                    ToBackend(GetLayout()), compileFlags));
+                            ToBackend(pipelineStages[stage].module)
+                                ->Compile(pipelineStages[stage].entryPoint.c_str(), stage,
+                                          ToBackend(GetLayout()), compileFlags));
             *shaders[stage] = compiledShader[stage].GetD3D12ShaderBytecode();
         }
 
@@ -426,6 +411,9 @@ namespace dawn_native { namespace d3d12 {
         DAWN_TRY(CheckHRESULT(device->GetD3D12Device()->CreateGraphicsPipelineState(
                                   &descriptorD3D12, IID_PPV_ARGS(&mPipelineState)),
                               "D3D12 create graphics pipeline state"));
+
+        SetLabelImpl();
+
         return {};
     }
 
@@ -443,6 +431,10 @@ namespace dawn_native { namespace d3d12 {
 
     const FirstOffsetInfo& RenderPipeline::GetFirstOffsetInfo() const {
         return mFirstOffsetInfo;
+    }
+
+    void RenderPipeline::SetLabelImpl() {
+        SetDebugName(ToBackend(GetDevice()), GetPipelineState(), "Dawn_RenderPipeline", GetLabel());
     }
 
     D3D12_INPUT_LAYOUT_DESC RenderPipeline::ComputeInputLayout(
@@ -476,6 +468,15 @@ namespace dawn_native { namespace d3d12 {
         inputLayoutDescriptor.pInputElementDescs = &(*inputElementDescriptors)[0];
         inputLayoutDescriptor.NumElements = count;
         return inputLayoutDescriptor;
+    }
+
+    void RenderPipeline::InitializeAsync(Ref<RenderPipelineBase> renderPipeline,
+                                         WGPUCreateRenderPipelineAsyncCallback callback,
+                                         void* userdata) {
+        std::unique_ptr<CreateRenderPipelineAsyncTask> asyncTask =
+            std::make_unique<CreateRenderPipelineAsyncTask>(std::move(renderPipeline), callback,
+                                                            userdata);
+        CreateRenderPipelineAsyncTask::RunAsync(std::move(asyncTask));
     }
 
 }}  // namespace dawn_native::d3d12

@@ -18,10 +18,6 @@ Additional tests are included in spacetobatch_op_test.py, where the BatchToSpace
 op is tested in tandem with its reverse SpaceToBatch op.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
@@ -63,7 +59,7 @@ class BatchToSpaceDepthToSpace(test.TestCase, PythonOpImpl):
               array_ops.transpose(x, [3, 1, 2, 0]), block_size=block_size),
           [3, 1, 2, 0])
       with self.cached_session():
-        self.assertAllEqual(y1.eval(), y2.eval())
+        self.assertAllEqual(y1, y2)
 
 
 class BatchToSpaceDepthToSpaceCpp(BatchToSpaceDepthToSpace, CppOpImpl):
@@ -89,7 +85,7 @@ class BatchToSpaceErrorHandlingTest(test.TestCase, PythonOpImpl):
     block_size = 0
     with self.assertRaises(ValueError):
       out_tf = self.batch_to_space(x_np, crops, block_size)
-      out_tf.eval()
+      self.evaluate(out_tf)
 
   @test_util.run_deprecated_v1
   def testBlockSizeOne(self):
@@ -109,7 +105,7 @@ class BatchToSpaceErrorHandlingTest(test.TestCase, PythonOpImpl):
     block_size = 10
     with self.assertRaises(ValueError):
       out_tf = self.batch_to_space(x_np, crops, block_size)
-      out_tf.eval()
+      self.evaluate(out_tf)
 
   @test_util.run_deprecated_v1
   def testBlockSizeSquaredNotDivisibleBatch(self):

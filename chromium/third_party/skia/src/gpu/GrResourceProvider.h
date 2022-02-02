@@ -62,6 +62,7 @@ public:
      */
     sk_sp<GrTexture> createApproxTexture(SkISize dimensions,
                                          const GrBackendFormat& format,
+                                         GrTextureType textureType,
                                          GrRenderable renderable,
                                          int renderTargetSampleCnt,
                                          GrProtected isProtected);
@@ -69,6 +70,7 @@ public:
     /** Create an exact fit texture with no initial data to upload. */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
                                    GrMipmapped mipMapped,
@@ -82,6 +84,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat& format,
+                                   GrTextureType textureType,
                                    GrColorType colorType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
@@ -97,6 +100,7 @@ public:
      */
     sk_sp<GrTexture> createTexture(SkISize dimensions,
                                    const GrBackendFormat&,
+                                   GrTextureType textureType,
                                    GrColorType srcColorType,
                                    GrRenderable,
                                    int renderTargetSampleCnt,
@@ -112,6 +116,7 @@ public:
     sk_sp<GrTexture> findAndRefScratchTexture(const GrScratchKey&);
     sk_sp<GrTexture> findAndRefScratchTexture(SkISize dimensions,
                                               const GrBackendFormat&,
+                                              GrTextureType textureType,
                                               GrRenderable,
                                               int renderTargetSampleCnt,
                                               GrMipmapped,
@@ -290,7 +295,8 @@ public:
     sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
                                            const GrBackendFormat& format,
                                            int sampleCnt,
-                                           GrProtected isProtected);
+                                           GrProtected isProtected,
+                                           GrMemoryless isMemoryless);
 
     /**
      * Gets a GrAttachment that can be used for MSAA rendering. This attachment may be shared by
@@ -301,7 +307,8 @@ public:
     sk_sp<GrAttachment> getDiscardableMSAAAttachment(SkISize dimensions,
                                                      const GrBackendFormat& format,
                                                      int sampleCnt,
-                                                     GrProtected isProtected);
+                                                     GrProtected isProtected,
+                                                     GrMemoryless memoryless);
 
     /**
      * Assigns a unique key to a resource. If the key is associated with another resource that
@@ -338,6 +345,7 @@ private:
      */
     sk_sp<GrTexture> getExactScratch(SkISize dimensions,
                                      const GrBackendFormat&,
+                                     GrTextureType,
                                      GrRenderable,
                                      int renderTargetSampleCnt,
                                      SkBudgeted,
@@ -349,7 +357,8 @@ private:
     sk_sp<GrAttachment> refScratchMSAAAttachment(SkISize dimensions,
                                                  const GrBackendFormat&,
                                                  int sampleCnt,
-                                                 GrProtected);
+                                                 GrProtected,
+                                                 GrMemoryless memoryless);
 
     // Used to perform any conversions necessary to texel data before creating a texture with
     // existing data or uploading to a scratch texture.

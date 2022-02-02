@@ -252,6 +252,16 @@ through APIs like the tabs and windows APIs. This is critical for certain types
 of extensions, such as tab and session managers, bookmark managers, and history
 managers.
 
+### Why do we not allow extensions to open or close chrome-untrusted:-scheme pages?
+
+The chrome-untrusted:-scheme (such as chrome-untrusted://terminal) is generally
+used for Chrome OS System Web Apps. Some of these apps such as Terminal which
+starts the Linux VM can perform operations on startup, or start other systems
+which may have security vulnerabilities. We
+[intentionally](../../security/chromeos_security_whitepaper.md#principles-of-chrome-os-security)
+disallow auto-start to avoid
+[persistent attacks](https://chromium.googlesource.com/chromiumos/docs/+/HEAD/containers_and_vms.md#security-persistence).
+
 ### Why are extensions allowed to bypass a web page's Content Security Policy?
 
 Extensions are considered more privileged than the web pages they are allowed to
@@ -358,6 +368,19 @@ websites. Chrome does not limit what an extension does with this data.
 If an extension is able to access incognito contexts without this setting
 enabled, this may be a security bug; please report any such bugs
 [here][new-security-bug].
+
+### What privileges does the Debugger permission grant an extension? What privileges should it lack?
+
+The debugger permission should grant an extension the power to automate any
+website. This may extend to driving interactions with that site which are not
+possible using JavaScript on the site itself, but instead normally require
+user interaction with Chrome features.
+
+The debugger permission does not allow automating parts of the Chromium
+browser unrelated to websites. Automating WebUI or settings, installing
+extensions, downloading and executing a native binary, or executing custom
+code outside the sandbox should not be possible for an extension with the
+debugger permission.
 
 ### I've found a security bug in an extension. Is this a security bug in Chromium?
 

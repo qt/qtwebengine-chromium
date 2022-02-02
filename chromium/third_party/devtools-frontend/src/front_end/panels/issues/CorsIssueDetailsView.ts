@@ -124,11 +124,8 @@ const str_ = i18n.i18n.registerUIStrings('panels/issues/CorsIssueDetailsView.ts'
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class CorsIssueDetailsView extends AffectedResourcesView {
-  private issue: AggregatedIssue;
-
-  constructor(parentView: IssueView, issue: AggregatedIssue) {
-    super(parentView);
-    this.issue = issue;
+  constructor(parent: IssueView, issue: AggregatedIssue) {
+    super(parent, issue);
     this.affectedResourcesCountElement.classList.add('cors-issue-affected-resource-label');
   }
 
@@ -208,7 +205,8 @@ export class CorsIssueDetailsView extends AffectedResourcesView {
       default:
         Platform.assertUnhandled<IssuesManager.CorsIssue.IssueCode.PreflightMissingAllowExternal|
                                  IssuesManager.CorsIssue.IssueCode.PreflightInvalidAllowExternal|
-                                 IssuesManager.CorsIssue.IssueCode.InvalidResponse>(issueCode);
+                                 IssuesManager.CorsIssue.IssueCode.InvalidResponse|
+                                 IssuesManager.CorsIssue.IssueCode.InvalidPrivateNetworkAccess>(issueCode);
     }
 
     this.affectedResources.appendChild(header);
@@ -432,7 +430,8 @@ export class CorsIssueDetailsView extends AffectedResourcesView {
         this.appendStatus(element, details.isWarning);
         Platform.assertUnhandled<IssuesManager.CorsIssue.IssueCode.PreflightMissingAllowExternal|
                                  IssuesManager.CorsIssue.IssueCode.PreflightInvalidAllowExternal|
-                                 IssuesManager.CorsIssue.IssueCode.InvalidResponse>(issueCode);
+                                 IssuesManager.CorsIssue.IssueCode.InvalidResponse|
+                                 IssuesManager.CorsIssue.IssueCode.InvalidPrivateNetworkAccess>(issueCode);
         break;
     }
 

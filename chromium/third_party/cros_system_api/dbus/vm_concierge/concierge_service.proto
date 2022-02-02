@@ -194,6 +194,22 @@ message StartVmRequest {
   // message and that file descriptor will be used for the type's purpose.
   repeated FdType fds = 16;
 
+  // Timeout (seconds) for VM startup
+  uint32 timeout = 20;
+
+  enum TerminaFeature {
+    // This list must stay in sync with the one in vm_guest.proto
+    UNKNOWN = 0;
+    USED_BY_TESTS = 1;
+    START_LXD = 2 [deprecated = true];
+    RESET_LXD_ON_LAUNCH = 3 [deprecated = true];
+    LXD_4_LTS = 4;
+    // This list must stay in sync with the one in vm_guest.proto
+  }
+  // Experimental Termina features to enable. Like Chrome feature flags but for
+  // inside the VM.
+  repeated TerminaFeature features = 21;
+
   reserved 13, 14, 6;
 }
 
@@ -295,6 +311,13 @@ message StartArcVmRequest {
   // How to configure the balloon policy. If set, LimitCacheBalloonPolicy is
   // used, otherwise BalanceAvailableBalloonPolicy is used.
   BalloonPolicyOptions balloon_policy = 13;
+
+  // Whether per-VM core scheduling should be used instead of the default one
+  // (per-vCPU core scheduing.) This option is no-op on devices that have
+  // neither MDS nor L1TF vulnerability. On those non-vulnerable devices, core
+  // scheduling is not used, and all vCPU threads can be assigned to any CPU
+  // cores without restrictions.
+  bool use_per_vm_core_scheduling = 14;
 }
 
 enum VmStatus {

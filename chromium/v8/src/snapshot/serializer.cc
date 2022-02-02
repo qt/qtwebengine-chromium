@@ -6,6 +6,7 @@
 
 #include "src/codegen/assembler-inl.h"
 #include "src/common/globals.h"
+#include "src/handles/global-handles-inl.h"
 #include "src/heap/heap-inl.h"  // For Space::identity().
 #include "src/heap/memory-chunk-inl.h"
 #include "src/heap/read-only-heap.h"
@@ -47,6 +48,10 @@ Serializer::Serializer(Isolate* isolate, Snapshot::SerializerFlags flags)
   }
 #endif  // OBJECT_PRINT
 }
+
+#ifdef DEBUG
+void Serializer::PopStack() { stack_.Pop(); }
+#endif
 
 void Serializer::CountAllocation(Map map, int size, SnapshotSpace space) {
   DCHECK(FLAG_serialization_statistics);
@@ -121,12 +126,14 @@ void Serializer::SerializeObject(Handle<HeapObject> obj) {
   // indirection and serialize the actual string directly.
   if (obj->IsThinString(isolate())) {
     obj = handle(ThinString::cast(*obj).actual(isolate()), isolate());
-  } else if (obj->IsBaselineData()) {
-    // For now just serialize the BytecodeArray instead of baseline data.
-    // TODO(v8:11429,pthier): Handle BaselineData in cases we want to serialize
-    // Baseline code.
-    obj = handle(Handle<BaselineData>::cast(obj)->GetActiveBytecodeArray(),
-                 isolate());
+  } else if (obj->IsCodeT()) {
+    Code code = FromCodeT(CodeT::cast(*obj));
+    if (code.kind() == CodeKind::BASELINE) {
+      // For now just serialize the BytecodeArray instead of baseline code.
+      // TODO(v8:11429,pthier): Handle Baseline code in cases we want to
+      // serialize it.
+      obj = handle(code.bytecode_or_interpreter_data(isolate()), isolate());
+    }
   }
   SerializeObjectImpl(obj);
 }
@@ -521,10 +528,6 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
   ArrayBufferExtension* extension = buffer->extension();
 
   // The embedder-allocated backing store only exists for the off-heap case.
-#ifdef V8_HEAP_SANDBOX
-  uint32_t external_pointer_entry =
-      buffer->GetBackingStoreRefForDeserialization();
-#endif
   if (backing_store != nullptr) {
     uint32_t ref = SerializeBackingStore(backing_store, byte_length);
     buffer->SetBackingStoreRefForSerialization(ref);
@@ -538,11 +541,7 @@ void Serializer::ObjectSerializer::SerializeJSArrayBuffer() {
 
   SerializeObject();
 
-#ifdef V8_HEAP_SANDBOX
-  buffer->SetBackingStoreRefForSerialization(external_pointer_entry);
-#else
-  buffer->set_backing_store(isolate(), backing_store);
-#endif
+  buffer->set_backing_store(backing_store);
   buffer->set_extension(extension);
 }
 

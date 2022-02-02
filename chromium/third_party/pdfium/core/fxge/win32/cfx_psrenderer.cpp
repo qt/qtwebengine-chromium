@@ -7,14 +7,22 @@
 #include "core/fxge/win32/cfx_psrenderer.h"
 
 #include <math.h>
+#include <string.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <sstream>
+#include <string>
 #include <utility>
 
-#include "core/fxcrt/maybe_owned.h"
+#include "core/fxcrt/bytestring.h"
+#include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memory.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/fx_stream.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
+#include "core/fxge/cfx_font.h"
 #include "core/fxge/cfx_fontcache.h"
 #include "core/fxge/cfx_gemodule.h"
 #include "core/fxge/cfx_glyphcache.h"
@@ -23,32 +31,188 @@
 #include "core/fxge/dib/cfx_dibextractor.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/dib/fx_dib.h"
+#include "core/fxge/fx_freetype.h"
 #include "core/fxge/text_char_pos.h"
-#include "core/fxge/win32/cpsoutput.h"
+#include "core/fxge/win32/cfx_psfonttracker.h"
+#include "third_party/base/check_op.h"
 
-struct PSGlyph {
-  UnownedPtr<CFX_Font> m_pFont;
-  uint32_t m_GlyphIndex;
-  bool m_bGlyphAdjust;
-  float m_AdjustMatrix[4];
+namespace {
+
+bool CanEmbed(CFX_Font* font) {
+  FT_UShort fstype = FT_Get_FSType_Flags(font->GetFaceRec());
+  return (fstype & (FT_FSTYPE_RESTRICTED_LICENSE_EMBEDDING |
+                    FT_FSTYPE_BITMAP_EMBEDDING_ONLY)) == 0;
+}
+
+Optional<ByteString> GenerateType42SfntData(
+    const ByteString& psname,
+    pdfium::span<const uint8_t> font_data) {
+  if (font_data.empty())
+    return pdfium::nullopt;
+
+  // Per Type 42 font spec.
+  constexpr size_t kMaxSfntStringSize = 65535;
+  if (font_data.size() > kMaxSfntStringSize) {
+    // TODO(thestig): Fonts that are too big need to be written out in sections.
+    return pdfium::nullopt;
+  }
+
+  // Each byte is written as 2 ASCIIHex characters, so really 64 chars per line.
+  constexpr size_t kMaxBytesPerLine = 32;
+  std::ostringstream output;
+  output << "/" << psname << "_sfnts [\n<\n";
+  size_t bytes_per_line = 0;
+  char buf[2];
+  for (uint8_t datum : font_data) {
+    FXSYS_IntToTwoHexChars(datum, buf);
+    output << buf[0];
+    output << buf[1];
+    bytes_per_line++;
+    if (bytes_per_line == kMaxBytesPerLine) {
+      output << "\n";
+      bytes_per_line = 0;
+    }
+  }
+
+  // Pad with ASCIIHex NUL character per Type 42 font spec if needed.
+  if (!FX_IsOdd(font_data.size()))
+    output << "00";
+
+  output << "\n>\n] def\n";
+  return ByteString(output);
+}
+
+// The value to use with GenerateType42FontDictionary() below, and the max
+// number of entries supported for non-CID fonts.
+// Also used to avoid buggy fonts by writing out at least this many entries,
+// per note in Poppler's Type 42 generation code.
+constexpr size_t kGlyphsPerDescendantFont = 256;
+
+ByteString GenerateType42FontDictionary(const ByteString& psname,
+                                        const FX_RECT& bbox,
+                                        size_t num_glyphs,
+                                        size_t glyphs_per_descendant_font) {
+  DCHECK_LE(glyphs_per_descendant_font, kGlyphsPerDescendantFont);
+  CHECK_GT(glyphs_per_descendant_font, 0u);
+
+  const size_t descendant_font_count =
+      (num_glyphs + glyphs_per_descendant_font - 1) /
+      glyphs_per_descendant_font;
+
+  std::ostringstream output;
+  for (size_t i = 0; i < descendant_font_count; ++i) {
+    output << "8 dict begin\n";
+    output << "/FontType 42 def\n";
+    output << "/FontMatrix [1 0 0 1 0 0] def\n";
+    output << "/FontName /" << psname << "_" << i << " def\n";
+
+    output << "/Encoding " << glyphs_per_descendant_font << " array\n";
+    for (size_t j = 0, pos = i * glyphs_per_descendant_font;
+         j < glyphs_per_descendant_font; ++j, ++pos) {
+      if (pos >= num_glyphs)
+        break;
+
+      output << ByteString::Format("dup %d /c%02x put\n", j, j);
+    }
+    output << "readonly def\n";
+
+    // Note: `bbox` is LTRB, while /FontBBox is LBRT. Writing it out as LTRB
+    // gets the correct values.
+    output << "/FontBBox [" << bbox.left << " " << bbox.top << " " << bbox.right
+           << " " << bbox.bottom << "] def\n";
+
+    output << "/PaintType 0 def\n";
+
+    output << "/CharStrings " << glyphs_per_descendant_font + 1
+           << " dict dup begin\n";
+    output << "/.notdef 0 def\n";
+    for (size_t j = 0, pos = i * glyphs_per_descendant_font;
+         j < glyphs_per_descendant_font; ++j, ++pos) {
+      if (pos >= num_glyphs)
+        break;
+
+      output << ByteString::Format("/c%02x %d def\n", j, pos);
+    }
+    output << "end readonly def\n";
+
+    output << "/sfnts " << psname << "_sfnts def\n";
+    output << "FontName currentdict end definefont pop\n";
+  }
+
+  output << "6 dict begin\n";
+  output << "/FontName /" << psname << " def\n";
+  output << "/FontType 0 def\n";
+  output << "/FontMatrix [1 0 0 1 0 0] def\n";
+  output << "/FMapType 2 def\n";
+
+  output << "/Encoding [\n";
+  for (size_t i = 0; i < descendant_font_count; ++i)
+    output << i << "\n";
+  output << "] def\n";
+
+  output << "/FDepVector [\n";
+  for (size_t i = 0; i < descendant_font_count; ++i)
+    output << "/" << psname << "_" << i << " findfont\n";
+  output << "] def\n";
+
+  output << "FontName currentdict end definefont pop\n";
+  output << "%%EndResource\n";
+
+  return ByteString(output);
+}
+
+ByteString GenerateType42FontData(const CFX_Font* font) {
+  const FXFT_FaceRec* font_face_rec = font->GetFaceRec();
+  if (!font_face_rec)
+    return ByteString();
+
+  const ByteString psname = font->GetPsName();
+  DCHECK(!psname.IsEmpty());
+
+  Optional<ByteString> sfnt_data =
+      GenerateType42SfntData(psname, font->GetFontSpan());
+  if (!sfnt_data.has_value())
+    return ByteString();
+
+  ByteString output = "%%BeginResource: font ";
+  output += psname;
+  output += "\n";
+  output += sfnt_data.value();
+  output += GenerateType42FontDictionary(psname, font->GetRawBBox().value(),
+                                         font_face_rec->num_glyphs,
+                                         kGlyphsPerDescendantFont);
+  return output;
+}
+
+}  // namespace
+
+struct CFX_PSRenderer::Glyph {
+  Glyph(CFX_Font* font, uint32_t glyph_index)
+      : font(font), glyph_index(glyph_index) {}
+  Glyph(const Glyph& other) = delete;
+  Glyph& operator=(const Glyph&) = delete;
+  ~Glyph() = default;
+
+  UnownedPtr<CFX_Font> const font;
+  const uint32_t glyph_index;
+  Optional<std::array<float, 4>> adjust_matrix;
 };
 
-class CPSFont {
- public:
-  int m_nGlyphs;
-  PSGlyph m_Glyphs[256];
-};
-
-CFX_PSRenderer::CFX_PSRenderer(const EncoderIface* pEncoderIface)
-    : m_pEncoderIface(pEncoderIface) {}
+CFX_PSRenderer::CFX_PSRenderer(CFX_PSFontTracker* font_tracker,
+                               const EncoderIface* encoder_iface)
+    : m_pFontTracker(font_tracker), m_pEncoderIface(encoder_iface) {
+  DCHECK(m_pFontTracker);
+}
 
 CFX_PSRenderer::~CFX_PSRenderer() = default;
 
 void CFX_PSRenderer::Init(const RetainPtr<IFX_RetainableWriteStream>& pStream,
-                          int pslevel,
+                          RenderingLevel level,
                           int width,
                           int height) {
-  m_PSLevel = pslevel;
+  DCHECK(pStream);
+
+  m_Level = level;
   m_pStream = pStream;
   m_ClipBox.left = 0;
   m_ClipBox.top = 0;
@@ -84,6 +248,17 @@ void CFX_PSRenderer::EndRendering() {
 
   WriteString("\nrestore\n");
   m_bInited = false;
+
+  // Flush `m_PreambleOutput` if it is not empty.
+  std::streampos preamble_pos = m_PreambleOutput.tellp();
+  if (preamble_pos > 0) {
+    m_pStream->WriteBlock(m_PreambleOutput.str().c_str(), preamble_pos);
+    m_PreambleOutput.str(std::string());
+  }
+
+  // Flush `m_Output`. It's never empty because of the WriteString() call above.
+  m_pStream->WriteBlock(m_Output.str().c_str(), m_Output.tellp());
+  m_Output.str(std::string());
 }
 
 void CFX_PSRenderer::SaveState() {
@@ -331,7 +506,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     std::unique_ptr<uint8_t, FxFreeDeleter> src_buf(
         FX_Alloc(uint8_t, src_size));
     for (int row = 0; row < height; row++) {
-      const uint8_t* src_scan = pSource->GetScanline(row);
+      const uint8_t* src_scan = pSource->GetScanline(row).data();
       memcpy(src_buf.get() + row * pitch, src_scan, pitch);
     }
 
@@ -386,7 +561,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
     uint8_t* output_buf = nullptr;
     size_t output_size = 0;
     const char* filter = nullptr;
-    if ((m_PSLevel == 2 || options.bLossy) &&
+    if ((m_Level.value() == RenderingLevel::kLevel2 || options.bLossy) &&
         m_pEncoderIface->pJpegEncodeFunc(pConverted, &output_buf,
                                          &output_size)) {
       filter = "/DCTDecode filter ";
@@ -396,7 +571,7 @@ bool CFX_PSRenderer::DrawDIBits(const RetainPtr<CFX_DIBBase>& pSource,
       output_size = height * src_pitch;
       output_buf = FX_Alloc(uint8_t, output_size);
       for (int row = 0; row < height; row++) {
-        const uint8_t* src_scan = pConverted->GetScanline(row);
+        const uint8_t* src_scan = pConverted->GetScanline(row).data();
         uint8_t* dest_scan = output_buf + row * src_pitch;
         if (bpp == 3) {
           for (int col = 0; col < width; col++) {
@@ -453,32 +628,33 @@ void CFX_PSRenderer::FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,
                                      const TextCharPos& charpos,
                                      int* ps_fontnum,
                                      int* ps_glyphindex) {
-  int i = 0;
-  for (const auto& pPSFont : m_PSFontList) {
-    for (int j = 0; j < pPSFont->m_nGlyphs; j++) {
-      if (pPSFont->m_Glyphs[j].m_pFont == pFont &&
-          pPSFont->m_Glyphs[j].m_GlyphIndex == charpos.m_GlyphIndex &&
-          ((!pPSFont->m_Glyphs[j].m_bGlyphAdjust && !charpos.m_bGlyphAdjust) ||
-           (pPSFont->m_Glyphs[j].m_bGlyphAdjust && charpos.m_bGlyphAdjust &&
-            (fabs(pPSFont->m_Glyphs[j].m_AdjustMatrix[0] -
-                  charpos.m_AdjustMatrix[0]) < 0.01 &&
-             fabs(pPSFont->m_Glyphs[j].m_AdjustMatrix[1] -
-                  charpos.m_AdjustMatrix[1]) < 0.01 &&
-             fabs(pPSFont->m_Glyphs[j].m_AdjustMatrix[2] -
-                  charpos.m_AdjustMatrix[2]) < 0.01 &&
-             fabs(pPSFont->m_Glyphs[j].m_AdjustMatrix[3] -
-                  charpos.m_AdjustMatrix[3]) < 0.01)))) {
-        *ps_fontnum = i;
-        *ps_glyphindex = j;
+  for (size_t i = 0; i < m_PSFontList.size(); ++i) {
+    const Glyph& glyph = *m_PSFontList[i];
+    if (glyph.font == pFont && glyph.glyph_index == charpos.m_GlyphIndex &&
+        glyph.adjust_matrix.has_value() == charpos.m_bGlyphAdjust) {
+      bool found;
+      if (glyph.adjust_matrix.has_value()) {
+        constexpr float kEpsilon = 0.01f;
+        const auto& adjust_matrix = glyph.adjust_matrix.value();
+        found = fabs(adjust_matrix[0] - charpos.m_AdjustMatrix[0]) < kEpsilon &&
+                fabs(adjust_matrix[1] - charpos.m_AdjustMatrix[1]) < kEpsilon &&
+                fabs(adjust_matrix[2] - charpos.m_AdjustMatrix[2]) < kEpsilon &&
+                fabs(adjust_matrix[3] - charpos.m_AdjustMatrix[3]) < kEpsilon;
+      } else {
+        found = true;
+      }
+      if (found) {
+        *ps_fontnum = i / 256;
+        *ps_glyphindex = i % 256;
         return;
       }
     }
-    ++i;
   }
 
-  if (m_PSFontList.empty() || m_PSFontList.back()->m_nGlyphs == 256) {
-    m_PSFontList.push_back(std::make_unique<CPSFont>());
-    m_PSFontList.back()->m_nGlyphs = 0;
+  m_PSFontList.push_back(std::make_unique<Glyph>(pFont, charpos.m_GlyphIndex));
+  *ps_fontnum = (m_PSFontList.size() - 1) / 256;
+  *ps_glyphindex = (m_PSFontList.size() - 1) % 256;
+  if (*ps_glyphindex == 0) {
     std::ostringstream buf;
     buf << "8 dict begin/FontType 3 def/FontMatrix[1 0 0 1 0 0]def\n"
            "/FontBBox[0 0 0 0]def/Encoding 256 array def 0 1 255{Encoding "
@@ -489,25 +665,15 @@ void CFX_PSRenderer::FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,
            "/BuildChar{1 index/Encoding get exch get 1 index/BuildGlyph get "
            "exec}bind def\n"
            "currentdict end\n";
-    buf << "/X" << static_cast<uint32_t>(m_PSFontList.size() - 1)
-        << " exch definefont pop\n";
+    buf << "/X" << *ps_fontnum << " exch definefont pop\n";
     WriteStream(buf);
   }
 
-  *ps_fontnum = m_PSFontList.size() - 1;
-  CPSFont* pPSFont = m_PSFontList[*ps_fontnum].get();
-  int glyphindex = pPSFont->m_nGlyphs;
-  *ps_glyphindex = glyphindex;
-  pPSFont->m_Glyphs[glyphindex].m_GlyphIndex = charpos.m_GlyphIndex;
-  pPSFont->m_Glyphs[glyphindex].m_pFont = pFont;
-  pPSFont->m_Glyphs[glyphindex].m_bGlyphAdjust = charpos.m_bGlyphAdjust;
   if (charpos.m_bGlyphAdjust) {
-    pPSFont->m_Glyphs[glyphindex].m_AdjustMatrix[0] = charpos.m_AdjustMatrix[0];
-    pPSFont->m_Glyphs[glyphindex].m_AdjustMatrix[1] = charpos.m_AdjustMatrix[1];
-    pPSFont->m_Glyphs[glyphindex].m_AdjustMatrix[2] = charpos.m_AdjustMatrix[2];
-    pPSFont->m_Glyphs[glyphindex].m_AdjustMatrix[3] = charpos.m_AdjustMatrix[3];
+    m_PSFontList.back()->adjust_matrix = std::array<float, 4>{
+        charpos.m_AdjustMatrix[0], charpos.m_AdjustMatrix[1],
+        charpos.m_AdjustMatrix[2], charpos.m_AdjustMatrix[3]};
   }
-  pPSFont->m_nGlyphs++;
 
   CFX_Matrix matrix;
   if (charpos.m_bGlyphAdjust) {
@@ -525,7 +691,7 @@ void CFX_PSRenderer::FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,
     TransformedPath.Transform(matrix);
 
   std::ostringstream buf;
-  buf << "/X" << *ps_fontnum << " Ff/CharProcs get begin/" << glyphindex
+  buf << "/X" << *ps_fontnum << " Ff/CharProcs get begin/" << *ps_glyphindex
       << "{n ";
   for (size_t p = 0; p < TransformedPath.GetPoints().size(); p++) {
     CFX_PointF point = TransformedPath.GetPoint(p);
@@ -549,9 +715,64 @@ void CFX_PSRenderer::FindPSFontGlyph(CFX_GlyphCache* pGlyphCache,
     }
   }
   buf << "f}bind def end\n";
-  buf << "/X" << *ps_fontnum << " Ff/Encoding get " << glyphindex << "/"
-      << glyphindex << " put\n";
+  buf << "/X" << *ps_fontnum << " Ff/Encoding get " << *ps_glyphindex << "/"
+      << *ps_glyphindex << " put\n";
   WriteStream(buf);
+}
+
+void CFX_PSRenderer::DrawTextAsType3Font(int char_count,
+                                         const TextCharPos* char_pos,
+                                         CFX_Font* font,
+                                         float font_size,
+                                         std::ostringstream& buf) {
+  CFX_FontCache* pCache = CFX_GEModule::Get()->GetFontCache();
+  RetainPtr<CFX_GlyphCache> pGlyphCache = pCache->GetGlyphCache(font);
+  int last_fontnum = -1;
+  for (int i = 0; i < char_count; i++) {
+    int ps_fontnum;
+    int ps_glyphindex;
+    FindPSFontGlyph(pGlyphCache.Get(), font, char_pos[i], &ps_fontnum,
+                    &ps_glyphindex);
+    if (last_fontnum != ps_fontnum) {
+      buf << "/X" << ps_fontnum << " Ff " << font_size << " Fs Sf ";
+      last_fontnum = ps_fontnum;
+    }
+    buf << char_pos[i].m_Origin.x << " " << char_pos[i].m_Origin.y << " m";
+    ByteString hex = ByteString::Format("<%02X>", ps_glyphindex);
+    buf << hex.AsStringView() << "Tj\n";
+  }
+}
+
+bool CFX_PSRenderer::DrawTextAsType42Font(int char_count,
+                                          const TextCharPos* char_pos,
+                                          CFX_Font* font,
+                                          float font_size,
+                                          std::ostringstream& buf) {
+  if (m_Level != RenderingLevel::kLevel3Type42 || !CanEmbed(font))
+    return false;
+
+  if (font->GetFontType() != CFX_Font::FontType::kCIDTrueType)
+    return false;
+
+  bool is_existing_font = m_pFontTracker->SeenFontObject(font);
+  if (!is_existing_font) {
+    ByteString font_data = GenerateType42FontData(font);
+    if (font_data.IsEmpty())
+      return false;
+
+    m_pFontTracker->AddFontObject(font);
+    WritePreambleString(font_data.AsStringView());
+  }
+
+  buf << "/" << font->GetPsName() << " " << font_size << " selectfont\n";
+  for (int i = 0; i < char_count; ++i) {
+    buf << char_pos[i].m_Origin.x << " " << char_pos[i].m_Origin.y << " m";
+    uint8_t hi = char_pos[i].m_GlyphIndex / 256;
+    uint8_t lo = char_pos[i].m_GlyphIndex % 256;
+    ByteString hex = ByteString::Format("<%02X%02X>", hi, lo);
+    buf << hex.AsStringView() << "Tj\n";
+  }
+  return true;
 }
 
 bool CFX_PSRenderer::DrawText(int nChars,
@@ -584,22 +805,10 @@ bool CFX_PSRenderer::DrawText(int nChars,
       << mtObject2Device.c << " " << mtObject2Device.d << " "
       << mtObject2Device.e << " " << mtObject2Device.f << "]cm\n";
 
-  CFX_FontCache* pCache = CFX_GEModule::Get()->GetFontCache();
-  RetainPtr<CFX_GlyphCache> pGlyphCache = pCache->GetGlyphCache(pFont);
-  int last_fontnum = -1;
-  for (int i = 0; i < nChars; i++) {
-    int ps_fontnum;
-    int ps_glyphindex;
-    FindPSFontGlyph(pGlyphCache.Get(), pFont, pCharPos[i], &ps_fontnum,
-                    &ps_glyphindex);
-    if (last_fontnum != ps_fontnum) {
-      buf << "/X" << ps_fontnum << " Ff " << font_size << " Fs Sf ";
-      last_fontnum = ps_fontnum;
-    }
-    buf << pCharPos[i].m_Origin.x << " " << pCharPos[i].m_Origin.y << " m";
-    ByteString hex = ByteString::Format("<%02X>", ps_glyphindex);
-    buf << hex.AsStringView() << "Tj\n";
+  if (!DrawTextAsType42Font(nChars, pCharPos, pFont, font_size, buf)) {
+    DrawTextAsType3Font(nChars, pCharPos, pFont, font_size, buf);
   }
+
   buf << "Q\n";
   WriteStream(buf);
   return true;
@@ -635,7 +844,8 @@ void CFX_PSRenderer::PSCompressData(uint8_t* src_buf,
 
   uint8_t* dest_buf = nullptr;
   uint32_t dest_size = src_size;
-  if (m_PSLevel >= 3) {
+  if (m_Level.value() == RenderingLevel::kLevel3 ||
+      m_Level.value() == RenderingLevel::kLevel3Type42) {
     std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf_unique;
     if (m_pEncoderIface->pFlateEncodeFunc(src_buf, src_size, &dest_buf_unique,
                                           &dest_size)) {
@@ -659,21 +869,42 @@ void CFX_PSRenderer::PSCompressData(uint8_t* src_buf,
   }
 }
 
+void CFX_PSRenderer::WritePreambleString(ByteStringView str) {
+  m_PreambleOutput << str;
+}
+
 void CFX_PSRenderer::WritePSBinary(pdfium::span<const uint8_t> data) {
   std::unique_ptr<uint8_t, FxFreeDeleter> dest_buf;
   uint32_t dest_size;
   if (m_pEncoderIface->pA85EncodeFunc(data, &dest_buf, &dest_size)) {
-    m_pStream->WriteBlock(dest_buf.get(), dest_size);
+    m_Output.write(reinterpret_cast<const char*>(dest_buf.get()), dest_size);
   } else {
-    m_pStream->WriteBlock(data.data(), data.size());
+    m_Output.write(reinterpret_cast<const char*>(data.data()), data.size());
   }
 }
 
 void CFX_PSRenderer::WriteStream(std::ostringstream& stream) {
   if (stream.tellp() > 0)
-    m_pStream->WriteBlock(stream.str().c_str(), stream.tellp());
+    m_Output.write(stream.str().c_str(), stream.tellp());
 }
 
 void CFX_PSRenderer::WriteString(ByteStringView str) {
-  m_pStream->WriteString(str);
+  m_Output << str;
+}
+
+// static
+Optional<ByteString> CFX_PSRenderer::GenerateType42SfntDataForTesting(
+    const ByteString& psname,
+    pdfium::span<const uint8_t> font_data) {
+  return GenerateType42SfntData(psname, font_data);
+}
+
+// static
+ByteString CFX_PSRenderer::GenerateType42FontDictionaryForTesting(
+    const ByteString& psname,
+    const FX_RECT& bbox,
+    size_t num_glyphs,
+    size_t glyphs_per_descendant_font) {
+  return GenerateType42FontDictionary(psname, bbox, num_glyphs,
+                                      glyphs_per_descendant_font);
 }

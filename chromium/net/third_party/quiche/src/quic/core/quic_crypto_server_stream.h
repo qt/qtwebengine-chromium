@@ -51,6 +51,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
   std::string GetAddressToken() const override;
   bool ValidateAddressToken(absl::string_view token) const override;
   bool ShouldSendExpectCTHeader() const override;
+  bool DidCertMatchSni() const override;
   const ProofSource::Details* ProofSourceDetails() const override;
 
   // From QuicCryptoStream
@@ -68,6 +69,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
   std::unique_ptr<QuicDecrypter> AdvanceKeysAndCreateCurrentOneRttDecrypter()
       override;
   std::unique_ptr<QuicEncrypter> CreateCurrentOneRttEncrypter() override;
+  SSL* GetSsl() const override;
 
   // From QuicCryptoHandshaker
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;

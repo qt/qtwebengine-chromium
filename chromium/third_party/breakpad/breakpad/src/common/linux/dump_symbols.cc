@@ -260,13 +260,16 @@ class DumperLineToModule: public DwarfCUToModule::LineToModuleHandler {
   void StartCompilationUnit(const string& compilation_dir) {
     compilation_dir_ = compilation_dir;
   }
-  void ReadProgram(const uint8_t* program, uint64_t length,
+  void ReadProgram(const uint8_t* program,
+                   uint64_t length,
                    const uint8_t* string_section,
                    uint64_t string_section_length,
                    const uint8_t* line_string_section,
                    uint64_t line_string_section_length,
-                   Module* module, std::vector<Module::Line>* lines) {
-    DwarfLineToModule handler(module, compilation_dir_, lines);
+                   Module* module,
+                   std::vector<Module::Line>* lines,
+                   std::map<uint32_t, Module::File*>* files) {
+    DwarfLineToModule handler(module, compilation_dir_, lines, files);
     google_breakpad::LineInfo parser(program, length, byte_reader_,
                                   string_section, string_section_length,
                                   line_string_section,
@@ -284,6 +287,7 @@ bool LoadDwarf(const string& dwarf_filename,
                const typename ElfClass::Ehdr* elf_header,
                const bool big_endian,
                bool handle_inter_cu_refs,
+               bool handle_inline,
                Module* module) {
   typedef typename ElfClass::Shdr Shdr;
 
@@ -330,7 +334,7 @@ bool LoadDwarf(const string& dwarf_filename,
     // data that was found.
     DwarfCUToModule::WarningReporter reporter(dwarf_filename, offset);
     DwarfCUToModule root_handler(&file_context, &line_to_module,
-                                 &ranges_handler, &reporter);
+                                 &ranges_handler, &reporter, handle_inline);
     // Make a Dwarf2Handler that drives the DIEHandler.
     google_breakpad::DIEDispatcher die_dispatcher(&root_handler);
     // Make a DWARF parser for the compilation unit at OFFSET.
@@ -680,7 +684,8 @@ bool LoadSymbols(const string& obj_file,
   bool found_debug_info_section = false;
   bool found_usable_info = false;
 
-  if (options.symbol_data != ONLY_CFI) {
+  if ((options.symbol_data & SYMBOLS_AND_FILES) ||
+      (options.symbol_data & INLINES)) {
 #ifndef NO_STABS_SUPPORT
     // Look for STABS debugging information, and load it if present.
     const Shdr* stab_section =
@@ -782,14 +787,15 @@ bool LoadSymbols(const string& obj_file,
       found_usable_info = true;
       info->LoadedSection(".debug_info");
       if (!LoadDwarf<ElfClass>(obj_file, elf_header, big_endian,
-                               options.handle_inter_cu_refs, module)) {
+                               options.handle_inter_cu_refs,
+                               options.symbol_data & INLINES, module)) {
         fprintf(stderr, "%s: \".debug_info\" section found, but failed to load "
                 "DWARF debugging information\n", obj_file.c_str());
       }
     }
   }
 
-  if (options.symbol_data != NO_CFI) {
+  if (options.symbol_data & CFI) {
     // Dwarf Call Frame Information (CFI) is actually independent from
     // the other DWARF debugging information, and can be used alone.
     const Shdr* dwarf_cfi_section =

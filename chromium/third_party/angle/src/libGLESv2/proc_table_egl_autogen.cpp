@@ -317,7 +317,9 @@ const ProcEntry g_procTable[] = {
     {"glDrawTexxOES", P(GL_DrawTexxOES)},
     {"glDrawTexxvOES", P(GL_DrawTexxvOES)},
     {"glEGLImageTargetRenderbufferStorageOES", P(GL_EGLImageTargetRenderbufferStorageOES)},
+    {"glEGLImageTargetTexStorageEXT", P(GL_EGLImageTargetTexStorageEXT)},
     {"glEGLImageTargetTexture2DOES", P(GL_EGLImageTargetTexture2DOES)},
+    {"glEGLImageTargetTextureStorageEXT", P(GL_EGLImageTargetTextureStorageEXT)},
     {"glEnable", P(GL_Enable)},
     {"glEnableClientState", P(GL_EnableClientState)},
     {"glEnableVertexAttribArray", P(GL_EnableVertexAttribArray)},
@@ -392,6 +394,7 @@ const ProcEntry g_procTable[] = {
     {"glGetBufferPointervRobustANGLE", P(GL_GetBufferPointervRobustANGLE)},
     {"glGetClipPlanef", P(GL_GetClipPlanef)},
     {"glGetClipPlanex", P(GL_GetClipPlanex)},
+    {"glGetCompressedTexImageANGLE", P(GL_GetCompressedTexImageANGLE)},
     {"glGetDebugMessageLog", P(GL_GetDebugMessageLog)},
     {"glGetDebugMessageLogKHR", P(GL_GetDebugMessageLogKHR)},
     {"glGetError", P(GL_GetError)},
@@ -916,5 +919,5 @@ const ProcEntry g_procTable[] = {
     {"glWaitSync", P(GL_WaitSync)},
     {"glWeightPointerOES", P(GL_WeightPointerOES)}};
 
-const size_t g_numProcs = 883;
+const size_t g_numProcs = 886;
 }  // namespace egl

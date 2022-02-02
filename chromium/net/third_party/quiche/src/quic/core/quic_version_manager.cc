@@ -15,17 +15,27 @@ namespace quic {
 
 QuicVersionManager::QuicVersionManager(
     ParsedQuicVersionVector supported_versions)
-    : disable_version_rfcv1_(GetQuicReloadableFlag(quic_disable_version_rfcv1)),
+    : lazy_(GetQuicRestartFlag(quic_lazy_quic_version_manager)),
+      disable_version_rfcv1_(
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_rfcv1)),
       disable_version_draft_29_(
-          GetQuicReloadableFlag(quic_disable_version_draft_29)),
-      disable_version_t051_(GetQuicReloadableFlag(quic_disable_version_t051)),
-      disable_version_q050_(GetQuicReloadableFlag(quic_disable_version_q050)),
-      disable_version_q046_(GetQuicReloadableFlag(quic_disable_version_q046)),
-      disable_version_q043_(GetQuicReloadableFlag(quic_disable_version_q043)),
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_draft_29)),
+      disable_version_t051_(
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_t051)),
+      disable_version_q050_(
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_q050)),
+      disable_version_q046_(
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_q046)),
+      disable_version_q043_(
+          lazy_ ? true : GetQuicReloadableFlag(quic_disable_version_q043)),
       allowed_supported_versions_(std::move(supported_versions)) {
   static_assert(SupportedVersions().size() == 6u,
                 "Supported versions out of sync");
-  RefilterSupportedVersions();
+  if (lazy_) {
+    QUIC_RESTART_FLAG_COUNT(quic_lazy_quic_version_manager);
+  } else {
+    RefilterSupportedVersions();
+  }
 }
 
 QuicVersionManager::~QuicVersionManager() {}
@@ -33,6 +43,12 @@ QuicVersionManager::~QuicVersionManager() {}
 const ParsedQuicVersionVector& QuicVersionManager::GetSupportedVersions() {
   MaybeRefilterSupportedVersions();
   return filtered_supported_versions_;
+}
+
+const ParsedQuicVersionVector&
+QuicVersionManager::GetSupportedVersionsWithOnlyHttp3() {
+  MaybeRefilterSupportedVersions();
+  return filtered_supported_versions_with_http3_;
 }
 
 const ParsedQuicVersionVector&
@@ -76,6 +92,7 @@ void QuicVersionManager::MaybeRefilterSupportedVersions() {
 void QuicVersionManager::RefilterSupportedVersions() {
   filtered_supported_versions_ =
       FilterSupportedVersions(allowed_supported_versions_);
+  filtered_supported_versions_with_http3_.clear();
   filtered_supported_versions_with_quic_crypto_.clear();
   filtered_transport_versions_.clear();
   filtered_supported_alpns_.clear();
@@ -85,6 +102,9 @@ void QuicVersionManager::RefilterSupportedVersions() {
                   filtered_transport_versions_.end(),
                   transport_version) == filtered_transport_versions_.end()) {
       filtered_transport_versions_.push_back(transport_version);
+    }
+    if (version.UsesHttp3()) {
+      filtered_supported_versions_with_http3_.push_back(version);
     }
     if (version.handshake_protocol == PROTOCOL_QUIC_CRYPTO) {
       filtered_supported_versions_with_quic_crypto_.push_back(version);

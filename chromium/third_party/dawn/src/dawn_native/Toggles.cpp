@@ -212,6 +212,22 @@ namespace dawn_native {
              {"disable_symbol_renaming",
               "Disables the WGSL symbol renaming so that names are preserved.",
               "https://crbug.com/dawn/1016"}},
+            {Toggle::UseUserDefinedLabelsInBackend,
+             {"use_user_defined_labels_in_backend",
+              "Enables calls to SetLabel to be forwarded to backend-specific APIs that label "
+              "objects.",
+              "https://crbug.com/dawn/840"}},
+            {Toggle::DisableR8RG8Mipmaps,
+             {"disable_r8_rg8_mipmaps",
+              "Disables mipmaps for r8unorm and rg8unorm textures, which are known on some drivers "
+              "to not clear correctly.",
+              "https://crbug.com/dawn/1071"}},
+            {Toggle::UseDummyFragmentInVertexOnlyPipeline,
+             {"use_dummy_fragment_in_vertex_only_pipeline",
+              "Use a dummy empty fragment shader in vertex only render pipeline. This toggle must "
+              "be enabled for OpenGL ES backend, and serves as a workaround by default enabled on "
+              "some Metal devices with Intel GPU to ensure the depth result is correct.",
+              "https://crbug.com/dawn/136"}},
             // Dummy comment to separate the }} so it is clearer what to copy-paste to add a toggle.
         }};
     }  // anonymous namespace

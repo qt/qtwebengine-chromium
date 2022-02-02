@@ -13,8 +13,8 @@ package org.appspot.apprtc;
 import android.content.Context;
 import android.os.Environment;
 import android.os.ParcelFileDescriptor;
-import android.support.annotation.Nullable;
 import android.util.Log;
+import androidx.annotation.Nullable;
 import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -54,6 +54,8 @@ import org.webrtc.PeerConnection;
 import org.webrtc.PeerConnection.IceConnectionState;
 import org.webrtc.PeerConnection.PeerConnectionState;
 import org.webrtc.PeerConnectionFactory;
+import org.webrtc.RTCStatsCollectorCallback;
+import org.webrtc.RTCStatsReport;
 import org.webrtc.RtpParameters;
 import org.webrtc.RtpReceiver;
 import org.webrtc.RtpSender;
@@ -62,8 +64,6 @@ import org.webrtc.SdpObserver;
 import org.webrtc.SessionDescription;
 import org.webrtc.SoftwareVideoDecoderFactory;
 import org.webrtc.SoftwareVideoEncoderFactory;
-import org.webrtc.StatsObserver;
-import org.webrtc.StatsReport;
 import org.webrtc.SurfaceTextureHelper;
 import org.webrtc.VideoCapturer;
 import org.webrtc.VideoDecoderFactory;
@@ -96,7 +96,6 @@ public class PeerConnectionClient {
   private static final String VIDEO_CODEC_H264_BASELINE = "H264 Baseline";
   private static final String VIDEO_CODEC_H264_HIGH = "H264 High";
   private static final String VIDEO_CODEC_AV1 = "AV1";
-  private static final String VIDEO_CODEC_AV1_SDP_CODEC_NAME = "AV1X";
   private static final String AUDIO_CODEC_OPUS = "opus";
   private static final String AUDIO_CODEC_ISAC = "ISAC";
   private static final String VIDEO_CODEC_PARAM_START_BITRATE = "x-google-start-bitrate";
@@ -312,7 +311,7 @@ public class PeerConnectionClient {
     /**
      * Callback fired once peer connection statistics is ready.
      */
-    void onPeerConnectionStatsReady(final StatsReport[] reports);
+    void onPeerConnectionStatsReady(final RTCStatsReport report);
 
     /**
      * Callback fired once peer connection error happened.
@@ -747,20 +746,16 @@ public class PeerConnectionClient {
     return isVideoCallEnabled() && videoWidth * videoHeight >= 1280 * 720;
   }
 
-  @SuppressWarnings("deprecation") // TODO(sakal): getStats is deprecated.
   private void getStats() {
     if (peerConnection == null || isError) {
       return;
     }
-    boolean success = peerConnection.getStats(new StatsObserver() {
+    peerConnection.getStats(new RTCStatsCollectorCallback() {
       @Override
-      public void onComplete(final StatsReport[] reports) {
-        events.onPeerConnectionStatsReady(reports);
+      public void onStatsDelivered(RTCStatsReport report) {
+        events.onPeerConnectionStatsReady(report);
       }
-    }, null);
-    if (!success) {
-      Log.e(TAG, "getStats() returns false!");
-    }
+    });
   }
 
   public void enableStatsEvents(boolean enable, int periodMs) {
@@ -989,7 +984,7 @@ public class PeerConnectionClient {
       case VIDEO_CODEC_VP9:
         return VIDEO_CODEC_VP9;
       case VIDEO_CODEC_AV1:
-        return VIDEO_CODEC_AV1_SDP_CODEC_NAME;
+        return VIDEO_CODEC_AV1;
       case VIDEO_CODEC_H264_HIGH:
       case VIDEO_CODEC_H264_BASELINE:
         return VIDEO_CODEC_H264;

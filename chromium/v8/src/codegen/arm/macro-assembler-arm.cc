@@ -182,7 +182,7 @@ void TurboAssembler::Jump(Handle<Code> code, RelocInfo::Mode rmode,
     // size s.t. pc-relative calls may be used.
     UseScratchRegisterScope temps(this);
     Register scratch = temps.Acquire();
-    int offset = IsolateData::builtin_entry_slot_offset(code->builtin_id());
+    int offset = IsolateData::BuiltinEntrySlotOffset(code->builtin_id());
     ldr(scratch, MemOperand(kRootRegister, offset));
     Jump(scratch, cond);
     return;
@@ -269,7 +269,7 @@ void TurboAssembler::Call(Handle<Code> code, RelocInfo::Mode rmode,
     // This branch is taken only for specific cctests, where we force isolate
     // creation at runtime. At this point, Code space isn't restricted to a
     // size s.t. pc-relative calls may be used.
-    int offset = IsolateData::builtin_entry_slot_offset(code->builtin_id());
+    int offset = IsolateData::BuiltinEntrySlotOffset(code->builtin_id());
     ldr(ip, MemOperand(kRootRegister, offset));
     Call(ip, cond);
     return;
@@ -315,7 +315,7 @@ MemOperand TurboAssembler::EntryFromBuiltinAsOperand(Builtin builtin) {
   ASM_CODE_COMMENT(this);
   DCHECK(root_array_available());
   return MemOperand(kRootRegister,
-                    IsolateData::builtin_entry_slot_offset(builtin));
+                    IsolateData::BuiltinEntrySlotOffset(builtin));
 }
 
 void TurboAssembler::CallBuiltin(Builtin builtin, Condition cond) {
@@ -343,29 +343,32 @@ void TurboAssembler::LoadCodeObjectEntry(Register destination,
     DCHECK(root_array_available());
     Label if_code_is_off_heap, out;
 
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
+    {
+      UseScratchRegisterScope temps(this);
+      Register scratch = temps.Acquire();
 
-    DCHECK(!AreAliased(destination, scratch));
-    DCHECK(!AreAliased(code_object, scratch));
+      DCHECK(!AreAliased(destination, scratch));
+      DCHECK(!AreAliased(code_object, scratch));
 
-    // Check whether the Code object is an off-heap trampoline. If so, call its
-    // (off-heap) entry point directly without going through the (on-heap)
-    // trampoline.  Otherwise, just call the Code object as always.
-    ldr(scratch, FieldMemOperand(code_object, Code::kFlagsOffset));
-    tst(scratch, Operand(Code::IsOffHeapTrampoline::kMask));
-    b(ne, &if_code_is_off_heap);
+      // Check whether the Code object is an off-heap trampoline. If so, call
+      // its (off-heap) entry point directly without going through the (on-heap)
+      // trampoline.  Otherwise, just call the Code object as always.
+      ldr(scratch, FieldMemOperand(code_object, Code::kFlagsOffset));
+      tst(scratch, Operand(Code::IsOffHeapTrampoline::kMask));
+      b(ne, &if_code_is_off_heap);
 
-    // Not an off-heap trampoline, the entry point is at
-    // Code::raw_instruction_start().
-    add(destination, code_object, Operand(Code::kHeaderSize - kHeapObjectTag));
-    jmp(&out);
+      // Not an off-heap trampoline, the entry point is at
+      // Code::raw_instruction_start().
+      add(destination, code_object,
+          Operand(Code::kHeaderSize - kHeapObjectTag));
+      jmp(&out);
 
-    // An off-heap trampoline, the entry point is loaded from the builtin entry
-    // table.
-    bind(&if_code_is_off_heap);
-    ldr(scratch, FieldMemOperand(code_object, Code::kBuiltinIndexOffset));
-    lsl(destination, scratch, Operand(kSystemPointerSizeLog2));
+      // An off-heap trampoline, the entry point is loaded from the builtin
+      // entry table.
+      bind(&if_code_is_off_heap);
+      ldr(scratch, FieldMemOperand(code_object, Code::kBuiltinIndexOffset));
+      lsl(destination, scratch, Operand(kSystemPointerSizeLog2));
+    }
     add(destination, destination, kRootRegister);
     ldr(destination,
         MemOperand(destination, IsolateData::builtin_entry_table_offset()));
@@ -1639,8 +1642,10 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
 
   // If the expected parameter count is equal to the adaptor sentinel, no need
   // to push undefined value as arguments.
-  cmp(expected_parameter_count, Operand(kDontAdaptArgumentsSentinel));
-  b(eq, &regular_invoke);
+  if (kDontAdaptArgumentsSentinel != 0) {
+    cmp(expected_parameter_count, Operand(kDontAdaptArgumentsSentinel));
+    b(eq, &regular_invoke);
+  }
 
   // If overapplication or if the actual argument count is equal to the
   // formal parameter count, no need to push extra undefined values.
@@ -1669,7 +1674,11 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
     str(scratch, MemOperand(dest, kSystemPointerSize, PostIndex));
     sub(num, num, Operand(1), SetCC);
     bind(&check);
-    b(ge, &copy);
+    if (kJSArgcIncludesReceiver) {
+      b(gt, &copy);
+    } else {
+      b(ge, &copy);
+    }
   }
 
   // Fill remaining expected arguments with undefined values.
@@ -1685,8 +1694,8 @@ void MacroAssembler::InvokePrologue(Register expected_parameter_count,
 
   bind(&stack_overflow);
   {
-    FrameScope frame(this,
-                     has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
+    FrameScope frame(
+        this, has_frame() ? StackFrame::NO_FRAME_TYPE : StackFrame::INTERNAL);
     CallRuntime(Runtime::kThrowStackOverflow);
     bkpt(0);
   }
@@ -1700,7 +1709,8 @@ void MacroAssembler::CallDebugOnFunctionCall(Register fun, Register new_target,
   ASM_CODE_COMMENT(this);
   // Load receiver to pass it later to DebugOnFunctionCall hook.
   ldr(r4, ReceiverOperand(actual_parameter_count));
-  FrameScope frame(this, has_frame() ? StackFrame::NONE : StackFrame::INTERNAL);
+  FrameScope frame(
+      this, has_frame() ? StackFrame::NO_FRAME_TYPE : StackFrame::INTERNAL);
 
   SmiTag(expected_parameter_count);
   Push(expected_parameter_count);
@@ -1867,16 +1877,26 @@ void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
   cmp(type_reg, Operand(type));
 }
 
+void MacroAssembler::CompareRange(Register value, unsigned lower_limit,
+                                  unsigned higher_limit) {
+  ASM_CODE_COMMENT(this);
+  DCHECK_LT(lower_limit, higher_limit);
+  if (lower_limit != 0) {
+    UseScratchRegisterScope temps(this);
+    Register scratch = temps.Acquire();
+    sub(scratch, value, Operand(lower_limit));
+    cmp(scratch, Operand(higher_limit - lower_limit));
+  } else {
+    cmp(value, Operand(higher_limit));
+  }
+}
 void MacroAssembler::CompareInstanceTypeRange(Register map, Register type_reg,
                                               InstanceType lower_limit,
                                               InstanceType higher_limit) {
   ASM_CODE_COMMENT(this);
   DCHECK_LT(lower_limit, higher_limit);
-  UseScratchRegisterScope temps(this);
-  Register scratch = temps.Acquire();
   ldrh(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  sub(scratch, type_reg, Operand(lower_limit));
-  cmp(scratch, Operand(higher_limit - lower_limit));
+  CompareRange(type_reg, lower_limit, higher_limit);
 }
 
 void MacroAssembler::CompareRoot(Register obj, RootIndex index) {
@@ -1891,14 +1911,7 @@ void MacroAssembler::JumpIfIsInRange(Register value, unsigned lower_limit,
                                      unsigned higher_limit,
                                      Label* on_in_range) {
   ASM_CODE_COMMENT(this);
-  if (lower_limit != 0) {
-    UseScratchRegisterScope temps(this);
-    Register scratch = temps.Acquire();
-    sub(scratch, value, Operand(lower_limit));
-    cmp(scratch, Operand(higher_limit - lower_limit));
-  } else {
-    cmp(value, Operand(higher_limit));
-  }
+  CompareRange(value, lower_limit, higher_limit);
   b(ls, on_in_range);
 }
 
@@ -2082,7 +2095,7 @@ void TurboAssembler::Abort(AbortReason reason) {
 
   if (should_abort_hard()) {
     // We don't care if we constructed a frame. Just pretend we did.
-    FrameScope assume_frame(this, StackFrame::NONE);
+    FrameScope assume_frame(this, StackFrame::NO_FRAME_TYPE);
     Move32BitImmediate(r0, Operand(static_cast<int>(reason)));
     PrepareCallCFunction(1, 0, r1);
     Move(r1, ExternalReference::abort_with_reason());
@@ -2098,7 +2111,7 @@ void TurboAssembler::Abort(AbortReason reason) {
   if (!has_frame()) {
     // We don't actually want to generate a pile of code for this, so just
     // claim there is a stack frame, without generating one.
-    FrameScope scope(this, StackFrame::NONE);
+    FrameScope scope(this, StackFrame::NO_FRAME_TYPE);
     Call(BUILTIN_CODE(isolate(), Abort), RelocInfo::CODE_TARGET);
   } else {
     Call(BUILTIN_CODE(isolate(), Abort), RelocInfo::CODE_TARGET);
@@ -2660,17 +2673,19 @@ void TurboAssembler::ComputeCodeStartAddress(Register dst) {
   sub(dst, pc, Operand(pc_offset() + Instruction::kPcLoadDelta));
 }
 
-void TurboAssembler::ResetSpeculationPoisonRegister() {
-  mov(kSpeculationPoisonRegister, Operand(-1));
-}
-
 void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
                                            DeoptimizeKind kind, Label* ret,
                                            Label*) {
   ASM_CODE_COMMENT(this);
+
+  // All constants should have been emitted prior to deoptimization exit
+  // emission. See PrepareForDeoptimizationExits.
+  DCHECK(!has_pending_constants());
   BlockConstPoolScope block_const_pool(this);
-  ldr(ip, MemOperand(kRootRegister,
-                     IsolateData::builtin_entry_slot_offset(target)));
+
+  CHECK_LE(target, Builtins::kLastTier0);
+  ldr(ip,
+      MemOperand(kRootRegister, IsolateData::BuiltinEntrySlotOffset(target)));
   Call(ip);
   DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
             (kind == DeoptimizeKind::kLazy)
@@ -2682,6 +2697,9 @@ void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
     DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
               Deoptimizer::kEagerWithResumeBeforeArgsSize);
   }
+
+  // The above code must not emit constants either.
+  DCHECK(!has_pending_constants());
 }
 
 void TurboAssembler::Trap() { stop(); }

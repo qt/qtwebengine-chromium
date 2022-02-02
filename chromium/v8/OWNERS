@@ -31,6 +31,7 @@ per-file WATCHLISTS=file:COMMON_OWNERS
 per-file WATCHLISTS=v8-ci-autoroll-builder@chops-service-accounts.iam.gserviceaccount.com
 per-file DEPS=v8-ci-autoroll-builder@chops-service-accounts.iam.gserviceaccount.com
 
+per-file ...-loong64*=file:LOONG_OWNERS
 per-file ...-mips*=file:MIPS_OWNERS
 per-file ...-mips64*=file:MIPS_OWNERS
 per-file ...-ppc*=file:PPC_OWNERS

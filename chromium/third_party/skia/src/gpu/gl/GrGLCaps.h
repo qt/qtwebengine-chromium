@@ -120,7 +120,7 @@ public:
 
     bool isFormatSRGB(const GrBackendFormat&) const override;
 
-    bool isFormatTexturable(const GrBackendFormat&) const override;
+    bool isFormatTexturable(const GrBackendFormat&, GrTextureType) const override;
     bool isFormatTexturable(GrGLFormat) const;
 
     bool isFormatAsColorTypeRenderable(GrColorType ct, const GrBackendFormat& format,
@@ -404,6 +404,19 @@ public:
         return fMustSetAnyTexParameterToEnableMipmapping;
     }
 
+    // Whether we must reset the blend function to not reference src2 when disabling blending after
+    // previously referencing src2.
+    bool mustResetBlendFuncBetweenDualSourceAndDisable() const {
+        return fMustResetBlendFuncBetweenDualSourceAndDisable;
+    }
+
+    // Before changing the sample count of a texture bound to an FBO with
+    // glFramebufferTexture2DMultisample() temporarily bind texture 0 to avoid corruption int the
+    // texture contents.
+    bool bindTexture0WhenChangingTextureFBOMultisampleCount() const {
+        return fBindTexture0WhenChangingTextureFBOMultisampleCount;
+    }
+
     // Returns the observed maximum number of instances the driver can handle in a single draw call
     // without crashing, or 'pendingInstanceCount' if this workaround is not necessary.
     // NOTE: the return value may be larger than pendingInstanceCount.
@@ -577,6 +590,8 @@ private:
     bool fMustSetAnyTexParameterToEnableMipmapping : 1;
     bool fAllowBGRA8CopyTexSubImage : 1;
     bool fDisallowDynamicMSAA : 1;
+    bool fMustResetBlendFuncBetweenDualSourceAndDisable : 1;
+    bool fBindTexture0WhenChangingTextureFBOMultisampleCount : 1;
     int fMaxInstancesPerDrawWithoutCrashing = 0;
 
     uint32_t fBlitFramebufferFlags = kNoSupport_BlitFramebufferFlag;

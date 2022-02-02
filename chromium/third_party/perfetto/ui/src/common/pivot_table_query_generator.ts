@@ -12,52 +12,102 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-export interface AggregationAttrs {
-  tableName: string;
-  columnName: string;
-  aggregation: string;
-  order: string;
+import {
+  AggregationAttrs,
+  AVAILABLE_TABLES,
+  getHiddenStackHelperColumns,
+  getParentStackWhereFilter,
+  getStackColumn,
+  getStackDepthColumn,
+  PivotAttrs,
+} from './pivot_table_common';
+
+export function getPivotAlias(pivot: PivotAttrs): string {
+  return `${pivot.tableName} ${pivot.columnName}`;
 }
 
-export interface PivotAttrs {
-  tableName: string;
-  columnName: string;
+export function getHiddenPivotAlias(pivot: PivotAttrs) {
+  return getPivotAlias(pivot) + ' (hidden)';
 }
 
-function getPivotAlias(pivot: PivotAttrs): string {
-  return `${pivot.tableName}_${pivot.columnName}`;
+export function getAggregationAlias(aggregation: AggregationAttrs): string {
+  return `${aggregation.tableName} ${aggregation.columnName} (${
+      aggregation.aggregation})`;
 }
 
-function getAggregationAlias(
-    aggregation: AggregationAttrs, index?: number): string {
-  let alias = `${aggregation.aggregation}_${aggregation.tableName}_${
-      aggregation.columnName}`;
-  if (index !== undefined) {
-    alias += `_${index}`;
-  }
-  return alias;
+export function getSqlPivotAlias(pivot: PivotAttrs): string {
+  return `"${getPivotAlias(pivot)}"`;
 }
 
-function getAliasedPivotColumns(
-    pivots: PivotAttrs[], lastIndex: number): string[] {
+export function getSqlHiddenPivotAlias(pivot: PivotAttrs): string {
+  return `"${getHiddenPivotAlias(pivot)}"`;
+}
+
+export function getSqlAggregationAlias(aggregation: AggregationAttrs): string {
+  return `"${getAggregationAlias(aggregation)}"`;
+}
+
+export function getAggregationOverStackAlias(aggregation: AggregationAttrs):
+    string {
+  return `${getAggregationAlias(aggregation)} (stack)`;
+}
+
+export function getSqlAggregationOverStackAlias(aggregation: AggregationAttrs):
+    string {
+  return `"${getAggregationOverStackAlias(aggregation)}"`;
+}
+
+export function getTotalAggregationAlias(aggregation: AggregationAttrs):
+    string {
+  return `${getAggregationAlias(aggregation)} (total)`;
+}
+
+export function getSqlTotalAggregationAlias(aggregation: AggregationAttrs):
+    string {
+  return `"${getTotalAggregationAlias(aggregation)}"`;
+}
+
+// Returns an array of pivot aliases along with any additional pivot aliases.
+export function getSqlAliasedPivotColumns(pivots: PivotAttrs[]): string[] {
   const pivotCols = [];
-  for (let i = 0; i < lastIndex; ++i) {
-    pivotCols.push(getPivotAlias(pivots[i]));
+  for (const pivot of pivots) {
+    pivotCols.push(getSqlPivotAlias(pivot));
+    if (pivot.isStackPivot) {
+      pivotCols.push(...getHiddenStackHelperColumns(pivot).map(
+          column => `"${column.columnAlias}"`));
+    }
   }
   return pivotCols;
 }
 
-function getAliasedAggregationColumns(
-    pivots: PivotAttrs[], aggregations: AggregationAttrs[]): string[] {
-  const aggCols = [];
-  for (let i = 0; i < aggregations.length; ++i) {
-    if (pivots.length === 0) {
-      aggCols.push(getAggregationAlias(aggregations[i]));
-      continue;
+export function getAliasedPivotColumns(pivots: PivotAttrs[]) {
+  const pivotCols: Array<{pivotAttrs: PivotAttrs, columnAlias: string}> = [];
+  for (const pivot of pivots) {
+    pivotCols.push({pivotAttrs: pivot, columnAlias: getPivotAlias(pivot)});
+    if (pivot.isStackPivot) {
+      pivotCols.push(...getHiddenStackHelperColumns(pivot));
     }
-    for (let j = 0; j < pivots.length; ++j) {
-      aggCols.push(getAggregationAlias(aggregations[i], j + 1));
-    }
+  }
+  return pivotCols;
+}
+
+// Returns an array of aggregation aliases along with total aggregations if
+// necessary.
+function getSqlAliasedAggregationsColumns(
+    aggregations: AggregationAttrs[],
+    hasPivotsSelected: boolean,
+    isStackQuery: boolean): string[] {
+  const aggCols =
+      aggregations.map(aggregation => getSqlAggregationAlias(aggregation));
+
+  if (hasPivotsSelected) {
+    aggCols.push(...aggregations.map(
+        aggregation => getSqlTotalAggregationAlias(aggregation)));
+  }
+
+  if (isStackQuery) {
+    aggCols.push(...aggregations.map(
+        aggregation => getSqlAggregationOverStackAlias(aggregation)));
   }
   return aggCols;
 }
@@ -65,69 +115,107 @@ function getAliasedAggregationColumns(
 export class PivotTableQueryGenerator {
   // Generates a query that selects all pivots and aggregations and joins any
   // tables needed by them together. All pivots are renamed into the format
-  // tableName_columnName and all aggregations are renamed into
-  // aggregation_tableName_columnName (see getPivotAlias or
+  // tableName columnName and all aggregations are renamed into
+  // tableName columnName (aggregation) (see getPivotAlias or
   // getAggregationAlias).
   private generateJoinQuery(
-      pivots: PivotAttrs[], aggregations: AggregationAttrs[]): string {
+      pivots: PivotAttrs[], aggregations: AggregationAttrs[],
+      whereFilters: string[], joinTables: string[]): string {
     let joinQuery = 'SELECT\n';
 
     const pivotCols = [];
-    for (let i = 0; i < pivots.length; ++i) {
-      pivotCols.push(
-          `${pivots[i].tableName}.${pivots[i].columnName} AS ` +
-          `${getPivotAlias(pivots[i])}`);
+    for (const pivot of pivots) {
+      if (pivot.isStackPivot) {
+        pivotCols.push(
+            `${pivot.tableName}.name AS ` +
+            `${getSqlPivotAlias(pivot)}`);
+
+        pivotCols.push(...getHiddenStackHelperColumns(pivot).map(
+            column => `${column.pivotAttrs.tableName}.${
+                column.pivotAttrs.columnName} AS "${column.columnAlias}"`));
+      } else {
+        pivotCols.push(
+            `${pivot.tableName}.${pivot.columnName} AS ` +
+            `${getSqlPivotAlias(pivot)}`);
+      }
     }
 
     const aggCols = [];
-    for (let i = 0; i < aggregations.length; ++i) {
+    for (const aggregation of aggregations) {
       aggCols.push(
-          `${aggregations[i].tableName}.${aggregations[i].columnName} AS ` +
-          `${getAggregationAlias(aggregations[i])}`);
+          `${aggregation.tableName}.${aggregation.columnName} AS ` +
+          `${getSqlAggregationAlias(aggregation)}`);
     }
 
     joinQuery += pivotCols.concat(aggCols).join(',\n  ');
     joinQuery += '\n';
-    joinQuery += 'FROM slice WHERE slice.dur != -1\n';
+    joinQuery += 'FROM\n';
+    joinQuery += joinTables.join(',\n  ');
+    joinQuery += '\n';
+    joinQuery += 'WHERE\n';
+    joinQuery += whereFilters.join(' AND\n  ');
+    joinQuery += '\n';
     return joinQuery;
   }
 
   // Partitions the aggregations from the subquery generateJoinQuery over
   // all sets of appended pivots ({pivot1}, {pivot1, pivot2}, etc).
   private generateAggregationQuery(
-      pivots: PivotAttrs[], aggregations: AggregationAttrs[]): string {
+      pivots: PivotAttrs[], aggregations: AggregationAttrs[],
+      whereFilters: string[], joinTables: string[],
+      isStackQuery: boolean): string {
     // No need for this query if there are no aggregations.
     if (aggregations.length === 0) {
-      return this.generateJoinQuery(pivots, aggregations);
+      return this.generateJoinQuery(
+          pivots, aggregations, whereFilters, joinTables);
     }
 
     let aggQuery = 'SELECT\n';
-    const pivotCols = getAliasedPivotColumns(pivots, pivots.length);
+    const pivotCols = getSqlAliasedPivotColumns(pivots);
+    let partitionByPivotCols = pivotCols;
+    if (pivots.length > 0 && pivots[0].isStackPivot) {
+      partitionByPivotCols = [];
+      partitionByPivotCols.push(
+          getSqlHiddenPivotAlias(getStackColumn(pivots[0])));
+      partitionByPivotCols.push(...getSqlAliasedPivotColumns(pivots.slice(1)));
+    }
 
     const aggCols = [];
-    for (let i = 0; i < aggregations.length; ++i) {
-      const aggColPrefix = `${aggregations[i].aggregation}(${
-          getAggregationAlias(aggregations[i])})`;
+    for (const aggregation of aggregations) {
+      const aggColPrefix =
+          `${aggregation.aggregation}(${getSqlAggregationAlias(aggregation)})`;
 
       if (pivots.length === 0) {
         // Don't partition over pivots if there are no pivots.
         aggCols.push(
-            `${aggColPrefix} AS ${getAggregationAlias(aggregations[i])}`);
+            `${aggColPrefix} AS ${getSqlAggregationAlias(aggregation)}`);
         continue;
       }
 
-      for (let j = 0; j < pivots.length; ++j) {
+      // Add total aggregations column.
+      aggCols.push(
+          `${aggColPrefix} OVER () AS ` +
+          `${getSqlTotalAggregationAlias(aggregation)}`);
+
+      // Add aggregation over stack column.
+      if (isStackQuery) {
         aggCols.push(
             `${aggColPrefix} OVER (PARTITION BY ` +
-            `${getAliasedPivotColumns(pivots, j + 1).join(',  ')}) AS ` +
-            `${getAggregationAlias(aggregations[i], j + 1)}`);
+            `${partitionByPivotCols[0]}) AS ` +
+            `${getSqlAggregationOverStackAlias(aggregation)}`);
       }
+
+      aggCols.push(
+          `${aggColPrefix} OVER (PARTITION BY ` +
+          `${partitionByPivotCols.join(',  ')}) AS ` +
+          `${getSqlAggregationAlias(aggregation)}`);
     }
 
     aggQuery += pivotCols.concat(aggCols).join(',\n  ');
     aggQuery += '\n';
     aggQuery += 'FROM (\n';
-    aggQuery += `${this.generateJoinQuery(pivots, aggregations)}`;
+    aggQuery +=
+        this.generateJoinQuery(pivots, aggregations, whereFilters, joinTables);
     aggQuery += ')\n';
     return aggQuery;
   }
@@ -135,8 +223,10 @@ export class PivotTableQueryGenerator {
   // Takes a list of pivots and aggregations and generates a query that
   // extracts all pivots and aggregation partitions and groups by all
   // columns and orders by each aggregation as requested.
-  generateQuery(pivots: PivotAttrs[], aggregations: AggregationAttrs[]):
-      string {
+  private generateQueryImpl(
+      pivots: PivotAttrs[], aggregations: AggregationAttrs[],
+      whereFilters: string[], joinTables: string[], isStackQuery: boolean,
+      orderBy: boolean): string {
     // No need to generate query if there is no selected pivots or
     // aggregations.
     if (pivots.length === 0 && aggregations.length === 0) {
@@ -145,39 +235,87 @@ export class PivotTableQueryGenerator {
 
     let query = '\nSELECT\n';
 
-    const pivotCols = getAliasedPivotColumns(pivots, pivots.length);
-    const aggCols = getAliasedAggregationColumns(pivots, aggregations);
+    const pivotCols = getSqlAliasedPivotColumns(pivots);
+    const aggCols = getSqlAliasedAggregationsColumns(
+        aggregations,
+        /* has_pivots_selected = */ pivots.length > 0,
+        isStackQuery);
 
     query += pivotCols.concat(aggCols).join(',\n  ');
     query += '\n';
     query += 'FROM (\n';
-    query += `${this.generateAggregationQuery(pivots, aggregations)}`;
+    query += this.generateAggregationQuery(
+        pivots, aggregations, whereFilters, joinTables, isStackQuery);
     query += ')\n';
     query += 'GROUP BY ';
 
-    const aggPartitionNum = aggregations.length * Math.max(pivots.length, 1);
-
-    // Generate an array from 1 to size (number of pivots and aggregation
-    // partitions) into a string to group by all columns.
-    const size = pivots.length + aggPartitionNum;
-    const groupByQuery =
-        new Array(size).fill(1).map((_, i) => i + 1).join(',  ');
-    query += groupByQuery;
+    // Grouping by each pivot, additional pivots, and aggregations.
+    const aggregationsGroupBy =
+        aggregations.map(aggregation => getSqlAggregationAlias(aggregation));
+    query += pivotCols.concat(aggregationsGroupBy).join(',  ');
     query += '\n';
 
-    // For each aggregation partition (found after pivot columns) we order by
-    // either 'DESC' or 'ASC' as requested (DESC by default).
-    if (aggregations.length > 0) {
+    const pivotsOrderBy = [];
+
+    // Sort by depth first if generating a stack query, to ensure that the
+    // parents appear first before their children and allow us to nest the
+    // results into an expandable structure.
+    if (orderBy && isStackQuery) {
+      pivotsOrderBy.push(
+          `${getSqlHiddenPivotAlias(getStackDepthColumn(pivots[0]))} ASC`);
+    }
+
+    // For each aggregation we order by either 'DESC' or 'ASC' as
+    // requested (DESC by default).
+    const orderString = (aggregation: AggregationAttrs) =>
+        `${getSqlAggregationAlias(aggregation)} ` +
+        `${aggregation.order}`;
+    const aggregationsOrderBy =
+        aggregations.map(aggregation => orderString(aggregation));
+
+    if (orderBy && pivotsOrderBy.length + aggregationsOrderBy.length > 0) {
       query += 'ORDER BY ';
-      const orderString = (i: number) => `${i + 1 + pivots.length} ` +
-          `${aggregations[Math.floor(i / Math.max(pivots.length, 1))].order}`;
-      const orderByQuery = new Array(aggPartitionNum)
-                               .fill(1)
-                               .map((_, i) => orderString(i))
-                               .join(',  ');
-      query += orderByQuery;
+      query += pivotsOrderBy.concat(aggregationsOrderBy).join(',  ');
       query += '\n';
     }
     return query;
+  }
+
+  generateQuery(
+      pivots: PivotAttrs[], aggregations: AggregationAttrs[],
+      whereFilters: string[], joinTables: string[]) {
+    return this.generateQueryImpl(
+        pivots,
+        aggregations,
+        whereFilters,
+        joinTables,
+        /* is_stack_query = */ false,
+        /* order_by = */ true);
+  }
+
+  generateStackQuery(
+      pivots: PivotAttrs[], aggregations: AggregationAttrs[],
+      whereFilters: string[], joinTables: string[], stackId: string) {
+    const stackQuery = this.generateQueryImpl(
+        pivots,
+        aggregations,
+        whereFilters,
+        joinTables,
+        /* is_stack_query = */ true,
+        /* order_by = */ true);
+
+    // Query the next column rows for the parent row.
+    if (pivots.length > 1) {
+      const stackPivot = pivots[0];
+      const currStackQuery = this.generateQueryImpl(
+          pivots,
+          aggregations,
+          whereFilters.concat(getParentStackWhereFilter(stackPivot, stackId)),
+          AVAILABLE_TABLES,
+          /* is_stack_query = */ true,
+          /* order_by = */ false);
+      return `${currStackQuery} UNION ALL ${stackQuery}`;
+    }
+    return stackQuery;
   }
 }

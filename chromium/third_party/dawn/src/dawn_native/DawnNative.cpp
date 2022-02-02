@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "dawn_native/DawnNative.h"
+
+#include "dawn_native/BindGroupLayout.h"
+#include "dawn_native/Buffer.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/Instance.h"
 #include "dawn_native/Texture.h"
@@ -73,8 +76,10 @@ namespace dawn_native {
                 return BackendType::OpenGLES;
 
             case wgpu::BackendType::D3D11:
-                UNREACHABLE();
+            case wgpu::BackendType::WebGPU:
+                break;
         }
+        UNREACHABLE();
     }
 
     DeviceType Adapter::GetDeviceType() const {
@@ -88,19 +93,33 @@ namespace dawn_native {
             case wgpu::AdapterType::Unknown:
                 return DeviceType::Unknown;
         }
+        UNREACHABLE();
     }
 
     const PCIInfo& Adapter::GetPCIInfo() const {
         return mImpl->GetPCIInfo();
     }
 
+    // TODO(dawn:1149): remove once GetSupportedExtensions() is no longer used.
     std::vector<const char*> Adapter::GetSupportedExtensions() const {
-        ExtensionsSet supportedExtensionsSet = mImpl->GetSupportedExtensions();
-        return supportedExtensionsSet.GetEnabledExtensionNames();
+        return GetSupportedFeatures();
+    }
+
+    std::vector<const char*> Adapter::GetSupportedFeatures() const {
+        FeaturesSet supportedFeaturesSet = mImpl->GetSupportedFeatures();
+        return supportedFeaturesSet.GetEnabledFeatureNames();
     }
 
     WGPUDeviceProperties Adapter::GetAdapterProperties() const {
         return mImpl->GetAdapterProperties();
+    }
+
+    bool Adapter::GetLimits(WGPUSupportedLimits* limits) const {
+        return mImpl->GetLimits(reinterpret_cast<SupportedLimits*>(limits));
+    }
+
+    void Adapter::SetUseTieredLimits(bool useTieredLimits) {
+        mImpl->SetUseTieredLimits(useTieredLimits);
     }
 
     bool Adapter::SupportsExternalImages() const {
@@ -113,6 +132,12 @@ namespace dawn_native {
 
     WGPUDevice Adapter::CreateDevice(const DeviceDescriptor* deviceDescriptor) {
         return reinterpret_cast<WGPUDevice>(mImpl->CreateDevice(deviceDescriptor));
+    }
+
+    void Adapter::RequestDevice(const DeviceDescriptor* descriptor,
+                                WGPURequestDeviceCallback callback,
+                                void* userdata) {
+        mImpl->RequestDevice(descriptor, callback, userdata);
     }
 
     void Adapter::ResetInternalDeviceForTesting() {
@@ -223,6 +248,22 @@ namespace dawn_native {
     // ExternalImageExportInfo
 
     ExternalImageExportInfo::ExternalImageExportInfo(ExternalImageType type) : type(type) {
+    }
+
+    const char* GetObjectLabelForTesting(void* objectHandle) {
+        ApiObjectBase* object = reinterpret_cast<ApiObjectBase*>(objectHandle);
+        return object->GetLabel().c_str();
+    }
+
+    uint64_t GetAllocatedSizeForTesting(WGPUBuffer buffer) {
+        return reinterpret_cast<const BufferBase*>(buffer)->GetAllocatedSize();
+    }
+
+    bool BindGroupLayoutBindingsEqualForTesting(WGPUBindGroupLayout a, WGPUBindGroupLayout b) {
+        BindGroupLayoutBase* aBase = reinterpret_cast<BindGroupLayoutBase*>(a);
+        BindGroupLayoutBase* bBase = reinterpret_cast<BindGroupLayoutBase*>(b);
+        bool excludePipelineCompatibiltyToken = true;
+        return aBase->IsLayoutEqual(bBase, excludePipelineCompatibiltyToken);
     }
 
 }  // namespace dawn_native

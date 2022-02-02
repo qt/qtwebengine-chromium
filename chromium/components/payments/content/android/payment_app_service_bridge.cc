@@ -265,7 +265,7 @@ PaymentAppServiceBridge::GetMethodData() const {
   return spec_->method_data();
 }
 
-std::unique_ptr<autofill::InternalAuthenticator>
+std::unique_ptr<webauthn::InternalAuthenticator>
 PaymentAppServiceBridge::CreateInternalAuthenticator() const {
   // This authenticator can be used in a cross-origin iframe only if the
   // top-level frame allowed it with Permissions Policy, e.g., with
@@ -273,9 +273,13 @@ PaymentAppServiceBridge::CreateInternalAuthenticator() const {
   // displays the top-level origin in its UI before the user can click on the
   // [Verify] button to invoke this authenticator.
   auto* rfh = content::RenderFrameHost::FromID(frame_routing_id_);
-  return rfh && rfh->IsActive()
-             ? std::make_unique<InternalAuthenticatorAndroid>(
-                   rfh->GetMainFrame())
+  // Lifetime of the created authenticator is externally managed by the
+  // authenticator factory, but is generally tied to the RenderFrame by
+  // listening for `RenderFrameDeleted()`. Check `IsRenderFrameLive()` as a
+  // safety precaution to ensure that `RenderFrameDeleted()` will be called at
+  // some point.
+  return rfh && rfh->IsActive() && rfh->IsRenderFrameLive()
+             ? std::make_unique<InternalAuthenticatorAndroid>(rfh)
              : nullptr;
 }
 

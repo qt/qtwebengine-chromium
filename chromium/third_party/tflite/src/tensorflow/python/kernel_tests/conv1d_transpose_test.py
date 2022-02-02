@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for convolution related functionality in tensorflow.ops.nn."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
@@ -153,7 +149,7 @@ class Conv1DTransposeTest(test.TestCase):
   def testConv1DTransposeSingleStrideNCW(self):
     # `NCW` data format is only supported for CUDA device.
     if test.is_gpu_available(cuda_only=True):
-      with self.session(use_gpu=True):
+      with self.session():
         strides = [1, 1, 1]
 
         # Input, output: [batch, depth, width]
@@ -184,7 +180,7 @@ class Conv1DTransposeTest(test.TestCase):
   def testConv1DTransposeSameNCW(self):
     # `NCW` data format is only supported for CUDA device.
     if test.is_gpu_available(cuda_only=True):
-      with self.session(use_gpu=True):
+      with self.session():
         strides = [1, 1, 2]
 
         # Input, output: [batch, depth, width]
@@ -216,7 +212,7 @@ class Conv1DTransposeTest(test.TestCase):
   def testConv1DTransposeValidNCW(self):
     # `NCW` data format is only supported for CUDA device.
     if test.is_gpu_available(cuda_only=True):
-      with self.session(use_gpu=True):
+      with self.session():
         strides = [1, 1, 2]
 
         # Input, output: [batch, depth, width]

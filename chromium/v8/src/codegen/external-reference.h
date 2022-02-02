@@ -72,6 +72,8 @@ class StatsCounter;
     "RegExpStack::limit_address_address()")                                    \
   V(address_of_regexp_stack_memory_top_address,                                \
     "RegExpStack::memory_top_address_address()")                               \
+  V(address_of_regexp_stack_stack_pointer,                                     \
+    "RegExpStack::stack_pointer_address()")                                    \
   V(address_of_static_offsets_vector, "OffsetsVector::static_offsets_vector")  \
   V(thread_in_wasm_flag_address_address,                                       \
     "Isolate::thread_in_wasm_flag_address_address")                            \
@@ -111,13 +113,6 @@ class StatsCounter;
   V(address_of_runtime_stats_flag, "TracingFlags::runtime_stats")              \
   V(address_of_the_hole_nan, "the_hole_nan")                                   \
   V(address_of_uint32_bias, "uint32_bias")                                     \
-  V(address_of_wasm_i8x16_swizzle_mask, "wasm_i8x16_swizzle_mask")             \
-  V(address_of_wasm_i8x16_popcnt_mask, "wasm_i8x16_popcnt_mask")               \
-  V(address_of_wasm_i8x16_splat_0x01, "wasm_i8x16_splat_0x01")                 \
-  V(address_of_wasm_i8x16_splat_0x0f, "wasm_i8x16_splat_0x0f")                 \
-  V(address_of_wasm_i8x16_splat_0x33, "wasm_i8x16_splat_0x33")                 \
-  V(address_of_wasm_i8x16_splat_0x55, "wasm_i8x16_splat_0x55")                 \
-  V(address_of_wasm_i16x8_splat_0x0001, "wasm_16x8_splat_0x0001")              \
   V(baseline_pc_for_bytecode_offset, "BaselinePCForBytecodeOffset")            \
   V(baseline_pc_for_next_executed_bytecode,                                    \
     "BaselinePCForNextExecutedBytecode")                                       \
@@ -247,12 +242,21 @@ class StatsCounter;
   IF_WASM(V, wasm_memory_init, "wasm::memory_init")                            \
   IF_WASM(V, wasm_memory_copy, "wasm::memory_copy")                            \
   IF_WASM(V, wasm_memory_fill, "wasm::memory_fill")                            \
+  IF_WASM(V, wasm_array_copy, "wasm::array_copy")                              \
+  V(address_of_wasm_i8x16_swizzle_mask, "wasm_i8x16_swizzle_mask")             \
+  V(address_of_wasm_i8x16_popcnt_mask, "wasm_i8x16_popcnt_mask")               \
+  V(address_of_wasm_i8x16_splat_0x01, "wasm_i8x16_splat_0x01")                 \
+  V(address_of_wasm_i8x16_splat_0x0f, "wasm_i8x16_splat_0x0f")                 \
+  V(address_of_wasm_i8x16_splat_0x33, "wasm_i8x16_splat_0x33")                 \
+  V(address_of_wasm_i8x16_splat_0x55, "wasm_i8x16_splat_0x55")                 \
+  V(address_of_wasm_i16x8_splat_0x0001, "wasm_16x8_splat_0x0001")              \
   V(address_of_wasm_f64x2_convert_low_i32x4_u_int_mask,                        \
     "wasm_f64x2_convert_low_i32x4_u_int_mask")                                 \
   V(supports_wasm_simd_128_address, "wasm::supports_wasm_simd_128_address")    \
   V(address_of_wasm_double_2_power_52, "wasm_double_2_power_52")               \
   V(address_of_wasm_int32_max_as_double, "wasm_int32_max_as_double")           \
   V(address_of_wasm_uint32_max_as_double, "wasm_uint32_max_as_double")         \
+  V(address_of_wasm_int32_overflow_as_float, "wasm_int32_overflow_as_float")   \
   V(write_barrier_marking_from_code_function, "WriteBarrier::MarkingFromCode") \
   V(call_enqueue_microtask_function, "MicrotaskQueue::CallEnqueueMicrotask")   \
   V(call_enter_context_function, "call_enter_context_function")                \
@@ -274,6 +278,14 @@ class StatsCounter;
           "tsan_relaxed_store_function_32_bits")                               \
   IF_TSAN(V, tsan_relaxed_store_function_64_bits,                              \
           "tsan_relaxed_store_function_64_bits")                               \
+  IF_TSAN(V, tsan_seq_cst_store_function_8_bits,                               \
+          "tsan_seq_cst_store_function_8_bits")                                \
+  IF_TSAN(V, tsan_seq_cst_store_function_16_bits,                              \
+          "tsan_seq_cst_store_function_16_bits")                               \
+  IF_TSAN(V, tsan_seq_cst_store_function_32_bits,                              \
+          "tsan_seq_cst_store_function_32_bits")                               \
+  IF_TSAN(V, tsan_seq_cst_store_function_64_bits,                              \
+          "tsan_seq_cst_store_function_64_bits")                               \
   IF_TSAN(V, tsan_relaxed_load_function_32_bits,                               \
           "tsan_relaxed_load_function_32_bits")                                \
   IF_TSAN(V, tsan_relaxed_load_function_64_bits,                               \
@@ -318,6 +330,10 @@ class ExternalReference {
     // ObjectPair f(v8::internal::Arguments).
     BUILTIN_CALL_PAIR,
 
+    // TODO(mslekova): Once FAST_C_CALL is supported in the simulator,
+    // the following four specific types and their special handling
+    // can be removed, as the generic call supports them.
+
     // Builtin that takes float arguments and returns an int.
     // int f(double, double).
     BUILTIN_COMPARE_CALL,
@@ -349,7 +365,11 @@ class ExternalReference {
     // Call to accessor getter callback via InvokeAccessorGetterCallback.
     // void f(Local<Name> property, PropertyCallbackInfo& info,
     //     AccessorNameGetterCallback callback)
-    PROFILING_GETTER_CALL
+    PROFILING_GETTER_CALL,
+
+    // C call, either representing a fast API call or used in tests.
+    // Can have arbitrary signature from the types supported by the fast API.
+    FAST_C_CALL
   };
 
 #define COUNT_EXTERNAL_REFERENCE(name, desc) +1
@@ -370,7 +390,8 @@ class ExternalReference {
   static ExternalReference Create(const Runtime::Function* f);
   static ExternalReference Create(IsolateAddressId id, Isolate* isolate);
   static ExternalReference Create(Runtime::FunctionId id);
-  static V8_EXPORT_PRIVATE ExternalReference Create(Address address);
+  static V8_EXPORT_PRIVATE ExternalReference
+  Create(Address address, Type type = ExternalReference::BUILTIN_CALL);
 
   template <typename SubjectChar, typename PatternChar>
   static ExternalReference search_string_raw();

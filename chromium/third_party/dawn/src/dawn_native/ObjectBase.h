@@ -15,7 +15,11 @@
 #ifndef DAWNNATIVE_OBJECTBASE_H_
 #define DAWNNATIVE_OBJECTBASE_H_
 
+#include "common/LinkedList.h"
 #include "common/RefCounted.h"
+#include "dawn_native/Forward.h"
+
+#include <string>
 
 namespace dawn_native {
 
@@ -26,17 +30,39 @@ namespace dawn_native {
         struct ErrorTag {};
         static constexpr ErrorTag kError = {};
 
-        ObjectBase(DeviceBase* device);
+        explicit ObjectBase(DeviceBase* device);
         ObjectBase(DeviceBase* device, ErrorTag tag);
 
         DeviceBase* GetDevice() const;
         bool IsError() const;
-
-      protected:
-        ~ObjectBase() override = default;
+        bool IsAlive() const;
+        void DestroyObject();
 
       private:
+        // Pointer to owning device, if nullptr, that means that the object is no longer alive or
+        // valid.
         DeviceBase* mDevice;
+    };
+
+    class ApiObjectBase : public ObjectBase, public LinkNode<ApiObjectBase> {
+      public:
+        struct LabelNotImplementedTag {};
+        static constexpr LabelNotImplementedTag kLabelNotImplemented = {};
+
+        ApiObjectBase(DeviceBase* device, LabelNotImplementedTag tag);
+        ApiObjectBase(DeviceBase* device, const char* label);
+        ApiObjectBase(DeviceBase* device, ErrorTag tag);
+
+        virtual ObjectType GetType() const = 0;
+        const std::string& GetLabel() const;
+
+        // Dawn API
+        void APISetLabel(const char* label);
+
+      private:
+        virtual void SetLabelImpl();
+
+        std::string mLabel;
     };
 
 }  // namespace dawn_native

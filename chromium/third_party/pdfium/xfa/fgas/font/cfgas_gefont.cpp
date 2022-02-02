@@ -95,11 +95,10 @@ bool CFGAS_GEFont::LoadFontInternal(const wchar_t* pszFontFamily,
 #endif  // defined(OS_WIN)
 
 bool CFGAS_GEFont::LoadFontInternal(const RetainPtr<CPDF_Font>& pPDFFont) {
-  CFX_Font* pExternalFont = pPDFFont->GetFont();
-  if (m_pFont || !pExternalFont)
+  if (m_pFont)
     return false;
 
-  m_pFont = pExternalFont;
+  m_pFont = pPDFFont->GetFont();
   if (!InitFont())
     return false;
 
@@ -197,10 +196,6 @@ Optional<FX_RECT> CFGAS_GEFont::GetCharBBox(wchar_t wUnicode) {
     m_BBoxMap[wUnicode] = rtBBox.value();
 
   return rtBBox;
-}
-
-Optional<FX_RECT> CFGAS_GEFont::GetBBox() {
-  return m_pFont->GetBBox();
 }
 
 int32_t CFGAS_GEFont::GetGlyphIndex(wchar_t wUnicode) {

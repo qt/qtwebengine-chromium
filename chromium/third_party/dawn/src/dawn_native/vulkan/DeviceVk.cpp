@@ -108,8 +108,9 @@ namespace dawn_native { namespace vulkan {
         return BindGroup::Create(this, descriptor);
     }
     ResultOrError<Ref<BindGroupLayoutBase>> Device::CreateBindGroupLayoutImpl(
-        const BindGroupLayoutDescriptor* descriptor) {
-        return BindGroupLayout::Create(this, descriptor);
+        const BindGroupLayoutDescriptor* descriptor,
+        PipelineCompatibilityToken pipelineCompatibilityToken) {
+        return BindGroupLayout::Create(this, descriptor, pipelineCompatibilityToken);
     }
     ResultOrError<Ref<BufferBase>> Device::CreateBufferImpl(const BufferDescriptor* descriptor) {
         return Buffer::Create(this, descriptor);
@@ -131,9 +132,9 @@ namespace dawn_native { namespace vulkan {
         const QuerySetDescriptor* descriptor) {
         return QuerySet::Create(this, descriptor);
     }
-    ResultOrError<Ref<RenderPipelineBase>> Device::CreateRenderPipelineImpl(
+    Ref<RenderPipelineBase> Device::CreateUninitializedRenderPipelineImpl(
         const RenderPipelineDescriptor* descriptor) {
-        return RenderPipeline::Create(this, descriptor);
+        return RenderPipeline::CreateUninitialized(this, descriptor);
     }
     ResultOrError<Ref<SamplerBase>> Device::CreateSamplerImpl(const SamplerDescriptor* descriptor) {
         return Sampler::Create(this, descriptor);
@@ -166,6 +167,11 @@ namespace dawn_native { namespace vulkan {
                                                 WGPUCreateComputePipelineAsyncCallback callback,
                                                 void* userdata) {
         ComputePipeline::CreateAsync(this, descriptor, blueprintHash, callback, userdata);
+    }
+    void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
+                                                   WGPUCreateRenderPipelineAsyncCallback callback,
+                                                   void* userdata) {
+        RenderPipeline::InitializeAsync(renderPipeline, callback, userdata);
     }
 
     MaybeError Device::TickImpl() {
@@ -342,19 +348,31 @@ namespace dawn_native { namespace vulkan {
             usedKnobs.features.samplerAnisotropy = VK_TRUE;
         }
 
-        if (IsExtensionEnabled(Extension::TextureCompressionBC)) {
+        if (IsFeatureEnabled(Feature::TextureCompressionBC)) {
             ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionBC ==
                    VK_TRUE);
             usedKnobs.features.textureCompressionBC = VK_TRUE;
         }
 
-        if (IsExtensionEnabled(Extension::PipelineStatisticsQuery)) {
+        if (IsFeatureEnabled(Feature::TextureCompressionETC2)) {
+            ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionETC2 ==
+                   VK_TRUE);
+            usedKnobs.features.textureCompressionETC2 = VK_TRUE;
+        }
+
+        if (IsFeatureEnabled(Feature::TextureCompressionASTC)) {
+            ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.textureCompressionASTC_LDR ==
+                   VK_TRUE);
+            usedKnobs.features.textureCompressionASTC_LDR = VK_TRUE;
+        }
+
+        if (IsFeatureEnabled(Feature::PipelineStatisticsQuery)) {
             ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.pipelineStatisticsQuery ==
                    VK_TRUE);
             usedKnobs.features.pipelineStatisticsQuery = VK_TRUE;
         }
 
-        if (IsExtensionEnabled(Extension::ShaderFloat16)) {
+        if (IsFeatureEnabled(Feature::ShaderFloat16)) {
             const VulkanDeviceInfo& deviceInfo = ToBackend(GetAdapter())->GetDeviceInfo();
             ASSERT(deviceInfo.HasExt(DeviceExt::ShaderFloat16Int8) &&
                    deviceInfo.shaderFloat16Int8Features.shaderFloat16 == VK_TRUE &&
@@ -370,6 +388,11 @@ namespace dawn_native { namespace vulkan {
                               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES_KHR);
             featuresChain.Add(&usedKnobs._16BitStorageFeatures,
                               VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES);
+        }
+
+        if (IsFeatureEnabled(Feature::DepthClamping)) {
+            ASSERT(ToBackend(GetAdapter())->GetDeviceInfo().features.depthClamp == VK_TRUE);
+            usedKnobs.features.depthClamp = VK_TRUE;
         }
 
         // Find a universal queue family
@@ -864,6 +887,16 @@ namespace dawn_native { namespace vulkan {
 
             VkResult result = VkResult::WrapUnsafe(VK_TIMEOUT);
             do {
+                // If WaitForIdleForDesctruction is called while we are Disconnected, it means that
+                // the device lost came from the ErrorInjector and we need to wait without allowing
+                // any more error to be injected. This is because the device lost was "fake" and
+                // commands might still be running.
+                if (GetState() == State::Disconnected) {
+                    result = VkResult::WrapUnsafe(
+                        fn.WaitForFences(mVkDevice, 1, &*fence, true, UINT64_MAX));
+                    continue;
+                }
+
                 result = VkResult::WrapUnsafe(
                     INJECT_ERROR_OR_RUN(fn.WaitForFences(mVkDevice, 1, &*fence, true, UINT64_MAX),
                                         VK_ERROR_DEVICE_LOST));
@@ -923,7 +956,11 @@ namespace dawn_native { namespace vulkan {
         }
         mRecordingContext.signalSemaphores.clear();
 
+        // Some commands might still be marked as in-flight if we shut down because of a device
+        // loss. Recycle them as unused so that we free them below.
+        RecycleCompletedCommands();
         ASSERT(mCommandsInFlight.Empty());
+
         for (const CommandPoolAndBuffer& commands : mUnusedCommands) {
             // The VkCommandBuffer memory should be wholly owned by the pool and freed when it is
             // destroyed, but that's not the case in some drivers and the leak memory.
@@ -933,6 +970,13 @@ namespace dawn_native { namespace vulkan {
             fn.DestroyCommandPool(mVkDevice, commands.pool, nullptr);
         }
         mUnusedCommands.clear();
+
+        // Some fences might still be marked as in-flight if we shut down because of a device loss.
+        // Delete them since at this point all commands are complete.
+        while (!mFencesInFlight.empty()) {
+            fn.DestroyFence(mVkDevice, *mFencesInFlight.front().first, nullptr);
+            mFencesInFlight.pop();
+        }
 
         for (VkFence fence : mUnusedFences) {
             fn.DestroyFence(mVkDevice, fence, nullptr);

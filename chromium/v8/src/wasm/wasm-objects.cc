@@ -12,11 +12,13 @@
 #include "src/debug/debug-interface.h"
 #include "src/logging/counters.h"
 #include "src/objects/debug-objects-inl.h"
+#include "src/objects/managed-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/shared-function-info.h"
 #include "src/objects/struct-inl.h"
 #include "src/trap-handler/trap-handler.h"
 #include "src/utils/utils.h"
+#include "src/wasm/code-space-access.h"
 #include "src/wasm/jump-table-assembler.h"
 #include "src/wasm/module-compiler.h"
 #include "src/wasm/module-decoder.h"
@@ -250,7 +252,7 @@ base::Vector<const uint8_t> WasmModuleObject::GetRawFunctionName(
 Handle<WasmTableObject> WasmTableObject::New(
     Isolate* isolate, Handle<WasmInstanceObject> instance, wasm::ValueType type,
     uint32_t initial, bool has_maximum, uint32_t maximum,
-    Handle<FixedArray>* entries) {
+    Handle<FixedArray>* entries, Handle<Object> initial_value) {
   // TODO(7748): Make this work with other types when spec clears up.
   {
     const WasmModule* module =
@@ -259,9 +261,8 @@ Handle<WasmTableObject> WasmTableObject::New(
   }
 
   Handle<FixedArray> backing_store = isolate->factory()->NewFixedArray(initial);
-  Object null = ReadOnlyRoots(isolate).null_value();
   for (int i = 0; i < static_cast<int>(initial); ++i) {
-    backing_store->set(i, null);
+    backing_store->set(i, *initial_value);
   }
 
   Handle<Object> max;
@@ -1242,21 +1243,13 @@ bool WasmInstanceObject::EnsureIndirectFunctionTableWithMinimumSize(
 void WasmInstanceObject::SetRawMemory(byte* mem_start, size_t mem_size) {
   CHECK_LE(mem_size, wasm::max_mem_bytes());
 #if V8_HOST_ARCH_64_BIT
-  uint64_t mem_mask64 = base::bits::RoundUpToPowerOfTwo64(mem_size) - 1;
   set_memory_start(mem_start);
   set_memory_size(mem_size);
-  set_memory_mask(mem_mask64);
 #else
   // Must handle memory > 2GiB specially.
   CHECK_LE(mem_size, size_t{kMaxUInt32});
-  uint32_t mem_mask32 =
-      (mem_size > 2 * size_t{GB})
-          ? 0xFFFFFFFFu
-          : base::bits::RoundUpToPowerOfTwo32(static_cast<uint32_t>(mem_size)) -
-                1;
   set_memory_start(mem_start);
   set_memory_size(mem_size);
-  set_memory_mask(mem_mask32);
 #endif
 }
 
@@ -1540,7 +1533,8 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
   if (sig_id >= 0) {
     wasm::NativeModule* native_module =
         instance->module_object().native_module();
-    // TODO(wasm): Cache and reuse wrapper code.
+    // TODO(wasm): Cache and reuse wrapper code, to avoid repeated compilation
+    // and permissions switching.
     const wasm::WasmFeatures enabled = native_module->enabled_features();
     auto resolved = compiler::ResolveWasmImportCall(
         callable, sig, instance->module(), enabled);
@@ -1553,10 +1547,11 @@ void WasmInstanceObject::ImportWasmJSFunctionIntoTable(
     if (kind == compiler::WasmImportCallKind ::kJSFunctionArityMismatch) {
       expected_arity = Handle<JSFunction>::cast(callable)
                            ->shared()
-                           .internal_formal_parameter_count();
+                           .internal_formal_parameter_count_without_receiver();
     }
     wasm::WasmCompilationResult result = compiler::CompileWasmImportCallWrapper(
         &env, kind, sig, false, expected_arity);
+    wasm::CodeSpaceWriteScope write_scope(native_module);
     std::unique_ptr<wasm::WasmCode> wasm_code = native_module->AddCode(
         result.func_index, result.code_desc, result.frame_slot_count,
         result.tagged_parameter_slots,
@@ -1691,18 +1686,6 @@ wasm::WasmValue WasmArray::GetElement(uint32_t index) {
     case wasm::kBottom:
       UNREACHABLE();
   }
-}
-
-ObjectSlot WasmArray::ElementSlot(uint32_t index) {
-  DCHECK_LE(index, length());
-  DCHECK(type()->element_type().is_reference());
-  return RawField(kHeaderSize + kTaggedSize * index);
-}
-
-Address WasmArray::ElementAddress(uint32_t index) {
-  DCHECK_LE(index, length());
-  return ptr() + WasmArray::kHeaderSize +
-         index * type()->element_type().element_size_bytes() - kHeapObjectTag;
 }
 
 // static
@@ -2030,7 +2013,7 @@ Handle<WasmExportedFunction> WasmExportedFunction::New(
   // method. This does not apply to functions exported from asm.js however.
   DCHECK_EQ(is_asm_js_module, js_function->IsConstructor());
   shared->set_length(arity);
-  shared->set_internal_formal_parameter_count(arity);
+  shared->set_internal_formal_parameter_count(JSParameterCount(arity));
   shared->set_script(instance->module_object().script());
   return Handle<WasmExportedFunction>::cast(js_function);
 }
@@ -2115,7 +2098,8 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
     CK kind = compiler::kDefaultImportCallKind;
     if (callable->IsJSFunction()) {
       SharedFunctionInfo shared = Handle<JSFunction>::cast(callable)->shared();
-      expected_arity = shared.internal_formal_parameter_count();
+      expected_arity =
+          shared.internal_formal_parameter_count_without_receiver();
       if (expected_arity != parameter_count) {
         kind = CK::kJSFunctionArityMismatch;
       }
@@ -2143,7 +2127,8 @@ Handle<WasmJSFunction> WasmJSFunction::New(Isolate* isolate,
       Factory::JSFunctionBuilder{isolate, shared, context}
           .set_map(function_map)
           .Build();
-  js_function->shared().set_internal_formal_parameter_count(parameter_count);
+  js_function->shared().set_internal_formal_parameter_count(
+      JSParameterCount(parameter_count));
   return Handle<WasmJSFunction>::cast(js_function);
 }
 
@@ -2216,10 +2201,6 @@ Handle<AsmWasmData> AsmWasmData::New(
   result->set_uses_bitset(*uses_bitset);
   return result;
 }
-
-static_assert(wasm::kV8MaxWasmArrayLength <=
-                  (Smi::kMaxValue - WasmArray::kHeaderSize) / kDoubleSize,
-              "max Wasm array size must fit into max object size");
 
 namespace wasm {
 

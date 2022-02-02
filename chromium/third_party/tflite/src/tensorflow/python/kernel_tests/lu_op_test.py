@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.tf.Lu."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.client import session
@@ -91,7 +87,7 @@ class LuOpTest(test.TestCase):
     # Prepare the upper factor.
     upper = array_ops.matrix_band_part(lu, 0, -1)
 
-    verification = math_ops.matmul(lower, upper)
+    verification = test_util.matmul_without_tf32(lower, upper)
 
     # Permute the rows of product of the Cholesky factors.
     if num_rows > 0:
@@ -268,7 +264,7 @@ class LuBenchmark(test.Benchmark):
           ops.device("/cpu:0"):
         matrix = variables.Variable(self._GenerateMatrix(shape))
         lu, p = linalg_ops.lu(matrix)
-        variables.global_variables_initializer().run()
+        self.evaluate(variables.global_variables_initializer())
         self.run_op_benchmark(
             sess,
             control_flow_ops.group(lu, p),
@@ -281,7 +277,7 @@ class LuBenchmark(test.Benchmark):
             ops.device("/device:GPU:0"):
           matrix = variables.Variable(self._GenerateMatrix(shape))
           lu, p = linalg_ops.lu(matrix)
-          variables.global_variables_initializer().run()
+          self.evaluate(variables.global_variables_initializer())
           self.run_op_benchmark(
               sess,
               control_flow_ops.group(lu, p),

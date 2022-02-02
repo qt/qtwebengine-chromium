@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-/* eslint-disable rulesdir/no_underscored_properties */
-
 import * as Platform from '../../core/platform/platform.js';
 
 // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -108,6 +106,18 @@ export function markAsList(element: Element): void {
 
 export function markAsListitem(element: Element): void {
   element.setAttribute('role', 'listitem');
+}
+
+export function markAsMain(element: Element): void {
+  element.setAttribute('role', 'main');
+}
+
+export function markAsComplementary(element: Element): void {
+  element.setAttribute('role', 'complementary');
+}
+
+export function markAsNavigation(element: Element): void {
+  element.setAttribute('role', 'navigation');
 }
 
 /**
@@ -452,23 +462,26 @@ function hideFromLayout(element: HTMLElement): void {
 
 let alertElement: HTMLElement|undefined;
 
-function createAriaAlertElement(): HTMLElement {
-  const element = document.body.createChild('div') as HTMLElement;
-  hideFromLayout(element);
-  element.setAttribute('role', 'alert');
-  element.setAttribute('aria-atomic', 'true');
-  return element;
+export function alertElementInstance(): HTMLElement {
+  if (!alertElement) {
+    const element = document.body.createChild('div') as HTMLElement;
+    hideFromLayout(element);
+    element.setAttribute('role', 'alert');
+    element.setAttribute('aria-atomic', 'true');
+    alertElement = element;
+  }
+  return alertElement;
 }
+
 /**
  * This function is used to announce a message with the screen reader.
  * Setting the textContent would allow the SR to access the offscreen element via browse mode
  */
 export function alert(message: string): void {
-  if (!alertElement) {
-    alertElement = createAriaAlertElement();
-  }
+  const element = alertElementInstance();
+
   // We first set the textContent to blank so that the string will announce even if it is replaced
   // with the same string.
-  alertElement.textContent = '';
-  alertElement.textContent = Platform.StringUtilities.trimEndWithMaxLength(message, 10000);
+  element.textContent = '';
+  element.textContent = Platform.StringUtilities.trimEndWithMaxLength(message, 10000);
 }

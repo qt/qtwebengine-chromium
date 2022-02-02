@@ -103,10 +103,7 @@ public:
     // Applies any necessary workarounds and returns the GL primitive type to use in draw calls.
     GrGLenum prepareToDraw(GrPrimitiveType primitiveType);
 
-    enum class ResolveDirection : bool {
-        kSingleToMSAA,  // glCaps.canResolveSingleToMSAA() must be true.
-        kMSAAToSingle
-    };
+    using ResolveDirection = GrGLRenderTarget::ResolveDirection;
 
     // Resolves the render target's single sample FBO into the MSAA, or vice versa.
     // If glCaps.framebufferResolvesMustBeFullSize() is true, resolveRect must be equal the render
@@ -155,7 +152,8 @@ public:
     sk_sp<GrAttachment> makeMSAAAttachment(SkISize dimensions,
                                            const GrBackendFormat& format,
                                            int numSamples,
-                                           GrProtected isProtected) override;
+                                           GrProtected isProtected,
+                                           GrMemoryless) override;
 
     void deleteBackendTexture(const GrBackendTexture&) override;
 
@@ -457,9 +455,6 @@ private:
     void flushStencil(const GrStencilSettings&, GrSurfaceOrigin);
     void disableStencil();
 
-    // rt is used only if useHWAA is true.
-    void flushHWAAState(GrRenderTarget* rt, bool useHWAA);
-
     void flushConservativeRasterState(bool enable);
 
     void flushWireframeState(bool enable);
@@ -721,7 +716,6 @@ private:
         }
     }                                       fHWBlendState;
 
-    TriState                                fMSAAEnabled;
     TriState                                fHWConservativeRasterEnabled;
 
     TriState                                fHWWireframeEnabled;

@@ -6,6 +6,7 @@
 #define V8_REGEXP_REGEXP_BYTECODE_GENERATOR_H_
 
 #include "src/base/strings.h"
+#include "src/codegen/label.h"
 #include "src/regexp/regexp-macro-assembler.h"
 
 namespace v8 {
@@ -82,7 +83,8 @@ class V8_EXPORT_PRIVATE RegExpBytecodeGenerator : public RegExpMacroAssembler {
   Handle<HeapObject> GetCode(Handle<String> source) override;
 
  private:
-  void Expand();
+  void ExpandBuffer();
+
   // Code and bitmap emission.
   inline void EmitOrLink(Label* label);
   inline void Emit32(uint32_t x);
@@ -95,7 +97,9 @@ class V8_EXPORT_PRIVATE RegExpBytecodeGenerator : public RegExpMacroAssembler {
   void Copy(byte* a);
 
   // The buffer into which code and relocation info are generated.
-  base::Vector<byte> buffer_;
+  static constexpr int kInitialBufferSize = 1024;
+  ZoneVector<byte> buffer_;
+
   // The program counter.
   int pc_;
   Label backtrack_;

@@ -207,6 +207,7 @@ def main():
     parser.add_argument('--verify-lib-check', action='store_true')
     parser.add_argument('--is_web_worker', action='store_true')
     parser.add_argument('--module', required=False)
+    parser.add_argument('--reset_timestamps', action='store_true')
     parser.add_argument('--use-rbe', action='store_true')
     parser.add_argument('--rewrapper-binary', required=False)
     parser.add_argument('--rewrapper-cfg', required=False)
@@ -214,6 +215,7 @@ def main():
     parser.set_defaults(test_only=False,
                         no_emit=False,
                         verify_lib_check=False,
+                        reset_timestamps=False,
                         module='esnext')
 
     opts = parser.parse_args()
@@ -227,6 +229,7 @@ def main():
     tsconfig_output_location = path.join(os.getcwd(), opts.tsconfig_output_location)
     tsconfig_output_directory = path.dirname(tsconfig_output_location)
     tsbuildinfo_name = path.basename(tsconfig_output_location) + '.tsbuildinfo'
+    runs_in_node_environment = opts.module == "commonjs"
 
     def get_relative_path_from_output_directory(file_to_resolve):
         return path.relpath(path.join(os.getcwd(), file_to_resolve), tsconfig_output_directory)
@@ -242,10 +245,18 @@ def main():
     if (not opts.verify_lib_check):
         tsconfig['compilerOptions']['skipLibCheck'] = True
     tsconfig['compilerOptions']['rootDir'] = get_relative_path_from_output_directory(opts.front_end_directory)
-    tsconfig['compilerOptions']['typeRoots'] = opts.test_only and [
+    tsconfig['compilerOptions']['typeRoots'] = (
+        opts.test_only or runs_in_node_environment
+    ) and [
         get_relative_path_from_output_directory(TYPES_NODE_MODULES_DIRECTORY)
     ] or []
     if opts.test_only:
+        tsconfig['compilerOptions']['types'] = [
+            "mocha", "chai", "sinon", "karma-chai-sinon"
+        ]
+        if runs_in_node_environment:
+            tsconfig['compilerOptions']['types'] += ["node"]
+    if runs_in_node_environment:
         tsconfig['compilerOptions']['moduleResolution'] = 'node'
     if opts.no_emit:
         tsconfig['compilerOptions']['emitDeclarationOnly'] = True
@@ -281,8 +292,10 @@ def main():
         found_errors, stderr = runTsc(
             tsconfig_location=tsconfig_output_location)
 
-    maybe_reset_timestamps_on_generated_files(
-        previously_generated_file_metadata, tsconfig_output_directory)
+    if opts.reset_timestamps:
+        maybe_reset_timestamps_on_generated_files(
+            previously_generated_file_metadata, tsconfig_output_directory)
+
     remove_generated_tsbuildinfo_file(
         path.join(tsconfig_output_directory, tsbuildinfo_name))
 

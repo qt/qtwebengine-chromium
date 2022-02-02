@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.fingerprint_op."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.ops import array_ops
@@ -36,6 +32,11 @@ class FingerprintTest(test.TestCase):
     self.assertEqual(fingerprint0.ndim, 2)
     self.assertTupleEqual(fingerprint0.shape, fingerprint1.shape)
     self.assertTrue(np.any(fingerprint0 != fingerprint1))
+
+  def test_empty(self):
+    f0 = self.evaluate(array_ops.fingerprint([]))
+    self.assertEqual(f0.ndim, 2)
+    self.assertEqual(f0.shape, (0, 8))
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@
 #ifndef DAWNNATIVE_COMPUTEPIPELINE_H_
 #define DAWNNATIVE_COMPUTEPIPELINE_H_
 
+#include "common/NonCopyable.h"
+#include "dawn_native/Forward.h"
 #include "dawn_native/Pipeline.h"
 
 namespace dawn_native {
@@ -32,6 +34,8 @@ namespace dawn_native {
 
         static ComputePipelineBase* MakeError(DeviceBase* device);
 
+        ObjectType GetType() const override;
+
         // Functors necessary for the unordered_set<ComputePipelineBase*>-based cache.
         struct EqualityFunc {
             bool operator()(const ComputePipelineBase* a, const ComputePipelineBase* b) const;
@@ -43,7 +47,7 @@ namespace dawn_native {
         // CreateComputePipelineAsyncTask is declared as a friend of ComputePipelineBase as it
         // needs to call the private member function ComputePipelineBase::Initialize().
         friend class CreateComputePipelineAsyncTask;
-        virtual MaybeError Initialize(const ComputePipelineDescriptor* descriptor);
+        virtual MaybeError Initialize();
     };
 
 }  // namespace dawn_native

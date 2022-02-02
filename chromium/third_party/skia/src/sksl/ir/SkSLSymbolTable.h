@@ -12,7 +12,7 @@
 #include "include/private/SkSLSymbol.h"
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
-#include "src/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLErrorReporter.h"
 
 #include <forward_list>
 #include <memory>
@@ -20,6 +20,7 @@
 
 namespace SkSL {
 
+class Context;
 class FunctionDeclaration;
 
 /**
@@ -28,14 +29,30 @@ class FunctionDeclaration;
  */
 class SymbolTable {
 public:
-    SymbolTable(ErrorReporter* errorReporter, bool builtin)
+    SymbolTable(const Context& context, bool builtin)
     : fBuiltin(builtin)
-    , fErrorReporter(*errorReporter) {}
+    , fContext(context) {}
 
     SymbolTable(std::shared_ptr<SymbolTable> parent, bool builtin)
     : fParent(parent)
     , fBuiltin(builtin)
-    , fErrorReporter(parent->fErrorReporter) {}
+    , fContext(parent->fContext) {}
+
+    /** Replaces the passed-in SymbolTable with a newly-created child symbol table. */
+    static void Push(std::shared_ptr<SymbolTable>* table) {
+        Push(table, (*table)->isBuiltin());
+    }
+    static void Push(std::shared_ptr<SymbolTable>* table, bool isBuiltin) {
+        *table = std::make_shared<SymbolTable>(*table, isBuiltin);
+    }
+
+    /**
+     * Replaces the passed-in SymbolTable with its parent. If the child symbol table is otherwise
+     * unreferenced, it will be deleted.
+     */
+    static void Pop(std::shared_ptr<SymbolTable>* table) {
+        *table = (*table)->fParent;
+    }
 
     /**
      * If the input is a built-in symbol table, returns a new empty symbol table as a child of the
@@ -90,8 +107,8 @@ public:
 
     /**
      * Given type = `float` and arraySize = 5, creates the array type `float[5]` in the symbol
-     * table. The created array type is returned. `kUnsizedArray` can be passed as a `[]` dimension.
-     * If zero is passed, the base type is returned unchanged.
+     * table. The created array type is returned. If zero is passed, the base type is returned
+     * unchanged.
      */
     const Type* addArrayDimension(const Type* type, int arraySize);
 
@@ -141,9 +158,29 @@ private:
     std::vector<std::unique_ptr<IRNode>> fOwnedNodes;
     std::forward_list<String> fOwnedStrings;
     SkTHashMap<SymbolKey, const Symbol*, SymbolKey::Hash> fSymbols;
-    ErrorReporter& fErrorReporter;
+    const Context& fContext;
 
     friend class Dehydrator;
+};
+
+/**
+ * While in scope, the passed-in symbol table is replaced with a child symbol table.
+ */
+class AutoSymbolTable {
+public:
+    AutoSymbolTable(std::shared_ptr<SymbolTable>* s)
+        : fSymbolTable(s) {
+        SkDEBUGCODE(fPrevious = fSymbolTable->get();)
+        SymbolTable::Push(fSymbolTable);
+    }
+
+    ~AutoSymbolTable() {
+        SymbolTable::Pop(fSymbolTable);
+        SkASSERT(fPrevious == fSymbolTable->get());
+    }
+
+    std::shared_ptr<SymbolTable>* fSymbolTable;
+    SkDEBUGCODE(SymbolTable* fPrevious;)
 };
 
 }  // namespace SkSL

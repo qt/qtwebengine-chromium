@@ -6,14 +6,17 @@ import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Root from '../../core/root/root.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import {HiddenIssuesRow} from './HiddenIssuesRow.js';
-import type {AggregatedIssue} from './IssueAggregator.js';
+import issuesPaneStyles from './issuesPane.css.js';
+import issuesTreeStyles from './issuesTree.css.js';
+
+import type {AggregatedIssue, AggregationKey} from './IssueAggregator.js';
 import {Events as IssueAggregatorEvents, IssueAggregator} from './IssueAggregator.js';
 import {IssueView} from './IssueView.js';
+import {IssueKindView, getGroupIssuesByKindSetting, issueKindViewSortPriority} from './IssueKindView.js';
 
 const UIStrings = {
   /**
@@ -64,6 +67,14 @@ const UIStrings = {
    */
   groupByCategory: 'Group by category',
   /**
+  * @description Title for a checkbox which toggles grouping by kind in the issues tab
+    */
+  groupDisplayedIssuesUnderKind: 'Group displayed issues as Page errors, Breaking changes and Improvements',
+  /**
+  * @description Label for a checkbox which toggles grouping by kind in the issues tab
+    */
+  groupByKind: 'Group by kind',
+  /**
    * @description Title for a checkbox. Whether the issues tab should include third-party issues or not.
    */
   includeCookieIssuesCausedBy: 'Include cookie Issues caused by third-party sites',
@@ -91,9 +102,9 @@ const UIStrings = {
    */
   quirksMode: 'Quirks Mode',
   /**
-   * @description Tooltip label for the button which reveals all hidden isssues.
+   * @description Category title for the different 'Generic' issues.
    */
-  unHideAllHiddenIssues: 'Unhide all hidden issues',
+  generic: 'Generic',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/issues/IssuesPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -134,6 +145,8 @@ class IssueCategoryView extends UI.TreeOutline.TreeElement {
         return i18nString(UIStrings.attributionReporting);
       case IssuesManager.Issue.IssueCategory.QuirksMode:
         return i18nString(UIStrings.quirksMode);
+      case IssuesManager.Issue.IssueCategory.Generic:
+        return i18nString(UIStrings.generic);
       case IssuesManager.Issue.IssueCategory.Other:
         return i18nString(UIStrings.other);
     }
@@ -164,7 +177,8 @@ let issuesPaneInstance: IssuesPane;
 
 export class IssuesPane extends UI.Widget.VBox {
   private categoryViews: Map<IssuesManager.Issue.IssueCategory, IssueCategoryView>;
-  private issueViews: Map<string, IssueView>;
+  private issueViews: Map<AggregationKey, IssueView>;
+  private kindViews: Map<IssuesManager.Issue.IssueKind, IssueKindView>;
   private showThirdPartyCheckbox: UI.Toolbar.ToolbarSettingCheckbox|null;
   private issuesTree: UI.TreeOutline.TreeOutlineInShadow;
   private hiddenIssuesRow: HiddenIssuesRow;
@@ -175,17 +189,18 @@ export class IssuesPane extends UI.Widget.VBox {
 
   private constructor() {
     super(true);
-    this.registerRequiredCSS('panels/issues/issuesPane.css');
+
     this.contentElement.classList.add('issues-pane');
 
     this.categoryViews = new Map();
+    this.kindViews = new Map();
     this.issueViews = new Map();
     this.showThirdPartyCheckbox = null;
 
     this.createToolbars();
 
     this.issuesTree = new UI.TreeOutline.TreeOutlineInShadow();
-    this.issuesTree.registerRequiredCSS('panels/issues/issuesTree.css');
+
     this.issuesTree.setShowSelectionOnKeyboardFocus(true);
     this.issuesTree.contentElement.classList.add('issues');
     this.contentElement.appendChild(this.issuesTree.element);
@@ -229,22 +244,19 @@ export class IssuesPane extends UI.Widget.VBox {
         groupByCategorySetting, i18nString(UIStrings.groupDisplayedIssuesUnder), i18nString(UIStrings.groupByCategory));
     // Hide the option to toggle category grouping for now.
     groupByCategoryCheckbox.setVisible(false);
-    if (Root.Runtime.experiments.isEnabled('hideIssuesFeature')) {
-      const button = new UI.Toolbar.ToolbarButton(i18nString(UIStrings.unHideAllHiddenIssues));
-      button.element.classList.add('unhide-all-issues-btn');
-      button.addEventListener(
-          UI.Toolbar.ToolbarButton.Events.Click,
-          () => IssuesManager.IssuesManager.IssuesManager.instance().unhideAllIssues());
-      UI.ARIAUtils.markAsMenuButton(button.element);
-      const icon = new IconButton.Icon.Icon();
-      icon.data = {iconName: 'refresh_12x12_icon', color: '', height: '12px', width: '12px'};
-      button.element.appendChild(icon);
-      rightToolbar.appendToolbarItem(button);
-    }
     rightToolbar.appendToolbarItem(groupByCategoryCheckbox);
     groupByCategorySetting.addChangeListener(() => {
       this.fullUpdate(true);
     });
+
+    const groupByKindSetting = getGroupIssuesByKindSetting();
+    const groupByKindSettingCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
+        groupByKindSetting, i18nString(UIStrings.groupDisplayedIssuesUnderKind), i18nString(UIStrings.groupByKind));
+    rightToolbar.appendToolbarItem(groupByKindSettingCheckbox);
+    groupByKindSetting.addChangeListener(() => {
+      this.fullUpdate(true);
+    });
+    groupByKindSettingCheckbox.setVisible(Root.Runtime.experiments.isEnabled('groupAndHideIssuesByKind'));
 
     const thirdPartySetting = IssuesManager.Issue.getShowThirdPartyIssuesSetting();
     this.showThirdPartyCheckbox = new UI.Toolbar.ToolbarSettingCheckbox(
@@ -259,7 +271,7 @@ export class IssuesPane extends UI.Widget.VBox {
       tooltipCallback: (): void => {
         const issueEnumeration = IssueCounter.IssueCounter.getIssueCountsEnumeration(
             IssuesManager.IssuesManager.IssuesManager.instance(), false);
-        UI.Tooltip.Tooltip.install(issueCounter, issueEnumeration);
+        issueCounter.title = issueEnumeration;
       },
       displayMode: IssueCounter.IssueCounter.DisplayMode.ShowAlways,
       issuesManager: IssuesManager.IssuesManager.IssuesManager.instance(),
@@ -281,7 +293,7 @@ export class IssuesPane extends UI.Widget.VBox {
 
   /** Don't call directly. Use `scheduleIssueViewUpdate` instead. */
   private async updateIssueView(issue: AggregatedIssue): Promise<void> {
-    let issueView = this.issueViews.get(issue.code());
+    let issueView = this.issueViews.get(issue.aggregationKey());
     if (!issueView) {
       const description = issue.getDescription();
       if (!description) {
@@ -291,12 +303,14 @@ export class IssuesPane extends UI.Widget.VBox {
       const markdownDescription =
           await IssuesManager.MarkdownIssueDescription.createIssueDescriptionFromMarkdown(description);
       issueView = new IssueView(issue, markdownDescription);
-      this.issueViews.set(issue.code(), issueView);
+      this.issueViews.set(issue.aggregationKey(), issueView);
       const parent = this.getIssueViewParent(issue);
       this.appendIssueViewToParent(issueView, parent);
     } else {
+      issueView.setIssue(issue);
       const newParent = this.getIssueViewParent(issue);
-      if (issueView.parent !== newParent) {
+      if (issueView.parent !== newParent &&
+          !(newParent instanceof UI.TreeOutline.TreeOutline && issueView.parent === newParent.rootElement())) {
         issueView.parent?.removeChild(issueView);
         this.appendIssueViewToParent(issueView, newParent);
       }
@@ -322,28 +336,45 @@ export class IssuesPane extends UI.Widget.VBox {
   }
 
   private getIssueViewParent(issue: AggregatedIssue): UI.TreeOutline.TreeOutline|UI.TreeOutline.TreeElement {
-    if (!getGroupIssuesByCategorySetting().get()) {
-      if (issue.isHidden()) {
-        return this.hiddenIssuesRow;
-      }
-      return this.issuesTree;
+    const groupByKind = Root.Runtime.experiments.isEnabled('groupAndHideIssuesByKind');
+    if (issue.isHidden()) {
+      return this.hiddenIssuesRow;
     }
-
-    const category = issue.getCategory();
-    const view = this.categoryViews.get(category);
-    if (view) {
-      return view;
-    }
-
-    const newView = new IssueCategoryView(category);
-    this.issuesTree.appendChild(newView, (a, b) => {
-      if (a instanceof IssueCategoryView && b instanceof IssueCategoryView) {
-        return a.getCategoryName().localeCompare(b.getCategoryName());
+    if (groupByKind && getGroupIssuesByKindSetting().get()) {
+      const kind = issue.getKind();
+      const view = this.kindViews.get(kind);
+      if (view) {
+        return view;
       }
-      return 0;
-    });
-    this.categoryViews.set(category, newView);
-    return newView;
+
+      const newView = new IssueKindView(kind);
+      this.issuesTree.appendChild(newView, (a, b) => {
+        if (a instanceof IssueKindView && b instanceof IssueKindView) {
+          return issueKindViewSortPriority(a, b);
+        }
+        return 0;
+      });
+      this.kindViews.set(kind, newView);
+      return newView;
+    }
+    if (getGroupIssuesByCategorySetting().get()) {
+      const category = issue.getCategory();
+      const view = this.categoryViews.get(category);
+      if (view) {
+        return view;
+      }
+
+      const newView = new IssueCategoryView(category);
+      this.issuesTree.appendChild(newView, (a, b) => {
+        if (a instanceof IssueCategoryView && b instanceof IssueCategoryView) {
+          return a.getCategoryName().localeCompare(b.getCategoryName());
+        }
+        return 0;
+      });
+      this.categoryViews.set(category, newView);
+      return newView;
+    }
+    return this.issuesTree;
   }
 
   private clearViews<T>(views: Map<T, UI.TreeOutline.TreeElement>, preservedSet?: Set<T>): void {
@@ -357,30 +388,39 @@ export class IssuesPane extends UI.Widget.VBox {
   }
 
   private onFullUpdate(): void {
-    this.fullUpdate(true);
+    this.fullUpdate(false);
   }
 
   private fullUpdate(force: boolean): void {
     this.clearViews(this.categoryViews, force ? undefined : this.aggregator.aggregatedIssueCategories());
+    this.clearViews(this.kindViews, force ? undefined : this.aggregator.aggregatedIssueKinds());
     this.clearViews(this.issueViews, force ? undefined : this.aggregator.aggregatedIssueCodes());
     if (this.aggregator) {
       for (const issue of this.aggregator.aggregatedIssues()) {
-        this.scheduleIssueViewUpdate(issue);
-      }
-      for (const issue of this.aggregator.hiddenAggregatedIssues()) {
         this.scheduleIssueViewUpdate(issue);
       }
     }
     this.updateCounts();
   }
 
+  private updateIssueKindViewsCount(): void {
+    for (const view of this.kindViews.values()) {
+      const count = this.issuesManager.numberOfIssues(view.getKind());
+      view.update(count);
+    }
+  }
+
   private updateCounts(): void {
+    const groupByKind = Root.Runtime.experiments.isEnabled('groupAndHideIssuesByKind');
     this.showIssuesTreeOrNoIssuesDetectedMessage(
         this.issuesManager.numberOfIssues(), this.issuesManager.numberOfHiddenIssues());
+    if (groupByKind && getGroupIssuesByKindSetting().get()) {
+      this.updateIssueKindViewsCount();
+    }
   }
 
   private showIssuesTreeOrNoIssuesDetectedMessage(issuesCount: number, hiddenIssueCount: number): void {
-    if (issuesCount > 0) {
+    if (issuesCount > 0 || hiddenIssueCount > 0) {
       this.hiddenIssuesRow.hidden = hiddenIssueCount === 0;
       this.hiddenIssuesRow.update(hiddenIssueCount);
       this.issuesTree.element.hidden = false;
@@ -403,17 +443,30 @@ export class IssuesPane extends UI.Widget.VBox {
     }
   }
 
-  async revealByCode(code: string): Promise<void> {
+  async reveal(issue: IssuesManager.Issue.Issue): Promise<void> {
     await this.issueViewUpdatePromise;
-    const issueView = this.issueViews.get(code);
+    const key = this.aggregator.keyForIssue(issue);
+    const issueView = this.issueViews.get(key);
+    const groupByKind = Root.Runtime.experiments.isEnabled('groupAndHideIssuesByKind');
     if (issueView) {
       if (issueView.isForHiddenIssue()) {
         this.hiddenIssuesRow.expand();
         this.hiddenIssuesRow.reveal();
       }
+      if (groupByKind && getGroupIssuesByKindSetting().get() && !issueView.isForHiddenIssue()) {
+        const kindView = this.kindViews.get(issueView.getIssueKind());
+        kindView?.expand();
+        kindView?.reveal();
+      }
       issueView.expand();
       issueView.reveal();
       issueView.select(false, true);
     }
+  }
+
+  wasShown(): void {
+    super.wasShown();
+    this.issuesTree.registerCSSFiles([issuesTreeStyles]);
+    this.registerCSSFiles([issuesPaneStyles]);
   }
 }

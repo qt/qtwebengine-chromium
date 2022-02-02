@@ -264,6 +264,8 @@ bool Resolver::ResolveInternal() {
     }
   }
 
+  AllocateOverridableConstantIds();
+
   if (!ValidatePipelineStages()) {
     return false;
   }
@@ -574,6 +576,46 @@ ast::Access Resolver::DefaultAccessForStorageClass(
       break;
   }
   return ast::Access::kReadWrite;
+}
+
+void Resolver::AllocateOverridableConstantIds() {
+  // The next pipeline constant ID to try to allocate.
+  uint16_t next_constant_id = 0;
+
+  // Allocate constant IDs in global declaration order, so that they are
+  // deterministic.
+  // TODO(crbug.com/tint/1192): If a transform changes the order or removes an
+  // unused constant, the allocation may change on the next Resolver pass.
+  for (auto* decl : builder_->AST().GlobalDeclarations()) {
+    auto* var = decl->As<ast::Variable>();
+    if (!var) {
+      continue;
+    }
+    auto* override_deco =
+        ast::GetDecoration<ast::OverrideDecoration>(var->decorations());
+    if (!override_deco) {
+      continue;
+    }
+
+    uint16_t constant_id;
+    if (override_deco->HasValue()) {
+      constant_id = static_cast<uint16_t>(override_deco->value());
+    } else {
+      // No ID was specified, so allocate the next available ID.
+      constant_id = next_constant_id;
+      while (constant_ids_.count(constant_id)) {
+        if (constant_id == UINT16_MAX) {
+          TINT_ICE(Resolver, builder_->Diagnostics())
+              << "no more pipeline constant IDs available";
+          return;
+        }
+        constant_id++;
+      }
+      next_constant_id = constant_id + 1;
+    }
+
+    variable_to_info_[var]->constant_id = constant_id;
+  }
 }
 
 bool Resolver::ValidateVariableConstructor(const ast::Variable* var,
@@ -1235,8 +1277,7 @@ bool Resolver::ValidateFunctionParameter(const ast::Function* func,
 
 bool Resolver::ValidateBuiltinDecoration(const ast::BuiltinDecoration* deco,
                                          const sem::Type* storage_type,
-                                         const bool is_input,
-                                         const bool is_struct_member) {
+                                         const bool is_input) {
   auto* type = storage_type->UnwrapRef();
   const auto stage = current_function_
                          ? current_function_->declaration->pipeline_stage()
@@ -1260,6 +1301,7 @@ bool Resolver::ValidateBuiltinDecoration(const ast::BuiltinDecoration* deco,
       break;
     case ast::Builtin::kGlobalInvocationId:
     case ast::Builtin::kLocalInvocationId:
+    case ast::Builtin::kNumWorkgroups:
     case ast::Builtin::kWorkgroupId:
       if (stage != ast::PipelineStage::kNone &&
           !(stage == ast::PipelineStage::kCompute && is_input)) {
@@ -1339,24 +1381,16 @@ bool Resolver::ValidateBuiltinDecoration(const ast::BuiltinDecoration* deco,
         return false;
       }
       break;
-    case ast::Builtin::kNumWorkgroups:
-      // TODO(crbug.com/tint/752): Backend support (needs extra work for HLSL).
-      AddError("num_workgroups builtin is not yet implemented", deco->source());
-      return false;
     default:
       break;
   }
 
-  // ignore builtin attribute on struct members to facillate data movement
-  // between stages
-  if (!is_struct_member) {
-    if (is_stage_mismatch) {
-      AddError(deco_to_str(deco) + " cannot be used in " +
-                   (is_input ? "input of " : "output of ") + stage_name.str() +
-                   " pipeline stage",
-               deco->source());
-      return false;
-    }
+  if (is_stage_mismatch) {
+    AddError(deco_to_str(deco) + " cannot be used in " +
+                 (is_input ? "input of " : "output of ") + stage_name.str() +
+                 " pipeline stage",
+             deco->source());
+    return false;
   }
 
   return true;
@@ -1517,10 +1551,9 @@ bool Resolver::ValidateEntryPoint(const ast::Function* func,
               return false;
             }
 
-            if (!ValidateBuiltinDecoration(
-                    builtin, ty,
-                    /* is_input */ param_or_ret == ParamOrRetType::kParameter,
-                    /* is_struct_member */ is_struct_member)) {
+            if (!ValidateBuiltinDecoration(builtin, ty,
+                                           /* is_input */ param_or_ret ==
+                                               ParamOrRetType::kParameter)) {
               return false;
             }
             builtins.emplace(builtin->value());
@@ -1868,10 +1901,10 @@ bool Resolver::Function(ast::Function* func) {
       }
 
       constexpr const char* kErrBadType =
-          "workgroup_size parameter must be either literal or module-scope "
+          "workgroup_size argument must be either literal or module-scope "
           "constant of type i32 or u32";
       constexpr const char* kErrInconsistentType =
-          "workgroup_size parameters must be of the same type, either i32 "
+          "workgroup_size arguments must be of the same type, either i32 "
           "or u32";
 
       auto* ty = TypeOf(expr);
@@ -1910,6 +1943,12 @@ bool Resolver::Function(ast::Function* func) {
           info->workgroup_size[i].value = 0;
           continue;
         }
+      } else if (!expr->Is<ast::ScalarConstructorExpression>()) {
+        AddError(
+            "workgroup_size argument must be either a literal or a "
+            "module-scope constant",
+            values[i]->source());
+        return false;
       }
 
       auto val = ConstantValueOf(expr);
@@ -1920,7 +1959,7 @@ bool Resolver::Function(ast::Function* func) {
       }
       // Validate and set the default value for this dimension.
       if (is_i32 ? val.Elements()[0].i32 < 1 : val.Elements()[0].u32 < 1) {
-        AddError("workgroup_size parameter must be at least 1",
+        AddError("workgroup_size argument must be at least 1",
                  values[i]->source());
         return false;
       }
@@ -2040,15 +2079,15 @@ bool Resolver::Statement(ast::Statement* stmt) {
     }
     return true;
   }
-  if (stmt->Is<ast::ContinueStatement>()) {
+  if (auto* c = stmt->As<ast::ContinueStatement>()) {
     // Set if we've hit the first continue statement in our parent loop
     if (auto* block =
             current_block_->FindFirstParent<
                 sem::LoopBlockStatement, sem::LoopContinuingBlockStatement>()) {
       if (auto* loop_block = block->As<sem::LoopBlockStatement>()) {
-        if (loop_block->FirstContinue() == size_t(~0)) {
+        if (!loop_block->FirstContinue()) {
           const_cast<sem::LoopBlockStatement*>(loop_block)
-              ->SetFirstContinue(loop_block->Decls().size());
+              ->SetFirstContinue(c, loop_block->Decls().size());
         }
       } else {
         AddError("continuing blocks must not contain a continue statement",
@@ -2346,8 +2385,7 @@ bool Resolver::ArrayAccessor(ast::ArrayAccessorExpression* expr) {
   } else if (auto* mat = parent_type->As<sem::Matrix>()) {
     ret = builder_->create<sem::Vector>(mat->type(), mat->rows());
   } else {
-    AddError("invalid parent type (" + parent_type->type_name() +
-                 ") in array accessor",
+    AddError("cannot index type '" + TypeNameOf(expr->array()) + "'",
              expr->source());
     return false;
   }
@@ -2657,7 +2695,10 @@ bool Resolver::ValidateFunctionCall(const ast::CallExpression* call,
         }
       }
 
-      if (!is_valid) {
+      if (!is_valid &&
+          IsValidationEnabled(
+              param->declaration->decorations(),
+              ast::DisabledValidation::kIgnoreInvalidPointerArgument)) {
         AddError(
             "expected an address-of expression of a variable identifier "
             "expression or a function parameter",
@@ -2966,16 +3007,16 @@ bool Resolver::Identifier(ast::IdentifierExpression* expr) {
     var->users.push_back(expr);
     set_referenced_from_function_if_needed(var, true);
 
-    if (current_block_) {
+    if (current_statement_) {
       // If identifier is part of a loop continuing block, make sure it
       // doesn't refer to a variable that is bypassed by a continue statement
       // in the loop's body block.
       if (auto* continuing_block =
-              current_block_
+              current_statement_
                   ->FindFirstParent<sem::LoopContinuingBlockStatement>()) {
         auto* loop_block =
             continuing_block->FindFirstParent<sem::LoopBlockStatement>();
-        if (loop_block->FirstContinue() != size_t(~0)) {
+        if (loop_block->FirstContinue()) {
           auto& decls = loop_block->Decls();
           // If our identifier is in loop_block->decls, make sure its index is
           // less than first_continue
@@ -2985,11 +3026,16 @@ bool Resolver::Identifier(ast::IdentifierExpression* expr) {
           if (iter != decls.end()) {
             auto var_decl_index =
                 static_cast<size_t>(std::distance(decls.begin(), iter));
-            if (var_decl_index >= loop_block->FirstContinue()) {
+            if (var_decl_index >= loop_block->NumDeclsAtFirstContinue()) {
               AddError("continue statement bypasses declaration of '" +
-                           builder_->Symbols().NameFor(symbol) +
-                           "' in continuing block",
-                       expr->source());
+                           builder_->Symbols().NameFor(symbol) + "'",
+                       loop_block->FirstContinue()->source());
+              AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
+                          "' declared here",
+                      (*iter)->source());
+              AddNote("identifier '" + builder_->Symbols().NameFor(symbol) +
+                          "' referenced in continuing block here",
+                      expr->source());
               return false;
             }
           }
@@ -3124,9 +3170,10 @@ bool Resolver::MemberAccessor(ast::MemberAccessorExpression* expr) {
         expr, builder_->create<sem::Swizzle>(expr, ret, current_statement_,
                                              std::move(swizzle)));
   } else {
-    AddError("invalid use of member accessor on a non-vector/non-struct " +
-                 TypeNameOf(expr->structure()),
-             expr->source());
+    AddError(
+        "invalid member accessor expression. Expected vector or struct, got '" +
+            TypeNameOf(expr->structure()) + "'",
+        expr->structure()->source());
     return false;
   }
 
@@ -3435,8 +3482,11 @@ bool Resolver::VariableDeclStatement(const ast::VariableDeclStatement* stmt) {
   }
 
   for (auto* deco : var->decorations()) {
-    // TODO(bclayton): Validate decorations
     Mark(deco);
+    if (!deco->Is<ast::InternalDecoration>()) {
+      AddError("decorations are not valid on local variables", deco->source());
+      return false;
+    }
   }
 
   variable_stack_.set(var->symbol(), info);
@@ -3695,9 +3745,6 @@ void Resolver::CreateSemanticNodes() const {
     }
   }
 
-  // The next pipeline constant ID to try to allocate.
-  uint16_t next_constant_id = 0;
-
   // Create semantic nodes for all ast::Variables
   std::unordered_map<const tint::ast::Variable*, sem::Parameter*> sem_params;
   for (auto it : variable_to_info_) {
@@ -3706,28 +3753,10 @@ void Resolver::CreateSemanticNodes() const {
 
     sem::Variable* sem_var = nullptr;
 
-    if (auto* override_deco =
-            ast::GetDecoration<ast::OverrideDecoration>(var->decorations())) {
+    if (ast::HasDecoration<ast::OverrideDecoration>(var->decorations())) {
       // Create a pipeline overridable constant.
-      uint16_t constant_id;
-      if (override_deco->HasValue()) {
-        constant_id = static_cast<uint16_t>(override_deco->value());
-      } else {
-        // No ID was specified, so allocate the next available ID.
-        constant_id = next_constant_id;
-        while (constant_ids_.count(constant_id)) {
-          if (constant_id == UINT16_MAX) {
-            TINT_ICE(Resolver, builder_->Diagnostics())
-                << "no more pipeline constant IDs available";
-            return;
-          }
-          constant_id++;
-        }
-        next_constant_id = constant_id + 1;
-      }
-
-      sem_var =
-          builder_->create<sem::GlobalVariable>(var, info->type, constant_id);
+      sem_var = builder_->create<sem::GlobalVariable>(var, info->type,
+                                                      info->constant_id);
     } else {
       switch (info->kind) {
         case VariableKind::kGlobal:
@@ -3869,9 +3898,66 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
 
   uint64_t stride = explicit_stride ? explicit_stride : implicit_stride;
 
-  // WebGPU requires runtime arrays have at least one element, but the AST
-  // records an element count of 0 for it.
-  auto size = std::max<uint32_t>(arr->size(), 1) * stride;
+  // Evaluate the constant array size expression.
+  // sem::Array uses a size of 0 for a runtime-sized array.
+  uint32_t count = 0;
+  if (auto* count_expr = arr->Size()) {
+    Mark(count_expr);
+    if (!Expression(count_expr)) {
+      return nullptr;
+    }
+
+    auto size_source = count_expr->source();
+
+    auto* ty = TypeOf(count_expr)->UnwrapRef();
+    if (!ty->is_integer_scalar()) {
+      AddError("array size must be integer scalar", size_source);
+      return nullptr;
+    }
+
+    if (auto* ident = count_expr->As<ast::IdentifierExpression>()) {
+      // Make sure the identifier is a non-overridable module-scope constant.
+      VariableInfo* var = nullptr;
+      bool is_global = false;
+      if (!variable_stack_.get(ident->symbol(), &var, &is_global) ||
+          !is_global || !var->declaration->is_const()) {
+        AddError("array size identifier must be a module-scope constant",
+                 size_source);
+        return nullptr;
+      }
+      if (ast::HasDecoration<ast::OverrideDecoration>(
+              var->declaration->decorations())) {
+        AddError("array size expression must not be pipeline-overridable",
+                 size_source);
+        return nullptr;
+      }
+
+      count_expr = var->declaration->constructor();
+    } else if (!count_expr->Is<ast::ScalarConstructorExpression>()) {
+      AddError(
+          "array size expression must be either a literal or a module-scope "
+          "constant",
+          size_source);
+      return nullptr;
+    }
+
+    auto count_val = ConstantValueOf(count_expr);
+    if (!count_val) {
+      TINT_ICE(Resolver, diagnostics_)
+          << "could not resolve array size expression";
+      return nullptr;
+    }
+
+    if (ty->is_signed_integer_scalar() ? count_val.Elements()[0].i32 < 1
+                                       : count_val.Elements()[0].u32 < 1u) {
+      AddError("array size must be at least 1", size_source);
+      return nullptr;
+    }
+
+    count = count_val.Elements()[0].u32;
+  }
+
+  auto size = std::max<uint64_t>(count, 1) * stride;
   if (size > std::numeric_limits<uint32_t>::max()) {
     std::stringstream msg;
     msg << "array size in bytes must not exceed 0x" << std::hex
@@ -3887,7 +3973,7 @@ sem::Array* Resolver::Array(const ast::Array* arr) {
     return nullptr;
   }
   auto* out = builder_->create<sem::Array>(
-      elem_type, arr->size(), el_align, static_cast<uint32_t>(size),
+      elem_type, count, el_align, static_cast<uint32_t>(size),
       static_cast<uint32_t>(stride), static_cast<uint32_t>(implicit_stride));
 
   if (!ValidateArray(out, source)) {
@@ -4006,8 +4092,7 @@ bool Resolver::ValidateStructure(const sem::Struct* str) {
         }
       } else if (auto* builtin = deco->As<ast::BuiltinDecoration>()) {
         if (!ValidateBuiltinDecoration(builtin, member->Type(),
-                                       /* is_input */ false,
-                                       /* is_struct_member */ true)) {
+                                       /* is_input */ false)) {
           return false;
         }
         if (builtin->value() == ast::Builtin::kPosition) {

@@ -529,9 +529,11 @@ class P2PTransportChannelTestBase : public ::testing::Test,
   void AddAddress(int endpoint,
                   const SocketAddress& addr,
                   const std::string& ifname,
-                  rtc::AdapterType adapter_type) {
-    GetEndpoint(endpoint)->network_manager_.AddInterface(addr, ifname,
-                                                         adapter_type);
+                  rtc::AdapterType adapter_type,
+                  absl::optional<rtc::AdapterType> underlying_vpn_adapter_type =
+                      absl::nullopt) {
+    GetEndpoint(endpoint)->network_manager_.AddInterface(
+        addr, ifname, adapter_type, underlying_vpn_adapter_type);
   }
   void RemoveAddress(int endpoint, const SocketAddress& addr) {
     GetEndpoint(endpoint)->network_manager_.RemoveInterface(addr);
@@ -1336,6 +1338,13 @@ TEST_F(P2PTransportChannelTest, GetStats) {
                              kMediumTimeout, clock);
   // Sends and receives 10 packets.
   TestSendRecv(&clock);
+
+  // Try sending a packet which is discarded due to the socket being blocked.
+  virtual_socket_server()->SetSendingBlocked(true);
+  const char* data = "ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890";
+  int len = static_cast<int>(strlen(data));
+  EXPECT_EQ(-1, SendData(ep1_ch1(), data, len));
+
   IceTransportStats ice_transport_stats;
   ASSERT_TRUE(ep1_ch1()->GetStats(&ice_transport_stats));
   ASSERT_GE(ice_transport_stats.connection_infos.size(), 1u);
@@ -1353,9 +1362,12 @@ TEST_F(P2PTransportChannelTest, GetStats) {
   EXPECT_TRUE(best_conn_info->receiving);
   EXPECT_TRUE(best_conn_info->writable);
   EXPECT_FALSE(best_conn_info->timeout);
-  EXPECT_EQ(10U, best_conn_info->sent_total_packets);
-  EXPECT_EQ(0U, best_conn_info->sent_discarded_packets);
+  // Note that discarded packets are counted in sent_total_packets but not
+  // sent_total_bytes.
+  EXPECT_EQ(11U, best_conn_info->sent_total_packets);
+  EXPECT_EQ(1U, best_conn_info->sent_discarded_packets);
   EXPECT_EQ(10 * 36U, best_conn_info->sent_total_bytes);
+  EXPECT_EQ(36U, best_conn_info->sent_discarded_bytes);
   EXPECT_EQ(10 * 36U, best_conn_info->recv_total_bytes);
   EXPECT_EQ(10U, best_conn_info->packets_received);
   DestroyChannels();
@@ -3167,6 +3179,119 @@ TEST_F(P2PTransportChannelMultihomedTest, TestRestoreBackupConnection) {
       kDefaultTimeout, clock);
 
   DestroyChannels();
+}
+
+TEST_F(P2PTransportChannelMultihomedTest, TestVpnDefault) {
+  rtc::ScopedFakeClock clock;
+  AddAddress(0, kPublicAddrs[0], "eth0", rtc::ADAPTER_TYPE_ETHERNET);
+  AddAddress(0, kAlternateAddrs[0], "vpn0", rtc::ADAPTER_TYPE_VPN);
+  AddAddress(1, kPublicAddrs[1]);
+
+  IceConfig config;
+  CreateChannels(config, config, false);
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          !ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+}
+
+TEST_F(P2PTransportChannelMultihomedTest, TestVpnPreferVpn) {
+  rtc::ScopedFakeClock clock;
+  AddAddress(0, kPublicAddrs[0], "eth0", rtc::ADAPTER_TYPE_ETHERNET);
+  AddAddress(0, kAlternateAddrs[0], "vpn0", rtc::ADAPTER_TYPE_VPN,
+             rtc::ADAPTER_TYPE_CELLULAR);
+  AddAddress(1, kPublicAddrs[1]);
+
+  IceConfig config;
+  config.vpn_preference = webrtc::VpnPreference::kPreferVpn;
+  RTC_LOG(LS_INFO) << "KESO: config.vpn_preference: " << config.vpn_preference;
+  CreateChannels(config, config, false);
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+
+  // Block VPN.
+  fw()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, kAlternateAddrs[0]);
+
+  // Check that it switches to non-VPN
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          !ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+}
+
+TEST_F(P2PTransportChannelMultihomedTest, TestVpnAvoidVpn) {
+  rtc::ScopedFakeClock clock;
+  AddAddress(0, kPublicAddrs[0], "eth0", rtc::ADAPTER_TYPE_CELLULAR);
+  AddAddress(0, kAlternateAddrs[0], "vpn0", rtc::ADAPTER_TYPE_VPN,
+             rtc::ADAPTER_TYPE_ETHERNET);
+  AddAddress(1, kPublicAddrs[1]);
+
+  IceConfig config;
+  config.vpn_preference = webrtc::VpnPreference::kAvoidVpn;
+  CreateChannels(config, config, false);
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          !ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+
+  // Block non-VPN.
+  fw()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, kPublicAddrs[0]);
+
+  // Check that it switches to VPN
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+}
+
+TEST_F(P2PTransportChannelMultihomedTest, TestVpnNeverVpn) {
+  rtc::ScopedFakeClock clock;
+  AddAddress(0, kPublicAddrs[0], "eth0", rtc::ADAPTER_TYPE_CELLULAR);
+  AddAddress(0, kAlternateAddrs[0], "vpn0", rtc::ADAPTER_TYPE_VPN,
+             rtc::ADAPTER_TYPE_ETHERNET);
+  AddAddress(1, kPublicAddrs[1]);
+
+  IceConfig config;
+  config.vpn_preference = webrtc::VpnPreference::kNeverUseVpn;
+  CreateChannels(config, config, false);
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          !ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+
+  // Block non-VPN.
+  fw()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, kPublicAddrs[0]);
+
+  // Check that it does not switches to VPN
+  clock.AdvanceTime(webrtc::TimeDelta::Millis(kDefaultTimeout));
+  EXPECT_TRUE_SIMULATED_WAIT(!CheckConnected(ep1_ch1(), ep2_ch1()),
+                             kDefaultTimeout, clock);
+}
+
+TEST_F(P2PTransportChannelMultihomedTest, TestVpnOnlyVpn) {
+  rtc::ScopedFakeClock clock;
+  AddAddress(0, kPublicAddrs[0], "eth0", rtc::ADAPTER_TYPE_CELLULAR);
+  AddAddress(0, kAlternateAddrs[0], "vpn0", rtc::ADAPTER_TYPE_VPN,
+             rtc::ADAPTER_TYPE_ETHERNET);
+  AddAddress(1, kPublicAddrs[1]);
+
+  IceConfig config;
+  config.vpn_preference = webrtc::VpnPreference::kOnlyUseVpn;
+  CreateChannels(config, config, false);
+  EXPECT_TRUE_SIMULATED_WAIT(
+      CheckConnected(ep1_ch1(), ep2_ch1()) &&
+          ep1_ch1()->selected_connection()->network()->IsVpn(),
+      kDefaultTimeout, clock);
+
+  // Block VPN.
+  fw()->AddRule(false, rtc::FP_ANY, rtc::FD_ANY, kAlternateAddrs[0]);
+
+  // Check that it does not switch to non-VPN
+  clock.AdvanceTime(webrtc::TimeDelta::Millis(kDefaultTimeout));
+  EXPECT_TRUE_SIMULATED_WAIT(!CheckConnected(ep1_ch1(), ep2_ch1()),
+                             kDefaultTimeout, clock);
 }
 
 // A collection of tests which tests a single P2PTransportChannel by sending

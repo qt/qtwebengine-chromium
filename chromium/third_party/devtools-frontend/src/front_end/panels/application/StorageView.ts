@@ -10,10 +10,10 @@ import * as Protocol from '../../generated/protocol.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-import {ApplicationCacheModel} from './ApplicationCacheModel.js';
 import {DatabaseModel} from './DatabaseModel.js';
 import {DOMStorageModel} from './DOMStorageModel.js';
 import {IndexedDBModel} from './IndexedDBModel.js';
+import storageViewStyles from './storageView.css.js';
 
 const UIStrings = {
   /**
@@ -85,10 +85,6 @@ const UIStrings = {
    * @description Checkbox label in the Clear Storage section of the Storage View of the Application panel
    */
   cacheStorage: 'Cache storage',
-  /**
-   * @description Checkbox label in the Clear Storage section of the Storage View of the Application panel
-   */
-  applicationCache: 'Application cache',
   /**
    * @description Checkbox label in the Clear Storage section of the Storage View of the Application panel
    */
@@ -165,7 +161,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
 
   constructor() {
     super(true, 1000);
-    this.registerRequiredCSS('panels/application/storageView.css');
+
     this.contentElement.classList.add('clear-storage-container');
     this.pieColors = new Map([
       [Protocol.Storage.StorageType.Appcache, 'rgb(110, 161, 226)'],        // blue
@@ -179,7 +175,7 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
 
     // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
     this.reportView = new UI.ReportView.ReportView(i18nString(UIStrings.storageTitle));
-    this.reportView.registerRequiredCSS('panels/application/storageView.css');
+
     this.reportView.element.classList.add('clear-storage-header');
     this.reportView.show(this.contentElement);
     /** @type {?SDK.Target.Target} */
@@ -260,7 +256,6 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
 
     const caches = this.reportView.appendSection(i18nString(UIStrings.cache));
     this.appendItem(caches, i18nString(UIStrings.cacheStorage), Protocol.Storage.StorageType.Cache_storage);
-    this.appendItem(caches, i18nString(UIStrings.applicationCache), Protocol.Storage.StorageType.Appcache);
     caches.markFieldListAsGroup();
 
     SDK.TargetManager.TargetManager.instance().observeTargets(this);
@@ -297,10 +292,10 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
         SDK.SecurityOriginManager.Events.MainSecurityOriginChanged, this.originChanged, this);
   }
 
-  private originChanged(event: Common.EventTarget.EventTargetEvent): void {
-    const mainOrigin = /** *@type {string} */ (event.data.mainSecurityOrigin);
-    const unreachableMainOrigin = /** @type {string} */ (event.data.unreachableMainSecurityOrigin);
-    this.updateOrigin(mainOrigin, unreachableMainOrigin);
+  private originChanged(
+      event: Common.EventTarget.EventTargetEvent<SDK.SecurityOriginManager.MainSecurityOriginChangedEvent>): void {
+    const {mainSecurityOrigin, unreachableMainSecurityOrigin} = event.data;
+    this.updateOrigin(mainSecurityOrigin, unreachableMainSecurityOrigin);
   }
 
   private updateOrigin(mainOrigin: string, unreachableMainOrigin: string|null): void {
@@ -442,13 +437,6 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
         model.clearForOrigin(securityOrigin);
       }
     }
-
-    if (set.has(Protocol.Storage.StorageType.Appcache) || hasAll) {
-      const appcacheModel = target.model(ApplicationCacheModel);
-      if (appcacheModel) {
-        appcacheModel.reset();
-      }
-    }
   }
 
   async doUpdate(): Promise<void> {
@@ -532,6 +520,11 @@ export class StorageView extends UI.ThrottledWidget.ThrottledWidget {
       default:
         return i18nString(UIStrings.other);
     }
+  }
+  wasShown(): void {
+    super.wasShown();
+    this.reportView.registerCSSFiles([storageViewStyles]);
+    this.registerCSSFiles([storageViewStyles]);
   }
 }
 

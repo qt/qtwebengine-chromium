@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.linalg.linalg_impl.tridiagonal_matmul."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import itertools
 
 import numpy as np
@@ -80,7 +76,7 @@ class TridiagonalMulOpTest(test.TestCase):
             diags_matrix_batch, rhs_batch, diagonals_format='matrix')
     ]
 
-    with self.cached_session(use_gpu=True):
+    with self.cached_session():
       results = self.evaluate(results)
       results_batch = self.evaluate(results_batch)
 
@@ -114,7 +110,7 @@ class TridiagonalMulOpTest(test.TestCase):
 
     diags = constant_op.constant(diags, dtype=dtype)
     rhs = constant_op.constant(rhs, dtype=dtype)
-    with self.cached_session(use_gpu=True):
+    with self.cached_session():
       grad_reference, _ = gradient_checker_v2.compute_gradient(
           reference_matmul, [diags, rhs])
       grad_theoretical, grad_numerical = gradient_checker_v2.compute_gradient(
@@ -155,7 +151,7 @@ class TridiagonalMulOpTest(test.TestCase):
         constant_op.constant(rhs, dtype=dtypes.complex128),
         diagonals_format='matrix')
 
-    with self.cached_session(use_gpu=True):
+    with self.cached_session():
       result = self.evaluate(result)
 
     self.assertAllClose(result, expected_result)
@@ -221,7 +217,7 @@ class TridiagonalMulOpTest(test.TestCase):
                                               vec,
                                               diagonals_format='sequence')
 
-          variables.global_variables_initializer().run()
+          self.evaluate(variables.global_variables_initializer())
           self.run_op_benchmark(
               sess,
               control_flow_ops.group(x1),

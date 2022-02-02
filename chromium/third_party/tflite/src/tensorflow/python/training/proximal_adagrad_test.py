@@ -14,16 +14,11 @@
 # ==============================================================================
 """Functional tests for Proximal Adagrad operations."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.framework import constant_op
 from tensorflow.python.framework import dtypes
 from tensorflow.python.framework import ops
-from tensorflow.python.framework import test_util
 from tensorflow.python.ops import embedding_ops
 from tensorflow.python.ops import math_ops
 from tensorflow.python.ops import resource_variable_ops
@@ -36,7 +31,8 @@ from tensorflow.python.training import proximal_adagrad
 class ProximalAdagradOptimizerTest(test.TestCase):
 
   def doTestProximalAdagradwithoutRegularization(self, use_resource=False):
-    with self.cached_session() as sess:
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       var0 = variables.Variable([0.0, 0.0])
       var1 = variables.Variable([0.0, 0.0])
       grads0 = constant_op.constant([0.1, 0.2])
@@ -47,7 +43,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
           l1_regularization_strength=0.0,
           l2_regularization_strength=0.0)
       update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-      variables.global_variables_initializer().run()
+      self.evaluate(variables.global_variables_initializer())
 
       v0_val, v1_val = self.evaluate([var0, var1])
       self.assertAllClose([0.0, 0.0], v0_val)
@@ -65,17 +61,15 @@ class ProximalAdagradOptimizerTest(test.TestCase):
       self.assertStartsWith(opt_vars[1].name, var1._shared_name)
       self.assertEqual(2, len(opt_vars))
 
-  @test_util.run_deprecated_v1
   def testProximalAdagradwithoutRegularization(self):
     self.doTestProximalAdagradwithoutRegularization(use_resource=False)
 
-  @test_util.run_deprecated_v1
   def testResourceProximalAdagradwithoutRegularization(self):
     self.doTestProximalAdagradwithoutRegularization(use_resource=True)
 
-  @test_util.run_deprecated_v1
   def testProximalAdagradwithoutRegularization2(self):
-    with self.cached_session() as sess:
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       var0 = variables.Variable([1.0, 2.0])
       var1 = variables.Variable([4.0, 3.0])
       grads0 = constant_op.constant([0.1, 0.2])
@@ -87,7 +81,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
           l1_regularization_strength=0.0,
           l2_regularization_strength=0.0)
       update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-      variables.global_variables_initializer().run()
+      self.evaluate(variables.global_variables_initializer())
 
       v0_val, v1_val = self.evaluate([var0, var1])
       self.assertAllClose([1.0, 2.0], v0_val)
@@ -100,16 +94,16 @@ class ProximalAdagradOptimizerTest(test.TestCase):
       self.assertAllClose(np.array([-1.60261, -2.296985]), v0_val)
       self.assertAllClose(np.array([3.715679, 2.433051]), v1_val)
 
-  @test_util.run_deprecated_v1
   def testMinimizeSparseResourceVariable(self):
     for dtype in [dtypes.float32, dtypes.float64]:
-      with self.cached_session():
+      # ProximalAdagradOptimizer is supported only in V1.
+      with ops.Graph().as_default(), self.cached_session():
         var0 = resource_variable_ops.ResourceVariable([[1.0, 2.0]], dtype=dtype)
         x = constant_op.constant([[4.0], [5.0]], dtype=dtype)
         pred = math_ops.matmul(embedding_ops.embedding_lookup([var0], [0]), x)
         loss = pred * pred
         sgd_op = proximal_adagrad.ProximalAdagradOptimizer(1.0).minimize(loss)
-        variables.global_variables_initializer().run()
+        self.evaluate(variables.global_variables_initializer())
         # Fetch params to validate initial values
         self.assertAllCloseAccordingToType([[1.0, 2.0]], self.evaluate(var0))
         # Run 1 step of sgd
@@ -119,9 +113,9 @@ class ProximalAdagradOptimizerTest(test.TestCase):
                                            self.evaluate(var0),
                                            atol=0.01)
 
-  @test_util.run_deprecated_v1
   def testProximalAdagradWithL1(self):
-    with self.cached_session() as sess:
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       var0 = variables.Variable([1.0, 2.0])
       var1 = variables.Variable([4.0, 3.0])
       grads0 = constant_op.constant([0.1, 0.2])
@@ -133,7 +127,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
           l1_regularization_strength=0.001,
           l2_regularization_strength=0.0)
       update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-      variables.global_variables_initializer().run()
+      self.evaluate(variables.global_variables_initializer())
 
       v0_val, v1_val = self.evaluate([var0, var1])
       self.assertAllClose([1.0, 2.0], v0_val)
@@ -146,9 +140,9 @@ class ProximalAdagradOptimizerTest(test.TestCase):
       self.assertAllClose(np.array([-6.663634, -9.190331]), v0_val)
       self.assertAllClose(np.array([2.959304, 1.029232]), v1_val)
 
-  @test_util.run_deprecated_v1
   def testProximalAdagradWithL1_L2(self):
-    with self.cached_session() as sess:
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       var0 = variables.Variable([1.0, 2.0])
       var1 = variables.Variable([4.0, 3.0])
       grads0 = constant_op.constant([0.1, 0.2])
@@ -160,7 +154,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
           l1_regularization_strength=0.001,
           l2_regularization_strength=2.0)
       update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-      variables.global_variables_initializer().run()
+      self.evaluate(variables.global_variables_initializer())
 
       v0_val, v1_val = self.evaluate([var0, var1])
       self.assertAllClose([1.0, 2.0], v0_val)
@@ -195,7 +189,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
       grads1 = constant_op.constant([0.01, 0.02])
 
     update = opt.apply_gradients(zip([grads0, grads1], [var0, var1]))
-    variables.global_variables_initializer().run()
+    self.evaluate(variables.global_variables_initializer())
 
     sess = ops.get_default_session()
     v0_val, v1_val = self.evaluate([var0, var1])
@@ -213,9 +207,9 @@ class ProximalAdagradOptimizerTest(test.TestCase):
     v0_val, v1_val = self.evaluate([var0, var1])
     return v0_val, v1_val
 
-  @test_util.run_deprecated_v1
   def testEquivAdagradwithoutRegularization(self):
-    with self.cached_session():
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       val0, val1 = self.applyOptimizer(
           proximal_adagrad.ProximalAdagradOptimizer(
               3.0,
@@ -223,7 +217,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
               l1_regularization_strength=0.0,
               l2_regularization_strength=0.0))
 
-    with self.cached_session():
+    with ops.Graph().as_default(), self.cached_session():
       val2, val3 = self.applyOptimizer(
           adagrad.AdagradOptimizer(
               3.0, initial_accumulator_value=0.1))
@@ -231,9 +225,9 @@ class ProximalAdagradOptimizerTest(test.TestCase):
     self.assertAllClose(val0, val2)
     self.assertAllClose(val1, val3)
 
-  @test_util.run_deprecated_v1
   def testEquivSparseAdagradwithoutRegularization(self):
-    with self.cached_session():
+    # ProximalAdagradOptimizer is supported only in V1.
+    with ops.Graph().as_default(), self.cached_session():
       val0, val1 = self.applyOptimizer(
           proximal_adagrad.ProximalAdagradOptimizer(
               3.0,
@@ -242,7 +236,7 @@ class ProximalAdagradOptimizerTest(test.TestCase):
               l2_regularization_strength=0.0),
           is_sparse=True)
 
-    with self.cached_session():
+    with ops.Graph().as_default(), self.cached_session():
       val2, val3 = self.applyOptimizer(
           adagrad.AdagradOptimizer(
               3.0, initial_accumulator_value=0.1),

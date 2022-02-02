@@ -103,40 +103,24 @@ namespace dawn_native {
 
     CreateComputePipelineAsyncTask::CreateComputePipelineAsyncTask(
         Ref<ComputePipelineBase> nonInitializedComputePipeline,
-        const ComputePipelineDescriptor* descriptor,
         size_t blueprintHash,
         WGPUCreateComputePipelineAsyncCallback callback,
         void* userdata)
-        : mComputePipeline(nonInitializedComputePipeline),
+        : mComputePipeline(std::move(nonInitializedComputePipeline)),
           mBlueprintHash(blueprintHash),
           mCallback(callback),
-          mUserdata(userdata),
-          mLabel(descriptor->label != nullptr ? descriptor->label : ""),
-          mLayout(descriptor->layout),
-          mEntryPoint(descriptor->compute.entryPoint),
-          mComputeShaderModule(descriptor->compute.module) {
+          mUserdata(userdata) {
         ASSERT(mComputePipeline != nullptr);
-
-        // TODO(jiawei.shao@intel.com): save nextInChain when it is supported in Dawn.
-        ASSERT(descriptor->nextInChain == nullptr);
     }
 
     void CreateComputePipelineAsyncTask::Run() {
-        ComputePipelineDescriptor descriptor;
-        if (!mLabel.empty()) {
-            descriptor.label = mLabel.c_str();
-        }
-        descriptor.compute.entryPoint = mEntryPoint.c_str();
-        descriptor.layout = mLayout.Get();
-        descriptor.compute.module = mComputeShaderModule.Get();
-        MaybeError maybeError = mComputePipeline->Initialize(&descriptor);
+        MaybeError maybeError = mComputePipeline->Initialize();
         std::string errorMessage;
         if (maybeError.IsError()) {
             mComputePipeline = nullptr;
             errorMessage = maybeError.AcquireError()->GetMessage();
         }
 
-        mComputeShaderModule = nullptr;
         mComputePipeline->GetDevice()->AddComputePipelineAsyncCallbackTask(
             mComputePipeline, errorMessage, mCallback, mUserdata, mBlueprintHash);
     }
@@ -155,4 +139,39 @@ namespace dawn_native {
         device->GetAsyncTaskManager()->PostTask(std::move(asyncTask));
     }
 
+    CreateRenderPipelineAsyncTask::CreateRenderPipelineAsyncTask(
+        Ref<RenderPipelineBase> nonInitializedRenderPipeline,
+        WGPUCreateRenderPipelineAsyncCallback callback,
+        void* userdata)
+        : mRenderPipeline(std::move(nonInitializedRenderPipeline)),
+          mCallback(callback),
+          mUserdata(userdata) {
+        ASSERT(mRenderPipeline != nullptr);
+    }
+
+    void CreateRenderPipelineAsyncTask::Run() {
+        MaybeError maybeError = mRenderPipeline->Initialize();
+        std::string errorMessage;
+        if (maybeError.IsError()) {
+            mRenderPipeline = nullptr;
+            errorMessage = maybeError.AcquireError()->GetMessage();
+        }
+
+        mRenderPipeline->GetDevice()->AddRenderPipelineAsyncCallbackTask(
+            mRenderPipeline, errorMessage, mCallback, mUserdata);
+    }
+
+    void CreateRenderPipelineAsyncTask::RunAsync(
+        std::unique_ptr<CreateRenderPipelineAsyncTask> task) {
+        DeviceBase* device = task->mRenderPipeline->GetDevice();
+
+        // Using "taskPtr = std::move(task)" causes compilation error while it should be supported
+        // since C++14:
+        // https://docs.microsoft.com/en-us/cpp/cpp/lambda-expressions-in-cpp?view=msvc-160
+        auto asyncTask = [taskPtr = task.release()] {
+            std::unique_ptr<CreateRenderPipelineAsyncTask> innerTaskPtr(taskPtr);
+            innerTaskPtr->Run();
+        };
+        device->GetAsyncTaskManager()->PostTask(std::move(asyncTask));
+    }
 }  // namespace dawn_native

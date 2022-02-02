@@ -18,6 +18,7 @@
 #include "src/heap/cppgc/marker.h"
 #include "src/heap/cppgc/metric-recorder.h"
 #include "src/heap/cppgc/object-allocator.h"
+#include "src/heap/cppgc/platform.h"
 #include "src/heap/cppgc/process-heap-statistics.h"
 #include "src/heap/cppgc/process-heap.h"
 #include "src/heap/cppgc/raw-heap.h"
@@ -65,6 +66,7 @@ namespace testing {
 class TestWithHeap;
 }  // namespace testing
 
+class FatalOutOfMemoryHandler;
 class PageBackend;
 class PreFinalizerHandler;
 class StatsCollector;
@@ -94,6 +96,11 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
 
   cppgc::Platform* platform() { return platform_.get(); }
   const cppgc::Platform* platform() const { return platform_.get(); }
+
+  FatalOutOfMemoryHandler& oom_handler() { return *oom_handler_.get(); }
+  const FatalOutOfMemoryHandler& oom_handler() const {
+    return *oom_handler_.get();
+  }
 
   PageBackend* page_backend() { return page_backend_.get(); }
   const PageBackend* page_backend() const { return page_backend_.get(); }
@@ -199,6 +206,8 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
     stats_collector_->SetMetricRecorder(std::move(histogram_recorder));
   }
 
+  int GetCreationThreadId() const { return creation_thread_id_; }
+
  protected:
   // Used by the incremental scheduler to finalize a GC if supported.
   virtual void FinalizeIncrementalGarbageCollectionIfNeeded(
@@ -208,12 +217,14 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
 
   bool IsMarking() const { return marker_.get(); }
 
-  void ExecutePreFinalizers();
+  // Returns amount of bytes allocated while executing prefinalizers.
+  size_t ExecutePreFinalizers();
 
   PageAllocator* page_allocator() const;
 
   RawHeap raw_heap_;
   std::shared_ptr<cppgc::Platform> platform_;
+  std::unique_ptr<FatalOutOfMemoryHandler> oom_handler_;
 
 #if defined(LEAK_SANITIZER)
   std::unique_ptr<v8::base::LsanPageAllocator> lsan_page_allocator_;
@@ -260,6 +271,8 @@ class V8_EXPORT_PRIVATE HeapBase : public cppgc::HeapHandle {
   uintptr_t stack_end_of_current_gc_ = 0;
 
   bool in_atomic_pause_ = false;
+
+  int creation_thread_id_ = v8::base::OS::GetCurrentThreadId();
 
   friend class MarkerBase::IncrementalMarkingTask;
   friend class testing::TestWithHeap;

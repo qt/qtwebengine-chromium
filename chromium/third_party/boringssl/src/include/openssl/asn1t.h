@@ -389,13 +389,6 @@ struct ASN1_ADB_TABLE_st {
 /* Field is a SEQUENCE OF */
 #define ASN1_TFLG_SEQUENCE_OF	(0x2 << 1)
 
-/* Special case: this refers to a SET OF that
- * will be sorted into DER order when encoded *and*
- * the corresponding STACK will be modified to match
- * the new order.
- */
-#define ASN1_TFLG_SET_ORDER	(0x3 << 1)
-
 /* Mask for SET OF or SEQUENCE OF */
 #define ASN1_TFLG_SK_MASK	(0x3 << 1)
 
@@ -602,8 +595,8 @@ typedef struct ASN1_AUX_st {
 #define ASN1_OP_FREE_POST	3
 #define ASN1_OP_D2I_PRE		4
 #define ASN1_OP_D2I_POST	5
-#define ASN1_OP_I2D_PRE		6
-#define ASN1_OP_I2D_POST	7
+/* ASN1_OP_I2D_PRE and ASN1_OP_I2D_POST are not supported. We leave the
+ * constants undefined so code relying on them does not accidentally compile. */
 #define ASN1_OP_PRINT_PRE	8
 #define ASN1_OP_PRINT_POST	9
 #define ASN1_OP_STREAM_PRE	10

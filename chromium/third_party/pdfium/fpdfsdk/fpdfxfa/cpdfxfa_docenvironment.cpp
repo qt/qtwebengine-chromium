@@ -6,7 +6,6 @@
 
 #include "fpdfsdk/fpdfxfa/cpdfxfa_docenvironment.h"
 
-#include <memory>
 #include <utility>
 
 #include "core/fpdfapi/parser/cpdf_array.h"
@@ -285,8 +284,8 @@ void CPDFXFA_DocEnvironment::OnPageViewEvent(CXFA_FFPageView* pPageView,
   if (!pFormFillEnv)
     return;
 
-  if (m_pContext->GetLoadStatus() == FXFA_LOADSTATUS_LOADING ||
-      m_pContext->GetLoadStatus() == FXFA_LOADSTATUS_CLOSING ||
+  if (m_pContext->GetLoadStatus() == CPDFXFA_Context::LoadStatus::kLoading ||
+      m_pContext->GetLoadStatus() == CPDFXFA_Context::LoadStatus::kClosing ||
       eEvent != CXFA_FFDoc::PageViewEvent::kStopLayout) {
     return;
   }
@@ -555,7 +554,7 @@ void CPDFXFA_DocEnvironment::SetFocusWidget(CXFA_FFDoc* hDoc,
 
   if (!hWidget) {
     ObservedPtr<CPDFSDK_Annot> pNull;
-    m_pContext->GetFormFillEnv()->SetFocusAnnot(&pNull);
+    m_pContext->GetFormFillEnv()->SetFocusAnnot(pNull);
     return;
   }
 
@@ -568,7 +567,7 @@ void CPDFXFA_DocEnvironment::SetFocusWidget(CXFA_FFDoc* hDoc,
 
     ObservedPtr<CPDFSDK_Annot> pAnnot(pPageView->GetAnnotByXFAWidget(hWidget));
     if (pAnnot) {
-      m_pContext->GetFormFillEnv()->SetFocusAnnot(&pAnnot);
+      m_pContext->GetFormFillEnv()->SetFocusAnnot(pAnnot);
       break;
     }
   }

@@ -14,19 +14,15 @@
 # ==============================================================================
 """Memory leak detection utility."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tensorflow.python.framework.python_memory_checker import _PythonMemoryChecker
 from tensorflow.python.profiler.traceme import TraceMe
 from tensorflow.python.profiler.traceme import traceme_wrapper
 from tensorflow.python.util import tf_inspect
 
 try:
-  from tensorflow.python.platform.cpp_memory_checker import _CppMemoryChecker  # pylint:disable=g-import-not-at-top
+  from tensorflow.python.platform.cpp_memory_checker import _CppMemoryChecker as CppMemoryChecker  # pylint:disable=g-import-not-at-top
 except ImportError:
-  _CppMemoryChecker = None
+  CppMemoryChecker = None
 
 
 def _get_test_name_best_effort():
@@ -77,13 +73,13 @@ class MemoryChecker(object):
     self._trace_me = TraceMe('with MemoryChecker():')
     self._trace_me.__enter__()
     self._python_memory_checker = _PythonMemoryChecker()
-    if _CppMemoryChecker:
-      self._cpp_memory_checker = _CppMemoryChecker(_get_test_name_best_effort())
+    if CppMemoryChecker:
+      self._cpp_memory_checker = CppMemoryChecker(_get_test_name_best_effort())
     return self
 
   @traceme_wrapper
   def __exit__(self, exc_type, exc_value, traceback):
-    if _CppMemoryChecker:
+    if CppMemoryChecker:
       self._cpp_memory_checker.stop()
     self._trace_me.__exit__(exc_type, exc_value, traceback)
 
@@ -99,7 +95,7 @@ class MemoryChecker(object):
     code complexity and the allcoation pattern.
     """
     self._python_memory_checker.record_snapshot()
-    if _CppMemoryChecker:
+    if CppMemoryChecker:
       self._cpp_memory_checker.record_snapshot()
 
   @traceme_wrapper
@@ -111,7 +107,7 @@ class MemoryChecker(object):
     directory provided the infra instead.
     """
     self._python_memory_checker.report()
-    if _CppMemoryChecker:
+    if CppMemoryChecker:
       self._cpp_memory_checker.report()
 
   @traceme_wrapper
@@ -124,7 +120,7 @@ class MemoryChecker(object):
     """
 
     self._python_memory_checker.assert_no_leak_if_all_possibly_except_one()
-    if _CppMemoryChecker:
+    if CppMemoryChecker:
       self._cpp_memory_checker.assert_no_leak_if_all_possibly_except_one()
 
   @traceme_wrapper

@@ -15,7 +15,6 @@ devtools_test_files = [
   "front_end/legacy_test_runner/accessibility_test_runner/accessibility_test_runner.js",
   "front_end/legacy_test_runner/bindings_test_runner/bindings_test_runner.js",
   "front_end/legacy_test_runner/application_test_runner/application_test_runner.js",
-  "front_end/legacy_test_runner/application_test_runner/AppcacheTestRunner.js",
   "front_end/legacy_test_runner/application_test_runner/CacheStorageTestRunner.js",
   "front_end/legacy_test_runner/application_test_runner/IndexedDBTestRunner.js",
   "front_end/legacy_test_runner/application_test_runner/ResourcesTestRunner.js",
@@ -84,7 +83,6 @@ foreach(application, devtools_applications) {
 
 non_autostart_non_remote_modules = [
   "panels/accessibility/accessibility_module.js",
-  "panels/animation/animation_module.js",
   "panels/browser_debugger/browser_debugger_module.js",
   "panels/changes/changes_module.js",
   "ui/legacy/components/color_picker/color_picker_module.js",
@@ -123,7 +121,6 @@ non_autostart_non_remote_modules = [
   "panels/timeline/timeline_module.js",
   "panels/web_audio/web_audio_module.js",
   "panels/webauthn/webauthn_module.js",
-  "models/workspace_diff/workspace_diff_module.js",
   "emulated_devices/emulated_devices_module.js",
 ]
 

@@ -3511,6 +3511,16 @@ void CaptureGetTexImageANGLE_pixels(const State &glState,
     paramCapture->readBufferSizeBytes      = kMaxPixelSize * width * height * depth;
 }
 
+void CaptureGetCompressedTexImageANGLE_pixels(const State &glState,
+                                              bool isCallValid,
+                                              TextureTarget targetPacked,
+                                              GLint level,
+                                              void *pixels,
+                                              angle::ParamCapture *paramCapture)
+{
+    UNIMPLEMENTED();
+}
+
 void CaptureGetRenderbufferImageANGLE_pixels(const State &glState,
                                              bool isCallValid,
                                              GLenum target,
@@ -3567,7 +3577,7 @@ void CaptureDeleteProgramPipelinesEXT_pipelinesPacked(const State &glState,
                                                       const ProgramPipelineID *pipelinesPacked,
                                                       angle::ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(pipelinesPacked, n, paramCapture);
 }
 
 void CaptureGenProgramPipelinesEXT_pipelinesPacked(const State &glState,
@@ -3576,7 +3586,7 @@ void CaptureGenProgramPipelinesEXT_pipelinesPacked(const State &glState,
                                                    ProgramPipelineID *pipelinesPacked,
                                                    angle::ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureGenHandles(n, pipelinesPacked, paramCapture);
 }
 
 void CaptureGetProgramPipelineInfoLogEXT_length(const State &glState,
@@ -3847,6 +3857,26 @@ void CaptureProgramUniformMatrix4x3fvEXT_value(const State &glState,
                                                GLboolean transpose,
                                                const GLfloat *value,
                                                angle::ParamCapture *paramCapture)
+{
+    UNIMPLEMENTED();
+}
+
+void CaptureEGLImageTargetTexStorageEXT_attrib_list(const State &glState,
+                                                    bool isCallValid,
+                                                    GLenum target,
+                                                    GLeglImageOES image,
+                                                    const GLint *attrib_list,
+                                                    angle::ParamCapture *paramCapture)
+{
+    UNIMPLEMENTED();
+}
+
+void CaptureEGLImageTargetTextureStorageEXT_attrib_list(const State &glState,
+                                                        bool isCallValid,
+                                                        GLuint texture,
+                                                        GLeglImageOES image,
+                                                        const GLint *attrib_list,
+                                                        angle::ParamCapture *paramCapture)
 {
     UNIMPLEMENTED();
 }

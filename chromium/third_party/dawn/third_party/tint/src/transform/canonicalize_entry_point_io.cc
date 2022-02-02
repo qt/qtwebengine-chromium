@@ -67,6 +67,12 @@ bool IsShaderIODecoration(const ast::Decoration* deco) {
                        ast::InvariantDecoration, ast::LocationDecoration>();
 }
 
+// Returns true if `decos` contains a `sample_mask` builtin.
+bool HasSampleMask(const ast::DecorationList& decos) {
+  auto* builtin = ast::GetDecoration<ast::BuiltinDecoration>(decos);
+  return builtin && builtin->value() == ast::Builtin::kSampleMask;
+}
+
 }  // namespace
 
 /// State holds the current transform state for a single entry point.
@@ -106,6 +112,8 @@ struct CanonicalizeEntryPointIO::State {
   std::vector<OutputValue> wrapper_output_values;
   /// The body of the wrapper function.
   ast::StatementList wrapper_body;
+  /// Input names used by the entrypoint
+  std::unordered_set<std::string> input_names;
 
   /// Constructor
   /// @param context the clone context
@@ -165,22 +173,35 @@ struct CanonicalizeEntryPointIO::State {
               ctx.dst->ID(), ast::DisabledValidation::kIgnoreStorageClass));
 
       // Create the global variable and use its value for the shader input.
-      auto var = ctx.dst->Symbols().New(name);
-      ctx.dst->Global(var, type, ast::StorageClass::kInput,
+      auto symbol = ctx.dst->Symbols().New(name);
+      ast::Expression* value = ctx.dst->Expr(symbol);
+      if (HasSampleMask(attributes)) {
+        // Vulkan requires the type of a SampleMask builtin to be an array.
+        // Declare it as array<u32, 1> and then load the first element.
+        type = ctx.dst->ty.array(type, 1);
+        value = ctx.dst->IndexAccessor(value, 0);
+      }
+      ctx.dst->Global(symbol, type, ast::StorageClass::kInput,
                       std::move(attributes));
-      return ctx.dst->Expr(var);
+      return value;
     } else if (cfg.shader_style == ShaderStyle::kMsl &&
                ast::HasDecoration<ast::BuiltinDecoration>(attributes)) {
       // If this input is a builtin and we are targeting MSL, then add it to the
       // parameter list and pass it directly to the inner function.
+      Symbol symbol = input_names.emplace(name).second
+                          ? ctx.dst->Symbols().Register(name)
+                          : ctx.dst->Symbols().New(name);
       wrapper_ep_parameters.push_back(
-          ctx.dst->Param(name, type, std::move(attributes)));
-      return ctx.dst->Expr(name);
+          ctx.dst->Param(symbol, type, std::move(attributes)));
+      return ctx.dst->Expr(symbol);
     } else {
       // Otherwise, move it to the new structure member list.
+      Symbol symbol = input_names.emplace(name).second
+                          ? ctx.dst->Symbols().Register(name)
+                          : ctx.dst->Symbols().New(name);
       wrapper_struct_param_members.push_back(
-          ctx.dst->Member(name, type, std::move(attributes)));
-      return ctx.dst->MemberAccessor(InputStructSymbol(), name);
+          ctx.dst->Member(symbol, type, std::move(attributes)));
+      return ctx.dst->MemberAccessor(InputStructSymbol(), symbol);
     }
   }
 
@@ -303,9 +324,7 @@ struct CanonicalizeEntryPointIO::State {
   void AddFixedSampleMask() {
     // Check the existing output values for a sample mask builtin.
     for (auto& outval : wrapper_output_values) {
-      auto* builtin =
-          ast::GetDecoration<ast::BuiltinDecoration>(outval.attributes);
-      if (builtin && builtin->value() == ast::Builtin::kSampleMask) {
+      if (HasSampleMask(outval.attributes)) {
         // Combine the authored sample mask with the fixed mask.
         outval.value = ctx.dst->And(outval.value, cfg.fixed_sample_mask);
         return;
@@ -390,7 +409,7 @@ struct CanonicalizeEntryPointIO::State {
   }
 
   /// Create and assign the wrapper function's output variables.
-  void CreateOutputVariables() {
+  void CreateSpirvOutputVariables() {
     for (auto& outval : wrapper_output_values) {
       // Disable validation for use of the `output` storage class.
       ast::DecorationList attributes = std::move(outval.attributes);
@@ -400,9 +419,17 @@ struct CanonicalizeEntryPointIO::State {
 
       // Create the global variable and assign it the output value.
       auto name = ctx.dst->Symbols().New(outval.name);
-      ctx.dst->Global(name, outval.type, ast::StorageClass::kOutput,
+      auto* type = outval.type;
+      ast::Expression* lhs = ctx.dst->Expr(name);
+      if (HasSampleMask(attributes)) {
+        // Vulkan requires the type of a SampleMask builtin to be an array.
+        // Declare it as array<u32, 1> and then store to the first element.
+        type = ctx.dst->ty.array(type, 1);
+        lhs = ctx.dst->IndexAccessor(lhs, 0);
+      }
+      ctx.dst->Global(name, type, ast::StorageClass::kOutput,
                       std::move(attributes));
-      wrapper_body.push_back(ctx.dst->Assign(name, outval.value));
+      wrapper_body.push_back(ctx.dst->Assign(lhs, outval.value));
     }
   }
 
@@ -498,7 +525,7 @@ struct CanonicalizeEntryPointIO::State {
     // Produce the entry point outputs, if necessary.
     if (!wrapper_output_values.empty()) {
       if (cfg.shader_style == ShaderStyle::kSpirv) {
-        CreateOutputVariables();
+        CreateSpirvOutputVariables();
       } else {
         auto* output_struct = CreateOutputStruct();
         wrapper_ret_type = [&, output_struct] {

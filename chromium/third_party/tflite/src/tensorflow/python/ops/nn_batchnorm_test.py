@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for batch_norm related functionality in tensorflow.ops.nn."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
@@ -295,8 +291,8 @@ class BatchNormalizationTest(test.TestCase):
                                                shift_after_normalization)
             tf_batch_norm, keep_dims_tf_batch_norm = sess.run(
                 [bn, keep_dims_bn])
-            self.assertEquals(x_shape, tf_batch_norm.shape)
-            self.assertEquals(x_shape, keep_dims_tf_batch_norm.shape)
+            self.assertEqual(x_shape, tf_batch_norm.shape)
+            self.assertEqual(x_shape, keep_dims_tf_batch_norm.shape)
             self.assertAllClose(
                 tf_batch_norm, keep_dims_tf_batch_norm, atol=0.000001)
 
@@ -328,8 +324,8 @@ class BatchNormalizationTest(test.TestCase):
                                               scale_after_normalization,
                                               shift_after_normalization)
             [tf_batch_norm] = self.evaluate([bn])
-            self.assertEquals(x_shape, np_batch_norm.shape)
-            self.assertEquals(x_shape, tf_batch_norm.shape)
+            self.assertEqual(x_shape, np_batch_norm.shape)
+            self.assertEqual(x_shape, tf_batch_norm.shape)
             self.assertAllClose(np_batch_norm, tf_batch_norm, atol=atol)
 
   def testBatchNormArbitraryShapes(self):

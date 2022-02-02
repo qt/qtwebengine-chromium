@@ -16,6 +16,7 @@
 #include "core/fpdfdoc/cpdf_formcontrol.h"
 #include "core/fpdfdoc/cpdf_formfield.h"
 #include "core/fpdfdoc/cpdf_interactiveform.h"
+#include "fpdfsdk/cpdfsdk_formfillenvironment.h"
 #include "fpdfsdk/cpdfsdk_helpers.h"
 #include "fpdfsdk/cpdfsdk_interactiveform.h"
 #include "fpdfsdk/cpdfsdk_pageview.h"
@@ -29,6 +30,7 @@
 #include "third_party/base/check.h"
 #include "third_party/base/notreached.h"
 #include "third_party/base/optional.h"
+#include "v8/include/v8-container.h"
 
 namespace {
 
@@ -1719,17 +1721,16 @@ CJS_Result CJS_Field::set_rect(CJS_Runtime* pRuntime, v8::Local<v8::Value> vp) {
   if (pRuntime->GetArrayLength(rcArray) < 4)
     return CJS_Result::Failure(JSMessage::kValueError);
 
-  float pArray[4];
-  pArray[0] = static_cast<float>(
+  float f0 = static_cast<float>(
       pRuntime->ToInt32(pRuntime->GetArrayElement(rcArray, 0)));
-  pArray[1] = static_cast<float>(
+  float f1 = static_cast<float>(
       pRuntime->ToInt32(pRuntime->GetArrayElement(rcArray, 1)));
-  pArray[2] = static_cast<float>(
+  float f2 = static_cast<float>(
       pRuntime->ToInt32(pRuntime->GetArrayElement(rcArray, 2)));
-  pArray[3] = static_cast<float>(
+  float f3 = static_cast<float>(
       pRuntime->ToInt32(pRuntime->GetArrayElement(rcArray, 3)));
 
-  CFX_FloatRect crRect(pArray);
+  CFX_FloatRect crRect(f0, f1, f2, f3);
   if (m_bDelay) {
     AddDelay_Rect(FP_RECT, crRect);
   } else {
@@ -2508,7 +2509,7 @@ CJS_Result CJS_Field::setFocus(
 
   if (pWidget) {
     ObservedPtr<CPDFSDK_Annot> pObserved(pWidget);
-    m_pFormFillEnv->SetFocusAnnot(&pObserved);
+    m_pFormFillEnv->SetFocusAnnot(pObserved);
   }
 
   return CJS_Result::Success();

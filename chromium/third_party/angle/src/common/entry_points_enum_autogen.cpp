@@ -1034,8 +1034,12 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glDrawTransformFeedbackStreamInstanced";
         case EntryPoint::GLEGLImageTargetRenderbufferStorageOES:
             return "glEGLImageTargetRenderbufferStorageOES";
+        case EntryPoint::GLEGLImageTargetTexStorageEXT:
+            return "glEGLImageTargetTexStorageEXT";
         case EntryPoint::GLEGLImageTargetTexture2DOES:
             return "glEGLImageTargetTexture2DOES";
+        case EntryPoint::GLEGLImageTargetTextureStorageEXT:
+            return "glEGLImageTargetTextureStorageEXT";
         case EntryPoint::GLEdgeFlag:
             return "glEdgeFlag";
         case EntryPoint::GLEdgeFlagPointer:
@@ -1268,6 +1272,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glGetClipPlanex";
         case EntryPoint::GLGetCompressedTexImage:
             return "glGetCompressedTexImage";
+        case EntryPoint::GLGetCompressedTexImageANGLE:
+            return "glGetCompressedTexImageANGLE";
         case EntryPoint::GLGetCompressedTextureImage:
             return "glGetCompressedTextureImage";
         case EntryPoint::GLGetCompressedTextureSubImage:

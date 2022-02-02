@@ -11,11 +11,11 @@
 
 #include "core/fxge/cfx_color.h"
 #include "fxjs/cjs_event_context.h"
-#include "fxjs/cjs_eventrecorder.h"
 #include "fxjs/cjs_object.h"
 #include "fxjs/cjs_runtime.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/js_define.h"
+#include "v8/include/v8-container.h"
 
 const JSPropertySpec CJS_Color::PropertySpecs[] = {
     {"black", get_black_static, set_black_static},

@@ -16,10 +16,8 @@ limitations under the License.
 #define EIGEN_USE_THREADS
 
 #include "third_party/eigen3/unsupported/Eigen/CXX11/Tensor"
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
 #include "tensorflow/core/common_runtime/device.h"
 #include "tensorflow/core/framework/device_base.h"
-#endif
 #include "tensorflow/core/framework/function.h"
 #include "tensorflow/core/framework/op_kernel.h"
 #include "tensorflow/core/framework/tensor.h"
@@ -73,7 +71,7 @@ Status ToBool(gtl::ArraySlice<Tensor> t, bool* v) {
       CASE(uint8);
       CASE(int16);
       CASE(int8);
-      CASE(int64);
+      CASE(int64_t);
 #undef CASE
       case DT_BOOL:
         *v = t[0].scalar<bool>()();
@@ -114,6 +112,7 @@ void SetRunOptions(OpKernelContext* ctx, FunctionLibraryRuntime::Options* opts,
                    bool always_collect_stats) {
   opts->rendezvous = ctx->rendezvous();
   opts->cancellation_manager = ctx->cancellation_manager();
+  opts->collective_executor = ctx->collective_executor();
   if (always_collect_stats) {
     opts->stats_collector = ctx->stats_collector();
   }
@@ -149,7 +148,7 @@ class IfOp : public AsyncOpKernel {
 
   mutex mu_;
   std::unordered_map<FunctionLibraryRuntime*, std::pair<FHandle, FHandle>>
-      handles_ GUARDED_BY(mu_);
+      handles_ ABSL_GUARDED_BY(mu_);
 
   class State {
    public:
@@ -173,12 +172,7 @@ class IfOp : public AsyncOpKernel {
     void Start() {
       FHandle handle = cond_ ? then_handle_ : else_handle_;
       rets_.clear();
-      profiler::TraceMe trace_me(
-          [&] {
-            return absl::StrCat("IfOp #parent_step_id=", ctx_->step_id(),
-                                ",function_step_id=", opts_.step_id, "#");
-          },
-          /*level=*/2);
+      profiler::TraceMe trace_me("IfOp");
       lib_->Run(
           // Evaluate one of the branch.
           opts_, handle, args_, &rets_,
@@ -276,7 +270,7 @@ class CaseOp : public AsyncOpKernel {
     OP_REQUIRES_ASYNC(ctx, TensorShapeUtils::IsScalar(branch_index.shape()),
                       errors::InvalidArgument("branch_index must be scalar"),
                       done);
-    int32 branch = branch_index.scalar<int32>()();
+    int32_t branch = branch_index.scalar<int32>()();
     (new State(this, ctx, branch, branch_handles, done))->Start();
   }
 
@@ -308,12 +302,7 @@ class CaseOp : public AsyncOpKernel {
         branch = branch_handles_.size() - 1;
       }
       rets_.clear();
-      profiler::TraceMe trace_me(
-          [&] {
-            return absl::StrCat("CaseOp #parent_step_id=", ctx_->step_id(),
-                                ",function_step_id=", opts_.step_id, "#");
-          },
-          /*level=*/2);
+      profiler::TraceMe trace_me("CaseOp");
       lib_->Run(
           // Evaluate one of the branch.
           opts_, branch_handles_[branch], args_, &rets_,
@@ -353,6 +342,10 @@ REGISTER_KERNEL_BUILDER(Name("If").Device(DEVICE_GPU).HostMemory("cond"), IfOp);
 REGISTER_KERNEL_BUILDER(Name("Case").Device(DEVICE_CPU), CaseOp);
 REGISTER_KERNEL_BUILDER(
     Name("Case").Device(DEVICE_GPU).HostMemory("branch_index"), CaseOp);
+REGISTER_KERNEL_BUILDER(Name("StatelessCase").Device(DEVICE_CPU), CaseOp);
+REGISTER_KERNEL_BUILDER(
+    Name("StatelessCase").Device(DEVICE_GPU).HostMemory("branch_index"),
+    CaseOp);
 
 REGISTER_KERNEL_BUILDER(Name("StatelessIf").Device(DEVICE_CPU), IfOp);
 REGISTER_KERNEL_BUILDER(
@@ -372,6 +365,7 @@ class WhileOp : public AsyncOpKernel {
       // Use the non-callback-based implementation when kernels (and function
       // callbacks) execute inline to avoid stack overflow.
       OP_REQUIRES_OK_ASYNC(ctx, DoComputeSync(ctx), done);
+      done();
     } else {
       FHandle cond_handle;
       FHandle body_handle;
@@ -400,29 +394,18 @@ class WhileOp : public AsyncOpKernel {
 
   mutex mu_;
   std::unordered_map<FunctionLibraryRuntime*, std::pair<FHandle, FHandle>>
-      handles_ GUARDED_BY(mu_);
-
-  static string EvalCondTraceString(
-      OpKernelContext* ctx, const FunctionLibraryRuntime::Options& opts) {
-    return absl::StrCat("WhileOp-EvalCond #parent_step_id=", ctx->step_id(),
-                        ",function_step_id=", opts.step_id, "#");
-  }
-
-  static string StartBodyTraceString(
-      OpKernelContext* ctx, const FunctionLibraryRuntime::Options& opts) {
-    return absl::StrCat("WhileOp-StartBody #parent_step_id=", ctx->step_id(),
-                        ",function_step_id=", opts.step_id, "#");
-  }
+      handles_ ABSL_GUARDED_BY(mu_);
 
   static Status CondResultToBool(OpKernelContext* ctx,
                                  const FunctionLibraryRuntime::Options& opts,
                                  const Tensor& cond_t, bool* out_result) {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
+    bool is_pluggable = ctx->op_device_context() &&
+                        ctx->op_device_context()->IsPluggableDevice();
     const DeviceBase::GpuDeviceInfo* gpu_device_info =
         ctx->device()->tensorflow_gpu_device_info();
     const bool is_hostmem_dtype =
         cond_t.dtype() == DT_INT32 || cond_t.dtype() == DT_INT64;
-    if (!is_hostmem_dtype && gpu_device_info &&
+    if (!is_hostmem_dtype && (is_pluggable || gpu_device_info) &&
         (opts.rets_alloc_attrs.empty() ||
          !opts.rets_alloc_attrs[0].on_host())) {
       // Copy the ret value to host if it's allocated on device.
@@ -433,7 +416,6 @@ class WhileOp : public AsyncOpKernel {
           &cond_t, /*tensor_name=*/"", device, &host_cond_t));
       return ToBool({host_cond_t}, out_result);
     }
-#endif
     return ToBool({cond_t}, out_result);
   }
 
@@ -549,9 +531,7 @@ class WhileOp : public AsyncOpKernel {
     std::unique_ptr<BodyFuncCallFrame> body_frame_;
 
     void EvalCond() {
-      profiler::TraceMe trace_me(
-          [&] { return EvalCondTraceString(ctx_, opts_); },
-          /*level=*/2);
+      profiler::TraceMe trace_me("WhileOp-EvalCond");
       lib_->Run(
           // Evaluate the condition.
           opts_, cond_handle_, args_, &rets_,
@@ -587,9 +567,7 @@ class WhileOp : public AsyncOpKernel {
       }
       rets_.clear();
       rets_.resize(args_.size());
-      profiler::TraceMe trace_me(
-          [&] { return StartBodyTraceString(ctx_, opts_); },
-          /*level=*/2);
+      profiler::TraceMe trace_me("WhileOp-StartBody");
       lib_->Run(
           // Evaluate the body.
           opts_, body_handle_, body_frame_.get(),
@@ -644,9 +622,7 @@ class WhileOp : public AsyncOpKernel {
     do {
       // Evaluate the cond function on the current loop variables.
       {
-        profiler::TraceMe trace_me(
-            [&] { return EvalCondTraceString(ctx, opts); },
-            /*level=*/2);
+        profiler::TraceMe trace_me("WhileOp-EvalCond");
         TF_RETURN_IF_ERROR(lib->RunSync(opts, cond_handle, args, &cond_rets));
       }
       if (cond_rets.size() != 1) {
@@ -667,9 +643,7 @@ class WhileOp : public AsyncOpKernel {
       // Evaluate the body function on the current loop variables, to get an
       // updated vector of loop variables.
       {
-        profiler::TraceMe trace_me(
-            [&] { return StartBodyTraceString(ctx, opts); },
-            /*level=*/2);
+        profiler::TraceMe trace_me("WhileOp-StartBody");
         body_rets.resize(num_loop_vars);
         BodyFuncCallFrame call_frame(&args, &body_rets, loop_var_types);
         TF_RETURN_IF_ERROR(lib->RunSync(opts, body_handle, &call_frame));
@@ -780,7 +754,7 @@ class ForOp : public AsyncOpKernel {
       args_[0] = Tensor(DT_INT32, {});
       iter_ = &args_[0].scalar<int32>()();
 
-      const int32 num_loop_inputs = ctx_->num_inputs() - 3;
+      const int32_t num_loop_inputs = ctx_->num_inputs() - 3;
       rets_.reserve(num_loop_inputs);
       for (int i = 0; i < num_loop_inputs; ++i) {
         rets_.push_back(ctx_->input(3 + i));
@@ -849,12 +823,7 @@ class ForOp : public AsyncOpKernel {
         args_[1 + i] = std::move(rets_[i]);
       }
       rets_.clear();
-      profiler::TraceMe trace_me(
-          [&] {
-            return absl::StrCat("ForOp #parent_step_id=", ctx_->step_id(),
-                                ",function_step_id=", opts_.step_id, "#");
-          },
-          /*level=*/2);
+      profiler::TraceMe trace_me("ForOp");
       lib_->Run(opts_, kernel_->body_handle_, args_, &rets_,
                 [this](const Status& s) {
                   if (s.ok()) {
@@ -901,24 +870,23 @@ class FakeParamOp : public OpKernel {
     PartialTensorShape partial_shape;
     OP_REQUIRES_OK(context, context->GetAttr("shape", &partial_shape));
     if (!partial_shape.unknown_rank()) {
-      for (int64 d : partial_shape.dim_sizes()) {
+      for (int64_t d : partial_shape.dim_sizes()) {
         shape.AddDim(d == -1 ? 0 : d);
       }
     }
 
-    // Create a persistent tensor that we can repeatedly return to save memory.
+    // Create a tensor that we can repeatedly return to save memory.
     // TODO(b/119612758): add optimization to prevent sending this across
     // devices on each Compute() call.
-    OP_REQUIRES_OK(context, context->allocate_persistent(
-                                dtype, shape, &value_handle_, nullptr));
+    OP_REQUIRES_OK(context, context->allocate_temp(dtype, shape, &value_));
   }
 
   void Compute(OpKernelContext* context) override {
-    context->set_output(0, *value_handle_.AccessTensor(context));
+    context->set_output(0, value_);
   }
 
  private:
-  PersistentTensor value_handle_;
+  Tensor value_;
 };
 
 REGISTER_KERNEL_BUILDER(Name("FakeParam").Device(DEVICE_CPU), FakeParamOp);
@@ -948,7 +916,6 @@ class DeviceIndexOp : public OpKernel {
   }
 
  private:
-  PersistentTensor value_handle_;
   std::vector<string> device_names_;
 };
 

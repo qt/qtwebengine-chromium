@@ -286,6 +286,8 @@ set(TINT_LIB_SRCS
   symbol.cc
   symbol.h
   traits.h
+  transform/add_empty_entry_point.cc
+  transform/add_empty_entry_point.h
   transform/array_length_from_uniform.cc
   transform/array_length_from_uniform.h
   transform/binding_remapper.cc
@@ -308,12 +310,18 @@ set(TINT_LIB_SRCS
   transform/fold_trivial_single_use_lets.h
   transform/for_loop_to_loop.cc
   transform/for_loop_to_loop.h
+  transform/glsl.cc
+  transform/glsl.h
   transform/inline_pointer_lets.cc
   transform/inline_pointer_lets.h
   transform/loop_to_for_loop.cc
   transform/loop_to_for_loop.h
   transform/manager.cc
   transform/manager.h
+  transform/module_scope_var_to_entry_point_param.cc
+  transform/module_scope_var_to_entry_point_param.h
+  transform/num_workgroups_from_uniform.cc
+  transform/num_workgroups_from_uniform.h
   transform/pad_array_elements.cc
   transform/pad_array_elements.h
   transform/promote_initializers_to_const_var.cc
@@ -444,8 +452,6 @@ endif()
 
 if(${TINT_BUILD_SPV_WRITER})
   list(APPEND TINT_LIB_SRCS
-    transform/spirv.cc
-    transform/spirv.h
     writer/spirv/binary_writer.cc
     writer/spirv/binary_writer.h
     writer/spirv/builder.cc
@@ -473,8 +479,6 @@ endif()
 
 if(${TINT_BUILD_MSL_WRITER})
   list(APPEND TINT_LIB_SRCS
-    transform/msl.cc
-    transform/msl.h
     writer/msl/generator.cc
     writer/msl/generator.h
     writer/msl/generator_impl.cc
@@ -482,10 +486,17 @@ if(${TINT_BUILD_MSL_WRITER})
   )
 endif()
 
+if(${TINT_BUILD_GLSL_WRITER})
+  list(APPEND TINT_LIB_SRCS
+    writer/glsl/generator.cc
+    writer/glsl/generator.h
+    writer/glsl/generator_impl.cc
+    writer/glsl/generator_impl.h
+  )
+endif()
+
 if(${TINT_BUILD_HLSL_WRITER})
   list(APPEND TINT_LIB_SRCS
-    transform/hlsl.cc
-    transform/hlsl.h
     writer/hlsl/generator.cc
     writer/hlsl/generator.h
     writer/hlsl/generator_impl.cc
@@ -540,8 +551,18 @@ if (${TINT_BUILD_FUZZERS})
   if (${COMPILER_IS_LIKE_GNU})
     target_compile_options(libtint-fuzz PRIVATE -fvisibility=hidden)
   endif()
-  target_compile_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
-  target_link_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
+
+  if (NOT ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS} STREQUAL "")
+    # This is set when the fuzzers are being built by OSS-Fuzz. In this case the
+    # variable provides the necessary linker flags, and OSS-Fuzz will take care
+    # of passing suitable compiler flags.
+    target_link_options(libtint-fuzz PUBLIC ${TINT_LIB_FUZZING_ENGINE_LINK_OPTIONS})
+  else()
+    # When the fuzzers are being built outside of OSS-Fuzz, specific libFuzzer
+    # arguments to enable fuzzing are used.
+    target_compile_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
+    target_link_options(libtint-fuzz PUBLIC -fsanitize=fuzzer -fsanitize-coverage=trace-cmp)
+  endif()
 endif()
 
 if(${TINT_BUILD_SPV_READER} OR ${TINT_BUILD_SPV_WRITER})
@@ -629,13 +650,9 @@ if(${TINT_BUILD_TESTS})
     demangler_test.cc
     diagnostic/formatter_test.cc
     diagnostic/printer_test.cc
-    inspector/inspector_test.cc
-    inspector/test_inspector_builder.cc
-    inspector/test_inspector_builder.h
-    inspector/test_inspector_runner.cc
-    inspector/test_inspector_runner.h
     intrinsic_table_test.cc
     program_test.cc
+    resolver/array_accessor_test.cc
     resolver/assignment_validation_test.cc
     resolver/atomics_test.cc
     resolver/atomics_validation_test.cc
@@ -710,6 +727,17 @@ if(${TINT_BUILD_TESTS})
     writer/float_to_string_test.cc
     writer/text_generator_test.cc
   )
+
+  # Inspector tests depend on WGSL reader
+  if(${TINT_BUILD_WGSL_READER})
+    list(APPEND TINT_TEST_SRCS
+      inspector/inspector_test.cc
+      inspector/test_inspector_builder.cc
+      inspector/test_inspector_builder.h
+      inspector/test_inspector_runner.cc
+      inspector/test_inspector_runner.h
+    )
+  endif()
 
   if(${TINT_BUILD_SPV_READER})
     list(APPEND TINT_TEST_SRCS
@@ -831,8 +859,6 @@ if(${TINT_BUILD_TESTS})
 
   if(${TINT_BUILD_SPV_WRITER})
     list(APPEND TINT_TEST_SRCS
-      transform/msl_test.cc
-      transform/spirv_test.cc
       writer/spirv/binary_writer_test.cc
       writer/spirv/builder_accessor_expression_test.cc
       writer/spirv/builder_assign_test.cc
@@ -904,6 +930,7 @@ if(${TINT_BUILD_TESTS})
 
   if(${TINT_BUILD_WGSL_READER} AND ${TINT_BUILD_WGSL_WRITER})
     list(APPEND TINT_TEST_SRCS
+      transform/add_empty_entry_point_test.cc
       transform/array_length_from_uniform_test.cc
       transform/binding_remapper_test.cc
       transform/calculate_array_length_test.cc
@@ -917,6 +944,8 @@ if(${TINT_BUILD_TESTS})
       transform/for_loop_to_loop_test.cc
       transform/inline_pointer_lets_test.cc
       transform/loop_to_for_loop_test.cc
+      transform/module_scope_var_to_entry_point_param_test.cc
+      transform/num_workgroups_from_uniform_test.cc
       transform/pad_array_elements_test.cc
       transform/promote_initializers_to_const_var_test.cc
       transform/renamer_test.cc
@@ -963,9 +992,43 @@ if(${TINT_BUILD_TESTS})
     )
   endif()
 
+  if (${TINT_BUILD_GLSL_WRITER})
+    list(APPEND TINT_TEST_SRCS
+      writer/glsl/generator_impl_array_accessor_test.cc
+      writer/glsl/generator_impl_assign_test.cc
+      writer/glsl/generator_impl_binary_test.cc
+      writer/glsl/generator_impl_bitcast_test.cc
+      writer/glsl/generator_impl_block_test.cc
+      writer/glsl/generator_impl_break_test.cc
+      writer/glsl/generator_impl_call_test.cc
+      writer/glsl/generator_impl_case_test.cc
+      writer/glsl/generator_impl_cast_test.cc
+      writer/glsl/generator_impl_constructor_test.cc
+      writer/glsl/generator_impl_continue_test.cc
+      writer/glsl/generator_impl_discard_test.cc
+      writer/glsl/generator_impl_function_test.cc
+      writer/glsl/generator_impl_identifier_test.cc
+      writer/glsl/generator_impl_if_test.cc
+      writer/glsl/generator_impl_intrinsic_test.cc
+      writer/glsl/generator_impl_intrinsic_texture_test.cc
+      writer/glsl/generator_impl_import_test.cc
+      writer/glsl/generator_impl_loop_test.cc
+      writer/glsl/generator_impl_member_accessor_test.cc
+      writer/glsl/generator_impl_module_constant_test.cc
+      writer/glsl/generator_impl_return_test.cc
+      writer/glsl/generator_impl_sanitizer_test.cc
+      writer/glsl/generator_impl_switch_test.cc
+      writer/glsl/generator_impl_test.cc
+      writer/glsl/generator_impl_type_test.cc
+      writer/glsl/generator_impl_unary_op_test.cc
+      writer/glsl/generator_impl_variable_decl_statement_test.cc
+      writer/glsl/generator_impl_workgroup_var_test.cc
+      writer/glsl/test_helper.h
+    )
+  endif()
+
   if (${TINT_BUILD_HLSL_WRITER})
     list(APPEND TINT_TEST_SRCS
-      transform/hlsl_test.cc
       writer/hlsl/generator_impl_array_accessor_test.cc
       writer/hlsl/generator_impl_assign_test.cc
       writer/hlsl/generator_impl_binary_test.cc

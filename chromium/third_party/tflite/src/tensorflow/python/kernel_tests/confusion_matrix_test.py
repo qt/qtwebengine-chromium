@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for confusion_matrix_ops."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
@@ -221,9 +217,9 @@ class ConfusionMatrixTest(test.TestCase):
   def testInputDifferentSize(self):
     labels = np.asarray([1, 2])
     predictions = np.asarray([1, 2, 3])
-    self.assertRaisesRegexp(ValueError, "must be equal",
-                            confusion_matrix.confusion_matrix, predictions,
-                            labels)
+    self.assertRaisesRegex(ValueError, "must be equal",
+                           confusion_matrix.confusion_matrix, predictions,
+                           labels)
 
   def testOutputIsInt32(self):
     labels = np.arange(2)

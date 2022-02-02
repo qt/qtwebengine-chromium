@@ -32,20 +32,14 @@ class CXFA_Measurement;
 class CXFA_Node;
 class CXFA_Object;
 
-typedef CJS_Result (*CJX_MethodCall)(
-    CJX_Object* obj,
-    CFX_V8* runtime,
-    const std::vector<v8::Local<v8::Value>>& params);
+using CJX_MethodCall =
+    CJS_Result (*)(CJX_Object* obj,
+                   CFX_V8* runtime,
+                   const std::vector<v8::Local<v8::Value>>& params);
 
 struct CJX_MethodSpec {
   const char* pName;
   CJX_MethodCall pMethodCall;
-};
-
-enum XFA_SOM_MESSAGETYPE {
-  XFA_SOM_ValidationMessage,
-  XFA_SOM_FormatMessage,
-  XFA_SOM_MandatoryMessage
 };
 
 class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
@@ -180,11 +174,6 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
   JSE_PROP(ScriptSomInstanceIndex);
   JSE_PROP(ScriptSubmitFormatMode);
 
-  void ScriptSomMessage(v8::Isolate* pIsolate,
-                        v8::Local<v8::Value>* pValue,
-                        bool bSetting,
-                        XFA_SOM_MESSAGETYPE iMessageType);
-
   Optional<WideString> TryNamespace() const;
 
   int32_t GetInteger(XFA_Attribute eAttr) const;
@@ -223,11 +212,21 @@ class CJX_Object : public cppgc::GarbageCollected<CJX_Object>,
   void ThrowArgumentMismatchException() const;
   void ThrowIndexOutOfBoundsException() const;
   void ThrowParamCountMismatchException(const WideString& method) const;
-  void ThrowTooManyOccurancesException(const WideString& obj) const;
+  void ThrowTooManyOccurrencesException(const WideString& obj) const;
 
  protected:
+  enum class SOMMessageType {
+    kValidationMessage,
+    kFormatMessage,
+    kMandatoryMessage
+  };
+
   explicit CJX_Object(CXFA_Object* obj);
 
+  void ScriptSomMessage(v8::Isolate* pIsolate,
+                        v8::Local<v8::Value>* pValue,
+                        bool bSetting,
+                        SOMMessageType iMessageType);
   void SetAttributeValueImpl(const WideString& wsValue,
                              const WideString& wsXMLValue,
                              bool bNotify,

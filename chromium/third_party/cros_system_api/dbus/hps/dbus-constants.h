@@ -12,7 +12,16 @@ constexpr char kHpsServicePath[] = "/org/chromium/Hps";
 constexpr char kHpsServiceName[] = "org.chromium.Hps";
 
 // Methods exported by hpsd.
-constexpr char kGetFeatureResult[] = "GetFeatureResult";
+constexpr char kEnableHpsSense[] = "EnableHpsSense";
+constexpr char kDisableHpsSense[] = "DisableHpsSense";
+constexpr char kGetResultHpsSense[] = "GetResultHpsSense";
+constexpr char kEnableHpsNotify[] = "EnableHpsNotify";
+constexpr char kDisableHpsNotify[] = "DisableHpsNotify";
+constexpr char kGetResultHpsNotify[] = "GetResultHpsNotify";
+
+// Signals emitted by hpsd.
+constexpr char kHpsSenseChanged[] = "kHpsSenseChanged";
+constexpr char kHpsNotifyChanged[] = "HpsNotifyChanged";
 
 }  // namespace hps
 

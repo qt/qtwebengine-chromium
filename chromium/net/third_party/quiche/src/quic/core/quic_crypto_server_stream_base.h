@@ -85,11 +85,22 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStreamBase : public QuicCryptoStream {
   // configuration for the certificate used in the connection is accessible.
   virtual bool ShouldSendExpectCTHeader() const = 0;
 
+  // Return true if a cert was picked that matched the SNI hostname.
+  virtual bool DidCertMatchSni() const = 0;
+
   // Returns the Details from the latest call to ProofSource::GetProof or
   // ProofSource::ComputeTlsSignature. Returns nullptr if no such call has been
   // made. The Details are owned by the QuicCryptoServerStreamBase and the
   // pointer is only valid while the owning object is still valid.
   virtual const ProofSource::Details* ProofSourceDetails() const = 0;
+
+  bool ExportKeyingMaterial(absl::string_view /*label*/,
+                            absl::string_view /*context*/,
+                            size_t /*result_len*/,
+                            std::string* /*result*/) override {
+    QUICHE_NOTREACHED();
+    return false;
+  }
 };
 
 // Creates an appropriate QuicCryptoServerStream for the provided parameters,

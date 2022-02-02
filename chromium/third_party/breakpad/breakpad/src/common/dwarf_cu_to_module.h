@@ -156,7 +156,8 @@ class DwarfCUToModule: public RootDIEHandler {
                              uint64_t string_section_length,
                              const uint8_t* line_string_section,
                              uint64_t line_string_length,
-                             Module* module, vector<Module::Line>* lines) = 0;
+                             Module* module, vector<Module::Line>* lines,
+                             map<uint32_t, Module::File*>* files) = 0;
   };
 
   // The interface DwarfCUToModule uses to report warnings. The member
@@ -257,7 +258,8 @@ class DwarfCUToModule: public RootDIEHandler {
   DwarfCUToModule(FileContext* file_context,
                   LineToModuleHandler* line_reader,
                   RangesHandler* ranges_handler,
-                  WarningReporter* reporter);
+                  WarningReporter* reporter,
+                  bool handle_inline = false);
   ~DwarfCUToModule();
 
   void ProcessAttributeSigned(enum DwarfAttribute attr,
@@ -289,6 +291,7 @@ class DwarfCUToModule: public RootDIEHandler {
   struct Specification;
   class GenericDIEHandler;
   class FuncHandler;
+  class InlineHandler;
   class NamedScopeHandler;
 
   // A map from section offsets to specifications.
@@ -308,6 +311,8 @@ class DwarfCUToModule: public RootDIEHandler {
   // compilation unit at a time, and gives no indication of which
   // lines belong to which functions, beyond their addresses.)
   void AssignLinesToFunctions();
+
+  void AssignFilesToInlines();
 
   // The only reason cu_context_ and child_context_ are pointers is
   // that we want to keep their definitions private to
@@ -335,6 +340,9 @@ class DwarfCUToModule: public RootDIEHandler {
   // during parsing.  Then, in Finish, we call AssignLinesToFunctions
   // to dole them out to the appropriate functions.
   vector<Module::Line> lines_;
+
+  // The map from file index to File* in this CU.
+  std::map<uint32_t, Module::File*> files_;
 };
 
 }  // namespace google_breakpad

@@ -13,10 +13,6 @@
 # limitations under the License.
 # ==============================================================================
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 from tensorflow.python.framework import test_util
 from tensorflow.python.ops import array_ops
 from tensorflow.python.ops import linalg_ops
@@ -76,7 +72,7 @@ class LinearOperatorHouseholderTest(
     return operator, matrix
 
   def test_scalar_reflection_axis_raises(self):
-    with self.assertRaisesRegexp(ValueError, "must have at least 1 dimension"):
+    with self.assertRaisesRegex(ValueError, "must have at least 1 dimension"):
       householder.LinearOperatorHouseholder(1.)
 
   def test_householder_adjoint_type(self):

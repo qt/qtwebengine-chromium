@@ -37,10 +37,13 @@ namespace dawn_native { namespace vulkan {
 
         VkPipeline GetHandle() const;
 
+        // Dawn API
+        void SetLabelImpl() override;
+
       private:
         ~ComputePipeline() override;
         using ComputePipelineBase::ComputePipelineBase;
-        MaybeError Initialize(const ComputePipelineDescriptor* descriptor) override;
+        MaybeError Initialize() override;
 
         VkPipeline mHandle = VK_NULL_HANDLE;
     };

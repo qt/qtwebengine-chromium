@@ -73,13 +73,16 @@ namespace dawn_native { namespace vulkan {
             case BindingInfoType::StorageTexture:
                 return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         }
+        UNREACHABLE();
     }
 
     // static
     ResultOrError<Ref<BindGroupLayout>> BindGroupLayout::Create(
         Device* device,
-        const BindGroupLayoutDescriptor* descriptor) {
-        Ref<BindGroupLayout> bgl = AcquireRef(new BindGroupLayout(device, descriptor));
+        const BindGroupLayoutDescriptor* descriptor,
+        PipelineCompatibilityToken pipelineCompatibilityToken) {
+        Ref<BindGroupLayout> bgl =
+            AcquireRef(new BindGroupLayout(device, descriptor, pipelineCompatibilityToken));
         DAWN_TRY(bgl->Initialize());
         return bgl;
     }
@@ -139,8 +142,9 @@ namespace dawn_native { namespace vulkan {
     }
 
     BindGroupLayout::BindGroupLayout(DeviceBase* device,
-                                     const BindGroupLayoutDescriptor* descriptor)
-        : BindGroupLayoutBase(device, descriptor),
+                                     const BindGroupLayoutDescriptor* descriptor,
+                                     PipelineCompatibilityToken pipelineCompatibilityToken)
+        : BindGroupLayoutBase(device, descriptor, pipelineCompatibilityToken),
           mBindGroupAllocator(MakeFrontendBindGroupAllocator<BindGroup>(4096)) {
     }
 

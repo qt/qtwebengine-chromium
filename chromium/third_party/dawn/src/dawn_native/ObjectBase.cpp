@@ -13,6 +13,9 @@
 // limitations under the License.
 
 #include "dawn_native/ObjectBase.h"
+#include "dawn_native/Device.h"
+
+#include <mutex>
 
 namespace dawn_native {
 
@@ -32,6 +35,39 @@ namespace dawn_native {
 
     bool ObjectBase::IsError() const {
         return GetRefCountPayload() == kErrorPayload;
+    }
+
+    bool ObjectBase::IsAlive() const {
+        return mDevice != nullptr;
+    }
+
+    void ObjectBase::DestroyObject() {
+        mDevice = nullptr;
+    }
+
+    ApiObjectBase::ApiObjectBase(DeviceBase* device, const char* label) : ObjectBase(device) {
+        if (label) {
+            mLabel = label;
+        }
+    }
+
+    ApiObjectBase::ApiObjectBase(DeviceBase* device, ErrorTag tag) : ObjectBase(device, tag) {
+    }
+
+    ApiObjectBase::ApiObjectBase(DeviceBase* device, LabelNotImplementedTag tag)
+        : ObjectBase(device) {
+    }
+
+    void ApiObjectBase::APISetLabel(const char* label) {
+        mLabel = label;
+        SetLabelImpl();
+    }
+
+    const std::string& ApiObjectBase::GetLabel() const {
+        return mLabel;
+    }
+
+    void ApiObjectBase::SetLabelImpl() {
     }
 
 }  // namespace dawn_native

@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for tensorflow.ops.gen_linalg_ops.matrix_logarithm."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 
 from tensorflow.python.client import session
@@ -177,7 +173,7 @@ class MatrixLogarithmBenchmark(test.Benchmark):
           ops.device("/cpu:0"):
         matrix = self._GenerateMatrix(shape)
         logm = gen_linalg_ops.matrix_logarithm(matrix)
-        variables.global_variables_initializer().run()
+        self.evaluate(variables.global_variables_initializer())
         self.run_op_benchmark(
             sess,
             control_flow_ops.group(logm),

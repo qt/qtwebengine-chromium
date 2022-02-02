@@ -119,7 +119,7 @@
 <translation id="4384583879834880242">Вопросы и ответы</translation>
 <translation id="4444765639179266822">Похоже, тут написано "<ph name="OCR_TEXT" />"</translation>
 <translation id="4446524499724042288">ссылка на словарную статью</translation>
-<translation id="4522570452068850558">Детали</translation>
+<translation id="4522570452068850558">Сведения</translation>
 <translation id="4576178047100686001">У этого изображения нет ярлыка. Чтобы получить описания изображений, откройте меню "Ещё" в левом верхнем углу экрана.</translation>
 <translation id="4597532268155981612">форма</translation>
 <translation id="4661075872484491155">tree</translation>
@@ -160,11 +160,12 @@
 <translation id="5406322316791861025">фигура</translation>
 <translation id="5425179576310518467">текущая дата</translation>
 <translation id="5453733299334684579">элемент дерева</translation>
+<translation id="546643433018805598">подстрочный</translation>
 <translation id="5466621249238537318">Выберите один или несколько файлов.</translation>
 <translation id="5468998798572797635">выход из полноэкранного режима</translation>
 <translation id="5516235301412634559">0,75</translation>
 <translation id="5516424706154626233">окно выбора даты</translation>
-<translation id="5537725057119320332">Cast</translation>
+<translation id="5537725057119320332">Трансляция</translation>
 <translation id="5546461542133609677">включение звука</translation>
 <translation id="5608153257855394627">выделение</translation>
 <translation id="561939826962581046">time</translation>
@@ -172,6 +173,7 @@
 <translation id="5631759159893697722">аннотация</translation>
 <translation id="5643186887447432888">кнопка</translation>
 <translation id="5677946354068040947">дополнительные параметры</translation>
+<translation id="5693537480074347398">надстрочный</translation>
 <translation id="576709008726043716">введение</translation>
 <translation id="57838592816432529">Отключить звук</translation>
 <translation id="5786442179789148008">Показать меню скорости воспроизведения</translation>
@@ -277,7 +279,7 @@
 <translation id="8199524924445686405">гггг</translation>
 <translation id="8208673686607688524">выбор местного времени и даты</translation>
 <translation id="8261464734335370856">Орфографическая ошибка</translation>
-<translation id="8284326494547611709">Титры</translation>
+<translation id="8284326494547611709">Субтитры</translation>
 <translation id="8346634859695247203">раздел</translation>
 <translation id="835897206747267392">Недопустимые данные.</translation>
 <translation id="839593075537728968">Укажите значение времени от <ph name="MINIMUM_TIME" /> до <ph name="MAXIMUM_TIME" />.</translation>

@@ -121,6 +121,7 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     this.tabbedLocation = UI.ViewManager.ViewManager.instance().createTabbedLocation(
         () => SettingsScreen.revealSettingsScreen(), 'settings-view');
     const tabbedPane = this.tabbedLocation.tabbedPane();
+    tabbedPane.registerCSSFiles([settingsScreenStyles]);
     tabbedPane.leftToolbar().appendToolbarItem(new UI.Toolbar.ToolbarItem(settingsLabelElement));
     tabbedPane.setShrinkableTabs(false);
     tabbedPane.makeVerticalTabLayout();
@@ -193,8 +194,8 @@ export class SettingsScreen extends UI.Widget.VBox implements UI.View.ViewLocati
     this.tabbedLocation.tabbedPane().selectTab(name, /* userGesture */ true);
   }
 
-  private tabInvoked(event: Common.EventTarget.EventTargetEvent): void {
-    const eventData = event.data as UI.TabbedPane.EventData;
+  private tabInvoked(event: Common.EventTarget.EventTargetEvent<UI.TabbedPane.EventData>): void {
+    const eventData = event.data;
     if (!eventData.isUserGesture) {
       return;
     }
@@ -279,6 +280,9 @@ export class GenericSettingsTab extends SettingsTab {
       Common.Settings.SettingCategory.DEBUGGER,
       Common.Settings.SettingCategory.GLOBAL,
     ];
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.SYNC_SETTINGS)) {
+      explicitSectionOrder.push(Common.Settings.SettingCategory.SYNC);
+    }
 
     // Some settings define their initial ordering.
     const preRegisteredSettings = Common.Settings.getRegisteredSettings().sort(
@@ -481,7 +485,7 @@ export class ExperimentsSettingsTab extends SettingsTab {
       link.setAttribute('aria-label', i18nString(UIStrings.learnMore));
 
       const linkIcon = new IconButton.Icon.Icon();
-      linkIcon.data = {iconName: 'ic_help_16x16', color: 'var(--color-text-secondary)', width: '16px', height: '16px'};
+      linkIcon.data = {iconName: 'help_outline', color: 'var(--color-text-secondary)', width: '16px', height: '16px'};
       linkIcon.classList.add('link-icon');
       link.prepend(linkIcon);
 

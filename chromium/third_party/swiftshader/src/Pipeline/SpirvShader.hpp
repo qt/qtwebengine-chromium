@@ -17,6 +17,7 @@
 
 #include "SamplerCore.hpp"
 #include "ShaderCore.hpp"
+#include "SpirvBinary.hpp"
 #include "SpirvID.hpp"
 #include "Device/Config.hpp"
 #include "Device/Sampler.hpp"
@@ -152,8 +153,7 @@ private:
 class SpirvShader
 {
 public:
-	using InsnStore = std::vector<uint32_t>;
-	InsnStore insns;
+	SpirvBinary insns;
 
 	using ImageSampler = void(void *texture, void *uvsIn, void *texelOut, void *constants);
 
@@ -173,7 +173,7 @@ public:
 
 		InsnIterator() = default;
 
-		explicit InsnIterator(InsnStore::const_iterator iter)
+		explicit InsnIterator(SpirvBinary::const_iterator iter)
 		    : iter{ iter }
 		{
 		}
@@ -282,7 +282,7 @@ public:
 		}
 
 	private:
-		InsnStore::const_iterator iter;
+		SpirvBinary::const_iterator iter;
 	};
 
 	/* range-based-for interface */
@@ -565,7 +565,7 @@ public:
 	SpirvShader(uint32_t codeSerialID,
 	            VkShaderStageFlagBits stage,
 	            const char *entryPointName,
-	            InsnStore const &insns,
+	            SpirvBinary const &insns,
 	            const vk::RenderPass *renderPass,
 	            uint32_t subpassIndex,
 	            bool robustBufferAccess,
@@ -573,7 +573,7 @@ public:
 
 	~SpirvShader();
 
-	struct Modes
+	struct ExecutionModes
 	{
 		bool EarlyFragmentTests : 1;
 		bool DepthReplacing : 1;
@@ -581,22 +581,28 @@ public:
 		bool DepthLess : 1;
 		bool DepthUnchanged : 1;
 
-		// TODO(b/177839655): These are not SPIR-V execution modes.
-		// Move to an Analysis structure.
-		bool ContainsKill : 1;
-		bool ContainsControlBarriers : 1;
-		bool NeedsCentroid : 1;
-		bool ContainsSampleQualifier : 1;
-
 		// Compute workgroup dimensions
 		int WorkgroupSizeX = 1;
 		int WorkgroupSizeY = 1;
 		int WorkgroupSizeZ = 1;
 	};
 
-	Modes const &getModes() const
+	const ExecutionModes &getExecutionModes() const
 	{
-		return modes;
+		return executionModes;
+	}
+
+	struct Analysis
+	{
+		bool ContainsKill : 1;
+		bool ContainsControlBarriers : 1;
+		bool NeedsCentroid : 1;
+		bool ContainsSampleQualifier : 1;
+	};
+
+	const Analysis &getAnalysis() const
+	{
+		return analysis;
 	}
 
 	struct Capabilities
@@ -630,7 +636,7 @@ public:
 		bool StencilExportEXT : 1;
 	};
 
-	Capabilities const &getUsedCapabilities() const
+	const Capabilities &getUsedCapabilities() const
 	{
 		return capabilities;
 	}
@@ -830,7 +836,13 @@ public:
 
 private:
 	const uint32_t codeSerialID;
-	Modes modes = {};
+	const bool robustBufferAccess;
+
+	Function::ID entryPoint;
+	spv::ExecutionModel executionModel = spv::ExecutionModelMax;  // Invalid prior to OpEntryPoint parsing.
+
+	ExecutionModes executionModes = {};
+	Analysis analysis = {};
 	Capabilities capabilities = {};
 	HandleMap<Type> types;
 	HandleMap<Object> defs;
@@ -838,11 +850,7 @@ private:
 	std::unordered_map<StringID, String> strings;
 	HandleMap<Extension> extensionsByID;
 	std::unordered_set<uint32_t> extensionsImported;
-	Function::ID entryPoint;
 	mutable bool imageWriteEmitted = false;
-
-	const bool robustBufferAccess = true;
-	spv::ExecutionModel executionModel = spv::ExecutionModelMax;  // Invalid prior to OpEntryPoint parsing.
 
 	// DeclareType creates a Type for the given OpTypeX instruction, storing
 	// it into the types map. It is called from the analysis pass (constructor).
@@ -962,7 +970,7 @@ private:
 		    , multiSampleCount(multiSampleCount)
 		    , executionModel(executionModel)
 		{
-			ASSERT(executionModelToStage(executionModel) != VkShaderStageFlagBits(0));  // Must parse OpEntryPoint before emitting.
+			ASSERT(executionModel != spv::ExecutionModelMax);  // Must parse OpEntryPoint before emitting.
 		}
 
 		// Returns the mask describing the active lanes as updated by dynamic
@@ -1056,9 +1064,9 @@ private:
 		std::unordered_map<Object::ID, Intermediate> intermediates;
 		std::unordered_map<Object::ID, SIMD::Pointer> pointers;
 
-		const bool robustBufferAccess = true;  // Emit robustBufferAccess safe code.
-		const unsigned int multiSampleCount = 0;
-		const spv::ExecutionModel executionModel = spv::ExecutionModelMax;
+		const bool robustBufferAccess;  // Emit robustBufferAccess safe code.
+		const unsigned int multiSampleCount;
+		const spv::ExecutionModel executionModel;
 	};
 
 	// EmitResult is an enumerator of result values from the Emit functions.

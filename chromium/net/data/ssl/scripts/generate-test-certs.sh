@@ -641,8 +641,7 @@ CA_NAME="req_ca_dn" \
   openssl ca \
     -batch \
     -extensions user_cert \
-    -startdate 190701000000Z \
-    -enddate   211217000000Z \
+    -days 900 \
     -in out/900_days_after_2019_07_01.req \
     -out ../certificates/900_days_after_2019_07_01.pem \
     -config ca.cnf
@@ -660,7 +659,7 @@ SUBJECT_NAME="req_ev_state_only_dn" \
 
 # Regenerate CRLSets
 ## Block a leaf cert directly by SPKI
-python crlsetutil.py -o ../certificates/crlset_by_leaf_spki.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_leaf_spki.raw \
 <<CRLBYLEAFSPKI
 {
   "BlockedBySPKI": ["../certificates/ok_cert.pem"]
@@ -668,7 +667,7 @@ python crlsetutil.py -o ../certificates/crlset_by_leaf_spki.raw \
 CRLBYLEAFSPKI
 
 ## Block a root cert directly by SPKI
-python crlsetutil.py -o ../certificates/crlset_by_root_spki.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_root_spki.raw \
 <<CRLBYROOTSPKI
 {
   "BlockedBySPKI": ["../certificates/root_ca_cert.pem"]
@@ -676,7 +675,7 @@ python crlsetutil.py -o ../certificates/crlset_by_root_spki.raw \
 CRLBYROOTSPKI
 
 ## Block a leaf cert by issuer-hash-and-serial
-python crlsetutil.py -o ../certificates/crlset_by_root_serial.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_root_serial.raw \
 <<CRLBYROOTSERIAL
 {
   "BlockedByHash": {
@@ -689,7 +688,7 @@ CRLBYROOTSERIAL
 
 ## Block a leaf cert by issuer-hash-and-serial. However, this will be issued
 ## from an intermediate CA issued underneath a root.
-python crlsetutil.py -o ../certificates/crlset_by_intermediate_serial.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_intermediate_serial.raw \
 <<CRLSETBYINTERMEDIATESERIAL
 {
   "BlockedByHash": {
@@ -701,7 +700,7 @@ python crlsetutil.py -o ../certificates/crlset_by_intermediate_serial.raw \
 CRLSETBYINTERMEDIATESERIAL
 
 ## Block a subject with a single-entry allowlist of SPKI hashes.
-python crlsetutil.py -o ../certificates/crlset_by_root_subject.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_root_subject.raw \
 <<CRLSETBYROOTSUBJECT
 {
   "LimitedSubjects": {
@@ -713,7 +712,7 @@ python crlsetutil.py -o ../certificates/crlset_by_root_subject.raw \
 CRLSETBYROOTSUBJECT
 
 ## Block a subject with an empty allowlist of SPKI hashes.
-python crlsetutil.py -o ../certificates/crlset_by_root_subject_no_spki.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_root_subject_no_spki.raw \
 <<CRLSETBYROOTSUBJECTNOSPKI
 {
   "LimitedSubjects": {
@@ -724,7 +723,7 @@ python crlsetutil.py -o ../certificates/crlset_by_root_subject_no_spki.raw \
 CRLSETBYROOTSUBJECTNOSPKI
 
 ## Block a subject with an empty allowlist of SPKI hashes.
-python crlsetutil.py -o ../certificates/crlset_by_leaf_subject_no_spki.raw \
+python3 crlsetutil.py -o ../certificates/crlset_by_leaf_subject_no_spki.raw \
 <<CRLSETBYLEAFSUBJECTNOSPKI
 {
   "LimitedSubjects": {
@@ -734,7 +733,7 @@ python crlsetutil.py -o ../certificates/crlset_by_leaf_subject_no_spki.raw \
 CRLSETBYLEAFSUBJECTNOSPKI
 
 ## Mark a given root as blocked for interception.
-python crlsetutil.py -o \
+python3 crlsetutil.py -o \
   ../certificates/crlset_blocked_interception_by_root.raw \
 <<CRLSETINTERCEPTIONBYROOT
 {
@@ -745,7 +744,7 @@ python crlsetutil.py -o \
 CRLSETINTERCEPTIONBYROOT
 
 ## Mark a given intermediate as blocked for interception.
-python crlsetutil.py -o \
+python3 crlsetutil.py -o \
   ../certificates/crlset_blocked_interception_by_intermediate.raw \
 <<CRLSETINTERCEPTIONBYINTERMEDIATE
 {
@@ -756,7 +755,7 @@ python crlsetutil.py -o \
 CRLSETINTERCEPTIONBYINTERMEDIATE
 
 ## Mark a given root as known for interception, but not blocked.
-python crlsetutil.py -o \
+python3 crlsetutil.py -o \
   ../certificates/crlset_known_interception_by_root.raw \
 <<CRLSETINTERCEPTIONBYROOT
 {

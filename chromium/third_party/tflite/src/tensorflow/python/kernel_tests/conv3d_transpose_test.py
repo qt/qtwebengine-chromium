@@ -14,10 +14,6 @@
 # ==============================================================================
 """Tests for convolution related functionality in tensorflow.ops.nn."""
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 
@@ -220,7 +216,7 @@ class Conv3DTransposeTest(test.TestCase):
       err = gradient_checker.compute_gradient_error([x, f], [x_shape, f_shape],
                                                     output, y_shape)
     print("conv3d_transpose gradient err = %g " % err)
-    err_tolerance = 0.0005
+    err_tolerance = 0.00055
     self.assertLess(err, err_tolerance)
 
 

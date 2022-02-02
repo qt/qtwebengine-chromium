@@ -1,3 +1,1 @@
-monorail {
-  component: "UI>Browser>Mobile>Settings"
-}
+mixins: "//components/browser_ui/site_settings/COMMON_METADATA"

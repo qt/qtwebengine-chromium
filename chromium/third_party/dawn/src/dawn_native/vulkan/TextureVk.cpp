@@ -51,8 +51,9 @@ namespace dawn_native { namespace vulkan {
 
                 case wgpu::TextureViewDimension::e1D:
                 case wgpu::TextureViewDimension::Undefined:
-                    UNREACHABLE();
+                    break;
             }
+            UNREACHABLE();
         }
 
         // Computes which vulkan access type could be required for the given Dawn usage.
@@ -72,9 +73,6 @@ namespace dawn_native { namespace vulkan {
             }
             if (usage & wgpu::TextureUsage::StorageBinding) {
                 flags |= VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT;
-            }
-            if (usage & kReadOnlyStorageTexture) {
-                flags |= VK_ACCESS_SHADER_READ_BIT;
             }
             if (usage & wgpu::TextureUsage::RenderAttachment) {
                 if (format.HasDepthOrStencil()) {
@@ -119,7 +117,7 @@ namespace dawn_native { namespace vulkan {
             if (usage & (wgpu::TextureUsage::CopySrc | wgpu::TextureUsage::CopyDst)) {
                 flags |= VK_PIPELINE_STAGE_TRANSFER_BIT;
             }
-            if (usage & (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture)) {
+            if (usage & wgpu::TextureUsage::TextureBinding) {
                 // TODO(crbug.com/dawn/851): Only transition to the usage we care about to avoid
                 // introducing FS -> VS dependencies that would prevent parallelization on tiler
                 // GPUs
@@ -337,11 +335,94 @@ namespace dawn_native { namespace vulkan {
                 return VK_FORMAT_BC7_UNORM_BLOCK;
             case wgpu::TextureFormat::BC7RGBAUnormSrgb:
                 return VK_FORMAT_BC7_SRGB_BLOCK;
+
+            case wgpu::TextureFormat::ETC2RGB8Unorm:
+                return VK_FORMAT_ETC2_R8G8B8_UNORM_BLOCK;
+            case wgpu::TextureFormat::ETC2RGB8UnormSrgb:
+                return VK_FORMAT_ETC2_R8G8B8_SRGB_BLOCK;
+            case wgpu::TextureFormat::ETC2RGB8A1Unorm:
+                return VK_FORMAT_ETC2_R8G8B8A1_UNORM_BLOCK;
+            case wgpu::TextureFormat::ETC2RGB8A1UnormSrgb:
+                return VK_FORMAT_ETC2_R8G8B8A1_SRGB_BLOCK;
+            case wgpu::TextureFormat::ETC2RGBA8Unorm:
+                return VK_FORMAT_ETC2_R8G8B8A8_UNORM_BLOCK;
+            case wgpu::TextureFormat::ETC2RGBA8UnormSrgb:
+                return VK_FORMAT_ETC2_R8G8B8A8_SRGB_BLOCK;
+            case wgpu::TextureFormat::EACR11Unorm:
+                return VK_FORMAT_EAC_R11_UNORM_BLOCK;
+            case wgpu::TextureFormat::EACR11Snorm:
+                return VK_FORMAT_EAC_R11_SNORM_BLOCK;
+            case wgpu::TextureFormat::EACRG11Unorm:
+                return VK_FORMAT_EAC_R11G11_UNORM_BLOCK;
+            case wgpu::TextureFormat::EACRG11Snorm:
+                return VK_FORMAT_EAC_R11G11_SNORM_BLOCK;
+
+            case wgpu::TextureFormat::ASTC4x4Unorm:
+                return VK_FORMAT_ASTC_4x4_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC4x4UnormSrgb:
+                return VK_FORMAT_ASTC_4x4_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC5x4Unorm:
+                return VK_FORMAT_ASTC_5x4_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC5x4UnormSrgb:
+                return VK_FORMAT_ASTC_5x4_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC5x5Unorm:
+                return VK_FORMAT_ASTC_5x5_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC5x5UnormSrgb:
+                return VK_FORMAT_ASTC_5x5_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC6x5Unorm:
+                return VK_FORMAT_ASTC_6x5_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC6x5UnormSrgb:
+                return VK_FORMAT_ASTC_6x5_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC6x6Unorm:
+                return VK_FORMAT_ASTC_6x6_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC6x6UnormSrgb:
+                return VK_FORMAT_ASTC_6x6_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC8x5Unorm:
+                return VK_FORMAT_ASTC_8x5_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC8x5UnormSrgb:
+                return VK_FORMAT_ASTC_8x5_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC8x6Unorm:
+                return VK_FORMAT_ASTC_8x6_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC8x6UnormSrgb:
+                return VK_FORMAT_ASTC_8x6_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC8x8Unorm:
+                return VK_FORMAT_ASTC_8x8_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC8x8UnormSrgb:
+                return VK_FORMAT_ASTC_8x8_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC10x5Unorm:
+                return VK_FORMAT_ASTC_10x5_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC10x5UnormSrgb:
+                return VK_FORMAT_ASTC_10x5_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC10x6Unorm:
+                return VK_FORMAT_ASTC_10x6_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC10x6UnormSrgb:
+                return VK_FORMAT_ASTC_10x6_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC10x8Unorm:
+                return VK_FORMAT_ASTC_10x8_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC10x8UnormSrgb:
+                return VK_FORMAT_ASTC_10x8_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC10x10Unorm:
+                return VK_FORMAT_ASTC_10x10_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC10x10UnormSrgb:
+                return VK_FORMAT_ASTC_10x10_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC12x10Unorm:
+                return VK_FORMAT_ASTC_12x10_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC12x10UnormSrgb:
+                return VK_FORMAT_ASTC_12x10_SRGB_BLOCK;
+            case wgpu::TextureFormat::ASTC12x12Unorm:
+                return VK_FORMAT_ASTC_12x12_UNORM_BLOCK;
+            case wgpu::TextureFormat::ASTC12x12UnormSrgb:
+                return VK_FORMAT_ASTC_12x12_SRGB_BLOCK;
+
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
+            // TODO(dawn:666): implement stencil8
             case wgpu::TextureFormat::Stencil8:
+            // TODO(dawn:570): implement depth16unorm
+            case wgpu::TextureFormat::Depth16Unorm:
             case wgpu::TextureFormat::Undefined:
-                UNREACHABLE();
+                break;
         }
+        UNREACHABLE();
     }
 
     // Converts the Dawn usage flags to Vulkan usage flags. Also needs the format to choose
@@ -358,7 +439,7 @@ namespace dawn_native { namespace vulkan {
         if (usage & wgpu::TextureUsage::TextureBinding) {
             flags |= VK_IMAGE_USAGE_SAMPLED_BIT;
         }
-        if (usage & (wgpu::TextureUsage::StorageBinding | kReadOnlyStorageTexture)) {
+        if (usage & wgpu::TextureUsage::StorageBinding) {
             flags |= VK_IMAGE_USAGE_STORAGE_BIT;
         }
         if (usage & wgpu::TextureUsage::RenderAttachment) {
@@ -383,7 +464,7 @@ namespace dawn_native { namespace vulkan {
         if (!wgpu::HasZeroOrOneBits(usage)) {
             // Sampled | ReadOnlyStorage is the only possible multi-bit usage, if more appear  we
             // might need additional special-casing.
-            ASSERT(usage == (wgpu::TextureUsage::TextureBinding | kReadOnlyStorageTexture));
+            ASSERT(usage == wgpu::TextureUsage::TextureBinding);
             return VK_IMAGE_LAYOUT_GENERAL;
         }
 
@@ -416,7 +497,6 @@ namespace dawn_native { namespace vulkan {
                 // and store operations on storage images can only be done on the images in
                 // VK_IMAGE_LAYOUT_GENERAL layout.
             case wgpu::TextureUsage::StorageBinding:
-            case kReadOnlyStorageTexture:
                 return VK_IMAGE_LAYOUT_GENERAL;
 
             case wgpu::TextureUsage::RenderAttachment:
@@ -430,8 +510,9 @@ namespace dawn_native { namespace vulkan {
                 return VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
             case wgpu::TextureUsage::None:
-                UNREACHABLE();
+                break;
         }
+        UNREACHABLE();
     }
 
     VkSampleCountFlagBits VulkanSampleCount(uint32_t sampleCount) {
@@ -440,9 +521,8 @@ namespace dawn_native { namespace vulkan {
                 return VK_SAMPLE_COUNT_1_BIT;
             case 4:
                 return VK_SAMPLE_COUNT_4_BIT;
-            default:
-                UNREACHABLE();
         }
+        UNREACHABLE();
     }
 
     MaybeError ValidateVulkanImageCanBeWrapped(const DeviceBase*,
@@ -577,6 +657,8 @@ namespace dawn_native { namespace vulkan {
                                   GetAllSubresources(), TextureBase::ClearValue::NonZero));
         }
 
+        SetLabelImpl();
+
         return {};
     }
 
@@ -611,11 +693,15 @@ namespace dawn_native { namespace vulkan {
         baseCreateInfo.usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 
         DAWN_TRY_ASSIGN(mHandle, externalMemoryService->CreateImage(descriptor, baseCreateInfo));
+
+        SetLabelHelper("Dawn_ExternalTexture");
+
         return {};
     }
 
     void Texture::InitializeForSwapChain(VkImage nativeImage) {
         mHandle = nativeImage;
+        SetLabelHelper("Dawn_SwapChainTexture");
     }
 
     MaybeError Texture::BindExternalMemory(const ExternalImageDescriptorVk* descriptor,
@@ -720,6 +806,15 @@ namespace dawn_native { namespace vulkan {
         DestroyInternal();
     }
 
+    void Texture::SetLabelHelper(const char* prefix) {
+        SetDebugName(ToBackend(GetDevice()), VK_OBJECT_TYPE_IMAGE,
+                     reinterpret_cast<uint64_t&>(mHandle), prefix, GetLabel());
+    }
+
+    void Texture::SetLabelImpl() {
+        SetLabelHelper("Dawn_InternalTexture");
+    }
+
     void Texture::DestroyImpl() {
         if (GetTextureState() == TextureState::OwnedInternal) {
             Device* device = ToBackend(GetDevice());
@@ -760,8 +855,9 @@ namespace dawn_native { namespace vulkan {
                 return VulkanAspectMask(Aspect::Stencil);
             case wgpu::TextureAspect::Plane0Only:
             case wgpu::TextureAspect::Plane1Only:
-                UNREACHABLE();
+                break;
         }
+        UNREACHABLE();
     }
 
     void Texture::TweakTransitionForExternalUsage(CommandRecordingContext* recordingContext,

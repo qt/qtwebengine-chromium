@@ -173,6 +173,9 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
       entry_point.input_sample_mask_used |=
           ContainsBuiltin(ast::Builtin::kSampleMask, param->Type(),
                           param->Declaration()->decorations());
+      entry_point.num_workgroups_used |=
+          ContainsBuiltin(ast::Builtin::kNumWorkgroups, param->Type(),
+                          param->Declaration()->decorations());
     }
 
     if (!sem->ReturnType()->Is<sem::Void>()) {
@@ -194,6 +197,23 @@ std::vector<EntryPoint> Inspector::GetEntryPoints() {
       if (global && global->IsPipelineConstant()) {
         OverridableConstant overridable_constant;
         overridable_constant.name = name;
+        auto* type = var->Type();
+        TINT_ASSERT(Inspector, type->is_scalar());
+        if (type->is_bool_scalar_or_vector()) {
+          overridable_constant.type = OverridableConstant::Type::kBool;
+        } else if (type->is_float_scalar()) {
+          overridable_constant.type = OverridableConstant::Type::kFloat32;
+        } else if (type->is_signed_integer_scalar()) {
+          overridable_constant.type = OverridableConstant::Type::kInt32;
+        } else if (type->is_unsigned_integer_scalar()) {
+          overridable_constant.type = OverridableConstant::Type::kUint32;
+        } else {
+          TINT_UNREACHABLE(Inspector, diagnostics_);
+        }
+
+        overridable_constant.is_initialized =
+            global->Declaration()->has_constructor();
+
         entry_point.overridable_constants.push_back(overridable_constant);
       }
     }
@@ -321,7 +341,8 @@ uint32_t Inspector::GetStorageSize(const std::string& entry_point) {
     }
   }
 
-  if (size > std::numeric_limits<uint32_t>::max()) {
+  if (static_cast<uint64_t>(size) >
+      static_cast<uint64_t>(std::numeric_limits<uint32_t>::max())) {
     return std::numeric_limits<uint32_t>::max();
   }
   return static_cast<uint32_t>(size);
