@@ -1,0 +1,98 @@
+﻿<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist  PUBLIC '-//Apple//DTD PLIST 1.0//EN'  'http://www.apple.com/DTDs/PropertyList-1.0.dtd'>
+<plist version="1.0">
+  <dict>
+    <!-- ChromePolicy is the preferred key to configure Chrome.
+         Each of the keys in this <dict> configures a Chrome policy.
+         All of the Chrome policies are configured with an example
+         value below.
+         Note that it's not necessary to configure all of them. -->
+    <key>ChromePolicy</key>
+    <dict>
+      <key>AutoFillEnabled</key>
+      <false/>
+      <key>CookiesAllowedForUrls</key>
+      <array>
+        <string>http://www.example.com</string>
+        <string>[*.]example.edu</string>
+      </array>
+      <key>CookiesBlockedForUrls</key>
+      <array>
+        <string>http://www.example.com</string>
+        <string>[*.]example.edu</string>
+      </array>
+      <key>CookiesSessionOnlyForUrls</key>
+      <array>
+        <string>http://www.example.com</string>
+        <string>[*.]example.edu</string>
+      </array>
+      <key>DefaultCookiesSetting</key>
+      <integer>1</integer>
+      <key>DefaultPopupsSetting</key>
+      <integer>1</integer>
+      <key>DefaultSearchProviderEnabled</key>
+      <true/>
+      <key>DefaultSearchProviderKeyword</key>
+      <string>mis</string>
+      <key>DefaultSearchProviderName</key>
+      <string>My Intranet Search</string>
+      <key>DefaultSearchProviderSearchURL</key>
+      <string>http://search.my.company/search?q={searchTerms}</string>
+      <key>ManagedBookmarks</key>
+      <array>
+        <dict>
+          <key>name</key>
+          <string>Google</string>
+          <key>url</key>
+          <string>google.com</string>
+        </dict>
+        <dict>
+          <key>name</key>
+          <string>Youtube</string>
+          <key>url</key>
+          <string>youtube.com</string>
+        </dict>
+      </array>
+      <key>PasswordManagerEnabled</key>
+      <true/>
+      <key>PopupsAllowedForUrls</key>
+      <array>
+        <string>http://www.example.com</string>
+        <string>[*.]example.edu</string>
+      </array>
+      <key>PopupsBlockedForUrls</key>
+      <array>
+        <string>http://www.example.com</string>
+        <string>[*.]example.edu</string>
+      </array>
+      <key>ProxyBypassList</key>
+      <string>http://www.example1.com,http://www.example2.com,http://internalsite/</string>
+      <key>ProxyMode</key>
+      <string>direct</string>
+      <key>ProxyPacUrl</key>
+      <string>http://internal.site/example.pac</string>
+      <key>ProxyServer</key>
+      <string>123.123.123.123:8080</string>
+      <key>SearchSuggestEnabled</key>
+      <true/>
+      <key>TranslateEnabled</key>
+      <true/>
+      <key>URLBlacklist</key>
+      <array>
+        <string>example.com</string>
+        <string>https://ssl.server.com</string>
+        <string>hosting.com/bad_path</string>
+        <string>http://server:8080/path</string>
+        <string>.exact.hostname.com</string>
+      </array>
+      <key>URLWhitelist</key>
+      <array>
+        <string>example.com</string>
+        <string>https://ssl.server.com</string>
+        <string>hosting.com/bad_path</string>
+        <string>http://server:8080/path</string>
+        <string>.exact.hostname.com</string>
+      </array>
+    </dict>
+  </dict>
+</plist>

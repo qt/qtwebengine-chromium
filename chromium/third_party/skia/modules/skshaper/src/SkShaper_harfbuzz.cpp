@@ -1268,7 +1268,8 @@ public:
     }
     HBLockedFaceCache(const HBLockedFaceCache&) = delete;
     HBLockedFaceCache& operator=(const HBLockedFaceCache&) = delete;
-    HBLockedFaceCache(HBLockedFaceCache&&) = delete;
+    // Required until C++17 copy elision
+    HBLockedFaceCache(HBLockedFaceCache&&) = default;
     HBLockedFaceCache& operator=(HBLockedFaceCache&&) = delete;
 
     ~HBLockedFaceCache() {
@@ -1402,6 +1403,14 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
                     std::unique_ptr<ShapedGlyph[]>(new ShapedGlyph[len]), len);
 
     // Undo skhb_position with (1.0/(1<<16)) and scale as needed.
+    SkAutoSTArray<32, SkGlyphID> glyphIDs(len);
+    for (unsigned i = 0; i < len; i++) {
+        glyphIDs[i] = info[i].codepoint;
+    }
+    SkAutoSTArray<32, SkRect> glyphBounds(len);
+    SkPaint p;
+    run.fFont.getBounds(glyphIDs.get(), len, glyphBounds.get(), &p);
+
     double SkScalarFromHBPosX = +(1.52587890625e-5) * run.fFont.getScaleX();
     double SkScalarFromHBPosY = -(1.52587890625e-5);  // HarfBuzz y-up, Skia y-down
     SkVector runAdvance = { 0, 0 };
@@ -1414,11 +1423,7 @@ ShapedRun ShaperHarfBuzz::shape(char const * const utf8,
         glyph.fAdvance.fX = pos[i].x_advance * SkScalarFromHBPosX;
         glyph.fAdvance.fY = pos[i].y_advance * SkScalarFromHBPosY;
 
-        SkRect bounds;
-        SkScalar advance;
-        SkPaint p;
-        run.fFont.getWidthsBounds(&glyph.fID, 1, &advance, &bounds, &p);
-        glyph.fHasVisual = !bounds.isEmpty(); //!font->currentTypeface()->glyphBoundsAreZero(glyph.fID);
+        glyph.fHasVisual = !glyphBounds[i].isEmpty(); //!font->currentTypeface()->glyphBoundsAreZero(glyph.fID);
 #if SK_HB_VERSION_CHECK(1, 5, 0)
         glyph.fUnsafeToBreak = info[i].mask & HB_GLYPH_FLAG_UNSAFE_TO_BREAK;
 #else

@@ -4,7 +4,6 @@
 
 #include "third_party/blink/renderer/bindings/core/v8/v8_wasm_response_extensions.h"
 
-#include "base/macros.h"
 #include "base/memory/scoped_refptr.h"
 #include "third_party/blink/public/mojom/loader/code_cache.mojom.h"
 #include "third_party/blink/public/platform/platform.h"
@@ -15,6 +14,7 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/fetch/body_stream_buffer.h"
 #include "third_party/blink/renderer/core/fetch/fetch_data_loader.h"
+#include "third_party/blink/renderer/core/fetch/response.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/workers/worker_backing_thread.h"
@@ -25,8 +25,8 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/crypto.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/handle.h"
-#include "third_party/blink/renderer/platform/heap/heap.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/loader/fetch/cached_metadata.h"
 #include "third_party/blink/renderer/platform/loader/fetch/script_cached_metadata_handler.h"
@@ -56,7 +56,7 @@ void SendCachedData(String response_url,
   scoped_refptr<CachedMetadata> cached_metadata =
       CachedMetadata::CreateFromSerializedData(std::move(serialized_module));
 
-  blink::mojom::CodeCacheHost* code_cache_host =
+  CodeCacheHost* code_cache_host =
       ExecutionContext::GetCodeCacheHostFromContext(execution_context);
   base::span<const uint8_t> serialized_data = cached_metadata->SerializedData();
   CachedMetadataSender::SendToCodeCacheHost(
@@ -158,7 +158,6 @@ class WasmStreamingClient : public v8::WasmStreaming::Client {
 // received bytes get forwarded to the V8 API class |WasmStreaming|.
 class FetchDataLoaderForWasmStreaming final : public FetchDataLoader,
                                               public BytesConsumer::Client {
-
  public:
   FetchDataLoaderForWasmStreaming(
       const String& url,
@@ -393,7 +392,6 @@ class FetchDataLoaderForWasmStreaming final : public FetchDataLoader,
 class WasmDataLoaderClient final
     : public GarbageCollected<WasmDataLoaderClient>,
       public FetchDataLoader::Client {
-
  public:
   explicit WasmDataLoaderClient(FetchDataLoaderForWasmStreaming* loader)
       : loader_(loader) {}

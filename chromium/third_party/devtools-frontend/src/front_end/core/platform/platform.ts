@@ -28,10 +28,9 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-import './utilities.js';
-
 import * as ArrayUtilities from './array-utilities.js';
 import * as DateUtilities from './date-utilities.js';
+import * as DevToolsPath from './DevToolsPath.js';
 import * as KeyboardUtilities from './keyboard-utilities.js';
 import * as MapUtilities from './map-utilities.js';
 import * as NumberUtilities from './number-utilities.js';
@@ -51,6 +50,7 @@ export {assertNever, runOnWindowLoad} from './utilities.js';
 export {
   ArrayUtilities,
   DateUtilities,
+  DevToolsPath,
   KeyboardUtilities,
   MapUtilities,
   NumberUtilities,

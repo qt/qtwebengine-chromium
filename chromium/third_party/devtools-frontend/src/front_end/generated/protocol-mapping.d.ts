@@ -13,6 +13,15 @@
 export namespace ProtocolMapping {
   export interface Events {
     /**
+     * The loadComplete event mirrors the load complete event sent by the browser to assistive
+     * technology when the web page has finished loading.
+     */
+    'Accessibility.loadComplete': [Protocol.Accessibility.LoadCompleteEvent];
+    /**
+     * The nodesUpdated event is sent every time a previously requested node has changed the in tree.
+     */
+    'Accessibility.nodesUpdated': [Protocol.Accessibility.NodesUpdatedEvent];
+    /**
      * Event for when an animation has been cancelled.
      */
     'Animation.animationCanceled': [Protocol.Animation.AnimationCanceledEvent];
@@ -24,8 +33,6 @@ export namespace ProtocolMapping {
      * Event for animation that has been started.
      */
     'Animation.animationStarted': [Protocol.Animation.AnimationStartedEvent];
-    'ApplicationCache.applicationCacheStatusUpdated': [Protocol.ApplicationCache.ApplicationCacheStatusUpdatedEvent];
-    'ApplicationCache.networkStateUpdated': [Protocol.ApplicationCache.NetworkStateUpdatedEvent];
     'Audits.issueAdded': [Protocol.Audits.IssueAddedEvent];
     /**
      * Called when the recording state for the service has been updated.
@@ -298,6 +305,7 @@ export namespace ProtocolMapping {
      */
     'Network.reportingApiReportAdded': [Protocol.Network.ReportingApiReportAddedEvent];
     'Network.reportingApiReportUpdated': [Protocol.Network.ReportingApiReportUpdatedEvent];
+    'Network.reportingApiEndpointsChangedForOrigin': [Protocol.Network.ReportingApiEndpointsChangedForOriginEvent];
     /**
      * Fired when the node should be inspected. This happens after call to `setInspectMode` or when
      * user manually inspects an element.
@@ -440,7 +448,7 @@ export namespace ProtocolMapping {
      */
     'Security.visibleSecurityStateChanged': [Protocol.Security.VisibleSecurityStateChangedEvent];
     /**
-     * The security state of the page changed.
+     * The security state of the page changed. No longer being sent.
      */
     'Security.securityStateChanged': [Protocol.Security.SecurityStateChangedEvent];
     'ServiceWorker.workerErrorReported': [Protocol.ServiceWorker.WorkerErrorReportedEvent];
@@ -704,6 +712,22 @@ export namespace ProtocolMapping {
       returnType: Protocol.Accessibility.GetFullAXTreeResponse;
     };
     /**
+     * Fetches the root node.
+     * Requires `enable()` to have been called previously.
+     */
+    'Accessibility.getRootAXNode': {
+      paramsType: [Protocol.Accessibility.GetRootAXNodeRequest?];
+      returnType: Protocol.Accessibility.GetRootAXNodeResponse;
+    };
+    /**
+     * Fetches a node and all ancestors up to and including the root.
+     * Requires `enable()` to have been called previously.
+     */
+    'Accessibility.getAXNodeAndAncestors': {
+      paramsType: [Protocol.Accessibility.GetAXNodeAndAncestorsRequest?];
+      returnType: Protocol.Accessibility.GetAXNodeAndAncestorsResponse;
+    };
+    /**
      * Fetches a particular accessibility node by AXNodeId.
      * Requires `enable()` to have been called previously.
      */
@@ -765,30 +789,6 @@ export namespace ProtocolMapping {
      * Sets the timing of an animation node.
      */
     'Animation.setTiming': {paramsType: [Protocol.Animation.SetTimingRequest]; returnType: void;};
-    /**
-     * Enables application cache domain notifications.
-     */
-    'ApplicationCache.enable': {paramsType: []; returnType: void;};
-    /**
-     * Returns relevant application cache data for the document in given frame.
-     */
-    'ApplicationCache.getApplicationCacheForFrame': {
-      paramsType: [Protocol.ApplicationCache.GetApplicationCacheForFrameRequest];
-      returnType: Protocol.ApplicationCache.GetApplicationCacheForFrameResponse;
-    };
-    /**
-     * Returns array of frame identifiers with manifest urls for each frame containing a document
-     * associated with some application cache.
-     */
-    'ApplicationCache.getFramesWithManifests':
-        {paramsType: []; returnType: Protocol.ApplicationCache.GetFramesWithManifestsResponse;};
-    /**
-     * Returns manifest URL for document in the given frame.
-     */
-    'ApplicationCache.getManifestForFrame': {
-      paramsType: [Protocol.ApplicationCache.GetManifestForFrameRequest];
-      returnType: Protocol.ApplicationCache.GetManifestForFrameResponse;
-    };
     /**
      * Returns the response body and size if it were re-encoded with the specified settings. Only
      * applies to images.
@@ -1086,6 +1086,10 @@ export namespace ProtocolMapping {
      * sink via Presentation API, Remote Playback API, or Cast SDK.
      */
     'Cast.setSinkToUse': {paramsType: [Protocol.Cast.SetSinkToUseRequest]; returnType: void;};
+    /**
+     * Starts mirroring the desktop to the sink.
+     */
+    'Cast.startDesktopMirroring': {paramsType: [Protocol.Cast.StartDesktopMirroringRequest]; returnType: void;};
     /**
      * Starts mirroring the tab to the sink.
      */
@@ -1387,6 +1391,16 @@ export namespace ProtocolMapping {
      * Sets breakpoint on XMLHttpRequest.
      */
     'DOMDebugger.setXHRBreakpoint': {paramsType: [Protocol.DOMDebugger.SetXHRBreakpointRequest]; returnType: void;};
+    /**
+     * Sets breakpoint on particular native event.
+     */
+    'EventBreakpoints.setInstrumentationBreakpoint':
+        {paramsType: [Protocol.EventBreakpoints.SetInstrumentationBreakpointRequest]; returnType: void;};
+    /**
+     * Removes breakpoint on particular native event.
+     */
+    'EventBreakpoints.removeInstrumentationBreakpoint':
+        {paramsType: [Protocol.EventBreakpoints.RemoveInstrumentationBreakpointRequest]; returnType: void;};
     /**
      * Disables DOM snapshot agent for the given page.
      */
@@ -2326,18 +2340,9 @@ export namespace ProtocolMapping {
      */
     'Page.stopScreencast': {paramsType: []; returnType: void;};
     /**
-     * Forces compilation cache to be generated for every subresource script.
-     * See also: `Page.produceCompilationCache`.
-     */
-    'Page.setProduceCompilationCache':
-        {paramsType: [Protocol.Page.SetProduceCompilationCacheRequest]; returnType: void;};
-    /**
      * Requests backend to produce compilation cache for the specified scripts.
-     * Unlike setProduceCompilationCache, this allows client to only produce cache
-     * for specific scripts. `scripts` are appeneded to the list of scripts
-     * for which the cache for would produced. Disabling compilation cache with
-     * `setProduceCompilationCache` would reset all pending cache requests.
-     * The list may also be reset during page navigation.
+     * `scripts` are appeneded to the list of scripts for which the cache
+     * would be produced. The list may be reset during page navigation.
      * When script with a matching URL is encountered, the cache is optionally
      * produced upon backend discretion, based on internal heuristics.
      * See also: `Page.compilationCacheProduced`.
@@ -2352,6 +2357,11 @@ export namespace ProtocolMapping {
      * Clears seeded compilation cache.
      */
     'Page.clearCompilationCache': {paramsType: []; returnType: void;};
+    /**
+     * Sets the Secure Payment Confirmation transaction mode.
+     * https://w3c.github.io/secure-payment-confirmation/#sctn-automation-set-spc-transaction-mode
+     */
+    'Page.setSPCTransactionMode': {paramsType: [Protocol.Page.SetSPCTransactionModeRequest]; returnType: void;};
     /**
      * Generates a report for testing.
      */

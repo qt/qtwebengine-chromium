@@ -13,6 +13,7 @@
 
 #include "common/Color.h"
 #include "common/FixedVector.h"
+#include "libANGLE/renderer/vulkan/ResourceVk.h"
 #include "libANGLE/renderer/vulkan/vk_utils.h"
 
 namespace rx
@@ -51,8 +52,6 @@ namespace vk
 class DynamicDescriptorPool;
 class ImageHelper;
 enum class ImageLayout;
-
-using PipelineAndSerial = ObjectAndSerial<Pipeline>;
 
 using RefCountedDescriptorSetLayout    = RefCounted<DescriptorSetLayout>;
 using RefCountedPipelineLayout         = RefCounted<PipelineLayout>;
@@ -572,11 +571,8 @@ class GraphicsPipelineDesc final
                                      const PipelineLayout &pipelineLayout,
                                      const gl::AttributesMask &activeAttribLocationsMask,
                                      const gl::ComponentTypeMask &programAttribsTypeMask,
-                                     const ShaderModule *vertexModule,
-                                     const ShaderModule *fragmentModule,
-                                     const ShaderModule *geometryModule,
-                                     const ShaderModule *tessControlModule,
-                                     const ShaderModule *tessEvaluationModule,
+                                     const gl::DrawBufferMask &missingOutputsMask,
+                                     const ShaderAndSerialMap &shaders,
                                      const SpecializationConstants &specConsts,
                                      Pipeline *pipelineOut) const;
 
@@ -630,9 +626,14 @@ class GraphicsPipelineDesc final
                             gl::DrawBufferMask blendEnabledMask);
     void updateBlendColor(GraphicsPipelineTransitionBits *transition, const gl::ColorF &color);
     void updateBlendFuncs(GraphicsPipelineTransitionBits *transition,
-                          const gl::BlendStateExt &blendStateExt);
+                          const gl::BlendStateExt &blendStateExt,
+                          gl::DrawBufferMask attachmentMask);
     void updateBlendEquations(GraphicsPipelineTransitionBits *transition,
-                              const gl::BlendStateExt &blendStateExt);
+                              const gl::BlendStateExt &blendStateExt,
+                              gl::DrawBufferMask attachmentMask);
+    void resetBlendFuncsAndEquations(GraphicsPipelineTransitionBits *transition,
+                                     gl::DrawBufferMask previousAttachmentsMask,
+                                     gl::DrawBufferMask newAttachmentsMask);
     void setColorWriteMasks(gl::BlendStateExt::ColorMaskStorage::Type colorMasks,
                             const gl::DrawBufferMask &alphaMask,
                             const gl::DrawBufferMask &enabledDrawBuffers);
@@ -829,6 +830,52 @@ static_assert(sizeof(PipelineLayoutDesc) == (sizeof(DescriptorSetArray<Descripto
                                              sizeof(gl::ShaderMap<PackedPushConstantRange>)),
               "Unexpected Size");
 
+struct YcbcrConversionDesc final
+{
+    YcbcrConversionDesc();
+    ~YcbcrConversionDesc();
+    YcbcrConversionDesc(const YcbcrConversionDesc &other);
+    YcbcrConversionDesc &operator=(const YcbcrConversionDesc &other);
+
+    size_t hash() const;
+    bool operator==(const YcbcrConversionDesc &other) const;
+
+    bool valid() const { return mExternalOrVkFormat != 0; }
+    void reset();
+    void update(RendererVk *rendererVk,
+                uint64_t externalFormat,
+                VkSamplerYcbcrModelConversion conversionModel,
+                VkSamplerYcbcrRange colorRange,
+                VkChromaLocation xChromaOffset,
+                VkChromaLocation yChromaOffset,
+                VkFilter chromaFilter,
+                angle::FormatID intendedFormatID);
+
+    // If the sampler needs to convert the image content (e.g. from YUV to RGB) then
+    // mExternalOrVkFormat will be non-zero. The value is either the external format
+    // as returned by vkGetAndroidHardwareBufferPropertiesANDROID or a YUV VkFormat.
+    // For VkSamplerYcbcrConversion, mExternalOrVkFormat along with mIsExternalFormat,
+    // mConversionModel and mColorRange works as a Serial() used elsewhere in ANGLE.
+    uint64_t mExternalOrVkFormat;
+    // 1 bit to identify if external format is used
+    uint16_t mIsExternalFormat : 1;
+    // 3 bits to identify conversion model
+    uint16_t mConversionModel : 3;
+    // 1 bit to identify color component range
+    uint16_t mColorRange : 1;
+    // 1 bit to identify x chroma location
+    uint16_t mXChromaOffset : 1;
+    // 1 bit to identify y chroma location
+    uint16_t mYChromaOffset : 1;
+    // 1 bit to identify chroma filtering
+    uint16_t mChromaFilter : 1;
+    uint16_t mPadding : 8;
+    uint16_t mReserved0;
+    uint32_t mReserved1;
+};
+
+static_assert(sizeof(YcbcrConversionDesc) == 16, "Unexpected YcbcrConversionDesc size");
+
 // Packed sampler description for the sampler cache.
 class SamplerDesc final
 {
@@ -837,7 +884,7 @@ class SamplerDesc final
     SamplerDesc(ContextVk *contextVk,
                 const gl::SamplerState &samplerState,
                 bool stencilMode,
-                uint64_t externalFormat,
+                const YcbcrConversionDesc *ycbcrConversionDesc,
                 angle::FormatID intendedFormatID);
     ~SamplerDesc();
 
@@ -847,7 +894,7 @@ class SamplerDesc final
     void update(ContextVk *contextVk,
                 const gl::SamplerState &samplerState,
                 bool stencilMode,
-                uint64_t externalFormat,
+                const YcbcrConversionDesc *ycbcrConversionDesc,
                 angle::FormatID intendedFormatID);
     void reset();
     angle::Result init(ContextVk *contextVk, Sampler *sampler) const;
@@ -863,13 +910,8 @@ class SamplerDesc final
     float mMinLod;
     float mMaxLod;
 
-    // If the sampler needs to convert the image content (e.g. from YUV to RGB) then
-    // mExternalOrVkFormat will be non-zero. The value is either the external format
-    // as returned by vkGetAndroidHardwareBufferPropertiesANDROID or a YUV VkFormat.
-    // The format is guaranteed to be unique in that any image with the same mExternalOrVkFormat
-    // can use the same conversion sampler. Thus mExternalOrVkFormat along with mIsExternalFormat
-    // works as a Serial() used elsewhere in ANGLE.
-    uint64_t mExternalOrVkFormat;
+    // 16*8 bits to uniquely identify a YCbCr conversion sampler.
+    YcbcrConversionDesc mYcbcrConversionDesc;
 
     // 16 bits for modes + states.
     // 1 bit per filter (only 2 possible values in GL: linear/nearest)
@@ -888,13 +930,10 @@ class SamplerDesc final
     // 3 bits for compare op. (8 possible values)
     uint16_t mCompareOp : 3;
 
-    // 1 bit to identify if external format is used
-    uint16_t mIsExternalFormat : 1;
-
-    uint16_t mPadding : 14;
-
     // Values from angle::ColorGeneric::Type. Float is 0 and others are 1.
     uint16_t mBorderColorType : 1;
+
+    uint16_t mPadding : 15;
 
     // 16*8 bits for BorderColor
     angle::ColorF mBorderColor;
@@ -903,7 +942,7 @@ class SamplerDesc final
     uint32_t mReserved;
 };
 
-static_assert(sizeof(SamplerDesc) == 48, "Unexpected SamplerDesc size");
+static_assert(sizeof(SamplerDesc) == 56, "Unexpected SamplerDesc size");
 
 // Disable warnings about struct padding.
 ANGLE_DISABLE_STRUCT_PADDING_WARNINGS
@@ -963,18 +1002,16 @@ ANGLE_INLINE bool GraphicsPipelineTransitionMatch(GraphicsPipelineTransitionBits
     return true;
 }
 
-class PipelineHelper final : angle::NonCopyable
+class PipelineHelper final : public Resource
 {
   public:
     PipelineHelper();
-    ~PipelineHelper();
+    ~PipelineHelper() override;
     inline explicit PipelineHelper(Pipeline &&pipeline);
 
     void destroy(VkDevice device);
 
-    void updateSerial(Serial serial) { mSerial = serial; }
     bool valid() const { return mPipeline.valid(); }
-    Serial getSerial() const { return mSerial; }
     Pipeline &getPipeline() { return mPipeline; }
 
     ANGLE_INLINE bool findTransition(GraphicsPipelineTransitionBits bits,
@@ -1000,7 +1037,6 @@ class PipelineHelper final : angle::NonCopyable
 
   private:
     std::vector<GraphicsPipelineTransition> mTransitions;
-    Serial mSerial;
     Pipeline mPipeline;
 };
 
@@ -1372,6 +1408,12 @@ struct hash<rx::vk::FramebufferDesc>
 };
 
 template <>
+struct hash<rx::vk::YcbcrConversionDesc>
+{
+    size_t operator()(const rx::vk::YcbcrConversionDesc &key) const { return key.hash(); }
+};
+
+template <>
 struct hash<rx::vk::SamplerDesc>
 {
     size_t operator()(const rx::vk::SamplerDesc &key) const { return key.hash(); }
@@ -1515,8 +1557,9 @@ class RenderPassCache final : angle::NonCopyable
 
     // Use a two-layer caching scheme. The top level matches the "compatible" RenderPass elements.
     // The second layer caches the attachment load/store ops and initial/final layout.
-    using InnerCache = angle::HashMap<vk::AttachmentOpsArray, vk::RenderPassHelper>;
-    using OuterCache = angle::HashMap<vk::RenderPassDesc, InnerCache>;
+    // Switch to `std::unordered_map` to retain pointer stability.
+    using InnerCache = std::unordered_map<vk::AttachmentOpsArray, vk::RenderPassHelper>;
+    using OuterCache = std::unordered_map<vk::RenderPassDesc, InnerCache>;
 
     OuterCache mPayload;
     CacheStats mCompatibleRenderPassCacheStats;
@@ -1541,11 +1584,8 @@ class GraphicsPipelineCache final : public HasCacheStats<VulkanCacheType::Graphi
                                            const vk::PipelineLayout &pipelineLayout,
                                            const gl::AttributesMask &activeAttribLocationsMask,
                                            const gl::ComponentTypeMask &programAttribsTypeMask,
-                                           const vk::ShaderModule *vertexModule,
-                                           const vk::ShaderModule *fragmentModule,
-                                           const vk::ShaderModule *geometryModule,
-                                           const vk::ShaderModule *tessControlModule,
-                                           const vk::ShaderModule *tessEvaluationModule,
+                                           const gl::DrawBufferMask &missingOutputsMask,
+                                           const vk::ShaderAndSerialMap &shaders,
                                            const vk::SpecializationConstants &specConsts,
                                            const vk::GraphicsPipelineDesc &desc,
                                            const vk::GraphicsPipelineDesc **descPtrOut,
@@ -1562,9 +1602,8 @@ class GraphicsPipelineCache final : public HasCacheStats<VulkanCacheType::Graphi
 
         mCacheStats.miss();
         return insertPipeline(contextVk, pipelineCacheVk, compatibleRenderPass, pipelineLayout,
-                              activeAttribLocationsMask, programAttribsTypeMask, vertexModule,
-                              fragmentModule, geometryModule, tessControlModule,
-                              tessEvaluationModule, specConsts, desc, descPtrOut, pipelineOut);
+                              activeAttribLocationsMask, programAttribsTypeMask, missingOutputsMask,
+                              shaders, specConsts, desc, descPtrOut, pipelineOut);
     }
 
   private:
@@ -1574,11 +1613,8 @@ class GraphicsPipelineCache final : public HasCacheStats<VulkanCacheType::Graphi
                                  const vk::PipelineLayout &pipelineLayout,
                                  const gl::AttributesMask &activeAttribLocationsMask,
                                  const gl::ComponentTypeMask &programAttribsTypeMask,
-                                 const vk::ShaderModule *vertexModule,
-                                 const vk::ShaderModule *fragmentModule,
-                                 const vk::ShaderModule *geometryModule,
-                                 const vk::ShaderModule *tessControlModule,
-                                 const vk::ShaderModule *tessEvaluationModule,
+                                 const gl::DrawBufferMask &missingOutputsMask,
+                                 const vk::ShaderAndSerialMap &shaders,
                                  const vk::SpecializationConstants &specConsts,
                                  const vk::GraphicsPipelineDesc &desc,
                                  const vk::GraphicsPipelineDesc **descPtrOut,
@@ -1650,32 +1686,17 @@ class SamplerYcbcrConversionCache final
 
     angle::Result getYuvConversion(
         vk::Context *context,
-        uint64_t externalOrVkFormat,
-        bool isExternalFormat,
+        const vk::YcbcrConversionDesc &ycbcrConversionDesc,
         const VkSamplerYcbcrConversionCreateInfo &yuvConversionCreateInfo,
         vk::BindingPointer<vk::SamplerYcbcrConversion> *yuvConversionOut);
-    VkSamplerYcbcrConversion getSamplerYcbcrConversion(uint64_t externalOrVkFormat,
-                                                       bool isExternalFormat) const;
+    VkSamplerYcbcrConversion getSamplerYcbcrConversion(
+        const vk::YcbcrConversionDesc &ycbcrConversionDesc) const;
 
   private:
-    template <typename T>
-    using SamplerYcbcrConversionMap = std::unordered_map<T, vk::RefCountedSamplerYcbcrConversion>;
-
-    template <typename T>
-    angle::Result getYuvConversionImpl(
-        vk::Context *context,
-        T format,
-        SamplerYcbcrConversionMap<T> *payload,
-        const VkSamplerYcbcrConversionCreateInfo &yuvConversionCreateInfo,
-        vk::BindingPointer<vk::SamplerYcbcrConversion> *yuvConversionOut);
-
-    template <typename T>
-    VkSamplerYcbcrConversion getSamplerYcbcrConversionImpl(
-        T format,
-        const SamplerYcbcrConversionMap<T> &payload) const;
-
-    SamplerYcbcrConversionMap<uint64_t> mExternalFormatPayload;
-    SamplerYcbcrConversionMap<VkFormat> mVkFormatPayload;
+    using SamplerYcbcrConversionMap =
+        std::unordered_map<vk::YcbcrConversionDesc, vk::RefCountedSamplerYcbcrConversion>;
+    SamplerYcbcrConversionMap mExternalFormatPayload;
+    SamplerYcbcrConversionMap mVkFormatPayload;
 };
 
 // DescriptorSet Cache

@@ -1438,6 +1438,7 @@ void GenerateCaps(const FunctionsGL *functions,
         functions->hasGLESExtension("GL_OES_texture_border_clamp") ||
         functions->hasGLESExtension("GL_EXT_texture_border_clamp") ||
         functions->hasGLESExtension("GL_NV_texture_border_clamp");
+    extensions->multiDrawIndirectEXT = true;
     extensions->instancedArraysANGLE = functions->isAtLeastGL(gl::Version(3, 1)) ||
                                        (functions->hasGLExtension("GL_ARB_instanced_arrays") &&
                                         (functions->hasGLExtension("GL_ARB_draw_instanced") ||
@@ -1690,6 +1691,9 @@ void GenerateCaps(const FunctionsGL *functions,
         functions->isAtLeastGL(gl::Version(3, 2)) || functions->isAtLeastGLES(gl::Version(3, 2)) ||
         functions->hasGLESExtension("GL_OES_draw_elements_base_vertex") ||
         functions->hasGLESExtension("GL_EXT_draw_elements_base_vertex");
+
+    // ANGLE_base_vertex_base_instance_shader_builtin
+    extensions->baseVertexBaseInstanceShaderBuiltinANGLE = extensions->baseVertexBaseInstanceANGLE;
 
     // OES_draw_elements_base_vertex
     extensions->drawElementsBaseVertexOES =
@@ -1997,7 +2001,7 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
                             IsAndroid() || (IsApple() && (isIntel || isAMD || isNvidia)));
     ANGLE_FEATURE_CONDITION(features, limitMax3dArrayTextureSizeTo1024, limitMaxTextureSize);
 
-    ANGLE_FEATURE_CONDITION(features, allowClearForRobustResourceInit, false);
+    ANGLE_FEATURE_CONDITION(features, allowClearForRobustResourceInit, IsApple());
 
     // The WebGL conformance/uniforms/out-of-bounds-uniform-array-access test has been seen to fail
     // on AMD and Android devices.
@@ -2126,10 +2130,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
     // http://crbug.com/1137851
     // Speculative fix for above issue, users can enable it via flags.
     // http://crbug.com/1187475
-    // Disable on Intel due to crashes in Mesa.
-    // http://anglebug.com/6174
-    // Disabled everywhere due to a bug in detecting Intel platforms on dual-GPU systems.
-    ANGLE_FEATURE_CONDITION(features, disableSyncControlSupport, IsLinux());
+    // Disable on Mesa 20 / Intel
+    ANGLE_FEATURE_CONDITION(features, disableSyncControlSupport,
+                            IsLinux() && isIntel && isMesa && mesaVersion[0] == 20);
 
     ANGLE_FEATURE_CONDITION(features, keepBufferShadowCopy, !CanMapBufferForRead(functions));
 
@@ -2186,9 +2189,9 @@ void InitializeFeatures(const FunctionsGL *functions, angle::FeaturesGL *feature
 
     // Temporarily disable on all of Android. http://crbug.com/1238327
     ANGLE_FEATURE_CONDITION(features, disableMultisampledRenderToTexture,
-                            IsAndroid() || isAdreno4xxOnAndroidLessThan51 ||
-                                isAdreno4xxOnAndroid70 || isAdreno5xxOnAndroidLessThan70 ||
-                                isAdreno5xxOnAndroid71 || isLinuxVivante);
+                            isAdreno4xxOnAndroidLessThan51 || isAdreno4xxOnAndroid70 ||
+                                isAdreno5xxOnAndroidLessThan70 || isAdreno5xxOnAndroid71 ||
+                                isLinuxVivante);
 
     // http://crbug.com/1181068
     ANGLE_FEATURE_CONDITION(features, uploadTextureDataInChunks, IsApple());
@@ -2204,7 +2207,6 @@ void InitializeFrontendFeatures(const FunctionsGL *functions, angle::FrontendFea
 
     ANGLE_FEATURE_CONDITION(features, disableProgramCachingForTransformFeedback,
                             IsAndroid() && isQualcomm);
-    ANGLE_FEATURE_CONDITION(features, syncFramebufferBindingsOnTexImage, false);
     // https://crbug.com/480992
     // Disable shader program cache to workaround PowerVR Rogue issues.
     ANGLE_FEATURE_CONDITION(features, disableProgramBinary, IsPowerVrRogue(functions));
@@ -2605,7 +2607,7 @@ angle::Result ShouldApplyLastRowPaddingWorkaround(ContextGL *contextGL,
     // At this point checkedEndByte is the actual last byte read.
     // The driver adds an extra row padding (if any), mimic it.
     ANGLE_CHECK_GL_MATH(contextGL, checkedPixelBytes.IsValid());
-    if (checkedPixelBytes.ValueOrDie() * size.width < rowPitch)
+    if (static_cast<size_t>(checkedPixelBytes.ValueOrDie()) * size.width < rowPitch)
     {
         checkedEndByte += rowPitch - checkedPixelBytes * size.width;
     }

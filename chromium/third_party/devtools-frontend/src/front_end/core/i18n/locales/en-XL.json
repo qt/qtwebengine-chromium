@@ -401,6 +401,21 @@
   "core/sdk/DOMDebuggerModel.ts | xhr": {
     "message": "X̂H́R̂"
   },
+  "core/sdk/EventBreakpointsModel.ts | auctionWorklet": {
+    "message": "Âd́ Âúĉt́îón̂ Ẃôŕk̂ĺêt́"
+  },
+  "core/sdk/EventBreakpointsModel.ts | beforeBidderWorkletBiddingStart": {
+    "message": "B̂íd̂d́êŕ B̂íd̂d́îńĝ Ṕĥáŝé Ŝt́âŕt̂"
+  },
+  "core/sdk/EventBreakpointsModel.ts | beforeBidderWorkletReportingStart": {
+    "message": "B̂íd̂d́êŕ R̂ép̂ór̂t́îńĝ Ṕĥáŝé Ŝt́âŕt̂"
+  },
+  "core/sdk/EventBreakpointsModel.ts | beforeSellerWorkletReportingStart": {
+    "message": "Ŝél̂ĺêŕ R̂ép̂ór̂t́îńĝ Ṕĥáŝé Ŝt́âŕt̂"
+  },
+  "core/sdk/EventBreakpointsModel.ts | beforeSellerWorkletScoringStart": {
+    "message": "Ŝél̂ĺêŕ Ŝćôŕîńĝ Ṕĥáŝé Ŝt́âŕt̂"
+  },
   "core/sdk/NetworkManager.ts | crossoriginReadBlockingCorb": {
     "message": "Ĉŕôśŝ-Ór̂íĝín̂ Ŕêád̂ B́l̂óĉḱîńĝ (ĆÔŔB̂) b́l̂óĉḱêd́ ĉŕôśŝ-ór̂íĝín̂ ŕêśp̂ón̂śê {PH1} ẃît́ĥ ḾÎḾÊ t́ŷṕê {PH2}. Śêé ĥt́t̂ṕŝ://ẃŵẃ.ĉh́r̂óm̂éŝt́ât́ûś.ĉóm̂/f́êát̂úr̂é/5629709824032768 f̂ór̂ ḿôŕê d́êt́âíl̂ś."
   },
@@ -569,6 +584,9 @@
   "core/sdk/sdk-meta.ts | disabledDarkMode": {
     "message": "D̂íŝáb̂ĺê"
   },
+  "core/sdk/sdk-meta.ts | disableEmulateAutoDarkMode": {
+    "message": "D̂íŝáb̂ĺê áût́ô d́âŕk̂ ḿôd́ê"
+  },
   "core/sdk/sdk-meta.ts | disableJavascript": {
     "message": "D̂íŝáb̂ĺê J́âv́âŚĉŕîṕt̂"
   },
@@ -599,6 +617,9 @@
   "core/sdk/sdk-meta.ts | doNotEmulateCssMediaType": {
     "message": "D̂ó n̂ót̂ ém̂úl̂át̂é ĈŚŜ ḿêd́îá t̂ýp̂é"
   },
+  "core/sdk/sdk-meta.ts | doNotEmulateDarkMode": {
+    "message": "D̂ó n̂ót̂ ém̂úl̂át̂é âút̂ó d̂ár̂ḱ m̂ód̂é"
+  },
   "core/sdk/sdk-meta.ts | doNotExtendGridLines": {
     "message": "D̂ó n̂ót̂ éx̂t́êńd̂ ǵr̂íd̂ ĺîńêś"
   },
@@ -616,6 +637,9 @@
   },
   "core/sdk/sdk-meta.ts | doNotShowGridTrackSizes": {
     "message": "D̂ó n̂ót̂ śĥóŵ ǵr̂íd̂ t́r̂áĉḱ ŝíẑéŝ"
+  },
+  "core/sdk/sdk-meta.ts | doNotShowRulersOnHover": {
+    "message": "D̂ó n̂ót̂ śĥóŵ ŕûĺêŕŝ ón̂ h́ôv́êŕ"
   },
   "core/sdk/sdk-meta.ts | emulateAchromatopsia": {
     "message": "Êḿûĺât́ê áĉh́r̂óm̂át̂óp̂śîá"
@@ -668,6 +692,9 @@
   "core/sdk/sdk-meta.ts | enabledDarkMode": {
     "message": "Êńâb́l̂é"
   },
+  "core/sdk/sdk-meta.ts | enableEmulateAutoDarkMode": {
+    "message": "Êńâb́l̂é âút̂ó d̂ár̂ḱ m̂ód̂é"
+  },
   "core/sdk/sdk-meta.ts | enableJavascript": {
     "message": "Êńâb́l̂é Ĵáv̂áŜćr̂íp̂t́"
   },
@@ -691,9 +718,6 @@
   },
   "core/sdk/sdk-meta.ts | hideFramesPerSecondFpsMeter": {
     "message": "Ĥíd̂é f̂ŕâḿêś p̂ér̂ śêćôńd̂ (F́P̂Ś) m̂ét̂ér̂"
-  },
-  "core/sdk/sdk-meta.ts | hideHittestBorders": {
-    "message": "Ĥíd̂é ĥít̂-t́êśt̂ b́ôŕd̂ér̂ś"
   },
   "core/sdk/sdk-meta.ts | hideLayerBorders": {
     "message": "Ĥíd̂é l̂áŷér̂ b́ôŕd̂ér̂ś"
@@ -749,9 +773,6 @@
   "core/sdk/sdk-meta.ts | showGridTrackSizes": {
     "message": "Ŝh́ôẃ ĝŕîd́ t̂ŕâćk̂ śîźêś"
   },
-  "core/sdk/sdk-meta.ts | showHittestBorders": {
-    "message": "Ŝh́ôẃ ĥít̂-t́êśt̂ b́ôŕd̂ér̂ś"
-  },
   "core/sdk/sdk-meta.ts | showLayerBorders": {
     "message": "Ŝh́ôẃ l̂áŷér̂ b́ôŕd̂ér̂ś"
   },
@@ -770,8 +791,8 @@
   "core/sdk/sdk-meta.ts | showPaintFlashingRectangles": {
     "message": "Ŝh́ôẃ p̂áîńt̂ f́l̂áŝh́îńĝ ŕêćt̂án̂ǵl̂éŝ"
   },
-  "core/sdk/sdk-meta.ts | showRulers": {
-    "message": "Ŝh́ôẃ r̂úl̂ér̂ś"
+  "core/sdk/sdk-meta.ts | showRulersOnHover": {
+    "message": "Ŝh́ôẃ r̂úl̂ér̂ś ôń ĥóv̂ér̂"
   },
   "core/sdk/sdk-meta.ts | showScrollPerformanceBottlenecks": {
     "message": "Ŝh́ôẃ ŝćr̂ól̂ĺ p̂ér̂f́ôŕm̂án̂ćê b́ôt́t̂ĺêńêćk̂ś"
@@ -935,6 +956,9 @@
   "entrypoints/inspector_main/RenderingOptions.ts | forcesCssColorgamutMediaFeature": {
     "message": "F̂ór̂ćêś ĈŚŜ color-gamut ḿêd́îá f̂éât́ûŕê"
   },
+  "entrypoints/inspector_main/RenderingOptions.ts | forcesCssForcedColors": {
+    "message": "F̂ór̂ćêś ĈŚŜ f́ôŕĉéd̂-ćôĺôŕŝ ḿêd́îá f̂éât́ûŕê"
+  },
   "entrypoints/inspector_main/RenderingOptions.ts | forcesCssPreferscolorschemeMedia": {
     "message": "F̂ór̂ćêś ĈŚŜ prefers-color-scheme ḿêd́îá f̂éât́ûŕê"
   },
@@ -971,9 +995,6 @@
   "entrypoints/inspector_main/RenderingOptions.ts | highlightsFramesRedDetectedToBe": {
     "message": "Ĥíĝh́l̂íĝh́t̂ś f̂ŕâḿêś (r̂éd̂) d́êt́êćt̂éd̂ t́ô b́ê ád̂ś."
   },
-  "entrypoints/inspector_main/RenderingOptions.ts | hittestBorders": {
-    "message": "Ĥít̂-t́êśt̂ b́ôŕd̂ér̂ś"
-  },
   "entrypoints/inspector_main/RenderingOptions.ts | layerBorders": {
     "message": "L̂áŷér̂ b́ôŕd̂ér̂ś"
   },
@@ -995,13 +1016,10 @@
   "entrypoints/inspector_main/RenderingOptions.ts | showsAnOverlayWithCoreWebVitals": {
     "message": "Ŝh́ôẃŝ án̂ óv̂ér̂ĺâý ŵít̂h́ Ĉór̂é Ŵéb̂ V́ît́âĺŝ."
   },
-  "entrypoints/inspector_main/RenderingOptions.ts | showsBordersAroundHittestRegions": {
-    "message": "Ŝh́ôẃŝ b́ôŕd̂ér̂ś âŕôún̂d́ ĥít̂-t́êśt̂ ŕêǵîón̂ś."
-  },
   "entrypoints/inspector_main/RenderingOptions.ts | showsLayerBordersOrangeoliveAnd": {
     "message": "Ŝh́ôẃŝ ĺâýêŕ b̂ór̂d́êŕŝ (ór̂án̂ǵê/ól̂ív̂é) âńd̂ t́îĺêś (ĉýâń)."
   },
-  "entrypoints/js_app/JsMain.ts | main": {
+  "entrypoints/js_app/js_app.ts | main": {
     "message": "M̂áîń"
   },
   "entrypoints/main/main-meta.ts | asAuthored": {
@@ -1190,40 +1208,40 @@
   "entrypoints/main/MainImpl.ts | undockIntoSeparateWindow": {
     "message": "Ûńd̂óĉḱ îńt̂ó ŝép̂ár̂át̂é ŵín̂d́ôẃ"
   },
-  "entrypoints/node_app/node_app-meta.ts | node": {
-    "message": "N̂ód̂é"
-  },
-  "entrypoints/node_app/node_app-meta.ts | showNode": {
-    "message": "N̂ód̂é"
-  },
-  "entrypoints/node_main/node_main-meta.ts | connection": {
+  "entrypoints/node_app/node_app.ts | connection": {
     "message": "Ĉón̂ńêćt̂íôń"
   },
-  "entrypoints/node_main/node_main-meta.ts | node": {
+  "entrypoints/node_app/node_app.ts | networkTitle": {
+    "message": "N̂ód̂é"
+  },
+  "entrypoints/node_app/node_app.ts | node": {
     "message": "n̂ód̂é"
   },
-  "entrypoints/node_main/node_main-meta.ts | showConnection": {
+  "entrypoints/node_app/node_app.ts | showConnection": {
     "message": "Ŝh́ôẃ Ĉón̂ńêćt̂íôń"
   },
-  "entrypoints/node_main/NodeConnectionsPanel.ts | addConnection": {
+  "entrypoints/node_app/node_app.ts | showNode": {
+    "message": "N̂ód̂é"
+  },
+  "entrypoints/node_app/NodeConnectionsPanel.ts | addConnection": {
     "message": "Âd́d̂ ćôńn̂éĉt́îón̂"
   },
-  "entrypoints/node_main/NodeConnectionsPanel.ts | networkAddressEgLocalhost": {
+  "entrypoints/node_app/NodeConnectionsPanel.ts | networkAddressEgLocalhost": {
     "message": "N̂ét̂ẃôŕk̂ ád̂d́r̂éŝś (ê.ǵ. l̂óĉál̂h́ôśt̂:9229)"
   },
-  "entrypoints/node_main/NodeConnectionsPanel.ts | noConnectionsSpecified": {
+  "entrypoints/node_app/NodeConnectionsPanel.ts | noConnectionsSpecified": {
     "message": "N̂ó ĉón̂ńêćt̂íôńŝ śp̂éĉíf̂íêd́"
   },
-  "entrypoints/node_main/NodeConnectionsPanel.ts | nodejsDebuggingGuide": {
+  "entrypoints/node_app/NodeConnectionsPanel.ts | nodejsDebuggingGuide": {
     "message": "N̂ód̂é.ĵś d̂éb̂úĝǵîńĝ ǵûíd̂é"
   },
-  "entrypoints/node_main/NodeConnectionsPanel.ts | specifyNetworkEndpointAnd": {
+  "entrypoints/node_app/NodeConnectionsPanel.ts | specifyNetworkEndpointAnd": {
     "message": "Ŝṕêćîf́ŷ ńêt́ŵór̂ḱ êńd̂ṕôín̂t́ âńd̂ D́êv́T̂óôĺŝ ẃîĺl̂ ćôńn̂éĉt́ t̂ó ît́ âút̂óm̂át̂íĉál̂ĺŷ. Ŕêád̂ {PH1} t́ô ĺêár̂ń m̂ór̂é."
   },
-  "entrypoints/node_main/NodeMain.ts | main": {
+  "entrypoints/node_app/NodeMain.ts | main": {
     "message": "M̂áîń"
   },
-  "entrypoints/node_main/NodeMain.ts | nodejsS": {
+  "entrypoints/node_app/NodeMain.ts | nodejsS": {
     "message": "N̂ód̂é.ĵś: {PH1}"
   },
   "entrypoints/worker_app/WorkerMain.ts | main": {
@@ -1322,17 +1340,14 @@
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Ĉŕôśŝ-Ór̂íĝín̂ Ŕêśôúr̂ćê Śĥár̂ín̂ǵ (CORS)"
   },
-  "models/issues_manager/CorsIssue.ts | corsForPrivateNetworksRfc": {
-    "message": "ĈÓR̂Ś f̂ór̂ ṕr̂ív̂át̂é n̂ét̂ẃôŕk̂ś (R̂F́Ĉ1918)"
+  "models/issues_manager/CorsIssue.ts | corsPrivateNetworkAccess": {
+    "message": "P̂ŕîv́ât́ê Ńêt́ŵór̂ḱ Âćĉéŝś"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | coopAndCoep": {
     "message": "ĈÓÔṔ âńd̂ ĆÔÉP̂"
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Ŝám̂é-Ŝít̂é âńd̂ Śâḿê-Ór̂íĝín̂"
-  },
-  "models/issues_manager/DeprecationIssue.ts | userAgentReduction": {
-    "message": "Ûśêŕ-Âǵêńt̂ Śt̂ŕîńĝ Ŕêd́ûćt̂íôń"
   },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "P̂ór̂t́âĺŝ - Śâḿê-ór̂íĝín̂ ćôḿm̂ún̂íĉát̂íôń ĉh́âńn̂él̂ś"
@@ -1363,6 +1378,9 @@
   },
   "models/issues_manager/MixedContentIssue.ts | preventingMixedContent": {
     "message": "P̂ŕêv́êńt̂ín̂ǵ m̂íx̂éd̂ ćôńt̂én̂t́"
+  },
+  "models/issues_manager/NavigatorUserAgentIssue.ts | userAgentReduction": {
+    "message": "Ûśêŕ-Âǵêńt̂ Śt̂ŕîńĝ Ŕêd́ûćt̂íôń"
   },
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "D̂óĉúm̂én̂t́ ĉóm̂ṕât́îb́îĺît́ŷ ḿôd́ê"
@@ -1694,6 +1712,9 @@
   "panels/accessibility/AccessibilityStrings.ts | fromCaption": {
     "message": "F̂ŕôḿ caption"
   },
+  "panels/accessibility/AccessibilityStrings.ts | fromDescription": {
+    "message": "F̂ŕôḿ description"
+  },
   "panels/accessibility/AccessibilityStrings.ts | fromLabel": {
     "message": "F̂ŕôḿ label"
   },
@@ -1844,6 +1865,9 @@
   "panels/accessibility/AccessibilityStrings.ts | valueFromAttribute": {
     "message": "V̂ál̂úê f́r̂óm̂ át̂t́r̂íb̂út̂é."
   },
+  "panels/accessibility/AccessibilityStrings.ts | valueFromDescriptionElement": {
+    "message": "V̂ál̂úê f́r̂óm̂ description él̂ém̂én̂t́."
+  },
   "panels/accessibility/AccessibilityStrings.ts | valueFromElementContents": {
     "message": "V̂ál̂úê f́r̂óm̂ él̂ém̂én̂t́ ĉón̂t́êńt̂ś."
   },
@@ -1931,8 +1955,17 @@
   "panels/accessibility/AXBreadcrumbsPane.ts | accessibilityTree": {
     "message": "Âćĉéŝśîb́îĺît́ŷ T́r̂éê"
   },
+  "panels/accessibility/AXBreadcrumbsPane.ts | fullTreeExperimentDescription": {
+    "message": "T̂h́ê áĉćêśŝíb̂íl̂ít̂ý t̂ŕêé m̂óv̂éd̂ t́ô t́ĥé t̂óp̂ ŕîǵĥt́ ĉór̂ńêŕ ôf́ t̂h́ê D́ÔḾ t̂ŕêé."
+  },
+  "panels/accessibility/AXBreadcrumbsPane.ts | fullTreeExperimentName": {
+    "message": "Êńâb́l̂é f̂úl̂ĺ-p̂áĝé âćĉéŝśîb́îĺît́ŷ t́r̂éê"
+  },
   "panels/accessibility/AXBreadcrumbsPane.ts | ignored": {
     "message": "Îǵn̂ór̂éd̂"
+  },
+  "panels/accessibility/AXBreadcrumbsPane.ts | reloadRequired": {
+    "message": "R̂él̂óâd́ r̂éq̂úîŕêd́ b̂éf̂ór̂é t̂h́ê ćĥán̂ǵê t́âḱêś êf́f̂éĉt́."
   },
   "panels/accessibility/AXBreadcrumbsPane.ts | scrollIntoView": {
     "message": "Ŝćr̂ól̂ĺ îńt̂ó v̂íêẃ"
@@ -2028,7 +2061,7 @@
     "message": "Ŝt́ôṕ r̂éĉór̂d́îńĝ év̂én̂t́ŝ"
   },
   "panels/application/ApplicationPanelCacheSection.ts | backForwardCache": {
-    "message": "B̂áĉḱ-f̂ór̂ẃâŕd̂ Ćâćĥé"
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé"
   },
   "panels/application/ApplicationPanelCacheSection.ts | cacheStorage": {
     "message": "Ĉáĉh́ê Śt̂ór̂áĝé"
@@ -2330,41 +2363,338 @@
   "panels/application/AppManifestView.ts | theSpecifiedApplicationPlatform": {
     "message": "T̂h́ê śp̂éĉíf̂íêd́ âṕp̂ĺîćât́îón̂ ṕl̂át̂f́ôŕm̂ íŝ ńôt́ ŝúp̂ṕôŕt̂éd̂ ón̂ Android"
   },
-  "panels/application/BackForwardCacheView.ts | backForwardCacheTitle": {
-    "message": "B̂áĉḱ-f̂ór̂ẃâŕd̂ Ćâćĥé"
+  "panels/application/BackForwardCacheStrings.ts | appBanner": {
+    "message": "P̂áĝéŝ t́ĥát̂ ŕêq́ûéŝt́êd́ âń Âṕp̂B́âńn̂ér̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
   },
-  "panels/application/BackForwardCacheView.ts | bfcacheStatus": {
-    "message": "B̂áĉḱ-f̂ór̂ẃâŕd̂ Ćâćĥé Ŝt́ât́ûś"
+  "panels/application/BackForwardCacheStrings.ts | backForwardCacheDisabled": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îś d̂íŝáb̂ĺêd́ b̂ý f̂ĺâǵŝ. V́îśît́ ĉh́r̂óm̂é://f̂ĺâǵŝ/#b́âćk̂-f́ôŕŵár̂d́-ĉáĉh́ê t́ô én̂áb̂ĺê ít̂ ĺôćâĺl̂ý ôń t̂h́îś d̂év̂íĉé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | backForwardCacheDisabledByCommandLine": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îś d̂íŝáb̂ĺêd́ b̂ý t̂h́ê ćôḿm̂án̂d́ l̂ín̂é."
+  },
+  "panels/application/BackForwardCacheStrings.ts | backForwardCacheDisabledByLowMemory": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îś d̂íŝáb̂ĺêd́ d̂úê t́ô ín̂śûf́f̂íĉíêńt̂ ḿêḿôŕŷ."
+  },
+  "panels/application/BackForwardCacheStrings.ts | backForwardCacheDisabledForDelegate": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îś n̂ót̂ śûṕp̂ór̂t́êd́ b̂ý d̂él̂éĝát̂é."
+  },
+  "panels/application/BackForwardCacheStrings.ts | backForwardCacheDisabledForPrerender": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îś d̂íŝáb̂ĺêd́ f̂ór̂ ṕr̂ér̂én̂d́êŕêŕ."
+  },
+  "panels/application/BackForwardCacheStrings.ts | broadcastChannel": {
+    "message": "T̂h́ê ṕâǵê ćâńn̂ót̂ b́ê ćâćĥéd̂ b́êćâúŝé ît́ ĥáŝ á B̂ŕôád̂ćâśt̂Ćĥán̂ńêĺ îńŝt́âńĉé ŵít̂h́ r̂éĝíŝt́êŕêd́ l̂íŝt́êńêŕŝ."
+  },
+  "panels/application/BackForwardCacheStrings.ts | cacheControlNoStore": {
+    "message": "P̂áĝéŝ ẃît́ĥ ćâćĥé-ĉón̂t́r̂ól̂:ńô-śt̂ór̂é ĥéâd́êŕ ĉán̂ńôt́ êńt̂ér̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | cacheFlushed": {
+    "message": "T̂h́ê ćâćĥé ŵáŝ ín̂t́êńt̂íôńâĺl̂ý ĉĺêár̂éd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | cacheLimit": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ t́ĥé ĉáĉh́ê t́ô ál̂ĺôẃ âńôt́ĥér̂ ṕâǵê t́ô b́ê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | containsPlugins": {
+    "message": "P̂áĝéŝ ćôńt̂áîńîńĝ ṕl̂úĝín̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentFileChooser": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé F̂íl̂éĈh́ôóŝér̂ ÁP̂Í âŕê ńôt́ êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentFileSystemAccess": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé F̂íl̂é Ŝýŝt́êḿ Âćĉéŝś ÂṔÎ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentMediaDevicesDispatcherHost": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé M̂éd̂íâ D́êv́îćê D́îśp̂át̂ćĥér̂ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentMediaPlay": {
+    "message": "Â ḿêd́îá p̂ĺâýêŕ ŵáŝ ṕl̂áŷín̂ǵ ûṕôń n̂áv̂íĝát̂ín̂ǵ âẃâý."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentMediaSession": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé M̂éd̂íâŚêśŝíôń ÂṔÎ án̂d́ ŝét̂ á p̂ĺâýb̂áĉḱ ŝt́ât́ê ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentMediaSessionService": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé M̂éd̂íâŚêśŝíôń ÂṔÎ án̂d́ ŝét̂ áĉt́îón̂ h́âńd̂ĺêŕŝ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentSecurityHandler": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŝéĉúr̂ít̂ýĤán̂d́l̂ér̂ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentSerial": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŝér̂íâĺ ÂṔÎ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentWebAuthenticationAPI": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂Áût́ĥét̂íĉát̂íôń ÂṔÎ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentWebBluetooth": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂B́l̂úêt́ôót̂h́ ÂṔÎ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | contentWebUSB": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂ÚŜB́ ÂṔÎ ár̂é n̂ót̂ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | dedicatedWorkerOrWorklet": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé â d́êd́îćât́êd́ ŵór̂ḱêŕ ôŕ ŵór̂ḱl̂ét̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | documentLoaded": {
+    "message": "T̂h́ê d́ôćûḿêńt̂ d́îd́ n̂ót̂ f́îńîśĥ ĺôád̂ín̂ǵ b̂éf̂ór̂é n̂áv̂íĝát̂ín̂ǵ âẃâý."
+  },
+  "panels/application/BackForwardCacheStrings.ts | enteredBackForwardCacheBeforeServiceWorkerHostAdded": {
+    "message": "Â śêŕv̂íĉé ŵór̂ḱêŕ ŵáŝ áĉt́îv́ât́êd́ ŵh́îĺê t́ĥé p̂áĝé ŵáŝ ín̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | foregroundCacheLimit": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ t́ĥé ĉáĉh́ê t́ô ál̂ĺôẃ âńôt́ĥér̂ ṕâǵê t́ô b́ê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | grantedMediaStreamAccess": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ǵr̂án̂t́êd́ m̂éd̂íâ śt̂ŕêám̂ áĉćêśŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | haveInnerContents": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé p̂ór̂t́âĺŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | HTTPMethodNotGET": {
+    "message": "Ôńl̂ý p̂áĝéŝ ĺôád̂éd̂ v́îá â ǴÊT́ r̂éq̂úêśt̂ ár̂é êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | HTTPStatusNotOK": {
+    "message": "Ôńl̂ý p̂áĝéŝ ẃît́ĥ á ŝt́ât́ûś ĉód̂é ôf́ 2X̂X́ ĉán̂ b́ê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | idleManager": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Îd́l̂éM̂án̂áĝér̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | indexedDBConnection": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê án̂ óp̂én̂ Ín̂d́êx́êd́D̂B́ ĉón̂ńêćt̂íôń âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | ineligibleAPI": {
+    "message": "Îńêĺîǵîb́l̂é ÂṔÎś ŵér̂é ûśêd́."
+  },
+  "panels/application/BackForwardCacheStrings.ts | injectedJavascript": {
+    "message": "ÎṔâǵêś t̂h́ât́ Ĵáv̂áŜćr̂íp̂t́ îś îńĵéĉt́êd́ îńt̂ó b̂ý êx́t̂én̂śîón̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | injectedStyleSheet": {
+    "message": "P̂áĝéŝ t́ĥát̂ Śt̂ýl̂éŜh́êét̂ íŝ ín̂j́êćt̂éd̂ ín̂t́ô b́ŷ éx̂t́êńŝíôńŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | internalError": {
+    "message": "Îńt̂ér̂ńâĺ êŕr̂ór̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | JavaScriptExecution": {
+    "message": "Ĉh́r̂óm̂é d̂ét̂éĉt́êd́ âń ât́t̂ém̂ṕt̂ t́ô éx̂éĉút̂é Ĵáv̂áŜćr̂íp̂t́ ŵh́îĺê ín̂ t́ĥé ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | keyboardLock": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé K̂éŷb́ôár̂d́ l̂óĉḱ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | loading": {
+    "message": "T̂h́ê ṕâǵê d́îd́ n̂ót̂ f́îńîśĥ ĺôád̂ín̂ǵ b̂éf̂ór̂é n̂áv̂íĝát̂ín̂ǵ âẃâý."
+  },
+  "panels/application/BackForwardCacheStrings.ts | mainResourceHasCacheControlNoCache": {
+    "message": "P̂áĝéŝ ẃĥóŝé m̂áîń r̂éŝóûŕĉé ĥáŝ ćâćĥé-ĉón̂t́r̂ól̂:ńô-ćâćĥé ĉán̂ńôt́ êńt̂ér̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | mainResourceHasCacheControlNoStore": {
+    "message": "P̂áĝéŝ ẃĥóŝé m̂áîń r̂éŝóûŕĉé ĥáŝ ćâćĥé-ĉón̂t́r̂ól̂:ńô-śt̂ór̂é ĉán̂ńôt́ êńt̂ér̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | navigationCancelledWhileRestoring": {
+    "message": "N̂áv̂íĝát̂íôń ŵáŝ ćâńĉél̂ĺêd́ b̂éf̂ór̂é t̂h́ê ṕâǵê ćôúl̂d́ b̂é r̂éŝt́ôŕêd́ f̂ŕôḿ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | networkExceedsBufferLimit": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ t́ĥé ĉáĉh́ê b́êćâúŝé âń âćt̂ív̂é n̂ét̂ẃôŕk̂ ćôńn̂éĉt́îón̂ ŕêćêív̂éd̂ t́ôó m̂úĉh́ d̂át̂á. Ĉh́r̂óm̂é l̂ím̂ít̂ś t̂h́ê ám̂óûńt̂ óf̂ d́ât́â t́ĥát̂ á p̂áĝé m̂áŷ ŕêćêív̂é ŵh́îĺê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | networkRequestDatapipeDrainedAsBytesConsumer": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ín̂f́l̂íĝh́t̂ f́êt́ĉh́() ôŕ X̂H́R̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | networkRequestRedirected": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê b́êćâúŝé âń âćt̂ív̂é n̂ét̂ẃôŕk̂ ŕêq́ûéŝt́ îńv̂ól̂v́êd́ â ŕêd́îŕêćt̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | networkRequestTimeout": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ t́ĥé ĉáĉh́ê b́êćâúŝé â ńêt́ŵór̂ḱ ĉón̂ńêćt̂íôń ŵáŝ óp̂én̂ t́ôó l̂ón̂ǵ. Ĉh́r̂óm̂é l̂ím̂ít̂ś t̂h́ê ám̂óûńt̂ óf̂ t́îḿê t́ĥát̂ á p̂áĝé m̂áŷ ŕêćêív̂é d̂át̂á ŵh́îĺê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | noResponseHead": {
+    "message": "P̂áĝéŝ t́ĥát̂ d́ô ńôt́ ĥáv̂é â v́âĺîd́ r̂éŝṕôńŝé ĥéâd́ ĉán̂ńôt́ êńt̂ér̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | notMainFrame": {
+    "message": "N̂áv̂íĝát̂íôń ĥáp̂ṕêńêd́ îń â f́r̂ám̂é ôt́ĥér̂ t́ĥán̂ t́ĥé m̂áîń f̂ŕâḿê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | outstandingIndexedDBTransaction": {
+    "message": "P̂áĝé ŵít̂h́ ôńĝóîńĝ ín̂d́êx́êd́ D̂B́ t̂ŕâńŝáĉt́îón̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | outstandingNetworkRequestDirectSocket": {
+    "message": "P̂áĝéŝ ẃît́ĥ án̂ ín̂-f́l̂íĝh́t̂ ńêt́ŵór̂ḱ r̂éq̂úêśt̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | outstandingNetworkRequestFetch": {
+    "message": "P̂áĝéŝ ẃît́ĥ án̂ ín̂-f́l̂íĝh́t̂ f́êt́ĉh́ n̂ét̂ẃôŕk̂ ŕêq́ûéŝt́ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | outstandingNetworkRequestOthers": {
+    "message": "P̂áĝéŝ ẃît́ĥ án̂ ín̂-f́l̂íĝh́t̂ ńêt́ŵór̂ḱ r̂éq̂úêśt̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | outstandingNetworkRequestXHR": {
+    "message": "P̂áĝéŝ ẃît́ĥ án̂ ín̂-f́l̂íĝh́t̂ X́ĤŔ n̂ét̂ẃôŕk̂ ŕêq́ûéŝt́ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | paymentManager": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé P̂áŷḿêńt̂Ḿâńâǵêŕ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | pictureInPicture": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé P̂íĉt́ûŕê-ín̂-Ṕîćt̂úr̂é âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | portal": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé p̂ór̂t́âĺŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | printing": {
+    "message": "P̂áĝéŝ t́ĥát̂ śĥóŵ Ṕr̂ín̂t́îńĝ ÚÎ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | relatedActiveContentsExist": {
+    "message": "T̂h́ê ṕâǵê ẃâś ôṕêńêd́ ûśîńĝ 'window.open()' án̂d́ âńôt́ĥér̂ t́âb́ ĥáŝ á r̂éf̂ér̂én̂ćê t́ô ít̂, ór̂ t́ĥé p̂áĝé ôṕêńêd́ â ẃîńd̂óŵ."
+  },
+  "panels/application/BackForwardCacheStrings.ts | rendererProcessCrashed": {
+    "message": "T̂h́ê ŕêńd̂ér̂ér̂ ṕr̂óĉéŝś f̂ór̂ t́ĥé p̂áĝé îń b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé ĉŕâśĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | rendererProcessKilled": {
+    "message": "T̂h́ê ŕêńd̂ér̂ér̂ ṕr̂óĉéŝś f̂ór̂ t́ĥé p̂áĝé îń b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé ŵáŝ ḱîĺl̂éd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedAudioCapturePermission": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ âúd̂íô ćâṕt̂úr̂é p̂ér̂ḿîśŝíôńŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedBackForwardCacheBlockedSensors": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ ŝén̂śôŕ p̂ér̂ḿîśŝíôńŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedBackgroundWorkPermission": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ b̂áĉḱĝŕôún̂d́ ŝýn̂ć ôŕ f̂ét̂ćĥ ṕêŕm̂íŝśîón̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedMIDIPermission": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ M̂ÍD̂Í p̂ér̂ḿîśŝíôńŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedNotificationsPermission": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ n̂ót̂íf̂íĉát̂íôńŝ ṕêŕm̂íŝśîón̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedStorageAccessGrant": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ ŝt́ôŕâǵê áĉćêśŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | requestedVideoCapturePermission": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ŕêq́ûéŝt́êd́ v̂íd̂éô ćâṕt̂úr̂é p̂ér̂ḿîśŝíôńŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | schemeNotHTTPOrHTTPS": {
+    "message": "Ôńl̂ý p̂áĝéŝ ẃĥóŝé ÛŔL̂ śĉh́êḿê íŝ H́T̂T́P̂ / H́T̂T́P̂Ś ĉán̂ b́ê ćâćĥéd̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | serviceWorkerClaim": {
+    "message": "T̂h́ê ṕâǵê ẃâś ĉĺâím̂éd̂ b́ŷ á ŝér̂v́îćê ẃôŕk̂ér̂ ẃĥíl̂é ît́ îś îń b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | serviceWorkerPostMessage": {
+    "message": "Â śêŕv̂íĉé ŵór̂ḱêŕ ât́t̂ém̂ṕt̂éd̂ t́ô śêńd̂ t́ĥé p̂áĝé îń b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé â MessageEvent."
+  },
+  "panels/application/BackForwardCacheStrings.ts | serviceWorkerUnregistration": {
+    "message": "Ŝér̂v́îćêẂôŕk̂ér̂ ẃâś ûńr̂éĝíŝt́êŕêd́ ŵh́îĺê á p̂áĝé ŵáŝ ín̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | serviceWorkerVersionActivation": {
+    "message": "T̂h́ê ṕâǵê ẃâś êv́îćt̂éd̂ f́r̂óm̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê d́ûé t̂ó â śêŕv̂íĉé ŵór̂ḱêŕ âćt̂ív̂át̂íôń."
+  },
+  "panels/application/BackForwardCacheStrings.ts | sessionRestored": {
+    "message": "Ĉh́r̂óm̂é r̂éŝt́âŕt̂éd̂ án̂d́ ĉĺêár̂éd̂ t́ĥé b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé êńt̂ŕîéŝ."
+  },
+  "panels/application/BackForwardCacheStrings.ts | sharedWorker": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŝh́âŕêd́Ŵór̂ḱêŕ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | speechRecognizer": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŝṕêéĉh́R̂éĉóĝńîźêŕ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | speechSynthesis": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŝṕêéĉh́Ŝýn̂t́ĥéŝíŝ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | subframeIsNavigating": {
+    "message": "Âń îf́r̂ám̂é ôń t̂h́ê ṕâǵê śt̂ár̂t́êd́ â ńâv́îǵât́îón̂ t́ĥát̂ d́îd́ n̂ót̂ ćôḿp̂ĺêt́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | subresourceHasCacheControlNoCache": {
+    "message": "P̂áĝéŝ ẃĥóŝé ŝúb̂ŕêśôúr̂ćê h́âś ĉáĉh́ê-ćôńt̂ŕôĺ:n̂ó-ĉáĉh́ê ćâńn̂ót̂ én̂t́êŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | subresourceHasCacheControlNoStore": {
+    "message": "P̂áĝéŝ ẃĥóŝé ŝúb̂ŕêśôúr̂ćê h́âś ĉáĉh́ê-ćôńt̂ŕôĺ:n̂ó-ŝt́ôŕê ćâńn̂ót̂ én̂t́êŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | timeout": {
+    "message": "T̂h́ê ṕâǵê éx̂ćêéd̂éd̂ t́ĥé m̂áx̂ím̂úm̂ t́îḿê ín̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê án̂d́ ŵáŝ éx̂ṕîŕêd́."
+  },
+  "panels/application/BackForwardCacheStrings.ts | timeoutPuttingInCache": {
+    "message": "T̂h́ê ṕâǵê t́îḿêd́ ôút̂ én̂t́êŕîńĝ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê (ĺîḱêĺŷ d́ûé t̂ó l̂ón̂ǵ-r̂ún̂ńîńĝ ṕâǵêh́îd́ê h́âńd̂ĺêŕŝ)."
+  },
+  "panels/application/BackForwardCacheStrings.ts | unloadHandlerExistsInMainFrame": {
+    "message": "T̂h́ê ṕâǵê h́âś âń ûńl̂óâd́ ĥán̂d́l̂ér̂ ín̂ t́ĥé m̂áîń f̂ŕâḿê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | unloadHandlerExistsInSubFrame": {
+    "message": "T̂h́ê ṕâǵê h́âś âń ûńl̂óâd́ ĥán̂d́l̂ér̂ ín̂ á ŝúb̂ f́r̂ám̂é."
+  },
+  "panels/application/BackForwardCacheStrings.ts | userAgentOverrideDiffers": {
+    "message": "B̂ŕôẃŝér̂ h́âś ĉh́âńĝéd̂ t́ĥé ûśêŕ âǵêńt̂ óv̂ér̂ŕîd́ê h́êád̂ér̂."
+  },
+  "panels/application/BackForwardCacheStrings.ts | wasGrantedMediaAccess": {
+    "message": "P̂áĝéŝ t́ĥát̂ h́âv́ê ǵr̂án̂t́êd́ âćĉéŝś t̂ó r̂éĉór̂d́ v̂íd̂éô ór̂ áûd́îó âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webDatabase": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂D́ât́âb́âśê ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webHID": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂H́ÎD́ âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webLocks": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂Ĺôćk̂ś âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webNfc": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂Ńf̂ć âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâd́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webOTPService": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂ÓT̂ṔŜér̂v́îćê ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́f̂ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webRTC": {
+    "message": "P̂áĝéŝ ẃît́ĥ Ẃêb́R̂T́Ĉ ćâńn̂ót̂ én̂t́êŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webShare": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂Śĥár̂é âŕê ńôt́ ĉúr̂ŕêńt̂ĺŷ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâd́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webSocket": {
+    "message": "P̂áĝéŝ ẃît́ĥ Ẃêb́Ŝóĉḱêt́ ĉán̂ńôt́ êńt̂ér̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webTransport": {
+    "message": "P̂áĝéŝ ẃît́ĥ Ẃêb́T̂ŕâńŝṕôŕt̂ ćâńn̂ót̂ én̂t́êŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheStrings.ts | webXR": {
+    "message": "P̂áĝéŝ t́ĥát̂ úŝé Ŵéb̂X́R̂ ár̂é n̂ót̂ ćûŕr̂én̂t́l̂ý êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
+  "panels/application/BackForwardCacheView.ts | backForwardCacheTitle": {
+    "message": "B̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé"
   },
   "panels/application/BackForwardCacheView.ts | circumstantial": {
     "message": "N̂ót̂ Áĉt́îón̂áb̂ĺê"
   },
-  "panels/application/BackForwardCacheView.ts | lastMainFrameNavigation": {
-    "message": "L̂áŝt́ M̂áîń F̂ŕâḿê Ńâv́îǵât́îón̂"
+  "panels/application/BackForwardCacheView.ts | circumstantialExplanation": {
+    "message": "T̂h́êśê ŕêáŝón̂ś âŕê ńôt́ âćt̂íôńâb́l̂é î.é. ĉáĉh́îńĝ ẃâś p̂ŕêv́êńt̂éd̂ b́ŷ śôḿêt́ĥín̂ǵ ôút̂śîd́ê óf̂ t́ĥé d̂ír̂éĉt́ ĉón̂t́r̂ól̂ óf̂ t́ĥé p̂áĝé."
+  },
+  "panels/application/BackForwardCacheView.ts | learnMore": {
+    "message": "L̂éâŕn̂ ḿôŕê: b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê él̂íĝíb̂íl̂ít̂ý"
   },
   "panels/application/BackForwardCacheView.ts | mainFrame": {
     "message": "M̂áîń F̂ŕâḿê"
   },
   "panels/application/BackForwardCacheView.ts | normalNavigation": {
-    "message": "N̂ór̂ḿâĺ n̂áv̂íĝát̂íôń (N̂ót̂ ŕêśt̂ór̂éd̂ f́r̂óm̂ b́âćk̂-f́ôŕŵár̂d́ ĉáĉh́ê)"
+    "message": "N̂ót̂ śêŕv̂éd̂ f́r̂óm̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê: t́ô t́r̂íĝǵêŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé, ûśê Ćĥŕôḿê'ś b̂áĉḱ/f̂ór̂ẃâŕd̂ b́ût́t̂ón̂ś, ôŕ ûśê t́ĥé t̂éŝt́ b̂út̂t́ôń b̂él̂óŵ t́ô áût́ôḿât́îćâĺl̂ý n̂áv̂íĝát̂é âẃâý âńd̂ b́âćk̂."
   },
   "panels/application/BackForwardCacheView.ts | pageSupportNeeded": {
     "message": "Âćt̂íôńâb́l̂é"
   },
+  "panels/application/BackForwardCacheView.ts | pageSupportNeededExplanation": {
+    "message": "T̂h́êśê ŕêáŝón̂ś âŕê áĉt́îón̂áb̂ĺê í.ê. t́ĥéŷ ćâń b̂é ĉĺêán̂éd̂ úp̂ t́ô ḿâḱê t́ĥé p̂áĝé êĺîǵîb́l̂é f̂ór̂ b́âćk̂/f́ôŕŵár̂d́ ĉáĉh́ê."
+  },
   "panels/application/BackForwardCacheView.ts | restoredFromBFCache": {
-    "message": "R̂éŝt́ôŕêd́ f̂ŕôḿ b̂áĉḱ-f̂ór̂ẃâŕd̂ ćâćĥé"
+    "message": "Ŝúĉćêśŝf́ûĺl̂ý ŝér̂v́êd́ f̂ŕôḿ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé."
+  },
+  "panels/application/BackForwardCacheView.ts | runningTest": {
+    "message": "R̂ún̂ńîńĝ t́êśt̂"
+  },
+  "panels/application/BackForwardCacheView.ts | runTest": {
+    "message": "T̂éŝt́ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé"
   },
   "panels/application/BackForwardCacheView.ts | supportPending": {
     "message": "P̂én̂d́îńĝ Śûṕp̂ór̂t́"
+  },
+  "panels/application/BackForwardCacheView.ts | supportPendingExplanation": {
+    "message": "Ĉh́r̂óm̂é ŝúp̂ṕôŕt̂ f́ôŕ t̂h́êśê ŕêáŝón̂ś îś p̂én̂d́îńĝ í.ê. t́ĥéŷ ẃîĺl̂ ńôt́ p̂ŕêv́êńt̂ t́ĥé p̂áĝé f̂ŕôḿ b̂éîńĝ él̂íĝíb̂ĺê f́ôŕ b̂áĉḱ/f̂ór̂ẃâŕd̂ ćâćĥé îń â f́ût́ûŕê v́êŕŝíôń ôf́ Ĉh́r̂óm̂é."
   },
   "panels/application/BackForwardCacheView.ts | unavailable": {
     "message": "ûńâv́âíl̂áb̂ĺê"
   },
   "panels/application/BackForwardCacheView.ts | unknown": {
-    "message": "ûńk̂ńôẃn̂"
+    "message": "Ûńk̂ńôẃn̂ Śt̂át̂úŝ"
   },
   "panels/application/BackForwardCacheView.ts | url": {
-    "message": "ÛŔL̂"
+    "message": "ÛŔL̂:"
   },
   "panels/application/BackgroundServiceView.ts | backgroundFetch": {
     "message": "B̂áĉḱĝŕôún̂d́ F̂ét̂ćĥ"
@@ -2484,22 +2814,16 @@
     "message": "Ĉĺîćk̂ t́ô ŕêv́êál̂ ín̂ Śôúr̂ćêś p̂án̂él̂"
   },
   "panels/application/components/FrameDetailsView.ts | createdByAdScriptExplanation": {
-    "message": "T̂h́êŕê ẃâś âń âd́ ŝćr̂íp̂t́ îń t̂h́ê (áŝýn̂ć) ŝt́âćk̂ ẃĥén̂ t́ĥíŝ f́r̂ám̂é ŵáŝ ćr̂éât́êd́. Êx́âḿîńîńĝ t́ĥé ĉŕêát̂íôń ŝt́âćk̂ t́r̂áĉé ôf́ t̂h́îś f̂ŕâḿê ḿîǵĥt́ p̂ŕôv́îd́ê ḿôŕê ín̂śîǵĥt́."
+    "message": "T̂h́êŕê ẃâś âń âd́ ŝćr̂íp̂t́ îń t̂h́ê (async) stack ẃĥén̂ t́ĥíŝ f́r̂ám̂é ŵáŝ ćr̂éât́êd́. Êx́âḿîńîńĝ t́ĥé ĉŕêát̂íôń stack trace ôf́ t̂h́îś f̂ŕâḿê ḿîǵĥt́ p̂ŕôv́îd́ê ḿôŕê ín̂śîǵĥt́."
   },
   "panels/application/components/FrameDetailsView.ts | creationStackTrace": {
-    "message": "F̂ŕâḿê Ćr̂éât́îón̂ Śt̂áĉḱ T̂ŕâćê"
+    "message": "F̂ŕâḿê Ćr̂éât́îón̂ Stack Trace"
   },
   "panels/application/components/FrameDetailsView.ts | creationStackTraceExplanation": {
-    "message": "T̂h́îś f̂ŕâḿê ẃâś ĉŕêát̂éd̂ ṕr̂óĝŕâḿm̂át̂íĉál̂ĺŷ. T́ĥé ŝt́âćk̂ t́r̂áĉé ŝh́ôẃŝ ẃĥér̂é t̂h́îś ĥáp̂ṕêńêd́."
-  },
-  "panels/application/components/FrameDetailsView.ts | crossoriginEmbedderPolicy": {
-    "message": "Ĉŕôśŝ-Ór̂íĝín̂ Ém̂b́êd́d̂ér̂ Ṕôĺîćŷ"
+    "message": "T̂h́îś f̂ŕâḿê ẃâś ĉŕêát̂éd̂ ṕr̂óĝŕâḿm̂át̂íĉál̂ĺŷ. T́ĥé stack trace ŝh́ôẃŝ ẃĥér̂é t̂h́îś ĥáp̂ṕêńêd́."
   },
   "panels/application/components/FrameDetailsView.ts | crossoriginIsolated": {
     "message": "Ĉŕôśŝ-Ór̂íĝín̂ Íŝól̂át̂éd̂"
-  },
-  "panels/application/components/FrameDetailsView.ts | crossoriginOpenerPolicy": {
-    "message": "Ĉŕôśŝ-Ór̂íĝín̂ Óp̂én̂ér̂ Ṕôĺîćŷ"
   },
   "panels/application/components/FrameDetailsView.ts | document": {
     "message": "D̂óĉúm̂én̂t́"
@@ -2511,7 +2835,7 @@
     "message": "L̂éâŕn̂ ḿôŕê"
   },
   "panels/application/components/FrameDetailsView.ts | localhostIsAlwaysASecureContext": {
-    "message": "L̂óĉál̂h́ôśt̂ íŝ ál̂ẃâýŝ á ŝéĉúr̂é ĉón̂t́êx́t̂"
+    "message": "Localhost îś âĺŵáŷś â śêćûŕê ćôńt̂éx̂t́"
   },
   "panels/application/components/FrameDetailsView.ts | matchedBlockingRuleExplanation": {
     "message": "T̂h́îś f̂ŕâḿê íŝ ćôńŝíd̂ér̂éd̂ án̂ ád̂ f́r̂ám̂é b̂éĉáûśê ít̂ś ĉúr̂ŕêńt̂ (ór̂ ṕr̂év̂íôúŝ) ḿâín̂ d́ôćûḿêńt̂ íŝ án̂ ád̂ ŕêśôúr̂ćê."
@@ -2524,9 +2848,6 @@
   },
   "panels/application/components/FrameDetailsView.ts | origin": {
     "message": "Ôŕîǵîń"
-  },
-  "panels/application/components/FrameDetailsView.ts | originTrials": {
-    "message": "Ôŕîǵîń T̂ŕîál̂ś"
   },
   "panels/application/components/FrameDetailsView.ts | ownerElement": {
     "message": "Ôẃn̂ér̂ Él̂ém̂én̂t́"
@@ -2553,19 +2874,19 @@
     "message": "Ŝéĉúr̂ít̂ý & Îśôĺât́îón̂"
   },
   "panels/application/components/FrameDetailsView.ts | sharedarraybufferConstructorIs": {
-    "message": "Ŝh́âŕêd́Âŕr̂áŷB́ûf́f̂ér̂ ćôńŝt́r̂úĉt́ôŕ îś âv́âíl̂áb̂ĺê án̂d́ ŜÁB̂ś ĉán̂ b́ê t́r̂án̂śf̂ér̂ŕêd́ v̂íâ ṕôśt̂Ḿêśŝáĝé"
+    "message": "SharedArrayBuffer ĉón̂śt̂ŕûćt̂ór̂ íŝ áv̂áîĺâb́l̂é âńd̂ SABs ćâń b̂é t̂ŕâńŝf́êŕr̂éd̂ v́îá postMessage"
   },
   "panels/application/components/FrameDetailsView.ts | sharedarraybufferConstructorIsAvailable": {
-    "message": "Ŝh́âŕêd́Âŕr̂áŷB́ûf́f̂ér̂ ćôńŝt́r̂úĉt́ôŕ îś âv́âíl̂áb̂ĺê b́ût́ ŜÁB̂ś ĉán̂ńôt́ b̂é t̂ŕâńŝf́êŕr̂éd̂ v́îá p̂óŝt́M̂éŝśâǵê"
+    "message": "SharedArrayBuffer ĉón̂śt̂ŕûćt̂ór̂ íŝ áv̂áîĺâb́l̂é b̂út̂ SABs ćâńn̂ót̂ b́ê t́r̂án̂śf̂ér̂ŕêd́ v̂íâ postMessage"
   },
   "panels/application/components/FrameDetailsView.ts | theFramesSchemeIsInsecure": {
     "message": "T̂h́ê f́r̂ám̂é'ŝ śĉh́êḿê íŝ ín̂śêćûŕê"
   },
   "panels/application/components/FrameDetailsView.ts | thePerformanceAPI": {
-    "message": "T̂h́ê ṕêŕf̂ór̂ḿâńĉé.m̂éâśûŕêÚŝér̂Áĝén̂t́Ŝṕêćîf́îćM̂ém̂ór̂ý() ÂṔÎ íŝ áv̂áîĺâb́l̂é"
+    "message": "T̂h́ê performance.measureUserAgentSpecificMemory() ÁP̂Í îś âv́âíl̂áb̂ĺê"
   },
   "panels/application/components/FrameDetailsView.ts | thePerformancemeasureuseragentspecificmemory": {
-    "message": "T̂h́ê ṕêŕf̂ór̂ḿâńĉé.m̂éâśûŕêÚŝér̂Áĝén̂t́Ŝṕêćîf́îćM̂ém̂ór̂ý() ÂṔÎ íŝ ńôt́ âv́âíl̂áb̂ĺê"
+    "message": "T̂h́ê performance.measureUserAgentSpecificMemory() ÁP̂Í îś n̂ót̂ áv̂áîĺâb́l̂é"
   },
   "panels/application/components/FrameDetailsView.ts | thisAdditionalDebugging": {
     "message": "T̂h́îś âd́d̂ít̂íôńâĺ (d̂éb̂úĝǵîńĝ) ín̂f́ôŕm̂át̂íôń îś ŝh́ôẃn̂ b́êćâúŝé t̂h́ê 'Ṕr̂ót̂óĉól̂ Ḿôńît́ôŕ' êx́p̂ér̂ím̂én̂t́ îś êńâb́l̂éd̂."
@@ -2611,6 +2932,9 @@
   },
   "panels/application/components/OriginTrialTreeView.ts | tokens": {
     "message": "{PH1} t̂ók̂én̂ś"
+  },
+  "panels/application/components/OriginTrialTreeView.ts | trialName": {
+    "message": "T̂ŕîál̂ Ńâḿê"
   },
   "panels/application/components/OriginTrialTreeView.ts | usageRestriction": {
     "message": "Ûśâǵê Ŕêśt̂ŕîćt̂íôń"
@@ -3272,17 +3596,8 @@
   "panels/changes/ChangesSidebar.ts | sFromSourceMap": {
     "message": "{PH1} (f̂ŕôḿ ŝóûŕĉé m̂áp̂)"
   },
-  "panels/changes/ChangesTextEditor.ts | additions": {
-    "message": "Âd́d̂ít̂íôń:{PH1}"
-  },
-  "panels/changes/ChangesTextEditor.ts | deletions": {
-    "message": "D̂él̂ét̂íôń:{PH1}"
-  },
   "panels/changes/ChangesView.ts | binaryData": {
     "message": "B̂ín̂ár̂ý d̂át̂á"
-  },
-  "panels/changes/ChangesView.ts | changesDiffViewer": {
-    "message": "Ĉh́âńĝéŝ d́îf́f̂ v́îéŵér̂"
   },
   "panels/changes/ChangesView.ts | noChanges": {
     "message": "N̂ó ĉh́âńĝéŝ"
@@ -3295,9 +3610,6 @@
   },
   "panels/changes/ChangesView.ts | sInsertions": {
     "message": "{n, plural, =1 {# îńŝér̂t́îón̂ (+)} other {# ín̂śêŕt̂íôńŝ (+)}}"
-  },
-  "panels/changes/ChangesView.ts | SkippingDMatchingLines": {
-    "message": "( … Ŝḱîṕp̂ín̂ǵ {PH1} m̂át̂ćĥín̂ǵ l̂ín̂éŝ … )"
   },
   "panels/console_counters/WarningErrorCounter.ts | openConsoleToViewS": {
     "message": "Ôṕêń Ĉón̂śôĺê t́ô v́îéŵ {PH1}"
@@ -3758,20 +4070,11 @@
   "panels/coverage/CoverageView.ts | urlFilter": {
     "message": "ÛŔL̂ f́îĺt̂ér̂"
   },
-  "panels/css_overview/components/CSSOverviewStartView.ts | activelyWorkingAndLookingForS": {
-    "message": "Ôúr̂ t́êám̂ íŝ áĉt́îv́êĺŷ ẃôŕk̂ín̂ǵ ôń t̂h́îś f̂éât́ûŕê án̂d́ ŵé âŕê ĺôók̂ín̂ǵ f̂ór̂ ýôúr̂ {PH1}!"
-  },
   "panels/css_overview/components/CSSOverviewStartView.ts | captureOverview": {
     "message": "Ĉáp̂t́ûŕê óv̂ér̂v́îéŵ"
   },
   "panels/css_overview/components/CSSOverviewStartView.ts | capturePageCSSOverview": {
     "message": "Ĉáp̂t́ûŕê án̂ óv̂ér̂v́îéŵ óf̂ ýôúr̂ ṕâǵê’ś ĈŚŜ"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | feedbackInline": {
-    "message": "f̂éêd́b̂áĉḱ"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | feedbackStandalone": {
-    "message": "F̂éêd́b̂áĉḱ"
   },
   "panels/css_overview/components/CSSOverviewStartView.ts | identifyCSSImprovements": {
     "message": "Îd́êńt̂íf̂ý p̂ót̂én̂t́îál̂ ĆŜŚ îḿp̂ŕôv́êḿêńt̂ś"
@@ -3782,14 +4085,8 @@
   "panels/css_overview/components/CSSOverviewStartView.ts | locateAffectedElements": {
     "message": "L̂óĉát̂é t̂h́ê áf̂f́êćt̂éd̂ él̂ém̂én̂t́ŝ ín̂ t́ĥé Êĺêḿêńt̂ś p̂án̂él̂"
   },
-  "panels/css_overview/components/CSSOverviewStartView.ts | previewFeature": {
-    "message": "P̂ŕêv́îéŵ f́êát̂úr̂é"
-  },
   "panels/css_overview/components/CSSOverviewStartView.ts | quickStartWithCSSOverview": {
     "message": "Q̂úîćk̂ śt̂ár̂t́: ĝét̂ śt̂ár̂t́êd́ ŵít̂h́ t̂h́ê ńêẃ ĈŚŜ Óv̂ér̂v́îéŵ ṕâńêĺ"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | videoAndDocumentation": {
-    "message": "V̂íd̂éô án̂d́ d̂óĉúm̂én̂t́ât́îón̂"
   },
   "panels/css_overview/css_overview-meta.ts | cssOverview": {
     "message": "ĈŚŜ Óv̂ér̂v́îéŵ"
@@ -4021,6 +4318,9 @@
   },
   "panels/elements/components/LayoutPane.ts | chooseElementOverlayColor": {
     "message": "Ĉh́ôóŝé t̂h́ê óv̂ér̂ĺâý ĉól̂ór̂ f́ôŕ t̂h́îś êĺêḿêńt̂"
+  },
+  "panels/elements/components/LayoutPane.ts | colorPickerOpened": {
+    "message": "Ĉól̂ór̂ ṕîćk̂ér̂ óp̂én̂éd̂."
   },
   "panels/elements/components/LayoutPane.ts | flexbox": {
     "message": "F̂ĺêx́b̂óx̂"
@@ -4379,6 +4679,21 @@
   "panels/elements/PlatformFontsWidget.ts | renderedFonts": {
     "message": "R̂én̂d́êŕêd́ F̂ón̂t́ŝ"
   },
+  "panels/elements/PropertiesWidget.ts | filter": {
+    "message": "F̂íl̂t́êŕ"
+  },
+  "panels/elements/PropertiesWidget.ts | filterProperties": {
+    "message": "F̂íl̂t́êŕ P̂ŕôṕêŕt̂íêś"
+  },
+  "panels/elements/PropertiesWidget.ts | noMatchingProperty": {
+    "message": "N̂ó m̂át̂ćĥín̂ǵ p̂ŕôṕêŕt̂ý"
+  },
+  "panels/elements/PropertiesWidget.ts | showAll": {
+    "message": "Ŝh́ôẃ âĺl̂"
+  },
+  "panels/elements/PropertiesWidget.ts | showAllTooltip": {
+    "message": "Ŵh́êń ûńĉh́êćk̂éd̂, ón̂ĺŷ ṕr̂óp̂ér̂t́îéŝ ẃĥóŝé v̂ál̂úêś âŕê ńêít̂h́êŕ n̂úl̂ĺ n̂ór̂ ún̂d́êf́îńêd́ ŵíl̂ĺ b̂é ŝh́ôẃn̂"
+  },
   "panels/elements/StylePropertyTreeElement.ts | copyAllCssDeclarationsAsJs": {
     "message": "Ĉóp̂ý âĺl̂ d́êćl̂ár̂át̂íôńŝ áŝ J́Ŝ"
   },
@@ -4435,6 +4750,15 @@
   },
   "panels/elements/StylesSidebarPane.ts | copySelector": {
     "message": "Ĉóp̂ý selector"
+  },
+  "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
+    "message": "CSS p̂ŕôṕêŕt̂ý n̂ám̂é"
+  },
+  "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
+    "message": "CSS p̂ŕôṕêŕt̂ý v̂ál̂úê"
+  },
+  "panels/elements/StylesSidebarPane.ts | cssSelector": {
+    "message": "CSS ŝél̂éĉt́ôŕ"
   },
   "panels/elements/StylesSidebarPane.ts | filter": {
     "message": "F̂íl̂t́êŕ"
@@ -4626,7 +4950,7 @@
     "message": "Ĥíd̂é m̂éd̂íâ q́ûér̂íêś"
   },
   "panels/emulation/emulation-meta.ts | hideRulers": {
-    "message": "Ĥíd̂é r̂úl̂ér̂ś"
+    "message": "Ĥíd̂é r̂úl̂ér̂ś îń t̂h́ê D́êv́îćê Ḿôd́ê t́ôól̂b́âŕ"
   },
   "panels/emulation/emulation-meta.ts | showDeviceFrame": {
     "message": "Ŝh́ôẃ d̂év̂íĉé f̂ŕâḿê"
@@ -4635,7 +4959,7 @@
     "message": "Ŝh́ôẃ m̂éd̂íâ q́ûér̂íêś"
   },
   "panels/emulation/emulation-meta.ts | showRulers": {
-    "message": "Ŝh́ôẃ r̂úl̂ér̂ś"
+    "message": "Ŝh́ôẃ r̂úl̂ér̂ś îń t̂h́ê D́êv́îćê Ḿôd́ê t́ôól̂b́âŕ"
   },
   "panels/emulation/emulation-meta.ts | toggleDeviceToolbar": {
     "message": "T̂óĝǵl̂é d̂év̂íĉé t̂óôĺb̂ár̂"
@@ -4663,36 +4987,6 @@
   },
   "panels/event_listeners/EventListenersView.ts | toggleWhetherEventListenerIs": {
     "message": "T̂óĝǵl̂é ŵh́êt́ĥér̂ év̂én̂t́ l̂íŝt́êńêŕ îś p̂áŝśîv́ê ór̂ b́l̂óĉḱîńĝ"
-  },
-  "panels/help/help-meta.ts | bug": {
-    "message": "b̂úĝ"
-  },
-  "panels/help/help-meta.ts | doNotShowWhatsNewAfterEachUpdate": {
-    "message": "D̂ó n̂ót̂ śĥóŵ Ẃĥát̂'ś N̂éŵ áf̂t́êŕ êáĉh́ ûṕd̂át̂é"
-  },
-  "panels/help/help-meta.ts | releaseNotes": {
-    "message": "R̂él̂éâśê ńôt́êś"
-  },
-  "panels/help/help-meta.ts | reportADevtoolsIssue": {
-    "message": "R̂ép̂ór̂t́ â D́êv́T̂óôĺŝ íŝśûé"
-  },
-  "panels/help/help-meta.ts | reportTranslationIssue": {
-    "message": "R̂ép̂ór̂t́ â t́r̂án̂śl̂át̂íôń îśŝúê"
-  },
-  "panels/help/help-meta.ts | showWhatsNew": {
-    "message": "Ŝh́ôẃ Ŵh́ât́'ŝ Ńêẃ"
-  },
-  "panels/help/help-meta.ts | showWhatsNewAfterEachUpdate": {
-    "message": "Ŝh́ôẃ Ŵh́ât́'ŝ Ńêẃ âf́t̂ér̂ éâćĥ úp̂d́ât́ê"
-  },
-  "panels/help/help-meta.ts | whatsNew": {
-    "message": "Ŵh́ât́'ŝ Ńêẃ"
-  },
-  "panels/help/ReleaseNoteView.ts | close": {
-    "message": "Ĉĺôśê"
-  },
-  "panels/help/ReleaseNoteView.ts | learnMore": {
-    "message": "L̂éâŕn̂ ḿôŕê"
   },
   "panels/input/input-meta.ts | inputs": {
     "message": "Îńp̂út̂ś"
@@ -4910,8 +5204,20 @@
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidSourceEventId": {
     "message": "Îńv̂ál̂íd̂ attributionsourceeventid"
   },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | invalidSourceExpiry": {
+    "message": "Îńv̂ál̂íd̂ attributionexpiry"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | invalidSourcePriority": {
+    "message": "Îńv̂ál̂íd̂ attributionsourcepriority"
+  },
   "panels/issues/AttributionReportingIssueDetailsView.ts | invalidTriggerData": {
     "message": "Îńv̂ál̂íd̂ trigger-data"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | invalidTriggerDedupKey": {
+    "message": "Îńv̂ál̂íd̂ dedup-key"
+  },
+  "panels/issues/AttributionReportingIssueDetailsView.ts | invalidTriggerPriority": {
+    "message": "Îńv̂ál̂íd̂ priority"
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | nViolations": {
     "message": "{n, plural, =1 {# v̂íôĺât́îón̂} other {# v́îól̂át̂íôńŝ}}"
@@ -4939,6 +5245,9 @@
   },
   "panels/issues/CorsIssueDetailsView.ts | disallowedRequestMethod": {
     "message": "D̂íŝál̂ĺôẃêd́ R̂éq̂úêśt̂ Ḿêt́ĥód̂"
+  },
+  "panels/issues/CorsIssueDetailsView.ts | failedRequest": {
+    "message": "F̂áîĺêd́ R̂éq̂úêśt̂"
   },
   "panels/issues/CorsIssueDetailsView.ts | header": {
     "message": "Ĥéâd́êŕ"
@@ -5018,8 +5327,14 @@
   "panels/issues/HiddenIssuesRow.ts | unhideAll": {
     "message": "Ûńĥíd̂é âĺl̂"
   },
-  "panels/issues/IssueKindView.ts | hideAllCurrent": {
-    "message": "Ĥíd̂é âĺl̂ ćûŕr̂én̂t́ {PH1}"
+  "panels/issues/IssueKindView.ts | hideAllCurrentBreakingChanges": {
+    "message": "Ĥíd̂é âĺl̂ ćûŕr̂én̂t́ B̂ŕêák̂ín̂ǵ Ĉh́âńĝéŝ"
+  },
+  "panels/issues/IssueKindView.ts | hideAllCurrentImprovements": {
+    "message": "Ĥíd̂é âĺl̂ ćûŕr̂én̂t́ Îḿp̂ŕôv́êḿêńt̂ś"
+  },
+  "panels/issues/IssueKindView.ts | hideAllCurrentPageErrors": {
+    "message": "Ĥíd̂é âĺl̂ ćûŕr̂én̂t́ P̂áĝé Êŕr̂ór̂ś"
   },
   "panels/issues/issues-meta.ts | cspViolations": {
     "message": "ĈŚP̂ V́îól̂át̂íôńŝ"
@@ -6083,6 +6398,9 @@
   "panels/network/NetworkConfigView.ts | caching": {
     "message": "Ĉáĉh́îńĝ"
   },
+  "panels/network/NetworkConfigView.ts | clientHintsStatusText": {
+    "message": "Ûśêŕ âǵêńt̂ úp̂d́ât́êd́."
+  },
   "panels/network/NetworkConfigView.ts | custom": {
     "message": "Ĉúŝt́ôḿ..."
   },
@@ -6211,6 +6529,9 @@
   },
   "panels/network/NetworkDataGridNode.ts | sPreflight": {
     "message": "{PH1} + P̂ŕêf́l̂íĝh́t̂"
+  },
+  "panels/network/NetworkDataGridNode.ts | timeSubtitleTooltipText": {
+    "message": "L̂át̂én̂ćŷ (ŕêśp̂ón̂śê ŕêćêív̂éd̂ t́îḿê - śt̂ár̂t́ t̂ím̂é)"
   },
   "panels/network/NetworkDataGridNode.ts | unknown": {
     "message": "(ûńk̂ńôẃn̂)"
@@ -8420,6 +8741,18 @@
   "panels/sensors/SensorsView.ts | timezoneId": {
     "message": "T̂ím̂éẑón̂é ÎD́"
   },
+  "panels/settings/components/SyncSection.ts | preferencesSyncDisabled": {
+    "message": "T̂ó t̂úr̂ń t̂h́îś ŝét̂t́îńĝ ón̂, ýôú m̂úŝt́ f̂ír̂śt̂ én̂áb̂ĺê śêt́t̂ín̂ǵŝ śŷńĉ ín̂ Ćĥŕôḿê."
+  },
+  "panels/settings/components/SyncSection.ts | settings": {
+    "message": "Ĝó t̂ó Ŝét̂t́îńĝś"
+  },
+  "panels/settings/components/SyncSection.ts | signedIn": {
+    "message": "Ŝíĝńêd́ îńt̂ó Ĉh́r̂óm̂é âś:"
+  },
+  "panels/settings/components/SyncSection.ts | syncDisabled": {
+    "message": "T̂ó t̂úr̂ń t̂h́îś ŝét̂t́îńĝ ón̂, ýôú m̂úŝt́ êńâb́l̂é Ĉh́r̂óm̂é ŝýn̂ć."
+  },
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | addBrand": {
     "message": "Âd́d̂ B́r̂án̂d́"
   },
@@ -8747,6 +9080,9 @@
   "panels/sources/CallStackSidebarPane.ts | addScriptToIgnoreList": {
     "message": "Âd́d̂ śĉŕîṕt̂ t́ô íĝńôŕê ĺîśt̂"
   },
+  "panels/sources/CallStackSidebarPane.ts | callFrameWarnings": {
+    "message": "Ŝóm̂é ĉál̂ĺ f̂ŕâḿêś ĥáv̂é ŵár̂ńîńĝś"
+  },
   "panels/sources/CallStackSidebarPane.ts | callStack": {
     "message": "Ĉál̂ĺ Ŝt́âćk̂"
   },
@@ -8778,7 +9114,7 @@
     "message": "Ĉóv̂ér̂áĝé: n̂/á"
   },
   "panels/sources/CoveragePlugin.ts | coverageS": {
-    "message": "Ĉóv̂ér̂áĝé: {PH1} %"
+    "message": "Ĉóv̂ér̂áĝé: {PH1}"
   },
   "panels/sources/CoveragePlugin.ts | showDetails": {
     "message": "Ŝh́ôẃ D̂ét̂áîĺŝ"
@@ -9043,6 +9379,15 @@
   },
   "panels/sources/OutlineQuickOpen.ts | openAJavascriptOrCssFileToSee": {
     "message": "Ôṕêń â J́âv́âŚĉŕîṕt̂ ór̂ ĆŜŚ f̂íl̂é t̂ó ŝéê śŷḿb̂ól̂ś"
+  },
+  "panels/sources/ProfilePlugin.ts | kb": {
+    "message": "k̂B́"
+  },
+  "panels/sources/ProfilePlugin.ts | mb": {
+    "message": "M̂B́"
+  },
+  "panels/sources/ProfilePlugin.ts | ms": {
+    "message": "m̂ś"
   },
   "panels/sources/ScopeChainSidebarPane.ts | closure": {
     "message": "Ĉĺôśûŕê"
@@ -10973,6 +11318,18 @@
   "ui/components/data_grid/DataGrid.ts | sortBy": {
     "message": "Ŝór̂t́ B̂ý"
   },
+  "ui/components/diff_view/DiffView.ts | additions": {
+    "message": "Âd́d̂ít̂íôń:"
+  },
+  "ui/components/diff_view/DiffView.ts | changesDiffViewer": {
+    "message": "Ĉh́âńĝéŝ d́îf́f̂ v́îéŵér̂"
+  },
+  "ui/components/diff_view/DiffView.ts | deletions": {
+    "message": "D̂él̂ét̂íôń:"
+  },
+  "ui/components/diff_view/DiffView.ts | SkippingDMatchingLines": {
+    "message": "( … Ŝḱîṕp̂ín̂ǵ {PH1} m̂át̂ćĥín̂ǵ l̂ín̂éŝ … )"
+  },
   "ui/components/issue_counter/IssueCounter.ts | breakingChanges": {
     "message": "{issueCount, plural, =1 {# b̂ŕêák̂ín̂ǵ ĉh́âńĝé} other {# b̂ŕêák̂ín̂ǵ ĉh́âńĝéŝ}}"
   },
@@ -11047,6 +11404,24 @@
   },
   "ui/components/linear_memory_inspector/ValueInterpreterSettings.ts | otherGroup": {
     "message": "Ôt́ĥér̂"
+  },
+  "ui/components/panel_feedback/FeedbackButton.ts | feedback": {
+    "message": "F̂éêd́b̂áĉḱ"
+  },
+  "ui/components/panel_feedback/PanelFeedback.ts | previewFeature": {
+    "message": "P̂ŕêv́îéŵ f́êát̂úr̂é"
+  },
+  "ui/components/panel_feedback/PanelFeedback.ts | previewText": {
+    "message": "Ôúr̂ t́êám̂ íŝ áĉt́îv́êĺŷ ẃôŕk̂ín̂ǵ ôń t̂h́îś f̂éât́ûŕê án̂d́ ŵé ŵóûĺd̂ ĺôv́ê t́ô ḱn̂óŵ ẃĥát̂ ýôú t̂h́îńk̂."
+  },
+  "ui/components/panel_feedback/PanelFeedback.ts | previewTextFeedbackLink": {
+    "message": "Ŝén̂d́ ûś ŷóûŕ f̂éêd́b̂áĉḱ."
+  },
+  "ui/components/panel_feedback/PanelFeedback.ts | videoAndDocumentation": {
+    "message": "V̂íd̂éô án̂d́ d̂óĉúm̂én̂t́ât́îón̂"
+  },
+  "ui/components/panel_feedback/PreviewToggle.ts | previewTextFeedbackLink": {
+    "message": "Ŝén̂d́ ûś ŷóûŕ f̂éêd́b̂áĉḱ."
   },
   "ui/components/request_link_icon/RequestLinkIcon.ts | clickToShowRequestInTheNetwork": {
     "message": "Ĉĺîćk̂ t́ô óp̂én̂ t́ĥé n̂ét̂ẃôŕk̂ ṕâńêĺ âńd̂ śĥóŵ ŕêq́ûéŝt́ f̂ór̂ ÚR̂Ĺ: {url}"
@@ -11164,6 +11539,9 @@
   },
   "ui/legacy/components/cookie_table/CookiesTable.ts | name": {
     "message": "N̂ám̂é"
+  },
+  "ui/legacy/components/cookie_table/CookiesTable.ts | opaquePartitionKey": {
+    "message": "(ôṕâq́ûé)"
   },
   "ui/legacy/components/cookie_table/CookiesTable.ts | session": {
     "message": "Ŝéŝśîón̂"
@@ -11333,15 +11711,6 @@
   "ui/legacy/components/object_ui/CustomPreviewComponent.ts | showAsJavascriptObject": {
     "message": "Ŝh́ôẃ âś Ĵáv̂áŜćr̂íp̂t́ ôb́ĵéĉt́"
   },
-  "ui/legacy/components/object_ui/JavaScriptAutocomplete.ts | keys": {
-    "message": "K̂éŷś"
-  },
-  "ui/legacy/components/object_ui/JavaScriptAutocomplete.ts | keywords": {
-    "message": "k̂éŷẃôŕd̂ś"
-  },
-  "ui/legacy/components/object_ui/JavaScriptAutocomplete.ts | lexicalScopeVariables": {
-    "message": "L̂éx̂íĉál̂ śĉóp̂é v̂ár̂íâb́l̂éŝ"
-  },
   "ui/legacy/components/object_ui/ObjectPropertiesSection.ts | collapseChildren": {
     "message": "Ĉól̂ĺâṕŝé ĉh́îĺd̂ŕêń"
   },
@@ -11428,15 +11797,6 @@
   },
   "ui/legacy/components/perf_ui/FlameChart.ts | sSelected": {
     "message": "{PH1} ŝél̂éĉt́êd́"
-  },
-  "ui/legacy/components/perf_ui/LineLevelProfile.ts | kb": {
-    "message": "k̂B́"
-  },
-  "ui/legacy/components/perf_ui/LineLevelProfile.ts | mb": {
-    "message": "M̂B́"
-  },
-  "ui/legacy/components/perf_ui/LineLevelProfile.ts | ms": {
-    "message": "m̂ś"
   },
   "ui/legacy/components/perf_ui/NetworkPriorities.ts | high": {
     "message": "Ĥíĝh́"
@@ -11615,9 +11975,6 @@
   "ui/legacy/components/source_frame/XMLView.ts | find": {
     "message": "F̂ín̂d́"
   },
-  "ui/legacy/components/text_editor/CodeMirrorTextEditor.ts | codeEditor": {
-    "message": "Ĉód̂é êd́ît́ôŕ"
-  },
   "ui/legacy/components/utils/ImagePreview.ts | currentSource": {
     "message": "Ĉúr̂ŕêńt̂ śôúr̂ćê:"
   },
@@ -11725,6 +12082,12 @@
   },
   "ui/legacy/InspectorView.ts | drawer": {
     "message": "T̂óôĺ d̂ŕâẃêŕ"
+  },
+  "ui/legacy/InspectorView.ts | drawerHidden": {
+    "message": "D̂ŕâẃêŕ ĥíd̂d́êń"
+  },
+  "ui/legacy/InspectorView.ts | drawerShown": {
+    "message": "D̂ŕâẃêŕ ŝh́ôẃn̂"
   },
   "ui/legacy/InspectorView.ts | mainToolbar": {
     "message": "M̂áîń t̂óôĺb̂ár̂"

@@ -7,6 +7,10 @@ import * as CM from '../../../third_party/codemirror.next/codemirror.next.js';
 export const editorTheme = CM.EditorView.theme({
   '&.cm-editor': {
     color: 'color: var(--color-text-primary)',
+    cursor: 'auto',
+    '&.cm-focused': {
+      outline: 'none',
+    },
   },
 
   '.cm-scroller': {
@@ -15,7 +19,7 @@ export const editorTheme = CM.EditorView.theme({
     fontSize: 'var(--source-code-font-size)',
   },
 
-  '.cm-panels, .cm-tooltip': {
+  '.cm-panels': {
     backgroundColor: 'var(--color-background-elevation-1)',
   },
 
@@ -49,9 +53,18 @@ export const editorTheme = CM.EditorView.theme({
     backgroundColor: 'var(--color-background)',
   },
 
+  '.cm-lineNumbers': {
+    overflow: 'visible',
+    minWidth: '40px',
+  },
   '.cm-lineNumbers .cm-gutterElement': {
     color: 'var(--color-line-number)',
     padding: '0 3px 0 9px',
+  },
+
+  '.cm-matchingBracket, .cm-nonmatchingBracket': {
+    background: 'transparent',
+    borderBottom: 'none',
   },
 
   '&:focus-within .cm-matchingBracket': {
@@ -66,7 +79,7 @@ export const editorTheme = CM.EditorView.theme({
   },
 
   '.cm-trailingWhitespace': {
-    backgroundColor: 'var(--color-error-text)',
+    backgroundColor: 'var(--color-trailing-whitespace)',
   },
 
   '.cm-highlightedTab': {
@@ -96,6 +109,50 @@ export const editorTheme = CM.EditorView.theme({
 
   '.cm-completionHint': {
     color: 'var(--color-text-secondary)',
+  },
+
+  '.cm-tooltip': {
+    boxShadow: 'var(--drop-shadow)',
+    backgroundColor: 'var(--color-background-elevation-1)',
+  },
+
+  '.cm-argumentHints': {
+    pointerEvents: 'none',
+    padding: '0 4px',
+    whiteSpace: 'nowrap',
+    lineHeight: '20px',
+    marginBottom: '4px',
+    width: 'fit-content',
+  },
+
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': {
+    backgroundColor: 'var(--color-background)',
+    minWidth: '16em',
+    '& > li.cm-secondaryCompletion': {
+      display: 'flex',
+      backgroundColor: 'var(--color-background-elevation-1)',
+      justifyContent: 'space-between',
+      '&::before': {
+        content: '">"',
+        fontWeight: 'bold',
+        color: 'var(--color-primary-variant)',
+        marginRight: '5px',
+      },
+    },
+    '& > li:hover': {
+      backgroundColor: 'var(--item-hover-color)',
+    },
+    '& > li[aria-selected]': {
+      backgroundColor: 'var(--color-selected-option-background)',
+      '&, &.cm-secondaryCompletion::before': {
+        color: 'var(--color-selected-option)',
+      },
+    },
+  },
+
+  '.cm-completionMatchedText': {
+    textDecoration: 'none',
+    fontWeight: 'bold',
   },
 
   '.cm-highlightedLine': {

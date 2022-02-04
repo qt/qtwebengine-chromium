@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# import the use_x11 variable
+# import the ozone_platform_x11 variable
 import("gni/angle.gni")
 if (angle_has_build) {
   import("//build/config/linux/pkg_config.gni")
+  import("//build/config/sanitizers/sanitizers.gni")
   import("//build/config/ui.gni")
   import("//testing/libfuzzer/fuzzer_test.gni")
 
@@ -15,6 +16,8 @@ if (angle_has_build) {
     import("//build/config/android/rules.gni")
     import("android/angle_apk.gni")
   }
+} else {
+  using_sanitizer = false
 }
 
 declare_args() {
@@ -48,6 +51,10 @@ declare_args() {
 
   # Optional feature that forces dirty state whenever we use a new context regardless of thread.
   angle_force_context_check_every_call = false
+
+  # Allow shared library custom name extensions for setting soname such as libEGL.so.1
+  angle_egl_extension = ""
+  angle_glesv2_extension = ""
 }
 
 if (angle_build_all) {
@@ -199,8 +206,9 @@ config("extra_warnings") {
       "-Wtautological-type-limit-compare",
       "-Wundefined-reinterpret-cast",
       "-Wunneeded-internal-declaration",
-      "-Wweak-template-vtables",
       "-Wunused-but-set-variable",
+      "-Wsuggest-destructor-override",
+      "-Wsuggest-override",
 
       # The below warnings are used by WebKit. We enable them to make rolling
       # ANGLE in WebKit easier.
@@ -210,13 +218,6 @@ config("extra_warnings") {
       "-Wunreachable-code-aggressive",
       "-Wshorten-64-to-32",
     ]
-    if (!use_xcode_clang) {
-      # Mac catalyst uses a clang version that doesn't have these.
-      cflags += [
-        "-Wsuggest-destructor-override",
-        "-Wsuggest-override",
-      ]
-    }
   }
 
   if (is_gcc) {
@@ -376,7 +377,6 @@ angle_static_library("angle_common") {
 
   public_deps = [
     ":angle_abseil",
-    ":angle_version",
     ":includes",
   ]
   public_configs += [ ":angle_common_config" ]
@@ -400,6 +400,10 @@ angle_static_library("angle_common") {
 
   if (angle_expose_non_conformant_extensions_and_versions) {
     defines = [ "ANGLE_EXPOSE_NON_CONFORMANT_EXTENSIONS_AND_VERSIONS" ]
+  }
+
+  if (using_sanitizer && !build_with_chromium) {
+    data_deps = [ "//build/config/clang:llvm-symbolizer_data($host_toolchain)" ]
   }
 }
 
@@ -453,14 +457,15 @@ angle_static_library("angle_gpu_info_util") {
   libs = []
   defines = []
 
-  if (!is_chromeos && angle_has_build) {
+  if (angle_build_vulkan_system_info) {
     sources += libangle_gpu_info_util_vulkan_sources
     deps += [
-      "$angle_root/src/common/vulkan:angle_libvulkan_loader",
       "$angle_vulkan_headers_dir:vulkan_headers",
+      "src/common/vulkan:angle_libvulkan_loader",
+      "src/common/vulkan:angle_vulkan_icd",
     ]
     if (angle_enable_vulkan_system_info) {
-      defines += [ "ANGLE_HAS_VULKAN_SYSTEM_INFO" ]
+      defines += [ "ANGLE_USE_VULKAN_SYSTEM_INFO" ]
     }
   }
 
@@ -609,12 +614,19 @@ template("translator_lib") {
       deps += [
         "$angle_root/src/common/spirv:angle_spirv_base",
         "$angle_root/src/common/spirv:angle_spirv_builder",
-        "${angle_glslang_dir}:glslang_default_resource_limits_sources",
-        "${angle_glslang_dir}:glslang_lib_sources",
         "${angle_spirv_headers_dir}:spv_headers",
         "${angle_spirv_tools_dir}:spvtools_headers",
         "${angle_spirv_tools_dir}:spvtools_val",
       ]
+
+      if (angle_enable_spirv_gen_through_glslang) {
+        defines += [ "ANGLE_ENABLE_SPIRV_GENERATION_THROUGH_GLSLANG" ]
+        sources += [ "src/compiler/translator/glslang_wrapper.cpp" ]
+        deps += [
+          "${angle_glslang_dir}:glslang_default_resource_limits_sources",
+          "${angle_glslang_dir}:glslang_lib_sources",
+        ]
+      }
     }
 
     public_deps = [
@@ -656,10 +668,12 @@ config("angle_commit_id_config") {
   visibility = [ ":angle_commit_id" ]
 }
 
-_commit_id_output_file = "$root_gen_dir/angle/angle_commit.h"
 action("angle_commit_id") {
+  _commit_id_header = "$root_gen_dir/angle/angle_commit.h"
   script = "src/commit_id.py"
-  outputs = [ _commit_id_output_file ]
+  outputs = [ _commit_id_header ]
+
+  visibility = [ ":angle_version" ]
 
   # Add git as a dependency if it is available.
   if (angle_enable_commit_id &&
@@ -685,7 +699,7 @@ action("angle_commit_id") {
 
   args = [
     "gen",
-    rebase_path(_commit_id_output_file, root_build_dir),
+    rebase_path(_commit_id_header, root_build_dir),
   ]
 
   public_configs = [ ":angle_commit_id_config" ]
@@ -694,6 +708,26 @@ action("angle_commit_id") {
 angle_source_set("angle_version") {
   sources = [ "src/common/angle_version.h" ]
   public_deps = [ ":angle_commit_id" ]
+  visibility = [ ":angle_version_info" ]
+
+  # The version headers are used directly in Windows .RC files.
+  if (is_win) {
+    visibility += [
+      ":libEGL",
+      ":libGL",
+      ":libGLESv1_CM",
+      ":libGLESv2",
+      ":libGLESv2_capture_complement",
+    ]
+  }
+}
+
+angle_source_set("angle_version_info") {
+  sources = [
+    "src/common/angle_version_info.cpp",
+    "src/common/angle_version_info.h",
+  ]
+  deps = [ ":angle_version" ]
 }
 
 config("angle_backend_config") {
@@ -847,7 +881,7 @@ angle_source_set("libANGLE_base") {
   public_deps = [
     ":angle_common",
     ":angle_gpu_info_util",
-    ":angle_version",
+    ":angle_version_info",
     ":libANGLE_headers",
     ":translator",
   ]
@@ -901,7 +935,7 @@ angle_source_set("libANGLE_base") {
   }
 
   # Enable extra Chromium style warnings for libANGLE.
-  if (is_clang && angle_has_build && !use_xcode_clang) {
+  if (is_clang && angle_has_build) {
     suppressed_configs -= [ "//build/config/clang:find_bad_constructs" ]
   }
 
@@ -915,6 +949,11 @@ angle_source_set("libANGLE_base") {
 
   if (is_debug) {
     defines += [ "ANGLE_GENERATE_SHADER_DEBUG_INFO" ]
+  }
+
+  # If VVL are enabled, enable RenderDoc capture as well.
+  if (angle_enable_vulkan_validation_layers) {
+    defines += [ "ANGLE_TEST_ENABLE_RENDERDOC_CAPTURE" ]
   }
 
   configs += [ ":debug_annotations_config" ]
@@ -1111,11 +1150,10 @@ template("angle_libGLESv2") {
       sources += libglesv2_cl_sources
     }
 
-    if (is_win) {
-      sources += [ "src/libGLESv2/${invoker.output_name}_autogen.def" ]
-    }
-
     output_name = "${invoker.output_name}${angle_libs_suffix}"
+    if (angle_glesv2_extension != "") {
+      output_extension = angle_glesv2_extension
+    }
 
     configs += [
       ":angle_gl_visibility_config",
@@ -1127,7 +1165,13 @@ template("angle_libGLESv2") {
 
     deps = invoker.deps + [ ":includes" ]
 
-    public_deps = [ ":angle_version" ]
+    if (is_win) {
+      sources += [
+        "src/libGLESv2/${invoker.output_name}_autogen.def",
+        "src/libGLESv2/libGLESv2.rc",
+      ]
+      deps += [ ":angle_version" ]
+    }
   }
 }
 
@@ -1175,7 +1219,9 @@ if (is_win && !angle_is_winuwp) {
       ":libANGLE",
     ]
 
-    public_deps = [ ":angle_version" ]
+    if (is_win) {
+      deps += [ ":angle_version" ]
+    }
   }
 }
 
@@ -1210,6 +1256,7 @@ angle_shared_library("libGLESv1_CM") {
 
   if (is_win) {
     sources += [ "src/libGLESv1_CM/libGLESv1_CM.def" ]
+    deps += [ ":angle_version" ]
   }
 }
 
@@ -1233,7 +1280,14 @@ angle_source_set("libEGL_egl_loader") {
 
 angle_shared_library("libEGL") {
   sources = libegl_sources
+  if (is_win) {
+    sources += [ "src/libEGL/libEGL.rc" ]
+  }
+
   output_name = "libEGL${angle_libs_suffix}"
+  if (angle_egl_extension != "") {
+    output_extension = angle_egl_extension
+  }
 
   configs += [
     ":debug_annotations_config",
@@ -1247,15 +1301,15 @@ angle_shared_library("libEGL") {
     defines += [ "EGLAPI=__attribute__((visibility(\"default\")))" ]
   }
 
-  if (is_win) {
-    sources += [ "src/libEGL/libEGL_autogen.def" ]
-  }
-
   deps = [
     ":angle_common",
-    ":angle_version",
     ":libEGL_egl_loader",
   ]
+
+  if (is_win) {
+    sources += [ "src/libEGL/libEGL_autogen.def" ]
+    deps += [ ":angle_version" ]
+  }
 
   public_deps = [ ":includes" ]
 

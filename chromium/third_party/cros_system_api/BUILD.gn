@@ -14,6 +14,7 @@ group("all") {
     ":system_api-biod-protos",
     ":system_api-bootlockbox-goprotos",
     ":system_api-bootlockbox-protos",
+    ":system_api-cdm_oemcrypto-protos",
     ":system_api-chaps-protos",
     ":system_api-chunneld-protos",
     ":system_api-cryptohome-goprotos",
@@ -526,5 +527,12 @@ proto_library("system_api-privacy_screen-protos") {
   proto_in_dir = "dbus/privacy_screen"
   proto_out_dir = "include/privacy_screen/proto_bindings"
   sources = [ "${proto_in_dir}/privacy_screen.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-cdm_oemcrypto-protos") {
+  proto_in_dir = "dbus/cdm_oemcrypto"
+  proto_out_dir = "include/cdm_oemcrypto/proto_bindings"
+  sources = [ "${proto_in_dir}/secure_buffer.proto" ]
   standalone = true
 }

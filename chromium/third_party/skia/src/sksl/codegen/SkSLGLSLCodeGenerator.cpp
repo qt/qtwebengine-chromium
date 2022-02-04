@@ -10,13 +10,30 @@
 #include <memory>
 
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/ir/SkSLBinaryExpression.h"
 #include "src/sksl/ir/SkSLConstructorArrayCast.h"
+#include "src/sksl/ir/SkSLConstructorDiagonalMatrix.h"
+#include "src/sksl/ir/SkSLDoStatement.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLExtension.h"
+#include "src/sksl/ir/SkSLFieldAccess.h"
+#include "src/sksl/ir/SkSLForStatement.h"
+#include "src/sksl/ir/SkSLFunctionCall.h"
+#include "src/sksl/ir/SkSLFunctionDefinition.h"
+#include "src/sksl/ir/SkSLFunctionPrototype.h"
+#include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
+#include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLModifiersDeclaration.h"
 #include "src/sksl/ir/SkSLNop.h"
+#include "src/sksl/ir/SkSLPostfixExpression.h"
+#include "src/sksl/ir/SkSLPrefixExpression.h"
+#include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLSetting.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
+#include "src/sksl/ir/SkSLSwitchCase.h"
+#include "src/sksl/ir/SkSLSwitchStatement.h"
+#include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
 #ifndef SKSL_STANDALONE
@@ -424,6 +441,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     const ExpressionArray& arguments = c.arguments();
     bool isTextureFunctionWithBias = false;
     bool nameWritten = false;
+    const char* closingParen = ")";
     switch (c.function().intrinsicKind()) {
         case k_abs_IntrinsicKind: {
             if (!this->caps().emulateAbsIntFunction())
@@ -478,7 +496,8 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             break;
         case k_dFdy_IntrinsicKind:
             // Flipping Y also negates the Y derivatives.
-            this->write(SKSL_RTFLIP_NAME ".y * dFdy");
+            closingParen = "))";
+            this->write("(" SKSL_RTFLIP_NAME ".y * dFdy");
             nameWritten = true;
             [[fallthrough]];
         case k_dFdx_IntrinsicKind:
@@ -521,14 +540,14 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             }
             break;
         case k_inverse_IntrinsicKind:
-            if (this->caps().generation() < k140_GrGLSLGeneration) {
+            if (this->caps().generation() < SkSL::GLSLGeneration::k140) {
                 SkASSERT(arguments.size() == 1);
                 this->writeInverseHack(*arguments[0]);
                 return;
             }
             break;
         case k_inversesqrt_IntrinsicKind:
-            if (this->caps().generation() < k130_GrGLSLGeneration) {
+            if (this->caps().generation() < SkSL::GLSLGeneration::k130) {
                 SkASSERT(arguments.size() == 1);
                 this->writeInverseSqrtHack(*arguments[0]);
                 return;
@@ -632,7 +651,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
                 this->write(fTextureFunctionOverride.c_str());
             } else {
                 this->write("texture");
-                if (this->caps().generation() < k130_GrGLSLGeneration) {
+                if (this->caps().generation() < SkSL::GLSLGeneration::k130) {
                     this->write(dim);
                 }
                 if (proj) {
@@ -643,7 +662,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
             break;
         }
         case k_transpose_IntrinsicKind:
-            if (this->caps().generation() < k130_GrGLSLGeneration) {
+            if (this->caps().generation() < SkSL::GLSLGeneration::k130) {
                 SkASSERT(arguments.size() == 1);
                 this->writeTransposeHack(*arguments[0]);
                 return;
@@ -666,7 +685,7 @@ void GLSLCodeGenerator::writeFunctionCall(const FunctionCall& c) {
     if (fProgram.fConfig->fSettings.fSharpenTextures && isTextureFunctionWithBias) {
         this->write(", -0.5");
     }
-    this->write(")");
+    this->write(closingParen);
 }
 
 void GLSLCodeGenerator::writeConstructorDiagonalMatrix(const ConstructorDiagonalMatrix& c,
@@ -755,6 +774,9 @@ void GLSLCodeGenerator::writeVariableReference(const VariableReference& ref) {
             } else {
                 this->write("gl_FragColor");
             }
+            break;
+        case SK_SECONDARYFRAGCOLOR_BUILTIN:
+            this->write("gl_SecondaryFragColorEXT");
             break;
         case SK_FRAGCOORD_BUILTIN:
             this->writeFragCoord();
@@ -1076,7 +1098,7 @@ void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
         this->write("inout ");
     } else if (modifiers.fFlags & Modifiers::kIn_Flag) {
         if (globalContext &&
-            this->caps().generation() < GrGLSLGeneration::k130_GrGLSLGeneration) {
+            this->caps().generation() < SkSL::GLSLGeneration::k130) {
             this->write(fProgram.fConfig->fKind == ProgramKind::kVertex ? "attribute "
                                                                         : "varying ");
         } else {
@@ -1084,7 +1106,7 @@ void GLSLCodeGenerator::writeModifiers(const Modifiers& modifiers,
         }
     } else if (modifiers.fFlags & Modifiers::kOut_Flag) {
         if (globalContext &&
-            this->caps().generation() < GrGLSLGeneration::k130_GrGLSLGeneration) {
+            this->caps().generation() < SkSL::GLSLGeneration::k130) {
             this->write("varying ");
         } else {
             this->write("out ");

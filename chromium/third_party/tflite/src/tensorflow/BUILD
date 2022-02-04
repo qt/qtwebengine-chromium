@@ -46,7 +46,6 @@ licenses(["notice"])
 
 exports_files([
     "LICENSE",
-    "ACKNOWLEDGMENTS",
     # The leakr files are used by //third_party/cloud_tpu and
     # //third_party/tensorboard/google:copybara_config_test.
     "leakr_badwords.dic",
@@ -254,15 +253,6 @@ config_setting(
         {"cpu": "x64_windows"},
         {},
     ),
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "msvc_cl_debug",
-    values = {
-        "compiler": "msvc-cl",
-        "compilation_mode": "dbg",
-    },
     visibility = ["//visibility:public"],
 )
 
@@ -832,6 +822,7 @@ bzl_library(
         "//tensorflow/core/platform:build_config_root_bzl",
         "//tensorflow/core/platform:rules_cc_bzl",
         "//tensorflow/core/platform/default:cuda_build_defs_bzl",
+        "//tensorflow/core/platform/default:experimental_cc_shared_library_bzl",  # copybara:comment(oss only)
         "//third_party/llvm_openmp:openmp_bzl",
         "//third_party/mkl:build_defs_bzl",
         "//third_party/mkl_dnn:build_defs_bzl",
@@ -1047,11 +1038,6 @@ tf_cc_shared_object(
             "-z defs",
             "-Wl,--version-script,$(location //tensorflow:tf_version_script.lds)",
         ],
-    }) + select({
-        "//tensorflow:msvc_cl_debug": [
-            "/DEBUG:FASTLINK",
-        ],
-        "//conditions:default": [],
     }),
     per_os_targets = True,
     soversion = VERSION,
@@ -1300,9 +1286,6 @@ py_library(
         "//conditions:default": [":tf_python_api_gen_v1"],
     }) + [
         ":root_init_gen",
-        "//tensorflow/python/keras/api:keras_python_api_gen",
-        "//tensorflow/python/keras/api:keras_python_api_gen_compat_v1",
-        "//tensorflow/python/keras/api:keras_python_api_gen_compat_v2",
     ],
     srcs_version = "PY3",
     visibility = ["//visibility:public"],

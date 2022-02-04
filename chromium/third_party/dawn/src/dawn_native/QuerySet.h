@@ -46,13 +46,14 @@ namespace dawn_native {
 
       protected:
         QuerySetBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+
+        // Constructor used only for mocking and testing.
+        QuerySetBase(DeviceBase* device);
+        void DestroyImpl() override;
+
         ~QuerySetBase() override;
 
-        void DestroyInternal();
-
       private:
-        virtual void DestroyImpl() = 0;
-
         MaybeError ValidateDestroy() const;
 
         wgpu::QueryType mQueryType;

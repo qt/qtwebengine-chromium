@@ -24,13 +24,6 @@ limitations under the License.
 
 namespace xla {
 
-static mlir::DenseIntElementsAttr Convert(llvm::ArrayRef<int64_t> elements,
-                                          mlir::Builder* builder) {
-  return mlir::DenseIntElementsAttr::get(
-      mlir::RankedTensorType::get(elements.size(), builder->getIntegerType(64)),
-      elements);
-}
-
 mlir::ArrayAttr ConvertPrecisionConfig(const PrecisionConfig* config,
                                        mlir::Builder* builder) {
   if (!config) return {};
@@ -86,8 +79,11 @@ mlir::mhlo::DotDimensionNumbersAttr ConvertDotDimensionNumbers(
       arrayref(dnums.rhs_contracting_dimensions()));
 }
 
-mlir::mhlo::ConvDimensionNumbers ConvertConvDimensionNumbers(
+mlir::mhlo::ConvDimensionNumbersAttr ConvertConvDimensionNumbers(
     const xla::ConvolutionDimensionNumbers& dnums, mlir::Builder* builder) {
+  auto arrayref = [](absl::Span<const int64_t> array) {
+    return llvm::ArrayRef<int64_t>{array.data(), array.size()};
+  };
   llvm::SmallVector<int64_t, 4> input_spatial_dims(
       dnums.input_spatial_dimensions().begin(),
       dnums.input_spatial_dimensions().end());
@@ -97,16 +93,15 @@ mlir::mhlo::ConvDimensionNumbers ConvertConvDimensionNumbers(
   llvm::SmallVector<int64_t, 4> output_spatial_dims(
       dnums.output_spatial_dimensions().begin(),
       dnums.output_spatial_dimensions().end());
-  return mlir::mhlo::ConvDimensionNumbers::get(
-      builder->getI64IntegerAttr(dnums.input_batch_dimension()),
-      builder->getI64IntegerAttr(dnums.input_feature_dimension()),
-      Convert(input_spatial_dims, builder),
-      builder->getI64IntegerAttr(dnums.kernel_input_feature_dimension()),
-      builder->getI64IntegerAttr(dnums.kernel_output_feature_dimension()),
-      Convert(kernel_spatial_dims, builder),
-      builder->getI64IntegerAttr(dnums.output_batch_dimension()),
-      builder->getI64IntegerAttr(dnums.output_feature_dimension()),
-      Convert(output_spatial_dims, builder), builder->getContext());
+  return mlir::mhlo::ConvDimensionNumbersAttr::get(
+      builder->getContext(), dnums.input_batch_dimension(),
+      dnums.input_feature_dimension(),
+      arrayref(dnums.input_spatial_dimensions()),
+      dnums.kernel_input_feature_dimension(),
+      dnums.kernel_output_feature_dimension(),
+      arrayref(dnums.kernel_spatial_dimensions()),
+      dnums.output_batch_dimension(), dnums.output_feature_dimension(),
+      arrayref(dnums.output_spatial_dimensions()));
 }
 
 StatusOr<mlir::mhlo::FftType> ConvertFftType(FftType type) {
@@ -154,6 +149,49 @@ StatusOr<mlir::mhlo::CustomCallApiVersion> ConvertCustomCallApiVersion(
                              api_version,
                              xla::CustomCallApiVersion_Name(api_version));
   }
+}
+
+StatusOr<mlir::ArrayAttr> ExtractLayoutsFromShapes(
+    const absl::Span<const Shape> shapes_with_layouts, mlir::Builder* builder) {
+  std::vector<mlir::Attribute> layouts;
+  for (auto& shape_and_layout : shapes_with_layouts) {
+    if (shape_and_layout.IsTuple())
+      return tensorflow::errors::Unimplemented(
+          "Layout support for nested tuples is not implemented.");
+    const xla::Layout& xla_layout = shape_and_layout.layout();
+
+    // XLA can have invalid layout for certain values (such as token types).
+    // These are imported as empty layout in MHLO.
+    if (xla_layout.format() == xla::Format::INVALID_FORMAT) {
+      layouts.push_back(builder->getIndexTensorAttr({}));
+      continue;
+    }
+
+    // Only a subset of layout specification in XLA is supported in MHLO
+    // currently. The layout has to be dense, and only specify the order of
+    // dimensions. Sparse, tiled layout or non-default memory space fields
+    // cannot be expressed in MHLO layout yet.
+    if (xla_layout.format() != xla::Format::DENSE)
+      return tensorflow::errors::Unimplemented("Unexpected layout format");
+    if (!xla_layout.tiles().empty())
+      return tensorflow::errors::Unimplemented(
+          "Tiled layout is not supported yet");
+    if (xla_layout.memory_space() != xla::Layout::kDefaultMemorySpace)
+      return tensorflow::errors::Unimplemented(
+          "Layout support for non-default memory space is not yet implemented");
+
+    llvm::SmallVector<int64_t> layout;
+    for (int64_t dim_index : xla_layout.minor_to_major())
+      layout.push_back(dim_index);
+    layouts.push_back(builder->getIndexTensorAttr(layout));
+  }
+  return builder->getArrayAttr(layouts);
+}
+
+StatusOr<mlir::ArrayAttr> ExtractLayoutsFromTuple(const Shape shape,
+                                                  mlir::Builder* builder) {
+  if (!shape.IsTuple()) return InvalidArgument("Expected shape to be Tuple");
+  return ExtractLayoutsFromShapes(shape.tuple_shapes(), builder);
 }
 
 }  // namespace xla

@@ -33,7 +33,6 @@ const char kListKeys[] = "ListKeys";
 const char kGetKeyData[] = "GetKeyData";
 const char kCheckKey[] = "CheckKey";
 const char kAddKey[] = "AddKey";
-const char kAddDataRestoreKey[] = "AddDataRestoreKey";
 const char kRemoveKey[] = "RemoveKey";
 const char kMassRemoveKeys[] = "MassRemoveKeys";
 const char kMigrateKey[] = "MigrateKey";
@@ -47,6 +46,7 @@ const char kGetAccountDiskUsage[] = "GetAccountDiskUsage";
 const char kStartAuthSession[] = "StartAuthSession";
 const char kAddCredentials[] = "AddCredentials";
 const char kAuthenticateAuthSession[] = "AuthenticateAuthSession";
+const char kInvalidateAuthSession[] = "InvalidateAuthSession";
 
 // Methods of the |kArcQuotaInterface| interface:
 const char kGetArcDiskFeatures[] = "GetArcDiskFeatures";

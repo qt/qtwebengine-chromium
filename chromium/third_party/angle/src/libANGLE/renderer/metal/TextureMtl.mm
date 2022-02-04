@@ -799,8 +799,7 @@ angle::Result TextureMtl::ensureSamplerStateCreated(const gl::Context *context)
 
     mtl::SamplerDesc samplerDesc(mState.getSamplerState());
 
-    if (mFormat.actualAngleFormat().depthBits &&
-        !displayMtl->getFeatures().hasDepthTextureFiltering.enabled)
+    if (mFormat.actualAngleFormat().depthBits && !mFormat.getCaps().filterable)
     {
         // On devices not supporting filtering for depth textures, we need to convert to nearest
         // here.
@@ -1212,7 +1211,8 @@ angle::Result TextureMtl::setStorageExternalMemory(const gl::Context *context,
                                                    gl::MemoryObject *memoryObject,
                                                    GLuint64 offset,
                                                    GLbitfield createFlags,
-                                                   GLbitfield usageFlags)
+                                                   GLbitfield usageFlags,
+                                                   const void *imageCreateInfoPNext)
 {
     UNIMPLEMENTED();
 
@@ -1286,11 +1286,11 @@ angle::Result TextureMtl::generateMipmap(const gl::Context *context)
     //
     bool sRGB = mFormat.actualInternalFormat().colorEncoding == GL_SRGB;
 
-    bool avoidCSPath =
+    bool avoidGPUPath =
         contextMtl->getDisplay()->getFeatures().forceNonCSBaseMipmapGeneration.enabled &&
         mNativeTexture->widthAt0() < 5;
 
-    if (!avoidCSPath && caps.writable && mState.getType() == gl::TextureType::_3D)
+    if (!avoidGPUPath && caps.writable && mState.getType() == gl::TextureType::_3D)
     {
         // http://anglebug.com/4921.
         // Use compute for 3D mipmap generation.
@@ -1298,7 +1298,7 @@ angle::Result TextureMtl::generateMipmap(const gl::Context *context)
         ANGLE_TRY(contextMtl->getDisplay()->getUtils().generateMipmapCS(contextMtl, mNativeTexture,
                                                                         sRGB, &mNativeLevelViews));
     }
-    else if (caps.filterable && caps.colorRenderable)
+    else if (!avoidGPUPath && caps.filterable && caps.colorRenderable)
     {
         mtl::BlitCommandEncoder *blitEncoder = contextMtl->getBlitCommandEncoder();
         blitEncoder->generateMipmapsForTexture(mNativeTexture);
@@ -2142,10 +2142,12 @@ angle::Result TextureMtl::copySubImageWithDraw(const gl::Context *context,
 
     blitParams.enabledBuffers.set(0);
 
-    blitParams.src          = colorReadRT->getTexture();
-    blitParams.srcLevel     = colorReadRT->getLevelIndex();
-    blitParams.srcLayer     = colorReadRT->getLayerIndex();
-    blitParams.srcRect      = clippedSourceArea;
+    blitParams.src      = colorReadRT->getTexture();
+    blitParams.srcLevel = colorReadRT->getLevelIndex();
+    blitParams.srcLayer = colorReadRT->getLayerIndex();
+
+    blitParams.srcNormalizedCoords = mtl::NormalizedCoords(
+        clippedSourceArea, colorReadRT->getTexture()->size(blitParams.srcLevel));
     blitParams.srcYFlipped  = source->flipY();
     blitParams.dstLuminance = internalFormat.isLUMA();
 
@@ -2291,7 +2293,8 @@ angle::Result TextureMtl::copySubTextureWithDraw(const gl::Context *context,
     blitParams.src      = sourceTexture;
     blitParams.srcLevel = sourceNativeLevel;
     blitParams.srcLayer = 0;
-    blitParams.srcRect = gl::Rectangle(sourceBox.x, sourceBox.y, sourceBox.width, sourceBox.height);
+    blitParams.srcNormalizedCoords =
+        mtl::NormalizedCoords(sourceBox.toRect(), sourceTexture->size(sourceNativeLevel));
     blitParams.srcYFlipped            = false;
     blitParams.dstLuminance           = internalFormat.isLUMA();
     blitParams.unpackFlipY            = unpackFlipY;

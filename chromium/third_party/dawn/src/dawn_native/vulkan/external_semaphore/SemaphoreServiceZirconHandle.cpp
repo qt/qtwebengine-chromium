@@ -40,7 +40,7 @@ namespace dawn_native { namespace vulkan { namespace external_semaphore {
         VkPhysicalDeviceExternalSemaphoreInfoKHR semaphoreInfo;
         semaphoreInfo.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO_KHR;
         semaphoreInfo.pNext = nullptr;
-        semaphoreInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
+        semaphoreInfo.handleType = VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA;
 
         VkExternalSemaphorePropertiesKHR semaphoreProperties;
         semaphoreProperties.sType = VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES_KHR;
@@ -60,9 +60,8 @@ namespace dawn_native { namespace vulkan { namespace external_semaphore {
     }
 
     ResultOrError<VkSemaphore> Service::ImportSemaphore(ExternalSemaphoreHandle handle) {
-        if (handle == ZX_HANDLE_INVALID) {
-            return DAWN_VALIDATION_ERROR("Trying to import semaphore with invalid handle");
-        }
+        DAWN_INVALID_IF(handle == ZX_HANDLE_INVALID,
+                        "Importing a semaphore with an invalid handle.");
 
         VkSemaphore semaphore = VK_NULL_HANDLE;
         VkSemaphoreCreateInfo info;
@@ -74,18 +73,18 @@ namespace dawn_native { namespace vulkan { namespace external_semaphore {
             mDevice->fn.CreateSemaphore(mDevice->GetVkDevice(), &info, nullptr, &*semaphore),
             "vkCreateSemaphore"));
 
-        VkImportSemaphoreZirconHandleInfoFUCHSIA importSempahoreHandleInfo;
-        importSempahoreHandleInfo.sType =
-            VK_STRUCTURE_TYPE_TEMP_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA;
-        importSempahoreHandleInfo.pNext = nullptr;
-        importSempahoreHandleInfo.semaphore = semaphore;
-        importSempahoreHandleInfo.flags = 0;
-        importSempahoreHandleInfo.handleType =
-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
-        importSempahoreHandleInfo.handle = handle;
+        VkImportSemaphoreZirconHandleInfoFUCHSIA importSemaphoreHandleInfo;
+        importSemaphoreHandleInfo.sType =
+            VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA;
+        importSemaphoreHandleInfo.pNext = nullptr;
+        importSemaphoreHandleInfo.semaphore = semaphore;
+        importSemaphoreHandleInfo.flags = 0;
+        importSemaphoreHandleInfo.handleType =
+            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA;
+        importSemaphoreHandleInfo.handle = handle;
 
         MaybeError status = CheckVkSuccess(mDevice->fn.ImportSemaphoreZirconHandleFUCHSIA(
-                                               mDevice->GetVkDevice(), &importSempahoreHandleInfo),
+                                               mDevice->GetVkDevice(), &importSemaphoreHandleInfo),
                                            "vkImportSemaphoreZirconHandleFUCHSIA");
 
         if (status.IsError()) {
@@ -101,7 +100,7 @@ namespace dawn_native { namespace vulkan { namespace external_semaphore {
         exportSemaphoreInfo.sType = VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO_KHR;
         exportSemaphoreInfo.pNext = nullptr;
         exportSemaphoreInfo.handleTypes =
-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
+            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA;
 
         VkSemaphoreCreateInfo semaphoreCreateInfo;
         semaphoreCreateInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
@@ -118,12 +117,11 @@ namespace dawn_native { namespace vulkan { namespace external_semaphore {
 
     ResultOrError<ExternalSemaphoreHandle> Service::ExportSemaphore(VkSemaphore semaphore) {
         VkSemaphoreGetZirconHandleInfoFUCHSIA semaphoreGetHandleInfo;
-        semaphoreGetHandleInfo.sType =
-            VK_STRUCTURE_TYPE_TEMP_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA;
+        semaphoreGetHandleInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA;
         semaphoreGetHandleInfo.pNext = nullptr;
         semaphoreGetHandleInfo.semaphore = semaphore;
         semaphoreGetHandleInfo.handleType =
-            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_TEMP_ZIRCON_EVENT_BIT_FUCHSIA;
+            VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_ZIRCON_EVENT_BIT_FUCHSIA;
 
         zx_handle_t handle = ZX_HANDLE_INVALID;
         DAWN_TRY(CheckVkSuccess(mDevice->fn.GetSemaphoreZirconHandleFUCHSIA(

@@ -66,6 +66,8 @@
 			/>
 			<Tool
 				Name="VCLinkerTool"
+				OptimizeReferences="2"
+				EnableCOMDATFolding="2"
 			/>
 			<Tool
 				Name="VCALinkTool"
@@ -431,6 +433,10 @@
 						DisableLanguageExtensions="false"
 					/>
 				</FileConfiguration>
+			</File>
+			<File
+				RelativePath="..\..\..\src\sdf\sdf.c"
+				>
 			</File>
 			<File
 				RelativePath="..\..\..\src\smooth\smooth.c"

@@ -39,9 +39,10 @@ namespace dawn_native { namespace d3d12 {
     } while (0)
 
     // Definition of backend types
-    class Device : public DeviceBase {
+    class Device final : public DeviceBase {
       public:
-        static ResultOrError<Device*> Create(Adapter* adapter, const DeviceDescriptor* descriptor);
+        static ResultOrError<Device*> Create(Adapter* adapter,
+                                             const DawnDeviceDescriptor* descriptor);
         ~Device() override;
 
         MaybeError Initialize();
@@ -70,6 +71,11 @@ namespace dawn_native { namespace d3d12 {
         ComPtr<IDxcValidator> GetDxcValidator() const;
 
         ResultOrError<CommandRecordingContext*> GetPendingCommandContext();
+
+        MaybeError ClearBufferToZero(CommandRecordingContext* commandContext,
+                                     BufferBase* destination,
+                                     uint64_t destinationOffset,
+                                     uint64_t size);
 
         const D3D12DeviceInfo& GetDeviceInfo() const;
 
@@ -139,6 +145,9 @@ namespace dawn_native { namespace d3d12 {
 
         float GetTimestampPeriodInNS() const override;
 
+        bool ShouldDuplicateNumWorkgroupsForDispatchIndirect(
+            ComputePipelineBase* computePipeline) const override;
+
       private:
         using DeviceBase::DeviceBase;
 
@@ -149,14 +158,10 @@ namespace dawn_native { namespace d3d12 {
             PipelineCompatibilityToken pipelineCompatibilityToken) override;
         ResultOrError<Ref<BufferBase>> CreateBufferImpl(
             const BufferDescriptor* descriptor) override;
-        ResultOrError<Ref<ComputePipelineBase>> CreateComputePipelineImpl(
-            const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
             const QuerySetDescriptor* descriptor) override;
-        Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
-            const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(
             const SamplerDescriptor* descriptor) override;
         ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
@@ -173,20 +178,25 @@ namespace dawn_native { namespace d3d12 {
         ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
-        void CreateComputePipelineAsyncImpl(const ComputePipelineDescriptor* descriptor,
-                                            size_t blueprintHash,
-                                            WGPUCreateComputePipelineAsyncCallback callback,
-                                            void* userdata) override;
+        Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
+            const ComputePipelineDescriptor* descriptor) override;
+        Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
+            const RenderPipelineDescriptor* descriptor) override;
+        void InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
+                                                WGPUCreateComputePipelineAsyncCallback callback,
+                                                void* userdata) override;
         void InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                                WGPUCreateRenderPipelineAsyncCallback callback,
                                                void* userdata) override;
 
-        void ShutDownImpl() override;
+        void DestroyImpl() override;
         MaybeError WaitForIdleForDestruction() override;
 
         MaybeError CheckDebugLayerAndGenerateErrors();
 
         MaybeError ApplyUseDxcToggle();
+
+        MaybeError CreateZeroBuffer();
 
         ComPtr<ID3D12Fence> mFence;
         HANDLE mFenceEvent = nullptr;
@@ -242,6 +252,10 @@ namespace dawn_native { namespace d3d12 {
         // Sampler cache needs to be destroyed before the CPU sampler allocator to ensure the final
         // release is called.
         std::unique_ptr<SamplerHeapCache> mSamplerHeapCache;
+
+        // A buffer filled with zeros that is used to copy into other buffers when they need to be
+        // cleared.
+        Ref<Buffer> mZeroBuffer;
 
         // The number of nanoseconds required for a timestamp query to be incremented by 1
         float mTimestampPeriod = 1.0f;

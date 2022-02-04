@@ -25,6 +25,7 @@ limitations under the License.
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"  // from @llvm-project
 #include "mlir/Dialect/Shape/IR/Shape.h"  // from @llvm-project
 #include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
 #include "mlir/Dialect/Tensor/IR/Tensor.h"  // from @llvm-project
@@ -164,6 +165,11 @@ const llvm::DenseSet<mlir::TypeID> &MlirPreferredOps() {
     TypeID::get<TF::TanhGradOp>(),
     TypeID::get<TF::XlaDotOp>(),
     TypeID::get<TF::XlaDotV2Op>(),
+    TypeID::get<TF::XlaDynamicSliceOp>(),
+    TypeID::get<TF::XlaEinsumOp>(),
+    TypeID::get<TF::XlaReplicaIdOp>(),
+    TypeID::get<TF::XlaSortOp>(),
+    TypeID::get<TF::XlaVariadicReduceV2Op>(),
     TypeID::get<TF::XlogyOp>(),
     TypeID::get<TF::ZetaOp>(),
 
@@ -204,7 +210,7 @@ OwningRewritePatternList PatternsIncludeOps(
     // If the pattern is in include_ops then include it.
     bool include =
         !pat_op_name ||
-        include_ops.count(pat_op_name->getAbstractOperation()->typeID);
+        include_ops.count(pat_op_name->getRegisteredInfo()->getTypeID());
     if (include) to.add(std::move(pattern));
   }
 
@@ -282,6 +288,7 @@ LogicalResult legalizeTF(Operation *op, bool allow_partial_conversion,
     target.addLegalDialect<chlo::HloClientDialect>();
   }
   target.addLegalDialect<MhloDialect>();
+  target.addLegalDialect<arith::ArithmeticDialect>();
   target.addLegalDialect<StandardOpsDialect>();
   target.addLegalDialect<tensor::TensorDialect>();
   target.addLegalDialect<shape::ShapeDialect>();

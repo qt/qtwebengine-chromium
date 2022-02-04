@@ -21,11 +21,13 @@
 #include <utility>
 #include <vector>
 
+#include "source/binary.h"
 #include "source/diagnostic.h"
 #include "source/opcode.h"
 #include "source/spirv_constant.h"
 #include "source/spirv_target_env.h"
 #include "source/spirv_validator_options.h"
+#include "source/util/string_utils.h"
 #include "source/val/validate_scopes.h"
 #include "source/val/validation_state.h"
 
@@ -129,18 +131,30 @@ std::vector<uint32_t> getStructMembers(uint32_t struct_id, SpvOp type,
 // Returns whether the given structure is missing Offset decoration for any
 // member. Handles also nested structures.
 bool isMissingOffsetInStruct(uint32_t struct_id, ValidationState_t& vstate) {
-  std::vector<bool> hasOffset(getStructMembers(struct_id, vstate).size(),
-                              false);
-  // Check offsets of member decorations
-  for (auto& decoration : vstate.id_decorations(struct_id)) {
-    if (SpvDecorationOffset == decoration.dec_type() &&
-        Decoration::kInvalidMember != decoration.struct_member_index()) {
-      hasOffset[decoration.struct_member_index()] = true;
+  const auto* inst = vstate.FindDef(struct_id);
+  std::vector<bool> hasOffset;
+  std::vector<uint32_t> struct_members;
+  if (inst->opcode() == SpvOpTypeStruct) {
+    // Check offsets of member decorations.
+    struct_members = getStructMembers(struct_id, vstate);
+    hasOffset.resize(struct_members.size(), false);
+
+    for (auto& decoration : vstate.id_decorations(struct_id)) {
+      if (SpvDecorationOffset == decoration.dec_type() &&
+          Decoration::kInvalidMember != decoration.struct_member_index()) {
+        // Offset 0xffffffff is not valid so ignore it for simplicity's sake.
+        if (decoration.params()[0] == 0xffffffff) return true;
+        hasOffset[decoration.struct_member_index()] = true;
+      }
     }
+  } else if (inst->opcode() == SpvOpTypeArray ||
+             inst->opcode() == SpvOpTypeRuntimeArray) {
+    hasOffset.resize(1, true);
+    struct_members.push_back(inst->GetOperandAs<uint32_t>(1u));
   }
-  // Check also nested structures
+  // Look through nested structs (which may be in an array).
   bool nestedStructsMissingOffset = false;
-  for (auto id : getStructMembers(struct_id, SpvOpTypeStruct, vstate)) {
+  for (auto id : struct_members) {
     if (isMissingOffsetInStruct(id, vstate)) {
       nestedStructsMissingOffset = true;
       break;
@@ -786,8 +800,8 @@ spv_result_t CheckDecorationsOfEntryPoints(ValidationState_t& vstate) {
       // targeted by an OpEntryPoint instruction
       for (auto& decoration : vstate.id_decorations(entry_point)) {
         if (SpvDecorationLinkageAttributes == decoration.dec_type()) {
-          const char* linkage_name =
-              reinterpret_cast<const char*>(&decoration.params()[0]);
+          const std::string linkage_name =
+              spvtools::utils::MakeString(decoration.params());
           return vstate.diag(SPV_ERROR_INVALID_BINARY,
                              vstate.FindDef(entry_point))
                  << "The LinkageAttributes Decoration (Linkage name: "
@@ -985,7 +999,9 @@ spv_result_t CheckDecorationsOfBuffers(ValidationState_t& vstate) {
 
       const bool phys_storage_buffer =
           storageClass == SpvStorageClassPhysicalStorageBufferEXT;
-      const bool workgroup = storageClass == SpvStorageClassWorkgroup;
+      const bool workgroup =
+          storageClass == SpvStorageClassWorkgroup &&
+          vstate.HasCapability(SpvCapabilityWorkgroupMemoryExplicitLayoutKHR);
       if (uniform || push_constant || storage_buffer || phys_storage_buffer ||
           workgroup) {
         const auto ptrInst = vstate.FindDef(words[1]);

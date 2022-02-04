@@ -12,12 +12,10 @@ load("//project.star", "settings")
 ci.defaults.set(
     bucket = "ci",
     build_numbers = True,
-    configure_kitchen = True,
     cpu = cpu.X86_64,
     project_trigger_overrides = branches.value({
         branches.NOT_MAIN: {"chromium": settings.project},
     }),
-    swarming_tags = ["vpython:native-python-wrapper"],
     triggered_by = ["chromium-gitiles-trigger"],
 )
 

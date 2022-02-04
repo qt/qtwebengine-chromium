@@ -58,6 +58,7 @@ var CanvasKit = {
   MakeWebGLCanvasSurface: function() {},
   Malloc: function() {},
   MallocGlyphIDs: function() {},
+  MakeLazyImageFromTextureSource: function() {},
   Free: function() {},
   computeTonalColors: function() {},
   deleteContext: function() {},
@@ -204,8 +205,6 @@ var CanvasKit = {
     clipPath: function() {},
     getSaveCount: function() {},
     makeSurface: function() {},
-    markCTM: function() {},
-    findMarkedCTM: function() {},
     restore: function() {},
     restoreToCount: function() {},
     rotate: function() {},
@@ -250,7 +249,6 @@ var CanvasKit = {
       drawText: function() {},
       drawTextBlob: function() {},
       drawVertices: function() {},
-      findMarkedCTM: function() {},
       getLocalToDevice: function() {},
       getTotalMatrix: function() {},
       readPixels: function() {},
@@ -293,7 +291,6 @@ var CanvasKit = {
     _drawSimpleText: function() {},
     _drawTextBlob: function() {},
     _drawVertices: function() {},
-    _findMarkedCTM: function() {},
     _getLocalToDevice: function() {},
     _getTotalMatrix: function() {},
     _readPixels: function() {},
@@ -381,7 +378,6 @@ var CanvasKit = {
   FontMgr: {
     // public API (from C++ and JS bindings)
     FromData: function() {},
-    RefDefault: function() {},
     countFamilies: function() {},
     getFamilyName: function() {},
 
@@ -415,6 +411,7 @@ var CanvasKit = {
     // private API
     _makeShaderCubic: function() {},
     _makeShaderOptions: function() {},
+    _makeFromGenerator: function() {},
   },
 
   ImageFilter: {
@@ -1054,8 +1051,6 @@ CanvasKit.Surface.prototype.dispose = function() {};
 CanvasKit.Surface.prototype.flush = function() {};
 CanvasKit.Surface.prototype.requestAnimationFrame = function() {};
 CanvasKit.Surface.prototype.drawOnce = function() {};
-
-CanvasKit.FontMgr.prototype.MakeTypefaceFromData = function() {};
 
 CanvasKit.RuntimeEffect.prototype.makeShader = function() {};
 CanvasKit.RuntimeEffect.prototype.makeShaderWithChildren = function() {};

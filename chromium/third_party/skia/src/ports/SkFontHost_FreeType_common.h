@@ -128,6 +128,7 @@ protected:
 
     LocalizedStrings* onCreateFamilyNameIterator() const override;
 
+    bool onGlyphMaskNeedsCurrentColor() const override;
     int onGetVariationDesignPosition(SkFontArguments::VariationPosition::Coordinate coordinates[],
                                      int coordinateCount) const override;
     int onGetVariationDesignParameters(SkFontParameters::Variation::Axis parameters[],
@@ -145,6 +146,9 @@ private:
 
     mutable SkSharedMutex fC2GCacheMutex;
     mutable SkCharToGlyphCache fC2GCache;
+
+    mutable SkOnce fGlyphMasksMayNeedCurrentColorOnce;
+    mutable bool fGlyphMasksMayNeedCurrentColor;
 
     using INHERITED = SkTypeface;
 };

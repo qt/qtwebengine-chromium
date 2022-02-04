@@ -291,23 +291,6 @@ message AddKeyReply {
   CryptohomeErrorCode error = 1;
 }
 
-// Input parameters to AddDataRestoreKey()
-message AddDataRestoreKeyRequest {
-  // The owner the account.
-  cryptohome.AccountIdentifier account_id = 1;
-  // The authentication data of the account.
-  cryptohome.AuthorizationRequest authorization_request = 2;
-}
-
-// Output parameters for AddDataRestoreKey()
-message AddDataRestoreKeyReply {
-  // Indicates an error if error is not empty.
-  CryptohomeErrorCode error = 1;
-
-  // 256 bits data restore key in raw bytes
-  bytes data_restore_key = 2;
-}
-
 // Input parameters to RemoveKey()
 message RemoveKeyRequest {
   // The owner of the key to remove
@@ -416,6 +399,20 @@ message GetWebAuthnSecretReply {
   bytes webauthn_secret = 2;
 }
 
+// Input parameters to GetWebAuthnSecretHash()
+message GetWebAuthnSecretHashRequest {
+  // This represents the "single user" that the secret belongs to.
+  cryptohome.AccountIdentifier account_id = 1;
+}
+
+// Output parameters for GetWebAuthnSecretHash()
+message GetWebAuthnSecretHashReply {
+  // Indicates an error if |error| is not empty.
+  CryptohomeErrorCode error = 1;
+  // The WebAuthn secret hash.
+  bytes webauthn_secret_hash = 2;
+}
+
 // TODO(b/126307305): For the messages, below, we'll need to add the documentations
 // for them.
 
@@ -521,10 +518,9 @@ message LowDiskSpace {
 enum AuthSessionFlags {
   // Default Value.
   AUTH_SESSION_FLAGS_NONE = 0;
-  // This flag is set when auth session is used for a kiosk user.
-  AUTH_SESSION_FLAGS_KIOSK_USER = 1;
   // This flag is set when auth session is used for an ephemeral user.
   AUTH_SESSION_FLAGS_EPHEMERAL_USER = 2;
+  reserved 1;
 }
 
 message StartAuthSessionRequest {
@@ -579,6 +575,17 @@ message AuthenticateAuthSessionReply {
   CryptohomeErrorCode error = 1;
   // Returns if the Auth Session is authenticated.
   bool authenticated = 2;
+}
+
+message InvalidateAuthSessionRequest {
+  // Serialized form of token that is used to identify Auth Session that needs
+  // to be invalidated.
+  bytes auth_session_id = 1;
+}
+
+message InvalidateAuthSessionReply {
+  // Error if any to invalidate the Auth Session.
+  CryptohomeErrorCode error = 1;
 }
 
 // ------------------------- ArcQuota Interface -------------------------

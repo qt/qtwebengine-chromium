@@ -98,6 +98,12 @@ rtc_library("rtp_packet_info") {
   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
 }
 
+rtc_source_set("video_track_source_constraints") {
+  visibility = [ "*" ]
+  sources = [ "video_track_source_constraints.h" ]
+  absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+}
+
 rtc_library("media_stream_interface") {
   visibility = [ "*" ]
   sources = [
@@ -110,6 +116,7 @@ rtc_library("media_stream_interface") {
     ":audio_options_api",
     ":rtp_parameters",
     ":scoped_refptr",
+    ":video_track_source_constraints",
     "../modules/audio_processing:audio_processing_statistics",
     "../rtc_base:checks",
     "../rtc_base:refcount",
@@ -403,6 +410,16 @@ rtc_source_set("stats_observer_interface") {
   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
 }
 
+rtc_source_set("peer_network_dependencies") {
+  visibility = [ "*" ]
+  sources = [ "test/peer_network_dependencies.h" ]
+  deps = [
+    ":packet_socket_factory",
+    "../rtc_base",
+    "../rtc_base:threading",
+  ]
+}
+
 rtc_source_set("peer_connection_quality_test_fixture_api") {
   visibility = [ "*" ]
   testonly = true
@@ -418,6 +435,7 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
     ":media_stream_interface",
     ":network_state_predictor_api",
     ":packet_socket_factory",
+    ":peer_network_dependencies",
     ":rtp_parameters",
     ":simulated_network_api",
     ":stats_observer_interface",
@@ -647,6 +665,7 @@ rtc_source_set("network_emulation_manager_api") {
   deps = [
     ":array_view",
     ":packet_socket_factory",
+    ":peer_network_dependencies",
     ":simulated_network_api",
     ":time_controller",
     "../call:simulated_network",

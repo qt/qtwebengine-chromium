@@ -162,8 +162,9 @@ egl::Error HardwareBufferImageSiblingVkAndroid::ValidateHardwareBuffer(
         angle::FormatID formatID = vk::GetFormatIDFromVkFormat(bufferFormatProperties.format);
         if (!HasFullTextureFormatSupport(renderer, formatID))
         {
-            return egl::EglBadParameter() << "AHardwareBuffer format does not support enough "
-                                             "features to use as a texture.";
+            return egl::EglBadParameter()
+                   << "AHardwareBuffer format " << bufferFormatProperties.format
+                   << " does not support enough features to use as a texture.";
         }
     }
 
@@ -267,6 +268,9 @@ angle::Result HardwareBufferImageSiblingVkAndroid::initImpl(DisplayVk *displayVk
     VkExtent3D vkExtents;
     gl_vk::GetExtent(mSize, &vkExtents);
 
+    const uint32_t layerCount = mSize.depth;
+    vkExtents.depth           = 1;
+
     mImage = new vk::ImageHelper();
 
     // disable robust init for this external image.
@@ -278,13 +282,23 @@ angle::Result HardwareBufferImageSiblingVkAndroid::initImpl(DisplayVk *displayVk
     {
         imageCreateFlags |= VK_IMAGE_CREATE_PROTECTED_BIT;
     }
+
     const vk::Format &format =
         bufferFormatProperties.format == VK_FORMAT_UNDEFINED ? externalVkFormat : vkFormat;
-    ANGLE_TRY(mImage->initExternal(
-        displayVk, gl::TextureType::_2D, vkExtents, format.getIntendedFormatID(),
-        format.getActualRenderableImageFormatID(), 1, usage, imageCreateFlags,
-        vk::ImageLayout::ExternalPreInitialized, &externalMemoryImageCreateInfo, gl::LevelIndex(0),
-        1, 1, robustInitEnabled, nullptr, hasProtectedContent()));
+    const gl::TextureType textureType =
+        layerCount > 1 ? gl::TextureType::_2DArray : gl::TextureType::_2D;
+
+    VkImageFormatListCreateInfoKHR imageFormatListInfoStorage;
+    vk::ImageHelper::ImageListFormats imageListFormatsStorage;
+    const void *imageCreateInfoPNext = vk::ImageHelper::DeriveCreateInfoPNext(
+        displayVk, format.getActualRenderableImageFormatID(), &externalMemoryImageCreateInfo,
+        &imageFormatListInfoStorage, &imageListFormatsStorage, &imageCreateFlags);
+
+    ANGLE_TRY(mImage->initExternal(displayVk, textureType, vkExtents, format.getIntendedFormatID(),
+                                   format.getActualRenderableImageFormatID(), 1, usage,
+                                   imageCreateFlags, vk::ImageLayout::ExternalPreInitialized,
+                                   imageCreateInfoPNext, gl::LevelIndex(0), 1, layerCount,
+                                   robustInitEnabled, hasProtectedContent()));
 
     VkImportAndroidHardwareBufferInfoANDROID importHardwareBufferInfo = {};
     importHardwareBufferInfo.sType  = VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID;

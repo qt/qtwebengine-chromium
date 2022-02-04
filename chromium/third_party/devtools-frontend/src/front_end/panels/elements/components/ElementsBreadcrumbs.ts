@@ -276,7 +276,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       LitHtml.render(LitHtml.html`
-        <nav class="crumbs" aria-label="${i18nString(UIStrings.breadcrumbs)}">
+        <nav class="crumbs" aria-label=${i18nString(UIStrings.breadcrumbs)}>
           ${this.renderOverflowButton('left', this.userScrollPosition === 'start')}
 
           <div class="crumbs-window" @scroll=${this.onCrumbsWindowScroll}>
@@ -286,6 +286,7 @@ export class ElementsBreadcrumbs extends HTMLElement {
                   crumb: true,
                   selected: crumb.selected,
                 };
+                // eslint-disable-next-line rulesdir/ban_a_tags_in_lit_html
                 return LitHtml.html`
                   <li class=${LitHtml.Directives.classMap(crumbClasses)}
                     data-node-id=${crumb.node.id}

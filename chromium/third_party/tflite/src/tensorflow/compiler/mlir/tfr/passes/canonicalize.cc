@@ -75,12 +75,12 @@ class UnrollSCFForOp : public OpRewritePattern<scf::ForOp> {
     for (auto i = 0; i < trip_count; ++i) {
       if (!iv.use_empty()) {
         // iv' = iv + step * i;
-        Value iter = rewriter.create<ConstantIndexOp>(loc, i);
+        Value iter = rewriter.create<arith::ConstantIndexOp>(loc, i);
         Value step_cst =
-            rewriter.create<ConstantIndexOp>(loc, step.getSExtValue());
-        Value stride = rewriter.create<MulIOp>(loc, step_cst, iter);
+            rewriter.create<arith::ConstantIndexOp>(loc, step.getSExtValue());
+        Value stride = rewriter.create<arith::MulIOp>(loc, step_cst, iter);
         Value iv_unroll =
-            rewriter.create<AddIOp>(loc, mapping.lookup(iv), stride);
+            rewriter.create<arith::AddIOp>(loc, mapping.lookup(iv), stride);
         mapping.map(iv, iv_unroll);
       }
 
@@ -165,8 +165,7 @@ void populateCanonicalizationPatterns(FuncOp func,
   // bridge.
   func->walk([&](Operation *op) {
     if (op->getDialect() != tf) {
-      op->getAbstractOperation()->getCanonicalizationPatterns(patterns,
-                                                              context);
+      op->getRegisteredInfo()->getCanonicalizationPatterns(patterns, context);
     }
   });
   patterns.insert<UnrollSCFForOp, SimplifySCFIfOp>(context);

@@ -113,8 +113,12 @@ enum RoVerificationStatus {
   RO_STATUS_PASS = 1;
   // Triggered by RO verification, and it failed.
   RO_STATUS_FAIL = 2;
-  // There is not data to tell the RO verification status.
+  // RO verification is not supported. (deprecated)
   RO_STATUS_UNSUPPORTED = 3;
+  // RO verification is not supported but triggered
+  RO_STATUS_UNSUPPORTED_NOT_TRIGGERED = 4;
+  // RO verification is not supported and not triggered
+  RO_STATUS_UNSUPPORTED_TRIGGERED = 5;
 }
 
 // Tracks the expected policy for a particular NVRAM space.

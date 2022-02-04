@@ -17,6 +17,7 @@
 #include "libANGLE/ImageIndex.h"
 #include "libANGLE/Stream.h"
 #include "libANGLE/Texture.h"
+#include "libANGLE/angletypes.h"
 #include "libANGLE/renderer/FramebufferAttachmentObjectImpl.h"
 
 namespace egl
@@ -27,10 +28,6 @@ class Image;
 
 namespace gl
 {
-struct Box;
-struct Extents;
-struct Offset;
-struct Rectangle;
 class Framebuffer;
 class MemoryObject;
 struct PixelUnpackState;
@@ -185,7 +182,8 @@ class TextureImpl : public FramebufferAttachmentObjectImpl
                                                    gl::MemoryObject *memoryObject,
                                                    GLuint64 offset,
                                                    GLbitfield createFlags,
-                                                   GLbitfield usageFlags) = 0;
+                                                   GLbitfield usageFlags,
+                                                   const void *imageCreateInfoPNext) = 0;
 
     virtual angle::Result setImageExternal(const gl::Context *context,
                                            const gl::ImageIndex &index,

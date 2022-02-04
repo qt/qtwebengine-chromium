@@ -32,6 +32,10 @@ message VirtualMachineSpec {
   // ID of a DLC package that contains the vm_tools.img for this vm. If empty
   // the vm_tools.img from the above dlc_id is used if available.
   string tools_dlc_id = 5;
+
+  // Optional path to the wayland server which should be passed into the VM. If
+  // absent the default path (${XDG_RUNTIME_DIR}/wayland-0) will be used.
+  string wayland_server = 6;
 }
 
 // The type of disk image.
@@ -75,6 +79,10 @@ message DiskImage {
 
   // Image type of the disk.
   DiskImageType image_type = 8;
+
+  // The block size of the device. The default block size is used when zero.
+  // Only ARCVM supports the field at the moment.
+  uint32 block_size = 9;
 }
 
 // Information about a particular VM.
@@ -318,6 +326,9 @@ message StartArcVmRequest {
   // scheduling is not used, and all vCPU threads can be assigned to any CPU
   // cores without restrictions.
   bool use_per_vm_core_scheduling = 14;
+
+  // The block size of the rootfs. The default block size is used when zero.
+  uint32 rootfs_block_size = 15;
 }
 
 enum VmStatus {

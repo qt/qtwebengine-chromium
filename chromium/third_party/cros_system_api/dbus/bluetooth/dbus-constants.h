@@ -632,12 +632,17 @@ constexpr char kSetLevels[] = "SetLevels";
 
 namespace bluetooth_admin_policy {
 constexpr char kBluetoothAdminPolicyInterface[] = "org.bluez.AdminPolicy1";
+constexpr char kBluetoothAdminPolicyStatusInterface[] =
+    "org.bluez.AdminPolicyStatus1";
+constexpr char kBluetoothAdminPolicySetInterface[] =
+    "org.bluez.AdminPolicySet1";
 
 // Methods.
 constexpr char kSetServiceAllowList[] = "SetServiceAllowList";
 
 // Properties
 constexpr char kServiceAllowListProperty[] = "ServiceAllowList";
+constexpr char kIsBlockedByPolicyProperty[] = "AffectedByPolicy";
 }  // namespace bluetooth_admin_policy
 
 #endif  // SYSTEM_API_DBUS_BLUETOOTH_DBUS_CONSTANTS_H_

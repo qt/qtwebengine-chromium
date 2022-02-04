@@ -11,21 +11,18 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-
 #include "third_party/nearby_connections/windows/core_adapter.h"
 
 #include "absl/strings/str_format.h"
+#include "core/core.h"
 
 namespace location {
 namespace nearby {
 namespace connections {
 
-Core* InitCoreWithServiceControllerFactory(
-    std::function<ServiceController*()> factory) {
-  return new Core(factory);
+Core* InitCore(ServiceControllerRouter* router) {
+  return new Core(router);
 }
-
-Core* InitCore() { return new Core(); }
 
 void CloseCore(Core* pCore) {
   if (pCore) {
@@ -34,13 +31,13 @@ void CloseCore(Core* pCore) {
              std::function<void(location::nearby::connections::Status)>{
                  [](location::nearby::connections::Status) {}}});
     delete pCore;
-    pCore = nullptr;
   }
 }
 
-void StartAdvertising(Core* pCore, absl::string_view service_id,
-                      ConnectionOptions options, ConnectionRequestInfo info,
-                      ResultCallback callback) {
+void StartAdvertising(Core* pCore, const char* service_id,
+                              ConnectionOptions options,
+                              ConnectionRequestInfo info,
+                              ResultCallback callback) {
   if (pCore) {
     pCore->StartAdvertising(service_id, options, info, callback);
   }
@@ -52,9 +49,10 @@ void StopAdvertising(Core* pCore, ResultCallback callback) {
   }
 }
 
-void StartDiscovery(Core* pCore, absl::string_view service_id,
-                    ConnectionOptions options, DiscoveryListener listener,
-                    ResultCallback callback) {
+void StartDiscovery(Core* pCore, const char* service_id,
+                            ConnectionOptions options,
+                            DiscoveryListener listener,
+                            ResultCallback callback) {
   if (pCore) {
     pCore->StartDiscovery(service_id, options, listener, callback);
   }
@@ -66,52 +64,57 @@ void StopDiscovery(Core* pCore, ResultCallback callback) {
   }
 }
 
-void InjectEndpoint(Core* pCore, absl::string_view service_id,
-                    OutOfBandConnectionMetadata metadata,
-                    ResultCallback callback) {
+void InjectEndpoint(Core* pCore, char* service_id,
+                            OutOfBandConnectionMetadata metadata,
+                            ResultCallback callback) {
   if (pCore) {
     pCore->InjectEndpoint(service_id, metadata, callback);
   }
 }
 
-void RequestConnection(Core* pCore, absl::string_view endpoint_id,
-                       ConnectionRequestInfo info, ConnectionOptions options,
-                       ResultCallback callback) {
+void RequestConnection(Core* pCore, const char* endpoint_id,
+                               ConnectionRequestInfo info,
+                               ConnectionOptions options,
+                               ResultCallback callback) {
   if (pCore) {
     pCore->RequestConnection(endpoint_id, info, options, callback);
   }
 }
 
-void AcceptConnection(Core* pCore, absl::string_view endpoint_id,
-                      PayloadListener listener, ResultCallback callback) {
+void AcceptConnection(Core* pCore, const char* endpoint_id,
+                              PayloadListener listener,
+                              ResultCallback callback) {
   if (pCore) {
     pCore->AcceptConnection(endpoint_id, listener, callback);
   }
 }
 
-void RejectConnection(Core* pCore, absl::string_view endpoint_id,
-                      ResultCallback callback) {
+void RejectConnection(Core* pCore, const char* endpoint_id,
+                              ResultCallback callback) {
   if (pCore) {
     pCore->RejectConnection(endpoint_id, callback);
   }
 }
 
-void SendPayload(Core* pCore, absl::Span<const std::string> endpoint_ids,
-                 Payload payload, ResultCallback callback) {
+void SendPayload(Core* pCore,
+                         // todo(jfcarroll) this is being exported, needs to be
+                         // refactored to return a plain old c type
+                         absl::Span<const std::string> endpoint_ids,
+                         Payload payload, ResultCallback callback) {
   if (pCore) {
     pCore->SendPayload(endpoint_ids, std::move(payload), callback);
   }
 }
 
 void CancelPayload(Core* pCore, std::int64_t payload_id,
-                   ResultCallback callback) {
+                           ResultCallback callback) {
   if (pCore) {
     pCore->CancelPayload(payload_id, callback);
   }
 }
 
-void DisconnectFromEndpoint(Core* pCore, absl::string_view endpoint_id,
-                            ResultCallback callback) {
+void DisconnectFromEndpoint(Core* pCore, char* endpoint_id,
+                                    ResultCallback callback) {
   if (pCore) {
     pCore->DisconnectFromEndpoint(endpoint_id, callback);
   }
@@ -123,8 +126,8 @@ void StopAllEndpoints(Core* pCore, ResultCallback callback) {
   }
 }
 
-void InitiateBandwidthUpgrade(Core* pCore, absl::string_view endpoint_id,
-                              ResultCallback callback) {
+void InitiateBandwidthUpgrade(Core* pCore, char* endpoint_id,
+                                      ResultCallback callback) {
   if (pCore) {
     pCore->InitiateBandwidthUpgrade(endpoint_id, callback);
   }
@@ -133,12 +136,23 @@ void InitiateBandwidthUpgrade(Core* pCore, absl::string_view endpoint_id,
 const char* GetLocalEndpointId(Core* pCore) {
   if (pCore) {
     std::string endpoint_id = pCore->GetLocalEndpointId();
-    char * result = new char[endpoint_id.length() + 1];
+    char* result = new char[endpoint_id.length() + 1];
     absl::SNPrintF(result, endpoint_id.length() + 1, "%s", endpoint_id);
     return result;
   }
   return "Null-Core";
 }
+
+ServiceControllerRouter* InitServiceControllerRouter() {
+  return new ServiceControllerRouter();
+}
+
+void CloseServiceControllerRouter(ServiceControllerRouter* pRouter) {
+  if (pRouter) {
+    delete pRouter;
+  }
+}
+
 }  // namespace connections
 }  // namespace nearby
 }  // namespace location

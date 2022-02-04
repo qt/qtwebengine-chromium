@@ -1268,12 +1268,12 @@ TEST_F(Specifications, MangledNameRust) {
 
   TestFunctionCount(1);
   TestFunction(0,
-#ifndef HAVE_RUST_DEMANGLE
+#ifndef HAVE_RUSTC_DEMANGLE
                // Rust mangled names should pass through untouched if not
-               // using rust-demangle.
+               // using rustc-demangle.
                kName,
 #else
-               // If rust-demangle is available this should be properly
+               // If rustc-demangle is available this should be properly
                // demangled.
                "rustc_demangle::demangle",
 #endif
@@ -1570,7 +1570,7 @@ TEST_F(Specifications, InterCU) {
   vector<Module::Function*> functions;
   m.GetFunctions(&functions, functions.end());
   EXPECT_EQ(1U, functions.size());
-  EXPECT_STREQ("class_A::member_func_B", functions[0]->name.c_str());
+  EXPECT_STREQ("class_A::member_func_B", functions[0]->name.str().c_str());
 }
 
 TEST_F(Specifications, UnhandledInterCU) {

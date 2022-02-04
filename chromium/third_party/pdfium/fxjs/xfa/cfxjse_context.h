@@ -10,7 +10,7 @@
 #include <memory>
 #include <vector>
 
-#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "v8/include/cppgc/persistent.h"
 #include "v8/include/v8-forward.h"
@@ -41,7 +41,7 @@ class CFXJSE_Context {
   void EnableCompatibleMode();
 
   // Note: `pNewThisObject` may be empty.
-  bool ExecuteScript(const char* szScript,
+  bool ExecuteScript(ByteStringView bsScript,
                      CFXJSE_Value* pRetValue,
                      v8::Local<v8::Object> pNewThisObject);
 

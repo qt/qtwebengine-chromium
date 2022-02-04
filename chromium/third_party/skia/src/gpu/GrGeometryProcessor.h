@@ -191,7 +191,7 @@ public:
      */
     static uint32_t ComputeCoordTransformsKey(const GrFragmentProcessor& fp);
 
-    static constexpr int kCoordTransformKeyBits = 4;
+    inline static constexpr int kCoordTransformKeyBits = 4;
 
     /**
      * Adds a key on the GrProcessorKeyBuilder that reflects any variety in the code that the
@@ -321,9 +321,10 @@ public:
     /**
      * Emits the code from this geometry processor into the shaders. For any FP in the pipeline that
      * has its input coords implemented by the GP as a varying, the varying will be accessible in
-     * the returned map and should be used when the FP code is emitted.
+     * the returned map and should be used when the FP code is emitted. The FS variable containing
+     * the GP's output local coords is also returned.
      **/
-    FPCoordsMap emitCode(EmitArgs&, const GrPipeline& pipeline);
+    std::tuple<FPCoordsMap, GrShaderVar> emitCode(EmitArgs&, const GrPipeline& pipeline);
 
     /**
      * Called after all effect emitCode() functions, to give the processor a chance to write out
@@ -393,7 +394,7 @@ public:
         return (flags << (2 * kMatrixKeyBits)) |
                ComputeMatrixKeys(shaderCaps, viewMatrix, localMatrix);
     }
-    static constexpr int kMatrixKeyBits = 2;
+    inline static constexpr int kMatrixKeyBits = 2;
 
 protected:
     void setupUniformColor(GrGLSLFPFragmentBuilder* fragBuilder,
@@ -420,6 +421,10 @@ protected:
         // variable can be an attribute or local variable, but should not itself be a varying.
         // ProgramImpl automatically determines if this must be passed to a FS.
         GrShaderVar fLocalCoordVar;
+        // The GP can specify the local coord var either in the VS or FS. When either is possible
+        // the VS is preferable. It may allow derived coordinates to be interpolated from the VS
+        // instead of computed in the FS per pixel.
+        GrShaderType fLocalCoordShader = kVertex_GrShaderType;
     };
 
     // Helpers for adding code to write the transformed vertex position. The first simple version
@@ -461,6 +466,7 @@ private:
     FPCoordsMap collectTransforms(GrGLSLVertexBuilder* vb,
                                   GrGLSLVaryingHandler* varyingHandler,
                                   GrGLSLUniformHandler* uniformHandler,
+                                  GrShaderType localCoordsShader,
                                   const GrShaderVar& localCoordsVar,
                                   const GrShaderVar& positionVar,
                                   const GrPipeline& pipeline);
@@ -573,7 +579,7 @@ static constexpr inline size_t GrVertexAttribTypeSize(GrVertexAttribType type) {
             return 2 * sizeof(uint16_t);
         case kInt_GrVertexAttribType:
             return sizeof(int32_t);
-        case kUint_GrVertexAttribType:
+        case kUInt_GrVertexAttribType:
             return sizeof(uint32_t);
         case kUShort_norm_GrVertexAttribType:
             return sizeof(uint16_t);

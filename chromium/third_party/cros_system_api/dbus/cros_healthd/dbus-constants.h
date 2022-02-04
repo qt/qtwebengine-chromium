@@ -21,6 +21,9 @@ constexpr char kCrosHealthdBootstrapMojoConnectionMethod[] =
 // Token used for the Mojo connection pipe.
 constexpr char kCrosHealthdMojoConnectionChannelToken[] = "cros_healthd";
 
+constexpr char kBootstrapChromeMojoConnectionMethod[] =
+    "BootstrapChromeMojoConnection";
+
 }  // namespace diagnostics
 
 #endif  // SYSTEM_API_DBUS_CROS_HEALTHD_DBUS_CONSTANTS_H_

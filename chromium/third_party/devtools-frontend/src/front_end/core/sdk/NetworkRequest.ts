@@ -1175,6 +1175,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
     this.#contentDataProvider = dataProvider;
   }
 
+  // TODO(crbug.com/1253323): Cast to RawPathString will be removed when migration to branded types is complete.
   contentURL(): string {
     return this.#urlInternal;
   }

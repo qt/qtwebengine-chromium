@@ -183,27 +183,6 @@ TEST_F(GlslGeneratorImplTest_Type, EmitType_StructDecl) {
 )");
 }
 
-TEST_F(GlslGeneratorImplTest_Type, EmitType_StructDecl_OmittedIfStorageBuffer) {
-  auto* s = Structure("S",
-                      {
-                          Member("a", ty.i32()),
-                          Member("b", ty.f32()),
-                      },
-                      {create<ast::StructBlockDecoration>()});
-  Global("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
-         });
-
-  GeneratorImpl& gen = Build();
-
-  TextGenerator::TextBuffer buf;
-  auto* sem_s = program->TypeOf(s)->As<sem::Struct>();
-  ASSERT_TRUE(gen.EmitStructType(&buf, sem_s)) << gen.error();
-  EXPECT_EQ(buf.String(), "");
-}
-
 TEST_F(GlslGeneratorImplTest_Type, EmitType_Struct) {
   auto* s = Structure("S", {
                                Member("a", ty.i32()),
@@ -302,10 +281,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitSampler) {
   GeneratorImpl& gen = Build();
 
   std::stringstream out;
-  ASSERT_TRUE(gen.EmitType(out, sampler, ast::StorageClass::kNone,
-                           ast::Access::kReadWrite, ""))
+  ASSERT_FALSE(gen.EmitType(out, sampler, ast::StorageClass::kNone,
+                            ast::Access::kReadWrite, ""))
       << gen.error();
-  EXPECT_EQ(out.str(), "SamplerState");
 }
 
 TEST_F(GlslGeneratorImplTest_Type, EmitSamplerComparison) {
@@ -314,10 +292,9 @@ TEST_F(GlslGeneratorImplTest_Type, EmitSamplerComparison) {
   GeneratorImpl& gen = Build();
 
   std::stringstream out;
-  ASSERT_TRUE(gen.EmitType(out, sampler, ast::StorageClass::kNone,
-                           ast::Access::kReadWrite, ""))
+  ASSERT_FALSE(gen.EmitType(out, sampler, ast::StorageClass::kNone,
+                            ast::Access::kReadWrite, ""))
       << gen.error();
-  EXPECT_EQ(out.str(), "SamplerComparisonState");
 }
 
 struct GlslDepthTextureData {
@@ -340,7 +317,7 @@ TEST_P(GlslDepthTexturesTest, Emit) {
              create<ast::GroupDecoration>(2),
          });
 
-  Func("main", {}, ty.void_(), {Ignore(Call("textureDimensions", "tex"))},
+  Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
        {Stage(ast::PipelineStage::kFragment)});
 
   GeneratorImpl& gen = Build();
@@ -352,14 +329,12 @@ INSTANTIATE_TEST_SUITE_P(
     GlslGeneratorImplTest_Type,
     GlslDepthTexturesTest,
     testing::Values(
-        GlslDepthTextureData{ast::TextureDimension::k2d,
-                             "Texture2D tex : register(t1, space2);"},
+        GlslDepthTextureData{ast::TextureDimension::k2d, "sampler2D tex;"},
         GlslDepthTextureData{ast::TextureDimension::k2dArray,
-                             "Texture2DArray tex : register(t1, space2);"},
-        GlslDepthTextureData{ast::TextureDimension::kCube,
-                             "TextureCube tex : register(t1, space2);"},
+                             "sampler2DArray tex;"},
+        GlslDepthTextureData{ast::TextureDimension::kCube, "samplerCube tex;"},
         GlslDepthTextureData{ast::TextureDimension::kCubeArray,
-                             "TextureCubeArray tex : register(t1, space2);"}));
+                             "samplerCubeArray tex;"}));
 
 using GlslDepthMultisampledTexturesTest = TestHelper;
 TEST_F(GlslDepthMultisampledTexturesTest, Emit) {
@@ -371,14 +346,13 @@ TEST_F(GlslDepthMultisampledTexturesTest, Emit) {
              create<ast::GroupDecoration>(2),
          });
 
-  Func("main", {}, ty.void_(), {Ignore(Call("textureDimensions", "tex"))},
+  Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
        {Stage(ast::PipelineStage::kFragment)});
 
   GeneratorImpl& gen = Build();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_THAT(gen.result(),
-              HasSubstr("Texture2DMS<float4> tex : register(t1, space2);"));
+  EXPECT_THAT(gen.result(), HasSubstr("sampler2DMS tex;"));
 }
 
 enum class TextureDataType { F32, U32, I32 };
@@ -396,7 +370,7 @@ using GlslSampledTexturesTest = TestParamHelper<GlslSampledTextureData>;
 TEST_P(GlslSampledTexturesTest, Emit) {
   auto params = GetParam();
 
-  ast::Type* datatype = nullptr;
+  const ast::Type* datatype = nullptr;
   switch (params.datatype) {
     case TextureDataType::F32:
       datatype = ty.f32();
@@ -416,7 +390,7 @@ TEST_P(GlslSampledTexturesTest, Emit) {
              create<ast::GroupDecoration>(2),
          });
 
-  Func("main", {}, ty.void_(), {Ignore(Call("textureDimensions", "tex"))},
+  Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
        {Stage(ast::PipelineStage::kFragment)});
 
   GeneratorImpl& gen = Build();
@@ -424,100 +398,99 @@ TEST_P(GlslSampledTexturesTest, Emit) {
   ASSERT_TRUE(gen.Generate()) << gen.error();
   EXPECT_THAT(gen.result(), HasSubstr(params.result));
 }
-INSTANTIATE_TEST_SUITE_P(
-    GlslGeneratorImplTest_Type,
-    GlslSampledTexturesTest,
-    testing::Values(
-        GlslSampledTextureData{
-            ast::TextureDimension::k1d,
-            TextureDataType::F32,
-            "Texture1D<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2d,
-            TextureDataType::F32,
-            "Texture2D<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2dArray,
-            TextureDataType::F32,
-            "Texture2DArray<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k3d,
-            TextureDataType::F32,
-            "Texture3D<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCube,
-            TextureDataType::F32,
-            "TextureCube<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCubeArray,
-            TextureDataType::F32,
-            "TextureCubeArray<float4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k1d,
-            TextureDataType::U32,
-            "Texture1D<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2d,
-            TextureDataType::U32,
-            "Texture2D<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2dArray,
-            TextureDataType::U32,
-            "Texture2DArray<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k3d,
-            TextureDataType::U32,
-            "Texture3D<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCube,
-            TextureDataType::U32,
-            "TextureCube<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCubeArray,
-            TextureDataType::U32,
-            "TextureCubeArray<uint4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k1d,
-            TextureDataType::I32,
-            "Texture1D<int4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2d,
-            TextureDataType::I32,
-            "Texture2D<int4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k2dArray,
-            TextureDataType::I32,
-            "Texture2DArray<int4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::k3d,
-            TextureDataType::I32,
-            "Texture3D<int4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCube,
-            TextureDataType::I32,
-            "TextureCube<int4> tex : register(t1, space2);",
-        },
-        GlslSampledTextureData{
-            ast::TextureDimension::kCubeArray,
-            TextureDataType::I32,
-            "TextureCubeArray<int4> tex : register(t1, space2);",
-        }));
+INSTANTIATE_TEST_SUITE_P(GlslGeneratorImplTest_Type,
+                         GlslSampledTexturesTest,
+                         testing::Values(
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k1d,
+                                 TextureDataType::F32,
+                                 "sampler1D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2d,
+                                 TextureDataType::F32,
+                                 "sampler2D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2dArray,
+                                 TextureDataType::F32,
+                                 "sampler2DArray tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k3d,
+                                 TextureDataType::F32,
+                                 "sampler3D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCube,
+                                 TextureDataType::F32,
+                                 "samplerCube tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCubeArray,
+                                 TextureDataType::F32,
+                                 "samplerCubeArray tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k1d,
+                                 TextureDataType::U32,
+                                 "usampler1D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2d,
+                                 TextureDataType::U32,
+                                 "usampler2D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2dArray,
+                                 TextureDataType::U32,
+                                 "usampler2DArray tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k3d,
+                                 TextureDataType::U32,
+                                 "usampler3D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCube,
+                                 TextureDataType::U32,
+                                 "usamplerCube tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCubeArray,
+                                 TextureDataType::U32,
+                                 "usamplerCubeArray tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k1d,
+                                 TextureDataType::I32,
+                                 "isampler1D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2d,
+                                 TextureDataType::I32,
+                                 "isampler2D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k2dArray,
+                                 TextureDataType::I32,
+                                 "isampler2DArray tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::k3d,
+                                 TextureDataType::I32,
+                                 "isampler3D tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCube,
+                                 TextureDataType::I32,
+                                 "isamplerCube tex;",
+                             },
+                             GlslSampledTextureData{
+                                 ast::TextureDimension::kCubeArray,
+                                 TextureDataType::I32,
+                                 "isamplerCubeArray tex;",
+                             }));
 
 TEST_F(GlslGeneratorImplTest_Type, EmitMultisampledTexture) {
   auto* f32 = create<sem::F32>();
@@ -529,27 +502,23 @@ TEST_F(GlslGeneratorImplTest_Type, EmitMultisampledTexture) {
   ASSERT_TRUE(gen.EmitType(out, s, ast::StorageClass::kNone,
                            ast::Access::kReadWrite, ""))
       << gen.error();
-  EXPECT_EQ(out.str(), "Texture2DMS<float4>");
+  EXPECT_EQ(out.str(), "uniform highp sampler2DMS");
 }
 
 struct GlslStorageTextureData {
   ast::TextureDimension dim;
   ast::ImageFormat imgfmt;
-  bool ro;
   std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out,
                                 GlslStorageTextureData data) {
-  out << data.dim << (data.ro ? "ReadOnly" : "WriteOnly");
-  return out;
+  return out << data.dim;
 }
 using GlslStorageTexturesTest = TestParamHelper<GlslStorageTextureData>;
 TEST_P(GlslStorageTexturesTest, Emit) {
   auto params = GetParam();
 
-  auto* t =
-      ty.storage_texture(params.dim, params.imgfmt,
-                         params.ro ? ast::Access::kRead : ast::Access::kWrite);
+  auto* t = ty.storage_texture(params.dim, params.imgfmt, ast::Access::kWrite);
 
   Global("tex", t,
          ast::DecorationList{
@@ -557,7 +526,7 @@ TEST_P(GlslStorageTexturesTest, Emit) {
              create<ast::GroupDecoration>(2),
          });
 
-  Func("main", {}, ty.void_(), {Ignore(Call("textureDimensions", "tex"))},
+  Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
        {Stage(ast::PipelineStage::kFragment)});
 
   GeneratorImpl& gen = Build();
@@ -570,44 +539,32 @@ INSTANTIATE_TEST_SUITE_P(
     GlslStorageTexturesTest,
     testing::Values(
         GlslStorageTextureData{ast::TextureDimension::k1d,
-                               ast::ImageFormat::kRgba8Unorm, true,
-                               "Texture1D<float4> tex : register(t1, space2);"},
+                               ast::ImageFormat::kRgba8Unorm, "image1D tex;"},
         GlslStorageTextureData{ast::TextureDimension::k2d,
-                               ast::ImageFormat::kRgba16Float, true,
-                               "Texture2D<float4> tex : register(t1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Float, true,
-            "Texture2DArray<float4> tex : register(t1, space2);"},
+                               ast::ImageFormat::kRgba16Float, "image2D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k2dArray,
+                               ast::ImageFormat::kR32Float,
+                               "image2DArray tex;"},
         GlslStorageTextureData{ast::TextureDimension::k3d,
-                               ast::ImageFormat::kRg32Float, true,
-                               "Texture3D<float4> tex : register(t1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba32Float, false,
-            "RWTexture1D<float4> tex : register(u1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k2d, ast::ImageFormat::kRgba16Uint, false,
-            "RWTexture2D<uint4> tex : register(u1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Uint, false,
-            "RWTexture2DArray<uint4> tex : register(u1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k3d, ast::ImageFormat::kRg32Uint, false,
-            "RWTexture3D<uint4> tex : register(u1, space2);"},
+                               ast::ImageFormat::kRg32Float, "image3D tex;"},
         GlslStorageTextureData{ast::TextureDimension::k1d,
-                               ast::ImageFormat::kRgba32Uint, true,
-                               "Texture1D<uint4> tex : register(t1, space2);"},
+                               ast::ImageFormat::kRgba32Float, "image1D tex;"},
         GlslStorageTextureData{ast::TextureDimension::k2d,
-                               ast::ImageFormat::kRgba16Sint, true,
-                               "Texture2D<int4> tex : register(t1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Sint, true,
-            "Texture2DArray<int4> tex : register(t1, space2);"},
+                               ast::ImageFormat::kRgba16Uint, "image2D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k2dArray,
+                               ast::ImageFormat::kR32Uint, "image2DArray tex;"},
         GlslStorageTextureData{ast::TextureDimension::k3d,
-                               ast::ImageFormat::kRg32Sint, true,
-                               "Texture3D<int4> tex : register(t1, space2);"},
-        GlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba32Sint, false,
-            "RWTexture1D<int4> tex : register(u1, space2);"}));
+                               ast::ImageFormat::kRg32Uint, "image3D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k1d,
+                               ast::ImageFormat::kRgba32Uint, "image1D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k2d,
+                               ast::ImageFormat::kRgba16Sint, "image2D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k2dArray,
+                               ast::ImageFormat::kR32Sint, "image2DArray tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k3d,
+                               ast::ImageFormat::kRg32Sint, "image3D tex;"},
+        GlslStorageTextureData{ast::TextureDimension::k1d,
+                               ast::ImageFormat::kRgba32Sint, "image1D tex;"}));
 
 }  // namespace
 }  // namespace glsl

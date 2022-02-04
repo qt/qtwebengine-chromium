@@ -82,6 +82,10 @@ const UIStrings = {
   *@description A context menu item in the Call Stack Sidebar Pane of the Sources panel
   */
   addAllContentScriptsToIgnoreList: 'Add all content scripts to ignore list',
+  /**
+  *@description Text in Call Stack Sidebar Pane of the Sources panel when some call frames have warnings
+  */
+  callFrameWarnings: 'Some call frames have warnings',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/sources/CallStackSidebarPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -92,6 +96,7 @@ export class CallStackSidebarPane extends UI.View.SimpleView implements UI.Conte
                                                                         UI.ListControl.ListDelegate<Item> {
   private readonly ignoreListMessageElement: Element;
   private readonly notPausedMessageElement: HTMLElement;
+  private readonly callFrameWarningsElement: HTMLElement;
   private readonly items: UI.ListModel.ListModel<Item>;
   private list: UI.ListControl.ListControl<Item>;
   private readonly showMoreMessageElement: Element;
@@ -112,6 +117,12 @@ export class CallStackSidebarPane extends UI.View.SimpleView implements UI.Conte
     this.notPausedMessageElement = this.contentElement.createChild('div', 'gray-info-message');
     this.notPausedMessageElement.textContent = i18nString(UIStrings.notPaused);
     this.notPausedMessageElement.tabIndex = -1;
+
+    this.callFrameWarningsElement = this.contentElement.createChild('div', 'ignore-listed-message');
+    const icon = UI.Icon.Icon.create('smallicon-warning', 'call-frame-warning-icon');
+    this.callFrameWarningsElement.appendChild(icon);
+    this.callFrameWarningsElement.appendChild(document.createTextNode(i18nString(UIStrings.callFrameWarnings)));
+    this.callFrameWarningsElement.tabIndex = -1;
 
     this.items = new UI.ListModel.ListModel();
     this.list = new UI.ListControl.ListControl(this.items, this, UI.ListControl.ListMode.NonViewport);
@@ -164,6 +175,8 @@ export class CallStackSidebarPane extends UI.View.SimpleView implements UI.Conte
   private async doUpdate(): Promise<void> {
     this.locationPool.disposeAll();
 
+    this.callFrameWarningsElement.classList.add('hidden');
+
     const details = UI.Context.Context.instance().flavor(SDK.DebuggerModel.DebuggerPausedDetails);
     if (!details) {
       this.notPausedMessageElement.classList.remove('hidden');
@@ -174,10 +187,10 @@ export class CallStackSidebarPane extends UI.View.SimpleView implements UI.Conte
       return;
     }
 
-    let debuggerModel: SDK.DebuggerModel.DebuggerModel|null = details.debuggerModel;
     this.notPausedMessageElement.classList.add('hidden');
 
     const itemPromises = [];
+    const uniqueWarnings: Set<string> = new Set();
     for (const frame of details.callFrames) {
       const itemPromise =
           Item.createForDebuggerCallFrame(frame, this.locationPool, this.refreshItem.bind(this)).then(item => {
@@ -185,35 +198,43 @@ export class CallStackSidebarPane extends UI.View.SimpleView implements UI.Conte
             return item;
           });
       itemPromises.push(itemPromise);
+      for (const warning of frame.warnings) {
+        uniqueWarnings.add(warning);
+      }
     }
     const items = await Promise.all(itemPromises);
-
-    let asyncStackTrace: Protocol.Runtime.StackTrace|null|undefined = details.asyncStackTrace;
-    if (!asyncStackTrace && details.asyncStackTraceId) {
-      if (details.asyncStackTraceId.debuggerId) {
-        debuggerModel = await SDK.DebuggerModel.DebuggerModel.modelForDebuggerId(details.asyncStackTraceId.debuggerId);
-      }
-      asyncStackTrace = debuggerModel ? await debuggerModel.fetchAsyncStackTrace(details.asyncStackTraceId) : null;
+    if (uniqueWarnings.size) {
+      this.callFrameWarningsElement.classList.remove('hidden');
+      UI.Tooltip.Tooltip.install(this.callFrameWarningsElement, Array.from(uniqueWarnings).join('\n'));
     }
+
+    let debuggerModel = details.debuggerModel;
+    let asyncStackTraceId = details.asyncStackTraceId;
+    let asyncStackTrace: Protocol.Runtime.StackTrace|undefined|null = details.asyncStackTrace;
     let previousStackTrace: Protocol.Runtime.CallFrame[]|SDK.DebuggerModel.CallFrame[] = details.callFrames;
-    let maxAsyncStackChainDepth = this.maxAsyncStackChainDepth;
-    while (asyncStackTrace && maxAsyncStackChainDepth > 0) {
+    for (let {maxAsyncStackChainDepth} = this; maxAsyncStackChainDepth > 0; --maxAsyncStackChainDepth) {
+      if (!asyncStackTrace) {
+        if (!asyncStackTraceId) {
+          break;
+        }
+        if (asyncStackTraceId.debuggerId) {
+          const dm = await SDK.DebuggerModel.DebuggerModel.modelForDebuggerId(asyncStackTraceId.debuggerId);
+          if (!dm) {
+            break;
+          }
+          debuggerModel = dm;
+        }
+        asyncStackTrace = await debuggerModel.fetchAsyncStackTrace(asyncStackTraceId);
+        if (!asyncStackTrace) {
+          break;
+        }
+      }
       const title = UI.UIUtils.asyncStackTraceLabel(asyncStackTrace.description, previousStackTrace);
       items.push(...await Item.createItemsForAsyncStack(
           title, debuggerModel, asyncStackTrace.callFrames, this.locationPool, this.refreshItem.bind(this)));
-
-      --maxAsyncStackChainDepth;
       previousStackTrace = asyncStackTrace.callFrames;
-      if (asyncStackTrace.parent) {
-        asyncStackTrace = asyncStackTrace.parent;
-      } else if (asyncStackTrace.parentId) {
-        if (asyncStackTrace.parentId.debuggerId) {
-          debuggerModel = await SDK.DebuggerModel.DebuggerModel.modelForDebuggerId(asyncStackTrace.parentId.debuggerId);
-        }
-        asyncStackTrace = debuggerModel ? await debuggerModel.fetchAsyncStackTrace(asyncStackTrace.parentId) : null;
-      } else {
-        asyncStackTrace = null;
-      }
+      asyncStackTraceId = asyncStackTrace.parentId;
+      asyncStackTrace = asyncStackTrace.parent;
     }
     this.showMoreMessageElement.classList.toggle('hidden', !asyncStackTrace);
     this.items.replaceAll(items);
@@ -531,7 +552,7 @@ export class Item {
   }
 
   static async createItemsForAsyncStack(
-      title: string, debuggerModel: SDK.DebuggerModel.DebuggerModel|null, frames: Protocol.Runtime.CallFrame[],
+      title: string, debuggerModel: SDK.DebuggerModel.DebuggerModel, frames: Protocol.Runtime.CallFrame[],
       locationPool: Bindings.LiveLocation.LiveLocationPool, updateDelegate: (arg0: Item) => void): Promise<Item[]> {
     const headerItemToItemsSet = new WeakMap<Item, Set<Item>>();
     const asyncHeaderItem = new Item(title, updateDelegate);
@@ -542,17 +563,11 @@ export class Item {
     const liveLocationPromises = [];
     for (const frame of frames) {
       const item = new Item(UI.UIUtils.beautifyFunctionName(frame.functionName), update);
-      const rawLocation = debuggerModel ?
-          debuggerModel.createRawLocationByScriptId(frame.scriptId, frame.lineNumber, frame.columnNumber) :
-          null;
-      if (!rawLocation) {
-        item.linkText = (frame.url || '<unknown>') + ':' + (frame.lineNumber + 1);
-        item.updateDelegate(item);
-      } else {
-        liveLocationPromises.push(
-            Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createCallFrameLiveLocation(
-                rawLocation, item.update.bind(item), locationPool));
-      }
+      const rawLocation =
+          debuggerModel.createRawLocationByScriptId(frame.scriptId, frame.lineNumber, frame.columnNumber);
+      liveLocationPromises.push(
+          Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().createCallFrameLiveLocation(
+              rawLocation, item.update.bind(item), locationPool));
       asyncFrameItems.push(item);
     }
 

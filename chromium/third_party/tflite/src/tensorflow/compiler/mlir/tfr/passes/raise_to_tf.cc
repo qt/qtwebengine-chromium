@@ -30,6 +30,7 @@ limitations under the License.
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/QuantOps.h"  // from @llvm-project
 #include "mlir/Dialect/SCF/SCF.h"  // from @llvm-project
 #include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
@@ -445,7 +446,7 @@ LogicalResult RewriteTFRCallOp::matchAndRewrite(
 
   // Merge the attributes from the argument list to the derived ones.
   for (auto& attr : argument_attrs) {
-    derived_attrs.insert({attr.first, attr.second});
+    derived_attrs.insert({attr.getName(), attr.getValue()});
   }
 
   // Derive the output types by using the attributes attached to the tfr
@@ -465,7 +466,7 @@ class RaiseToTFOpsPass : public PassWrapper<RaiseToTFOpsPass, FunctionPass> {
  public:
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<TFRDialect, TF::TensorFlowDialect, scf::SCFDialect,
-                    StandardOpsDialect>();
+                    arith::ArithmeticDialect, StandardOpsDialect>();
   }
 
   explicit RaiseToTFOpsPass(llvm::Optional<ModuleOp> tfr_module,

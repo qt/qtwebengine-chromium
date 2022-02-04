@@ -83,7 +83,7 @@ namespace dawn_native { namespace d3d12 {
         : OldSwapChainBase(device, descriptor) {
         const auto& im = GetImplementation();
         DawnWSIContextD3D12 wsiContext = {};
-        wsiContext.device = reinterpret_cast<WGPUDevice>(GetDevice());
+        wsiContext.device = ToAPI(GetDevice());
         im.Init(im.userData, &wsiContext);
 
         ASSERT(im.textureUsage != WGPUTextureUsage_None);
@@ -141,7 +141,10 @@ namespace dawn_native { namespace d3d12 {
         return swapchain;
     }
 
-    SwapChain::~SwapChain() {
+    SwapChain::~SwapChain() = default;
+
+    void SwapChain::DestroyImpl() {
+        SwapChainBase::DestroyImpl();
         DetachFromSurface();
     }
 
@@ -166,9 +169,9 @@ namespace dawn_native { namespace d3d12 {
         // TODO(crbug.com/dawn/269): figure out what should happen when surfaces are used by
         // multiple backends one after the other. It probably needs to block until the backend
         // and GPU are completely finished with the previous swapchain.
-        if (previousSwapChain->GetBackendType() != wgpu::BackendType::D3D12) {
-            return DAWN_VALIDATION_ERROR("d3d12::SwapChain cannot switch between APIs");
-        }
+        DAWN_INVALID_IF(previousSwapChain->GetBackendType() != wgpu::BackendType::D3D12,
+                        "D3D12 SwapChain cannot switch backend types from %s to %s.",
+                        previousSwapChain->GetBackendType(), wgpu::BackendType::D3D12);
 
         // TODO(crbug.com/dawn/269): use ToBackend once OldSwapChainBase is removed.
         SwapChain* previousD3D12SwapChain = static_cast<SwapChain*>(previousSwapChain);
@@ -176,9 +179,8 @@ namespace dawn_native { namespace d3d12 {
         // TODO(crbug.com/dawn/269): Figure out switching an HWND between devices, it might
         // require just losing the reference to the swapchain, but might also need to wait for
         // all previous operations to complete.
-        if (GetDevice() != previousSwapChain->GetDevice()) {
-            return DAWN_VALIDATION_ERROR("d3d12::SwapChain cannot switch between devices");
-        }
+        DAWN_INVALID_IF(GetDevice() != previousSwapChain->GetDevice(),
+                        "D3D12 SwapChain cannot switch between D3D Devices");
 
         // The previous swapchain is on the same device so we want to reuse it but it is still not
         // always possible. Because DXGI requires that a new swapchain be created if the

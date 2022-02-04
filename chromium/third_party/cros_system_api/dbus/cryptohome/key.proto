@@ -93,6 +93,9 @@ message KeyData {
     // Fingerprint-based key. Cryptohome needs to start fingerprint auth
     // session and get fingerprint-based secret from biod.
     KEY_TYPE_FINGERPRINT = 2;
+    // For the kiosk key is generated based on the app_id, which is passed as a
+    // username.
+    KEY_TYPE_KIOSK = 3;
   }
   optional KeyType type = 1;
   // All keys must be labeled when persisted to disk, but when KeyData

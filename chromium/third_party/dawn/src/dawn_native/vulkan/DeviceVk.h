@@ -21,6 +21,7 @@
 #include "dawn_native/Commands.h"
 #include "dawn_native/Device.h"
 #include "dawn_native/vulkan/CommandRecordingContext.h"
+#include "dawn_native/vulkan/DescriptorSetAllocator.h"
 #include "dawn_native/vulkan/Forward.h"
 #include "dawn_native/vulkan/VulkanFunctions.h"
 #include "dawn_native/vulkan/VulkanInfo.h"
@@ -40,9 +41,10 @@ namespace dawn_native { namespace vulkan {
     class RenderPassCache;
     class ResourceMemoryAllocator;
 
-    class Device : public DeviceBase {
+    class Device final : public DeviceBase {
       public:
-        static ResultOrError<Device*> Create(Adapter* adapter, const DeviceDescriptor* descriptor);
+        static ResultOrError<Device*> Create(Adapter* adapter,
+                                             const DawnDeviceDescriptor* descriptor);
         ~Device() override;
 
         MaybeError Initialize();
@@ -64,7 +66,7 @@ namespace dawn_native { namespace vulkan {
         CommandRecordingContext* GetPendingRecordingContext();
         MaybeError SubmitPendingCommands();
 
-        void EnqueueDeferredDeallocation(BindGroupLayout* bindGroupLayout);
+        void EnqueueDeferredDeallocation(DescriptorSetAllocator* allocator);
 
         // Dawn Native API
 
@@ -104,7 +106,7 @@ namespace dawn_native { namespace vulkan {
         float GetTimestampPeriodInNS() const override;
 
       private:
-        Device(Adapter* adapter, const DeviceDescriptor* descriptor);
+        Device(Adapter* adapter, const DawnDeviceDescriptor* descriptor);
 
         ResultOrError<Ref<BindGroupBase>> CreateBindGroupImpl(
             const BindGroupDescriptor* descriptor) override;
@@ -113,14 +115,10 @@ namespace dawn_native { namespace vulkan {
             PipelineCompatibilityToken pipelineCompatibilityToken) override;
         ResultOrError<Ref<BufferBase>> CreateBufferImpl(
             const BufferDescriptor* descriptor) override;
-        ResultOrError<Ref<ComputePipelineBase>> CreateComputePipelineImpl(
-            const ComputePipelineDescriptor* descriptor) override;
         ResultOrError<Ref<PipelineLayoutBase>> CreatePipelineLayoutImpl(
             const PipelineLayoutDescriptor* descriptor) override;
         ResultOrError<Ref<QuerySetBase>> CreateQuerySetImpl(
             const QuerySetDescriptor* descriptor) override;
-        Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
-            const RenderPipelineDescriptor* descriptor) override;
         ResultOrError<Ref<SamplerBase>> CreateSamplerImpl(
             const SamplerDescriptor* descriptor) override;
         ResultOrError<Ref<ShaderModuleBase>> CreateShaderModuleImpl(
@@ -137,10 +135,13 @@ namespace dawn_native { namespace vulkan {
         ResultOrError<Ref<TextureViewBase>> CreateTextureViewImpl(
             TextureBase* texture,
             const TextureViewDescriptor* descriptor) override;
-        void CreateComputePipelineAsyncImpl(const ComputePipelineDescriptor* descriptor,
-                                            size_t blueprintHash,
-                                            WGPUCreateComputePipelineAsyncCallback callback,
-                                            void* userdata) override;
+        Ref<ComputePipelineBase> CreateUninitializedComputePipelineImpl(
+            const ComputePipelineDescriptor* descriptor) override;
+        Ref<RenderPipelineBase> CreateUninitializedRenderPipelineImpl(
+            const RenderPipelineDescriptor* descriptor) override;
+        void InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
+                                                WGPUCreateComputePipelineAsyncCallback callback,
+                                                void* userdata) override;
         void InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                                WGPUCreateRenderPipelineAsyncCallback callback,
                                                void* userdata) override;
@@ -152,7 +153,7 @@ namespace dawn_native { namespace vulkan {
         void InitTogglesFromDriver();
         void ApplyDepth24PlusS8Toggle();
 
-        void ShutDownImpl() override;
+        void DestroyImpl() override;
         MaybeError WaitForIdleForDestruction() override;
 
         // To make it easier to use fn it is a public const member. However
@@ -165,7 +166,8 @@ namespace dawn_native { namespace vulkan {
         VkQueue mQueue = VK_NULL_HANDLE;
         uint32_t mComputeSubgroupSize = 0;
 
-        SerialQueue<ExecutionSerial, Ref<BindGroupLayout>> mBindGroupLayoutsPendingDeallocation;
+        SerialQueue<ExecutionSerial, Ref<DescriptorSetAllocator>>
+            mDescriptorAllocatorsPendingDeallocation;
         std::unique_ptr<FencedDeleter> mDeleter;
         std::unique_ptr<ResourceMemoryAllocator> mResourceMemoryAllocator;
         std::unique_ptr<RenderPassCache> mRenderPassCache;

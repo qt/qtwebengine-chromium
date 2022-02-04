@@ -50,6 +50,9 @@ namespace dawn_native {
 
     class PipelineLayoutBase : public ApiObjectBase, public CachedObject {
       public:
+        PipelineLayoutBase(DeviceBase* device,
+                           const PipelineLayoutDescriptor* descriptor,
+                           ApiObjectBase::UntrackedByDeviceTag tag);
         PipelineLayoutBase(DeviceBase* device, const PipelineLayoutDescriptor* descriptor);
         ~PipelineLayoutBase() override;
 
@@ -80,7 +83,10 @@ namespace dawn_native {
         };
 
       protected:
+        // Constructor used only for mocking and testing.
+        PipelineLayoutBase(DeviceBase* device);
         PipelineLayoutBase(DeviceBase* device, ObjectBase::ErrorTag tag);
+        void DestroyImpl() override;
 
         BindGroupLayoutArray mBindGroupLayouts;
         BindGroupLayoutMask mMask;

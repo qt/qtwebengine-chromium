@@ -25,10 +25,10 @@ message FeatureConfig {
     // If the inference result is > than the threshold it is considered a
     // positive result, if the inference result is <= to the threshold then it
     // is considered a negative result.
-    // Note: The inference result is a value from [0, 256), so due to the
+    // Note: The inference result is a value from [-128, 128), so due to the
     // comparison being 'inference value > threshold', the threshold value
-    // passed must be in the range of [0,255). A threshold value outside of this
-    // range will result in the filter never changing state.
+    // passed must be in the range of [-128, 127). A threshold value outside of
+    // this range will result in the filter never changing state.
     int32 threshold = 2;
     // 'initial_state' can be used to set the filter to initially be true or
     // false. This is so that client and the filter can be in sync on the

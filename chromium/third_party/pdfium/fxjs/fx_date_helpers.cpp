@@ -116,7 +116,7 @@ int MonthFromTime(double t) {
       59, 90, 120, 151, 181, 212, 243, 273, 304, 334, 365};
   for (size_t i = 0; i < pdfium::size(kCumulativeDaysInMonths); ++i) {
     if (day < kCumulativeDaysInMonths[i])
-      return i + 1;
+      return static_cast<int>(i) + 1;
   }
 
   return -1;
@@ -436,7 +436,7 @@ ConversionStatus FX_ParseDateUsingFormat(const WideString& value,
                 WideString sMonth = value.Substr(j, KMonthAbbreviationLength);
                 for (size_t m = 0; m < pdfium::size(kMonths); ++m) {
                   if (sMonth.CompareNoCase(kMonths[m]) == 0) {
-                    nMonth = m + 1;
+                    nMonth = static_cast<int>(m) + 1;
                     i += 3;
                     j += nSkip;
                     bFind = true;
@@ -474,8 +474,8 @@ ConversionStatus FX_ParseDateUsingFormat(const WideString& value,
                 for (size_t m = 0; m < pdfium::size(kFullMonths); ++m) {
                   WideString sFullMonths = WideString(kFullMonths[m]);
                   sFullMonths.MakeLower();
-                  if (sFullMonths.Contains(sMonth.c_str())) {
-                    nMonth = m + 1;
+                  if (sFullMonths.Contains(sMonth.AsStringView())) {
+                    nMonth = static_cast<int>(m) + 1;
                     i += 4;
                     j += nSkip;
                     bFind = true;
@@ -483,7 +483,6 @@ ConversionStatus FX_ParseDateUsingFormat(const WideString& value,
                   }
                 }
               }
-
               if (!bFind) {
                 nMonth = FX_ParseStringInteger(value, j, &nSkip, 4);
                 i += 4;

@@ -3652,10 +3652,15 @@ TEST(SSLTest, SetVersion) {
   ASSERT_TRUE(ctx);
 
   // Set valid TLS versions.
-  EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_1_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), TLS1_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), TLS1_1_VERSION));
+  for (const auto &vers : kAllVersions) {
+    SCOPED_TRACE(vers.name);
+    if (vers.ssl_method == VersionParam::is_tls) {
+      EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), vers.version));
+      EXPECT_EQ(SSL_CTX_get_max_proto_version(ctx.get()), vers.version);
+      EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), vers.version));
+      EXPECT_EQ(SSL_CTX_get_min_proto_version(ctx.get()), vers.version);
+    }
+  }
 
   // Invalid TLS versions are rejected.
   EXPECT_FALSE(SSL_CTX_set_max_proto_version(ctx.get(), DTLS1_VERSION));
@@ -3671,21 +3676,24 @@ TEST(SSLTest, SetVersion) {
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
   EXPECT_EQ(TLS1_VERSION, SSL_CTX_get_min_proto_version(ctx.get()));
 
-  // TLS 1.3 is available, but not by default.
-  EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_3_VERSION));
-  EXPECT_EQ(TLS1_3_VERSION, SSL_CTX_get_max_proto_version(ctx.get()));
-
   // SSL 3.0 is not available.
   EXPECT_FALSE(SSL_CTX_set_min_proto_version(ctx.get(), SSL3_VERSION));
 
   ctx.reset(SSL_CTX_new(DTLS_method()));
   ASSERT_TRUE(ctx);
 
-  EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), DTLS1_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), DTLS1_2_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), DTLS1_VERSION));
-  EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), DTLS1_2_VERSION));
+  // Set valid DTLS versions.
+  for (const auto &vers : kAllVersions) {
+    SCOPED_TRACE(vers.name);
+    if (vers.ssl_method == VersionParam::is_dtls) {
+      EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), vers.version));
+      EXPECT_EQ(SSL_CTX_get_max_proto_version(ctx.get()), vers.version);
+      EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), vers.version));
+      EXPECT_EQ(SSL_CTX_get_min_proto_version(ctx.get()), vers.version);
+    }
+  }
 
+  // Invalid DTLS versions are rejected.
   EXPECT_FALSE(SSL_CTX_set_max_proto_version(ctx.get(), TLS1_VERSION));
   EXPECT_FALSE(SSL_CTX_set_max_proto_version(ctx.get(), 0xfefe /* DTLS 1.1 */));
   EXPECT_FALSE(SSL_CTX_set_max_proto_version(ctx.get(), 0xfffe /* DTLS 0.1 */));
@@ -3695,6 +3703,7 @@ TEST(SSLTest, SetVersion) {
   EXPECT_FALSE(SSL_CTX_set_min_proto_version(ctx.get(), 0xfffe /* DTLS 0.1 */));
   EXPECT_FALSE(SSL_CTX_set_min_proto_version(ctx.get(), 0x1234));
 
+  // Zero is the default version.
   EXPECT_TRUE(SSL_CTX_set_max_proto_version(ctx.get(), 0));
   EXPECT_EQ(DTLS1_2_VERSION, SSL_CTX_get_max_proto_version(ctx.get()));
   EXPECT_TRUE(SSL_CTX_set_min_proto_version(ctx.get(), 0));
@@ -4957,23 +4966,43 @@ TEST_P(SSLVersionTest, SSLPending) {
 
   ASSERT_TRUE(Connect());
   EXPECT_EQ(0, SSL_pending(client_.get()));
+  EXPECT_EQ(0, SSL_has_pending(client_.get()));
 
   ASSERT_EQ(5, SSL_write(server_.get(), "hello", 5));
   ASSERT_EQ(5, SSL_write(server_.get(), "world", 5));
   EXPECT_EQ(0, SSL_pending(client_.get()));
+  EXPECT_EQ(0, SSL_has_pending(client_.get()));
 
   char buf[10];
   ASSERT_EQ(1, SSL_peek(client_.get(), buf, 1));
   EXPECT_EQ(5, SSL_pending(client_.get()));
+  EXPECT_EQ(1, SSL_has_pending(client_.get()));
 
   ASSERT_EQ(1, SSL_read(client_.get(), buf, 1));
   EXPECT_EQ(4, SSL_pending(client_.get()));
+  EXPECT_EQ(1, SSL_has_pending(client_.get()));
 
   ASSERT_EQ(4, SSL_read(client_.get(), buf, 10));
   EXPECT_EQ(0, SSL_pending(client_.get()));
+  if (is_dtls()) {
+    // In DTLS, the two records would have been read as a single datagram and
+    // buffered inside |client_|. Thus, |SSL_has_pending| should return true.
+    //
+    // This test is slightly unrealistic. It relies on |ConnectClientAndServer|
+    // using a |BIO| pair, which does not preserve datagram boundaries. Reading
+    // 1 byte, then 4 bytes, from the first record also relies on
+    // https://crbug.com/boringssl/65. But it does test the codepaths. When
+    // fixing either of these bugs, this test may need to be redone.
+    EXPECT_EQ(1, SSL_has_pending(client_.get()));
+  } else {
+    // In TLS, we do not overread, so |SSL_has_pending| should report no data is
+    // buffered.
+    EXPECT_EQ(0, SSL_has_pending(client_.get()));
+  }
 
   ASSERT_EQ(2, SSL_read(client_.get(), buf, 2));
   EXPECT_EQ(3, SSL_pending(client_.get()));
+  EXPECT_EQ(1, SSL_has_pending(client_.get()));
 }
 
 // Test that post-handshake tickets consumed by |SSL_shutdown| are ignored.

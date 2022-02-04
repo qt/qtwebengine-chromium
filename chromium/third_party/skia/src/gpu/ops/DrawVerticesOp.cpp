@@ -8,21 +8,22 @@
 #include "src/gpu/ops/DrawVerticesOp.h"
 
 #include "include/core/SkM44.h"
-#include "include/effects/SkRuntimeEffect.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkDevice.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkVerticesPriv.h"
+#include "src/gpu/BufferWriter.h"
 #include "src/gpu/GrGeometryProcessor.h"
 #include "src/gpu/GrOpFlushState.h"
 #include "src/gpu/GrProgramInfo.h"
-#include "src/gpu/GrVertexWriter.h"
 #include "src/gpu/SkGr.h"
 #include "src/gpu/glsl/GrGLSLColorSpaceXformHelper.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLVarying.h"
 #include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
 #include "src/gpu/ops/GrSimpleMeshDrawOpHelper.h"
+
+namespace skgpu::v1::DrawVerticesOp {
 
 namespace {
 
@@ -198,9 +199,13 @@ private:
 public:
     DEFINE_OP_CLASS_ID
 
-    DrawVerticesOpImpl(GrProcessorSet*, const SkPMColor4f&, sk_sp<SkVertices>,
-                       GrPrimitiveType, GrAAType, sk_sp<GrColorSpaceXform>, const SkMatrixProvider&,
-                       const SkRuntimeEffect*);
+    DrawVerticesOpImpl(GrProcessorSet*,
+                       const SkPMColor4f&,
+                       sk_sp<SkVertices>,
+                       GrPrimitiveType,
+                       GrAAType,
+                       sk_sp<GrColorSpaceXform>,
+                       const SkMatrixProvider&);
 
     const char* name() const override { return "DrawVerticesOp"; }
 
@@ -299,8 +304,7 @@ DrawVerticesOpImpl::DrawVerticesOpImpl(GrProcessorSet* processorSet,
                                        GrPrimitiveType primitiveType,
                                        GrAAType aaType,
                                        sk_sp<GrColorSpaceXform> colorSpaceXform,
-                                       const SkMatrixProvider& matrixProvider,
-                                       const SkRuntimeEffect* effect)
+                                       const SkMatrixProvider& matrixProvider)
         : INHERITED(ClassID())
         , fHelper(processorSet, aaType)
         , fPrimitiveType(primitiveType)
@@ -401,9 +405,9 @@ void DrawVerticesOpImpl::onPrepareDraws(GrMeshDrawTarget* target) {
     size_t vertexStride = this->vertexStride();
     sk_sp<const GrBuffer> vertexBuffer;
     int firstVertex = 0;
-    GrVertexWriter verts{
+    VertexWriter verts{
             target->makeVertexSpace(vertexStride, fVertexCount, &vertexBuffer, &firstVertex)};
-    if (!verts.fPtr) {
+    if (!verts) {
         SkDebugf("Could not allocate vertices\n");
         return;
     }
@@ -444,15 +448,15 @@ void DrawVerticesOpImpl::onPrepareDraws(GrMeshDrawTarget* target) {
         // TODO4F: Preserve float colors
         GrColor meshColor = mesh.fColor.toBytes_RGBA();
 
-        SkPoint* posBase = (SkPoint*)verts.fPtr;
+        SkPoint* posBase = (SkPoint*)verts.ptr();
 
         for (int i = 0; i < vertexCount; ++i) {
-            verts.write(positions[i]);
+            verts << positions[i];
             if (hasColorAttribute) {
-                verts.write(mesh.hasPerVertexColors() ? colors[i] : meshColor);
+                verts << (mesh.hasPerVertexColors() ? colors[i] : meshColor);
             }
             if (hasLocalCoordsAttribute) {
-                verts.write(localCoords[i]);
+                verts << localCoords[i];
             }
         }
 
@@ -581,23 +585,24 @@ static GrPrimitiveType SkVertexModeToGrPrimitiveType(SkVertices::VertexMode mode
 
 } // anonymous namespace
 
-namespace skgpu::v1::DrawVerticesOp {
-
 GrOp::Owner Make(GrRecordingContext* context,
                  GrPaint&& paint,
                  sk_sp<SkVertices> vertices,
                  const SkMatrixProvider& matrixProvider,
                  GrAAType aaType,
                  sk_sp<GrColorSpaceXform> colorSpaceXform,
-                 GrPrimitiveType* overridePrimType,
-                 const SkRuntimeEffect* effect) {
+                 GrPrimitiveType* overridePrimType) {
     SkASSERT(vertices);
     GrPrimitiveType primType = overridePrimType
                                        ? *overridePrimType
                                        : SkVertexModeToGrPrimitiveType(vertices->priv().mode());
-    return GrSimpleMeshDrawOpHelper::FactoryHelper<DrawVerticesOpImpl>(
-            context, std::move(paint), std::move(vertices), primType, aaType,
-            std::move(colorSpaceXform), matrixProvider, effect);
+    return GrSimpleMeshDrawOpHelper::FactoryHelper<DrawVerticesOpImpl>(context,
+                                                                       std::move(paint),
+                                                                       std::move(vertices),
+                                                                       primType,
+                                                                       aaType,
+                                                                       std::move(colorSpaceXform),
+                                                                       matrixProvider);
 }
 
 } // namespace skgpu::v1::DrawVerticesOp
@@ -707,7 +712,7 @@ GR_DRAW_OP_TEST_DEFINE(DrawVerticesOp) {
                          hasIndices);
     }
 
-    SkSimpleMatrixProvider matrixProvider(GrTest::TestMatrix(random));
+    SkMatrixProvider matrixProvider(GrTest::TestMatrix(random));
 
     sk_sp<GrColorSpaceXform> colorSpaceXform = GrTest::TestColorXform(random);
 
@@ -720,9 +725,13 @@ GR_DRAW_OP_TEST_DEFINE(DrawVerticesOp) {
     if (numSamples > 1 && random->nextBool()) {
         aaType = GrAAType::kMSAA;
     }
-    return skgpu::v1::DrawVerticesOp::Make(context, std::move(paint), std::move(vertices),
-                                           matrixProvider, aaType, std::move(colorSpaceXform),
-                                           &type, nullptr);
+    return skgpu::v1::DrawVerticesOp::Make(context,
+                                           std::move(paint),
+                                           std::move(vertices),
+                                           matrixProvider,
+                                           aaType,
+                                           std::move(colorSpaceXform),
+                                           &type);
 }
 
 #endif

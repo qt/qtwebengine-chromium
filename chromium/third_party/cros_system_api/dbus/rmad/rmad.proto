@@ -127,6 +127,12 @@ enum RmadErrorCode {
 
   // Failed to get logs.
   RMAD_ERROR_CANNOT_GET_LOG = 38;
+
+  // RMA daemon initialization failed.
+  RMAD_ERROR_DAEMON_INITIALIZATION_FAILED = 39;
+
+  // Update RO firmware failed.
+  RMAD_ERROR_UPDATE_RO_FIRMWARE_FAILED = 40;
 }
 
 // Defined Rmad components.
@@ -153,10 +159,8 @@ enum RmadComponent {
   RMAD_COMPONENT_LID_ACCELEROMETER = 17;
   RMAD_COMPONENT_BASE_GYROSCOPE = 18;
   RMAD_COMPONENT_LID_GYROSCOPE = 19;
-  // TODO(genechang): Legacy, keeping for compatibility with Chrome.
-  RMAD_COMPONENT_GYROSCOPE = 20;
   // Reserved for additional runtime_probe supported components.
-  reserved 21 to 32;
+  reserved 20 to 32;
   // Irrelevant components.
   // TODO(chenghan): Do we really need these?
   RMAD_COMPONENT_KEYBOARD = 33;
@@ -169,7 +173,18 @@ message HardwareVerificationResult {
   string error_str = 2;
 }
 
-// Defined steup instructions for Calibration.
+// Defined update RO firmware status.
+enum UpdateRoFirmwareStatus {
+  RMAD_UPDATE_RO_FIRMWARE_UNKNOWN = 0;
+  RMAD_UPDATE_RO_FIRMWARE_WAIT_USB = 1;
+  RMAD_UPDATE_RO_FIRMWARE_FILE_NOT_FOUND = 2;
+  RMAD_UPDATE_RO_FIRMWARE_DOWNLOADING = 3;
+  RMAD_UPDATE_RO_FIRMWARE_UPDATING = 4;
+  RMAD_UPDATE_RO_FIRMWARE_REBOOTING = 5;
+  RMAD_UPDATE_RO_FIRMWARE_COMPLETE = 6;
+}
+
+// Defined setup instructions for Calibration.
 // This is used in SetupCalibration.
 enum CalibrationSetupInstruction {
   RMAD_CALIBRATION_INSTRUCTION_UNKNOWN = 0;
@@ -286,26 +301,47 @@ message VerifyRsuState {
 
 // Wait for tech to physically disable HWWP.
 message WriteProtectDisablePhysicalState {
-  // No state. Waits for signal that write protection is disabled.
+  // Provided by daemon.
+  // Inform the repair tech whether they need to keep the device open after
+  // disabling write protection.
+  bool keep_device_open = 1;
 }
 
 // Display confirmation that HWWP has been disabled.
 message WriteProtectDisableCompleteState {
+  enum Action {
+    RMAD_WP_DISABLE_UNKNOWN = 0;
+    RMAD_WP_DISABLE_SKIPPED_ASSEMBLE_DEVICE = 1;
+    RMAD_WP_DISABLE_COMPLETE_ASSEMBLE_DEVICE = 2;
+    RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN = 3;
+  }
   // Provided by daemon.
+  // Deprecated.
   bool keep_device_open = 1;
+  // Deprecated
   bool wp_disable_skipped = 2;
+
+  Action action = 3;
 }
 
 // Select method to update firmware.
 message UpdateRoFirmwareState {
+  // TODO(chenghan): Deprecated. Remove it in the future.
   enum UpdateFirmware {
     RMAD_UPDATE_FIRMWARE_UNKNOWN = 0;
     RMAD_UPDATE_FIRMWARE_DOWNLOAD = 1;
     RMAD_UPDATE_FIRMWARE_RECOVERY_UTILITY = 2;
     RMAD_UPDATE_SKIP = 3;
   }
+  enum UpdateChoice {
+    RMAD_UPDATE_CHOICE_UNKNOWN = 0;
+    RMAD_UPDATE_CHOICE_CONTINUE = 1;
+    RMAD_UPDATE_CHOICE_SKIP = 2;
+  }
+
   bool optional = 1;  // If optional is set true by rmad then skip is allowed.
   UpdateFirmware update = 2;
+  UpdateChoice choice = 3;
 }
 
 // Pause RMA for restock.

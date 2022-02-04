@@ -73,6 +73,10 @@ HeaderValidator::HeaderStatus HeaderValidator::ValidateSingleHeader(
                        << "]";
         return HEADER_VALUE_INVALID_CHAR;
       }
+      if (value == "101") {
+        // Switching protocols is not allowed on a HTTP/2 stream.
+        return HEADER_VALUE_INVALID_STATUS;
+      }
       status_ = std::string(value);
     }
     pseudo_headers_.push_back(std::string(key));
@@ -93,6 +97,7 @@ bool HeaderValidator::FinishHeaderBlock(HeaderType type) {
     case HeaderType::RESPONSE_TRAILER:
       return ValidateResponseTrailers(pseudo_headers_);
   }
+  return false;
 }
 
 }  // namespace adapter

@@ -35,10 +35,11 @@ void RendererMainPlatformDelegate::PlatformUninitialize() {
 bool RendererMainPlatformDelegate::EnableSandbox() {
   TRACE_EVENT0("startup", "RendererMainPlatformDelegate::EnableSandbox");
   auto* info = base::android::BuildInfo::GetInstance();
-  sandbox::SeccompStarterAndroid starter(info->sdk_int(), info->device());
+  sandbox::SeccompStarterAndroid starter(info->sdk_int());
   // The policy compiler is only available if USE_SECCOMP_BPF is enabled.
 #if BUILDFLAG(USE_SECCOMP_BPF)
   bool allow_sched_affinity =
+      base::FeatureList::IsEnabled(features::kBigLittleScheduling) ||
       (base::HasBigCpuCores() &&
        (base::FeatureList::IsEnabled(
             power_scheduler::features::kPowerScheduler) ||

@@ -92,8 +92,6 @@ const char *GetCommandString(CommandID id)
             return "EndQuery";
         case CommandID::EndTransformFeedback:
             return "EndTransformFeedback";
-        case CommandID::ExecutionBarrier:
-            return "ExecutionBarrier";
         case CommandID::FillBuffer:
             return "FillBuffer";
         case CommandID::ImageBarrier:
@@ -359,7 +357,8 @@ void SecondaryCommandBuffer::executeCommands(PrimaryCommandBuffer *primary)
                 {
                     const DrawIndexedIndirectParams *params =
                         getParamPtr<DrawIndexedIndirectParams>(currentCommand);
-                    vkCmdDrawIndexedIndirect(cmdBuffer, params->buffer, params->offset, 1, 0);
+                    vkCmdDrawIndexedIndirect(cmdBuffer, params->buffer, params->offset,
+                                             params->drawCount, params->stride);
                     break;
                 }
                 case CommandID::DrawIndexedInstanced:
@@ -391,7 +390,8 @@ void SecondaryCommandBuffer::executeCommands(PrimaryCommandBuffer *primary)
                 {
                     const DrawIndirectParams *params =
                         getParamPtr<DrawIndirectParams>(currentCommand);
-                    vkCmdDrawIndirect(cmdBuffer, params->buffer, params->offset, 1, 0);
+                    vkCmdDrawIndirect(cmdBuffer, params->buffer, params->offset, params->drawCount,
+                                      params->stride);
                     break;
                 }
                 case CommandID::DrawInstanced:
@@ -434,14 +434,6 @@ void SecondaryCommandBuffer::executeCommands(PrimaryCommandBuffer *primary)
                     offsets.fill(0);
                     vkCmdEndTransformFeedbackEXT(cmdBuffer, 0, params->bufferCount, counterBuffers,
                                                  offsets.data());
-                    break;
-                }
-                case CommandID::ExecutionBarrier:
-                {
-                    const ExecutionBarrierParams *params =
-                        getParamPtr<ExecutionBarrierParams>(currentCommand);
-                    vkCmdPipelineBarrier(cmdBuffer, params->stageMask, params->stageMask, 0, 0,
-                                         nullptr, 0, nullptr, 0, nullptr);
                     break;
                 }
                 case CommandID::FillBuffer:

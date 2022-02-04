@@ -282,8 +282,8 @@ void Frame::NotifyUserActivationInFrameTree(
     const SecurityOrigin* security_origin =
         local_frame->GetSecurityContext()->GetSecurityOrigin();
 
-    Frame& root = Tree().Top();
-    for (Frame* node = &root; node; node = node->Tree().TraverseNext(&root)) {
+    for (Frame* node = &Tree().Top(); node;
+         node = node->Tree().TraverseNext()) {
       auto* local_frame_node = DynamicTo<LocalFrame>(node);
       if (local_frame_node &&
           security_origin->CanAccess(
@@ -303,7 +303,7 @@ bool Frame::ConsumeTransientUserActivationInFrameTree() {
   if (IsA<LocalFrame>(root))
     root.user_activation_state_.RecordPreconsumptionUma();
 
-  for (Frame* node = &root; node; node = node->Tree().TraverseNext(&root))
+  for (Frame* node = &root; node; node = node->Tree().TraverseNext())
     node->user_activation_state_.ConsumeIfActive();
 
   return was_active;
@@ -333,6 +333,21 @@ void Frame::RenderFallbackContentWithResourceTiming(
   RenderFallbackContent();
 }
 
+bool Frame::IsInFencedFrameTree() const {
+  if (!blink::features::IsFencedFramesEnabled())
+    return false;
+
+  switch (blink::features::kFencedFramesImplementationTypeParam.Get()) {
+    case blink::features::FencedFramesImplementationType::kMPArch:
+      return GetPage()->IsMainFrameFencedFrameRoot();
+    case blink::features::FencedFramesImplementationType::kShadowDOM:
+      return Tree().Top(FrameTreeBoundary::kFenced) !=
+             Tree().Top(FrameTreeBoundary::kIgnoreFence);
+    default:
+      return false;
+  }
+}
+
 void Frame::SetOwner(FrameOwner* owner) {
   owner_ = owner;
   UpdateInertIfPossible();
@@ -342,8 +357,8 @@ void Frame::SetOwner(FrameOwner* owner) {
 void Frame::UpdateInertIfPossible() {
   if (auto* frame_owner_element =
           DynamicTo<HTMLFrameOwnerElement>(owner_.Get())) {
-    if (frame_owner_element->IsInert())
-      SetIsInert(true);
+    const ComputedStyle* style = frame_owner_element->GetComputedStyle();
+    SetIsInert(style && style->IsInert());
   }
 }
 

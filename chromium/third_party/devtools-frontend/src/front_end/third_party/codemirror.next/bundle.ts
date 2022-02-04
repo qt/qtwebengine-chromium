@@ -7,32 +7,39 @@
 import {StreamLanguage} from '@codemirror/stream-parser';
 
 export {
-  acceptCompletion, autocompletion, completeAnyWord, Completion, CompletionContext,
-  CompletionResult, CompletionSource, currentCompletions, ifNotIn
+  acceptCompletion, autocompletion, closeCompletion, completeAnyWord,
+  Completion, CompletionContext, CompletionResult, CompletionSource, currentCompletions,
+  ifNotIn, selectedCompletion, startCompletion,
 } from '@codemirror/autocomplete';
 export {closeBrackets, closeBracketsKeymap} from '@codemirror/closebrackets';
 export {
   cursorMatchingBracket, cursorSubwordBackward, cursorSubwordForward,
-  indentLess, indentMore, selectMatchingBracket, selectSubwordBackward, selectSubwordForward,
+  indentLess, indentMore, insertNewlineAndIndent, selectMatchingBracket,
+  selectSubwordBackward, selectSubwordForward,
   standardKeymap
 } from '@codemirror/commands';
 export {toggleComment} from '@codemirror/comment';
 export {codeFolding, foldGutter, foldKeymap} from '@codemirror/fold';
-export { gutter, GutterMarker, gutters,lineNumbers} from '@codemirror/gutter';
+export {gutter, GutterMarker, gutters, lineNumberMarkers,lineNumbers} from '@codemirror/gutter';
 export {HighlightStyle, highlightTree, Tag, tags, TagStyle} from '@codemirror/highlight';
 export {history, historyKeymap, redo, redoSelection, undo, undoSelection} from '@codemirror/history';
-export { indentOnInput, indentUnit,Language, LanguageSupport, syntaxTree} from '@codemirror/language';
+export * as css from '@codemirror/lang-css';
+export * as html from '@codemirror/lang-html';
+export * as javascript from '@codemirror/lang-javascript';
+export {ensureSyntaxTree, indentOnInput, indentUnit,Language, LanguageSupport, syntaxTree} from '@codemirror/language';
 export {bracketMatching} from '@codemirror/matchbrackets';
+export {Panel, showPanel} from '@codemirror/panel';
 export {Range, RangeSet, RangeSetBuilder} from '@codemirror/rangeset';
 export {selectNextOccurrence} from '@codemirror/search';
 export {
-  Annotation, AnnotationType, Compartment, EditorSelection,
-  EditorState, EditorStateConfig, Extension, Facet, Prec, SelectionRange,
-  StateEffect, StateEffectType, StateField, Transaction, TransactionSpec
+  Annotation, AnnotationType, ChangeDesc, ChangeSet, ChangeSpec, Compartment,
+  EditorSelection, EditorState, EditorStateConfig, Extension, Facet, Prec,
+  SelectionRange, StateEffect, StateEffectType, StateField, Transaction,
+  TransactionSpec
 } from '@codemirror/state';
 export {StreamLanguage, StreamParser, StringStream} from '@codemirror/stream-parser';
 export {Line, Text, TextIterator} from '@codemirror/text';
-export {showTooltip, Tooltip, tooltips, TooltipView} from '@codemirror/tooltip';
+export { repositionTooltips,showTooltip, Tooltip, tooltips, TooltipView} from '@codemirror/tooltip';
 export {
   Command, Decoration, DecorationSet, drawSelection, EditorView,
   highlightSpecialChars, KeyBinding, keymap, MatchDecorator, placeholder,
@@ -42,6 +49,7 @@ export {
   NodeProp, NodeSet, NodeType, Parser, SyntaxNode, Tree, TreeCursor
 } from '@lezer/common';
 export {LRParser} from '@lezer/lr';
+export {StyleModule} from 'style-mod';
 
 export async function clojure() {
   return StreamLanguage.define((await import('@codemirror/legacy-modes/mode/clojure')).clojure);
@@ -52,17 +60,8 @@ export async function coffeescript() {
 export function cpp() {
   return import('@codemirror/lang-cpp');
 }
-export function css() {
-  return import('@codemirror/lang-css');
-}
-export function html() {
-  return import('@codemirror/lang-html');
-}
 export function java() {
   return import('@codemirror/lang-java');
-}
-export function javascript() {
-  return import('@codemirror/lang-javascript');
 }
 export function json() {
   return import('@codemirror/lang-json');

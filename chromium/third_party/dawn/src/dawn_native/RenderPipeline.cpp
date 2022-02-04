@@ -248,14 +248,9 @@ namespace dawn_native {
             DAWN_TRY(ValidateFrontFace(descriptor->frontFace));
             DAWN_TRY(ValidateCullMode(descriptor->cullMode));
 
-            // Pipeline descriptors must have stripIndexFormat != undefined IFF they are using strip
-            // topologies.
-            if (IsStripPrimitiveTopology(descriptor->topology)) {
-                DAWN_INVALID_IF(
-                    descriptor->stripIndexFormat == wgpu::IndexFormat::Undefined,
-                    "StripIndexFormat is undefined when using a strip primitive topology (%s).",
-                    descriptor->topology);
-            } else {
+            // Pipeline descriptors must have stripIndexFormat == undefined if they are using
+            // non-strip topologies.
+            if (!IsStripPrimitiveTopology(descriptor->topology)) {
                 DAWN_INVALID_IF(
                     descriptor->stripIndexFormat != wgpu::IndexFormat::Undefined,
                     "StripIndexFormat (%s) is not undefined when using a non-strip primitive "
@@ -543,15 +538,15 @@ namespace dawn_native {
         return stages;
     }
 
-    bool StencilTestEnabled(const DepthStencilState* mDepthStencil) {
-        return mDepthStencil->stencilBack.compare != wgpu::CompareFunction::Always ||
-               mDepthStencil->stencilBack.failOp != wgpu::StencilOperation::Keep ||
-               mDepthStencil->stencilBack.depthFailOp != wgpu::StencilOperation::Keep ||
-               mDepthStencil->stencilBack.passOp != wgpu::StencilOperation::Keep ||
-               mDepthStencil->stencilFront.compare != wgpu::CompareFunction::Always ||
-               mDepthStencil->stencilFront.failOp != wgpu::StencilOperation::Keep ||
-               mDepthStencil->stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
-               mDepthStencil->stencilFront.passOp != wgpu::StencilOperation::Keep;
+    bool StencilTestEnabled(const DepthStencilState* depthStencil) {
+        return depthStencil->stencilBack.compare != wgpu::CompareFunction::Always ||
+               depthStencil->stencilBack.failOp != wgpu::StencilOperation::Keep ||
+               depthStencil->stencilBack.depthFailOp != wgpu::StencilOperation::Keep ||
+               depthStencil->stencilBack.passOp != wgpu::StencilOperation::Keep ||
+               depthStencil->stencilFront.compare != wgpu::CompareFunction::Always ||
+               depthStencil->stencilFront.failOp != wgpu::StencilOperation::Keep ||
+               depthStencil->stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
+               depthStencil->stencilFront.passOp != wgpu::StencilOperation::Keep;
     }
 
     // RenderPipelineBase
@@ -619,6 +614,19 @@ namespace dawn_native {
 
         if (mAttachmentState->HasDepthStencilAttachment()) {
             mDepthStencil = *descriptor->depthStencil;
+            mWritesDepth = mDepthStencil.depthWriteEnabled;
+            if (mDepthStencil.stencilWriteMask) {
+                if ((mPrimitive.cullMode != wgpu::CullMode::Front &&
+                     (mDepthStencil.stencilFront.failOp != wgpu::StencilOperation::Keep ||
+                      mDepthStencil.stencilFront.depthFailOp != wgpu::StencilOperation::Keep ||
+                      mDepthStencil.stencilFront.passOp != wgpu::StencilOperation::Keep)) ||
+                    (mPrimitive.cullMode != wgpu::CullMode::Back &&
+                     (mDepthStencil.stencilBack.failOp != wgpu::StencilOperation::Keep ||
+                      mDepthStencil.stencilBack.depthFailOp != wgpu::StencilOperation::Keep ||
+                      mDepthStencil.stencilBack.passOp != wgpu::StencilOperation::Keep))) {
+                    mWritesStencil = true;
+                }
+            }
         } else {
             // These default values below are useful for backends to fill information.
             // The values indicate that depth and stencil test are disabled when backends
@@ -657,10 +665,28 @@ namespace dawn_native {
         }
 
         SetContentHash(ComputeContentHash());
+        TrackInDevice();
+    }
+
+    RenderPipelineBase::RenderPipelineBase(DeviceBase* device) : PipelineBase(device) {
+        TrackInDevice();
     }
 
     RenderPipelineBase::RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag)
         : PipelineBase(device, tag) {
+    }
+
+    RenderPipelineBase::~RenderPipelineBase() = default;
+
+    void RenderPipelineBase::DestroyImpl() {
+        if (IsCachedReference()) {
+            // Do not uncache the actual cached object if we are a blueprint.
+            GetDevice()->UncacheRenderPipeline(this);
+        }
+
+        // Remove reference to the attachment state so that we don't have lingering references to
+        // it preventing it from being uncached in the device.
+        mAttachmentState = nullptr;
     }
 
     // static
@@ -682,12 +708,6 @@ namespace dawn_native {
 
     ObjectType RenderPipelineBase::GetType() const {
         return ObjectType::RenderPipeline;
-    }
-
-    RenderPipelineBase::~RenderPipelineBase() {
-        if (IsCachedReference()) {
-            GetDevice()->UncacheRenderPipeline(this);
-        }
     }
 
     const ityp::bitset<VertexAttributeLocation, kMaxVertexAttributes>&
@@ -833,6 +853,18 @@ namespace dawn_native {
         return mAttachmentState.Get();
     }
 
+    bool RenderPipelineBase::WritesDepth() const {
+        ASSERT(!IsError());
+
+        return mWritesDepth;
+    }
+
+    bool RenderPipelineBase::WritesStencil() const {
+        ASSERT(!IsError());
+
+        return mWritesStencil;
+    }
+
     size_t RenderPipelineBase::ComputeContentHash() {
         ObjectContentHasher recorder;
 
@@ -903,62 +935,64 @@ namespace dawn_native {
             return false;
         }
 
-        for (ColorAttachmentIndex i :
-             IterateBitSet(a->mAttachmentState->GetColorAttachmentsMask())) {
-            const ColorTargetState& descA = *a->GetColorTargetState(i);
-            const ColorTargetState& descB = *b->GetColorTargetState(i);
-            if (descA.writeMask != descB.writeMask) {
-                return false;
-            }
-            if ((descA.blend == nullptr) != (descB.blend == nullptr)) {
-                return false;
-            }
-            if (descA.blend != nullptr) {
-                if (descA.blend->color.operation != descB.blend->color.operation ||
-                    descA.blend->color.srcFactor != descB.blend->color.srcFactor ||
-                    descA.blend->color.dstFactor != descB.blend->color.dstFactor) {
+        if (a->mAttachmentState.Get() != nullptr) {
+            for (ColorAttachmentIndex i :
+                 IterateBitSet(a->mAttachmentState->GetColorAttachmentsMask())) {
+                const ColorTargetState& descA = *a->GetColorTargetState(i);
+                const ColorTargetState& descB = *b->GetColorTargetState(i);
+                if (descA.writeMask != descB.writeMask) {
                     return false;
                 }
-                if (descA.blend->alpha.operation != descB.blend->alpha.operation ||
-                    descA.blend->alpha.srcFactor != descB.blend->alpha.srcFactor ||
-                    descA.blend->alpha.dstFactor != descB.blend->alpha.dstFactor) {
+                if ((descA.blend == nullptr) != (descB.blend == nullptr)) {
                     return false;
                 }
+                if (descA.blend != nullptr) {
+                    if (descA.blend->color.operation != descB.blend->color.operation ||
+                        descA.blend->color.srcFactor != descB.blend->color.srcFactor ||
+                        descA.blend->color.dstFactor != descB.blend->color.dstFactor) {
+                        return false;
+                    }
+                    if (descA.blend->alpha.operation != descB.blend->alpha.operation ||
+                        descA.blend->alpha.srcFactor != descB.blend->alpha.srcFactor ||
+                        descA.blend->alpha.dstFactor != descB.blend->alpha.dstFactor) {
+                        return false;
+                    }
+                }
             }
-        }
 
-        // Check depth/stencil state
-        if (a->mAttachmentState->HasDepthStencilAttachment()) {
-            const DepthStencilState& stateA = a->mDepthStencil;
-            const DepthStencilState& stateB = b->mDepthStencil;
+            // Check depth/stencil state
+            if (a->mAttachmentState->HasDepthStencilAttachment()) {
+                const DepthStencilState& stateA = a->mDepthStencil;
+                const DepthStencilState& stateB = b->mDepthStencil;
 
-            ASSERT(!std::isnan(stateA.depthBiasSlopeScale));
-            ASSERT(!std::isnan(stateB.depthBiasSlopeScale));
-            ASSERT(!std::isnan(stateA.depthBiasClamp));
-            ASSERT(!std::isnan(stateB.depthBiasClamp));
+                ASSERT(!std::isnan(stateA.depthBiasSlopeScale));
+                ASSERT(!std::isnan(stateB.depthBiasSlopeScale));
+                ASSERT(!std::isnan(stateA.depthBiasClamp));
+                ASSERT(!std::isnan(stateB.depthBiasClamp));
 
-            if (stateA.depthWriteEnabled != stateB.depthWriteEnabled ||
-                stateA.depthCompare != stateB.depthCompare ||
-                stateA.depthBias != stateB.depthBias ||
-                stateA.depthBiasSlopeScale != stateB.depthBiasSlopeScale ||
-                stateA.depthBiasClamp != stateB.depthBiasClamp) {
-                return false;
-            }
-            if (stateA.stencilFront.compare != stateB.stencilFront.compare ||
-                stateA.stencilFront.failOp != stateB.stencilFront.failOp ||
-                stateA.stencilFront.depthFailOp != stateB.stencilFront.depthFailOp ||
-                stateA.stencilFront.passOp != stateB.stencilFront.passOp) {
-                return false;
-            }
-            if (stateA.stencilBack.compare != stateB.stencilBack.compare ||
-                stateA.stencilBack.failOp != stateB.stencilBack.failOp ||
-                stateA.stencilBack.depthFailOp != stateB.stencilBack.depthFailOp ||
-                stateA.stencilBack.passOp != stateB.stencilBack.passOp) {
-                return false;
-            }
-            if (stateA.stencilReadMask != stateB.stencilReadMask ||
-                stateA.stencilWriteMask != stateB.stencilWriteMask) {
-                return false;
+                if (stateA.depthWriteEnabled != stateB.depthWriteEnabled ||
+                    stateA.depthCompare != stateB.depthCompare ||
+                    stateA.depthBias != stateB.depthBias ||
+                    stateA.depthBiasSlopeScale != stateB.depthBiasSlopeScale ||
+                    stateA.depthBiasClamp != stateB.depthBiasClamp) {
+                    return false;
+                }
+                if (stateA.stencilFront.compare != stateB.stencilFront.compare ||
+                    stateA.stencilFront.failOp != stateB.stencilFront.failOp ||
+                    stateA.stencilFront.depthFailOp != stateB.stencilFront.depthFailOp ||
+                    stateA.stencilFront.passOp != stateB.stencilFront.passOp) {
+                    return false;
+                }
+                if (stateA.stencilBack.compare != stateB.stencilBack.compare ||
+                    stateA.stencilBack.failOp != stateB.stencilBack.failOp ||
+                    stateA.stencilBack.depthFailOp != stateB.stencilBack.depthFailOp ||
+                    stateA.stencilBack.passOp != stateB.stencilBack.passOp) {
+                    return false;
+                }
+                if (stateA.stencilReadMask != stateB.stencilReadMask ||
+                    stateA.stencilWriteMask != stateB.stencilWriteMask) {
+                    return false;
+                }
             }
         }
 

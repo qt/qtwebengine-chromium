@@ -50,6 +50,8 @@ bool IsFloatClassificationIntrinsic(IntrinsicType i) {
 
 bool IsTextureIntrinsic(IntrinsicType i) {
   return IsImageQueryIntrinsic(i) || i == IntrinsicType::kTextureLoad ||
+         i == IntrinsicType::kTextureGather ||
+         i == IntrinsicType::kTextureGatherCompare ||
          i == IntrinsicType::kTextureSample ||
          i == IntrinsicType::kTextureSampleLevel ||
          i == IntrinsicType::kTextureSampleBias ||
@@ -102,7 +104,7 @@ bool IsAtomicIntrinsic(IntrinsicType i) {
 }
 
 Intrinsic::Intrinsic(IntrinsicType type,
-                     sem::Type* return_type,
+                     const sem::Type* return_type,
                      std::vector<Parameter*> parameters,
                      PipelineStageSet supported_stages,
                      bool is_deprecated)

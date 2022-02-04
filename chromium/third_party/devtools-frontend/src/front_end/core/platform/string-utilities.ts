@@ -240,9 +240,9 @@ const escapedReplacements = new Map([
   ['\v', '\\v'],
   ['\'', '\\\''],
   ['\\', '\\\\'],
-  ['<!--', '<\\!--'],
-  ['<script', '<\\script'],
-  ['</script', '<\\/script'],
+  ['<!--', '\\x3C!--'],
+  ['<script', '\\x3Cscript'],
+  ['</script', '\\x3C/script'],
 ]);
 
 export const formatAsJSLiteral = (content: string): string => {
@@ -450,7 +450,7 @@ export const createSearchRegex = function(query: string, caseSensitive: boolean,
   }
 
   if (!regexObject) {
-    regexObject = self.createPlainTextSearchRegex(query, regexFlags);
+    regexObject = createPlainTextSearchRegex(query, regexFlags);
   }
 
   return regexObject;
@@ -578,4 +578,40 @@ export const base64ToSize = function(content: string|null): number {
     size--;
   }
   return size;
+};
+
+export const SINGLE_QUOTE = '\'';
+export const DOUBLE_QUOTE = '"';
+const BACKSLASH = '\\';
+
+export const findUnclosedCssQuote = function(str: string): string {
+  let unmatchedQuote = '';
+  for (let i = 0; i < str.length; ++i) {
+    const char = str[i];
+    if (char === BACKSLASH) {
+      i++;
+      continue;
+    }
+    if (char === SINGLE_QUOTE || char === DOUBLE_QUOTE) {
+      if (unmatchedQuote === char) {
+        unmatchedQuote = '';
+      } else if (unmatchedQuote === '') {
+        unmatchedQuote = char;
+      }
+    }
+  }
+  return unmatchedQuote;
+};
+
+export const createPlainTextSearchRegex = function(query: string, flags?: string): RegExp {
+  // This should be kept the same as the one in StringUtil.cpp.
+  let regex = '';
+  for (let i = 0; i < query.length; ++i) {
+    const c = query.charAt(i);
+    if (regexSpecialCharacters().indexOf(c) !== -1) {
+      regex += '\\';
+    }
+    regex += c;
+  }
+  return new RegExp(regex, flags || '');
 };

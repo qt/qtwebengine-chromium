@@ -7,8 +7,8 @@
 #ifndef XFA_FXFA_CXFA_FFAPP_H_
 #define XFA_FXFA_CXFA_FFAPP_H_
 
-#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxcrt/widestring.h"
 #include "fxjs/gc/heap.h"
 #include "v8/include/cppgc/garbage-collected.h"
 #include "v8/include/cppgc/member.h"
@@ -21,8 +21,8 @@ class CXFA_FWLTheme;
 class CXFA_FontMgr;
 class IFX_SeekableReadStream;
 
-class CXFA_FFApp : public cppgc::GarbageCollected<CXFA_FFApp>,
-                   public CFWL_App::AdapterIface {
+class CXFA_FFApp final : public cppgc::GarbageCollected<CXFA_FFApp>,
+                         public CFWL_App::AdapterIface {
  public:
   class CallbackIface {
    public:

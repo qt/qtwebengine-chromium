@@ -652,13 +652,20 @@ void RtpVideoStreamReceiver::OnReceivedPayloadData(
             .first->second;
 
     // Try to extrapolate absolute capture time if it is missing.
-    packet_info.set_absolute_capture_time(
+    absl::optional<AbsoluteCaptureTime> absolute_capture_time =
         absolute_capture_time_interpolator_.OnReceivePacket(
             AbsoluteCaptureTimeInterpolator::GetSource(packet_info.ssrc(),
                                                        packet_info.csrcs()),
             packet_info.rtp_timestamp(),
             // Assume frequency is the same one for all video frames.
-            kVideoPayloadTypeFrequency, packet_info.absolute_capture_time()));
+            kVideoPayloadTypeFrequency, packet_info.absolute_capture_time());
+    packet_info.set_absolute_capture_time(absolute_capture_time);
+
+    if (absolute_capture_time.has_value()) {
+      packet_info.set_local_capture_clock_offset(
+          capture_clock_offset_updater_.AdjustEstimatedCaptureClockOffset(
+              absolute_capture_time->estimated_capture_clock_offset));
+    }
 
     insert_result = packet_buffer_.InsertPacket(std::move(packet));
   }
@@ -773,8 +780,6 @@ void RtpVideoStreamReceiver::OnInsertedPacket(
         max_nack_count = packet->times_nacked;
         min_recv_time = packet_info.receive_time().ms();
         max_recv_time = packet_info.receive_time().ms();
-        payloads.clear();
-        packet_infos.clear();
       } else {
         max_nack_count = std::max(max_nack_count, packet->times_nacked);
         min_recv_time =
@@ -817,6 +822,8 @@ void RtpVideoStreamReceiver::OnInsertedPacket(
             last_packet.video_header.color_space,              //
             RtpPacketInfos(std::move(packet_infos)),           //
             std::move(bitstream)));
+        payloads.clear();
+        packet_infos.clear();
       }
     }
     RTC_DCHECK(frame_boundary);

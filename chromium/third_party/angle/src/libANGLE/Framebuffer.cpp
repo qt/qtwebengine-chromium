@@ -214,8 +214,8 @@ FramebufferStatus CheckAttachmentSampleCompleteness(const Context *context,
     {
         const Texture *texture = attachment.getTexture();
         ASSERT(texture);
-        GLenum internalFormat         = attachment.getFormat().info->internalFormat;
-        const TextureCaps &formatCaps = context->getTextureCaps().get(internalFormat);
+        GLenum sizedInternalFormat    = attachment.getFormat().info->sizedInternalFormat;
+        const TextureCaps &formatCaps = context->getTextureCaps().get(sizedInternalFormat);
         if (static_cast<GLuint>(attachment.getSamples()) > formatCaps.getMaxSamples())
         {
             return FramebufferStatus::Incomplete(
@@ -776,6 +776,11 @@ Extents FramebufferState::getExtents() const
 bool FramebufferState::isDefault() const
 {
     return mId == Framebuffer::kDefaultDrawFramebufferHandle;
+}
+
+bool FramebufferState::isBoundAsDrawFramebuffer(const Context *context) const
+{
+    return context->getState().getDrawFramebuffer()->id() == mId;
 }
 
 const FramebufferID Framebuffer::kDefaultDrawFramebufferHandle = {0};
@@ -1804,8 +1809,8 @@ void Framebuffer::setAttachment(const Context *context,
     {
         const InternalFormat *info = resource->getAttachmentFormat(binding, textureIndex).info;
         ASSERT(info);
-        GLenum internalformat         = info->internalFormat;
-        const TextureCaps &formatCaps = context->getTextureCaps().get(internalformat);
+        GLenum sizedInternalFormat    = info->sizedInternalFormat;
+        const TextureCaps &formatCaps = context->getTextureCaps().get(sizedInternalFormat);
         samples                       = formatCaps.getNearestSamples(samples);
     }
 

@@ -10,6 +10,7 @@
 
 #include "core/fdrm/fx_crypt.h"
 #include "core/fxcrt/stl_util.h"
+#include "third_party/base/numerics/safe_conversions.h"
 
 namespace {
 
@@ -257,7 +258,7 @@ bool CFX_GlobalData::LoadGlobalPersistentVariables() {
   bool ret;
   {
     // Span can't outlive call to BufferDone().
-    Optional<pdfium::span<uint8_t>> buffer = m_pDelegate->LoadBuffer();
+    absl::optional<pdfium::span<uint8_t>> buffer = m_pDelegate->LoadBuffer();
     if (!buffer.has_value() || buffer.value().empty())
       return false;
 
@@ -384,7 +385,7 @@ bool CFX_GlobalData::SaveGlobalPersisitentVariables() {
   sFile.AppendBlock(&wVersion, sizeof(uint16_t));
   sFile.AppendBlock(&nCount, sizeof(uint32_t));
 
-  uint32_t dwSize = sData.GetSize();
+  uint32_t dwSize = pdfium::base::checked_cast<uint32_t>(sData.GetSize());
   sFile.AppendBlock(&dwSize, sizeof(uint32_t));
   sFile.AppendSpan(sData.GetSpan());
 

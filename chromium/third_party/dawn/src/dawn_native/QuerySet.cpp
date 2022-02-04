@@ -101,7 +101,7 @@ namespace dawn_native {
     }
 
     QuerySetBase::QuerySetBase(DeviceBase* device, const QuerySetDescriptor* descriptor)
-        : ApiObjectBase(device, kLabelNotImplemented),
+        : ApiObjectBase(device, descriptor->label),
           mQueryType(descriptor->type),
           mQueryCount(descriptor->count),
           mState(QuerySetState::Available) {
@@ -110,6 +110,11 @@ namespace dawn_native {
         }
 
         mQueryAvailability.resize(descriptor->count);
+        TrackInDevice();
+    }
+
+    QuerySetBase::QuerySetBase(DeviceBase* device) : ApiObjectBase(device, kLabelNotImplemented) {
+        TrackInDevice();
     }
 
     QuerySetBase::QuerySetBase(DeviceBase* device, ObjectBase::ErrorTag tag)
@@ -119,6 +124,10 @@ namespace dawn_native {
     QuerySetBase::~QuerySetBase() {
         // Uninitialized or already destroyed
         ASSERT(mState == QuerySetState::Unavailable || mState == QuerySetState::Destroyed);
+    }
+
+    void QuerySetBase::DestroyImpl() {
+        mState = QuerySetState::Destroyed;
     }
 
     // static
@@ -160,19 +169,12 @@ namespace dawn_native {
         if (GetDevice()->ConsumedError(ValidateDestroy())) {
             return;
         }
-        DestroyInternal();
+        Destroy();
     }
 
     MaybeError QuerySetBase::ValidateDestroy() const {
         DAWN_TRY(GetDevice()->ValidateObject(this));
         return {};
-    }
-
-    void QuerySetBase::DestroyInternal() {
-        if (mState != QuerySetState::Destroyed) {
-            DestroyImpl();
-        }
-        mState = QuerySetState::Destroyed;
     }
 
 }  // namespace dawn_native

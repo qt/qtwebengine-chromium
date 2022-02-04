@@ -23,7 +23,7 @@
     !defined(SK_BUILD_FOR_UNIX) && !defined(SK_BUILD_FOR_MAC)
 
     #ifdef __APPLE__
-        #include "TargetConditionals.h"
+        #include <TargetConditionals.h>
     #endif
 
     #if defined(_WIN32) || defined(__SYMBIAN32__)
@@ -236,7 +236,7 @@
 #  define SK_SUPPORT_GPU 1
 #endif
 
-#if SK_SUPPORT_GPU
+#if SK_SUPPORT_GPU || SK_GRAPHITE_ENABLED
 #  if !defined(SK_ENABLE_SKSL)
 #    define SK_ENABLE_SKSL
 #  endif
@@ -400,10 +400,6 @@
 #  define GR_TEST_UTILS 0
 #endif
 
-#ifndef SK_GPU_V2
-#  define SK_GPU_V2 0
-#endif
-
 #ifndef SK_GPU_V1
 #  define SK_GPU_V1 1
 #endif
@@ -555,6 +551,15 @@ template <typename T> static constexpr T SkAlignPtr(T x) {
 }
 template <typename T> static constexpr bool SkIsAlignPtr(T x) {
     return sizeof(void*) == 8 ? SkIsAlign8(x) : SkIsAlign4(x);
+}
+
+/**
+ *  align up to a power of 2
+ */
+static inline constexpr size_t SkAlignTo(size_t x, size_t alignment) {
+    // The same as alignment && SkIsPow2(value), w/o a dependency cycle.
+    SkASSERT(alignment && (alignment & (alignment - 1)) == 0);
+    return (x + alignment - 1) & ~(alignment - 1);
 }
 
 typedef uint32_t SkFourByteTag;

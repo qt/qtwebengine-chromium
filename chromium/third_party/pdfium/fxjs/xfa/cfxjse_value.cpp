@@ -63,10 +63,8 @@ double ftod(float fNumber) {
 
 }  // namespace
 
-void FXJSE_ThrowMessage(ByteStringView utf8Message) {
-  v8::Isolate* pIsolate = v8::Isolate::GetCurrent();
+void FXJSE_ThrowMessage(v8::Isolate* pIsolate, ByteStringView utf8Message) {
   DCHECK(pIsolate);
-
   CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
   v8::Local<v8::String> hMessage = fxv8::NewStringHelper(pIsolate, utf8Message);
   v8::Local<v8::Value> hError = v8::Exception::Error(hMessage);
@@ -99,14 +97,16 @@ void CFXJSE_Value::SetArray(
     v8::Isolate* pIsolate,
     const std::vector<std::unique_ptr<CFXJSE_Value>>& values) {
   CFXJSE_ScopeUtil_IsolateHandleRootContext scope(pIsolate);
-  v8::Local<v8::Array> hArrayObject = v8::Array::New(pIsolate, values.size());
-  uint32_t count = 0;
+  std::vector<v8::Local<v8::Value>> local_values;
+  local_values.reserve(values.size());
   for (auto& v : values) {
     if (v->IsEmpty())
-      v->SetUndefined(pIsolate);
-    fxv8::ReentrantPutArrayElementHelper(pIsolate, hArrayObject, count++,
-                                         v->GetValue(pIsolate));
+      local_values.push_back(fxv8::NewUndefinedHelper(pIsolate));
+    else
+      local_values.push_back(v->GetValue(pIsolate));
   }
+  v8::Local<v8::Array> hArrayObject =
+      v8::Array::New(pIsolate, local_values.data(), local_values.size());
   m_hValue.Reset(pIsolate, hArrayObject);
 }
 

@@ -369,40 +369,51 @@ class StreamExecutor {
   bool GetConvolveAlgorithms(dnn::ConvolutionKind kind,
                              std::vector<dnn::AlgorithmDesc> *out_algorithms);
 
-  // Returns the supported execution plans for the convolution operation.
-  bool GetConvolveExecutionPlans(
-      dnn::ConvolutionKind kind, dnn::DataType element_type, Stream *stream,
+  // Returns the supported algorithms / execution plans for a convolution.
+  port::Status GetConvolveRunners(
+      bool use_cudnn_frontend, dnn::ConvolutionKind kind,
+      dnn::DataType input_type, dnn::DataType output_type, Stream *stream,
+      const dnn::BatchDescriptor &input_descriptor, DeviceMemoryBase input_data,
+      const dnn::FilterDescriptor &filter_descriptor,
+      DeviceMemoryBase filter_data,
+      const dnn::BatchDescriptor &output_descriptor,
+      DeviceMemoryBase output_data,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      bool use_fallback, ScratchAllocator *scratch_allocator,
+      std::vector<std::unique_ptr<const dnn::ConvRunner>> *out_exec_plans);
+
+  port::StatusOr<std::unique_ptr<const dnn::ConvRunner>> ConvolveRunnerFromDesc(
+      const dnn::AlgorithmDesc &algorithm_desc, dnn::ConvolutionKind kind,
+      dnn::DataType element_type, dnn::DataType output_type,
       const dnn::BatchDescriptor &input_descriptor,
       const dnn::FilterDescriptor &filter_descriptor,
       const dnn::BatchDescriptor &output_descriptor,
-      const dnn::ConvolutionDescriptor &convolution_descriptor,
-      std::vector<std::unique_ptr<dnn::ConvolveExecutionPlan>> *out_exec_plans);
+      const dnn::ConvolutionDescriptor &convolution_descriptor);
 
-  port::Status GetFusedConvolveExecutionPlans(
-      dnn::ConvolutionKind kind, dnn::DataType element_type,
-      double conv_input_scale, double side_input_scale, Stream *stream,
+  port::Status GetFusedConvolveRunners(
+      bool use_cudnn_frontend, dnn::ConvolutionKind kind,
+      dnn::DataType input_type, dnn::DataType bias_type,
+      dnn::DataType output_type, double conv_input_scale,
+      double side_input_scale, Stream *stream,
       const dnn::BatchDescriptor &input_descriptor,
       const dnn::FilterDescriptor &filter_descriptor,
       const dnn::BatchDescriptor &bias_descriptor,
       const dnn::BatchDescriptor &output_descriptor,
       const dnn::ConvolutionDescriptor &convolution_descriptor,
-      dnn::ActivationMode activation_mode,
-      std::vector<std::unique_ptr<dnn::ConvolveExecutionPlan>>
-          *out_exec_plans) {
-    dnn::DnnSupport *dnn_support = AsDnn();
-    if (dnn_support) {
-#if GOOGLE_CUDA
-      gpu::CudnnSupport *cudnn_dnn =
-          dynamic_cast<gpu::CudnnSupport *>(dnn_support);
-      return cudnn_dnn->GetFusedConvolveExecutionPlans(
-          kind, element_type, conv_input_scale, side_input_scale, stream,
-          input_descriptor, filter_descriptor, bias_descriptor,
-          output_descriptor, convolution_descriptor, activation_mode,
-          out_exec_plans);
-#endif  // GOOGLE_CUDA
-    }
-    return port::UnimplementedError("DNN library is not found.");
-  }
+      bool use_fallback, dnn::ActivationMode activation_mode,
+      std::vector<std::unique_ptr<const dnn::FusedConvRunner>> *out_exec_plans);
+
+  port::StatusOr<std::unique_ptr<const dnn::FusedConvRunner>>
+  FusedConvolveRunnerFromDesc(
+      const dnn::AlgorithmDesc &algorithm_desc, dnn::ConvolutionKind kind,
+      dnn::DataType element_type, dnn::DataType bias_type,
+      dnn::DataType output_type, double conv_input_scale,
+      double side_input_scale, const dnn::BatchDescriptor &input_descriptor,
+      const dnn::FilterDescriptor &filter_descriptor,
+      const dnn::BatchDescriptor &bias_descriptor,
+      const dnn::BatchDescriptor &output_descriptor,
+      const dnn::ConvolutionDescriptor &convolution_descriptor,
+      dnn::ActivationMode activation_mode);
 
   // Returns the list of supported algorithms for the forward convolution
   // operation.

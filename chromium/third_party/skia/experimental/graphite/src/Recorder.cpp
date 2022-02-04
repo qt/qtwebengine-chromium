@@ -5,23 +5,55 @@
  * found in the LICENSE file.
  */
 
-#include "experimental/graphite/src/Recorder.h"
+#include "experimental/graphite/include/Recorder.h"
 
-#include "experimental/graphite/src/Recording.h"
+#include "experimental/graphite/include/Context.h"
+#include "experimental/graphite/include/Recording.h"
+#include "experimental/graphite/src/Caps.h"
+#include "experimental/graphite/src/CommandBuffer.h"
+#include "experimental/graphite/src/ContextPriv.h"
+#include "experimental/graphite/src/DrawBufferManager.h"
+#include "experimental/graphite/src/Gpu.h"
+#include "experimental/graphite/src/ResourceProvider.h"
+#include "experimental/graphite/src/UniformCache.h"
 
 namespace skgpu {
 
-Recorder::Recorder() {}
+Recorder::Recorder(sk_sp<Context> context)
+        : fContext(std::move(context))
+        , fUniformCache(new UniformCache)
+        , fDrawBufferManager(new DrawBufferManager(
+                fContext->priv().gpu()->resourceProvider(),
+                fContext->priv().gpu()->caps()->requiredUniformBufferAlignment())) {
+}
+
 Recorder::~Recorder() {}
+
+Context* Recorder::context() const {
+    return fContext.get();
+}
+
+UniformCache* Recorder::uniformCache() {
+    return fUniformCache.get();
+}
+
+DrawBufferManager* Recorder::drawBufferManager() {
+    return fDrawBufferManager.get();
+}
 
 void Recorder::add(sk_sp<Task> task) {
     fGraph.add(std::move(task));
 }
 
 std::unique_ptr<Recording> Recorder::snap() {
-    // TODO: transmute the task graph into the Recording's primitives
+    auto gpu = fContext->priv().gpu();
+    auto commandBuffer = gpu->resourceProvider()->createCommandBuffer();
+
+    fGraph.addCommands(gpu->resourceProvider(), commandBuffer.get());
+    fDrawBufferManager->transferToCommandBuffer(commandBuffer.get());
+
     fGraph.reset();
-    return std::unique_ptr<Recording>(new Recording);
+    return std::unique_ptr<Recording>(new Recording(std::move(commandBuffer)));
 }
 
 } // namespace skgpu

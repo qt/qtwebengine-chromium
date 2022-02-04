@@ -14,9 +14,9 @@
 #include "absl/strings/string_view.h"
 #include "third_party/boringssl/src/include/openssl/base.h"
 #include "third_party/boringssl/src/include/openssl/ssl.h"
+#include "quic/core/crypto/client_proof_source.h"
 #include "quic/core/crypto/crypto_handshake.h"
 #include "quic/core/crypto/crypto_protocol.h"
-#include "quic/core/crypto/proof_source.h"
 #include "quic/core/crypto/transport_parameters.h"
 #include "quic/core/quic_packets.h"
 #include "quic/core/quic_server_id.h"
@@ -49,6 +49,9 @@ struct QUIC_EXPORT_PRIVATE QuicResumptionState {
   // client received from the server at the application layer that the client
   // needs to remember when performing a 0-RTT handshake.
   std::unique_ptr<ApplicationState> application_state = nullptr;
+
+  // Opaque token received in NEW_TOKEN frame if any.
+  std::string token;
 };
 
 // SessionCache is an interface for managing storing and retrieving
@@ -74,12 +77,21 @@ class QUIC_EXPORT_PRIVATE SessionCache {
   // delete cache entries after returning them in Lookup so that session tickets
   // are used only once.
   virtual std::unique_ptr<QuicResumptionState> Lookup(
-      const QuicServerId& server_id,
-      const SSL_CTX* ctx) = 0;
+      const QuicServerId& server_id, QuicWallTime now, const SSL_CTX* ctx) = 0;
 
   // Called when 0-RTT is rejected. Disables early data for all the TLS tickets
   // associated with |server_id|.
   virtual void ClearEarlyData(const QuicServerId& server_id) = 0;
+
+  // Called when NEW_TOKEN frame is received.
+  virtual void OnNewTokenReceived(const QuicServerId& server_id,
+                                  absl::string_view token) = 0;
+
+  // Called to remove expired entries.
+  virtual void RemoveExpiredEntries(QuicWallTime now) = 0;
+
+  // Clear the session cache.
+  virtual void Clear() = 0;
 };
 
 // QuicCryptoClientConfig contains crypto-related configuration settings for a
@@ -336,8 +348,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
 
   ProofVerifier* proof_verifier() const;
   SessionCache* session_cache() const;
-  ProofSource* proof_source() const;
-  void set_proof_source(std::unique_ptr<ProofSource> proof_source);
+  ClientProofSource* proof_source() const;
+  void set_proof_source(std::unique_ptr<ClientProofSource> proof_source);
   SSL_CTX* ssl_ctx() const;
 
   // Initialize the CachedState from |canonical_crypto_config| for the
@@ -389,6 +401,8 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
   bool pad_full_hello() const { return pad_full_hello_; }
   void set_pad_full_hello(bool new_value) { pad_full_hello_ = new_value; }
 
+  SessionCache* mutable_session_cache() { return session_cache_.get(); }
+
  private:
   // Sets the members to reasonable, default values.
   void SetDefaults();
@@ -429,7 +443,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoClientConfig : public QuicCryptoConfig {
 
   std::unique_ptr<ProofVerifier> proof_verifier_;
   std::unique_ptr<SessionCache> session_cache_;
-  std::unique_ptr<ProofSource> proof_source_;
+  std::unique_ptr<ClientProofSource> proof_source_;
 
   bssl::UniquePtr<SSL_CTX> ssl_ctx_;
 

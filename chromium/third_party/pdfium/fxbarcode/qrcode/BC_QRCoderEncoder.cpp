@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "core/fxcrt/fx_memory_wrappers.h"
+#include "core/fxcrt/fx_string.h"
 #include "fxbarcode/common/BC_CommonByteMatrix.h"
 #include "fxbarcode/common/reedsolomon/BC_ReedSolomon.h"
 #include "fxbarcode/common/reedsolomon/BC_ReedSolomonGF256.h"
@@ -38,10 +39,10 @@
 #include "fxbarcode/qrcode/BC_QRCoderMatrixUtil.h"
 #include "fxbarcode/qrcode/BC_QRCoderMode.h"
 #include "fxbarcode/qrcode/BC_QRCoderVersion.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
 #include "third_party/base/cxx17_backports.h"
-#include "third_party/base/optional.h"
 
 using ModeStringPair = std::pair<CBC_QRCoderMode*, ByteString>;
 
@@ -252,7 +253,7 @@ int32_t CalculateMaskPenalty(CBC_CommonByteMatrix* matrix) {
          CBC_QRCoderMaskUtil::ApplyMaskPenaltyRule4(matrix);
 }
 
-Optional<int32_t> ChooseMaskPattern(
+absl::optional<int32_t> ChooseMaskPattern(
     CBC_QRCoderBitVector* bits,
     const CBC_QRCoderErrorCorrectionLevel* ecLevel,
     int32_t version,
@@ -263,7 +264,7 @@ Optional<int32_t> ChooseMaskPattern(
        maskPattern++) {
     if (!CBC_QRCoderMatrixUtil::BuildMatrix(bits, ecLevel, version, maskPattern,
                                             matrix)) {
-      return pdfium::nullopt;
+      return absl::nullopt;
     }
     int32_t penalty = CalculateMaskPenalty(matrix);
     if (penalty < minPenalty) {
@@ -453,7 +454,7 @@ bool CBC_QRCoderEncoder::Encode(WideStringView content,
 
   auto matrix = std::make_unique<CBC_CommonByteMatrix>(
       qrCode->GetMatrixWidth(), qrCode->GetMatrixWidth());
-  Optional<int32_t> maskPattern = ChooseMaskPattern(
+  absl::optional<int32_t> maskPattern = ChooseMaskPattern(
       &finalBits, qrCode->GetECLevel(), qrCode->GetVersion(), matrix.get());
   if (!maskPattern.has_value())
     return false;

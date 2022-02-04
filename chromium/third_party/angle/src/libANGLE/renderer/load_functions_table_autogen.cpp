@@ -1486,6 +1486,20 @@ LoadImageFunctionInfo DEPTH_COMPONENT16_to_D16_UNORM(GLenum type)
     }
 }
 
+LoadImageFunctionInfo DEPTH_COMPONENT16_to_D32_FLOAT(GLenum type)
+{
+    switch (type)
+    {
+        case GL_UNSIGNED_INT:
+            return LoadImageFunctionInfo(LoadUNorm32To32F, true);
+        case GL_UNSIGNED_SHORT:
+            return LoadImageFunctionInfo(LoadUNorm16To32F, true);
+        default:
+            UNREACHABLE();
+            return LoadImageFunctionInfo(UnreachableLoadFunction, true);
+    }
+}
+
 LoadImageFunctionInfo DEPTH_COMPONENT24_to_D24_UNORM_S8_UINT(GLenum type)
 {
     switch (type)
@@ -3126,7 +3140,7 @@ LoadImageFunctionInfo RGBA8_USCALED_ANGLEX_to_default(GLenum type)
     }
 }
 
-LoadImageFunctionInfo RGBX8_ANGLEX_to_R8G8B8A8_UNORM(GLenum type)
+LoadImageFunctionInfo RGBX8_ANGLE_to_R8G8B8A8_UNORM(GLenum type)
 {
     switch (type)
     {
@@ -3138,7 +3152,7 @@ LoadImageFunctionInfo RGBX8_ANGLEX_to_R8G8B8A8_UNORM(GLenum type)
     }
 }
 
-LoadImageFunctionInfo RGBX8_ANGLEX_to_R8G8B8X8_UNORM(GLenum type)
+LoadImageFunctionInfo RGBX8_ANGLE_to_R8G8B8X8_UNORM(GLenum type)
 {
     switch (type)
     {
@@ -3695,6 +3709,8 @@ LoadFunctionMap GetLoadFunctionsMap(GLenum internalFormat, FormatID angleFormat)
             {
                 case FormatID::D16_UNORM:
                     return DEPTH_COMPONENT16_to_D16_UNORM;
+                case FormatID::D32_FLOAT:
+                    return DEPTH_COMPONENT16_to_D32_FLOAT;
                 default:
                     break;
             }
@@ -4576,14 +4592,14 @@ LoadFunctionMap GetLoadFunctionsMap(GLenum internalFormat, FormatID angleFormat)
             return RGBA8_SSCALED_ANGLEX_to_default;
         case GL_RGBA8_USCALED_ANGLEX:
             return RGBA8_USCALED_ANGLEX_to_default;
-        case GL_RGBX8_ANGLEX:
+        case GL_RGBX8_ANGLE:
         {
             switch (angleFormat)
             {
                 case FormatID::R8G8B8A8_UNORM:
-                    return RGBX8_ANGLEX_to_R8G8B8A8_UNORM;
+                    return RGBX8_ANGLE_to_R8G8B8A8_UNORM;
                 case FormatID::R8G8B8X8_UNORM:
-                    return RGBX8_ANGLEX_to_R8G8B8X8_UNORM;
+                    return RGBX8_ANGLE_to_R8G8B8X8_UNORM;
                 default:
                     break;
             }

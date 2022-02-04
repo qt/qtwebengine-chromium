@@ -11,35 +11,35 @@ vars = {
   'checkout_reclient': False,
 
   'build_url': 'https://chromium.googlesource.com/chromium/src/build.git',
-  'build_revision': '90f82e8dd1434183170fa684d5f5e933c7456544',
+  'build_revision': '55549da1e7575597cc5988a4809b47666c014310',
 
   'buildtools_url': 'https://chromium.googlesource.com/chromium/src/buildtools.git',
-  'buildtools_revision': 'a9bc3e283182a586998338a665c7eae17406ec54',
+  'buildtools_revision': '075dd7e22837a69189003e4fa84499acf63188cf',
 
   'depot_tools_url': 'https://chromium.googlesource.com/chromium/tools/depot_tools.git',
-  'depot_tools_revision': '3ed476b8d218571b0c16c608fde7cae1c69ed191',
+  'depot_tools_revision': '85d7fe7fe82ad5876c2bb95784d9b9f282115f92',
 
   'inspector_protocol_url': 'https://chromium.googlesource.com/deps/inspector_protocol',
-  'inspector_protocol_revision': '79d309325cafed50853b7111b54ab294b9e36d59',
+  'inspector_protocol_revision': '324560578c6d7ef2564f5ec7086a81ffe6a59983',
 
   'clang_format_url': 'https://chromium.googlesource.com/external/github.com/llvm/llvm-project/clang/tools/clang-format.git',
-  'clang_format_revision': '99803d74e35962f63a775f29477882afd4d57d94',
+  'clang_format_revision': 'e435ad79c17b1888b34df88d6a30a094936e3836',
 
   'emscripten_tag': '6ab7fc5622a67e6111d07c4ba61c8d3c8fc33ed2',
 
   # GN CIPD package version.
-  'gn_version': 'git_revision:0153d369bbccc908f4da4993b1ba82728055926a',
+  'gn_version': 'git_revision:fc295f3ac7ca4fe7acc6cb5fb052d22909ef3a8f',
 
   # reclient CIPD package version
   'reclient_version': 're_client_version:0.19.2.319f839',
 
   # Chromium build number for unit tests. It should be regularly updated to
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/LAST_CHANGE
-  'chromium_linux': '929047',
+  'chromium_linux': '949936',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/LAST_CHANGE
-  'chromium_win': '929043',
+  'chromium_win': '949932',
   # the content of https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/LAST_CHANGE
-  'chromium_mac': '929046',
+  'chromium_mac': '949933',
 }
 
 # Only these hosts are allowed for dependencies in this DEPS file.
@@ -107,12 +107,12 @@ hooks = [
     'name': 'node_linux64',
     'pattern': '.',
     'condition': 'host_os == "linux" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--extract',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/14.15.4',
+                '--bucket', 'chromium-nodejs/16.13.0',
                 '-s', 'third_party/node/linux/node-linux-x64.tar.gz.sha1',
     ],
   },
@@ -120,12 +120,12 @@ hooks = [
     'name': 'node_mac',
     'pattern': '.',
     'condition': 'host_os == "mac" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--extract',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/14.15.4',
+                '--bucket', 'chromium-nodejs/16.13.0',
                 '-s', 'third_party/node/mac/node-darwin-x64.tar.gz.sha1',
     ],
   },
@@ -133,11 +133,11 @@ hooks = [
     'name': 'node_win',
     'pattern': '.',
     'condition': 'host_os == "win" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
-                '--bucket', 'chromium-nodejs/14.15.4',
+                '--bucket', 'chromium-nodejs/16.13.0',
                 '-s', 'third_party/node/win/node.exe.sha1',
     ],
   },
@@ -148,7 +148,7 @@ hooks = [
     'name': 'disable_depot_tools_selfupdate',
     'pattern': '.',
     'action': [
-        'python',
+        'python3',
         'third_party/depot_tools/update_depot_tools_toggle.py',
         '--disable',
     ],
@@ -159,7 +159,7 @@ hooks = [
     'name': 'clang_format_win',
     'pattern': '.',
     'condition': 'host_os == "win" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
@@ -171,7 +171,7 @@ hooks = [
     'name': 'clang_format_mac',
     'pattern': '.',
     'condition': 'host_os == "mac" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
@@ -183,7 +183,7 @@ hooks = [
     'name': 'clang_format_linux',
     'pattern': '.',
     'condition': 'host_os == "linux" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'third_party/depot_tools/download_from_google_storage.py',
                 '--no_resume',
                 '--no_auth',
@@ -197,7 +197,7 @@ hooks = [
     'name': 'download_chromium_win',
     'pattern': '.',
     'condition': 'host_os == "win" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'scripts/deps/download_chromium.py',
                 'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Win_x64/' + Var('chromium_win') + '/chrome-win.zip',
                 'third_party/chrome',
@@ -209,7 +209,7 @@ hooks = [
     'name': 'download_chromium_mac',
     'pattern': '.',
     'condition': 'host_os == "mac" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'scripts/deps/download_chromium.py',
                 'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Mac/' + Var('chromium_mac') + '/chrome-mac.zip',
                 'third_party/chrome',
@@ -221,7 +221,7 @@ hooks = [
     'name': 'download_chromium_linux',
     'pattern': '.',
     'condition': 'host_os == "linux" and build_with_chromium == False',
-    'action': [ 'python',
+    'action': [ 'python3',
                 'scripts/deps/download_chromium.py',
                 'https://commondatastorage.googleapis.com/chromium-browser-snapshots/Linux_x64/' + Var('chromium_linux') + '/chrome-linux.zip',
                 'third_party/chrome',
@@ -233,19 +233,19 @@ hooks = [
     'name': 'sysroot_x64',
     'pattern': '.',
     'condition': 'checkout_linux and checkout_x64',
-    'action': ['python', 'build/linux/sysroot_scripts/install-sysroot.py',
+    'action': ['python3', 'build/linux/sysroot_scripts/install-sysroot.py',
                '--arch=x64'],
   },
   {
     'name': 'emscripten',
     'pattern': '.',
     'condition': 'build_with_chromium == False',
-    'action': ['python', 'scripts/deps/download_emscripten.py', Var('emscripten_tag'), 'third_party/emscripten-releases'],
+    'action': ['python3', 'scripts/deps/download_emscripten.py', Var('emscripten_tag'), 'third_party/emscripten-releases'],
   },
   {
     'name': 'VS Code settings',
     'pattern': '.',
     'condition': 'build_with_chromium == False',
-    'action': ['python', 'third_party/node/node.py', '--output', 'scripts/deps/sync-vscode-settings.js']
+    'action': ['python3', 'third_party/node/node.py', '--output', 'scripts/deps/sync-vscode-settings.js']
   },
 ]

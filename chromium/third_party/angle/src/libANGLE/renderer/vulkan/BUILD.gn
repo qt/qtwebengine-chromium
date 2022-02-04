@@ -92,6 +92,7 @@ _vulkan_backend_sources = [
   "vk_cache_utils.h",
   "vk_caps_utils.cpp",
   "vk_caps_utils.h",
+  "vk_command_buffer_utils.h",
   "vk_format_table_autogen.cpp",
   "vk_format_utils.cpp",
   "vk_format_utils.h",
@@ -263,6 +264,10 @@ angle_source_set("angle_vulkan_backend") {
     "$angle_root/src/common/spirv:angle_spirv_builder",
     "$angle_spirv_headers_dir:spv_headers",
   ]
+
+  if (angle_enable_cl || is_android) {
+    deps += [ "$angle_root:angle_version_info" ]
+  }
 
   public_deps = [
     "$angle_root:angle_glslang_wrapper",

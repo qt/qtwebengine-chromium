@@ -6,7 +6,7 @@
 load("//lib/args.star", "args")
 load("//lib/builders.star", "goma", "os", "sheriff_rotations")
 load("//lib/branches.star", "branches")
-load("//lib/ci.star", "ci")
+load("//lib/ci.star", "ci", "rbe_instance", "rbe_jobs")
 load("//lib/consoles.star", "consoles")
 
 ci.defaults.set(
@@ -183,6 +183,9 @@ ci.builder(
         short_name = "bld",
     ),
     cq_mirrors_console_view = "mirrors",
+    goma_backend = None,
+    reclient_instance = rbe_instance.DEFAULT,
+    reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
 )
 
 ci.builder(
@@ -193,6 +196,9 @@ ci.builder(
         short_name = "64",
     ),
     cq_mirrors_console_view = "mirrors",
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -201,6 +207,9 @@ ci.builder(
         category = "debug|builder",
         short_name = "32",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -211,6 +220,9 @@ ci.builder(
         short_name = "bld-wl",
     ),
     cq_mirrors_console_view = "mirrors",
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -234,6 +246,9 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     triggered_by = ["ci/Linux Builder (dbg)"],
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -342,99 +357,6 @@ ci.builder(
         short_name = "gcc",
     ),
     goma_backend = None,
-)
-
-ci.builder(
-    name = "linux-ozone-rel",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        category = "release",
-        short_name = "ozo",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    # Set tree_closing to false to disable the defaualt tree closer, which
-    # filters by step name, and instead enable tree closing for any step
-    # failure.
-    tree_closing = False,
-    notifies = ["linux-ozone-rel", "close-on-any-step-failure"],
-)
-
-ci.builder(
-    name = "Linux Ozone Tester (Headless)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        console_view = "chromium.fyi",
-        category = "linux",
-        short_name = "loh",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-)
-
-ci.builder(
-    name = "Linux Ozone Tester (Wayland)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        console_view = "chromium.fyi",
-        category = "linux",
-        short_name = "low",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-)
-
-ci.builder(
-    name = "Linux Ozone Tester (X11)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        console_view = "chromium.fyi",
-        category = "linux",
-        short_name = "lox",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-)
-
-ci.builder(
-    # CI tester for Ozone/Headless
-    name = "Linux Tester (Ozone Headless)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        category = "release|ozone",
-        short_name = "ltoh",
-    ),
-    main_console_view = "main",
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-    tree_closing = False,
-)
-
-ci.builder(
-    # CI tester for Ozone/Wayland
-    name = "Linux Tester (Ozone Wayland)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        category = "release|ozone",
-        short_name = "ltow",
-    ),
-    main_console_view = "main",
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-    tree_closing = False,
-)
-
-ci.builder(
-    # CI tester for Ozone/X11
-    name = "Linux Tester (Ozone X11)",
-    branch_selector = branches.STANDARD_MILESTONE,
-    console_view_entry = consoles.console_view_entry(
-        category = "release|ozone",
-        short_name = "ltox",
-    ),
-    main_console_view = "main",
-    cq_mirrors_console_view = "mirrors",
-    triggered_by = ["ci/linux-ozone-rel"],
-    tree_closing = False,
 )
 
 ci.builder(

@@ -6,7 +6,6 @@
 
 // Context.cpp: Implements the gl::Context class, managing all GL state and performing
 // rendering operations. It is the GLES2 specific implementation of EGLContext.
-#include "libANGLE/Context.h"
 #include "libANGLE/Context.inl.h"
 
 #include <string.h>
@@ -15,7 +14,7 @@
 #include <vector>
 
 #include "common/PackedEnums.h"
-#include "common/angle_version.h"
+#include "common/angle_version_info.h"
 #include "common/matrix_utils.h"
 #include "common/platform.h"
 #include "common/system_utils.h"
@@ -282,7 +281,8 @@ enum SubjectIndexes : angle::SubjectIndex
     kSamplerMaxSubjectIndex  = kSampler0SubjectIndex + IMPLEMENTATION_MAX_ACTIVE_TEXTURES,
     kVertexArraySubjectIndex = kSamplerMaxSubjectIndex,
     kReadFramebufferSubjectIndex,
-    kDrawFramebufferSubjectIndex
+    kDrawFramebufferSubjectIndex,
+    kProgramPipelineSubjectIndex,
 };
 
 bool IsClearBufferEnabled(const FramebufferState &fbState, GLenum buffer, GLint drawbuffer)
@@ -317,7 +317,6 @@ bool GetSaveAndRestoreState(const egl::AttributeMap &attribs)
 {
     return (attribs.get(EGL_EXTERNAL_CONTEXT_SAVE_STATE_ANGLE, EGL_FALSE) == EGL_TRUE);
 }
-
 }  // anonymous namespace
 
 #if defined(ANGLE_PLATFORM_APPLE)
@@ -330,7 +329,7 @@ static TLSIndex GetCurrentValidContextTLSIndex()
     static dispatch_once_t once;
     dispatch_once(&once, ^{
       ASSERT(CurrentValidContextIndex == TLS_INVALID_INDEX);
-      CurrentValidContextIndex = CreateTLSIndex();
+      CurrentValidContextIndex = CreateTLSIndex(nullptr);
     });
     return CurrentValidContextIndex;
 }
@@ -401,6 +400,7 @@ Context::Context(egl::Display *display,
       mVertexArrayObserverBinding(this, kVertexArraySubjectIndex),
       mDrawFramebufferObserverBinding(this, kDrawFramebufferSubjectIndex),
       mReadFramebufferObserverBinding(this, kReadFramebufferSubjectIndex),
+      mProgramPipelineObserverBinding(this, kProgramPipelineSubjectIndex),
       mThreadPool(nullptr),
       mFrameCapture(new angle::FrameCapture),
       mRefCount(0),
@@ -455,12 +455,6 @@ void Context::initializeDefaultResources()
     mImplementation->setMemoryProgramCache(mMemoryProgramCache);
 
     initCaps();
-
-    if (mDisplay->getFrontendFeatures().syncFramebufferBindingsOnTexImage.enabled)
-    {
-        mTexImageDirtyBits.set(State::DIRTY_BIT_READ_FRAMEBUFFER_BINDING);
-        mTexImageDirtyBits.set(State::DIRTY_BIT_DRAW_FRAMEBUFFER_BINDING);
-    }
 
     mState.initialize(this);
 
@@ -1303,8 +1297,7 @@ void Context::useProgramStages(ProgramPipelineID pipeline,
                                                                        pipeline);
 
     ASSERT(programPipeline);
-    ANGLE_CONTEXT_TRY(mState.useProgramStages(this, programPipeline, stages, shaderProgram));
-    mStateCache.onProgramExecutableChange(this);
+    ANGLE_CONTEXT_TRY(programPipeline->useProgramStages(this, stages, shaderProgram));
 }
 
 void Context::bindTransformFeedback(GLenum target, TransformFeedbackID transformFeedbackHandle)
@@ -1320,7 +1313,12 @@ void Context::bindProgramPipeline(ProgramPipelineID pipelineHandle)
     ProgramPipeline *pipeline = mState.mProgramPipelineManager->checkProgramPipelineAllocation(
         mImplementation.get(), pipelineHandle);
     ANGLE_CONTEXT_TRY(mState.setProgramPipelineBinding(this, pipeline));
+    if (pipeline && pipeline->isLinked())
+    {
+        ANGLE_CONTEXT_TRY(mState.onProgramPipelineExecutableChange(this));
+    }
     mStateCache.onProgramExecutableChange(this);
+    mProgramPipelineObserverBinding.bind(pipeline);
 }
 
 void Context::beginQuery(QueryType target, QueryID query)
@@ -2771,9 +2769,11 @@ void Context::handleError(GLenum errorCode,
     mErrors.handleError(errorCode, message, file, function, line);
 }
 
-void Context::validationError(GLenum errorCode, const char *message) const
+void Context::validationError(angle::EntryPoint entryPoint,
+                              GLenum errorCode,
+                              const char *message) const
 {
-    const_cast<Context *>(this)->mErrors.validationError(errorCode, message);
+    const_cast<Context *>(this)->mErrors.validationError(entryPoint, errorCode, message);
 }
 
 // Get one of the recorded errors and clear its flag, if any.
@@ -3217,7 +3217,7 @@ void Context::initVersionStrings()
         versionString << "OpenGL ES ";
     }
     versionString << clientVersion.major << "." << clientVersion.minor << ".0 (ANGLE "
-                  << ANGLE_VERSION_STRING << ")";
+                  << angle::GetANGLEVersionString() << ")";
     mVersionString = MakeStaticString(versionString.str());
 
     std::ostringstream shadingLanguageVersionString;
@@ -3231,8 +3231,8 @@ void Context::initVersionStrings()
         shadingLanguageVersionString << "OpenGL GLSL ";
     }
     shadingLanguageVersionString << (clientVersion.major == 2 ? 1 : clientVersion.major) << "."
-                                 << clientVersion.minor << "0 (ANGLE " << ANGLE_VERSION_STRING
-                                 << ")";
+                                 << clientVersion.minor << "0 (ANGLE "
+                                 << angle::GetANGLEVersionString() << ")";
     mShadingLanguageString = MakeStaticString(shadingLanguageVersionString.str());
 }
 
@@ -4118,15 +4118,11 @@ angle::Result Context::prepareForClearBuffer(GLenum buffer, GLint drawbuffer)
 ANGLE_INLINE angle::Result Context::prepareForCopyImage()
 {
     ANGLE_TRY(syncDirtyObjects(mCopyImageDirtyObjects, Command::CopyImage));
-    return syncDirtyBits(mCopyImageDirtyBits);
+    return syncDirtyBits(mCopyImageDirtyBits, Command::CopyImage);
 }
 
 ANGLE_INLINE angle::Result Context::prepareForDispatch()
 {
-    // We always assume PPOs are used for draws, until they aren't. If we are executing a dispatch
-    // with a PPO, we need to convert it from a "draw"-type to "dispatch"-type.
-    convertPpoToComputeOrDraw(true);
-
     // Converting a PPO from graphics to compute requires re-linking it.
     // The compute shader must have successfully linked before being included in the PPO, so no link
     // errors that would have been caught during validation should be possible when re-linking the
@@ -4143,7 +4139,7 @@ ANGLE_INLINE angle::Result Context::prepareForDispatch()
     }
 
     ANGLE_TRY(syncDirtyObjects(mComputeDirtyObjects, Command::Dispatch));
-    return syncDirtyBits(mComputeDirtyBits);
+    return syncDirtyBits(mComputeDirtyBits, Command::Dispatch);
 }
 
 angle::Result Context::prepareForInvalidate(GLenum target)
@@ -4156,7 +4152,7 @@ angle::Result Context::prepareForInvalidate(GLenum target)
         effectiveTarget = GL_DRAW_FRAMEBUFFER;
     }
     ANGLE_TRY(mState.syncDirtyObject(this, effectiveTarget));
-    return syncDirtyBits(mInvalidateDirtyBits);
+    return syncDirtyBits(mInvalidateDirtyBits, Command::Invalidate);
 }
 
 angle::Result Context::syncState(const State::DirtyBits &bitMask,
@@ -4164,7 +4160,7 @@ angle::Result Context::syncState(const State::DirtyBits &bitMask,
                                  Command command)
 {
     ANGLE_TRY(syncDirtyObjects(objectMask, command));
-    ANGLE_TRY(syncDirtyBits(bitMask));
+    ANGLE_TRY(syncDirtyBits(bitMask, command));
     return angle::Result::Continue;
 }
 
@@ -5966,7 +5962,8 @@ void Context::debugMessageInsert(GLenum source,
                                  const GLchar *buf)
 {
     std::string msg(buf, (length > 0) ? static_cast<size_t>(length) : strlen(buf));
-    mState.getDebug().insertMessage(source, type, id, severity, std::move(msg), gl::LOG_INFO);
+    mState.getDebug().insertMessage(source, type, id, severity, std::move(msg), gl::LOG_INFO,
+                                    angle::EntryPoint::GLDebugMessageInsert);
 }
 
 void Context::debugMessageCallback(GLDEBUGPROCKHR callback, const void *userParam)
@@ -6396,36 +6393,9 @@ void Context::dispatchCompute(GLuint numGroupsX, GLuint numGroupsY, GLuint numGr
     // before convertPpoToComputeOrDraw() reverts the PPO back to graphics.
     MarkShaderStorageUsage(this);
 
-    // We always assume PPOs are used for draws, until they aren't. If we just executed a dispatch
-    // with a PPO, we need to convert it back to a "draw"-type.
-    // We don't re-link the PPO again, since it's possible for that link to generate validation
-    // errors due to bad VS/FS, and we want to catch those errors during validation of the draw
-    // command: 11.1.3.11 Validation It is not always possible to determine at link time if a
-    // program object can execute successfully, given that LinkProgram can not know the state of the
-    // remainder of the pipeline. Therefore validation is done when the first rendering command
-    // which triggers shader invocations is issued, to determine if the set of active program
-    // objects can be executed.
-    convertPpoToComputeOrDraw(false);
-
     if (ANGLE_UNLIKELY(IsError(result)))
     {
         return;
-    }
-}
-
-void Context::convertPpoToComputeOrDraw(bool isCompute)
-{
-    Program *program          = mState.getProgram();
-    ProgramPipeline *pipeline = mState.getProgramPipeline();
-    if (!program && pipeline)
-    {
-        pipeline->getExecutable().setIsCompute(isCompute);
-        pipeline->resetIsLinked();
-
-        // The PPO's isCompute() has changed, so its ProgramExecutable will produce different
-        // results for things like getShaderStorageBlocks() or getImageBindings().
-        mState.mDirtyBits.set(State::DirtyBitType::DIRTY_BIT_PROGRAM_EXECUTABLE);
-        mStateCache.onProgramExecutableChange(this);
     }
 }
 
@@ -6490,6 +6460,19 @@ void Context::multiDrawArraysInstanced(PrimitiveMode mode,
                                                                 instanceCounts, drawcount));
 }
 
+void Context::multiDrawArraysIndirect(GLenum mode,
+                                      const void *indirect,
+                                      GLsizei drawcount,
+                                      GLsizei stride)
+{
+    PrimitiveMode primitiveMode = FromGLenum<PrimitiveMode>(mode);
+
+    ANGLE_CONTEXT_TRY(prepareForDraw(primitiveMode));
+    ANGLE_CONTEXT_TRY(
+        mImplementation->multiDrawArraysIndirect(this, primitiveMode, indirect, drawcount, stride));
+    MarkShaderStorageUsage(this);
+}
+
 void Context::multiDrawElements(PrimitiveMode mode,
                                 const GLsizei *counts,
                                 DrawElementsType type,
@@ -6511,6 +6494,21 @@ void Context::multiDrawElementsInstanced(PrimitiveMode mode,
     ANGLE_CONTEXT_TRY(prepareForDraw(mode));
     ANGLE_CONTEXT_TRY(mImplementation->multiDrawElementsInstanced(this, mode, counts, type, indices,
                                                                   instanceCounts, drawcount));
+}
+
+void Context::multiDrawElementsIndirect(GLenum mode,
+                                        GLenum type,
+                                        const void *indirect,
+                                        GLsizei drawcount,
+                                        GLsizei stride)
+{
+    PrimitiveMode primitiveMode       = FromGLenum<PrimitiveMode>(mode);
+    DrawElementsType drawElementsType = FromGLenum<DrawElementsType>(type);
+
+    ANGLE_CONTEXT_TRY(prepareForDraw(primitiveMode));
+    ANGLE_CONTEXT_TRY(mImplementation->multiDrawElementsIndirect(
+        this, primitiveMode, drawElementsType, indirect, drawcount, stride));
+    MarkShaderStorageUsage(this);
 }
 
 void Context::drawArraysInstancedBaseInstance(PrimitiveMode mode,
@@ -6619,7 +6617,7 @@ GLenum Context::checkFramebufferStatus(GLenum target)
 
 void Context::compileShader(ShaderProgramID shader)
 {
-    Shader *shaderObject = GetValidShader(this, shader);
+    Shader *shaderObject = GetValidShader(this, angle::EntryPoint::GLCompileShader, shader);
     if (!shaderObject)
     {
         return;
@@ -8482,7 +8480,7 @@ void Context::texStorageMem2D(TextureType target,
                               GLuint64 offset)
 {
     texStorageMemFlags2D(target, levels, internalFormat, width, height, memory, offset, 0,
-                         std::numeric_limits<uint32_t>::max());
+                         std::numeric_limits<uint32_t>::max(), nullptr);
 }
 
 void Context::texStorageMem2DMultisample(TextureType target,
@@ -8545,14 +8543,16 @@ void Context::texStorageMemFlags2D(TextureType target,
                                    MemoryObjectID memory,
                                    GLuint64 offset,
                                    GLbitfield createFlags,
-                                   GLbitfield usageFlags)
+                                   GLbitfield usageFlags,
+                                   const void *imageCreateInfoPNext)
 {
     MemoryObject *memoryObject = getMemoryObject(memory);
     ASSERT(memoryObject);
     Extents size(width, height, 1);
     Texture *texture = getTextureByType(target);
-    ANGLE_CONTEXT_TRY(texture->setStorageExternalMemory(
-        this, target, levels, internalFormat, size, memoryObject, offset, createFlags, usageFlags));
+    ANGLE_CONTEXT_TRY(texture->setStorageExternalMemory(this, target, levels, internalFormat, size,
+                                                        memoryObject, offset, createFlags,
+                                                        usageFlags, imageCreateInfoPNext));
 }
 
 void Context::texStorageMemFlags2DMultisample(TextureType target,
@@ -8564,7 +8564,8 @@ void Context::texStorageMemFlags2DMultisample(TextureType target,
                                               MemoryObjectID memory,
                                               GLuint64 offset,
                                               GLbitfield createFlags,
-                                              GLbitfield usageFlags)
+                                              GLbitfield usageFlags,
+                                              const void *imageCreateInfoPNext)
 {
     UNIMPLEMENTED();
 }
@@ -8578,7 +8579,8 @@ void Context::texStorageMemFlags3D(TextureType target,
                                    MemoryObjectID memory,
                                    GLuint64 offset,
                                    GLbitfield createFlags,
-                                   GLbitfield usageFlags)
+                                   GLbitfield usageFlags,
+                                   const void *imageCreateInfoPNext)
 {
     UNIMPLEMENTED();
 }
@@ -8593,7 +8595,8 @@ void Context::texStorageMemFlags3DMultisample(TextureType target,
                                               MemoryObjectID memory,
                                               GLuint64 offset,
                                               GLbitfield createFlags,
-                                              GLbitfield usageFlags)
+                                              GLbitfield usageFlags,
+                                              const void *imageCreateInfoPNext)
 {
     UNIMPLEMENTED();
 }
@@ -8642,6 +8645,33 @@ void Context::semaphoreParameterui64v(SemaphoreID semaphore, GLenum pname, const
 void Context::getSemaphoreParameterui64v(SemaphoreID semaphore, GLenum pname, GLuint64 *params)
 {
     UNIMPLEMENTED();
+}
+
+void Context::acquireTextures(GLuint numTextures,
+                              const TextureID *textureIds,
+                              const GLenum *layouts)
+{
+    TextureBarrierVector textureBarriers(numTextures);
+    for (size_t i = 0; i < numTextures; i++)
+    {
+        textureBarriers[i].texture = getTexture(textureIds[i]);
+        textureBarriers[i].layout  = layouts[i];
+    }
+    ANGLE_CONTEXT_TRY(mImplementation->acquireTextures(this, textureBarriers));
+}
+
+void Context::releaseTextures(GLuint numTextures, const TextureID *textureIds, GLenum *layouts)
+{
+    TextureBarrierVector textureBarriers(numTextures);
+    for (size_t i = 0; i < numTextures; i++)
+    {
+        textureBarriers[i].texture = getTexture(textureIds[i]);
+    }
+    ANGLE_CONTEXT_TRY(mImplementation->releaseTextures(this, &textureBarriers));
+    for (size_t i = 0; i < numTextures; i++)
+    {
+        layouts[i] = textureBarriers[i].layout;
+    }
 }
 
 void Context::waitSemaphore(SemaphoreID semaphoreHandle,
@@ -8975,6 +9005,22 @@ void Context::onSubjectStateChange(angle::SubjectIndex index, angle::SubjectMess
             }
             break;
 
+        case kProgramPipelineSubjectIndex:
+            switch (message)
+            {
+                case angle::SubjectMessage::SubjectChanged:
+                    ANGLE_CONTEXT_TRY(mState.onProgramPipelineExecutableChange(this));
+                    mStateCache.onProgramExecutableChange(this);
+                    break;
+                case angle::SubjectMessage::ProgramRelinked:
+                    ANGLE_CONTEXT_TRY(mState.mProgramPipeline->link(this));
+                    break;
+                default:
+                    UNREACHABLE();
+                    break;
+            }
+            break;
+
         default:
             if (index < kTextureMaxSubjectIndex)
             {
@@ -9229,17 +9275,17 @@ void ErrorSet::handleError(GLenum errorCode,
 
     mContext->getState().getDebug().insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR,
                                                   errorCode, GL_DEBUG_SEVERITY_HIGH, message,
-                                                  gl::LOG_WARN);
+                                                  gl::LOG_WARN, angle::EntryPoint::GLInvalid);
 }
 
-void ErrorSet::validationError(GLenum errorCode, const char *message)
+void ErrorSet::validationError(angle::EntryPoint entryPoint, GLenum errorCode, const char *message)
 {
     ASSERT(errorCode != GL_NO_ERROR);
     mErrors.insert(errorCode);
 
     mContext->getState().getDebug().insertMessage(GL_DEBUG_SOURCE_API, GL_DEBUG_TYPE_ERROR,
                                                   errorCode, GL_DEBUG_SEVERITY_HIGH, message,
-                                                  gl::LOG_INFO);
+                                                  gl::LOG_INFO, entryPoint);
 }
 
 bool ErrorSet::empty() const

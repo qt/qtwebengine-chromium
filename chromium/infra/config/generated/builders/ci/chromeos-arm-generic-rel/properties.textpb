@@ -1,7 +1,7 @@
 {
   "$build/chromium_tests": {
     "project_trigger_overrides": {
-      "chromium": "chromium-m96"
+      "chromium": "chromium-m98"
     }
   },
   "$build/chromium_tests_builder_config": {
@@ -12,7 +12,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "chromeos-arm-generic-rel",
-              "project": "chromium-m96"
+              "project": "chromium-m98"
             },
             "builder_spec": {
               "builder_group": "chromium.chromiumos",
@@ -44,7 +44,7 @@
         {
           "bucket": "ci",
           "builder": "chromeos-arm-generic-rel",
-          "project": "chromium-m96"
+          "project": "chromium-m98"
         }
       ],
       "mirroring_builders": [
@@ -61,10 +61,6 @@
     "server_host": "goma.chromium.org",
     "use_luci_auth": true
   },
-  "$kitchen": {
-    "devshell": true,
-    "git_auth": true
-  },
   "$recipe_engine/resultdb/test_presentation": {
     "column_keys": [],
     "grouping_keys": [
@@ -73,5 +69,8 @@
     ]
   },
   "builder_group": "chromium.chromiumos",
-  "recipe": "chromium"
+  "recipe": "chromium",
+  "sheriff_rotations": [
+    "chrome_browser_release"
+  ]
 }

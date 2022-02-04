@@ -49,6 +49,9 @@ import {
   CpuByProcessAggregationController
 } from './aggregation/cpu_by_process_aggregation_controller';
 import {
+  FrameAggregationController
+} from './aggregation/frame_aggregation_controller';
+import {
   SliceAggregationController
 } from './aggregation/slice_aggregation_controller';
 import {
@@ -105,6 +108,8 @@ const METRICS = [
   'android_batt',
   'android_sysui_cuj',
   'android_jank',
+  'android_camera',
+  'chrome_dropped_frames',
   'trace_metadata',
 ];
 const FLAGGED_METRICS: Array<[Flag, string]> = METRICS.map(m => {
@@ -216,6 +221,10 @@ export class TraceController extends Controller<States> {
             'counter_aggregation',
             CounterAggregationController,
             {engine, kind: 'counter_aggregation'}));
+        childControllers.push(Child(
+            'frame_aggregation',
+            FrameAggregationController,
+            {engine, kind: 'frame_aggregation'}));
         childControllers.push(Child('search', SearchController, {
           engine,
           app: globals,
@@ -245,6 +254,10 @@ export class TraceController extends Controller<States> {
     return;
   }
 
+  onDestroy() {
+    frontendGlobals.engines.delete(this.engineId);
+  }
+
   private async loadTrace(): Promise<EngineMode> {
     this.updateStatus('Creating trace processor');
     // Check if there is any instance of the trace_processor_shell running in
@@ -254,25 +267,26 @@ export class TraceController extends Controller<States> {
     if (globals.state.newEngineMode === 'USE_HTTP_RPC_IF_AVAILABLE') {
       useRpc = (await HttpRpcEngine.checkConnection()).connected;
     }
+    let engine;
     if (useRpc) {
       console.log('Opening trace using native accelerator over HTTP+RPC');
       engineMode = 'HTTP_RPC';
-      const engine =
-          new HttpRpcEngine(this.engineId, LoadingManager.getInstance);
+      engine = new HttpRpcEngine(this.engineId, LoadingManager.getInstance);
       engine.errorHandler = (err) => {
         globals.dispatch(
             Actions.setEngineFailed({mode: 'HTTP_RPC', failure: `${err}`}));
         throw err;
       };
-      this.engine = engine;
     } else {
       console.log('Opening trace using built-in WASM engine');
       engineMode = 'WASM';
       const enginePort = resetEngineWorker();
-      this.engine = new WasmEngineProxy(
+      engine = new WasmEngineProxy(
           this.engineId, enginePort, LoadingManager.getInstance);
     }
+    this.engine = engine;
 
+    frontendGlobals.engines.set(this.engineId, engine);
     globals.dispatch(Actions.setEngineReady({
       engineId: this.engineId,
       ready: false,
@@ -565,15 +579,16 @@ export class TraceController extends Controller<States> {
     const result = await engine.query(`select str_value as uuid from metadata
                   where name = 'trace_uuid'`);
     if (result.numRows() === 0) {
-      throw new Error('metadata.trace_uuid could not be found.');
+      // One of the cases covered is an empty trace.
+      return '';
     }
     const traceUuid = result.firstRow({uuid: STR}).uuid;
     const engineConfig = assertExists(globals.state.engines[engine.id]);
-    if (!cacheTrace(engineConfig.source, traceUuid)) {
-      // If the trace is not cacheable (has been opened from URL or RPC) don't
-      // append a ?trace_id to the URL. Doing so would cause an error if the
-      // tab is discarded or the user hits the reload button because the trace
-      // is not in the cache.
+    if (!(await cacheTrace(engineConfig.source, traceUuid))) {
+      // If the trace is not cacheable (cacheable means it has been opened from
+      // URL or RPC) only append '?trace_id' to the URL, without the trace_id
+      // value. Doing otherwise would cause an error if the tab is discarded or
+      // the user hits the reload button because the trace is not in the cache.
       return '';
     }
     return traceUuid;
@@ -601,7 +616,8 @@ export class TraceController extends Controller<States> {
         id INTEGER PRIMARY KEY,
         name STRING,
         __metric_name STRING,
-        upid INTEGER
+        upid INTEGER,
+        group_name STRING
       );
     `);
 
@@ -657,6 +673,7 @@ export class TraceController extends Controller<States> {
         let hasDur = false;
         let hasUpid = false;
         let hasValue = false;
+        let hasGroupName = false;
         const it = result.iter({name: STR});
         for (; it.valid(); it.next()) {
           const name = it.name;
@@ -664,17 +681,22 @@ export class TraceController extends Controller<States> {
           hasDur = hasDur || name === 'dur';
           hasUpid = hasUpid || name === 'upid';
           hasValue = hasValue || name === 'value';
+          hasGroupName = hasGroupName || name === 'group_name';
         }
 
         const upidColumnSelect = hasUpid ? 'upid' : '0 AS upid';
         const upidColumnWhere = hasUpid ? 'upid' : '0';
+        const groupNameColumn =
+            hasGroupName ? 'group_name' : 'NULL AS group_name';
         if (hasSliceName && hasDur) {
           await engine.query(`
-            INSERT INTO annotation_slice_track(name, __metric_name, upid)
+            INSERT INTO annotation_slice_track(
+              name, __metric_name, upid, group_name)
             SELECT DISTINCT
               track_name,
               '${metric}' as metric_name,
-              ${upidColumnSelect}
+              ${upidColumnSelect},
+              ${groupNameColumn}
             FROM ${metric}_event
             WHERE track_type = 'slice'
           `);

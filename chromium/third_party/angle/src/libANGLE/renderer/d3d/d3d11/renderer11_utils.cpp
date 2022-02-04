@@ -1643,14 +1643,16 @@ void GenerateCaps(ID3D11Device *device,
          extensions->textureStorageMultisample2dArrayOES);
     extensions->copyTexture3dANGLE      = true;
     extensions->textureBorderClampOES   = true;
+    extensions->multiDrawIndirectEXT    = true;
     extensions->textureMultisampleANGLE = true;
     extensions->provokingVertexANGLE    = true;
     extensions->blendFuncExtendedEXT    = true;
     // http://anglebug.com/4926
-    extensions->texture3DOES                = false;
-    extensions->baseVertexBaseInstanceANGLE = true;
-    extensions->drawElementsBaseVertexOES   = true;
-    extensions->drawElementsBaseVertexEXT   = true;
+    extensions->texture3DOES                             = false;
+    extensions->baseVertexBaseInstanceANGLE              = true;
+    extensions->baseVertexBaseInstanceShaderBuiltinANGLE = true;
+    extensions->drawElementsBaseVertexOES                = true;
+    extensions->drawElementsBaseVertexEXT                = true;
     if (!strstr(description, "Adreno"))
     {
         extensions->multisampledRenderToTextureEXT = true;
@@ -1665,6 +1667,9 @@ void GenerateCaps(ID3D11Device *device,
     extensions->readDepthNV         = false;
     extensions->readStencilNV       = false;
     extensions->depthBufferFloat2NV = false;
+
+    // GL_EXT_clip_control
+    extensions->clipControlEXT = (renderer11DeviceCaps.featureLevel >= D3D_FEATURE_LEVEL_9_3);
 
     // D3D11 Feature Level 10_0+ uses SV_IsFrontFace in HLSL to emulate gl_FrontFacing.
     // D3D11 Feature Level 9_3 doesn't support SV_IsFrontFace, and has no equivalent, so can't

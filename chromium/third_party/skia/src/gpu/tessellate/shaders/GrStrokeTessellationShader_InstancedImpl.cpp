@@ -7,9 +7,12 @@
 
 #include "src/gpu/tessellate/shaders/GrStrokeTessellationShader.h"
 
-#include "src/gpu/geometry/GrWangsFormula.h"
 #include "src/gpu/glsl/GrGLSLFragmentShaderBuilder.h"
 #include "src/gpu/glsl/GrGLSLVertexGeoBuilder.h"
+#include "src/gpu/tessellate/StrokeFixedCountTessellator.h"
+#include "src/gpu/tessellate/WangsFormula.h"
+
+using skgpu::VertexWriter;
 
 void GrStrokeTessellationShader::InstancedImpl::onEmitCode(EmitArgs& args, GrGPArgs* gpArgs) {
     const auto& shader = args.fGeomProc.cast<GrStrokeTessellationShader>();
@@ -25,7 +28,7 @@ void GrStrokeTessellationShader::InstancedImpl::onEmitCode(EmitArgs& args, GrGPA
     args.fVertBuilder->insertFunction(kCosineBetweenVectorsFn);
     args.fVertBuilder->insertFunction(kMiterExtentFn);
     args.fVertBuilder->insertFunction(kUncheckedMixFn);
-    args.fVertBuilder->insertFunction(GrWangsFormula::as_sksl().c_str());
+    args.fVertBuilder->insertFunction(skgpu::wangs_formula::as_sksl().c_str());
 
     // Tessellation control uniforms and/or dynamic attributes.
     if (!shader.hasDynamicStroke()) {
@@ -83,12 +86,12 @@ void GrStrokeTessellationShader::InstancedImpl::onEmitCode(EmitArgs& args, GrGPA
     args.fVertBuilder->codeAppendf("float2x2 AFFINE_MATRIX = float2x2(%s);\n", affineMatrixName);
     args.fVertBuilder->codeAppendf("float2 TRANSLATE = %s;\n", translateName);
 
-    if (args.fShaderCaps->infinitySupport()) {
+    if (shader.hasExplicitCurveType()) {
+        args.fVertBuilder->insertFunction(SkStringPrintf(R"(
+        bool is_conic_curve() { return curveTypeAttr != %g; })", skgpu::kCubicCurveType).c_str());
+    } else {
         args.fVertBuilder->insertFunction(R"(
         bool is_conic_curve() { return isinf(pts23Attr.w); })");
-    } else {
-        args.fVertBuilder->insertFunction(SkStringPrintf(R"(
-        bool is_conic_curve() { return curveTypeAttr != %g; })", kCubicCurveType).c_str());
     }
 
     // Tessellation code.
@@ -178,7 +181,8 @@ void GrStrokeTessellationShader::InstancedImpl::onEmitCode(EmitArgs& args, GrGPA
         }
     } else {
         args.fVertBuilder->codeAppendf(R"(
-        float numEdgesInJoin = %i;)", GrStrokeTessellationShader::NumFixedEdgesInJoin(joinType));
+        float numEdgesInJoin = %i;)",
+        skgpu::StrokeFixedCountTessellator::NumFixedEdgesInJoin(joinType));
     }
 
     args.fVertBuilder->codeAppend(R"(
@@ -262,14 +266,4 @@ void GrStrokeTessellationShader::InstancedImpl::onEmitCode(EmitArgs& args, GrGPA
     this->emitTessellationCode(shader, &args.fVertBuilder->code(), gpArgs, *args.fShaderCaps);
 
     this->emitFragmentCode(shader, args);
-}
-
-void GrStrokeTessellationShader::InitializeVertexIDFallbackBuffer(GrVertexWriter vertexWriter,
-                                                                  size_t bufferSize) {
-    SkASSERT(bufferSize % (sizeof(float) * 2) == 0);
-    int edgeCount = bufferSize / (sizeof(float) * 2);
-    for (int i = 0; i < edgeCount; ++i) {
-        vertexWriter.write<float>(i);
-        vertexWriter.write<float>(-i);
-    }
 }

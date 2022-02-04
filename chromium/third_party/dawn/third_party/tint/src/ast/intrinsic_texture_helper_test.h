@@ -61,14 +61,28 @@ enum class ValidTextureOverload {
   kDimensionsDepthCubeArray,
   kDimensionsDepthCubeArrayLevel,
   kDimensionsDepthMultisampled2d,
-  kDimensionsStorageRO1d,
-  kDimensionsStorageRO2d,
-  kDimensionsStorageRO2dArray,
-  kDimensionsStorageRO3d,
   kDimensionsStorageWO1d,
   kDimensionsStorageWO2d,
   kDimensionsStorageWO2dArray,
   kDimensionsStorageWO3d,
+  kGather2dF32,
+  kGather2dOffsetF32,
+  kGather2dArrayF32,
+  kGather2dArrayOffsetF32,
+  kGatherCubeF32,
+  kGatherCubeArrayF32,
+  kGatherDepth2dF32,
+  kGatherDepth2dOffsetF32,
+  kGatherDepth2dArrayF32,
+  kGatherDepth2dArrayOffsetF32,
+  kGatherDepthCubeF32,
+  kGatherDepthCubeArrayF32,
+  kGatherCompareDepth2dF32,
+  kGatherCompareDepth2dOffsetF32,
+  kGatherCompareDepth2dArrayF32,
+  kGatherCompareDepth2dArrayOffsetF32,
+  kGatherCompareDepthCubeF32,
+  kGatherCompareDepthCubeArrayF32,
   kNumLayers2dArray,
   kNumLayersCubeArray,
   kNumLayersDepth2dArray,
@@ -160,29 +174,10 @@ enum class ValidTextureOverload {
   kLoadDepth2dLevelF32,
   kLoadDepth2dArrayLevelF32,
   kLoadDepthMultisampled2dF32,
-  kLoadStorageRO1dRgba32float,  // Not permutated for all texel formats
-  kLoadStorageRO2dRgba8unorm,
-  kLoadStorageRO2dRgba8snorm,
-  kLoadStorageRO2dRgba8uint,
-  kLoadStorageRO2dRgba8sint,
-  kLoadStorageRO2dRgba16uint,
-  kLoadStorageRO2dRgba16sint,
-  kLoadStorageRO2dRgba16float,
-  kLoadStorageRO2dR32uint,
-  kLoadStorageRO2dR32sint,
-  kLoadStorageRO2dR32float,
-  kLoadStorageRO2dRg32uint,
-  kLoadStorageRO2dRg32sint,
-  kLoadStorageRO2dRg32float,
-  kLoadStorageRO2dRgba32uint,
-  kLoadStorageRO2dRgba32sint,
-  kLoadStorageRO2dRgba32float,
-  kLoadStorageRO2dArrayRgba32float,  // Not permutated for all texel formats
-  kLoadStorageRO3dRgba32float,       // Not permutated for all texel formats
-  kStoreWO1dRgba32float,             // Not permutated for all texel formats
-  kStoreWO2dRgba32float,             // Not permutated for all texel formats
-  kStoreWO2dArrayRgba32float,        // Not permutated for all texel formats
-  kStoreWO3dRgba32float,             // Not permutated for all texel formats
+  kStoreWO1dRgba32float,       // Not permutated for all texel formats
+  kStoreWO2dRgba32float,       // Not permutated for all texel formats
+  kStoreWO2dArrayRgba32float,  // Not permutated for all texel formats
+  kStoreWO3dRgba32float,       // Not permutated for all texel formats
 };
 
 /// @param texture_overload the ValidTextureOverload
@@ -228,22 +223,23 @@ struct TextureOverloadCase {
 
   /// @param builder the AST builder used for the test
   /// @returns the vector component type of the texture function return value
-  ast::Type* buildResultVectorComponentType(ProgramBuilder* builder) const;
+  const ast::Type* BuildResultVectorComponentType(
+      ProgramBuilder* builder) const;
   /// @param builder the AST builder used for the test
   /// @returns a variable holding the test texture, automatically registered as
   /// a global variable.
-  ast::Variable* buildTextureVariable(ProgramBuilder* builder) const;
+  const ast::Variable* BuildTextureVariable(ProgramBuilder* builder) const;
   /// @param builder the AST builder used for the test
   /// @returns a Variable holding the test sampler, automatically registered as
   /// a global variable.
-  ast::Variable* buildSamplerVariable(ProgramBuilder* builder) const;
+  const ast::Variable* BuildSamplerVariable(ProgramBuilder* builder) const;
 
   /// The enumerator for this overload
-  ValidTextureOverload const overload;
+  const ValidTextureOverload overload;
   /// A human readable description of the overload
   const char* const description;
   /// The texture kind for the texture parameter
-  TextureKind const texture_kind;
+  const TextureKind texture_kind;
   /// The sampler kind for the sampler parameter
   /// Used only when texture_kind is not kStorage
   ast::SamplerKind const sampler_kind = ast::SamplerKind::kSampler;
@@ -256,7 +252,7 @@ struct TextureOverloadCase {
   /// The dimensions of the texture parameter
   ast::TextureDimension const texture_dimension;
   /// The data type of the texture parameter
-  TextureDataType const texture_data_type;
+  const TextureDataType texture_data_type;
   /// Name of the function. e.g. `textureSample`, `textureSampleGrad`, etc
   const char* const function;
   /// A function that builds the AST arguments for the overload

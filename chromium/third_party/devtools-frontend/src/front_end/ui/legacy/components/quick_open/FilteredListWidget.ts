@@ -13,6 +13,8 @@ import * as Diff from '../../../../third_party/diff/diff.js';
 import * as TextPrompt from '../../../../ui/components/text_prompt/text_prompt.js';
 import * as UI from '../../legacy.js';
 
+import filteredListWidgetStyles from './filteredListWidget.css.js';
+
 const UIStrings = {
   /**
   * @description Aria label for quick open dialog prompt
@@ -64,7 +66,6 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     const listener = (this.onKeyDown.bind(this) as (arg0: Event) => void);
     this.contentElement.addEventListener('keydown', listener, true);
     UI.ARIAUtils.markAsCombobox(this.contentElement);
-    this.registerRequiredCSS('ui/legacy/components/quick_open/filteredListWidget.css');
 
     this.inputBoxElement = new TextPrompt.TextPrompt.TextPrompt();
     this.inputBoxElement.data = {ariaLabel: i18nString(UIStrings.quickOpenPrompt), prefix: '', suggestion: ''};
@@ -84,6 +85,7 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     this.itemElementsContainer.classList.add('container');
     this.bottomElementsContainer.appendChild(this.itemElementsContainer);
     this.itemElementsContainer.addEventListener('click', this.onClick.bind(this), false);
+    this.itemElementsContainer.addEventListener('mouseover', this.onMouseOver.bind(this), false);
     UI.ARIAUtils.markAsListBox(this.itemElementsContainer);
     UI.ARIAUtils.setControls(this.inputBoxElement, this.itemElementsContainer);
     UI.ARIAUtils.setAutocomplete(this.inputBoxElement, UI.ARIAUtils.AutocompleteInteractionModel.list);
@@ -211,6 +213,7 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
   }
 
   wasShown(): void {
+    this.registerCSSFiles([filteredListWidgetStyles]);
     this.attachProvider();
   }
 
@@ -306,6 +309,14 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
     }
   }
 
+  private onMouseOver(event: Event): void {
+    const item = this.list.itemForNode((event.target as Node | null));
+    if (item === null) {
+      return;
+    }
+    this.list.selectItem(item);
+  }
+
   setQuery(query: string): void {
     this.query = query;
     this.inputBoxElement.focus();
@@ -323,14 +334,20 @@ export class FilteredListWidget extends Common.ObjectWrapper.eventMixin<EventTyp
         break;
       }
     }
-    if (!completion) {
-      return false;
+    // If there is an auto-completion, press 'tab' first time will show the auto-completion, second time will rewrite
+    // the query. Otherwise it will select the next item.
+    if (completion) {
+      const selection = this.inputBoxElement.getComponentSelection();
+      if (selection && selection.toString().trim() !== '') {
+        this.setQuery(completion);
+        return true;
+      }
+      this.inputBoxElement.focus();
+      this.inputBoxElement.setText(completion);
+      this.setQuerySelectedRange(userEnteredText.length, completion.length);
+      return true;
     }
-    this.inputBoxElement.focus();
-    this.inputBoxElement.setText(completion);
-    this.inputBoxElement.setSelectedRange(userEnteredText.length, completion.length);
-    this.scheduleFilter();
-    return true;
+    return this.list.selectNextItem(true, false);
   }
 
   private itemsFilteredForTest(): void {

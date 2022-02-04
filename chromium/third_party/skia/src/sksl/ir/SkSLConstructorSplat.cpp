@@ -6,6 +6,7 @@
  */
 
 #include "src/sksl/SkSLConstantFolder.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLConstructorSplat.h"
 
 namespace SkSL {
@@ -23,11 +24,9 @@ std::unique_ptr<Expression> ConstructorSplat::Make(const Context& context,
         return arg;
     }
 
-    if (context.fConfig->fSettings.fOptimize) {
-        // Replace constant variables with their corresponding values, so `float3(five)` can
-        // compile down to `float3(5.0)` (the latter is a compile-time constant).
-        arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
-    }
+    // Replace constant variables with their corresponding values, so `float3(five)` can compile
+    // down to `float3(5.0)` (the latter is a compile-time constant).
+    arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
 
     SkASSERT(type.isVector());
     return std::make_unique<ConstructorSplat>(line, type, std::move(arg));

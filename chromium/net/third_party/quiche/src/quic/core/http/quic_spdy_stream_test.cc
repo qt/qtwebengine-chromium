@@ -26,6 +26,7 @@
 #include "quic/core/quic_versions.h"
 #include "quic/core/quic_write_blocked_list.h"
 #include "quic/platform/api/quic_expect_bug.h"
+#include "quic/platform/api/quic_flags.h"
 #include "quic/platform/api/quic_test.h"
 #include "quic/test_tools/qpack/qpack_test_utils.h"
 #include "quic/test_tools/quic_config_peer.h"
@@ -157,10 +158,19 @@ class TestCryptoStream : public QuicCryptoStream, public QuicCryptoHandshaker {
                           ConnectionCloseSource /*source*/) override {}
   void OnHandshakeDoneReceived() override {}
   void OnNewTokenReceived(absl::string_view /*token*/) override {}
-  std::string GetAddressToken() const override { return ""; }
+  std::string GetAddressToken(
+      const CachedNetworkParameters* /*cached_network_parameters*/)
+      const override {
+    return "";
+  }
   bool ValidateAddressToken(absl::string_view /*token*/) const override {
     return true;
   }
+  const CachedNetworkParameters* PreviousCachedNetworkParams() const override {
+    return nullptr;
+  }
+  void SetPreviousCachedNetworkParams(
+      CachedNetworkParameters /*cached_network_params*/) override {}
 
   MOCK_METHOD(void, OnCanWrite, (), (override));
 
@@ -241,6 +251,11 @@ class TestStream : public QuicSpdyStream {
   }
 
   size_t headers_payload_length() const { return headers_payload_length_; }
+
+  bool AreHeadersValid(const QuicHeaderList& header_list) const override {
+    return !GetQuicReloadableFlag(quic_verify_request_headers_2) ||
+           QuicSpdyStream::AreHeadersValid(header_list);
+  }
 
  private:
   bool should_process_data_;
@@ -3047,6 +3062,7 @@ TEST_P(QuicSpdyStreamTest, ProcessOutgoingWebTransportHeadersDatagramDraft00) {
   InitializeWithPerspective(kShouldProcessData, Perspective::IS_CLIENT);
   session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft00And04);
   session_->EnableWebTransport();
+  session_->OnSetting(SETTINGS_ENABLE_CONNECT_PROTOCOL, 1);
   QuicSpdySessionPeer::EnableWebTransport(session_.get());
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
                                               HttpDatagramSupport::kDraft00);
@@ -3072,6 +3088,7 @@ TEST_P(QuicSpdyStreamTest, ProcessOutgoingWebTransportHeadersDatagramDraft04) {
   InitializeWithPerspective(kShouldProcessData, Perspective::IS_CLIENT);
   session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft00And04);
   session_->EnableWebTransport();
+  session_->OnSetting(SETTINGS_ENABLE_CONNECT_PROTOCOL, 1);
   QuicSpdySessionPeer::EnableWebTransport(session_.get());
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
                                               HttpDatagramSupport::kDraft04);
@@ -3102,6 +3119,7 @@ TEST_P(QuicSpdyStreamTest, ProcessIncomingWebTransportHeadersDatagramDraft04) {
 
   headers_[":method"] = "CONNECT";
   headers_[":protocol"] = "webtransport";
+  headers_["sec-webtransport-http3-draft02"] = "1";
 
   stream_->OnStreamHeadersPriority(
       spdy::SpdyStreamPrecedence(kV3HighestPriority));
@@ -3206,6 +3224,10 @@ TEST_P(QuicSpdyStreamTest, HttpDatagramRegistrationWithoutContextDraft00) {
   session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft00And04);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
                                               HttpDatagramSupport::kDraft00);
+  headers_[":method"] = "CONNECT";
+  headers_[":protocol"] = "webtransport";
+  headers_["datagram-flow-id"] = absl::StrCat(stream_->id());
+  ProcessHeaders(false, headers_);
   session_->RegisterHttp3DatagramFlowId(stream_->id(), stream_->id());
   ::testing::NiceMock<MockHttp3DatagramRegistrationVisitor>
       h3_datagram_registration_visitor;
@@ -3257,6 +3279,9 @@ TEST_P(QuicSpdyStreamTest, H3DatagramRegistrationWithoutContextDraft04) {
   session_->set_local_http_datagram_support(HttpDatagramSupport::kDraft04);
   QuicSpdySessionPeer::SetHttpDatagramSupport(session_.get(),
                                               HttpDatagramSupport::kDraft04);
+  headers_[":method"] = "CONNECT";
+  headers_[":protocol"] = "webtransport";
+  ProcessHeaders(false, headers_);
   ::testing::NiceMock<MockHttp3DatagramRegistrationVisitor>
       h3_datagram_registration_visitor;
   SavingHttp3DatagramVisitor h3_datagram_visitor;
@@ -3324,7 +3349,11 @@ TEST_P(QuicSpdyStreamTest, HttpDatagramRegistrationWithContext) {
     datagram[i] = i;
   }
   stream_->RegisterHttp3DatagramRegistrationVisitor(
-      &h3_datagram_registration_visitor);
+      &h3_datagram_registration_visitor, /*use_datagram_contexts=*/true);
+  headers_[":method"] = "CONNECT";
+  headers_[":protocol"] = "webtransport";
+  headers_["sec-use-datagram-contexts"] = "?1";
+  ProcessHeaders(false, headers_);
 
   // Expect us to send a REGISTER_DATAGRAM_CONTEXT capsule.
   EXPECT_CALL(*session_, WritevData(stream_->id(), _, _, _, _, _))

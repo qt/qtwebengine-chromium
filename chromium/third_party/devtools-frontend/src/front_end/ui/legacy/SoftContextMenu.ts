@@ -35,8 +35,9 @@ import type * as Platform from '../../core/platform/platform.js';
 import * as ARIAUtils from './ARIAUtils.js';
 import {AnchorBehavior, GlassPane, MarginBehavior, PointerEventsBehavior, SizeBehavior} from './GlassPane.js';
 import {Icon} from './Icon.js';
-import * as ThemeSupport from './theme_support/theme_support.js';  // eslint-disable-line rulesdir/es_modules_import
+import * as ThemeSupport from './theme_support/theme_support.js';
 import {createTextChild, ElementFocusRestorer} from './UIUtils.js';
+import softContextMenuStyles from './softContextMenu.css.legacy.js';
 
 const UIStrings = {
   /**
@@ -77,15 +78,18 @@ export class SoftContextMenu {
   private hideOnUserGesture?: ((event: Event) => void);
   private activeSubMenuElement?: HTMLElement;
   private subMenu?: SoftContextMenu;
+  private onMenuClosed?: () => void;
 
   constructor(
-      items: SoftContextMenuDescriptor[], itemSelectedCallback: (arg0: number) => void, parentMenu?: SoftContextMenu) {
+      items: SoftContextMenuDescriptor[], itemSelectedCallback: (arg0: number) => void, parentMenu?: SoftContextMenu,
+      onMenuClosed?: () => void) {
     this.items = items;
     this.itemSelectedCallback = itemSelectedCallback;
     this.parentMenu = parentMenu;
     this.highlightedMenuItemElement = null;
 
     this.detailsForElementMap = new WeakMap();
+    this.onMenuClosed = onMenuClosed;
   }
 
   show(document: Document, anchorBox: AnchorBox): void {
@@ -98,7 +102,7 @@ export class SoftContextMenu {
     this.glassPane = new GlassPane();
     this.glassPane.setPointerEventsBehavior(
         this.parentMenu ? PointerEventsBehavior.PierceGlassPane : PointerEventsBehavior.BlockedByGlassPane);
-    this.glassPane.registerRequiredCSS('ui/legacy/softContextMenu.css');
+    this.glassPane.registerRequiredCSS(softContextMenuStyles);
     this.glassPane.setContentAnchorBox(anchorBox);
     this.glassPane.setSizeBehavior(SizeBehavior.MeasureContent);
     this.glassPane.setMarginBehavior(MarginBehavior.NoMargin);
@@ -165,6 +169,7 @@ export class SoftContextMenu {
         delete this.parentMenu.activeSubMenuElement;
       }
     }
+    this.onMenuClosed?.();
   }
 
   private createMenuItem(item: SoftContextMenuDescriptor): HTMLElement {
@@ -193,7 +198,7 @@ export class SoftContextMenu {
       subMenuTimer: undefined,
     };
 
-    if (item.element) {
+    if (item.element && !item.label) {
       const wrapper = menuItemElement.createChild('div', 'soft-context-menu-custom-item');
       wrapper.appendChild(item.element);
       detailsForElement.customElement = (item.element as HTMLElement);
@@ -205,6 +210,9 @@ export class SoftContextMenu {
       menuItemElement.classList.add('soft-context-menu-disabled');
     }
     createTextChild(menuItemElement, item.label || '');
+    if (item.element) {
+      menuItemElement.appendChild(item.element);
+    }
     menuItemElement.createChild('span', 'soft-context-menu-shortcut').textContent = item.shortcut || '';
 
     menuItemElement.addEventListener('mousedown', this.menuItemMouseDown.bind(this), false);

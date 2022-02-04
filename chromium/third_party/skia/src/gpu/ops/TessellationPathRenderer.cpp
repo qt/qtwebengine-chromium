@@ -19,13 +19,15 @@
 #include "src/gpu/ops/PathStencilCoverOp.h"
 #include "src/gpu/ops/PathTessellateOp.h"
 #include "src/gpu/ops/StrokeTessellateOp.h"
+#include "src/gpu/tessellate/Tessellation.h"
+#include "src/gpu/tessellate/WangsFormula.h"
 #include "src/gpu/v1/SurfaceDrawContext_v1.h"
 
 namespace {
 
 GrOp::Owner make_non_convex_fill_op(GrRecordingContext* rContext,
                                     SkArenaAlloc* arena,
-                                    GrTessellationPathFlags pathFlags,
+                                    skgpu::v1::FillPathFlags fillPathFlags,
                                     GrAAType aaType,
                                     const SkRect& drawBounds,
                                     const SkMatrix& viewMatrix,
@@ -48,7 +50,7 @@ GrOp::Owner make_non_convex_fill_op(GrRecordingContext* rContext,
                                                                  path,
                                                                  std::move(paint),
                                                                  aaType,
-                                                                 pathFlags,
+                                                                 fillPathFlags,
                                                                  drawBounds);
         }
     }
@@ -58,7 +60,7 @@ GrOp::Owner make_non_convex_fill_op(GrRecordingContext* rContext,
                                                      path,
                                                      std::move(paint),
                                                      aaType,
-                                                     pathFlags,
+                                                     fillPathFlags,
                                                      drawBounds);
 }
 
@@ -96,6 +98,15 @@ PathRenderer::CanDrawPath TessellationPathRenderer::onCanDrawPath(
         if (shape.inverseFilled()) {
             return CanDrawPath::kNo;
         }
+        if (shape.style().strokeRec().getWidth() * args.fViewMatrix->getMaxScale() > 10000) {
+            // crbug.com/1266446 -- Don't draw massively wide strokes with the tessellator. Since we
+            // outset the viewport by stroke width for pre-chopping, astronomically wide strokes can
+            // result in an astronomical viewport size, and therefore an exponential explosion chops
+            // and memory usage. It is also simply inefficient to tessellate these strokes due to
+            // the number of radial edges required. We're better off just converting them to a path
+            // after a certain point.
+            return CanDrawPath::kNo;
+        }
     }
     if (args.fHasUserStencilSettings) {
         // Non-convex paths and strokes use the stencil buffer internally, so they can't support
@@ -113,6 +124,33 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
+    const SkRect pathDevBounds = args.fViewMatrix->mapRect(args.fShape->bounds());
+    float n4 = wangs_formula::worst_case_cubic_pow4(kTessellationPrecision,
+                                                    pathDevBounds.width(),
+                                                    pathDevBounds.height());
+    if (n4 > pow4(kMaxTessellationSegmentsPerCurve)) {
+        // The path is extremely large. Pre-chop its curves to keep the number of tessellation
+        // segments tractable. This will also flatten curves that fall completely outside the
+        // viewport.
+        SkRect viewport = SkRect::Make(*args.fClipConservativeBounds);
+        if (!args.fShape->style().isSimpleFill()) {
+            // Outset the viewport to pad for the stroke width.
+            const SkStrokeRec& stroke = args.fShape->style().strokeRec();
+            float inflationRadius;
+            if (stroke.isHairlineStyle()) {
+                // SkStrokeRec::getInflationRadius() doesn't handle hairlines robustly. Instead
+                // find the inflation of an equivalent stroke in device space with a width of 1.
+                inflationRadius = SkStrokeRec::GetInflationRadius(stroke.getJoin(),
+                                                                  stroke.getMiter(),
+                                                                  stroke.getCap(), 1);
+            } else {
+                inflationRadius = stroke.getInflationRadius() * args.fViewMatrix->getMaxScale();
+            }
+            viewport.outset(inflationRadius, inflationRadius);
+        }
+        path = PreChopPathCurves(kTessellationPrecision, path, *args.fViewMatrix, viewport);
+    }
+
     // Handle strokes first.
     if (!args.fShape->style().isSimpleFill()) {
         SkASSERT(!path.isInverseFillType());  // See onGetStencilSupport().
@@ -126,7 +164,6 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
     }
 
     // Handle empty paths.
-    const SkRect pathDevBounds = args.fViewMatrix->mapRect(args.fShape->bounds());
     if (pathDevBounds.isEmpty()) {
         if (path.isInverseFillType()) {
             args.fSurfaceDrawContext->drawPaint(args.fClip, std::move(args.fPaint),
@@ -135,11 +172,17 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
         return true;
     }
 
-    // Handle convex paths.
-    if (args.fShape->knownToBeConvex() && !path.isInverseFillType()) {
-        auto op = GrOp::Make<PathTessellateOp>(args.fContext, *args.fViewMatrix, path,
-                                               std::move(args.fPaint), args.fAAType,
-                                               args.fUserStencilSettings, pathDevBounds);
+    // Handle convex paths. Make sure to check 'path' for convexity since it may have been
+    // pre-chopped, not 'fShape'.
+    if (path.isConvex() && !path.isInverseFillType()) {
+        auto op = GrOp::Make<PathTessellateOp>(args.fContext,
+                                               args.fSurfaceDrawContext->arenaAlloc(),
+                                               args.fAAType,
+                                               args.fUserStencilSettings,
+                                               *args.fViewMatrix,
+                                               path,
+                                               std::move(args.fPaint),
+                                               pathDevBounds);
         sdc->addDrawOp(args.fClip, std::move(op));
         return true;
     }
@@ -150,7 +193,7 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
             : pathDevBounds;
     auto op = make_non_convex_fill_op(args.fContext,
                                       args.fSurfaceDrawContext->arenaAlloc(),
-                                      GrTessellationPathFlags::kNone,
+                                      FillPathFlags::kNone,
                                       args.fAAType,
                                       drawBounds,
                                       *args.fViewMatrix,
@@ -173,7 +216,16 @@ void TessellationPathRenderer::onStencilPath(const StencilPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
-    if (args.fShape->knownToBeConvex()) {
+    float n4 = wangs_formula::worst_case_cubic_pow4(kTessellationPrecision,
+                                                    pathDevBounds.width(),
+                                                    pathDevBounds.height());
+    if (n4 > pow4(kMaxTessellationSegmentsPerCurve)) {
+        SkRect viewport = SkRect::Make(*args.fClipConservativeBounds);
+        path = PreChopPathCurves(kTessellationPrecision, path, *args.fViewMatrix, viewport);
+    }
+
+    // Make sure to check 'path' for convexity since it may have been pre-chopped, not 'fShape'.
+    if (path.isConvex()) {
         constexpr static GrUserStencilSettings kMarkStencil(
             GrUserStencilSettings::StaticInit<
                 0x0001,
@@ -185,8 +237,13 @@ void TessellationPathRenderer::onStencilPath(const StencilPathArgs& args) {
 
         GrPaint stencilPaint;
         stencilPaint.setXPFactory(GrDisableColorXPFactory::Get());
-        auto op = GrOp::Make<PathTessellateOp>(args.fContext, *args.fViewMatrix, path,
-                                               std::move(stencilPaint), aaType, &kMarkStencil,
+        auto op = GrOp::Make<PathTessellateOp>(args.fContext,
+                                               args.fSurfaceDrawContext->arenaAlloc(),
+                                               aaType,
+                                               &kMarkStencil,
+                                               *args.fViewMatrix,
+                                               path,
+                                               std::move(stencilPaint),
                                                pathDevBounds);
         sdc->addDrawOp(args.fClip, std::move(op));
         return;
@@ -194,7 +251,7 @@ void TessellationPathRenderer::onStencilPath(const StencilPathArgs& args) {
 
     auto op = make_non_convex_fill_op(args.fContext,
                                       args.fSurfaceDrawContext->arenaAlloc(),
-                                      GrTessellationPathFlags::kStencilOnly,
+                                      FillPathFlags::kStencilOnly,
                                       aaType,
                                       pathDevBounds,
                                       *args.fViewMatrix,

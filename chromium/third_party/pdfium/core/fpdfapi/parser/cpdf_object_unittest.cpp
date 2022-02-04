@@ -592,7 +592,7 @@ TEST(PDFArrayTest, GetTypeAt) {
       vals[i] = arr->AppendNew<CPDF_Array>();
       for (size_t j = 0; j < 3; ++j) {
         int value = j + 100;
-        vals[i]->InsertNewAt<CPDF_Number>(i, value);
+        vals[i]->InsertNewAt<CPDF_Number>(j, value);
       }
     }
     for (size_t i = 0; i < 3; ++i) {
@@ -841,8 +841,8 @@ TEST(PDFArrayTest, ConvertIndirect) {
 
 TEST(PDFStreamTest, SetData) {
   std::vector<uint8_t, FxAllocAllocator<uint8_t>> data(100);
-  auto stream = pdfium::MakeRetain<CPDF_Stream>();
-  stream->InitStream(data, pdfium::MakeRetain<CPDF_Dictionary>());
+  auto stream = pdfium::MakeRetain<CPDF_Stream>(
+      data, pdfium::MakeRetain<CPDF_Dictionary>());
   EXPECT_EQ(static_cast<int>(data.size()),
             stream->GetDict()->GetIntegerFor(pdfium::stream::kLength));
 
@@ -867,8 +867,8 @@ TEST(PDFStreamTest, SetData) {
 
 TEST(PDFStreamTest, SetDataAndRemoveFilter) {
   std::vector<uint8_t, FxAllocAllocator<uint8_t>> data(100);
-  auto stream = pdfium::MakeRetain<CPDF_Stream>();
-  stream->InitStream(data, pdfium::MakeRetain<CPDF_Dictionary>());
+  auto stream = pdfium::MakeRetain<CPDF_Stream>(
+      data, pdfium::MakeRetain<CPDF_Dictionary>());
   EXPECT_EQ(static_cast<int>(data.size()),
             stream->GetDict()->GetIntegerFor(pdfium::stream::kLength));
 

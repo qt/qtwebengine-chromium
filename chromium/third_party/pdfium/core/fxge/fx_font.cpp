@@ -8,6 +8,7 @@
 
 #include "core/fxcrt/fx_safe_types.h"
 #include "core/fxcrt/fx_system.h"
+#include "core/fxcrt/widestring.h"
 #include "core/fxge/cfx_glyphbitmap.h"
 #include "core/fxge/dib/cfx_dibitmap.h"
 #include "core/fxge/fx_freetype.h"
@@ -40,7 +41,7 @@ FX_RECT GetGlyphsBBox(const std::vector<TextGlyphPos>& glyphs, int anti_alias) {
     if (!glyph.m_pGlyph)
       continue;
 
-    Optional<CFX_Point> point = glyph.GetOrigin({0, 0});
+    absl::optional<CFX_Point> point = glyph.GetOrigin({0, 0});
     if (!point.has_value())
       continue;
 

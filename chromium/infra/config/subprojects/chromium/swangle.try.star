@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/builders.star", "goma", "os")
+load("//lib/builders.star", "cpu", "goma", "os")
 load("//lib/consoles.star", "consoles")
 load("//lib/try.star", "try_")
 
@@ -17,7 +17,7 @@ try_.defaults.set(
             path = "win_toolchain",
         ),
     ],
-    configure_kitchen = True,
+    cpu = cpu.X86_64,
     cq_group = "cq",
     executable = "recipe:angle_chromium_trybot",
     execution_timeout = 2 * time.hour,
@@ -29,7 +29,6 @@ try_.defaults.set(
     pool = "luci.chromium.try",
     service_account = "chromium-try-gpu-builder@chops-service-accounts.iam.gserviceaccount.com",
     subproject_list_view = "luci.chromium.try",
-    swarming_tags = ["vpython:native-python-wrapper"],
     task_template_canary_percentage = 5,
 )
 

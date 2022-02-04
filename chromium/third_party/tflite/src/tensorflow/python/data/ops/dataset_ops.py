@@ -29,16 +29,14 @@ from tensorflow.core.framework import dataset_metadata_pb2
 from tensorflow.core.framework import dataset_options_pb2
 from tensorflow.core.framework import graph_pb2
 from tensorflow.python import tf2
-from tensorflow.python.compat import compat
 from tensorflow.python.data.ops import iterator_ops
 from tensorflow.python.data.ops import options as options_lib
+from tensorflow.python.data.ops import structured_function
 from tensorflow.python.data.util import nest
 from tensorflow.python.data.util import random_seed
 from tensorflow.python.data.util import structure
 from tensorflow.python.data.util import traverse
 from tensorflow.python.eager import context
-from tensorflow.python.eager import def_function
-from tensorflow.python.eager import function as eager_function
 from tensorflow.python.framework import auto_control_deps
 from tensorflow.python.framework import auto_control_deps_utils as acd_utils
 from tensorflow.python.framework import composite_tensor
@@ -68,12 +66,16 @@ from tensorflow.python.ops import string_ops
 from tensorflow.python.ops.ragged import ragged_tensor
 from tensorflow.python.training.tracking import base as tracking_base
 from tensorflow.python.training.tracking import tracking
+from tensorflow.python.types import trace
 from tensorflow.python.util import deprecation
-from tensorflow.python.util import function_utils
 from tensorflow.python.util import lazy_loader
 from tensorflow.python.util import nest as tf_nest
 from tensorflow.python.util.compat import collections_abc
 from tensorflow.python.util.tf_export import tf_export
+
+# Symbols forwarded for legacy access through dataset_ops.py. These forwarded
+# symbols can be removed once all internal uses are updated.
+StructuredFunctionWrapper = structured_function.StructuredFunctionWrapper
 
 # Loaded lazily due to a circular dependency (roughly
 # tf.function->wrap_function->dataset->autograph->tf.function).
@@ -81,13 +83,6 @@ from tensorflow.python.util.tf_export import tf_export
 wrap_function = lazy_loader.LazyLoader(
     "wrap_function", globals(),
     "tensorflow.python.eager.wrap_function")
-# TODO(mdan): Create a public API for this.
-autograph_ctx = lazy_loader.LazyLoader(
-    "autograph_ctx", globals(),
-    "tensorflow.python.autograph.core.ag_ctx")
-autograph = lazy_loader.LazyLoader(
-    "autograph", globals(),
-    "tensorflow.python.autograph.impl.api")
 # Loaded lazily due to a circular dependency
 # dataset_ops->parsing_ops->dataset_ops
 # TODO(varshaan): Use a regular import.
@@ -373,9 +368,7 @@ class DatasetV2(collections_abc.Iterable, tracking_base.Trackable,
     output_node_name = output_node_names[0]
 
     file_path_nodes = {}
-    # TODO(b/188455028): Remove this check when
-    # `CapturableResource._map_resources` take an argument to provide the
-    # re-mapped asset tensor object instead of the original eager one.
+    # When building a tf.function, track files as `saved_model.Asset`s.
     if ops.get_default_graph().building_function:
       asset_tracker = self._maybe_track_assets(graph_def)
       for key in asset_tracker:
@@ -537,12 +530,7 @@ class DatasetV2(collections_abc.Iterable, tracking_base.Trackable,
 
   def __repr__(self):
     type_ = type(self._dataset if isinstance(self, DatasetV1Adapter) else self)
-    output_shapes = nest.map_structure(str, get_legacy_output_shapes(self))
-    output_shapes = str(output_shapes).replace("'", "")
-    output_types = nest.map_structure(repr, get_legacy_output_types(self))
-    output_types = str(output_types).replace("'", "")
-    return ("<%s shapes: %s, types: %s>" % (type_.__name__, output_shapes,
-                                            output_types))
+    return f"<{type_.__name__} element_spec={self.element_spec}>"
 
   def __debug_string__(self):
     """Returns a string showing the type of the dataset and its inputs.
@@ -649,6 +637,27 @@ class DatasetV2(collections_abc.Iterable, tracking_base.Trackable,
       constructor.
     """
     return {
+        "output_shapes": self._flat_shapes,
+        "output_types": self._flat_types,
+    }
+
+  @property
+  def _common_args(self):
+    """Helper for generating arguments that are common across most dataset ops.
+
+    Most dataset op constructors expect `output_shapes` and `output_types`
+    arguments that represent the flattened structure of an element, as well as a
+    `metadata` argument for additional metadata such as user-defined dataset
+    name. This helper function generates common attributes as a keyword argument
+    dictionary, allowing `Dataset._variant_tensor` implementations to pass
+    `**self._common_args` to the op constructor.
+
+    Returns:
+      A dictionary of keyword arguments that can be passed to a dataset op
+      constructor.
+    """
+    return {
+        "metadata": self._metadata.SerializeToString(),
         "output_shapes": self._flat_shapes,
         "output_types": self._flat_types,
     }
@@ -1147,7 +1156,7 @@ class DatasetV2(collections_abc.Iterable, tracking_base.Trackable,
     [1.0, 3.0]
 
     Args:
-      *args: follows the same semantics as python's xrange.
+      *args: follows the same semantics as python's range.
         len(args) == 1 -> start = 0, stop = args[0], step = 1.
         len(args) == 2 -> start = args[0], stop = args[1], step = 1.
         len(args) == 3 -> start = args[0], stop = args[1], step = args[2].
@@ -2240,9 +2249,9 @@ name=None))
     >>> dataset = tf.data.Dataset.range(7).window(3)
     >>> for window in dataset:
     ...   print(window)
-    <...Dataset shapes: (), types: tf.int64>
-    <...Dataset shapes: (), types: tf.int64>
-    <...Dataset shapes: (), types: tf.int64>
+    <...Dataset element_spec=TensorSpec(shape=(), dtype=tf.int64, name=None)>
+    <...Dataset element_spec=TensorSpec(shape=(), dtype=tf.int64, name=None)>
+    <...Dataset element_spec=TensorSpec(shape=(), dtype=tf.int64, name=None)>
 
     Since windows are datasets, they can be iterated over:
 
@@ -2305,8 +2314,8 @@ name=None))
     >>> dataset = dataset.window(2)
     >>> windows = next(iter(dataset))
     >>> windows
-    (<...Dataset shapes: (), types: tf.int32>,
-     <...Dataset shapes: (), types: tf.int32>)
+    (<...Dataset element_spec=TensorSpec(shape=(), dtype=tf.int32, name=None)>,
+     <...Dataset element_spec=TensorSpec(shape=(), dtype=tf.int32, name=None)>)
 
     >>> def to_numpy(ds):
     ...   return list(ds.as_numpy_iterator())
@@ -2413,7 +2422,7 @@ name=None))
     need_to_rerun = True
     while need_to_rerun:
 
-      wrapped_func = StructuredFunctionWrapper(
+      wrapped_func = structured_function.StructuredFunctionWrapper(
           reduce_func,
           "reduce()",
           input_structure=(state_structure, self.element_spec),
@@ -2484,9 +2493,6 @@ name=None))
     metadata = dataset_metadata_pb2.Metadata()
     if name:
       metadata.name = _validate_and_encode(name)
-    kwargs = {}
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = metadata.SerializeToString()
     return structure.from_compatible_tensor_list(
         state_structure,
         gen_dataset_ops.reduce_dataset(
@@ -2496,7 +2502,7 @@ name=None))
             f=reduce_func,
             output_shapes=structure.get_flat_tensor_shapes(state_structure),
             output_types=structure.get_flat_tensor_types(state_structure),
-            **kwargs))
+            metadata=metadata.SerializeToString()))
 
   def get_single_element(self, name=None):
     """Returns the single element of the `dataset`.
@@ -2618,13 +2624,12 @@ name=None))
     metadata = dataset_metadata_pb2.Metadata()
     if name:
       metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = metadata.SerializeToString()
     return structure.from_compatible_tensor_list(
         self.element_spec,
-        gen_dataset_ops.dataset_to_single_element(self._variant_tensor,
-                                                  **kwargs))  # pylint: disable=protected-access
+        gen_dataset_ops.dataset_to_single_element(
+            self._variant_tensor,
+            metadata=metadata.SerializeToString(),
+            **self._flat_structure))  # pylint: disable=protected-access
 
   def unbatch(self, name=None):
     """Splits elements of a dataset into multiple elements.
@@ -4258,6 +4263,35 @@ def to_variant(dataset):
   return dataset._variant_tensor  # pylint: disable=protected-access
 
 
+# TODO(b/202447704): Merge into DatasetSpec.
+class DatasetSpecTraceType(trace.TraceType):
+  """Defines the Tracing Protocol for Dataset objects.
+
+  The default TraceType supplied by TypeSpec does not take into account
+  `element_spec` and therefore reuses concrete functions for cases where
+  the `element_spec` is different.
+  """
+
+  def __init__(self, element_spec, dataset_shape):
+    self._components = (element_spec, tuple(dataset_shape.as_list()))
+
+  def is_subtype_of(self, other):
+    return self == other
+
+  def most_specific_common_supertype(self, others):
+    return None
+
+  def __hash__(self):
+    return hash(DatasetSpecTraceType)
+
+  def __eq__(self, other):
+    if not isinstance(other, trace.TraceType):
+      return NotImplemented
+
+    return isinstance(
+        other, DatasetSpecTraceType) and self._components == other._components
+
+
 @tf_export(
     "data.DatasetSpec",
     v1=["data.DatasetSpec", "data.experimental.DatasetStructure"])
@@ -4338,238 +4372,8 @@ class DatasetSpec(type_spec.BatchableTypeSpec):
   def _to_legacy_output_classes(self):
     return self
 
-
-class StructuredFunctionWrapper(object):
-  """A function wrapper that supports structured arguments and return values."""
-
-  def __init__(self,
-               func,
-               transformation_name,
-               dataset=None,
-               input_classes=None,
-               input_shapes=None,
-               input_types=None,
-               input_structure=None,
-               add_to_graph=True,
-               use_legacy_function=False,
-               defun_kwargs=None):
-    """Creates a new `StructuredFunctionWrapper` for the given function.
-
-    Args:
-      func: A function from a (nested) structure to another (nested) structure.
-      transformation_name: Human-readable name of the transformation in which
-        this function is being instantiated, for error messages.
-      dataset: (Optional.) A `tf.data.Dataset`. If given, the structure of this
-        dataset will be assumed as the structure for `func` arguments; otherwise
-        `input_classes`, `input_shapes`, and `input_types` must be defined.
-      input_classes: (Optional.) A (nested) structure of `type`. If given, this
-        argument defines the Python types for `func` arguments.
-      input_shapes: (Optional.) A (nested) structure of `tf.TensorShape`. If
-        given, this argument defines the shapes and structure for `func`
-        arguments.
-      input_types: (Optional.) A (nested) structure of `tf.DType`. If given,
-        this argument defines the element types and structure for `func`
-        arguments.
-      input_structure: (Optional.) A `Structure` object. If given, this argument
-        defines the element types and structure for `func` arguments.
-      add_to_graph: (Optional.) If `True`, the function will be added to the
-        default graph, if it exists.
-      use_legacy_function: (Optional.) A boolean that determines whether the
-        function be created using `tensorflow.python.eager.function.defun`
-        (default behavior) or `tensorflow.python.framework.function.Defun`
-        (legacy behavior).
-      defun_kwargs: (Optional.) A dictionary mapping string argument names to
-        values. If supplied, will be passed to `function` as keyword arguments.
-
-    Raises:
-      ValueError: If an invalid combination of `dataset`, `input_classes`,
-        `input_shapes`, and `input_types` is passed.
-    """
-    # pylint: disable=protected-access
-    if input_structure is None:
-      if dataset is None:
-        if input_classes is None or input_shapes is None or input_types is None:
-          raise ValueError("Either `dataset`, `input_structure` or all of "
-                           "`input_classes`, `input_shapes`, and `input_types` "
-                           "must be specified.")
-        self._input_structure = structure.convert_legacy_structure(
-            input_types, input_shapes, input_classes)
-      else:
-        if not (input_classes is None and input_shapes is None and
-                input_types is None):
-          raise ValueError("Either `dataset`, `input_structure` or all of "
-                           "`input_classes`, `input_shapes`, and `input_types` "
-                           "must be specified.")
-        self._input_structure = dataset.element_spec
-    else:
-      if not (dataset is None and input_classes is None and input_shapes is None
-              and input_types is None):
-        raise ValueError("Either `dataset`, `input_structure`, or all of "
-                         "`input_classes`, `input_shapes`, and `input_types` "
-                         "must be specified.")
-      self._input_structure = input_structure
-
-    self._func = func
-
-    if defun_kwargs is None:
-      defun_kwargs = {}
-
-    readable_transformation_name = transformation_name.replace(
-        ".", "_")[:-2] if len(transformation_name) > 2 else ""
-
-    func_name = "_".join(
-        [readable_transformation_name,
-         function_utils.get_func_name(func)])
-    # Sanitize function name to remove symbols that interfere with graph
-    # construction.
-    for symbol in ["<", ">", "\\", "'", " "]:
-      func_name = func_name.replace(symbol, "")
-
-    ag_ctx = autograph_ctx.control_status_ctx()
-
-    def wrapper_helper(*args):
-      """Wrapper for passing nested structures to and from tf.data functions."""
-      nested_args = structure.from_compatible_tensor_list(
-          self._input_structure, args)
-      if not _should_unpack(nested_args):
-        nested_args = (nested_args,)
-      ret = autograph.tf_convert(self._func, ag_ctx)(*nested_args)
-      if _should_pack(ret):
-        ret = tuple(ret)
-
-      try:
-        self._output_structure = structure.type_spec_from_value(ret)
-      except (ValueError, TypeError):
-        six.reraise(
-            TypeError,
-            TypeError(f"Unsupported return value from function passed to "
-                      f"{transformation_name}: {ret}."),
-            sys.exc_info()[2])
-      return ret
-
-    def trace_legacy_function(defun_kwargs):
-      @function.Defun(*structure.get_flat_tensor_types(self._input_structure),
-                      **defun_kwargs)
-      def wrapped_fn(*args):
-        ret = wrapper_helper(*args)
-        return structure.to_tensor_list(self._output_structure, ret)
-
-      return lambda: wrapped_fn
-
-    def trace_py_function(defun_kwargs):
-      # First we trace the function to infer the output structure.
-      @eager_function.defun_with_attributes(
-          input_signature=structure.get_flat_tensor_specs(
-              self._input_structure),
-          autograph=False,
-          attributes=defun_kwargs)
-      def unused(*args):  # pylint: disable=missing-docstring,unused-variable
-        ret = wrapper_helper(*args)
-        ret = structure.to_tensor_list(self._output_structure, ret)
-        return [ops.convert_to_tensor(t) for t in ret]
-
-      _ = unused.get_concrete_function()
-
-      def py_function_wrapper(*args):
-        nested_args = structure.from_compatible_tensor_list(
-            self._input_structure, args)
-        if not _should_unpack(nested_args):
-          nested_args = (nested_args,)
-        ret = self._func(*nested_args)
-        if _should_pack(ret):
-          ret = tuple(ret)
-        ret = structure.to_tensor_list(self._output_structure, ret)
-        return [ops.convert_to_tensor(t) for t in ret]
-
-      # Next we trace the function wrapped in `eager_py_func` to force eager
-      # execution.
-      @eager_function.defun_with_attributes(
-          input_signature=structure.get_flat_tensor_specs(
-              self._input_structure),
-          autograph=False,
-          attributes=defun_kwargs)
-      def wrapped_fn(*args):  # pylint: disable=missing-docstring
-        return script_ops.eager_py_func(
-            py_function_wrapper, args,
-            structure.get_flat_tensor_types(self._output_structure))
-
-      return wrapped_fn.get_concrete_function
-
-    def trace_tf_function(defun_kwargs):
-      # Note: wrapper_helper will apply autograph based on context.
-      @eager_function.defun_with_attributes(
-          input_signature=structure.get_flat_tensor_specs(
-              self._input_structure),
-          autograph=False,
-          attributes=defun_kwargs)
-      def wrapped_fn(*args):  # pylint: disable=missing-docstring
-        ret = wrapper_helper(*args)
-        ret = structure.to_tensor_list(self._output_structure, ret)
-        return [ops.convert_to_tensor(t) for t in ret]
-
-      return wrapped_fn.get_concrete_function
-
-    if use_legacy_function:
-      defun_kwargs.update({"func_name": func_name + "_" + str(ops.uid())})
-      fn_factory = trace_legacy_function(defun_kwargs)
-    else:
-      defun_kwargs.update({"func_name": func_name})
-      defun_kwargs.update({"_tf_data_function": True})
-      if DEBUG_MODE:
-        fn_factory = trace_py_function(defun_kwargs)
-      else:
-        if def_function.functions_run_eagerly():
-          warnings.warn(
-              "Even though the `tf.config.experimental_run_functions_eagerly` "
-              "option is set, this option does not apply to tf.data functions. "
-              "To force eager execution of tf.data functions, please use "
-              "`tf.data.experimental.enable_debug_mode()`.")
-        fn_factory = trace_tf_function(defun_kwargs)
-
-    self._function = fn_factory()
-    # There is no graph to add in eager mode.
-    add_to_graph &= not context.executing_eagerly()
-    # There are some lifetime issues when a legacy function is not added to a
-    # out-living graph. It's already deprecated so de-prioritizing the fix.
-    add_to_graph |= use_legacy_function
-    if add_to_graph:
-      self._function.add_to_graph(ops.get_default_graph())
-
-    if not use_legacy_function:
-      outer_graph_seed = ops.get_default_graph().seed
-      if outer_graph_seed and self._function.graph.seed == outer_graph_seed:
-        if self._function.graph._seed_used:
-          warnings.warn(
-              "Seed %s from outer graph might be getting used by function %s, "
-              "if the random op has not been provided any seed. Explicitly set "
-              "the seed in the function if this is not the intended behavior."
-              %(outer_graph_seed, func_name), stacklevel=4)
-
-  @property
-  def output_structure(self):
-    return self._output_structure
-
-  @property
-  def output_classes(self):
-    return nest.map_structure(
-        lambda component_spec: component_spec._to_legacy_output_classes(),  # pylint: disable=protected-access
-        self._output_structure)
-
-  @property
-  def output_shapes(self):
-    return nest.map_structure(
-        lambda component_spec: component_spec._to_legacy_output_shapes(),  # pylint: disable=protected-access
-        self._output_structure)
-
-  @property
-  def output_types(self):
-    return nest.map_structure(
-        lambda component_spec: component_spec._to_legacy_output_types(),  # pylint: disable=protected-access
-        self._output_structure)
-
-  @property
-  def function(self):
-    return self._function
+  def __tf_tracing_type__(self, _):
+    return DatasetSpecTraceType(self._element_spec, self._dataset_shape)
 
 
 class _NumpyIterator(object):
@@ -4635,13 +4439,10 @@ class TensorDataset(DatasetSource):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = {}
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.tensor_dataset(
         self._tensors,
         output_shapes=structure.get_flat_tensor_shapes(self._structure),
-        **kwargs)
+        metadata=self._metadata.SerializeToString())
     super(TensorDataset, self).__init__(variant_tensor)
 
   @property
@@ -4672,15 +4473,11 @@ class TensorSliceDataset(DatasetSource):
           tensor_shape.Dimension(
               tensor_shape.dimension_value(t.get_shape()[0])))
 
-    kwargs = {
-        "output_shapes": structure.get_flat_tensor_shapes(self._structure)
-    }
-    if compat.forward_compatible(2021, 9, 20):
-      kwargs["is_files"] = is_files
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.tensor_slice_dataset(
-        self._tensors, **kwargs)
+        self._tensors,
+        output_shapes=structure.get_flat_tensor_shapes(self._structure),
+        is_files=is_files,
+        metadata=self._metadata.SerializeToString())
     super(TensorSliceDataset, self).__init__(variant_tensor)
 
   @property
@@ -4747,17 +4544,17 @@ class _GeneratorDataset(DatasetSource):
 
     self._init_structure = structure.type_spec_from_value(init_args)
 
-    self._init_func = StructuredFunctionWrapper(
+    self._init_func = structured_function.StructuredFunctionWrapper(
         init_func,
         self._transformation_name(),
         input_structure=self._init_structure)
 
-    self._next_func = StructuredFunctionWrapper(
+    self._next_func = structured_function.StructuredFunctionWrapper(
         next_func,
         self._transformation_name(),
         input_structure=self._init_func.output_structure)
 
-    self._finalize_func = StructuredFunctionWrapper(
+    self._finalize_func = structured_function.StructuredFunctionWrapper(
         finalize_func,
         self._transformation_name(),
         input_structure=self._init_func.output_structure)
@@ -4768,9 +4565,6 @@ class _GeneratorDataset(DatasetSource):
     if name:
       self._metadata.name = _validate_and_encode(name)
 
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.generator_dataset(
         structure.to_tensor_list(self._init_structure, self._init_args) +
         self._init_func.function.captured_inputs,
@@ -4779,7 +4573,7 @@ class _GeneratorDataset(DatasetSource):
         init_func=self._init_func.function,
         next_func=self._next_func.function,
         finalize_func=self._finalize_func.function,
-        **kwargs)
+        **self._common_args)
     super(_GeneratorDataset, self).__init__(variant_tensor)
 
   @property
@@ -4813,11 +4607,9 @@ class ZipDataset(DatasetV2):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.zip_dataset(
-        [ds._variant_tensor for ds in nest.flatten(self._datasets)], **kwargs)
+        [ds._variant_tensor for ds in nest.flatten(self._datasets)],
+        **self._common_args)
     super(ZipDataset, self).__init__(variant_tensor)
 
   def _inputs(self):
@@ -4836,35 +4628,24 @@ class ConcatenateDataset(DatasetV2):
     self._input_dataset = input_dataset
     self._dataset_to_concatenate = dataset_to_concatenate
 
-    output_types = get_legacy_output_types(input_dataset)
-    if output_types != get_legacy_output_types(dataset_to_concatenate):
-      raise TypeError(f"Incompatible types of input datasets: {output_types} "
-                      f"vs. {get_legacy_output_types(dataset_to_concatenate)}.")
-
-    output_classes = get_legacy_output_classes(input_dataset)
-    if output_classes != get_legacy_output_classes(dataset_to_concatenate):
-      raise TypeError(f"Incompatible classes of input datasets: "
-                      f"{output_classes} vs. "
-                      f"{get_legacy_output_classes(dataset_to_concatenate)}.")
-
-    spec1 = input_dataset.element_spec
-    spec2 = dataset_to_concatenate.element_spec
-    self._structure = nest.pack_sequence_as(spec1, [
-        ts1.most_specific_compatible_type(ts2)
-        for (ts1, ts2) in zip(nest.flatten(spec1), nest.flatten(spec2))
-    ])
+    try:
+      self._structure = tf_nest.map_structure(
+          lambda ts1, ts2: ts1.most_specific_compatible_type(ts2),
+          input_dataset.element_spec, dataset_to_concatenate.element_spec)
+    except (TypeError, ValueError) as e:
+      raise TypeError(
+          f"Incompatible dataset elements:\n"
+          f"  {input_dataset.element_spec} vs. "
+          f"  {dataset_to_concatenate.element_spec}") from e
 
     self._input_datasets = [input_dataset, dataset_to_concatenate]
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     # pylint: disable=protected-access
     variant_tensor = gen_dataset_ops.concatenate_dataset(
         input_dataset._variant_tensor, dataset_to_concatenate._variant_tensor,
-        **kwargs)
+        **self._common_args)
     # pylint: enable=protected-access
     super(ConcatenateDataset, self).__init__(variant_tensor)
 
@@ -4890,13 +4671,10 @@ class RepeatDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.repeat_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         count=self._count,
-        **kwargs)
+        **self._common_args)
     super(RepeatDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -4907,11 +4685,11 @@ class RangeDataset(DatasetSource):
     """See `Dataset.range()` for details."""
     self._parse_args(*args, **kwargs)
     self._structure = tensor_spec.TensorSpec([], self._output_type)
-    kwargs = self._flat_structure
-    if self._metadata.name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.range_dataset(
-        start=self._start, stop=self._stop, step=self._step, **kwargs)
+        start=self._start,
+        stop=self._stop,
+        step=self._step,
+        **self._common_args)
     super(RangeDataset, self).__init__(variant_tensor)
 
   def _parse_args(self, *args, **kwargs):
@@ -4958,20 +4736,17 @@ class CacheDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     if tf2.enabled() and (context.executing_eagerly() or ops.inside_function()):
       variant_tensor = gen_dataset_ops.cache_dataset_v2(
           input_dataset._variant_tensor,  # pylint: disable=protected-access
           filename=self._filename,
           cache=gen_dataset_ops.dummy_memory_cache(),
-          **kwargs)
+          **self._common_args)
     else:
       variant_tensor = gen_dataset_ops.cache_dataset(
           input_dataset._variant_tensor,  # pylint: disable=protected-access
           filename=self._filename,
-          **kwargs)
+          **self._common_args)
     super(CacheDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -4995,9 +4770,6 @@ class ShuffleDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
 
     if (tf2.enabled() and
         (context.executing_eagerly() or ops.inside_function())):
@@ -5008,7 +4780,7 @@ class ShuffleDataset(UnaryUnchangedStructureDataset):
           seed2=self._seed2,
           seed_generator=gen_dataset_ops.dummy_seed_generator(),
           reshuffle_each_iteration=self._reshuffle_each_iteration,
-          **kwargs)
+          **self._common_args)
     else:
       variant_tensor = gen_dataset_ops.shuffle_dataset(
           input_dataset._variant_tensor,  # pylint: disable=protected-access
@@ -5016,7 +4788,7 @@ class ShuffleDataset(UnaryUnchangedStructureDataset):
           seed=self._seed,
           seed2=self._seed2,
           reshuffle_each_iteration=self._reshuffle_each_iteration,
-          **kwargs)
+          **self._common_args)
     super(ShuffleDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -5030,13 +4802,10 @@ class TakeDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.take_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         count=self._count,
-        **kwargs)
+        **self._common_args)
     super(TakeDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -5050,13 +4819,10 @@ class SkipDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.skip_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         count=self._count,
-        **kwargs)
+        **self._common_args)
     super(SkipDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -5072,14 +4838,11 @@ class ShardDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.shard_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         num_shards=self._num_shards,
         index=self._index,
-        **kwargs)
+        **self._common_args)
     super(ShardDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -5112,14 +4875,11 @@ class BatchDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.batch_dataset_v2(
         input_dataset._variant_tensor,
         batch_size=self._batch_size,
         drop_remainder=self._drop_remainder,
-        **kwargs)
+        **self._common_args)
     super(BatchDataset, self).__init__(input_dataset, variant_tensor)
 
   @property
@@ -5170,16 +4930,13 @@ class ParallelBatchDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.parallel_batch_dataset(
         input_dataset._variant_tensor,
         batch_size=self._batch_size,
         num_parallel_calls=self._num_parallel_calls,
         drop_remainder=self._drop_remainder,
         deterministic=self._deterministic,
-        **kwargs)
+        **self._common_args)
 
     super(ParallelBatchDataset, self).__init__(input_dataset, variant_tensor)
 
@@ -5354,7 +5111,7 @@ class PaddedBatchDataset(UnaryDataset):
 
     # If padding_values is a single element and input_shapes is a structure,
     # "broadcast" padding_values to the same structure as input_shapes.
-    if nest.is_sequence(input_shapes) and not nest.is_sequence(padding_values):
+    if nest.is_nested(input_shapes) and not nest.is_nested(padding_values):
       padding_values = nest.map_structure(lambda _: padding_values,
                                           input_shapes)
 
@@ -5380,9 +5137,6 @@ class PaddedBatchDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = {}
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.padded_batch_dataset_v2(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         batch_size=self._batch_size,
@@ -5393,45 +5147,12 @@ class PaddedBatchDataset(UnaryDataset):
         padding_values=nest.flatten(self._padding_values),
         drop_remainder=self._drop_remainder,
         output_shapes=structure.get_flat_tensor_shapes(self._structure),
-        **kwargs)
+        metadata=self._metadata.SerializeToString())
     super(PaddedBatchDataset, self).__init__(input_dataset, variant_tensor)
 
   @property
   def element_spec(self):
     return self._structure
-
-
-def _should_pack(arg):
-  """Determines whether the caller needs to pack the argument in a tuple.
-
-  If user-defined function returns a list of tensors, `nest.flatten()` and
-  `ops.convert_to_tensor()` and would conspire to attempt to stack those tensors
-  into a single tensor because the tf.data version of `nest.flatten()` does
-  not recurse into lists. Since it is more likely that the list arose from
-  returning the result of an operation (such as `tf.numpy_function()`) that
-  returns a list of not-necessarily-stackable tensors, we treat the returned
-  value as a `tuple` instead. A user wishing to pack the return value into a
-  single tensor can use an explicit `tf.stack()` before returning.
-
-  Args:
-    arg: argument to check
-
-  Returns:
-    Indication of whether the caller needs to pack the argument in a tuple.
-  """
-  return isinstance(arg, list)
-
-
-def _should_unpack(arg):
-  """Determines whether the caller needs to unpack the argument from a tuple.
-
-  Args:
-    arg: argument to check
-
-  Returns:
-    Indication of whether the caller needs to unpack the argument from a tuple.
-  """
-  return type(arg) is tuple  # pylint: disable=unidiomatic-typecheck
 
 
 class MapDataset(UnaryDataset):
@@ -5448,7 +5169,7 @@ class MapDataset(UnaryDataset):
     self._input_dataset = input_dataset
     self._use_inter_op_parallelism = use_inter_op_parallelism
     self._preserve_cardinality = preserve_cardinality
-    self._map_func = StructuredFunctionWrapper(
+    self._map_func = structured_function.StructuredFunctionWrapper(
         map_func,
         self._transformation_name(),
         dataset=input_dataset,
@@ -5456,16 +5177,13 @@ class MapDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.map_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._map_func.function.captured_inputs,
         f=self._map_func.function,
         use_inter_op_parallelism=self._use_inter_op_parallelism,
         preserve_cardinality=self._preserve_cardinality,
-        **kwargs)
+        **self._common_args)
     super(MapDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -5494,7 +5212,7 @@ class ParallelMapDataset(UnaryDataset):
     """See `Dataset.map()` for details."""
     self._input_dataset = input_dataset
     self._use_inter_op_parallelism = use_inter_op_parallelism
-    self._map_func = StructuredFunctionWrapper(
+    self._map_func = structured_function.StructuredFunctionWrapper(
         map_func,
         self._transformation_name(),
         dataset=input_dataset,
@@ -5511,9 +5229,6 @@ class ParallelMapDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.parallel_map_dataset_v2(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._map_func.function.captured_inputs,
@@ -5522,7 +5237,7 @@ class ParallelMapDataset(UnaryDataset):
         deterministic=self._deterministic,
         use_inter_op_parallelism=self._use_inter_op_parallelism,
         preserve_cardinality=self._preserve_cardinality,
-        **kwargs)
+        **self._common_args)
     super(ParallelMapDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -5542,7 +5257,7 @@ class FlatMapDataset(UnaryDataset):
   def __init__(self, input_dataset, map_func, name=None):
     """See `Dataset.flat_map()` for details."""
     self._input_dataset = input_dataset
-    self._map_func = StructuredFunctionWrapper(
+    self._map_func = structured_function.StructuredFunctionWrapper(
         map_func, self._transformation_name(), dataset=input_dataset)
     if not isinstance(self._map_func.output_structure, DatasetSpec):
       raise TypeError(
@@ -5552,14 +5267,11 @@ class FlatMapDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.flat_map_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._map_func.function.captured_inputs,
         f=self._map_func.function,
-        **kwargs)
+        **self._common_args)
     super(FlatMapDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -5585,7 +5297,7 @@ class InterleaveDataset(UnaryDataset):
     """See `Dataset.interleave()` for details."""
 
     self._input_dataset = input_dataset
-    self._map_func = StructuredFunctionWrapper(
+    self._map_func = structured_function.StructuredFunctionWrapper(
         map_func, self._transformation_name(), dataset=input_dataset)
     if not isinstance(self._map_func.output_structure, DatasetSpec):
       raise TypeError(
@@ -5599,16 +5311,13 @@ class InterleaveDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.interleave_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._map_func.function.captured_inputs,  # pylint: disable=protected-access
         self._cycle_length,
         self._block_length,
         f=self._map_func.function,
-        **kwargs)
+        **self._common_args)
     super(InterleaveDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -5637,7 +5346,7 @@ class ParallelInterleaveDataset(UnaryDataset):
                name=None):
     """See `Dataset.interleave()` for details."""
     self._input_dataset = input_dataset
-    self._map_func = StructuredFunctionWrapper(
+    self._map_func = structured_function.StructuredFunctionWrapper(
         map_func, self._transformation_name(), dataset=input_dataset)
     if not isinstance(self._map_func.output_structure, DatasetSpec):
       raise TypeError(
@@ -5669,9 +5378,6 @@ class ParallelInterleaveDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.parallel_interleave_dataset_v4(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._map_func.function.captured_inputs,  # pylint: disable=protected-access
@@ -5682,7 +5388,7 @@ class ParallelInterleaveDataset(UnaryDataset):
         self._num_parallel_calls,
         f=self._map_func.function,
         deterministic=deterministic_string,
-        **kwargs)
+        **self._common_args)
     super(ParallelInterleaveDataset, self).__init__(input_dataset,
                                                     variant_tensor)
 
@@ -5707,7 +5413,7 @@ class FilterDataset(UnaryUnchangedStructureDataset):
                name=None):
     """See `Dataset.filter()` for details."""
     self._input_dataset = input_dataset
-    wrapped_func = StructuredFunctionWrapper(
+    wrapped_func = structured_function.StructuredFunctionWrapper(
         predicate,
         self._transformation_name(),
         dataset=input_dataset,
@@ -5721,14 +5427,11 @@ class FilterDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.filter_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         other_arguments=self._predicate.function.captured_inputs,
         predicate=self._predicate.function,
-        **kwargs)
+        **self._common_args)
     super(FilterDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -5751,9 +5454,6 @@ class PrefetchDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     # pylint: disable=protected-access
     # We colocate the prefetch dataset with its input as this collocation only
     # happens automatically in graph mode.
@@ -5762,7 +5462,7 @@ class PrefetchDataset(UnaryUnchangedStructureDataset):
           input_dataset._variant_tensor,
           buffer_size=self._buffer_size,
           slack_period=slack_period,
-          **kwargs)
+          **self._common_args)
     super(PrefetchDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -5797,16 +5497,13 @@ class WindowDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = gen_dataset_ops.window_dataset(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         size=self._size,
         shift=self._shift,
         stride=self._stride,
         drop_remainder=self._drop_remainder,
-        **kwargs)
+        **self._common_args)
     super(WindowDataset, self).__init__(input_dataset, variant_tensor)
 
   @property
@@ -5825,13 +5522,10 @@ class _OptionsDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     with ops.colocate_with(input_dataset._variant_tensor):
       variant_tensor = gen_dataset_ops.options_dataset(
           input_dataset._variant_tensor, options_pb.SerializeToString(),
-          **kwargs)
+          **self._common_args)
     super(_OptionsDataset, self).__init__(input_dataset, variant_tensor)
 
     if self._options_attr:
@@ -5860,7 +5554,7 @@ def normalize_to_dense(dataset):
   # non-tensor components.
   #
   # TODO(mrry): Consider optimizing this if it turns out to be a bottleneck.
-  if _should_unpack(dataset.element_spec):
+  if structured_function._should_unpack(dataset.element_spec):  # pylint: disable=protected-access
 
     def normalize(*args):
       return structure.to_batched_tensor_list(dataset.element_spec, tuple(args))
@@ -5914,12 +5608,9 @@ class _UnbatchDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.unbatch_dataset(
         self._input_dataset._variant_tensor,  # pylint: disable=protected-access
-        **kwargs)
+        **self._common_args)
     super(_UnbatchDataset, self).__init__(input_dataset, variant_tensor)
 
   @property
@@ -5944,9 +5635,6 @@ class _GroupByWindowDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.group_by_window_dataset(
         self._input_dataset._variant_tensor,  # pylint: disable=protected-access
         self._key_func.function.captured_inputs,
@@ -5955,7 +5643,7 @@ class _GroupByWindowDataset(UnaryDataset):
         key_func=self._key_func.function,
         reduce_func=self._reduce_func.function,
         window_size_func=self._window_size_func.function,
-        **kwargs)
+        **self._common_args)
     super(_GroupByWindowDataset, self).__init__(input_dataset, variant_tensor)
 
   def _make_window_size_func(self, window_size_func):
@@ -5964,7 +5652,7 @@ class _GroupByWindowDataset(UnaryDataset):
     def window_size_func_wrapper(key):
       return ops.convert_to_tensor(window_size_func(key), dtype=dtypes.int64)
 
-    self._window_size_func = StructuredFunctionWrapper(
+    self._window_size_func = structured_function.StructuredFunctionWrapper(
         window_size_func_wrapper,
         self._transformation_name(),
         input_structure=tensor_spec.TensorSpec([], dtypes.int64))
@@ -5981,7 +5669,7 @@ class _GroupByWindowDataset(UnaryDataset):
     def key_func_wrapper(*args):
       return ops.convert_to_tensor(key_func(*args), dtype=dtypes.int64)
 
-    self._key_func = StructuredFunctionWrapper(
+    self._key_func = structured_function.StructuredFunctionWrapper(
         key_func_wrapper, self._transformation_name(), dataset=input_dataset)
     if not self._key_func.output_structure.is_compatible_with(
         tensor_spec.TensorSpec([], dtypes.int64)):
@@ -5993,7 +5681,7 @@ class _GroupByWindowDataset(UnaryDataset):
     """Make wrapping defun for reduce_func."""
     nested_dataset = DatasetSpec(input_dataset.element_spec)
     input_structure = (tensor_spec.TensorSpec([], dtypes.int64), nested_dataset)
-    self._reduce_func = StructuredFunctionWrapper(
+    self._reduce_func = structured_function.StructuredFunctionWrapper(
         reduce_func,
         self._transformation_name(),
         input_structure=input_structure)
@@ -6024,11 +5712,8 @@ class RandomDataset(DatasetSource):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.random_dataset(
-        seed=self._seed, seed2=self._seed2, **kwargs)
+        seed=self._seed, seed2=self._seed2, **self._common_args)
     super(RandomDataset, self).__init__(variant_tensor)
 
   @property
@@ -6257,7 +5942,7 @@ class _TakeWhileDataset(UnaryUnchangedStructureDataset):
     """See `take_while()` for details."""
 
     self._input_dataset = input_dataset
-    wrapped_func = StructuredFunctionWrapper(
+    wrapped_func = structured_function.StructuredFunctionWrapper(
         predicate, self._transformation_name(), dataset=self._input_dataset)
 
     if not wrapped_func.output_structure.is_compatible_with(
@@ -6270,14 +5955,11 @@ class _TakeWhileDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.take_while_dataset(
         self._input_dataset._variant_tensor,  # pylint: disable=protected-access
         other_arguments=self._predicate.function.captured_inputs,
         predicate=self._predicate.function,
-        **kwargs)
+        **self._common_args)
     super(_TakeWhileDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -6301,12 +5983,9 @@ class _UniqueDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.unique_dataset(
         self._input_dataset._variant_tensor,  # pylint: disable=protected-access
-        **kwargs)
+        **self._common_args)
     super(_UniqueDataset, self).__init__(input_dataset, variant_tensor)
 
 
@@ -6333,13 +6012,13 @@ class _SnapshotDataset(UnaryUnchangedStructureDataset):
     self._path = path
     self._compression = compression
 
-    self._reader_func = StructuredFunctionWrapper(
+    self._reader_func = structured_function.StructuredFunctionWrapper(
         reader_func,
         self._transformation_name() + ".reader_func",
         # Dataset of datasets of input elements
         input_structure=DatasetSpec(DatasetSpec(input_dataset.element_spec)),
         use_legacy_function=use_legacy_function)
-    self._shard_func = StructuredFunctionWrapper(
+    self._shard_func = structured_function.StructuredFunctionWrapper(
         shard_func,
         self._transformation_name() + ".shard_func",
         dataset=input_dataset,
@@ -6356,9 +6035,6 @@ class _SnapshotDataset(UnaryUnchangedStructureDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     variant_tensor = ged_ops.snapshot_dataset_v2(
         input_dataset._variant_tensor,  # pylint: disable=protected-access
         path,
@@ -6367,7 +6043,7 @@ class _SnapshotDataset(UnaryUnchangedStructureDataset):
         compression=compression,
         reader_func=self._reader_func.function,
         shard_func=self._shard_func.function,
-        **kwargs)
+        **self._common_args)
     super(_SnapshotDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):
@@ -6400,7 +6076,7 @@ class _ScanDataset(UnaryDataset):
     need_to_rerun = True
     while need_to_rerun:
 
-      wrapped_func = StructuredFunctionWrapper(
+      wrapped_func = structured_function.StructuredFunctionWrapper(
           scan_func,
           self._transformation_name(),
           input_structure=(self._state_structure, input_dataset.element_spec),
@@ -6477,9 +6153,6 @@ class _ScanDataset(UnaryDataset):
     self._metadata = dataset_metadata_pb2.Metadata()
     if name:
       self._metadata.name = _validate_and_encode(name)
-    kwargs = self._flat_structure
-    if name or compat.forward_compatible(2021, 9, 30):
-      kwargs["metadata"] = self._metadata.SerializeToString()
     # pylint: disable=protected-access
     if use_default_device is not None:
       variant_tensor = ged_ops.scan_dataset(
@@ -6489,7 +6162,7 @@ class _ScanDataset(UnaryDataset):
           f=self._scan_func.function,
           preserve_cardinality=True,
           use_default_device=use_default_device,
-          **kwargs)
+          **self._common_args)
     else:
       variant_tensor = ged_ops.scan_dataset(
           self._input_dataset._variant_tensor,
@@ -6497,7 +6170,7 @@ class _ScanDataset(UnaryDataset):
           self._scan_func.function.captured_inputs,
           f=self._scan_func.function,
           preserve_cardinality=True,
-          **kwargs)
+          **self._common_args)
     super(_ScanDataset, self).__init__(input_dataset, variant_tensor)
 
   def _functions(self):

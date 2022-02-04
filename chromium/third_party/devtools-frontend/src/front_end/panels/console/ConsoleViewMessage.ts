@@ -42,17 +42,20 @@ import type * as IssuesManager from '../../models/issues_manager/issues_manager.
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Workspace from '../../models/workspace/workspace.js';
+import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 import * as RequestLinkIcon from '../../ui/components/request_link_icon/request_link_icon.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as ObjectUI from '../../ui/legacy/components/object_ui/object_ui.js';
-import * as TextEditor from '../../ui/legacy/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as ThemeSupport from '../../ui/legacy/theme_support/theme_support.js';
+// eslint-disable-next-line rulesdir/es_modules_import
+import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import type {Chrome} from '../../../extension-api/ExtensionAPI.js'; // eslint-disable-line rulesdir/es_modules_import
 
 import type {ConsoleViewportElement} from './ConsoleViewport.js';
+import consoleViewStyles from './consoleView.css.js';
 
 const UIStrings = {
   /**
@@ -1057,25 +1060,8 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
   }
 
   matchesFilterText(filter: string): boolean {
-    return ConsoleViewMessage.recursivelyTestParentConsoleMessage(this.message, filter) ||
-        ConsoleViewMessage.recursivelyTestChildrenConsoleMessage(this.message, filter);
-  }
-
-  static recursivelyTestParentConsoleMessage(consoleMessage: SDK.ConsoleModel.ConsoleMessage, filterString: string):
-      boolean {
-    const doesFilterMatchText = consoleMessage.messageText.toLowerCase().includes(filterString.toLowerCase());
-    const doesParentMatchText = consoleMessage.groupParent &&
-        ConsoleViewMessage.recursivelyTestParentConsoleMessage(consoleMessage.groupParent, filterString);
-    return Boolean(doesFilterMatchText || doesParentMatchText);
-  }
-
-  static recursivelyTestChildrenConsoleMessage(consoleMessage: SDK.ConsoleModel.ConsoleMessage, filterString: string):
-      boolean {
-    const doesFilterMatchChildren = consoleMessage.groupChildren?.some(childMessage => {
-      const filterMatch = childMessage.messageText.toLowerCase().includes(filterString.toLowerCase());
-      return filterMatch || ConsoleViewMessage.recursivelyTestChildrenConsoleMessage(childMessage, filterString);
-    });
-    return Boolean(doesFilterMatchChildren);
+    const text = this.contentElement().deepTextContent();
+    return text.toLowerCase().includes(filter.toLowerCase());
   }
 
   updateTimestamp(): void {
@@ -1650,9 +1636,14 @@ export class ConsoleViewMessage implements ConsoleViewportElement {
       const suffix = `${line.substring(link.positionRight)}${newline}`;
 
       formattedLine.appendChild(this.linkifyStringAsFragment(prefix));
-      const scriptLocationLink = this.linkifier.linkifyScriptLocation(
-          debuggerModel.target(), null, link.url, link.lineNumber,
-          {columnNumber: link.columnNumber, className: undefined, tabStop: undefined, inlineFrameIndex: 0});
+      const scriptLocationLink =
+          this.linkifier.linkifyScriptLocation(debuggerModel.target(), null, link.url, link.lineNumber, {
+            columnNumber: link.columnNumber,
+            className: undefined,
+            tabStop: undefined,
+            inlineFrameIndex: 0,
+            showColumnNumber: true,
+          });
       scriptLocationLink.tabIndex = -1;
       this.selectableChildren.push({element: scriptLocationLink, forceSelect: (): void => scriptLocationLink.focus()});
       formattedLine.appendChild(scriptLocationLink);
@@ -1925,8 +1916,8 @@ export class ConsoleCommand extends ConsoleViewMessage {
     newContentElement.appendChild(this.formattedCommand);
 
     if (this.formattedCommand.textContent.length < MaxLengthToIgnoreHighlighter) {
-      const javascriptSyntaxHighlighter = new TextEditor.SyntaxHighlighter.SyntaxHighlighter('text/javascript', true);
-      javascriptSyntaxHighlighter.syntaxHighlightNode(this.formattedCommand).then(this.updateSearch.bind(this));
+      CodeHighlighter.CodeHighlighter.highlightNode(this.formattedCommand, 'text/javascript')
+          .then(this.updateSearch.bind(this));
     } else {
       this.updateSearch();
     }
@@ -2079,7 +2070,11 @@ export class ConsoleTableMessageView extends ConsoleViewMessage {
         const tableElement = formattedResult.createChild('div', 'console-message-formatted-table');
         const dataGridContainer = tableElement.createChild('span');
         tableElement.appendChild(this.formatParameter(actualTable, true, false));
-        dataGridContainer.appendChild(this.dataGrid.element);
+        const shadowRoot = dataGridContainer.attachShadow({mode: 'open'});
+        const dataGridWidget = this.dataGrid.asWidget();
+        dataGridWidget.markAsRoot();
+        dataGridWidget.show(shadowRoot as unknown as Element);
+        dataGridWidget.registerCSSFiles([consoleViewStyles, objectValueStyles]);
         formattedMessage.appendChild(formattedResult);
         this.dataGrid.renderInline();
       }

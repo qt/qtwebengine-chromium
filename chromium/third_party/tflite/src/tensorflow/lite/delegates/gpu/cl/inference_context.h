@@ -60,12 +60,47 @@ struct CLNode {
   CLNode& operator=(const CLNode&) = delete;
 };
 
+struct GpuNode {
+  std::unique_ptr<GPUOperation> gpu_operation;
+  std::vector<ValueId> inputs;
+  std::vector<ValueId> outputs;
+  std::string name;
+
+  GpuNode() = default;
+  GpuNode(GpuNode&& node) = default;
+  GpuNode& operator=(GpuNode&& node) = default;
+  GpuNode(const GpuNode&) = delete;
+  GpuNode& operator=(const GpuNode&) = delete;
+};
+
 class InferenceContext {
  public:
   struct CreateInferenceInfo {
     CalculationsPrecision precision;
     TensorStorageType storage_type;
     ModelHints hints;
+
+    // User can provide immutable external tensors for inference context.
+    // Some restrictions apply:
+    //   1) ValueId must be input or output id of GraphFloat32
+    //   2) Provided ptrs must be valid during life of InferenceContext.
+    //   3) data_type must be equal to DeduceDataTypeFromPrecision(precision);
+    //      for example for precision F16, data_type must be FLOAT16
+    //   4) Layout must be without Batch dimension if tensor.shape.b == 1
+    //      Layout must be with Batch dimension if tensor.shape.b != 1
+    // InitFromGraph will fail if gpu can not allocate tensor with requested
+    // tensor descriptor
+    // WARNING: This is an experimental API and subject to change.
+    absl::flat_hash_map<ValueId, GpuSpatialTensor*> external_immutable_tensors;
+  };
+
+  struct GpuModel {
+    std::vector<std::pair<ValueId, ValueId>> input_ids_and_refs;
+    std::vector<std::pair<ValueId, ValueId>> variable_ids_and_refs;
+    std::vector<std::pair<ValueId, ValueId>> output_ids_and_refs;
+    std::vector<GpuNode> nodes;
+    absl::flat_hash_map<ValueId, TensorDescriptor> tensors;
+    absl::flat_hash_map<ValueId, TensorDescriptor> const_tensors;
   };
 
   absl::Status InitFromGraph(const CreateInferenceInfo& create_info,
@@ -98,10 +133,17 @@ class InferenceContext {
   const std::vector<ValueId>& GetOutputIds() const { return output_ids_; }
 
   absl::Status RestoreDeserialized(
-      const absl::Span<const uint8_t> serialized_model, Environment* env);
+      const absl::Span<const uint8_t> serialized_model, Environment* env,
+      CreateInferenceInfo* create_info = nullptr);
 
  private:
-  enum class TensorMemoryType { kStrongShape, kBuffer, kVariable, kConst };
+  enum class TensorMemoryType {
+    kStrongShape,
+    kBuffer,
+    kVariable,
+    kConst,
+    kExternal
+  };
 
   friend flatbuffers::Offset<data::InferenceContext> Encode(
       const CLDevice& device, const InferenceContext& inference,
@@ -112,14 +154,6 @@ class InferenceContext {
                              const data::InferenceContext* fb_inference,
                              InferenceContext* inference);
 
-  void CopyInAndOutIds(const GraphFloat32& graph);
-  absl::Status ConvertOperations(const GpuInfo& gpu_info,
-                                 const GraphFloat32& graph, ModelHints hints);
-  void CreateLinks();
-  absl::Status ReserveGraphTensors(const CreateInferenceInfo& create_info,
-                                   const GpuInfo& gpu_info,
-                                   const GraphFloat32& graph);
-  absl::Status Merge();
   absl::Status AllocateMemory(const GpuInfo& gpu_info, CLContext* context);
 
   absl::Status AllocateMemoryForConstTensors(CLContext* context);
@@ -148,21 +182,25 @@ class InferenceContext {
 
   void ReleaseCPURepresentation();
 
-  // performance hacks
-  bool need_flush_ = false;
+  absl::Status ProfileTime(ProfilingCommandQueue* queue, ProfilingInfo* result);
 
-  bool flush_periodically_ = false;
-  int flush_period_ = 1;
+  struct ExecutionHints {
+    bool need_flush = false;
 
-  // In order to reduce memory leak on Mali a pipeline needs to be synchronized
-  // with CPU to prevent growing internal global OpenCL kernel pool. One trick
-  // is to enqueue an event from a previous run. Most of the time is should
-  // already be executed on GPU and should not stall the pipeline.
-  bool need_manual_release_ = false;
-  CLEvent prev_enqueue_start_point_;
+    bool flush_periodically = false;
+    int flush_period = 1;
 
-  CalculationsPrecision precision_;
-  TensorStorageType storage_type_;
+    // In order to reduce memory leak on Mali a pipeline needs to be
+    // synchronized with CPU to prevent growing internal global OpenCL kernel
+    // pool. One trick is to enqueue an event from a previous run. Most of the
+    // time is should already be executed on GPU and should not stall the
+    // pipeline.
+    bool need_manual_release = false;
+    CLEvent prev_enqueue_start_point;
+
+    void Init(const GpuInfo& gpu_info);
+  };
+  ExecutionHints execution_hints_;
 
   // Directly mapped nodes from graph, but some of them "inactive" due
   //  to fusion (inactive = fused).
@@ -170,60 +208,8 @@ class InferenceContext {
   //  anywhere.
   std::vector<CLNode> nodes_;
 
-  struct DummyTensor {
-    BHWC shape;
-    TensorDescriptor descriptor;
-
-    bool operator==(const DummyTensor& b) const {
-      return shape == b.shape && descriptor == b.descriptor;
-    }
-  };
-
-  class TensorReserver {
-   public:
-    TensorReserver() : next_(0) {}
-    ValueId Add(const DummyTensor& dummy) {
-      reservations_[next_] = dummy;
-      return next_++;
-    }
-    void Add(ValueId id, const DummyTensor& dummy) {
-      reservations_[id] = dummy;
-    }
-    void SetNext(ValueId id) { next_ = id; }
-    DummyTensor Get(ValueId id) { return reservations_[id]; }
-
-    std::vector<std::pair<ValueId, TensorDescriptor>> GetTensorDescs() const {
-      std::vector<std::pair<ValueId, TensorDescriptor>> result;
-      for (auto& v : reservations_) {
-        TensorDescriptor desc = v.second.descriptor;
-        desc.shape.b = v.second.shape.b;
-        desc.shape.h = v.second.shape.h;
-        desc.shape.w = v.second.shape.w;
-        desc.shape.d = 1;
-        desc.shape.c = v.second.shape.c;
-        result.push_back({v.first, desc});
-      }
-      return result;
-    }
-
-    void Add(const std::vector<std::pair<ValueId, TensorDescriptor>>& tensors) {
-      for (auto& v : tensors) {
-        DummyTensor dummy;
-        dummy.descriptor = v.second;
-        dummy.shape.b = v.second.shape.b;
-        dummy.shape.h = v.second.shape.h;
-        dummy.shape.w = v.second.shape.w;
-        dummy.shape.c = v.second.shape.c;
-        Add(v.first, dummy);
-      }
-    }
-
-   private:
-    absl::flat_hash_map<ValueId, DummyTensor> reservations_;
-    ValueId next_;
-  };
-  TensorReserver tensor_reserver_;
-
+  absl::flat_hash_map<ValueId, Tensor*> external_immutable_tensors_;
+  absl::flat_hash_map<ValueId, TensorDescriptor> tensors_descs_;
   absl::flat_hash_map<ValueId, TensorDescriptor> const_tensors_descs_;
   std::map<ValueId, Tensor> const_tensors_;
 
@@ -242,6 +228,8 @@ class InferenceContext {
   std::vector<ValueId> output_ids_;
 
   std::unique_ptr<RecordableQueue> recordable_queue_;
+
+  GpuInfo gpu_info_;
 };
 
 // Runs OpenCL specific transforms for the graph.

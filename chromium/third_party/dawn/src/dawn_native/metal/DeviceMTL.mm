@@ -108,7 +108,7 @@ namespace dawn_native { namespace metal {
     // static
     ResultOrError<Device*> Device::Create(AdapterBase* adapter,
                                           NSPRef<id<MTLDevice>> mtlDevice,
-                                          const DeviceDescriptor* descriptor) {
+                                          const DawnDeviceDescriptor* descriptor) {
         Ref<Device> device = AcquireRef(new Device(adapter, std::move(mtlDevice), descriptor));
         DAWN_TRY(device->Initialize());
         return device.Detach();
@@ -116,12 +116,12 @@ namespace dawn_native { namespace metal {
 
     Device::Device(AdapterBase* adapter,
                    NSPRef<id<MTLDevice>> mtlDevice,
-                   const DeviceDescriptor* descriptor)
+                   const DawnDeviceDescriptor* descriptor)
         : DeviceBase(adapter, descriptor), mMtlDevice(std::move(mtlDevice)), mCompletedSerial(0) {
     }
 
     Device::~Device() {
-        ShutDownBase();
+        Destroy();
     }
 
     MaybeError Device::Initialize() {
@@ -243,9 +243,9 @@ namespace dawn_native { namespace metal {
         const CommandBufferDescriptor* descriptor) {
         return CommandBuffer::Create(encoder, descriptor);
     }
-    ResultOrError<Ref<ComputePipelineBase>> Device::CreateComputePipelineImpl(
+    Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
-        return ComputePipeline::Create(this, descriptor);
+        return ComputePipeline::CreateUninitialized(this, descriptor);
     }
     ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) {
@@ -285,16 +285,15 @@ namespace dawn_native { namespace metal {
         const TextureViewDescriptor* descriptor) {
         return TextureView::Create(texture, descriptor);
     }
-    void Device::CreateComputePipelineAsyncImpl(const ComputePipelineDescriptor* descriptor,
-                                                size_t blueprintHash,
-                                                WGPUCreateComputePipelineAsyncCallback callback,
-                                                void* userdata) {
-        ComputePipeline::CreateAsync(this, descriptor, blueprintHash, callback, userdata);
+    void Device::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
+                                                    WGPUCreateComputePipelineAsyncCallback callback,
+                                                    void* userdata) {
+        ComputePipeline::InitializeAsync(std::move(computePipeline), callback, userdata);
     }
     void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                                    WGPUCreateRenderPipelineAsyncCallback callback,
                                                    void* userdata) {
-        RenderPipeline::InitializeAsync(renderPipeline, callback, userdata);
+        RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
     }
 
     ResultOrError<ExecutionSerial> Device::CheckAndUpdateCompletedSerials() {
@@ -434,8 +433,7 @@ namespace dawn_native { namespace metal {
     Ref<Texture> Device::CreateTextureWrappingIOSurface(const ExternalImageDescriptor* descriptor,
                                                         IOSurfaceRef ioSurface,
                                                         uint32_t plane) {
-        const TextureDescriptor* textureDescriptor =
-            reinterpret_cast<const TextureDescriptor*>(descriptor->cTextureDescriptor);
+        const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
 
         if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
             return nullptr;
@@ -483,7 +481,7 @@ namespace dawn_native { namespace metal {
         return {};
     }
 
-    void Device::ShutDownImpl() {
+    void Device::DestroyImpl() {
         ASSERT(GetState() == State::Disconnected);
 
         // Forget all pending commands.

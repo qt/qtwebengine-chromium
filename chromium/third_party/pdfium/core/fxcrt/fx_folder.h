@@ -7,19 +7,18 @@
 #ifndef CORE_FXCRT_FX_FOLDER_H_
 #define CORE_FXCRT_FX_FOLDER_H_
 
-#include "core/fxcrt/fx_string.h"
+#include <memory>
 
-struct FX_FolderHandle;
+#include "core/fxcrt/bytestring.h"
 
-FX_FolderHandle* FX_OpenFolder(const char* path);
-bool FX_GetNextFile(FX_FolderHandle* handle,
-                    ByteString* filename,
-                    bool* bFolder);
-void FX_CloseFolder(FX_FolderHandle* handle);
+class FX_Folder {
+ public:
+  static std::unique_ptr<FX_Folder> OpenFolder(const ByteString& path);
 
-// Used with std::unique_ptr to automatically call FX_CloseFolder().
-struct FxFolderHandleCloser {
-  inline void operator()(FX_FolderHandle* h) const { FX_CloseFolder(h); }
+  virtual ~FX_Folder() = default;
+
+  // `filename` and `folder` are required out-parameters.
+  virtual bool GetNextFile(ByteString* filename, bool* bFolder) = 0;
 };
 
 #endif  // CORE_FXCRT_FX_FOLDER_H_

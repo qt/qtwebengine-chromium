@@ -14,9 +14,9 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_contentmarks.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/fx_coordinates.h"
 #include "core/fxcrt/fx_number.h"
-#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_fillrenderoptions.h"
@@ -238,7 +238,6 @@ class CPDF_StreamContentParser {
   ByteString m_LastImageName;
   RetainPtr<CPDF_Image> m_pLastImage;
   bool m_bColored = false;
-  bool m_bResourceMissing = false;
   std::vector<std::unique_ptr<CPDF_AllStates>> m_StateStack;
   float m_Type3Data[6] = {0.0f};
   ContentParam m_ParamBuf[kParamBufSize];

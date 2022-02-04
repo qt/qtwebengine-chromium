@@ -36,6 +36,7 @@ const char kGetServiceFunction[] = "GetService";
 const char kRequestScanFunction[] = "RequestScan";
 const char kSetNetworkThrottlingFunction[] = "SetNetworkThrottlingStatus";
 const char kSetDNSProxyDOHProvidersFunction[] = "SetDNSProxyDOHProviders";
+const char kAddPasspointCredentialsFunction[] = "AddPasspointCredentials";
 
 // Service function names.
 const char kActivateCellularModemFunction[] = "ActivateCellularModem";
@@ -174,7 +175,7 @@ const char kServingOperatorProperty[] = "Cellular.ServingOperator";
 const char kTechnologyFamilyProperty[] = "Cellular.Family";
 const char kUsageURLProperty[] = "Cellular.UsageUrl";
 
-// EAP Service property names.
+// EAP Service/Passpoint credentials property names.
 const char kEapAnonymousIdentityProperty[] = "EAP.AnonymousIdentity";
 const char kEapCaCertIdProperty[] = "EAP.CACertID";
 const char kEapCaCertPemProperty[] = "EAP.CACertPEM";
@@ -218,6 +219,7 @@ const char kWifiFrequency[] = "WiFi.Frequency";
 const char kWifiHexSsid[] = "WiFi.HexSSID";
 const char kWifiHiddenSsid[] = "WiFi.HiddenSSID";
 const char kWifiPhyMode[] = "WiFi.PhyMode";
+static constexpr char kWifiRandomMACPolicy[] = "WiFi.RandomMACPolicy";
 const char kWifiRekeyInProgressProperty[] = "WiFi.RekeyInProgress";
 const char kWifiRoamStateProperty[] = "WiFi.RoamState";
 const char kWifiVendorInformationProperty[] = "WiFi.VendorInformation";
@@ -350,6 +352,17 @@ const char kDhcpv6LengthProperty[] = "Length";
 const char kDhcpv6LeaseDurationSecondsProperty[] = "LeaseDurationSeconds";
 const char kDhcpv6PreferredLeaseDurationSecondsProperty[] =
     "PreferredLeaseDurationSeconds";
+
+// Passpoint credentials property names.
+// EAP properties are defined above for EAP service.
+const char kPasspointCredentialsDomainsProperty[] = "Domains";
+const char kPasspointCredentialsRealmProperty[] = "Realm";
+const char kPasspointCredentialsHomeOIsProperty[] = "HomeOIs";
+const char kPasspointCredentialsRequiredHomeOIsProperty[] = "RequiredHomeOIs";
+const char kPasspointCredentialsRoamingConsortiaProperty[] = "RoamingConsortia";
+const char kPasspointCredentialsMeteredOverrideProperty[] = "MeteredOverride";
+const char kPasspointCredentialsAndroidPackageNameProperty[] =
+    "AndroidPackageName";
 
 // Base Device property names.
 const char kAddressProperty[] = "Address";  // Also used for IPConfig.
@@ -791,6 +804,15 @@ static constexpr char kONCSourceNone[] = "None";
 static constexpr char kONCSourceUserImport[] = "UserImport";
 static constexpr char kONCSourceDevicePolicy[] = "DevicePolicy";
 static constexpr char kONCSourceUserPolicy[] = "UserPolicy";
+
+// MAC Randomization constants
+static constexpr char kWifiRandomMacPolicyHardware[] = "Hardware";
+static constexpr char kWifiRandomMacPolicyFullRandom[] = "FullRandom";
+static constexpr char kWifiRandomMacPolicyOUIRandom[] = "OUIRandom";
+static constexpr char kWifiRandomMacPolicyPersistentRandom[] =
+    "PersistentRandom";
+static constexpr char kWifiRandomMacPolicyNonPersistentRandom[] =
+    "NonPersistentRandom";
 
 // Cellular activation types.
 const char kActivationTypeNonCellular[] = "NonCellular";  // For future use

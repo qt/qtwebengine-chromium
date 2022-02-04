@@ -5,8 +5,11 @@
  * found in the LICENSE file.
  */
 
-#include "src/sksl/SkSLIRGenerator.h"
 #include "src/sksl/ir/SkSLSetting.h"
+
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
 
 namespace SkSL {
@@ -23,7 +26,7 @@ public:
 
 class BoolCapsLookup : public CapsLookupMethod {
 public:
-    using CapsFn = bool (ShaderCapsClass::*)() const;
+    using CapsFn = bool (ShaderCaps::*)() const;
 
     BoolCapsLookup(const CapsFn& fn) : fGetCap(fn) {}
 
@@ -40,7 +43,7 @@ private:
 
 class IntCapsLookup : public CapsLookupMethod {
 public:
-    using CapsFn = int (ShaderCapsClass::*)() const;
+    using CapsFn = int (ShaderCaps::*)() const;
 
     IntCapsLookup(const CapsFn& fn) : fGetCap(fn) {}
 
@@ -75,9 +78,9 @@ private:
 };
 
 static const CapsLookupTable& caps_lookup_table() {
-    // Create a lookup table that converts strings into the equivalent ShaderCapsClass methods.
+    // Create a lookup table that converts strings into the equivalent ShaderCaps methods.
     static CapsLookupTable* sCapsLookupTable = new CapsLookupTable({
-    #define CAP(T, name) CapsLookupTable::Pair{#name, new T##CapsLookup{&ShaderCapsClass::name}}
+    #define CAP(T, name) CapsLookupTable::Pair{#name, new T##CapsLookup{&ShaderCaps::name}}
         CAP(Bool, fbFetchSupport),
         CAP(Bool, fbFetchNeedsCustomOutput),
         CAP(Bool, flatInterpolationSupport),
@@ -87,7 +90,6 @@ static const CapsLookupTable& caps_lookup_table() {
         CAP(Bool, mustDeclareFragmentShaderOutput),
         CAP(Bool, mustDoOpBetweenFloorAndAbs),
         CAP(Bool, mustGuardDivisionEvenAfterExplicitZeroCheck),
-        CAP(Bool, inBlendModesFailRandomlyForAllZeroVec),
         CAP(Bool, atan2ImplementedAsAtanYOverX),
         CAP(Bool, canUseAnyFunctionInShader),
         CAP(Bool, floatIs32Bits),

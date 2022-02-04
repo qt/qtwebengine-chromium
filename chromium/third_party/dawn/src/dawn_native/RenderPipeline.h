@@ -41,7 +41,7 @@ namespace dawn_native {
 
     bool IsStripPrimitiveTopology(wgpu::PrimitiveTopology primitiveTopology);
 
-    bool StencilTestEnabled(const DepthStencilState* mDepthStencil);
+    bool StencilTestEnabled(const DepthStencilState* depthStencil);
 
     struct VertexAttributeInfo {
         wgpu::VertexFormat format;
@@ -95,6 +95,8 @@ namespace dawn_native {
         uint32_t GetSampleCount() const;
         uint32_t GetSampleMask() const;
         bool IsAlphaToCoverageEnabled() const;
+        bool WritesDepth() const;
+        bool WritesStencil() const;
 
         const AttachmentState* GetAttachmentState() const;
 
@@ -105,8 +107,10 @@ namespace dawn_native {
             bool operator()(const RenderPipelineBase* a, const RenderPipelineBase* b) const;
         };
 
-        // Initialize() should only be called once by the frontend.
-        virtual MaybeError Initialize() = 0;
+      protected:
+        // Constructor used only for mocking and testing.
+        RenderPipelineBase(DeviceBase* device);
+        void DestroyImpl() override;
 
       private:
         RenderPipelineBase(DeviceBase* device, ObjectBase::ErrorTag tag);
@@ -131,6 +135,8 @@ namespace dawn_native {
         DepthStencilState mDepthStencil;
         MultisampleState mMultisample;
         bool mClampDepth = false;
+        bool mWritesDepth = false;
+        bool mWritesStencil = false;
     };
 
 }  // namespace dawn_native

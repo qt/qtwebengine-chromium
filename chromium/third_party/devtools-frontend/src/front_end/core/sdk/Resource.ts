@@ -32,7 +32,7 @@
 
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Common from '../common/common.js';
-import * as Platfrom from '../platform/platform.js';
+import * as Platform from '../platform/platform.js';
 import type * as Protocol from '../../generated/protocol.js';
 
 import type {NetworkRequest} from './NetworkRequest.js';
@@ -52,7 +52,6 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
   #lastModifiedInternal: Date|null;
   readonly #contentSizeInternal: number|null;
   #contentInternal!: string|null;
-  #contentLoadError!: string|null;
   #contentEncodedInternal!: boolean;
   readonly #pendingContentCallbacks: ((arg0: Object|null) => void)[];
   #parsedURLInternal?: Common.ParsedURL.ParsedURL;
@@ -73,7 +72,7 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
     this.#mimeTypeInternal = mimeType;
     this.#isGeneratedInternal = false;
 
-    this.#lastModifiedInternal = lastModified && Platfrom.DateUtilities.isValid(lastModified) ? lastModified : null;
+    this.#lastModifiedInternal = lastModified && Platform.DateUtilities.isValid(lastModified) ? lastModified : null;
     this.#contentSizeInternal = contentSize;
     this.#pendingContentCallbacks = [];
     if (this.#requestInternal && !this.#requestInternal.finished) {
@@ -87,7 +86,7 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
     }
     const lastModifiedHeader = this.#requestInternal.responseLastModified();
     const date = lastModifiedHeader ? new Date(lastModifiedHeader) : null;
-    this.#lastModifiedInternal = date && Platfrom.DateUtilities.isValid(date) ? date : null;
+    this.#lastModifiedInternal = date && Platform.DateUtilities.isValid(date) ? date : null;
     return this.#lastModifiedInternal;
   }
 
@@ -151,6 +150,7 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
     this.#isGeneratedInternal = val;
   }
 
+  // TODO(crbug.com/1253323): Cast to RawPathString will be removed when migration to branded types is complete.
   contentURL(): string {
     return this.#urlInternal;
   }
@@ -244,12 +244,10 @@ export class Resource implements TextUtils.ContentProvider.ContentProvider {
           {frameId: this.frameId as Protocol.Page.FrameId, url: this.url});
       const protocolError = response.getError();
       if (protocolError) {
-        this.#contentLoadError = protocolError;
         this.#contentInternal = null;
         loadResult = {content: null, error: protocolError, isEncoded: false};
       } else {
         this.#contentInternal = response.content;
-        this.#contentLoadError = null;
         loadResult = {content: response.content, isEncoded: response.base64Encoded};
       }
       this.#contentEncodedInternal = response.base64Encoded;

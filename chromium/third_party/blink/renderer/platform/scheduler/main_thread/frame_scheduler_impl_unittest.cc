@@ -16,8 +16,8 @@
 #include "base/metrics/field_trial_param_associator.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/run_loop.h"
-#include "base/single_thread_task_runner.h"
 #include "base/task/sequence_manager/test/sequence_manager_for_test.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -182,7 +182,7 @@ class FrameSchedulerDelegateForTesting : public FrameScheduler::Delegate {
     return base::UnguessableToken::Null();
   }
 
-  MOCK_METHOD1(UpdateActiveSchedulerTrackedFeatures, void(uint64_t));
+  MOCK_METHOD1(UpdateBackForwardCacheDisablingFeatures, void(uint64_t));
 
   int update_task_time_calls_ = 0;
 };
@@ -2660,7 +2660,7 @@ TEST_F(FrameSchedulerImplTest, FeatureUpload) {
                 testing::Mock::VerifyAndClearExpectations(delegate);
                 EXPECT_CALL(
                     *delegate,
-                    UpdateActiveSchedulerTrackedFeatures(
+                    UpdateBackForwardCacheDisablingFeatures(
                         (1 << static_cast<size_t>(
                              SchedulingPolicy::Feature::
                                  kMainResourceHasCacheControlNoStore)) |
@@ -2694,7 +2694,7 @@ TEST_F(FrameSchedulerImplTest, FeatureUpload_FrameDestruction) {
                 // Ensure that the feature upload is delayed.
                 testing::Mock::VerifyAndClearExpectations(delegate);
                 EXPECT_CALL(*delegate,
-                            UpdateActiveSchedulerTrackedFeatures(
+                            UpdateBackForwardCacheDisablingFeatures(
                                 (1 << static_cast<size_t>(
                                      SchedulingPolicy::Feature::kWebSocket))));
               },
@@ -2714,7 +2714,7 @@ TEST_F(FrameSchedulerImplTest, FeatureUpload_FrameDestruction) {
                        testing::Mock::VerifyAndClearExpectations(delegate);
                        EXPECT_CALL(
                            *delegate,
-                           UpdateActiveSchedulerTrackedFeatures(testing::_))
+                           UpdateBackForwardCacheDisablingFeatures(testing::_))
                            .Times(0);
                      },
                      frame_scheduler_.get(), frame_scheduler_delegate_.get(),

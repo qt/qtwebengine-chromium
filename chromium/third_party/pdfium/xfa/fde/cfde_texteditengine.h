@@ -12,9 +12,9 @@
 #include <utility>
 #include <vector>
 
-#include "core/fxcrt/fx_string.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
+#include "core/fxcrt/widestring.h"
 #include "core/fxge/dib/fx_dib.h"
 #include "xfa/fgas/layout/cfgas_txtbreak.h"
 
@@ -38,7 +38,7 @@ inline FDE_TEXTEDITPIECE::FDE_TEXTEDITPIECE(const FDE_TEXTEDITPIECE& that) =
     default;
 inline FDE_TEXTEDITPIECE::~FDE_TEXTEDITPIECE() = default;
 
-class CFDE_TextEditEngine : public CFGAS_TxtBreak::Engine {
+class CFDE_TextEditEngine final : public CFGAS_TxtBreak::Engine {
  public:
   class Iterator {
    public:

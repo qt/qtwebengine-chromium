@@ -89,7 +89,16 @@ message PowerManagementPolicy {
     // less than or equal to |idle_ms|.
     optional int64 idle_warning_ms = 5;
 
-    // Next ID to use: 6
+    // Similar to the `screen_dim_ms`, also controls when the screen will be
+    // dimmed, in milliseconds.
+    // A quick dim may happen after this delay, before a standard screen dim if
+    // this is set and hps result is negative. Therefore this only applies on a
+    // device that has hps.
+    // 0 disables quick_dim; so do values that are >= screen_dim_ms, since
+    // there is no point to have a quick dim that is slower than a standard dim.
+    optional int64 quick_dim_ms = 6;
+
+    // Next ID to use: 7
   }
 
   // Action to perform when |idle_ms| (see Delays) is reached without any
@@ -250,7 +259,12 @@ message PowerManagementPolicy {
   // Ignored unless powerd is configured to honor charging-related prefs.
   optional BatteryChargeMode battery_charge_mode = 24;
 
-  // Next value to use: 26
+  // This field is only used for experiment and will be removed soon after the
+  // experiment. This controls whether to send feedback to DimAdvisor to disable
+  // quick dim for a short period of time if a quick dim is undimmed.
+  optional bool send_feedback_if_undimmed = 26;
+
+  // Next value to use: 27
 }
 
 // Message included in IdleActionImminent signals.

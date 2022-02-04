@@ -73,6 +73,7 @@ CollectiveAllReduceStrategy = (
 def _get_tpu_strategy_creator(steps_per_run,
                               use_single_core=False,
                               enable_packed_variable=False,
+                              enable_spmd_xla_paritioning=False,
                               **kwargs):
 
   def _create_tpu_strategy():
@@ -110,10 +111,16 @@ def _get_tpu_strategy_creator(steps_per_run,
 
     # Steps per run is only supported in TF 1.x
     if tf2.enabled():
-      strategy = tpu_lib.TPUStrategy(resolver, device_assignment, **kwargs)
+      strategy = tpu_lib.TPUStrategyV2(
+          resolver,
+          device_assignment,
+          experimental_spmd_xla_partitioning=enable_spmd_xla_paritioning,
+          **kwargs)
     else:
       strategy = tpu_lib.TPUStrategyV1(resolver, steps_per_run,
                                        device_assignment, **kwargs)
+    if enable_packed_variable and enable_spmd_xla_paritioning:
+      raise ValueError("Packed Variable is not compatiable with SPMD mode")
     strategy._enable_packed_variable_in_eager_mode = enable_packed_variable  # pylint: disable=protected-access
     return strategy
 
@@ -198,9 +205,17 @@ def get_cluster_def(num_workers, num_ps):
   }
 
 
+# Due to b/195615322, FixedShardsPartitioner will wrongly partition
+# RNG state, so we use MinSizePartitioner as the default. Maximum RNG
+# state size is int64[3] which is 8 * 3 bytes, so we set
+# min_shard_bytes to 8 * 3 + 1.
+DEFAULT_PARTITIONER = sharded_variable.MinSizePartitioner(
+    min_shard_bytes=8 * 3 + 1, max_shards=2)
+
+
 def _get_ps_strategy_creator(
     num_workers, num_ps, required_gpus=0,
-    variable_partitioner=sharded_variable.FixedShardsPartitioner(2)):
+    variable_partitioner=DEFAULT_PARTITIONER):
 
   def _create_ps_strategy(resolver, variable_partitioner):
     return parameter_server_strategy_v2.ParameterServerStrategyV2(
@@ -327,6 +342,11 @@ tpu_strategy_packed_var = combinations.NamedDistribution(
     "TPUPackedVar",
     _get_tpu_strategy_creator(steps_per_run=2, enable_packed_variable=True),
     required_tpu=True)
+tpu_strategy_spmd = combinations.NamedDistribution(
+    "TPUUseSPMD",
+    _get_tpu_strategy_creator(
+        steps_per_run=2, enable_spmd_xla_paritioning=True),
+    required_tpu=True)
 tpu_strategy_one_step = combinations.NamedDistribution(
     "TPUOneStep", _get_tpu_strategy_creator(steps_per_run=1), required_tpu=True)
 tpu_strategy_one_core = combinations.NamedDistribution(
@@ -435,7 +455,7 @@ multi_worker_mirrored_4x1_cpu = combinations.NamedDistribution(
 
 def parameter_server_strategy_fn(
     name, num_workers, num_ps, required_gpus=0,
-    variable_partitioner=sharded_variable.FixedShardsPartitioner(2)):
+    variable_partitioner=DEFAULT_PARTITIONER):
   return combinations.NamedDistribution(
       name,
       _get_ps_strategy_creator(

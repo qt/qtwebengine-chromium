@@ -209,12 +209,12 @@ ByteString CFX_Win32FontInfo::FindFont(const ByteString& name) {
   if (!m_pMapper)
     return name;
 
-  Optional<ByteString> maybe_installed =
+  absl::optional<ByteString> maybe_installed =
       m_pMapper->InstalledFontNameStartingWith(name);
   if (maybe_installed.has_value())
     return maybe_installed.value();
 
-  Optional<ByteString> maybe_localized =
+  absl::optional<ByteString> maybe_localized =
       m_pMapper->LocalizedFontNameStartingWith(name);
   if (maybe_localized.has_value())
     return maybe_localized.value();
@@ -441,6 +441,14 @@ void CWin32Platform::Init() {
 
 std::unique_ptr<SystemFontInfoIface>
 CWin32Platform::CreateDefaultSystemFontInfo() {
+  auto** user_paths = CFX_GEModule::Get()->GetUserFontPaths();
+  if (user_paths) {
+    auto font_info = std::make_unique<CFX_Win32FallbackFontInfo>();
+    for (; *user_paths; user_paths++)
+      font_info->AddPath(*user_paths);
+    return std::move(font_info);
+  }
+
   if (pdfium::base::win::IsUser32AndGdi32Available())
     return std::make_unique<CFX_Win32FontInfo>();
 

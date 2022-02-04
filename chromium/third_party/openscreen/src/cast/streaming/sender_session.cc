@@ -321,7 +321,7 @@ void SenderSession::OnAnswer(ReceiverMessage message) {
         SenderMessage{SenderMessage::Type::kGetCapabilities,
                       ++current_sequence_number_, true},
         ReceiverMessage::Type::kCapabilitiesResponse,
-        [this](ReceiverMessage message) { OnCapabilitiesResponse(message); });
+        [this](ReceiverMessage msg) { OnCapabilitiesResponse(msg); });
     if (!result.ok()) {
       config_.client->OnError(
           this, Error(Error::Code::kNegotiationFailure,
@@ -412,7 +412,7 @@ std::unique_ptr<Sender> SenderSession::CreateSender(Ssrc receiver_ssrc,
                        stream.aes_key,
                        stream.aes_iv_mask,
                        /* is_pli_enabled*/ true};
-
+  OSP_DCHECK(config.IsValid());
   return std::make_unique<Sender>(config_.environment, &packet_router_,
                                   std::move(config), type);
 }

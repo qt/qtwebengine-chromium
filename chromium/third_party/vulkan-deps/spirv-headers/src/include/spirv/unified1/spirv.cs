@@ -349,6 +349,7 @@ namespace Spv
             VolatileTexelKHR = 11,
             SignExtend = 12,
             ZeroExtend = 13,
+            Offsets = 16,
         }
 
         public enum ImageOperandsMask
@@ -372,6 +373,7 @@ namespace Spv
             VolatileTexelKHR = 0x00000800,
             SignExtend = 0x00001000,
             ZeroExtend = 0x00002000,
+            Offsets = 0x00010000,
         }
 
         public enum FPFastMathModeShift
@@ -497,6 +499,10 @@ namespace Spv
             RestrictPointerEXT = 5355,
             AliasedPointer = 5356,
             AliasedPointerEXT = 5356,
+            BindlessSamplerNV = 5398,
+            BindlessImageNV = 5399,
+            BoundSamplerNV = 5400,
+            BoundImageNV = 5401,
             SIMTCallINTEL = 5599,
             ReferencedIndirectlyINTEL = 5602,
             ClobberINTEL = 5607,
@@ -536,6 +542,7 @@ namespace Spv
             FunctionFloatingPointModeINTEL = 6080,
             SingleElementVectorINTEL = 6085,
             VectorComputeCallableFunctionINTEL = 6087,
+            MediaBlockIOINTEL = 6140,
         }
 
         public enum BuiltIn
@@ -1011,6 +1018,7 @@ namespace Spv
             ShaderSMBuiltinsNV = 5373,
             FragmentShaderPixelInterlockEXT = 5378,
             DemoteToHelperInvocationEXT = 5379,
+            BindlessTextureNV = 5390,
             SubgroupShuffleINTEL = 5568,
             SubgroupBufferBlockIOINTEL = 5569,
             SubgroupImageBlockIOINTEL = 5570,
@@ -1568,6 +1576,13 @@ namespace Spv
             OpEndInvocationInterlockEXT = 5365,
             OpDemoteToHelperInvocationEXT = 5380,
             OpIsHelperInvocationEXT = 5381,
+            OpConvertUToImageNV = 5391,
+            OpConvertUToSamplerNV = 5392,
+            OpConvertImageToUNV = 5393,
+            OpConvertSamplerToUNV = 5394,
+            OpConvertUToSampledImageNV = 5395,
+            OpConvertSampledImageToUNV = 5396,
+            OpSamplerImageAddressingModeNV = 5397,
             OpSubgroupShuffleINTEL = 5571,
             OpSubgroupShuffleDownINTEL = 5572,
             OpSubgroupShuffleUpINTEL = 5573,
@@ -1592,7 +1607,7 @@ namespace Spv
             OpUSubSatINTEL = 5596,
             OpIMul32x16INTEL = 5597,
             OpUMul32x16INTEL = 5598,
-            OpConstFunctionPointerINTEL = 5600,
+            OpConstantFunctionPointerINTEL = 5600,
             OpFunctionPointerCallINTEL = 5601,
             OpAsmTargetINTEL = 5609,
             OpAsmINTEL = 5610,

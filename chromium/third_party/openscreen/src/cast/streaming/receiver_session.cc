@@ -102,12 +102,11 @@ template <typename T>
 bool HasLessRestrictiveLimits(std::vector<T> first, std::vector<T> second) {
   // Sort both vectors to allow for element-by-element comparison between the
   // two. All elements with |applies_to_all_codecs| set are sorted to the front.
-  std::function<bool(const T&, const T&)> sorter = [](const T& first,
-                                                      const T& second) {
-    if (first.applies_to_all_codecs != second.applies_to_all_codecs) {
-      return first.applies_to_all_codecs;
+  std::function<bool(const T&, const T&)> sorter = [](const T& x, const T& y) {
+    if (x.applies_to_all_codecs != y.applies_to_all_codecs) {
+      return x.applies_to_all_codecs;
     }
-    return static_cast<int>(first.codec) < static_cast<int>(second.codec);
+    return static_cast<int>(x.codec) < static_cast<int>(y.codec);
   };
   std::sort(first.begin(), first.end(), sorter);
   std::sort(second.begin(), second.end(), sorter);
@@ -421,7 +420,6 @@ void ReceiverSession::InitializeSession(const SessionProperties& properties) {
   if (properties.mode == CastMode::kMirroring) {
     client_->OnNegotiated(this, std::move(receivers));
   } else {
-    // TODO(jophba): cleanup sequence number usage.
     rpc_messenger_ = std::make_unique<RpcMessenger>([this](std::vector<uint8_t> message) {
       Error error = this->messenger_.SendMessage(
           ReceiverMessage{ReceiverMessage::Type::kRpc, -1, true /* valid */,
@@ -449,6 +447,9 @@ std::unique_ptr<Receiver> ReceiverSession::ConstructReceiver(
                           stream.rtp_timebase, stream.channels,
                           stream.target_delay, stream.aes_key,
                           stream.aes_iv_mask,  /* is_pli_enabled */ true};
+  if (!config.IsValid()) {
+    return nullptr;
+  }
   return std::make_unique<Receiver>(environment_, &packet_router_,
                                     std::move(config));
 }

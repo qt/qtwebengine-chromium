@@ -10,6 +10,7 @@
 #include "base/containers/contains.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
+#include "base/memory/raw_ptr.h"
 #include "base/ranges/algorithm.h"
 #include "base/trace_event/typed_macros.h"
 #include "components/guest_view/browser/guest_view_base.h"
@@ -48,7 +49,7 @@ namespace {
 //    content::ChildProcessSecurityPolicy.
 // 2. This robustly handles initial empty documents (see the *InitialEmptyDoc*
 //    tests in //content_script_tracker_browsertest.cc) and isn't impacted
-//    by ReadyToCommit races associated with RenderDocumentHostUserData.
+//    by ReadyToCommit races associated with DocumentUserData.
 // For more information see:
 // https://docs.google.com/document/d/1MFprp2ss2r9RNamJ7Jxva1bvRZvec3rzGceDGoJ6vW0/edit#
 class RenderProcessHostUserData : public base::SupportsUserData::Data {
@@ -167,7 +168,15 @@ class RenderFrameHostAdapter
     return std::make_unique<RenderFrameHostAdapter>(parent_or_opener);
   }
 
-  GURL GetUrl() const override { return frame_->GetLastCommittedURL(); }
+  GURL GetUrl() const override {
+    if (frame_->GetLastCommittedURL().is_empty()) {
+      // It's possible for URL to be empty when `frame_` is on the initial empty
+      // document. TODO(https://crbug.com/1197308): Consider making  `frame_`'s
+      // document's URL about:blank instead of empty in that case.
+      return GURL(url::kAboutBlankURL);
+    }
+    return frame_->GetLastCommittedURL();
+  }
 
   url::Origin GetOrigin() const override {
     return frame_->GetLastCommittedOrigin();
@@ -190,7 +199,7 @@ class RenderFrameHostAdapter
   uintptr_t GetId() const override { return frame_->GetRoutingID(); }
 
  private:
-  content::RenderFrameHost* const frame_;
+  const raw_ptr<content::RenderFrameHost> frame_;
 };
 
 // This function approximates ScriptContext::GetEffectiveDocumentURLForInjection

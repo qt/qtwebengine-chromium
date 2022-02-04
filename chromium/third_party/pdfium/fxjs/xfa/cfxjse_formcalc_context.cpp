@@ -19,6 +19,7 @@
 #include "core/fxcrt/cfx_datetime.h"
 #include "core/fxcrt/cfx_widetextbuf.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_memory_wrappers.h"
 #include "core/fxcrt/fx_random.h"
 #include "fxjs/fxv8.h"
 #include "fxjs/xfa/cfxjse_class.h"
@@ -26,9 +27,9 @@
 #include "fxjs/xfa/cfxjse_engine.h"
 #include "fxjs/xfa/cfxjse_value.h"
 #include "fxjs/xfa/cjx_object.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/check.h"
 #include "third_party/base/cxx17_backports.h"
-#include "third_party/base/optional.h"
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-function-callback.h"
 #include "v8/include/v8-object.h"
@@ -1447,8 +1448,8 @@ double ValueToDouble(v8::Isolate* pIsolate, v8::Local<v8::Value> arg) {
   return fxv8::ReentrantToDoubleHelper(pIsolate, extracted);
 }
 
-Optional<double> ExtractDouble(v8::Isolate* pIsolate,
-                               v8::Local<v8::Value> src) {
+absl::optional<double> ExtractDouble(v8::Isolate* pIsolate,
+                                     v8::Local<v8::Value> src) {
   if (src.IsEmpty())
     return 0.0;
 
@@ -1458,7 +1459,7 @@ Optional<double> ExtractDouble(v8::Isolate* pIsolate,
   v8::Local<v8::Array> arr = src.As<v8::Array>();
   uint32_t iLength = fxv8::GetArrayLengthHelper(arr);
   if (iLength < 3)
-    return pdfium::nullopt;
+    return absl::nullopt;
 
   v8::Local<v8::Value> propertyValue =
       fxv8::ReentrantGetArrayElementHelper(pIsolate, arr, 1);
@@ -1559,7 +1560,7 @@ v8::Local<v8::Value> GetObjectForName(CFXJSE_HostObject* pHostObject,
     return v8::Local<v8::Value>();
 
   CFXJSE_Engine* pScriptContext = pDoc->GetScriptContext();
-  Optional<CFXJSE_Engine::ResolveResult> maybeResult =
+  absl::optional<CFXJSE_Engine::ResolveResult> maybeResult =
       pScriptContext->ResolveObjects(
           pScriptContext->GetThisObject(),
           WideString::FromUTF8(bsAccessorName).AsStringView(),
@@ -1575,7 +1576,7 @@ v8::Local<v8::Value> GetObjectForName(CFXJSE_HostObject* pHostObject,
       maybeResult.value().objects.front().Get());
 }
 
-Optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
+absl::optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     CFXJSE_HostObject* pHostObject,
     v8::Local<v8::Value> pRefValue,
     ByteStringView bsSomExp,
@@ -1583,7 +1584,7 @@ Optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     bool bHasNoResolveName) {
   CXFA_Document* pDoc = ToFormCalcContext(pHostObject)->GetDocument();
   if (!pDoc)
-    return pdfium::nullopt;
+    return absl::nullopt;
 
   v8::Isolate* pIsolate = ToFormCalcContext(pHostObject)->GetIsolate();
   WideString wsSomExpression = WideString::FromUTF8(bsSomExp);
@@ -1597,12 +1598,12 @@ Optional<CFXJSE_Engine::ResolveResult> ResolveObjects(
     } else {
       pNode = CFXJSE_Engine::ToObject(pIsolate, pRefValue);
       if (!pNode)
-        return pdfium::nullopt;
+        return absl::nullopt;
 
       if (bHasNoResolveName) {
         WideString wsName;
         if (CXFA_Node* pXFANode = pNode->AsNode()) {
-          Optional<WideString> ret =
+          absl::optional<WideString> ret =
               pXFANode->JSObject()->TryAttribute(XFA_Attribute::Name, false);
           if (ret.has_value())
             wsName = ret.value();
@@ -1684,7 +1685,7 @@ void CFXJSE_FormCalcContext::Abs(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Abs");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Abs");
     return;
   }
 
@@ -1725,7 +1726,7 @@ void CFXJSE_FormCalcContext::Ceil(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Ceil");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Ceil");
     return;
   }
 
@@ -1757,7 +1758,7 @@ void CFXJSE_FormCalcContext::Floor(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Floor");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Floor");
     return;
   }
 
@@ -1820,7 +1821,7 @@ void CFXJSE_FormCalcContext::Mod(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowParamCountMismatchException(L"Mod");
+    pContext->ThrowParamCountMismatchException("Mod");
     return;
   }
 
@@ -1829,8 +1830,10 @@ void CFXJSE_FormCalcContext::Mod(
     return;
   }
 
-  Optional<double> maybe_dividend = ExtractDouble(info.GetIsolate(), info[0]);
-  Optional<double> maybe_divisor = ExtractDouble(info.GetIsolate(), info[1]);
+  absl::optional<double> maybe_dividend =
+      ExtractDouble(info.GetIsolate(), info[0]);
+  absl::optional<double> maybe_divisor =
+      ExtractDouble(info.GetIsolate(), info[1]);
   if (!maybe_dividend.has_value() || !maybe_divisor.has_value()) {
     pContext->ThrowArgumentMismatchException();
     return;
@@ -1854,7 +1857,7 @@ void CFXJSE_FormCalcContext::Round(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    pContext->ThrowParamCountMismatchException(L"Round");
+    pContext->ThrowParamCountMismatchException("Round");
     return;
   }
 
@@ -1863,7 +1866,8 @@ void CFXJSE_FormCalcContext::Round(
     return;
   }
 
-  Optional<double> maybe_value = ExtractDouble(info.GetIsolate(), info[0]);
+  absl::optional<double> maybe_value =
+      ExtractDouble(info.GetIsolate(), info[0]);
   if (!maybe_value.has_value()) {
     pContext->ThrowArgumentMismatchException();
     return;
@@ -1876,7 +1880,7 @@ void CFXJSE_FormCalcContext::Round(
       info.GetReturnValue().SetNull();
       return;
     }
-    Optional<double> maybe_precision =
+    absl::optional<double> maybe_precision =
         ExtractDouble(info.GetIsolate(), info[1]);
     if (!maybe_precision.has_value()) {
       pContext->ThrowArgumentMismatchException();
@@ -1916,7 +1920,7 @@ void CFXJSE_FormCalcContext::Date(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 0) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Date");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Date");
     return;
   }
 
@@ -1936,7 +1940,7 @@ void CFXJSE_FormCalcContext::Date2Num(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Date2Num");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Date2Num");
     return;
   }
 
@@ -1979,7 +1983,7 @@ void CFXJSE_FormCalcContext::DateFmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Date2Num");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Date2Num");
     return;
   }
 
@@ -2017,7 +2021,7 @@ void CFXJSE_FormCalcContext::IsoDate2Num(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"IsoDate2Num");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("IsoDate2Num");
     return;
   }
   v8::Local<v8::Value> argOne = GetSimpleValue(info, 0);
@@ -2035,7 +2039,7 @@ void CFXJSE_FormCalcContext::IsoTime2Num(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException(L"IsoTime2Num");
+    pContext->ThrowParamCountMismatchException("IsoTime2Num");
     return;
   }
 
@@ -2089,7 +2093,7 @@ void CFXJSE_FormCalcContext::LocalDateFmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"LocalDateFmt");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("LocalDateFmt");
     return;
   }
 
@@ -2127,7 +2131,7 @@ void CFXJSE_FormCalcContext::LocalTimeFmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"LocalTimeFmt");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("LocalTimeFmt");
     return;
   }
 
@@ -2165,7 +2169,7 @@ void CFXJSE_FormCalcContext::Num2Date(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Num2Date");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Num2Date");
     return;
   }
 
@@ -2307,7 +2311,7 @@ void CFXJSE_FormCalcContext::Num2GMTime(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Num2GMTime");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Num2GMTime");
     return;
   }
 
@@ -2355,7 +2359,7 @@ void CFXJSE_FormCalcContext::Num2Time(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Num2Time");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Num2Time");
     return;
   }
 
@@ -2402,7 +2406,7 @@ void CFXJSE_FormCalcContext::Time(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 0) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Time");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Time");
     return;
   }
 
@@ -2419,7 +2423,7 @@ void CFXJSE_FormCalcContext::Time2Num(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Time2Num");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Time2Num");
     return;
   }
 
@@ -2504,7 +2508,7 @@ void CFXJSE_FormCalcContext::TimeFmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"TimeFmt");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("TimeFmt");
     return;
   }
 
@@ -2683,7 +2687,7 @@ void CFXJSE_FormCalcContext::Apr(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"Apr");
+    pContext->ThrowParamCountMismatchException("Apr");
     return;
   }
 
@@ -2737,7 +2741,7 @@ void CFXJSE_FormCalcContext::CTerm(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"CTerm");
+    pContext->ThrowParamCountMismatchException("CTerm");
     return;
   }
 
@@ -2769,7 +2773,7 @@ void CFXJSE_FormCalcContext::FV(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"FV");
+    pContext->ThrowParamCountMismatchException("FV");
     return;
   }
 
@@ -2811,7 +2815,7 @@ void CFXJSE_FormCalcContext::IPmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 5) {
-    pContext->ThrowParamCountMismatchException(L"IPmt");
+    pContext->ThrowParamCountMismatchException("IPmt");
     return;
   }
 
@@ -2872,7 +2876,7 @@ void CFXJSE_FormCalcContext::NPV(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2) {
-    pContext->ThrowParamCountMismatchException(L"NPV");
+    pContext->ThrowParamCountMismatchException("NPV");
     return;
   }
 
@@ -2914,7 +2918,7 @@ void CFXJSE_FormCalcContext::Pmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"Pmt");
+    pContext->ThrowParamCountMismatchException("Pmt");
     return;
   }
 
@@ -2950,7 +2954,7 @@ void CFXJSE_FormCalcContext::PPmt(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 5) {
-    pContext->ThrowParamCountMismatchException(L"PPmt");
+    pContext->ThrowParamCountMismatchException("PPmt");
     return;
   }
 
@@ -3011,7 +3015,7 @@ void CFXJSE_FormCalcContext::PV(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"PV");
+    pContext->ThrowParamCountMismatchException("PV");
     return;
   }
 
@@ -3047,7 +3051,7 @@ void CFXJSE_FormCalcContext::Rate(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"Rate");
+    pContext->ThrowParamCountMismatchException("Rate");
     return;
   }
 
@@ -3079,7 +3083,7 @@ void CFXJSE_FormCalcContext::Term(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 3) {
-    pContext->ThrowParamCountMismatchException(L"Term");
+    pContext->ThrowParamCountMismatchException("Term");
     return;
   }
 
@@ -3112,7 +3116,7 @@ void CFXJSE_FormCalcContext::Choose(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2) {
-    pContext->ThrowParamCountMismatchException(L"Choose");
+    pContext->ThrowParamCountMismatchException("Choose");
     return;
   }
 
@@ -3186,7 +3190,7 @@ void CFXJSE_FormCalcContext::Exists(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Exists");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Exists");
     return;
   }
   info.GetReturnValue().Set(fxv8::IsObject(info[0]));
@@ -3197,7 +3201,7 @@ void CFXJSE_FormCalcContext::HasValue(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"HasValue");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("HasValue");
     return;
   }
 
@@ -3219,7 +3223,7 @@ void CFXJSE_FormCalcContext::Oneof(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() < 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Oneof");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Oneof");
     return;
   }
 
@@ -3238,7 +3242,7 @@ void CFXJSE_FormCalcContext::Within(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Within");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Within");
     return;
   }
 
@@ -3272,7 +3276,7 @@ void CFXJSE_FormCalcContext::If(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"If");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("If");
     return;
   }
 
@@ -3288,7 +3292,7 @@ void CFXJSE_FormCalcContext::Eval(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException(L"Eval");
+    pContext->ThrowParamCountMismatchException("Eval");
     return;
   }
 
@@ -3301,20 +3305,20 @@ void CFXJSE_FormCalcContext::Eval(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsUtf8Script.AsStringView());
-  Optional<CFX_WideTextBuf> wsJavaScriptBuf = CFXJSE_FormCalcContext::Translate(
-      pContext->GetDocument()->GetHeap(), wsCalcScript.AsStringView());
+  absl::optional<CFX_WideTextBuf> wsJavaScriptBuf =
+      CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
+                                        wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
     pContext->ThrowCompilerErrorException();
     return;
   }
-
   std::unique_ptr<CFXJSE_Context> pNewContext =
       CFXJSE_Context::Create(pIsolate, nullptr, nullptr, nullptr);
 
   auto returnValue = std::make_unique<CFXJSE_Value>();
-  pNewContext->ExecuteScript(
-      FX_UTF8Encode(wsJavaScriptBuf.value().AsStringView()).c_str(),
-      returnValue.get(), v8::Local<v8::Object>());
+  ByteString bsScript = FX_UTF8Encode(wsJavaScriptBuf.value().AsStringView());
+  pNewContext->ExecuteScript(bsScript.AsStringView(), returnValue.get(),
+                             v8::Local<v8::Object>());
 
   info.GetReturnValue().Set(returnValue->DirectGetValue());
 }
@@ -3325,7 +3329,7 @@ void CFXJSE_FormCalcContext::Ref(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException(L"Ref");
+    pContext->ThrowParamCountMismatchException("Ref");
     return;
   }
 
@@ -3370,7 +3374,7 @@ void CFXJSE_FormCalcContext::UnitType(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"UnitType");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("UnitType");
     return;
   }
 
@@ -3478,7 +3482,7 @@ void CFXJSE_FormCalcContext::UnitValue(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"UnitValue");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("UnitValue");
     return;
   }
 
@@ -3616,7 +3620,7 @@ void CFXJSE_FormCalcContext::At(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"At");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("At");
     return;
   }
 
@@ -3646,7 +3650,7 @@ void CFXJSE_FormCalcContext::Concat(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Concat");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Concat");
     return;
   }
 
@@ -3675,7 +3679,7 @@ void CFXJSE_FormCalcContext::Decode(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Decode");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Decode");
     return;
   }
 
@@ -3726,7 +3730,7 @@ void CFXJSE_FormCalcContext::Encode(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Encode");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Encode");
     return;
   }
 
@@ -3773,7 +3777,7 @@ void CFXJSE_FormCalcContext::Format(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() < 2) {
-    pContext->ThrowParamCountMismatchException(L"Format");
+    pContext->ThrowParamCountMismatchException("Format");
     return;
   }
 
@@ -3852,7 +3856,7 @@ void CFXJSE_FormCalcContext::Left(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Left");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Left");
     return;
   }
 
@@ -3875,7 +3879,7 @@ void CFXJSE_FormCalcContext::Len(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Len");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Len");
     return;
   }
 
@@ -3895,7 +3899,7 @@ void CFXJSE_FormCalcContext::Lower(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Lower");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Lower");
     return;
   }
 
@@ -3925,7 +3929,7 @@ void CFXJSE_FormCalcContext::Ltrim(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Ltrim");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Ltrim");
     return;
   }
 
@@ -3947,7 +3951,7 @@ void CFXJSE_FormCalcContext::Parse(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 2) {
-    pContext->ThrowParamCountMismatchException(L"Parse");
+    pContext->ThrowParamCountMismatchException("Parse");
     return;
   }
 
@@ -4091,7 +4095,7 @@ void CFXJSE_FormCalcContext::Replace(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 2 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Replace");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Replace");
     return;
   }
 
@@ -4121,7 +4125,7 @@ void CFXJSE_FormCalcContext::Right(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Right");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Right");
     return;
   }
 
@@ -4144,7 +4148,7 @@ void CFXJSE_FormCalcContext::Rtrim(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Rtrim");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Rtrim");
     return;
   }
 
@@ -4165,7 +4169,7 @@ void CFXJSE_FormCalcContext::Space(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Space");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Space");
     return;
   }
 
@@ -4175,16 +4179,16 @@ void CFXJSE_FormCalcContext::Space(
     return;
   }
 
-  int32_t count = std::max(0, ValueToInteger(info.GetIsolate(), argOne));
-  std::ostringstream spaceString;
-  int32_t index = 0;
-  while (index < count) {
-    spaceString << ' ';
-    index++;
+  // Maximum number of characters Acrobat can fit in a text box.
+  constexpr int kMaxCharCount = 15654908;
+  int count = std::max(0, ValueToInteger(info.GetIsolate(), argOne));
+  if (count > kMaxCharCount) {
+    ToFormCalcContext(pThis)->ThrowException("String too long.");
+    return;
   }
-  spaceString << '\0';
-  info.GetReturnValue().Set(fxv8::NewStringHelper(
-      info.GetIsolate(), ByteStringView(spaceString.str().c_str())));
+  std::vector<char, FxAllocAllocator<char>> space_string(count, ' ');
+  info.GetReturnValue().Set(
+      fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(space_string)));
 }
 
 // static
@@ -4193,7 +4197,7 @@ void CFXJSE_FormCalcContext::Str(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Str");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Str");
     return;
   }
 
@@ -4310,7 +4314,7 @@ void CFXJSE_FormCalcContext::Stuff(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 3 || argc > 4) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Stuff");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Stuff");
     return;
   }
 
@@ -4361,7 +4365,7 @@ void CFXJSE_FormCalcContext::Substr(
     CFXJSE_HostObject* pThis,
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   if (info.Length() != 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Substr");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Substr");
     return;
   }
 
@@ -4404,7 +4408,7 @@ void CFXJSE_FormCalcContext::Uuid(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 0 || argc > 1) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Uuid");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Uuid");
     return;
   }
 
@@ -4423,7 +4427,7 @@ void CFXJSE_FormCalcContext::Upper(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 2) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"Upper");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("Upper");
     return;
   }
 
@@ -4459,7 +4463,7 @@ void CFXJSE_FormCalcContext::WordNum(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   int32_t argc = info.Length();
   if (argc < 1 || argc > 3) {
-    ToFormCalcContext(pThis)->ThrowParamCountMismatchException(L"WordNum");
+    ToFormCalcContext(pThis)->ThrowParamCountMismatchException("WordNum");
     return;
   }
 
@@ -4507,7 +4511,7 @@ void CFXJSE_FormCalcContext::Get(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException(L"Get");
+    pContext->ThrowParamCountMismatchException("Get");
     return;
   }
 
@@ -4540,7 +4544,7 @@ void CFXJSE_FormCalcContext::Post(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2 || argc > 5) {
-    pContext->ThrowParamCountMismatchException(L"Post");
+    pContext->ThrowParamCountMismatchException("Post");
     return;
   }
 
@@ -4597,7 +4601,7 @@ void CFXJSE_FormCalcContext::Put(
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   int32_t argc = info.Length();
   if (argc < 2 || argc > 3) {
-    pContext->ThrowParamCountMismatchException(L"Put");
+    pContext->ThrowParamCountMismatchException("Put");
     return;
   }
 
@@ -5098,7 +5102,7 @@ void CFXJSE_FormCalcContext::eval_translation(
     const v8::FunctionCallbackInfo<v8::Value>& info) {
   CFXJSE_FormCalcContext* pContext = ToFormCalcContext(pThis);
   if (info.Length() != 1) {
-    pContext->ThrowParamCountMismatchException(L"Eval");
+    pContext->ThrowParamCountMismatchException("Eval");
     return;
   }
 
@@ -5110,8 +5114,9 @@ void CFXJSE_FormCalcContext::eval_translation(
   }
 
   WideString wsCalcScript = WideString::FromUTF8(bsArg.AsStringView());
-  Optional<CFX_WideTextBuf> wsJavaScriptBuf = CFXJSE_FormCalcContext::Translate(
-      pContext->GetDocument()->GetHeap(), wsCalcScript.AsStringView());
+  absl::optional<CFX_WideTextBuf> wsJavaScriptBuf =
+      CFXJSE_FormCalcContext::Translate(pContext->GetDocument()->GetHeap(),
+                                        wsCalcScript.AsStringView());
   if (!wsJavaScriptBuf.has_value()) {
     pContext->ThrowCompilerErrorException();
     return;
@@ -5291,7 +5296,7 @@ ByteString CFXJSE_FormCalcContext::GenerateSomExpression(ByteStringView bsName,
   return bsSomExp;
 }
 
-Optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
+absl::optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
     cppgc::Heap* pHeap,
     WideStringView wsFormcalc) {
   if (wsFormcalc.IsEmpty())
@@ -5301,15 +5306,15 @@ Optional<CFX_WideTextBuf> CFXJSE_FormCalcContext::Translate(
   CXFA_FMParser parser(pHeap, &lexer);
   CXFA_FMAST* ast = parser.Parse();
   if (!ast || parser.HasError())
-    return pdfium::nullopt;
+    return absl::nullopt;
 
   CXFA_FMToJavaScriptDepth::Reset();
-  Optional<CFX_WideTextBuf> wsJavaScript = ast->ToJavaScript();
+  absl::optional<CFX_WideTextBuf> wsJavaScript = ast->ToJavaScript();
   if (!wsJavaScript.has_value())
-    return pdfium::nullopt;
+    return absl::nullopt;
 
   if (CXFA_IsTooBig(wsJavaScript.value()))
-    return pdfium::nullopt;
+    return absl::nullopt;
 
   return wsJavaScript;
 }
@@ -5379,7 +5384,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     for (uint32_t i = 2; i < iLength; i++) {
       v8::Local<v8::Value> hJSObjValue =
           fxv8::ReentrantGetArrayElementHelper(info.GetIsolate(), arr, i);
-      Optional<CFXJSE_Engine::ResolveResult> maybeResult =
+      absl::optional<CFXJSE_Engine::ResolveResult> maybeResult =
           ResolveObjects(pThis, hJSObjValue, bsSomExp.AsStringView(),
                          bDotAccessor, bHasNoResolveName);
       if (maybeResult.has_value()) {
@@ -5389,9 +5394,8 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
       }
     }
     if (bAllEmpty) {
-      pContext->ThrowPropertyNotInObjectException(
-          WideString::FromUTF8(bsName.AsStringView()),
-          WideString::FromUTF8(bsSomExp.AsStringView()));
+      pContext->ThrowPropertyNotInObjectException(bsName.AsStringView(),
+                                                  bsSomExp.AsStringView());
       return;
     }
 
@@ -5409,7 +5413,7 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     return;
   }
 
-  Optional<CFXJSE_Engine::ResolveResult> maybeResult;
+  absl::optional<CFXJSE_Engine::ResolveResult> maybeResult;
   ByteString bsAccessorName =
       fxv8::ReentrantToByteStringHelper(info.GetIsolate(), info[1]);
   if (fxv8::IsObject(argAccessor) ||
@@ -5426,9 +5430,8 @@ void CFXJSE_FormCalcContext::DotAccessorCommon(
     }
   }
   if (!maybeResult.has_value()) {
-    pContext->ThrowPropertyNotInObjectException(
-        WideString::FromUTF8(bsName.AsStringView()),
-        WideString::FromUTF8(bsSomExp.AsStringView()));
+    pContext->ThrowPropertyNotInObjectException(bsName.AsStringView(),
+                                                bsSomExp.AsStringView());
     return;
   }
 
@@ -5515,44 +5518,47 @@ void CFXJSE_FormCalcContext::ApplyToObject(
 
 void CFXJSE_FormCalcContext::ThrowNoDefaultPropertyException(
     ByteStringView name) const {
-  ThrowException(WideString::FromUTF8(name) +
-                 WideString::FromASCII(" doesn't have a default property."));
+  ByteString msg(name);
+  msg += " doesn't have a default property.";
+  ThrowException(msg.AsStringView());
 }
 
 void CFXJSE_FormCalcContext::ThrowCompilerErrorException() const {
-  ThrowException(WideString::FromASCII("Compiler error."));
+  ThrowException("Compiler error.");
 }
 
 void CFXJSE_FormCalcContext::ThrowDivideByZeroException() const {
-  ThrowException(WideString::FromASCII("Divide by zero."));
+  ThrowException("Divide by zero.");
 }
 
 void CFXJSE_FormCalcContext::ThrowServerDeniedException() const {
-  ThrowException(WideString::FromASCII("Server does not permit operation."));
+  ThrowException("Server does not permit operation.");
 }
 
 void CFXJSE_FormCalcContext::ThrowPropertyNotInObjectException(
-    const WideString& name,
-    const WideString& exp) const {
-  ThrowException(
-      WideString::FromASCII("An attempt was made to reference property '") +
-      name + WideString::FromASCII("' of a non-object in SOM expression ") +
-      exp + L".");
+    ByteStringView name,
+    ByteStringView exp) const {
+  ByteString msg("An attempt was made to reference property '");
+  msg += name;
+  msg += "' of a non-object in SOM expression ";
+  msg += exp;
+  msg += ".";
+  ThrowException(msg.AsStringView());
 }
 
 void CFXJSE_FormCalcContext::ThrowParamCountMismatchException(
-    const WideString& method) const {
-  ThrowException(
-      WideString::FromASCII("Incorrect number of parameters calling method '") +
-      method + L"'.");
+    ByteStringView method) const {
+  ByteString msg("Incorrect number of parameters calling method '");
+  msg += method;
+  msg += "'.";
+  ThrowException(msg.AsStringView());
 }
 
 void CFXJSE_FormCalcContext::ThrowArgumentMismatchException() const {
-  ThrowException(WideString::FromASCII(
-      "Argument mismatch in property or function argument."));
+  ThrowException("Argument mismatch in property or function argument.");
 }
 
-void CFXJSE_FormCalcContext::ThrowException(const WideString& str) const {
+void CFXJSE_FormCalcContext::ThrowException(ByteStringView str) const {
   DCHECK(!str.IsEmpty());
-  FXJSE_ThrowMessage(str.ToUTF8().AsStringView());
+  FXJSE_ThrowMessage(GetIsolate(), str);
 }

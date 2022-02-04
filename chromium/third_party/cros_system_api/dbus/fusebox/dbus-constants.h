@@ -17,6 +17,7 @@ const char kFuseBoxOperationMethod[] = "FuseBoxOperation";
 const char kFuseBoxClientInterface[] = "org.chromium.FuseBoxClient";
 const char kFuseBoxClientName[] = "org.chromium.FuseBoxClient";
 const char kFuseBoxClientPath[] = "/org/chromium/FuseBoxClient";
+const char kFuseBoxReadDirBatchResponseMethod[] = "ReadDirBatchResponse";
 
 }  // namespace fusebox
 

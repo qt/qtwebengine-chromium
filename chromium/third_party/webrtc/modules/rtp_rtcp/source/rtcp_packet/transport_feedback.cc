@@ -454,11 +454,7 @@ bool TransportFeedback::Parse(const CommonHeader& packet) {
   // Determine if timestamps, that is, recv_delta are included in the packet.
   if (end_index >= index + recv_delta_size) {
     for (size_t delta_size : delta_sizes) {
-      if (index + delta_size > end_index) {
-        RTC_LOG(LS_WARNING) << "Buffer overflow while parsing packet.";
-        Clear();
-        return false;
-      }
+      RTC_DCHECK_LE(index + delta_size, end_index);
       switch (delta_size) {
         case 0:
           if (include_lost_)
@@ -488,7 +484,7 @@ bool TransportFeedback::Parse(const CommonHeader& packet) {
 
           return false;
         default:
-          RTC_NOTREACHED();
+          RTC_DCHECK_NOTREACHED();
           break;
       }
       ++seq_no;

@@ -14,8 +14,8 @@
 
 import {assertExists} from '../base/logging';
 import {TraceConfig} from '../common/protos';
-import {createEmptyRecordConfig} from '../common/state';
 
+import {createEmptyRecordConfig} from './record_config_types';
 import {genConfigProto, toPbtxt} from './record_controller';
 
 test('encodeConfig', () => {

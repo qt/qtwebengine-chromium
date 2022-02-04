@@ -12,7 +12,6 @@
 #include "base/strings/stringprintf.h"
 #include "base/system/sys_info.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "build/util/chromium_git_revision.h"
 
 #if defined(OS_MAC)
@@ -34,7 +33,7 @@ std::string GetUserAgentPlatform() {
   return "";
 #elif defined(OS_MAC)
   return "Macintosh; ";
-#elif defined(USE_X11) || defined(USE_OZONE)
+#elif defined(USE_OZONE)
   return "X11; ";  // strange, but that's what Firefox uses
 #elif defined(OS_ANDROID)
   return "Linux; ";
@@ -52,7 +51,7 @@ std::string GetUserAgentPlatform() {
 std::string GetUnifiedPlatform() {
 #if defined(OS_ANDROID)
   return frozen_user_agent_strings::kUnifiedPlatformAndroid;
-#elif BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#elif defined(OS_CHROMEOS)
   return frozen_user_agent_strings::kUnifiedPlatformCrOS;
 #elif defined(OS_MAC)
   return frozen_user_agent_strings::kUnifiedPlatformMacOS;
@@ -79,7 +78,7 @@ std::string BuildCpuInfo() {
   cpuinfo = "Intel";
 #elif defined(OS_WIN)
   base::win::OSInfo* os_info = base::win::OSInfo::GetInstance();
-  if (os_info->wow64_status() == base::win::OSInfo::WOW64_ENABLED) {
+  if (os_info->IsWowX86OnAMD64()) {
     cpuinfo = "WOW64";
   } else {
     base::win::OSInfo::WindowsArchitecture windows_architecture =
@@ -112,7 +111,12 @@ std::string GetLowEntropyCpuArchitecture() {
 #if defined(OS_WIN)
   base::win::OSInfo::WindowsArchitecture windows_architecture =
       base::win::OSInfo::GetInstance()->GetArchitecture();
-  if (windows_architecture == base::win::OSInfo::ARM64_ARCHITECTURE) {
+  base::win::OSInfo* os_info = base::win::OSInfo::GetInstance();
+  // When running a Chrome x86_64 (AMD64) build on an ARM64 device,
+  // the OS lies and returns 0x9 (PROCESSOR_ARCHITECTURE_AMD64)
+  // for wProcessorArchitecture.
+  if (windows_architecture == base::win::OSInfo::ARM64_ARCHITECTURE ||
+      os_info->IsWowX86OnARM64() || os_info->IsWowAMD64OnARM64()) {
     return "arm";
   } else if ((windows_architecture == base::win::OSInfo::X86_ARCHITECTURE) ||
              (windows_architecture == base::win::OSInfo::X64_ARCHITECTURE)) {
@@ -158,8 +162,7 @@ std::string GetLowEntropyCpuBitness() {
 std::string GetOSVersion(IncludeAndroidBuildNumber include_android_build_number,
                          IncludeAndroidModel include_android_model) {
   std::string os_version;
-#if defined(OS_WIN) || defined(OS_MAC) || BUILDFLAG(IS_CHROMEOS_ASH) || \
-    BUILDFLAG(IS_CHROMEOS_LACROS)
+#if defined(OS_WIN) || defined(OS_MAC) || defined(OS_CHROMEOS)
   int32_t os_major_version = 0;
   int32_t os_minor_version = 0;
   int32_t os_bugfix_version = 0;
@@ -191,7 +194,7 @@ std::string GetOSVersion(IncludeAndroidBuildNumber include_android_build_number,
 #elif defined(OS_MAC)
                       "%d_%d_%d", os_major_version, os_minor_version,
                       os_bugfix_version
-#elif BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#elif defined(OS_CHROMEOS)
                       "%d.%d.%d", os_major_version, os_minor_version,
                       os_bugfix_version
 #elif defined(OS_ANDROID)
@@ -232,7 +235,7 @@ std::string BuildOSCpuInfoFromOSVersionAndCpuType(const std::string& os_version,
   base::StringAppendF(&os_cpu,
 #if defined(OS_MAC)
                       "%s Mac OS X %s", cpu_type.c_str(), os_version.c_str()
-#elif BUILDFLAG(IS_CHROMEOS_ASH) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#elif defined(OS_CHROMEOS)
                       "CrOS "
                       "%s %s",
                       cpu_type.c_str(),  // e.g. i686

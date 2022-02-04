@@ -262,40 +262,19 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
       return '';
     }
     const mainTarget = this.manager.target();
-    const runtimeModel = mainTarget.model(SDK.RuntimeModel.RuntimeModel);
-    const executionContext = runtimeModel && runtimeModel.defaultExecutionContext();
-    let inspectedURL = mainTarget.inspectedURL();
-    if (!executionContext) {
+    // target.inspectedURL is reliably populated, however it lacks any url #hash
+    const inspectedURL = mainTarget.inspectedURL();
+
+    // We'll use the navigationHistory to acquire the current URL including hash
+    const resourceTreeModel = mainTarget.model(SDK.ResourceTreeModel.ResourceTreeModel);
+    const navHistory = resourceTreeModel && await resourceTreeModel.navigationHistory();
+    if (!resourceTreeModel || !navHistory) {
       return inspectedURL;
     }
 
-    // Evaluate location.href for a more specific URL than inspectedURL provides so that SPA hash navigation routes
-    // will be respected and audited.
-    try {
-      const result = await executionContext.evaluate(
-          {
-            expression: 'window.location.href',
-            objectGroup: 'lighthouse',
-            includeCommandLineAPI: false,
-            silent: false,
-            returnByValue: true,
-            generatePreview: false,
-            allowUnsafeEvalBlockedByCSP: undefined,
-            disableBreaks: undefined,
-            replMode: undefined,
-            throwOnSideEffect: undefined,
-            timeout: undefined,
-          },
-          /* userGesture */ false, /* awaitPromise */ false);
-      if ((!('exceptionDetails' in result) || !result.exceptionDetails) && 'object' in result && result.object) {
-        inspectedURL = result.object.value;
-        result.object.release();
-      }
-    } catch (err) {
-      console.error(err);
-    }
-
-    return inspectedURL;
+    const {currentIndex, entries} = navHistory;
+    const navigationEntry = entries[currentIndex];
+    return navigationEntry.url;
   }
 
   getFlags(): {internalDisableDeviceScreenEmulation: boolean, emulatedFormFactor: (string|undefined)} {
@@ -361,42 +340,48 @@ const STORAGE_TYPE_NAMES = new Map([
 export const Presets: Preset[] = [
   // configID maps to Lighthouse's Object.keys(config.categories)[0] value
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_perf', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_perf', true, Common.Settings.SettingStorageType.Synced),
     configID: 'performance',
     title: i18nLazyString(UIStrings.performance),
     description: i18nLazyString(UIStrings.howLongDoesThisAppTakeToShow),
     plugin: false,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_pwa', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_pwa', true, Common.Settings.SettingStorageType.Synced),
     configID: 'pwa',
     title: i18nLazyString(UIStrings.progressiveWebApp),
     description: i18nLazyString(UIStrings.doesThisPageMeetTheStandardOfA),
     plugin: false,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_best_practices', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_best_practices', true, Common.Settings.SettingStorageType.Synced),
     configID: 'best-practices',
     title: i18nLazyString(UIStrings.bestPractices),
     description: i18nLazyString(UIStrings.doesThisPageFollowBestPractices),
     plugin: false,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_a11y', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_a11y', true, Common.Settings.SettingStorageType.Synced),
     configID: 'accessibility',
     title: i18nLazyString(UIStrings.accessibility),
     description: i18nLazyString(UIStrings.isThisPageUsableByPeopleWith),
     plugin: false,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_seo', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_seo', true, Common.Settings.SettingStorageType.Synced),
     configID: 'seo',
     title: i18nLazyString(UIStrings.seo),
     description: i18nLazyString(UIStrings.isThisPageOptimizedForSearch),
     plugin: false,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.cat_pubads', false),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.cat_pubads', false, Common.Settings.SettingStorageType.Synced),
     plugin: true,
     configID: 'lighthouse-plugin-publisher-ads',
     title: i18nLazyString(UIStrings.publisherAds),
@@ -410,7 +395,8 @@ export type Flags = {
 
 export const RuntimeSettings: RuntimeSetting[] = [
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.device_type', 'mobile'),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.device_type', 'mobile', Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.applyMobileEmulation),
     description: i18nLazyString(UIStrings.applyMobileEmulationDuring),
     setFlags: (flags: Flags, value: string|boolean): void => {
@@ -425,7 +411,8 @@ export const RuntimeSettings: RuntimeSetting[] = [
   },
   {
     // This setting is disabled, but we keep it around to show in the UI.
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.throttling', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.throttling', true, Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.simulatedThrottling),
     // We will disable this when we have a Lantern trace viewer within DevTools.
     learnMore:
@@ -437,7 +424,8 @@ export const RuntimeSettings: RuntimeSetting[] = [
     options: undefined,
   },
   {
-    setting: Common.Settings.Settings.instance().createSetting('lighthouse.clear_storage', true),
+    setting: Common.Settings.Settings.instance().createSetting(
+        'lighthouse.clear_storage', true, Common.Settings.SettingStorageType.Synced),
     title: i18nLazyString(UIStrings.clearStorage),
     description: i18nLazyString(UIStrings.resetStorageLocalstorage),
     setFlags: (flags: Flags, value: string|boolean): void => {

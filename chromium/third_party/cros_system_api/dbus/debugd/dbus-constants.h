@@ -93,6 +93,28 @@ enum CupsResult {
   CUPS_PRINTER_NOT_AUTOCONF = 10
 };
 
+// DRMTraceCategories flags. These values must align with those in
+// org.chromium.debug.xml.
+enum DRMTraceCategories {
+  DRMTraceCategory_CORE = 0x001,
+  DRMTraceCategory_DRIVER = 0x002,
+  DRMTraceCategory_KMS = 0x004,
+  DRMTraceCategory_PRIME = 0x008,
+  DRMTraceCategory_ATOMIC = 0x010,
+  DRMTraceCategory_VBL = 0x020,
+  DRMTraceCategory_STATE = 0x040,
+  DRMTraceCategory_LEASE = 0x080,
+  DRMTraceCategory_DP = 0x100,
+  DRMTraceCategory_DRMRES = 0x200,
+};
+
+// DRMTraceSizes enum. These values must align with those in
+// org.chromium.debugd.xml
+enum DRMTraceSizes {
+  DRMTraceSize_DEFAULT = 0,
+  DRMTraceSize_DEBUG = 1,
+};
+
 // Debug log keys which should be substituted in the system info dialog.
 const char kIwlwifiDumpKey[] = "iwlwifi_dump";
 

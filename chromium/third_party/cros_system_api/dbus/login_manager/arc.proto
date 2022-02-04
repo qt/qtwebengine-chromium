@@ -74,7 +74,10 @@ message StartArcMiniContainerRequest {
   // rosters.
   optional bool arc_generate_pai = 11 [default = false];
 
-  // Next ID to use: 13
+  // Enables use of new notifications ui.
+  optional bool enable_notifications_refresh = 13 [default = false];
+
+  // Next ID to use: 14
 }
 
 // ARC upgrade options sent from Chrome to session manager. This message is used

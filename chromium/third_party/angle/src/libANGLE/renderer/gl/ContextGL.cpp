@@ -750,6 +750,17 @@ angle::Result ContextGL::multiDrawArraysInstanced(const gl::Context *context,
                                                drawcount);
 }
 
+angle::Result ContextGL::multiDrawArraysIndirect(const gl::Context *context,
+                                                 gl::PrimitiveMode mode,
+                                                 const void *indirect,
+                                                 GLsizei drawcount,
+                                                 GLsizei stride)
+{
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawArraysIndirectGeneral(this, context, mode, indirect, drawcount, stride);
+}
+
 angle::Result ContextGL::multiDrawElements(const gl::Context *context,
                                            gl::PrimitiveMode mode,
                                            const GLsizei *counts,
@@ -774,6 +785,19 @@ angle::Result ContextGL::multiDrawElementsInstanced(const gl::Context *context,
 
     return rx::MultiDrawElementsInstancedGeneral(this, context, mode, counts, type, indices,
                                                  instanceCounts, drawcount);
+}
+
+angle::Result ContextGL::multiDrawElementsIndirect(const gl::Context *context,
+                                                   gl::PrimitiveMode mode,
+                                                   gl::DrawElementsType type,
+                                                   const void *indirect,
+                                                   GLsizei drawcount,
+                                                   GLsizei stride)
+{
+    mRenderer->markWorkSubmitted();
+
+    return rx::MultiDrawElementsIndirectGeneral(this, context, mode, type, indirect, drawcount,
+                                                stride);
 }
 
 angle::Result ContextGL::multiDrawArraysInstancedBaseInstance(const gl::Context *context,
@@ -856,7 +880,8 @@ angle::Result ContextGL::popDebugGroup(const gl::Context *context)
 
 angle::Result ContextGL::syncState(const gl::Context *context,
                                    const gl::State::DirtyBits &dirtyBits,
-                                   const gl::State::DirtyBits &bitMask)
+                                   const gl::State::DirtyBits &bitMask,
+                                   gl::Command command)
 {
     return mRenderer->getStateManager()->syncState(context, dirtyBits, bitMask);
 }

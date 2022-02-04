@@ -4,7 +4,7 @@
 """Definitions of builders in the chromium.android.fyi builder group."""
 
 load("//lib/builders.star", "goma", "os")
-load("//lib/ci.star", "ci", "rbe_instance")
+load("//lib/ci.star", "ci", "rbe_instance", "rbe_jobs")
 load("//lib/consoles.star", "consoles")
 
 ci.defaults.set(
@@ -103,6 +103,9 @@ ci.builder(
         category = "webview",
         short_name = "p-rel",
     ),
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 # TODO(crbug.com/1022533#c40): Remove this builder once there are no associated

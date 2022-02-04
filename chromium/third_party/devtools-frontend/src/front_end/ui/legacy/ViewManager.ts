@@ -18,6 +18,7 @@ import type {TabbedViewLocation, View, ViewLocation, ViewLocationResolver} from 
 import {getRegisteredLocationResolvers, getRegisteredViewExtensions, maybeRemoveViewExtension, registerLocationResolver, registerViewExtension, ViewLocationCategoryValues, ViewLocationValues, ViewPersistence, ViewRegistration} from './ViewRegistration.js';
 import type {Widget, WidgetElement} from './Widget.js';
 import {VBox} from './Widget.js';
+import viewContainersStyles from './viewContainers.css.legacy.js';
 
 const UIStrings = {
   /**
@@ -28,6 +29,11 @@ const UIStrings = {
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/ViewManager.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+export const defaultOptionsForTabs = {
+  security: true,
+};
+
 export class PreRegisteredView implements View {
   private readonly viewRegistration: ViewRegistration;
   private widgetRequested: boolean;
@@ -413,7 +419,7 @@ export class _ExpandableContainerWidget extends VBox {
   constructor(view: View) {
     super(true);
     this.element.classList.add('flex-none');
-    this.registerRequiredCSS('ui/legacy/viewContainers.css');
+    this.registerRequiredCSS(viewContainersStyles);
 
     this.titleElement = document.createElement('div');
     this.titleElement.classList.add('expandable-view-title');
@@ -615,9 +621,12 @@ export class _TabbedLocation extends Location implements TabbedViewLocation {
   private setOrUpdateCloseableTabsSetting(): void {
     // Update the setting value, we respect the closed state decided by the user
     // and append the new tabs with value of true so they are shown open
-    const defaultOptionsForTabs = {'security': true};
     const tabs = this.closeableTabSetting.get();
-    const newClosable = Object.assign(defaultOptionsForTabs, tabs);
+    const newClosable = Object.assign(
+        {
+          ...defaultOptionsForTabs,
+        },
+        tabs);
     this.closeableTabSetting.set(newClosable);
   }
 
@@ -817,6 +826,12 @@ export class _TabbedLocation extends Location implements TabbedViewLocation {
       tabOrders[key] = ++lastOrder;
     }
     this.tabOrderSetting.set(tabOrders);
+  }
+
+  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getCloseableTabSetting(): Common.Settings.Setting<any> {
+    return this.closeableTabSetting.get();
   }
 
   static orderStep = 10;  // Keep in sync with descriptors.

@@ -84,7 +84,6 @@ export class ConsoleModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   #violationsInternal: number;
   #pageLoadSequenceNumber: number;
   readonly #targetListeners: WeakMap<Target, Common.EventTarget.EventDescriptor[]>;
-  #consoleGroupMessageStack: ConsoleMessage[] = [];
 
   private constructor() {
     super();
@@ -276,7 +275,6 @@ export class ConsoleModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
       message = call.args[0].description;
     }
     const callFrame = call.stackTrace && call.stackTrace.callFrames.length ? call.stackTrace.callFrames[0] : null;
-    const groupParent = this.#consoleGroupMessageStack[this.#consoleGroupMessageStack.length - 1];
     const details = {
       type: call.type,
       url: callFrame?.url,
@@ -287,20 +285,9 @@ export class ConsoleModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
       timestamp: call.timestamp,
       executionContextId: call.executionContextId,
       context: call.context,
-      groupParent,
-      groupChildren: [],
     };
     const consoleMessage =
         new ConsoleMessage(runtimeModel, FrontendMessageSource.ConsoleAPI, level, (message as string), details);
-    if (call.type === Protocol.Runtime.ConsoleAPICalledEventType.StartGroup) {
-      this.#consoleGroupMessageStack.push(consoleMessage);
-    }
-    if (call.type === Protocol.Runtime.ConsoleAPICalledEventType.EndGroup) {
-      this.#consoleGroupMessageStack.pop();
-    }
-    if (groupParent && call.type !== Protocol.Runtime.ConsoleAPICalledEventType.EndGroup) {
-      groupParent.groupChildren?.push(consoleMessage);
-    }
     this.addMessage(consoleMessage);
   }
 
@@ -392,7 +379,6 @@ export class ConsoleModel extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
 
   private clear(): void {
     this.#messagesInternal = [];
-    this.#consoleGroupMessageStack = [];
     this.#messageByExceptionId.clear();
     this.#errorsInternal = 0;
     this.#warningsInternal = 0;
@@ -505,6 +491,30 @@ function areAffectedResourcesEquivalent(a?: AffectedResources, b?: AffectedResou
   return a?.requestId === b?.requestId;
 }
 
+function areStackTracesEquivalent(
+    stackTrace1?: Protocol.Runtime.StackTrace, stackTrace2?: Protocol.Runtime.StackTrace): boolean {
+  if (!stackTrace1 !== !stackTrace2) {
+    return false;
+  }
+  if (!stackTrace1 || !stackTrace2) {
+    return true;
+  }
+  const callFrames1 = stackTrace1.callFrames;
+  const callFrames2 = stackTrace2.callFrames;
+  if (callFrames1.length !== callFrames2.length) {
+    return false;
+  }
+  for (let i = 0, n = callFrames1.length; i < n; ++i) {
+    if (callFrames1[i].scriptId !== callFrames2[i].scriptId ||
+        callFrames1[i].functionName !== callFrames2[i].functionName ||
+        callFrames1[i].lineNumber !== callFrames2[i].lineNumber ||
+        callFrames1[i].columnNumber !== callFrames2[i].columnNumber) {
+      return false;
+    }
+  }
+  return areStackTracesEquivalent(stackTrace1.parent, stackTrace2.parent);
+}
+
 export interface ConsoleMessageDetails {
   type?: MessageType;
   url?: string;
@@ -518,8 +528,6 @@ export interface ConsoleMessageDetails {
   workerId?: string;
   context?: string;
   affectedResources?: AffectedResources;
-  groupParent?: ConsoleMessage;
-  groupChildren?: ConsoleMessage[];
   category?: Protocol.Log.LogEntryCategory;
 }
 
@@ -543,8 +551,6 @@ export class ConsoleMessage {
   #pageLoadSequenceNumber?: number = undefined;
   #exceptionId?: number = undefined;
   #affectedResources?: AffectedResources;
-  groupParent?: ConsoleMessage;
-  groupChildren?: Array<ConsoleMessage>;
   category?: Protocol.Log.LogEntryCategory;
 
   constructor(
@@ -565,8 +571,6 @@ export class ConsoleMessage {
     this.scriptId = details?.scriptId;
     this.workerId = details?.workerId;
     this.#affectedResources = details?.affectedResources;
-    this.groupParent = details?.groupParent;
-    this.groupChildren = details?.groupChildren;
     this.category = details?.category;
 
     if (!this.#executionContextId && this.#runtimeModelInternal) {
@@ -679,10 +683,6 @@ export class ConsoleMessage {
       return false;
     }
 
-    if (!this.isEqualStackTraces(this.stackTrace, msg.stackTrace)) {
-      return false;
-    }
-
     if (this.parameters) {
       if (!msg.parameters || this.parameters.length !== msg.parameters.length) {
         return false;
@@ -707,38 +707,12 @@ export class ConsoleMessage {
       }
     }
 
-    const watchExpressionRegex = /^watch-expression-\d+.devtools$/;
-    const bothAreWatchExpressions =
-        watchExpressionRegex.test(this.url || '') && watchExpressionRegex.test(msg.url || '');
-
     return (this.runtimeModel() === msg.runtimeModel()) && (this.source === msg.source) && (this.type === msg.type) &&
         (this.level === msg.level) && (this.line === msg.line) && (this.url === msg.url) &&
-        (bothAreWatchExpressions || this.scriptId === msg.scriptId) && (this.messageText === msg.messageText) &&
+        (this.scriptId === msg.scriptId) && (this.messageText === msg.messageText) &&
         (this.#executionContextId === msg.#executionContextId) &&
-        areAffectedResourcesEquivalent(this.#affectedResources, msg.#affectedResources);
-  }
-
-  private isEqualStackTraces(
-      stackTrace1: Protocol.Runtime.StackTrace|undefined, stackTrace2: Protocol.Runtime.StackTrace|undefined): boolean {
-    if (!stackTrace1 !== !stackTrace2) {
-      return false;
-    }
-    if (!stackTrace1 || !stackTrace2) {
-      return true;
-    }
-    const callFrames1 = stackTrace1.callFrames;
-    const callFrames2 = stackTrace2.callFrames;
-    if (callFrames1.length !== callFrames2.length) {
-      return false;
-    }
-    for (let i = 0, n = callFrames1.length; i < n; ++i) {
-      if (callFrames1[i].url !== callFrames2[i].url || callFrames1[i].functionName !== callFrames2[i].functionName ||
-          callFrames1[i].lineNumber !== callFrames2[i].lineNumber ||
-          callFrames1[i].columnNumber !== callFrames2[i].columnNumber) {
-        return false;
-      }
-    }
-    return this.isEqualStackTraces(stackTrace1.parent, stackTrace2.parent);
+        areAffectedResourcesEquivalent(this.#affectedResources, msg.#affectedResources) &&
+        areStackTracesEquivalent(this.stackTrace, msg.stackTrace);
   }
 }
 

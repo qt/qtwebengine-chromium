@@ -234,6 +234,11 @@ const UIStrings = {
   *@description Text in Network Data Grid Node of the Network panel
   */
   webBundle: '(Web Bundle)',
+  /**
+  *@description Tooltip text for subtitles of Time cells in Network request rows. Latency is the time difference
+  * between the time a response to a network request is received and the time the request is started.
+  */
+  timeSubtitleTooltipText: 'Latency (response received time - start time)',
 };
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -241,6 +246,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 // TODO(crbug.com/1167717): Make this a const enum again
 // eslint-disable-next-line rulesdir/const_enum
 export enum Events {
+  // RequestSelected might fire twice for the same "activation"
   RequestSelected = 'RequestSelected',
   RequestActivated = 'RequestActivated',
 }
@@ -1002,7 +1008,10 @@ export class NetworkRequestNode extends NetworkNode {
       cell.style.setProperty('padding-left', leftPadding);
       this.nameCell = cell;
       cell.addEventListener('dblclick', this.openInNewTab.bind(this), false);
-      cell.addEventListener('click', () => {
+      cell.addEventListener('mousedown', () => {
+        // When the request panel isn't visible yet, firing the RequestActivated event
+        // doesn't make it visible if no request is selected. So we'll select it first.
+        this.select();
         this.parentView().dispatchEventToListeners(Events.RequestActivated, {showPanel: true});
       });
       let iconElement;
@@ -1296,7 +1305,9 @@ export class NetworkRequestNode extends NetworkNode {
   private renderTimeCell(cell: HTMLElement): void {
     if (this.requestInternal.duration > 0) {
       this.setTextAndTitle(cell, i18n.TimeUtilities.secondsToString(this.requestInternal.duration));
-      this.appendSubtitle(cell, i18n.TimeUtilities.secondsToString(this.requestInternal.latency));
+      this.appendSubtitle(
+          cell, i18n.TimeUtilities.secondsToString(this.requestInternal.latency), false,
+          i18nString(UIStrings.timeSubtitleTooltipText));
     } else if (this.requestInternal.preserved) {
       this.setTextAndTitle(cell, i18nString(UIStrings.unknown), i18nString(UIStrings.unknownExplanation));
     } else {
@@ -1305,14 +1316,18 @@ export class NetworkRequestNode extends NetworkNode {
     }
   }
 
-  private appendSubtitle(cellElement: Element, subtitleText: string, showInlineWhenSelected: boolean|undefined = false):
-      void {
+  private appendSubtitle(
+      cellElement: Element, subtitleText: string, showInlineWhenSelected: boolean|undefined = false,
+      tooltipText: string|undefined = ''): void {
     const subtitleElement = document.createElement('div');
     subtitleElement.classList.add('network-cell-subtitle');
     if (showInlineWhenSelected) {
       subtitleElement.classList.add('network-cell-subtitle-show-inline-when-selected');
     }
     subtitleElement.textContent = subtitleText;
+    if (tooltipText) {
+      UI.Tooltip.Tooltip.install(subtitleElement, tooltipText);
+    }
     cellElement.appendChild(subtitleElement);
   }
 }

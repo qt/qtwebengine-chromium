@@ -102,3 +102,17 @@ message IsDlpPolicyMatchedResponse {
   // Whether a DLP rule exists that might prevent operation on the file.
   optional bool restricted = 1;
 }
+
+message FileMetadata {
+  // File inode number.
+  optional uint64 inode = 1;
+  // URL from where the file was downloaded.
+  optional string source_url = 2;
+}
+
+message GetDisallowedTransfersRequest {
+  // A list of files to be transferred.
+  repeated FileMetadata transferred_files = 1;
+  // URL where the files are going to be transferrxwed.
+  optional string destination_url = 2;
+}

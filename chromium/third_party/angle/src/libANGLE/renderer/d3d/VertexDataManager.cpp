@@ -64,7 +64,7 @@ int ElementsInBuffer(const gl::VertexAttribute &attrib,
     angle::CheckedNumeric<size_t> elementSize = ComputeVertexAttributeTypeSize(attrib);
 
     auto elementsInBuffer    = (bufferSize - (offset % stride) + (stride - elementSize)) / stride;
-    auto elementsInBufferInt = angle::CheckedNumeric<int>::cast(elementsInBuffer);
+    auto elementsInBufferInt = elementsInBuffer.Cast<int>();
 
     return elementsInBufferInt.ValueOrDefault(0);
 }

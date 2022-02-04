@@ -476,15 +476,16 @@ llvm::Value* IrArray::EmitArrayElementAddress(const IrArray::Index& index,
     return base_ptr_;
   }
   CHECK_EQ(index.size(), shape_.rank());
-  CHECK(index.ShapeIsCompatible(shape_));
+  CHECK(index.ShapeIsCompatible(shape_))
+      << "Shape " << index.AsShapeWithType(shape_.element_type()).ToString(true)
+      << " is not compatible with " << shape_.ToString(true);
 
   if (use_linear_index && index.LinearValidOnShape(shape_)) {
     llvm::Module* module = b->GetInsertBlock()->getParent()->getParent();
+    llvm::Type* type = PrimitiveTypeToIrType(shape_.element_type(), module);
     return b->CreateInBoundsGEP(
-        b->CreateBitCast(base_ptr_,
-                         PrimitiveTypeToIrType(shape_.element_type(), module)
-                             ->getPointerTo()),
-        {index.linear()}, llvm_ir::AsStringRef(name));
+        type, b->CreateBitCast(base_ptr_, type->getPointerTo()), index.linear(),
+        llvm_ir::AsStringRef(name));
   }
 
   std::vector<llvm::Value*> actual_index;
@@ -509,7 +510,8 @@ llvm::Value* IrArray::EmitArrayElementAddress(const IrArray::Index& index,
     int64_t dimension = LayoutUtil::Major(shape_.layout(), i);
     gep_indices.push_back(actual_index[dimension]);
   }
-  return b->CreateInBoundsGEP(base_ptr_, gep_indices,
+  return b->CreateInBoundsGEP(base_ptr_->getType()->getPointerElementType(),
+                              base_ptr_, gep_indices,
                               llvm_ir::AsStringRef(name));
 }
 
@@ -531,7 +533,9 @@ llvm::Value* IrArray::EmitReadArrayElement(const Index& index,
                                            bool use_linear_index) const {
   llvm::Value* element_address =
       EmitArrayElementAddress(index, b, name, use_linear_index);
-  llvm::LoadInst* load = b->CreateLoad(element_address, name.data());
+  llvm::LoadInst* load =
+      b->CreateLoad(element_address->getType()->getPointerElementType(),
+                    element_address, llvm_ir::AsStringRef(name));
   AnnotateLoadStoreInstructionWithMetadata(load);
   return load;
 }

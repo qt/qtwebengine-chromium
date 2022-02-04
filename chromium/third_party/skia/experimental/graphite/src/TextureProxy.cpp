@@ -12,6 +12,9 @@
 
 namespace skgpu {
 
+TextureProxy::TextureProxy(SkISize dimensions, const TextureInfo& info)
+        : fDimensions(dimensions), fInfo(info) {}
+
 TextureProxy::~TextureProxy() {}
 
 bool TextureProxy::instantiate(ResourceProvider* resourceProvider) {
@@ -24,6 +27,14 @@ bool TextureProxy::instantiate(ResourceProvider* resourceProvider) {
     }
     SkDEBUGCODE(this->validateTexture(fTexture.get()));
     return true;
+}
+
+sk_sp<Texture> TextureProxy::refTexture() const {
+    return fTexture;
+}
+
+const Texture* TextureProxy::texture() const {
+    return fTexture.get();
 }
 
 #ifdef SK_DEBUG

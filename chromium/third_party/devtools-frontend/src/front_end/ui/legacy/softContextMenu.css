@@ -11,7 +11,7 @@
   overflow-y: auto;
   min-width: 160px !important; /* stylelint-disable-line declaration-no-important */
   /* NOTE: Keep padding in sync with padding adjustment in SoftContextMenu.js */
-  padding: 4px 0 4px 0;
+  padding: 4px 0;
   border: 1px solid var(--color-details-hairline);
   background-color: var(--color-background);
   box-shadow: var(--drop-shadow);
@@ -42,6 +42,13 @@
   padding: 3px 7px 3px 8px;
   margin: 0 13px 0 0;
   white-space: nowrap;
+  align-items: center;
+}
+
+.soft-context-menu-item devtools-icon {
+  --icon-color: var(--color-text-secondary);
+
+  pointer-events: none;
 }
 
 .soft-context-menu-disabled {
@@ -64,6 +71,10 @@
 .soft-context-menu-item-mouse-over {
   background-color: var(--color-primary);
   color: var(--override-context-menu-hover-text-color);
+}
+
+.soft-context-menu-item-mouse-over devtools-icon {
+  --icon-color: var(--override-context-menu-hover-text-color);
 }
 
 .-theme-with-dark-background .soft-context-menu-item-mouse-over,

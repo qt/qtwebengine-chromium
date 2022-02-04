@@ -10,6 +10,7 @@ import * as ARIAUtils from './ARIAUtils.js';
 import {Keys} from './KeyboardShortcut.js';
 import {createTextButton} from './UIUtils.js';
 import type {Widget} from './Widget.js';
+import infobarStyles from './infobar.css.legacy.js';
 
 const UIStrings = {
   /**
@@ -46,9 +47,8 @@ export class Infobar {
   private readonly closeContainer: HTMLElement;
   private readonly toggleElement: HTMLButtonElement;
   private readonly closeButton: HTMLElement;
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private closeCallback: (() => any)|null;
+  private closeCallback: (() => void)|null;
+  #firstFocusableElement: HTMLElement|null = null;
   private parentView?: Widget;
 
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -56,8 +56,8 @@ export class Infobar {
   constructor(type: Type, text: string, actions?: InfobarAction[], disableSetting?: Common.Settings.Setting<any>) {
     this.element = document.createElement('div');
     this.element.classList.add('flex-none');
-    this.shadowRoot = Utils.createShadowRootWithCoreStyles(
-        this.element, {cssFile: 'ui/legacy/infobar.css', delegatesFocus: undefined});
+    this.shadowRoot =
+        Utils.createShadowRootWithCoreStyles(this.element, {cssFile: infobarStyles, delegatesFocus: undefined});
 
     this.contentElement = this.shadowRoot.createChild('div', 'infobar infobar-' + type) as HTMLDivElement;
 
@@ -89,6 +89,9 @@ export class Infobar {
         }
 
         const button = createTextButton(action.text, actionCallback, buttonClass);
+        if (action.highlight && !this.#firstFocusableElement) {
+          this.#firstFocusableElement = button;
+        }
         this.actionContainer.appendChild(button);
       }
     }
@@ -103,6 +106,7 @@ export class Infobar {
     this.closeContainer = this.mainRow.createChild('div', 'infobar-close-container');
     this.toggleElement = createTextButton(
         i18nString(UIStrings.learnMore), this.onToggleDetails.bind(this), 'link-style devtools-link hidden');
+    this.toggleElement.setAttribute('role', 'link');
     this.closeContainer.appendChild(this.toggleElement);
     this.closeButton = this.closeContainer.createChild('div', 'close-button', 'dt-close-button');
     // @ts-ignore This is a custom element defined in UIUitls.js that has a `setTabbable` that TS doesn't
@@ -159,9 +163,7 @@ export class Infobar {
     this.onResize();
   }
 
-  // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  setCloseCallback(callback: (() => any)|null): void {
+  setCloseCallback(callback: (() => void)|null): void {
     this.closeCallback = callback;
   }
 
@@ -204,6 +206,11 @@ export class Infobar {
     this.toggleElement.remove();
     this.onResize();
     ARIAUtils.alert(this.detailsMessage);
+    if (this.#firstFocusableElement) {
+      this.#firstFocusableElement.focus();
+    } else {
+      this.closeButton.focus();
+    }
   }
 
   createDetailsRowMessage(message?: string): Element {

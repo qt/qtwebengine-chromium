@@ -43,6 +43,8 @@ import * as NetworkForward from '../../../../panels/network/forward/forward.js';
 import * as UI from '../../legacy.js';
 import * as DataGrid from '../data_grid/data_grid.js';
 
+import cookiesTableStyles from './cookiesTable.css.js';
+
 const UIStrings = {
   /**
   *@description Cookie table cookies table expires session value in Cookies Table of the Cookies table in the Application panel
@@ -101,6 +103,10 @@ const UIStrings = {
    * @example {9001628746521180} seconds
    */
   timeAfterTooltip: 'The expiration timestamp is {seconds}, which corresponds to a date after {date}',
+  /**
+   * @description Text to be show in the Partition Key column in case it is an opaque origin.
+   */
+  opaquePartitionKey: '(opaque)',
 };
 const str_ = i18n.i18n.registerUIStrings('ui/legacy/components/cookie_table/CookiesTable.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -124,7 +130,6 @@ export class CookiesTable extends UI.Widget.VBox {
       deleteCallback?: ((arg0: SDK.Cookie.Cookie, arg1: () => void) => void)) {
     super();
 
-    this.registerRequiredCSS('ui/legacy/components/cookie_table/cookiesTable.css');
     this.element.classList.add('cookies-table');
 
     this.saveCallback = saveCallback;
@@ -215,6 +220,13 @@ export class CookiesTable extends UI.Widget.VBox {
         editable: editable,
       },
       {
+        id: SDK.Cookie.Attributes.PartitionKey,
+        title: 'Partition Key',
+        sortable: true,
+        weight: 7,
+        editable: editable,
+      },
+      {
         id: SDK.Cookie.Attributes.Priority,
         title: 'Priority',
         sortable: true,
@@ -284,6 +296,10 @@ export class CookiesTable extends UI.Widget.VBox {
     this.cookieDomain = '';
 
     this.cookieToBlockedReasons = null;
+  }
+
+  wasShown(): void {
+    this.registerCSSFiles([cookiesTableStyles]);
   }
 
   setCookies(
@@ -457,6 +473,8 @@ export class CookiesTable extends UI.Widget.VBox {
           return String(cookie.sameSite());
         case SDK.Cookie.Attributes.SameParty:
           return String(cookie.sameParty());
+        case SDK.Cookie.Attributes.PartitionKey:
+          return cookie.partitionKeyOpaque() ? i18nString(UIStrings.opaquePartitionKey) : String(cookie.partitionKey());
         case SDK.Cookie.Attributes.SourceScheme:
           return String(cookie.sourceScheme());
         default:
@@ -565,6 +583,7 @@ export class CookiesTable extends UI.Widget.VBox {
     data[SDK.Cookie.Attributes.SourcePort] = cookie.sourcePort();
     data[SDK.Cookie.Attributes.SourceScheme] = cookie.sourceScheme();
     data[SDK.Cookie.Attributes.Priority] = cookie.priority() || '';
+    data[SDK.Cookie.Attributes.PartitionKey] = cookie.partitionKey() || '';
 
     const blockedReasons = this.cookieToBlockedReasons?.get(cookie);
     const node = new DataGridNode(data, cookie, blockedReasons || null);
@@ -607,6 +626,9 @@ export class CookiesTable extends UI.Widget.VBox {
     }
     if (node.data[SDK.Cookie.Attributes.Expires] === null) {
       node.data[SDK.Cookie.Attributes.Expires] = expiresSessionValue();
+    }
+    if (node.data[SDK.Cookie.Attributes.PartitionKey] === null) {
+      node.data[SDK.Cookie.Attributes.PartitionKey] = '';
     }
   }
 
@@ -654,6 +676,9 @@ export class CookiesTable extends UI.Widget.VBox {
     if (SDK.Cookie.Attributes.SourcePort in data) {
       cookie.addAttribute(
           SDK.Cookie.Attributes.SourcePort, Number.parseInt(data[SDK.Cookie.Attributes.SourcePort], 10) || undefined);
+    }
+    if (SDK.Cookie.Attributes.PartitionKey in data) {
+      cookie.addAttribute(SDK.Cookie.Attributes.PartitionKey, data[SDK.Cookie.Attributes.PartitionKey]);
     }
     cookie.setSize(data[SDK.Cookie.Attributes.Name].length + data[SDK.Cookie.Attributes.Value].length);
     return cookie;

@@ -7,7 +7,7 @@
             "builder_id": {
               "bucket": "ci",
               "builder": "chromeos-arm-generic-rel",
-              "project": "chromium-m96"
+              "project": "chromium-m98"
             },
             "builder_spec": {
               "builder_group": "chromium.chromiumos",
@@ -39,7 +39,7 @@
         {
           "bucket": "ci",
           "builder": "chromeos-arm-generic-rel",
-          "project": "chromium-m96"
+          "project": "chromium-m98"
         }
       ]
     }
@@ -49,10 +49,6 @@
     "rpc_extra_params": "?prod",
     "server_host": "goma.chromium.org",
     "use_luci_auth": true
-  },
-  "$kitchen": {
-    "devshell": true,
-    "git_auth": true
   },
   "$recipe_engine/resultdb/test_presentation": {
     "column_keys": [],

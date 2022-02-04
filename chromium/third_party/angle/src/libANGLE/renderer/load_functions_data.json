@@ -256,6 +256,10 @@
     "D16_UNORM": {
       "GL_UNSIGNED_INT": "LoadR32ToR16",
       "GL_UNSIGNED_SHORT": "LoadToNative<GLushort, 1>"
+    },
+    "D32_FLOAT": {
+      "GL_UNSIGNED_SHORT": "LoadUNorm16To32F",
+      "GL_UNSIGNED_INT": "LoadUNorm32To32F"
     }
   },
   "GL_RGB32I": {
@@ -411,7 +415,7 @@
       "GL_UNSIGNED_BYTE": "LoadToNative<GLubyte, 4>"
     }
   },
-  "GL_RGBX8_ANGLEX" : {
+  "GL_RGBX8_ANGLE" : {
     "R8G8B8X8_UNORM": {
       "GL_UNSIGNED_BYTE": "LoadToNative<GLubyte, 4>"
     },

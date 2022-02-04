@@ -52,7 +52,9 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength) {
 precision mediump float;
 
 
-my_struct b : register(t1, space2);
+layout (binding = 1) buffer my_struct_1 {
+  float a[];
+} b;
 
 void a_func() {
   uint tint_symbol_1 = 0u;
@@ -101,7 +103,10 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_OtherMembersInStruct) {
 precision mediump float;
 
 
-my_struct b : register(t1, space2);
+layout (binding = 1) buffer my_struct_1 {
+  float z;
+  float a[];
+} b;
 
 void a_func() {
   uint tint_symbol_1 = 0u;
@@ -152,7 +157,9 @@ TEST_F(GlslSanitizerTest, Call_ArrayLength_ViaLets) {
 precision mediump float;
 
 
-my_struct b : register(t1, space2);
+layout (binding = 1) buffer my_struct_1 {
+  float a[];
+} b;
 
 void a_func() {
   uint tint_symbol_1 = 0u;
@@ -192,13 +199,13 @@ TEST_F(GlslSanitizerTest, PromoteArrayInitializerToConstVar) {
   auto* expect = R"(#version 310 es
 precision mediump float;
 
-void main() {
-  int tint_symbol[4] = int[4](1, 2, 3, 4);
-  int pos = tint_symbol[3];
+void tint_symbol() {
+  int tint_symbol_1[4] = int[4](1, 2, 3, 4);
+  int pos = tint_symbol_1[3];
   return;
 }
 void main() {
-  main();
+  tint_symbol();
 }
 
 
@@ -239,13 +246,13 @@ struct S {
   int c;
 };
 
-void main() {
-  S tint_symbol = S(1, vec3(2.0f, 3.0f, 4.0f), 4);
-  vec3 pos = tint_symbol.b;
+void tint_symbol() {
+  S tint_symbol_1 = S(1, vec3(2.0f, 3.0f, 4.0f), 4);
+  vec3 pos = tint_symbol_1.b;
   return;
 }
 void main() {
-  main();
+  tint_symbol();
 }
 
 
@@ -280,13 +287,13 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsBasic) {
   auto* expect = R"(#version 310 es
 precision mediump float;
 
-void main() {
+void tint_symbol() {
   int v = 0;
   int x = v;
   return;
 }
 void main() {
-  main();
+  tint_symbol();
 }
 
 
@@ -295,29 +302,31 @@ void main() {
 }
 
 TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
-  // var m : mat4x4<f32>;
-  // let mp : ptr<function, mat4x4<f32>> = &m;
+  // var a : array<mat4x4<f32>, 4>;
+  // let ap : ptr<function, array<mat4x4<f32>, 4>> = &a;
+  // let mp : ptr<function, mat4x4<f32>> = &(*ap)[3];
   // let vp : ptr<function, vec4<f32>> = &(*mp)[2];
-  // let fp : ptr<function, f32> = &(*vp)[1];
-  // let f : f32 = *fp;
-  auto* m = Var("m", ty.mat4x4<f32>());
+  // let v : vec4<f32> = *vp;
+  auto* a = Var("a", ty.array(ty.mat4x4<f32>(), 4));
+  auto* ap = Const(
+      "ap",
+      ty.pointer(ty.array(ty.mat4x4<f32>(), 4), ast::StorageClass::kFunction),
+      AddressOf(a));
   auto* mp =
       Const("mp", ty.pointer(ty.mat4x4<f32>(), ast::StorageClass::kFunction),
-            AddressOf(m));
+            AddressOf(IndexAccessor(Deref(ap), 3)));
   auto* vp =
       Const("vp", ty.pointer(ty.vec4<f32>(), ast::StorageClass::kFunction),
             AddressOf(IndexAccessor(Deref(mp), 2)));
-  auto* fp = Const("fp", ty.pointer<f32>(ast::StorageClass::kFunction),
-                   AddressOf(IndexAccessor(Deref(vp), 1)));
-  auto* f = Var("f", ty.f32(), ast::StorageClass::kNone, Deref(fp));
+  auto* v = Var("v", ty.vec4<f32>(), ast::StorageClass::kNone, Deref(vp));
 
   Func("main", ast::VariableList{}, ty.void_(),
        {
-           Decl(m),
+           Decl(a),
+           Decl(ap),
            Decl(mp),
            Decl(vp),
-           Decl(fp),
-           Decl(f),
+           Decl(v),
        },
        {
            Stage(ast::PipelineStage::kFragment),
@@ -331,13 +340,13 @@ TEST_F(GlslSanitizerTest, InlinePtrLetsComplexChain) {
   auto* expect = R"(#version 310 es
 precision mediump float;
 
-void main() {
-  mat4 m = mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
-  float f = m[2][1];
+void tint_symbol() {
+  mat4 a[4] = mat4[4](mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f), mat4(0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f));
+  vec4 v = a[3][2];
   return;
 }
 void main() {
-  main();
+  tint_symbol();
 }
 
 

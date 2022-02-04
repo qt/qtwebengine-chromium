@@ -52,6 +52,8 @@ const char kSessionManagerSetFlagsForUser[] = "SetFlagsForUser";
 const char kSessionManagerSetFeatureFlagsForUser[] = "SetFeatureFlagsForUser";
 const char kSessionManagerGetServerBackedStateKeys[] =
     "GetServerBackedStateKeys";
+const char kSessionManagerGetPsmDeviceActiveSecret[] =
+    "GetPsmDeviceActiveSecret";
 const char kSessionManagerInitMachineInfo[] = "InitMachineInfo";
 const char kSessionManagerCheckArcAvailability[] = "CheckArcAvailability";
 const char kSessionManagerStartArcMiniContainer[] = "StartArcMiniContainer";

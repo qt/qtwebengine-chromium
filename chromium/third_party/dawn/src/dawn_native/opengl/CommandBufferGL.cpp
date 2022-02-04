@@ -645,10 +645,10 @@ namespace dawn_native { namespace opengl {
                     auto& dst = copy->destination;
                     Buffer* buffer = ToBackend(src.buffer.Get());
 
-                    if (dst.aspect == Aspect::Stencil) {
-                        return DAWN_VALIDATION_ERROR(
-                            "Copies to stencil textures unsupported on OpenGL");
-                    }
+                    DAWN_INVALID_IF(
+                        dst.aspect == Aspect::Stencil,
+                        "Copies to stencil textures are unsupported on the OpenGL backend.");
+
                     ASSERT(dst.aspect == Aspect::Color);
 
                     buffer->EnsureDataInitialized();
@@ -825,6 +825,27 @@ namespace dawn_native { namespace opengl {
                     break;
                 }
 
+                case Command::ClearBuffer: {
+                    ClearBufferCmd* cmd = mCommands.NextCommand<ClearBufferCmd>();
+                    if (cmd->size == 0) {
+                        // Skip no-op fills.
+                        break;
+                    }
+                    Buffer* dstBuffer = ToBackend(cmd->buffer.Get());
+
+                    bool clearedToZero =
+                        dstBuffer->EnsureDataInitializedAsDestination(cmd->offset, cmd->size);
+
+                    if (!clearedToZero) {
+                        const std::vector<uint8_t> clearValues(cmd->size, 0u);
+                        gl.BindBuffer(GL_ARRAY_BUFFER, dstBuffer->GetHandle());
+                        gl.BufferSubData(GL_ARRAY_BUFFER, cmd->offset, cmd->size,
+                                         clearValues.data());
+                    }
+
+                    break;
+                }
+
                 case Command::ResolveQuerySet: {
                     // TODO(crbug.com/dawn/434): Resolve non-precise occlusion query.
                     SkipCommand(&mCommands, type);
@@ -843,10 +864,6 @@ namespace dawn_native { namespace opengl {
                     SkipCommand(&mCommands, type);
                     break;
                 }
-
-                case Command::SetValidatedBufferLocationsInternal:
-                    DoNextSetValidatedBufferLocationsInternal();
-                    break;
 
                 case Command::WriteBuffer: {
                     WriteBufferCmd* write = mCommands.NextCommand<WriteBufferCmd>();
@@ -1187,17 +1204,17 @@ namespace dawn_native { namespace opengl {
 
                 case Command::DrawIndexedIndirect: {
                     DrawIndexedIndirectCmd* draw = iter->NextCommand<DrawIndexedIndirectCmd>();
-                    ASSERT(!draw->indirectBufferLocation->IsNull());
 
                     vertexStateBufferBindingTracker.Apply(gl);
                     bindGroupTracker.Apply(gl);
 
-                    Buffer* indirectBuffer = ToBackend(draw->indirectBufferLocation->GetBuffer());
+                    Buffer* indirectBuffer = ToBackend(draw->indirectBuffer.Get());
+                    ASSERT(indirectBuffer != nullptr);
+
                     gl.BindBuffer(GL_DRAW_INDIRECT_BUFFER, indirectBuffer->GetHandle());
                     gl.DrawElementsIndirect(
                         lastPipeline->GetGLPrimitiveTopology(), indexBufferFormat,
-                        reinterpret_cast<void*>(
-                            static_cast<intptr_t>(draw->indirectBufferLocation->GetOffset())));
+                        reinterpret_cast<void*>(static_cast<intptr_t>(draw->indirectOffset)));
                     break;
                 }
 

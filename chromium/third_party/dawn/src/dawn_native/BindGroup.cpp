@@ -36,10 +36,13 @@ namespace dawn_native {
         MaybeError ValidateBufferBinding(const DeviceBase* device,
                                          const BindGroupEntry& entry,
                                          const BindingInfo& bindingInfo) {
-            if (entry.buffer == nullptr || entry.sampler != nullptr ||
-                entry.textureView != nullptr || entry.nextInChain != nullptr) {
-                return DAWN_VALIDATION_ERROR("Expected buffer binding");
-            }
+            DAWN_INVALID_IF(entry.buffer == nullptr, "Binding entry buffer not set.");
+
+            DAWN_INVALID_IF(entry.sampler != nullptr || entry.textureView != nullptr,
+                            "Expected only buffer to be set for binding entry.");
+
+            DAWN_INVALID_IF(entry.nextInChain != nullptr, "nextInChain must be nullptr.");
+
             DAWN_TRY(device->ValidateObject(entry.buffer));
 
             ASSERT(bindingInfo.bindingType == BindingInfoType::Buffer);
@@ -50,19 +53,22 @@ namespace dawn_native {
             switch (bindingInfo.buffer.type) {
                 case wgpu::BufferBindingType::Uniform:
                     requiredUsage = wgpu::BufferUsage::Uniform;
-                    maxBindingSize = kMaxUniformBufferBindingSize;
-                    requiredBindingAlignment = kMinUniformBufferOffsetAlignment;
+                    maxBindingSize = device->GetLimits().v1.maxUniformBufferBindingSize;
+                    requiredBindingAlignment =
+                        device->GetLimits().v1.minUniformBufferOffsetAlignment;
                     break;
                 case wgpu::BufferBindingType::Storage:
                 case wgpu::BufferBindingType::ReadOnlyStorage:
                     requiredUsage = wgpu::BufferUsage::Storage;
-                    maxBindingSize = kMaxStorageBufferBindingSize;
-                    requiredBindingAlignment = kMinStorageBufferOffsetAlignment;
+                    maxBindingSize = device->GetLimits().v1.maxStorageBufferBindingSize;
+                    requiredBindingAlignment =
+                        device->GetLimits().v1.minStorageBufferOffsetAlignment;
                     break;
                 case kInternalStorageBufferBinding:
                     requiredUsage = kInternalStorageBuffer;
-                    maxBindingSize = kMaxStorageBufferBindingSize;
-                    requiredBindingAlignment = kMinStorageBufferOffsetAlignment;
+                    maxBindingSize = device->GetLimits().v1.maxStorageBufferBindingSize;
+                    requiredBindingAlignment =
+                        device->GetLimits().v1.minStorageBufferOffsetAlignment;
                     break;
                 case wgpu::BufferBindingType::Undefined:
                     UNREACHABLE();
@@ -113,10 +119,13 @@ namespace dawn_native {
         MaybeError ValidateTextureBinding(DeviceBase* device,
                                           const BindGroupEntry& entry,
                                           const BindingInfo& bindingInfo) {
-            if (entry.textureView == nullptr || entry.sampler != nullptr ||
-                entry.buffer != nullptr || entry.nextInChain != nullptr) {
-                return DAWN_VALIDATION_ERROR("Expected texture binding");
-            }
+            DAWN_INVALID_IF(entry.textureView == nullptr, "Binding entry textureView not set.");
+
+            DAWN_INVALID_IF(entry.sampler != nullptr || entry.buffer != nullptr,
+                            "Expected only textureView to be set for binding entry.");
+
+            DAWN_INVALID_IF(entry.nextInChain != nullptr, "nextInChain must be nullptr.");
+
             DAWN_TRY(device->ValidateObject(entry.textureView));
 
             TextureViewBase* view = entry.textureView;
@@ -173,6 +182,10 @@ namespace dawn_native {
                         "Dimension (%s) of %s doesn't match the expected dimension (%s).",
                         entry.textureView->GetDimension(), entry.textureView,
                         bindingInfo.storageTexture.viewDimension);
+
+                    DAWN_INVALID_IF(entry.textureView->GetLevelCount() != 1,
+                                    "mipLevelCount (%u) of %s expected to be 1.",
+                                    entry.textureView->GetLevelCount(), entry.textureView);
                     break;
                 }
                 default:
@@ -186,10 +199,13 @@ namespace dawn_native {
         MaybeError ValidateSamplerBinding(const DeviceBase* device,
                                           const BindGroupEntry& entry,
                                           const BindingInfo& bindingInfo) {
-            if (entry.sampler == nullptr || entry.textureView != nullptr ||
-                entry.buffer != nullptr || entry.nextInChain != nullptr) {
-                return DAWN_VALIDATION_ERROR("Expected sampler binding");
-            }
+            DAWN_INVALID_IF(entry.sampler == nullptr, "Binding entry sampler not set.");
+
+            DAWN_INVALID_IF(entry.textureView != nullptr || entry.buffer != nullptr,
+                            "Expected only sampler to be set for binding entry.");
+
+            DAWN_INVALID_IF(entry.nextInChain != nullptr, "nextInChain must be nullptr.");
+
             DAWN_TRY(device->ValidateObject(entry.sampler));
 
             ASSERT(bindingInfo.bindingType == BindingInfoType::Sampler);
@@ -230,10 +246,12 @@ namespace dawn_native {
             const ExternalTextureBindingEntry* externalTextureBindingEntry = nullptr;
             FindInChain(entry.nextInChain, &externalTextureBindingEntry);
 
-            if (entry.sampler != nullptr || entry.textureView != nullptr ||
-                entry.buffer != nullptr || externalTextureBindingEntry == nullptr) {
-                return DAWN_VALIDATION_ERROR("Expected external texture binding");
-            }
+            DAWN_INVALID_IF(externalTextureBindingEntry == nullptr,
+                            "Binding entry external texture not set.");
+
+            DAWN_INVALID_IF(
+                entry.sampler != nullptr || entry.textureView != nullptr || entry.buffer != nullptr,
+                "Expected only external texture to be set for binding entry.");
 
             DAWN_TRY(ValidateSingleSType(externalTextureBindingEntry->nextInChain,
                                          wgpu::SType::ExternalTextureBindingEntry));
@@ -247,9 +265,7 @@ namespace dawn_native {
 
     MaybeError ValidateBindGroupDescriptor(DeviceBase* device,
                                            const BindGroupDescriptor* descriptor) {
-        if (descriptor->nextInChain != nullptr) {
-            return DAWN_VALIDATION_ERROR("nextInChain must be nullptr");
-        }
+        DAWN_INVALID_IF(descriptor->nextInChain != nullptr, "nextInChain must be nullptr.");
 
         DAWN_TRY(device->ValidateObject(descriptor->layout));
 
@@ -319,7 +335,7 @@ namespace dawn_native {
     BindGroupBase::BindGroupBase(DeviceBase* device,
                                  const BindGroupDescriptor* descriptor,
                                  void* bindingDataStart)
-        : ApiObjectBase(device, kLabelNotImplemented),
+        : ApiObjectBase(device, descriptor->label),
           mLayout(descriptor->layout),
           mBindingData(mLayout->ComputeBindingDataPointers(bindingDataStart)) {
         for (BindingIndex i{0}; i < mLayout->GetBindingCount(); ++i) {
@@ -379,9 +395,17 @@ namespace dawn_native {
                 ++packedIdx;
             }
         }
+
+        TrackInDevice();
     }
 
-    BindGroupBase::~BindGroupBase() {
+    BindGroupBase::BindGroupBase(DeviceBase* device) : ApiObjectBase(device, kLabelNotImplemented) {
+        TrackInDevice();
+    }
+
+    BindGroupBase::~BindGroupBase() = default;
+
+    void BindGroupBase::DestroyImpl() {
         if (mLayout != nullptr) {
             ASSERT(!IsError());
             for (BindingIndex i{0}; i < mLayout->GetBindingCount(); ++i) {
@@ -395,7 +419,7 @@ namespace dawn_native {
         // is destroyed after the bind group. The bind group is slab-allocated inside
         // memory owned by the layout (except for the null backend).
         Ref<BindGroupLayoutBase> layout = mLayout;
-        RefCounted::DeleteThis();
+        ApiObjectBase::DeleteThis();
     }
 
     BindGroupBase::BindGroupBase(DeviceBase* device, ObjectBase::ErrorTag tag)

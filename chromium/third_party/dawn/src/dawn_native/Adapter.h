@@ -33,15 +33,17 @@ namespace dawn_native {
         AdapterBase(InstanceBase* instance, wgpu::BackendType backend);
         virtual ~AdapterBase() = default;
 
+        MaybeError Initialize();
+
         wgpu::BackendType GetBackendType() const;
         wgpu::AdapterType GetAdapterType() const;
         const std::string& GetDriverDescription() const;
         const PCIInfo& GetPCIInfo() const;
         InstanceBase* GetInstance() const;
 
-        DeviceBase* CreateDevice(const DeviceDescriptor* descriptor = nullptr);
+        DeviceBase* CreateDevice(const DawnDeviceDescriptor* descriptor = nullptr);
 
-        void RequestDevice(const DeviceDescriptor* descriptor,
+        void RequestDevice(const DawnDeviceDescriptor* descriptor,
                            WGPURequestDeviceCallback callback,
                            void* userdata);
 
@@ -64,9 +66,19 @@ namespace dawn_native {
         FeaturesSet mSupportedFeatures;
 
       private:
-        virtual ResultOrError<DeviceBase*> CreateDeviceImpl(const DeviceDescriptor* descriptor) = 0;
+        virtual ResultOrError<DeviceBase*> CreateDeviceImpl(
+            const DawnDeviceDescriptor* descriptor) = 0;
 
-        MaybeError CreateDeviceInternal(DeviceBase** result, const DeviceDescriptor* descriptor);
+        virtual MaybeError InitializeImpl() = 0;
+
+        // Check base WebGPU features and discover supported featurees.
+        virtual MaybeError InitializeSupportedFeaturesImpl() = 0;
+
+        // Check base WebGPU limits and populate supported limits.
+        virtual MaybeError InitializeSupportedLimitsImpl(CombinedLimits* limits) = 0;
+
+        MaybeError CreateDeviceInternal(DeviceBase** result,
+                                        const DawnDeviceDescriptor* descriptor);
 
         virtual MaybeError ResetInternalDeviceForTestingImpl();
         InstanceBase* mInstance = nullptr;

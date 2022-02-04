@@ -199,11 +199,8 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::FindResFontSameCharset(
   CPDF_DictionaryLocker locker(pFonts);
   for (const auto& it : locker) {
     const ByteString& csKey = it.first;
-    if (!it.second)
-      continue;
-
     CPDF_Dictionary* pElement = ToDictionary(it.second->GetDirect());
-    if (!pElement || pElement->GetNameFor("Type") != "Font")
+    if (!ValidateDictType(pElement, "Font"))
       continue;
 
     auto* pData = CPDF_DocPageData::FromDocument(m_pDocument.Get());
@@ -250,7 +247,7 @@ RetainPtr<CPDF_Font> CPDF_BAFontMap::GetAnnotDefaultFont(ByteString* sAlias) {
 
   CPDF_DefaultAppearance appearance(sDA);
   float font_size;
-  Optional<ByteString> font = appearance.GetFont(&font_size);
+  absl::optional<ByteString> font = appearance.GetFont(&font_size);
   *sAlias = font.value_or(ByteString());
 
   CPDF_Dictionary* pFontDict = nullptr;

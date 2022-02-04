@@ -35,7 +35,7 @@ namespace convert {
 
 struct ConversionParams {
   const grappler::GrapplerItem* grappler_item = nullptr;
-  const std::vector<string>* output_names = nullptr;
+  const std::vector<string>* input_output_names = nullptr;
   string trt_logger_name;
   size_t max_batch_size = 1;
   size_t max_workspace_size_bytes = 1 << 30;
@@ -61,12 +61,9 @@ std::pair<int, Allocator*> GetDeviceAndAllocator(const ConversionParams& params,
                                                  const EngineInfo& engine);
 
 // Helper method that registers `segment_graph` as a function to the function
-// library in `graph`. When `has_int32_input` is true, the routine will informs
-// TensorFlow that int32 _Arg node inputs are on device memory during native
-// segment execution.
+// library in `graph`.
 Status RegisterGraphToFunctionLibrary(const GraphDef& segment_graph_def,
-                                      Graph* graph, const string& engine_name,
-                                      bool has_int32_input = false);
+                                      Graph* graph, const string& engine_name);
 
 // Creates and serializes an ICudaEngine. Used only in is_dynamic_op=false,
 // a.k.a. static engine mode.

@@ -65,7 +65,7 @@ def IsWindows(): return 'windows' == platform.system().lower()
 # Verify consistency of generated source code
 def CheckVVLCodegenConsistency():
     print("Check Generated Source Code Consistency")
-    gen_check_cmd = 'python3 scripts/generate_source.py --verify %s/Vulkan-Headers/registry' % EXTERNAL_DIR
+    gen_check_cmd = 'python3 scripts/generate_source.py --verify %s/Vulkan-Headers/registry %s/SPIRV-Headers/include/spirv/unified1/' % (EXTERNAL_DIR, EXTERNAL_DIR)
     RunShellCmd(gen_check_cmd)
 
 #
@@ -75,16 +75,6 @@ def BuildVVL(args, build_tests=False):
     print("Log CMake version")
     cmake_ver_cmd = 'cmake --version'
     RunShellCmd(cmake_ver_cmd)
-
-    GTEST_DIR = RepoRelative("external/googletest")
-    if not os.path.exists(GTEST_DIR):
-        print("Clone Testing Framework Source Code")
-        clone_gtest_cmd = f'git clone https://github.com/google/googletest.git {GTEST_DIR}'
-        RunShellCmd(clone_gtest_cmd)
-
-        print("Get Specified Testing Source")
-        gtest_checkout_cmd = 'git checkout tags/release-1.8.1'
-        RunShellCmd(gtest_checkout_cmd, GTEST_DIR)
 
     utils.make_dirs(VVL_BUILD_DIR)
     print("Run CMake for Validation Layers")

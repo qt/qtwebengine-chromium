@@ -4945,6 +4945,88 @@
       "version" : "None"
     },
     {
+      "opname" : "OpConvertUToImageNV",
+      "class"  : "Reserved",
+      "opcode" : 5391,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConvertUToSamplerNV",
+      "class"  : "Reserved",
+      "opcode" : 5392,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConvertImageToUNV",
+      "class"  : "Reserved",
+      "opcode" : 5393,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConvertSamplerToUNV",
+      "class"  : "Reserved",
+      "opcode" : 5394,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConvertUToSampledImageNV",
+      "class"  : "Reserved",
+      "opcode" : 5395,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpConvertSampledImageToUNV",
+      "class"  : "Reserved",
+      "opcode" : 5396,
+      "operands" : [
+        { "kind" : "IdResultType" },
+        { "kind" : "IdResult" },
+        { "kind" : "IdRef", "name" : "'Operand'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
+      "opname" : "OpSamplerImageAddressingModeNV",
+      "class"  : "Reserved",
+      "opcode" : 5397,
+      "operands" : [
+        { "kind" : "LiteralInteger", "name" : "'Bit Width'" }
+      ],
+      "capabilities" : [ "BindlessTextureNV" ],
+      "version" : "None"
+    },
+    {
       "opname" : "OpSubgroupShuffleINTEL",
       "class"  : "Group",
       "opcode" : 5571,
@@ -5256,7 +5338,7 @@
       "version" : "None"
     },
     {
-      "opname" : "OpConstFunctionPointerINTEL",
+      "opname" : "OpConstantFunctionPointerINTEL",
       "class"  : "@exclude",
       "opcode" : 5600,
       "operands" : [
@@ -8475,6 +8557,13 @@
           "enumerant" : "ZeroExtend",
           "value" : "0x2000",
           "version" : "1.4"
+        },
+        {
+          "enumerant" : "Offsets",
+          "value" : "0x10000",
+          "parameters" : [
+            { "kind" : "IdRef" }
+          ]
         }
       ]
     },
@@ -8488,40 +8577,35 @@
         },
         {
           "enumerant" : "NotNaN",
-          "value" : "0x0001",
-          "capabilities" : [ "Kernel" ]
+          "value" : "0x0001"
         },
         {
           "enumerant" : "NotInf",
-          "value" : "0x0002",
-          "capabilities" : [ "Kernel" ]
+          "value" : "0x0002"
         },
         {
           "enumerant" : "NSZ",
-          "value" : "0x0004",
-          "capabilities" : [ "Kernel" ]
+          "value" : "0x0004"
         },
         {
           "enumerant" : "AllowRecip",
-          "value" : "0x0008",
-          "capabilities" : [ "Kernel" ]
+          "value" : "0x0008"
         },
         {
           "enumerant" : "Fast",
-          "value" : "0x0010",
-          "capabilities" : [ "Kernel" ]
+          "value" : "0x0010"
         },
         {
           "enumerant" : "AllowContractFastINTEL",
           "value" : "0x10000",
           "capabilities" : [ "FPFastMathModeINTEL" ],
-	  "version" : "None"
+          "version" : "None"
         },
         {
           "enumerant" : "AllowReassocINTEL",
           "value" : "0x20000",
           "capabilities" : [ "FPFastMathModeINTEL" ],
-	  "version" : "None"
+          "version" : "None"
         }
       ]
     },
@@ -11079,6 +11163,30 @@
           "version" : "1.5"
         },
         {
+          "enumerant" : "BindlessSamplerNV",
+          "value" : 5398,
+          "capabilities" : [ "BindlessTextureNV" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "BindlessImageNV",
+          "value" : 5399,
+          "capabilities" : [ "BindlessTextureNV" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "BoundSamplerNV",
+          "value" : 5400,
+          "capabilities" : [ "BindlessTextureNV" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "BoundImageNV",
+          "value" : 5401,
+          "capabilities" : [ "BindlessTextureNV" ],
+          "version" : "None"
+        },
+        {
           "enumerant" : "SIMTCallINTEL",
           "value" : 5599,
           "parameters" : [
@@ -11396,6 +11504,12 @@
         {
           "enumerant" : "VectorComputeCallableFunctionINTEL",
           "value" : 6087,
+          "capabilities" : [ "VectorComputeINTEL" ],
+          "version" : "None"
+        },
+        {
+          "enumerant" : "MediaBlockIOINTEL",
+          "value" : 6140,
           "capabilities" : [ "VectorComputeINTEL" ],
           "version" : "None"
         }
@@ -13220,6 +13334,12 @@
           "version" : "None"
         },
         {
+          "enumerant" : "BindlessTextureNV",
+          "value" : 5390,
+          "extensions" : [ "SPV_NV_bindless_texture" ],
+          "version" : "None"
+        },
+        {
           "enumerant" : "SubgroupShuffleINTEL",
           "value" : 5568,
           "extensions" : [ "SPV_INTEL_subgroups" ],
@@ -13484,14 +13604,12 @@
         {
           "enumerant" : "AtomicFloat32AddEXT",
           "value" : 6033,
-          "capabilities" : [ "Shader" ],
           "extensions" : [ "SPV_EXT_shader_atomic_float_add" ],
           "version" : "None"
         },
         {
           "enumerant" : "AtomicFloat64AddEXT",
           "value" : 6034,
-          "capabilities" : [ "Shader" ],
           "extensions" : [ "SPV_EXT_shader_atomic_float_add" ],
           "version" : "None"
         },
@@ -13510,7 +13628,6 @@
         {
           "enumerant" : "AtomicFloat16AddEXT",
           "value" : 6095,
-          "capabilities" : [ "Shader" ],
           "extensions" : [ "SPV_EXT_shader_atomic_float16_add" ],
           "version" : "None"
         },

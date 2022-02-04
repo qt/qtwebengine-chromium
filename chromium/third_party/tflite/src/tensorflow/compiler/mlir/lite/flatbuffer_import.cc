@@ -45,6 +45,7 @@ limitations under the License.
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
+#include "mlir/Dialect/Arithmetic/IR/Arithmetic.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/QuantOps.h"  // from @llvm-project
 #include "mlir/Dialect/Quant/QuantTypes.h"  // from @llvm-project
 #include "mlir/Dialect/StandardOps/IR/Ops.h"  // from @llvm-project
@@ -774,7 +775,7 @@ Status AddOpIntermediatesForLstm(
           mlir::TypeAttr::get(std::get<0>(type_and_name));
       auto named_attr =
           builder.getNamedAttr(std::get<1>(type_and_name), type_attr);
-      op_state.addAttribute(named_attr.first, named_attr.second);
+      op_state.addAttribute(named_attr.getName(), named_attr.getValue());
     }
   }
   return Status::OK();
@@ -1440,9 +1441,10 @@ OwningModuleRef tflite::FlatBufferToMlir(
     const std::vector<std::string>& ordered_input_arrays,
     const std::vector<std::string>& ordered_output_arrays,
     bool experimental_prune_unreachable_nodes_unconditionally) {
-  context->loadDialect<
-      mlir::StandardOpsDialect, mlir::quant::QuantizationDialect,
-      mlir::TFL::TensorFlowLiteDialect, mlir::TF::TensorFlowDialect>();
+  context->loadDialect<mlir::arith::ArithmeticDialect, mlir::StandardOpsDialect,
+                       mlir::quant::QuantizationDialect,
+                       mlir::TFL::TensorFlowLiteDialect,
+                       mlir::TF::TensorFlowDialect>();
 
   auto model_ptr =
       FlatBufferModel::VerifyAndBuildFromBuffer(buffer.data(), buffer.length());

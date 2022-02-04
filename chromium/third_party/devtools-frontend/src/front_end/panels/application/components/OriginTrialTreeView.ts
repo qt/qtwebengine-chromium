@@ -19,6 +19,12 @@ const UIStrings = {
   */
   origin: 'Origin',
   /**
+   *@description Label for `trialName` field in a parsed Origin Trial Token.
+   * This field is only shown when token has unknown trial name as the token
+   * will be put into 'UNKNOWN' group.
+   */
+  trialName: 'Trial Name',
+  /**
    *@description Label for `expiryTime` field in a parsed Origin Trial Token.
    */
   expiryTime: 'Expiry Time',
@@ -223,7 +229,7 @@ export class OriginTrialTokenRows extends HTMLElement {
   }
 
   private renderTokenField = (fieldValue: string, hasError?: boolean): LitHtml.TemplateResult => LitHtml.html`
-        <div class="${LitHtml.Directives.ifDefined(hasError ? 'error-text' : undefined)}">
+        <div class=${LitHtml.Directives.ifDefined(hasError ? 'error-text' : undefined)}>
           ${fieldValue}
         </div>`;
 
@@ -257,6 +263,16 @@ export class OriginTrialTokenRows extends HTMLElement {
         value: this.renderTokenField(this.tokenWithStatus.parsedToken.matchSubDomains.toString()),
       },
     ];
+
+    if (this.tokenWithStatus.status === Protocol.Page.OriginTrialTokenStatus.UnknownTrial) {
+      this.parsedTokenDetails = [
+        {
+          name: i18nString(UIStrings.trialName),
+          value: this.renderTokenField(this.tokenWithStatus.parsedToken.trialName),
+        },
+        ...this.parsedTokenDetails,
+      ];
+    }
   }
 
   private render(): void {
@@ -318,10 +334,10 @@ export class OriginTrialTreeView extends HTMLElement {
 
     LitHtml.render(
         LitHtml.html`
-      <${TreeOutline.TreeOutline.TreeOutline.litTagName} .data="${{
+      <${TreeOutline.TreeOutline.TreeOutline.litTagName} .data=${{
           tree: trials.map(constructOriginTrialTree),
           defaultRenderer,
-        } as TreeOutline.TreeOutline.TreeOutlineData<OriginTrialTreeNodeData>}">
+        } as TreeOutline.TreeOutline.TreeOutlineData<OriginTrialTreeNodeData>}>
       </${TreeOutline.TreeOutline.TreeOutline.litTagName}>
     `,
         this.shadow, {host: this});

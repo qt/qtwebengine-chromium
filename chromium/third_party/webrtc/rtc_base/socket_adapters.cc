@@ -97,7 +97,7 @@ void BufferedReadAdapter::OnReadEvent(Socket* socket) {
 
   if (data_len_ >= buffer_size_) {
     RTC_LOG(LS_ERROR) << "Input buffer overflow";
-    RTC_NOTREACHED();
+    RTC_DCHECK_NOTREACHED();
     data_len_ = 0;
   }
 
@@ -105,7 +105,7 @@ void BufferedReadAdapter::OnReadEvent(Socket* socket) {
                                      buffer_size_ - data_len_, nullptr);
   if (len < 0) {
     // TODO: Do something better like forwarding the error to the user.
-    RTC_LOG_ERR(INFO) << "Recv";
+    RTC_LOG_ERR(LS_INFO) << "Recv";
     return;
   }
 

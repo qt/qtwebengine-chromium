@@ -15,6 +15,7 @@
 #include "dawn_native/d3d12/DeviceD3D12.h"
 
 #include "common/GPUInfo.h"
+#include "dawn_native/DynamicUploader.h"
 #include "dawn_native/Instance.h"
 #include "dawn_native/d3d12/AdapterD3D12.h"
 #include "dawn_native/d3d12/BackendD3D12.h"
@@ -49,10 +50,14 @@ namespace dawn_native { namespace d3d12 {
     static constexpr uint16_t kShaderVisibleDescriptorHeapSize = 1024;
     static constexpr uint8_t kAttachmentDescriptorHeapSize = 64;
 
+    // Value may change in the future to better accomodate large clears.
+    static constexpr uint64_t kZeroBufferSize = 1024 * 1024 * 4;  // 4 Mb
+
     static constexpr uint64_t kMaxDebugMessagesToPrint = 5;
 
     // static
-    ResultOrError<Device*> Device::Create(Adapter* adapter, const DeviceDescriptor* descriptor) {
+    ResultOrError<Device*> Device::Create(Adapter* adapter,
+                                          const DawnDeviceDescriptor* descriptor) {
         Ref<Device> device = AcquireRef(new Device(adapter, descriptor));
         DAWN_TRY(device->Initialize());
         return device.Detach();
@@ -165,11 +170,14 @@ namespace dawn_native { namespace d3d12 {
         // The environment can only use DXC when it's available. Override the decision if it is not
         // applicable.
         DAWN_TRY(ApplyUseDxcToggle());
+
+        DAWN_TRY(CreateZeroBuffer());
+
         return {};
     }
 
     Device::~Device() {
-        ShutDownBase();
+        Destroy();
     }
 
     ID3D12Device* Device::GetD3D12Device() const {
@@ -248,6 +256,59 @@ namespace dawn_native { namespace d3d12 {
             DAWN_TRY(mPendingCommands.Open(mD3d12Device.Get(), mCommandAllocatorManager.get()));
         }
         return &mPendingCommands;
+    }
+
+    MaybeError Device::CreateZeroBuffer() {
+        BufferDescriptor zeroBufferDescriptor;
+        zeroBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
+        zeroBufferDescriptor.size = kZeroBufferSize;
+        zeroBufferDescriptor.label = "ZeroBuffer_Internal";
+        DAWN_TRY_ASSIGN(mZeroBuffer, Buffer::Create(this, &zeroBufferDescriptor));
+
+        return {};
+    }
+
+    MaybeError Device::ClearBufferToZero(CommandRecordingContext* commandContext,
+                                         BufferBase* destination,
+                                         uint64_t offset,
+                                         uint64_t size) {
+        // TODO(crbug.com/dawn/852): It would be ideal to clear the buffer in CreateZeroBuffer, but
+        // the allocation of the staging buffer causes various end2end tests that monitor heap usage
+        // to fail if it's done during device creation. Perhaps ClearUnorderedAccessView*() can be
+        // used to avoid that.
+        if (!mZeroBuffer->IsDataInitialized()) {
+            DynamicUploader* uploader = GetDynamicUploader();
+            UploadHandle uploadHandle;
+            DAWN_TRY_ASSIGN(uploadHandle,
+                            uploader->Allocate(kZeroBufferSize, GetPendingCommandSerial(),
+                                               kCopyBufferToBufferOffsetAlignment));
+
+            memset(uploadHandle.mappedBuffer, 0u, kZeroBufferSize);
+
+            CopyFromStagingToBufferImpl(commandContext, uploadHandle.stagingBuffer,
+                                        uploadHandle.startOffset, mZeroBuffer.Get(), 0,
+                                        kZeroBufferSize);
+
+            mZeroBuffer->SetIsDataInitialized();
+        }
+
+        Buffer* dstBuffer = ToBackend(destination);
+
+        // Necessary to ensure residency of the zero buffer.
+        mZeroBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopySrc);
+        dstBuffer->TrackUsageAndTransitionNow(commandContext, wgpu::BufferUsage::CopyDst);
+
+        while (size > 0) {
+            uint64_t copySize = std::min(kZeroBufferSize, size);
+            commandContext->GetCommandList()->CopyBufferRegion(
+                dstBuffer->GetD3D12Resource(), offset, mZeroBuffer->GetD3D12Resource(), 0,
+                copySize);
+
+            offset += copySize;
+            size -= copySize;
+        }
+
+        return {};
     }
 
     MaybeError Device::TickImpl() {
@@ -334,9 +395,9 @@ namespace dawn_native { namespace d3d12 {
         const CommandBufferDescriptor* descriptor) {
         return CommandBuffer::Create(encoder, descriptor);
     }
-    ResultOrError<Ref<ComputePipelineBase>> Device::CreateComputePipelineImpl(
+    Ref<ComputePipelineBase> Device::CreateUninitializedComputePipelineImpl(
         const ComputePipelineDescriptor* descriptor) {
-        return ComputePipeline::Create(this, descriptor);
+        return ComputePipeline::CreateUninitialized(this, descriptor);
     }
     ResultOrError<Ref<PipelineLayoutBase>> Device::CreatePipelineLayoutImpl(
         const PipelineLayoutDescriptor* descriptor) {
@@ -376,16 +437,15 @@ namespace dawn_native { namespace d3d12 {
         const TextureViewDescriptor* descriptor) {
         return TextureView::Create(texture, descriptor);
     }
-    void Device::CreateComputePipelineAsyncImpl(const ComputePipelineDescriptor* descriptor,
-                                                size_t blueprintHash,
-                                                WGPUCreateComputePipelineAsyncCallback callback,
-                                                void* userdata) {
-        ComputePipeline::CreateAsync(this, descriptor, blueprintHash, callback, userdata);
+    void Device::InitializeComputePipelineAsyncImpl(Ref<ComputePipelineBase> computePipeline,
+                                                    WGPUCreateComputePipelineAsyncCallback callback,
+                                                    void* userdata) {
+        ComputePipeline::InitializeAsync(std::move(computePipeline), callback, userdata);
     }
     void Device::InitializeRenderPipelineAsyncImpl(Ref<RenderPipelineBase> renderPipeline,
                                                    WGPUCreateRenderPipelineAsyncCallback callback,
                                                    void* userdata) {
-        RenderPipeline::InitializeAsync(renderPipeline, callback, userdata);
+        RenderPipeline::InitializeAsync(std::move(renderPipeline), callback, userdata);
     }
 
     ResultOrError<std::unique_ptr<StagingBufferBase>> Device::CreateStagingBuffer(size_t size) {
@@ -405,8 +465,10 @@ namespace dawn_native { namespace d3d12 {
 
         Buffer* dstBuffer = ToBackend(destination);
 
-        DAWN_TRY(dstBuffer->EnsureDataInitializedAsDestination(commandRecordingContext,
-                                                               destinationOffset, size));
+        bool cleared;
+        DAWN_TRY_ASSIGN(cleared, dstBuffer->EnsureDataInitializedAsDestination(
+                                     commandRecordingContext, destinationOffset, size));
+        DAWN_UNUSED(cleared);
 
         CopyFromStagingToBufferImpl(commandRecordingContext, source, sourceOffset, destination,
                                     destinationOffset, size);
@@ -518,10 +580,9 @@ namespace dawn_native { namespace d3d12 {
         SetToggle(Toggle::UseD3D12ResidencyManagement, true);
         SetToggle(Toggle::UseDXC, false);
 
-#if defined(_DEBUG)
-        // Enable better shader debugging with the graphics debugging tools.
-        SetToggle(Toggle::EmitHLSLDebugSymbols, true);
-#endif
+        // Disable optimizations when using FXC
+        // See https://crbug.com/dawn/1203
+        SetToggle(Toggle::FxcOptimizations, false);
 
         // By default use the maximum shader-visible heap size allowed.
         SetToggle(Toggle::UseD3D12SmallShaderVisibleHeapForTesting, false);
@@ -601,7 +662,7 @@ namespace dawn_native { namespace d3d12 {
         return DAWN_INTERNAL_ERROR(messages.str());
     }
 
-    void Device::ShutDownImpl() {
+    void Device::DestroyImpl() {
         ASSERT(GetState() == State::Disconnected);
 
         // Immediately forget about all pending commands for the case where device is lost on its
@@ -674,6 +735,11 @@ namespace dawn_native { namespace d3d12 {
 
     float Device::GetTimestampPeriodInNS() const {
         return mTimestampPeriod;
+    }
+
+    bool Device::ShouldDuplicateNumWorkgroupsForDispatchIndirect(
+        ComputePipelineBase* computePipeline) const {
+        return ToBackend(computePipeline)->UsesNumWorkgroups();
     }
 
 }}  // namespace dawn_native::d3d12

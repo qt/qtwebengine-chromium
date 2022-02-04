@@ -13,13 +13,13 @@
 #include <memory>
 
 #include "core/fpdfapi/parser/cpdf_crypto_handler.h"
-#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/retain_ptr.h"
 
 class CPDF_Array;
 class CPDF_Dictionary;
 
-class CPDF_SecurityHandler : public Retainable {
+class CPDF_SecurityHandler final : public Retainable {
  public:
   CONSTRUCT_VIA_MAKE_RETAIN;
 

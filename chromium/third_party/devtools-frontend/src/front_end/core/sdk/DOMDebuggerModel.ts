@@ -7,6 +7,7 @@ import * as i18n from '../i18n/i18n.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
+import {CategorizedBreakpoint} from './CategorizedBreakpoint.js';
 import type {Location} from './DebuggerModel.js';
 import type {DOMNode} from './DOMModel.js';
 import {DOMModel, Events as DOMModelEvents} from './DOMModel.js';
@@ -196,6 +197,37 @@ const UIStrings = {
 };
 const str_ = i18n.i18n.registerUIStrings('core/sdk/DOMDebuggerModel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
+
+// Some instrumentation breakpoints have their titles adjusted to localized
+// versions, and some are merely renamed to more recognizable names.
+//
+// This function returns a table that links the breakpoint names and replacement
+// titles.
+function getInstrumentationBreakpointTitles(): [string, string|Common.UIString.LocalizedString][] {
+  return [
+    ['setTimeout.callback', i18nString(UIStrings.setTimeoutOrIntervalFired, {PH1: 'setTimeout'})],
+    ['setInterval.callback', i18nString(UIStrings.setTimeoutOrIntervalFired, {PH1: 'setInterval'})],
+    ['scriptFirstStatement', i18nString(UIStrings.scriptFirstStatement)],
+    ['scriptBlockedByCSP', i18nString(UIStrings.scriptBlockedByContentSecurity)],
+    ['requestAnimationFrame', i18nString(UIStrings.requestAnimationFrame)],
+    ['cancelAnimationFrame', i18nString(UIStrings.cancelAnimationFrame)],
+    ['requestAnimationFrame.callback', i18nString(UIStrings.animationFrameFired)],
+    ['webglErrorFired', i18nString(UIStrings.webglErrorFired)],
+    ['webglWarningFired', i18nString(UIStrings.webglWarningFired)],
+    ['Element.setInnerHTML', i18nString(UIStrings.setInnerhtml)],
+    ['canvasContextCreated', i18nString(UIStrings.createCanvasContext)],
+    ['Geolocation.getCurrentPosition', 'getCurrentPosition'],
+    ['Geolocation.watchPosition', 'watchPosition'],
+    ['Notification.requestPermission', 'requestPermission'],
+    ['DOMWindow.close', 'window.close'],
+    ['Document.write', 'document.write'],
+    ['audioContextCreated', i18nString(UIStrings.createAudiocontext)],
+    ['audioContextClosed', i18nString(UIStrings.closeAudiocontext)],
+    ['audioContextResumed', i18nString(UIStrings.resumeAudiocontext)],
+    ['audioContextSuspended', i18nString(UIStrings.suspendAudiocontext)],
+  ];
+}
+
 export class DOMDebuggerModel extends SDKModel<EventTypes> {
   readonly agent: ProtocolProxyApi.DOMDebuggerApi;
   readonly #runtimeModelInternal: RuntimeModel;
@@ -659,38 +691,6 @@ export namespace EventListener {
   }
 }
 
-export class CategorizedBreakpoint {
-  readonly #categoryInternal: string;
-  titleInternal: string;
-  enabledInternal: boolean;
-
-  constructor(category: string, title: string) {
-    this.#categoryInternal = category;
-    this.titleInternal = title;
-    this.enabledInternal = false;
-  }
-
-  category(): string {
-    return this.#categoryInternal;
-  }
-
-  enabled(): boolean {
-    return this.enabledInternal;
-  }
-
-  setEnabled(enabled: boolean): void {
-    this.enabledInternal = enabled;
-  }
-
-  title(): string {
-    return this.titleInternal;
-  }
-
-  setTitle(title: string): void {
-    this.titleInternal = title;
-  }
-}
-
 export class CSPViolationBreakpoint extends CategorizedBreakpoint {
   readonly #typeInternal: Protocol.DOMDebugger.CSPViolationType;
   constructor(category: string, title: string, type: Protocol.DOMDebugger.CSPViolationType) {
@@ -703,7 +703,7 @@ export class CSPViolationBreakpoint extends CategorizedBreakpoint {
   }
 }
 
-export class EventListenerBreakpoint extends CategorizedBreakpoint {
+export class DOMEventListenerBreakpoint extends CategorizedBreakpoint {
   readonly instrumentationName: string;
   readonly eventName: string;
   readonly eventTargetNames: string[];
@@ -753,7 +753,7 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
   readonly #xhrBreakpointsSetting: Common.Settings.Setting<{url: string, enabled: boolean}[]>;
   readonly #xhrBreakpointsInternal: Map<string, boolean>;
   readonly #cspViolationsToBreakOn: CSPViolationBreakpoint[];
-  readonly #eventListenerBreakpointsInternal: EventListenerBreakpoint[];
+  readonly #eventListenerBreakpointsInternal: DOMEventListenerBreakpoint[];
 
   constructor() {
     this.#xhrBreakpointsSetting = Common.Settings.Settings.instance().createLocalSetting('xhrBreakpoints', []);
@@ -830,7 +830,24 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
     this.createEventListenerBreakpoints(
         i18nString(UIStrings.keyboard), ['keydown', 'keyup', 'keypress', 'input'], ['*']);
     this.createEventListenerBreakpoints(
-        i18nString(UIStrings.load), ['load', 'beforeunload', 'unload', 'abort', 'error', 'hashchange', 'popstate'],
+        i18nString(UIStrings.load),
+        [
+          'load',
+          'beforeunload',
+          'unload',
+          'abort',
+          'error',
+          'hashchange',
+          'popstate',
+          'navigate',
+          'navigatesuccess',
+          'navigateerror',
+          'currentchange',
+          'navigateto',
+          'navigatefrom',
+          'finish',
+          'dispose',
+        ],
         ['*']);
     this.createEventListenerBreakpoints(
         i18nString(UIStrings.mouse),
@@ -874,86 +891,11 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
         ['readystatechange', 'load', 'loadstart', 'loadend', 'abort', 'error', 'progress', 'timeout'],
         ['xmlhttprequest', 'xmlhttprequestupload']);
 
-    let breakpoint;
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:setTimeout.callback');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.setTimeoutOrIntervalFired, {PH1: 'setTimeout'}));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:setInterval.callback');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.setTimeoutOrIntervalFired, {PH1: 'setInterval'}));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:scriptFirstStatement');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.scriptFirstStatement));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:scriptBlockedByCSP');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.scriptBlockedByContentSecurity));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:requestAnimationFrame');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.requestAnimationFrame));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:cancelAnimationFrame');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.cancelAnimationFrame));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:requestAnimationFrame.callback');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.animationFrameFired));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:webglErrorFired');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.webglErrorFired));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:webglWarningFired');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.webglWarningFired));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:Element.setInnerHTML');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.setInnerhtml));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:canvasContextCreated');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.createCanvasContext));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:Geolocation.getCurrentPosition');
-    if (breakpoint) {
-      breakpoint.setTitle('getCurrentPosition');
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:Geolocation.watchPosition');
-    if (breakpoint) {
-      breakpoint.setTitle('watchPosition');
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:Notification.requestPermission');
-    if (breakpoint) {
-      breakpoint.setTitle('requestPermission');
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:DOMWindow.close');
-    if (breakpoint) {
-      breakpoint.setTitle('window.close');
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:Document.write');
-    if (breakpoint) {
-      breakpoint.setTitle('document.write');
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:audioContextCreated');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.createAudiocontext));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:audioContextClosed');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.closeAudiocontext));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:audioContextResumed');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.resumeAudiocontext));
-    }
-    breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:audioContextSuspended');
-    if (breakpoint) {
-      breakpoint.setTitle(i18nString(UIStrings.suspendAudiocontext));
+    for (const [name, newTitle] of getInstrumentationBreakpointTitles()) {
+      const breakpoint = this.resolveEventListenerBreakpointInternal('instrumentation:' + name);
+      if (breakpoint) {
+        breakpoint.setTitle(newTitle);
+      }
     }
 
     TargetManager.instance().observeModels(DOMDebuggerModel, this);
@@ -977,19 +919,19 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
   private createInstrumentationBreakpoints(category: string, instrumentationNames: string[]): void {
     for (const instrumentationName of instrumentationNames) {
       this.#eventListenerBreakpointsInternal.push(
-          new EventListenerBreakpoint(instrumentationName, '', [], category, instrumentationName));
+          new DOMEventListenerBreakpoint(instrumentationName, '', [], category, instrumentationName));
     }
   }
 
   private createEventListenerBreakpoints(category: string, eventNames: string[], eventTargetNames: string[]): void {
     for (const eventName of eventNames) {
       this.#eventListenerBreakpointsInternal.push(
-          new EventListenerBreakpoint('', eventName, eventTargetNames, category, eventName));
+          new DOMEventListenerBreakpoint('', eventName, eventTargetNames, category, eventName));
     }
   }
 
-  private resolveEventListenerBreakpointInternal(eventName: string, eventTargetName?: string): EventListenerBreakpoint
-      |null {
+  private resolveEventListenerBreakpointInternal(eventName: string, eventTargetName?: string):
+      DOMEventListenerBreakpoint|null {
     const instrumentationPrefix = 'instrumentation:';
     const listenerPrefix = 'listener:';
     let instrumentationName = '';
@@ -1002,7 +944,7 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
       return null;
     }
     eventTargetName = (eventTargetName || '*').toLowerCase();
-    let result: EventListenerBreakpoint|null = null;
+    let result: DOMEventListenerBreakpoint|null = null;
     for (const breakpoint of this.#eventListenerBreakpointsInternal) {
       if (instrumentationName && breakpoint.instrumentationName === instrumentationName) {
         result = breakpoint;
@@ -1019,7 +961,7 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
     return result;
   }
 
-  eventListenerBreakpoints(): EventListenerBreakpoint[] {
+  eventListenerBreakpoints(): DOMEventListenerBreakpoint[] {
     return this.#eventListenerBreakpointsInternal.slice();
   }
 
@@ -1052,7 +994,7 @@ export class DOMDebuggerManager implements SDKModelObserver<DOMDebuggerModel> {
   resolveEventListenerBreakpoint(auxData: {
     eventName: string,
     targetName: string,
-  }): EventListenerBreakpoint|null {
+  }): DOMEventListenerBreakpoint|null {
     return this.resolveEventListenerBreakpointInternal(auxData['eventName'], auxData['targetName']);
   }
 

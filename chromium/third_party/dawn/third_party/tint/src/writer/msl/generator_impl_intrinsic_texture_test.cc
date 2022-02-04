@@ -26,7 +26,6 @@ std::string expected_texture_overload(
   using ValidTextureOverload = ast::intrinsic::test::ValidTextureOverload;
   switch (overload) {
     case ValidTextureOverload::kDimensions1d:
-    case ValidTextureOverload::kDimensionsStorageRO1d:
     case ValidTextureOverload::kDimensionsStorageWO1d:
       return R"(int(texture.get_width()))";
     case ValidTextureOverload::kDimensions2d:
@@ -39,13 +38,10 @@ std::string expected_texture_overload(
     case ValidTextureOverload::kDimensionsDepthCube:
     case ValidTextureOverload::kDimensionsDepthCubeArray:
     case ValidTextureOverload::kDimensionsDepthMultisampled2d:
-    case ValidTextureOverload::kDimensionsStorageRO2d:
-    case ValidTextureOverload::kDimensionsStorageRO2dArray:
     case ValidTextureOverload::kDimensionsStorageWO2d:
     case ValidTextureOverload::kDimensionsStorageWO2dArray:
       return R"(int2(texture.get_width(), texture.get_height()))";
     case ValidTextureOverload::kDimensions3d:
-    case ValidTextureOverload::kDimensionsStorageRO3d:
     case ValidTextureOverload::kDimensionsStorageWO3d:
       return R"(int3(texture.get_width(), texture.get_height(), texture.get_depth()))";
     case ValidTextureOverload::kDimensions2dLevel:
@@ -59,6 +55,42 @@ std::string expected_texture_overload(
       return R"(int2(texture.get_width(1), texture.get_height(1)))";
     case ValidTextureOverload::kDimensions3dLevel:
       return R"(int3(texture.get_width(1), texture.get_height(1), texture.get_depth(1)))";
+    case ValidTextureOverload::kGather2dF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), int2(0), component::x))";
+    case ValidTextureOverload::kGather2dOffsetF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), int2(3, 4), component::x))";
+    case ValidTextureOverload::kGather2dArrayF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), 3, int2(0), component::x))";
+    case ValidTextureOverload::kGather2dArrayOffsetF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), 3, int2(4, 5), component::x))";
+    case ValidTextureOverload::kGatherCubeF32:
+      return R"(texture.gather(sampler, float3(1.0f, 2.0f, 3.0f), component::x))";
+    case ValidTextureOverload::kGatherCubeArrayF32:
+      return R"(texture.gather(sampler, float3(1.0f, 2.0f, 3.0f), 4, component::x))";
+    case ValidTextureOverload::kGatherDepth2dF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f)))";
+    case ValidTextureOverload::kGatherDepth2dOffsetF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), int2(3, 4)))";
+    case ValidTextureOverload::kGatherDepth2dArrayF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), 3))";
+    case ValidTextureOverload::kGatherDepth2dArrayOffsetF32:
+      return R"(texture.gather(sampler, float2(1.0f, 2.0f), 3, int2(4, 5)))";
+    case ValidTextureOverload::kGatherDepthCubeF32:
+      return R"(texture.gather(sampler, float3(1.0f, 2.0f, 3.0f)))";
+    case ValidTextureOverload::kGatherDepthCubeArrayF32:
+      return R"(texture.gather(sampler, float3(1.0f, 2.0f, 3.0f), 4))";
+    case ValidTextureOverload::kGatherCompareDepth2dF32:
+      return R"(texture.gather_compare(sampler, float2(1.0f, 2.0f), 3.0f))";
+    case ValidTextureOverload::kGatherCompareDepth2dOffsetF32:
+      return R"(texture.gather_compare(sampler, float2(1.0f, 2.0f), 3.0f, int2(4, 5)))";
+    case ValidTextureOverload::kGatherCompareDepth2dArrayF32:
+      return R"(texture.gather_compare(sampler, float2(1.0f, 2.0f), 3, 4.0f))";
+    case ValidTextureOverload::kGatherCompareDepth2dArrayOffsetF32:
+      return R"(texture.gather_compare(sampler, float2(1.0f, 2.0f), 3, 4.0f, int2(5, 6)))";
+    case ValidTextureOverload::kGatherCompareDepthCubeF32:
+      return R"(texture.gather_compare(sampler, float3(1.0f, 2.0f, 3.0f), 4.0f))";
+    case ValidTextureOverload::kGatherCompareDepthCubeArrayF32:
+      return R"(texture.gather_compare(sampler, float3(1.0f, 2.0f, 3.0f), 4, 5.0f))";
     case ValidTextureOverload::kNumLayers2dArray:
     case ValidTextureOverload::kNumLayersCubeArray:
     case ValidTextureOverload::kNumLayersDepth2dArray:
@@ -227,29 +259,6 @@ std::string expected_texture_overload(
       return R"(texture.read(uint2(int2(1, 2)), 3))";
     case ValidTextureOverload::kLoadDepth2dArrayLevelF32:
       return R"(texture.read(uint2(int2(1, 2)), 3, 4))";
-    case ValidTextureOverload::kLoadStorageRO1dRgba32float:
-      return R"(texture.read(uint(1)))";
-    case ValidTextureOverload::kLoadStorageRO2dRgba8unorm:
-    case ValidTextureOverload::kLoadStorageRO2dRgba8snorm:
-    case ValidTextureOverload::kLoadStorageRO2dRgba8uint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba8sint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba16uint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba16sint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba16float:
-    case ValidTextureOverload::kLoadStorageRO2dR32uint:
-    case ValidTextureOverload::kLoadStorageRO2dR32sint:
-    case ValidTextureOverload::kLoadStorageRO2dR32float:
-    case ValidTextureOverload::kLoadStorageRO2dRg32uint:
-    case ValidTextureOverload::kLoadStorageRO2dRg32sint:
-    case ValidTextureOverload::kLoadStorageRO2dRg32float:
-    case ValidTextureOverload::kLoadStorageRO2dRgba32uint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba32sint:
-    case ValidTextureOverload::kLoadStorageRO2dRgba32float:
-      return R"(texture.read(uint2(int2(1, 2))))";
-    case ValidTextureOverload::kLoadStorageRO2dArrayRgba32float:
-      return R"(texture.read(uint2(int2(1, 2)), 3))";
-    case ValidTextureOverload::kLoadStorageRO3dRgba32float:
-      return R"(texture.read(uint3(int3(1, 2, 3))))";
     case ValidTextureOverload::kStoreWO1dRgba32float:
       return R"(texture.write(float4(2.0f, 3.0f, 4.0f, 5.0f), uint(1)))";
     case ValidTextureOverload::kStoreWO2dRgba32float:
@@ -268,14 +277,11 @@ class MslGeneratorIntrinsicTextureTest
 TEST_P(MslGeneratorIntrinsicTextureTest, Call) {
   auto param = GetParam();
 
-  param.buildTextureVariable(this);
-  param.buildSamplerVariable(this);
+  param.BuildTextureVariable(this);
+  param.BuildSamplerVariable(this);
 
-  auto* call =
-      create<ast::CallExpression>(Expr(param.function), param.args(this));
-  auto* stmt = ast::intrinsic::test::ReturnsVoid(param.overload)
-                   ? create<ast::CallStatement>(call)
-                   : Ignore(call);
+  auto* call = Call(Expr(param.function), param.args(this));
+  auto* stmt = CallStmt(call);
 
   Func("main", {}, ty.void_(), {stmt}, {Stage(ast::PipelineStage::kFragment)});
 

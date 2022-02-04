@@ -38,9 +38,10 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
+import * as CodeMirror from '../../third_party/codemirror.next/codemirror.next.js';
 import * as Adorners from '../../ui/components/adorners/adorners.js';
-import type * as TextEditor from '../../ui/components/text_editor/text_editor.js';
-import * as TextEditorLegacy from '../../ui/legacy/components/text_editor/text_editor.js';
+import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
+import * as TextEditor from '../../ui/components/text_editor/text_editor.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Emulation from '../emulation/emulation.js';
@@ -678,8 +679,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     const isEditable = this.hasEditableNode();
     // clang-format off
     if (isEditable && !this.editing) {
-      // Eagerly load CodeMirror to avoid a delay when opening the "Edit as HTML" editor when the user actually clicks on it
-      import('../../ui/components/text_editor/text_editor.js');
       contextMenu.editSection().appendItem(i18nString(UIStrings.editAsHtml), this.editAsHTML.bind(this));
     }
     // clang-format on
@@ -1025,9 +1024,6 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
       }
     });
 
-    const TextEditor = await import('../../ui/components/text_editor/text_editor.js');
-    const CodeMirror = await import('../../third_party/codemirror.next/codemirror.next.js');
-    const {html} = await CodeMirror.html();
     const editor = new TextEditor.TextEditor.TextEditor(CodeMirror.EditorState.create({
       doc: initialValue,
       extensions: [
@@ -1048,10 +1044,12 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
           },
         ]),
         TextEditor.Config.baseConfiguration(initialValue),
-        html(),
-        TextEditor.Config.domWordWrap,
+        TextEditor.Config.closeBrackets,
+        TextEditor.Config.autocompletion,
+        CodeMirror.html.html(),
+        TextEditor.Config.domWordWrap.instance(),
         CodeMirror.EditorView.theme({
-          '.cm-editor': {maxHeight: '300px'},
+          '&.cm-editor': {maxHeight: '300px'},
           '.cm-scroller': {overflowY: 'auto'},
         }),
         CodeMirror.EditorView.domEventHandlers({
@@ -1518,6 +1516,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
             className: undefined,
             lineNumber: undefined,
             columnNumber: undefined,
+            showColumnNumber: false,
             inlineFrameIndex: 0,
             maxLength: undefined,
             tabStop: undefined,
@@ -1730,18 +1729,13 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
         if (node.parentNode && node.parentNode.nodeName().toLowerCase() === 'script') {
           const newNode = titleDOM.createChild('span', 'webkit-html-text-node webkit-html-js-node');
           const text = node.nodeValue();
-          newNode.textContent = text.startsWith('\n') ? text.substring(1) : text;
-
-          const javascriptSyntaxHighlighter =
-              new TextEditorLegacy.SyntaxHighlighter.SyntaxHighlighter('text/javascript', true);
-          javascriptSyntaxHighlighter.syntaxHighlightNode(newNode).then(updateSearchHighlight);
+          newNode.textContent = text.replace(/^[\n\r]+|\s+$/g, '');
+          CodeHighlighter.CodeHighlighter.highlightNode(newNode, 'text/javascript').then(updateSearchHighlight);
         } else if (node.parentNode && node.parentNode.nodeName().toLowerCase() === 'style') {
           const newNode = titleDOM.createChild('span', 'webkit-html-text-node webkit-html-css-node');
           const text = node.nodeValue();
-          newNode.textContent = text.startsWith('\n') ? text.substring(1) : text;
-
-          const cssSyntaxHighlighter = new TextEditorLegacy.SyntaxHighlighter.SyntaxHighlighter('text/css', true);
-          cssSyntaxHighlighter.syntaxHighlightNode(newNode).then(updateSearchHighlight);
+          newNode.textContent = text.replace(/^[\n\r]+|\s+$/g, '');
+          CodeHighlighter.CodeHighlighter.highlightNode(newNode, 'text/css').then(updateSearchHighlight);
         } else {
           UI.UIUtils.createTextChild(titleDOM, '"');
           const textNodeElement = titleDOM.createChild('span', 'webkit-html-text-node');
@@ -1905,7 +1899,7 @@ export class ElementsTreeElement extends UI.TreeOutline.TreeElement {
     this.hideSearchHighlight();
 
     const text = this.listItemElement.textContent || '';
-    const regexObject = createPlainTextSearchRegex(this.searchQuery, 'gi');
+    const regexObject = Platform.StringUtilities.createPlainTextSearchRegex(this.searchQuery, 'gi');
 
     let match = regexObject.exec(text);
     const matchRanges = [];

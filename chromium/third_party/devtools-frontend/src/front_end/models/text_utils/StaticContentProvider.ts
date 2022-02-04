@@ -28,6 +28,7 @@ export class StaticContentProvider implements ContentProvider {
     return new StaticContentProvider(contentURL, contentType, lazyContent);
   }
 
+  // TODO(crbug.com/1253323): Cast to PawPathString will be removed when migration to branded types is complete.
   contentURL(): string {
     return this.contentURLInternal;
   }

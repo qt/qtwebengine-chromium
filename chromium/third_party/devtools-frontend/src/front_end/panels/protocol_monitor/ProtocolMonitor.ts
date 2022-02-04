@@ -142,6 +142,7 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
     clearButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, () => {
       this.messages = [];
       this.dataGridIntegrator.update({...this.dataGridIntegrator.data(), rows: []});
+      this.infoWidget.render(null);
     });
     topToolbar.appendToolbarItem(clearButton);
 
@@ -164,6 +165,9 @@ export class ProtocolMonitorImpl extends UI.Widget.VBox {
           widthWeighting: 1,
           visible: true,
           hideable: true,
+          styles: {
+            'text-align': 'center',
+          },
         },
         {
           id: 'method',

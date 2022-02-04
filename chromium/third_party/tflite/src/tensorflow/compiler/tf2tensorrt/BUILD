@@ -20,7 +20,7 @@ load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_test")
 load("//tensorflow:tensorflow.bzl", "tf_custom_op_py_library")
 
 # buildifier: disable=same-origin-load
-load("//tensorflow:tensorflow.bzl", "pybind_extension")
+load("//tensorflow:tensorflow.bzl", "pybind_ccsharedlib_extension")
 
 # buildifier: disable=same-origin-load
 load("//tensorflow:tensorflow.bzl", "tf_gen_op_libs")
@@ -83,6 +83,63 @@ tf_cuda_cc_test(
         ":tensorrt_lib",
         "@local_config_cuda//cuda:cuda_headers",
     ]),
+)
+
+cc_library(
+    name = "trt_convert_api",
+    srcs = ["trt_convert_api.cc"],
+    hdrs = [
+        "trt_convert_api.h",
+    ],
+    copts = tf_copts(),
+    deps = [
+        ":trt_parameters",
+        ":trt_resources",
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core:direct_session",
+        "//tensorflow/core:framework",
+        "//tensorflow/core/grappler:grappler_item_builder",
+        "//tensorflow/core/platform:logging",
+    ] + if_tensorrt([":tensorrt_lib"]),
+)
+
+tf_cuda_cc_test(
+    name = "trt_convert_api_test",
+    size = "small",
+    srcs = ["trt_convert_api_test.cc"],
+    tags = [
+        "no_cuda_on_cpu_tap",
+        "no_windows",
+        "nomac",
+    ],
+    deps = [
+        ":common_utils",
+        ":testutils",
+        ":trt_conversion",
+        ":trt_convert_api",
+        ":trt_logging",
+        ":trt_op_kernels",
+        ":trt_resources",
+        ":utils",
+        "//tensorflow/cc:cc_ops",
+        "//tensorflow/cc:scope",
+        "//tensorflow/core:array_ops_op_lib",
+        "//tensorflow/core:core_cpu",
+        "//tensorflow/core:direct_session",
+        "//tensorflow/core:framework",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:lib_internal",
+        "//tensorflow/core:math_ops_op_lib",
+        "//tensorflow/core:no_op_op_lib",
+        "//tensorflow/core:ops",
+        "//tensorflow/core:protos_all_cc",
+        "//tensorflow/core:state_ops_op_lib",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+        "//tensorflow/core/kernels:array",
+        "//tensorflow/core/kernels:ops_testutil",
+        "//tensorflow/core/kernels:resource_variable_ops",
+    ],
 )
 
 cc_library(
@@ -225,6 +282,7 @@ tf_cuda_cc_test(
         "//tensorflow/core/kernels:resource_variable_ops",
         "@com_google_absl//absl/container:inlined_vector",
         "@com_google_absl//absl/memory",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -279,6 +337,7 @@ cc_library(
     name = "trt_op_libs",
     deps = [
         ":get_calibration_data_op_op_lib",
+        ":trt_convert_api",
         ":trt_engine_op_op_lib",
         ":trt_engine_utils",
     ],
@@ -300,6 +359,7 @@ tf_cuda_library(
         ":trt_logging",
         ":utils",
         ":trt_allocator",
+        ":trt_parameters",
         "@com_google_absl//absl/strings",
         "//tensorflow/core:framework",
         "//tensorflow/core:framework_headers_lib",
@@ -340,6 +400,21 @@ tf_custom_op_py_library(
         "//tensorflow/python:platform",
         "//tensorflow/python:resources",
     ],
+)
+
+tf_cuda_library(
+    name = "trt_parameters",
+    srcs = ["convert/trt_parameters.cc"],
+    hdrs = [
+        "convert/trt_parameters.h",
+    ],
+    copts = tf_copts(),
+    deps = [
+        ":utils",
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:framework",
+    ] + if_tensorrt([":tensorrt_lib"]),
 )
 
 tf_cuda_library(
@@ -439,12 +514,69 @@ tf_cuda_library(
     ] + if_tensorrt([":tensorrt_lib"]),
 )
 
+tf_cuda_library(
+    name = "trt_weights",
+    srcs = ["convert/weights.cc"],
+    hdrs = [
+        "convert/weights.h",
+    ],
+    copts = tf_copts(),
+    deps = [
+        ":utils",
+        "//tensorflow/core:lib",
+        "//tensorflow/core:framework",
+    ] + if_tensorrt([":tensorrt_lib"]),
+)
+
+tf_cuda_library(
+    name = "op_converter",
+    srcs = [],
+    hdrs = [
+        "convert/op_converter.h",
+    ],
+    deps = [
+        ":trt_parameters",
+        ":trt_weights",
+    ] + if_tensorrt([":tensorrt_lib"]),
+)
+
+tf_cuda_library(
+    name = "op_converter_registry",
+    srcs = ["convert/op_converter_registry.cc"],
+    hdrs = [
+        "convert/op_converter_registry.h",
+    ],
+    copts = tf_copts(),
+    deps = [
+        ":utils",
+        ":op_converter",
+        "@com_google_absl//absl/strings",
+        "//tensorflow/core:lib",
+    ] + if_tensorrt([":tensorrt_lib"]),
+)
+
+tf_cuda_cc_test(
+    name = "op_converter_registry_test",
+    size = "small",
+    srcs = ["convert/op_converter_registry_test.cc"],
+    tags = [
+        "no_windows",
+        "nomac",
+    ],
+    deps = [
+        ":op_converter_registry",
+        "//tensorflow/core:test",
+        "//tensorflow/core:test_main",
+    ],
+)
+
 # Library for the node-level conversion portion of TensorRT operation creation
 tf_cuda_library(
     name = "trt_conversion",
     srcs = [
         "convert/convert_graph.cc",
         "convert/convert_nodes.cc",
+        "convert/ops/data_format_vec_permute.cc",
         "convert/ops/slice_ops.cc",
         "convert/trt_optimization_pass.cc",
     ],
@@ -460,10 +592,14 @@ tf_cuda_library(
         ":logger_registry",
         ":segment",
         ":trt_allocator",
+        ":trt_parameters",
         ":trt_plugins",
         ":trt_logging",
         ":trt_resources",
         ":utils",
+        ":trt_weights",
+        ":op_converter",
+        ":op_converter_registry",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "//tensorflow/core/common_runtime:core_cpu",
@@ -530,6 +666,7 @@ tf_cuda_cc_test(
     size = "medium",
     srcs = [
         "convert/convert_nodes_test.cc",
+        "convert/op_converter_test.cc",
     ],
     tags = [
         "no_cuda_on_cpu_tap",
@@ -602,6 +739,7 @@ cc_library(
         "//tensorflow/core:protos_all_cc",
         "//tensorflow/core/common_runtime:core_cpu",
         "//tensorflow/core/grappler/costs:graph_properties",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:optional",
@@ -683,11 +821,49 @@ cc_library(
     ]),
 )
 
-pybind_extension(
+pybind_ccsharedlib_extension(
     name = "_pywrap_py_utils",
     srcs = ["utils/py_utils_wrapper.cc"],
     link_in_framework = True,
     module_name = "_pywrap_py_utils",
+    static_deps = [
+        # copybara:comment_begin(oss only)
+        "@bazel_tools//:__subpackages__",
+        "@boringssl//:__subpackages__",
+        "@com_github_googlecloudplatform_tensorflow_gcp_tools//:__subpackages__",
+        "@com_google_absl//:__subpackages__",
+        "@com_google_googleapis//:__subpackages__",
+        "@com_google_protobuf//:__subpackages__",
+        "@com_googlesource_code_re2//:__subpackages__",
+        "@curl//:__subpackages__",
+        "@double_conversion//:__subpackages__",
+        "@eigen_archive//:__subpackages__",
+        "@farmhash_archive//:__subpackages__",
+        "@fft2d//:__subpackages__",
+        "@gif//:__subpackages__",
+        "@highwayhash//:__subpackages__",
+        "@hwloc//:__subpackages__",
+        "@jsoncpp_git//:__subpackages__",
+        "@libjpeg_turbo//:__subpackages__",
+        "@libxsmm_archive//:__subpackages__",
+        "@llvm_openmp//:__subpackages__",
+        "@llvm-project//:__subpackages__",
+        "@llvm_terminfo//:__subpackages__",
+        "@llvm_zlib//:__subpackages__",
+        "@local_config_cuda//:__subpackages__",
+        "@local_config_git//:__subpackages__",
+        "@local_config_python//:__subpackages__",
+        "@local_config_rocm//:__subpackages__",
+        "@local_config_tensorrt//:__subpackages__",
+        "@local_execution_config_platform//:__subpackages__",
+        "@nsync//:__subpackages__",
+        "@platforms//:__subpackages__",
+        "@pybind11//:__subpackages__",
+        "@snappy//:__subpackages__",
+        "//:__subpackages__",
+        "@zlib//:__subpackages__",
+        # copybara:comment_end
+    ],
     deps = [
         ":common_utils",
         ":py_utils",

@@ -130,10 +130,11 @@ void DoBilinearLoop(const CFX_ImageTransformer::CalcData& calc_data,
 
 }  // namespace
 
-CFX_ImageTransformer::CFX_ImageTransformer(const RetainPtr<CFX_DIBBase>& pSrc,
-                                           const CFX_Matrix& matrix,
-                                           const FXDIB_ResampleOptions& options,
-                                           const FX_RECT* pClip)
+CFX_ImageTransformer::CFX_ImageTransformer(
+    const RetainPtr<const CFX_DIBBase>& pSrc,
+    const CFX_Matrix& matrix,
+    const FXDIB_ResampleOptions& options,
+    const FX_RECT* pClip)
     : m_pSrc(pSrc), m_matrix(matrix), m_ResampleOptions(options) {
   FX_RECT result_rect = m_matrix.GetUnitRect().GetClosestRect();
   FX_RECT result_clip = result_rect;
@@ -308,8 +309,10 @@ void CFX_ImageTransformer::CalcMono(const CalcData& calc_data) {
     for (size_t i = 0; i < pdfium::size(argb); i++)
       argb[i] = palette[i];
   } else {
-    for (size_t i = 0; i < pdfium::size(argb); i++)
-      argb[i] = ArgbEncode(0xff, i, i, i);
+    for (size_t i = 0; i < pdfium::size(argb); i++) {
+      uint32_t v = static_cast<uint32_t>(i);
+      argb[i] = ArgbEncode(0xff, v, v, v);
+    }
   }
   int destBpp = calc_data.bitmap->GetBPP() / 8;
   auto func = [&calc_data, &argb](const BilinearData& data, uint8_t* dest) {

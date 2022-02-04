@@ -121,6 +121,11 @@ namespace dawn_native {
                     cmd->~ExecuteBundlesCmd();
                     break;
                 }
+                case Command::ClearBuffer: {
+                    ClearBufferCmd* cmd = commands->NextCommand<ClearBufferCmd>();
+                    cmd->~ClearBufferCmd();
+                    break;
+                }
                 case Command::InsertDebugMarker: {
                     InsertDebugMarkerCmd* cmd = commands->NextCommand<InsertDebugMarkerCmd>();
                     commands->NextData<char>(cmd->length + 1);
@@ -156,12 +161,6 @@ namespace dawn_native {
                 case Command::SetStencilReference: {
                     SetStencilReferenceCmd* cmd = commands->NextCommand<SetStencilReferenceCmd>();
                     cmd->~SetStencilReferenceCmd();
-                    break;
-                }
-                case Command::SetValidatedBufferLocationsInternal: {
-                    SetValidatedBufferLocationsInternalCmd* cmd =
-                        commands->NextCommand<SetValidatedBufferLocationsInternalCmd>();
-                    cmd->~SetValidatedBufferLocationsInternalCmd();
                     break;
                 }
                 case Command::SetViewport: {
@@ -286,6 +285,10 @@ namespace dawn_native {
                 break;
             }
 
+            case Command::ClearBuffer:
+                commands->NextCommand<ClearBufferCmd>();
+                break;
+
             case Command::InsertDebugMarker: {
                 InsertDebugMarkerCmd* cmd = commands->NextCommand<InsertDebugMarkerCmd>();
                 commands->NextData<char>(cmd->length + 1);
@@ -317,10 +320,6 @@ namespace dawn_native {
 
             case Command::SetStencilReference:
                 commands->NextCommand<SetStencilReferenceCmd>();
-                break;
-
-            case Command::SetValidatedBufferLocationsInternal:
-                commands->NextCommand<SetValidatedBufferLocationsInternalCmd>();
                 break;
 
             case Command::SetViewport:

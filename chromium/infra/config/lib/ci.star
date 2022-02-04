@@ -48,7 +48,7 @@ def ci_builder(
       branch_selector: A branch selector value controlling whether the
         builder definition is executed. See branches.star for more
         information.
-      console_view_entry - A `consoles.console_view_entry` struct or a list of
+      console_view_entry: A `consoles.console_view_entry` struct or a list of
         them describing console view entries to create for the builder.
         See `consoles.console_view_entry` for details.
       main_console_view: A string identifying the ID of the main console
@@ -129,11 +129,6 @@ def ci_builder(
         # chrome_browser_release sheriff rotation
         branches.value({branches.STANDARD_BRANCHES: "chrome_browser_release"}),
     )
-
-    experiments = dict(experiments or {})
-
-    # TODO(crbug.com/1135718): Promote out of experiment for all builders.
-    experiments.setdefault("chromium.chromium_tests.use_rdb_results", 100)
 
     goma_enable_ats = defaults.get_value_from_kwargs("goma_enable_ats", kwargs)
     if goma_enable_ats == args.COMPUTE:
@@ -296,4 +291,10 @@ ci = struct(
 rbe_instance = struct(
     DEFAULT = "rbe-chromium-trusted",
     GVISOR_SHADOW = "rbe-chromium-gvisor-shadow",
+)
+
+rbe_jobs = struct(
+    DEFAULT = 250,
+    LOW_JOBS_FOR_CI = 80,
+    HIGH_JOBS_FOR_CI = 500,
 )

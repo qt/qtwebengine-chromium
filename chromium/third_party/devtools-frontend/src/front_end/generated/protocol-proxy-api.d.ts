@@ -21,8 +21,6 @@ declare namespace ProtocolProxyApi {
 
     Animation: AnimationApi;
 
-    ApplicationCache: ApplicationCacheApi;
-
     Audits: AuditsApi;
 
     BackgroundService: BackgroundServiceApi;
@@ -38,6 +36,8 @@ declare namespace ProtocolProxyApi {
     DOM: DOMApi;
 
     DOMDebugger: DOMDebuggerApi;
+
+    EventBreakpoints: EventBreakpointsApi;
 
     DOMSnapshot: DOMSnapshotApi;
 
@@ -113,8 +113,6 @@ declare namespace ProtocolProxyApi {
 
     Animation: AnimationDispatcher;
 
-    ApplicationCache: ApplicationCacheDispatcher;
-
     Audits: AuditsDispatcher;
 
     BackgroundService: BackgroundServiceDispatcher;
@@ -130,6 +128,8 @@ declare namespace ProtocolProxyApi {
     DOM: DOMDispatcher;
 
     DOMDebugger: DOMDebuggerDispatcher;
+
+    EventBreakpoints: EventBreakpointsDispatcher;
 
     DOMSnapshot: DOMSnapshotDispatcher;
 
@@ -226,6 +226,20 @@ declare namespace ProtocolProxyApi {
         Promise<Protocol.Accessibility.GetFullAXTreeResponse>;
 
     /**
+     * Fetches the root node.
+     * Requires `enable()` to have been called previously.
+     */
+    invoke_getRootAXNode(params: Protocol.Accessibility.GetRootAXNodeRequest):
+        Promise<Protocol.Accessibility.GetRootAXNodeResponse>;
+
+    /**
+     * Fetches a node and all ancestors up to and including the root.
+     * Requires `enable()` to have been called previously.
+     */
+    invoke_getAXNodeAndAncestors(params: Protocol.Accessibility.GetAXNodeAndAncestorsRequest):
+        Promise<Protocol.Accessibility.GetAXNodeAndAncestorsResponse>;
+
+    /**
      * Fetches a particular accessibility node by AXNodeId.
      * Requires `enable()` to have been called previously.
      */
@@ -242,7 +256,18 @@ declare namespace ProtocolProxyApi {
     invoke_queryAXTree(params: Protocol.Accessibility.QueryAXTreeRequest):
         Promise<Protocol.Accessibility.QueryAXTreeResponse>;
   }
-  export interface AccessibilityDispatcher {}
+  export interface AccessibilityDispatcher {
+    /**
+     * The loadComplete event mirrors the load complete event sent by the browser to assistive
+     * technology when the web page has finished loading.
+     */
+    loadComplete(params: Protocol.Accessibility.LoadCompleteEvent): void;
+
+    /**
+     * The nodesUpdated event is sent every time a previously requested node has changed the in tree.
+     */
+    nodesUpdated(params: Protocol.Accessibility.NodesUpdatedEvent): void;
+  }
 
   export interface AnimationApi {
     /**
@@ -315,36 +340,6 @@ declare namespace ProtocolProxyApi {
      * Event for animation that has been started.
      */
     animationStarted(params: Protocol.Animation.AnimationStartedEvent): void;
-  }
-
-  export interface ApplicationCacheApi {
-    /**
-     * Enables application cache domain notifications.
-     */
-    invoke_enable(): Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
-     * Returns relevant application cache data for the document in given frame.
-     */
-    invoke_getApplicationCacheForFrame(params: Protocol.ApplicationCache.GetApplicationCacheForFrameRequest):
-        Promise<Protocol.ApplicationCache.GetApplicationCacheForFrameResponse>;
-
-    /**
-     * Returns array of frame identifiers with manifest urls for each frame containing a document
-     * associated with some application cache.
-     */
-    invoke_getFramesWithManifests(): Promise<Protocol.ApplicationCache.GetFramesWithManifestsResponse>;
-
-    /**
-     * Returns manifest URL for document in the given frame.
-     */
-    invoke_getManifestForFrame(params: Protocol.ApplicationCache.GetManifestForFrameRequest):
-        Promise<Protocol.ApplicationCache.GetManifestForFrameResponse>;
-  }
-  export interface ApplicationCacheDispatcher {
-    applicationCacheStatusUpdated(params: Protocol.ApplicationCache.ApplicationCacheStatusUpdatedEvent): void;
-
-    networkStateUpdated(params: Protocol.ApplicationCache.NetworkStateUpdatedEvent): void;
   }
 
   export interface AuditsApi {
@@ -755,6 +750,12 @@ declare namespace ProtocolProxyApi {
      * sink via Presentation API, Remote Playback API, or Cast SDK.
      */
     invoke_setSinkToUse(params: Protocol.Cast.SetSinkToUseRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Starts mirroring the desktop to the sink.
+     */
+    invoke_startDesktopMirroring(params: Protocol.Cast.StartDesktopMirroringRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Starts mirroring the tab to the sink.
@@ -1197,6 +1198,21 @@ declare namespace ProtocolProxyApi {
         Promise<Protocol.ProtocolResponseWithError>;
   }
   export interface DOMDebuggerDispatcher {}
+
+  export interface EventBreakpointsApi {
+    /**
+     * Sets breakpoint on particular native event.
+     */
+    invoke_setInstrumentationBreakpoint(params: Protocol.EventBreakpoints.SetInstrumentationBreakpointRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Removes breakpoint on particular native event.
+     */
+    invoke_removeInstrumentationBreakpoint(params: Protocol.EventBreakpoints.RemoveInstrumentationBreakpointRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
+  }
+  export interface EventBreakpointsDispatcher {}
 
   export interface DOMSnapshotApi {
     /**
@@ -2172,6 +2188,8 @@ declare namespace ProtocolProxyApi {
     reportingApiReportAdded(params: Protocol.Network.ReportingApiReportAddedEvent): void;
 
     reportingApiReportUpdated(params: Protocol.Network.ReportingApiReportUpdatedEvent): void;
+
+    reportingApiEndpointsChangedForOrigin(params: Protocol.Network.ReportingApiEndpointsChangedForOriginEvent): void;
   }
 
   export interface OverlayApi {
@@ -2630,19 +2648,9 @@ declare namespace ProtocolProxyApi {
     invoke_stopScreencast(): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Forces compilation cache to be generated for every subresource script.
-     * See also: `Page.produceCompilationCache`.
-     */
-    invoke_setProduceCompilationCache(params: Protocol.Page.SetProduceCompilationCacheRequest):
-        Promise<Protocol.ProtocolResponseWithError>;
-
-    /**
      * Requests backend to produce compilation cache for the specified scripts.
-     * Unlike setProduceCompilationCache, this allows client to only produce cache
-     * for specific scripts. `scripts` are appeneded to the list of scripts
-     * for which the cache for would produced. Disabling compilation cache with
-     * `setProduceCompilationCache` would reset all pending cache requests.
-     * The list may also be reset during page navigation.
+     * `scripts` are appeneded to the list of scripts for which the cache
+     * would be produced. The list may be reset during page navigation.
      * When script with a matching URL is encountered, the cache is optionally
      * produced upon backend discretion, based on internal heuristics.
      * See also: `Page.compilationCacheProduced`.
@@ -2661,6 +2669,13 @@ declare namespace ProtocolProxyApi {
      * Clears seeded compilation cache.
      */
     invoke_clearCompilationCache(): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Sets the Secure Payment Confirmation transaction mode.
+     * https://w3c.github.io/secure-payment-confirmation/#sctn-automation-set-spc-transaction-mode
+     */
+    invoke_setSPCTransactionMode(params: Protocol.Page.SetSPCTransactionModeRequest):
+        Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Generates a report for testing.
@@ -2904,7 +2919,7 @@ declare namespace ProtocolProxyApi {
     visibleSecurityStateChanged(params: Protocol.Security.VisibleSecurityStateChangedEvent): void;
 
     /**
-     * The security state of the page changed.
+     * The security state of the page changed. No longer being sent.
      */
     securityStateChanged(params: Protocol.Security.SecurityStateChangedEvent): void;
   }

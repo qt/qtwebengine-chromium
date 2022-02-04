@@ -23,6 +23,11 @@ constexpr uint32_t kFirstSeneschalServerPort = 16384;
 // Name of the user that runs unstrusted operating systems on Chrome OS.
 constexpr char kCrosVmUser[] = "crosvm";
 
+// Name of the directory under /run/wayland where VM wayland sockets should be
+// created. In Exo parlance this is called the "Security Context". See
+// go/secure-exo-ids for more details.
+constexpr char kConciergeSecurityContext[] = "concierge";
+
 }  // namespace vm_tools
 
 #endif  // SYSTEM_API_CONSTANTS_VM_TOOLS_H_

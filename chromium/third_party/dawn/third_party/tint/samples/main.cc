@@ -20,6 +20,11 @@
 #include <string>
 #include <vector>
 
+#if TINT_BUILD_GLSL_WRITER
+#include "StandAlone/ResourceLimits.h"
+#include "glslang/Public/ShaderLang.h"
+#endif
+
 #if TINT_BUILD_SPV_READER
 #include "spirv-tools/libspirv.hpp"
 #endif  // TINT_BUILD_SPV_READER
@@ -64,7 +69,6 @@ struct Options {
   std::string output_file = "-";  // Default to stdout
 
   bool parse_only = false;
-  bool dump_ast = false;
   bool disable_workgroup_init = false;
   bool validate = false;
   bool demangle = false;
@@ -104,7 +108,6 @@ const char kUsage[] = R"(Usage: tint [options] <input-file>
                                 renamer
                                 robustness
   --parse-only              -- Stop after parsing the input
-  --dump-ast                -- Dump the generated AST to stdout
   --disable-workgroup-init  -- Disable workgroup memory zero initialization.
   --demangle                -- Preserve original source names. Demangle them.
                                Affects AST dumping, and text-based output languages.
@@ -347,9 +350,6 @@ std::string ResourceTypeToString(
     case tint::inspector::ResourceBinding::ResourceType::kMultisampledTexture:
       return "MultisampledTexture";
     case tint::inspector::ResourceBinding::ResourceType::
-        kReadOnlyStorageTexture:
-      return "ReadOnlyStorageTexture";
-    case tint::inspector::ResourceBinding::ResourceType::
         kWriteOnlyStorageTexture:
       return "WriteOnlyStorageTexture";
     case tint::inspector::ResourceBinding::ResourceType::kDepthTexture:
@@ -407,8 +407,6 @@ bool ParseArgs(const std::vector<std::string>& args, Options* opts) {
       opts->transforms = split_transform_names(args[i]);
     } else if (arg == "--parse-only") {
       opts->parse_only = true;
-    } else if (arg == "--dump-ast") {
-      opts->dump_ast = true;
     } else if (arg == "--disable-workgroup-init") {
       opts->disable_workgroup_init = true;
     } else if (arg == "--demangle") {
@@ -720,8 +718,6 @@ bool GenerateMsl(const tint::Program* program, const Options& options) {
         case tint::inspector::ResourceBinding::ResourceType::
             kMultisampledTexture:
         case tint::inspector::ResourceBinding::ResourceType::
-            kReadOnlyStorageTexture:
-        case tint::inspector::ResourceBinding::ResourceType::
             kWriteOnlyStorageTexture:
         case tint::inspector::ResourceBinding::ResourceType::kDepthTexture:
         case tint::inspector::ResourceBinding::ResourceType::
@@ -850,28 +846,71 @@ bool GenerateHlsl(const tint::Program* program, const Options& options) {
 #endif  // TINT_BUILD_HLSL_WRITER
 }
 
+#if TINT_BUILD_GLSL_WRITER
+EShLanguage pipeline_stage_to_esh_language(tint::ast::PipelineStage stage) {
+  switch (stage) {
+    case tint::ast::PipelineStage::kFragment:
+      return EShLangFragment;
+    case tint::ast::PipelineStage::kVertex:
+      return EShLangVertex;
+    case tint::ast::PipelineStage::kCompute:
+      return EShLangCompute;
+    default:
+      TINT_ASSERT(AST, false);
+      return EShLangVertex;
+  }
+}
+#endif
+
 /// Generate GLSL code for a program.
 /// @param program the program to generate
 /// @param options the options that Tint was invoked with
 /// @returns true on success
 bool GenerateGlsl(const tint::Program* program, const Options& options) {
 #if TINT_BUILD_GLSL_WRITER
+  bool success = true;
+  if (options.validate) {
+    glslang::InitializeProcess();
+  }
   tint::writer::glsl::Options gen_options;
-  auto result = tint::writer::glsl::Generate(program, gen_options);
-  if (!result.success) {
-    PrintWGSL(std::cerr, *program);
-    std::cerr << "Failed to generate: " << result.error << std::endl;
-    return false;
+  tint::inspector::Inspector inspector(program);
+  for (auto& entry_point : inspector.GetEntryPoints()) {
+    auto result =
+        tint::writer::glsl::Generate(program, gen_options, entry_point.name);
+    if (!result.success) {
+      PrintWGSL(std::cerr, *program);
+      std::cerr << "Failed to generate: " << result.error << std::endl;
+      return false;
+    }
+
+    if (!WriteFile(options.output_file, "w", result.glsl)) {
+      return false;
+    }
+
+    if (options.validate) {
+      for (auto entry_pt : result.entry_points) {
+        EShLanguage lang = pipeline_stage_to_esh_language(entry_pt.second);
+        glslang::TShader shader(lang);
+        const char* strings[1] = {result.glsl.c_str()};
+        int lengths[1] = {static_cast<int>(result.glsl.length())};
+        shader.setStringsWithLengths(strings, lengths, 1);
+        shader.setEntryPoint("main");
+        bool glslang_result =
+            shader.parse(&glslang::DefaultTBuiltInResource, 310, EEsProfile,
+                         false, false, EShMsgDefault);
+        if (!glslang_result) {
+          std::cerr << "Error parsing GLSL shader:\n"
+                    << shader.getInfoLog() << "\n"
+                    << shader.getInfoDebugLog() << "\n";
+          success = false;
+        }
+      }
+    }
   }
-
-  if (!WriteFile(options.output_file, "w", result.glsl)) {
-    return false;
-  }
-
-  // TODO(senorblanco): implement GLSL validation
-
-  return true;
+  return success;
 #else
+  (void)program;
+  (void)options;
   std::cerr << "GLSL writer not enabled in tint build" << std::endl;
   return false;
 #endif  // TINT_BUILD_GLSL_WRITER
@@ -920,67 +959,104 @@ int main(int argc, const char** argv) {
 
   std::unique_ptr<tint::Program> program;
   std::unique_ptr<tint::Source::File> source_file;
-#if TINT_BUILD_WGSL_READER
+
+  enum class InputFormat {
+    kUnknown,
+    kWgsl,
+    kSpirvBin,
+    kSpirvAsm,
+  };
+  auto input_format = InputFormat::kUnknown;
+
   if (options.input_filename.size() > 5 &&
       options.input_filename.substr(options.input_filename.size() - 5) ==
           ".wgsl") {
-    std::vector<uint8_t> data;
-    if (!ReadFile<uint8_t>(options.input_filename, &data)) {
-      return 1;
-    }
-    source_file = std::make_unique<tint::Source::File>(
-        options.input_filename, std::string(data.begin(), data.end()));
-    program = std::make_unique<tint::Program>(
-        tint::reader::wgsl::Parse(source_file.get()));
+    input_format = InputFormat::kWgsl;
+  } else if (options.input_filename.size() > 4 &&
+             options.input_filename.substr(options.input_filename.size() - 4) ==
+                 ".spv") {
+    input_format = InputFormat::kSpirvBin;
+  } else if (options.input_filename.size() > 7 &&
+             options.input_filename.substr(options.input_filename.size() - 7) ==
+                 ".spvasm") {
+    input_format = InputFormat::kSpirvAsm;
   }
-#endif  // TINT_BUILD_WGSL_READER
 
+  switch (input_format) {
+    case InputFormat::kUnknown: {
+      std::cerr << "Unknown input format" << std::endl;
+      return 1;
+    }
+    case InputFormat::kWgsl: {
+#if TINT_BUILD_WGSL_READER
+      std::vector<uint8_t> data;
+      if (!ReadFile<uint8_t>(options.input_filename, &data)) {
+        return 1;
+      }
+      source_file = std::make_unique<tint::Source::File>(
+          options.input_filename, std::string(data.begin(), data.end()));
+      program = std::make_unique<tint::Program>(
+          tint::reader::wgsl::Parse(source_file.get()));
+      break;
+#else
+      std::cerr << "Tint not built with the WGSL reader enabled" << std::endl;
+      return 1;
+#endif  // TINT_BUILD_WGSL_READER
+    }
+    case InputFormat::kSpirvBin: {
 #if TINT_BUILD_SPV_READER
-  // Handle SPIR-V binary input, in files ending with .spv
-  if (options.input_filename.size() > 4 &&
-      options.input_filename.substr(options.input_filename.size() - 4) ==
-          ".spv") {
-    std::vector<uint32_t> data;
-    if (!ReadFile<uint32_t>(options.input_filename, &data)) {
+      std::vector<uint32_t> data;
+      if (!ReadFile<uint32_t>(options.input_filename, &data)) {
+        return 1;
+      }
+      program =
+          std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
+      break;
+#else
+      std::cerr << "Tint not built with the SPIR-V reader enabled" << std::endl;
       return 1;
-    }
-    program = std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
-  }
-  // Handle SPIR-V assembly input, in files ending with .spvasm
-  if (options.input_filename.size() > 7 &&
-      options.input_filename.substr(options.input_filename.size() - 7) ==
-          ".spvasm") {
-    std::vector<char> text;
-    if (!ReadFile<char>(options.input_filename, &text)) {
-      return 1;
-    }
-    // Use Vulkan 1.1, since this is what Tint, internally, is expecting.
-    spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
-    tools.SetMessageConsumer([](spv_message_level_t, const char*,
-                                const spv_position_t& pos, const char* msg) {
-      std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg
-                << std::endl;
-    });
-    std::vector<uint32_t> data;
-    if (!tools.Assemble(text.data(), text.size(), &data,
-                        SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS)) {
-      return 1;
-    }
-    program = std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
-  }
 #endif  // TINT_BUILD_SPV_READER
+    }
+    case InputFormat::kSpirvAsm: {
+#if TINT_BUILD_SPV_READER
+      std::vector<char> text;
+      if (!ReadFile<char>(options.input_filename, &text)) {
+        return 1;
+      }
+      // Use Vulkan 1.1, since this is what Tint, internally, is expecting.
+      spvtools::SpirvTools tools(SPV_ENV_VULKAN_1_1);
+      tools.SetMessageConsumer([](spv_message_level_t, const char*,
+                                  const spv_position_t& pos, const char* msg) {
+        std::cerr << (pos.line + 1) << ":" << (pos.column + 1) << ": " << msg
+                  << std::endl;
+      });
+      std::vector<uint32_t> data;
+      if (!tools.Assemble(text.data(), text.size(), &data,
+                          SPV_TEXT_TO_BINARY_OPTION_PRESERVE_NUMERIC_IDS)) {
+        return 1;
+      }
+      program =
+          std::make_unique<tint::Program>(tint::reader::spirv::Parse(data));
+      break;
+#else
+      std::cerr << "Tint not built with the SPIR-V reader enabled" << std::endl;
+      return 1;
+#endif  // TINT_BUILD_SPV_READER
+    }
+  }
 
   if (!program) {
-    std::cerr << "Failed to create reader for input file: "
-              << options.input_filename << std::endl;
+    std::cerr << "Failed to parse input file: " << options.input_filename
+              << std::endl;
     return 1;
   }
   if (program->Diagnostics().count() > 0) {
+    if (!program->IsValid() && input_format != InputFormat::kWgsl) {
+      // Invalid program from a non-wgsl source. Print the WGSL, to help
+      // understand the diagnostics.
+      PrintWGSL(std::cout, *program);
+    }
     diag_formatter.format(program->Diagnostics(), diag_printer.get());
-  }
-
-  if (options.dump_ast) {
-    std::cout << std::endl << program->to_str(options.demangle) << std::endl;
   }
 
   if (!program->IsValid()) {

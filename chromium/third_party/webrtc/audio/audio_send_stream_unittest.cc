@@ -246,7 +246,6 @@ struct ConfigHelper {
           .Times(1);
     }
     EXPECT_CALL(*channel_send_, ResetSenderCongestionControlObjects()).Times(1);
-    EXPECT_CALL(rtp_rtcp_, SetRid(std::string())).Times(1);
   }
 
   void SetupMockForSetupSendCodec(bool expect_set_encoder_call) {
@@ -301,7 +300,7 @@ struct ConfigHelper {
         .WillRepeatedly(Return(report_blocks));
     EXPECT_CALL(*channel_send_, GetANAStatistics())
         .WillRepeatedly(Return(ANAStats()));
-    EXPECT_CALL(*channel_send_, GetBitrate()).WillRepeatedly(Return(0));
+    EXPECT_CALL(*channel_send_, GetTargetBitrate()).WillRepeatedly(Return(0));
 
     audio_processing_stats_.echo_return_loss = kEchoReturnLoss;
     audio_processing_stats_.echo_return_loss_enhancement =

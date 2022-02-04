@@ -187,7 +187,7 @@ void SkSurface_Gpu::onAsyncRescaleAndReadPixelsYUV420(SkYUVColorSpace yuvColorSp
 // Create a new render target and, if necessary, copy the contents of the old
 // render target into it. Note that this flushes the SkGpuDevice but
 // doesn't force an OpenGL flush.
-void SkSurface_Gpu::onCopyOnWrite(ContentChangeMode mode) {
+bool SkSurface_Gpu::onCopyOnWrite(ContentChangeMode mode) {
     GrSurfaceProxyView readSurfaceView = fDevice->readSurfaceView();
 
     // are we sharing our backing proxy with the image? Note this call should never create a new
@@ -196,10 +196,13 @@ void SkSurface_Gpu::onCopyOnWrite(ContentChangeMode mode) {
     SkASSERT(image);
 
     if (static_cast<SkImage_Gpu*>(image.get())->surfaceMustCopyOnWrite(readSurfaceView.proxy())) {
-        fDevice->replaceBackingProxy(mode);
+        if (!fDevice->replaceBackingProxy(mode)) {
+            return false;
+        }
     } else if (kDiscard_ContentChangeMode == mode) {
         this->SkSurface_Gpu::onDiscard();
     }
+    return true;
 }
 
 void SkSurface_Gpu::onDiscard() { fDevice->discard(); }
@@ -637,7 +640,11 @@ sk_sp<SkSurface> SkSurface::MakeFromAHardwareBuffer(GrDirectContext* dContext,
                                                     AHardwareBuffer* hardwareBuffer,
                                                     GrSurfaceOrigin origin,
                                                     sk_sp<SkColorSpace> colorSpace,
-                                                    const SkSurfaceProps* surfaceProps) {
+                                                    const SkSurfaceProps* surfaceProps
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+                                                    , bool fromWindow
+#endif
+                                                    ) {
     AHardwareBuffer_Desc bufferDesc;
     AHardwareBuffer_describe(hardwareBuffer, &bufferDesc);
 
@@ -663,12 +670,23 @@ sk_sp<SkSurface> SkSurface::MakeFromAHardwareBuffer(GrDirectContext* dContext,
         bool isProtectedContent =
                 SkToBool(bufferDesc.usage & AHARDWAREBUFFER_USAGE_PROTECTED_CONTENT);
 
+        bool fromWindowLocal = false;
+#ifdef SK_BUILD_FOR_ANDROID_FRAMEWORK
+        fromWindowLocal = fromWindow;
+#endif
+
         GrBackendTexture backendTexture =
-                GrAHardwareBufferUtils::MakeBackendTexture(dContext, hardwareBuffer,
-                                                           bufferDesc.width, bufferDesc.height,
-                                                           &deleteImageProc, &updateImageProc,
-                                                           &deleteImageCtx, isProtectedContent,
-                                                           backendFormat, true);
+                GrAHardwareBufferUtils::MakeBackendTexture(dContext,
+                                                           hardwareBuffer,
+                                                           bufferDesc.width,
+                                                           bufferDesc.height,
+                                                           &deleteImageProc,
+                                                           &updateImageProc,
+                                                           &deleteImageCtx,
+                                                           isProtectedContent,
+                                                           backendFormat,
+                                                           true,
+                                                           fromWindowLocal);
         if (!backendTexture.isValid()) {
             return nullptr;
         }

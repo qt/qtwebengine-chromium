@@ -12,9 +12,12 @@ load("//project.star", "settings")
 try_.defaults.set(
     builder_group = "tryserver.chromium.linux",
     cores = 8,
+    orchestrator_cores = 2,
+    compilator_cores = 16,
     executable = try_.DEFAULT_EXECUTABLE,
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
+    compilator_goma_jobs = goma.jobs.J150,
     os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
     pool = try_.DEFAULT_POOL,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
@@ -74,6 +77,26 @@ try_.builder(
             ],
         },
     },
+)
+
+try_.builder(
+    name = "fuchsia-binary-size",
+    branch_selector = branches.STANDARD_MILESTONE,
+    builderless = True,
+    executable = "recipe:binary_size_fuchsia_trybot",
+    properties = {
+        "$build/binary_size": {
+            "analyze_targets": [
+                "//fuchsia/release:fuchsia_sizes",
+            ],
+            "compile_targets": [
+                "fuchsia_sizes",
+            ],
+        },
+    },
+    tryjob = try_.job(
+        experiment_percentage = 20,
+    ),
 )
 
 try_.builder(
@@ -270,14 +293,6 @@ try_.builder(
 )
 
 try_.builder(
-    name = "linux-ozone-rel",
-    branch_selector = branches.STANDARD_MILESTONE,
-    builderless = not settings.is_main,
-    main_list_view = "try",
-    tryjob = try_.job(),
-)
-
-try_.builder(
     name = "linux-perfetto-rel",
     tryjob = try_.job(
         experiment_percentage = 100,
@@ -291,15 +306,20 @@ try_.builder(
     ),
 )
 
-try_.builder(
+try_.orchestrator_builder(
     name = "linux-rel",
+    compilator = "linux-rel-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
-    builderless = not settings.is_main,
-    goma_jobs = goma.jobs.J150,
     main_list_view = "try",
     use_clang_coverage = True,
     coverage_test_types = ["unit", "overall"],
     tryjob = try_.job(),
+)
+
+try_.compilator_builder(
+    name = "linux-rel-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -309,7 +329,6 @@ try_.builder(
     reclient_jobs = 150,
     goma_backend = None,
     reclient_instance = "rbe-chromium-gvisor-shadow",
-    kitchen_emulate_gce = True,
     tryjob = try_.job(
         experiment_percentage = 10,
     ),
@@ -321,9 +340,7 @@ try_.builder(
     branch_selector = branches.STANDARD_MILESTONE,
     builderless = not settings.is_main,
     main_list_view = "try",
-    tryjob = try_.job(
-        experiment_percentage = 1,
-    ),
+    tryjob = try_.job(),
 )
 
 try_.builder(
@@ -366,13 +383,18 @@ try_.builder(
     name = "linux_chromium_archive_rel_ng",
 )
 
-try_.builder(
+try_.orchestrator_builder(
     name = "linux_chromium_asan_rel_ng",
+    compilator = "linux_chromium_asan_rel_ng-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
-    goma_jobs = goma.jobs.J150,
-    ssd = True,
     main_list_view = "try",
     tryjob = try_.job(),
+)
+
+try_.compilator_builder(
+    name = "linux_chromium_asan_rel_ng-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -461,13 +483,18 @@ try_.builder(
     goma_jobs = goma.jobs.J150,
 )
 
-try_.builder(
+try_.orchestrator_builder(
     name = "linux_chromium_tsan_rel_ng",
+    compilator = "linux_chromium_tsan_rel_ng-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
-    builderless = not settings.is_main,
-    goma_jobs = goma.jobs.J150,
     main_list_view = "try",
     tryjob = try_.job(),
+)
+
+try_.compilator_builder(
+    name = "linux_chromium_tsan_rel_ng-compilator",
+    branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -482,20 +509,6 @@ try_.builder(
 
 try_.builder(
     name = "linux_chromium_ubsan_rel_ng",
-)
-
-try_.builder(
-    name = "linux_layout_tests_composite_after_paint",
-    branch_selector = branches.STANDARD_MILESTONE,
-    main_list_view = "try",
-    tryjob = try_.job(
-        location_regexp = [
-            ".+/[+]/third_party/blink/renderer/core/paint/.+",
-            ".+/[+]/third_party/blink/renderer/core/svg/.+",
-            ".+/[+]/third_party/blink/renderer/platform/graphics/.+",
-            ".+/[+]/third_party/blink/web_tests/.+",
-        ],
-    ),
 )
 
 try_.builder(

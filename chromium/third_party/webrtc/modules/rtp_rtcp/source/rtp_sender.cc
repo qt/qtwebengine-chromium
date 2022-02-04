@@ -125,7 +125,7 @@ bool IsNonVolatile(RTPExtensionType type) {
       return false;
     case kRtpExtensionNone:
     case kRtpExtensionNumberOfExtensions:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
       return false;
   }
   RTC_CHECK_NOTREACHED();
@@ -236,14 +236,6 @@ bool RTPSender::RegisterRtpHeaderExtension(absl::string_view uri, int id) {
 bool RTPSender::IsRtpHeaderExtensionRegistered(RTPExtensionType type) const {
   MutexLock lock(&send_mutex_);
   return rtp_header_extension_map_.IsRegistered(type);
-}
-
-int32_t RTPSender::DeregisterRtpHeaderExtension(RTPExtensionType type) {
-  MutexLock lock(&send_mutex_);
-  rtp_header_extension_map_.Deregister(type);
-  supports_bwe_extension_ = HasBweExtension(rtp_header_extension_map_);
-  UpdateHeaderSizes();
-  return 0;
 }
 
 void RTPSender::DeregisterRtpHeaderExtension(absl::string_view uri) {

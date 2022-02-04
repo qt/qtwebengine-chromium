@@ -303,8 +303,6 @@ bool CPDF_PageOrganizer::UpdateReference(CPDF_Object* pObj) {
           if (key == "Parent" || key == "Prev" || key == "First")
             continue;
           CPDF_Object* pNextObj = it.second.Get();
-          if (!pNextObj)
-            return false;
           if (!UpdateReference(pNextObj))
             bad_keys.push_back(key);
         }
@@ -316,8 +314,7 @@ bool CPDF_PageOrganizer::UpdateReference(CPDF_Object* pObj) {
     case CPDF_Object::kArray: {
       CPDF_Array* pArray = pObj->AsArray();
       for (size_t i = 0; i < pArray->size(); ++i) {
-        CPDF_Object* pNextObj = pArray->GetObjectAt(i);
-        if (!pNextObj || !UpdateReference(pNextObj))
+        if (!UpdateReference(pArray->GetObjectAt(i)))
           return false;
       }
       return true;
@@ -352,9 +349,9 @@ uint32_t CPDF_PageOrganizer::GetNewObjId(CPDF_Reference* pRef) {
   if (CPDF_Dictionary* pDictClone = pClone->AsDictionary()) {
     if (pDictClone->KeyExist("Type")) {
       ByteString strType = pDictClone->GetStringFor("Type");
-      if (!FXSYS_stricmp(strType.c_str(), "Pages"))
+      if (strType.EqualNoCase("Pages"))
         return 4;
-      if (!FXSYS_stricmp(strType.c_str(), "Page"))
+      if (strType.EqualNoCase("Page"))
         return 0;
     }
   }

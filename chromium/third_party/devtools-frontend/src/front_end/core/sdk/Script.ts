@@ -163,6 +163,7 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return this.#isLiveEditInternal;
   }
 
+  // TODO(crbug.com/1253323): Cast to RawPathString will be removed when migration to branded types is complete.
   contentURL(): string {
     return this.sourceURL;
   }
@@ -309,10 +310,6 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
 
   isAnonymousScript(): boolean {
     return !this.sourceURL;
-  }
-
-  isInlineScriptWithSourceURL(): boolean {
-    return Boolean(this.hasSourceURL) && this.isInlineScript();
   }
 
   async setBlackboxedRanges(positions: Protocol.Debugger.ScriptPosition[]): Promise<boolean> {

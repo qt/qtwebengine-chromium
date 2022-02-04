@@ -227,9 +227,6 @@ LibvpxVp9Encoder::LibvpxVp9Encoder(const cricket::VideoCodec& codec,
       first_frame_in_picture_(true),
       ss_info_needed_(false),
       force_all_active_layers_(false),
-      use_svc_controller_(
-          !absl::StartsWith(trials.Lookup("WebRTC-Vp9DependencyDescriptor"),
-                            "Disabled")),
       is_flexible_mode_(false),
       variable_framerate_experiment_(ParseVariableFramerateConfig(trials)),
       variable_framerate_controller_(
@@ -552,9 +549,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
     num_temporal_layers_ = 1;
   }
 
-  if (use_svc_controller_) {
-    svc_controller_ = CreateVp9ScalabilityStructure(*inst);
-  }
+  svc_controller_ = CreateVp9ScalabilityStructure(*inst);
   framerate_controller_ = std::vector<FramerateControllerDeprecated>(
       num_spatial_layers_, FramerateControllerDeprecated(codec_.maxFramerate));
 
@@ -578,7 +573,7 @@ int LibvpxVp9Encoder::InitEncode(const VideoCodec* inst,
     case VP9Profile::kProfile1:
       // Encoding of profile 1 is not implemented. It would require extended
       // support for I444, I422, and I440 buffers.
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
       break;
     case VP9Profile::kProfile2:
       img_fmt = VPX_IMG_FMT_I42016;
@@ -838,7 +833,7 @@ int LibvpxVp9Encoder::InitAndSetControlSettings(const VideoCodec* inst) {
         libvpx_->codec_control(encoder_, VP9E_SET_SVC_INTER_LAYER_PRED, 2);
         break;
       default:
-        RTC_NOTREACHED();
+        RTC_DCHECK_NOTREACHED();
     }
 
     memset(&svc_drop_frame_, 0, sizeof(svc_drop_frame_));
@@ -1116,7 +1111,7 @@ int LibvpxVp9Encoder::Encode(const VideoFrame& input_image,
       break;
     }
     case VP9Profile::kProfile1: {
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
       break;
     }
     case VP9Profile::kProfile2: {
@@ -1740,7 +1735,6 @@ VideoEncoder::EncoderInfo LibvpxVp9Encoder::GetEncoderInfo() const {
   }
   info.has_trusted_rate_controller = trusted_rate_controller_;
   info.is_hardware_accelerated = false;
-  info.has_internal_source = false;
   if (inited_) {
     // Find the max configured fps of any active spatial layer.
     float max_fps = 0.0;
@@ -1935,8 +1929,8 @@ void LibvpxVp9Encoder::MaybeRewrapRawWithFormat(const vpx_img_fmt fmt) {
     raw_ = libvpx_->img_wrap(nullptr, fmt, codec_.width, codec_.height, 1,
                              nullptr);
   } else if (raw_->fmt != fmt) {
-    RTC_LOG(INFO) << "Switching VP9 encoder pixel format to "
-                  << (fmt == VPX_IMG_FMT_NV12 ? "NV12" : "I420");
+    RTC_LOG(LS_INFO) << "Switching VP9 encoder pixel format to "
+                     << (fmt == VPX_IMG_FMT_NV12 ? "NV12" : "I420");
     libvpx_->img_free(raw_);
     raw_ = libvpx_->img_wrap(nullptr, fmt, codec_.width, codec_.height, 1,
                              nullptr);
@@ -2006,7 +2000,7 @@ rtc::scoped_refptr<VideoFrameBuffer> LibvpxVp9Encoder::PrepareBufferForProfile0(
       break;
     }
     default:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
   }
   return mapped_buffer;
 }

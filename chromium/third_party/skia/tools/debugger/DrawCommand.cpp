@@ -32,7 +32,7 @@
 #include "tools/debugger/DebugLayerManager.h"
 #include "tools/debugger/JsonWriteBuffer.h"
 
-#ifdef SK_SUPPORT_GPU
+#if SK_SUPPORT_GPU
 #include "include/gpu/GrDirectContext.h"
 #else
 class GrDirectContext;
@@ -651,7 +651,7 @@ bool DrawCommand::flatten(const SkImage&  image,
             SkImageInfo::Make(image.dimensions(), kN32_SkColorType, kPremul_SkAlphaType);
     // "cheat" for this debug tool and use image's context
     GrDirectContext* dContext = nullptr;
-#ifdef SK_SUPPORT_GPU
+#if SK_SUPPORT_GPU
     dContext = GrAsDirectContext(as_IB(&image)->context());
 #endif
     if (!image.readPixels(dContext, dstInfo, buffer.get(), rowBytes, 0, 0)) {
@@ -1995,11 +1995,16 @@ SaveLayerCommand::SaveLayerCommand(const SkCanvas::SaveLayerRec& rec)
         , fBounds(rec.fBounds)
         , fPaint(rec.fPaint)
         , fBackdrop(SkSafeRef(rec.fBackdrop))
-        , fSaveLayerFlags(rec.fSaveLayerFlags) {}
+        , fSaveLayerFlags(rec.fSaveLayerFlags)
+        , fBackdropScale(SkCanvasPriv::GetBackdropScaleFactor(rec)) {}
 
 void SaveLayerCommand::execute(SkCanvas* canvas) const {
-    canvas->saveLayer(
-            SkCanvas::SaveLayerRec(fBounds.getMaybeNull(), fPaint.getMaybeNull(), fSaveLayerFlags));
+    // In the common case fBackdropScale == 1.f and then this is no different than a regular Rec
+    canvas->saveLayer(SkCanvasPriv::ScaledBackdropLayer(fBounds.getMaybeNull(),
+                                                        fPaint.getMaybeNull(),
+                                                        fBackdrop.get(),
+                                                        fBackdropScale,
+                                                        fSaveLayerFlags));
 }
 
 void SaveLayerCommand::toJSON(SkJSONWriter& writer, UrlDataManager& urlDataManager) const {

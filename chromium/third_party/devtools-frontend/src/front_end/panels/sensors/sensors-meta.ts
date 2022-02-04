@@ -5,7 +5,6 @@
 import * as Common from '../../core/common/common.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
-// eslint-disable-next-line rulesdir/es_modules_import
 import type * as Sensors from './sensors.js';
 
 import * as i18n from '../../core/i18n/i18n.js';
@@ -154,6 +153,7 @@ UI.ActionRegistration.registerActionExtension({
 });
 
 Common.Settings.registerSettingExtension({
+  storageType: Common.Settings.SettingStorageType.Synced,
   settingName: 'emulation.locations',
   settingType: Common.Settings.SettingType.ARRAY,
   // TODO(crbug.com/1136655): http://crrev.com/c/2666426 regressed localization of city titles.

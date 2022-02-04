@@ -41,14 +41,29 @@
 #include "src/sem/statement.h"
 #include "src/sem/storage_texture_type.h"
 #include "src/sem/struct.h"
+#include "src/sem/type_constructor.h"
+#include "src/sem/type_conversion.h"
 #include "src/sem/variable.h"
 #include "src/transform/calculate_array_length.h"
 #include "src/transform/glsl.h"
 #include "src/utils/defer.h"
-#include "src/utils/get_or_create.h"
+#include "src/utils/map.h"
 #include "src/utils/scoped_assignment.h"
 #include "src/writer/append_vector.h"
 #include "src/writer/float_to_string.h"
+
+namespace {
+
+bool IsRelational(tint::ast::BinaryOp op) {
+  return op == tint::ast::BinaryOp::kEqual ||
+         op == tint::ast::BinaryOp::kNotEqual ||
+         op == tint::ast::BinaryOp::kLessThan ||
+         op == tint::ast::BinaryOp::kGreaterThan ||
+         op == tint::ast::BinaryOp::kLessThanEqual ||
+         op == tint::ast::BinaryOp::kGreaterThanEqual;
+}
+
+}  // namespace
 
 namespace tint {
 namespace writer {
@@ -59,54 +74,7 @@ const char kTempNamePrefix[] = "tint_tmp";
 const char kSpecConstantPrefix[] = "WGSL_SPEC_CONSTANT_";
 
 bool last_is_break_or_fallthrough(const ast::BlockStatement* stmts) {
-  if (stmts->empty()) {
-    return false;
-  }
-
-  return stmts->last()->Is<ast::BreakStatement>() ||
-         stmts->last()->Is<ast::FallthroughStatement>();
-}
-
-const char* image_format_to_rwtexture_type(ast::ImageFormat image_format) {
-  switch (image_format) {
-    case ast::ImageFormat::kRgba8Unorm:
-    case ast::ImageFormat::kRgba8Snorm:
-    case ast::ImageFormat::kRgba16Float:
-    case ast::ImageFormat::kR32Float:
-    case ast::ImageFormat::kRg32Float:
-    case ast::ImageFormat::kRgba32Float:
-      return "float4";
-    case ast::ImageFormat::kRgba8Uint:
-    case ast::ImageFormat::kRgba16Uint:
-    case ast::ImageFormat::kR32Uint:
-    case ast::ImageFormat::kRg32Uint:
-    case ast::ImageFormat::kRgba32Uint:
-      return "uint4";
-    case ast::ImageFormat::kRgba8Sint:
-    case ast::ImageFormat::kRgba16Sint:
-    case ast::ImageFormat::kR32Sint:
-    case ast::ImageFormat::kRg32Sint:
-    case ast::ImageFormat::kRgba32Sint:
-      return "int4";
-    default:
-      return nullptr;
-  }
-}
-
-// Helper for writing " : register(RX, spaceY)", where R is the register, X is
-// the binding point binding value, and Y is the binding point group value.
-struct RegisterAndSpace {
-  RegisterAndSpace(char r, ast::Variable::BindingPoint bp)
-      : reg(r), binding_point(bp) {}
-
-  char const reg;
-  ast::Variable::BindingPoint const binding_point;
-};
-
-std::ostream& operator<<(std::ostream& s, const RegisterAndSpace& rs) {
-  s << " : register(" << rs.reg << rs.binding_point.binding->value()
-    << ", space" << rs.binding_point.group->value() << ")";
-  return s;
+  return IsAnyOf<ast::BreakStatement, ast::FallthroughStatement>(stmts->Last());
 }
 
 }  // namespace
@@ -128,7 +96,11 @@ bool GeneratorImpl::Generate() {
   size_t last_padding_line = 0;
 
   line() << "#version 310 es";
-  line() << "precision mediump float;" << std::endl;
+  line() << "precision mediump float;";
+
+  auto helpers_insertion_point = current_buffer_->lines.size();
+
+  line();
 
   for (auto* decl : builder_.AST().GlobalDeclarations()) {
     if (decl->Is<ast::Alias>()) {
@@ -151,8 +123,10 @@ bool GeneratorImpl::Generate() {
         return false;
       }
     } else if (auto* str = decl->As<ast::Struct>()) {
-      if (!EmitStructType(current_buffer_, builder_.Sem().Get(str))) {
-        return false;
+      if (!str->IsBlockDecorated()) {
+        if (!EmitStructType(current_buffer_, builder_.Sem().Get(str))) {
+          return false;
+        }
       }
     } else if (auto* func = decl->As<ast::Function>()) {
       if (func->IsEntryPoint()) {
@@ -172,20 +146,22 @@ bool GeneratorImpl::Generate() {
   }
 
   if (!helpers_.lines.empty()) {
-    current_buffer_->Insert(helpers_, 0, 0);
+    current_buffer_->Insert("", helpers_insertion_point++, 0);
+    current_buffer_->Insert(helpers_, helpers_insertion_point++, 0);
   }
 
   return true;
 }
 
-bool GeneratorImpl::EmitArrayAccessor(std::ostream& out,
-                                      ast::ArrayAccessorExpression* expr) {
-  if (!EmitExpression(out, expr->array())) {
+bool GeneratorImpl::EmitIndexAccessor(
+    std::ostream& out,
+    const ast::IndexAccessorExpression* expr) {
+  if (!EmitExpression(out, expr->object)) {
     return false;
   }
   out << "[";
 
-  if (!EmitExpression(out, expr->idx_expr())) {
+  if (!EmitExpression(out, expr->index)) {
     return false;
   }
   out << "]";
@@ -194,59 +170,116 @@ bool GeneratorImpl::EmitArrayAccessor(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitBitcast(std::ostream& out,
-                                ast::BitcastExpression* expr) {
-  auto* type = TypeOf(expr);
-  if (auto* vec = type->UnwrapRef()->As<sem::Vector>()) {
-    type = vec->type();
-  }
+                                const ast::BitcastExpression* expr) {
+  auto* src_type = TypeOf(expr->expr);
+  auto* dst_type = TypeOf(expr);
 
-  if (!type->is_integer_scalar() && !type->is_float_scalar()) {
-    diagnostics_.add_error(diag::System::Writer,
-                           "Unable to do bitcast to type " + type->type_name());
+  if (!dst_type->is_integer_scalar_or_vector() &&
+      !dst_type->is_float_scalar_or_vector()) {
+    diagnostics_.add_error(
+        diag::System::Writer,
+        "Unable to do bitcast to type " + dst_type->type_name());
     return false;
   }
 
-  out << "as";
-  if (!EmitType(out, type, ast::StorageClass::kNone, ast::Access::kReadWrite,
-                "")) {
-    return false;
+  if (src_type == dst_type) {
+    return EmitExpression(out, expr->expr);
+  }
+
+  if (src_type->is_float_scalar_or_vector() &&
+      dst_type->is_signed_scalar_or_vector()) {
+    out << "floatBitsToInt";
+  } else if (src_type->is_float_scalar_or_vector() &&
+             dst_type->is_unsigned_scalar_or_vector()) {
+    out << "floatBitsToUint";
+  } else if (src_type->is_signed_scalar_or_vector() &&
+             dst_type->is_float_scalar_or_vector()) {
+    out << "intBitsToFloat";
+  } else if (src_type->is_unsigned_scalar_or_vector() &&
+             dst_type->is_float_scalar_or_vector()) {
+    out << "uintBitsToFloat";
+  } else {
+    if (!EmitType(out, dst_type, ast::StorageClass::kNone,
+                  ast::Access::kReadWrite, "")) {
+      return false;
+    }
   }
   out << "(";
-  if (!EmitExpression(out, expr->expr())) {
+  if (!EmitExpression(out, expr->expr)) {
     return false;
   }
   out << ")";
   return true;
 }
 
-bool GeneratorImpl::EmitAssign(ast::AssignmentStatement* stmt) {
+bool GeneratorImpl::EmitAssign(const ast::AssignmentStatement* stmt) {
   auto out = line();
-  if (!EmitExpression(out, stmt->lhs())) {
+  if (!EmitExpression(out, stmt->lhs)) {
     return false;
   }
   out << " = ";
-  if (!EmitExpression(out, stmt->rhs())) {
+  if (!EmitExpression(out, stmt->rhs)) {
     return false;
   }
   out << ";";
   return true;
 }
 
-bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
-  if (expr->op() == ast::BinaryOp::kLogicalAnd ||
-      expr->op() == ast::BinaryOp::kLogicalOr) {
+bool GeneratorImpl::EmitVectorRelational(std::ostream& out,
+                                         const ast::BinaryExpression* expr) {
+  switch (expr->op) {
+    case ast::BinaryOp::kEqual:
+      out << "equal";
+      break;
+    case ast::BinaryOp::kNotEqual:
+      out << "notEqual";
+      break;
+    case ast::BinaryOp::kLessThan:
+      out << "lessThan";
+      break;
+    case ast::BinaryOp::kGreaterThan:
+      out << "greaterThan";
+      break;
+    case ast::BinaryOp::kLessThanEqual:
+      out << "lessThanEqual";
+      break;
+    case ast::BinaryOp::kGreaterThanEqual:
+      out << "greaterThanEqual";
+      break;
+    default:
+      break;
+  }
+  out << "(";
+  if (!EmitExpression(out, expr->lhs)) {
+    return false;
+  }
+  out << ", ";
+  if (!EmitExpression(out, expr->rhs)) {
+    return false;
+  }
+  out << ")";
+  return true;
+}
+
+bool GeneratorImpl::EmitBinary(std::ostream& out,
+                               const ast::BinaryExpression* expr) {
+  if (IsRelational(expr->op) && !TypeOf(expr->lhs)->UnwrapRef()->is_scalar()) {
+    return EmitVectorRelational(out, expr);
+  }
+  if (expr->op == ast::BinaryOp::kLogicalAnd ||
+      expr->op == ast::BinaryOp::kLogicalOr) {
     auto name = UniqueIdentifier(kTempNamePrefix);
 
     {
       auto pre = line();
       pre << "bool " << name << " = ";
-      if (!EmitExpression(pre, expr->lhs())) {
+      if (!EmitExpression(pre, expr->lhs)) {
         return false;
       }
       pre << ";";
     }
 
-    if (expr->op() == ast::BinaryOp::kLogicalOr) {
+    if (expr->op == ast::BinaryOp::kLogicalOr) {
       line() << "if (!" << name << ") {";
     } else {
       line() << "if (" << name << ") {";
@@ -256,7 +289,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
       ScopedIndent si(this);
       auto pre = line();
       pre << name << " = ";
-      if (!EmitExpression(pre, expr->rhs())) {
+      if (!EmitExpression(pre, expr->rhs)) {
         return false;
       }
       pre << ";";
@@ -269,12 +302,12 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
   }
 
   out << "(";
-  if (!EmitExpression(out, expr->lhs())) {
+  if (!EmitExpression(out, expr->lhs)) {
     return false;
   }
   out << " ";
 
-  switch (expr->op()) {
+  switch (expr->op) {
     case ast::BinaryOp::kAnd:
       out << "&";
       break;
@@ -341,7 +374,7 @@ bool GeneratorImpl::EmitBinary(std::ostream& out, ast::BinaryExpression* expr) {
   }
   out << " ";
 
-  if (!EmitExpression(out, expr->rhs())) {
+  if (!EmitExpression(out, expr->rhs)) {
     return false;
   }
 
@@ -365,276 +398,297 @@ bool GeneratorImpl::EmitStatementsWithIndent(const ast::StatementList& stmts) {
 
 bool GeneratorImpl::EmitBlock(const ast::BlockStatement* stmt) {
   line() << "{";
-  if (!EmitStatementsWithIndent(stmt->statements())) {
+  if (!EmitStatementsWithIndent(stmt->statements)) {
     return false;
   }
   line() << "}";
   return true;
 }
 
-bool GeneratorImpl::EmitBreak(ast::BreakStatement*) {
+bool GeneratorImpl::EmitBreak(const ast::BreakStatement*) {
   line() << "break;";
   return true;
 }
 
-bool GeneratorImpl::EmitCall(std::ostream& out, ast::CallExpression* expr) {
-  const auto& params = expr->params();
-  auto* ident = expr->func();
+bool GeneratorImpl::EmitCall(std::ostream& out,
+                             const ast::CallExpression* expr) {
   auto* call = builder_.Sem().Get(expr);
   auto* target = call->Target();
 
   if (auto* func = target->As<sem::Function>()) {
-    if (ast::HasDecoration<
-            transform::CalculateArrayLength::BufferSizeIntrinsic>(
-            func->Declaration()->decorations())) {
-      // Special function generated by the CalculateArrayLength transform for
-      // calling X.GetDimensions(Y)
-      if (!EmitExpression(out, params[0])) {
-        return false;
-      }
-      out << ".GetDimensions(";
-      if (!EmitExpression(out, params[1])) {
-        return false;
-      }
-      out << ")";
-      return true;
-    }
+    return EmitFunctionCall(out, call, func);
   }
+  if (auto* intrinsic = target->As<sem::Intrinsic>()) {
+    return EmitIntrinsicCall(out, call, intrinsic);
+  }
+  if (auto* cast = target->As<sem::TypeConversion>()) {
+    return EmitTypeConversion(out, call, cast);
+  }
+  if (auto* ctor = target->As<sem::TypeConstructor>()) {
+    return EmitTypeConstructor(out, call, ctor);
+  }
+  TINT_ICE(Writer, diagnostics_)
+      << "unhandled call target: " << target->TypeInfo().name;
+  return false;
+}
 
-  if (auto* intrinsic = call->Target()->As<sem::Intrinsic>()) {
-    if (intrinsic->IsTexture()) {
-      return EmitTextureCall(out, expr, intrinsic);
-    } else if (intrinsic->Type() == sem::IntrinsicType::kSelect) {
-      return EmitSelectCall(out, expr);
-    } else if (intrinsic->Type() == sem::IntrinsicType::kModf) {
-      return EmitModfCall(out, expr, intrinsic);
-    } else if (intrinsic->Type() == sem::IntrinsicType::kFrexp) {
-      return EmitFrexpCall(out, expr, intrinsic);
-    } else if (intrinsic->Type() == sem::IntrinsicType::kIsNormal) {
-      return EmitIsNormalCall(out, expr, intrinsic);
-    } else if (intrinsic->Type() == sem::IntrinsicType::kIgnore) {
-      return EmitExpression(out, expr->params()[0]);
-    } else if (intrinsic->IsDataPacking()) {
-      return EmitDataPackingCall(out, expr, intrinsic);
-    } else if (intrinsic->IsDataUnpacking()) {
-      return EmitDataUnpackingCall(out, expr, intrinsic);
-    } else if (intrinsic->IsBarrier()) {
-      return EmitBarrierCall(out, intrinsic);
-    } else if (intrinsic->IsAtomic()) {
-      return EmitWorkgroupAtomicCall(out, expr, intrinsic);
-    }
-    auto name = generate_builtin_name(intrinsic);
-    if (name.empty()) {
+bool GeneratorImpl::EmitFunctionCall(std::ostream& out,
+                                     const sem::Call* call,
+                                     const sem::Function* func) {
+  const auto& args = call->Arguments();
+  auto* decl = call->Declaration();
+  auto* ident = decl->target.name;
+
+  auto name = builder_.Symbols().NameFor(ident->symbol);
+  auto caller_sym = ident->symbol;
+
+  if (ast::HasDecoration<transform::CalculateArrayLength::BufferSizeIntrinsic>(
+          func->Declaration()->decorations)) {
+    // Special function generated by the CalculateArrayLength transform for
+    // calling X.GetDimensions(Y)
+    if (!EmitExpression(out, args[0]->Declaration())) {
       return false;
     }
-
-    out << name << "(";
-
-    bool first = true;
-    for (auto* param : params) {
-      if (!first) {
-        out << ", ";
-      }
-      first = false;
-
-      if (!EmitExpression(out, param)) {
-        return false;
-      }
+    out << ".GetDimensions(";
+    if (!EmitExpression(out, args[1]->Declaration())) {
+      return false;
     }
-
     out << ")";
     return true;
   }
 
-  auto name = builder_.Symbols().NameFor(ident->symbol());
-  auto caller_sym = ident->symbol();
+  out << name << "(";
 
-  auto* func = builder_.AST().Functions().Find(ident->symbol());
-  if (func == nullptr) {
-    diagnostics_.add_error(diag::System::Writer,
-                           "Unable to find function: " +
-                               builder_.Symbols().NameFor(ident->symbol()));
+  bool first = true;
+  for (auto* arg : args) {
+    if (!first) {
+      out << ", ";
+    }
+    first = false;
+
+    if (!EmitExpression(out, arg->Declaration())) {
+      return false;
+    }
+  }
+
+  out << ")";
+  return true;
+}
+
+bool GeneratorImpl::EmitIntrinsicCall(std::ostream& out,
+                                      const sem::Call* call,
+                                      const sem::Intrinsic* intrinsic) {
+  auto* expr = call->Declaration();
+  if (intrinsic->IsTexture()) {
+    return EmitTextureCall(out, call, intrinsic);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kSelect) {
+    return EmitSelectCall(out, expr);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kDot) {
+    return EmitDotCall(out, expr, intrinsic);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kModf) {
+    return EmitModfCall(out, expr, intrinsic);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kFrexp) {
+    return EmitFrexpCall(out, expr, intrinsic);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kIsNormal) {
+    return EmitIsNormalCall(out, expr, intrinsic);
+  }
+  if (intrinsic->Type() == sem::IntrinsicType::kIgnore) {
+    return EmitExpression(out, expr->args[0]);  // [DEPRECATED]
+  }
+  if (intrinsic->IsDataPacking()) {
+    return EmitDataPackingCall(out, expr, intrinsic);
+  }
+  if (intrinsic->IsDataUnpacking()) {
+    return EmitDataUnpackingCall(out, expr, intrinsic);
+  }
+  if (intrinsic->IsBarrier()) {
+    return EmitBarrierCall(out, intrinsic);
+  }
+  if (intrinsic->IsAtomic()) {
+    return EmitWorkgroupAtomicCall(out, expr, intrinsic);
+  }
+  auto name = generate_builtin_name(intrinsic);
+  if (name.empty()) {
     return false;
   }
 
   out << name << "(";
 
   bool first = true;
-  for (auto* param : params) {
+  for (auto* arg : call->Arguments()) {
     if (!first) {
       out << ", ";
     }
     first = false;
 
-    if (!EmitExpression(out, param)) {
+    if (!EmitExpression(out, arg->Declaration())) {
       return false;
     }
   }
 
   out << ")";
+  return true;
+}
 
+bool GeneratorImpl::EmitTypeConversion(std::ostream& out,
+                                       const sem::Call* call,
+                                       const sem::TypeConversion* conv) {
+  if (!EmitType(out, conv->Target(), ast::StorageClass::kNone,
+                ast::Access::kReadWrite, "")) {
+    return false;
+  }
+  out << "(";
+
+  if (!EmitExpression(out, call->Arguments()[0]->Declaration())) {
+    return false;
+  }
+
+  out << ")";
+  return true;
+}
+
+bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
+                                        const sem::Call* call,
+                                        const sem::TypeConstructor* ctor) {
+  auto* type = ctor->ReturnType();
+
+  // If the type constructor is empty then we need to construct with the zero
+  // value for all components.
+  if (call->Arguments().empty()) {
+    return EmitZeroValue(out, type);
+  }
+
+  auto it = structure_builders_.find(As<sem::Struct>(type));
+  if (it != structure_builders_.end()) {
+    out << it->second << "(";
+  } else {
+    if (!EmitType(out, type, ast::StorageClass::kNone, ast::Access::kReadWrite,
+                  "")) {
+      return false;
+    }
+    out << "(";
+  }
+
+  bool first = true;
+  for (auto* arg : call->Arguments()) {
+    if (!first) {
+      out << ", ";
+    }
+    first = false;
+
+    if (!EmitExpression(out, arg->Declaration())) {
+      return false;
+    }
+  }
+
+  out << ")";
   return true;
 }
 
 bool GeneratorImpl::EmitWorkgroupAtomicCall(std::ostream& out,
-                                            ast::CallExpression* expr,
+                                            const ast::CallExpression* expr,
                                             const sem::Intrinsic* intrinsic) {
-  std::string result = UniqueIdentifier("atomic_result");
-
-  if (!intrinsic->ReturnType()->Is<sem::Void>()) {
-    auto pre = line();
-    if (!EmitTypeAndName(pre, intrinsic->ReturnType(), ast::StorageClass::kNone,
-                         ast::Access::kUndefined, result)) {
-      return false;
-    }
-    pre << " = ";
-    if (!EmitZeroValue(pre, intrinsic->ReturnType())) {
-      return false;
-    }
-    pre << ";";
-  }
-
   auto call = [&](const char* name) {
-    auto pre = line();
-    pre << name;
-
+    out << name;
     {
-      ScopedParen sp(pre);
-      for (size_t i = 0; i < expr->params().size(); i++) {
-        auto* arg = expr->params()[i];
+      ScopedParen sp(out);
+      for (size_t i = 0; i < expr->args.size(); i++) {
+        auto* arg = expr->args[i];
         if (i > 0) {
-          pre << ", ";
+          out << ", ";
         }
-        if (!EmitExpression(pre, arg)) {
+        if (!EmitExpression(out, arg)) {
           return false;
         }
       }
-
-      pre << ", " << result;
     }
-
-    pre << ";";
-
-    out << result;
     return true;
   };
 
   switch (intrinsic->Type()) {
     case sem::IntrinsicType::kAtomicLoad: {
-      // GLSL does not have an InterlockedLoad, so we emulate it with
-      // InterlockedOr using 0 as the OR value
-      auto pre = line();
-      pre << "InterlockedOr";
-      {
-        ScopedParen sp(pre);
-        if (!EmitExpression(pre, expr->params()[0])) {
-          return false;
-        }
-        pre << ", 0, " << result;
-      }
-      pre << ";";
-
-      out << result;
-      return true;
-    }
-    case sem::IntrinsicType::kAtomicStore: {
-      // GLSL does not have an InterlockedStore, so we emulate it with
-      // InterlockedExchange and discard the returned value
-      {  // T result = 0;
-        auto pre = line();
-        auto* value_ty = intrinsic->Parameters()[1]->Type();
-        if (!EmitTypeAndName(pre, value_ty, ast::StorageClass::kNone,
-                             ast::Access::kUndefined, result)) {
-          return false;
-        }
-        pre << " = ";
-        if (!EmitZeroValue(pre, value_ty)) {
-          return false;
-        }
-        pre << ";";
-      }
-
-      out << "InterlockedExchange";
+      // GLSL does not have an atomicLoad, so we emulate it with
+      // atomicOr using 0 as the OR value
+      out << "atomicOr";
       {
         ScopedParen sp(out);
-        if (!EmitExpression(out, expr->params()[0])) {
+        if (!EmitExpression(out, expr->args[0])) {
           return false;
         }
-        out << ", ";
-        if (!EmitExpression(out, expr->params()[1])) {
-          return false;
+        out << ", 0";
+        if (intrinsic->ReturnType()->Is<sem::U32>()) {
+          out << "u";
         }
-        out << ", " << result;
       }
       return true;
     }
     case sem::IntrinsicType::kAtomicCompareExchangeWeak: {
-      auto* dest = expr->params()[0];
-      auto* compare_value = expr->params()[1];
-      auto* value = expr->params()[2];
-
-      std::string compare = UniqueIdentifier("atomic_compare_value");
-
-      {  // T compare_value = <compare_value>;
-        auto pre = line();
-        if (!EmitTypeAndName(pre, TypeOf(compare_value),
-                             ast::StorageClass::kNone, ast::Access::kUndefined,
-                             compare)) {
-          return false;
-        }
-        pre << " = ";
-        if (!EmitExpression(pre, compare_value)) {
-          return false;
-        }
-        pre << ";";
-      }
-
-      {  // InterlockedCompareExchange(dst, compare, value, result.x);
-        auto pre = line();
-        pre << "InterlockedCompareExchange";
-        {
-          ScopedParen sp(pre);
-          if (!EmitExpression(pre, dest)) {
-            return false;
-          }
-          pre << ", " << compare << ", ";
-          if (!EmitExpression(pre, value)) {
-            return false;
-          }
-          pre << ", " << result << ".x";
-        }
-        pre << ";";
-      }
-
-      {  // result.y = result.x == compare;
-        line() << result << ".y = " << result << ".x == " << compare << ";";
-      }
-
-      out << result;
-      return true;
+      return CallIntrinsicHelper(
+          out, expr, intrinsic,
+          [&](TextBuffer* b, const std::vector<std::string>& params) {
+            {
+              auto pre = line(b);
+              if (!EmitTypeAndName(pre, intrinsic->ReturnType(),
+                                   ast::StorageClass::kNone,
+                                   ast::Access::kUndefined, "result")) {
+                return false;
+              }
+              pre << ";";
+            }
+            {
+              auto pre = line(b);
+              pre << "result.x = atomicCompSwap";
+              {
+                ScopedParen sp(pre);
+                pre << params[0];
+                pre << ", " << params[1];
+                pre << ", " << params[2];
+              }
+              pre << ";";
+            }
+            {
+              auto pre = line(b);
+              pre << "result.y = result.x == " << params[2] << " ? ";
+              if (TypeOf(expr->args[2])->Is<sem::U32>()) {
+                pre << "1u : 0u;";
+              } else {
+                pre << "1 : 0;";
+              }
+            }
+            line(b) << "return result;";
+            return true;
+          });
     }
 
     case sem::IntrinsicType::kAtomicAdd:
     case sem::IntrinsicType::kAtomicSub:
-      return call("InterlockedAdd");
+      return call("atomicAdd");
 
     case sem::IntrinsicType::kAtomicMax:
-      return call("InterlockedMax");
+      return call("atomicMax");
 
     case sem::IntrinsicType::kAtomicMin:
-      return call("InterlockedMin");
+      return call("atomicMin");
 
     case sem::IntrinsicType::kAtomicAnd:
-      return call("InterlockedAnd");
+      return call("atomicAnd");
 
     case sem::IntrinsicType::kAtomicOr:
-      return call("InterlockedOr");
+      return call("atomicOr");
 
     case sem::IntrinsicType::kAtomicXor:
-      return call("InterlockedXor");
+      return call("atomicXor");
 
     case sem::IntrinsicType::kAtomicExchange:
-      return call("InterlockedExchange");
+    case sem::IntrinsicType::kAtomicStore:
+      // GLSL does not have an atomicStore, so we emulate it with
+      // atomicExchange.
+      return call("atomicExchange");
 
     default:
       break;
@@ -646,10 +700,10 @@ bool GeneratorImpl::EmitWorkgroupAtomicCall(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitSelectCall(std::ostream& out,
-                                   ast::CallExpression* expr) {
-  auto* expr_false = expr->params()[0];
-  auto* expr_true = expr->params()[1];
-  auto* expr_cond = expr->params()[2];
+                                   const ast::CallExpression* expr) {
+  auto* expr_false = expr->args[0];
+  auto* expr_true = expr->args[1];
+  auto* expr_cond = expr->args[2];
   ScopedParen paren(out);
   if (!EmitExpression(out, expr_cond)) {
     return false;
@@ -670,10 +724,82 @@ bool GeneratorImpl::EmitSelectCall(std::ostream& out,
   return true;
 }
 
+bool GeneratorImpl::EmitDotCall(std::ostream& out,
+                                const ast::CallExpression* expr,
+                                const sem::Intrinsic* intrinsic) {
+  auto* vec_ty = intrinsic->Parameters()[0]->Type()->As<sem::Vector>();
+  std::string fn = "dot";
+  if (vec_ty->type()->is_integer_scalar()) {
+    // GLSL does not have a builtin for dot() with integer vector types.
+    // Generate the helper function if it hasn't been created already
+    fn = utils::GetOrCreate(int_dot_funcs_, vec_ty, [&]() -> std::string {
+      TextBuffer b;
+      TINT_DEFER(helpers_.Append(b));
+
+      auto fn_name = UniqueIdentifier("tint_int_dot");
+
+      std::string v;
+      {
+        std::stringstream s;
+        if (!EmitType(s, vec_ty->type(), ast::StorageClass::kNone,
+                      ast::Access::kRead, "")) {
+          return "";
+        }
+        v = s.str();
+      }
+      {  // (u)int tint_int_dot([i|u]vecN a, [i|u]vecN b) {
+        auto l = line(&b);
+        if (!EmitType(l, vec_ty->type(), ast::StorageClass::kNone,
+                      ast::Access::kRead, "")) {
+          return "";
+        }
+        l << " " << fn_name << "(";
+        if (!EmitType(l, vec_ty, ast::StorageClass::kNone, ast::Access::kRead,
+                      "")) {
+          return "";
+        }
+        l << " a, ";
+        if (!EmitType(l, vec_ty, ast::StorageClass::kNone, ast::Access::kRead,
+                      "")) {
+          return "";
+        }
+        l << " b) {";
+      }
+      {
+        auto l = line(&b);
+        l << "  return ";
+        for (uint32_t i = 0; i < vec_ty->Width(); i++) {
+          if (i > 0) {
+            l << " + ";
+          }
+          l << "a[" << i << "]*b[" << i << "]";
+        }
+        l << ";";
+      }
+      line(&b) << "}";
+      return fn_name;
+    });
+    if (fn.empty()) {
+      return false;
+    }
+  }
+
+  out << fn << "(";
+  if (!EmitExpression(out, expr->args[0])) {
+    return false;
+  }
+  out << ", ";
+  if (!EmitExpression(out, expr->args[1])) {
+    return false;
+  }
+  out << ")";
+  return true;
+}
+
 bool GeneratorImpl::EmitModfCall(std::ostream& out,
-                                 ast::CallExpression* expr,
+                                 const ast::CallExpression* expr,
                                  const sem::Intrinsic* intrinsic) {
-  if (expr->params().size() == 1) {
+  if (expr->args.size() == 1) {
     return CallIntrinsicHelper(
         out, expr, intrinsic,
         [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -710,20 +836,20 @@ bool GeneratorImpl::EmitModfCall(std::ostream& out,
   // DEPRECATED
   out << "modf";
   ScopedParen sp(out);
-  if (!EmitExpression(out, expr->params()[0])) {
+  if (!EmitExpression(out, expr->args[0])) {
     return false;
   }
   out << ", ";
-  if (!EmitExpression(out, expr->params()[1])) {
+  if (!EmitExpression(out, expr->args[1])) {
     return false;
   }
   return true;
 }
 
 bool GeneratorImpl::EmitFrexpCall(std::ostream& out,
-                                  ast::CallExpression* expr,
+                                  const ast::CallExpression* expr,
                                   const sem::Intrinsic* intrinsic) {
-  if (expr->params().size() == 1) {
+  if (expr->args.size() == 1) {
     return CallIntrinsicHelper(
         out, expr, intrinsic,
         [&](TextBuffer* b, const std::vector<std::string>& params) {
@@ -792,7 +918,7 @@ bool GeneratorImpl::EmitFrexpCall(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitIsNormalCall(std::ostream& out,
-                                     ast::CallExpression* expr,
+                                     const ast::CallExpression* expr,
                                      const sem::Intrinsic* intrinsic) {
   // GLSL doesn't have a isNormal intrinsic, we need to emulate
   return CallIntrinsicHelper(
@@ -820,7 +946,7 @@ bool GeneratorImpl::EmitIsNormalCall(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitDataPackingCall(std::ostream& out,
-                                        ast::CallExpression* expr,
+                                        const ast::CallExpression* expr,
                                         const sem::Intrinsic* intrinsic) {
   return CallIntrinsicHelper(
       out, expr, intrinsic,
@@ -886,7 +1012,7 @@ bool GeneratorImpl::EmitDataPackingCall(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitDataUnpackingCall(std::ostream& out,
-                                          ast::CallExpression* expr,
+                                          const ast::CallExpression* expr,
                                           const sem::Intrinsic* intrinsic) {
   return CallIntrinsicHelper(
       out, expr, intrinsic,
@@ -960,9 +1086,9 @@ bool GeneratorImpl::EmitBarrierCall(std::ostream& out,
   // TODO(crbug.com/tint/661): Combine sequential barriers to a single
   // instruction.
   if (intrinsic->Type() == sem::IntrinsicType::kWorkgroupBarrier) {
-    out << "GroupMemoryBarrierWithGroupSync()";
+    out << "memoryBarrierShared()";
   } else if (intrinsic->Type() == sem::IntrinsicType::kStorageBarrier) {
-    out << "DeviceMemoryBarrierWithGroupSync()";
+    out << "memoryBarrierBuffer()";
   } else {
     TINT_UNREACHABLE(Writer, diagnostics_)
         << "unexpected barrier intrinsic type " << sem::str(intrinsic->Type());
@@ -972,16 +1098,17 @@ bool GeneratorImpl::EmitBarrierCall(std::ostream& out,
 }
 
 bool GeneratorImpl::EmitTextureCall(std::ostream& out,
-                                    ast::CallExpression* expr,
+                                    const sem::Call* call,
                                     const sem::Intrinsic* intrinsic) {
   using Usage = sem::ParameterUsage;
 
-  auto parameters = intrinsic->Parameters();
-  auto arguments = expr->params();
+  auto& signature = intrinsic->Signature();
+  auto* expr = call->Declaration();
+  auto arguments = expr->args;
 
   // Returns the argument with the given usage
   auto arg = [&](Usage usage) {
-    int idx = sem::IndexOf(parameters, usage);
+    int idx = signature.IndexOf(usage);
     return (idx >= 0) ? arguments[idx] : nullptr;
   };
 
@@ -995,18 +1122,35 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
 
   switch (intrinsic->Type()) {
     case sem::IntrinsicType::kTextureDimensions: {
-      out << "textureSize(";
+      if (texture_type->Is<sem::StorageTexture>()) {
+        out << "imageSize(";
+      } else {
+        out << "textureSize(";
+      }
       if (!EmitExpression(out, texture)) {
         return false;
       }
 
-      auto* level_arg = arg(Usage::kLevel);
-      if (level_arg) {
-        if (!EmitExpression(out, level_arg)) {
-          return false;
+      // The LOD parameter is mandatory on textureSize() for non-multisampled
+      // textures.
+      if (!texture_type->Is<sem::StorageTexture>() &&
+          !texture_type->Is<sem::MultisampledTexture>() &&
+          !texture_type->Is<sem::DepthMultisampledTexture>()) {
+        out << ", ";
+        if (auto* level_arg = arg(Usage::kLevel)) {
+          if (!EmitExpression(out, level_arg)) {
+            return false;
+          }
+        } else {
+          out << "0";
         }
       }
-      out << ");";
+      out << ")";
+      // textureSize() on sampler2dArray returns the array size in the
+      // final component, so strip it out.
+      if (texture_type->dim() == ast::TextureDimension::k2dArray) {
+        out << ".xy";
+      }
       return true;
     }
     // TODO(senorblanco): determine if this works for array textures
@@ -1031,47 +1175,38 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
       break;
   }
 
-  if (!EmitExpression(out, texture))
-    return false;
-
-  // If pack_level_in_coords is true, then the mip level will be appended as the
-  // last value of the coordinates argument. If the WGSL intrinsic overload does
-  // not have a level parameter and pack_level_in_coords is true, then a zero
-  // mip level will be inserted.
-  bool pack_level_in_coords = false;
-
   uint32_t glsl_ret_width = 4u;
 
   switch (intrinsic->Type()) {
     case sem::IntrinsicType::kTextureSample:
-      out << ".Sample(";
-      break;
     case sem::IntrinsicType::kTextureSampleBias:
-      out << ".SampleBias(";
+      out << "texture(";
       break;
     case sem::IntrinsicType::kTextureSampleLevel:
-      out << ".SampleLevel(";
+      out << "textureLod(";
+      break;
+    case sem::IntrinsicType::kTextureGather:
+    case sem::IntrinsicType::kTextureGatherCompare:
+      out << (intrinsic->Signature().IndexOf(sem::ParameterUsage::kOffset) < 0
+                  ? "textureGather("
+                  : "textureGatherOffset(");
       break;
     case sem::IntrinsicType::kTextureSampleGrad:
-      out << ".SampleGrad(";
+      out << "textureGrad(";
       break;
     case sem::IntrinsicType::kTextureSampleCompare:
-      out << ".SampleCmp(";
+      out << "texture(";
       glsl_ret_width = 1;
       break;
     case sem::IntrinsicType::kTextureSampleCompareLevel:
-      out << ".SampleCmpLevelZero(";
+      out << "texture(";
       glsl_ret_width = 1;
       break;
     case sem::IntrinsicType::kTextureLoad:
-      out << ".Load(";
-      // Multisampled textures do not support mip-levels.
-      if (!texture_type->Is<sem::MultisampledTexture>()) {
-        pack_level_in_coords = true;
-      }
+      out << "texelFetch(";
       break;
     case sem::IntrinsicType::kTextureStore:
-      out << "[";
+      out << "imageStore(";
       break;
     default:
       diagnostics_.add_error(
@@ -1081,11 +1216,10 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
       return false;
   }
 
-  if (auto* sampler = arg(Usage::kSampler)) {
-    if (!EmitExpression(out, sampler))
-      return false;
-    out << ", ";
-  }
+  if (!EmitExpression(out, texture))
+    return false;
+
+  out << ", ";
 
   auto* param_coords = arg(Usage::kCoords);
   if (!param_coords) {
@@ -1093,40 +1227,10 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     return false;
   }
 
-  auto emit_vector_appended_with_i32_zero = [&](tint::ast::Expression* vector) {
-    auto* i32 = builder_.create<sem::I32>();
-    auto* zero = builder_.Expr(0);
-    auto* stmt = builder_.Sem().Get(vector)->Stmt();
-    builder_.Sem().Add(zero, builder_.create<sem::Expression>(zero, i32, stmt,
-                                                              sem::Constant{}));
-    auto* packed = AppendVector(&builder_, vector, zero);
-    return EmitExpression(out, packed);
-  };
-
-  auto emit_vector_appended_with_level = [&](tint::ast::Expression* vector) {
-    if (auto* level = arg(Usage::kLevel)) {
-      auto* packed = AppendVector(&builder_, vector, level);
-      return EmitExpression(out, packed);
-    }
-    return emit_vector_appended_with_i32_zero(vector);
-  };
-
   if (auto* array_index = arg(Usage::kArrayIndex)) {
     // Array index needs to be appended to the coordinates.
     auto* packed = AppendVector(&builder_, param_coords, array_index);
-    if (pack_level_in_coords) {
-      // Then mip level needs to be appended to the coordinates.
-      if (!emit_vector_appended_with_level(packed)) {
-        return false;
-      }
-    } else {
-      if (!EmitExpression(out, packed)) {
-        return false;
-      }
-    }
-  } else if (pack_level_in_coords) {
-    // Mip level needs to be appended to the coordinates.
-    if (!emit_vector_appended_with_level(param_coords)) {
+    if (!EmitExpression(out, packed->Declaration())) {
       return false;
     }
   } else {
@@ -1136,10 +1240,8 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
   }
 
   for (auto usage : {Usage::kDepthRef, Usage::kBias, Usage::kLevel, Usage::kDdx,
-                     Usage::kDdy, Usage::kSampleIndex, Usage::kOffset}) {
-    if (usage == Usage::kLevel && pack_level_in_coords) {
-      continue;  // mip level already packed in coordinates.
-    }
+                     Usage::kDdy, Usage::kSampleIndex, Usage::kOffset,
+                     Usage::kComponent, Usage::kValue}) {
     if (auto* e = arg(usage)) {
       out << ", ";
       if (!EmitExpression(out, e)) {
@@ -1148,34 +1250,30 @@ bool GeneratorImpl::EmitTextureCall(std::ostream& out,
     }
   }
 
-  if (intrinsic->Type() == sem::IntrinsicType::kTextureStore) {
-    out << "] = ";
-    if (!EmitExpression(out, arg(Usage::kValue))) {
-      return false;
-    }
-  } else {
-    out << ")";
+  out << ")";
 
-    // If the intrinsic return type does not match the number of elements of the
-    // GLSL intrinsic, we need to swizzle the expression to generate the correct
-    // number of components.
-    uint32_t wgsl_ret_width = 1;
-    if (auto* vec = intrinsic->ReturnType()->As<sem::Vector>()) {
-      wgsl_ret_width = vec->Width();
+  if (intrinsic->ReturnType()->Is<sem::Void>()) {
+    return true;
+  }
+  // If the intrinsic return type does not match the number of elements of the
+  // GLSL intrinsic, we need to swizzle the expression to generate the correct
+  // number of components.
+  uint32_t wgsl_ret_width = 1;
+  if (auto* vec = intrinsic->ReturnType()->As<sem::Vector>()) {
+    wgsl_ret_width = vec->Width();
+  }
+  if (wgsl_ret_width < glsl_ret_width) {
+    out << ".";
+    for (uint32_t i = 0; i < wgsl_ret_width; i++) {
+      out << "xyz"[i];
     }
-    if (wgsl_ret_width < glsl_ret_width) {
-      out << ".";
-      for (uint32_t i = 0; i < wgsl_ret_width; i++) {
-        out << "xyz"[i];
-      }
-    }
-    if (wgsl_ret_width > glsl_ret_width) {
-      TINT_ICE(Writer, diagnostics_)
-          << "WGSL return width (" << wgsl_ret_width
-          << ") is wider than GLSL return width (" << glsl_ret_width << ") for "
-          << intrinsic->Type();
-      return false;
-    }
+  }
+  if (wgsl_ret_width > glsl_ret_width) {
+    TINT_ICE(Writer, diagnostics_)
+        << "WGSL return width (" << wgsl_ret_width
+        << ") is wider than GLSL return width (" << glsl_ret_width << ") for "
+        << intrinsic->Type();
+    return false;
   }
 
   return true;
@@ -1190,7 +1288,6 @@ std::string GeneratorImpl::generate_builtin_name(
     case sem::IntrinsicType::kAny:
     case sem::IntrinsicType::kAsin:
     case sem::IntrinsicType::kAtan:
-    case sem::IntrinsicType::kAtan2:
     case sem::IntrinsicType::kCeil:
     case sem::IntrinsicType::kClamp:
     case sem::IntrinsicType::kCos:
@@ -1225,6 +1322,8 @@ std::string GeneratorImpl::generate_builtin_name(
     case sem::IntrinsicType::kTranspose:
     case sem::IntrinsicType::kTrunc:
       return intrinsic->str();
+    case sem::IntrinsicType::kAtan2:
+      return "atan";
     case sem::IntrinsicType::kCountOneBits:
       return "countbits";
     case sem::IntrinsicType::kDpdx:
@@ -1258,7 +1357,7 @@ std::string GeneratorImpl::generate_builtin_name(
     case sem::IntrinsicType::kIsNan:
       return "isnan";
     case sem::IntrinsicType::kMix:
-      return "lerp";
+      return "mix";
     case sem::IntrinsicType::kReverseBits:
       return "reversebits";
     case sem::IntrinsicType::kSmoothStep:
@@ -1272,18 +1371,18 @@ std::string GeneratorImpl::generate_builtin_name(
   return "";
 }
 
-bool GeneratorImpl::EmitCase(ast::CaseStatement* stmt) {
+bool GeneratorImpl::EmitCase(const ast::CaseStatement* stmt) {
   if (stmt->IsDefault()) {
     line() << "default: {";
   } else {
-    for (auto* selector : stmt->selectors()) {
+    for (auto* selector : stmt->selectors) {
       auto out = line();
       out << "case ";
       if (!EmitLiteral(out, selector)) {
         return false;
       }
       out << ":";
-      if (selector == stmt->selectors().back()) {
+      if (selector == stmt->selectors.back()) {
         out << " {";
       }
     }
@@ -1291,10 +1390,10 @@ bool GeneratorImpl::EmitCase(ast::CaseStatement* stmt) {
 
   {
     ScopedIndent si(this);
-    if (!EmitStatements(stmt->body()->statements())) {
+    if (!EmitStatements(stmt->body->statements)) {
       return false;
     }
-    if (!last_is_break_or_fallthrough(stmt->body())) {
+    if (!last_is_break_or_fallthrough(stmt->body)) {
       line() << "break;";
     }
   }
@@ -1304,72 +1403,7 @@ bool GeneratorImpl::EmitCase(ast::CaseStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitConstructor(std::ostream& out,
-                                    ast::ConstructorExpression* expr) {
-  if (auto* scalar = expr->As<ast::ScalarConstructorExpression>()) {
-    return EmitScalarConstructor(out, scalar);
-  }
-  return EmitTypeConstructor(out, expr->As<ast::TypeConstructorExpression>());
-}
-
-bool GeneratorImpl::EmitScalarConstructor(
-    std::ostream& out,
-    ast::ScalarConstructorExpression* expr) {
-  return EmitLiteral(out, expr->literal());
-}
-
-bool GeneratorImpl::EmitTypeConstructor(std::ostream& out,
-                                        ast::TypeConstructorExpression* expr) {
-  auto* type = TypeOf(expr)->UnwrapRef();
-
-  // If the type constructor is empty then we need to construct with the zero
-  // value for all components.
-  if (expr->values().empty()) {
-    return EmitZeroValue(out, type);
-  }
-
-  // For single-value vector initializers, swizzle the scalar to the right
-  // vector dimension using .x
-  const bool is_single_value_vector_init =
-      type->is_scalar_vector() && expr->values().size() == 1 &&
-      TypeOf(expr->values()[0])->UnwrapRef()->is_scalar();
-
-  auto it = structure_builders_.find(As<sem::Struct>(type));
-  if (it != structure_builders_.end()) {
-    out << it->second << "(";
-  } else {
-    if (!EmitType(out, type, ast::StorageClass::kNone, ast::Access::kReadWrite,
-                  "")) {
-      return false;
-    }
-    out << "(";
-  }
-
-  if (is_single_value_vector_init) {
-    out << "(";
-  }
-
-  bool first = true;
-  for (auto* e : expr->values()) {
-    if (!first) {
-      out << ", ";
-    }
-    first = false;
-
-    if (!EmitExpression(out, e)) {
-      return false;
-    }
-  }
-
-  if (is_single_value_vector_init) {
-    out << ")." << std::string(type->As<sem::Vector>()->Width(), 'x');
-  }
-
-  out << ")";
-  return true;
-}
-
-bool GeneratorImpl::EmitContinue(ast::ContinueStatement*) {
+bool GeneratorImpl::EmitContinue(const ast::ContinueStatement*) {
   if (!emit_continuing_()) {
     return false;
   }
@@ -1377,16 +1411,17 @@ bool GeneratorImpl::EmitContinue(ast::ContinueStatement*) {
   return true;
 }
 
-bool GeneratorImpl::EmitDiscard(ast::DiscardStatement*) {
+bool GeneratorImpl::EmitDiscard(const ast::DiscardStatement*) {
   // TODO(dsinclair): Verify this is correct when the discard semantics are
   // defined for WGSL (https://github.com/gpuweb/gpuweb/issues/361)
   line() << "discard;";
   return true;
 }
 
-bool GeneratorImpl::EmitExpression(std::ostream& out, ast::Expression* expr) {
-  if (auto* a = expr->As<ast::ArrayAccessorExpression>()) {
-    return EmitArrayAccessor(out, a);
+bool GeneratorImpl::EmitExpression(std::ostream& out,
+                                   const ast::Expression* expr) {
+  if (auto* a = expr->As<ast::IndexAccessorExpression>()) {
+    return EmitIndexAccessor(out, a);
   }
   if (auto* b = expr->As<ast::BinaryExpression>()) {
     return EmitBinary(out, b);
@@ -1397,11 +1432,11 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, ast::Expression* expr) {
   if (auto* c = expr->As<ast::CallExpression>()) {
     return EmitCall(out, c);
   }
-  if (auto* c = expr->As<ast::ConstructorExpression>()) {
-    return EmitConstructor(out, c);
-  }
   if (auto* i = expr->As<ast::IdentifierExpression>()) {
     return EmitIdentifier(out, i);
+  }
+  if (auto* l = expr->As<ast::LiteralExpression>()) {
+    return EmitLiteral(out, l);
   }
   if (auto* m = expr->As<ast::MemberAccessorExpression>()) {
     return EmitMemberAccessor(out, m);
@@ -1410,40 +1445,41 @@ bool GeneratorImpl::EmitExpression(std::ostream& out, ast::Expression* expr) {
     return EmitUnaryOp(out, u);
   }
 
-  diagnostics_.add_error(diag::System::Writer,
-                         "unknown expression type: " + builder_.str(expr));
+  diagnostics_.add_error(
+      diag::System::Writer,
+      "unknown expression type: " + std::string(expr->TypeInfo().name));
   return false;
 }
 
 bool GeneratorImpl::EmitIdentifier(std::ostream& out,
-                                   ast::IdentifierExpression* expr) {
-  out << builder_.Symbols().NameFor(expr->symbol());
+                                   const ast::IdentifierExpression* expr) {
+  out << builder_.Symbols().NameFor(expr->symbol);
   return true;
 }
 
-bool GeneratorImpl::EmitIf(ast::IfStatement* stmt) {
+bool GeneratorImpl::EmitIf(const ast::IfStatement* stmt) {
   {
     auto out = line();
     out << "if (";
-    if (!EmitExpression(out, stmt->condition())) {
+    if (!EmitExpression(out, stmt->condition)) {
       return false;
     }
     out << ") {";
   }
 
-  if (!EmitStatementsWithIndent(stmt->body()->statements())) {
+  if (!EmitStatementsWithIndent(stmt->body->statements)) {
     return false;
   }
 
-  for (auto* e : stmt->else_statements()) {
-    if (e->HasCondition()) {
+  for (auto* e : stmt->else_statements) {
+    if (e->condition) {
       line() << "} else {";
       increment_indent();
 
       {
         auto out = line();
         out << "if (";
-        if (!EmitExpression(out, e->condition())) {
+        if (!EmitExpression(out, e->condition)) {
           return false;
         }
         out << ") {";
@@ -1452,15 +1488,15 @@ bool GeneratorImpl::EmitIf(ast::IfStatement* stmt) {
       line() << "} else {";
     }
 
-    if (!EmitStatementsWithIndent(e->body()->statements())) {
+    if (!EmitStatementsWithIndent(e->body->statements)) {
       return false;
     }
   }
 
   line() << "}";
 
-  for (auto* e : stmt->else_statements()) {
-    if (e->HasCondition()) {
+  for (auto* e : stmt->else_statements) {
+    if (e->condition) {
       decrement_indent();
       line() << "}";
     }
@@ -1468,34 +1504,20 @@ bool GeneratorImpl::EmitIf(ast::IfStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitFunction(ast::Function* func) {
+bool GeneratorImpl::EmitFunction(const ast::Function* func) {
   auto* sem = builder_.Sem().Get(func);
 
-  if (ast::HasDecoration<ast::InternalDecoration>(func->decorations())) {
+  if (ast::HasDecoration<ast::InternalDecoration>(func->decorations)) {
     // An internal function. Do not emit.
     return true;
   }
 
   {
     auto out = line();
-    auto name = builder_.Symbols().NameFor(func->symbol());
-    // If the function returns an array, then we need to declare a typedef for
-    // this.
-    if (sem->ReturnType()->Is<sem::Array>()) {
-      auto typedef_name = UniqueIdentifier(name + "_ret");
-      auto pre = line();
-      pre << "typedef ";
-      if (!EmitTypeAndName(pre, sem->ReturnType(), ast::StorageClass::kNone,
-                           ast::Access::kReadWrite, typedef_name)) {
-        return false;
-      }
-      pre << ";";
-      out << typedef_name;
-    } else {
-      if (!EmitType(out, sem->ReturnType(), ast::StorageClass::kNone,
-                    ast::Access::kReadWrite, "")) {
-        return false;
-      }
+    auto name = builder_.Symbols().NameFor(func->symbol);
+    if (!EmitType(out, sem->ReturnType(), ast::StorageClass::kNone,
+                  ast::Access::kReadWrite, "")) {
+      return false;
     }
 
     out << " " << name << "(";
@@ -1527,14 +1549,14 @@ bool GeneratorImpl::EmitFunction(ast::Function* func) {
       // storage buffers and a uint4[N] for uniform buffers.
       if (!EmitTypeAndName(
               out, type, v->StorageClass(), v->Access(),
-              builder_.Symbols().NameFor(v->Declaration()->symbol()))) {
+              builder_.Symbols().NameFor(v->Declaration()->symbol))) {
         return false;
       }
     }
     out << ") {";
   }
 
-  if (!EmitStatementsWithIndent(func->body()->statements())) {
+  if (!EmitStatementsWithIndent(func->body->statements)) {
     return false;
   }
 
@@ -1543,8 +1565,8 @@ bool GeneratorImpl::EmitFunction(ast::Function* func) {
   return true;
 }
 
-bool GeneratorImpl::EmitGlobalVariable(ast::Variable* global) {
-  if (global->is_const()) {
+bool GeneratorImpl::EmitGlobalVariable(const ast::Variable* global) {
+  if (global->is_const) {
     return EmitProgramConstVariable(global);
   }
 
@@ -1572,12 +1594,18 @@ bool GeneratorImpl::EmitGlobalVariable(ast::Variable* global) {
 bool GeneratorImpl::EmitUniformVariable(const sem::Variable* var) {
   auto* decl = var->Declaration();
   auto* type = var->Type()->UnwrapRef();
-  auto out = line();
-  if (!EmitTypeAndName(out, type, ast::StorageClass::kUniform, var->Access(),
-                       builder_.Symbols().NameFor(decl->symbol()))) {
+  auto* str = type->As<sem::Struct>();
+  if (!str) {
+    TINT_ICE(Writer, builder_.Diagnostics())
+        << "storage variable must be of struct type";
     return false;
   }
-  out << ";";
+  ast::VariableBindingPoint bp = decl->BindingPoint();
+  line() << "layout (binding = " << bp.binding->value << ") uniform "
+         << UniqueIdentifier(StructName(str)) << " {";
+  EmitStructMembers(current_buffer_, str);
+  auto name = builder_.Symbols().NameFor(decl->symbol);
+  line() << "} " << name << ";";
 
   return true;
 }
@@ -1585,47 +1613,33 @@ bool GeneratorImpl::EmitUniformVariable(const sem::Variable* var) {
 bool GeneratorImpl::EmitStorageVariable(const sem::Variable* var) {
   auto* decl = var->Declaration();
   auto* type = var->Type()->UnwrapRef();
-  auto out = line();
-  if (!EmitTypeAndName(out, type, ast::StorageClass::kStorage, var->Access(),
-                       builder_.Symbols().NameFor(decl->symbol()))) {
+  auto* str = type->As<sem::Struct>();
+  if (!str) {
+    TINT_ICE(Writer, builder_.Diagnostics())
+        << "storage variable must be of struct type";
     return false;
   }
-
-  out << RegisterAndSpace(var->Access() == ast::Access::kRead ? 't' : 'u',
-                          decl->binding_point())
-      << ";";
-
+  ast::VariableBindingPoint bp = decl->BindingPoint();
+  line() << "layout (binding = " << bp.binding->value << ") buffer "
+         << UniqueIdentifier(StructName(str)) << " {";
+  EmitStructMembers(current_buffer_, str);
+  auto name = builder_.Symbols().NameFor(decl->symbol);
+  line() << "} " << name << ";";
   return true;
 }
 
 bool GeneratorImpl::EmitHandleVariable(const sem::Variable* var) {
   auto* decl = var->Declaration();
-  auto* unwrapped_type = var->Type()->UnwrapRef();
   auto out = line();
 
-  auto name = builder_.Symbols().NameFor(decl->symbol());
+  auto name = builder_.Symbols().NameFor(decl->symbol);
   auto* type = var->Type()->UnwrapRef();
+  if (type->As<sem::Sampler>()) {
+    // GLSL ignores Sampler variables.
+    return true;
+  }
   if (!EmitTypeAndName(out, type, var->StorageClass(), var->Access(), name)) {
     return false;
-  }
-
-  const char* register_space = nullptr;
-
-  if (unwrapped_type->Is<sem::Texture>()) {
-    register_space = "t";
-    if (auto* storage_tex = unwrapped_type->As<sem::StorageTexture>()) {
-      if (storage_tex->access() != ast::Access::kRead) {
-        register_space = "u";
-      }
-    }
-  } else if (unwrapped_type->Is<sem::Sampler>()) {
-    register_space = "s";
-  }
-
-  if (register_space) {
-    auto bp = decl->binding_point();
-    out << " : register(" << register_space << bp.binding->value() << ", space"
-        << bp.group->value() << ")";
   }
 
   out << ";";
@@ -1636,16 +1650,14 @@ bool GeneratorImpl::EmitPrivateVariable(const sem::Variable* var) {
   auto* decl = var->Declaration();
   auto out = line();
 
-  out << "static ";
-
-  auto name = builder_.Symbols().NameFor(decl->symbol());
+  auto name = builder_.Symbols().NameFor(decl->symbol);
   auto* type = var->Type()->UnwrapRef();
   if (!EmitTypeAndName(out, type, var->StorageClass(), var->Access(), name)) {
     return false;
   }
 
   out << " = ";
-  if (auto* constructor = decl->constructor()) {
+  if (auto* constructor = decl->constructor) {
     if (!EmitExpression(out, constructor)) {
       return false;
     }
@@ -1663,15 +1675,15 @@ bool GeneratorImpl::EmitWorkgroupVariable(const sem::Variable* var) {
   auto* decl = var->Declaration();
   auto out = line();
 
-  out << "groupshared ";
+  out << "shared ";
 
-  auto name = builder_.Symbols().NameFor(decl->symbol());
+  auto name = builder_.Symbols().NameFor(decl->symbol);
   auto* type = var->Type()->UnwrapRef();
   if (!EmitTypeAndName(out, type, var->StorageClass(), var->Access(), name)) {
     return false;
   }
 
-  if (auto* constructor = decl->constructor()) {
+  if (auto* constructor = decl->constructor) {
     out << " = ";
     if (!EmitExpression(out, constructor)) {
       return false;
@@ -1713,10 +1725,20 @@ sem::Type* GeneratorImpl::builtin_type(ast::Builtin builtin) {
   }
 }
 
-const char* GeneratorImpl::builtin_to_string(ast::Builtin builtin) const {
+const char* GeneratorImpl::builtin_to_string(ast::Builtin builtin,
+                                             ast::PipelineStage stage) {
   switch (builtin) {
     case ast::Builtin::kPosition:
-      return "gl_Position";
+      switch (stage) {
+        case ast::PipelineStage::kVertex:
+          return "gl_Position";
+        case ast::PipelineStage::kFragment:
+          return "gl_FragCoord";
+        default:
+          TINT_ICE(Writer, builder_.Diagnostics())
+              << "position builtin unexpected in this pipeline stage";
+          return "";
+      }
     case ast::Builtin::kVertexIndex:
       return "gl_VertexID";
     case ast::Builtin::kInstanceIndex:
@@ -1772,24 +1794,25 @@ std::string GeneratorImpl::interpolation_to_modifiers(
   return modifiers;
 }
 
-bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
+bool GeneratorImpl::EmitEntryPointFunction(const ast::Function* func) {
   auto* func_sem = builder_.Sem().Get(func);
 
   {
     auto out = line();
-    if (func->pipeline_stage() == ast::PipelineStage::kCompute) {
-      // Emit the workgroup_size attribute.
-      auto wgsize = func_sem->workgroup_size();
-      out << "[numthreads(";
+    if (func->PipelineStage() == ast::PipelineStage::kCompute) {
+      // Emit the layout(local_size) attributes.
+      auto wgsize = func_sem->WorkgroupSize();
+      out << "layout(";
       for (int i = 0; i < 3; i++) {
         if (i > 0) {
           out << ", ";
         }
+        out << "local_size_" << (i == 0 ? "x" : i == 1 ? "y" : "z") << " = ";
 
         if (wgsize[i].overridable_const) {
           auto* global = builder_.Sem().Get<sem::GlobalVariable>(
               wgsize[i].overridable_const);
-          if (!global->IsPipelineConstant()) {
+          if (!global->IsOverridable()) {
             TINT_ICE(Writer, builder_.Diagnostics())
                 << "expected a pipeline-overridable constant";
           }
@@ -1798,17 +1821,17 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
           out << std::to_string(wgsize[i].value);
         }
       }
-      out << ")]" << std::endl;
+      out << ") in;" << std::endl;
     }
 
-    out << func->return_type()->FriendlyName(builder_.Symbols());
+    out << func->return_type->FriendlyName(builder_.Symbols());
 
-    out << " " << builder_.Symbols().NameFor(func->symbol()) << "(";
+    out << " " << builder_.Symbols().NameFor(func->symbol) << "(";
 
     bool first = true;
 
     // Emit entry point parameters.
-    for (auto* var : func->params()) {
+    for (auto* var : func->params) {
       auto* sem = builder_.Sem().Get(var);
       auto* type = sem->Type();
       if (!type->Is<sem::Struct>()) {
@@ -1824,7 +1847,7 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
       first = false;
 
       if (!EmitTypeAndName(out, type, sem->StorageClass(), sem->Access(),
-                           builder_.Symbols().NameFor(var->symbol()))) {
+                           builder_.Symbols().NameFor(var->symbol))) {
         return false;
       }
     }
@@ -1835,11 +1858,11 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   {
     ScopedIndent si(this);
 
-    if (!EmitStatements(func->body()->statements())) {
+    if (!EmitStatements(func->body->statements)) {
       return false;
     }
 
-    if (!Is<ast::ReturnStatement>(func->get_last_statement())) {
+    if (!Is<ast::ReturnStatement>(func->body->Last())) {
       ast::ReturnStatement ret(ProgramID(), Source{});
       if (!EmitStatement(&ret)) {
         return false;
@@ -1852,18 +1875,18 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   auto out = line();
 
   // Declare entry point input variables
-  for (auto* var : func->params()) {
+  for (auto* var : func->params) {
     auto* sem = builder_.Sem().Get(var);
     auto* str = sem->Type()->As<sem::Struct>();
     for (auto* member : str->Members()) {
       if (ast::HasDecoration<ast::BuiltinDecoration>(
-              member->Declaration()->decorations())) {
+              member->Declaration()->decorations)) {
         continue;
       }
       if (!EmitTypeAndName(
               out, member->Type(), ast::StorageClass::kInput,
               ast::Access::kReadWrite,
-              builder_.Symbols().NameFor(member->Declaration()->symbol()))) {
+              builder_.Symbols().NameFor(member->Declaration()->symbol))) {
         return false;
       }
       out << ";" << std::endl;
@@ -1875,13 +1898,13 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   if (return_type) {
     for (auto* member : return_type->Members()) {
       if (ast::HasDecoration<ast::BuiltinDecoration>(
-              member->Declaration()->decorations())) {
+              member->Declaration()->decorations)) {
         continue;
       }
       if (!EmitTypeAndName(
               out, member->Type(), ast::StorageClass::kOutput,
               ast::Access::kReadWrite,
-              builder_.Symbols().NameFor(member->Declaration()->symbol()))) {
+              builder_.Symbols().NameFor(member->Declaration()->symbol))) {
         return false;
       }
       out << ";" << std::endl;
@@ -1891,7 +1914,7 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   // Create a main() function which calls the entry point.
   out << "void main() {" << std::endl;
   std::string printed_name;
-  for (auto* var : func->params()) {
+  for (auto* var : func->params) {
     out << "  ";
     auto* sem = builder_.Sem().Get(var);
     if (!EmitTypeAndName(out, sem->Type(), sem->StorageClass(), sem->Access(),
@@ -1903,20 +1926,20 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
     auto* str = type->As<sem::Struct>();
     for (auto* member : str->Members()) {
       std::string name =
-          builder_.Symbols().NameFor(member->Declaration()->symbol());
+          builder_.Symbols().NameFor(member->Declaration()->symbol);
       out << "  inputs." << name << " = ";
       if (auto* builtin = ast::GetDecoration<ast::BuiltinDecoration>(
-              member->Declaration()->decorations())) {
-        if (builtin_type(builtin->value()) != member->Type()) {
+              member->Declaration()->decorations)) {
+        if (builtin_type(builtin->builtin) != member->Type()) {
           if (!EmitType(out, member->Type(), ast::StorageClass::kNone,
                         ast::Access::kReadWrite, "")) {
             return false;
           }
           out << "(";
-          out << builtin_to_string(builtin->value());
+          out << builtin_to_string(builtin->builtin, func->PipelineStage());
           out << ")";
         } else {
-          out << builtin_to_string(builtin->value());
+          out << builtin_to_string(builtin->builtin, func->PipelineStage());
         }
       } else {
         out << name;
@@ -1930,8 +1953,8 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
         << "outputs;" << std::endl;
     out << "  outputs = ";
   }
-  out << builder_.Symbols().NameFor(func->symbol());
-  if (func->params().empty()) {
+  out << builder_.Symbols().NameFor(func->symbol);
+  if (func->params.empty()) {
     out << "()";
   } else {
     out << "(inputs)";
@@ -1942,16 +1965,19 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   if (str) {
     for (auto* member : str->Members()) {
       std::string name =
-          builder_.Symbols().NameFor(member->Declaration()->symbol());
+          builder_.Symbols().NameFor(member->Declaration()->symbol);
       out << "  ";
       if (auto* builtin = ast::GetDecoration<ast::BuiltinDecoration>(
-              member->Declaration()->decorations())) {
-        out << builtin_to_string(builtin->value());
+              member->Declaration()->decorations)) {
+        out << builtin_to_string(builtin->builtin, func->PipelineStage());
       } else {
         out << name;
       }
       out << " = outputs." << name << ";" << std::endl;
     }
+  }
+  if (func->PipelineStage() == ast::PipelineStage::kVertex) {
+    out << "  gl_Position.y = -gl_Position.y;" << std::endl;
   }
 
   out << "}" << std::endl << std::endl;
@@ -1959,22 +1985,23 @@ bool GeneratorImpl::EmitEntryPointFunction(ast::Function* func) {
   return true;
 }
 
-bool GeneratorImpl::EmitLiteral(std::ostream& out, ast::Literal* lit) {
-  if (auto* l = lit->As<ast::BoolLiteral>()) {
-    out << (l->IsTrue() ? "true" : "false");
-  } else if (auto* fl = lit->As<ast::FloatLiteral>()) {
-    if (std::isinf(fl->value())) {
-      out << (fl->value() >= 0 ? "asfloat(0x7f800000u)"
-                               : "asfloat(0xff800000u)");
-    } else if (std::isnan(fl->value())) {
-      out << "asfloat(0x7fc00000u)";
+bool GeneratorImpl::EmitLiteral(std::ostream& out,
+                                const ast::LiteralExpression* lit) {
+  if (auto* l = lit->As<ast::BoolLiteralExpression>()) {
+    out << (l->value ? "true" : "false");
+  } else if (auto* fl = lit->As<ast::FloatLiteralExpression>()) {
+    if (std::isinf(fl->value)) {
+      out << (fl->value >= 0 ? "uintBitsToFloat(0x7f800000u)"
+                             : "uintBitsToFloat(0xff800000u)");
+    } else if (std::isnan(fl->value)) {
+      out << "uintBitsToFloat(0x7fc00000u)";
     } else {
-      out << FloatToString(fl->value()) << "f";
+      out << FloatToString(fl->value) << "f";
     }
-  } else if (auto* sl = lit->As<ast::SintLiteral>()) {
-    out << sl->value();
-  } else if (auto* ul = lit->As<ast::UintLiteral>()) {
-    out << ul->value() << "u";
+  } else if (auto* sl = lit->As<ast::SintLiteralExpression>()) {
+    out << sl->value;
+  } else if (auto* ul = lit->As<ast::UintLiteralExpression>()) {
+    out << ul->value << "u";
   } else {
     diagnostics_.add_error(diag::System::Writer, "unknown literal type");
     return false;
@@ -2057,10 +2084,10 @@ bool GeneratorImpl::EmitZeroValue(std::ostream& out, const sem::Type* type) {
   return true;
 }
 
-bool GeneratorImpl::EmitLoop(ast::LoopStatement* stmt) {
+bool GeneratorImpl::EmitLoop(const ast::LoopStatement* stmt) {
   auto emit_continuing = [this, stmt]() {
-    if (stmt->has_continuing()) {
-      if (!EmitBlock(stmt->continuing())) {
+    if (stmt->continuing && !stmt->continuing->Empty()) {
+      if (!EmitBlock(stmt->continuing)) {
         return false;
       }
     }
@@ -2071,7 +2098,7 @@ bool GeneratorImpl::EmitLoop(ast::LoopStatement* stmt) {
   line() << "while (true) {";
   {
     ScopedIndent si(this);
-    if (!EmitStatements(stmt->body()->statements())) {
+    if (!EmitStatements(stmt->body->statements)) {
       return false;
     }
     if (!emit_continuing()) {
@@ -2083,7 +2110,7 @@ bool GeneratorImpl::EmitLoop(ast::LoopStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
+bool GeneratorImpl::EmitForLoop(const ast::ForLoopStatement* stmt) {
   // Nest a for loop with a new block. In HLSL the initializer scope is not
   // nested by the for-loop, so we may get variable redefinitions.
   line() << "{";
@@ -2094,7 +2121,7 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
   });
 
   TextBuffer init_buf;
-  if (auto* init = stmt->initializer()) {
+  if (auto* init = stmt->initializer) {
     TINT_SCOPED_ASSIGNMENT(current_buffer_, &init_buf);
     if (!EmitStatement(init)) {
       return false;
@@ -2103,7 +2130,7 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
 
   TextBuffer cond_pre;
   std::stringstream cond_buf;
-  if (auto* cond = stmt->condition()) {
+  if (auto* cond = stmt->condition) {
     TINT_SCOPED_ASSIGNMENT(current_buffer_, &cond_pre);
     if (!EmitExpression(cond_buf, cond)) {
       return false;
@@ -2111,7 +2138,7 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
   }
 
   TextBuffer cont_buf;
-  if (auto* cont = stmt->continuing()) {
+  if (auto* cont = stmt->continuing) {
     TINT_SCOPED_ASSIGNMENT(current_buffer_, &cont_buf);
     if (!EmitStatement(cont)) {
       return false;
@@ -2126,7 +2153,7 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
   // If the for-loop has multi-statement initializer, or is going to be emitted
   // as a `while(true)` loop, then declare the initializer statement(s) before
   // the loop.
-  if (init_buf.lines.size() > 1 || (stmt->initializer() && emit_as_loop)) {
+  if (init_buf.lines.size() > 1 || (stmt->initializer && emit_as_loop)) {
     current_buffer_->Append(init_buf);
     init_buf.lines.clear();  // Don't emit the initializer again in the 'for'
   }
@@ -2145,12 +2172,12 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
       line() << "}";
     });
 
-    if (stmt->condition()) {
+    if (stmt->condition) {
       current_buffer_->Append(cond_pre);
       line() << "if (!(" << cond_buf.str() << ")) { break; }";
     }
 
-    if (!EmitStatements(stmt->body()->statements())) {
+    if (!EmitStatements(stmt->body->statements)) {
       return false;
     }
 
@@ -2182,7 +2209,7 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
     {
       auto emit_continuing = [] { return true; };
       TINT_SCOPED_ASSIGNMENT(emit_continuing_, emit_continuing);
-      if (!EmitStatementsWithIndent(stmt->body()->statements())) {
+      if (!EmitStatementsWithIndent(stmt->body->statements)) {
         return false;
       }
     }
@@ -2192,28 +2219,29 @@ bool GeneratorImpl::EmitForLoop(ast::ForLoopStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitMemberAccessor(std::ostream& out,
-                                       ast::MemberAccessorExpression* expr) {
-  if (!EmitExpression(out, expr->structure())) {
+bool GeneratorImpl::EmitMemberAccessor(
+    std::ostream& out,
+    const ast::MemberAccessorExpression* expr) {
+  if (!EmitExpression(out, expr->structure)) {
     return false;
   }
   out << ".";
 
   // Swizzles output the name directly
   if (builder_.Sem().Get(expr)->Is<sem::Swizzle>()) {
-    out << builder_.Symbols().NameFor(expr->member()->symbol());
-  } else if (!EmitExpression(out, expr->member())) {
+    out << builder_.Symbols().NameFor(expr->member->symbol);
+  } else if (!EmitExpression(out, expr->member)) {
     return false;
   }
 
   return true;
 }
 
-bool GeneratorImpl::EmitReturn(ast::ReturnStatement* stmt) {
-  if (stmt->has_value()) {
+bool GeneratorImpl::EmitReturn(const ast::ReturnStatement* stmt) {
+  if (stmt->value) {
     auto out = line();
     out << "return ";
-    if (!EmitExpression(out, stmt->value())) {
+    if (!EmitExpression(out, stmt->value)) {
       return false;
     }
     out << ";";
@@ -2223,7 +2251,7 @@ bool GeneratorImpl::EmitReturn(ast::ReturnStatement* stmt) {
   return true;
 }
 
-bool GeneratorImpl::EmitStatement(ast::Statement* stmt) {
+bool GeneratorImpl::EmitStatement(const ast::Statement* stmt) {
   if (auto* a = stmt->As<ast::AssignmentStatement>()) {
     return EmitAssign(a);
   }
@@ -2235,10 +2263,7 @@ bool GeneratorImpl::EmitStatement(ast::Statement* stmt) {
   }
   if (auto* c = stmt->As<ast::CallStatement>()) {
     auto out = line();
-    if (!TypeOf(c->expr())->Is<sem::Void>()) {
-      out << "(void) ";
-    }
-    if (!EmitCall(out, c->expr())) {
+    if (!EmitCall(out, c->expr)) {
       return false;
     }
     out << ";";
@@ -2270,19 +2295,20 @@ bool GeneratorImpl::EmitStatement(ast::Statement* stmt) {
     return EmitSwitch(s);
   }
   if (auto* v = stmt->As<ast::VariableDeclStatement>()) {
-    return EmitVariable(v->variable());
+    return EmitVariable(v->variable);
   }
 
-  diagnostics_.add_error(diag::System::Writer,
-                         "unknown statement type: " + builder_.str(stmt));
+  diagnostics_.add_error(
+      diag::System::Writer,
+      "unknown statement type: " + std::string(stmt->TypeInfo().name));
   return false;
 }
 
-bool GeneratorImpl::EmitSwitch(ast::SwitchStatement* stmt) {
+bool GeneratorImpl::EmitSwitch(const ast::SwitchStatement* stmt) {
   {  // switch(expr) {
     auto out = line();
     out << "switch(";
-    if (!EmitExpression(out, stmt->condition())) {
+    if (!EmitExpression(out, stmt->condition)) {
       return false;
     }
     out << ") {";
@@ -2290,7 +2316,7 @@ bool GeneratorImpl::EmitSwitch(ast::SwitchStatement* stmt) {
 
   {
     ScopedIndent si(this);
-    for (auto* s : stmt->body()) {
+    for (auto* s : stmt->body) {
       if (!EmitCase(s)) {
         return false;
       }
@@ -2332,12 +2358,6 @@ bool GeneratorImpl::EmitType(std::ostream& out,
     const sem::Type* base_type = ary;
     std::vector<uint32_t> sizes;
     while (auto* arr = base_type->As<sem::Array>()) {
-      if (arr->IsRuntimeSized()) {
-        TINT_ICE(Writer, diagnostics_)
-            << "Runtime arrays may only exist in storage buffers, which should "
-               "have been transformed into a ByteAddressBuffer";
-        return false;
-      }
       sizes.push_back(arr->Count());
       base_type = arr->ElemType();
     }
@@ -2351,7 +2371,11 @@ bool GeneratorImpl::EmitType(std::ostream& out,
       }
     }
     for (uint32_t size : sizes) {
-      out << "[" << size << "]";
+      if (size > 0) {
+        out << "[" << size << "]";
+      } else {
+        out << "[]";
+      }
     }
   } else if (type->Is<sem::Bool>()) {
     out << "bool";
@@ -2370,12 +2394,8 @@ bool GeneratorImpl::EmitType(std::ostream& out,
         << "Attempting to emit pointer type. These should have been removed "
            "with the InlinePointerLets transform";
     return false;
-  } else if (auto* sampler = type->As<sem::Sampler>()) {
-    out << "Sampler";
-    if (sampler->IsComparison()) {
-      out << "Comparison";
-    }
-    out << "State";
+  } else if (type->Is<sem::Sampler>()) {
+    return false;
   } else if (auto* str = type->As<sem::Struct>()) {
     out << StructName(str);
   } else if (auto* tex = type->As<sem::Texture>()) {
@@ -2384,10 +2404,25 @@ bool GeneratorImpl::EmitType(std::ostream& out,
     auto* depth_ms = tex->As<sem::DepthMultisampledTexture>();
     auto* sampled = tex->As<sem::SampledTexture>();
 
+    out << "uniform highp ";
+
     if (storage && storage->access() != ast::Access::kRead) {
-      out << "RW";
+      out << "writeonly ";
     }
-    out << "Texture";
+    auto* subtype = sampled
+                        ? sampled->type()
+                        : storage ? storage->type() : ms ? ms->type() : nullptr;
+    if (!subtype || subtype->Is<sem::F32>()) {
+    } else if (subtype->Is<sem::I32>()) {
+      out << "i";
+    } else if (subtype->Is<sem::U32>()) {
+      out << "u";
+    } else {
+      TINT_ICE(Writer, diagnostics_) << "Unsupported texture type";
+      return false;
+    }
+
+    out << (storage ? "image" : "sampler");
 
     switch (tex->dim()) {
       case ast::TextureDimension::k1d:
@@ -2412,34 +2447,6 @@ bool GeneratorImpl::EmitType(std::ostream& out,
         TINT_UNREACHABLE(Writer, diagnostics_)
             << "unexpected TextureDimension " << tex->dim();
         return false;
-    }
-
-    if (storage) {
-      auto* component = image_format_to_rwtexture_type(storage->image_format());
-      if (component == nullptr) {
-        TINT_ICE(Writer, diagnostics_)
-            << "Unsupported StorageTexture ImageFormat: "
-            << static_cast<int>(storage->image_format());
-        return false;
-      }
-      out << "<" << component << ">";
-    } else if (depth_ms) {
-      out << "<float4>";
-    } else if (sampled || ms) {
-      auto* subtype = sampled ? sampled->type() : ms->type();
-      out << "<";
-      if (subtype->Is<sem::F32>()) {
-        out << "float4";
-      } else if (subtype->Is<sem::I32>()) {
-        out << "int4";
-      } else if (subtype->Is<sem::U32>()) {
-        out << "uint4";
-      } else {
-        TINT_ICE(Writer, diagnostics_)
-            << "Unsupported multisampled texture type";
-        return false;
-      }
-      out << ">";
     }
   } else if (type->Is<sem::U32>()) {
     out << "uint";
@@ -2491,67 +2498,54 @@ bool GeneratorImpl::EmitTypeAndName(std::ostream& out,
 
 bool GeneratorImpl::EmitStructType(TextBuffer* b, const sem::Struct* str) {
   auto storage_class_uses = str->StorageClassUsage();
-  if (storage_class_uses.size() ==
-      (storage_class_uses.count(ast::StorageClass::kStorage))) {
-    // The only use of the structure is as a storage buffer.
-    // Structures used as storage buffer are read and written to via a
-    // ByteAddressBuffer instead of true structure.
-    return true;
-  }
-
   line(b) << "struct " << StructName(str) << " {";
-  {
-    ScopedIndent si(b);
-    for (auto* mem : str->Members()) {
-      auto name = builder_.Symbols().NameFor(mem->Name());
-
-      auto* ty = mem->Type();
-
-      auto out = line(b);
-
-      std::string pre, post;
-
-      if (auto* decl = mem->Declaration()) {
-        for (auto* deco : decl->decorations()) {
-          if (deco->As<ast::LocationDecoration>()) {
-            auto& pipeline_stage_uses = str->PipelineStageUses();
-            if (pipeline_stage_uses.size() != 1) {
-              TINT_ICE(Writer, diagnostics_)
-                  << "invalid entry point IO struct uses";
-            }
-          } else if (auto* interpolate =
-                         deco->As<ast::InterpolateDecoration>()) {
-            auto mod = interpolation_to_modifiers(interpolate->type(),
-                                                  interpolate->sampling());
-            if (mod.empty()) {
-              diagnostics_.add_error(diag::System::Writer,
-                                     "unsupported interpolation");
-              return false;
-            }
-          }
-        }
-      }
-
-      out << pre;
-      if (!EmitTypeAndName(out, ty, ast::StorageClass::kNone,
-                           ast::Access::kReadWrite, name)) {
-        return false;
-      }
-      out << post << ";";
-    }
-  }
-
+  EmitStructMembers(b, str);
   line(b) << "};";
 
   return true;
 }
 
+bool GeneratorImpl::EmitStructMembers(TextBuffer* b, const sem::Struct* str) {
+  ScopedIndent si(b);
+  for (auto* mem : str->Members()) {
+    auto name = builder_.Symbols().NameFor(mem->Name());
+
+    auto* ty = mem->Type();
+
+    auto out = line(b);
+
+    std::string pre, post;
+
+    if (auto* decl = mem->Declaration()) {
+      for (auto* deco : decl->decorations) {
+        if (auto* interpolate = deco->As<ast::InterpolateDecoration>()) {
+          auto mod = interpolation_to_modifiers(interpolate->type,
+                                                interpolate->sampling);
+          if (mod.empty()) {
+            diagnostics_.add_error(diag::System::Writer,
+                                   "unsupported interpolation");
+            return false;
+          }
+        }
+      }
+    }
+
+    out << pre;
+    if (!EmitTypeAndName(out, ty, ast::StorageClass::kNone,
+                         ast::Access::kReadWrite, name)) {
+      return false;
+    }
+    out << post << ";";
+  }
+  return true;
+}
+
 bool GeneratorImpl::EmitUnaryOp(std::ostream& out,
-                                ast::UnaryOpExpression* expr) {
-  switch (expr->op()) {
+                                const ast::UnaryOpExpression* expr) {
+  switch (expr->op) {
     case ast::UnaryOp::kIndirection:
     case ast::UnaryOp::kAddressOf:
-      return EmitExpression(out, expr->expr());
+      return EmitExpression(out, expr->expr);
     case ast::UnaryOp::kComplement:
       out << "~";
       break;
@@ -2564,7 +2558,7 @@ bool GeneratorImpl::EmitUnaryOp(std::ostream& out,
   }
   out << "(";
 
-  if (!EmitExpression(out, expr->expr())) {
+  if (!EmitExpression(out, expr->expr)) {
     return false;
   }
 
@@ -2573,12 +2567,12 @@ bool GeneratorImpl::EmitUnaryOp(std::ostream& out,
   return true;
 }
 
-bool GeneratorImpl::EmitVariable(ast::Variable* var) {
+bool GeneratorImpl::EmitVariable(const ast::Variable* var) {
   auto* sem = builder_.Sem().Get(var);
   auto* type = sem->Type()->UnwrapRef();
 
   // TODO(dsinclair): Handle variable decorations
-  if (!var->decorations().empty()) {
+  if (!var->decorations.empty()) {
     diagnostics_.add_error(diag::System::Writer,
                            "Variable decorations are not handled yet");
     return false;
@@ -2587,14 +2581,14 @@ bool GeneratorImpl::EmitVariable(ast::Variable* var) {
   auto out = line();
   // TODO(senorblanco): handle const
   if (!EmitTypeAndName(out, type, sem->StorageClass(), sem->Access(),
-                       builder_.Symbols().NameFor(var->symbol()))) {
+                       builder_.Symbols().NameFor(var->symbol))) {
     return false;
   }
 
   out << " = ";
 
-  if (var->constructor()) {
-    if (!EmitExpression(out, var->constructor())) {
+  if (var->constructor) {
+    if (!EmitExpression(out, var->constructor)) {
       return false;
     }
   } else {
@@ -2608,14 +2602,14 @@ bool GeneratorImpl::EmitVariable(ast::Variable* var) {
 }
 
 bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
-  for (auto* d : var->decorations()) {
+  for (auto* d : var->decorations) {
     if (!d->Is<ast::OverrideDecoration>()) {
       diagnostics_.add_error(diag::System::Writer,
                              "Decorated const values not valid");
       return false;
     }
   }
-  if (!var->is_const()) {
+  if (!var->is_const) {
     diagnostics_.add_error(diag::System::Writer, "Expected a const value");
     return false;
   }
@@ -2624,15 +2618,15 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
   auto* type = sem->Type();
 
   auto* global = sem->As<sem::GlobalVariable>();
-  if (global && global->IsPipelineConstant()) {
+  if (global && global->IsOverridable()) {
     auto const_id = global->ConstantId();
 
     line() << "#ifndef " << kSpecConstantPrefix << const_id;
 
-    if (var->constructor() != nullptr) {
+    if (var->constructor != nullptr) {
       auto out = line();
       out << "#define " << kSpecConstantPrefix << const_id << " ";
-      if (!EmitExpression(out, var->constructor())) {
+      if (!EmitExpression(out, var->constructor)) {
         return false;
       }
     } else {
@@ -2641,22 +2635,22 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
     line() << "#endif";
     {
       auto out = line();
-      out << "static const ";
+      out << "const ";
       if (!EmitTypeAndName(out, type, sem->StorageClass(), sem->Access(),
-                           builder_.Symbols().NameFor(var->symbol()))) {
+                           builder_.Symbols().NameFor(var->symbol))) {
         return false;
       }
       out << " = " << kSpecConstantPrefix << const_id << ";";
     }
   } else {
     auto out = line();
-    out << "static const ";
+    out << "const ";
     if (!EmitTypeAndName(out, type, sem->StorageClass(), sem->Access(),
-                         builder_.Symbols().NameFor(var->symbol()))) {
+                         builder_.Symbols().NameFor(var->symbol))) {
       return false;
     }
     out << " = ";
-    if (!EmitExpression(out, var->constructor())) {
+    if (!EmitExpression(out, var->constructor)) {
       return false;
     }
     out << ";";
@@ -2667,7 +2661,7 @@ bool GeneratorImpl::EmitProgramConstVariable(const ast::Variable* var) {
 
 template <typename F>
 bool GeneratorImpl::CallIntrinsicHelper(std::ostream& out,
-                                        ast::CallExpression* call,
+                                        const ast::CallExpression* call,
                                         const sem::Intrinsic* intrinsic,
                                         F&& build) {
   // Generate the helper function if it hasn't been created already
@@ -2726,7 +2720,7 @@ bool GeneratorImpl::CallIntrinsicHelper(std::ostream& out,
   {
     ScopedParen sp(out);
     bool first = true;
-    for (auto* arg : call->params()) {
+    for (auto* arg : call->args) {
       if (!first) {
         out << ", ";
       }

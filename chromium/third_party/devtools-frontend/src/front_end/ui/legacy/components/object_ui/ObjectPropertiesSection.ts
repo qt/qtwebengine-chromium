@@ -37,12 +37,14 @@ import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
 import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import * as IconButton from '../../../components/icon_button/icon_button.js';
+import * as TextEditor from '../../../components/text_editor/text_editor.js';
 import * as UI from '../../legacy.js';
 
 import {CustomPreviewComponent} from './CustomPreviewComponent.js';
-import {JavaScriptAutocomplete} from './JavaScriptAutocomplete.js';
 import {JavaScriptREPL} from './JavaScriptREPL.js';
 import {createSpansForNodeTitle, RemoteObjectPreviewFormatter} from './RemoteObjectPreviewFormatter.js';
+import objectValueStyles from './objectValue.css.js';
+import objectPropertiesSectionStyles from './objectPropertiesSection.css.js';
 
 const UIStrings = {
   /**
@@ -161,8 +163,7 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
     }
 
     objectPropertiesSectionMap.set(this.element, this);
-    this.registerRequiredCSS('ui/legacy/components/object_ui/objectValue.css');
-    this.registerRequiredCSS('ui/legacy/components/object_ui/objectPropertiesSection.css');
+    this.registerCSSFiles([objectValueStyles, objectPropertiesSectionStyles]);
     this.rootElement().childrenListElement.classList.add('source-code', 'object-properties-section');
   }
 
@@ -183,7 +184,7 @@ export class ObjectPropertiesSection extends UI.TreeOutline.TreeOutlineInShadow 
     const titleElement = document.createElement('span');
     titleElement.classList.add('source-code');
     const shadowRoot = UI.Utils.createShadowRootWithCoreStyles(titleElement, {
-      cssFile: 'ui/legacy/components/object_ui/objectValue.css',
+      cssFile: [objectValueStyles],
       delegatesFocus: undefined,
     });
     const propertyValue =
@@ -578,8 +579,7 @@ export class ObjectPropertiesSectionsTreeOutline extends UI.TreeOutline.TreeOutl
   private readonly editable: boolean;
   constructor(options?: TreeOutlineOptions|null) {
     super();
-    this.registerRequiredCSS('ui/legacy/components/object_ui/objectValue.css');
-    this.registerRequiredCSS('ui/legacy/components/object_ui/objectPropertiesSection.css');
+    this.registerCSSFiles([objectValueStyles, objectPropertiesSectionStyles]);
     this.editable = !(options && options.readOnly);
     this.contentElement.classList.add('source-code');
     this.contentElement.classList.add('object-properties-section');
@@ -1513,8 +1513,7 @@ export class ArrayGroupingTreeElement extends UI.TreeOutline.TreeElement {
 export class ObjectPropertyPrompt extends UI.TextPrompt.TextPrompt {
   constructor() {
     super();
-    const javaScriptAutocomplete = JavaScriptAutocomplete.instance();
-    this.initialize(javaScriptAutocomplete.completionsForTextInCurrentContext.bind(javaScriptAutocomplete));
+    this.initialize(TextEditor.JavaScript.completeInContext);
   }
 }
 

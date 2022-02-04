@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "core/fpdfapi/page/cpdf_pattern.h"
-#include "core/fxcrt/fx_string.h"
+#include "core/fxcrt/bytestring.h"
 #include "core/fxcrt/observed_ptr.h"
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
@@ -104,8 +104,9 @@ class CPDF_ColorSpace : public Retainable, public Observable {
                                float* value,
                                float* min,
                                float* max) const;
-  virtual void TranslateImageLine(uint8_t* dest_buf,
-                                  const uint8_t* src_buf,
+
+  virtual void TranslateImageLine(pdfium::span<uint8_t> dest_span,
+                                  pdfium::span<const uint8_t> src_span,
                                   int pixels,
                                   int image_width,
                                   int image_height,

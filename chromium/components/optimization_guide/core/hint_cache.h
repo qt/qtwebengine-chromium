@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/containers/mru_cache.h"
-#include "base/macros.h"
+#include "base/containers/lru_cache.h"
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
 #include "base/time/clock.h"
@@ -165,10 +165,10 @@ class HintCache {
 
  private:
   using HostKeyedHintCache =
-      base::HashingMRUCache<std::string, std::unique_ptr<MemoryHint>>;
+      base::HashingLRUCache<std::string, std::unique_ptr<MemoryHint>>;
 
   using URLKeyedHintCache =
-      base::HashingMRUCache<std::string, std::unique_ptr<MemoryHint>>;
+      base::HashingLRUCache<std::string, std::unique_ptr<MemoryHint>>;
 
   // The callback run after the store finishes initialization. This then runs
   // the callback initially provided by the Initialize() call.
@@ -202,7 +202,7 @@ class HintCache {
   URLKeyedHintCache url_keyed_hint_cache_;
 
   // The clock used to determine if hints have expired.
-  const base::Clock* clock_;
+  raw_ptr<const base::Clock> clock_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 

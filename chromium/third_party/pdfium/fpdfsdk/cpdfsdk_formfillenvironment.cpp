@@ -27,6 +27,7 @@
 #include "fpdfsdk/formfiller/cffl_perwindowdata.h"
 #include "fxjs/ijs_runtime.h"
 #include "third_party/base/check.h"
+#include "third_party/base/numerics/safe_conversions.h"
 
 static_assert(FXCT_ARROW ==
                   static_cast<int>(IPWL_SystemHandler::CursorStyle::kArrow),
@@ -210,13 +211,13 @@ int CPDFSDK_FormFillEnvironment::JS_appAlert(const WideString& Msg,
                                 AsFPDFWideString(&bsTitle), Type, Icon);
 }
 
-int CPDFSDK_FormFillEnvironment::JS_appResponse(const WideString& Question,
-                                                const WideString& Title,
-                                                const WideString& Default,
-                                                const WideString& Label,
-                                                FPDF_BOOL bPassword,
-                                                void* response,
-                                                int length) {
+int CPDFSDK_FormFillEnvironment::JS_appResponse(
+    const WideString& Question,
+    const WideString& Title,
+    const WideString& Default,
+    const WideString& Label,
+    FPDF_BOOL bPassword,
+    pdfium::span<uint8_t> response) {
   IPDF_JSPLATFORM* js_platform = GetJSPlatform();
   if (!js_platform || !js_platform->app_response)
     return -1;
@@ -228,7 +229,7 @@ int CPDFSDK_FormFillEnvironment::JS_appResponse(const WideString& Question,
   return js_platform->app_response(
       js_platform, AsFPDFWideString(&bsQuestion), AsFPDFWideString(&bsTitle),
       AsFPDFWideString(&bsDefault), AsFPDFWideString(&bsLabel), bPassword,
-      response, length);
+      response.data(), pdfium::base::checked_cast<int>(response.size()));
 }
 
 void CPDFSDK_FormFillEnvironment::JS_appBeep(int nType) {
@@ -259,8 +260,7 @@ WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
   return WideString::FromDefANSI(ByteStringView(pBuff));
 }
 
-void CPDFSDK_FormFillEnvironment::JS_docmailForm(void* mailData,
-                                                 int length,
+void CPDFSDK_FormFillEnvironment::JS_docmailForm(pdfium::span<uint8_t> mailData,
                                                  FPDF_BOOL bUI,
                                                  const WideString& To,
                                                  const WideString& Subject,
@@ -276,7 +276,8 @@ void CPDFSDK_FormFillEnvironment::JS_docmailForm(void* mailData,
   ByteString bsCC = CC.ToUTF16LE();
   ByteString bsBcc = BCC.ToUTF16LE();
   ByteString bsMsg = Msg.ToUTF16LE();
-  js_platform->Doc_mail(js_platform, mailData, length, bUI,
+  js_platform->Doc_mail(js_platform, mailData.data(),
+                        pdfium::base::checked_cast<int>(mailData.size()), bUI,
                         AsFPDFWideString(&bsTo), AsFPDFWideString(&bsSubject),
                         AsFPDFWideString(&bsCC), AsFPDFWideString(&bsBcc),
                         AsFPDFWideString(&bsMsg));
@@ -421,7 +422,7 @@ void CPDFSDK_FormFillEnvironment::OnFormat(ObservedPtr<CPDFSDK_Annot>& pAnnot) {
   CPDFSDK_Widget* pWidget = ToCPDFSDKWidget(pAnnot.Get());
   DCHECK(pWidget);
 
-  Optional<WideString> sValue =
+  absl::optional<WideString> sValue =
       m_pInteractiveForm->OnFormat(pWidget->GetFormField());
   if (!pAnnot)
     return;
@@ -730,11 +731,10 @@ CPDFSDK_InteractiveForm* CPDFSDK_FormFillEnvironment::GetInteractiveForm() {
   return m_pInteractiveForm.get();
 }
 
-void CPDFSDK_FormFillEnvironment::UpdateAllViews(CPDFSDK_PageView* pSender,
-                                                 CPDFSDK_Annot* pAnnot) {
+void CPDFSDK_FormFillEnvironment::UpdateAllViews(CPDFSDK_Annot* pAnnot) {
   for (const auto& it : m_PageMap) {
     CPDFSDK_PageView* pPageView = it.second.get();
-    if (pPageView != pSender)
+    if (pPageView)
       pPageView->UpdateView(pAnnot);
   }
 }

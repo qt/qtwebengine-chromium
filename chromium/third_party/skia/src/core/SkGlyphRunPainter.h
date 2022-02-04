@@ -47,7 +47,7 @@ class SkStrikeCommon {
 public:
     // An atlas consists of plots, and plots hold glyphs. The minimum a plot can be is 256x256.
     // This means that the maximum size a glyph can be is 256x256.
-    static constexpr uint16_t kSkSideTooBigForAtlas = 256;
+    inline static constexpr uint16_t kSkSideTooBigForAtlas = 256;
 };
 
 class SkGlyphRunListPainter {
@@ -92,7 +92,8 @@ public:
                          const SkPaint& drawPaint,
                          const GrSDFTControl& control,
                          SkGlyphRunPainterInterface* process,
-                         const char* tag = nullptr);
+                         const char* tag = nullptr,
+                         uint64_t blobID = SK_InvalidUniqueID);
 #endif  // SK_SUPPORT_GPU
 
 private:
@@ -101,6 +102,8 @@ private:
 
     struct ScopedBuffers {
         ScopedBuffers(SkGlyphRunListPainter* painter, size_t size);
+        // Required until C++17 copy elision
+        ScopedBuffers(const ScopedBuffers&) = default;
         ~ScopedBuffers();
         SkGlyphRunListPainter* fPainter;
     };
@@ -137,23 +140,23 @@ class SkGlyphRunPainterInterface {
 public:
     virtual ~SkGlyphRunPainterInterface() = default;
 
-#if SK_GPU_V1
     virtual void processDeviceMasks(const SkZip<SkGlyphVariant, SkPoint>& drawables,
-                                    const SkStrikeSpec& strikeSpec) = 0;
+                                    sk_sp<SkStrike>&& strike) = 0;
 
     virtual void processSourceMasks(const SkZip<SkGlyphVariant, SkPoint>& drawables,
-                                    const SkStrikeSpec& strikeSpec) = 0;
+                                    sk_sp<SkStrike>&& strike,
+                                    SkScalar strikeToSourceScale) = 0;
 
     virtual void processSourcePaths(const SkZip<SkGlyphVariant, SkPoint>& drawables,
                                     const SkFont& runFont,
-                                    const SkStrikeSpec& strikeSpec) = 0;
+                                    SkScalar strikeToSourceScale) = 0;
 
     virtual void processSourceSDFT(const SkZip<SkGlyphVariant, SkPoint>& drawables,
-                                   const SkStrikeSpec& strikeSpec,
+                                   sk_sp<SkStrike>&& strike,
+                                   SkScalar strikeToSourceScale,
                                    const SkFont& runFont,
                                    SkScalar minScale,
                                    SkScalar maxScale) = 0;
-#endif // SK_GPU_V1
 };
 
 #endif  // SkGlyphRunPainter_DEFINED

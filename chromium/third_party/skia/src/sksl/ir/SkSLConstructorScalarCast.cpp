@@ -5,8 +5,11 @@
  * found in the LICENSE file.
  */
 
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLConstantFolder.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLConstructorScalarCast.h"
+#include "src/sksl/ir/SkSLLiteral.h"
 
 namespace SkSL {
 
@@ -43,6 +46,9 @@ std::unique_ptr<Expression> ConstructorScalarCast::Convert(const Context& contex
                                type.displayName() + "' constructor" + swizzleHint);
         return nullptr;
     }
+    if (type.checkForOutOfRangeLiteral(context, *args[0])) {
+        return nullptr;
+    }
 
     return ConstructorScalarCast::Make(context, line, type, std::move(args[0]));
 }
@@ -59,13 +65,16 @@ std::unique_ptr<Expression> ConstructorScalarCast::Make(const Context& context,
     if (arg->type() == type) {
         return arg;
     }
-    // When optimization is on, look up the value of constant variables. This allows expressions
-    // like `int(zero)` to be replaced with a literal zero.
-    if (context.fConfig->fSettings.fOptimize) {
-        arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
-    }
-    // We can cast scalar literals at compile-time.
-    if (arg->is<Literal>()) {
+    // Look up the value of constant variables. This allows constant-expressions like `int(zero)` to
+    // be replaced with a literal zero.
+    arg = ConstantFolder::MakeConstantValueForVariable(std::move(arg));
+
+    // We can cast scalar literals at compile-time when possible. (If the resulting literal would be
+    // out of range for its type, we report an error and return the constructor. This can occur when
+    // code is inlined, so we can't necessarily catch it during Convert. As such, it's not safe to
+    // return null or assert.)
+    if (arg->is<Literal>() &&
+        !type.checkForOutOfRangeLiteral(context, arg->as<Literal>().value(), arg->fLine)) {
         return Literal::Make(line, arg->as<Literal>().value(), &type);
     }
     return std::make_unique<ConstructorScalarCast>(line, type, std::move(arg));

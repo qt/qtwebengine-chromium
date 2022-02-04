@@ -94,6 +94,10 @@ void CreateTPUBridgePipeline(OpPassManager &pm) {
   pm.addPass(CreateTPUClusterFormationPass());
   pm.addPass(CreateOutsideCompiledToHostLaunchPass());
   pm.addNestedPass<FuncOp>(TFDevice::CreateDeviceAttributeToLaunchPass());
+  // Running canonicalizer before decomposing resource ops in cluster helps the
+  // latter pass to converge faster as it does not have to spend time folding
+  // away dead ops.
+  pm.addNestedPass<FuncOp>(createCanonicalizerPass());
   // Place DecomposeResourceOpsPass before TFExecutorConstantSinking pass
   // because DecomposeResourceOpsPass uses pattern rewriter which hoists
   // changed constants out of tf_device.Launch.
@@ -133,16 +137,17 @@ void CreateTPUBridgePipeline(OpPassManager &pm) {
   pm.addPass(TF::CreateTFShapeInferencePass());
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());
   pm.addPass(CreateTPUClusterCleanupAttributesPass());
-  // TODO(b/173622615): This should incrementally be moved down as
-  // more passes support this representation and then can be removed once
-  // all passes support it.
-  pm.addPass(TFDevice::CreateHostLaunchToOutsideCompiledPass());
   pm.addPass(TFDevice::CreateResourceOpLiftingPass());
   // Re-run the canonicalizer pass as some cleanup during resource op lifting
   // pass opens up some opportunities for canonicalization of cluster ops.
   // Specifically, we want to eliminate pass through results from the cluster
   // op.
   pm.addNestedPass<FuncOp>(createCanonicalizerPass());
+
+  // TODO(b/173622615): This should incrementally be moved down as
+  // more passes support this representation and then can be removed once
+  // all passes support it.
+  pm.addPass(TFDevice::CreateHostLaunchToOutsideCompiledPass());
   pm.addNestedPass<FuncOp>(createCSEPass());
   if (tensorflow::GetMlirCommonFlags()
           ->tf_mlir_enable_merge_control_flow_pass) {
@@ -168,7 +173,7 @@ void CreateTPUBridgePipeline(OpPassManager &pm) {
   pm.addNestedPass<FuncOp>(
       TF::CreateHoistReplicateInvariantResourceWritesPass());
   pm.addNestedPass<FuncOp>(CreateTPUColocateCompositeResourceOps());
-  pm.addPass(CreateTPUVariableReformattingPass());
+  pm.addPass(CreateTPUVariableRuntimeReformattingPass());
   pm.addPass(TF::CreateTFRegionControlFlowToFunctional());
 }
 
@@ -212,6 +217,10 @@ void AddGraphExportLoweringPasses(OpPassManager &pm) {
   add_pass(TFDevice::CreateLaunchToDeviceAttributePass());
   pm.addNestedPass<FuncOp>(TFTPU::CreateTPUDevicePropagationPass());
   pm.addPass(createSymbolDCEPass());
+  if (tensorflow::GetMlirCommonFlags()
+          ->tf_mlir_enable_convert_control_to_data_outputs_pass) {
+    pm.addPass(tf_executor::CreateTFExecutorConvertControlToDataOutputsPass());
+  }
   pm.addPass(CreateVerifySuitableForExportPass());
 }
 

@@ -29,23 +29,15 @@ TEST_F(BuilderTest, Expression_Call) {
   func_params.push_back(Param("a", ty.f32()));
   func_params.push_back(Param("b", ty.f32()));
 
-  auto* a_func =
-      Func("a_func", func_params, ty.f32(),
-           ast::StatementList{Return(Add("a", "b"))}, ast::DecorationList{});
-
+  auto* a_func = Func("a_func", func_params, ty.f32(), {Return(Add("a", "b"))});
   auto* func =
-      Func("main", {}, ty.void_(), ast::StatementList{}, ast::DecorationList{});
-
-  auto* expr = Call("a_func", 1.f, 1.f);
-
-  WrapInFunction(expr);
+      Func("main", {}, ty.void_(), {Assign(Phony(), Call("a_func", 1.f, 1.f))});
 
   spirv::Builder& b = Build();
 
   ASSERT_TRUE(b.GenerateFunction(a_func)) << b.error();
   ASSERT_TRUE(b.GenerateFunction(func)) << b.error();
 
-  EXPECT_EQ(b.GenerateCallExpression(expr), 12u) << b.error();
   EXPECT_EQ(DumpBuilder(b), R"(OpName %3 "a_func"
 OpName %4 "a"
 OpName %5 "b"
@@ -75,23 +67,16 @@ TEST_F(BuilderTest, Statement_Call) {
   func_params.push_back(Param("a", ty.f32()));
   func_params.push_back(Param("b", ty.f32()));
 
-  auto* a_func =
-      Func("a_func", func_params, ty.f32(),
-           ast::StatementList{Return(Add("a", "b"))}, ast::DecorationList{});
+  auto* a_func = Func("a_func", func_params, ty.f32(), {Return(Add("a", "b"))});
 
   auto* func =
-      Func("main", {}, ty.void_(), ast::StatementList{}, ast::DecorationList{});
-
-  auto* expr = Ignore(Call("a_func", 1.f, 1.f));
-
-  WrapInFunction(expr);
+      Func("main", {}, ty.void_(), {CallStmt(Call("a_func", 1.f, 1.f))});
 
   spirv::Builder& b = Build();
 
   ASSERT_TRUE(b.GenerateFunction(a_func)) << b.error();
   ASSERT_TRUE(b.GenerateFunction(func)) << b.error();
 
-  EXPECT_TRUE(b.GenerateStatement(expr)) << b.error();
   EXPECT_EQ(DumpBuilder(b), R"(OpName %3 "a_func"
 OpName %4 "a"
 OpName %5 "b"
@@ -100,7 +85,7 @@ OpName %10 "main"
 %1 = OpTypeFunction %2 %2 %2
 %9 = OpTypeVoid
 %8 = OpTypeFunction %9
-%14 = OpConstant %2 1
+%13 = OpConstant %2 1
 %3 = OpFunction %2 None %1
 %4 = OpFunctionParameter %2
 %5 = OpFunctionParameter %2
@@ -110,7 +95,7 @@ OpReturnValue %7
 OpFunctionEnd
 %10 = OpFunction %9 None %8
 %11 = OpLabel
-%13 = OpFunctionCall %2 %3 %14 %14
+%12 = OpFunctionCall %2 %3 %13 %13
 OpReturn
 OpFunctionEnd
 )");

@@ -24,6 +24,7 @@ limitations under the License.
 #include "absl/strings/str_split.h"
 #include "tensorflow/core/platform/logging.h"
 #include "tensorflow/lite/builtin_op_data.h"
+#include "tensorflow/lite/c/c_api_types.h"
 #include "tensorflow/lite/kernels/internal/compatibility.h"
 #include "tensorflow/lite/schema/schema_generated.h"
 #include "tensorflow/lite/schema/schema_utils.h"
@@ -513,6 +514,9 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       return 1;
 
     case BuiltinOperator_TILE:
+      if (op_sig.inputs.at(0).type == kTfLiteInt8) {
+        return 3;
+      }
       if (op_sig.inputs.at(0).type == kTfLiteString) {
         return 2;
       }
@@ -798,11 +802,17 @@ int GetBuiltinOperatorVersion(const OpSignature& op_sig) {
       }
       return 2;
     case BuiltinOperator_CAST:
-      if (op_sig.inputs.at(0).type == kTfLiteUInt32 ||
-          op_sig.outputs.at(0).type == kTfLiteUInt32) {
+      if (op_sig.inputs.at(0).type == kTfLiteInt8 ||
+          op_sig.outputs.at(0).type == kTfLiteInt8) {
+        return 3;
+      } else if (op_sig.inputs.at(0).type == kTfLiteUInt32 ||
+                 op_sig.outputs.at(0).type == kTfLiteUInt32) {
         return 2;
       }
       return 1;
+    case BuiltinOperator_WHERE:
+      if (op_sig.inputs.at(0).type == kTfLiteBool) return 1;
+      return 2;
     default:
       return 1;
   }

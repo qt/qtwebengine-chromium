@@ -304,6 +304,13 @@ message Camera {
 
 // Things about input_device.
 message InputDevice {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_UNKNOWN = 1;
+    TYPE_STYLUS = 2;
+    TYPE_TOUCHPAD = 3;
+    TYPE_TOUCHSCREEN = 4;
+  }
   message Fields {
     // The name of the device.
     string name = 1;
@@ -321,6 +328,8 @@ message InputDevice {
     uint32 version = 7;
     // The firmware version.
     string fw_version = 8;
+    // The type of the device.
+    Type device_type = 9;
   }
   // Component alias.
   string name = 1;
@@ -534,6 +543,25 @@ message ProbeResult {
   repeated Network cellular = 14;
   repeated Network ethernet = 15;
   repeated Network wireless = 16;
+}
+
+// Holds componenet fields for any component categories.
+message ComponentFields {
+  oneof component_fields {
+    AudioCodec.Fields audio_codec = 1;
+    Battery.Fields battery = 2;
+    Storage.Fields storage = 3;
+    VpdCached.Fields vpd_cached = 4;
+    Camera.Fields camera = 5;
+    InputDevice.Fields stylus = 6;
+    InputDevice.Fields touchpad = 7;
+    InputDevice.Fields touchscreen = 8;
+    Memory.Fields dram = 9;
+    Edid.Fields display_panel = 10;
+    Network.Fields cellular = 11;
+    Network.Fields ethernet = 12;
+    Network.Fields wireless = 13;
+  }
 }
 
 message GetKnownComponentsRequest {

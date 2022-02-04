@@ -11,7 +11,7 @@ import {
   kTextureFormatInfo,
   kValidTextureFormatsForCopyE2T,
 } from '../../capability_info.js';
-import { CopyToTextureUtils } from '../../util/copy_to_texture.js';
+import { CopyToTextureUtils, isFp16Format } from '../../util/copy_to_texture.js';
 import { canvasTypes, allCanvasTypes, createCanvas } from '../../util/create_elements.js';
 import { kTexelRepresentationInfo } from '../../util/texture/texel_data.js';
 
@@ -205,9 +205,14 @@ class F extends CopyToTextureUtils {
           rgba.B /= rgba.A;
         }
 
+        // WebGL readPixel returns pixels from bottom-left origin. Using CopyExternalImageToTexture
+        // to copy from WebGL Canvas keeps top-left origin. So the expectation from webgl.readPixel should
+        // be flipped.
+        const dstPixelPos = contextType === 'gl' ? (height - i - 1) * width + j : pixelPos;
+
         memcpy(
           { src: rep.pack(rep.encode(rgba)) },
-          { dst: expectedPixels, start: pixelPos * bytesPerPixel }
+          { dst: expectedPixels, start: dstPixelPos * bytesPerPixel }
         );
       }
     }
@@ -305,7 +310,8 @@ g.test('copy_contents_from_2d_context_canvas')
       },
       { width: canvas.width, height: canvas.height, depthOrArrayLayers: 1 },
       dstBytesPerPixel,
-      expectedPixels
+      expectedPixels,
+      isFp16Format(dstColorFormat)
     );
   });
 
@@ -407,6 +413,7 @@ g.test('copy_contents_from_gl_context_canvas')
       },
       { width: canvas.width, height: canvas.height, depthOrArrayLayers: 1 },
       dstBytesPerPixel,
-      expectedPixels
+      expectedPixels,
+      isFp16Format(dstColorFormat)
     );
   });

@@ -33,9 +33,10 @@
 #include "fxjs/fx_date_helpers.h"
 #include "fxjs/js_define.h"
 #include "fxjs/js_resources.h"
+#include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/check.h"
 #include "third_party/base/cxx17_backports.h"
-#include "third_party/base/optional.h"
+#include "third_party/base/numerics/safe_conversions.h"
 #include "v8/include/v8-container.h"
 
 // static
@@ -121,7 +122,8 @@ ByteString CalculateString(double dValue,
   ss << std::fixed << std::setprecision(iDec) << dValue;
   std::string value = ss.str();
   size_t pos = value.find('.');
-  *iDec2 = pos == std::string::npos ? value.size() : static_cast<int>(pos);
+  *iDec2 = pdfium::base::checked_cast<int>(
+      pos == std::string::npos ? value.size() : pos);
   return ByteString(value.c_str());
 }
 #endif
@@ -141,7 +143,8 @@ template <CJS_Result (*F)(CJS_Runtime*,
                           const std::vector<v8::Local<v8::Value>>&)>
 void JSGlobalFunc(const char* func_name_string,
                   const v8::FunctionCallbackInfo<v8::Value>& info) {
-  CJS_Object* pObj = CFXJS_Engine::GetObjectPrivate(info.Holder());
+  CJS_Object* pObj =
+      CFXJS_Engine::GetObjectPrivate(info.GetIsolate(), info.Holder());
   if (!pObj)
     return;
 
@@ -209,20 +212,20 @@ void NormalizeDecimalMarkW(WideString* str) {
   str->Replace(L",", L".");
 }
 
-Optional<double> ApplyNamedOperation(const wchar_t* sFunction,
-                                     double dValue1,
-                                     double dValue2) {
-  if (FXSYS_wcsicmp(sFunction, L"AVG") == 0 ||
-      FXSYS_wcsicmp(sFunction, L"SUM") == 0) {
+absl::optional<double> ApplyNamedOperation(const WideString& wsFunction,
+                                           double dValue1,
+                                           double dValue2) {
+  if (wsFunction.EqualsASCIINoCase("AVG") ||
+      wsFunction.EqualsASCIINoCase("SUM")) {
     return dValue1 + dValue2;
   }
-  if (FXSYS_wcsicmp(sFunction, L"PRD") == 0)
+  if (wsFunction.EqualsASCIINoCase("PRD"))
     return dValue1 * dValue2;
-  if (FXSYS_wcsicmp(sFunction, L"MIN") == 0)
+  if (wsFunction.EqualsASCIINoCase("MIN"))
     return std::min(dValue1, dValue2);
-  if (FXSYS_wcsicmp(sFunction, L"MAX") == 0)
+  if (wsFunction.EqualsASCIINoCase("MAX"))
     return std::max(dValue1, dValue2);
-  return pdfium::nullopt;
+  return absl::nullopt;
 }
 
 }  // namespace
@@ -348,7 +351,8 @@ v8::Local<v8::Array> CJS_PublicMethods::AF_MakeArrayFromList(
   return StrArray;
 }
 
-double CJS_PublicMethods::ParseDate(const WideString& value,
+double CJS_PublicMethods::ParseDate(v8::Isolate* isolate,
+                                    const WideString& value,
                                     bool* bWrongFormat) {
   double dt = FX_GetDateTime();
   int nYear = FX_GetYearFromTime(dt);
@@ -422,11 +426,13 @@ double CJS_PublicMethods::ParseDate(const WideString& value,
   }
 
   // TODO(thestig): Should we set |bWrongFormat| to false here too?
-  return JS_DateParse(WideString::Format(L"%d/%d/%d %d:%d:%d", nMonth, nDay,
-                                         nYear, nHour, nMin, nSec));
+  return JS_DateParse(
+      isolate, WideString::Format(L"%d/%d/%d %d:%d:%d", nMonth, nDay, nYear,
+                                  nHour, nMin, nSec));
 }
 
-double CJS_PublicMethods::ParseDateUsingFormat(const WideString& value,
+double CJS_PublicMethods::ParseDateUsingFormat(v8::Isolate* isolate,
+                                               const WideString& value,
                                                const WideString& format,
                                                bool* bWrongFormat) {
   double dRet = nan("");
@@ -435,13 +441,13 @@ double CJS_PublicMethods::ParseDateUsingFormat(const WideString& value,
     return dRet;
 
   if (status == fxjs::ConversionStatus::kBadDate) {
-    dRet = JS_DateParse(value);
+    dRet = JS_DateParse(isolate, value);
     if (!isnan(dRet))
       return dRet;
   }
 
   bool bBadFormat = false;
-  dRet = ParseDate(value, &bBadFormat);
+  dRet = ParseDate(isolate, value, &bBadFormat);
   if (bWrongFormat)
     *bWrongFormat = bBadFormat;
 
@@ -840,7 +846,7 @@ CJS_Result CJS_PublicMethods::AFPercent_Format(
   strValue.ReleaseBuffer(szNewSize);
 
   // for processing separator style
-  Optional<size_t> mark_pos = strValue.Find('.');
+  absl::optional<size_t> mark_pos = strValue.Find('.');
   if (mark_pos.has_value()) {
     char mark = DecimalMarkForStyle(iSepStyle);
     if (mark != '.')
@@ -892,9 +898,10 @@ CJS_Result CJS_PublicMethods::AFDate_FormatEx(
   double dDate;
   if (strValue.Contains(L"GMT")) {
     // e.g. "Tue Aug 11 14:24:16 GMT+08002009"
-    dDate = ParseDateAsGMT(strValue);
+    dDate = ParseDateAsGMT(pRuntime->GetIsolate(), strValue);
   } else {
-    dDate = ParseDateUsingFormat(strValue, sFormat, nullptr);
+    dDate = ParseDateUsingFormat(pRuntime->GetIsolate(), strValue, sFormat,
+                                 nullptr);
   }
 
   if (isnan(dDate)) {
@@ -908,7 +915,8 @@ CJS_Result CJS_PublicMethods::AFDate_FormatEx(
   return CJS_Result::Success();
 }
 
-double CJS_PublicMethods::ParseDateAsGMT(const WideString& strValue) {
+double CJS_PublicMethods::ParseDateAsGMT(v8::Isolate* isolate,
+                                         const WideString& strValue) {
   std::vector<WideString> wsArray;
   WideString sTemp;
   for (const auto& c : strValue) {
@@ -926,7 +934,7 @@ double CJS_PublicMethods::ParseDateAsGMT(const WideString& strValue) {
   sTemp = wsArray[1];
   for (size_t i = 0; i < pdfium::size(fxjs::kMonths); ++i) {
     if (sTemp == fxjs::kMonths[i]) {
-      nMonth = i + 1;
+      nMonth = static_cast<int>(i) + 1;
       break;
     }
   }
@@ -939,7 +947,7 @@ double CJS_PublicMethods::ParseDateAsGMT(const WideString& strValue) {
   double dRet = FX_MakeDate(FX_MakeDay(nYear, nMonth - 1, nDay),
                             FX_MakeTime(nHour, nMin, nSec, 0));
   if (isnan(dRet))
-    dRet = JS_DateParse(strValue);
+    dRet = JS_DateParse(isolate, strValue);
 
   return dRet;
 }
@@ -966,7 +974,8 @@ CJS_Result CJS_PublicMethods::AFDate_KeystrokeEx(
 
   bool bWrongFormat = false;
   WideString sFormat = pRuntime->ToWideString(params[0]);
-  double dRet = ParseDateUsingFormat(strValue, sFormat, &bWrongFormat);
+  double dRet = ParseDateUsingFormat(pRuntime->GetIsolate(), strValue, sFormat,
+                                     &bWrongFormat);
   if (bWrongFormat || isnan(dRet)) {
     WideString swMsg = WideString::Format(
         JSGetStringFromID(JSMessage::kParseDateError).c_str(), sFormat.c_str());
@@ -1222,7 +1231,8 @@ CJS_Result CJS_PublicMethods::AFParseDateEx(
 
   WideString sValue = pRuntime->ToWideString(params[0]);
   WideString sFormat = pRuntime->ToWideString(params[1]);
-  double dDate = ParseDateUsingFormat(sValue, sFormat, nullptr);
+  double dDate =
+      ParseDateUsingFormat(pRuntime->GetIsolate(), sValue, sFormat, nullptr);
   if (isnan(dDate)) {
     WideString swMsg = WideString::Format(
         JSGetStringFromID(JSMessage::kParseDateError).c_str(), sFormat.c_str());
@@ -1245,7 +1255,7 @@ CJS_Result CJS_PublicMethods::AFSimple(
   if (isnan(arg1) || isnan(arg2))
     return CJS_Result::Failure(JSMessage::kValueError);
 
-  Optional<double> result = ApplyNamedOperation(sFunction.c_str(), arg1, arg2);
+  absl::optional<double> result = ApplyNamedOperation(sFunction, arg1, arg2);
   if (!result.has_value())
     return CJS_Result::Failure(JSMessage::kValueError);
 
@@ -1344,8 +1354,8 @@ CJS_Result CJS_PublicMethods::AFSimple_Calculate(
            wcscmp(sFunction.c_str(), L"MAX") == 0)) {
         dValue = dTemp;
       }
-      Optional<double> dResult =
-          ApplyNamedOperation(sFunction.c_str(), dValue, dTemp);
+      absl::optional<double> dResult =
+          ApplyNamedOperation(sFunction, dValue, dTemp);
       if (!dResult.has_value())
         return CJS_Result::Failure(JSMessage::kValueError);
 

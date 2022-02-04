@@ -399,7 +399,7 @@ webrtc::RTCError JsepTransport::VerifyCertificateFingerprint(
 void JsepTransport::SetActiveResetSrtpParams(bool active_reset_srtp_params) {
   RTC_DCHECK_RUN_ON(network_thread_);
   if (dtls_srtp_transport_) {
-    RTC_LOG(INFO)
+    RTC_LOG(LS_INFO)
         << "Setting active_reset_srtp_params of DtlsSrtpTransport to: "
         << active_reset_srtp_params;
     dtls_srtp_transport_->SetActiveResetSrtpParams(active_reset_srtp_params);
@@ -460,7 +460,7 @@ bool JsepTransport::SetRtcpMux(bool enable,
       }
       break;
     default:
-      RTC_NOTREACHED();
+      RTC_DCHECK_NOTREACHED();
   }
 
   if (!ret) {
@@ -670,7 +670,7 @@ webrtc::RTCError JsepTransport::NegotiateDtlsRole(
             }
             break;
           default:
-            RTC_NOTREACHED();
+            RTC_DCHECK_NOTREACHED();
             break;
         }
       } else {
