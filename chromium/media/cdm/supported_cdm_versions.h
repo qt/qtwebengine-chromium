@@ -8,7 +8,6 @@
 #include <stddef.h>
 
 #include <array>
-#include <cstddef>
 
 #include "media/base/media_export.h"
 #include "media/cdm/api/content_decryption_module.h"
