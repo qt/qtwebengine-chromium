@@ -1337,13 +1337,13 @@ angle::Result FramebufferVk::resolveColorWithCommand(ContextVk *contextVk,
     resolveRegion.srcSubresource.mipLevel       = 0;
     resolveRegion.srcSubresource.baseArrayLayer = params.srcLayer;
     resolveRegion.srcSubresource.layerCount     = 1;
-    resolveRegion.srcOffset.x                   = params.srcOffset[0];
-    resolveRegion.srcOffset.y                   = params.srcOffset[1];
+    resolveRegion.srcOffset.x                   = params.blitArea.x;
+    resolveRegion.srcOffset.y                   = params.blitArea.y;
     resolveRegion.srcOffset.z                   = 0;
     resolveRegion.dstSubresource.aspectMask     = VK_IMAGE_ASPECT_COLOR_BIT;
     resolveRegion.dstSubresource.layerCount     = 1;
-    resolveRegion.dstOffset.x                   = params.destOffset[0];
-    resolveRegion.dstOffset.y                   = params.destOffset[1];
+    resolveRegion.dstOffset.x                   = params.blitArea.x;
+    resolveRegion.dstOffset.y                   = params.blitArea.y;
     resolveRegion.dstOffset.z                   = 0;
     resolveRegion.extent.width                  = params.srcExtents[0];
     resolveRegion.extent.height                 = params.srcExtents[1];
