@@ -226,6 +226,11 @@ class COMPONENT_EXPORT(STORAGE_BROWSER) FileSystemContext
   // a message loop. |callback| is invoked on the caller thread.
   void ResolveURL(const FileSystemURL& url, ResolveURLCallback callback);
 
+  void DidResolveURLOnOpenFileSystem(OpenFileSystemCallback callback,
+                                     const GURL& filesystem_root,
+                                     const std::string& filesystem_name,
+                                     base::File::Error error);
+
   // Attempts to mount the filesystem needed to satisfy |request_info| made from
   // |request_info.storage_domain|. If an appropriate file system is not found,
   // callback will return an error.
