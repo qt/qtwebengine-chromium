@@ -342,28 +342,11 @@ const char* Tool::GetToolTypeForSourceType(SourceFile::Type type) {
 
 // static
 const char* Tool::GetToolTypeForTargetFinalOutput(const Target* target) {
-  // The contents of this list might be suprising (i.e. stamp tool for copy
+  // The contents of this list might be surprising (i.e. stamp tool for copy
   // rules). See the header for why.
   // TODO(crbug.com/gn/39): Don't emit stamp files for single-output targets.
   if (target->source_types_used().RustSourceUsed()) {
-    switch (target->rust_values().crate_type()) {
-      case RustValues::CRATE_AUTO: {
-        switch (target->output_type()) {
-          case Target::EXECUTABLE:
-            return RustTool::kRsToolBin;
-          case Target::SHARED_LIBRARY:
-            return RustTool::kRsToolDylib;
-          case Target::STATIC_LIBRARY:
-            return RustTool::kRsToolStaticlib;
-          case Target::RUST_LIBRARY:
-            return RustTool::kRsToolRlib;
-          case Target::RUST_PROC_MACRO:
-            return RustTool::kRsToolMacro;
-          default:
-            break;
-        }
-        break;
-      }
+    switch (target->rust_values().InferredCrateType(target)) {
       case RustValues::CRATE_BIN:
         return RustTool::kRsToolBin;
       case RustValues::CRATE_CDYLIB:
@@ -376,6 +359,8 @@ const char* Tool::GetToolTypeForTargetFinalOutput(const Target* target) {
         return RustTool::kRsToolRlib;
       case RustValues::CRATE_STATICLIB:
         return RustTool::kRsToolStaticlib;
+      case RustValues::CRATE_AUTO:
+        break;
       default:
         NOTREACHED();
     }

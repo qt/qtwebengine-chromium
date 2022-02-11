@@ -28,13 +28,10 @@ Err ErrInsideStringToken(const Token& token,
   // The "+1" is skipping over the " at the beginning of the token.
   int int_offset = static_cast<int>(offset);
   Location begin_loc(token.location().file(), token.location().line_number(),
-                     token.location().column_number() + int_offset + 1,
-                     token.location().byte() + int_offset + 1);
-  Location end_loc(
-      token.location().file(), token.location().line_number(),
-      token.location().column_number() + int_offset + 1 +
-          static_cast<int>(size),
-      token.location().byte() + int_offset + 1 + static_cast<int>(size));
+                     token.location().column_number() + int_offset + 1);
+  Location end_loc(token.location().file(), token.location().line_number(),
+                   token.location().column_number() + int_offset + 1 +
+                       static_cast<int>(size));
   return Err(LocationRange(begin_loc, end_loc), msg, help);
 }
 
@@ -287,8 +284,8 @@ bool ExpandStringLiteral(Scope* scope,
   return true;
 }
 
-size_t EditDistance(const std::string_view& s1,
-                    const std::string_view& s2,
+size_t EditDistance(std::string_view s1,
+                    std::string_view s2,
                     size_t max_edit_distance) {
   // The algorithm implemented below is the "classic"
   // dynamic-programming algorithm for computing the Levenshtein
@@ -329,7 +326,7 @@ size_t EditDistance(const std::string_view& s1,
   return row[n];
 }
 
-std::string_view SpellcheckString(const std::string_view& text,
+std::string_view SpellcheckString(std::string_view text,
                                   const std::vector<std::string_view>& words) {
   const size_t kMaxValidEditDistance = 3u;
 

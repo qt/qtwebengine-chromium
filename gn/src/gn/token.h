@@ -58,21 +58,19 @@ class Token {
   };
 
   Token();
-  Token(const Location& location, Type t, const std::string_view& v);
+  Token(const Location& location, Type t, std::string_view v);
 
-  static Token ClassifyAndMake(const Location& location,
-                               const std::string_view& v);
+  static Token ClassifyAndMake(const Location& location, std::string_view v);
 
   Type type() const { return type_; }
-  const std::string_view& value() const { return value_; }
+  std::string_view value() const { return value_; }
   const Location& location() const { return location_; }
   void set_location(Location location) { location_ = location; }
   LocationRange range() const {
     return LocationRange(
         location_,
         Location(location_.file(), location_.line_number(),
-                 location_.column_number() + static_cast<int>(value_.size()),
-                 location_.byte() + static_cast<int>(value_.size())));
+                 location_.column_number() + static_cast<int>(value_.size())));
   }
 
   // Helper functions for comparing this token to something.

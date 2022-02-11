@@ -11,7 +11,6 @@
 #include <string_view>
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "util/build_config.h"
@@ -267,7 +266,7 @@ bool FilePath::AppendRelativePath(const FilePath& child, FilePath* path) const {
 
 #if defined(FILE_PATH_USES_DRIVE_LETTERS)
   // Windows can access case sensitive filesystems, so component
-  // comparisions must be case sensitive, but drive letters are
+  // comparisons must be case sensitive, but drive letters are
   // never case sensitive.
   if ((FindDriveLetter(*parent_comp) != StringType::npos) &&
       (FindDriveLetter(*child_comp) != StringType::npos)) {

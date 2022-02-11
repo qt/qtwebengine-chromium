@@ -6,11 +6,10 @@
 #define BASE_WIN_REGISTRY_H_
 
 #include <stdint.h>
+#include <windows.h>
 #include <string>
 #include <vector>
-#include <windows.h>
 
-#include "base/macros.h"
 #include "base/win/scoped_handle.h"
 
 namespace base {
@@ -58,7 +57,7 @@ class RegKey {
   HKEY Take();
 
   // Returns false if this key does not have the specified value, or if an error
-  // occurrs while attempting to access it.
+  // occurs while attempting to access it.
   bool HasValue(const char16_t* value_name) const;
 
   // Returns the number of values for this key, or 0 if the number cannot be
@@ -140,7 +139,8 @@ class RegKey {
   HKEY key_;  // The registry key being iterated.
   REGSAM wow64access_;
 
-  DISALLOW_COPY_AND_ASSIGN(RegKey);
+  RegKey(const RegKey&) = delete;
+  RegKey& operator=(const RegKey&) = delete;
 };
 
 // Iterates the entries found in a particular folder on the registry.
@@ -196,7 +196,8 @@ class RegistryValueIterator {
   DWORD value_size_;
   DWORD type_;
 
-  DISALLOW_COPY_AND_ASSIGN(RegistryValueIterator);
+  RegistryValueIterator(const RegistryValueIterator&) = delete;
+  RegistryValueIterator& operator=(const RegistryValueIterator&) = delete;
 };
 
 class RegistryKeyIterator {
@@ -243,7 +244,8 @@ class RegistryKeyIterator {
 
   char16_t name_[MAX_PATH];
 
-  DISALLOW_COPY_AND_ASSIGN(RegistryKeyIterator);
+  RegistryKeyIterator(const RegistryKeyIterator&) = delete;
+  RegistryKeyIterator& operator=(const RegistryKeyIterator&) = delete;
 };
 
 }  // namespace win

@@ -8,10 +8,10 @@
 #include <stddef.h>
 
 #include <memory>
+#include <string_view>
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
 #include "base/values.h"
 #include "gn/err.h"
 #include "gn/token.h"
@@ -68,7 +68,8 @@ class Comments {
   // following the expression.
   std::vector<Token> after_;
 
-  DISALLOW_COPY_AND_ASSIGN(Comments);
+  Comments(const Comments&) = delete;
+  Comments& operator=(const Comments&) = delete;
 };
 
 // ParseNode -------------------------------------------------------------------
@@ -115,7 +116,7 @@ class ParseNode {
   // given type (and value).
   base::Value CreateJSONNode(const char* type, LocationRange location) const;
   base::Value CreateJSONNode(const char* type,
-                             const std::string_view& value,
+                             std::string_view value,
                              LocationRange location) const;
 
  private:
@@ -124,7 +125,8 @@ class ParseNode {
 
   std::unique_ptr<Comments> comments_;
 
-  DISALLOW_COPY_AND_ASSIGN(ParseNode);
+  ParseNode(const ParseNode&) = delete;
+  ParseNode& operator=(const ParseNode&) = delete;
 };
 
 // AccessorNode ----------------------------------------------------------------
@@ -216,7 +218,8 @@ class AccessorNode : public ParseNode {
   std::unique_ptr<ParseNode> subscript_;
   std::unique_ptr<IdentifierNode> member_;
 
-  DISALLOW_COPY_AND_ASSIGN(AccessorNode);
+  AccessorNode(const AccessorNode&) = delete;
+  AccessorNode& operator=(const AccessorNode&) = delete;
 };
 
 // BinaryOpNode ----------------------------------------------------------------
@@ -253,7 +256,8 @@ class BinaryOpNode : public ParseNode {
   Token op_;
   std::unique_ptr<ParseNode> right_;
 
-  DISALLOW_COPY_AND_ASSIGN(BinaryOpNode);
+  BinaryOpNode(const BinaryOpNode&) = delete;
+  BinaryOpNode& operator=(const BinaryOpNode&) = delete;
 };
 
 // BlockNode -------------------------------------------------------------------
@@ -313,7 +317,8 @@ class BlockNode : public ParseNode {
 
   std::vector<std::unique_ptr<ParseNode>> statements_;
 
-  DISALLOW_COPY_AND_ASSIGN(BlockNode);
+  BlockNode(const BlockNode&) = delete;
+  BlockNode& operator=(const BlockNode&) = delete;
 };
 
 // ConditionNode ---------------------------------------------------------------
@@ -357,7 +362,8 @@ class ConditionNode : public ParseNode {
   std::unique_ptr<BlockNode> if_true_;    // Always non-null.
   std::unique_ptr<ParseNode> if_false_;   // May be null.
 
-  DISALLOW_COPY_AND_ASSIGN(ConditionNode);
+  ConditionNode(const ConditionNode&) = delete;
+  ConditionNode& operator=(const ConditionNode&) = delete;
 };
 
 // FunctionCallNode ------------------------------------------------------------
@@ -395,7 +401,8 @@ class FunctionCallNode : public ParseNode {
   std::unique_ptr<ListNode> args_;
   std::unique_ptr<BlockNode> block_;  // May be null.
 
-  DISALLOW_COPY_AND_ASSIGN(FunctionCallNode);
+  FunctionCallNode(const FunctionCallNode&) = delete;
+  FunctionCallNode& operator=(const FunctionCallNode&) = delete;
 };
 
 // IdentifierNode --------------------------------------------------------------
@@ -425,7 +432,8 @@ class IdentifierNode : public ParseNode {
  private:
   Token value_;
 
-  DISALLOW_COPY_AND_ASSIGN(IdentifierNode);
+  IdentifierNode(const IdentifierNode&) = delete;
+  IdentifierNode& operator=(const IdentifierNode&) = delete;
 };
 
 // ListNode --------------------------------------------------------------------
@@ -480,7 +488,8 @@ class ListNode : public ParseNode {
 
   std::vector<std::unique_ptr<const ParseNode>> contents_;
 
-  DISALLOW_COPY_AND_ASSIGN(ListNode);
+  ListNode(const ListNode&) = delete;
+  ListNode& operator=(const ListNode&) = delete;
 };
 
 // LiteralNode -----------------------------------------------------------------
@@ -510,7 +519,8 @@ class LiteralNode : public ParseNode {
  private:
   Token value_;
 
-  DISALLOW_COPY_AND_ASSIGN(LiteralNode);
+  LiteralNode(const LiteralNode&) = delete;
+  LiteralNode& operator=(const LiteralNode&) = delete;
 };
 
 // UnaryOpNode -----------------------------------------------------------------
@@ -543,7 +553,8 @@ class UnaryOpNode : public ParseNode {
   Token op_;
   std::unique_ptr<ParseNode> operand_;
 
-  DISALLOW_COPY_AND_ASSIGN(UnaryOpNode);
+  UnaryOpNode(const UnaryOpNode&) = delete;
+  UnaryOpNode& operator=(const UnaryOpNode&) = delete;
 };
 
 // BlockCommentNode ------------------------------------------------------------
@@ -576,7 +587,8 @@ class BlockCommentNode : public ParseNode {
  private:
   Token comment_;
 
-  DISALLOW_COPY_AND_ASSIGN(BlockCommentNode);
+  BlockCommentNode(const BlockCommentNode&) = delete;
+  BlockCommentNode& operator=(const BlockCommentNode&) = delete;
 };
 
 // EndNode ---------------------------------------------------------------------
@@ -607,7 +619,8 @@ class EndNode : public ParseNode {
  private:
   Token value_;
 
-  DISALLOW_COPY_AND_ASSIGN(EndNode);
+  EndNode(const EndNode&) = delete;
+  EndNode& operator=(const EndNode&) = delete;
 };
 
 #endif  // TOOLS_GN_PARSE_TREE_H_

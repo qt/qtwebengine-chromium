@@ -12,7 +12,6 @@
 
 #include "base/atomic_ref_count.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "gn/input_file_manager.h"
 #include "gn/label.h"
 #include "gn/source_file.h"
@@ -56,7 +55,7 @@ class Scheduler {
   //
   // TODO(brettw) this is global rather than per-BuildSettings. If we
   // start using >1 build settings, then we probably want this to take a
-  // BuildSettings object so we know the depdency on a per-build basis.
+  // BuildSettings object so we know the dependency on a per-build basis.
   // If moved, most of the Add/Get functions below should move as well.
   void AddGenDependency(const base::FilePath& file);
   std::vector<base::FilePath> GetGenDependencies() const;
@@ -148,7 +147,8 @@ class Scheduler {
   std::multimap<SourceFile, const Target*> unknown_generated_inputs_;
   std::map<SourceFile, bool> generated_files_;
 
-  DISALLOW_COPY_AND_ASSIGN(Scheduler);
+  Scheduler(const Scheduler&) = delete;
+  Scheduler& operator=(const Scheduler&) = delete;
 };
 
 extern Scheduler* g_scheduler;

@@ -195,10 +195,10 @@
    - "test_targets": A list of the labels for targets that are needed to run
      the tests we wish to run.
 
-   - "additional_compile_targets": A list of the labels for targets that we
-     wish to rebuild, but aren't necessarily needed for testing. The important
-     difference between this field and "test_targets" is that if an item in
-     the additional_compile_targets list refers to a group, then any
+   - "additional_compile_targets" (optional): A list of the labels for targets
+     that we wish to rebuild, but aren't necessarily needed for testing. The
+     important difference between this field and "test_targets" is that if an
+     item in the additional_compile_targets list refers to a group, then any
      dependencies of that group will be returned if they are out of date, but
      the group itself does not need to be. If the dependencies themselves are
      groups, the same filtering is repeated. This filtering can be used to
@@ -208,6 +208,8 @@
 
      This filtering behavior is also known as "pruning" the list of compile
      targets.
+
+     If "additional_compile_targets" is absent, it defaults to the empty list.
 
   If input_path is -, input is read from stdin.
 
@@ -801,6 +803,9 @@
       Use the specified Windows 10 SDK version to generate project files.
       As an example, "10.0.15063.0" can be specified to use Creators Update SDK
       instead of the default one.
+
+  --ninja-executable=<string>
+      Can be used to specify the ninja executable to use when building.
 
   --ninja-extra-args=<string>
       This string is passed without any quoting to the ninja invocation
@@ -1746,12 +1751,12 @@
   specifying the intended location of the output file.
 
   The `output_conversion` variable specified the format to write the
-  value. See `gn help output_conversion`.
+  value. See `gn help io_conversion`.
 
-  One of `contents` or `data_keys` must be specified; use of `data` will write
-  the contents of that value to file, while use of `data_keys` will trigger a
-  metadata collection walk based on the dependencies of the target and the
-  optional values of the `rebase` and `walk_keys` variables. See
+  One of `contents` or `data_keys` must be specified; use of `contents` will
+  write the contents of that value to file, while use of `data_keys` will
+  trigger a metadata collection walk based on the dependencies of the target and
+  the optional values of the `rebase` and `walk_keys` variables. See
   `gn help metadata`.
 
   Collected metadata, if specified, will be returned in postorder of
@@ -2167,7 +2172,7 @@
   need to remove the corresponding config that sets it. The final set of flags,
   defines, etc. for a target is generated in this order:
 
-   1. The values specified directly on the target (rather than using a config.
+   1. The values specified directly on the target (rather than using a config).
    2. The configs specified in the target's "configs" list, in order.
    3. Public_configs from a breadth-first traversal of the dependency tree in
       the order that the targets appear in "deps".
@@ -2201,6 +2206,7 @@
          libs, precompiled_header, precompiled_source, rustflags,
          rustenv, swiftflags
   Nested configs: configs
+  General: visibility
 ```
 
 #### **Variables on a target used to apply configs**
@@ -2350,7 +2356,7 @@
       unspecified or the empty list which means no arguments.
 
   input_conversion:
-      Controls how the file is read and parsed. See "gn help io_conversion".
+      Controls how the file is read and parsed. See `gn help io_conversion`.
 
       If unspecified, defaults to the empty string which causes the script
       result to be discarded. exec script will return None.
@@ -2920,7 +2926,7 @@
       Filename to read, relative to the build file.
 
   input_conversion
-      Controls how the file is read and parsed. See "gn help io_conversion".
+      Controls how the file is read and parsed. See `gn help io_conversion`.
 ```
 
 #### **Example**
@@ -3665,6 +3671,14 @@
         If specified, this list is the subset of the outputs that should be
         added to runtime deps (see "gn help runtime_deps"). By default (if
         runtime_outputs is empty or unspecified), it will be the link_output.
+
+    rust_sysroot
+        Valid for: Rust tools
+
+        A path relative to root_out_dir. This is not used in the build
+        process, but may be used when generating metadata for rust-analyzer.
+        (See --export-rust-project). It enables such metadata to include
+        information about the Rust standard library.
 ```
 
 #### **Expansions for tool variables**
@@ -4148,7 +4162,7 @@
       The list or string to write.
 
   output_conversion
-    Controls how the output is written. See "gn help io_conversion".
+    Controls how the output is written. See `gn help io_conversion`.
 ```
 ## <a name="predefined_variables"></a>Built-in predefined variables
 
@@ -5849,7 +5863,7 @@
 
 ```
   Controls how the "contents" of a generated_file target is formatted.
-  See "gn help io_conversion".
+  See `gn help io_conversion`.
 ```
 ### <a name="var_output_dir"></a>**output_dir**: [directory] Directory to put output file in.
 

@@ -365,7 +365,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, NoHardDepsToNoPublicHeaderTarget) {
       SubstitutionList::MakeForTest("//out/Debug/generated.cc");
   ASSERT_TRUE(action.OnResolved(&err));
 
-  // A source set compiling geneated code, this target does not publicize any
+  // A source set compiling generated code, this target does not publicize any
   // headers.
   Target gen_obj(setup.settings(), Label(SourceDir("//foo/"), "gen_obj"));
   gen_obj.set_output_type(Target::SOURCE_SET);
@@ -490,6 +490,7 @@ TEST_F(NinjaCBinaryTargetWriterTest, LibsAndLibDirs) {
   Target target(setup.settings(), Label(SourceDir("//foo/"), "shlib"));
   target.set_output_type(Target::SHARED_LIBRARY);
   target.config_values().libs().push_back(LibFile(SourceFile("//foo/lib1.a")));
+  target.config_values().libs().push_back(LibFile(SourceFile("//sysroot/DIA SDK/diaguids.lib")));
   target.config_values().libs().push_back(LibFile("foo"));
   target.config_values().lib_dirs().push_back(SourceDir("//foo/bar/"));
   target.SetToolchain(setup.toolchain());
@@ -507,9 +508,13 @@ TEST_F(NinjaCBinaryTargetWriterTest, LibsAndLibDirs) {
       "target_output_name = libshlib\n"
       "\n"
       "\n"
-      "build ./libshlib.so: solink | ../../foo/lib1.a\n"
+      "build ./libshlib.so: solink | ../../foo/lib1.a ../../sysroot/DIA$ SDK/diaguids.lib\n"
       "  ldflags = -L../../foo/bar\n"
-      "  libs = ../../foo/lib1.a -lfoo\n"
+#ifdef _WIN32
+      "  libs = ../../foo/lib1.a \"../../sysroot/DIA$ SDK/diaguids.lib\" -lfoo\n"
+#else
+      "  libs = ../../foo/lib1.a ../../sysroot/DIA\\$ SDK/diaguids.lib -lfoo\n"
+#endif
       "  frameworks =\n"
       "  swiftmodules =\n"
       "  output_extension = .so\n"
@@ -1919,4 +1924,60 @@ build withmodules/c: link obj/zap/c.x.o obj/zap/c.y.o obj/blah/liba.a obj/stuff/
     std::string out_str = out.str();
     EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
   }
+}
+
+TEST_F(NinjaCBinaryTargetWriterTest, SolibsEscaping) {
+  Err err;
+  TestWithScope setup;
+
+  Toolchain toolchain_with_toc(
+      setup.settings(), Label(SourceDir("//toolchain_with_toc/"), "with_toc"));
+  TestWithScope::SetupToolchain(&toolchain_with_toc, true);
+
+  // Create a shared library with a space in the output name.
+  Target shared_lib(setup.settings(),
+                    Label(SourceDir("//rocket"), "space_cadet"));
+  shared_lib.set_output_type(Target::SHARED_LIBRARY);
+  shared_lib.set_output_name("Space Cadet");
+  shared_lib.set_output_prefix_override("");
+  shared_lib.SetToolchain(&toolchain_with_toc);
+  shared_lib.visibility().SetPublic();
+  ASSERT_TRUE(shared_lib.OnResolved(&err));
+
+  // Set up an executable to depend on it.
+  Target target(setup.settings(), Label(SourceDir("//launchpad"), "main"));
+  target.sources().push_back(SourceFile("//launchpad/main.cc"));
+  target.set_output_type(Target::EXECUTABLE);
+  target.private_deps().push_back(LabelTargetPair(&shared_lib));
+  target.SetToolchain(&toolchain_with_toc);
+  ASSERT_TRUE(target.OnResolved(&err));
+
+  std::ostringstream out;
+  NinjaCBinaryTargetWriter writer(&target, out);
+  writer.Run();
+
+  const char expected[] = R"(defines =
+include_dirs =
+root_out_dir = .
+target_out_dir = obj/launchpad
+target_output_name = main
+
+build obj/launchpad/main.main.o: cxx ../../launchpad/main.cc
+
+build ./main: link obj/launchpad/main.main.o | ./Space$ Cadet.so.TOC
+  ldflags =
+  libs =
+  frameworks =
+  swiftmodules =
+  output_extension = 
+  output_dir = 
+)"
+#if defined(OS_WIN)
+  "  solibs = \"./Space$ Cadet.so\"\n";
+#else
+  "  solibs = ./Space\\$ Cadet.so\n";
+#endif
+
+  std::string out_str = out.str();
+  EXPECT_EQ(expected, out_str) << expected << "\n" << out_str;
 }

@@ -22,7 +22,6 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
@@ -373,7 +372,7 @@ STR CollapseWhitespaceT(const STR& text, bool trim_sequences_with_line_breaks) {
         --chars_written;
       }
     } else {
-      // Non-whitespace chracters are copied straight across.
+      // Non-whitespace characters are copied straight across.
       in_whitespace = false;
       already_trimmed = false;
       result[chars_written++] = *i;

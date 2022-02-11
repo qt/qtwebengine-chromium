@@ -320,6 +320,8 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
   os = "solaris";
 #elif defined(OS_NETBSD)
   os = "netbsd";
+#elif defined(OS_ZOS)
+  os = "zos";
 #else
 #error Unknown OS type.
 #endif
@@ -338,6 +340,7 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
   static const char kRISCV32[] = "riscv32";
   static const char kRISCV64[] = "riscv64";
   static const char kE2K[] = "e2k";
+  static const char kLOONG64[] = "loong64";
   const char* arch = nullptr;
 
   // Set the host CPU architecture based on the underlying OS, not
@@ -368,6 +371,8 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
     arch = kRISCV64;
   else if (os_arch == "e2k")
     arch = kE2K;
+  else if (os_arch == "loongarch64")
+    arch = kLOONG64;
   else
     CHECK(false) << "OS architecture not handled. (" << os_arch << ")";
 
@@ -396,7 +401,7 @@ void Args::SetSystemVarsLocked(Scope* dest) const {
   declared_arguments[variables::kTargetCpu] = empty_string;
 
   // Mark these variables used so the build config file can override them
-  // without geting a warning about overwriting an unused variable.
+  // without getting a warning about overwriting an unused variable.
   dest->MarkUsed(variables::kHostCpu);
   dest->MarkUsed(variables::kCurrentCpu);
   dest->MarkUsed(variables::kTargetCpu);

@@ -19,6 +19,7 @@
 #include "gn/filesystem_utils.h"
 #include "gn/label.h"
 #include "gn/loader.h"
+#include "gn/string_output_buffer.h"
 
 namespace {
 base::FilePath::CharType kProjectDirName[] =
@@ -74,9 +75,8 @@ QtCreatorWriter::~QtCreatorWriter() = default;
 void QtCreatorWriter::CollectDeps(const Target* target) {
   for (const auto& dep : target->GetDeps(Target::DEPS_ALL)) {
     const Target* dep_target = dep.ptr;
-    if (targets_.count(dep_target))
+    if (!targets_.add(dep_target))
       continue;
-    targets_.insert(dep_target);
     CollectDeps(dep_target);
   }
 }
@@ -85,7 +85,8 @@ bool QtCreatorWriter::DiscoverTargets() {
   auto all_targets = builder_.GetAllResolvedTargets();
 
   if (root_target_name_.empty()) {
-    targets_ = std::set<const Target*>(all_targets.begin(), all_targets.end());
+    targets_.clear();
+    targets_.insert(all_targets.begin(), all_targets.end());
     return true;
   }
 
@@ -270,10 +271,11 @@ void QtCreatorWriter::HandleTarget(const Target* target) {
 void QtCreatorWriter::GenerateFile(const base::FilePath::CharType* suffix,
                                    const std::set<std::string>& items) {
   const base::FilePath file_path = project_prefix_.AddExtension(suffix);
-  std::ostringstream output;
+  StringOutputBuffer storage;
+  std::ostream output(&storage);
   for (const std::string& item : items)
     output << item << std::endl;
-  WriteFileIfChanged(file_path, output.str(), &err_);
+  storage.WriteToFileIfChanged(file_path, &err_);
 }
 
 void QtCreatorWriter::Run() {

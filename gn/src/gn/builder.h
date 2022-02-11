@@ -6,11 +6,11 @@
 #define TOOLS_GN_BUILDER_H_
 
 #include <functional>
-#include <map>
 #include <memory>
+#include <unordered_map>
 
-#include "base/macros.h"
 #include "gn/builder_record.h"
+#include "gn/builder_record_map.h"
 #include "gn/label.h"
 #include "gn/label_ptr.h"
 #include "gn/unique_vector.h"
@@ -60,6 +60,9 @@ class Builder {
   // If there are any undefined references, returns false and sets the error.
   bool CheckForBadItems(Err* err) const;
 
+  // Get or create an empty record for unit-testing.
+  BuilderRecord* GetOrCreateRecordForTesting(const Label& label);
+
  private:
   bool TargetDefined(BuilderRecord* record, Err* err);
   bool ConfigDefined(BuilderRecord* record, Err* err);
@@ -95,6 +98,9 @@ class Builder {
   bool AddDeps(BuilderRecord* record,
                const LabelTargetVector& targets,
                Err* err);
+  bool AddGenDeps(BuilderRecord* record,
+                  const LabelTargetVector& targets,
+                  Err* err);
   bool AddActionValuesDep(BuilderRecord* record,
                           const ActionValues& action_values,
                           Err* err);
@@ -114,7 +120,7 @@ class Builder {
 
   void ScheduleItemLoadIfNecessary(BuilderRecord* record);
 
-  // This takes a BuilderRecord with resolved depdencies, and fills in the
+  // This takes a BuilderRecord with resolved dependencies, and fills in the
   // target's Label*Vectors with the resolved pointers.
   bool ResolveItem(BuilderRecord* record, Err* err);
 
@@ -136,11 +142,12 @@ class Builder {
   // Non owning pointer.
   Loader* loader_;
 
-  std::map<Label, std::unique_ptr<BuilderRecord>> records_;
+  BuilderRecordMap records_;
 
   ResolvedGeneratedCallback resolved_and_generated_callback_;
 
-  DISALLOW_COPY_AND_ASSIGN(Builder);
+  Builder(const Builder&) = delete;
+  Builder& operator=(const Builder&) = delete;
 };
 
 #endif  // TOOLS_GN_BUILDER_H_

@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "base/memory/ref_counted.h"
 #include "gn/input_file.h"
 #include "gn/parse_tree.h"
@@ -37,7 +36,7 @@ class Token;
 // various state points into them.
 class InputFileManager : public base::RefCountedThreadSafe<InputFileManager> {
  public:
-  // Callback issued when a file is laoded. On auccess, the parse node will
+  // Callback issued when a file is loaded. On auccess, the parse node will
   // refer to the root block of the file. On failure, this will be NULL.
   using FileLoadCallback = std::function<void(const ParseNode*)>;
 
@@ -169,7 +168,8 @@ class InputFileManager : public base::RefCountedThreadSafe<InputFileManager> {
   // Used by unit tests to mock out SyncLoadFile().
   SyncLoadFileCallback load_file_callback_;
 
-  DISALLOW_COPY_AND_ASSIGN(InputFileManager);
+  InputFileManager(const InputFileManager&) = delete;
+  InputFileManager& operator=(const InputFileManager&) = delete;
 };
 
 #endif  // TOOLS_GN_INPUT_FILE_MANAGER_H_

@@ -22,7 +22,7 @@ Visibility::Visibility() = default;
 Visibility::~Visibility() = default;
 
 bool Visibility::Set(const SourceDir& current_dir,
-                     const std::string_view& source_root,
+                     std::string_view source_root,
                      const Value& value,
                      Err* err) {
   patterns_.clear();
@@ -84,7 +84,7 @@ std::unique_ptr<base::Value> Visibility::AsValue() const {
   auto res = std::make_unique<base::ListValue>();
   for (const auto& pattern : patterns_)
     res->AppendString(pattern.Describe());
-  return std::move(res);
+  return res;
 }
 
 // static

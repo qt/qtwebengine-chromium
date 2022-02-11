@@ -5,7 +5,6 @@
 #ifndef TOOLS_GN_CONFIG_VALUES_GENERATOR_H_
 #define TOOLS_GN_CONFIG_VALUES_GENERATOR_H_
 
-#include "base/macros.h"
 #include "gn/source_dir.h"
 
 class ConfigValues;
@@ -33,7 +32,8 @@ class ConfigValuesGenerator {
   const SourceDir input_dir_;
   Err* err_;
 
-  DISALLOW_COPY_AND_ASSIGN(ConfigValuesGenerator);
+  ConfigValuesGenerator(const ConfigValuesGenerator&) = delete;
+  ConfigValuesGenerator& operator=(const ConfigValuesGenerator&) = delete;
 };
 
 // For using in documentation for functions which use this.
@@ -41,6 +41,6 @@ class ConfigValuesGenerator {
   "  Flags: cflags, cflags_c, cflags_cc, cflags_objc, cflags_objcc,\n"     \
   "         asmflags, defines, include_dirs, inputs, ldflags, lib_dirs,\n" \
   "         libs, precompiled_header, precompiled_source, rustflags,\n"    \
-  "         rustenv, swiftflags\n"
+  "         rustenv, swiftflags, testonly\n"
 
 #endif  // TOOLS_GN_CONFIG_VALUES_GENERATOR_H_

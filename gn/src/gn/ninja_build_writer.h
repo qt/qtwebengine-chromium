@@ -7,10 +7,10 @@
 
 #include <iosfwd>
 #include <map>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
-#include "base/macros.h"
 #include "gn/path_output.h"
 
 class Builder;
@@ -22,7 +22,7 @@ class Toolchain;
 
 namespace base {
 class CommandLine;
-}  // base
+}  // namespace base
 
 // Generates the toplevel "build.ninja" file. This references the individual
 // toolchain files and lists all input .gn files as dependencies of the
@@ -56,7 +56,7 @@ class NinjaBuildWriter {
   bool WriteSubninjas(Err* err);
   bool WritePhonyAndAllRules(Err* err);
 
-  void WritePhonyRule(const Target* target, const std::string& phony_name);
+  void WritePhonyRule(const Target* target, std::string_view phony_name);
 
   const BuildSettings* build_settings_;
 
@@ -69,7 +69,8 @@ class NinjaBuildWriter {
   std::ostream& dep_out_;
   PathOutput path_output_;
 
-  DISALLOW_COPY_AND_ASSIGN(NinjaBuildWriter);
+  NinjaBuildWriter(const NinjaBuildWriter&) = delete;
+  NinjaBuildWriter& operator=(const NinjaBuildWriter&) = delete;
 };
 
 extern const char kNinjaRules_Help[];

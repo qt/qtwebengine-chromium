@@ -9,7 +9,6 @@
 #include <utility>
 
 #include "base/json/json_reader.h"
-#include "base/macros.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -108,7 +107,7 @@ Value ParseList(const std::string& input, const ParseNode* origin, Err* err) {
   return ret;
 }
 
-bool IsIdentifier(const std::string_view& buffer) {
+bool IsIdentifier(std::string_view buffer) {
   DCHECK(buffer.size() > 0);
   if (!Tokenizer::IsIdentifierFirstChar(buffer[0]))
     return false;
@@ -234,7 +233,7 @@ Value DoConvertInputToValue(const Settings* settings,
     return ParseJSON(settings, input, origin, err);
 
   *err = Err(original_input_conversion, "Not a valid input_conversion.",
-             "Run gn help input_conversion to see your options.");
+             "Run `gn help io_conversion` to see your options.");
   return Value();
 }
 

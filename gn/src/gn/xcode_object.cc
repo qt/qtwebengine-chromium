@@ -11,7 +11,6 @@
 #include <utility>
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "gn/filesystem_utils.h"
 
@@ -143,7 +142,7 @@ const SourceTypeForExt kSourceTypeForExt[] = {
     {"y", "sourcecode.yacc"},
 };
 
-const char* GetSourceType(const std::string_view& ext) {
+const char* GetSourceType(std::string_view ext) {
   for (size_t i = 0; i < std::size(kSourceTypeForExt); ++i) {
     if (kSourceTypeForExt[i].ext == ext)
       return kSourceTypeForExt[i].source_type;
@@ -152,11 +151,11 @@ const char* GetSourceType(const std::string_view& ext) {
   return "text";
 }
 
-bool HasExplicitFileType(const std::string_view& ext) {
+bool HasExplicitFileType(std::string_view ext) {
   return ext == "dart";
 }
 
-bool IsSourceFileForIndexing(const std::string_view& ext) {
+bool IsSourceFileForIndexing(std::string_view ext) {
   return ext == "c" || ext == "cc" || ext == "cpp" || ext == "cxx" ||
          ext == "m" || ext == "mm";
 }

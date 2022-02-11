@@ -5,6 +5,8 @@
 #ifndef TOOLS_GN_NINJA_TARGET_COMMAND_WRITER_H_
 #define TOOLS_GN_NINJA_TARGET_COMMAND_WRITER_H_
 
+#include <string_view>
+
 #include "base/json/string_escape.h"
 #include "gn/config_values_extractors.h"
 #include "gn/escape.h"
@@ -90,7 +92,8 @@ struct IncludeWriter {
 // The tool_type indicates the corresponding tool for flags that are
 // tool-specific (e.g. "cflags_c"). For non-tool-specific flags (e.g.
 // "defines") tool_type should be TYPE_NONE.
-void WriteOneFlag(const Target* target,
+void WriteOneFlag(RecursiveWriterConfig config,
+                  const Target* target,
                   const Substitution* subst_enum,
                   bool has_precompiled_headers,
                   const char* tool_name,

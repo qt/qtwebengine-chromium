@@ -137,7 +137,7 @@ void InsertTargetsIntoFoundPaths(const PathVector& path,
   // Don't try to insert the 0th item in the list which is the "from" target.
   // The search will be run more than once (for the different path types) and
   // if the "from" target was in the list, subsequent passes could never run
-  // the starting point is alredy in the list of targets considered).
+  // the starting point is already in the list of targets considered).
   //
   // One might imagine an alternate implementation where all items are counted
   // here but the "from" item is erased at the beginning of each search, but
@@ -179,7 +179,7 @@ void BreadthFirstSearch(const Target* from,
   work_queue.push_back(initial_stack);
 
   // Track checked targets to avoid checking the same once more than once.
-  std::set<const Target*> visited;
+  TargetSet visited;
 
   while (!work_queue.empty()) {
     PathVector current_path = work_queue.front();
@@ -220,9 +220,7 @@ void BreadthFirstSearch(const Target* from,
     // If we've already checked this one, stop. This should be after the above
     // check for a known-good check, because known-good ones will always have
     // been previously visited.
-    if (visited.find(current_target) == visited.end())
-      visited.insert(current_target);
-    else
+    if (!visited.add(current_target))
       continue;
 
     // Add public deps for this target to the queue.

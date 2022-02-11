@@ -7,11 +7,10 @@
 
 #include <stddef.h>
 
-#include <map>
 #include <utility>
 #include <vector>
 
-#include "base/macros.h"
+#include "gn/unique_vector.h"
 
 class Target;
 
@@ -32,7 +31,7 @@ class InheritedLibraries {
 
   // Returns the list of dependencies in order, optionally with the flag
   // indicating whether the dependency is public.
-  std::vector<const Target*> GetOrdered() const;
+  std::vector<const Target*> GetOrdered() const { return targets_.vector(); }
   std::vector<std::pair<const Target*, bool>> GetOrderedAndPublicFlag() const;
 
   // Adds a single dependency to the end of the list. See note on adding above.
@@ -41,7 +40,7 @@ class InheritedLibraries {
   // Appends all items from the "other" list to the current one. The is_public
   // parameter indicates how the current target depends on the items in
   // "other". If is_public is true, the existing public flags of the appended
-  // items will be preserved (propogating the public-ness up the dependency
+  // items will be preserved (propagating the public-ness up the dependency
   // chain). If is_public is false, all deps will be added as private since
   // the current target isn't forwarding them.
   void AppendInherited(const InheritedLibraries& other, bool is_public);
@@ -54,18 +53,11 @@ class InheritedLibraries {
                                    bool is_public);
 
  private:
-  struct Node {
-    Node() : index(static_cast<size_t>(-1)), is_public(false) {}
-    Node(size_t i, bool p) : index(i), is_public(p) {}
+  UniqueVector<const Target*> targets_;
+  std::vector<bool> public_flags_;
 
-    size_t index;
-    bool is_public;
-  };
-
-  using LibraryMap = std::map<const Target*, Node>;
-  LibraryMap map_;
-
-  DISALLOW_COPY_AND_ASSIGN(InheritedLibraries);
+  InheritedLibraries(const InheritedLibraries&) = delete;
+  InheritedLibraries& operator=(const InheritedLibraries&) = delete;
 };
 
 #endif  // TOOLS_GN_INHERITED_LIBRARIES_H_

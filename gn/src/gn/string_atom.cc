@@ -9,7 +9,6 @@
 #include <mutex>
 #include <set>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 #include "gn/hash_table_base.h"
@@ -163,7 +162,7 @@ class StringAtomSet {
    public:
     // Init the n-th string in the slab with |str|.
     // Return its location as well.
-    std::string* init(size_t index, const std::string_view& str) {
+    std::string* init(size_t index, std::string_view str) {
       std::string* result = &items_[index].str;
       new (result) std::string(str);
       return result;
@@ -205,11 +204,22 @@ class ThreadLocalCache {
   KeySet local_set_;
 };
 
+#if !defined(OS_ZOS)
 thread_local ThreadLocalCache s_local_cache;
+#else
+// TODO(gabylb) - zos: thread_local not yet supported, use zoslib's impl'n:
+static ThreadLocalCache s_tlc;
+__tlssim<ThreadLocalCache*> __g_s_local_cache_impl(&s_tlc);
+#define s_local_cache (*__g_s_local_cache_impl.access())
+#endif
 
 }  // namespace
 
 StringAtom::StringAtom() : value_(kEmptyString) {}
 
 StringAtom::StringAtom(std::string_view str) noexcept
+#ifndef OS_ZOS
     : value_(*s_local_cache.find(str)) {}
+#else
+    : value_(*s_local_cache->find(str)) {}
+#endif

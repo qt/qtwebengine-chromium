@@ -31,6 +31,7 @@
 #include "gn/scheduler.h"
 #include "gn/settings.h"
 #include "gn/source_file.h"
+#include "gn/string_output_buffer.h"
 #include "gn/substitution_writer.h"
 #include "gn/target.h"
 #include "gn/value.h"
@@ -324,7 +325,10 @@ class CollectPBXObjectsPerClassHelper : public PBXObjectVisitorConst {
  private:
   std::map<PBXObjectClass, std::vector<const PBXObject*>> objects_per_class_;
 
-  DISALLOW_COPY_AND_ASSIGN(CollectPBXObjectsPerClassHelper);
+  CollectPBXObjectsPerClassHelper(const CollectPBXObjectsPerClassHelper&) =
+      delete;
+  CollectPBXObjectsPerClassHelper& operator=(
+      const CollectPBXObjectsPerClassHelper&) = delete;
 };
 
 std::map<PBXObjectClass, std::vector<const PBXObject*>>
@@ -359,7 +363,9 @@ class RecursivelyAssignIdsHelper : public PBXObjectVisitor {
   std::string seed_;
   int64_t counter_;
 
-  DISALLOW_COPY_AND_ASSIGN(RecursivelyAssignIdsHelper);
+  RecursivelyAssignIdsHelper(const RecursivelyAssignIdsHelper&) = delete;
+  RecursivelyAssignIdsHelper& operator=(const RecursivelyAssignIdsHelper&) =
+      delete;
 };
 
 void RecursivelyAssignIds(PBXProject* project) {
@@ -489,7 +495,8 @@ bool XcodeWorkspace::WriteWorkspaceDataFile(const std::string& name,
   if (source_file.is_null())
     return false;
 
-  std::stringstream out;
+  StringOutputBuffer storage;
+  std::ostream out(&storage);
   out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
       << "<Workspace\n"
       << "   version = \"1.0\">\n"
@@ -498,8 +505,8 @@ bool XcodeWorkspace::WriteWorkspaceDataFile(const std::string& name,
       << "   </FileRef>\n"
       << "</Workspace>\n";
 
-  return WriteFileIfChanged(build_settings_->GetFullPath(source_file),
-                            out.str(), err);
+  return storage.WriteToFileIfChanged(build_settings_->GetFullPath(source_file),
+                                      err);
 }
 
 bool XcodeWorkspace::WriteSettingsFile(const std::string& name,
@@ -511,7 +518,8 @@ bool XcodeWorkspace::WriteSettingsFile(const std::string& name,
   if (source_file.is_null())
     return false;
 
-  std::stringstream out;
+  StringOutputBuffer storage;
+  std::ostream out(&storage);
   out << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
       << "<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" "
       << "\"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n"
@@ -530,8 +538,8 @@ bool XcodeWorkspace::WriteSettingsFile(const std::string& name,
   out << "</dict>\n"
       << "</plist>\n";
 
-  return WriteFileIfChanged(build_settings_->GetFullPath(source_file),
-                            out.str(), err);
+  return storage.WriteToFileIfChanged(build_settings_->GetFullPath(source_file),
+                                      err);
 }
 
 // Class responsible for constructing and writing the .xcodeproj from the
@@ -642,6 +650,11 @@ bool XcodeProject::AddSourcesFromBuilder(const Builder& builder, Err* err) {
     for (const SourceFile& source : target->public_headers()) {
       if (ShouldIncludeFileInProject(source))
         sources.insert(source);
+    }
+
+    const SourceFile& bridge_header = target->swift_values().bridge_header();
+    if (!bridge_header.is_null() && ShouldIncludeFileInProject(bridge_header)) {
+      sources.insert(bridge_header);
     }
 
     if (target->output_type() == Target::ACTION ||
@@ -844,11 +857,12 @@ bool XcodeProject::WriteFile(Err* err) const {
   if (pbxproj_file.is_null())
     return false;
 
-  std::stringstream pbxproj_string_out;
+  StringOutputBuffer storage;
+  std::ostream pbxproj_string_out(&storage);
   WriteFileContent(pbxproj_string_out);
 
-  if (!WriteFileIfChanged(build_settings_->GetFullPath(pbxproj_file),
-                          pbxproj_string_out.str(), err)) {
+  if (!storage.WriteToFileIfChanged(build_settings_->GetFullPath(pbxproj_file),
+                                    err)) {
     return false;
   }
 
@@ -880,7 +894,7 @@ std::optional<std::vector<const Target*>> XcodeProject::GetTargetsFromBuilder(
   // Filter out all target of type EXECUTABLE that are direct dependency of
   // a BUNDLE_DATA target (under the assumption that they will be part of a
   // CREATE_BUNDLE target generating an application bundle).
-  std::set<const Target*> targets(all_targets.begin(), all_targets.end());
+  TargetSet targets(all_targets.begin(), all_targets.end());
   for (const Target* target : all_targets) {
     if (!target->settings()->is_default())
       continue;
@@ -892,9 +906,7 @@ std::optional<std::vector<const Target*>> XcodeProject::GetTargetsFromBuilder(
       if (pair.ptr->output_type() != Target::EXECUTABLE)
         continue;
 
-      auto iter = targets.find(pair.ptr);
-      if (iter != targets.end())
-        targets.erase(iter);
+      targets.erase(pair.ptr);
     }
   }
 
@@ -966,10 +978,9 @@ PBXNativeTarget* XcodeProject::AddBundleTarget(const Target* target,
   const std::string& target_output_name = RebasePath(
       target->bundle_data().GetBundleRootDirOutput(target->settings()).value(),
       build_settings_->build_dir());
-  const std::string output_dir = RebasePath(target->bundle_data()
-          .GetBundleDir(target->settings())
-          .value(),
-      build_settings_->build_dir());
+  const std::string output_dir =
+      RebasePath(target->bundle_data().GetBundleDir(target->settings()).value(),
+                 build_settings_->build_dir());
   const std::string root_src_dir =
       RebasePath("//", build_settings_->build_dir());
   return project_.AddNativeTarget(

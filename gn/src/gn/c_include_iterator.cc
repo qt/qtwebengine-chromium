@@ -7,7 +7,6 @@
 #include <iterator>
 
 #include "base/logging.h"
-#include "base/macros.h"
 #include "base/strings/string_util.h"
 #include "gn/input_file.h"
 #include "gn/location.h"
@@ -23,7 +22,7 @@ enum IncludeType {
 // Returns a new string piece referencing the same buffer as the argument, but
 // with leading space trimmed. This only checks for space and tab characters
 // since we're dealing with lines in C source files.
-std::string_view TrimLeadingWhitespace(const std::string_view& str) {
+std::string_view TrimLeadingWhitespace(std::string_view str) {
   size_t new_begin = 0;
   while (new_begin < str.size() &&
          (str[new_begin] == ' ' || str[new_begin] == '\t'))
@@ -42,7 +41,7 @@ std::string_view TrimLeadingWhitespace(const std::string_view& str) {
 //
 // We assume the line has leading whitespace trimmed. We also assume that empty
 // lines have already been filtered out.
-bool ShouldCountTowardNonIncludeLines(const std::string_view& line) {
+bool ShouldCountTowardNonIncludeLines(std::string_view line) {
   if (base::StartsWith(line, "//", base::CompareCase::SENSITIVE))
     return false;  // Don't count comments.
   if (base::StartsWith(line, "/*", base::CompareCase::SENSITIVE) ||
@@ -61,7 +60,7 @@ bool ShouldCountTowardNonIncludeLines(const std::string_view& line) {
 //
 // The 1-based character number on the line that the include was found at
 // will be filled into *begin_char.
-IncludeType ExtractInclude(const std::string_view& line,
+IncludeType ExtractInclude(std::string_view line,
                            std::string_view* path,
                            int* begin_char) {
   static const char kInclude[] = "include";
@@ -113,7 +112,7 @@ IncludeType ExtractInclude(const std::string_view& line,
 }
 
 // Returns true if this line has a "nogncheck" comment associated with it.
-bool HasNoCheckAnnotation(const std::string_view& line) {
+bool HasNoCheckAnnotation(std::string_view line) {
   return line.find("nogncheck") != std::string_view::npos;
 }
 
@@ -140,11 +139,9 @@ bool CIncludeIterator::GetNextIncludeString(
     if (type != INCLUDE_NONE) {
       include->contents = include_contents;
       include->location = LocationRange(
-          Location(input_file_, cur_line_number, begin_char,
-                   -1 /* TODO(scottmg): Is this important? */),
+          Location(input_file_, cur_line_number, begin_char),
           Location(input_file_, cur_line_number,
-                   begin_char + static_cast<int>(include_contents.size()),
-                   -1 /* TODO(scottmg): Is this important? */));
+                   begin_char + static_cast<int>(include_contents.size())));
       include->system_style_include = (type == INCLUDE_SYSTEM);
 
       lines_since_last_include_ = 0;

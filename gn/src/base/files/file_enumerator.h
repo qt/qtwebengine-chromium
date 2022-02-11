@@ -12,7 +12,6 @@
 
 #include "base/containers/stack.h"
 #include "base/files/file_path.h"
-#include "base/macros.h"
 #include "util/build_config.h"
 #include "util/ticks.h"
 
@@ -47,7 +46,7 @@ class FileEnumerator {
     bool IsDirectory() const;
 
     // The name of the file. This will not include any path information. This
-    // is in constrast to the value returned by FileEnumerator.Next() which
+    // is in contrast to the value returned by FileEnumerator.Next() which
     // includes the |root_path| passed into the FileEnumerator constructor.
     FilePath GetName() const;
 
@@ -163,7 +162,8 @@ class FileEnumerator {
   // enumerate in the breadth-first search.
   base::stack<FilePath> pending_paths_;
 
-  DISALLOW_COPY_AND_ASSIGN(FileEnumerator);
+  FileEnumerator(const FileEnumerator&) = delete;
+  FileEnumerator& operator=(const FileEnumerator&) = delete;
 };
 
 }  // namespace base

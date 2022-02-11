@@ -14,6 +14,7 @@
 #include "gn/ninja_utils.h"
 #include "gn/rust_substitution_type.h"
 #include "gn/substitution_writer.h"
+#include "gn/rust_values.h"
 #include "gn/target.h"
 
 namespace {
@@ -154,7 +155,9 @@ void NinjaRustBinaryTargetWriter::Run() {
     order_only_deps.push_back(non_linkable_dep->dependency_output_file());
   }
   for (const auto* linkable_dep : classified_deps.linkable_deps) {
-    if (linkable_dep->source_types_used().RustSourceUsed()) {
+    // Rust cdylibs are treated as non-Rust dependencies for linking purposes.
+    if (linkable_dep->source_types_used().RustSourceUsed() &&
+        linkable_dep->rust_values().crate_type() != RustValues::CRATE_CDYLIB) {
       rustdeps.push_back(linkable_dep->link_output_file());
     } else {
       nonrustdeps.push_back(linkable_dep->link_output_file());
@@ -175,8 +178,7 @@ void NinjaRustBinaryTargetWriter::Run() {
 
   // Bubble up the full list of transitive rlib dependencies.
   std::vector<OutputFile> transitive_rustlibs;
-  for (const auto* dep :
-       target_->rust_values().transitive_libs().GetOrdered()) {
+  for (const auto* dep : target_->rust_transitive_libs().GetOrdered()) {
     if (dep->source_types_used().RustSourceUsed()) {
       transitive_rustlibs.push_back(dep->dependency_output_file());
     }
@@ -205,10 +207,12 @@ void NinjaRustBinaryTargetWriter::WriteCompilerVars() {
   EscapeOptions opts = GetFlagOptions();
   WriteCrateVars(target_, tool_, opts, out_);
 
-  WriteOneFlag(target_, &kRustSubstitutionRustFlags, false, Tool::kToolNone,
+  WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
+               &kRustSubstitutionRustFlags, false, Tool::kToolNone,
                &ConfigValues::rustflags, opts, path_output_, out_);
 
-  WriteOneFlag(target_, &kRustSubstitutionRustEnv, false, Tool::kToolNone,
+  WriteOneFlag(kRecursiveWriterKeepDuplicates, target_,
+               &kRustSubstitutionRustEnv, false, Tool::kToolNone,
                &ConfigValues::rustenv, opts, path_output_, out_);
 
   WriteSharedVars(subst);
@@ -248,7 +252,10 @@ void NinjaRustBinaryTargetWriter::WriteExterns(
 
   for (const Target* target : deps) {
     if (target->output_type() == Target::RUST_LIBRARY ||
-        target->output_type() == Target::RUST_PROC_MACRO) {
+        target->output_type() == Target::RUST_PROC_MACRO ||
+        (target->source_types_used().RustSourceUsed() &&
+         target->rust_values().InferredCrateType(target) ==
+             RustValues::CRATE_DYLIB)) {
       out_ << " --extern ";
       const auto& renamed_dep =
           target_->rust_values().aliased_deps().find(target->label());
@@ -312,12 +319,20 @@ void NinjaRustBinaryTargetWriter::WriteRustdeps(
     out_ << " -Lnative=";
     path_output_.WriteDir(out_, nonrustdep_dir, PathOutput::DIR_NO_LAST_SLASH);
   }
+  // Before outputting any libraries to link, ensure the linker is in a mode
+  // that allows dynamic linking, as rustc may have previously put it into
+  // static-only mode.
+  if (nonrustdeps.size() > 0) {
+    out_ << " -Clink-arg=-Bdynamic";
+  }
   for (const auto& nonrustdep : nonrustdeps) {
     out_ << " -Clink-arg=";
     path_output_.WriteFile(out_, nonrustdep);
   }
-
-  WriteLinkerFlags(out_, tool_, nullptr);
+  WriteLibrarySearchPath(out_, tool_);
   WriteLibs(out_, tool_);
+  out_ << std::endl;
+  out_ << "  ldflags =";
+  WriteCustomLinkerFlags(out_, tool_);
   out_ << std::endl;
 }

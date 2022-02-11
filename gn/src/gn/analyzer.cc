@@ -47,19 +47,15 @@ struct Outputs {
   std::set<Label> invalid_labels;
 };
 
-std::set<Label> LabelsFor(const std::set<const Target*>& targets) {
+std::set<Label> LabelsFor(const TargetSet& targets) {
   std::set<Label> labels;
   for (auto* target : targets)
     labels.insert(target->label());
   return labels;
 }
 
-std::set<const Target*> Intersect(const std::set<const Target*>& l,
-                                  const std::set<const Target*>& r) {
-  std::set<const Target*> result;
-  std::set_intersection(l.begin(), l.end(), r.begin(), r.end(),
-                        std::inserter(result, result.begin()));
-  return result;
+TargetSet Intersect(const TargetSet& l, const TargetSet& r) {
+  return l.intersection_with(r);
 }
 
 std::vector<std::string> GetStringVector(const base::DictionaryValue& dict,
@@ -138,42 +134,61 @@ Err JSONToInputs(const Label& default_toolchain,
     return Err(Location(), "Input is not a dictionary.");
 
   Err err;
-  std::vector<std::string> strings;
-  strings = GetStringVector(*dict, "files", &err);
-  if (err.has_error())
-    return err;
-  for (auto& s : strings) {
-    if (!IsPathSourceAbsolute(s) && !IsPathAbsolute(s)) {
-      return Err(Location(),
-                 "\"" + s + "\" is not a source-absolute or absolute path.");
+
+  const char kFilesKey[] = "files";
+  {
+    std::vector<std::string> files = GetStringVector(*dict, kFilesKey, &err);
+    if (err.has_error())
+      return err;
+    for (auto& s : files) {
+      if (!IsPathSourceAbsolute(s) && !IsPathAbsolute(s)) {
+        return Err(Location(),
+                   "\"" + s + "\" is not a source-absolute or absolute path.");
+      }
+      inputs->source_vec.emplace_back(std::move(s));
     }
-    inputs->source_vec.emplace_back(std::move(s));
   }
 
-  strings = GetStringVector(*dict, "additional_compile_targets", &err);
-  if (err.has_error())
-    return err;
-
   inputs->compile_included_all = false;
-  for (auto& s : strings) {
-    if (s == "all") {
-      inputs->compile_included_all = true;
-    } else {
-      inputs->compile_vec.push_back(
+  const char kAdditonalCompileTargetsKey[] = "additional_compile_targets";
+  if (dict->HasKey(kAdditonalCompileTargetsKey)) {
+    std::vector<std::string> additional_compile_targets =
+        GetStringVector(*dict, kAdditonalCompileTargetsKey, &err);
+    if (err.has_error())
+      return err;
+
+    for (auto& s : additional_compile_targets) {
+      if (s == "all") {
+        inputs->compile_included_all = true;
+      } else {
+        inputs->compile_vec.push_back(
+            AbsoluteOrSourceAbsoluteStringToLabel(default_toolchain, s, &err));
+        if (err.has_error())
+          return err;
+      }
+    }
+  }
+
+  const char kTestTargetsKey[] = "test_targets";
+  {
+    std::vector<std::string> test_targets =
+        GetStringVector(*dict, kTestTargetsKey, &err);
+    if (err.has_error())
+      return err;
+    for (auto& s : test_targets) {
+      inputs->test_vec.push_back(
           AbsoluteOrSourceAbsoluteStringToLabel(default_toolchain, s, &err));
       if (err.has_error())
         return err;
     }
   }
 
-  strings = GetStringVector(*dict, "test_targets", &err);
-  if (err.has_error())
-    return err;
-  for (auto& s : strings) {
-    inputs->test_vec.push_back(
-        AbsoluteOrSourceAbsoluteStringToLabel(default_toolchain, s, &err));
-    if (err.has_error())
-      return err;
+  for (const auto& kv : dict->DictItems()) {
+    if (kv.first == kFilesKey || kv.first == kAdditonalCompileTargetsKey ||
+        kv.first == kTestTargetsKey) {
+      continue;
+    }
+    return Err(Location(), "Unknown analyze input key \"" + kv.first + "\".");
   }
 
   for (auto& s : inputs->source_vec)
@@ -297,7 +312,7 @@ std::string Analyzer::Analyze(const std::string& input, Err* err) const {
 
   std::set<const Item*> affected_items =
       GetAllAffectedItems(inputs.source_files);
-  std::set<const Target*> affected_targets;
+  TargetSet affected_targets;
   for (const Item* affected_item : affected_items) {
     if (affected_item->AsTarget())
       affected_targets.insert(affected_item->AsTarget());
@@ -308,18 +323,18 @@ std::string Analyzer::Analyze(const std::string& input, Err* err) const {
     return OutputsToJSON(outputs, default_toolchain_, err);
   }
 
-  std::set<const Target*> root_targets;
+  TargetSet root_targets;
   for (const auto* item : all_items_) {
     if (item->AsTarget() && dep_map_.find(item) == dep_map_.end())
       root_targets.insert(item->AsTarget());
   }
 
-  std::set<const Target*> compile_targets = TargetsFor(inputs.compile_labels);
+  TargetSet compile_targets = TargetsFor(inputs.compile_labels);
   if (inputs.compile_included_all) {
     for (auto* root_target : root_targets)
       compile_targets.insert(root_target);
   }
-  std::set<const Target*> filtered_targets = Filter(compile_targets);
+  TargetSet filtered_targets = Filter(compile_targets);
   outputs.compile_labels =
       LabelsFor(Intersect(filtered_targets, affected_targets));
 
@@ -329,7 +344,7 @@ std::string Analyzer::Analyze(const std::string& input, Err* err) const {
       outputs.compile_labels.size() == filtered_targets.size())
     outputs.compile_includes_all = true;
 
-  std::set<const Target*> test_targets = TargetsFor(inputs.test_labels);
+  TargetSet test_targets = TargetsFor(inputs.test_labels);
   outputs.test_labels = LabelsFor(Intersect(test_targets, affected_targets));
 
   if (outputs.compile_labels.empty() && outputs.test_labels.empty())
@@ -361,9 +376,8 @@ std::set<Label> Analyzer::InvalidLabels(const std::set<Label>& labels) const {
   return invalid_labels;
 }
 
-std::set<const Target*> Analyzer::TargetsFor(
-    const std::set<Label>& labels) const {
-  std::set<const Target*> targets;
+TargetSet Analyzer::TargetsFor(const std::set<Label>& labels) const {
+  TargetSet targets;
   for (const auto& label : labels) {
     auto it = labels_to_items_.find(label);
     if (it != labels_to_items_.end()) {
@@ -374,20 +388,18 @@ std::set<const Target*> Analyzer::TargetsFor(
   return targets;
 }
 
-std::set<const Target*> Analyzer::Filter(
-    const std::set<const Target*>& targets) const {
-  std::set<const Target*> seen;
-  std::set<const Target*> filtered;
+TargetSet Analyzer::Filter(const TargetSet& targets) const {
+  TargetSet seen;
+  TargetSet filtered;
   for (const auto* target : targets)
     FilterTarget(target, &seen, &filtered);
   return filtered;
 }
 
 void Analyzer::FilterTarget(const Target* target,
-                            std::set<const Target*>* seen,
-                            std::set<const Target*>* filtered) const {
-  if (seen->find(target) == seen->end()) {
-    seen->insert(target);
+                            TargetSet* seen,
+                            TargetSet* filtered) const {
+  if (seen->add(target)) {
     if (target->output_type() != Target::GROUP) {
       filtered->insert(target);
     } else {

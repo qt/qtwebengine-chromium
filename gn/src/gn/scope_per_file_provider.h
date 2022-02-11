@@ -6,8 +6,8 @@
 #define TOOLS_GN_SCOPE_PER_FILE_PROVIDER_H_
 
 #include <memory>
+#include <string_view>
 
-#include "base/macros.h"
 #include "gn/scope.h"
 
 // ProgrammaticProvider for a scope to provide it with per-file built-in
@@ -21,7 +21,7 @@ class ScopePerFileProvider : public Scope::ProgrammaticProvider {
   ~ScopePerFileProvider() override;
 
   // ProgrammaticProvider implementation.
-  const Value* GetProgrammaticValue(const std::string_view& ident) override;
+  const Value* GetProgrammaticValue(std::string_view ident) override;
 
  private:
   const Value* GetCurrentToolchain();
@@ -47,7 +47,8 @@ class ScopePerFileProvider : public Scope::ProgrammaticProvider {
   std::unique_ptr<Value> target_gen_dir_;
   std::unique_ptr<Value> target_out_dir_;
 
-  DISALLOW_COPY_AND_ASSIGN(ScopePerFileProvider);
+  ScopePerFileProvider(const ScopePerFileProvider&) = delete;
+  ScopePerFileProvider& operator=(const ScopePerFileProvider&) = delete;
 };
 
 #endif  // TOOLS_GN_SCOPE_PER_FILE_PROVIDER_H_
