@@ -24,8 +24,10 @@
 #include "base/types/strong_alias.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/filling/form_filler.h"
+#endif
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/common/dense_set.h"
@@ -36,7 +38,9 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/translate/core/browser/translate_driver.h"
+#endif
 
 namespace autofill {
 
@@ -60,8 +64,13 @@ class FormInteractionsUkmLogger;
 // - BrowserAutofillManager for Chrome.
 //
 // It is owned by the AutofillDriver.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class AutofillManager
     : public translate::TranslateDriver::LanguageDetectionObserver {
+#else
+class AutofillManager {
+#endif
+
  public:
   using LifecycleState = AutofillDriver::LifecycleState;
 
@@ -183,6 +192,7 @@ class AutofillManager
     virtual void OnSuggestionsShown(AutofillManager& manager) {}
     virtual void OnSuggestionsHidden(AutofillManager& manager) {}
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
     // Fired when a form is filled or previewed with a AutofillProfile or
     // CreditCard.
     // `filled_fields` represents the fields that were sent to the renderer to
@@ -198,6 +208,7 @@ class AutofillManager
         mojom::ActionPersistence action_persistence,
         base::span<const FormFieldData* const> filled_fields,
         const FillingPayload& filling_payload) {}
+#endif
 
     // Fired when a form is submitted. A `FormData` is passed instead of a
     // `FormGlobalId` because the form structure cached inside `AutofillManager`
@@ -207,17 +218,23 @@ class AutofillManager
                                  const FormData& form) {}
   };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/40733066): Move to anonymous namespace once
   // BrowserAutofillManager::OnLoadedServerPredictions() moves to
   // AutofillManager.
   static void LogTypePredictionsAvailable(
       LogManager* log_manager,
       const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms);
+#endif
 
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~AutofillManager() override;
+#else
+  virtual ~AutofillManager();
+#endif
 
   // Notifies `Observer`s and calls Reset() if applicable.
   void OnAutofillDriverLifecycleStateChanged(
@@ -236,6 +253,7 @@ class AutofillManager
   // Some functions are virtual for testing.
   virtual void OnFormsSeen(const std::vector<FormData>& updated_forms,
                            const std::vector<FormGlobalId>& removed_forms);
+
   virtual void OnFormSubmitted(const FormData& form,
                                mojom::SubmissionSource source);
   virtual void OnTextFieldValueChanged(const FormData& form,
@@ -272,6 +290,7 @@ class AutofillManager
 
   // Other events.
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
 
   // translate::TranslateDriver::LanguageDetectionObserver:
@@ -284,6 +303,7 @@ class AutofillManager
   // language, its predictions are not recomputed.
   void OnLanguageDetermined(
       const translate::LanguageDetectionDetails& details) override;
+#endif
 
   // Fills `form_structure` and `autofill_field` with the cached elements
   // corresponding to `form_id` and `field_id`.  This might have the side-effect
@@ -324,10 +344,12 @@ class AutofillManager
   // Returns predictions from a heuristic source for fields identified by
   // `field_ids` in a form identified by `form_id`. Returns an empty map if the
   // manager has no data about the form.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::flat_map<FieldGlobalId, FieldType> GetHeursticPredictionForForm(
       HeuristicSource source,
       FormGlobalId form_id,
       const std::vector<FieldGlobalId>& field_ids) const;
+#endif
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -411,12 +433,14 @@ class AutofillManager
   virtual void OnFormProcessed(const FormData& form_data,
                                const FormStructure& form_structure) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the number of FormStructures with the given |form_signature| and
   // appends them to |form_structures|. Runs in linear time.
   size_t FindCachedFormsBySignature(
       FormSignature form_signature,
       std::vector<raw_ptr<FormStructure, VectorExperimental>>* form_structures)
       const;
+#endif
 
   // Parses multiple forms in one go. The function proceeds in four stages:
   //
@@ -463,16 +487,20 @@ class AutofillManager
  private:
   friend class AutofillManagerTestApi;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Invoked by `AutofillCrowdsourcingManager`.
   void OnLoadedServerPredictions(
       std::optional<AutofillCrowdsourcingManager::QueryResponse> response);
+#endif
 
   // Invoked when forms from OnFormsSeen() have been parsed to
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<autofill_metrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
+#endif
 
   // Returns a callback that runs `callback` on the main thread after all
   // ongoing async parsing operations have finished.
@@ -496,10 +524,12 @@ class AutofillManager
   // `*driver_` owns this object.
   const raw_ref<AutofillDriver> driver_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Observer needed to re-run heuristics when the language has been detected.
   base::ScopedObservation<translate::TranslateDriver,
                           translate::TranslateDriver::LanguageDetectionObserver>
       translate_observation_{this};
+#endif
 
   // Our copy of the form data.
   std::map<FormGlobalId, std::unique_ptr<FormStructure>> form_structures_;
