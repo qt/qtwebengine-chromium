@@ -35,10 +35,12 @@
 #include "base/types/optional_ref.h"
 #include "base/types/pass_key.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/crowdsourcing/autofill_crowdsourcing_manager.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/form_filler.h"
+#endif
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/heuristic_source.h"
@@ -51,7 +53,9 @@
 #include "components/autofill/core/common/password_form_fill_data.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/translate/core/browser/translate_driver.h"
+#endif
 #include "ui/gfx/geometry/rect.h"
 
 namespace autofill {
@@ -76,8 +80,13 @@ class FormInteractionsUkmLogger;
 // - BrowserAutofillManager for Chrome.
 //
 // It is owned by the AutofillDriver.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class AutofillManager
     : public translate::TranslateDriver::LanguageDetectionObserver {
+#else
+class AutofillManager {
+#endif
+
  public:
   class RendererEventPassKey {
    private:
@@ -235,6 +244,7 @@ class AutofillManager
     virtual void OnSuggestionsHidden(AutofillManager& manager,
                                      SuggestionHidingReason reason) {}
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
     // Fired when an autofill of `filling_payload` is previewed or filled.
     // This is not fired for single-field operations (see
     // OnFillOrPreviewField()). `filled_field_ids` represents the IDs of the
@@ -265,6 +275,7 @@ class AutofillManager
         mojom::ActionPersistence action_persistence,
         const std::u16string& value,
         std::optional<FieldType> field_type_used) {}
+#endif
 
     // Fired when a form is submitted. A `FormData` is passed instead of a
     // `FormGlobalId` because the form structure cached inside `AutofillManager`
@@ -308,7 +319,11 @@ class AutofillManager
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~AutofillManager() override;
+#else
+  virtual ~AutofillManager();
+#endif
 
   // Notifies `Observer`s and calls Reset() if applicable.
   void OnAutofillDriverLifecycleStateChanged(
@@ -322,6 +337,7 @@ class AutofillManager
   // Returns a WeakPtr to the leaf class.
   virtual base::WeakPtr<AutofillManager> GetWeakPtr() = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Routes calls from external components to FormFiller::FillOrPreviewField.
   // Virtual for testing.
   virtual void FillOrPreviewField(mojom::ActionPersistence action_persistence,
@@ -331,6 +347,7 @@ class AutofillManager
                                   const std::u16string& value,
                                   FillingProduct filling_product,
                                   std::optional<FieldType> field_type_used) = 0;
+#endif
 
   // Events triggered by the renderer.
   // See autofill_driver.mojom for documentation.
@@ -338,6 +355,7 @@ class AutofillManager
   virtual void OnFormsSeen(std::vector<FormData> updated_forms,
                            std::vector<FormGlobalId> removed_form_ids,
                            RendererEventPassKey pass_key);
+
   virtual void OnFormSubmitted(const FormData& form,
                                mojom::SubmissionSource source,
                                RendererEventPassKey pass_key);
@@ -401,6 +419,7 @@ class AutofillManager
   // Invoked when the suggestions are actually hidden.
   virtual void OnSuggestionsHidden(SuggestionHidingReason reason);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
 
   // translate::TranslateDriver::LanguageDetectionObserver:
@@ -413,6 +432,7 @@ class AutofillManager
   // language, its predictions are not recomputed.
   void OnLanguageDetermined(
       const translate::LanguageDetectionDetails& details) override;
+#endif
 
   FormStructure* FindCachedFormById(const FormGlobalId& form_id,
                                     const FormMutationPassKey& pass_key);
@@ -442,6 +462,7 @@ class AutofillManager
   virtual void TriggerFormExtractionInAllFrames(
       base::OnceCallback<void(bool success)> form_extraction_finished_callback);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns server predictions for fields identified by `field_ids` in a form
   // identified by `form_id`. If the manager has no data about the form with
   // `form_id`, returns an empty map. If the form does not contain data about
@@ -462,6 +483,7 @@ class AutofillManager
   // for Android (i.e., platform) Autofill.
   virtual CreditCardAccessManager* GetCreditCardAccessManager() = 0;
   virtual const CreditCardAccessManager* GetCreditCardAccessManager() const = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   void AddObserver(Observer* observer) { observers_.AddObserver(observer); }
 
@@ -481,10 +503,12 @@ class AutofillManager
   // Reparses all known forms.
   virtual void ReparseKnownForms();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // After subscribing, FieldClassificationModelHandler::OnModelUpdated() will
   // trigger ReparseKnownForms(). There may be a handler for Autofill and/or
   // Password Manager.
   void SubscribeToMlModelChanges(FieldClassificationModelHandler& handler);
+#endif
 
  protected:
   explicit AutofillManager(AutofillDriver* driver);
@@ -556,8 +580,10 @@ class AutofillManager
       AutofillSuggestionTriggerSource trigger_source,
       std::optional<PasswordSuggestionRequest> password_request) = 0;
   virtual void OnDidAutofillFormImpl(const FormData& form) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void SuppressAutomaticRefillsImpl(const FillId& fill_id) = 0;
   virtual void RequestRefillImpl(const FillId& fill_id) = 0;
+#endif
   virtual void OnHidePopupImpl() = 0;
   virtual void OnJavaScriptChangedAutofilledValueImpl(
       const FormData& form,
@@ -567,8 +593,10 @@ class AutofillManager
       const FormData& form,
       const FieldGlobalId& trigger_field_id,
       const std::vector<JavaScriptFieldModification>& field_modifications) = 0;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void OnLoadedServerPredictionsImpl(
       base::span<const raw_ref<FormStructure>> forms) = 0;
+#endif
 
   // Parses multiple forms in one go. The function proceeds in five stages:
   //
@@ -613,6 +641,7 @@ class AutofillManager
       base::OnceCallback<void(AutofillManager&, const std::vector<FormData>&)>
           callback);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Step 2 described above ParseFormsAsync().
   void RunMlModels(AsyncContext context,
                    base::OnceCallback<void(AsyncContext)> done_callback);
@@ -639,12 +668,14 @@ class AutofillManager
   // `OnLoadedServerPredictions()`.
   void LogServerQueryResponseMetrics(
       const std::vector<raw_ref<FormStructure>>& forms);
+#endif
 
   // Invoked when forms from OnFormsSeen() have been parsed to
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms,
                      base::TimeTicks form_seen_timestamp);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Updates `form_structures_` with the information in `forms` and `context`,
   // if available. `context` is available when this function is called as a
   // result of a parsing operation, `reason` is an indicator of that.
@@ -659,6 +690,7 @@ class AutofillManager
 
   std::unique_ptr<autofill_metrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
+#endif
 
   // If `kAutofillSynchronousAfterParsing` is disabled:
   // Returns a callback that runs `callback` on the main thread after all
@@ -677,10 +709,12 @@ class AutofillManager
   // `*driver_` owns this object.
   const raw_ref<AutofillDriver> driver_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Observer needed to re-run heuristics when the language has been detected.
   base::ScopedObservation<translate::TranslateDriver,
                           translate::TranslateDriver::LanguageDetectionObserver>
       translate_observation_{this};
+#endif
 
   // Our copy of the form data.
   std::map<FormGlobalId, std::unique_ptr<FormStructure>> form_structures_;
@@ -688,9 +722,11 @@ class AutofillManager
   // Observers that listen to updates of this instance.
   base::ObserverList<Observer> observers_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Set by SubscribeToMlModelChanges().
   base::CallbackListSubscription autofill_model_change_subscription_;
   base::CallbackListSubscription password_manager_model_change_subscription_;
+#endif
 
   // DetermineHeuristicTypes() should only be run on the `parsing_task_runner_`.
   // The reply will be called on the main thread and should be a no-op if this

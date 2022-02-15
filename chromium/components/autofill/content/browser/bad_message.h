@@ -30,6 +30,7 @@ bool ValidateArguments(Pred&& pred, const Args&... args) {
     }
     return true;
   };
+  (void)recursion_helper;
   return (recursion_helper(args) && ...);
 }
 

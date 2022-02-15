@@ -56,6 +56,7 @@ void LogSuggestionAcceptedIndex(
     FillingProduct filling_product,
     bool off_the_record,
     base::span<const SuggestionType> shown_suggestion_types) {
+  const int kMaxBucketsCount = 50;
   const int uma_index = std::min(index, kMaxBucketsCount);
   base::UmaHistogramSparse("Autofill.SuggestionAcceptedIndex", uma_index);
 

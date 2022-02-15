@@ -49,10 +49,12 @@ class AutofillDriver;
 class BrowserAutofillManager;
 class FormStructure;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Retrieves a copy of the profile that the `payload` refers to.
 std::optional<AutofillProfile> GetProfileFromPayload(
     const AddressDataManager& adm,
     const Suggestion::AutofillProfilePayload& payload);
+#endif
 
 // Delegate for in-browser Autocomplete and Autofill display and selection.
 class AutofillExternalDelegate : public AutofillSuggestionDelegate {
@@ -146,6 +148,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   }
 
  private:
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the `AutofillProfile` that an address suggestion contains as
   // payload or `std::nullopt` if the profile cannot be found. Assumes that
   // `suggestion` has an `AutofillProfilePayload`.
@@ -157,6 +160,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   // has an `AutofillAiPayload`.
   base::optional_ref<const EntityInstance> GetEntityInstance(
       const Suggestion& suggestion) const;
+#endif
 
   // Tries to display `suggestions` in the suggestions UI.
   // If `trigger_field` is `std::nullopt`, the delegate attempts to update the
@@ -180,6 +184,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
                                AutofillSuggestionTriggerSource)>
   CreateUpdateSuggestionsCallback();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Private handler for DidAcceptSuggestions for address related suggestions.
   void DidAcceptAddressSuggestion(const Suggestion& suggestion,
                                   const SuggestionMetadata& metadata);
@@ -229,6 +234,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   // all |suggestions| come from Google Payments.
   void ApplyAutofillOptions(std::vector<Suggestion>* suggestions,
                             bool is_all_server_suggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Inserts the data list values at the start of the given list, including
   // any required separators. Will also go through `suggestions` and remove
@@ -237,8 +243,10 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   void InsertDataListValues(base::span<const SelectOption> datalist_options,
                             std::vector<Suggestion>& suggestions) const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the text (i.e. |Suggestion| value) for Chrome autofill options.
   std::u16string GetSettingsSuggestionValue() const;
+#endif
 
   // Returns if the Pay Now Pay Later tabs should be shown.
   virtual bool ShouldShowPayNowPayLaterTabs();

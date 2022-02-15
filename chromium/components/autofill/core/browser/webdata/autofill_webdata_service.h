@@ -16,7 +16,9 @@
 #include "base/time/time.h"
 #include "build/buildflag.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif
 #include "components/autofill/core/browser/data_model/valuables/valuable_types.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/common/form_field_data.h"

@@ -23,7 +23,7 @@
 #include "base/types/expected.h"
 #include "base/types/optional_ref.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
-#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+// #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/field_filling_util.h"
@@ -44,6 +44,7 @@ class AutofillClient;
 class AutofillProfile;
 class BrowserAutofillManager;
 class CreditCard;
+class EntityInstance;
 class LogManager;
 enum class FillingProduct;
 

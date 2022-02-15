@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
+// #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_types.h"
 #include "components/autofill/core/common/dense_set.h"
@@ -100,6 +100,7 @@ class AutofillType {
   //   `GetFormTypes().empty()`
   DenseSet<FormType> GetFormTypes() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // The AutofillType constraints guarantee that AutofillType contains at most
   // one FieldType of certain kinds. For example, an AutofillType may hold at
   // most one address-related FieldType.
@@ -120,6 +121,7 @@ class AutofillType {
   // excludes the dynamically assigned types (e.g., name types).
   FieldTypeSet GetAutofillAiTypes() const;
   FieldTypeSet GetStaticAutofillAiTypes() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   std::string ToString() const;
 

@@ -38,18 +38,26 @@
 #include "base/time/time.h"
 #include "base/types/optional_ref.h"
 #include "base/types/pass_key.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
+#endif
 #include "components/autofill/core/browser/autofill_field.h"
 #include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/autofill_server_prediction.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/country_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_type_utils.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_types.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
 #include "components/autofill/core/browser/form_processing/autofill_ai/determine_attribute_types.h"
+#endif
 #include "components/autofill/core/browser/form_processing/name_processing_util.h"
 #include "components/autofill/core/browser/form_structure_rationalizer.h"
 #include "components/autofill/core/browser/form_structure_sectioning_util.h"
@@ -97,6 +105,7 @@ std::string ServerTypesToString(const AutofillField& field) {
   return base::StrCat({"[", base::JoinString(server_types, ", "), "]"});
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::string AttributeTypesToString(base::span<const AttributeType> types) {
   auto attribute_type_to_string = [](AttributeType t) {
     return base::StrCat(
@@ -107,6 +116,7 @@ std::string AttributeTypesToString(base::span<const AttributeType> types) {
        base::JoinString(base::ToVector(types, attribute_type_to_string), ", "),
        "]"});
 }
+#endif
 
 std::string_view ToYesOrNo(bool value) {
   return value ? "Yes" : "No";
@@ -225,6 +235,7 @@ void FormStructure::RationalizeAndAssignSections(
     const GeoIpCountryCode& client_country,
     const LanguageCode& current_page_language,
     LogManager* log_manager) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // We call AssignSections() before *and* after rationalization because
   // - rationalization depends on sections and
   // - sectioning depends on field types, which rationalization may change.
@@ -260,6 +271,7 @@ void FormStructure::RationalizeAndAssignSections(
       });
     }
   }
+#endif
 }
 
 FormDataPredictions FormStructure::GetFieldTypePredictions() const {
@@ -273,6 +285,7 @@ FormDataPredictions FormStructure::GetFieldTypePredictions() const {
   form.structural_form_signature =
       base::NumberToString(structural_form_signature().value());
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::map<const AutofillField*, std::vector<AttributeType>>
       field_to_attribute_types;
   for (const auto& [section, entities_and_fields] :
@@ -283,6 +296,7 @@ FormDataPredictions FormStructure::GetFieldTypePredictions() const {
       }
     }
   }
+#endif
 
   const base::flat_map<FieldGlobalId, std::u16string> parseable_names =
       GetParseableNames(fields_);
@@ -299,10 +313,12 @@ FormDataPredictions FormStructure::GetFieldTypePredictions() const {
     if (!field->server_predictions().empty()) {
       annotated_field.server_type = FieldTypeToStringView(field->server_type());
     }
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (auto it = field_to_attribute_types.find(&*field);
         it != field_to_attribute_types.end()) {
       annotated_field.attribute_types = AttributeTypesToString(it->second);
     }
+#endif
     if (base::optional_ref<const AutofillFormatString> format_string =
             field->format_string()) {
       annotated_field.format_string = base::UTF16ToUTF8(format_string->value);
@@ -373,6 +389,8 @@ std::string FormStructure::FormSignatureAsStr() const {
   return base::NumberToString(form_signature().value());
 }
 
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool FormStructure::IsCompleteCreditCardForm(
     CreditCardFormCompleteness credit_card_form_completeness) const {
   FieldTypeSet all_cc_types = FieldTypeSet(fields_, [](const auto& field) {
@@ -399,6 +417,7 @@ bool FormStructure::IsCompleteCreditCardForm(
     }
   }
 }
+#endif
 
 void FormStructure::UpdateFormData(const FormData& form_data) {
   CHECK_EQ(form_data.global_id(), global_id());
@@ -724,6 +743,7 @@ LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form) {
            << ToYesOrNo(form.may_run_autofill_ai_model());
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::map<const AutofillField*, std::vector<AttributeType>>
       field_to_attribute_types;
   for (const auto& [section, entities_and_fields] :
@@ -734,6 +754,7 @@ LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form) {
       }
     }
   }
+#endif
 
   const base::flat_map<FieldGlobalId, std::u16string> parseable_names =
       GetParseableNames(form.fields());
@@ -805,11 +826,13 @@ LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form) {
                             " (regex heuristic: ", regex_heuristic_type,
                             ml_heuristic_part, ", server: ", server_type,
                             html_type_description, ")"});
+#if !BUILDFLAG(IS_QTWEBENGINE)
     if (auto it = field_to_attribute_types.find(&*field);
         it != field_to_attribute_types.end()) {
       buffer << Tr{} << "Autofill AI AttributeTypes:"
              << AttributeTypesToString(it->second);
     }
+#endif
     if (base::optional_ref<const AutofillFormatString> format_string =
             field->format_string()) {
       std::string_view source;
@@ -861,6 +884,7 @@ LogBuffer& operator<<(LogBuffer& buffer, const FormStructure& form) {
   return buffer;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::flat_map<FieldGlobalId, AutofillServerPrediction>
 FormStructure::GetServerPredictions(
     base::span<const FieldGlobalId> field_ids) const {
@@ -876,6 +900,7 @@ FormStructure::GetServerPredictions(
   }
   return predictions;
 }
+#endif
 
 base::flat_map<FieldGlobalId, FieldType> FormStructure::GetHeuristicPredictions(
     HeuristicSource source,

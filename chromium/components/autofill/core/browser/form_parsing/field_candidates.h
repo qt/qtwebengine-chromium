@@ -50,6 +50,7 @@ struct FieldCandidatePriority {
 
 // Represents a possible type for a given field.
 struct FieldCandidate {
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   // The associated type for this candidate.
   FieldType type = internal::IsRequired();
 
@@ -60,6 +61,11 @@ struct FieldCandidate {
   // A non-negative number indicating how sure the type is for this specific
   // candidate. The higher the more confidence.
   FieldCandidatePriority priority = internal::IsRequired();
+#else
+  FieldType type;
+  MatchInfo match_info;
+  FieldCandidatePriority priority;
+#endif
 };
 
 // Each field can be of different types. This class collects all these possible

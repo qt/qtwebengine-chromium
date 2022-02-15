@@ -43,10 +43,12 @@ class ContentAutofillClient
       base::PassKey<ContentAutofillDriver> pass_key,
       ContentAutofillDriver& driver) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the ContentCredentialManager for the WebContents that handles
   // navigator.credentials requests or nullptr if none is available.
   virtual credential_management::ContentCredentialManager*
   GetContentCredentialManager() = 0;
+#endif
 
   // Implementation of AutofillClient:
   bool DocumentUsedWebOTP() final;
@@ -59,8 +61,10 @@ class ContentAutofillClient
   friend class content::WebContentsUserData<ContentAutofillClient>;
 
   ContentAutofillDriverFactory autofill_driver_factory_;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<PasswordManagerAutofillHelper>
       password_manager_autofill_helper_;
+#endif
 
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 };

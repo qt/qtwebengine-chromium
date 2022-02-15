@@ -95,6 +95,7 @@ class FormStructure {
   // Return the form signature as string.
   std::string FormSignatureAsStr() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // This enum defines two different states of completeness for a credit card
   // form, each used for a distinct purpose to check if the required credit card
   // fields exist.
@@ -113,6 +114,7 @@ class FormStructure {
   // defined by the given CreditCardFormCompleteness level.
   bool IsCompleteCreditCardForm(
       CreditCardFormCompleteness credit_card_form_completeness) const;
+#endif
 
   void UpdateFormData(
       const FormData& form_data,
@@ -246,8 +248,10 @@ class FormStructure {
     std::optional<FormSignature> last_credit_card_form_submitted;
   };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::flat_map<FieldGlobalId, AutofillServerPrediction> GetServerPredictions(
       base::span<const FieldGlobalId> field_ids) const;
+#endif
 
   base::flat_map<FieldGlobalId, FieldType> GetHeuristicPredictions(
       HeuristicSource source,

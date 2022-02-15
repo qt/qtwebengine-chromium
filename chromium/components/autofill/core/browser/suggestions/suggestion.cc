@@ -22,7 +22,9 @@
 #include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/buildflag.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/integrators/at_memory/memory_data_type.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
@@ -270,6 +272,7 @@ Suggestion::PasswordSuggestionDetails::operator=(PasswordSuggestionDetails&&) =
     default;
 Suggestion::PasswordSuggestionDetails::~PasswordSuggestionDetails() = default;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 Suggestion::AutofillAiPayload::AutofillAiPayload() = default;
 
 Suggestion::AutofillAiPayload::AutofillAiPayload(EntityInstance::EntityId guid,
@@ -288,6 +291,7 @@ Suggestion::AutofillAiPayload& Suggestion::AutofillAiPayload::operator=(
     AutofillAiPayload&&) = default;
 
 Suggestion::AutofillAiPayload::~AutofillAiPayload() = default;
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
 base::android::ScopedJavaLocalRef<jobject>
@@ -351,6 +355,7 @@ Suggestion::IdentityCredentialPayload::operator=(IdentityCredentialPayload&&) =
 
 Suggestion::IdentityCredentialPayload::~IdentityCredentialPayload() = default;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 Suggestion::AtMemoryPayload::AtMemoryPayload() = default;
 
 Suggestion::AtMemoryPayload::AtMemoryPayload(std::u16string value,
@@ -380,6 +385,7 @@ Suggestion::OpenGeminiPayload& Suggestion::OpenGeminiPayload::operator=(
 Suggestion::OpenGeminiPayload& Suggestion::OpenGeminiPayload::operator=(
     OpenGeminiPayload&&) = default;
 Suggestion::OpenGeminiPayload::~OpenGeminiPayload() = default;
+#endif
 
 Suggestion::PaymentsPayload::PaymentsPayload() = default;
 

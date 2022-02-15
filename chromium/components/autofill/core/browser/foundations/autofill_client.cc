@@ -17,7 +17,9 @@
 #include "base/containers/span.h"
 #include "base/i18n/rtl.h"
 #include "base/notimplemented.h"
+#include "base/version_info/version_info.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/country_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
@@ -37,7 +39,10 @@
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/optimization_guide/core/model_execution/remote_model_executor.h"
-#include "components/personal_context/core/personal_context_types.h"
+#else
+#include "components/autofill/core/browser/filling/filling_product.h"
+#include "components/autofill/core/browser/suggestions/suggestion.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/profile_metrics/browser_profile_type.h"
 #include "net/base/schemeful_site.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -83,6 +88,7 @@ bool AutofillClient::IsOffTheRecord() const {
   return false;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const EntityDataManager* AutofillClient::GetEntityDataManager() const {
   return const_cast<AutofillClient*>(this)->GetEntityDataManager();
 }
@@ -98,6 +104,7 @@ const PersonalDataManager& AutofillClient::GetPersonalDataManager() const {
 const ValuablesDataManager* AutofillClient::GetValuablesDataManager() const {
   return const_cast<AutofillClient*>(this)->GetValuablesDataManager();
 }
+#endif
 
 WalletPassAccessManager* AutofillClient::GetWalletPassAccessManager() {
   return nullptr;
@@ -138,6 +145,8 @@ void AutofillClient::MarkPersonalContextAtMemoryNoticeAsAcknowledged() {}
 AutofillComposeDelegate* AutofillClient::GetComposeDelegate() {
   return nullptr;
 }
+
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const AutofillComposeDelegate* AutofillClient::GetComposeDelegate() const {
   return const_cast<AutofillClient*>(this)->GetComposeDelegate();
 }
@@ -227,11 +236,13 @@ AutofillClient::GetPaymentsAutofillClient() const {
   // nullptr.
   return const_cast<AutofillClient*>(this)->GetPaymentsAutofillClient();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 GeoIpCountryCode AutofillClient::GetVariationConfigCountryCode() const {
   return GeoIpCountryCode(std::string());
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 profile_metrics::BrowserProfileType AutofillClient::GetProfileType() const {
   // This is an abstract interface and thus never instantiated directly,
   // therefore it is safe to always return |kRegular| here.
@@ -242,11 +253,13 @@ const subscription_eligibility::SubscriptionEligibilityService*
 AutofillClient::GetSubscriptionEligibilityService() const {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 LogManager* AutofillClient::GetCurrentLogManager() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool AutofillClient::ShouldFormatForLargeKeyboardAccessory() const {
   return false;
 }
@@ -294,7 +307,7 @@ void AutofillClient::TriggerAutofillAiFillingJourneySurvey(
     const FieldTypeSet& triggering_field_types) {
   NOTIMPLEMENTED();
 }
-
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool AutofillClient::IsTabInActorMode() const {
   return false;
@@ -304,6 +317,7 @@ ActorKeyMetricsRecorder* AutofillClient::GetActorKeyMetricsRecorder() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::unique_ptr<device_reauth::DeviceAuthenticator>
 AutofillClient::GetDeviceAuthenticator(std::string histogram) const {
   return nullptr;
@@ -315,10 +329,14 @@ AutofillClient::GetDeviceAuthenticator() const {
 }
 
 bool AutofillClient::SupportsDeviceReauth() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<device_reauth::DeviceAuthenticator> authenticator =
       GetDeviceAuthenticator();
   return authenticator &&
          authenticator->CanAuthenticateWithBiometricOrScreenLock();
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool AutofillClient::ShowAutofillFieldIphForFeature(
@@ -330,6 +348,7 @@ bool AutofillClient::ShowAutofillFieldIphForFeature(
 void AutofillClient::HideAutofillFieldIph() {}
 
 void AutofillClient::NotifyIphFeatureUsed(AutofillClient::IphFeature feature) {}
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 std::optional<AutofillClient::SuggestionUiSessionId>
 AutofillClient::GetSessionIdForCurrentAutofillSuggestions() const {
@@ -349,6 +368,7 @@ void AutofillClient::UpdateAutofillSuggestions(
   NOTIMPLEMENTED();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool AutofillClient::IsCvcSavingSupported() const {
   return true;
 }
@@ -443,6 +463,7 @@ one_time_tokens::OneTimeTokenService* AutofillClient::GetOneTimeTokenService()
     const {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool AutofillClient::DocumentUsedWebOTP() {
   return false;
@@ -457,9 +478,11 @@ AutofillManager* AutofillClient::GetAutofillManagerForPrimaryMainFrame() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 OtpPhishGuardDelegate* AutofillClient::GetOtpPhishGuardDelegate() {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillClient::OpenGeminiInSidebar(const std::u16string& prompt) {
   // TODO(crbug.com/493824736): Implement opening Gemini in the sidebar.

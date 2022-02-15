@@ -33,37 +33,52 @@
 #include "base/types/zip.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/at_memory/at_memory_manager.h"
 #include "components/autofill/core/browser/autofill_ai_form_rationalization.h"
+#endif
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/autofill_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_manager/addresses/address_data_manager.h"
 #include "components/autofill/core/browser/data_manager/autofill_ai/entity_data_manager.h"
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager.h"
 #include "components/autofill/core/browser/data_manager/valuables/valuables_data_manager.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif
 #include "components/autofill/core/browser/data_model/valuables/valuable_types.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_type_utils.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/addresses/field_filling_address_util.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/filling/autofill_ai/autofill_ai_access_manager.h"
 #include "components/autofill/core/browser/filling/autofill_ai/field_filling_entity_util.h"
+#endif
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/filling/form_filler.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_processing/autofill_ai/determine_attribute_types.h"
+#endif
 #include "components/autofill/core/browser/foundations/autofill_client.h"
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/foundations/browser_autofill_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_manager.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/metrics/autofill_ai_metrics.h"
+#endif
 #include "components/autofill/core/browser/integrators/compose/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/otp_suggestion.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/metrics/autofill_in_devtools_metrics.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics_utils.h"
+#endif
 #include "components/autofill/core/browser/metrics/loyalty_cards_metrics.h"
 #include "components/autofill/core/browser/metrics/suggestions_list_metrics.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/payments/ai_card_recommendation_manager.h"
 #include "components/autofill/core/browser/payments/bnpl_manager.h"
 #include "components/autofill/core/browser/payments/bnpl_util.h"
@@ -72,6 +87,7 @@
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/payments/payments_util.h"
 #include "components/autofill/core/browser/payments/save_and_fill_manager.h"
+#endif
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
@@ -94,6 +110,7 @@
 
 namespace autofill {
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // Fills the queried form with the provided credit card using the specified
@@ -272,6 +289,7 @@ std::optional<AutofillProfile> GetProfileFromPayload(
   }
   return std::nullopt;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 AutofillExternalDelegate::AutofillExternalDelegate(
     BrowserAutofillManager* manager)
@@ -368,22 +386,28 @@ void AutofillExternalDelegate::OnQuery(
     const FormFieldData& field,
     const gfx::Rect& caret_bounds,
     AutofillSuggestionTriggerSource trigger_source) {
+  // NOTE(QtWebEngine): datalist requires |query_field_| and |element_bounds_|
   last_query_ = {.form_id = form.global_id(),
                  .field_id = field.global_id(),
                  .field_datalist_options = field.datalist_options()};
   caret_bounds_ = caret_bounds;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   trigger_source_ = trigger_source;
   manager_->client().UpdateAutofillDataListValues(field.datalist_options());
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const AutofillField* AutofillExternalDelegate::GetQueriedField() const {
   return GetQueriedFormAndField().second;
 }
+#endif
 
 FieldGlobalId AutofillExternalDelegate::GetQueriedFieldId() const {
   return last_query_.field_id;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::pair<const FormStructure*, const AutofillField*>
 AutofillExternalDelegate::GetQueriedFormAndField() const {
   auto [form, field] =
@@ -394,6 +418,7 @@ AutofillExternalDelegate::GetQueriedFormAndField() const {
 AutofillTriggerSource AutofillExternalDelegate::GetTriggerSource() const {
   return TriggerSourceFromSuggestionTriggerSource(trigger_source_);
 }
+#endif
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
     const FormFieldData& trigger_field,
@@ -412,6 +437,7 @@ void AutofillExternalDelegate::OnSuggestionsReturned(
       AutofillSuggestionsIgnoreFocusLoss(false));
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::optional<AutofillProfile>
 AutofillExternalDelegate::GetProfileFromAddressSuggestion(
     const Suggestion& suggestion) const {
@@ -430,6 +456,7 @@ AutofillExternalDelegate::GetEntityInstance(
   return edm->GetEntityInstance(
       suggestion.GetPayload<Suggestion::AutofillAiPayload>().guid);
 }
+#endif
 
 void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
     std::vector<Suggestion> suggestions,
@@ -439,6 +466,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
   const bool is_update = !trigger_field.has_value();
   CHECK(!*ignore_focus_loss || is_update)
       << "Ignoring focus loss is only supported for updates";
+#if !BUILDFLAG(IS_QTWEBENGINE)
 
   if ((!is_update && !trigger_field->is_focusable()) ||
       !manager_->driver().CanShowAutofillUi()) {
@@ -448,6 +476,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
   }
 
   PossiblyRemoveAutofillWarnings(suggestions);
+#endif
 
   const FillingProduct old_product = GetMainFillingProduct();
 
@@ -464,6 +493,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
   shown_suggestion_types_ = base::ToVector(suggestions, &Suggestion::type);
   const FillingProduct new_product = GetMainFillingProduct();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (suggestions.empty() && !IsAtMemoryTriggerSource(trigger_source)) {
     OnAutofillAvailabilityEvent(
         mojom::AutofillSuggestionAvailability::kNoSuggestions);
@@ -476,6 +506,7 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
       return;
     }
   }
+#endif
 
   // Send to display.
   if (is_update) {
@@ -512,12 +543,14 @@ void AutofillExternalDelegate::AttemptToDisplayAutofillSuggestions(
 #endif
 
   const bool show_tabbed_popup = ShouldShowPayNowPayLaterTabs();
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (show_tabbed_popup) {
     manager_->client()
         .GetPersonalDataManager()
         .payments_data_manager()
         .SetAutofillHasSeenBnpl();
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Tabbed popups may call `OnSuggestionsChanged()` when the active tab is
   // updated, so prefer the previous arrow side to keep the dropdown in
@@ -598,6 +631,7 @@ AutofillExternalDelegate::GetDriver_DoNotUse() {
 void AutofillExternalDelegate::OnSuggestionsShown(
     base::span<const Suggestion> suggestions,
     base::optional_ref<const SuggestionMetadata> parent_suggestion_metadata) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Popups are expected to be Autofill or Autocomplete.
   DCHECK(suggestions.empty() ||
          GetFillingProductFromSuggestionType(suggestions[0].type) !=
@@ -625,30 +659,46 @@ void AutofillExternalDelegate::OnSuggestionsShown(
   manager_->DidShowSuggestions(
       suggestions, parent_suggestion_metadata, last_query_.form_id,
       last_query_.field_id, CreateUpdateSuggestionsCallback(), trigger_source_);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::OnSuggestionsHidden(
     SuggestionHidingReason reason) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   manager_->GetAtMemoryManager().OnPopupHidden();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   manager_->OnSuggestionsHidden(reason);
 }
 
 bool AutofillExternalDelegate::OnFilterChanged(const std::u16string& filter) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return manager_->GetAtMemoryManager().OnFilterChanged(filter);
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool AutofillExternalDelegate::OnSearchSubmitted(const std::u16string& filter) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return manager_->GetAtMemoryManager().OnSearchSubmitted(filter);
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool AutofillExternalDelegate::IsSearching() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return manager_->GetAtMemoryManager().IsSearching();
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidSelectSuggestion(
     const Suggestion& suggestion) {
   ClearPreviewedForm();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   switch (suggestion.type) {
     case SuggestionType::kUndoOrClear:
       manager_->UndoAutofill(mojom::ActionPersistence::kPreview,
@@ -802,11 +852,13 @@ void AutofillExternalDelegate::DidSelectSuggestion(
     case SuggestionType::kWebauthnCredential:
       NOTREACHED();  // Should be handled elsewhere.
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidAcceptSuggestion(
     const Suggestion& suggestion,
     const SuggestionMetadata& metadata) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(suggestion.IsAcceptable());
   base::UmaHistogramEnumeration("Autofill.Suggestions.AcceptedType",
                                 suggestion.type);
@@ -1104,12 +1156,22 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
     case SuggestionType::kWebauthnCredential:
       NOTREACHED();  // Should be handled elsewhere.
   }
+#else
+  if (suggestion.type == SuggestionType::kDatalistEntry) {
+    manager_->driver().RendererShouldAcceptDataListSuggestion(
+        last_query_.field_id, suggestion.main_text.value);
+  } else {
+    // QtWebEngine supports datalist only.
+    NOTREACHED();
+  }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   manager_->client().HideSuggestions(SuggestionHidingReason::kAcceptSuggestion,
                                      /*product=*/std::nullopt);
 }
 
 bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   switch (suggestion.type) {
     // These SuggestionTypes are various types which can appear in the first
     // level suggestion to fill an address or credit card field.
@@ -1249,6 +1311,9 @@ bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
       return false;
   }
   NOTREACHED();
+#else
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillExternalDelegate::DidEndTextFieldEditing() {
@@ -1257,6 +1322,7 @@ void AutofillExternalDelegate::DidEndTextFieldEditing() {
 }
 
 void AutofillExternalDelegate::OnTabSelected(TabbedPaneTabType tab_type) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   switch (tab_type) {
     case TabbedPaneTabType::kPayLater:
       manager_->GetPaymentsBnplManager()->OnUserDecisionToUseBnpl(
@@ -1279,6 +1345,7 @@ void AutofillExternalDelegate::OnTabSelected(TabbedPaneTabType tab_type) {
       manager_->GetPaymentsBnplManager()->OnUserDecisionToUseSavedCards();
       break;
   }
+#endif
 }
 
 void AutofillExternalDelegate::ClearPreviewedForm() {
@@ -1302,6 +1369,7 @@ base::WeakPtr<AutofillExternalDelegate> AutofillExternalDelegate::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillExternalDelegate::PreviewAddressFieldByFieldFillingSuggestion(
     const AutofillProfile& profile,
     const Suggestion& suggestion) {
@@ -1387,6 +1455,7 @@ void AutofillExternalDelegate::AutofillForm(
                               last_query_.form_id, last_query_.field_id,
                               trigger_source);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillExternalDelegate::InsertDataListValues(
     base::span<const SelectOption> datalist_options,
@@ -1395,7 +1464,9 @@ void AutofillExternalDelegate::InsertDataListValues(
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AutofillMetrics::LogDataListSuggestionsInserted();
+#endif
   // Go through the list of autocomplete values and remove them if they are in
   // the list of datalist values.
   auto datalist_values = base::MakeFlatSet<std::u16string_view>(
@@ -1428,6 +1499,7 @@ void AutofillExternalDelegate::InsertDataListValues(
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillExternalDelegate::DidAcceptAddressSuggestion(
     const Suggestion& suggestion,
     const SuggestionMetadata& metadata) {
@@ -1608,7 +1680,9 @@ void AutofillExternalDelegate::DidAcceptPaymentsSuggestion(
       break;
     }
     case SuggestionType::kMaximizeCreditCardBenefitsEntry: {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       manager_->GetAiCardRecommendationManager().MaximizeCreditCardBenefits();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
       break;
     }
     default:
@@ -1622,8 +1696,10 @@ void AutofillExternalDelegate::DidAcceptPaymentsSuggestion(
             : AutofillMetrics::SCAN_CARD_OTHER_ITEM_SELECTED);
   }
 }
+#endif
 
 bool AutofillExternalDelegate::ShouldShowPayNowPayLaterTabs() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (GetQueriedField()) {
     return GetMainFillingProduct() == FillingProduct::kCreditCard &&
            payments::ShouldShowBnplSuggestions(
@@ -1632,6 +1708,7 @@ bool AutofillExternalDelegate::ShouldShowPayNowPayLaterTabs() {
            base::FeatureList::IsEnabled(
                features::kAutofillEnablePayNowPayLaterTabs);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
   return false;
 }
 

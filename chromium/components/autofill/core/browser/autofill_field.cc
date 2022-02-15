@@ -34,7 +34,9 @@
 #include "base/types/pass_key.h"
 #include "components/autofill/core/browser/autofill_format_string.h"
 #include "components/autofill/core/browser/autofill_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_type_utils.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/heuristic_source.h"
 #include "components/autofill/core/browser/proto/api_v1.pb.h"
@@ -59,6 +61,7 @@ struct DenseSetTraits<FieldPrediction::Source>
                          FieldPrediction::Source_MIN,
                          FieldPrediction::Source_MAX> {};
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // Defines a precedence in type predictions for `winning_type` over
@@ -356,6 +359,7 @@ bool AreCollapsibleLogEvents(const AutofillField::FieldLogEventType& event1,
 }
 
 }  // namespace
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 // LINT.IfChange(PredictionSourceTranslation)
 
@@ -505,7 +509,11 @@ std::unique_ptr<AutofillField> AutofillField::CreateForPasswordManagerUpload(
 }
 
 FieldType AutofillField::heuristic_type() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return heuristic_type(GetActiveHeuristicSource());
+#else
+  return UNKNOWN_TYPE;
+#endif
 }
 
 FieldType AutofillField::heuristic_type(HeuristicSource s) const {
@@ -531,6 +539,7 @@ FieldType AutofillField::heuristic_type(HeuristicSource s) const {
     return model_type;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FieldType type = local_type_predictions_[static_cast<size_t>(s)];
   // Guaranteed by construction of `local_type_predictions_`.
   DCHECK(ToSafeFieldType(type).has_value());
@@ -541,26 +550,39 @@ FieldType AutofillField::heuristic_type(HeuristicSource s) const {
   return type != NO_SERVER_DATA || s != GetActiveHeuristicSource()
              ? type
              : UNKNOWN_TYPE;
+#else
+  return UNKNOWN_TYPE;
+#endif
 }
 
 FieldType AutofillField::server_type() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return server_predictions_.empty()
              ? NO_SERVER_DATA
              : ToSafeFieldType(server_predictions_[0].type())
                    .value_or(NO_SERVER_DATA);
+#else
+  return NO_SERVER_DATA;
+#endif
 }
 
 bool AutofillField::server_type_prediction_is_override() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return server_predictions_.empty() ? false
                                      : server_predictions_[0].override();
+#else
+  return false;
+#endif
 }
 
 void AutofillField::set_heuristic_type(HeuristicSource s, FieldType type) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   CHECK(ToSafeFieldType(type).has_value(), base::NotFatalUntil::M142);
   local_type_predictions_[static_cast<size_t>(s)] = type;
   if (s == GetActiveHeuristicSource()) {
     overall_type_ = std::nullopt;
   }
+#endif
 }
 
 void AutofillField::set_server_predictions(
@@ -568,6 +590,7 @@ void AutofillField::set_server_predictions(
   overall_type_ = std::nullopt;
   server_predictions_.clear();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (auto& prediction : predictions) {
     MaybeAddServerPrediction(std::move(prediction));
   }
@@ -576,9 +599,11 @@ void AutofillField::set_server_predictions(
     // Equivalent to a `NO_SERVER_DATA` prediction from `SOURCE_UNSPECIFIED`.
     server_predictions_.emplace_back();
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillField::MaybeAddServerPrediction(FieldPrediction prediction) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   overall_type_ = std::nullopt;
   if (server_predictions_.size() == 1 &&
       server_predictions_[0].type() == NO_SERVER_DATA &&
@@ -617,6 +642,7 @@ void AutofillField::MaybeAddServerPrediction(FieldPrediction prediction) {
       server_predictions_.push_back(std::move(prediction));
     }
   }
+#endif
 }
 
 void AutofillField::SetHtmlType(HtmlFieldType type, HtmlFieldMode mode) {
@@ -693,6 +719,7 @@ AutofillField::PredictionResult AutofillField::GetOverallPredictionResult()
 
 AutofillField::PredictionResult AutofillField::GetComputedPredictionResult()
     const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Some of these (in particular, heuristic_type()) are slow to compute, so
   // cache them in local variables.
   const HtmlFieldType html_type_local = html_type();
@@ -766,9 +793,13 @@ AutofillField::PredictionResult AutofillField::GetComputedPredictionResult()
           heuristic_type_local != UNKNOWN_TYPE
               ? std::optional(AutofillPredictionSource::kHeuristics)
               : std::nullopt};
+#else
+  return {MakeAutofillType(heuristic_type()), std::nullopt};
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 const std::u16string& AutofillField::value_for_import() const {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool should_consider_value_for_import =
       IsSelectElement() || initial_value() != value();
   if (base::FeatureList::IsEnabled(
@@ -785,6 +816,9 @@ const std::u16string& AutofillField::value_for_import() const {
     return *text;
   }
   return value();
+#else
+  return base::EmptyString16();
+#endif
 }
 
 FieldSignature AutofillField::GetFieldSignature() const {
@@ -877,6 +911,7 @@ bool AutofillField::IsCreditCardPrediction() const {
 
 void AutofillField::AppendLogEventIfNotRepeated(
     const FieldLogEventType& log_event) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!field_log_events_) {
     return;
   }
@@ -891,6 +926,7 @@ void AutofillField::AppendLogEventIfNotRepeated(
       field_log_events_ = std::nullopt;
     }
   }
+#endif
 }
 
 bool AutofillField::WasAutofilledWithFallback() const {

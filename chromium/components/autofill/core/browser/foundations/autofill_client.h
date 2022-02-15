@@ -24,15 +24,20 @@
 #include "base/types/optional_ref.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/country_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
+#endif
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/ui/popup_open_enums.h"
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/plus_addresses/plus_address_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
+#endif
 #include "net/base/schemeful_site.h"
 #include "ui/gfx/geometry/rect_f.h"
 
@@ -317,10 +322,12 @@ class AutofillClient {
   // entity. If the user edits the entity and then accepts edits, the edited
   // version of the entity should be passed as the second parameter. No entity
   // is passed otherwise.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   using EntityImportPromptResultCallback =
       base::OnceCallback<void(AutofillAiBubbleResult result,
                               std::optional<EntityInstance> edited_entity,
                               const EntityImportUIContext& ui_context)>;
+#endif
 
   // The types of prompts that AutofillAi can show to the user after a form
   // submission. The values are ordered by decreasing priority of being shown
@@ -381,6 +388,7 @@ class AutofillClient {
   // Returns the AutofillDriverFactory.
   virtual AutofillDriverFactory& GetAutofillDriverFactory() = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the VotesUploader.
   virtual VotesUploader& GetVotesUploader() = 0;
 
@@ -410,6 +418,7 @@ class AutofillClient {
   // one.
   virtual EntityDataManager* GetEntityDataManager() = 0;
   const EntityDataManager* GetEntityDataManager() const;
+#endif
 
   // Gets the WalletPassAccessManager instance associated with the client, if
   // there is one.
@@ -433,9 +442,11 @@ class AutofillClient {
   virtual FieldClassificationModelHandler*
   GetPasswordManagerFieldClassificationModelHandler();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Handles routing single-field form filling requests, such as for
   // Autocomplete and merchant promo codes.
   virtual SingleFieldFillRouter& GetSingleFieldFillRouter() = 0;
+#endif
 
   // Returns true if Autofill suggestions should include the Personal Context
   // notice.
@@ -457,6 +468,7 @@ class AutofillClient {
   virtual AutofillComposeDelegate* GetComposeDelegate();
   const AutofillComposeDelegate* GetComposeDelegate() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Attempts to the annotated page content for the current tab and calls
   // `callback` with the results.
   using GetAiPageContentCallback = base::OnceCallback<void(
@@ -520,10 +532,13 @@ class AutofillClient {
   const PasswordManagerDelegate* GetPasswordManagerDelegate(
       const FieldGlobalId& field_id) const;
 
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
+
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
   const syncer::SyncService* GetSyncService() const;
@@ -581,11 +596,13 @@ class AutofillClient {
   // Returns the translate driver, if available, which is used to observe the
   // page language for language-dependent heuristics.
   virtual translate::TranslateDriver* GetTranslateDriver() = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Retrieves the country code of the user from Chrome variation service.
   // If the variation service is not available, return an empty string.
   virtual GeoIpCountryCode GetVariationConfigCountryCode() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the profile type of the session.
   virtual profile_metrics::BrowserProfileType GetProfileType() const;
 
@@ -608,6 +625,7 @@ class AutofillClient {
       const AutofillProfile* original_profile,
       SaveAddressBubbleType save_address_bubble_type,
       AddressProfileSavePromptCallback callback) = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // A unique identifier for suggestions UI (i.e. the keyboard accessory on
   // mobile and the popup on Desktop). Calling `ShowAutofillSuggestions`
@@ -664,6 +682,7 @@ class AutofillClient {
   virtual void HideSuggestions(SuggestionHidingReason reason,
                                std::optional<FillingProduct> product) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Maybe triggers a hats survey that measures the user's perception of
   // Autofill. When triggering happens, the survey dialog will be displayed with
   // a 5s delay. Note:  This survey should be triggered after form submissions.
@@ -691,7 +710,7 @@ class AutofillClient {
       EntityType entity_type,
       const base::flat_set<EntityTypeName>& saved_entities,
       const FieldTypeSet& triggering_field_types);
-
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns whether there is an active actor task for this client's tab (if
   // one exists).
@@ -719,6 +738,7 @@ class AutofillClient {
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() const = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
 
@@ -732,6 +752,7 @@ class AutofillClient {
   // Returns true if all the conditions for enabling the upload of credit card
   // are satisfied.
   virtual bool IsCreditCardUploadEnabled() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns a LogManager instance (for chrome://autofill-internals). Note that
   // the return value may change over the lifetime of an AutofillClient from
@@ -742,6 +763,7 @@ class AutofillClient {
   // - May return null for platforms that don't support this.
   virtual LogManager* GetCurrentLogManager();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual autofill_metrics::FormInteractionsUkmLogger&
   GetFormInteractionsUkmLogger() = 0;
 
@@ -835,6 +857,7 @@ class AutofillClient {
   virtual optimization_guide::ModelQualityLogsUploaderService*
   GetMqlsUploadService();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shows a bubble asking whether the user wants to save or update Autofill AI
   // data. `old_entity` is present in the update cases. It is used to give users
   // a better understanding of what was updated.
@@ -849,6 +872,7 @@ class AutofillClient {
 
   // Hides the Autofill AI import bubble if it is currently showing.
   virtual void CloseEntityImportBubble();
+#endif
 
   // Shows a bubble informing the user that their data was saved locally because
   // an upload request to the Wallet server was unsuccessful.
@@ -892,6 +916,7 @@ class AutofillClient {
 
   // May return null on platforms where no OneTimeTokenService is supported.
   virtual one_time_tokens::OneTimeTokenService* GetOneTimeTokenService() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns true if the primary main frame's document used the WebOTP API. This
   // exists only for the main frame because only the main frame has the

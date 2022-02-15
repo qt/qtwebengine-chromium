@@ -682,7 +682,9 @@ std::string_view FieldTypeToDeveloperRepresentationString(FieldType type);
 
 // There's a one-to-many relationship between FieldTypeGroup and
 // FieldType as well as HtmlFieldType.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr FieldTypeSet FieldTypesOfGroup(FieldTypeGroup group);
+#endif
 constexpr FieldTypeGroup GroupTypeOfFieldType(FieldType field_type);
 FieldTypeGroup GroupTypeOfHtmlFieldType(HtmlFieldType field_type);
 
@@ -946,9 +948,11 @@ FieldTypesByGroupHelper() {
 }
 }  // namespace internal
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr FieldTypeSet FieldTypesOfGroup(FieldTypeGroup group) {
   return internal::FieldTypesByGroupHelper()[std::to_underlying(group)];
 }
+#endif
 
 }  // namespace autofill
 
