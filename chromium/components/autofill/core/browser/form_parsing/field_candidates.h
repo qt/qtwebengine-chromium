@@ -18,6 +18,7 @@ namespace autofill {
 
 // Represents a possible type for a given field.
 struct FieldCandidate {
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   // The associated type for this candidate.
   FieldType type = internal::IsRequired();
 
@@ -27,6 +28,11 @@ struct FieldCandidate {
   // A non-negative number indicating how sure the type is for this specific
   // candidate. The higher the more confidence.
   float score = internal::IsRequired();
+#else
+  FieldType type;
+  MatchAttribute match_attribute;
+  float score;
+#endif
 };
 
 // Each field can be of different types. This class collects all these possible

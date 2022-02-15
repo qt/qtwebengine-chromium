@@ -48,7 +48,9 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/form_parsing/autofill_parsing_utils.h"
 #include "components/autofill/core/browser/form_parsing/buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_parsing/form_field_parser.h"
+#endif
 #include "components/autofill/core/browser/form_processing/label_processing_util.h"
 #include "components/autofill/core/browser/form_processing/name_processing_util.h"
 #include "components/autofill/core/browser/form_structure_rationalizer.h"
@@ -194,6 +196,7 @@ void FormStructure::DetermineFieldRanks() {
 void FormStructure::DetermineHeuristicTypes(
     const GeoIpCountryCode& client_country,
     LogManager* log_manager) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.DetermineHeuristicTypes");
 
   client_country_ = client_country;
@@ -245,12 +248,13 @@ void FormStructure::DetermineHeuristicTypes(
   }
 
   LogDetermineHeuristicTypesMetrics();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void FormStructure::DetermineNonActiveHeuristicTypes(
     std::optional<FieldCandidatesMap> active_predictions,
     ParsingContext& context) {
-#if BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS)
+#if BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS) && !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(autofill_ai::kAutofillAi)) {
     // Run the parser for the AutofillAi.
     context.pattern_file = PatternFile::kAutofillAi;
@@ -267,7 +271,7 @@ void FormStructure::DetermineNonActiveHeuristicTypes(
   context.active_features.clear();
   AssignBestFieldTypes(ParseFieldTypesWithPatterns(context),
                        HeuristicSource::kDefaultRegexes);
-#endif
+#endif // BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS) && !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 // static
@@ -358,6 +362,7 @@ bool FormStructure::IsAutofillable() const {
   return ShouldBeParsed();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool FormStructure::IsCompleteCreditCardForm(
     CreditCardFormCompleteness credit_card_form_completeness) const {
   bool found_cc_expiration =
@@ -386,6 +391,7 @@ bool FormStructure::IsCompleteCreditCardForm(
     }
   }
 }
+#endif
 
 void FormStructure::UpdateAutofillCount() {
   autofill_count_ = 0;
@@ -399,8 +405,10 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
                                    LogManager* log_manager) const {
   // Exclude URLs not on the web via HTTP(S).
   if (!HasAllowedScheme(source_url_)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotAllowedScheme << *this;
+#endif
     return false;
   }
 
@@ -409,21 +417,26 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
        active_field_count() <
            params.required_fields_for_forms_with_only_password_fields) &&
       !has_author_specified_types_) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotEnoughFields
                         << active_field_count() << *this;
+#endif
     return false;
   }
 
   // Rule out search forms.
   if (MatchesRegex<kUrlSearchActionRe>(
           base::UTF8ToUTF16(target_url_.path_piece()))) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingUrlMatchesSearchRegex
                         << *this;
+#endif
     return false;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool has_text_field = std::ranges::any_of(
       *this, [](const auto& field) { return !field->IsSelectElement(); });
   if (!has_text_field) {
@@ -431,6 +444,8 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
                         << LogMessage::kAbortParsingFormHasNoTextfield << *this;
   }
   return has_text_field;
+#endif
+  return true;
 }
 
 bool FormStructure::ShouldRunHeuristics() const {
@@ -685,6 +700,7 @@ void FormStructure::RetrieveFromCache(const FormStructure& cached_form,
   form_signature_ = cached_form.form_signature_;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::LogDetermineHeuristicTypesMetrics() {
   developer_engagement_metrics_ = 0;
   if (IsAutofillable()) {
@@ -696,6 +712,7 @@ void FormStructure::LogDetermineHeuristicTypesMetrics() {
     AutofillMetrics::LogDeveloperEngagementMetric(metric);
   }
 }
+#endif
 
 void FormStructure::SetFieldTypesFromAutocompleteAttribute() {
   has_author_specified_types_ = false;
@@ -751,6 +768,7 @@ FieldCandidatesMap FormStructure::ParseFieldTypesWithPatterns(
     ParsingContext& context) const {
   FieldCandidatesMap field_type_map;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (ShouldRunHeuristics()) {
     FormFieldParser::ParseFormFields(context, fields_, is_form_element(),
                                      field_type_map);
@@ -774,12 +792,14 @@ FieldCandidatesMap FormStructure::ParseFieldTypesWithPatterns(
                                                   field_type_map);
     }
   }
+#endif
   return field_type_map;
 }
 
 void FormStructure::AssignBestFieldTypes(
     const FieldCandidatesMap& field_type_map,
     HeuristicSource heuristic_source) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (field_type_map.empty()) {
     return;
   }
@@ -812,6 +832,7 @@ void FormStructure::AssignBestFieldTypes(
         .rank_in_field_signature_group = field_rank,
     });
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 const AutofillField* FormStructure::field(size_t index) const {
@@ -939,6 +960,7 @@ void FormStructure::set_randomized_encoder(
   randomized_encoder_ = std::move(encoder);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::RationalizePhoneNumberFieldsForFilling() {
   FormStructureRationalizer rationalizer(&fields_);
   rationalizer.RationalizePhoneNumbersForFilling();
@@ -952,6 +974,7 @@ void FormStructure::RationalizeFormStructure(LogManager* log_manager) {
       main_frame_origin(), client_country(), current_page_language(),
       log_manager);
 }
+#endif
 
 std::ostream& operator<<(std::ostream& buffer, const FormStructure& form) {
   buffer << "\nForm signature: "

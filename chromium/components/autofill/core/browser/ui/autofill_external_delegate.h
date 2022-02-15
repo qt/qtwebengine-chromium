@@ -160,6 +160,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   base::OnceCallback<void(SuggestionHidingReason)>
   CreateHideSuggestionsCallback();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Creates a callback that, when run, fills the field that was last queried
   // when the callback was created.
   base::RepeatingCallback<void(const std::u16string&)>
@@ -229,6 +230,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   // all |suggestions| come from Google Payments.
   void ApplyAutofillOptions(std::vector<Suggestion>* suggestions,
                             bool is_all_server_suggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Inserts the data list values at the start of the given list, including
   // any required separators. Will also go through `suggestions` and remove
@@ -236,8 +238,10 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate {
   // version.
   void InsertDataListValues(std::vector<Suggestion>& suggestions) const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the text (i.e. |Suggestion| value) for Chrome autofill options.
   std::u16string GetSettingsSuggestionValue() const;
+#endif
 
   // Returns the trigger source to use to reopen the popup after an edit or
   // delete address profile dialog is closed.
