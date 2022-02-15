@@ -16,12 +16,15 @@
 #include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_switches.h"
 #include "components/autofill/core/common/autofill_tick_clock.h"
+#if !defined(TOOLKIT_QT)
 #include "components/translate/core/common/language_detection_details.h"
 #include "google_apis/google_api_keys.h"
+#endif
 #include "ui/gfx/geometry/rect_f.h"
 
 namespace autofill {
 
+#if !defined(TOOLKIT_QT)
 namespace {
 
 // Returns the AutofillField* corresponding to |field| in |form| or nullptr,
@@ -68,9 +71,11 @@ std::string GetAPIKeyForUrl(version_info::Channel channel) {
 }
 
 }  // namespace
+#endif  // !defined(TOOLKIT_QT)
 
 using base::TimeTicks;
 
+#if !defined(TOOLKIT_QT)
 // static
 void AutofillManager::LogAutofillTypePredictionsAvailable(
     LogManager* log_manager,
@@ -98,6 +103,7 @@ bool AutofillManager::IsRawMetadataUploadingEnabled(
   return channel == version_info::Channel::CANARY ||
          channel == version_info::Channel::DEV;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 AutofillManager::AutofillManager(
     AutofillDriver* driver,
@@ -111,6 +117,16 @@ AutofillManager::AutofillManager(
   DCHECK(client);
 }
 
+#if defined(TOOLKIT_QT)
+AutofillManager::AutofillManager(
+    AutofillDriver* driver,
+    AutofillClient* client,
+    AutofillDownloadManagerState enable_download_manager,
+    version_info::Channel channel)
+    : driver_(driver),
+      client_(client)
+{}
+#else
 AutofillManager::AutofillManager(
     AutofillDriver* driver,
     AutofillClient* client,
@@ -173,10 +189,12 @@ void AutofillManager::OnFormSubmitted(const FormData& form,
   if (IsValidFormData(form))
     OnFormSubmittedImpl(form, known_success, source);
 }
+#endif  // defined(TOOLKIT_QT)
 
 void AutofillManager::OnFormsSeen(
     const std::vector<FormData>& updated_forms,
     const std::vector<FormGlobalId>& removed_forms) {
+#if !defined(TOOLKIT_QT)
   if (base::FeatureList::IsEnabled(features::kAutofillDisplaceRemovedForms)) {
     // Erase forms that have been removed from the DOM. This prevents
     // |form_structures_| from growing up its upper bound
@@ -225,8 +243,10 @@ void AutofillManager::OnFormsSeen(
   if (new_forms.empty())
     return;
   OnFormsParsed(new_forms);
+#endif  // !defined(TOOLKIT_QT)
 }
 
+#if !defined(TOOLKIT_QT)
 void AutofillManager::OnFormsParsed(const std::vector<const FormData*>& forms) {
   DCHECK(!forms.empty());
   OnBeforeProcessParsedForms();
@@ -280,6 +300,7 @@ void AutofillManager::OnFormsParsed(const std::vector<const FormData*>& forms) {
     download_manager()->StartQueryRequest(queryable_forms);
   }
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void AutofillManager::OnTextFieldDidChange(const FormData& form,
                                            const FormFieldData& field,
@@ -330,6 +351,7 @@ void AutofillManager::OnFocusOnFormField(const FormData& form,
   OnFocusOnFormFieldImpl(form, field, bounding_box);
 }
 
+#if !defined(TOOLKIT_QT)
 // Returns true if |live_form| does not match |cached_form|.
 bool AutofillManager::GetCachedFormAndField(const FormData& form,
                                             const FormFieldData& field,
@@ -448,12 +470,16 @@ FormStructure* AutofillManager::ParseForm(const FormData& form,
 
   return parsed_form_structure;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void AutofillManager::Reset() {
+#if !defined(TOOLKIT_QT)
   form_structures_.clear();
   form_interactions_ukm_logger_ = CreateFormInteractionsUkmLogger();
+#endif
 }
 
+#if !defined(TOOLKIT_QT)
 void AutofillManager::OnLoadedServerPredictions(
     std::string response,
     const std::vector<FormSignature>& queried_form_signatures) {
@@ -511,5 +537,6 @@ void AutofillManager::OnServerRequestError(
     FormSignature form_signature,
     AutofillDownloadManager::RequestType request_type,
     int http_error) {}
+#endif  // !defined(TOOLKIT_QT)
 
 }  // namespace autofill
