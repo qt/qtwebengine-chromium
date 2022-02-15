@@ -598,12 +598,14 @@ void AutofillMetrics::LogEditedAutofilledFieldAtSubmission(
     }
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the field was edited, record the event to UKM.
   if (editing_metric ==
       AutofilledFieldUserEditingStatusMetric::AUTOFILLED_FIELD_WAS_EDITED) {
     form_interactions_ukm_logger.LogEditedAutofilledFieldAtSubmission(
         source_id, form, field);
   }
+#endif
 }
 
 // static
@@ -697,6 +699,7 @@ void AutofillMetrics::LogStoredCreditCardMetrics(
     }
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Iterate over all of the cards and gather metrics.
   const base::Time now = AutofillClock::Now();
   for (const CreditCard* card : credit_cards) {
@@ -735,6 +738,7 @@ void AutofillMetrics::LogStoredCreditCardMetrics(
         NOTREACHED();
     }
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Calculate some summary info.
   const size_t num_cards = num_local_cards + num_server_cards;
@@ -1245,6 +1249,7 @@ void AutofillMetrics::LogAutofillFieldInfoAfterSubmission(
     ukm::SourceId source_id,
     const FormStructure& form,
     base::TimeTicks form_submitted_timestamp) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (const auto& field : form) {
     // The possible field submitted types determined by comparing the submitted
     // value in the field with the data stored in the Autofill server. We will
@@ -1278,6 +1283,7 @@ void AutofillMetrics::LogAutofillFieldInfoAfterSubmission(
                     .InMilliseconds()))
         .Record(ukm_recorder);
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 int64_t AutofillMetrics::FormTypesToBitVector(

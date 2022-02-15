@@ -23,7 +23,9 @@
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/crowdsourcing/votes_uploader.h"
 #include "components/autofill/core/browser/data_manager/addresses/account_name_email_strike_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_manager/personal_data_manager.h"
+#endif
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/filling/form_autofill_history.h"
@@ -34,24 +36,30 @@
 #include "components/autofill/core/browser/foundations/autofill_driver.h"
 #include "components/autofill/core/browser/foundations/autofill_manager.h"
 #include "components/autofill/core/browser/integrators/address_on_typing/address_on_typing_manager.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_manager.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/metrics/otp_form_event_logger.h"
 #include "components/autofill/core/browser/integrators/one_time_tokens/otp_manager.h"
+#endif
 #include "components/autofill/core/browser/integrators/password_form_classification.h"
 #include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
 #include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/integrators/touch_to_fill/touch_to_fill_delegate.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_events/loyalty_card_form_event_logger.h"
+#endif
 #include "components/autofill/core/browser/metrics/log_event.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/payments/autofill_offer_manager.h"
 #include "components/autofill/core/browser/payments/card_unmask_delegate.h"
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/single_field_fillers/autocomplete/autocomplete_history_manager.h"
 #include "components/autofill/core/browser/single_field_fillers/single_field_fill_router.h"
+#endif
 #include "components/autofill/core/browser/studies/autofill_ablation_study.h"
 #include "components/autofill/core/browser/suggestions/suggestion_generator.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
@@ -152,6 +160,7 @@ class BrowserAutofillManager : public AutofillManager {
 
   ~BrowserAutofillManager() override;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Fills or previews `form` with the information in `filling_payload`.
   // `field_id` is the ID of the field that triggered the filling operation.
   // `trigger_source` is the reason for triggering the filling operation.
@@ -241,6 +250,7 @@ class BrowserAutofillManager : public AutofillManager {
   // Gets the amount extraction manager owned by `this`. This will be used for
   // flows that require amount extraction from the page.
   virtual payments::AmountExtractionManager& GetAmountExtractionManager();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Handles post-filling logic of `form`, like notifying observers and logging
   // form metrics.
@@ -279,8 +289,10 @@ class BrowserAutofillManager : public AutofillManager {
       const FormData& form,
       const FieldGlobalId& field_id,
       const std::u16string& old_value) override;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void OnLoadedServerPredictionsImpl(
       base::span<const raw_ref<FormStructure>> forms) override;
+#endif
   void Reset() override;
 
   base::WeakPtr<BrowserAutofillManager> GetBrowserAutofillManagerWeakPtr();
@@ -290,6 +302,7 @@ class BrowserAutofillManager : public AutofillManager {
   // for the virtual card last four when checking for standalone CVC field.
   void FetchPotentialCardLastFourDigitsCombinationFromDOM();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -322,6 +335,7 @@ class BrowserAutofillManager : public AutofillManager {
   // This reference is not stable over the lifetime of BrowserAutofillManager.
   virtual autofill_metrics::CreditCardFormEventLogger&
   GetCreditCardFormEventLogger();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // This reference is not stable over the lifetime of BrowserAutofillManager.
   autofill_metrics::OtpFormEventLogger& GetOtpFormEventLogger() {
@@ -335,9 +349,11 @@ class BrowserAutofillManager : public AutofillManager {
       const AutofillField& field);
 
  protected:
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the card image for `credit_card`. If the `credit_card` has a card
   // art image linked, prefer it. Otherwise fall back to the network icon.
   virtual const gfx::Image& GetCardImage(const CreditCard& credit_card);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -376,6 +392,7 @@ class BrowserAutofillManager : public AutofillManager {
                                            FormStructure** form_structure,
                                            AutofillField** autofill_field);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Emits all metrics that should be recorded at submission time.
   void LogSubmissionMetrics(const FormStructure* submitted_form,
                             const base::TimeTicks& form_submitted_timestamp);
@@ -411,6 +428,7 @@ class BrowserAutofillManager : public AutofillManager {
       const AutofillField& trigger_autofill_field,
       std::optional<std::string> plus_address_email_override,
       AutofillSuggestionTriggerSource trigger_source);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns a list of suggestions from the stored loyalty cards for the given
   // last committed primary main frame URL obtained from `client()` and the
@@ -556,11 +574,13 @@ class BrowserAutofillManager : public AutofillManager {
       std::vector<Suggestion> plus_address_suggestions,
       std::vector<Suggestion> single_field_suggestions);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Triggered when the user undoes the filling of an address profile using an
   // email override.
   void OnEmailOverrideUndone(const std::u16string& original_email,
                              const FormGlobalId& form_id,
                              const FieldGlobalId& field_id);
+#endif
 
   // The function receives a the list of `suggestions` from
   // `GenerateFooter` and displays them if `show_suggestions` is true (via the
@@ -575,6 +595,7 @@ class BrowserAutofillManager : public AutofillManager {
       bool show_suggestions,
       std::vector<Suggestion> suggestions);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Combines plus address and address profile suggestions into a single list,
   // prioritizing plus address suggestions first. Runs `callback` with the
   // resulting list of suggestions.
@@ -585,6 +606,7 @@ class BrowserAutofillManager : public AutofillManager {
       const FormGlobalId& form_id,
       const FieldGlobalId& field_id,
       OnGenerateSuggestionsCallback callback);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Iterate through all the fields in the form to process the log events for
   // each field and record into FieldInfo UKM event.
@@ -648,6 +670,7 @@ class BrowserAutofillManager : public AutofillManager {
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_ =
       std::make_unique<AutofillExternalDelegate>(this);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate_;
 
   // This is always non-nullopt except very briefly during Reset().
@@ -673,6 +696,7 @@ class BrowserAutofillManager : public AutofillManager {
   // form_filler() instead, because tests inject test objects.
   std::unique_ptr<FormFiller> form_filler_ =
       std::make_unique<FormFiller>(*this);
+#endif
 
   std::unique_ptr<OtpManager> otp_manager_;
 

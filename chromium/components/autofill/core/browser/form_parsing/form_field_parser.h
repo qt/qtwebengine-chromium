@@ -158,11 +158,16 @@ class FormFieldParser {
     // matched or how well the regex matched to improve match prioritisation.
   };
   struct FieldAndMatchInfo {
+#if defined(IS_REQUIRED_SUPPORTED)
     FieldAndMatchInfo(const FormFieldData* field LIFETIME_BOUND,
                       MatchInfo match_info)
         : field(*field), match_info(match_info) {}
     raw_ref<const FormFieldData> field = internal::IsRequired();
     MatchInfo match_info = internal::IsRequired();
+#else
+    raw_ptr<const AutofillField> field;
+    MatchInfo match_info;
+#endif
   };
 
   FormFieldParser(const FormFieldParser&) = delete;

@@ -6,7 +6,9 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_WEBDATA_AUTOFILL_WEBDATA_SERVICE_OBSERVER_H_
 
 #include "components/autofill/core/browser/webdata/autofill_change.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/data_type.h"
+#endif
 
 namespace autofill {
 

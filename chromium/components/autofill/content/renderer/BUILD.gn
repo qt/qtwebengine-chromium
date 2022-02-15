@@ -46,7 +46,7 @@ static_library("renderer") {
     "//base:i18n",
     "//components/autofill/content/common/mojom",
     "//components/autofill/core/common:autofill_regex",
-    "//components/password_manager/core/common",
+#    "//components/password_manager/core/common",
     "//components/safe_browsing:buildflags",
     "//components/signin/public/base:signin_buildflags",
     "//components/signin/public/base:signin_switches",

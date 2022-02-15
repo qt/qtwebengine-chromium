@@ -20,6 +20,7 @@
 #include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "components/autofill/core/browser/foundations/form_forest_util_inl.h"
+#include "components/autofill/core/common/form_field_data.h"
 
 namespace autofill::internal {
 

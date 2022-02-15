@@ -27,6 +27,8 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
+import("//build/config/features.gni")
+
 grit("autofill_address_rewriter_resources") {
   source = "geo/autofill_address_rewriter_resources.grd"
   outputs = [
@@ -988,6 +990,7 @@ static_library("browser") {
   configs += [
     "//build/config:precompiled_headers",
     "//build/config/compiler:wexit_time_destructors",
+    "//third_party/leveldatabase:leveldb_config"
   ]
 
   public_deps = [
@@ -1124,6 +1127,93 @@ static_library("browser") {
 
   if (is_ios) {
     deps += [ "//components/autofill/ios/common" ]
+  }
+
+  if (is_qtwebengine) {
+    sources = []
+    sources = [
+      "foundations/autofill_client.cc",
+      "foundations/autofill_client.h",
+      "foundations/autofill_driver.h",
+      "foundations/autofill_driver.cc",
+      "foundations/autofill_driver_factory.h",
+      "foundations/autofill_driver_factory.cc",
+      "foundations/autofill_driver_router.cc",
+      "foundations/autofill_driver_router.h",
+      "foundations/autofill_manager.cc",
+      "foundations/autofill_manager.h",
+      "foundations/browser_autofill_manager.cc",
+      "foundations/browser_autofill_manager.h",
+      "foundations/form_forest.cc",
+      "foundations/form_forest.h",
+      "autofill_field.cc",
+      "autofill_field.h",
+      "autofill_type.cc",
+      "autofill_type.h",
+      "data_quality/autofill_data_util.cc",
+      "data_quality/autofill_data_util.h",
+      "field_type_utils.cc",
+      "field_type_utils.h",
+      "field_types.cc",
+      "field_types.h",
+      "logging/log_buffer_submitter.cc",
+      "logging/log_buffer_submitter.h",
+      "filling/filling_product.h",
+      "filling/filling_product.cc",
+      "form_parsing/field_candidates.cc",
+      "form_parsing/field_candidates.h",
+      "form_processing/label_processing_util.cc",
+      "form_processing/label_processing_util.h",
+      "form_processing/name_processing_util.cc",
+      "form_processing/name_processing_util.h",
+      "form_structure.cc",
+      "form_structure.h",
+      "form_structure_sectioning_util.cc",
+      "form_structure_sectioning_util.h",
+      "form_types.cc",
+      "form_types.h",
+      "metrics/suggestions_list_metrics.cc",
+      "metrics/suggestions_list_metrics.h",
+      "suggestions/suggestions_context.cc",
+      "suggestions/suggestions_context.h",
+      "suggestions/suggestion.cc",
+      "suggestions/suggestion.h",
+      "suggestions/suggestion_hiding_reason.h",
+      "suggestions/suggestion_type.cc",
+      "suggestions/suggestion_type.h",
+      "ui/autofill_external_delegate.cc",
+      "ui/autofill_external_delegate.h",
+      "webdata/autocomplete/autocomplete_entry.cc",
+      "webdata/autocomplete/autocomplete_entry.h",
+    ]
+
+    public_deps = []
+    public_deps = [
+      "//components/autofill/core/browser/proto",
+      "//components/autofill/core/common",
+      "//components/resources:components_scaled_resources",
+      "//components/strings:components_strings",
+      "//components/autofill/core/common/mojom:mojo_types",
+      "//third_party/abseil-cpp:absl",
+      "//ui/base",
+      "//ui/gfx/geometry",
+      "//ui/gfx/range",
+      "//url",
+    ]
+
+    deps = []
+    deps = [
+      ":buildflags",
+      "//base",
+      "//base:i18n",
+      "//build:branding_buildflags",
+      "//build:chromeos_buildflags",
+      "//components/optimization_guide:machine_learning_tflite_buildflags",
+      "//components/pref_registry",
+      "//components/prefs",
+      "//third_party/re2",
+      "//ui/accessibility:accessibility",
+    ]
   }
 }
 

@@ -48,7 +48,9 @@
 #include "components/language_detection/core/constants.h"
 #include "components/optimization_guide/machine_learning_tflite_buildflags.h"
 #include "components/translate/core/browser/language_state.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/translate/core/common/language_detection_details.h"
+#endif
 #include "third_party/abseil-cpp/absl/cleanup/cleanup.h"
 #include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -147,6 +149,7 @@ struct AutofillManager::AsyncContext {
   std::unique_ptr<BufferingLogManager> log_manager;
 };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillManager::AutofillManager(AutofillDriver* driver)
     : driver_(CHECK_DEREF(driver)) {
   if (auto* translate_driver = client().GetTranslateDriver()) {
@@ -157,6 +160,14 @@ AutofillManager::AutofillManager(AutofillDriver* driver)
 AutofillManager::~AutofillManager() {
   translate_observation_.Reset();
 }
+#else
+AutofillManager::AutofillManager(AutofillDriver* driver)
+    : driver_(CHECK_DEREF(driver)) {}
+
+AutofillManager::~AutofillManager() {
+  //NotifyObservers(&Observer::OnAutofillManagerDestroyed);
+}
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillManager::OnAutofillDriverLifecycleStateChanged(
     LifecycleState old_state,
@@ -176,6 +187,7 @@ void AutofillManager::Reset() {
   form_structures_.clear();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillManager::OnLanguageDetermined(
     const translate::LanguageDetectionDetails& details) {
   if (!base::FeatureList::IsEnabled(features::kAutofillPageLanguageDetection)) {
@@ -201,13 +213,18 @@ void AutofillManager::OnTranslateDriverDestroyed(
     translate::TranslateDriver* translate_driver) {
   translate_observation_.Reset();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 LanguageCode AutofillManager::GetCurrentPageLanguage() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   const translate::LanguageState* language_state = client().GetLanguageState();
   if (!language_state) {
     return LanguageCode();
   }
   return LanguageCode(language_state->current_language());
+#else
+  return LanguageCode();
+#endif
 }
 
 void AutofillManager::OnDidAutofillForm(const FormData& form) {
@@ -360,6 +377,7 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms,
     return;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Query the server if at least one of the forms was parsed.
   if (!queryable_forms.empty()) {
     NotifyObservers(&Observer::OnBeforeLoadedServerPredictions);
@@ -372,6 +390,7 @@ void AutofillManager::OnFormsParsed(const std::vector<FormData>& forms,
         std::move(queryable_forms), driver().GetIsolationInfo(),
         std::move(on_loaded));
   }
+#endif
 }
 
 void AutofillManager::OnCaretMovedInFormField(const FormData& form,
@@ -383,12 +402,14 @@ void AutofillManager::OnCaretMovedInFormField(const FormData& form,
   const FormFieldData& field = CHECK_DEREF(form.FindFieldByGlobalId(field_id));
   NotifyObservers(&Observer::OnBeforeCaretMovedInFormField, form.global_id(),
                   field_id, field.selected_text(), caret_bounds);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ParseFormAsync(
       form, ParsingCallback(&AutofillManager::OnCaretMovedInFormFieldImpl,
                             field_id, caret_bounds)
                 .Then(NotifyObserversCallback(
                     &Observer::OnAfterCaretMovedInFormField, form.global_id(),
                     field_id, field.selected_text(), caret_bounds)));
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillManager::OnTextFieldValueChanged(const FormData& form,
@@ -464,11 +485,13 @@ void AutofillManager::OnFocusOnFormField(const FormData& form,
   }
   NotifyObservers(&Observer::OnBeforeFocusOnFormField, form.global_id(),
                   field_id);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ParseFormAsync(
       form,
       ParsingCallback(&AutofillManager::OnFocusOnFormFieldImpl, field_id)
           .Then(NotifyObserversCallback(&Observer::OnAfterFocusOnFormField,
                                         form.global_id(), field_id)));
+#endif // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void AutofillManager::OnFocusOnNonFormField() {
@@ -594,6 +617,7 @@ AutofillManager::GetServerPredictionsForForm(
   return cached_form->GetServerPredictions(field_ids);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 base::flat_map<FieldGlobalId, FieldType>
 AutofillManager::GetHeuristicPredictionForForm(
     HeuristicSource source,
@@ -605,6 +629,7 @@ AutofillManager::GetHeuristicPredictionForForm(
   }
   return cached_form->GetHeuristicPredictions(source, field_ids);
 }
+#endif
 
 void AutofillManager::ParseFormsAsync(
     const std::vector<FormData>& forms,
@@ -623,8 +648,10 @@ void AutofillManager::ParseFormsAsync(
   for (const FormData& form : forms) {
     bool is_new_form = !form_structures_.contains(form.global_id());
     if (num_managed_forms + is_new_form > kAutofillManagerMaxFormCacheSize) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       LOG_AF(log_manager()) << LoggingScope::kAbortParsing
                             << LogMessage::kAbortParsingTooManyForms << form;
+#endif
       continue;
     }
 
@@ -650,8 +677,10 @@ void AutofillManager::ParseFormAsync(
   bool is_new_form = !form_structures_.contains(form.global_id());
   if (form_structures_.size() + is_new_form >
       kAutofillManagerMaxFormCacheSize) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager()) << LoggingScope::kAbortParsing
                           << LogMessage::kAbortParsingTooManyForms << form;
+#endif
     return;
   }
 
@@ -908,6 +937,7 @@ void AutofillManager::PopulateCacheForQueryResponse(
   }
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillManager::OnLoadedServerPredictions(
     base::span<const FormData> forms,
     base::TimeTicks form_seen_timestamp,
@@ -1018,6 +1048,7 @@ void AutofillManager::LogServerQueryResponseMetrics(
     AutofillMetrics::LogServerQueryMetric(metric);
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillManager::UpdateFormCache(
     base::span<const FormData> forms,

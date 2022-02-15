@@ -12,7 +12,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/time/time.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
-#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+// #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/form_autofill_history.h"
 #include "components/autofill/core/browser/form_structure.h"
@@ -25,6 +25,7 @@ class AutofillClient;
 class AutofillProfile;
 class BrowserAutofillManager;
 class CreditCard;
+class EntityInstance;
 class LogManager;
 enum class FillingProduct;
 

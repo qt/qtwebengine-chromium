@@ -39,7 +39,7 @@ struct CallTimerState {
     kExtractFormsAndNotifyPasswordAutofillAgent,
     kOnDevToolsSessionConnectionChanged,
   };
-#if defined(IS_REQUIRED_SUPPORTED)
+#if defined(IS_REQUIRED_SUPPORTED) && !BUILDFLAG(IS_QTWEBENGINE)
   CallSite call_site = internal::IsRequired();
   base::TimeTicks last_autofill_agent_reset = internal::IsRequired();
   base::TimeTicks last_dom_content_loaded = internal::IsRequired();

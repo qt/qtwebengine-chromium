@@ -91,6 +91,7 @@ class FormStructure {
   // Return the form signature as string.
   std::string FormSignatureAsStr() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // This enum defines two different states of completeness for a credit card
   // form, each used for a distinct purpose to check if the required credit card
   // fields exist.
@@ -109,6 +110,7 @@ class FormStructure {
   // defined by the given CreditCardFormCompleteness level.
   bool IsCompleteCreditCardForm(
       CreditCardFormCompleteness credit_card_form_completeness) const;
+#endif
 
   // This enum defines the behavior of RetrieveFromCache, which needs to adapt
   // to the reason for retrieving data from the cache.

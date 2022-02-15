@@ -12,11 +12,15 @@
 
 #include "base/check.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/data_model/payments/iban.h"
 #include "components/autofill/core/browser/webdata/autocomplete/autocomplete_entry.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/webdata/payments/server_cvc.h"
+#endif
 
 namespace autofill {
 

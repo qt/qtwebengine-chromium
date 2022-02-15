@@ -42,6 +42,7 @@ namespace {
 // spec networks and icons. Note that "generic" is not in the spec.
 // https://w3c.github.io/webpayments-methods-card/#method-id
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr PaymentRequestData kPaymentRequestData[]{
     {autofill::kAmericanExpressCard, "amex", IDR_AUTOFILL_METADATA_CC_AMEX,
      IDS_AUTOFILL_CC_AMEX},
@@ -70,6 +71,9 @@ constexpr PaymentRequestData kPaymentRequestData[]{
 constexpr PaymentRequestData kGenericPaymentRequestData = {
     autofill::kGenericCard, "generic", IDR_AUTOFILL_METADATA_CC_GENERIC,
     IDS_AUTOFILL_CC_GENERIC};
+#else
+constexpr PaymentRequestData kDummyPaymentRequestData = {"", "", -1, -1};
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 constexpr auto kNamePrefixes = std::to_array<std::string_view>(
     {"1lt",     "1st", "2lt", "2nd",    "3rd",  "admiral", "capt",
@@ -491,27 +495,39 @@ std::u16string JoinNameParts(std::u16string_view given,
 
 const PaymentRequestData& GetPaymentRequestData(
     std::string_view issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (const PaymentRequestData& data : kPaymentRequestData) {
     if (issuer_network == data.issuer_network) {
       return data;
     }
   }
   return kGenericPaymentRequestData;
+#else
+  return kDummyPaymentRequestData;
+#endif
 }
 
 const char* GetIssuerNetworkForBasicCardIssuerNetwork(
     std::string_view basic_card_issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   for (const PaymentRequestData& data : kPaymentRequestData) {
     if (basic_card_issuer_network == data.basic_card_issuer_network) {
       return data.issuer_network;
     }
   }
   return kGenericPaymentRequestData.issuer_network;
+#else
+  return "";
+#endif
 }
 
 bool IsValidBasicCardIssuerNetwork(std::string_view basic_card_issuer_network) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return std::ranges::contains(kPaymentRequestData, basic_card_issuer_network,
                                &PaymentRequestData::basic_card_issuer_network);
+#else
+  return false;
+#endif
 }
 
 bool IsValidCountryCode(std::string_view country_code) {
@@ -529,9 +545,11 @@ std::string GetCountryCodeWithFallback(const autofill::AutofillProfile& profile,
                                        std::string_view app_locale) {
   std::string country_code =
       base::UTF16ToUTF8(profile.GetRawInfo(autofill::ADDRESS_HOME_COUNTRY));
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!IsValidCountryCode(country_code)) {
     country_code = AutofillCountry::CountryCodeForLocale(app_locale);
   }
+#endif
   return country_code;
 }
 

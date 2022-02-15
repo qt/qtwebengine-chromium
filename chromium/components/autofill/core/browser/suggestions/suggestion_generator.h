@@ -11,7 +11,9 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif
 #include "components/autofill/core/browser/data_model/identity_credential/identity_credential.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"

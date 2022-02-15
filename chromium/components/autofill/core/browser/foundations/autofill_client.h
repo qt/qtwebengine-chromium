@@ -18,13 +18,18 @@
 #include "base/types/optional_ref.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/country_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
+#endif
 #include "components/autofill/core/browser/ui/popup_open_enums.h"
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/plus_addresses/plus_address_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
+#endif
 #include "ui/gfx/geometry/rect_f.h"
 
 class GoogleGroupsManager;
@@ -300,6 +305,7 @@ class AutofillClient {
   // Returns the AutofillDriverFactory.
   virtual AutofillDriverFactory& GetAutofillDriverFactory() = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the VotesUploader.
   virtual VotesUploader& GetVotesUploader() = 0;
 
@@ -329,6 +335,7 @@ class AutofillClient {
   // one.
   virtual EntityDataManager* GetEntityDataManager() = 0;
   const EntityDataManager* GetEntityDataManager() const;
+#endif
 
   // Gets the WalletPassAccessManager instance associated with the client, if
   // there is one.
@@ -352,9 +359,11 @@ class AutofillClient {
   virtual FieldClassificationModelHandler*
   GetPasswordManagerFieldClassificationModelHandler();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Handles routing single-field form filling requests, such as for
   // Autocomplete and merchant promo codes.
   virtual SingleFieldFillRouter& GetSingleFieldFillRouter() = 0;
+#endif
 
   // Gets the AutocompleteHistoryManager instance associated with the client.
   virtual AutocompleteHistoryManager* GetAutocompleteHistoryManager() = 0;
@@ -362,6 +371,7 @@ class AutofillClient {
   // Returns the `AutofillComposeDelegate` instance for the tab of this client.
   virtual AutofillComposeDelegate* GetComposeDelegate();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Attempts to the annotated page content for the current tab and calls
   // `callback` with the results.
   using GetAiPageContentCallback = base::OnceCallback<void(
@@ -402,10 +412,13 @@ class AutofillClient {
   virtual PasswordManagerDelegate* GetPasswordManagerDelegate(
       const FieldGlobalId& field_id);
 
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
+
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
   const syncer::SyncService* GetSyncService() const;
@@ -457,11 +470,13 @@ class AutofillClient {
   // Returns the translate driver, if available, which is used to observe the
   // page language for language-dependent heuristics.
   virtual translate::TranslateDriver* GetTranslateDriver() = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Retrieves the country code of the user from Chrome variation service.
   // If the variation service is not available, return an empty string.
   virtual GeoIpCountryCode GetVariationConfigCountryCode() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the profile type of the session.
   virtual profile_metrics::BrowserProfileType GetProfileType() const;
 
@@ -480,6 +495,7 @@ class AutofillClient {
       const AutofillProfile* original_profile,
       SaveAddressBubbleType save_address_bubble_type,
       AddressProfileSavePromptCallback callback) = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // A unique identifier for suggestions UI (i.e. the keyboard accessory on
   // mobile and the popup on Desktop). Calling `ShowAutofillSuggestions`
@@ -536,6 +552,7 @@ class AutofillClient {
   // Hides the Autofill suggestions UI if it is currently showing.
   virtual void HideAutofillSuggestions(SuggestionHidingReason reason) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Maybe triggers a hats survey that measures the user's perception of
   // Autofill. When triggering happens, the survey dialog will be displayed with
   // a 5s delay. Note:  This survey should be triggered after form submissions.
@@ -551,6 +568,7 @@ class AutofillClient {
 
   // Triggers a survey to ask the user why they declined saving an address.
   virtual void TriggerDeclinedSaveAddressReasonSurvey();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Triggers a survey after the user sees an Autofill AI suggestion and submits
   // a form. The triggering happens only if the uses sees an Autofill AI
@@ -587,8 +605,10 @@ class AutofillClient {
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() const = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns whether Google Wallet storage is supported.
   virtual bool IsWalletStorageEnabled() const = 0;
@@ -610,6 +630,7 @@ class AutofillClient {
   // - May return null for platforms that don't support this.
   virtual LogManager* GetCurrentLogManager();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual autofill_metrics::FormInteractionsUkmLogger&
   GetFormInteractionsUkmLogger() = 0;
 
@@ -635,6 +656,7 @@ class AutofillClient {
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Same as `GetDeviceAuthenticator()` but also logs authentication results to
   // `histogram`.
@@ -655,6 +677,7 @@ class AutofillClient {
   // Notifies the IPH code that `feature` was used.
   virtual void NotifyIphFeatureUsed(AutofillClient::IphFeature feature);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Stores test addresses provided by devtools and used to help developers
   // debug their forms with a list of well formatted addresses. Differently from
   // other `AutofillProfile`s/addresses, this list is stored in the client,
@@ -663,6 +686,7 @@ class AutofillClient {
 
   virtual base::span<const AutofillProfile> GetTestAddresses() const
       LIFETIME_BOUND;
+#endif
 
   // Returns the heuristics predictions for the renderer form to which
   // `field_id` belongs inside the form with `form_id`. The browser form with
@@ -680,6 +704,7 @@ class AutofillClient {
   virtual void TriggerPlusAddressUserPerceptionSurvey(
       plus_addresses::hats::SurveyType survey_type);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the service used in order to log metrics into MQLS.
   virtual optimization_guide::ModelQualityLogsUploaderService*
   GetMqlsUploadService();
@@ -729,6 +754,7 @@ class AutofillClient {
 
   // Returns the AutofillManager instance for the current frame/tab.
   virtual AutofillManager* GetAutofillManagerForPrimaryMainFrame();
+#endif
 };
 
 }  // namespace autofill

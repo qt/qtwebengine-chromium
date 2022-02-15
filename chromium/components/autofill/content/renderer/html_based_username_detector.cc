@@ -169,8 +169,8 @@ bool ContainsWordFromCategory(const UsernameFieldData& possible_username,
 // usernames, because their computed values contain at least one negative word.
 void RemoveFieldsWithNegativeWords(
     std::vector<UsernameFieldData>* possible_usernames_data) {
-  static constexpr CategoryOfWords kNegativeCategory = {kNegativeLatin,
-                                                        kNegativeNonLatin};
+  static const CategoryOfWords kNegativeCategory = {kNegativeLatin,
+                                                    kNegativeNonLatin};
 
   std::erase_if(
       *possible_usernames_data, [](const UsernameFieldData& possible_username) {
@@ -213,15 +213,15 @@ void FindUsernameFieldInternal(
   DCHECK(username_predictions);
   DCHECK(username_predictions->empty());
 
-  static constexpr CategoryOfWords kUsernameCategory = {kUsernameLatin,
-                                                        kUsernameLatin};
-  static constexpr CategoryOfWords kUserCategory = {kUserLatin, kUserNonLatin};
-  static constexpr CategoryOfWords kTechnicalCategory = {kTechnicalWords, {}};
-  static constexpr CategoryOfWords kWeakCategory = {kWeakWords, {}};
+  static const CategoryOfWords kUsernameCategory = {kUsernameLatin,
+                                                    kUsernameLatin};
+  static const CategoryOfWords kUserCategory = {kUserLatin, kUserNonLatin};
+  static const CategoryOfWords kTechnicalCategory = {kTechnicalWords, {}};
+  static const CategoryOfWords kWeakCategory = {kWeakWords, {}};
   // These categories contain words that point to username field.
   // Order of categories is vital: the detector searches for words in descending
   // order of probability to point to a username field.
-  static constexpr auto kPositiveCategories = std::to_array<CategoryOfWords>(
+  static const auto kPositiveCategories = std::to_array<CategoryOfWords>(
       {kUsernameCategory, kUserCategory, kTechnicalCategory, kWeakCategory});
   std::vector<UsernameFieldData> possible_usernames_data;
 

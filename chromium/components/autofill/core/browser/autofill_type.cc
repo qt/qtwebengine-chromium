@@ -10,7 +10,9 @@
 
 #include "base/containers/to_vector.h"
 #include "components/autofill/core/browser/autofill_field.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
+#endif
 #include "components/autofill/core/browser/field_type_utils.h"
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/proto/api_v1.pb.h"
@@ -56,6 +58,7 @@ FieldTypeSet Normalize(FieldTypeSet field_types) {
 // - FillingProducts are too decoupled from FieldTypes (e.g., some
 //   FillingProducts have no associated FieldTypes).
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 constexpr FieldTypeSet kAddressFieldTypes =
     Union(FieldTypesOfGroup(FieldTypeGroup::kName),
           FieldTypesOfGroup(FieldTypeGroup::kEmail),
@@ -66,6 +69,7 @@ constexpr FieldTypeSet kAddressFieldTypes =
 constexpr FieldTypeSet kCreditCardFieldTypes =
     Union(FieldTypesOfGroup(FieldTypeGroup::kCreditCard),
           FieldTypesOfGroup(FieldTypeGroup::kStandaloneCvcField));
+#endif
 
 // FedCM currently only supports full names (NAME_FULL) and given names
 // (NAME_FIRST), no other name parts:
@@ -92,6 +96,7 @@ constexpr FieldTypeSet kLoyaltyCardFieldTypes = {
     EMAIL_ADDRESS, LOYALTY_MEMBERSHIP_ID, LOYALTY_MEMBERSHIP_PROGRAM,
     LOYALTY_MEMBERSHIP_PROVIDER, EMAIL_OR_LOYALTY_MEMBERSHIP_ID};
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Password Manager currently does not use AutofillType except for filling
 // ONE_TIME_CODE fields. If and when we want to migrate Password Manager to
 // AutofillType, we need to be careful about the AutofillType constraints.
@@ -102,11 +107,13 @@ constexpr FieldTypeSet kPasswordManagerFieldTypes =
     Union(FieldTypesOfGroup(FieldTypeGroup::kUsernameField),
           FieldTypesOfGroup(FieldTypeGroup::kPasswordField),
           FieldTypeSet{ONE_TIME_CODE});
+#endif
 
 }  // namespace
 
 // static
 bool AutofillType::TestConstraints(const FieldTypeSet& s) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Each EntityType defines one constraint, so we don't have a constant
   // FieldTypeSet for each of them.
   auto test_entity_constraint = [&s](EntityType entity) {
@@ -123,6 +130,9 @@ bool AutofillType::TestConstraints(const FieldTypeSet& s) {
          Intersection(s, kIdentityCredentialFieldTypes).size() <= 1 &&
          Intersection(s, kLoyaltyCardFieldTypes).size() <= 1 &&
          Intersection(s, kPasswordManagerFieldTypes).size() <= 1;
+#else
+  return true;
+#endif
 }
 
 AutofillType::AutofillType(FieldTypeSet field_types, bool is_country_code)
@@ -159,6 +169,7 @@ DenseSet<FormType> AutofillType::GetFormTypes() const {
   return form_types;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 FieldType AutofillType::GetAddressType() const {
   return GetUniqueIfAny(Intersection(GetTypes(), kAddressFieldTypes));
 }
@@ -200,6 +211,7 @@ FieldTypeSet AutofillType::GetStaticAutofillAiTypes() const {
       FieldTypesOfGroup(FieldTypeGroup::kAutofillAi);
   return Intersection(GetTypes(), kFieldTypes);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 std::string AutofillType::ToString() const {
   return FieldTypeSetToString(types_);
