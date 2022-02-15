@@ -35,7 +35,9 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/translate/core/browser/translate_driver.h"
+#endif
 
 namespace autofill {
 
@@ -56,8 +58,13 @@ class TouchToFillDelegateAndroidImpl;
 // - BrowserAutofillManager for Chrome.
 //
 // It is owned by the AutofillDriver.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 class AutofillManager
     : public translate::TranslateDriver::LanguageDetectionObserver {
+#else
+class AutofillManager {
+#endif
+
  public:
   // Observer of AutofillManager events.
   //
@@ -184,17 +191,23 @@ class AutofillManager
     virtual void OnFormSubmitted(AutofillManager& manager, FormGlobalId form) {}
   };
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // TODO(crbug.com/40733066): Move to anonymous namespace once
   // BrowserAutofillManager::OnLoadedServerPredictions() moves to
   // AutofillManager.
   static void LogAutofillTypePredictionsAvailable(
       LogManager* log_manager,
       const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms);
+#endif
 
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~AutofillManager() override;
+#else
+  virtual ~AutofillManager();
+#endif
 
   // The following will fail a DCHECK if called for a prerendered main frame.
   AutofillClient& client() {
@@ -219,6 +232,7 @@ class AutofillManager
   // Some functions are virtual for testing.
   virtual void OnFormsSeen(const std::vector<FormData>& updated_forms,
                            const std::vector<FormGlobalId>& removed_forms);
+
   virtual void OnFormSubmitted(const FormData& form,
                                bool known_success,
                                mojom::SubmissionSource source);
@@ -254,11 +268,14 @@ class AutofillManager
 
   // Other events.
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
+#endif
 
   // Resets cache.
   virtual void Reset();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // translate::TranslateDriver::LanguageDetectionObserver:
   void OnTranslateDriverDestroyed(
       translate::TranslateDriver* translate_driver) override;
@@ -268,6 +285,7 @@ class AutofillManager
   // language-specific patterns.
   void OnLanguageDetermined(
       const translate::LanguageDetectionDetails& details) override;
+#endif
 
   // Fills |form_structure| and |autofill_field| with the cached elements
   // corresponding to |form| and |field|.  This might have the side-effect of
@@ -313,10 +331,12 @@ class AutofillManager
 
   AutofillDriver& driver() { return *driver_; }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // The return value shouldn't be cached, retrieve it as needed.
   AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger() {
     return form_interactions_ukm_logger_.get();
   }
+#endif
 
  protected:
   explicit AutofillManager(AutofillDriver* driver);
@@ -380,12 +400,14 @@ class AutofillManager
   virtual void OnFormProcessed(const FormData& form_data,
                                const FormStructure& form_structure) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the number of FormStructures with the given |form_signature| and
   // appends them to |form_structures|. Runs in linear time.
   size_t FindCachedFormsBySignature(
       FormSignature form_signature,
       std::vector<raw_ptr<FormStructure, VectorExperimental>>* form_structures)
       const;
+#endif
 
   // Parses multiple forms in one go. The function proceeds in three stages:
   //
@@ -433,17 +455,21 @@ class AutofillManager
  private:
   friend class AutofillManagerTestApi;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Invoked by `AutofillCrowdsourcingManager`.
   void OnLoadedServerPredictions(
       std::string response,
       const std::vector<FormSignature>& queried_form_signatures);
+#endif
 
   // Invoked when forms from OnFormsSeen() have been parsed to
   // |form_structures|.
   void OnFormsParsed(const std::vector<FormData>& forms);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
+#endif
 
   // Provides driver-level context to the shared code of the component.
   // `*driver_` owns this object.
@@ -451,17 +477,21 @@ class AutofillManager
 
   const raw_ptr<LogManager> log_manager_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Observer needed to re-run heuristics when the language has been detected.
   base::ScopedObservation<translate::TranslateDriver,
                           translate::TranslateDriver::LanguageDetectionObserver>
       translate_observation_{this};
+#endif
 
   // Our copy of the form data.
   std::map<FormGlobalId, std::unique_ptr<FormStructure>> form_structures_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Utility for logging URL keyed metrics.
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
       form_interactions_ukm_logger_;
+#endif
 
   // Observers that listen to updates of this instance.
   base::ObserverList<Observer> observers_;

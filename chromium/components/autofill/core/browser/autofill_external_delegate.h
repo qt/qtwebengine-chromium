@@ -15,7 +15,9 @@
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/address_data_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_trigger_details.h"
 #include "components/autofill/core/browser/ui/autofill_suggestion_delegate.h"
@@ -37,8 +39,11 @@ class CreditCard;
 enum class CreditCardFetchResult;
 
 // Delegate for in-browser Autocomplete and Autofill display and selection.
-class AutofillExternalDelegate : public AutofillSuggestionDelegate,
-                                 public AddressDataManager::Observer {
+class AutofillExternalDelegate : public AutofillSuggestionDelegate
+#if !BUILDFLAG(IS_QTWEBENGINE)
+                               , public AddressDataManager::Observer
+#endif
+{
  public:
   class ScopedAutofillPopupShortcutForTesting;
 
@@ -123,8 +128,10 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate,
   // used to help record the metrics of when a new popup is shown.
   void DidEndTextFieldEditing();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // AddressDataManager::Observer:
   void OnAddressDataChanged() override;
+#endif
 
   const FormData& query_form() const { return query_form_; }
 
@@ -146,6 +153,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate,
   void DidAcceptPaymentsSuggestion(const Suggestion& suggestion,
                                    const SuggestionPosition& position);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shows the address editor to the user. The Autofill profile to edit is
   // determined by passed `guid`.
   void ShowEditAddressProfileDialog(const std::string& guid);
@@ -236,6 +244,7 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate,
   // all |suggestions| come from Google Payments.
   void ApplyAutofillOptions(std::vector<Suggestion>* suggestions,
                             bool is_all_server_suggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Insert the data list values at the start of the given list, including
   // any required separators. Will also go through |suggestions| and remove
@@ -243,10 +252,12 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate,
   // version.
   void InsertDataListValues(std::vector<Suggestion>* suggestions);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool IsPaymentsManualFallbackOnNonPaymentsField() const;
 
   // Returns the text (i.e. |Suggestion| value) for Chrome autofill options.
   std::u16string GetSettingsSuggestionValue() const;
+#endif
 
   // Returns the trigger source to use to reopen the popup after an edit or
   // delete address profile dialog is closed.
@@ -283,11 +294,13 @@ class AutofillExternalDelegate : public AutofillSuggestionDelegate,
   // The caret position of the focused field.
   gfx::Rect caret_bounds_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Autofill profile update and deletion are async operations. ADM observer is
   // used to detect when these operations finish. These operations can happen at
   // the same time.
   base::ScopedObservation<AddressDataManager, AddressDataManager::Observer>
       adm_observation_{this};
+#endif
 
   base::WeakPtrFactory<AutofillExternalDelegate> weak_ptr_factory_{this};
 };

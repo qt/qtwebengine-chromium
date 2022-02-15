@@ -66,6 +66,7 @@ source_set("unit_tests") {
       "//components/sync/protocol",
       "//crypto",
     ]
+
   }
 }
 

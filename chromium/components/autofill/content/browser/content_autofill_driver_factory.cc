@@ -119,11 +119,13 @@ void ContentAutofillDriverFactory::RenderFrameDeleted(
   ContentAutofillDriver* driver = it->second.get();
   DCHECK(driver);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!render_frame_host->IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering)) {
     driver->GetAutofillManager().ReportAutofillWebOTPMetrics(
         render_frame_host->DocumentUsedWebOTP());
   }
+#endif
 
   for (Observer& observer : observers_) {
     observer.OnContentAutofillDriverWillBeDeleted(*this, *driver);
@@ -143,7 +145,7 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
     return;
   }
 
-#if !defined(TOOLKIT_QT)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If the navigation happened in the main frame and the BrowserAutofillManager
   // exists (not in Android Webview), and the AutofillOfferManager exists (not
   // in Incognito windows), notifies the navigation event.

@@ -52,8 +52,10 @@
 #include "base/uuid.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/address_data_manager.h"
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_browser_util.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_compose_delegate.h"
@@ -81,6 +83,7 @@
 #include "components/autofill/core/browser/field_types.h"
 #include "components/autofill/core/browser/filling_product.h"
 #include "components/autofill/core/browser/form_autofill_history.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/form_data_importer.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/geo/phone_number_i18n.h"
@@ -103,6 +106,7 @@
 #include "components/autofill/core/browser/randomized_encoder.h"
 #include "components/autofill/core/browser/suggestions_context.h"
 #include "components/autofill/core/browser/ui/payments/bubble_show_options.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/autofill/core/browser/ui/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/ui/suggestion_type.h"
@@ -147,6 +151,7 @@ namespace autofill {
 using base::TimeTicks;
 using mojom::SubmissionSource;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 namespace {
 
 // The minimum required number of fields for an user perception survey to be
@@ -548,7 +553,9 @@ bool IsTriggerSourceOnlyRelevantForCompose(
 }
 
 }  // namespace
+#endif  // defined(TOOLKIT_QT)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
                                                const std::string& app_locale)
     : AutofillManager(driver),
@@ -605,11 +612,21 @@ BrowserAutofillManager::~BrowserAutofillManager() {
   // the user generates blur votes and closes the tab before the votes are sent
   // (due to a navigation).
 }
+#else
+BrowserAutofillManager::BrowserAutofillManager(AutofillDriver* driver,
+                                               const std::string& app_locale)
+    : AutofillManager(driver)
+    , external_delegate_(std::make_unique<AutofillExternalDelegate>(this))
+
+{
+}
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 base::WeakPtr<AutofillManager> BrowserAutofillManager::GetWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 CreditCardAccessManager& BrowserAutofillManager::GetCreditCardAccessManager() {
   return *credit_card_access_manager_;
 }
@@ -708,8 +725,10 @@ void BrowserAutofillManager::RefetchCardsAndUpdatePopup(
   DCHECK(!cards.empty());
   external_delegate_->OnSuggestionsReturned(field_data.global_id(), cards);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool BrowserAutofillManager::ShouldParseForms() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   bool autofill_enabled = IsAutofillEnabled();
   // If autofill is disabled but the password manager is enabled, we still
   // need to parse the forms and query the server as the password manager
@@ -736,11 +755,16 @@ bool BrowserAutofillManager::ShouldParseForms() {
   // classifications if the password manager is enabled but autofill is
   // disabled.
   return autofill_enabled || password_manager_enabled;
+#else
+  // FIXME: Breaks typing in datalist when enabled.
+  return false;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnFormSubmittedImpl(const FormData& form,
                                                  bool known_success,
                                                  SubmissionSource source) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   base::UmaHistogramEnumeration("Autofill.FormSubmission.PerProfileType",
                                 client().GetProfileType());
   LOG_AF(log_manager()) << LoggingScope::kSubmission
@@ -900,8 +924,10 @@ void BrowserAutofillManager::OnFormSubmittedImpl(const FormData& form,
 
   ProfileTokenQuality::SaveObservationsForFilledFormForAllSubmittedProfiles(
       *submitted_form, form, *client().GetPersonalDataManager());
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool BrowserAutofillManager::MaybeStartVoteUploadProcess(
     std::unique_ptr<FormStructure> form_structure,
     bool observed_submission) {
@@ -1029,11 +1055,13 @@ void BrowserAutofillManager::ProcessPendingFormForUpload() {
   MaybeStartVoteUploadProcess(std::move(upload_form),
                               /*observed_submission=*/false);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void BrowserAutofillManager::OnTextFieldDidChangeImpl(
     const FormData& form,
     const FormFieldData& field,
     const TimeTicks timestamp) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FormStructure* form_structure = nullptr;
   AutofillField* autofill_field = nullptr;
   if (!GetCachedFormAndField(form, field, &form_structure, &autofill_field)) {
@@ -1074,8 +1102,10 @@ void BrowserAutofillManager::OnTextFieldDidChangeImpl(
   if (logger) {
     logger->OnTextFieldDidChange(autofill_field->global_id());
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool BrowserAutofillManager::IsFormNonSecure(const FormData& form) const {
   // Check if testing override applies.
   if (consider_form_as_secure_for_testing_.has_value() &&
@@ -1085,6 +1115,7 @@ bool BrowserAutofillManager::IsFormNonSecure(const FormData& form) const {
 
   return IsFormOrClientNonSecure(client(), form);
 }
+#endif
 
 void BrowserAutofillManager::OnAskForValuesToFillImpl(
     const FormData& form,
@@ -1106,6 +1137,7 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
   external_delegate_->OnQuery(form, field, caret_bounds, trigger_source);
 
   std::vector<Suggestion> suggestions;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   SuggestionsContext context;
   GetAvailableSuggestions(form, field, trigger_source, &suggestions, &context);
 
@@ -1322,8 +1354,12 @@ void BrowserAutofillManager::OnAskForValuesToFillImpl(
     // Send Autofill suggestions (could be an empty list).
     external_delegate_->OnSuggestionsReturned(field.global_id(), suggestions);
   }
+#else
+  external_delegate_->OnSuggestionsReturned(field.global_id(), suggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::AuthenticateThenFillCreditCardForm(
     const FormData& form,
     const FormFieldData& field,
@@ -1476,9 +1512,11 @@ void BrowserAutofillManager::FillOrPreviewCreditCardForm(
                                   trigger_details,
                                   /*is_refill=*/false);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void BrowserAutofillManager::OnFocusOnNonFormFieldImpl(
     bool had_interacted_form) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // For historical reasons, Chrome takes action on this message only if focus
   // was previously on a form with which the user had interacted.
   // TODO(crbug.com/40726656): Remove need for this short-circuit.
@@ -1499,11 +1537,13 @@ void BrowserAutofillManager::OnFocusOnNonFormFieldImpl(
         mojom::AutofillSuggestionAvailability::kNoSuggestions);
   }
 #endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnFocusOnFormFieldImpl(
     const FormData& form,
     const FormFieldData& field) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (pending_form_data_ &&
       pending_form_data_->global_id() != form.global_id()) {
     // A new form has received the focus, so we may have votes to upload for the
@@ -1540,6 +1580,7 @@ void BrowserAutofillManager::OnFocusOnFormFieldImpl(
        !suggestions.empty())
           ? mojom::AutofillSuggestionAvailability::kAutofillAvailable
           : mojom::AutofillSuggestionAvailability::kNoSuggestions);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnSelectControlDidChangeImpl(
@@ -1551,6 +1592,7 @@ void BrowserAutofillManager::OnSelectControlDidChangeImpl(
 void BrowserAutofillManager::OnDidFillAutofillFormDataImpl(
     const FormData& form,
     const TimeTicks timestamp) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   UpdatePendingForm(form);
 
   // Find the FormStructure that corresponds to |form|. Use default form type if
@@ -1561,8 +1603,10 @@ void BrowserAutofillManager::OnDidFillAutofillFormDataImpl(
     form_types = form_structure->GetFormTypes();
   }
   UpdateInitialInteractionTimestamp(timestamp);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::DidShowSuggestions(
     base::span<const SuggestionType> shown_suggestions_types,
     const FormData& form,
@@ -1629,8 +1673,10 @@ void BrowserAutofillManager::DidShowSuggestions(
     autocomplete_unrecognized_fallback_logger_->OnDidShowSuggestions();
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void BrowserAutofillManager::OnHidePopupImpl() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   single_field_form_fill_router_->CancelPendingQueries();
   client().HideAutofillSuggestions(SuggestionHidingReason::kRendererEvent);
   client().HideAutofillFieldIphForManualFallbackFeature();
@@ -1640,8 +1686,12 @@ void BrowserAutofillManager::OnHidePopupImpl() {
   if (touch_to_fill_delegate_) {
     touch_to_fill_delegate_->HideTouchToFill();
   }
+#else
+  client().HideAutofillSuggestions(SuggestionHidingReason::kRendererEvent);
+#endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool BrowserAutofillManager::RemoveAutofillProfileOrCreditCard(
     Suggestion::BackendId backend_id) {
   if (const CreditCard* credit_card = GetCreditCard(backend_id)) {
@@ -1708,9 +1758,14 @@ void BrowserAutofillManager::OnUserHideSuggestions(const FormData& form,
     logger->OnUserHideSuggestions(*form_structure, *autofill_field);
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 bool BrowserAutofillManager::ShouldClearPreviewedForm() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   return credit_card_access_manager_->ShouldClearPreviewedForm();
+#else
+  return false;
+#endif
 }
 
 void BrowserAutofillManager::OnSelectOrSelectListFieldOptionsDidChangeImpl(
@@ -1722,11 +1777,13 @@ void BrowserAutofillManager::OnSelectOrSelectListFieldOptionsDidChangeImpl(
 
   driver().SendAutofillTypePredictionsToRenderer({form_structure});
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (form_filler_->ShouldTriggerRefill(
           *form_structure, RefillTriggerReason::kSelectOptionsChanged)) {
     form_filler_->TriggerRefill(
         form, {.trigger_source = AutofillTriggerSource::kSelectOptionsChanged});
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnJavaScriptChangedAutofilledValueImpl(
@@ -1734,6 +1791,7 @@ void BrowserAutofillManager::OnJavaScriptChangedAutofilledValueImpl(
     const FormFieldData& field,
     const std::u16string& old_value,
     bool formatting_only) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Log to chrome://autofill-internals that a field's value was set by
   // JavaScript.
   auto StructureOfString = [](std::u16string str) {
@@ -1784,6 +1842,7 @@ void BrowserAutofillManager::OnJavaScriptChangedAutofilledValueImpl(
       form, field, *form_structure, old_value,
       {.trigger_source =
            AutofillTriggerSource::kJavaScriptChangedAutofilledValue});
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void BrowserAutofillManager::AnalyzeJavaScriptChangedAutofilledValue(
@@ -1791,6 +1850,7 @@ void BrowserAutofillManager::AnalyzeJavaScriptChangedAutofilledValue(
     AutofillField& field,
     bool cleared_value,
     bool formatting_only) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!formatting_only &&
       base::FeatureList::IsEnabled(
           features::kAutofillFixCachingOnJavaScriptChanges)) {
@@ -1843,6 +1903,7 @@ void BrowserAutofillManager::OnCreditCardFetched(
       *credit_card, credit_card->cvc(),
       {.trigger_source = fetched_credit_card_trigger_source_.value_or(
            AutofillTriggerSource::kCreditCardCvcPopup)});
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void BrowserAutofillManager::OnDidEndTextFieldEditingImpl() {
@@ -1863,6 +1924,7 @@ bool BrowserAutofillManager::IsAutofillPaymentMethodsEnabled() const {
   return prefs::IsAutofillPaymentMethodsEnabled(client().GetPrefs());
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const FormData& BrowserAutofillManager::last_query_form() const {
   return external_delegate_->query_form();
 }
@@ -2060,8 +2122,10 @@ void BrowserAutofillManager::OnSubmissionFieldTypesDetermined(
   UploadVotesAndLogQuality(std::move(submitted_form), interaction_time,
                            submission_time, observed_submission, source_id);
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void BrowserAutofillManager::Reset() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Process log events and record into UKM when the form is destroyed or
   // removed.
   for (const auto& [form_id, form_structure] : form_structures()) {
@@ -2118,8 +2182,12 @@ void BrowserAutofillManager::Reset() {
   form_filler_->Reset();
   form_submitted_timestamp_ = TimeTicks();
   four_digit_combinations_in_dom_.clear();
+#else
+  AutofillManager::Reset();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool BrowserAutofillManager::RefreshDataModels() {
   if (!IsAutofillEnabled()) {
     return false;
@@ -2471,10 +2539,12 @@ BrowserAutofillManager::GetVirtualCreditCardsForStandaloneCvcField(
   }
   return virtual_card_guid_to_last_four_map;
 }
+#endif  // !BUILDFLAG_IS_QTWEBENGINE)
 
 // TODO(crbug.com/40219607) Eliminate and replace with a listener?
 // Should we do the same with all the other BrowserAutofillManager events?
 void BrowserAutofillManager::OnBeforeProcessParsedForms() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   has_parsed_forms_ = true;
 
   // Record the current sync state to be used for metrics on this page.
@@ -2485,11 +2555,13 @@ void BrowserAutofillManager::OnBeforeProcessParsedForms() {
 
   // Setup the url for metrics that we will collect for this form.
   form_interactions_ukm_logger()->OnFormsParsed(client().GetUkmSourceId());
+#endif
 }
 
 void BrowserAutofillManager::OnFormProcessed(
     const FormData& form,
     const FormStructure& form_structure) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // If a standalone cvc field is found in the form, query the DOM for last four
   // combinations. Used to search for the virtual card last four for a virtual
   // card saved on file of a merchant webpage.
@@ -2546,8 +2618,12 @@ void BrowserAutofillManager::OnFormProcessed(
         form, form_structure,
         {.trigger_source = AutofillTriggerSource::kFormsSeen});
   }
+#else
+  NOTREACHED();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void BrowserAutofillManager::UpdateInitialInteractionTimestamp(
     const TimeTicks& interaction_timestamp) {
   if (initial_interaction_timestamp_.is_null() ||
@@ -2982,5 +3058,6 @@ void BrowserAutofillManager::SetFastCheckoutRunId(
       NOTREACHED();
   }
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 }  // namespace autofill
