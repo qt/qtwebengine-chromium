@@ -21,16 +21,18 @@
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/browser/ui/touch_to_fill_delegate.h"
+#if !defined(TOOLKIT_QT)
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
 #include "components/translate/core/browser/language_state.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#endif
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
 #include "ui/gfx/image/image.h"
 #include "url/gurl.h"
 
-#if !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_IOS) && !defined(TOOLKIT_QT)
 #include "components/webauthn/core/browser/internal_authenticator.h"
 #endif
 
@@ -96,7 +98,11 @@ class PaymentsClient;
 // BrowserAutofillManager is used (e.g. a single tab), so when we say "for the
 // client" below, we mean "in the execution context the client is associated
 // with" (e.g. for the tab the BrowserAutofillManager is attached to).
+#if !defined(TOOLKIT_QT)
 class AutofillClient : public RiskDataLoader {
+#else
+class AutofillClient {
+#endif
  public:
   enum class PaymentsRpcResult {
     // Empty result. Used for initializing variables and should generally
@@ -307,7 +313,9 @@ class AutofillClient : public RiskDataLoader {
       base::OnceCallback<void(SaveAddressProfileOfferUserDecision,
                               AutofillProfile profile)>;
 
+#if !defined(TOOLKIT_QT)
   ~AutofillClient() override = default;
+#endif
 
   // Returns the channel for the installation. In branded builds, this will be
   // version_info::Channel::{STABLE,BETA,DEV,CANARY}. In unbranded builds, or
@@ -329,14 +337,17 @@ class AutofillClient : public RiskDataLoader {
   virtual CreditCardCVCAuthenticator* GetCVCAuthenticator();
   virtual CreditCardOtpAuthenticator* GetOtpAuthenticator();
 
+#if !defined(TOOLKIT_QT)
   // Creates and returns a SingleFieldFormFillRouter using the
   // AutocompleteHistoryManager instance associated with the client.
   std::unique_ptr<SingleFieldFormFillRouter> GetSingleFieldFormFillRouter();
+#endif
 
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
+#if !defined(TOOLKIT_QT)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
 
@@ -586,6 +597,7 @@ class AutofillClient : public RiskDataLoader {
   // when a credit card is scanned successfully. Should be called only if
   // HasCreditCardScanFeature() returns true.
   virtual void ScanCreditCard(CreditCardScanCallback callback) = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Returns true if the Touch To Fill feature is both supported by platform and
   // enabled. Should be called before |ShowTouchToFillCreditCard| or
@@ -636,6 +648,7 @@ class AutofillClient : public RiskDataLoader {
   // Hide the Autofill popup if one is currently showing.
   virtual void HideAutofillPopup(PopupHidingReason reason) = 0;
 
+#if !defined(TOOLKIT_QT)
   // TODO(crbug.com/1093057): Rename all the "domain" in this flow to origin.
   //                          The server is passing down full origin of the
   //                          urls. "Domain" is no longer accurate.
@@ -671,6 +684,7 @@ class AutofillClient : public RiskDataLoader {
       base::OnceClosure cancel_callback);
   virtual void CloseAutofillProgressDialog(
       bool show_confirmation_before_closing);
+#endif  // !defined(TOOLKIT_QT)
 
   // Returns true if the Autofill Assistant UI is currently being shown.
   virtual bool IsAutofillAssistantShowing();
@@ -687,6 +701,7 @@ class AutofillClient : public RiskDataLoader {
       AutofillDriver* driver,
       const std::vector<FormStructure*>& forms) = 0;
 
+#if !defined(TOOLKIT_QT)
   // Inform the client that the field has been filled.
   virtual void DidFillOrPreviewField(
       const std::u16string& autofilled_value,
@@ -704,12 +719,15 @@ class AutofillClient : public RiskDataLoader {
 
   // Handles simple actions for the autofill popups.
   virtual void ExecuteCommand(int id) = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Returns a LogManager instance. May be null for platforms that don't support
   // this.
   virtual LogManager* GetLogManager() const;
 
+#if !defined(TOOLKIT_QT)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
+#endif
 
 #if BUILDFLAG(IS_IOS)
   // Checks whether the current query is the most recent one.

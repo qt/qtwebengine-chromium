@@ -210,8 +210,10 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
             DriverForFrame(navigation_handle->GetRenderFrameHost())) {
       if (!navigation_handle->IsInPrerenderedMainFrame()) {
         client_->HideAutofillPopup(PopupHidingReason::kNavigation);
+#ifndef TOOLKIT_QT
         if (client_->IsTouchToFillCreditCardSupported())
           client_->HideTouchToFillCreditCard();
+#endif
       }
       driver->DidNavigateFrame(navigation_handle);
     }
@@ -222,8 +224,10 @@ void ContentAutofillDriverFactory::OnVisibilityChanged(
     content::Visibility visibility) {
   if (visibility == content::Visibility::HIDDEN) {
     client_->HideAutofillPopup(PopupHidingReason::kTabGone);
+#ifndef TOOLKIT_QT
     if (client_->IsTouchToFillCreditCardSupported())
       client_->HideTouchToFillCreditCard();
+#endif
   }
 }
 

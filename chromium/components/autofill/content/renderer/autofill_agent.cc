@@ -378,6 +378,7 @@ void AutofillAgent::AccessibilityModeChanged(const ui::AXMode& mode) {
 void AutofillAgent::FireHostSubmitEvents(const WebFormElement& form,
                                          bool known_success,
                                          SubmissionSource source) {
+#if !defined(TOOLKIT_QT)
   DCHECK(IsOwnedByFrame(form, render_frame()));
 
   FormData form_data;
@@ -385,11 +386,13 @@ void AutofillAgent::FireHostSubmitEvents(const WebFormElement& form,
     return;
 
   FireHostSubmitEvents(form_data, known_success, source);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillAgent::FireHostSubmitEvents(const FormData& form_data,
                                          bool known_success,
                                          SubmissionSource source) {
+#if !defined(TOOLKIT_QT)
   // We don't want to fire duplicate submission event.
   if (!base::FeatureList::IsEnabled(
           features::kAutofillAllowDuplicateFormSubmissions) &&
@@ -398,6 +401,7 @@ void AutofillAgent::FireHostSubmitEvents(const FormData& form_data,
   }
 
   GetAutofillDriver().FormSubmitted(form_data, known_success, source);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillAgent::Shutdown() {
