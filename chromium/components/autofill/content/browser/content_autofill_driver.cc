@@ -141,11 +141,13 @@ bool ContentAutofillDriver::RendererIsAvailable() {
 }
 
 void ContentAutofillDriver::PopupHidden() {
+#if !defined(TOOLKIT_QT)
   // If the unmask prompt is shown, keep showing the preview. The preview
   // will be cleared when the prompt closes.
   if (autofill_manager_ && autofill_manager_->ShouldClearPreviewedForm()) {
     RendererShouldClearPreviewedForm();
   }
+#endif
 }
 
 gfx::RectF ContentAutofillDriver::TransformBoundingBoxToViewportCoordinates(
@@ -182,6 +184,7 @@ std::vector<FieldGlobalId> ContentAutofillDriver::FillOrPreviewForm(
 
 void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<FormStructure*>& forms) {
+#if !defined(TOOLKIT_QT)
   std::vector<FormDataPredictions> type_predictions =
       FormStructure::GetFieldTypePredictions(forms);
   // TODO(crbug.com/1185232) Send the FormDataPredictions object only if the
@@ -195,6 +198,7 @@ void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
         target->GetAutofillAgent()->FieldTypePredictionsAvailable(
             type_predictions);
       });
+#endif
 }
 
 void ContentAutofillDriver::SendFieldsEligibleForManualFillingToRenderer(
@@ -560,15 +564,18 @@ void ContentAutofillDriver::OnContextMenuShownInField(
 void ContentAutofillDriver::DidNavigateFrame(
     content::NavigationHandle* navigation_handle) {
   if (navigation_handle->IsSameDocument()) {
+#if !defined(TOOLKIT_QT)
     // On page refresh, reset the rate limiter for fetching authentication
     // details for credit card unmasking.
     if (autofill_manager_ && autofill_manager_->GetCreditCardAccessManager()) {
       autofill_manager_->GetCreditCardAccessManager()
           ->SignalCanFetchUnmaskDetails();
     }
+#endif
     return;
   }
 
+#if !defined(TOOLKIT_QT)
   // If the navigation happened in the main frame and the BrowserAutofillManager
   // exists (not in Android Webview), and the AutofillOfferManager exists (not
   // in Incognito windows), notifies the navigation event.
@@ -577,6 +584,7 @@ void ContentAutofillDriver::DidNavigateFrame(
     autofill_manager_->GetOfferManager()->OnDidNavigateFrame(
         autofill_manager_->client());
   }
+#endif
 
   // When IsServedFromBackForwardCache or IsPrerendererdPageActivation, the form
   // data is not parsed again. So, we should keep and use the autofill manager's

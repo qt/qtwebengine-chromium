@@ -21,7 +21,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -30,6 +32,7 @@
 #include "components/autofill/core/browser/field_filler.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
 #include "components/autofill/core/browser/payments/autofill_offer_manager.h"
@@ -39,6 +42,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
 #include "components/autofill/core/browser/sync_utils.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/touch_to_fill_delegate_impl.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/common/dense_set.h"
@@ -94,9 +98,13 @@ enum class ValuePatternsMetric {
 
 // Manages saving and restoring the user's personal information entered into web
 // forms. One per frame; owned by the AutofillDriver.
+#if defined(TOOLKIT_QT)
+class BrowserAutofillManager : public AutofillManager {
+#else
 class BrowserAutofillManager : public AutofillManager,
                                public SingleFieldFormFiller::SuggestionsHandler,
                                public CreditCardAccessManager::Accessor {
+#endif  // defined(TOOLKIT_QT)
  public:
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
@@ -105,6 +113,7 @@ class BrowserAutofillManager : public AutofillManager,
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
+#if !defined(TOOLKIT_QT)
   ~BrowserAutofillManager() override;
 
   void ShowAutofillSettings(PopupType popup_type);
@@ -236,12 +245,15 @@ class BrowserAutofillManager : public AutofillManager,
   // Invoked when the popup view can't be created. Main usage is to collect
   // metrics.
   void DidSuppressPopup(const FormData& form, const FormFieldData& field);
+#endif  // !defined(TOOLKIT_QT)
 
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
+#if !defined(TOOLKIT_QT)
   AutofillOfferManager* GetOfferManager() override;
   CreditCardAccessManager* GetCreditCardAccessManager() override;
   bool ShouldClearPreviewedForm() override;
+#endif  // !defined(TOOLKIT_QT)
   void OnFocusNoLongerOnFormImpl(bool had_interacted_form) override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -256,17 +268,22 @@ class BrowserAutofillManager : public AutofillManager,
       const FormData& form,
       const FormFieldData& field,
       const std::u16string& old_value) override;
+#if !defined(TOOLKIT_QT)
   void PropagateAutofillPredictions(
       const std::vector<FormStructure*>& forms) override;
+#endif
+
   void Reset() override;
   void OnContextMenuShownInField(const FormGlobalId& form_global_id,
                                  const FieldGlobalId& field_global_id) override;
 
+#if !defined(TOOLKIT_QT)
   // SingleFieldFormFiller::SuggestionsHandler:
   void OnSuggestionsReturned(
       FieldGlobalId field_id,
       AutoselectFirstSuggestion autoselect_first_suggestion,
       const std::vector<Suggestion>& suggestions) override;
+#endif
 
   // Returns true if either Profile or CreditCard Autofill is enabled.
   virtual bool IsAutofillEnabled() const;
@@ -279,6 +296,7 @@ class BrowserAutofillManager : public AutofillManager,
   // the client supports Autofill.
   virtual bool IsAutofillCreditCardEnabled() const;
 
+#if !defined(TOOLKIT_QT)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -311,6 +329,7 @@ class BrowserAutofillManager : public AutofillManager,
                                           int frontend_id,
                                           const FormData& form,
                                           const FormFieldData& field);
+#endif  // !defined(TOOLKIT_QT)
 
   // Set Fast Checkout run ID on the corresponding form event logger.
   virtual void SetFastCheckoutRunId(FieldTypeGroup field_type_group,
@@ -401,6 +420,7 @@ class BrowserAutofillManager : public AutofillManager,
   FormData* pending_form_data_for_test() { return pending_form_data_.get(); }
 
  protected:
+#if !defined(TOOLKIT_QT)
   // Stores a `callback` for `form_signature`, possibly overriding an older
   // callback for `form_signature` or triggering a pending callback in case too
   // many callbacks are stored to create space.
@@ -424,9 +444,7 @@ class BrowserAutofillManager : public AutofillManager,
       base::TimeTicks submission_time,
       bool observed_submission);
 
-  // Returns the card image for `credit_card`. If the `credit_card` has a card
-  // art image linked, prefer it. Otherwise fall back to the network icon.
-  virtual const gfx::Image& GetCardImage(const CreditCard& credit_card) const;
+#endif  // !defined(TOOLKIT_QT)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -455,6 +473,7 @@ class BrowserAutofillManager : public AutofillManager,
   void OnAfterProcessParsedForms(const DenseSet<FormType>& form_types) override;
 
  private:
+#if !defined(TOOLKIT_QT)
   // Keeps track of the filling context for a form, used to make refill
   // attempts.
   struct FillingContext {
@@ -703,6 +722,7 @@ class BrowserAutofillManager : public AutofillManager,
   // May return nullptr.
   FormEventLoggerBase* GetEventFormLogger(
       FieldTypeGroup field_type_group) const;
+#endif  // !defined(TOOLKIT_QT)
 
   void SetDataList(const std::vector<std::u16string>& values,
                    const std::vector<std::u16string>& labels);
@@ -719,7 +739,9 @@ class BrowserAutofillManager : public AutofillManager,
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<TouchToFillDelegateImpl> touch_to_fill_delegate_;
+#endif
 
   std::string app_locale_;
 
@@ -729,6 +751,7 @@ class BrowserAutofillManager : public AutofillManager,
   // May be NULL.  NULL indicates OTR.
   raw_ptr<PersonalDataManager> personal_data_;
 
+#if !defined(TOOLKIT_QT)
   // Used to help fill data into fields.
   FieldFiller field_filler_;
 
@@ -799,6 +822,7 @@ class BrowserAutofillManager : public AutofillManager,
   // Used to record metrics. This should be set at the beginning of the
   // interaction and re-used throughout the context of this manager.
   AutofillSyncSigninState sync_state_ = AutofillSyncSigninState::kNumSyncStates;
+#endif  // !defined(TOOLKIT_QT)
 
   // Helps with measuring whether phone number is collected and whether it is in
   // conjunction with WebOTP or OneTimeCode (OTC).
