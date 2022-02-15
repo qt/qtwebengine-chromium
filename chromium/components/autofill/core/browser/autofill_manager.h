@@ -33,7 +33,9 @@
 #include "components/autofill/core/common/mojom/autofill_types.mojom.h"
 #include "components/autofill/core/common/signatures.h"
 #include "components/autofill/core/common/unique_ids.h"
+#if !defined(TOOLKIT_QT)
 #include "components/translate/core/browser/translate_driver.h"
+#endif
 
 namespace gfx {
 class RectF;
@@ -59,9 +61,14 @@ class TouchToFillDelegateAndroidImpl;
 // - BrowserAutofillManager for Chrome.
 //
 // It is owned by the AutofillDriver.
+#if !defined(TOOLKIT_QT)
 class AutofillManager
     : public AutofillDownloadManager::Observer,
       public translate::TranslateDriver::LanguageDetectionObserver {
+#else
+class AutofillManager {
+#endif  // !defined(TOOLKIT_QT)
+
  public:
   // Observer of AutofillManager events.
   //
@@ -167,17 +174,23 @@ class AutofillManager
     virtual void OnFormSubmitted(AutofillManager& manager, FormGlobalId form) {}
   };
 
+#if !defined(TOOLKIT_QT)
   // TODO(crbug.com/1151542): Move to anonymous namespace once
   // BrowserAutofillManager::OnLoadedServerPredictions() moves to
   // AutofillManager.
   static void LogAutofillTypePredictionsAvailable(
       LogManager* log_manager,
       const std::vector<FormStructure*>& forms);
+#endif  // !defined(TOOLKIT_QT)
 
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
 
+#if !defined(TOOLKIT_QT)
   ~AutofillManager() override;
+#else
+  virtual ~AutofillManager() = default;
+#endif
 
   // The following will fail a DCHECK if called for a prerendered main frame.
   AutofillClient& client() {
@@ -198,6 +211,7 @@ class AutofillManager
   // Returns a WeakPtr to the leaf class.
   virtual base::WeakPtr<AutofillManager> GetWeakPtr() = 0;
 
+#if !defined(TOOLKIT_QT)
   // May return nullptr.
   virtual CreditCardAccessManager* GetCreditCardAccessManager() = 0;
 
@@ -205,6 +219,7 @@ class AutofillManager
 
   // Returns true only if the previewed form should be cleared.
   virtual bool ShouldClearPreviewedForm() = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Invoked when the value of textfield is changed.
   // |bounding_box| are viewport coordinates.
@@ -250,6 +265,7 @@ class AutofillManager
                                bool known_success,
                                mojom::SubmissionSource source);
 
+#if !defined(TOOLKIT_QT)
   void FillCreditCardForm(const FormData& form,
                           const FormFieldData& field,
                           const CreditCard& credit_card,
@@ -260,6 +276,7 @@ class AutofillManager
                        const FormData& form,
                        const FormFieldData& field,
                        const AutofillTriggerDetails& trigger_details);
+#endif
 
   // Invoked when |form| has been filled with the value given by
   // FillOrPreviewForm.
@@ -303,6 +320,7 @@ class AutofillManager
 
   // Other events.
 
+#if !defined(TOOLKIT_QT)
   virtual void ReportAutofillWebOTPMetrics(bool used_web_otp) = 0;
 
   // Resets cache.
@@ -377,13 +395,21 @@ class AutofillManager
     return form_interactions_ukm_logger_.get();
   }
 
+#else
+  virtual void Reset() {}
+  AutofillDriver& driver() { return driver_; }
+  const AutofillDriver& driver() const { return driver_; }
+#endif  // !defined(TOOLKIT_QT)
+
  protected:
   AutofillManager(AutofillDriver* driver, AutofillClient* client);
 
+#if !defined(TOOLKIT_QT)
   LogManager* log_manager() { return log_manager_; }
 
   // Retrieves the page language from |client_|
   LanguageCode GetCurrentPageLanguage();
+#endif
 
   // The following do not check for prerendering. These should only used while
   // constructing or resetting the manager.
@@ -425,6 +451,7 @@ class AutofillManager
       const FormData& form,
       const base::TimeTicks timestamp) = 0;
 
+#if !defined(TOOLKIT_QT)
   virtual void FillCreditCardFormImpl(
       const FormData& form,
       const FormFieldData& field,
@@ -436,6 +463,7 @@ class AutofillManager
       const FormFieldData& field,
       const AutofillProfile& profile,
       const AutofillTriggerDetails& trigger_details) = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   virtual void OnFocusNoLongerOnFormImpl(bool had_interacted_form) = 0;
 
@@ -469,6 +497,7 @@ class AutofillManager
   virtual void OnAfterProcessParsedForms(
       const DenseSet<FormType>& form_types) = 0;
 
+#if !defined(TOOLKIT_QT)
   // Returns the number of FormStructures with the given |form_signature| and
   // appends them to |form_structures|. Runs in linear time.
   size_t FindCachedFormsBySignature(
@@ -521,10 +550,12 @@ class AutofillManager
   mutable_form_structures() {
     return &form_structures_;
   }
+#endif  // !defined(TOOLKIT_QT)
 
  private:
   friend class AutofillManagerTestApi;
 
+#if !defined(TOOLKIT_QT)
   // AutofillDownloadManager::Observer:
   void OnLoadedServerPredictions(
       std::string response,
@@ -536,6 +567,7 @@ class AutofillManager
 
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
   CreateFormInteractionsUkmLogger();
+#endif  // !defined(TOOLKIT_QT)
 
   // Provides driver-level context to the shared code of the component.
   // `*driver_` owns this object.
@@ -546,6 +578,7 @@ class AutofillManager
   // client isn't accessed incorrectly.
   const raw_ref<AutofillClient> client_;
 
+#if !defined(TOOLKIT_QT)
   const raw_ptr<LogManager> log_manager_;
 
   // Observer needed to re-run heuristics when the language has been detected.
@@ -559,6 +592,7 @@ class AutofillManager
   // Utility for logging URL keyed metrics.
   std::unique_ptr<AutofillMetrics::FormInteractionsUkmLogger>
       form_interactions_ukm_logger_;
+#endif  // !defined(TOOLKIT_QT)
 
   // Observers that listen to updates of this instance.
   base::ObserverList<Observer> observers_;

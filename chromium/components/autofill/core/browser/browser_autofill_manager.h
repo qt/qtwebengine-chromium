@@ -21,7 +21,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -33,6 +35,7 @@
 #include "components/autofill/core/browser/form_autofill_history.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/fallback_autocomplete_unrecognized_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
@@ -44,10 +47,13 @@
 #include "components/autofill/core/browser/payments/full_card_request.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/ui/fast_checkout_delegate.h"
 #include "components/autofill/core/browser/ui/popup_item_ids.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/ui/touch_to_fill_delegate.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
@@ -101,9 +107,13 @@ enum class ValuePatternsMetric {
 
 // Manages saving and restoring the user's personal information entered into web
 // forms. One per frame; owned by the AutofillDriver.
+#if defined(TOOLKIT_QT)
+class BrowserAutofillManager : public AutofillManager {
+#else
 class BrowserAutofillManager : public AutofillManager,
                                public SingleFieldFormFiller::SuggestionsHandler,
                                public CreditCardAccessManager::Accessor {
+#endif  // defined(TOOLKIT_QT)
  public:
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
@@ -112,6 +122,7 @@ class BrowserAutofillManager : public AutofillManager,
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
+#if !defined(TOOLKIT_QT)
   ~BrowserAutofillManager() override;
 
   void ShowAutofillSettings(PopupType popup_type);
@@ -233,11 +244,15 @@ class BrowserAutofillManager : public AutofillManager,
 
   // Upload the current pending form.
   void ProcessPendingFormForUpload();
+#endif  // !defined(TOOLKIT_QT)
+
 
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
+#if !defined(TOOLKIT_QT)
   CreditCardAccessManager* GetCreditCardAccessManager() override;
   bool ShouldClearPreviewedForm() override;
+#endif  // !defined(TOOLKIT_QT)
   void OnFocusNoLongerOnFormImpl(bool had_interacted_form) override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -253,6 +268,8 @@ class BrowserAutofillManager : public AutofillManager,
       const FormFieldData& field,
       const std::u16string& old_value) override;
   void Reset() override;
+
+#if !defined(TOOLKIT_QT)
   void OnContextMenuShownInField(const FormGlobalId& form_global_id,
                                  const FieldGlobalId& field_global_id) override;
   // SingleFieldFormFiller::SuggestionsHandler:
@@ -260,6 +277,7 @@ class BrowserAutofillManager : public AutofillManager,
       FieldGlobalId field_id,
       AutofillSuggestionTriggerSource trigger_source,
       const std::vector<Suggestion>& suggestions) override;
+#endif
 
   // Retrieves the four digit combinations from the DOM of the current web page
   // and stores them in `four_digit_combinations_in_dom_`. This is used to check
@@ -277,6 +295,7 @@ class BrowserAutofillManager : public AutofillManager,
   // the client supports Autofill.
   virtual bool IsAutofillCreditCardEnabled() const;
 
+#if !defined(TOOLKIT_QT)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -336,6 +355,7 @@ class BrowserAutofillManager : public AutofillManager,
       std::vector<autofill::AutofillProfile> test_addresses) {
     test_addresses_ = test_addresses;
   }
+#endif  // !defined(TOOLKIT_QT)
 
   // Returns the field corresponding to |form| and |field| that can be
   // autofilled. Returns NULL if the field cannot be autofilled.
@@ -348,6 +368,7 @@ class BrowserAutofillManager : public AutofillManager,
   }
 
  protected:
+#if !defined(TOOLKIT_QT)
   // Stores a `callback` for `form_signature`, possibly overriding an older
   // callback for `form_signature` or triggering a pending callback in case too
   // many callbacks are stored to create space.
@@ -374,6 +395,7 @@ class BrowserAutofillManager : public AutofillManager,
   // Returns the card image for `credit_card`. If the `credit_card` has a card
   // art image linked, prefer it. Otherwise fall back to the network icon.
   virtual const gfx::Image& GetCardImage(const CreditCard& credit_card);
+#endif  // !defined(TOOLKIT_QT)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -403,6 +425,7 @@ class BrowserAutofillManager : public AutofillManager,
  private:
   friend class BrowserAutofillManagerTestApi;
 
+#if !defined(TOOLKIT_QT)
   // Keeps track of the filling context for a form, used to make refill
   // attempts.
   struct FillingContext {
@@ -472,6 +495,7 @@ class BrowserAutofillManager : public AutofillManager,
   // Gets the card referred to by the guid |unique_id|. Returns |nullptr| if
   // card does not exist.
   CreditCard* GetCreditCard(Suggestion::BackendId unique_id);
+#endif
 
   // Gets the profile referred to by the guid |unique_id|. Returns |nullptr| if
   // profile does not exist.
@@ -592,6 +616,7 @@ class BrowserAutofillManager : public AutofillManager,
       size_t current_index,
       const ServerFieldTypeSet& upload_types);
 
+#if !defined(TOOLKIT_QT)
   // Calls FieldFiller::FillFormField().
   //
   // If the field was newly filled, sets `autofill_field->is_autofilled` and
@@ -678,6 +703,7 @@ class BrowserAutofillManager : public AutofillManager,
   // type. May return nullptr.
   autofill_metrics::FormEventLoggerBase* GetEventFormLogger(
       const AutofillField& field) const;
+#endif  // !defined(TOOLKIT_QT)
 
   void SetDataList(const std::vector<std::u16string>& values,
                    const std::vector<std::u16string>& labels);
@@ -704,11 +730,14 @@ class BrowserAutofillManager : public AutofillManager,
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate_;
+#endif
   std::unique_ptr<FastCheckoutDelegate> fast_checkout_delegate_;
 
   std::string app_locale_;
 
+#if !defined(TOOLKIT_QT)
   // Used to help fill data into fields.
   FieldFiller field_filler_;
 
@@ -791,6 +820,7 @@ class BrowserAutofillManager : public AutofillManager,
   // interaction and re-used throughout the context of this manager.
   AutofillMetrics::PaymentsSigninState signin_state_for_metrics_ =
       AutofillMetrics::PaymentsSigninState::kUnknown;
+#endif  // !defined(TOOLKIT_QT)
 
   // Helps with measuring whether phone number is collected and whether it is in
   // conjunction with WebOTP or OneTimeCode (OTC).
