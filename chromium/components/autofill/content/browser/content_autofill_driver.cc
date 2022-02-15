@@ -155,6 +155,7 @@ bool ContentAutofillDriver::RendererIsAvailable() {
   return render_frame_host_->GetRenderViewHost() != nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 webauthn::InternalAuthenticator*
 ContentAutofillDriver::GetOrCreateCreditCardInternalAuthenticator() {
   if (!authenticator_impl_ && browser_autofill_manager_ &&
@@ -165,14 +166,17 @@ ContentAutofillDriver::GetOrCreateCreditCardInternalAuthenticator() {
   }
   return authenticator_impl_.get();
 }
+#endif
 
 void ContentAutofillDriver::PopupHidden() {
+#if !defined(TOOLKIT_QT)
   // If the unmask prompt is shown, keep showing the preview. The preview
   // will be cleared when the prompt closes.
   if (browser_autofill_manager_ &&
       browser_autofill_manager_->ShouldClearPreviewedForm()) {
     RendererShouldClearPreviewedForm();
   }
+#endif
 }
 
 gfx::RectF ContentAutofillDriver::TransformBoundingBoxToViewportCoordinates(
@@ -286,12 +290,14 @@ void ContentAutofillDriver::RendererShouldSetSuggestionAvailabilityImpl(
 
 void ContentAutofillDriver::SendAutofillTypePredictionsToRenderer(
     const std::vector<FormStructure*>& forms) {
+#if !defined(TOOLKIT_QT)
   std::vector<FormDataPredictions> type_predictions =
       FormStructure::GetFieldTypePredictions(forms);
   // TODO(crbug.com/1185232) Send the FormDataPredictions object only if the
   // debugging flag is enabled.
   GetAutofillRouter().SendAutofillTypePredictionsToRenderer(this,
                                                             type_predictions);
+#endif
 }
 
 void ContentAutofillDriver::SendFieldsEligibleForManualFillingToRenderer(
@@ -348,6 +354,7 @@ void ContentAutofillDriver::SetFormToBeProbablySubmittedImpl(
 void ContentAutofillDriver::FormSubmittedImpl(const FormData& form,
                                               bool known_success,
                                               mojom::SubmissionSource source) {
+#if !defined(TOOLKIT_QT)
   // Omit duplicate form submissions. It may be reasonable to take |source|
   // into account here as well.
   // TODO(crbug/1117451): Clean up experiment code.
@@ -360,6 +367,7 @@ void ContentAutofillDriver::FormSubmittedImpl(const FormData& form,
   }
 
   autofill_manager_->OnFormSubmitted(form, known_success, source);
+#endif
 }
 
 void ContentAutofillDriver::TextFieldDidChangeImpl(
@@ -433,6 +441,7 @@ void ContentAutofillDriver::FillFormForAssistantImpl(
     const AutofillableData& fill_data,
     const FormData& form,
     const FormFieldData& field) {
+#if !defined(TOOLKIT_QT)
   DCHECK(browser_autofill_manager_);
   if (fill_data.is_profile()) {
     browser_autofill_manager_->FillProfileForm(fill_data.profile(), form,
@@ -444,6 +453,7 @@ void ContentAutofillDriver::FillFormForAssistantImpl(
   } else {
     NOTREACHED();
   }
+#endif
 }
 
 void ContentAutofillDriver::ProbablyFormSubmitted() {
@@ -615,15 +625,18 @@ void ContentAutofillDriver::FillFormForAssistant(
 void ContentAutofillDriver::DidNavigateFrame(
     content::NavigationHandle* navigation_handle) {
   if (navigation_handle->IsSameDocument()) {
+#if !defined(TOOLKIT_QT)
     // On page refresh, reset the rate limiter for fetching authentication
     // details for credit card unmasking.
     if (browser_autofill_manager_) {
       browser_autofill_manager_->credit_card_access_manager()
           ->SignalCanFetchUnmaskDetails();
     }
+#endif
     return;
   }
 
+#if !defined(TOOLKIT_QT)
   // If the navigation happened in the main frame and the BrowserAutofillManager
   // exists (not in Android Webview), and the AutofillOfferManager exists (not
   // in Incognito windows), notifies the navigation event.
@@ -632,6 +645,7 @@ void ContentAutofillDriver::DidNavigateFrame(
     browser_autofill_manager_->offer_manager()->OnDidNavigateFrame(
         browser_autofill_manager_->client());
   }
+#endif
 
   // When IsServedFromBackForwardCache or IsPrerendererdPageActivation, the form
   // data is not parsed again. So, we should keep and use the autofill manager's
@@ -751,6 +765,7 @@ bool ContentAutofillDriver::DocumentUsedWebOTP() const {
 }
 
 void ContentAutofillDriver::MaybeReportAutofillWebOTPMetrics() {
+#if !defined(TOOLKIT_QT)
   // In tests, the browser_autofill_manager_ may be unset or destroyed before
   // |this|.
   if (!browser_autofill_manager_)
@@ -763,10 +778,12 @@ void ContentAutofillDriver::MaybeReportAutofillWebOTPMetrics() {
     return;
 
   ReportAutofillWebOTPMetrics(DocumentUsedWebOTP());
+#endif
 }
 
 void ContentAutofillDriver::ReportAutofillWebOTPMetrics(
     bool document_used_webotp) {
+#if !defined(TOOLKIT_QT)
   if (browser_autofill_manager_->has_observed_phone_number_field())
     phone_collection_metric_state_ |= phone_collection_metric::kPhoneCollected;
   if (browser_autofill_manager_->has_observed_one_time_code_field())
@@ -784,6 +801,7 @@ void ContentAutofillDriver::ReportAutofillWebOTPMetrics(
   UMA_HISTOGRAM_ENUMERATION(
       "Autofill.WebOTP.PhonePlusWebOTPPlusOTC",
       static_cast<PhoneCollectionMetricState>(phone_collection_metric_state_));
+#endif  // !defined(TOOLKIT_QT)
 }
 
 ContentAutofillRouter& ContentAutofillDriver::GetAutofillRouter() {

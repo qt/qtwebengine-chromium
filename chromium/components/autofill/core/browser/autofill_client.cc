@@ -6,10 +6,12 @@
 
 #include "base/no_destructor.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/payments/virtual_card_enrollment_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/version_info/channel.h"
 
@@ -41,6 +43,7 @@ version_info::Channel AutofillClient::GetChannel() const {
   return version_info::Channel::UNKNOWN;
 }
 
+#if !defined(TOOLKIT_QT)
 std::unique_ptr<SingleFieldFormFillRouter>
 AutofillClient::GetSingleFieldFormFillRouter() {
   return std::make_unique<SingleFieldFormFillRouter>(
@@ -155,6 +158,7 @@ void AutofillClient::CloseAutofillProgressDialog(
   // This is overridden by platform subclasses. Currently only
   // ChromeAutofillClient (Chrome Desktop & Android) implements this.
 }
+#endif  // !defined(TOOLKIT_QT)
 
 bool AutofillClient::IsAutofillAssistantShowing() {
   return false;
@@ -164,10 +168,12 @@ LogManager* AutofillClient::GetLogManager() const {
   return nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 const AutofillAblationStudy& AutofillClient::GetAblationStudy() const {
   // As finch configs are profile independent we can use a static instance here.
   static base::NoDestructor<AutofillAblationStudy> ablation_study;
   return *ablation_study;
 }
+#endif
 
 }  // namespace autofill

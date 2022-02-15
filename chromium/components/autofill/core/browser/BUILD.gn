@@ -11,6 +11,8 @@ if (is_android) {
   import("//build/config/android/rules.gni")
 }
 
+import("//build/config/features.gni")
+
 grit("autofill_address_rewriter_resources") {
   source = "autofill_address_rewriter_resources.grd"
   outputs = [
@@ -522,6 +524,48 @@ jumbo_static_library("browser") {
     deps += [
       "//ui/native_theme",
       "//ui/native_theme:native_theme_browser",
+    ]
+  }
+
+  if (use_qt) {
+    sources = []
+    sources = [
+      "autofill_client.cc",
+      "autofill_client.h",
+      "autofill_driver.h",
+      "autofill_external_delegate.cc",
+      "autofill_external_delegate.h",
+      "autofill_manager.cc",
+      "autofill_manager.h",
+      "browser_autofill_manager.cc",
+      "browser_autofill_manager.h",
+      "ui/popup_item_ids.h",
+      "ui/popup_types.h",
+      "ui/suggestion.cc",
+      "ui/suggestion.h",
+    ]
+
+    public_deps = []
+    public_deps = [
+      "//components/autofill/core/browser/proto",
+      "//components/autofill/core/common",
+      "//components/autofill/core/common/mojom:mojo_types",
+      "//third_party/abseil-cpp:absl",
+      "//ui/base",
+      "//ui/gfx/geometry",
+      "//ui/gfx/range",
+      "//url",
+    ]
+
+    deps = []
+    deps = [
+      "//base",
+      "//base:i18n",
+      "//build:branding_buildflags",
+      "//build:chromeos_buildflags",
+      "//components/pref_registry",
+      "//components/prefs",
+      "//ui/accessibility:accessibility",
     ]
   }
 }

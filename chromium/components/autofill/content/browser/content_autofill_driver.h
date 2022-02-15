@@ -155,8 +155,10 @@ class ContentAutofillDriver : public AutofillDriver,
   ui::AXTreeID GetAxTreeId() const override;
   scoped_refptr<network::SharedURLLoaderFactory> GetURLLoaderFactory() override;
   bool RendererIsAvailable() override;
+#if !defined(TOOLKIT_QT)
   webauthn::InternalAuthenticator* GetOrCreateCreditCardInternalAuthenticator()
       override;
+#endif
   void PropagateAutofillPredictions(
       const std::vector<autofill::FormStructure*>& forms) override;
   void HandleParsedForms(const std::vector<const FormData*>& forms) override;
