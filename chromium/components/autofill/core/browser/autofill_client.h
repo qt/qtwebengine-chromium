@@ -34,10 +34,13 @@
 #include "components/autofill/core/common/form_interactions_flow.h"
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/device_reauth/device_authenticator.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/plus_addresses/plus_address_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
 #include "components/translate/core/browser/language_state.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#endif
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -245,6 +248,7 @@ class AutofillClient {
   virtual AutofillPredictionImprovementsDelegate*
   GetAutofillPredictionImprovementsDelegate();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the `AutofillPlusAddressDelegate` associated with the profile of
   // the window of this tab.
   virtual AutofillPlusAddressDelegate* GetPlusAddressDelegate();
@@ -276,11 +280,13 @@ class AutofillClient {
       std::u16string affiliated_domain,
       std::u16string affiliated_plus_address,
       base::OnceClosure on_accepted);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
 
@@ -330,11 +336,13 @@ class AutofillClient {
   // Returns the translate driver, if available, which is used to observe the
   // page language for language-dependent heuristics.
   virtual translate::TranslateDriver* GetTranslateDriver() = 0;
+#endif
 
   // Retrieves the country code of the user from Chrome variation service.
   // If the variation service is not available, return an empty string.
   virtual GeoIpCountryCode GetVariationConfigCountryCode() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns the profile type of the session.
   virtual profile_metrics::BrowserProfileType GetProfileType() const;
 
@@ -369,6 +377,7 @@ class AutofillClient {
       const AutofillProfile* original_profile,
       bool is_migration_to_account,
       AddressProfileSavePromptCallback callback) = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // A unique identifier for suggestions UI (i.e. the keyboard accessory on
   // mobile and the popup on Desktop). Calling `ShowAutofillSuggestions`
@@ -423,6 +432,7 @@ class AutofillClient {
   // Hides the Autofill suggestions UI if it is currently showing.
   virtual void HideAutofillSuggestions(SuggestionHidingReason reason) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Maybe triggers a hats survey that measures the user's perception of
   // Autofill. When triggering happens, the survey dialog will be displayed with
   // a 5s delay. Note:  This survey should be triggered after form submissions.
@@ -435,6 +445,7 @@ class AutofillClient {
   virtual void TriggerUserPerceptionOfAutofillSurvey(
       FillingProduct filling_product,
       const std::map<std::string, std::string>& field_filling_stats_data);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Whether the Autocomplete feature of Autofill should be enabled.
   virtual bool IsAutocompleteEnabled() const = 0;
@@ -442,6 +453,7 @@ class AutofillClient {
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Inform the client that the form has been filled.
   virtual void DidFillOrPreviewForm(mojom::ActionPersistence action_persistence,
                                     AutofillTriggerSource trigger_source,
@@ -449,11 +461,13 @@ class AutofillClient {
 
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Returns a LogManager instance. May be null for platforms that don't support
   // this.
   virtual LogManager* GetLogManager() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
 
 #if BUILDFLAG(IS_IOS)
@@ -478,6 +492,7 @@ class AutofillClient {
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Attaches the IPH for the manual fallback feature to the `field`, on
   // platforms that support manual fallback.

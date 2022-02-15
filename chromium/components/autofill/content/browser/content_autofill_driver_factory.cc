@@ -152,12 +152,14 @@ void ContentAutofillDriverFactory::RenderFrameDeleted(
   ContentAutofillDriver* driver = it->second.get();
   DCHECK(driver);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!render_frame_host->IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering)) {
     // TODO: crbug.com/354043809 - Move out of CADF.
     driver->GetAutofillManager().ReportAutofillWebOTPMetrics(
         render_frame_host->DocumentUsedWebOTP());
   }
+#endif
 
   SetLifecycleStateAndNotifyObservers(*driver,
                                       LifecycleState::kPendingDeletion);

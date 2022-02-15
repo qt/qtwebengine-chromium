@@ -187,6 +187,7 @@ void FormStructure::DetermineHeuristicTypes(
     const GeoIpCountryCode& client_country,
     AutofillMetrics::FormInteractionsUkmLogger* form_interactions_ukm_logger,
     LogManager* log_manager) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   SCOPED_UMA_HISTOGRAM_TIMER("Autofill.Timing.DetermineHeuristicTypes");
 
   client_country_ = client_country;
@@ -246,12 +247,13 @@ void FormStructure::DetermineHeuristicTypes(
   }
 
   LogDetermineHeuristicTypesMetrics();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void FormStructure::DetermineNonActiveHeuristicTypes(
     std::optional<FieldCandidatesMap> active_predictions,
     ParsingContext& context) {
-#if BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS)
+#if BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS) && !BUILDFLAG(IS_QTWEBENGINE)
   if (base::FeatureList::IsEnabled(
           features::kAutofillEnableImprovedPredictionParser)) {
     // Run the parser for the prediction improvements.
@@ -269,7 +271,7 @@ void FormStructure::DetermineNonActiveHeuristicTypes(
   context.active_features.clear();
   AssignBestFieldTypes(ParseFieldTypesWithPatterns(context),
                        HeuristicSource::kDefaultRegexes);
-#endif
+#endif // BUILDFLAG(USE_INTERNAL_AUTOFILL_PATTERNS) && !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 // static
@@ -358,6 +360,7 @@ bool FormStructure::IsAutofillable() const {
   return ShouldBeParsed();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool FormStructure::IsCompleteCreditCardForm() const {
   bool found_cc_number = false;
   bool found_cc_expiration = false;
@@ -373,6 +376,7 @@ bool FormStructure::IsCompleteCreditCardForm() const {
   }
   return false;
 }
+#endif
 
 void FormStructure::UpdateAutofillCount() {
   autofill_count_ = 0;
@@ -386,8 +390,10 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
                                    LogManager* log_manager) const {
   // Exclude URLs not on the web via HTTP(S).
   if (!HasAllowedScheme(source_url_)) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotAllowedScheme << *this;
+#endif
     return false;
   }
 
@@ -396,28 +402,34 @@ bool FormStructure::ShouldBeParsed(ShouldBeParsedParams params,
        active_field_count() <
            params.required_fields_for_forms_with_only_password_fields) &&
       !has_author_specified_types_) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingNotEnoughFields
                         << active_field_count() << *this;
+#endif
     return false;
   }
 
   // Rule out search forms.
   if (MatchesRegex<kUrlSearchActionRe>(
           base::UTF8ToUTF16(target_url_.path_piece()))) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingUrlMatchesSearchRegex
                         << *this;
+#endif
     return false;
   }
 
   bool has_text_field = std::ranges::any_of(*this, [](const auto& field) {
     return !field->IsSelectOrSelectListElement();
   });
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (!has_text_field) {
     LOG_AF(log_manager) << LoggingScope::kAbortParsing
                         << LogMessage::kAbortParsingFormHasNoTextfield << *this;
   }
+#endif
   return has_text_field;
 }
 
@@ -618,6 +630,7 @@ void FormStructure::RetrieveFromCache(const FormStructure& cached_form,
   form_signature_ = cached_form.form_signature_;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::LogDetermineHeuristicTypesMetrics() {
   developer_engagement_metrics_ = 0;
   if (IsAutofillable()) {
@@ -629,6 +642,7 @@ void FormStructure::LogDetermineHeuristicTypesMetrics() {
     AutofillMetrics::LogDeveloperEngagementMetric(metric);
   }
 }
+#endif
 
 void FormStructure::SetFieldTypesFromAutocompleteAttribute() {
   has_author_specified_types_ = false;
@@ -684,6 +698,7 @@ FieldCandidatesMap FormStructure::ParseFieldTypesWithPatterns(
     ParsingContext& context) const {
   FieldCandidatesMap field_type_map;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (ShouldRunHeuristics()) {
     FormFieldParser::ParseFormFields(context, fields_, is_form_element(),
                                      field_type_map);
@@ -711,12 +726,14 @@ FieldCandidatesMap FormStructure::ParseFieldTypesWithPatterns(
                                                   field_type_map);
     }
   }
+#endif
   return field_type_map;
 }
 
 void FormStructure::AssignBestFieldTypes(
     const FieldCandidatesMap& field_type_map,
     HeuristicSource heuristic_source) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (field_type_map.empty()) {
     return;
   }
@@ -743,6 +760,7 @@ void FormStructure::AssignBestFieldTypes(
             field_rank_map[field->GetFieldSignature()],
     });
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 const AutofillField* FormStructure::field(size_t index) const {
@@ -886,6 +904,7 @@ void FormStructure::set_randomized_encoder(
   randomized_encoder_ = std::move(encoder);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void FormStructure::RationalizePhoneNumbersInSection(const Section& section) {
   if (base::Contains(phone_rationalized_, section))
     return;
@@ -906,6 +925,7 @@ void FormStructure::RationalizeFormStructure(
       main_frame_origin(), client_country(), current_page_language(),
       log_manager);
 }
+#endif
 
 std::ostream& operator<<(std::ostream& buffer, const FormStructure& form) {
   buffer << "\nForm signature: "

@@ -22,7 +22,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -36,6 +38,7 @@
 #include "components/autofill/core/browser/form_filler.h"
 #include "components/autofill/core/browser/form_structure.h"
 #include "components/autofill/core/browser/form_types.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
 #include "components/autofill/core/browser/metrics/fallback_autocomplete_unrecognized_metrics.h"
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
@@ -49,11 +52,14 @@
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/suggestions_context.h"
 #include "components/autofill/core/browser/ui/fast_checkout_delegate.h"
 #include "components/autofill/core/browser/ui/suggestion_hiding_reason.h"
 #include "components/autofill/core/browser/ui/suggestion_type.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/ui/touch_to_fill_delegate.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/common/aliases.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_data.h"
@@ -115,6 +121,7 @@ class BrowserAutofillManager : public AutofillManager {
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   ~BrowserAutofillManager() override;
 
   // Whether the |field| should show an entry to scan a credit card.
@@ -245,6 +252,7 @@ class BrowserAutofillManager : public AutofillManager {
 
   CreditCardAccessManager& GetCreditCardAccessManager();
   const CreditCardAccessManager& GetCreditCardAccessManager() const;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Handles post-filling logic of `form_structure`, like notifying observers
   // and logging form metrics.
@@ -300,6 +308,7 @@ class BrowserAutofillManager : public AutofillManager {
   // and the client supports Autofill.
   virtual bool IsAutofillPaymentMethodsEnabled() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -356,8 +365,10 @@ class BrowserAutofillManager : public AutofillManager {
   autofill_metrics::ManualFallbackEventLogger& GetManualFallbackEventLogger() {
     return metrics_->manual_fallback_logger;
   }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
  protected:
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Stores a `callback` for `form_signature`, possibly overriding an older
   // callback for `form_signature` or triggering a pending callback in case too
   // many callbacks are stored to create space.
@@ -385,6 +396,7 @@ class BrowserAutofillManager : public AutofillManager {
   // Returns the card image for `credit_card`. If the `credit_card` has a card
   // art image linked, prefer it. Otherwise fall back to the network icon.
   virtual const gfx::Image& GetCardImage(const CreditCard& credit_card);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -512,6 +524,7 @@ class BrowserAutofillManager : public AutofillManager {
   // Updates event loggers with information about data stored for Autofill.
   void UpdateLoggersReadinessData();
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Creates a FormStructure using the FormData received from the renderer. Will
   // return an empty scoped_ptr if the data should not be processed for upload
   // or personal data.
@@ -560,6 +573,7 @@ class BrowserAutofillManager : public AutofillManager {
       FieldType trigger_field_type,
       AutofillSuggestionTriggerSource trigger_source,
       autofill_metrics::SuggestionRankingContext& ranking_context);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // If `metrics_->initial_interaction_timestamp` is unset or is set to a later
   // time than `interaction_timestamp`, updates the cached timestamp.  The
@@ -682,10 +696,12 @@ class BrowserAutofillManager : public AutofillManager {
       const std::vector<AutofillProfile>& profiles,
       FormStructure* form_structure);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Returns an appropriate EventFormLogger, depending on the given `field`'s
   // type. May return nullptr.
   autofill_metrics::FormEventLoggerBase* GetEventFormLogger(
       const AutofillField& field);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // Iterate through all the fields in the form to process the log events for
   // each field and record into FieldInfo UKM event.
@@ -713,6 +729,7 @@ class BrowserAutofillManager : public AutofillManager {
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_ =
       std::make_unique<AutofillExternalDelegate>(this);
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<TouchToFillDelegate> touch_to_fill_delegate_;
   std::unique_ptr<FastCheckoutDelegate> fast_checkout_delegate_;
 
@@ -746,6 +763,7 @@ class BrowserAutofillManager : public AutofillManager {
       std::make_unique<FormFiller>(*this, log_manager(), app_locale_);
 
   std::u16string last_unlocked_credit_card_cvc_;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // List of callbacks to be called for sending blur votes. Only one callback is
   // stored per FormSignature. We rely on FormSignatures rather than
