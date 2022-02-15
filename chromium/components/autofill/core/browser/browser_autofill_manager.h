@@ -19,7 +19,9 @@
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -28,6 +30,7 @@
 #include "components/autofill/core/browser/fast_checkout_delegate.h"
 #include "components/autofill/core/browser/field_filler.h"
 #include "components/autofill/core/browser/form_types.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/metrics/form_events/address_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_events/credit_card_form_event_logger.h"
 #include "components/autofill/core/browser/metrics/form_interactions_counter.h"
@@ -38,6 +41,7 @@
 #include "components/autofill/core/browser/personal_data_manager.h"
 #include "components/autofill/core/browser/single_field_form_fill_router.h"
 #include "components/autofill/core/browser/sync_utils.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/touch_to_fill_delegate_impl.h"
 #include "components/autofill/core/browser/ui/popup_types.h"
 #include "components/autofill/core/common/dense_set.h"
@@ -101,9 +105,13 @@ enum class ValuePatternsMetric {
 
 // Manages saving and restoring the user's personal information entered into web
 // forms. One per frame; owned by the AutofillDriver.
+#if defined(TOOLKIT_QT)
+class BrowserAutofillManager : public AutofillManager {
+#else
 class BrowserAutofillManager : public AutofillManager,
                                public SingleFieldFormFiller::SuggestionsHandler,
                                public CreditCardAccessManager::Accessor {
+#endif  // defined(TOOLKIT_QT)
  public:
   BrowserAutofillManager(AutofillDriver* driver,
                          AutofillClient* client,
@@ -113,6 +121,7 @@ class BrowserAutofillManager : public AutofillManager,
   BrowserAutofillManager(const BrowserAutofillManager&) = delete;
   BrowserAutofillManager& operator=(const BrowserAutofillManager&) = delete;
 
+#if !defined(TOOLKIT_QT)
   ~BrowserAutofillManager() override;
 
   void ShowAutofillSettings(bool show_credit_card_settings);
@@ -240,12 +249,15 @@ class BrowserAutofillManager : public AutofillManager,
   // Invoked when the popup view can't be created. Main usage is to collect
   // metrics.
   void DidSuppressPopup(const FormData& form, const FormFieldData& field);
+#endif  // !defined(TOOLKIT_QT)
 
   // AutofillManager:
   base::WeakPtr<AutofillManager> GetWeakPtr() override;
+#if !defined(TOOLKIT_QT)
   AutofillOfferManager* GetOfferManager() override;
   CreditCardAccessManager* GetCreditCardAccessManager() override;
   bool ShouldClearPreviewedForm() override;
+#endif  // !defined(TOOLKIT_QT)
   void OnFocusNoLongerOnFormImpl(bool had_interacted_form) override;
   void OnFocusOnFormFieldImpl(const FormData& form,
                               const FormFieldData& field,
@@ -260,15 +272,20 @@ class BrowserAutofillManager : public AutofillManager,
       const FormData& form,
       const FormFieldData& field,
       const std::u16string& old_value) override;
+#if !defined(TOOLKIT_QT)
   void PropagateAutofillPredictions(
       const std::vector<FormStructure*>& forms) override;
+#endif
+
   void Reset() override;
 
+#if !defined(TOOLKIT_QT)
   // SingleFieldFormFiller::SuggestionsHandler:
   void OnSuggestionsReturned(
       int query_id,
       bool autoselect_first_suggestion,
       const std::vector<Suggestion>& suggestions) override;
+#endif
 
   // Returns true if either Profile or CreditCard Autofill is enabled.
   virtual bool IsAutofillEnabled() const;
@@ -281,6 +298,7 @@ class BrowserAutofillManager : public AutofillManager,
   // the client supports Autofill.
   virtual bool IsAutofillCreditCardEnabled() const;
 
+#if !defined(TOOLKIT_QT)
   // Shared code to determine if |form| should be uploaded to the Autofill
   // server. It verifies that uploading is allowed and |form| meets conditions
   // to be uploadable. Exposed for testing.
@@ -317,6 +335,7 @@ class BrowserAutofillManager : public AutofillManager,
   void OnSeePromoCodeOfferDetailsSelected(const GURL& offer_details_url,
                                           const std::u16string& value,
                                           int frontend_id);
+#endif  // !defined(TOOLKIT_QT)
 
 #if defined(UNIT_TEST)
   void SetExternalDelegateForTest(
@@ -370,6 +389,15 @@ class BrowserAutofillManager : public AutofillManager,
 #endif  // defined(UNIT_TEST)
 
  protected:
+#if !defined(TOOLKIT_QT)
+  // Test code should prefer to use this constructor.
+  BrowserAutofillManager(AutofillDriver* driver,
+                         AutofillClient* client,
+                         PersonalDataManager* personal_data,
+                         const std::string app_locale = "en-US",
+                         AutofillDownloadManagerState enable_download_manager =
+                             DISABLE_AUTOFILL_DOWNLOAD_MANAGER);
+
   // Uploads the form data to the Autofill server. |observed_submission|
   // indicates that upload is the result of a submission event.
   virtual void UploadFormData(const FormStructure& submitted_form,
@@ -383,6 +411,8 @@ class BrowserAutofillManager : public AutofillManager,
       const base::TimeTicks& interaction_time,
       const base::TimeTicks& submission_time,
       bool observed_submission);
+
+#endif  // !defined(TOOLKIT_QT)
 
   // AutofillManager:
   void OnFormSubmittedImpl(const FormData& form,
@@ -411,8 +441,10 @@ class BrowserAutofillManager : public AutofillManager,
                        const FormStructure& form_structure) override;
   void OnAfterProcessParsedForms(const DenseSet<FormType>& form_types) override;
 
+#if !defined(TOOLKIT_QT)
   // Exposed for testing.
   FormData* pending_form_data() { return pending_form_data_.get(); }
+#endif
 
 #ifdef UNIT_TEST
   void set_single_field_form_fill_router_for_test(
@@ -436,6 +468,7 @@ class BrowserAutofillManager : public AutofillManager,
   FRIEND_TEST_ALL_PREFIXES(BrowserAutofillManagerTest,
                            PageLanguageGetsCorrectlyDetected);
 
+#if !defined(TOOLKIT_QT)
   // Keeps track of the filling context for a form, used to make refill attemps.
   struct FillingContext {
     // |profile_or_credit_card| contains either AutofillProfile or CreditCard
@@ -471,7 +504,9 @@ class BrowserAutofillManager : public AutofillManager,
     // field (it does not matter whether the field already contains a value).
     std::map<FieldGlobalId, std::u16string> forced_fill_values;
   };
+#endif  // !defined(TOOLKIT_QT)
 
+#if !defined(TOOLKIT_QT)
   // CreditCardAccessManager::Accessor
   void OnCreditCardFetched(
       CreditCardFetchResult result,
@@ -698,6 +733,7 @@ class BrowserAutofillManager : public AutofillManager,
   // May return nullptr.
   FormEventLoggerBase* GetEventFormLogger(
       FieldTypeGroup field_type_group) const;
+#endif  // !defined(TOOLKIT_QT)
 
   void SetDataList(const std::vector<std::u16string>& values,
                    const std::vector<std::u16string>& labels);
@@ -705,8 +741,9 @@ class BrowserAutofillManager : public AutofillManager,
   // Delegates to perform external processing (display, selection) on
   // our behalf.
   std::unique_ptr<AutofillExternalDelegate> external_delegate_;
-  std::unique_ptr<FastCheckoutDelegate> fast_checkout_delegate_;
+#if !defined(TOOLKIT_QT)
   std::unique_ptr<TouchToFillDelegateImpl> touch_to_fill_delegate_;
+#endif
 
   std::string app_locale_;
 
@@ -716,6 +753,7 @@ class BrowserAutofillManager : public AutofillManager,
   // May be NULL.  NULL indicates OTR.
   raw_ptr<PersonalDataManager> personal_data_;
 
+#if !defined(TOOLKIT_QT)
   // Used to help fill data into fields.
   FieldFiller field_filler_;
 
@@ -787,6 +825,7 @@ class BrowserAutofillManager : public AutofillManager,
   // Used to record metrics. This should be set at the beginning of the
   // interaction and re-used throughout the context of this manager.
   AutofillSyncSigninState sync_state_ = AutofillSyncSigninState::kNumSyncStates;
+#endif  // !defined(TOOLKIT_QT)
 
   // Used to keep track of user interactions with text fields, Autocomplete and
   // Autofill.

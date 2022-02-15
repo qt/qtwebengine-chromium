@@ -159,12 +159,14 @@ void ContentAutofillDriverFactory::RenderFrameDeleted(
   ContentAutofillDriver* driver = it->second.get();
   DCHECK(driver);
 
+#if !defined(TOOLKIT_QT)
   if (!render_frame_host->IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering) &&
       driver->autofill_manager()) {
     driver->autofill_manager()->ReportAutofillWebOTPMetrics(
         render_frame_host->DocumentUsedWebOTP());
   }
+#endif  // !defined(TOOLKIT_QT)
 
   // If the popup menu has been triggered from within an iframe and that
   // frame is deleted, hide the popup. This is necessary because the popup
@@ -209,8 +211,10 @@ void ContentAutofillDriverFactory::DidFinishNavigation(
             DriverForFrame(navigation_handle->GetRenderFrameHost())) {
       if (!navigation_handle->IsInPrerenderedMainFrame()) {
         client_->HideAutofillPopup(PopupHidingReason::kNavigation);
+#ifndef TOOLKIT_QT
         if (client_->IsTouchToFillCreditCardSupported())
           client_->HideTouchToFillCreditCard();
+#endif
       }
       driver->DidNavigateFrame(navigation_handle);
     }
@@ -221,8 +225,10 @@ void ContentAutofillDriverFactory::OnVisibilityChanged(
     content::Visibility visibility) {
   if (visibility == content::Visibility::HIDDEN) {
     client_->HideAutofillPopup(PopupHidingReason::kTabGone);
+#ifndef TOOLKIT_QT
     if (client_->IsTouchToFillCreditCardSupported())
       client_->HideTouchToFillCreditCard();
+#endif
   }
 }
 
