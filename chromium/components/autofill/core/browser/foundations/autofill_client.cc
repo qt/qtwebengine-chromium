@@ -12,6 +12,8 @@
 #include "base/no_destructor.h"
 #include "base/notimplemented.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
+#include "components/autofill/core/browser/data_model/autofill_profile.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
 #include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_manager.h"
 #include "components/autofill/core/browser/integrators/compose/autofill_compose_delegate.h"
@@ -23,6 +25,10 @@
 #include "components/autofill/core/browser/suggestions/suggestion.h"
 #include "components/autofill/core/browser/ui/popup_open_enums.h"
 #include "components/optimization_guide/proto/features/common_quality_data.pb.h"
+#else
+#include "components/autofill/core/browser/filling/filling_product.h"
+#include "components/autofill/core/browser/suggestions/suggestion.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/version_info/channel.h"
 
 namespace autofill {
@@ -51,6 +57,7 @@ AutofillClient::PopupOpenArgs& AutofillClient::PopupOpenArgs::operator=(
 AutofillClient::PopupOpenArgs& AutofillClient::PopupOpenArgs::operator=(
     AutofillClient::PopupOpenArgs&&) = default;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillClient::EntitySaveOrUpdatePromptResult::EntitySaveOrUpdatePromptResult(
     bool did_user_decline,
     std::optional<EntityInstance> entity)
@@ -75,6 +82,7 @@ AutofillClient::EntitySaveOrUpdatePromptResult::operator=(
 
 AutofillClient::EntitySaveOrUpdatePromptResult::
     ~EntitySaveOrUpdatePromptResult() = default;
+#endif
 
 version_info::Channel AutofillClient::GetChannel() const {
   return version_info::Channel::UNKNOWN;
@@ -84,6 +92,7 @@ bool AutofillClient::IsOffTheRecord() const {
   return false;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const EntityDataManager* AutofillClient::GetEntityDataManager() const {
   return const_cast<AutofillClient*>(this)->GetEntityDataManager();
 }
@@ -95,6 +104,7 @@ const PersonalDataManager& AutofillClient::GetPersonalDataManager() const {
 const ValuablesDataManager* AutofillClient::GetValuablesDataManager() const {
   return const_cast<AutofillClient*>(this)->GetValuablesDataManager();
 }
+#endif
 
 AutofillOptimizationGuide* AutofillClient::GetAutofillOptimizationGuide()
     const {
@@ -115,6 +125,7 @@ AutofillComposeDelegate* AutofillClient::GetComposeDelegate() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 AutofillPlusAddressDelegate* AutofillClient::GetPlusAddressDelegate() {
   return nullptr;
 }
@@ -181,11 +192,13 @@ AutofillClient::GetPaymentsAutofillClient() const {
   // nullptr.
   return const_cast<AutofillClient*>(this)->GetPaymentsAutofillClient();
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 GeoIpCountryCode AutofillClient::GetVariationConfigCountryCode() const {
   return GeoIpCountryCode(std::string());
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 profile_metrics::BrowserProfileType AutofillClient::GetProfileType() const {
   // This is an abstract interface and thus never instantiated directly,
   // therefore it is safe to always return |kRegular| here.
@@ -195,11 +208,13 @@ profile_metrics::BrowserProfileType AutofillClient::GetProfileType() const {
 FastCheckoutClient* AutofillClient::GetFastCheckoutClient() {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 LogManager* AutofillClient::GetCurrentLogManager() {
   return nullptr;
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool AutofillClient::ShouldFormatForLargeKeyboardAccessory() const {
   return false;
 }
@@ -229,6 +244,7 @@ std::unique_ptr<device_reauth::DeviceAuthenticator>
 AutofillClient::GetDeviceAuthenticator() {
   return nullptr;
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void AutofillClient::ShowPlusAddressEmailOverrideNotification(
     const std::string& original_email,
@@ -267,12 +283,14 @@ void AutofillClient::UpdateAutofillSuggestions(
   NOTIMPLEMENTED();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void AutofillClient::set_test_addresses(
     std::vector<AutofillProfile> test_addresses) {}
 
 base::span<const AutofillProfile> AutofillClient::GetTestAddresses() const {
   return {};
 }
+#endif
 
 PasswordFormClassification AutofillClient::ClassifyAsPasswordForm(
     AutofillManager& manager,
@@ -284,6 +302,7 @@ PasswordFormClassification AutofillClient::ClassifyAsPasswordForm(
 void AutofillClient::TriggerPlusAddressUserPerceptionSurvey(
     plus_addresses::hats::SurveyType survey_type) {}
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 const syncer::SyncService* AutofillClient::GetSyncService() const {
   return const_cast<const syncer::SyncService*>(
       const_cast<AutofillClient*>(this)->GetSyncService());
@@ -298,5 +317,6 @@ void AutofillClient::ShowEntitySaveOrUpdateBubble(
     EntityInstance new_entity,
     std::optional<EntityInstance> old_entity,
     EntitySaveOrUpdatePromptResultCallback save_prompt_acceptance_callback) {}
+#endif
 
 }  // namespace autofill

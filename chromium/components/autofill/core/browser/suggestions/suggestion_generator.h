@@ -8,7 +8,9 @@
 #include <variant>
 
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+#endif
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/data_model/payments/iban.h"

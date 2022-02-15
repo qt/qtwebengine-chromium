@@ -86,6 +86,7 @@ struct SelectOption {
   std::u16string value;
   // The option's "label" attribute, or, if not present, its text content.
   std::u16string text;
+  bool operator==(const SelectOption &) const = default;
 };
 
 using FormControlType = mojom::FormControlType;

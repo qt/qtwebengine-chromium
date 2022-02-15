@@ -173,6 +173,7 @@ class AutofillPlusAddressDelegate {
       base::span<const Suggestion> current_suggestions,
       UpdateSuggestionsCallback update_suggestions_callback) = 0;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   using HideSuggestionsCallback =
       base::OnceCallback<void(SuggestionHidingReason)>;
   using PlusAddressErrorDialogType = AutofillClient::PlusAddressErrorDialogType;
@@ -195,6 +196,7 @@ class AutofillPlusAddressDelegate {
       ShowAffiliationErrorDialogCallback show_affiliation_error_dialog,
       ShowErrorDialogCallback show_error_dialog,
       base::OnceClosure reshow_suggestions) = 0;
+#endif
 
   // Returns survey specific data for plus address HaTS surveys. Subsequent
   // calls can return different data.

@@ -15,7 +15,7 @@
 #include "base/timer/timer.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
-#include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
+// #include "components/autofill/core/browser/data_model/autofill_ai/entity_instance.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/filling/field_filling_skip_reason.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
@@ -27,6 +27,7 @@
 namespace autofill {
 
 class BrowserAutofillManager;
+class EntityInstance;
 
 // Denotes the reason for triggering a refill attempt.
 // These values are persisted to UMA logs. Entries should not be renumbered and

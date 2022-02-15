@@ -100,6 +100,7 @@ class FormStructure {
   // auto-fillable, like google/yahoo/msn search, etc.
   bool IsAutofillable() const;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // This enum defines two different states of completeness for a credit card
   // form, each used for a distinct purpose to check if the required credit card
   // fields exist.
@@ -118,6 +119,7 @@ class FormStructure {
   // defined by the given CreditCardFormCompleteness level.
   bool IsCompleteCreditCardForm(
       CreditCardFormCompleteness credit_card_form_completeness) const;
+#endif
 
   // Returns true if this form matches the structural requirements for Autofill.
   [[nodiscard]] bool ShouldBeParsed(LogManager* log_manager = nullptr) const {
@@ -224,6 +226,7 @@ class FormStructure {
   void RetrieveFromCache(const FormStructure& cached_form,
                          RetrieveFromCacheReason reason);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Rationalize phone number fields so that, in every section, only the first
   // complete phone number is filled automatically. This is useful for when a
   // form contains a first phone number and second phone number, which usually
@@ -233,6 +236,7 @@ class FormStructure {
   // Rationalize the form's autocomplete attributes, repeated fields and field
   // type predictions.
   void RationalizeFormStructure(LogManager* log_manager);
+#endif
 
   // Returns the FieldGlobalIds of the |fields_| that are eligible for manual
   // filling on form interaction.

@@ -84,6 +84,7 @@ std::string_view FormTypeNameForLoggingToStringView(
   NOTREACHED();
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 bool FormHasAllCreditCardFields(const FormStructure& form_structure) {
   bool has_card_number_field = std::ranges::any_of(
       form_structure, [](const std::unique_ptr<AutofillField>& autofill_field) {
@@ -98,5 +99,6 @@ bool FormHasAllCreditCardFields(const FormStructure& form_structure) {
 
   return has_card_number_field && has_expiration_date_field;
 }
+#endif
 
 }  // namespace autofill

@@ -56,9 +56,11 @@ enum class FormTypeNameForLogging {
 std::string_view FormTypeNameForLoggingToStringView(
     FormTypeNameForLogging form_type);
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 // Returns true if the form contains fields that represent the card number and
 // the card expiration date.
 bool FormHasAllCreditCardFields(const FormStructure& form_structure);
+#endif
 
 FormType FieldTypeGroupToFormType(FieldTypeGroup field_type_group);
 
