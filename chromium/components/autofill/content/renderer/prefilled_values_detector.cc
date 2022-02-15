@@ -79,10 +79,12 @@ constexpr auto kKnownUsernamePlaceholders =
 
 }  // namespace
 
+#if !defined(TOOLKIT_QT)
 base::span<const base::StringPiece> KnownUsernamePlaceholders() {
   return base::make_span(kKnownUsernamePlaceholders.begin(),
                          kKnownUsernamePlaceholders.end());
 }
+#endif
 
 bool PossiblePrefilledUsernameValue(const std::string& username_value,
                                     const std::string& possible_email_domain) {

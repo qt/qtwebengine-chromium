@@ -19,7 +19,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_driver.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/browser_autofill_manager.h"
@@ -70,11 +72,13 @@ void AutofillExternalDelegate::OnQuery(const FormData& form,
   query_form_ = form;
   query_field_ = field;
   element_bounds_ = element_bounds;
+#if !defined(TOOLKIT_QT)
   should_show_scan_credit_card_ =
       manager_->ShouldShowScanCreditCard(query_form_, query_field_);
   popup_type_ = manager_->GetPopupType(query_form_, query_field_);
   should_show_cards_from_account_option_ =
       manager_->ShouldShowCardsFromAccountOption(query_form_, query_field_);
+#endif  // !defined(TOOLKIT_QT);
 }
 
 void AutofillExternalDelegate::OnSuggestionsReturned(
@@ -172,6 +176,7 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
 }
 
 void AutofillExternalDelegate::OnPopupShown() {
+#if !defined(TOOLKIT_QT)
   // Popups are expected to be Autofill or Autocomplete.
   DCHECK_NE(GetPopupType(), PopupType::kPasswords);
 
@@ -185,6 +190,7 @@ void AutofillExternalDelegate::OnPopupShown() {
     AutofillMetrics::LogScanCreditCardPromptMetric(
         AutofillMetrics::SCAN_CARD_ITEM_SHOWN);
   }
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::OnPopupHidden() {
@@ -192,7 +198,9 @@ void AutofillExternalDelegate::OnPopupHidden() {
 }
 
 void AutofillExternalDelegate::OnPopupSuppressed() {
+#if !defined(TOOLKIT_QT)
   manager_->DidSuppressPopup(query_form_, query_field_);
+#endif
 }
 
 void AutofillExternalDelegate::DidSelectSuggestion(
@@ -213,14 +221,17 @@ void AutofillExternalDelegate::DidSelectSuggestion(
     driver_->RendererShouldPreviewFieldWithValue(query_field_.global_id(),
                                                  suggestion.main_text.value);
   } else if (suggestion.popup_item_id == PopupItemId::kVirtualCreditCardEntry) {
+#if !defined(TOOLKIT_QT)
     manager_->FillOrPreviewVirtualCardInformation(
         mojom::RendererFormDataAction::kPreview, backend_id.value(),
         query_form_, query_field_, AutofillTriggerSource::kKeyboardAccessory);
+#endif
   }
 }
 
 void AutofillExternalDelegate::DidAcceptSuggestion(const Suggestion& suggestion,
                                                    int position) {
+#if !defined(TOOLKIT_QT)
   switch (suggestion.popup_item_id) {
     case PopupItemId::kAutofillOptions:
       // User selected 'Autofill Options'.
@@ -319,6 +330,16 @@ void AutofillExternalDelegate::DidAcceptSuggestion(const Suggestion& suggestion,
   } else {
     manager_->client()->HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
   }
+#else
+  if (suggestion.popup_item_id == PopupItemId::kDatalistEntry) {
+    driver_->RendererShouldAcceptDataListSuggestion(query_field_.global_id(),
+                                                    suggestion.main_text.value);
+  } else {
+      // QtWebEngine supports datalist only.
+      NOTREACHED();
+  }
+  manager_->client()->HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 bool AutofillExternalDelegate::GetDeletionConfirmationText(
@@ -327,14 +348,19 @@ bool AutofillExternalDelegate::GetDeletionConfirmationText(
     Suggestion::BackendId backend_id,
     std::u16string* title,
     std::u16string* body) {
+#if !defined(TOOLKIT_QT)
   return manager_->GetDeletionConfirmationText(value, popup_item_id, backend_id,
                                                title, body);
+#else
+  return false;
+#endif
 }
 
 bool AutofillExternalDelegate::RemoveSuggestion(
     const std::u16string& value,
     PopupItemId popup_item_id,
     Suggestion::BackendId backend_id) {
+#if !defined(TOOLKIT_QT)
   if (popup_item_id == PopupItemId::kAddressEntry ||
       popup_item_id == PopupItemId::kCreditCardEntry) {
     return manager_->RemoveAutofillProfileOrCreditCard(backend_id);
@@ -345,6 +371,7 @@ bool AutofillExternalDelegate::RemoveSuggestion(
                                                  popup_item_id);
     return true;
   }
+#endif  // !defined(TOOLKIT_QT)
 
   return false;
 }
@@ -388,8 +415,10 @@ base::WeakPtr<AutofillExternalDelegate> AutofillExternalDelegate::GetWeakPtr() {
 void AutofillExternalDelegate::OnCreditCardScanned(
     const AutofillTriggerSource trigger_source,
     const CreditCard& card) {
+#if !defined(TOOLKIT_QT)
   manager_->FillCreditCardFormImpl(query_form_, query_field_, card,
                                    std::u16string(), trigger_source);
+#endif
 }
 
 void AutofillExternalDelegate::FillAutofillFormData(
@@ -397,6 +426,7 @@ void AutofillExternalDelegate::FillAutofillFormData(
     Suggestion::BackendId backend_id,
     bool is_preview,
     const AutofillTriggerSource trigger_source) {
+#if !defined(TOOLKIT_QT)
   // If the selected element is a warning we don't want to do anything.
   if (IsAutofillWarningEntry(popup_item_id)) {
     return;
@@ -410,6 +440,7 @@ void AutofillExternalDelegate::FillAutofillFormData(
   // Fill the values for the whole form.
   manager_->FillOrPreviewForm(renderer_action, query_form_, query_field_,
                               backend_id, trigger_source);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::PossiblyRemoveAutofillWarnings(
@@ -458,6 +489,7 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
   suggestions->back().popup_item_id = PopupItemId::kAutofillOptions;
   suggestions->back().icon = "settingsIcon";
 
+#if !defined(TOOLKIT_QT)
   // On Android and Desktop, Google Pay branding is shown along with Settings.
   // So Google Pay Icon is just attached to an existing menu item.
   if (is_all_server_suggestions) {
@@ -470,6 +502,9 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
             : "googlePay";
 #endif
   }
+#else
+  DCHECK(!is_all_server_suggestions);
+#endif
 }
 
 void AutofillExternalDelegate::InsertDataListValues(
