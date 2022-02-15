@@ -34,10 +34,13 @@
 #include "components/autofill/core/common/unique_ids.h"
 #include "components/device_reauth/device_authenticator.h"
 #include "components/plus_addresses/plus_address_types.h"
+#if !defined(TOOLKIT_QT)
+#include "components/plus_addresses/plus_address_service.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/security_state/core/security_state.h"
 #include "components/translate/core/browser/language_state.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#endif
 #include "services/network/public/cpp/shared_url_loader_factory.h"
 #include "ui/base/window_open_disposition.h"
 #include "ui/gfx/geometry/rect_f.h"
@@ -431,6 +434,7 @@ class AutofillClient {
   // Gets the IbanAccessManager instance associated with the client.
   virtual IbanAccessManager* GetIbanAccessManager();
 
+#if !defined(TOOLKIT_QT)
   // When the enterprise plus address feature is supported, gets the
   // KeyedService that manages that data.
   virtual plus_addresses::PlusAddressService* GetPlusAddressService();
@@ -452,11 +456,13 @@ class AutofillClient {
   virtual CreditCardCvcAuthenticator* GetCvcAuthenticator();
   virtual CreditCardOtpAuthenticator* GetOtpAuthenticator();
   virtual CreditCardRiskBasedAuthenticator* GetRiskBasedAuthenticator();
+#endif  // !defined(TOOLKIT_QT)
 
   // Gets the preferences associated with the client.
   virtual PrefService* GetPrefs() = 0;
   virtual const PrefService* GetPrefs() const = 0;
 
+#if !defined(TOOLKIT_QT)
   // Gets the sync service associated with the client.
   virtual syncer::SyncService* GetSyncService() = 0;
 
@@ -746,6 +752,7 @@ class AutofillClient {
   // if one is currently shown. Should be called only if the feature is
   // supported by the platform.
   virtual void HideTouchToFillCreditCard() = 0;
+#endif  // !defined(TOOLKIT_QT)
 
   // Shows an Autofill popup with the given |values|, |labels|, |icons|, and
   // |identifiers| for the element at |element_bounds|. |delegate| will be
@@ -792,6 +799,7 @@ class AutofillClient {
   // Hide the Autofill popup if one is currently showing.
   virtual void HideAutofillPopup(PopupHidingReason reason) = 0;
 
+#if !defined(TOOLKIT_QT)
   // TODO(crbug.com/1093057): Rename all the "domain" in this flow to origin.
   //                          The server is passing down full origin of the
   //                          urls. "Domain" is no longer accurate.
@@ -826,6 +834,7 @@ class AutofillClient {
       bool show_confirmation_before_closing,
       base::OnceClosure no_interactive_authentication_callback =
           base::OnceClosure());
+#endif  // !defined(TOOLKIT_QT)
 
   // Maybe triggers a hats survey that measures the user's perception of
   // Autofill. When triggering happens, the survey dialog will be displayed with
@@ -843,6 +852,7 @@ class AutofillClient {
   // Returns whether password management is enabled as per the user preferences.
   virtual bool IsPasswordManagerEnabled() = 0;
 
+#if !defined(TOOLKIT_QT)
   // Inform the client that the form has been filled.
   virtual void DidFillOrPreviewForm(mojom::ActionPersistence action_persistence,
                                     AutofillTriggerSource trigger_source,
@@ -856,10 +866,13 @@ class AutofillClient {
   // If the context is secure.
   virtual bool IsContextSecure() const = 0;
 
+#endif  // !defined(TOOLKIT_QT)
+
   // Returns a LogManager instance. May be null for platforms that don't support
   // this.
   virtual LogManager* GetLogManager() const;
 
+#if !defined(TOOLKIT_QT)
   virtual const AutofillAblationStudy& GetAblationStudy() const;
 
 #if BUILDFLAG(IS_IOS)
@@ -885,6 +898,7 @@ class AutofillClient {
   // platform is not supported.
   virtual std::unique_ptr<device_reauth::DeviceAuthenticator>
   GetDeviceAuthenticator();
+#endif  // !defined(TOOLKIT_QT)
 };
 
 }  // namespace autofill

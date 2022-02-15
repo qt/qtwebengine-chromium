@@ -7,6 +7,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autofill_ablation_study.h"
 #include "components/autofill/core/browser/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
@@ -14,6 +15,7 @@
 #include "components/autofill/core/browser/payments/payments_window_manager.h"
 #include "components/autofill/core/browser/payments/virtual_card_enrollment_manager.h"
 #include "components/autofill/core/browser/ui/payments/bubble_show_options.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/ui/suggestion.h"
 #include "components/plus_addresses/plus_address_types.h"
 #include "components/version_info/channel.h"
@@ -78,6 +80,7 @@ AutofillComposeDelegate* AutofillClient::GetComposeDelegate() {
   return nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 plus_addresses::PlusAddressService* AutofillClient::GetPlusAddressService() {
   return nullptr;
 }
@@ -273,11 +276,13 @@ void AutofillClient::CloseAutofillProgressDialog(
     bool show_confirmation_before_closing,
     base::OnceClosure no_interactive_authentication_callback) {
 }
+#endif  // !defined(TOOLKIT_QT)
 
 LogManager* AutofillClient::GetLogManager() const {
   return nullptr;
 }
 
+#if !defined(TOOLKIT_QT)
 const AutofillAblationStudy& AutofillClient::GetAblationStudy() const {
   // As finch configs are profile independent we can use a static instance here.
   static base::NoDestructor<AutofillAblationStudy> ablation_study;
@@ -297,6 +302,7 @@ std::unique_ptr<device_reauth::DeviceAuthenticator>
 AutofillClient::GetDeviceAuthenticator() {
   return nullptr;
 }
+#endif
 
 std::optional<AutofillClient::PopupScreenLocation>
 AutofillClient::GetPopupScreenLocation() const {

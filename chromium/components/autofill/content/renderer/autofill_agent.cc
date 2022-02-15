@@ -489,6 +489,7 @@ void AutofillAgent::AccessibilityModeChanged(const ui::AXMode& mode) {
 void AutofillAgent::FireHostSubmitEvents(const FormData& form_data,
                                          bool known_success,
                                          SubmissionSource source) {
+#if !defined(TOOLKIT_QT)
   // We don't want to fire duplicate submission event.
   if (!base::FeatureList::IsEnabled(
           features::kAutofillAllowDuplicateFormSubmissions) &&
@@ -498,6 +499,7 @@ void AutofillAgent::FireHostSubmitEvents(const FormData& form_data,
   if (auto* autofill_driver = unsafe_autofill_driver()) {
     autofill_driver->FormSubmitted(form_data, known_success, source);
   }
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillAgent::TextFieldDidEndEditing(const WebInputElement& element) {

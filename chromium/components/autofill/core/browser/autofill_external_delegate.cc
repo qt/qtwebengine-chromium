@@ -21,7 +21,9 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#if !defined(TOOLKIT_QT)
 #include "components/autofill/core/browser/autocomplete_history_manager.h"
+#endif
 #include "components/autofill/core/browser/autofill_client.h"
 #include "components/autofill/core/browser/autofill_compose_delegate.h"
 #include "components/autofill/core/browser/autofill_driver.h"
@@ -228,8 +230,10 @@ void AutofillExternalDelegate::OnQuery(
   query_field_ = field;
   element_bounds_ = element_bounds;
   trigger_source_ = trigger_source;
+#if !defined(TOOLKIT_QT)
   popup_type_ = GetPopupTypeForQuery(*manager_, query_form_, query_field_,
                                      trigger_source);
+#endif  // !defined(TOOLKIT_QT);
 }
 
 const AutofillField* AutofillExternalDelegate::GetQueriedAutofillField() const {
@@ -345,6 +349,7 @@ void AutofillExternalDelegate::SetCurrentDataListValues(
 }
 
 void AutofillExternalDelegate::OnPopupShown() {
+#if !defined(TOOLKIT_QT)
   // Popups are expected to be Autofill or Autocomplete.
   DCHECK_NE(GetPopupType(), PopupType::kPasswords);
 
@@ -372,6 +377,7 @@ void AutofillExternalDelegate::OnPopupShown() {
     AutofillMetrics::LogScanCreditCardPromptMetric(
         AutofillMetrics::SCAN_CARD_ITEM_SHOWN);
   }
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::OnPopupHidden() {
@@ -391,10 +397,12 @@ void AutofillExternalDelegate::DidSelectSuggestion(
 
   switch (suggestion.popup_item_id) {
     case PopupItemId::kClearForm:
+#if !defined(TOOLKIT_QT)
       if (base::FeatureList::IsEnabled(features::kAutofillUndo)) {
         manager_->UndoAutofill(mojom::ActionPersistence::kPreview, query_form_,
                                query_field_);
       }
+#endif
       break;
     case PopupItemId::kAddressEntry:
     case PopupItemId::kCreditCardEntry:
@@ -452,6 +460,7 @@ void AutofillExternalDelegate::DidSelectSuggestion(
       PreviewFieldByFieldFillingSuggestion(suggestion);
       break;
     case PopupItemId::kVirtualCreditCardEntry:
+#if !defined(TOOLKIT_QT)
       // If triggered on a non payments form, don't preview the value.
       if (IsPaymentsManualFallbackOnNonPaymentsField()) {
         break;
@@ -460,6 +469,7 @@ void AutofillExternalDelegate::DidSelectSuggestion(
           suggestion.popup_item_id, backend_id, /*is_preview=*/true,
           {.trigger_source =
                TriggerSourceFromSuggestionTriggerSource(trigger_source_)});
+#endif
       break;
     case PopupItemId::kEditAddressProfile:
     case PopupItemId::kDeleteAddressProfile:
@@ -495,6 +505,7 @@ void AutofillExternalDelegate::DidSelectSuggestion(
 void AutofillExternalDelegate::DidAcceptSuggestion(
     const Suggestion& suggestion,
     const SuggestionPosition& position) {
+#if !defined(TOOLKIT_QT)
   if (!suggestion.is_acceptable) {
     // TODO(crbug.com/1493361): Handle this in the popup controller.
     return;
@@ -792,6 +803,16 @@ void AutofillExternalDelegate::DidAcceptSuggestion(
   } else {
     manager_->client().HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
   }
+#else
+  if (suggestion.popup_item_id == PopupItemId::kDatalistEntry) {
+    manager_->driver().RendererShouldAcceptDataListSuggestion(
+        query_field_.global_id(), suggestion.main_text.value);
+  } else {
+    // QtWebEngine supports datalist only.
+    NOTREACHED();
+  }
+  manager_->client().HideAutofillPopup(PopupHidingReason::kAcceptSuggestion);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
@@ -806,6 +827,7 @@ void AutofillExternalDelegate::DidPerformButtonActionForSuggestion(
 }
 
 bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
+#if !defined(TOOLKIT_QT)
   switch (suggestion.popup_item_id) {
     // These PopupItemIds are various types which can appear in the first level
     // suggestion to fill an address or credit card field.
@@ -858,6 +880,9 @@ bool AutofillExternalDelegate::RemoveSuggestion(const Suggestion& suggestion) {
     case PopupItemId::kDevtoolsTestAddressEntry:
       return false;
   }
+#endif  // !defined(TOOLKIT_QT)
+
+  return false;
 }
 
 void AutofillExternalDelegate::DidEndTextFieldEditing() {
@@ -969,9 +994,11 @@ void AutofillExternalDelegate::OnPersonalDataFinishedProfileTasks() {
 void AutofillExternalDelegate::OnCreditCardScanned(
     const AutofillTriggerSource trigger_source,
     const CreditCard& card) {
+#if !defined(TOOLKIT_QT)
   manager_->FillCreditCardForm(query_form_, query_field_, card,
                                std::u16string(),
                                {.trigger_source = trigger_source});
+#endif
 }
 
 void AutofillExternalDelegate::PreviewFieldByFieldFillingSuggestion(
@@ -1141,6 +1168,7 @@ void AutofillExternalDelegate::FillAutofillFormData(
     Suggestion::BackendId backend_id,
     bool is_preview,
     const AutofillTriggerDetails& trigger_details) {
+#if !defined(TOOLKIT_QT)
   if (base::FeatureList::IsEnabled(
           features::kAutofillGranularFillingAvailable)) {
     // Only address suggestions store the last field types to
@@ -1184,6 +1212,7 @@ void AutofillExternalDelegate::FillAutofillFormData(
     manager_->FillOrPreviewProfileForm(action_persistence, query_form_,
                                        query_field_, *profile, trigger_details);
   }
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void AutofillExternalDelegate::PossiblyRemoveAutofillWarnings(
@@ -1227,6 +1256,7 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
   suggestions->back().popup_item_id = PopupItemId::kAutofillOptions;
   suggestions->back().icon = Suggestion::Icon::kSettings;
 
+#if !defined(TOOLKIT_QT)
   // On Android and Desktop, Google Pay branding is shown along with Settings.
   // So Google Pay Icon is just attached to an existing menu item.
   if (is_all_server_suggestions) {
@@ -1239,6 +1269,9 @@ void AutofillExternalDelegate::ApplyAutofillOptions(
             : Suggestion::Icon::kGooglePay;
 #endif
   }
+#else
+  DCHECK(!is_all_server_suggestions);
+#endif
 }
 
 void AutofillExternalDelegate::InsertDataListValues(

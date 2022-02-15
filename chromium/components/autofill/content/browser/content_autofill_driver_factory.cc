@@ -156,11 +156,13 @@ void ContentAutofillDriverFactory::RenderFrameDeleted(
   ContentAutofillDriver* driver = it->second.get();
   DCHECK(driver);
 
+#if !defined(TOOLKIT_QT)
   if (!render_frame_host->IsInLifecycleState(
           content::RenderFrameHost::LifecycleState::kPrerendering)) {
     driver->GetAutofillManager().ReportAutofillWebOTPMetrics(
         render_frame_host->DocumentUsedWebOTP());
   }
+#endif  // !defined(TOOLKIT_QT)
 
   for (Observer& observer : observers_) {
     observer.OnContentAutofillDriverWillBeDeleted(*this, *driver);
