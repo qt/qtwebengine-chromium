@@ -117,7 +117,7 @@ base::TimeTicks GetEventTimeTicks(const Maybe<double>& timestamp) {
 }
 
 bool SetKeyboardEventText(
-    char16_t (&to)[blink::WebKeyboardEvent::kTextLengthCap],
+    base::char16 (&to)[blink::WebKeyboardEvent::kTextLengthCap],
     Maybe<std::string> from) {
   if (!from.isJust())
     return true;
