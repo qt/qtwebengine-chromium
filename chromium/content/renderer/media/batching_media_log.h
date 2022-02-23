@@ -65,9 +65,6 @@ class CONTENT_EXPORT BatchingMediaLog : public media::MediaLog {
 
   scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
 
-  // impl for sending queued events.
-  std::vector<std::unique_ptr<EventHandler>> event_handlers_;
-
   // |lock_| protects access to all of the following member variables.  It
   // allows any render process thread to AddEvent(), while preserving their
   // sequence for throttled send on |task_runner_| and coherent retrieval by
@@ -75,15 +72,18 @@ class CONTENT_EXPORT BatchingMediaLog : public media::MediaLog {
   // guarantees provided by MediaLog, since SendQueuedMediaEvents must also
   // be synchronized with respect to AddEvent.
   mutable base::Lock lock_;
-  const base::TickClock* tick_clock_;
-  base::TimeTicks last_ipc_send_time_;
-  std::vector<media::MediaLogRecord> queued_media_events_;
+  const base::TickClock* tick_clock_ GUARDED_BY(LOCK);
+  base::TimeTicks last_ipc_send_time_ GUARDED_BY(LOCK);
+  std::vector<media::MediaLogRecord> queued_media_events_ GUARDED_BY(LOCK);
+
+  // impl for sending queued events.
+  std::vector<std::unique_ptr<EventHandler>> event_handlers_ GUARDED_BY(LOCK);
 
   // For enforcing max 1 pending send.
-  bool ipc_send_pending_;
+  bool ipc_send_pending_ GUARDED_BY(LOCK);
 
   // Limits the number of events we send over IPC to one.
-  std::unique_ptr<media::MediaLogRecord> last_duration_changed_event_;
+  std::unique_ptr<media::MediaLogRecord> last_duration_changed_event_ GUARDED_BY(LOCK);
 
   // Holds the earliest MEDIA_ERROR_LOG_ENTRY event added to this log. This is
   // most likely to contain the most specific information available describing
