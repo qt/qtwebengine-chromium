@@ -1336,6 +1336,11 @@ void GpuDataManagerImplPrivate::AppendGpuCommandLine(
   command_line->AppendSwitchASCII(switches::kGpuPreferences,
                                   gpu_prefs.ToSwitchValue());
 
+  // do not reappend in case of same process
+  if (command_line->HasSwitch(switches::kSingleProcess) ||
+      command_line->HasSwitch(switches::kInProcessGPU))
+      return;
+
   std::string use_gl;
   switch (gpu_mode_) {
     case gpu::GpuMode::HARDWARE_GL:
