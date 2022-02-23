@@ -938,12 +938,6 @@ angle::Result BufferVk::acquireBufferHelper(ContextVk *contextVk, size_t sizeInB
     mBuffer = mBufferPool.getCurrentBuffer();
     ASSERT(mBuffer);
 
-    if (updateType == BufferUpdateType::StorageRedefined)
-    {
-        // Tell the observers (front end) that a buffer's storage has changed.
-        onStateChange(angle::SubjectMessage::BufferVkStorageChanged);
-    }
-
     return angle::Result::Continue;
 }
 

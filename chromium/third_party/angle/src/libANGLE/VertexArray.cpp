@@ -655,9 +655,6 @@ void VertexArray::onSubjectStateChange(angle::SubjectIndex index, angle::Subject
             onStateChange(angle::SubjectMessage::SubjectUnmapped);
             break;
 
-        case angle::SubjectMessage::BufferVkStorageChanged:
-            break;
-
         default:
             UNREACHABLE();
             break;
