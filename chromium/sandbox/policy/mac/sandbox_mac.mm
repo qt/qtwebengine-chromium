@@ -21,7 +21,9 @@
 #include "sandbox/policy/mac/nacl_loader.sb.h"
 #include "sandbox/policy/mac/network.sb.h"
 #include "sandbox/policy/mac/ppapi.sb.h"
+#if BUILDFLAG(ENABLE_OOP_PRINTING)
 #include "sandbox/policy/mac/print_backend.sb.h"
+#endif
 #include "sandbox/policy/mac/print_compositor.sb.h"
 #include "sandbox/policy/mac/renderer.sb.h"
 #include "sandbox/policy/mac/speech_recognition.sb.h"
@@ -72,7 +74,7 @@ std::string GetSandboxProfile(sandbox::mojom::Sandbox sandbox_type) {
     case sandbox::mojom::Sandbox::kPpapi:
       profile += kSeatbeltPolicyString_ppapi;
       break;
-#if BUILDFLAG(ENABLE_PRINTING)
+#if BUILDFLAG(ENABLE_OOP_PRINTING)
     case sandbox::mojom::Sandbox::kPrintBackend:
       profile += kSeatbeltPolicyString_print_backend;
       break;

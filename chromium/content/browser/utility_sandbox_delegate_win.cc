@@ -244,7 +244,7 @@ bool UtilitySandboxedProcessLauncherDelegate::PreSpawnTarget(
       return false;
   }
 
-#if BUILDFLAG(ENABLE_PRINTING)
+#if BUILDFLAG(ENABLE_PRINTING) && BUILDFLAG(ENABLE_OOP_PRINTING)
   if (sandbox_type_ == sandbox::mojom::Sandbox::kPrintBackend) {
     if (!PrintBackendPreSpawnTarget(policy))
       return false;
