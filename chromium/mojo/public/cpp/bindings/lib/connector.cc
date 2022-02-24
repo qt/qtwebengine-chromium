@@ -17,6 +17,7 @@
 #include "base/no_destructor.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task/current_thread.h"
 #include "base/threading/sequence_local_storage_slot.h"
@@ -153,7 +154,11 @@ Connector::Connector(ScopedMessagePipeHandle message_pipe,
       outgoing_serialization_mode_(g_default_outgoing_serialization_mode),
       incoming_serialization_mode_(g_default_incoming_serialization_mode),
       heap_profiler_tag_(heap_profiler_tag),
-      nesting_observer_(RunLoopNestingObserver::GetForThread()) {
+      nesting_observer_(RunLoopNestingObserver::GetForThread()),
+      header_validator_(
+          base::JoinString({heap_profiler_tag ? heap_profiler_tag : "Generic",
+                            "MessageHeaderValidator"},
+                           "")) {
   if (config == MULTI_THREADED_SEND)
     lock_.emplace();
 
@@ -454,6 +459,7 @@ MojoResult Connector::ReadMessage(Message* message) {
     return result;
 
   *message = Message::CreateFromMessageHandle(&handle);
+
   if (message->IsNull()) {
     // Even if the read was successful, the Message may still be null if there
     // was a problem extracting handles from it. We treat this essentially as
@@ -465,6 +471,10 @@ MojoResult Connector::ReadMessage(Message* message) {
     NotifyBadMessage(handle.get(),
                      std::string(heap_profiler_tag_) +
                          "One or more handle attachments were invalid.");
+    return MOJO_RESULT_ABORTED;
+  }
+
+  if (!header_validator_.Accept(message)) {
     return MOJO_RESULT_ABORTED;
   }
 

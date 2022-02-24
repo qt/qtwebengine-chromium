@@ -351,15 +351,8 @@ MultiplexRouter::MultiplexRouter(
   if (quota_checker)
     connector_.SetMessageQuotaChecker(std::move(quota_checker));
 
-  std::unique_ptr<MessageHeaderValidator> header_validator =
-      std::make_unique<MessageHeaderValidator>();
-  header_validator_ = header_validator.get();
-  dispatcher_.SetValidator(std::move(header_validator));
-
   if (primary_interface_name) {
     DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-    header_validator_->SetDescription(base::JoinString(
-        {primary_interface_name, "[primary] MessageHeaderValidator"}, " "));
     control_message_handler_.SetDescription(base::JoinString(
         {primary_interface_name, "[primary] PipeControlMessageHandler"}, " "));
   }

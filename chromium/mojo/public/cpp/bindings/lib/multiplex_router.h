@@ -29,7 +29,6 @@
 #include "mojo/public/cpp/bindings/connector.h"
 #include "mojo/public/cpp/bindings/interface_id.h"
 #include "mojo/public/cpp/bindings/message_dispatcher.h"
-#include "mojo/public/cpp/bindings/message_header_validator.h"
 #include "mojo/public/cpp/bindings/pending_flush.h"
 #include "mojo/public/cpp/bindings/pipe_control_message_handler.h"
 #include "mojo/public/cpp/bindings/pipe_control_message_handler_delegate.h"
@@ -258,9 +257,6 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS) MultiplexRouter
   const bool set_interface_id_namespace_bit_;
 
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
-
-  // Owned by |dispatcher_| below.
-  MessageHeaderValidator* header_validator_ = nullptr;
 
   MessageDispatcher dispatcher_;
   Connector connector_;
