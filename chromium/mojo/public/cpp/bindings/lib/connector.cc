@@ -17,6 +17,7 @@
 #include "base/no_destructor.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/task/current_thread.h"
 #include "base/threading/sequence_local_storage_slot.h"
@@ -154,6 +155,10 @@ Connector::Connector(ScopedMessagePipeHandle message_pipe,
       outgoing_serialization_mode_(g_default_outgoing_serialization_mode),
       incoming_serialization_mode_(g_default_incoming_serialization_mode),
       interface_name_(interface_name),
+      header_validator_(
+          base::JoinString({interface_name ? interface_name : "Generic",
+                            "MessageHeaderValidator"},
+                            "")),
       nesting_observer_(RunLoopNestingObserver::GetForThread()) {
   if (config == MULTI_THREADED_SEND)
     lock_.emplace();
@@ -466,6 +471,10 @@ MojoResult Connector::ReadMessage(Message* message) {
     NotifyBadMessage(handle.get(),
                      std::string(interface_name_) +
                          "One or more handle attachments were invalid.");
+    return MOJO_RESULT_ABORTED;
+  }
+
+  if (!header_validator_.Accept(message)) {
     return MOJO_RESULT_ABORTED;
   }
 
