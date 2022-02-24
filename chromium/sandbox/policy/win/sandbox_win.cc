@@ -1254,7 +1254,7 @@ std::string SandboxWin::GetSandboxTypeInEnglish(Sandbox sandbox_type) {
       return "CDM";
     case Sandbox::kPrintCompositor:
       return "Print Compositor";
-#if BUILDFLAG(ENABLE_PRINTING)
+#if BUILDFLAG(ENABLE_PRINTING) && BUILDFLAG(ENABLE_OOP_PRINTING)
     case Sandbox::kPrintBackend:
       return "Print Backend";
 #endif
