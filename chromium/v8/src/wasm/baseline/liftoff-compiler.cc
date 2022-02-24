@@ -2484,6 +2484,7 @@ class LiftoffCompiler {
   void AlignmentCheckMem(FullDecoder* decoder, uint32_t access_size,
                          uintptr_t offset, Register index,
                          LiftoffRegList pinned) {
+    DEBUG_CODE_COMMENT("alignment check");
     Label* trap_label = AddOutOfLineTrap(
         decoder->position(), WasmCode::kThrowWasmTrapUnalignedAccess, 0);
     Register address = __ GetUnusedRegister(kGpReg, pinned).gp();
@@ -3746,9 +3747,9 @@ class LiftoffCompiler {
     LiftoffRegister value = pinned.set(__ PopToRegister());
 #ifdef V8_TARGET_ARCH_IA32
     // We have to reuse the value register as the result register so that we
-    //  don't run out of registers on ia32. For this we use the value register
-    //  as the result register if it has no other uses. Otherwise  we allocate
-    //  a new register and let go of the value register to get spilled.
+    // don't run out of registers on ia32. For this we use the value register as
+    // the result register if it has no other uses. Otherwise we allocate a new
+    // register and let go of the value register to get spilled.
     LiftoffRegister result = value;
     if (__ cache_state()->is_used(value)) {
       result = pinned.set(__ GetUnusedRegister(value.reg_class(), pinned));
@@ -3768,6 +3769,7 @@ class LiftoffCompiler {
     pinned.set(index);
     AlignmentCheckMem(decoder, type.size(), imm.offset, index, pinned);
 
+    DEBUG_CODE_COMMENT("atomic binop");
     uintptr_t offset = imm.offset;
     index = AddMemoryMasking(index, &offset, &pinned);
     Register addr = pinned.set(__ GetUnusedRegister(kGpReg, pinned)).gp();
