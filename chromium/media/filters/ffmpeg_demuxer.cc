@@ -65,6 +65,11 @@ void SetAVStreamDiscard(AVStream* stream, AVDiscard discard) {
   stream->discard = discard;
 }
 
+#if BUILDFLAG(USE_SYSTEM_FFMPEG)
+auto av_stream_get_first_dts(AVStream* stream) {
+  return stream->first_dts;
+}
+#endif
 }  // namespace
 
 ScopedAVPacket MakeScopedAVPacket() {
@@ -404,12 +409,17 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
   scoped_refptr<DecoderBuffer> buffer;
 
+#if BUILDFLAG(USE_SYSTEM_FFMPEG)
+  typedef int side_data_arg;
+#else
+  typedef size_t side_data_arg;
+#endif
   if (type() == DemuxerStream::TEXT) {
-    size_t id_size = 0;
+    side_data_arg id_size = 0;
     uint8_t* id_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_WEBVTT_IDENTIFIER, &id_size);
 
-    size_t settings_size = 0;
+    side_data_arg settings_size = 0;
     uint8_t* settings_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_WEBVTT_SETTINGS, &settings_size);
 
@@ -421,7 +431,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
     buffer = DecoderBuffer::CopyFrom(packet->data, packet->size,
                                      side_data.data(), side_data.size());
   } else {
-    size_t side_data_size = 0;
+    side_data_arg side_data_size = 0;
     uint8_t* side_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL, &side_data_size);
 
@@ -482,7 +492,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                                        packet->size - data_offset);
     }
 
-    size_t skip_samples_size = 0;
+    side_data_arg skip_samples_size = 0;
     const uint32_t* skip_samples_ptr =
         reinterpret_cast<const uint32_t*>(av_packet_get_side_data(
             packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
