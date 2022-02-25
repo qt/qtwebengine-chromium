@@ -125,14 +125,23 @@ bool AudioFileReader::OpenDecoder() {
   // Verify the channel layout is supported by Chrome.  Acts as a sanity check
   // against invalid files.  See http://crbug.com/171962
   if (ChannelLayoutToChromeChannelLayout(
+#if LIBAVCODEC_VERSION_MAJOR > 60
           codec_context_->ch_layout.u.mask,
           codec_context_->ch_layout.nb_channels) ==
+#else
+          codec_context_->channel_layout,
+          codec_context_->channels) ==
+#endif
       CHANNEL_LAYOUT_UNSUPPORTED) {
     return false;
   }
 
   // Store initial values to guard against midstream configuration changes.
+#if LIBAVCODEC_VERSION_MAJOR > 60
   channels_ = codec_context_->ch_layout.nb_channels;
+#else
+  channels_ = codec_context_->channels;
+#endif
   audio_codec_ = CodecIDToAudioCodec(codec_context_->codec_id);
   sample_rate_ = codec_context_->sample_rate;
   av_sample_format_ = codec_context_->sample_fmt;
@@ -261,7 +270,11 @@ bool AudioFileReader::OnNewFrame(
   if (frames_read < 0)
     return false;
 
+#if LIBAVCODEC_VERSION_MAJOR > 60
   const int channels = frame->ch_layout.nb_channels;
+#else
+  const int channels = frame->channels;
+#endif
   if (frame->sample_rate != sample_rate_ || channels != channels_ ||
       frame->format != av_sample_format_) {
     DLOG(ERROR) << "Unsupported midstream configuration change!"
@@ -280,10 +293,18 @@ bool AudioFileReader::OnNewFrame(
   // silence from being output. In the case where we are also discarding some
   // portion of the packet (as indicated by a negative pts), we further want to
   // adjust the duration downward by however much exists before zero.
+#if LIBAVCODEC_VERSION_MAJOR > 60
   if (audio_codec_ == AudioCodec::kAAC && frame->duration) {
+#else
+  if (audio_codec_ == AudioCodec::kAAC && frame->pkt_duration) {
+#endif
     const base::TimeDelta pkt_duration = ConvertFromTimeBase(
         glue_->format_context()->streams[stream_index_]->time_base,
+#if LIBAVCODEC_VERSION_MAJOR > 60
         frame->duration + std::min(static_cast<int64_t>(0), frame->pts));
+#else
+        frame->pkt_duration + std::min(static_cast<int64_t>(0), frame->pts));
+#endif
     const base::TimeDelta frame_duration =
         base::Seconds(frames_read / static_cast<double>(sample_rate_));
 
