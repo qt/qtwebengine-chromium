@@ -509,7 +509,12 @@ bool FFmpegVideoDecoder::ConfigureDecoder(const VideoDecoderConfig& config,
   // microsecond-level precision such as VideoFrame.timestamp.
   codec_context_->pkt_timebase = AVRational{1, 1000000};
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  const AVCodec* codec =
+      FindDecoder(codec_context_->codec_id, codec_context_->codec_whitelist);
+#else
   const AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
+#endif
   if (!codec || avcodec_open2(codec_context_.get(), codec, nullptr) < 0) {
     ReleaseFFmpegResources();
     return false;

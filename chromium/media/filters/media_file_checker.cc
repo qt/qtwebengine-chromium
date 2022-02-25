@@ -77,7 +77,12 @@ bool MediaFileChecker::Start(base::TimeDelta check_time) {
           if (!context) {
             return Decoder{};
           }
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+          const AVCodec* codec =
+              FindDecoder(cp->codec_id, context->codec_whitelist);
+#else
           const AVCodec* codec = avcodec_find_decoder(cp->codec_id);
+#endif
           if (codec && avcodec_open2(context.get(), codec, nullptr) >= 0) {
             auto loop = std::make_unique<FFmpegDecodingLoop>(context.get());
             found_streams = true;

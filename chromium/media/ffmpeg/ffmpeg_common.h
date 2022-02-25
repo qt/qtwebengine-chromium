@@ -121,6 +121,12 @@ inline base::span<AVPacketSideData> AVCodecParametersCodedSideToSpan(
                  base::checked_cast<size_t>(codecpar->nb_coded_side_data)));
 }
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+// Systemlib friendly version of avcodec_find_decoder that respects the
+// whitelisted codecs.
+MEDIA_EXPORT const AVCodec* FindDecoder(AVCodecID id, const char* whitelist);
+#endif
+
 inline base::span<uint8_t> AVCodecParametersExtraDataToSpan(
     const AVCodecParameters* codecpar) {
   // SAFETY:
