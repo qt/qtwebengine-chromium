@@ -39,7 +39,7 @@ namespace blink {
 
 namespace {
 
-bool IsLinkHighlighted(const LayoutObject& object) {
+bool IsLinkHighlightedPPTW(const LayoutObject& object) {
   return object.GetFrame()->GetPage()->GetLinkHighlight().IsHighlighting(
       object);
 }
@@ -520,7 +520,7 @@ FragmentData* PrePaintTreeWalk::GetOrCreateFragmentData(
       // is the highlighted link (in which case even culled inlines get paint
       // effects).
       if (!object.IsBox() && !object.HasInlineFragments() &&
-          !IsLinkHighlighted(object))
+          !IsLinkHighlightedPPTW(object))
         return nullptr;
 
       DCHECK(allow_update);

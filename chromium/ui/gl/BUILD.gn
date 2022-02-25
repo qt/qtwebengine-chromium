@@ -222,6 +222,10 @@ jumbo_component("gl") {
         "gl_image_egl_angle_vulkan.cc",
         "gl_image_egl_angle_vulkan.h",
       ]
+
+      jumbo_excluded_sources = [
+        "gl_angle_util_vulkan.cc",
+      ]
     }
 
     if (is_linux || is_chromeos || use_ozone) {
