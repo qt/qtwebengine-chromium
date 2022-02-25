@@ -47,8 +47,10 @@
 #include "media/formats/mpeg/mpeg1_audio_stream_parser.h"
 #include "media/formats/webm/webm_crypto_helpers.h"
 #include "media/media_buildflags.h"
+#if !BUILDFLAG(USE_SYSTEM_FFMPEG)
 #include "third_party/ffmpeg/ffmpeg_features.h"
 #include "third_party/ffmpeg/libavcodec/packet.h"
+#endif  // !BUILDFLAG(USE_SYSTEM_FFMPEG)
 
 #if BUILDFLAG(ENABLE_PLATFORM_HEVC)
 #include "media/filters/ffmpeg_h265_to_annex_b_bitstream_converter.h"
@@ -86,6 +88,11 @@ bool IsStreamEnabled(container_names::MediaContainerName container,
   return stream->disposition & AV_DISPOSITION_DEFAULT;
 }
 
+#if LIBAVCODEC_VERSION_MAJOR < 59
+auto av_stream_get_first_dts(AVStream* stream) {
+  return stream->first_dts;
+}
+#endif
 }  // namespace
 
 static base::Time ExtractTimelineOffset(
@@ -122,7 +129,7 @@ static base::TimeDelta ExtractStartTime(AVStream* stream) {
 
   // Next try to use the first DTS value, for codecs where we know PTS == DTS
   // (excludes all H26x codecs). The start time must be returned in PTS.
-  if (av_stream_get_first_dts(stream) != kNoFFmpegTimestamp &&
+  if (av_stream_get_first_dts(stream) != kInvalidPTSMarker &&
       stream->codecpar->codec_id != AV_CODEC_ID_HEVC &&
       stream->codecpar->codec_id != AV_CODEC_ID_H264 &&
       stream->codecpar->codec_id != AV_CODEC_ID_MPEG4) {
@@ -401,7 +408,13 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
   scoped_refptr<DecoderBuffer> buffer;
 
-    size_t side_data_size = 0;
+#if LIBAVCODEC_VERSION_MAJOR < 59
+  typedef int side_data_arg;
+#else
+  typedef size_t side_data_arg;
+#endif
+
+    side_data_arg side_data_size = 0;
     uint8_t* side_data = av_packet_get_side_data(
         packet.get(), AV_PKT_DATA_MATROSKA_BLOCKADDITIONAL, &side_data_size);
 
@@ -464,7 +477,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
                                        packet->size - data_offset);
     }
 
-    size_t skip_samples_size = 0;
+    side_data_arg skip_samples_size = 0;
     const uint32_t* skip_samples_ptr =
         reinterpret_cast<const uint32_t*>(av_packet_get_side_data(
             packet.get(), AV_PKT_DATA_SKIP_SAMPLES, &skip_samples_size));
