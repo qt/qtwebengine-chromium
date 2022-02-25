@@ -116,7 +116,9 @@ FFmpegGlue::FFmpegGlue(FFmpegURLProtocol* protocol) {
 
   // We don't allow H.264 parsing during demuxing since we have our own parser
   // and the ffmpeg one increases memory usage unnecessarily.
+#if !BUILDFLAG(IS_QTWEBENGINE) && !BUILDFLAG(USE_SYSTEM_FFMPEG)
   format_context_->flags |= AVFMT_FLAG_NOH264PARSE;
+#endif
 
   // Ensures format parsing errors will bail out. From an audit on 11/2017, all
   // instances were real failures. Solves bugs like http://crbug.com/710791.
@@ -212,6 +214,31 @@ bool FFmpegGlue::OpenContext(bool is_local_file) {
   CHECK_NE(container_, container_names::MediaContainerName::kContainerUnknown);
   LogContainer(is_local_file, container_);
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  // 'avformat_find_stream_info' is not aware of the whitelisted codecs.
+  // However it respects the codecs set in the format_context.
+  // Try to force the correct codecs here at context creation.
+  // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#a52f39351b15890ef57cc6ff0ec9ab42d
+  // https://ffmpeg.org/doxygen/7.0/structAVFormatContext.html#ae5e087f4623b907517c0f7dd8327387d
+
+  for (int i = 0; i < format_context_->nb_streams; i++) {
+    AVCodecParameters *params = format_context_->streams[i]->codecpar;
+    if (!params)
+      continue;
+    const AVCodec* audio_codec =
+        FindDecoder(params->codec_id, GetAllowedAudioDecoders());
+    if (audio_codec) {
+      if (format_context_->audio_codec &&
+          format_context_->audio_codec != audio_codec) {
+        LOG(INFO) << "Conflicting codecs " << format_context_->audio_codec->name
+                  << ", " << audio_codec->name;
+        format_context_->audio_codec = nullptr;
+        break;
+      }
+      format_context_->audio_codec = audio_codec;
+    }
+  }
+#endif
   return true;
 }
 

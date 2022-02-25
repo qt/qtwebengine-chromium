@@ -35,7 +35,11 @@ namespace media {
 
 // Return the number of channels from the data in |frame|.
 static inline int DetermineChannels(AVFrame* frame) {
+#if LIBAVCODEC_VERSION_MAJOR > 60
   return frame->ch_layout.nb_channels;
+#else
+  return frame->channels;
+#endif
 }
 
 // Called by FFmpeg's allocation routine to allocate a buffer. Uses
@@ -248,7 +252,11 @@ bool FFmpegAudioDecoder::OnNewFrame(const DecoderBuffer& buffer,
   // Translate unsupported into discrete layouts for discrete configurations;
   // ffmpeg does not have a labeled discrete configuration internally.
   ChannelLayout channel_layout = ChannelLayoutToChromeChannelLayout(
+#if LIBAVCODEC_VERSION_MAJOR > 60
       codec_context_->ch_layout.u.mask, codec_context_->ch_layout.nb_channels);
+#else
+      codec_context_->channel_layout, codec_context_->channels);
+#endif
   if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED &&
       config_.channel_layout() == CHANNEL_LAYOUT_DISCRETE) {
     channel_layout = CHANNEL_LAYOUT_DISCRETE;
@@ -350,7 +358,13 @@ bool FFmpegAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
     }
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+  AVCodecID id = AudioCodecToCodecID(config.codec(), config.sample_format());
+  const AVCodec* codec = FindDecoder(id, codec_context_->codec_whitelist);
+#else
   const AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
+#endif
+
   if (!codec ||
       avcodec_open2(codec_context_.get(), codec, &codec_options) < 0) {
     DLOG(ERROR) << "Could not initialize audio decoder: "
@@ -365,11 +379,19 @@ bool FFmpegAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
   // Success!
   av_sample_format_ = codec_context_->sample_fmt;
 
+#if LIBAVCODEC_VERSION_MAJOR > 60
   if (codec_context_->ch_layout.nb_channels != config.channels()) {
+#else
+  if (codec_context_->channels != config.channels()) {
+#endif
     MEDIA_LOG(ERROR, media_log_)
         << "Audio configuration specified " << config.channels()
         << " channels, but FFmpeg thinks the file contains "
+#if LIBAVCODEC_VERSION_MAJOR > 60
         << codec_context_->ch_layout.nb_channels << " channels";
+#else
+        << codec_context_->channels << " channels";
+#endif
     ReleaseFFmpegResources();
     state_ = DecoderState::kUninitialized;
     return false;
@@ -419,7 +441,11 @@ int FFmpegAudioDecoder::GetAudioBuffer(struct AVCodecContext* s,
   if (frame->nb_samples <= 0)
     return AVERROR(EINVAL);
 
+#if LIBAVCODEC_VERSION_MAJOR > 60
   if (s->ch_layout.nb_channels != channels) {
+#else
+  if (s->channels != channels) {
+#endif
     DLOG(ERROR) << "AVCodecContext and AVFrame disagree on channel count.";
     return AVERROR(EINVAL);
   }
@@ -452,8 +478,13 @@ int FFmpegAudioDecoder::GetAudioBuffer(struct AVCodecContext* s,
   ChannelLayout channel_layout =
       config_.channel_layout() == CHANNEL_LAYOUT_DISCRETE
           ? CHANNEL_LAYOUT_DISCRETE
+#if LIBAVCODEC_VERSION_MAJOR > 60
           : ChannelLayoutToChromeChannelLayout(s->ch_layout.u.mask,
                                                s->ch_layout.nb_channels);
+#else
+          : ChannelLayoutToChromeChannelLayout(s->channel_layout,
+                                               s->channels);
+#endif
 
   if (channel_layout == CHANNEL_LAYOUT_UNSUPPORTED) {
     DLOG(ERROR) << "Unsupported channel layout.";
