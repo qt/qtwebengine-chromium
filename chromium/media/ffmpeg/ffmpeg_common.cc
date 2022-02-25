@@ -39,6 +39,11 @@
 #endif  // BUILDFLAG(ENABLE_PLATFORM_DOLBY_VISION)
 #endif
 
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+extern "C" {
+#include <libavutil/avstring.h>
+}
+#endif
 namespace media {
 
 namespace {
@@ -122,6 +127,24 @@ void CopyBufferFromConfig(const T& config, AVCodecContext* codec_context) {
 }
 
 }  // namespace
+
+#if BUILDFLAG(IS_QTWEBENGINE) && BUILDFLAG(USE_SYSTEM_FFMPEG)
+const AVCodec* FindDecoder(AVCodecID id, const char* whitelist) {
+  if (!whitelist) {
+    return avcodec_find_decoder(id);
+  }
+
+  void* i = 0;
+  const AVCodec* codec;
+  while (codec = av_codec_iterate(&i)) {
+    if (av_codec_is_decoder(codec) && codec->id == id &&
+        av_match_list(codec->name, whitelist, ',')) {
+      return codec;
+    }
+  }
+  return nullptr;
+}
+#endif
 
 static const AVRational kMicrosBase = { 1, base::Time::kMicrosecondsPerSecond };
 
@@ -385,8 +408,18 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
       codec_context->sample_fmt, codec_context->codec_id);
 
   ChannelLayout channel_layout =
-      ChannelLayoutToChromeChannelLayout(codec_context->ch_layout);
+      ChannelLayoutToChromeChannelLayout(
+#if LIBAVCODEC_VERSION_MAJOR >= 62
+                codec_context->ch_layout);
+#elif LIBAVCODEC_VERSION_MAJOR == 61
+                codec_context->ch_layout.u.mask,
+                codec_context->ch_layout.nb_channels);
+#else
+                codec_context->channel_layout,
+                codec_context->channels);
+#endif
 
+#if LIBAVCODEC_VERSION_MAJOR >= 62
   // If there is a mismatch of `channel_layout` and `nb_channels`, we trust the
   // count. We skip this check for DISCRETE layouts since it does not have a
   // specific channel count.
@@ -395,6 +428,7 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
           codec_context->ch_layout.nb_channels) {
     channel_layout = GuessChannelLayout(codec_context->ch_layout.nb_channels);
   }
+#endif
 
   switch (codec) {
     // For AC3/EAC3 we enable only demuxing, but not decoding, so FFmpeg does
@@ -455,9 +489,21 @@ bool AVCodecContextToAudioDecoderConfig(const AVCodecContext* codec_context,
   }
 
   config->Initialize(codec, sample_format,
+#if LIBAVCODEC_VERSION_MAJOR >= 62
                      {channel_layout, codec_context->ch_layout.nb_channels},
+#else
+                     channel_layout,
+#endif
                      codec_context->sample_rate, extra_data, encryption_scheme,
                      seek_preroll, codec_delay);
+#if LIBAVCODEC_VERSION_MAJOR < 62
+  if (channel_layout == CHANNEL_LAYOUT_DISCRETE)
+#if LIBAVCODEC_VERSION_MAJOR > 60
+    config->SetChannelsForDiscrete(codec_context->ch_layout.nb_channels);
+#else
+    config->SetChannelsForDiscrete(codec_context->channels);
+#endif
+#endif
 
 #if BUILDFLAG(ENABLE_PLATFORM_AC3_EAC3_AUDIO)
   // These are bitstream formats unknown to ffmpeg, so they don't have
@@ -527,7 +573,11 @@ void AudioDecoderConfigToAVCodecContext(const AudioDecoderConfig& config,
 
   // TODO(scherkus): should we set |channel_layout|? I'm not sure if FFmpeg uses
   // said information to decode.
+#if LIBAVCODEC_VERSION_MAJOR > 60
   codec_context->ch_layout.nb_channels = config.channels();
+#else
+  codec_context->channels = config.channels();
+#endif
   codec_context->sample_rate = config.samples_per_second();
 
   CopyBufferFromConfig(config, codec_context);
