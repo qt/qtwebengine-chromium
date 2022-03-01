@@ -2132,6 +2132,15 @@ angle::Result TextureVk::getAttachmentRenderTarget(const gl::Context *context,
 
     ContextVk *contextVk = vk::GetImpl(context);
 
+    if (mRedefinedLevels.any())
+    {
+        // If we have redefined levels, we must flush those out to fix the render targets.
+        ANGLE_TRY(respecifyImageStorage(contextVk));
+    }
+
+    // Otherwise, don't flush staged updates here. We'll handle that in FramebufferVk so we can
+    // defer clears.
+
     if (!mImage->valid())
     {
         const gl::ImageDesc &baseLevelDesc  = mState.getBaseLevelDesc();
@@ -2180,9 +2189,14 @@ angle::Result TextureVk::getAttachmentRenderTarget(const gl::Context *context,
     ANGLE_TRY(initRenderTargets(contextVk, layerCount, gl::LevelIndex(imageIndex.getLevelIndex()),
                                 renderToTextureIndex));
 
-    ASSERT(imageIndex.getLevelIndex() <
-           static_cast<int32_t>(mRenderTargets[renderToTextureIndex].size()));
-    *rtOut = &mRenderTargets[renderToTextureIndex][imageIndex.getLevelIndex()][layerIndex];
+    std::vector<RenderTargetVector> &levelRenderTargets =
+         mRenderTargets[renderToTextureIndex];
+    ASSERT(imageIndex.getLevelIndex() < static_cast<int32_t>(levelRenderTargets.size()));
+
+    RenderTargetVector &layerRenderTargets = levelRenderTargets[imageIndex.getLevelIndex()];
+    ASSERT(imageIndex.getLayerIndex() < static_cast<int32_t>(layerRenderTargets.size()));
+
+    *rtOut = &layerRenderTargets[layerIndex];
 
     return angle::Result::Continue;
 }
