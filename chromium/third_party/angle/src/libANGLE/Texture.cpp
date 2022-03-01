@@ -1073,7 +1073,15 @@ void Texture::signalDirtyStorage(InitState initState)
     mState.mInitState = initState;
     invalidateCompletenessCache();
     mState.mCachedSamplerFormatValid = false;
-    onStateChange(angle::SubjectMessage::SubjectChanged);
+
+    if (dirtyBit == DIRTY_BIT_BASE_LEVEL || dirtyBit == DIRTY_BIT_MAX_LEVEL)
+    {
+        onStateChange(angle::SubjectMessage::SubjectChanged);
+    }
+    else
+    {
+        onStateChange(angle::SubjectMessage::DirtyBitsFlagged);
+    }
 }
 
 void Texture::signalDirtyState(size_t dirtyBit)
