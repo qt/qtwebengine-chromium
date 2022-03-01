@@ -897,12 +897,9 @@ void ServiceWorkerContainerHost::UpdateUrls(
 
 #if DCHECK_IS_ON()
   const url::Origin origin_to_dcheck = IsContainerForClient()
-                                           ? url::Origin::Create(GetOrigin())
+                                           ? url::Origin::Create(GetUrlForScopeMatch())
                                            : url::Origin::Create(url);
   DCHECK((origin_to_dcheck.opaque() && key_.origin().opaque()) ||
-         // If GetUrlForScopeMatch() is a blob URL, GetOrigin() incorrectly
-         // returns an empty URL.
-         (IsContainerForClient() && GetUrlForScopeMatch().SchemeIsBlob()) ||
          origin_to_dcheck.IsSameOriginWith(key_.origin()))
       << origin_to_dcheck << " and " << key_.origin() << " should be equal.";
   // TODO(https://crbug.com/1199077): Make `top_frame_origin` non-optional and
