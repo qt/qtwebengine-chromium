@@ -568,6 +568,13 @@ class TRIVIAL_ABI raw_ptr {
     return *GetForDereference();
   }
   RAW_PTR_FUNC_ATTRIBUTES T* operator->() const { return GetForDereference(); }
+
+  // Disables `(my_raw_ptr->*pmf)(...)` as a workaround for
+  // the ICE in GCC parsing the code, reported at
+  // https://gcc.gnu.org/bugzilla/show_bug.cgi?id=103455
+  template <typename PMF>
+  void operator->*(PMF) const = delete;
+
   // Deliberately implicit, because raw_ptr is supposed to resemble raw ptr.
   // NOLINTNEXTLINE(runtime/explicit)
   RAW_PTR_FUNC_ATTRIBUTES operator T*() const { return GetForExtraction(); }
