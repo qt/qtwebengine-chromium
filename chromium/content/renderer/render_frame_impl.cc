@@ -2693,7 +2693,7 @@ void RenderFrameImpl::CommitNavigation(
       this, kMayReplaceInitialEmptyDocument);
 
   if (commit_params->origin_to_commit) {
-    commit_params->origin_to_commit->SetFullURL(frame_->GetDocumentLoader()->OriginalUrl());
+    commit_params->origin_to_commit->SetFullURL(commit_params->original_url);
   }
 
   SetOldPageLifecycleStateFromNewPageCommitIfNeeded(
