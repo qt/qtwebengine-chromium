@@ -2716,16 +2716,10 @@ bool ValidateBeginTransformFeedback(const Context *context, PrimitiveMode primit
         return false;
     }
 
-    size_t programXfbCount = programExecutable->getTransformFeedbackBufferCount();
-    for (size_t programXfbIndex = 0; programXfbIndex < programXfbCount; ++programXfbIndex)
+    if (!ValidateProgramExecutableXFBBuffersPresent(context, programExecutable))
     {
-        const OffsetBindingPointer<Buffer> &buffer =
-              transformFeedback->getIndexedBuffer(programXfbIndex);
-        if (!buffer.get())
-        {
-            context->validationError(GL_INVALID_OPERATION, kTransformFeedbackBufferMissing);
-            return false;
-        }
+        context->validationError(GL_INVALID_OPERATION, kTransformFeedbackBufferMissing);
+        return false;
     }
 
     return true;
