@@ -79,7 +79,8 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
                           const std::u16string& name,
                           uint32_t page_count);
 
-#if defined(OS_WIN) && !defined(TOOLKIT_QT)
+#if defined(OS_WIN)
+#if !defined(TOOLKIT_QT)
   void StartConversionToNativeFormat(
       scoped_refptr<base::RefCountedMemory> print_data,
       const gfx::Size& page_size,
@@ -92,6 +93,7 @@ class PrintJob : public base::RefCountedThreadSafe<PrintJob> {
   // of pages, because all PDF pages will be converted, but only the user's
   // selected pages should be sent to the printer. See https://crbug.com/823876.
   void ResetPageMapping();
+#endif
 
   // Called when |page| is done printing.
   void OnPageDone(PrintedPage* page);

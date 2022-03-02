@@ -421,7 +421,7 @@ void PrintJobWorker::OnNewPage() {
     return;
 
   bool do_spool_job = true;
-#if defined(OS_WIN)
+#if defined(OS_WIN) && !defined(TOOLKIT_QT)
   const bool source_is_pdf =
       !print_job_->document()->settings().is_modifiable();
   if (!features::ShouldPrintUsingXps(source_is_pdf)) {
