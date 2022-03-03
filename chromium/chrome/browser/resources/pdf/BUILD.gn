@@ -111,23 +111,25 @@ if (optimize_webui) {
 
 # This script is injected by `pdf::PluginResponseWriter`, and must stand alone.
 # Consequently, it must always be rolled up by `optimize_webui()`.
-build_internal_plugin_manifest = "build_internal_plugin_manifest.json"
-optimize_webui("build_internal_plugin") {
-  host = "about:blank"
-  input = rebase_path("$target_gen_dir/$preprocess_folder", root_build_dir)
-  js_out_files = [ "pdf_internal_plugin_wrapper.rollup.js" ]
-  js_module_in_files = [ "pdf_internal_plugin_wrapper.js" ]
-  out_manifest = "$target_gen_dir/$build_internal_plugin_manifest"
+if (optimize_webui) {
+ build_internal_plugin_manifest = "build_internal_plugin_manifest.json"
+ optimize_webui("build_internal_plugin") {
+   host = "about:blank"
+   input = rebase_path("$target_gen_dir/$preprocess_folder", root_build_dir)
+   js_out_files = [ "pdf_internal_plugin_wrapper.rollup.js" ]
+   js_module_in_files = [ "pdf_internal_plugin_wrapper.js" ]
+   out_manifest = "$target_gen_dir/$build_internal_plugin_manifest"
 
-  deps = [
-    ":preprocess",
-    ":preprocess_internal_plugin",
-    "../../../../ui/webui/resources:preprocess",
-  ]
-  excludes = [
-    "browser_api.js",
-    "chrome://resources/js/cr.m.js",
-  ]
+   deps = [
+     ":preprocess",
+     ":preprocess_internal_plugin",
+     "../../../../ui/webui/resources:preprocess",
+   ]
+   excludes = [
+     "browser_api.js",
+     "chrome://resources/js/cr.m.js",
+   ]
+ }
 }
 
 generate_grd("build_grd") {
@@ -161,8 +163,12 @@ generate_grd("build_grd") {
     ]
   }
 
-  deps += [ ":build_internal_plugin" ]
-  manifest_files += [ "$target_gen_dir/$build_internal_plugin_manifest" ]
+  if (optimize_webui) {
+    deps += [ ":build_internal_plugin" ]
+    manifest_files += [ "$target_gen_dir/$build_internal_plugin_manifest" ]
+  } else {
+    deps += [ ":preprocess_internal_plugin" ]
+  }
 
   grd_prefix = "pdf"
   out_grd = "$target_gen_dir/resources.grd"
