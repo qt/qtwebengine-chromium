@@ -6756,10 +6756,12 @@ static_library("browser") {
       "//components/pdf/browser",
       "//components/pdf/browser:interceptors",
       "//components/pdf/common",
-      "//extensions/common/api",
       "//pdf:buildflags",
       "//pdf:features",
     ]
+    if (enable_extensions) {
+      deps += [ "//extensions/common/api" ]
+    }
   }
 
   if (enable_plugins) {

@@ -1073,7 +1073,6 @@ if (!is_android && !is_fuchsia) {
       "//chrome/browser/devtools:test_support",
       "//chrome/browser/image_decoder:browser_tests",
       "//chrome/browser/media/router:media_router_feature",
-      "//chrome/browser/media/router:test_support",
       "//chrome/browser/metrics:test_support",
       "//chrome/browser/notifications/scheduler:factory",
       "//chrome/browser/notifications/scheduler/public",
@@ -1387,6 +1386,7 @@ if (!is_android && !is_fuchsia) {
     if (enable_extensions) {
       deps += [
         "//chrome/browser/extensions:test_support",
+        "//chrome/browser/media/router:test_support",
         "//chrome/browser/web_applications:browser_tests",
         "//chrome/browser/web_applications:web_applications_test_support",
         "//chrome/browser/web_applications/extensions",
@@ -3868,7 +3868,6 @@ if (!is_android && !is_fuchsia) {
         "../browser/media/webrtc/webrtc_webcam_browsertest.cc",
       ]
       deps -= [
-        "//chrome/browser/media/router:test_support",
         ":webrtc_browser_tests_base",
       ]
       if (enable_extensions) {
@@ -6281,7 +6280,6 @@ test("unit_tests") {
       "//chrome:packed_resources_integrity_hash",
       "//chrome/browser:cart_db_content_proto",
       "//chrome/browser:coupon_db_content_proto",
-      "//chrome/browser/media/router:test_support",
       "//chrome/browser/resource_coordinator:intervention_policy_database_proto",
       "//chrome/browser/resource_coordinator:tab_manager_features",
       "//chrome/browser/resource_coordinator:tab_metrics_event_proto",
@@ -6322,7 +6320,10 @@ test("unit_tests") {
       deps -= [ "//chrome/browser/media/router:test_support" ]
     }
     if (enable_extensions) {
-      deps += [ "//chrome/browser/web_applications:web_applications_test_support" ]
+      deps += [
+        "//chrome/browser/media/router:test_support",
+        "//chrome/browser/web_applications:web_applications_test_support",
+      ]
     }
     if (is_chromeos_ash) {
       deps += [
