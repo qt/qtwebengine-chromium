@@ -533,7 +533,6 @@ void CanvasPath::roundRect(
 #if !defined(COMPILER_MSVC)
   gfx::SizeF r[num_radii];
 #else
-  std::assert(num_radii <= 4);
   gfx::SizeF r[4];
 #endif
   for (int i = 0; i < num_radii; ++i) {

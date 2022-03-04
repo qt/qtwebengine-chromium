@@ -23,6 +23,10 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "v8/include/v8.h"
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 namespace base {
 class UnguessableToken;
 }

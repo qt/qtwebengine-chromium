@@ -69,8 +69,8 @@ class StateBitmap final {
 
   using CellType = uintptr_t;
   static constexpr size_t kBitsPerCell = sizeof(CellType) * CHAR_BIT;
-  static constexpr size_t kBitsNeededForAllocation =
-      bits::Log2Floor(static_cast<size_t>(State::kNumOfStates));
+  static constexpr size_t kBitsNeededForAllocation = 2;
+//      bits::Log2Floor(static_cast<size_t>(State::kNumOfStates));
   static constexpr CellType kStateMask = (1 << kBitsNeededForAllocation) - 1;
 
   static constexpr size_t kBitmapSize =

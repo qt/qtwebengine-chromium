@@ -35,6 +35,10 @@
                                              external_value, doc)        \
   type FLAGS_##flag = external_value;
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 // Preprocessor macros can only have one definition.
 // Select the right macro based on the number of arguments.
 #define GET_6TH_ARG(arg1, arg2, arg3, arg4, arg5, arg6, ...) arg6

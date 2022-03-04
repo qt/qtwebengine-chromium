@@ -104,7 +104,7 @@ ConversionReportSendOutcome ConvertToConversionReportSendOutcome(
 
 }  // namespace
 
-const constexpr base::TimeDelta kAttributionManagerQueueReportsInterval =
+const base::TimeDelta kAttributionManagerQueueReportsInterval =
     base::Minutes(30);
 
 AttributionManager* AttributionManagerProviderImpl::GetManager(

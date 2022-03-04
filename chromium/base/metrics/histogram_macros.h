@@ -340,6 +340,9 @@ enum class ScopedHistogramTiming {
 // All of these macros must be called with |name| as a runtime constant.
 
 // For details on usage, see the documentation on the non-stability equivalents.
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
 
 #define UMA_STABILITY_HISTOGRAM_BOOLEAN(name, sample) \
   STATIC_HISTOGRAM_POINTER_BLOCK(                     \

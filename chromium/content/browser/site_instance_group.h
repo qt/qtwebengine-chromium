@@ -49,7 +49,7 @@ class SiteInstanceGroup : public base::RefCounted<SiteInstanceGroup> {
   SiteInstanceGroupId GetId();
 
  private:
-  friend class RefCounted<SiteInstanceGroup>;
+  friend class base::RefCounted<SiteInstanceGroup>;
   ~SiteInstanceGroup();
 
   // A unique ID for this SiteInstanceGroup.

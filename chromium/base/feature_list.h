@@ -43,6 +43,7 @@ enum FeatureState {
 // pointer-based identity lookup.
 // Note: New code should use CONSTINIT on the base::Feature declaration.
 struct BASE_EXPORT Feature {
+  constexpr Feature() : name(nullptr), default_state(FEATURE_DISABLED_BY_DEFAULT) {}
   constexpr Feature(const char* name, FeatureState default_state)
       : name(name), default_state(default_state) {
 #if BUILDFLAG(ENABLE_BANNED_BASE_FEATURE_PREFIX)

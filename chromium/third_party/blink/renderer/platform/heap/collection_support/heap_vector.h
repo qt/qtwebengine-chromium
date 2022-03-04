@@ -22,6 +22,9 @@ class HeapVector final : public GarbageCollected<HeapVector<T, inlineCapacity>>,
  public:
   HeapVector() = default;
 
+  void operator delete(void* p) { delete
+                                  (Vector<T, inlineCapacity, HeapAllocator>*)p; }
+
   explicit HeapVector(wtf_size_t size)
       : Vector<T, inlineCapacity, HeapAllocator>(size) {
     CheckType();

@@ -611,6 +611,15 @@ class TRIVIAL_ABI raw_ptr {
     return *this += -delta_elems;
   }
 
+  template<typename U, typename = std::enable_if_t<std::is_integral<U>::value>>
+  RAW_PTR_FUNC_ATTRIBUTES T* operator+(U delta_elems) const {
+    return get() + delta_elems;
+  }
+  template<typename U, typename = std::enable_if_t<std::is_integral<U>::value>>
+  RAW_PTR_FUNC_ATTRIBUTES T* operator-(U delta_elems) const {
+    return get() - delta_elems;
+  }
+
   // Comparison operators between raw_ptr and raw_ptr<U>/U*/std::nullptr_t.
   // Strictly speaking, it is not necessary to provide these: the compiler can
   // use the conversion operator implicitly to allow comparisons to fall back to

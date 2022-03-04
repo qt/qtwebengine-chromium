@@ -1611,6 +1611,12 @@ config("default_warnings") {
       "/wd4068",  # unknown pragma
       "/wd5051",  # attribute requires newer c++
     ]
+
+    cflags_cc += [
+      # Allow "noexcept" annotations even though we compile with exceptions
+      # disabled.
+      "/wd4577",
+    ]
     if (!is_clang) {
       # TODO(thakis): Remove this once
       # https://swiftshader-review.googlesource.com/c/SwiftShader/+/57968 has

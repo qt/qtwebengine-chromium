@@ -9,6 +9,10 @@
 #include "base/metrics/histogram_macros_internal.h"
 #include "base/time/time.h"
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 // TODO(rkaplow): Migrate all LOCAL_* usage within Chromium to include this
 // file instead of the histogram_macros.h file.
 

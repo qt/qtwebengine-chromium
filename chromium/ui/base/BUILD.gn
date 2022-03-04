@@ -619,6 +619,8 @@ jumbo_component("base") {
         "dragdrop/os_exchange_data_provider_win.h",
         "resource/resource_bundle_win.cc",
         "resource/resource_bundle_win.h",
+        "win/win_cursor_factory.cc",
+        "win/win_cursor_factory.h",
       ]
     }
   }

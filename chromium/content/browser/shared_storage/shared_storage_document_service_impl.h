@@ -36,7 +36,7 @@ class SharedStorageDocumentServiceImpl final
       const std::vector<uint8_t>& serialized_data) override;
 
  private:
-  friend class DocumentUserData;
+  friend class DocumentUserData<SharedStorageDocumentServiceImpl>;
 
   explicit SharedStorageDocumentServiceImpl(RenderFrameHost*);
 

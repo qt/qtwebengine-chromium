@@ -41,7 +41,9 @@
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/pref_service.h"
 #include "components/variations/entropy_provider.h"
+#ifndef TOOLKIT_QT
 #include "components/variations/field_trial_config/field_trial_util.h"
+#endif
 #include "components/variations/pref_names.h"
 #include "components/variations/variations_switches.h"
 #include "third_party/metrics_proto/chrome_user_metrics_extension.pb.h"
@@ -336,6 +338,7 @@ int MetricsStateManager::GetLowEntropySource() {
 void MetricsStateManager::InstantiateFieldTrialList(
     const char* enable_gpu_benchmarking_switch,
     EntropyProviderType entropy_provider_type) {
+#ifndef TOOLKIT_QT
   // Instantiate the FieldTrialList to support field trials. If an instance
   // already exists, this is likely a test scenario with a ScopedFeatureList, so
   // use the existing instance so that any overrides are still applied.
@@ -395,7 +398,7 @@ void MetricsStateManager::InstantiateFieldTrialList(
                                          ::switches::kForceFieldTrials));
     }
   }
-
+#endif
   // Initializing the CleanExitBeacon is done after FieldTrialList instantiation
   // to allow experimentation on the CleanExitBeacon.
   clean_exit_beacon_.Initialize();

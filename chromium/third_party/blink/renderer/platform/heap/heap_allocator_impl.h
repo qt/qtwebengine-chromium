@@ -65,6 +65,11 @@ class PLATFORM_EXPORT HeapAllocator {
   }
 
   template <typename T>
+  static void Free(T* array) {
+//      UNREACHABLE();
+  }
+
+  template <typename T>
   static bool ExpandVectorBacking(T* array, size_t new_size) {
     DCHECK(array);
     return HeapVectorBacking<T>::FromArray(array)->Resize(new_size);
