@@ -476,7 +476,7 @@ jumbo_component("gl") {
         "gl_surface_egl.h",
       ]
     }
-    if (is_linux) {
+    if (is_linux && ozone_platform_x11) {
       sources += [
         "gl_image_egl_pixmap.cc",
         "gl_image_egl_pixmap.h",
