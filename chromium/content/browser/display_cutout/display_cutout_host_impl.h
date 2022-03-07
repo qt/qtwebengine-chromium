@@ -5,6 +5,7 @@
 #ifndef CONTENT_BROWSER_DISPLAY_CUTOUT_DISPLAY_CUTOUT_HOST_IMPL_H_
 #define CONTENT_BROWSER_DISPLAY_CUTOUT_DISPLAY_CUTOUT_HOST_IMPL_H_
 
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/render_frame_host_receiver_set.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "third_party/blink/public/mojom/page/display_cutout.mojom.h"
@@ -12,6 +13,7 @@
 
 namespace content {
 
+class RenderFrameHostImpl;
 class WebContentsImpl;
 
 class DisplayCutoutHostImpl : public blink::mojom::DisplayCutoutHost {
@@ -62,7 +64,7 @@ class DisplayCutoutHostImpl : public blink::mojom::DisplayCutoutHost {
   // `WebContentsImpl::current_fullscreen_frame_` because it also considers
   // browser side driven fullscreen mode, not just renderer side requested
   // frames.
-  RenderFrameHost* current_rfh_ = nullptr;
+  base::WeakPtr<RenderFrameHostImpl> current_rfh_;
 
   // Stores a map of RenderFrameHosts and their current viewport fit values.
   std::map<RenderFrameHost*, blink::mojom::ViewportFit> values_;
