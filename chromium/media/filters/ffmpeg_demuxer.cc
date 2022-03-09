@@ -66,7 +66,7 @@ void SetAVStreamDiscard(AVStream* stream, AVDiscard discard) {
   stream->discard = discard;
 }
 
-#if BUILDFLAG(USE_SYSTEM_FFMPEG)
+#if LIBAVCODEC_VERSION_MAJOR < 59
 auto av_stream_get_first_dts(AVStream* stream) {
   return stream->first_dts;
 }
@@ -408,7 +408,7 @@ void FFmpegDemuxerStream::EnqueuePacket(ScopedAVPacket packet) {
 
   scoped_refptr<DecoderBuffer> buffer;
 
-#if BUILDFLAG(USE_SYSTEM_FFMPEG)
+#if LIBAVCODEC_VERSION_MAJOR < 59
   typedef int side_data_arg;
 #else
   typedef size_t side_data_arg;
