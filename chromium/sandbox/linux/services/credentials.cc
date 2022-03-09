@@ -98,7 +98,10 @@ bool ChrootToSafeEmptyDir() {
   // attempt this optimization.
   clone_flags |= CLONE_VM | CLONE_VFORK | CLONE_SETTLS;
 
-  char tls_buf[PTHREAD_STACK_MIN] = {0};
+  // PTHREAD_STACK_MIN can be dynamic in glibc2.34+, so it is not possible to
+  // zeroify tls_buf assigning { 0 }
+  char tls_buf[PTHREAD_STACK_MIN];
+  memset(tls_buf, 0, PTHREAD_STACK_MIN);
   tls = tls_buf;
 #endif
 
