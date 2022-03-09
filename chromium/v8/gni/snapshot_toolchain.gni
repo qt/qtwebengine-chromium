@@ -106,6 +106,29 @@ if (v8_snapshot_toolchain == "") {
       # cross compile Windows arm64 with host toolchain.
       v8_snapshot_toolchain = host_toolchain
     }
+  } else if (host_cpu == "arm64") {
+    if (is_chromeos && !is_clang) {
+      _clang = ""
+    } else {
+      _clang = "clang_"
+    }
+
+    if (v8_current_cpu == "arm64" || v8_current_cpu == "arm") {
+      _cpus = v8_current_cpu
+    } else if (v8_current_cpu == "x64" || v8_current_cpu == "mips64el" ||
+               v8_current_cpu == "riscv64" || v8_current_cpu == "loong64") {
+      _cpus = "arm64_v8_${v8_current_cpu}"
+    } else if (v8_current_cpu == "x86" || v8_current_cpu == "mipsel") {
+      _cpus = "arm_v8_${v8_current_cpu}"
+    } else {
+      # This branch should not be reached; leave _cpus blank so the assert
+      # below will fail.
+      _cpus = ""
+    }
+
+    if (_cpus != "") {
+      v8_snapshot_toolchain = "//build/toolchain/${host_os}:${_clang}${_cpus}"
+    }
   }
 }
 

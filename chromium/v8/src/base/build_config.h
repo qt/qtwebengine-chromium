@@ -150,12 +150,12 @@
 #endif
 
 // Check for supported combinations of host and target architectures.
-#if V8_TARGET_ARCH_IA32 && !V8_HOST_ARCH_IA32
-#error Target architecture ia32 is only supported on ia32 host
+#if V8_TARGET_ARCH_IA32 && !V8_HOST_ARCH_32_BIT
+#error Target architecture ia32 is only supported on 32 bit host
 #endif
 #if (V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_64_BIT && \
-     !(V8_HOST_ARCH_X64 && V8_HOST_ARCH_64_BIT))
-#error Target architecture x64 is only supported on x64 host
+     !(V8_HOST_ARCH_64_BIT))
+#error Target architecture x64 is only supported on 64 bit host
 #endif
 #if (V8_TARGET_ARCH_X64 && V8_TARGET_ARCH_32_BIT && \
      !(V8_HOST_ARCH_X64 && V8_HOST_ARCH_32_BIT))
