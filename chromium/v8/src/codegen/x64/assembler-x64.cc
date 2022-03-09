@@ -31,6 +31,8 @@ namespace internal {
 
 namespace {
 
+#if V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
+
 V8_INLINE uint64_t xgetbv(unsigned int xcr) {
 #if V8_LIBC_MSVCRT
   return _xgetbv(xcr);
@@ -68,15 +70,18 @@ bool OSHasAVXSupport() {
   return (feature_mask & 0x6) == 0x6;
 }
 
+#endif  // V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
+
 }  // namespace
 
 void CpuFeatures::ProbeImpl(bool cross_compile) {
+  // Only use statically determined features for cross compile (snapshot).
+  if (cross_compile) return;
+
+#if V8_HOST_ARCH_IA32 || V8_HOST_ARCH_X64
   base::CPU cpu;
   CHECK(cpu.has_sse2());  // SSE2 support is mandatory.
   CHECK(cpu.has_cmov());  // CMOV support is mandatory.
-
-  // Only use statically determined features for cross compile (snapshot).
-  if (cross_compile) return;
 
   if (cpu.has_sse42() && FLAG_enable_sse4_2) supported_ |= 1u << SSE4_2;
   if (cpu.has_sse41() && FLAG_enable_sse4_1) {
@@ -104,6 +109,7 @@ void CpuFeatures::ProbeImpl(bool cross_compile) {
   } else if (strcmp(FLAG_mcpu, "atom") == 0) {
     supported_ |= 1u << ATOM;
   }
+#endif  // V8_HOST_ARCH_X64
 }
 
 void CpuFeatures::PrintTarget() {}
