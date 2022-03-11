@@ -42,9 +42,9 @@ using CreateReportStatus =
     ::content::AttributionStorage::CreateReportResult::Status;
 using DeactivatedSource = ::content::AttributionStorage::DeactivatedSource;
 
-const base::FilePath::CharType kInMemoryPath[] = FILE_PATH_LITERAL(":memory");
+const base::FilePath::CharType kInMemoryPathAttr[] = FILE_PATH_LITERAL(":memory");
 
-const base::FilePath::CharType kDatabasePath[] =
+const base::FilePath::CharType kDatabasePathAttr[] =
     FILE_PATH_LITERAL("Conversions");
 
 // Version number of the database.
@@ -114,16 +114,16 @@ const base::FilePath::CharType kDatabasePath[] =
 // Version 15 - 2021/11/13 - https://crrev.com/c/3180180
 //
 // Version 15 adds the conversions.external_report_id column.
-const int kCurrentVersionNumber = 15;
+const int kCurrentVersionNumberATTR = 15;
 
 // Earliest version which can use a |kCurrentVersionNumber| database
 // without failing.
-const int kCompatibleVersionNumber = 15;
+const int kCompatibleVersionNumberATTR = 15;
 
 // Latest version of the database that cannot be upgraded to
 // |kCurrentVersionNumber| without razing the database. No versions are
 // currently deprecated.
-const int kDeprecatedVersionNumber = 0;
+const int kDeprecatedVersionNumberATTR = 0;
 
 void RecordInitializationStatus(
     const AttributionStorageSql::InitStatus status) {
@@ -278,8 +278,8 @@ AttributionStorageSql::AttributionStorageSql(
     std::unique_ptr<Delegate> delegate,
     const base::Clock* clock)
     : path_to_database_(g_run_in_memory_
-                            ? base::FilePath(kInMemoryPath)
-                            : path_to_database.Append(kDatabasePath)),
+                            ? base::FilePath(kInMemoryPathAttr)
+                            : path_to_database.Append(kDatabasePathAttr)),
       rate_limit_table_(delegate.get(), clock),
       clock_(clock),
       delegate_(std::move(delegate)),
@@ -1404,7 +1404,7 @@ bool AttributionStorageSql::LazyInit(DbCreationPolicy creation_policy) {
       base::BindRepeating(&AttributionStorageSql::DatabaseErrorCallback,
                           weak_factory_.GetWeakPtr()));
 
-  if (path_to_database_.value() == kInMemoryPath) {
+  if (path_to_database_.value() == kInMemoryPathAttr) {
     if (!db_->OpenInMemory()) {
       HandleInitializationFailure(InitStatus::kFailedToOpenDbInMemory);
       return false;
@@ -1439,29 +1439,29 @@ bool AttributionStorageSql::InitializeSchema(bool db_empty) {
   if (db_empty)
     return CreateSchema();
 
-  int current_version = kCurrentVersionNumber;
+  int current_version = kCurrentVersionNumberATTR;
   if (!sql::MetaTable::DoesTableExist(db_.get())) {
     // Version 1 of the schema did not have a metadata table.
     current_version = 1;
-    if (!meta_table_.Init(db_.get(), current_version, kCompatibleVersionNumber))
+    if (!meta_table_.Init(db_.get(), current_version, kCompatibleVersionNumberATTR))
       return false;
   } else {
-    if (!meta_table_.Init(db_.get(), current_version, kCompatibleVersionNumber))
+    if (!meta_table_.Init(db_.get(), current_version, kCompatibleVersionNumberATTR))
       return false;
     current_version = meta_table_.GetVersionNumber();
   }
 
-  if (current_version == kCurrentVersionNumber)
+  if (current_version == kCurrentVersionNumberATTR)
     return true;
 
-  if (current_version <= kDeprecatedVersionNumber) {
+  if (current_version <= kDeprecatedVersionNumberATTR) {
     // Note that this also razes the meta table, so it will need to be
     // initialized again.
     db_->Raze();
     return CreateSchema();
   }
 
-  if (meta_table_.GetCompatibleVersionNumber() > kCurrentVersionNumber) {
+  if (meta_table_.GetCompatibleVersionNumber() > kCurrentVersionNumberATTR) {
     // In this case the database version is too new to be used. The DB will
     // never work until Chrome is re-upgraded. Assume the user will continue
     // using this Chrome version and raze the DB to get attribution reporting
@@ -1616,8 +1616,8 @@ bool AttributionStorageSql::CreateSchema() {
   if (!db_->Execute(kDedupKeyTableSql))
     return false;
 
-  if (!meta_table_.Init(db_.get(), kCurrentVersionNumber,
-                        kCompatibleVersionNumber)) {
+  if (!meta_table_.Init(db_.get(), kCurrentVersionNumberATTR,
+                        kCompatibleVersionNumberATTR)) {
     return false;
   }
 
@@ -1631,7 +1631,7 @@ void AttributionStorageSql::DatabaseErrorCallback(int extended_error,
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   // Attempt to recover a corrupt database, unless it is setup in memory.
   if (sql::Recovery::ShouldRecover(extended_error) &&
-      (path_to_database_.value() != kInMemoryPath)) {
+      (path_to_database_.value() != kInMemoryPathAttr)) {
     // Prevent reentrant calls.
     db_->reset_error_callback();
 

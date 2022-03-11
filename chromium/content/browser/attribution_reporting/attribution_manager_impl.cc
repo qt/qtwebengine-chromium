@@ -52,7 +52,7 @@ enum class ConversionReportSendOutcome {
 // and recreated for the same backing storage. This uses
 // BLOCK_SHUTDOWN as some data deletion operations may be running when the
 // browser is closed, and we want to ensure all data is deleted correctly.
-base::LazyThreadPoolSequencedTaskRunner g_storage_task_runner =
+base::LazyThreadPoolSequencedTaskRunner g_storage_task_runner_attr =
     LAZY_THREAD_POOL_SEQUENCED_TASK_RUNNER_INITIALIZER(
         base::TaskTraits(base::TaskPriority::BEST_EFFORT,
                          base::MayBlock(),
@@ -162,7 +162,7 @@ AttributionManagerImpl::AttributionManagerImpl(
       clock_(clock),
       reporter_(std::move(reporter)),
       attribution_storage_(base::SequenceBound<AttributionStorageSql>(
-          g_storage_task_runner.Get(),
+          g_storage_task_runner_attr.Get(),
           user_data_directory,
           std::make_unique<AttributionStorageDelegateImpl>(debug_mode_),
           clock_)),
