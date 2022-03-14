@@ -3851,7 +3851,7 @@ const char *ValidateDrawStates(const Context *context)
                 return kTessellationShaderRequiresBothControlAndEvaluation;
             }
 
-            if (state.isTransformFeedbackActiveUnpaused())
+            if (state.isTransformFeedbackActive())
             {
                 if (!ValidateProgramExecutableXFBBuffersPresent(context, executable))
                 {
