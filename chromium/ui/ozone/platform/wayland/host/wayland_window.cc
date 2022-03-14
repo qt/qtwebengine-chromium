@@ -78,6 +78,9 @@ WaylandWindow::~WaylandWindow() {
 
   if (parent_window_)
     parent_window_->set_child_window(nullptr);
+
+  if (child_window_)
+    child_window_->set_parent_window(nullptr);
 }
 
 void WaylandWindow::OnWindowLostCapture() {
