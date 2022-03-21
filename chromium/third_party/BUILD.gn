@@ -9,7 +9,7 @@ import("//third_party/harfbuzz-ng/harfbuzz.gni")
 import("//third_party/libjpeg.gni")
 
 assert(
-    use_blink,
+    use_blink || is_ios,
     "This is not used on if blink is not enabled, don't drag it in unintentionally")
 
 if (use_system_libjpeg) {
