@@ -43,6 +43,14 @@ declare_args() {
   ios_mobileprovision_files = []
 }
 
+if (target_environment == "") {
+  if (current_cpu == "x86" || current_cpu == "x64") {
+    target_environment = "simulator"
+  } else {
+    target_environment = "device"
+  }
+}
+
 # As entitlements are tied to a specific bundle identifier, all the
 # test applications share the same identifier. This simplifies adding
 # new test application (since there is no need to investigate which
