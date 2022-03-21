@@ -11,9 +11,9 @@ if (current_cpu == "arm" || current_cpu == "arm64") {
   import("//build/config/arm.gni")
 }
 
-assert(
-    use_blink,
-    "This is not used if blink is not enabled, don't drag it in unintentionally")
+#assert(
+#    use_blink,
+#    "This is not used if blink is not enabled, don't drag it in unintentionally")
 
 source_set("libjpeg_headers") {
   sources = [
