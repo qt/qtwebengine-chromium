@@ -25,6 +25,10 @@
 #include "core/fxge/fx_font.h"
 #include "core/fxge/text_char_pos.h"
 
+#if defined(OS_IOS)
+#include <CoreGraphics/CoreGraphics.h>
+#endif
+
 namespace {
 
 void DoNothing(void* info, const void* data, size_t size) {}
