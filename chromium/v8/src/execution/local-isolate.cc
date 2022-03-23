@@ -28,10 +28,6 @@ LocalIsolate::LocalIsolate(Isolate* isolate, ThreadKind kind,
                                   runtime_call_stats == nullptr
                               ? isolate->counters()->runtime_call_stats()
                               : runtime_call_stats)
-#ifdef V8_INTL_SUPPORT
-      ,
-      default_locale_(isolate->DefaultLocale())
-#endif
 {
 }
 
