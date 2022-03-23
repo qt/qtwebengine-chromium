@@ -23,10 +23,6 @@ LocalIsolate::LocalIsolate(Isolate* isolate, ThreadKind kind)
       stack_limit_(kind == ThreadKind::kMain
                        ? isolate->stack_guard()->real_climit()
                        : GetCurrentStackPosition() - v8_flags.stack_size * KB)
-#ifdef V8_INTL_SUPPORT
-      ,
-      default_locale_(isolate->DefaultLocale())
-#endif
 {
 #ifdef V8_RUNTIME_CALL_STATS
   if (kind == ThreadKind::kMain) {
@@ -68,8 +64,7 @@ bool StackLimitCheck::HasOverflowed(LocalIsolate* local_isolate) {
 #ifdef V8_INTL_SUPPORT
 // WARNING: This might be out-of-sync with the main-thread.
 const std::string& LocalIsolate::DefaultLocale() {
-  const std::string& res =
-      is_main_thread() ? isolate_->DefaultLocale() : default_locale_;
+  const std::string& res = isolate_->DefaultLocale();
   DCHECK(!res.empty());
   return res;
 }
