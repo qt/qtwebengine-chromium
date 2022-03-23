@@ -23,10 +23,6 @@ LocalIsolate::LocalIsolate(Isolate* isolate, ThreadKind kind)
       stack_limit_(kind == ThreadKind::kMain
                        ? isolate->stack_guard()->real_climit()
                        : GetCurrentStackPosition() - FLAG_stack_size * KB)
-#ifdef V8_INTL_SUPPORT
-      ,
-      default_locale_(isolate->DefaultLocale())
-#endif
 {
 #ifdef V8_RUNTIME_CALL_STATS
   if (kind == ThreadKind::kMain) {
