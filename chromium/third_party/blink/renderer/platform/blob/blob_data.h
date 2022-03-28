@@ -43,6 +43,7 @@
 #include "base/thread_annotations.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/struct_ptr.h"
+#include "third_party/blink/public/mojom/blob/data_element.mojom-blink-forward.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/forward.h"
@@ -117,13 +118,10 @@ class PLATFORM_EXPORT BlobData {
       const KURL& file_system_url,
       const base::Optional<base::Time>& expected_modification_time);
 
-  // Detaches from current thread so that it can be passed to another thread.
-  void DetachFromCurrentThread();
-
   const String& ContentType() const { return content_type_; }
   void SetContentType(const String&);
 
-  const Vector<mojom::blink::DataElementPtr>& Elements() const {
+  const Vector<mojom::blink::DataElementPtr>& ElementsForTesting() const {
     return elements_;
   }
   Vector<mojom::blink::DataElementPtr> ReleaseElements();
@@ -165,7 +163,15 @@ class PLATFORM_EXPORT BlobData {
 
   Vector<mojom::blink::DataElementPtr> elements_;
   size_t current_memory_population_ = 0;
-  BlobBytesProvider* last_bytes_provider_ = nullptr;
+
+  // These two members are used to combine multiple consecutive 'bytes' elements
+  // (as created by `AppendBytes`, `AppendData` or `AppendText`) into a single
+  // element. When one has a value the other also has a value. Before using
+  // `elements_` to actually create a blob, `last_bytes_provider_` should be
+  // bound to `last_bytes_provider_receiver_`.
+  std::unique_ptr<BlobBytesProvider> last_bytes_provider_;
+  mojo::PendingReceiver<mojom::blink::BytesProvider>
+      last_bytes_provider_receiver_;
 
   DISALLOW_COPY_AND_ASSIGN(BlobData);
 };
