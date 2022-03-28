@@ -31,13 +31,10 @@ class BlobBytesStreamer {
 
  public:
   BlobBytesStreamer(Vector<scoped_refptr<RawData>> data,
-                    mojo::ScopedDataPipeProducerHandle pipe,
-                    scoped_refptr<base::SequencedTaskRunner> task_runner)
+                    mojo::ScopedDataPipeProducerHandle pipe)
       : data_(std::move(data)),
         pipe_(std::move(pipe)),
-        watcher_(FROM_HERE,
-                 mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC,
-                 std::move(task_runner)) {
+        watcher_(FROM_HERE, mojo::SimpleWatcher::ArmingPolicy::AUTOMATIC) {
     watcher_.Watch(pipe_.get(), MOJO_HANDLE_SIGNAL_WRITABLE,
                    MOJO_WATCH_CONDITION_SATISFIED,
                    WTF::BindRepeating(&BlobBytesStreamer::OnWritable,
@@ -45,6 +42,8 @@ class BlobBytesStreamer {
   }
 
   void OnWritable(MojoResult result, const mojo::HandleSignalsState& state) {
+    DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
     if (result == MOJO_RESULT_CANCELLED ||
         result == MOJO_RESULT_FAILED_PRECONDITION) {
       delete this;
@@ -84,15 +83,18 @@ class BlobBytesStreamer {
 
  private:
   // The index of the item currently being written.
-  size_t current_item_ = 0;
+  size_t current_item_ GUARDED_BY_CONTEXT(sequence_checker_) = 0;
   // The offset into the current item of the first byte not yet written to the
   // data pipe.
-  size_t current_item_offset_ = 0;
+  size_t current_item_offset_ GUARDED_BY_CONTEXT(sequence_checker_) = 0;
   // The data being written.
-  Vector<scoped_refptr<RawData>> data_;
+  Vector<scoped_refptr<RawData>> data_ GUARDED_BY_CONTEXT(sequence_checker_);
 
-  mojo::ScopedDataPipeProducerHandle pipe_;
-  mojo::SimpleWatcher watcher_;
+  mojo::ScopedDataPipeProducerHandle pipe_
+      GUARDED_BY_CONTEXT(sequence_checker_);
+  mojo::SimpleWatcher watcher_ GUARDED_BY_CONTEXT(sequence_checker_);
+
+  SEQUENCE_CHECKER(sequence_checker_);
 };
 
 // This keeps the process alive while blobs are being transferred.
@@ -118,31 +120,8 @@ void DecreaseChildProcessRefCount() {
 
 constexpr size_t BlobBytesProvider::kMaxConsolidatedItemSizeInBytes;
 
-// static
-BlobBytesProvider* BlobBytesProvider::CreateAndBind(
-    mojo::PendingReceiver<mojom::blink::BytesProvider> receiver) {
-  auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
-      {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
-  auto provider = base::WrapUnique(new BlobBytesProvider(task_runner));
-  auto* result = provider.get();
-  // TODO(mek): Consider binding BytesProvider on the IPC thread instead, only
-  // using the MayBlock taskrunner for actual file operations.
-  PostCrossThreadTask(
-      *task_runner, FROM_HERE,
-      CrossThreadBindOnce(
-          [](std::unique_ptr<BlobBytesProvider> provider,
-             mojo::PendingReceiver<mojom::blink::BytesProvider> receiver) {
-            mojo::MakeSelfOwnedReceiver(std::move(provider),
-                                        std::move(receiver));
-          },
-          std::move(provider), std::move(receiver)));
-  return result;
-}
-
-// static
-std::unique_ptr<BlobBytesProvider> BlobBytesProvider::CreateForTesting(
-    scoped_refptr<base::SequencedTaskRunner> task_runner) {
-  return base::WrapUnique(new BlobBytesProvider(std::move(task_runner)));
+BlobBytesProvider::BlobBytesProvider() {
+  IncreaseChildProcessRefCount();
 }
 
 BlobBytesProvider::~BlobBytesProvider() {
@@ -150,6 +129,8 @@ BlobBytesProvider::~BlobBytesProvider() {
 }
 
 void BlobBytesProvider::AppendData(scoped_refptr<RawData> data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   if (!data_.IsEmpty()) {
     uint64_t last_offset = offsets_.IsEmpty() ? 0 : offsets_.back();
     offsets_.push_back(last_offset + data_.back()->length());
@@ -158,6 +139,8 @@ void BlobBytesProvider::AppendData(scoped_refptr<RawData> data) {
 }
 
 void BlobBytesProvider::AppendData(base::span<const char> data) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   if (data_.IsEmpty() ||
       data_.back()->length() + data.size() > kMaxConsolidatedItemSizeInBytes) {
     AppendData(RawData::Create());
@@ -165,8 +148,32 @@ void BlobBytesProvider::AppendData(base::span<const char> data) {
   data_.back()->MutableData()->Append(data.data(), data.size());
 }
 
+// static
+void BlobBytesProvider::Bind(
+    std::unique_ptr<BlobBytesProvider> provider,
+    mojo::PendingReceiver<mojom::blink::BytesProvider> receiver) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(provider->sequence_checker_);
+  DETACH_FROM_SEQUENCE(provider->sequence_checker_);
+
+  auto task_runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::MayBlock(), base::TaskPriority::USER_VISIBLE});
+  // TODO(mek): Consider binding BytesProvider on the IPC thread instead, only
+  // using the MayBlock taskrunner for actual file operations.
+  PostCrossThreadTask(
+      *task_runner, FROM_HERE,
+      CrossThreadBindOnce(
+          [](std::unique_ptr<BlobBytesProvider> provider,
+             mojo::PendingReceiver<mojom::blink::BytesProvider> receiver) {
+            DCHECK_CALLED_ON_VALID_SEQUENCE(provider->sequence_checker_);
+            mojo::MakeSelfOwnedReceiver(std::move(provider),
+                                        std::move(receiver));
+          },
+          std::move(provider), std::move(receiver)));
+}
+
 void BlobBytesProvider::RequestAsReply(RequestAsReplyCallback callback) {
-  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   // TODO(mek): Once better metrics are created we could experiment with ways
   // to reduce the number of copies of data that are made here.
   Vector<uint8_t> result;
@@ -177,9 +184,10 @@ void BlobBytesProvider::RequestAsReply(RequestAsReplyCallback callback) {
 
 void BlobBytesProvider::RequestAsStream(
     mojo::ScopedDataPipeProducerHandle pipe) {
-  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
   // BlobBytesStreamer will self delete when done.
-  new BlobBytesStreamer(std::move(data_), std::move(pipe), task_runner_);
+  new BlobBytesStreamer(std::move(data_), std::move(pipe));
 }
 
 void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
@@ -187,7 +195,7 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
                                       base::File file,
                                       uint64_t file_offset,
                                       RequestAsFileCallback callback) {
-  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   if (!file.IsValid()) {
     std::move(callback).Run(base::nullopt);
@@ -253,12 +261,6 @@ void BlobBytesProvider::RequestAsFile(uint64_t source_offset,
     return;
   }
   std::move(callback).Run(info.last_modified);
-}
-
-BlobBytesProvider::BlobBytesProvider(
-    scoped_refptr<base::SequencedTaskRunner> task_runner)
-    : task_runner_(std::move(task_runner)) {
-  IncreaseChildProcessRefCount();
 }
 
 }  // namespace blink
