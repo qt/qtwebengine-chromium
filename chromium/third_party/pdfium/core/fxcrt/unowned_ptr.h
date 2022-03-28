@@ -9,6 +9,7 @@
 #include <functional>
 #include <type_traits>
 #include <utility>
+#include <stdint.h>
 
 #include "third_party/base/compiler_specific.h"
 
