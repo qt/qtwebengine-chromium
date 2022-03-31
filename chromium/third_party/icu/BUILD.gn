@@ -410,12 +410,6 @@ config("system_icu_config") {
     "USING_SYSTEM_ICU=1",
     "ICU_UTIL_DATA_IMPL=ICU_UTIL_DATA_STATIC",
   ]
-
-  if (is_win) {
-    defines += [ "UCHAR_TYPE=wchar_t" ]
-  } else {
-    defines += [ "UCHAR_TYPE=uint16_t" ]
-  }
 }
 
 if (use_system_icu) {
