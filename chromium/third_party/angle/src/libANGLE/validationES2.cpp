@@ -3778,7 +3778,7 @@ bool ValidateBufferSubData(const Context *context,
     }
 
     // Check for possible overflow of size + offset
-    angle::CheckedNumeric<size_t> checkedSize(size);
+    angle::CheckedNumeric<decltype(size + offset)> checkedSize(size);
     checkedSize += offset;
     if (!checkedSize.IsValid())
     {
