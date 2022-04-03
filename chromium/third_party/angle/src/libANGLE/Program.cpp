@@ -3062,7 +3062,7 @@ bool Program::validateSamplersImpl(InfoLog *infoLog, const Caps &caps)
             return false;
         }
 
-        if (mActiveSamplerFormats[textureUnit] == SamplerFormat::InvalidEnum)
+        if (executable->mActiveSamplerFormats[textureUnit] == SamplerFormat::InvalidEnum)
         {
             if (infoLog)
             {
