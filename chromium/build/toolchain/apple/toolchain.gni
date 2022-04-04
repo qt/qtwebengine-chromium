@@ -180,7 +180,7 @@ template("apple_toolchain") {
     }
 
     linker_driver =
-        "TOOL_VERSION=${tool_versions.linker_driver} " +
+        "TOOL_VERSION=${tool_versions.linker_driver} " + python_path + " " +
         rebase_path("//build/toolchain/apple/linker_driver.py", root_build_dir)
 
     # Specify an explicit path for the strip binary.
