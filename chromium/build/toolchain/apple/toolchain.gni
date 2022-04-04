@@ -216,6 +216,7 @@ template("single_apple_toolchain") {
 
     linker_driver_env = "TOOL_VERSION=${tool_versions.linker_driver}"
     linker_driver =
+        python_path + " " +
         rebase_path("//build/toolchain/apple/linker_driver.py", root_build_dir)
     linker_driver_args = "-Wcrl,driver,$ld"
 
