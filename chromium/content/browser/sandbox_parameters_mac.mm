@@ -40,7 +40,7 @@
 namespace content {
 
 #if defined(TOOLKIT_QT)
-std::string getQtPrefix();
+base::FilePath getSandboxPath();
 #endif
 
 namespace {
@@ -133,9 +133,8 @@ void SetupCommonSandboxParameters(sandbox::SeatbeltExecClient* client) {
   CHECK(client->SetParameter(sandbox::policy::kParamOsVersion, GetOSVersion()));
 
 #if defined(TOOLKIT_QT)
-  // Allow read access to files under the Qt Prefix.
-  const std::string qt_prefix_path_string = getQtPrefix();
-  const base::FilePath qt_prefix_path = base::FilePath(qt_prefix_path_string);
+  // Allow read access to files under the Qt path.
+  const base::FilePath qt_prefix_path = getSandboxPath();
   const std::string qt_prefix_path_canonical =
       sandbox::policy::GetCanonicalPath(qt_prefix_path).value();
   CHECK(client->SetParameter(sandbox::policy::kParamQtPrefixPath,
