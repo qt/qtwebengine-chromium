@@ -10,6 +10,10 @@
 #include "base/metrics/histogram_macros_local.h"
 #include "base/time/time.h"
 
+#ifndef CR_EXPAND_ARG
+#define CR_EXPAND_ARG(x) x
+#endif
+
 
 // Macros for efficient use of histograms.
 //
@@ -75,10 +79,10 @@
 // enum to an arithmetic type and adding one. Instead, prefer the two argument
 // version of the macro which automatically deduces the boundary from kMaxValue.
 #define UMA_HISTOGRAM_ENUMERATION(name, ...)                            \
-  INTERNAL_UMA_HISTOGRAM_ENUMERATION_GET_MACRO(                         \
+  CR_EXPAND_ARG(INTERNAL_UMA_HISTOGRAM_ENUMERATION_GET_MACRO(           \
       __VA_ARGS__, INTERNAL_UMA_HISTOGRAM_ENUMERATION_SPECIFY_BOUNDARY, \
       INTERNAL_UMA_HISTOGRAM_ENUMERATION_DEDUCE_BOUNDARY)               \
-  (name, __VA_ARGS__, base::HistogramBase::kUmaTargetedHistogramFlag)
+  (name, __VA_ARGS__, base::HistogramBase::kUmaTargetedHistogramFlag))
 
 // As above but "scaled" count to avoid overflows caused by increments of
 // large amounts. See UMA_HISTOGRAM_SCALED_EXACT_LINEAR for more information.
@@ -340,9 +344,6 @@ enum class ScopedHistogramTiming {
 // All of these macros must be called with |name| as a runtime constant.
 
 // For details on usage, see the documentation on the non-stability equivalents.
-#ifndef CR_EXPAND_ARG
-#define CR_EXPAND_ARG(x) x
-#endif
 
 #define UMA_STABILITY_HISTOGRAM_BOOLEAN(name, sample) \
   STATIC_HISTOGRAM_POINTER_BLOCK(                     \
