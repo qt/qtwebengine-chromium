@@ -4383,6 +4383,13 @@ bool ValidateBindSampler(const Context *context, GLuint unit, SamplerID sampler)
         return false;
     }
 
+    if (!ValidateProgramExecutableXFBBuffersPresent(context,
+                                                    context->getState().getProgramExecutable()))
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kTransformFeedbackBufferMissing);
+        return false;
+    }
+
     return true;
 }
 
