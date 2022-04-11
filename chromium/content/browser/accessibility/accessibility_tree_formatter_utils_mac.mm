@@ -258,8 +258,12 @@ id AttributeInvoker::DictNodeToTextMarker(const PropertyNode& dictnode) const {
   } else {
     TEXTMARKER_FAIL(dictnode, "3rd argument: wrong affinity")
   }
-
+#ifndef TOOLKIT_QT
   return content::AXTextMarkerFrom(anchor_cocoa, *offset, affinity);
+#else
+  DCHECK(false);
+  return nil;
+#endif
 }
 
 id AttributeInvoker::PropertyNodeToTextMarker(
@@ -293,7 +297,12 @@ id AttributeInvoker::PropertyNodeToTextMarkerRange(
     TEXTMARKER_FAIL(rangenode, "failed to parse focus")
   }
 
+#ifndef TOOLKIT_QT
   return content::AXTextMarkerRangeFrom(anchor_textmarker, focus_textmarker);
+#else
+  DCHECK(false);
+  return nil;
+#endif
 }
 
 }  // namespace a11y
