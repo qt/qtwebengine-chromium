@@ -2641,7 +2641,7 @@ inline BigInt::digit_t MutableBigInt::digit_mul(digit_t a, digit_t b,
 BigInt::digit_t MutableBigInt::digit_div(digit_t high, digit_t low,
                                          digit_t divisor, digit_t* remainder) {
   DCHECK(high < divisor);
-#if V8_TARGET_ARCH_X64 && (__GNUC__ || __clang__)
+#if __x86_64__ && (__GNUC__ || __clang__)
   digit_t quotient;
   digit_t rem;
   __asm__("divq  %[divisor]"
@@ -2652,7 +2652,7 @@ BigInt::digit_t MutableBigInt::digit_div(digit_t high, digit_t low,
           : "d"(high), "a"(low), [divisor] "rm"(divisor));
   *remainder = rem;
   return quotient;
-#elif V8_TARGET_ARCH_IA32 && (__GNUC__ || __clang__)
+#elif __i386__ && (__GNUC__ || __clang__)
   digit_t quotient;
   digit_t rem;
   __asm__("divl  %[divisor]"
