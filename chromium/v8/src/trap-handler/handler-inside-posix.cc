@@ -106,14 +106,18 @@ bool TryHandleSignal(int signum, siginfo_t* info, void* context) {
     SigUnmaskStack unmask(sigs);
 
     ucontext_t* uc = reinterpret_cast<ucontext_t*>(context);
-#if V8_OS_LINUX && V8_TARGET_ARCH_X64
+#if V8_OS_LINUX && V8_HOST_ARCH_X64
     auto* context_ip = &uc->uc_mcontext.gregs[REG_RIP];
-#elif V8_OS_MACOSX && V8_TARGET_ARCH_ARM64
+#elif V8_OS_LINUX && V8_HOST_ARCH_ARM64
+    auto* context_ip = &uc->uc_mcontext.gregs[REG_PC];
+#elif V8_OS_MACOSX && V8_HOST_ARCH_ARM64
     auto* context_ip = &uc->uc_mcontext->__ss.__pc;
-#elif V8_OS_MACOSX && V8_TARGET_ARCH_X64
+#elif V8_OS_MACOSX && V8_HOST_ARCH_X64
     auto* context_ip = &uc->uc_mcontext->__ss.__rip;
-#elif V8_OS_FREEBSD && V8_TARGET_ARCH_X64
+#elif V8_OS_FREEBSD && V8_HOST_ARCH_X64
     auto* context_ip = &uc->uc_mcontext.mc_rip;
+#elif V8_OS_FREEBSD && V8_HOST_ARCH_ARM64
+    auto* context_ip = &uc->uc_mcontext.mc_pc;
 #else
 #error Unsupported platform
 #endif
