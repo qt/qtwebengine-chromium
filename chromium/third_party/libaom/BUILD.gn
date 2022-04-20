@@ -206,7 +206,7 @@ if (enable_libaom) {
     }
   }
 
-  static_library("libaom") {
+  source_set("libaom") {
     if (!is_debug && is_win) {
       configs -= [ "//build/config/compiler:default_optimization" ]
       configs += [ "//build/config/compiler:optimize_max" ]
