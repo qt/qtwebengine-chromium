@@ -122,7 +122,7 @@ static inline digit_t digit_div(digit_t high, digit_t low, digit_t divisor,
   DCHECK(high < divisor);
   DCHECK(divisor != 0);
 #endif
-#if __x86_64__ && (__GNUC__ || __clang__)
+#if defined(__x86_64__) && (defined(__GNUC__) || defined(__clang__))
   digit_t quotient;
   digit_t rem;
   __asm__("divq  %[divisor]"
@@ -133,7 +133,7 @@ static inline digit_t digit_div(digit_t high, digit_t low, digit_t divisor,
           : "d"(high), "a"(low), [divisor] "rm"(divisor));
   *remainder = rem;
   return quotient;
-#elif __i386__ && (__GNUC__ || __clang__)
+#elif defined(__i386__) && (defined(__GNUC__) || defined(__clang__))
   digit_t quotient;
   digit_t rem;
   __asm__("divl  %[divisor]"
