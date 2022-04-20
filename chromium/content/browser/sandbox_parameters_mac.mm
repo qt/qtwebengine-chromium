@@ -20,7 +20,6 @@
 #include "base/strings/sys_string_conversions.h"
 #include "base/system/sys_info.h"
 #include "content/public/browser/content_browser_client.h"
-#include "content/public/browser/plugin_service.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -33,6 +32,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 
 #if BUILDFLAG(ENABLE_PLUGINS)
+#include "content/public/browser/plugin_service.h"
 #include "content/public/common/pepper_plugin_info.h"
 #endif
 
@@ -226,7 +226,9 @@ void SetupSandboxParameters(sandbox::policy::SandboxType sandbox_type,
     case sandbox::policy::SandboxType::kCdm:
     case sandbox::policy::SandboxType::kMirroring:
     case sandbox::policy::SandboxType::kNaClLoader:
+#if BUILDFLAG(ENABLE_PRINTING)
     case sandbox::policy::SandboxType::kPrintBackend:
+#endif
     case sandbox::policy::SandboxType::kPrintCompositor:
     case sandbox::policy::SandboxType::kRenderer:
     case sandbox::policy::SandboxType::kUtility:
