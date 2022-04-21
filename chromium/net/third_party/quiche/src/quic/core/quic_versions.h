@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include "absl/base/macros.h"
 #include "net/third_party/quiche/src/quic/core/quic_tag.h"
 #include "net/third_party/quiche/src/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quic/platform/api/quic_export.h"
@@ -181,8 +182,14 @@ QUIC_EXPORT_PRIVATE constexpr bool ParsedQuicVersionIsValid(
       transport_version == QUIC_VERSION_RESERVED_FOR_NEGOTIATION;
   if (!transport_version_is_valid) {
     // Iterators are not constexpr in C++14 which Chrome uses.
-    constexpr auto supported_transport_versions = SupportedTransportVersions();
-    for (size_t i = 0; i < supported_transport_versions.size(); ++i) {
+    constexpr QuicTransportVersion supported_transport_versions[] = {
+        QUIC_VERSION_IETF_DRAFT_29,
+        QUIC_VERSION_IETF_DRAFT_27,
+        QUIC_VERSION_51,
+        QUIC_VERSION_50,
+        QUIC_VERSION_46,
+        QUIC_VERSION_43};
+    for (size_t i = 0; i < ABSL_ARRAYSIZE(supported_transport_versions); ++i) {
       const QuicTransportVersion& trans_vers = supported_transport_versions[i];
       if (trans_vers == transport_version) {
         transport_version_is_valid = true;

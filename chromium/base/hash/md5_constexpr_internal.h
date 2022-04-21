@@ -281,15 +281,63 @@ struct MD5CE {
     return IntermediateDataToMD5Digest(ProcessMessage(data, n));
   }
 
-  static constexpr uint64_t Hash64(const char* data, uint32_t n) {
-    IntermediateData intermediate = ProcessMessage(data, n);
-    return (static_cast<uint64_t>(SwapEndian(intermediate.a)) << 32) |
-           static_cast<uint64_t>(SwapEndian(intermediate.b));
+  static constexpr uint64_t Hash64(const char* message, uint32_t n) {
+    const uint32_t m = GetPaddedMessageLength(n);
+    IntermediateData intermediate0 = kInitialIntermediateData;
+    for (uint32_t offset = 0; offset < m; offset += 64) {
+      RoundData data = {
+          GetPaddedMessageWord(message, n, m, offset),
+          GetPaddedMessageWord(message, n, m, offset + 4),
+          GetPaddedMessageWord(message, n, m, offset + 8),
+          GetPaddedMessageWord(message, n, m, offset + 12),
+          GetPaddedMessageWord(message, n, m, offset + 16),
+          GetPaddedMessageWord(message, n, m, offset + 20),
+          GetPaddedMessageWord(message, n, m, offset + 24),
+          GetPaddedMessageWord(message, n, m, offset + 28),
+          GetPaddedMessageWord(message, n, m, offset + 32),
+          GetPaddedMessageWord(message, n, m, offset + 36),
+          GetPaddedMessageWord(message, n, m, offset + 40),
+          GetPaddedMessageWord(message, n, m, offset + 44),
+          GetPaddedMessageWord(message, n, m, offset + 48),
+          GetPaddedMessageWord(message, n, m, offset + 52),
+          GetPaddedMessageWord(message, n, m, offset + 56),
+          GetPaddedMessageWord(message, n, m, offset + 60)};
+      IntermediateData intermediate1 = intermediate0;
+      for (uint32_t i = 0; i < 64; ++i)
+        intermediate1 = ApplyStep(i, data, intermediate1);
+      intermediate0 = Add(intermediate0, intermediate1);
+    }
+    return (static_cast<uint64_t>(SwapEndian(intermediate0.a)) << 32) |
+           static_cast<uint64_t>(SwapEndian(intermediate0.b));
   }
 
-  static constexpr uint32_t Hash32(const char* data, uint32_t n) {
-    IntermediateData intermediate = ProcessMessage(data, n);
-    return SwapEndian(intermediate.a);
+  static constexpr uint32_t Hash32(const char* message, uint32_t n) {
+    const uint32_t m = GetPaddedMessageLength(n);
+    IntermediateData intermediate0 = kInitialIntermediateData;
+    for (uint32_t offset = 0; offset < m; offset += 64) {
+      RoundData data = {
+          GetPaddedMessageWord(message, n, m, offset),
+          GetPaddedMessageWord(message, n, m, offset + 4),
+          GetPaddedMessageWord(message, n, m, offset + 8),
+          GetPaddedMessageWord(message, n, m, offset + 12),
+          GetPaddedMessageWord(message, n, m, offset + 16),
+          GetPaddedMessageWord(message, n, m, offset + 20),
+          GetPaddedMessageWord(message, n, m, offset + 24),
+          GetPaddedMessageWord(message, n, m, offset + 28),
+          GetPaddedMessageWord(message, n, m, offset + 32),
+          GetPaddedMessageWord(message, n, m, offset + 36),
+          GetPaddedMessageWord(message, n, m, offset + 40),
+          GetPaddedMessageWord(message, n, m, offset + 44),
+          GetPaddedMessageWord(message, n, m, offset + 48),
+          GetPaddedMessageWord(message, n, m, offset + 52),
+          GetPaddedMessageWord(message, n, m, offset + 56),
+          GetPaddedMessageWord(message, n, m, offset + 60)};
+      IntermediateData intermediate1 = intermediate0;
+      for (uint32_t i = 0; i < 64; ++i)
+        intermediate1 = ApplyStep(i, data, intermediate1);
+      intermediate0 = Add(intermediate0, intermediate1);
+    }
+    return SwapEndian(intermediate0.a);
   }
 };
 
