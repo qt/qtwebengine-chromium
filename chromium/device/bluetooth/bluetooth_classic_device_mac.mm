@@ -296,4 +296,8 @@ std::string BluetoothClassicDeviceMac::GetDeviceAddress(
       base::SysNSStringToUTF8([device addressString]));
 }
 
+bool BluetoothClassicDeviceMac::IsLowEnergyDevice() {
+  return false;
+}
+
 }  // namespace device
