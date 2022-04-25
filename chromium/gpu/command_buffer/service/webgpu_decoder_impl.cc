@@ -582,12 +582,13 @@ error::Error WebGPUDecoderImpl::InitDawnDevice(
     uint32_t device_generation,
     const WGPUDeviceProperties& request_device_properties,
     bool* creation_succeeded) {
-  DCHECK_LE(0, requested_adapter_index);
-
-  DCHECK_LT(static_cast<size_t>(requested_adapter_index),
-            dawn_adapters_.size());
 
   *creation_succeeded = false;
+
+  if (requested_adapter_index < 0 ||
+      static_cast<uint32_t>(requested_adapter_index) >= dawn_adapters_.size()) {
+    return error::kOutOfBounds;
+  }
 
   dawn_native::DeviceDescriptor device_descriptor;
   if (request_device_properties.textureCompressionBC) {
