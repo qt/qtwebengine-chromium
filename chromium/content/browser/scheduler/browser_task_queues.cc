@@ -225,7 +225,7 @@ BrowserTaskQueues::CreateBrowserTaskRunners() const {
 }
 
 void BrowserTaskQueues::PostFeatureListInitializationSetup() {
-  if (base::FeatureList::IsEnabled(features::kPrioritizeBootstrapTasks)) {
+  if (base::FeatureList::IsEnabled(::features::kPrioritizeBootstrapTasks)) {
     GetBrowserTaskQueue(QueueType::kBootstrap)
         ->SetQueuePriority(QueuePriority::kHighestPriority);
 

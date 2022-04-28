@@ -1629,7 +1629,7 @@ void ServiceWorkerContextWrapper::BindStorageControl(
   if (storage_control_binder_for_test_) {
     storage_control_binder_for_test_.Run(std::move(receiver));
   } else if (base::FeatureList::IsEnabled(
-                 features::kStorageServiceOutOfProcess)) {
+                 ::features::kStorageServiceOutOfProcess)) {
     // TODO(crbug.com/1055677): Use storage_partition() to bind the control when
     // ServiceWorkerStorageControl is sandboxed in the Storage Service.
     DCHECK(!storage_control_);
