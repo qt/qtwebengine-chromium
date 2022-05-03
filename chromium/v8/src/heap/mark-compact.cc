@@ -2571,9 +2571,7 @@ void MarkCompactCollector::ClearJSWeakRefs() {
           JSFinalizationRegistry::cast(weak_cell.finalization_registry());
       finalization_registry.RemoveUnregisterToken(
           JSReceiver::cast(unregister_token), isolate(),
-          [undefined](WeakCell matched_cell) {
-            matched_cell.set_unregister_token(undefined);
-          },
+          JSFinalizationRegistry::kKeepMatchedCellsInRegistry,
           gc_notify_updated_slot);
       // The following is necessary because in the case that weak_cell has
       // already been popped and removed from the FinalizationRegistry, the call
