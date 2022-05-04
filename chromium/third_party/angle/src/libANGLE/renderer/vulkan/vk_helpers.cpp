@@ -5572,7 +5572,7 @@ void ImageHelper::stageSelfForBaseLevel()
     // object.
 
     // Usage info
-    prevImage->get().Resource::operator=(std::move(*this));
+    prevImage->Resource::operator=(std::move(*this));
 
     // Vulkan objects
     prevImage->mImage        = std::move(mImage);
