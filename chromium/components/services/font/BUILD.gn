@@ -43,6 +43,7 @@ if ((is_linux || is_chromeos) && enable_plugins) {
       "//base:base",
       "//ppapi/buildflags:buildflags",
       "//ppapi/c",
+      "//third_party/fontconfig",
     ]
   }
 }
