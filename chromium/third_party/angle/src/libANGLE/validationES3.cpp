@@ -228,6 +228,7 @@ bool ValidateCopyTexture3DCommon(const Context *context,
         case GL_RG32UI:
         case GL_RG32I:
         case GL_RGB8:
+        case GL_RGBX8_ANGLE:
         case GL_SRGB8:
         case GL_RGB565:
         case GL_RGB8_SNORM:
@@ -1959,8 +1960,11 @@ bool ValidateCompressedTexImage3D(const Context *context,
     // 3D texture target validation
     if (target != TextureTarget::_3D && target != TextureTarget::_2DArray)
     {
-        context->validationError(entryPoint, GL_INVALID_ENUM, kInvalidTextureTarget);
-        return false;
+        if (context->getClientVersion() < ES_3_2 || target != TextureTarget::CubeMapArray)
+        {
+            context->validationError(entryPoint, GL_INVALID_ENUM, kInvalidTextureTarget);
+            return false;
+        }
     }
 
     // validateES3TexImageFormat sets the error code if there is an error
@@ -2974,17 +2978,10 @@ bool ValidateBeginTransformFeedback(const Context *context,
         return false;
     }
 
-    size_t programXfbCount = programExecutable->getTransformFeedbackBufferCount();
-    for (size_t programXfbIndex = 0; programXfbIndex < programXfbCount; ++programXfbIndex)
+    if (!ValidateProgramExecutableXFBBuffersPresent(context, programExecutable))
     {
-        const OffsetBindingPointer<Buffer> &buffer =
-            transformFeedback->getIndexedBuffer(programXfbIndex);
-        if (!buffer.get())
-        {
-            context->validationError(entryPoint, GL_INVALID_OPERATION,
-                                     kTransformFeedbackBufferMissing);
-            return false;
-        }
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kTransformFeedbackBufferMissing);
+        return false;
     }
 
     return true;
@@ -4291,6 +4288,13 @@ bool ValidateResumeTransformFeedback(const Context *context, angle::EntryPoint e
     if (!transformFeedback->isPaused())
     {
         context->validationError(entryPoint, GL_INVALID_OPERATION, kTransformFeedbackNotPaused);
+        return false;
+    }
+
+    if (!ValidateProgramExecutableXFBBuffersPresent(context,
+                                                    context->getState().getProgramExecutable()))
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kTransformFeedbackBufferMissing);
         return false;
     }
 

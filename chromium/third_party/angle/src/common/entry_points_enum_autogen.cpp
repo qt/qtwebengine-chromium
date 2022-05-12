@@ -366,6 +366,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "eglMakeCurrent";
         case EntryPoint::EGLPostSubBufferNV:
             return "eglPostSubBufferNV";
+        case EntryPoint::EGLPrepareSwapBuffersANGLE:
+            return "eglPrepareSwapBuffersANGLE";
         case EntryPoint::EGLPresentationTimeANDROID:
             return "eglPresentationTimeANDROID";
         case EntryPoint::EGLProgramCacheGetAttribANGLE:
@@ -416,6 +418,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "eglReleaseThread";
         case EntryPoint::EGLSetBlobCacheFuncsANDROID:
             return "eglSetBlobCacheFuncsANDROID";
+        case EntryPoint::EGLSetDamageRegionKHR:
+            return "eglSetDamageRegionKHR";
         case EntryPoint::EGLSignalSyncKHR:
             return "eglSignalSyncKHR";
         case EntryPoint::EGLStreamAttribKHR:
@@ -1150,6 +1154,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glFramebufferFetchBarrierEXT";
         case EntryPoint::GLFramebufferParameteri:
             return "glFramebufferParameteri";
+        case EntryPoint::GLFramebufferParameteriMESA:
+            return "glFramebufferParameteriMESA";
         case EntryPoint::GLFramebufferRenderbuffer:
             return "glFramebufferRenderbuffer";
         case EntryPoint::GLFramebufferRenderbufferOES:
@@ -1322,6 +1328,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glGetFramebufferAttachmentParameterivRobustANGLE";
         case EntryPoint::GLGetFramebufferParameteriv:
             return "glGetFramebufferParameteriv";
+        case EntryPoint::GLGetFramebufferParameterivMESA:
+            return "glGetFramebufferParameterivMESA";
         case EntryPoint::GLGetFramebufferParameterivRobustANGLE:
             return "glGetFramebufferParameterivRobustANGLE";
         case EntryPoint::GLGetGraphicsResetStatus:
@@ -2222,6 +2230,8 @@ const char *GetEntryPointName(EntryPoint ep)
             return "glPrimitiveBoundingBox";
         case EntryPoint::GLPrimitiveBoundingBoxEXT:
             return "glPrimitiveBoundingBoxEXT";
+        case EntryPoint::GLPrimitiveBoundingBoxOES:
+            return "glPrimitiveBoundingBoxOES";
         case EntryPoint::GLPrimitiveRestartIndex:
             return "glPrimitiveRestartIndex";
         case EntryPoint::GLPrioritizeTextures:

@@ -35,6 +35,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Extensions from '../../models/extensions/extensions.js';
@@ -42,7 +43,7 @@ import * as Extensions from '../../models/extensions/extensions.js';
 import elementsPanelStyles from './elementsPanel.css.js';
 
 import type * as Adorners from '../../ui/components/adorners/adorners.js';
-import * as IconButton from '../../ui/components/icon_button/icon_button.js';
+import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -88,6 +89,14 @@ const UIStrings = {
   * close/hide the sidebar.
   */
   hideComputedStylesSidebar: 'Hide Computed Styles sidebar',
+  /**
+   * @description Screen reader announcement when the computed styles sidebar is shown in the Elements panel.
+   */
+  computedStylesShown: 'Computed Styles sidebar shown',
+  /**
+   * @description Screen reader announcement when the computed styles sidebar is hidden in the Elements panel.
+   */
+  computedStylesHidden: 'Computed Styles sidebar hidden',
   /**
   * @description Title of a pane in the Elements panel that shows computed styles for the selected
   * HTML element. Computed styles are the final, actual styles of the element, including all
@@ -142,20 +151,21 @@ const UIStrings = {
 const str_ = i18n.i18n.registerUIStrings('panels/elements/ElementsPanel.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
-const createAccessibilityTreeToggleButton = (isActive: boolean): HTMLButtonElement => {
-  const button = document.createElement('button');
-  if (isActive) {
-    button.classList.add('axtree-button', 'axtree-button-active');
-  } else {
-    button.classList.add('axtree-button');
-  }
-  button.tabIndex = 0;
-  button.title =
+const createAccessibilityTreeToggleButton = (isActive: boolean): HTMLElement => {
+  const button = new Buttons.Button.Button();
+  const title =
       isActive ? i18nString(UIStrings.switchToDomTreeView) : i18nString(UIStrings.switchToAccessibilityTreeView);
-  const icon = new IconButton.Icon.Icon();
-  const bgColor = isActive ? 'var(--color-primary)' : 'var(--color-text-secondary)';
-  icon.data = {iconName: 'accessibility-icon', color: bgColor, width: '16px', height: '16px'};
-  button.appendChild(icon);
+  button.data = {
+    active: isActive,
+    variant: Buttons.Button.Variant.TOOLBAR,
+    iconUrl: new URL('../../Images/accessibility-icon.svg', import.meta.url).toString(),
+    title,
+  };
+  button.tabIndex = 0;
+  button.classList.add('axtree-button');
+  if (isActive) {
+    button.classList.add('active');
+  }
   return button;
 };
 
@@ -166,7 +176,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
                                                              UI.View.ViewLocationResolver {
   private splitWidget: UI.SplitWidget.SplitWidget;
   private readonly searchableViewInternal: UI.SearchableView.SearchableView;
-  private contentElementInternal: HTMLDivElement;
+  private mainContainer: HTMLDivElement;
+  private domTreeContainer: HTMLDivElement;
   private splitMode: _splitMode|null;
   private readonly accessibilityTreeView: AccessibilityTreeView|undefined;
   private breadcrumbs: ElementsComponents.ElementsBreadcrumbs.ElementsBreadcrumbs;
@@ -185,8 +196,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   private readonly adornerManager: ElementsComponents.AdornerManager.AdornerManager;
   private adornerSettingsPane: ElementsComponents.AdornerSettingsPane.AdornerSettingsPane|null;
   private readonly adornersByName: Map<string, Set<Adorners.Adorner.Adorner>>;
-  accessibilityTreeButton?: HTMLButtonElement;
-  domTreeButton?: HTMLButtonElement;
+  accessibilityTreeButton?: HTMLElement;
+  domTreeButton?: HTMLElement;
   private selectedNodeOnReset?: SDK.DOMModel.DOMNode;
   private hasNonDefaultSelectedNode?: boolean;
   private searchConfig?: UI.SearchableView.SearchConfig;
@@ -210,24 +221,27 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.searchableViewInternal.setPlaceholder(i18nString(UIStrings.findByStringSelectorOrXpath));
     const stackElement = this.searchableViewInternal.element;
 
-    this.contentElementInternal = document.createElement('div');
+    this.mainContainer = document.createElement('div');
+    this.domTreeContainer = document.createElement('div');
     const crumbsContainer = document.createElement('div');
     if (Root.Runtime.experiments.isEnabled('fullAccessibilityTree')) {
-      this.initializeFullAccessibilityTreeView(stackElement);
+      this.initializeFullAccessibilityTreeView();
     }
-    stackElement.appendChild(this.contentElementInternal);
+    this.mainContainer.appendChild(this.domTreeContainer);
+    stackElement.appendChild(this.mainContainer);
     stackElement.appendChild(crumbsContainer);
 
-    UI.ARIAUtils.markAsMain(this.contentElementInternal);
-    UI.ARIAUtils.setAccessibleName(this.contentElementInternal, i18nString(UIStrings.domTreeExplorer));
+    UI.ARIAUtils.markAsMain(this.domTreeContainer);
+    UI.ARIAUtils.setAccessibleName(this.domTreeContainer, i18nString(UIStrings.domTreeExplorer));
 
     this.splitWidget.setMainWidget(this.searchableViewInternal);
     this.splitMode = null;
 
-    this.contentElementInternal.id = 'elements-content';
+    this.mainContainer.id = 'main-content';
+    this.domTreeContainer.id = 'elements-content';
     // FIXME: crbug.com/425984
     if (Common.Settings.Settings.instance().moduleSetting('domWordWrap').get()) {
-      this.contentElementInternal.classList.add('elements-wrap');
+      this.domTreeContainer.classList.add('elements-wrap');
     }
     Common.Settings.Settings.instance()
         .moduleSetting('domWordWrap')
@@ -274,14 +288,14 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     this.adornersByName = new Map();
   }
 
-  private initializeFullAccessibilityTreeView(stackElement: UI.Widget.WidgetElement): void {
+  private initializeFullAccessibilityTreeView(): void {
     this.accessibilityTreeButton = createAccessibilityTreeToggleButton(false);
     this.accessibilityTreeButton.addEventListener('click', this.showAccessibilityTree.bind(this));
 
     this.domTreeButton = createAccessibilityTreeToggleButton(true);
     this.domTreeButton.addEventListener('click', this.showDOMTree.bind(this));
 
-    stackElement.appendChild(this.accessibilityTreeButton);
+    this.mainContainer.appendChild(this.accessibilityTreeButton);
   }
 
   private showAccessibilityTree(): void {
@@ -432,12 +446,12 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     for (const treeOutline of this.treeOutlines) {
       // Attach heavy component lazily
-      if (treeOutline.element.parentElement !== this.contentElementInternal) {
+      if (treeOutline.element.parentElement !== this.domTreeContainer) {
         const header = this.treeOutlineHeaders.get(treeOutline);
         if (header) {
-          this.contentElementInternal.appendChild(header);
+          this.domTreeContainer.appendChild(header);
         }
-        this.contentElementInternal.appendChild(treeOutline.element);
+        this.domTreeContainer.appendChild(treeOutline.element);
       }
     }
 
@@ -457,7 +471,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
           treeOutline.rootDOMNode = domModel.existingDocument();
           this.documentUpdated(domModel);
         } else {
-          domModel.requestDocument();
+          void domModel.requestDocument();
         }
       }
     }
@@ -468,10 +482,10 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     for (const treeOutline of this.treeOutlines) {
       treeOutline.setVisible(false);
       // Detach heavy component on hide
-      this.contentElementInternal.removeChild(treeOutline.element);
+      this.domTreeContainer.removeChild(treeOutline.element);
       const header = this.treeOutlineHeaders.get(treeOutline);
       if (header) {
-        this.contentElementInternal.removeChild(header);
+        this.domTreeContainer.removeChild(header);
       }
     }
     super.willHide();
@@ -512,7 +526,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       };
 
       if (this.accessibilityTreeView) {
-        this.accessibilityTreeView.selectedNodeChanged(selectedNode);
+        void this.accessibilityTreeView.selectedNodeChanged(selectedNode);
       }
     } else {
       this.breadcrumbs.data = {crumbs: [], selectedNode: null};
@@ -523,7 +537,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     if (!selectedNode) {
       return;
     }
-    selectedNode.setAsInspectedNode();
+    void selectedNode.setAsInspectedNode();
     if (focus) {
       this.selectedNodeOnReset = selectedNode;
       this.hasNonDefaultSelectedNode = true;
@@ -551,7 +565,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     if (!domModel.existingDocument()) {
       if (this.isShowing()) {
-        domModel.requestDocument();
+        void domModel.requestDocument();
       }
       return;
     }
@@ -563,7 +577,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     const savedSelectedNodeOnReset = this.selectedNodeOnReset;
-    restoreNode.call(this, domModel, this.selectedNodeOnReset || null);
+    void restoreNode.call(this, domModel, this.selectedNodeOnReset || null);
 
     async function restoreNode(
         this: ElementsPanel, domModel: SDK.DOMModel.DOMModel, staleNode: SDK.DOMModel.DOMNode|null): Promise<void> {
@@ -637,7 +651,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     const showUAShadowDOM = Common.Settings.Settings.instance().moduleSetting('showUAShadowDOM').get();
     const domModels = SDK.TargetManager.TargetManager.instance().models(SDK.DOMModel.DOMModel);
     const promises = domModels.map(domModel => domModel.performSearch(whitespaceTrimmedQuery, showUAShadowDOM));
-    Promise.all(promises).then(resultCounts => {
+    void Promise.all(promises).then(resultCounts => {
       this.searchResults = [];
       for (let i = 0; i < resultCounts.length; ++i) {
         const resultCount = resultCounts[i];
@@ -667,7 +681,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   }
 
   private domWordWrapSettingChanged(event: Common.EventTarget.EventTargetEvent<boolean>): void {
-    this.contentElementInternal.classList.toggle('elements-wrap', event.data);
+    this.domTreeContainer.classList.toggle('elements-wrap', event.data);
     for (const treeOutline of this.treeOutlines) {
       treeOutline.setWordWrap(event.data);
     }
@@ -676,7 +690,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
   switchToAndFocus(node: SDK.DOMModel.DOMNode): void {
     // Reset search restore.
     this.searchableViewInternal.cancelSearch();
-    UI.ViewManager.ViewManager.instance().showView('elements').then(() => this.selectDOMNode(node, true));
+    void UI.ViewManager.ViewManager.instance().showView('elements').then(() => this.selectDOMNode(node, true));
   }
 
   private jumpToSearchResult(index: number): void {
@@ -725,7 +739,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
 
     if (typeof searchResult.node === 'undefined') {
       // No data for slot, request it.
-      searchResult.domModel.searchResult(searchResult.index).then(node => {
+      void searchResult.domModel.searchResult(searchResult.index).then(node => {
         searchResult.node = node;
 
         // If any of these properties are undefined or reset to an invalid value,
@@ -739,7 +753,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     const treeElement = this.treeElementForNode(searchResult.node);
-    searchResult.node.scrollIntoView();
+    void searchResult.node.scrollIntoView();
     if (treeElement) {
       this.searchConfig && treeElement.highlightSearchResults(this.searchConfig.query);
       treeElement.reveal();
@@ -866,7 +880,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     }
 
     if (this.accessibilityTreeView) {
-      this.accessibilityTreeView.revealAndSelectNode(node);
+      void this.accessibilityTreeView.revealAndSelectNode(node);
     }
 
     await UI.ViewManager.ViewManager.instance().showView('elements', false, !focus);
@@ -957,7 +971,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     });
     this.stylesWidget.addEventListener(StylesSidebarPaneEvents.InitialUpdateCompleted, () => {
       this.stylesWidget.appendToolbarItem(stylesSplitWidget.createShowHideSidebarButton(
-          i18nString(UIStrings.showComputedStylesSidebar), i18nString(UIStrings.hideComputedStylesSidebar)));
+          i18nString(UIStrings.showComputedStylesSidebar), i18nString(UIStrings.hideComputedStylesSidebar),
+          i18nString(UIStrings.computedStylesShown), i18nString(UIStrings.computedStylesHidden)));
     });
 
     const showMetricsWidgetInComputedPane = (): void => {
@@ -1114,7 +1129,7 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       }
       const treeElement = this.treeElementForNode(domNode);
       if (treeElement) {
-        treeElement.updateStyleAdorners();
+        void treeElement.updateStyleAdorners();
       }
     }
   }
@@ -1255,26 +1270,37 @@ export class DOMNodeRevealer implements Common.Revealer.Revealer {
     const panel = ElementsPanel.instance();
     panel.pendingNodeReveal = true;
 
-    return new Promise(revealPromise);
+    return (new Promise<void>(revealPromise)).catch((reason: Error) => {
+      let message: string;
+      if (Platform.UserVisibleError.isUserVisibleError(reason)) {
+        message = reason.message;
+      } else {
+        message = i18nString(UIStrings.nodeCannotBeFoundInTheCurrent);
+      }
 
-    function revealPromise(resolve: () => void, reject: (arg0: Error) => void): void {
+      Common.Console.Console.instance().warn(message);
+      // Blink tests expect an exception to be raised and unhandled here to detect that the node
+      // was actually not successfully viewed.
+      throw reason;
+    });
+
+    function revealPromise(
+        resolve: () => void, reject: (arg0: Platform.UserVisibleError.UserVisibleError) => void): void {
       if (node instanceof SDK.DOMModel.DOMNode) {
         onNodeResolved((node as SDK.DOMModel.DOMNode));
       } else if (node instanceof SDK.DOMModel.DeferredDOMNode) {
         (node as SDK.DOMModel.DeferredDOMNode).resolve(checkDeferredDOMNodeThenReveal);
       } else if (node instanceof SDK.RemoteObject.RemoteObject) {
-        const domModel =
-            /** @type {!SDK.RemoteObject.RemoteObject} */ (node as SDK.RemoteObject.RemoteObject)
-                .runtimeModel()
-                .target()
-                .model(SDK.DOMModel.DOMModel);
+        const domModel = node.runtimeModel().target().model(SDK.DOMModel.DOMModel);
         if (domModel) {
-          domModel.pushObjectAsNodeToFrontend(node).then(checkRemoteObjectThenReveal);
+          void domModel.pushObjectAsNodeToFrontend(node).then(checkRemoteObjectThenReveal);
         } else {
-          reject(new Error('Could not resolve a node to reveal.'));
+          const msg = i18nString(UIStrings.nodeCannotBeFoundInTheCurrent);
+          reject(new Platform.UserVisibleError.UserVisibleError(msg));
         }
       } else {
-        reject(new Error('Can\'t reveal a non-node.'));
+        const msg = i18nString(UIStrings.theRemoteObjectCouldNotBe);
+        reject(new Platform.UserVisibleError.UserVisibleError(msg));
         panel.pendingNodeReveal = false;
       }
 
@@ -1294,23 +1320,22 @@ export class DOMNodeRevealer implements Common.Revealer.Revealer {
         const isDocument = node instanceof SDK.DOMModel.DOMDocument;
         if (!isDocument && isDetached) {
           const msg = i18nString(UIStrings.nodeCannotBeFoundInTheCurrent);
-          Common.Console.Console.instance().warn(msg);
-          reject(new Error(msg));
+          reject(new Platform.UserVisibleError.UserVisibleError(msg));
           return;
         }
 
         if (resolvedNode) {
-          panel.revealAndSelectNode(resolvedNode, !omitFocus).then(resolve);
+          void panel.revealAndSelectNode(resolvedNode, !omitFocus).then(resolve);
           return;
         }
-        reject(new Error('Could not resolve node to reveal.'));
+        const msg = i18nString(UIStrings.nodeCannotBeFoundInTheCurrent);
+        reject(new Platform.UserVisibleError.UserVisibleError(msg));
       }
 
       function checkRemoteObjectThenReveal(resolvedNode: SDK.DOMModel.DOMNode|null): void {
         if (!resolvedNode) {
           const msg = i18nString(UIStrings.theRemoteObjectCouldNotBe);
-          Common.Console.Console.instance().warn(msg);
-          reject(new Error(msg));
+          reject(new Platform.UserVisibleError.UserVisibleError(msg));
           return;
         }
         onNodeResolved(resolvedNode);
@@ -1319,8 +1344,7 @@ export class DOMNodeRevealer implements Common.Revealer.Revealer {
       function checkDeferredDOMNodeThenReveal(resolvedNode: SDK.DOMModel.DOMNode|null): void {
         if (!resolvedNode) {
           const msg = i18nString(UIStrings.theDeferredDomNodeCouldNotBe);
-          Common.Console.Console.instance().warn(msg);
-          reject(new Error(msg));
+          reject(new Platform.UserVisibleError.UserVisibleError(msg));
           return;
         }
         onNodeResolved(resolvedNode);
@@ -1364,7 +1388,7 @@ export class ElementsActionDelegate implements UI.ActionRegistration.ActionDeleg
 
     switch (actionId) {
       case 'elements.hide-element':
-        treeOutline.toggleHideElement(node);
+        void treeOutline.toggleHideElement(node);
         return true;
       case 'elements.edit-as-html':
         treeOutline.toggleEditAsHTML(node);
@@ -1373,14 +1397,14 @@ export class ElementsActionDelegate implements UI.ActionRegistration.ActionDeleg
         treeOutline.duplicateNode(node);
         return true;
       case 'elements.copy-styles':
-        treeOutline.findTreeElement(node)?.copyStyles();
+        void treeOutline.findTreeElement(node)?.copyStyles();
         return true;
       case 'elements.undo':
-        SDK.DOMModel.DOMModelUndoStack.instance().undo();
+        void SDK.DOMModel.DOMModelUndoStack.instance().undo();
         ElementsPanel.instance().stylesWidget.forceUpdate();
         return true;
       case 'elements.redo':
-        SDK.DOMModel.DOMModelUndoStack.instance().redo();
+        void SDK.DOMModel.DOMModelUndoStack.instance().redo();
         ElementsPanel.instance().stylesWidget.forceUpdate();
         return true;
     }

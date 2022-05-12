@@ -7,7 +7,6 @@
 
 #include <atomic>
 #include <memory>
-#include <vector>
 
 #include "src/base/iterator.h"
 #include "src/base/macros.h"
@@ -170,13 +169,22 @@ class V8_EXPORT_PRIVATE Space : public BaseSpace {
     return external_backing_store_bytes_[type];
   }
 
-  MemoryChunk* first_page() { return memory_chunk_list_.front(); }
-  MemoryChunk* last_page() { return memory_chunk_list_.back(); }
+  virtual MemoryChunk* first_page() { return memory_chunk_list_.front(); }
+  virtual MemoryChunk* last_page() { return memory_chunk_list_.back(); }
 
-  const MemoryChunk* first_page() const { return memory_chunk_list_.front(); }
-  const MemoryChunk* last_page() const { return memory_chunk_list_.back(); }
+  virtual const MemoryChunk* first_page() const {
+    return memory_chunk_list_.front();
+  }
+  virtual const MemoryChunk* last_page() const {
+    return memory_chunk_list_.back();
+  }
 
   heap::List<MemoryChunk>& memory_chunk_list() { return memory_chunk_list_; }
+
+  virtual Page* InitializePage(MemoryChunk* chunk) {
+    UNREACHABLE();
+    return nullptr;
+  }
 
   FreeList* free_list() { return free_list_.get(); }
 
@@ -187,8 +195,6 @@ class V8_EXPORT_PRIVATE Space : public BaseSpace {
 #endif
 
  protected:
-  int allocation_observers_paused_depth_ = 0;
-
   AllocationCounter allocation_counter_;
 
   // The List manages the pages that belong to the given space.
@@ -468,6 +474,7 @@ class SpaceWithLinearArea : public Space {
                                                    size_t allocation_size);
 
   void MarkLabStartInitialized();
+  virtual void FreeLinearAllocationArea() = 0;
 
   // When allocation observers are active we may use a lower limit to allow the
   // observers to 'interrupt' earlier than the natural limit. Given a linear
@@ -478,16 +485,33 @@ class SpaceWithLinearArea : public Space {
   V8_EXPORT_PRIVATE virtual void UpdateInlineAllocationLimit(
       size_t min_size) = 0;
 
-  V8_EXPORT_PRIVATE void UpdateAllocationOrigins(AllocationOrigin origin);
+  void DisableInlineAllocation();
+  void EnableInlineAllocation();
+  bool IsInlineAllocationEnabled() const { return use_lab_; }
 
   void PrintAllocationsOrigins();
 
  protected:
-  // TODO(ofrobots): make these private after refactoring is complete.
+  V8_EXPORT_PRIVATE void UpdateAllocationOrigins(AllocationOrigin origin);
+
   LinearAllocationArea* const allocation_info_;
+  bool use_lab_ = true;
 
   size_t allocations_origins_[static_cast<int>(
       AllocationOrigin::kNumberOfAllocationOrigins)] = {0};
+};
+
+// Iterates over all memory chunks in the heap (across all spaces).
+class MemoryChunkIterator {
+ public:
+  explicit MemoryChunkIterator(Heap* heap) : space_iterator_(heap) {}
+
+  V8_INLINE bool HasNext();
+  V8_INLINE MemoryChunk* Next();
+
+ private:
+  SpaceIterator space_iterator_;
+  MemoryChunk* current_chunk_ = nullptr;
 };
 
 }  // namespace internal

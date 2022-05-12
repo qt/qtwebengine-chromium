@@ -103,6 +103,11 @@ message IsDlpPolicyMatchedResponse {
   optional bool restricted = 1;
 }
 
+message GetFilesSourcesRequest {
+  // A list of files inodes.
+  repeated uint64 files_inodes = 1;
+}
+
 message FileMetadata {
   // File inode number.
   optional uint64 inode = 1;
@@ -110,9 +115,9 @@ message FileMetadata {
   optional string source_url = 2;
 }
 
-message GetDisallowedTransfersRequest {
-  // A list of files to be transferred.
-  repeated FileMetadata transferred_files = 1;
-  // URL where the files are going to be transferrxwed.
-  optional string destination_url = 2;
+message GetFilesSourcesResponse {
+  // Error message, empty if no error occurred.
+  optional string error_message = 1;
+  // A list of files source urls.
+  repeated FileMetadata files_metadata = 2;
 }

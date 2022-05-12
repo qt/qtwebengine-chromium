@@ -49,7 +49,7 @@ def fyi_goma_rbe_canary_builder(
         *,
         name,
         goma_backend = goma.backend.RBE_PROD,
-        os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+        os = os.LINUX_DEFAULT,
         **kwargs):
     return builder(
         name = name,
@@ -62,10 +62,38 @@ def fyi_goma_rbe_canary_builder(
 
 fyi_goma_rbe_canary_builder(
     name = "Linux Builder Goma RBE Canary",
+    builder_spec = builder_config.copy_from(
+        "ci/Linux Builder",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_canary",
+                    "goma_use_local",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
 )
 
 fyi_goma_rbe_canary_builder(
     name = "Mac Builder (dbg) Goma RBE Canary (clobber)",
+    builder_spec = builder_config.copy_from(
+        "ci/Mac Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_canary",
+                    "clobber",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     cores = 4,
     goma_jobs = goma.jobs.J80,
     os = os.MAC_DEFAULT,
@@ -73,6 +101,20 @@ fyi_goma_rbe_canary_builder(
 
 fyi_goma_rbe_canary_builder(
     name = "Mac M1 Builder (dbg) Goma RBE Canary (clobber)",
+    builder_spec = builder_config.copy_from(
+        "ci/Mac Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_canary",
+                    "clobber",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     cores = None,
     goma_jobs = goma.jobs.J80,
     os = os.MAC_11,
@@ -118,6 +160,19 @@ fyi_goma_rbe_canary_builder(
 
 fyi_goma_rbe_canary_builder(
     name = "Win Builder (dbg) Goma RBE Canary",
+    builder_spec = builder_config.copy_from(
+        "ci/Win Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_canary",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     goma_enable_ats = False,
     os = os.WINDOWS_DEFAULT,
 )
@@ -136,6 +191,19 @@ fyi_goma_rbe_canary_builder(
 
 fyi_goma_rbe_canary_builder(
     name = "Win Builder (dbg) Goma RBE ATS Canary",
+    builder_spec = builder_config.copy_from(
+        "ci/Win Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_canary",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     goma_enable_ats = True,
     os = os.WINDOWS_DEFAULT,
 )
@@ -150,7 +218,7 @@ def fyi_goma_rbe_latest_client_builder(
         *,
         name,
         goma_backend = goma.backend.RBE_PROD,
-        os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+        os = os.LINUX_DEFAULT,
         **kwargs):
     return builder(
         name = name,
@@ -163,10 +231,38 @@ def fyi_goma_rbe_latest_client_builder(
 
 fyi_goma_rbe_latest_client_builder(
     name = "Linux Builder Goma RBE Latest Client",
+    builder_spec = builder_config.copy_from(
+        "ci/Linux Builder",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_latest_client",
+                    "goma_use_local",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
 )
 
 fyi_goma_rbe_latest_client_builder(
     name = "Mac Builder (dbg) Goma RBE Latest Client (clobber)",
+    builder_spec = builder_config.copy_from(
+        "ci/Mac Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_latest_client",
+                    "clobber",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     cores = 4,
     goma_jobs = goma.jobs.J80,
     os = os.MAC_DEFAULT,
@@ -174,6 +270,19 @@ fyi_goma_rbe_latest_client_builder(
 
 fyi_goma_rbe_latest_client_builder(
     name = "Win Builder (dbg) Goma RBE Latest Client",
+    builder_spec = builder_config.copy_from(
+        "ci/Win Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_latest_client",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     goma_enable_ats = False,
     os = os.WINDOWS_DEFAULT,
 )
@@ -186,6 +295,19 @@ fyi_goma_rbe_latest_client_builder(
 
 fyi_goma_rbe_latest_client_builder(
     name = "Win Builder (dbg) Goma RBE ATS Latest Client",
+    builder_spec = builder_config.copy_from(
+        "ci/Win Builder (dbg)",
+        lambda spec: structs.evolve(
+            spec,
+            chromium_config = structs.extend(
+                spec.chromium_config,
+                apply_configs = [
+                    "goma_latest_client",
+                ],
+            ),
+            build_gs_bucket = "chromium-fyi-archive",
+        ),
+    ),
     goma_enable_ats = True,
     os = os.WINDOWS_DEFAULT,
 )
@@ -237,7 +359,7 @@ def goma_builder(
         *,
         name,
         builderless = False,
-        os = os.LINUX_XENIAL_OR_BIONIC_SWITCH_TO_DEFAULT,
+        os = os.LINUX_DEFAULT,
         **kwargs):
     return builder(
         name = name,

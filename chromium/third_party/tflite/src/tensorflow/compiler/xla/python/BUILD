@@ -1,7 +1,7 @@
 load("//tensorflow/core/platform:rules_cc.bzl", "cc_library")
 load("//tensorflow/core/platform:build_config.bzl", "pyx_library")
 load("//tensorflow/compiler/xla:xla.bzl", "xla_py_test_deps")
-load("//tensorflow:tensorflow.bzl", "tf_cc_test")
+load("//tensorflow:tensorflow.bzl", "if_xla_available", "tf_cc_test")
 
 # buildifier: disable=same-origin-load
 load("//tensorflow:tensorflow.bzl", "pybind_extension")
@@ -196,8 +196,28 @@ cc_library(
         ":python_ref_manager",
         "//tensorflow/core:lib",
         "@com_google_absl//absl/container:inlined_vector",
+        "@com_google_absl//absl/hash",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
+        "@pybind11",
+    ],
+)
+
+cc_library(
+    name = "pprof_profile_builder",
+    srcs = ["pprof_profile_builder.cc"],
+    hdrs = ["pprof_profile_builder.h"],
+    copts = [
+        "-fexceptions",
+        "-fno-strict-aliasing",
+    ],
+    features = ["-use_header_modules"],
+    deps = [
+        "//tensorflow/compiler/xla:statusor",
+        "//tensorflow/compiler/xla:util",
+        "//tensorflow/core/platform:protobuf",
+        "//tensorflow/core/profiler:protos_all_cc",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@pybind11",
     ],
 )
@@ -225,6 +245,7 @@ cc_library(
     ],
     features = ["-use_header_modules"],
     deps = [
+        ":pprof_profile_builder",
         ":python_ref_manager",
         ":python_utils",
         ":traceback",
@@ -244,7 +265,6 @@ cc_library(
         "//tensorflow/compiler/xla/service:custom_call_target_registry",
         "//tensorflow/core/platform:fingerprint",
         "//tensorflow/core/platform:statusor",
-        "//tensorflow/core/profiler:protos_all_cc",
         "//tensorflow/core/profiler/lib:traceme",
         "//tensorflow/python/lib/core:numpy_lib",
         "@com_google_absl//absl/algorithm:container",
@@ -514,6 +534,7 @@ cc_library(
     features = ["-use_header_modules"],
     deps = [
         ":types",
+        "@pybind11",
         "//tensorflow/compiler/xla:status",
         "//tensorflow/core/platform:errors",
         "//tensorflow/core/platform:platform_port",
@@ -524,8 +545,9 @@ cc_library(
         "//tensorflow/core/profiler/rpc/client:capture_profile",
         "//tensorflow/core/profiler/rpc/client:profiler_client",
         "//tensorflow/python/profiler/internal:traceme_wrapper",
-        "@pybind11",
-    ],
+    ] + if_xla_available([
+        "//tensorflow/core/profiler/internal/cpu:metadata_collector",
+    ]),
 )
 
 cc_library(
@@ -586,6 +608,7 @@ pybind_extension(
         ":mlir",
         ":ops",
         ":pmap_lib",
+        ":pprof_profile_builder",
         ":profiler",
         ":py_client",
         ":pytree",

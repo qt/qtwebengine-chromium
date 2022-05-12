@@ -24,7 +24,6 @@ Page* SemiSpace::InitializePage(MemoryChunk* chunk) {
   Page* page = static_cast<Page*>(chunk);
   page->SetYoungGenerationPageFlags(heap()->incremental_marking()->IsMarking());
   page->list_node().Initialize();
-#ifdef ENABLE_MINOR_MC
   if (FLAG_minor_mc) {
     page->AllocateYoungGenerationBitmap();
     heap()
@@ -32,7 +31,6 @@ Page* SemiSpace::InitializePage(MemoryChunk* chunk) {
         ->non_atomic_marking_state()
         ->ClearLiveness(page);
   }
-#endif  // ENABLE_MINOR_MC
   page->InitializationMemoryFence();
   return page;
 }
@@ -58,8 +56,8 @@ bool SemiSpace::EnsureCurrentCapacity() {
       // Clear new space flags to avoid this page being treated as a new
       // space page that is potentially being swept.
       current_page->ClearFlags(Page::kIsInYoungGenerationMask);
-      heap()->memory_allocator()->Free<MemoryAllocator::kPooledAndQueue>(
-          current_page);
+      heap()->memory_allocator()->Free(MemoryAllocator::kConcurrentlyAndPool,
+                                       current_page);
       current_page = next_current;
     }
 
@@ -68,10 +66,10 @@ bool SemiSpace::EnsureCurrentCapacity() {
         heap()->incremental_marking()->non_atomic_marking_state();
     while (actual_pages < expected_pages) {
       actual_pages++;
-      current_page =
-          heap()->memory_allocator()->AllocatePage<MemoryAllocator::kPooled>(
-              MemoryChunkLayout::AllocatableMemoryInDataPage(), this,
-              NOT_EXECUTABLE);
+      current_page = heap()->memory_allocator()->AllocatePage(
+          MemoryAllocator::kUsePool,
+          MemoryChunkLayout::AllocatableMemoryInDataPage(), this,
+          NOT_EXECUTABLE);
       if (current_page == nullptr) return false;
       DCHECK_NOT_NULL(current_page);
       memory_chunk_list_.PushBack(current_page);
@@ -111,10 +109,9 @@ bool SemiSpace::Commit() {
     // Pages in the new spaces can be moved to the old space by the full
     // collector. Therefore, they must be initialized with the same FreeList as
     // old pages.
-    Page* new_page =
-        heap()->memory_allocator()->AllocatePage<MemoryAllocator::kPooled>(
-            MemoryChunkLayout::AllocatableMemoryInDataPage(), this,
-            NOT_EXECUTABLE);
+    Page* new_page = heap()->memory_allocator()->AllocatePage(
+        MemoryAllocator::kUsePool,
+        MemoryChunkLayout::AllocatableMemoryInDataPage(), this, NOT_EXECUTABLE);
     if (new_page == nullptr) {
       if (pages_added) RewindPages(pages_added);
       DCHECK(!IsCommitted());
@@ -136,7 +133,8 @@ bool SemiSpace::Uncommit() {
   while (!memory_chunk_list_.Empty()) {
     MemoryChunk* chunk = memory_chunk_list_.front();
     memory_chunk_list_.Remove(chunk);
-    heap()->memory_allocator()->Free<MemoryAllocator::kPooledAndQueue>(chunk);
+    heap()->memory_allocator()->Free(MemoryAllocator::kConcurrentlyAndPool,
+                                     chunk);
   }
   current_page_ = nullptr;
   current_capacity_ = 0;
@@ -169,10 +167,9 @@ bool SemiSpace::GrowTo(size_t new_capacity) {
   IncrementalMarking::NonAtomicMarkingState* marking_state =
       heap()->incremental_marking()->non_atomic_marking_state();
   for (int pages_added = 0; pages_added < delta_pages; pages_added++) {
-    Page* new_page =
-        heap()->memory_allocator()->AllocatePage<MemoryAllocator::kPooled>(
-            MemoryChunkLayout::AllocatableMemoryInDataPage(), this,
-            NOT_EXECUTABLE);
+    Page* new_page = heap()->memory_allocator()->AllocatePage(
+        MemoryAllocator::kUsePool,
+        MemoryChunkLayout::AllocatableMemoryInDataPage(), this, NOT_EXECUTABLE);
     if (new_page == nullptr) {
       if (pages_added) RewindPages(pages_added);
       return false;
@@ -193,7 +190,8 @@ void SemiSpace::RewindPages(int num_pages) {
   while (num_pages > 0) {
     MemoryChunk* last = last_page();
     memory_chunk_list_.Remove(last);
-    heap()->memory_allocator()->Free<MemoryAllocator::kPooledAndQueue>(last);
+    heap()->memory_allocator()->Free(MemoryAllocator::kConcurrentlyAndPool,
+                                     last);
     num_pages--;
   }
 }
@@ -621,13 +619,13 @@ AllocationResult NewSpace::AllocateRawUnaligned(int size_in_bytes,
                                                 AllocationOrigin origin) {
   DCHECK(!FLAG_enable_third_party_heap);
   if (!EnsureAllocation(size_in_bytes, kTaggedAligned)) {
-    return AllocationResult::Retry(NEW_SPACE);
+    return AllocationResult::Failure(NEW_SPACE);
   }
 
   DCHECK_EQ(allocation_info_->start(), allocation_info_->top());
 
   AllocationResult result = AllocateFastUnaligned(size_in_bytes, origin);
-  DCHECK(!result.IsRetry());
+  DCHECK(!result.IsFailure());
 
   InvokeAllocationObservers(result.ToAddress(), size_in_bytes, size_in_bytes,
                             size_in_bytes);
@@ -640,7 +638,7 @@ AllocationResult NewSpace::AllocateRawAligned(int size_in_bytes,
                                               AllocationOrigin origin) {
   DCHECK(!FLAG_enable_third_party_heap);
   if (!EnsureAllocation(size_in_bytes, alignment)) {
-    return AllocationResult::Retry(NEW_SPACE);
+    return AllocationResult::Failure(NEW_SPACE);
   }
 
   DCHECK_EQ(allocation_info_->start(), allocation_info_->top());
@@ -649,7 +647,7 @@ AllocationResult NewSpace::AllocateRawAligned(int size_in_bytes,
 
   AllocationResult result = AllocateFastAligned(
       size_in_bytes, &aligned_size_in_bytes, alignment, origin);
-  DCHECK(!result.IsRetry());
+  DCHECK(!result.IsFailure());
 
   InvokeAllocationObservers(result.ToAddress(), size_in_bytes,
                             aligned_size_in_bytes, aligned_size_in_bytes);
@@ -704,6 +702,11 @@ void NewSpace::Verify(Isolate* isolate) {
     external_space_bytes[static_cast<ExternalBackingStoreType>(i)] = 0;
   }
 
+  CHECK(!Page::FromAllocationAreaAddress(current)->IsFlagSet(
+      Page::PAGE_NEW_OLD_PROMOTION));
+  CHECK(!Page::FromAllocationAreaAddress(current)->IsFlagSet(
+      Page::PAGE_NEW_NEW_PROMOTION));
+
   PtrComprCageBase cage_base(isolate);
   while (current != top()) {
     if (!Page::IsAlignedToPageSize(current)) {
@@ -742,6 +745,8 @@ void NewSpace::Verify(Isolate* isolate) {
     } else {
       // At end of page, switch to next page.
       Page* page = Page::FromAllocationAreaAddress(current)->next_page();
+      CHECK(!page->IsFlagSet(Page::PAGE_NEW_OLD_PROMOTION));
+      CHECK(!page->IsFlagSet(Page::PAGE_NEW_NEW_PROMOTION));
       current = page->area_start();
     }
   }

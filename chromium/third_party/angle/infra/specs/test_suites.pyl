@@ -607,6 +607,35 @@
       },
     },
 
+    'angle_end2end_vulkan_gtests': {
+      'angle_end2end_tests': {
+        'android_args': [
+          '--shard-timeout=300',
+          '-v',
+          # We use this argument to save test artifacts.
+          '--render-test-output-dir=${ISOLATED_OUTDIR}',
+        ],
+        'android_swarming': {
+          'shards': 4,
+        },
+        'args': [
+          'angle_end2end_tests',
+          '--gtest_filter=*Vulkan*:-*Vulkan_SwiftShader*',
+        ],
+        'desktop_args': [
+          '--bot-mode',
+        ],
+        # Linux has issues with creating too many windows at once.
+        'linux_args': [
+          '--max-processes=4',
+        ],
+        'swarming': {
+          'shards': 2,
+        },
+        'use_isolated_scripts_api': True,
+      },
+    },
+
     'angle_end2end_with_retry_gtests': {
       'angle_end2end_tests': {
         'args': [
@@ -696,7 +725,6 @@
         ],
         'mixins': [
           'angle_skia_gold_test',
-          'chrome-gpu-gold-service-account',
         ],
         'android_swarming': {
           'shards': 6,
@@ -987,6 +1015,23 @@
       },
     },
 
+    'swangle_end2end_slow_tests': {
+      'angle_end2end_tests': {
+        'args': [
+          'angle_end2end_tests',
+          '--bot-mode',
+          '--gtest_filter=*Vulkan_SwiftShader*',
+        ],
+        'linux_args': [
+          '--xvfb',
+        ],
+        'use_isolated_scripts_api': True,
+        'swarming': {
+          'shards': 4,
+        },
+      },
+    },
+
     'swangle_end2end_tests': {
       'angle_end2end_tests': {
         'args': [
@@ -1015,7 +1060,6 @@
         ],
         'mixins': [
           'angle_skia_gold_test',
-          'chrome-gpu-gold-service-account',
         ],
         'swarming': {
           'shards': 6,
@@ -1038,6 +1082,19 @@
       'angle_deqp_khr_gles32_vulkan_gtests',
       'angle_deqp_khr_gles3_vulkan_gtests',
       'angle_end2end_gtests',
+      'angle_unit_gtests',
+    ],
+
+    'android_vulkan_gtests': [
+      'angle_deqp_egl_vulkan_gtests',
+      'angle_deqp_gles2_vulkan_gtests',
+      'angle_deqp_gles31_vulkan_gtests',
+      'angle_deqp_gles3_vulkan_gtests',
+      'angle_deqp_khr_gles2_vulkan_gtests',
+      'angle_deqp_khr_gles31_vulkan_gtests',
+      'angle_deqp_khr_gles32_vulkan_gtests',
+      'angle_deqp_khr_gles3_vulkan_gtests',
+      'angle_end2end_vulkan_gtests',
       'angle_unit_gtests',
     ],
 
@@ -1110,8 +1167,8 @@
       'swangle_end2end_tests',
     ],
 
-    'swangle_non_deqp_gtests': [
-      'swangle_end2end_tests',
+    'swangle_non_deqp_slow_gtests': [
+      'swangle_end2end_slow_tests',
     ],
 
     'swangle_slow_gtests': [

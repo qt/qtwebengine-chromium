@@ -27,7 +27,7 @@ exec python3 - "$@" <<'#'EOF
 TOOL_NAME = 'tracebox'
 
 # BEGIN_SECTION_GENERATED_BY(roll-prebuilts)
-# Revision: v22.1
+# Revision: v24.1
 PERFETTO_PREBUILT_MANIFEST = [{
     'tool':
         'tracebox',
@@ -36,11 +36,11 @@ PERFETTO_PREBUILT_MANIFEST = [{
     'file_name':
         'tracebox',
     'file_size':
-        1316160,
+        1332696,
     'url':
-        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v22.1/mac-amd64/tracebox',
+        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v24.1/mac-amd64/tracebox',
     'sha256':
-        '48539da3f73f04fe1c22dcd0aeb8cbed45405df3f4dfb3f2ff4077d6d023463e',
+        'be14a9040e8d0143d5b0838560cf20afb0be2d1971f6df4c79d7b4c46aa5852e',
     'platform':
         'darwin',
     'machine': ['x86_64']
@@ -52,11 +52,11 @@ PERFETTO_PREBUILT_MANIFEST = [{
     'file_name':
         'tracebox',
     'file_size':
-        1733320,
+        1756264,
     'url':
-        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v22.1/linux-amd64/tracebox',
+        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v24.1/linux-amd64/tracebox',
     'sha256':
-        'b9ab0a535a7e042675f690b0543e158cad01fb8b3e56dc3b7748f44b821ff6d5',
+        '2fde750c982826f6a7c3e49b2d6ee7ec72c956170b4bba07e2989f2b81f26269',
     'platform':
         'linux',
     'machine': ['x86_64']
@@ -68,11 +68,11 @@ PERFETTO_PREBUILT_MANIFEST = [{
     'file_name':
         'tracebox',
     'file_size':
-        1733320,
+        1756264,
     'url':
-        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v22.1/linux-amd64/tracebox',
+        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v24.1/linux-amd64/tracebox',
     'sha256':
-        'b9ab0a535a7e042675f690b0543e158cad01fb8b3e56dc3b7748f44b821ff6d5',
+        '2fde750c982826f6a7c3e49b2d6ee7ec72c956170b4bba07e2989f2b81f26269',
     'platform':
         'linux',
     'machine': ['x86_64']
@@ -84,11 +84,11 @@ PERFETTO_PREBUILT_MANIFEST = [{
     'file_name':
         'tracebox',
     'file_size':
-        998700,
+        1012940,
     'url':
-        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v22.1/linux-arm/tracebox',
+        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v24.1/linux-arm/tracebox',
     'sha256':
-        '825a1705f426f333c21679e38676c6118442b7b48379a0e2c2b87f052b3e2f8d',
+        'a6f964b1b155c309fda0fb0b765f9fbf3d030d8c4bd6f9f03dad173ee689668e',
     'platform':
         'linux',
     'machine': ['armv6l', 'armv7l', 'armv8l']
@@ -100,11 +100,11 @@ PERFETTO_PREBUILT_MANIFEST = [{
     'file_name':
         'tracebox',
     'file_size':
-        1613536,
+        1635160,
     'url':
-        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v22.1/linux-arm64/tracebox',
+        'https://commondatastorage.googleapis.com/perfetto-luci-artifacts/v24.1/linux-arm64/tracebox',
     'sha256':
-        'e664b2374a6842141b0f8c68838a37d0d387bae576b934db3168b4ae4999f182',
+        'ed998b18606a6cffb490336990220e6290faa4544e52a5c77273f69507f80e89',
     'platform':
         'linux',
     'machine': ['aarch64']

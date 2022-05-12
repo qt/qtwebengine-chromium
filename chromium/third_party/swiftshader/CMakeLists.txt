@@ -111,7 +111,6 @@ if(LINUX)
     check_symbol_exists(mallinfo2 malloc.h HAVE_MALLINFO2)
 endif()
 
-find_library(X11 X11)
 find_library(XCB xcb)
 if(SWIFTSHADER_BUILD_WSI_WAYLAND)
     find_library(WAYLAND wayland-client)
@@ -149,13 +148,12 @@ endfunction()
 option_if_not_defined(SWIFTSHADER_BUILD_WSI_WAYLAND "Build the Wayland WSI support" FALSE)
 option_if_not_defined(SWIFTSHADER_BUILD_WSI_DIRECTFB "Build the DirectFB WSI support" FALSE)
 option_if_not_defined(SWIFTSHADER_BUILD_WSI_D2D "Build the Direct-to-Display WSI support" FALSE)
-option_if_not_defined(SWIFTSHADER_BUILD_PVR "Build the PowerVR examples" TRUE)
-option_if_not_defined(SWIFTSHADER_GET_PVR "Check out the PowerVR submodule" FALSE)
-
-option_if_not_defined(SWIFTSHADER_USE_GROUP_SOURCES "Group the source files in a folder tree for Visual Studio" TRUE)
+option_if_not_defined(SWIFTSHADER_BUILD_PVR "Build the PowerVR examples" FALSE)
 
 option_if_not_defined(SWIFTSHADER_BUILD_TESTS "Build unit tests" TRUE)
 option_if_not_defined(SWIFTSHADER_BUILD_BENCHMARKS "Build benchmarks" FALSE)
+
+option_if_not_defined(SWIFTSHADER_USE_GROUP_SOURCES "Group the source files in a folder tree for Visual Studio" TRUE)
 
 option_if_not_defined(SWIFTSHADER_MSAN "Build with memory sanitizer" FALSE)
 option_if_not_defined(SWIFTSHADER_ASAN "Build with address sanitizer" FALSE)
@@ -256,12 +254,8 @@ if(REACTOR_EMIT_DEBUG_INFO)
     InitSubmodule(libbacktrace ${THIRD_PARTY_DIR}/libbacktrace/src)
 endif()
 
-if(SWIFTSHADER_GET_PVR)
+if(SWIFTSHADER_BUILD_PVR)
     InitSubmodule(PVRCore ${THIRD_PARTY_DIR}/PowerVR_Examples)
-    set(SWIFTSHADER_GET_PVR FALSE CACHE BOOL "Check out the PowerVR submodule" FORCE)
-endif()
-if(EXISTS ${THIRD_PARTY_DIR}/PowerVR_Examples/.git)
-    set(HAVE_PVR_SUBMODULE TRUE)
 endif()
 
 if(SWIFTSHADER_BUILD_CPPDAP)
@@ -692,6 +686,7 @@ endif()
 if(SWIFTSHADER_BUILD_TESTS)
     # For Win32, force gtest to match our CRT (shared)
     set(gtest_force_shared_crt TRUE CACHE BOOL "" FORCE)
+    set(INSTALL_GTEST FALSE CACHE BOOL "" FORCE)
     add_subdirectory(${THIRD_PARTY_DIR}/googletest EXCLUDE_FROM_ALL)
     # gtest finds python, which picks python 2 first, if present.
     # We need to undo this so that SPIR-V can later find python3.
@@ -743,9 +738,9 @@ endif()
 add_subdirectory(src/Reactor) # Add ReactorSubzero and ReactorLLVM targets
 
 if(${REACTOR_BACKEND} STREQUAL "LLVM")
-    set(Reactor ReactorLLVM)
+    add_library(Reactor ALIAS ReactorLLVM)
 elseif(${REACTOR_BACKEND} STREQUAL "Subzero")
-    set(Reactor ReactorSubzero)
+    add_library(Reactor ALIAS ReactorSubzero)
 else()
     message(FATAL_ERROR "REACTOR_BACKEND must be 'LLVM' or 'Subzero'")
 endif()
@@ -770,9 +765,6 @@ endif()
 if(WIN32)
     target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WIN32_KHR")
 elseif(LINUX)
-    if(X11)
-        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XLIB_KHR")
-    endif()
     if(XCB)
         target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XCB_KHR")
     endif()
@@ -816,12 +808,12 @@ endif()
 ###########################################################
 
 # TODO(b/161976310): Add support for building PowerVR on MacOS
-if(APPLE AND HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
+if(APPLE AND SWIFTSHADER_BUILD_PVR)
     message(WARNING "Building PowerVR examples for SwiftShader is not yet supported on Apple platforms.")
     set(SWIFTSHADER_BUILD_PVR FALSE)
 endif()
 
-if(HAVE_PVR_SUBMODULE AND SWIFTSHADER_BUILD_PVR)
+if(SWIFTSHADER_BUILD_PVR)
     if(UNIX AND NOT APPLE)
         set(PVR_WINDOW_SYSTEM XCB)
 
@@ -927,6 +919,7 @@ if(SWIFTSHADER_BUILD_BENCHMARKS)
         set_target_properties(benchmark_main PROPERTIES FOLDER "third_party")
     endif()
 
+    add_subdirectory(${TESTS_DIR}/PipelineBenchmarks) # Add PipelineBenchmarks target
     add_subdirectory(${TESTS_DIR}/ReactorBenchmarks) # Add ReactorBenchmarks target
     add_subdirectory(${TESTS_DIR}/SystemBenchmarks) # Add system-benchmarks target
     add_subdirectory(${TESTS_DIR}/VulkanBenchmarks) # Add VulkanBenchmarks target

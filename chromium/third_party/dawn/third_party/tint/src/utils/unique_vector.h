@@ -15,6 +15,7 @@
 #ifndef SRC_UTILS_UNIQUE_VECTOR_H_
 #define SRC_UTILS_UNIQUE_VECTOR_H_
 
+#include <cstddef>
 #include <functional>
 #include <unordered_set>
 #include <utility>
@@ -72,7 +73,7 @@ struct UniqueVector {
   const T& operator[](size_t i) const { return vector[i]; }
 
   /// @returns true if the vector is empty
-  size_t empty() const { return vector.empty(); }
+  bool empty() const { return vector.empty(); }
 
   /// @returns the number of items in the vector
   size_t size() const { return vector.size(); }
@@ -90,7 +91,7 @@ struct UniqueVector {
   ConstReverseIterator rend() const { return vector.rend(); }
 
   /// @returns a const reference to the internal vector
-  operator const std::vector<T> &() const { return vector; }
+  operator const std::vector<T>&() const { return vector; }
 
   /// Removes the last element from the vector
   /// @returns the popped element

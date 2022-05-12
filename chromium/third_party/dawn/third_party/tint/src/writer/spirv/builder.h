@@ -27,7 +27,7 @@
 #include "src/ast/continue_statement.h"
 #include "src/ast/discard_statement.h"
 #include "src/ast/if_statement.h"
-#include "src/ast/interpolate_decoration.h"
+#include "src/ast/interpolate_attribute.h"
 #include "src/ast/loop_statement.h"
 #include "src/ast/return_statement.h"
 #include "src/ast/switch_statement.h"
@@ -35,7 +35,7 @@
 #include "src/ast/variable_decl_statement.h"
 #include "src/program_builder.h"
 #include "src/scope_stack.h"
-#include "src/sem/intrinsic.h"
+#include "src/sem/builtin.h"
 #include "src/sem/storage_texture_type.h"
 #include "src/writer/spirv/function.h"
 #include "src/writer/spirv/scalar_constant.h"
@@ -216,6 +216,10 @@ class Builder {
     functions_.back().push_var(operands);
   }
 
+  /// @returns true if the current instruction insertion point is
+  /// inside a basic block.
+  bool InsideBasicBlock() const;
+
   /// Converts a storage class to a SPIR-V storage class.
   /// @param klass the storage class to convert
   /// @returns the SPIR-V storage class or SpvStorageClassMax on error.
@@ -372,44 +376,44 @@ class Builder {
   /// @returns the expression ID on success or 0 otherwise
   uint32_t GenerateFunctionCall(const sem::Call* call,
                                 const sem::Function* function);
-  /// Handles generating an intrinsic call expression
+  /// Handles generating a builtin call expression
   /// @param call the call expression
-  /// @param intrinsic the intrinsic being called
+  /// @param builtin the builtin being called
   /// @returns the expression ID on success or 0 otherwise
-  uint32_t GenerateIntrinsicCall(const sem::Call* call,
-                                 const sem::Intrinsic* intrinsic);
+  uint32_t GenerateBuiltinCall(const sem::Call* call,
+                               const sem::Builtin* builtin);
   /// Handles generating a type constructor or type conversion expression
   /// @param call the call expression
   /// @param var the variable that is being initialized. May be null.
   /// @returns the expression ID on success or 0 otherwise
   uint32_t GenerateTypeConstructorOrConversion(const sem::Call* call,
                                                const ast::Variable* var);
-  /// Generates a texture intrinsic call. Emits an error and returns false if
+  /// Generates a texture builtin call. Emits an error and returns false if
   /// we're currently outside a function.
   /// @param call the call expression
-  /// @param intrinsic the semantic information for the texture intrinsic
+  /// @param builtin the semantic information for the texture builtin
   /// @param result_type result type operand of the texture instruction
   /// @param result_id result identifier operand of the texture instruction
   /// parameters
   /// @returns true on success
-  bool GenerateTextureIntrinsic(const sem::Call* call,
-                                const sem::Intrinsic* intrinsic,
-                                spirv::Operand result_type,
-                                spirv::Operand result_id);
+  bool GenerateTextureBuiltin(const sem::Call* call,
+                              const sem::Builtin* builtin,
+                              spirv::Operand result_type,
+                              spirv::Operand result_id);
   /// Generates a control barrier statement.
-  /// @param intrinsic the semantic information for the barrier intrinsic call
+  /// @param builtin the semantic information for the barrier builtin call
   /// @returns true on success
-  bool GenerateControlBarrierIntrinsic(const sem::Intrinsic* intrinsic);
-  /// Generates an atomic intrinsic call.
+  bool GenerateControlBarrierBuiltin(const sem::Builtin* builtin);
+  /// Generates an atomic builtin call.
   /// @param call the call expression
-  /// @param intrinsic the semantic information for the atomic intrinsic call
+  /// @param builtin the semantic information for the atomic builtin call
   /// @param result_type result type operand of the texture instruction
   /// @param result_id result identifier operand of the texture instruction
   /// @returns true on success
-  bool GenerateAtomicIntrinsic(const sem::Call* call,
-                               const sem::Intrinsic* intrinsic,
-                               Operand result_type,
-                               Operand result_id);
+  bool GenerateAtomicBuiltin(const sem::Call* call,
+                             const sem::Builtin* builtin,
+                             Operand result_type,
+                             Operand result_id);
   /// Generates a sampled image
   /// @param texture_type the texture type
   /// @param texture_operand the texture operand
@@ -454,9 +458,24 @@ class Builder {
   /// @param stmt the statement to generate
   /// @returns true if the statement was generated
   bool GenerateStatement(const ast::Statement* stmt);
-  /// Geneates an OpLoad
-  /// @param type the type to load
-  /// @param id the variable id to load
+  /// Generates an expression. If the WGSL expression does not have reference
+  /// type, then return the SPIR-V ID for the expression. Otherwise implement
+  /// the WGSL Load Rule: generate an OpLoad and return the ID of the result.
+  /// Returns 0 if the expression could not be generated.
+  /// @param expr the semantic expression node to be generated
+  /// @returns the the ID of the expression, or loaded expression
+  uint32_t GenerateExpressionWithLoadIfNeeded(const sem::Expression* expr);
+  /// Generates an expression. If the WGSL expression does not have reference
+  /// type, then return the SPIR-V ID for the expression. Otherwise implement
+  /// the WGSL Load Rule: generate an OpLoad and return the ID of the result.
+  /// Returns 0 if the expression could not be generated.
+  /// @param expr the AST expression to be generated
+  /// @returns the the ID of the expression, or loaded expression
+  uint32_t GenerateExpressionWithLoadIfNeeded(const ast::Expression* expr);
+  /// Generates an OpLoad on the given ID if it has reference type in WGSL,
+  /// othewrise return the ID itself.
+  /// @param type the type of the expression
+  /// @param id the SPIR-V id of the experssion
   /// @returns the ID of the loaded value or `id` if type is not a reference
   uint32_t GenerateLoadIfNeeded(const sem::Type* type, uint32_t id);
   /// Generates an OpStore. Emits an error and returns false if we're
@@ -536,10 +555,10 @@ class Builder {
                                   const sem::Matrix* type,
                                   spv::Op op);
 
-  /// Converts AST image format to SPIR-V and pushes an appropriate capability.
+  /// Converts TexelFormat to SPIR-V and pushes an appropriate capability.
   /// @param format AST image format type
   /// @returns SPIR-V image format type
-  SpvImageFormat convert_image_format_to_spv(const ast::ImageFormat format);
+  SpvImageFormat convert_texel_format_to_spv(const ast::TexelFormat format);
 
   /// Determines if the given type constructor is created from constant values
   /// @param expr the expression to check

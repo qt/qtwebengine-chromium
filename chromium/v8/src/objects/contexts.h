@@ -207,6 +207,8 @@ enum ContextLookupFlags {
     temporal_time_zone_function)                                               \
   V(JS_TEMPORAL_ZONED_DATE_TIME_FUNCTION_INDEX, JSFunction,                    \
     temporal_zoned_date_time_function)                                         \
+  V(TEMPORAL_INSTANT_FIXED_ARRAY_FROM_ITERABLE_FUNCTION_INDEX, JSFunction,     \
+    temporal_instant_fixed_array_from_iterable)                                \
   /* Context maps */                                                           \
   V(NATIVE_CONTEXT_MAP_INDEX, Map, native_context_map)                         \
   V(FUNCTION_CONTEXT_MAP_INDEX, Map, function_context_map)                     \
@@ -325,6 +327,8 @@ enum ContextLookupFlags {
   V(EVAL_ERROR_FUNCTION_INDEX, JSFunction, eval_error_function)                \
   V(AGGREGATE_ERROR_FUNCTION_INDEX, JSFunction, aggregate_error_function)      \
   V(GLOBAL_EVAL_FUN_INDEX, JSFunction, global_eval_fun)                        \
+  V(GLOBAL_PARSE_FLOAT_FUN_INDEX, JSFunction, global_parse_float_fun)          \
+  V(GLOBAL_PARSE_INT_FUN_INDEX, JSFunction, global_parse_int_fun)              \
   V(GLOBAL_PROXY_FUNCTION_INDEX, JSFunction, global_proxy_function)            \
   V(MAP_DELETE_INDEX, JSFunction, map_delete)                                  \
   V(MAP_GET_INDEX, JSFunction, map_get)                                        \
@@ -382,22 +386,33 @@ class ScriptContextTable : public FixedArray {
   inline Context get_context(int i) const;
   inline Context get_context(int i, AcquireLoadTag tag) const;
 
+  DECL_ACCESSORS(names_to_context_index, NameToIndexHashTable)
+
+  // Adds local names from `script_context` to the hash table.
+  static void AddLocalNamesFromContext(
+      Isolate* isolate, Handle<ScriptContextTable> script_context_table,
+      Handle<Context> script_context, bool ignore_duplicates,
+      int script_context_index);
+
   // Lookup a variable `name` in a ScriptContextTable.
   // If it returns true, the variable is found and `result` contains
   // valid information about its location.
   // If it returns false, `result` is untouched.
   V8_WARN_UNUSED_RESULT
-  V8_EXPORT_PRIVATE static bool Lookup(Isolate* isolate,
-                                       ScriptContextTable table, String name,
-                                       VariableLookupResult* result);
+  V8_EXPORT_PRIVATE bool Lookup(Handle<String> name,
+                                VariableLookupResult* result);
 
   V8_WARN_UNUSED_RESULT
   V8_EXPORT_PRIVATE static Handle<ScriptContextTable> Extend(
-      Handle<ScriptContextTable> table, Handle<Context> script_context);
+      Isolate* isolate, Handle<ScriptContextTable> table,
+      Handle<Context> script_context, bool ignore_duplicates = false);
 
-  static const int kUsedSlotIndex = 0;
-  static const int kFirstContextSlotIndex = 1;
+  static const int kHashTableIndex = 0;
+  static const int kUsedSlotIndex = 1;
+  static const int kFirstContextSlotIndex = 2;
   static const int kMinLength = kFirstContextSlotIndex;
+
+  static const int kHashTableOffset = OffsetOfElementAt(kHashTableIndex);
 
   OBJECT_CONSTRUCTORS(ScriptContextTable, FixedArray);
 };
@@ -559,8 +574,7 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
   static const int kInvalidContext = 1;
 
   // Direct slot access.
-  inline void set_scope_info(ScopeInfo scope_info,
-                             WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
+  DECL_ACCESSORS(scope_info, ScopeInfo)
 
   inline Object unchecked_previous() const;
   inline Context previous() const;
@@ -573,7 +587,6 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
       HeapObject object, WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   JSObject extension_object() const;
   JSReceiver extension_receiver() const;
-  V8_EXPORT_PRIVATE inline ScopeInfo scope_info() const;
 
   // Find the module context (assuming there is one) and return the associated
   // module object.
@@ -752,7 +765,7 @@ class NativeContext : public Context {
 
   // The native context stores a list of all optimized code and a list of all
   // deoptimized code, which are needed by the deoptimizer.
-  V8_EXPORT_PRIVATE void AddOptimizedCode(Code code);
+  V8_EXPORT_PRIVATE void AddOptimizedCode(CodeT code);
   inline void SetOptimizedCodeListHead(Object head);
   inline Object OptimizedCodeListHead();
   inline void SetDeoptimizedCodeListHead(Object head);

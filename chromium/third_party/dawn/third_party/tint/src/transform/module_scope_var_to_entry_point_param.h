@@ -33,11 +33,10 @@ namespace transform {
 ///
 /// Before:
 /// ```
-/// [[block]]
 /// struct S {
 ///   f : f32;
 /// };
-/// [[binding(0), group(0)]]
+/// @binding(0) @group(0)
 /// var<storage, read> s : S;
 /// var<private> p : f32 = 2.0;
 ///
@@ -45,7 +44,7 @@ namespace transform {
 ///   p = p + f;
 /// }
 ///
-/// [[stage(compute), workgroup_size(1)]]
+/// @stage(compute) @workgroup_size(1)
 /// fn main() {
 ///   foo();
 /// }
@@ -57,7 +56,7 @@ namespace transform {
 ///   *p = *p + (*sptr).f;
 /// }
 ///
-/// [[stage(compute), workgroup_size(1)]]
+/// @stage(compute) @workgroup_size(1)
 /// fn main(sptr : ptr<storage, S, read>) {
 ///   var<private> p : f32 = 2.0;
 ///   foo(&p, sptr);
@@ -71,6 +70,12 @@ class ModuleScopeVarToEntryPointParam
   /// Destructor
   ~ModuleScopeVarToEntryPointParam() override;
 
+  /// @param program the program to inspect
+  /// @param data optional extra transform-specific input data
+  /// @returns true if this transform should be run for the given program
+  bool ShouldRun(const Program* program,
+                 const DataMap& data = {}) const override;
+
  protected:
   /// Runs the transform using the CloneContext built for transforming a
   /// program. Run() is responsible for calling Clone() on the CloneContext.
@@ -78,7 +83,9 @@ class ModuleScopeVarToEntryPointParam
   /// ProgramBuilder
   /// @param inputs optional extra transform-specific input data
   /// @param outputs optional extra transform-specific output data
-  void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) override;
+  void Run(CloneContext& ctx,
+           const DataMap& inputs,
+           DataMap& outputs) const override;
 
   struct State;
 };

@@ -49,7 +49,7 @@ const (
 	dawnURL             = "https://dawn.googlesource.com/dawn"
 	tintSubdirInDawn    = "third_party/tint"
 	branchPrefix        = "chromium/"
-	branchLegacyCutoff  = 4590 // Branch numbers < than this are ignored
+	branchLegacyCutoff  = 4664 // Branch numbers < than this are ignored
 )
 
 type branches = map[string]plumbing.Hash
@@ -90,7 +90,7 @@ func run() error {
 
 	// This tool uses a mix of 'go-git' and the command line git.
 	// go-git has the benefit of keeping the git information entirely in-memory,
-	// but has issues working with chromiums tools and gerrit.
+	// but has issues working with chromium's tools and gerrit.
 	// To create new release branches in Tint, we use 'go-git', so we need to
 	// dig out the username and password.
 	var auth transport.AuthMethod

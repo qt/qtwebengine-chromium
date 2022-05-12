@@ -50,6 +50,8 @@ class QuicConnectionPeer {
 
   static QuicTime::Delta GetNetworkTimeout(QuicConnection* connection);
 
+  static QuicTime::Delta GetHandshakeTimeout(QuicConnection* connection);
+
   static void SetPerspective(QuicConnection* connection,
                              Perspective perspective);
 
@@ -165,8 +167,6 @@ class QuicConnectionPeer {
       const QuicConnectionId& server_connection_id);
 
   static size_t NumUndecryptablePackets(QuicConnection* connection);
-
-  static size_t NumPendingPathChallengesToResponse(QuicConnection* connection);
 
   static void SetConnectionClose(QuicConnection* connection);
 

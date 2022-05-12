@@ -29,7 +29,7 @@ load("//project.star", "settings")
 load("./args.star", "args")
 load("./branches.star", "branches")
 load("./bootstrap.star", "register_bootstrap")
-load("./builder_config.star", "builder_config", "register_builder_config")
+load("./builder_config.star", "register_builder_config")
 load("./recipe_experiments.star", "register_recipe_experiments_ref")
 
 ################################################################################
@@ -64,46 +64,24 @@ os = struct(
     LINUX_TRUSTY = os_enum("Ubuntu-14.04", os_category.LINUX),
     LINUX_XENIAL = os_enum("Ubuntu-16.04", os_category.LINUX),
     LINUX_BIONIC = os_enum("Ubuntu-18.04", os_category.LINUX),
-    # xenial -> bionic migration
-    # * If a builder does not already explicitly set an os value, use
-    #   LINUX_BIONIC_REMOVE or LINUX_XENIAL_OR_BIONIC_REMOVE
-    # * If a builder explicitly sets LINUX_DEFAULT, use
-    #   LINUX_BIONIC_SWITCH_TO_DEFAULT or
-    #   LINUX_XENIAL_OR_BIONIC_SWITCH_TO_DEFAULT
-    #
-    # When the migration is complete, LINUX_DEFAULT can be switched to
-    # Ubunutu-18.04, all instances of LINUX_BIONIC_REMOVE can be removed and all
-    # instances of LINUX_BIONIC_SWITCH_TO_DEFAULT can be replaced with
-    # LINUX_DEFAULT, the only changes to the generated files should be
-    # Ubuntu-16.04|Ubuntu-18.04 -> Ubuntu-18.04
-    LINUX_DEFAULT = os_enum("Ubuntu-16.04", os_category.LINUX),
-    # 100% switch to bionic
-    LINUX_BIONIC_REMOVE = os_enum("Ubuntu-18.04", os_category.LINUX),
-    LINUX_BIONIC_SWITCH_TO_DEFAULT = os_enum("Ubuntu-18.04", os_category.LINUX),
-    # Staged switch to bionic: we can gradually shift the matching capacity
-    # towards bionic and the builder will continue to run on whatever is
-    # available
-    LINUX_XENIAL_OR_BIONIC_REMOVE = os_enum(
-        "Ubuntu-16.04|Ubuntu-18.04",
-        os_category.LINUX,
-    ),
-    LINUX_XENIAL_OR_BIONIC_SWITCH_TO_DEFAULT = os_enum(
-        "Ubuntu-16.04|Ubuntu-18.04",
-        os_category.LINUX,
-    ),
+    LINUX_DEFAULT = os_enum("Ubuntu-18.04", os_category.LINUX),
     MAC_10_12 = os_enum("Mac-10.12", os_category.MAC),
     MAC_10_13 = os_enum("Mac-10.13", os_category.MAC),
     MAC_10_14 = os_enum("Mac-10.14", os_category.MAC),
     MAC_10_15 = os_enum("Mac-10.15", os_category.MAC),
     MAC_11 = os_enum("Mac-11", os_category.MAC),
+    MAC_12 = os_enum("Mac-12", os_category.MAC),
     MAC_DEFAULT = os_enum("Mac-11", os_category.MAC),
     MAC_ANY = os_enum("Mac", os_category.MAC),
+    MAC_BETA = os_enum("Mac-12", os_category.MAC),
     WINDOWS_7 = os_enum("Windows-7", os_category.WINDOWS),
     WINDOWS_8_1 = os_enum("Windows-8.1", os_category.WINDOWS),
     WINDOWS_10 = os_enum("Windows-10", os_category.WINDOWS),
     WINDOWS_10_1703 = os_enum("Windows-10-15063", os_category.WINDOWS),
-    WINDOWS_10_20h2 = os_enum("Windows-10-19042", os_category.WINDOWS),
     WINDOWS_10_1909 = os_enum("Windows-10-18363", os_category.WINDOWS),
+    WINDOWS_10_20h2 = os_enum("Windows-10-19042", os_category.WINDOWS),
+    WINDOWS_11 = os_enum("Windows-11", os_category.WINDOWS),
+    WINDOWS_11_21h2 = os_enum("Windows-11-22000", os_category.WINDOWS),
     WINDOWS_DEFAULT = os_enum("Windows-10", os_category.WINDOWS),
     WINDOWS_ANY = os_enum("Windows", os_category.WINDOWS),
 )
@@ -183,10 +161,10 @@ xcode = struct(
     x12d4e = xcode_enum("12d4e"),
     # Xcode 12.5. Requires Mac11+ OS.
     x12e262 = xcode_enum("12e262"),
-    # Default Xcode 13 for chromium iOS (release candidate).
-    x13main = xcode_enum("13a233"),
-    # Xcode 13.0 latest beta (release candidate).
-    x13latestbeta = xcode_enum("13a233"),
+    # Default Xcode 13 for chromium iOS.
+    x13main = xcode_enum("13c100"),
+    # A newer Xcode version used on beta bots.
+    x13betabots = xcode_enum("13c100"),
     # in use by ios-webkit-tot
     x13wk = xcode_enum("13a1030dwk"),
 )
@@ -200,15 +178,6 @@ _DEFAULT_BUILDERLESS_OS_CATEGORIES = [os_category.LINUX]
 # Macs all have SSDs, so it doesn't make sense to use the default behavior of
 # setting ssd:0 dimension
 _EXCLUDE_BUILDERLESS_SSD_OS_CATEGORIES = [os_category.MAC]
-
-def _chromium_tests_property(*, project_trigger_overrides):
-    chromium_tests = {}
-
-    project_trigger_overrides = defaults.get_value("project_trigger_overrides", project_trigger_overrides)
-    if project_trigger_overrides:
-        chromium_tests["project_trigger_overrides"] = project_trigger_overrides
-
-    return chromium_tests or None
 
 def _goma_property(*, goma_backend, goma_debug, goma_enable_ats, goma_jobs):
     goma_properties = {}
@@ -276,9 +245,10 @@ def _code_coverage_property(
 def _reclient_property(*, instance, service, jobs, rewrapper_env, profiler_service, publish_trace, cache_silo, ensure_verified):
     reclient = {}
     instance = defaults.get_value("reclient_instance", instance)
-    if instance:
-        reclient["instance"] = instance
-        reclient["metrics_project"] = "chromium-reclient-metrics"
+    if not instance:
+        return None
+    reclient["instance"] = instance
+    reclient["metrics_project"] = "chromium-reclient-metrics"
     service = defaults.get_value("reclient_service", service)
     if service:
         reclient["service"] = service
@@ -326,7 +296,6 @@ defaults = args.defaults(
     goma_jobs = None,
     list_view = args.COMPUTE,
     os = None,
-    project_trigger_overrides = None,
     pool = None,
     sheriff_rotations = None,
     xcode = None,
@@ -365,6 +334,8 @@ def builder(
         triggered_by = args.DEFAULT,
         os = args.DEFAULT,
         builderless = args.DEFAULT,
+        builder_cache_name = None,
+        override_builder_dimension = None,
         auto_builder_dimension = args.DEFAULT,
         fully_qualified_builder_dimension = args.DEFAULT,
         cores = args.DEFAULT,
@@ -373,13 +344,13 @@ def builder(
         builder_group = args.DEFAULT,
         builder_spec = None,
         mirrors = None,
+        try_settings = None,
         pool = args.DEFAULT,
         ssd = args.DEFAULT,
         sheriff_rotations = None,
         xcode = args.DEFAULT,
         console_view_entry = None,
         list_view = args.DEFAULT,
-        project_trigger_overrides = args.DEFAULT,
         goma_backend = args.DEFAULT,
         goma_debug = args.DEFAULT,
         goma_enable_ats = args.DEFAULT,
@@ -442,6 +413,9 @@ def builder(
         builderless: a boolean indicating whether the builder runs on
             builderless machines. If True, emits a 'builderless:1' dimension. By
             default, considered True iff `os` refers to a linux OS.
+        override_builder_dimension: a string to assign to the "builder"
+            dimension. Ignores any other "builder" and "builderless" dimensions
+            that would have been assigned.
         auto_builder_dimension: a boolean indicating whether the builder runs on
             machines devoted to the builder. If True, a dimension will be
             emitted of the form 'builder:<name>'. By default, considered True
@@ -459,6 +433,8 @@ def builder(
             Cannot be set if `mirrors` is set.
         mirrors: References to the builders that the builder should mirror.
             Cannot be set if `builder_spec` is set.
+        try_settings: Try-builder-specific settings, can only be set if
+            `mirrors` is set.
         cores: an int indicating the number of cores the builder requires for
             the machines that run it. Emits a dimension of the form
             'cores:<cores>' will be emitted. By default, considered None.
@@ -490,11 +466,6 @@ def builder(
         list_view: A string or a list of strings identifying the ID(s) of the
             list view(s) to add an entry to. Supports a module-level default
             that defaults to no list views.
-        project_trigger_overrides: a dict mapping the LUCI projects declared in
-            recipe BotSpecs to the LUCI project to use when triggering builders.
-            When this builder triggers another builder, if the BotSpec for that
-            builder has a LUCI project that is a key in this mapping, the
-            corresponding value will be used instead.
         goma_backend: a member of the `goma.backend` enum indicating the goma
             backend the builder should use. Will be incorporated into the
             '$build/goma' property. By default, considered None.
@@ -542,18 +513,23 @@ def builder(
             instance for re-client to use.
         reclient_service: a string indicating the RBE service to dial via gRPC.
             By default, this is "remotebuildexecution.googleapis.com:443" (set
-            in the reclient recipe module).
+            in the reclient recipe module). Has no effect if reclient_instance
+            is not set.
         reclient_jobs: an integer indicating the number of concurrent
-            compilations to run when using re-client as the compiler.
+            compilations to run when using re-client as the compiler. Has no
+            effect if reclient_instance is not set.
         reclient_rewrapper_env: a map that sets the rewrapper flags via the
             environment variables. All such vars must start with the "RBE_"
-            prefix.
+            prefix. Has no effect if reclient_instance is not set.
         reclient_profiler_service: a string indicating service name for
-            re-client's cloud profiler.
-        reclient_publish_trace: If True, it publish trace by rpl2cloudtrace.
+            re-client's cloud profiler. Has no effect if reclient_instance is
+            not set.
+        reclient_publish_trace: If True, it publish trace by rpl2cloudtrace. Has
+            no effect if reclient_instance is not set.
         reclient_cache_silo: A string indicating a cache siling key to use for
-            remote caching.
-        reclient_ensure_verified: If True, it verifies build artifacts.
+            remote caching. Has no effect if reclient_instance is not set.
+        reclient_ensure_verified: If True, it verifies build artifacts. Has no
+            effect if reclient_instance is not set.
         **kwargs: Additional keyword arguments to forward on to `luci.builder`.
 
     Returns:
@@ -568,6 +544,8 @@ def builder(
 
     if builder_spec and mirrors:
         fail("Only one of builder_spec or mirrors can be set")
+    if try_settings and not (builder_spec or mirrors):
+        fail("try_settings can only be set if builder_spec or mirrors is set")
 
     dimensions = {}
 
@@ -591,30 +569,40 @@ def builder(
     if os:
         dimensions["os"] = os.dimension
 
-    builderless = defaults.get_value("builderless", builderless)
-    if builderless == args.COMPUTE:
-        builderless = os != None and os.category in _DEFAULT_BUILDERLESS_OS_CATEGORIES
-    if builderless:
-        dimensions["builderless"] = "1"
-
     # bucket might be the args.COMPUTE sentinel value if the caller didn't set
     # bucket in some way, which will result in a weird fully-qualified builder
     # dimension, but it shouldn't matter because the call to luci.builder will
     # fail without bucket being set
     bucket = defaults.get_value("bucket", bucket)
 
-    auto_builder_dimension = defaults.get_value(
-        "auto_builder_dimension",
-        auto_builder_dimension,
-    )
-    if auto_builder_dimension == args.COMPUTE:
-        auto_builder_dimension = builderless == False
-    if auto_builder_dimension:
-        fully_qualified_builder_dimension = defaults.get_value("fully_qualified_builder_dimension", fully_qualified_builder_dimension)
-        if fully_qualified_builder_dimension:
-            dimensions["builder"] = "{}/{}/{}".format(settings.project, bucket, name)
-        else:
-            dimensions["builder"] = name
+    if override_builder_dimension:
+        dimensions["builder"] = override_builder_dimension
+    else:
+        builderless = defaults.get_value("builderless", builderless)
+        if builderless == args.COMPUTE:
+            builderless = os != None and os.category in _DEFAULT_BUILDERLESS_OS_CATEGORIES
+        if builderless:
+            dimensions["builderless"] = "1"
+
+        auto_builder_dimension = defaults.get_value(
+            "auto_builder_dimension",
+            auto_builder_dimension,
+        )
+        if auto_builder_dimension == args.COMPUTE:
+            auto_builder_dimension = builderless == False
+        if auto_builder_dimension:
+            fully_qualified_builder_dimension = defaults.get_value("fully_qualified_builder_dimension", fully_qualified_builder_dimension)
+            if fully_qualified_builder_dimension:
+                dimensions["builder"] = "{}/{}/{}".format(settings.project, bucket, name)
+            else:
+                dimensions["builder"] = name
+
+    if builder_cache_name:
+        kwargs.setdefault("caches", []).append(swarming.cache(
+            name = builder_cache_name,
+            path = "builder",
+            wait_for_warm_cache = 4 * time.minute,
+        ))
 
     cores = defaults.get_value("cores", cores)
     if cores != None:
@@ -644,12 +632,6 @@ def builder(
             ssd = False
     if ssd != None:
         dimensions["ssd"] = str(int(ssd))
-
-    chromium_tests = _chromium_tests_property(
-        project_trigger_overrides = project_trigger_overrides,
-    )
-    if chromium_tests != None:
-        properties["$build/chromium_tests"] = chromium_tests
 
     goma_enable_ats = defaults.get_value("goma_enable_ats", goma_enable_ats)
 
@@ -715,11 +697,6 @@ def builder(
             by_timestamp = resultdb_index_by_timestamp,
         )
 
-    if builder_spec and builder_spec.execution_mode == builder_config.execution_mode.TEST:
-        if triggered_by != args.DEFAULT:
-            fail("triggered testers cannot specify triggered_by")
-        triggered_by = [builder_spec.parent]
-
     kwargs["notifies"] = defaults.get_value("notifies", notifies, merge = args.MERGE_LIST)
 
     triggered_by = defaults.get_value("triggered_by", triggered_by)
@@ -749,7 +726,7 @@ def builder(
 
     register_recipe_experiments_ref(bucket, name, executable)
 
-    register_builder_config(bucket, name, builder_group, builder_spec, mirrors)
+    register_builder_config(bucket, name, builder_group, builder_spec, mirrors, try_settings)
 
     register_bootstrap(bucket, name, bootstrap, executable)
 

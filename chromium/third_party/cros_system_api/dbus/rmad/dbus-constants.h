@@ -16,10 +16,8 @@ const char kGetCurrentStateMethod[] = "GetCurrentState";
 const char kTransitionNextStateMethod[] = "TransitionNextState";
 const char kTransitionPreviousStateMethod[] = "TransitionPreviousState";
 const char kAbortRmaMethod[] = "AbortRma";
-// Legacy method. Keep it to be compatible with Chrome.
-// TODO(chenghan): Remove it in the future.
-const char kGetLogPathMethod[] = "GetLogPath";
 const char kGetLogMethod[] = "GetLog";
+const char kSaveLogMethod[] = "SaveLog";
 
 // Signals.
 const char kErrorSignal[] = "Error";

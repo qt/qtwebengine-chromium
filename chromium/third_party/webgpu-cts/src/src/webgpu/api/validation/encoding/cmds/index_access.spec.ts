@@ -1,10 +1,5 @@
 export const description = `
-indexed draws validation tests.
-
-TODO: Implement robustness test or operation test for drawIndexedIndirect. This validation test
-only test that drawIndexed can catch index buffer OOB and generate a validation error, but for
-drawIndexedIndirect no CPU validation is available, and the robustness access in that case should
-be tested.
+Validation tests for indexed draws accessing the index buffer.
 `;
 
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
@@ -20,7 +15,7 @@ class F extends ValidationTest {
       vertex: {
         module: this.device.createShaderModule({
           code: `
-            [[stage(vertex)]] fn main() -> [[builtin(position)]] vec4<f32> {
+            @stage(vertex) fn main() -> @builtin(position) vec4<f32> {
               return vec4<f32>(0.0, 0.0, 0.0, 1.0);
             }`,
         }),
@@ -29,7 +24,7 @@ class F extends ValidationTest {
       fragment: {
         module: this.device.createShaderModule({
           code: `
-            [[stage(fragment)]] fn main() -> [[location(0)]] vec4<f32> {
+            @stage(fragment) fn main() -> @location(0) vec4<f32> {
               return vec4<f32>(0.0, 1.0, 0.0, 1.0);
             }`,
         }),

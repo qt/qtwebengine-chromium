@@ -31,13 +31,13 @@ namespace transform {
 /// Before:
 /// ```
 /// struct Locations{
-///   [[location(1)]] loc1 : f32;
-///   [[location(2)]] loc2 : vec4<u32>;
+///   @location(1) loc1 : f32;
+///   @location(2) loc2 : vec4<u32>;
 /// };
 ///
-/// [[stage(fragment)]]
-/// fn frag_main([[builtin(position)]] coord : vec4<f32>,
-///              locations : Locations) -> [[location(0)]] f32 {
+/// @stage(fragment)
+/// fn frag_main(@builtin(position) coord : vec4<f32>,
+///              locations : Locations) -> @location(0) f32 {
 ///   if (coord.w > 1.0) {
 ///     return 0.0;
 ///   }
@@ -54,13 +54,13 @@ namespace transform {
 /// };
 ///
 /// struct frag_main_in {
-///   [[builtin(position)]] coord : vec4<f32>;
-///   [[location(1)]] loc1 : f32;
-///   [[location(2)]] loc2 : vec4<u32>
+///   @builtin(position) coord : vec4<f32>;
+///   @location(1) loc1 : f32;
+///   @location(2) loc2 : vec4<u32>
 /// };
 ///
 /// struct frag_main_out {
-///   [[location(0)]] loc0 : f32;
+///   @location(0) loc0 : f32;
 /// };
 ///
 /// fn frag_main_inner(coord : vec4<f32>,
@@ -72,7 +72,7 @@ namespace transform {
 ///   return col;
 /// }
 ///
-/// [[stage(fragment)]]
+/// @stage(fragment)
 /// fn frag_main(in : frag_main_in) -> frag_main_out {
 ///   let inner_retval = frag_main_inner(in.coord, Locations(in.loc1, in.loc2));
 ///   var wrapper_result : frag_main_out;
@@ -80,6 +80,9 @@ namespace transform {
 ///   return wrapper_result;
 /// }
 /// ```
+///
+/// @note Depends on the following transforms to have been run first:
+/// * Unshadow
 class CanonicalizeEntryPointIO
     : public Castable<CanonicalizeEntryPointIO, Transform> {
  public:
@@ -87,6 +90,8 @@ class CanonicalizeEntryPointIO
   enum class ShaderStyle {
     /// Target SPIR-V (using global variables).
     kSpirv,
+    /// Target GLSL (using global variables).
+    kGlsl,
     /// Target MSL (using non-struct function parameters for builtins).
     kMsl,
     /// Target HLSL (using structures for all IO).
@@ -131,7 +136,9 @@ class CanonicalizeEntryPointIO
   /// ProgramBuilder
   /// @param inputs optional extra transform-specific input data
   /// @param outputs optional extra transform-specific output data
-  void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) override;
+  void Run(CloneContext& ctx,
+           const DataMap& inputs,
+           DataMap& outputs) const override;
 
   struct State;
 };

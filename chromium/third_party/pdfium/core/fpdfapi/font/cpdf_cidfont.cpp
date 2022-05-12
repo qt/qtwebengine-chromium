@@ -132,14 +132,17 @@ constexpr CIDTransform kJapan1VerticalCIDs[] = {
     {8818, 0, 129, 127, 0, 19, 114}, {8819, 0, 129, 127, 0, 218, 108},
 };
 
-// Boundary values to avoid integer overflow when multiplied by 1000.
-constexpr long kMinCBox = -2147483;
-constexpr long kMaxCBox = 2147483;
-
 // Boundary value to avoid integer overflow when adding 1/64th of the value.
 constexpr int kMaxRectTop = 2114445437;
 
-#if !defined(OS_WIN)
+int FTPosToCBoxInt(FT_Pos pos) {
+  // Boundary values to avoid integer overflow when multiplied by 1000.
+  constexpr FT_Pos kMinCBox = -2147483;
+  constexpr FT_Pos kMaxCBox = 2147483;
+  return static_cast<int>(pdfium::clamp(pos, kMinCBox, kMaxCBox));
+}
+
+#if !BUILDFLAG(IS_WIN)
 
 bool IsValidEmbeddedCharcodeFromUnicodeCharset(CIDSet charset) {
   switch (charset) {
@@ -187,7 +190,7 @@ uint32_t EmbeddedCharcodeFromUnicode(const FXCMAP_CMap* pEmbedMap,
   return 0;
 }
 
-#endif  // !defined(OS_WIN)
+#endif  // !BUILDFLAG(IS_WIN)
 
 void FT_UseCIDCharmap(FXFT_FaceRec* face, CIDCoding coding) {
   int encoding;
@@ -324,7 +327,7 @@ wchar_t CPDF_CIDFont::GetUnicodeFromCharCode(uint32_t charcode) const {
   if (m_pCID2UnicodeMap && m_pCID2UnicodeMap->IsLoaded() && m_pCMap->IsLoaded())
     return m_pCID2UnicodeMap->UnicodeFromCID(CIDFromCharCode(charcode));
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   wchar_t unicode;
   int charsize = 1;
   if (charcode > 255) {
@@ -376,7 +379,7 @@ uint32_t CPDF_CIDFont::CharCodeFromUnicode(wchar_t unicode) const {
     return static_cast<uint32_t>(unicode);
   if (m_pCMap->GetCoding() == CIDCoding::kCID)
     return 0;
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   uint8_t buffer[32];
   size_t ret = FX_WideCharToMultiByte(
       kCharsetCodePages[static_cast<size_t>(m_pCMap->GetCoding())],
@@ -518,19 +521,18 @@ FX_RECT CPDF_CIDFont::GetCharBBox(uint32_t charcode) {
         if (!err) {
           FT_BBox cbox;
           FT_Glyph_Get_CBox(glyph, FT_GLYPH_BBOX_PIXELS, &cbox);
-          cbox.xMin = pdfium::clamp(cbox.xMin, kMinCBox, kMaxCBox);
-          cbox.xMax = pdfium::clamp(cbox.xMax, kMinCBox, kMaxCBox);
-          cbox.yMin = pdfium::clamp(cbox.yMin, kMinCBox, kMaxCBox);
-          cbox.yMax = pdfium::clamp(cbox.yMax, kMinCBox, kMaxCBox);
-          int pixel_size_x = face->size->metrics.x_ppem;
-          int pixel_size_y = face->size->metrics.y_ppem;
+          const int xMin = FTPosToCBoxInt(cbox.xMin);
+          const int xMax = FTPosToCBoxInt(cbox.xMax);
+          const int yMin = FTPosToCBoxInt(cbox.yMin);
+          const int yMax = FTPosToCBoxInt(cbox.yMax);
+          const int pixel_size_x = face->size->metrics.x_ppem;
+          const int pixel_size_y = face->size->metrics.y_ppem;
           if (pixel_size_x == 0 || pixel_size_y == 0) {
-            rect = FX_RECT(cbox.xMin, cbox.yMax, cbox.xMax, cbox.yMin);
+            rect = FX_RECT(xMin, yMax, xMax, yMin);
           } else {
-            rect = FX_RECT(cbox.xMin * 1000 / pixel_size_x,
-                           cbox.yMax * 1000 / pixel_size_y,
-                           cbox.xMax * 1000 / pixel_size_x,
-                           cbox.yMin * 1000 / pixel_size_y);
+            rect =
+                FX_RECT(xMin * 1000 / pixel_size_x, yMax * 1000 / pixel_size_y,
+                        xMax * 1000 / pixel_size_x, yMin * 1000 / pixel_size_y);
           }
           rect.top = std::min(rect.top,
                               static_cast<int>(FXFT_Get_Face_Ascender(face)));
@@ -679,7 +681,7 @@ int CPDF_CIDFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
     uint16_t cid = CIDFromCharCode(charcode);
     wchar_t unicode = 0;
     if (m_bCIDIsGID) {
-#if defined(OS_APPLE)
+#if BUILDFLAG(IS_APPLE)
       if (FontStyleIsSymbolic(m_Flags))
         return cid;
 
@@ -744,7 +746,7 @@ int CPDF_CIDFont::GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) {
     if (m_Charset == CIDSET_JAPAN1) {
       if (unicode == '\\') {
         unicode = '/';
-#if !defined(OS_APPLE)
+#if !BUILDFLAG(IS_APPLE)
       } else if (unicode == 0xa5) {
         unicode = 0x5c;
 #endif

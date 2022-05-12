@@ -292,6 +292,19 @@ void dumpVec4(const char *note, vec4 vector) {
     fflush(stdout);
 }
 
+char const* to_string(VkPhysicalDeviceType const type)
+{
+    switch(type)
+    {
+        case VK_PHYSICAL_DEVICE_TYPE_OTHER: return "Other";
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "IntegratedGpu";
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "DiscreteGpu";
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "VirtualGpu";
+        case VK_PHYSICAL_DEVICE_TYPE_CPU: return "Cpu";
+        default: return "Unknown";
+    }
+}
+
 typedef struct {
     VkImage image;
     VkCommandBuffer cmd;
@@ -3419,8 +3432,8 @@ static void demo_init_vk(struct demo *demo) {
     {
         VkPhysicalDeviceProperties physicalDeviceProperties;
         vkGetPhysicalDeviceProperties(demo->gpu, &physicalDeviceProperties);
-        fprintf(stderr, "Selected GPU %d: %s, type: %u\n", demo->gpu_number, physicalDeviceProperties.deviceName,
-                physicalDeviceProperties.deviceType);
+        fprintf(stderr, "Selected GPU %d: %s, type: %s\n", demo->gpu_number, physicalDeviceProperties.deviceName,
+                to_string(physicalDeviceProperties.deviceType));
     }
     free(physical_devices);
 
@@ -3925,7 +3938,7 @@ static void demo_init_connection(struct demo *demo) {
 
     demo->connection = xcb_connect(NULL, &scr);
     if (xcb_connection_has_error(demo->connection) > 0) {
-        printf("Cannot find a compatible Vulkan installable client driver (ICD).\nExiting ...\n");
+        printf("Cannot connect to XCB.\nExiting ...\n");
         fflush(stdout);
         exit(1);
     }
@@ -3939,7 +3952,7 @@ static void demo_init_connection(struct demo *demo) {
     demo->display = wl_display_connect(NULL);
 
     if (demo->display == NULL) {
-        printf("Cannot find a compatible Vulkan installable client driver (ICD).\nExiting ...\n");
+        printf("Cannot connect to wayland.\nExiting ...\n");
         fflush(stdout);
         exit(1);
     }

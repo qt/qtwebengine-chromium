@@ -6,6 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
@@ -116,6 +117,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
   private prompt: CSSPropertyPrompt|null;
   private lastComputedValue: string|null;
   private contextForTest!: Context|undefined;
+  #propertyTextFromSource: string;
 
   constructor(
       stylesPane: StylesSidebarPane, matchedStyles: SDK.CSSMatchedStyles.CSSMatchedStyles,
@@ -145,6 +147,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.prompt = null;
 
     this.lastComputedValue = null;
+
+    this.#propertyTextFromSource = property.propertyText || '';
   }
 
   matchedStyles(): SDK.CSSMatchedStyles.CSSMatchedStyles {
@@ -184,7 +188,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     const matches = regex !== null && (regex.test(this.property.name) || regex.test(this.property.value));
     this.listItemElement.classList.toggle('filter-match', matches);
 
-    this.onpopulate();
+    void this.onpopulate();
     let hasMatchingChildren = false;
 
     for (let i = 0; i < this.childCount(); ++i) {
@@ -235,7 +239,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     swatch.addEventListener(InlineEditor.ColorSwatch.FormatChangedEvent.eventName, onFormatchanged);
 
     if (this.editable()) {
-      this.addColorContrastInfo(swatch);
+      void this.addColorContrastInfo(swatch);
     }
 
     return swatch;
@@ -429,7 +433,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
 
       valueElement.textContent = data.value;
       this.parentPaneInternal.setEditingStyle(true);
-      this.applyStyleText(this.renderedPropertyText(), false);
+      void this.applyStyleText(this.renderedPropertyText(), false);
     };
 
     const onDraggingFinished = (): void => {
@@ -477,6 +481,8 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     } else {
       this.listItemElement.classList.remove('disabled');
     }
+
+    this.listItemElement.classList.toggle('changed', this.isPropertyChanged(this.property));
   }
 
   node(): SDK.DOMModel.DOMNode|null {
@@ -519,6 +525,14 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.matchedStylesInternal.resetActiveProperties();
     this.updatePane();
     this.styleTextAppliedForTest();
+  }
+
+  private isPropertyChanged(property: SDK.CSSProperty.CSSProperty): boolean {
+    if (!Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.STYLES_PANE_CSS_CHANGES)) {
+      return false;
+    }
+    // Check local cache first, then check against diffs from the workspace.
+    return this.#propertyTextFromSource !== property.propertyText || this.parentPane().isPropertyChanged(property);
   }
 
   async onpopulate(): Promise<void> {
@@ -692,7 +706,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       this.listItemElement.insertBefore(
           StylesSidebarPane.createExclamationMark(this.property, null), this.listItemElement.firstChild);
     } else {
-      this.updateFontVariationSettingsWarning();
+      void this.updateFontVariationSettingsWarning();
     }
 
     if (!this.property.activeInStyle()) {
@@ -707,13 +721,21 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       enabledCheckboxElement.checked = !this.property.disabled;
       enabledCheckboxElement.addEventListener('mousedown', event => event.consume(), false);
       enabledCheckboxElement.addEventListener('click', event => {
-        this.toggleDisabled(!this.property.disabled);
+        void this.toggleDisabled(!this.property.disabled);
         event.consume();
       }, false);
       if (this.nameElement && this.valueElement) {
         UI.ARIAUtils.setAccessibleName(
             enabledCheckboxElement, `${this.nameElement.textContent} ${this.valueElement.textContent}`);
       }
+
+      const copyIcon = UI.Icon.Icon.create('largeicon-copy', 'copy');
+      UI.Tooltip.Tooltip.install(copyIcon, i18nString(UIStrings.copyDeclaration));
+      copyIcon.addEventListener('click', () => {
+        const propertyText = `${this.property.name}: ${this.property.value};`;
+        Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(propertyText);
+      });
+      this.listItemElement.append(copyIcon);
       this.listItemElement.insertBefore(enabledCheckboxElement, this.listItemElement.firstChild);
     }
   }
@@ -811,7 +833,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     }
     const revealCallback = this.navigateToSource.bind(this) as () => void;
     contextMenu.defaultSection().appendItem(i18nString(UIStrings.revealInSourcesPanel), revealCallback);
-    contextMenu.show();
+    void contextMenu.show();
   }
 
   private handleCopyContextMenuEvent(event: Event): void {
@@ -848,7 +870,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     });
 
     contextMenu.defaultSection().appendItem(i18nString(UIStrings.viewComputedValue), () => {
-      this.viewComputedValue();
+      void this.viewComputedValue();
     });
 
     contextMenu.clipboardSection().appendItem(
@@ -857,7 +879,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     contextMenu.defaultSection().appendItem(
         i18nString(UIStrings.copyAllCssDeclarationsAsJs), this.copyAllCssDeclarationAsJs.bind(this));
 
-    contextMenu.show();
+    void contextMenu.show();
   }
 
   private async viewComputedValue(): Promise<void> {
@@ -903,7 +925,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     const uiLocation = Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance().propertyUILocation(
         this.property, propertyNameClicked);
     if (uiLocation) {
-      Common.Revealer.reveal(uiLocation, omitFocus);
+      void Common.Revealer.reveal(uiLocation, omitFocus);
     }
   }
 
@@ -1027,7 +1049,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       }
 
       const target = (event.target as HTMLElement);
-      this.editingCommitted(target.textContent || '', context, 'forward');
+      void this.editingCommitted(target.textContent || '', context, 'forward');
     }
 
     function blurListener(this: StylePropertyTreeElement, context: Context, event: Event): void {
@@ -1036,7 +1058,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       if (!context.isEditingName) {
         text = this.value || text;
       }
-      this.editingCommitted(text || '', context, '');
+      void this.editingCommitted(text || '', context, '');
     }
 
     this.originalPropertyText = this.property.propertyText || '';
@@ -1050,7 +1072,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.prompt.setAutocompletionTimeout(0);
 
     this.prompt.addEventListener(UI.TextPrompt.Events.TextChanged, _event => {
-      this.applyFreeFlowStyleTextEdit(context);
+      void this.applyFreeFlowStyleTextEdit(context);
     });
 
     const invalidString = this.property.getInvalidStringForInvalidProperty();
@@ -1111,7 +1133,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
           break;
         case 'forward':
         case 'backward':
-          this.editingCommitted(target.textContent || '', context, result);
+          void this.editingCommitted(target.textContent || '', context, result);
           break;
       }
 
@@ -1149,7 +1171,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     if (isFieldInputTerminated) {
       // Enter or colon (for name)/semicolon outside of string (for value).
       event.consume(true);
-      this.editingCommitted(target.textContent || '', context, 'forward');
+      void this.editingCommitted(target.textContent || '', context, 'forward');
       return;
     }
   }
@@ -1161,7 +1183,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
 
     const enteredText = this.prompt.text();
     if (context.isEditingName && enteredText.includes(':')) {
-      this.editingCommitted(enteredText, context, 'forward');
+      void this.editingCommitted(enteredText, context, 'forward');
       return;
     }
 
@@ -1220,7 +1242,7 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
     this.removePrompt();
 
     if (this.hasBeenEditedIncrementally) {
-      this.applyOriginalStyle(context);
+      void this.applyOriginalStyle(context);
     } else if (this.newProperty && this.treeOutline) {
       this.treeOutline.removeChild(this);
     }
@@ -1469,6 +1491,9 @@ export class StylePropertyTreeElement extends UI.TreeOutline.TreeElement {
       }
       this.styleTextAppliedForTest();
       return;
+    }
+    if (updatedProperty) {
+      this.listItemElement.classList.toggle('changed', this.isPropertyChanged(updatedProperty));
     }
 
     this.matchedStylesInternal.resetActiveProperties();

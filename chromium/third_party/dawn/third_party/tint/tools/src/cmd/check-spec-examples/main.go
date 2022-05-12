@@ -197,12 +197,13 @@ type example struct {
 // tryCompile attempts to compile the example e in the directory wd, using the
 // compiler at the given path. If the example is annotated with 'function-scope'
 // then the code is wrapped with a basic vertex-stage-entry function.
-// If the first compile fails then a dummy vertex-state-entry function is
-// appended to the source, and another attempt to compile the shader is made.
+// If the first compile fails then a placeholder vertex-state-entry
+// function is appended to the source, and another attempt to compile
+// the shader is made.
 func tryCompile(compiler, wd string, e example) error {
 	code := e.code
 	if e.functionScope {
-		code = "\n[[stage(vertex)]] fn main() -> [[builtin(position)]] vec4<f32> {\n" + code + " return vec4<f32>();}\n"
+		code = "\n@stage(vertex) fn main() -> @builtin(position) vec4<f32> {\n" + code + " return vec4<f32>();}\n"
 	}
 
 	addedStubFunction := false
@@ -213,7 +214,7 @@ func tryCompile(compiler, wd string, e example) error {
 		}
 
 		if !addedStubFunction {
-			code += "\n[[stage(vertex)]] fn main() {}\n"
+			code += "\n@stage(vertex) fn main() {}\n"
 			addedStubFunction = true
 			continue
 		}

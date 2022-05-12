@@ -19,7 +19,7 @@
 #include "media/media_buildflags.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
 #endif
 
@@ -38,7 +38,7 @@ const bool kUsePropCodecs = false;
 // all cases except for when paired with the Opus codec.
 const char kTestMimeType[] = "foo/foo";
 
-#if defined(OS_ANDROID) && BUILDFLAG(USE_PROPRIETARY_CODECS)
+#if BUILDFLAG(IS_ANDROID) && BUILDFLAG(USE_PROPRIETARY_CODECS)
 // HLS is supported on Android API level 14 and higher and Chrome supports
 // API levels 15 and higher, so HLS is always supported on Android.
 const bool kHlsSupported = true;
@@ -506,7 +506,7 @@ TEST(MimeUtilTest, ParseVideoCodecString_SimpleCodecsHaveProfiles) {
   EXPECT_EQ(VideoColorSpace::REC709(), out_colorspace);
 
 // Valid Theora string.
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // Theora not supported on Android.
   EXPECT_FALSE(ParseVideoCodecString("video/ogg", "theora", &out_is_ambiguous,
                                      &out_codec, &out_profile, &out_level,
@@ -588,6 +588,11 @@ TEST(IsCodecSupportedOnAndroidTest, EncryptedCodecBehavior) {
           case MimeUtil::AV1:
             EXPECT_EQ(BUILDFLAG(ENABLE_AV1_DECODER), result);
             break;
+
+          case MimeUtil::DTS:
+          case MimeUtil::DTSXP2:
+            EXPECT_EQ(BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO), result);
+            break;
         }
       });
 }
@@ -648,6 +653,11 @@ TEST(IsCodecSupportedOnAndroidTest, ClearCodecBehavior) {
 
           case MimeUtil::AV1:
             EXPECT_EQ(BUILDFLAG(ENABLE_AV1_DECODER), result);
+            break;
+
+          case MimeUtil::DTS:
+          case MimeUtil::DTSXP2:
+            EXPECT_EQ(BUILDFLAG(ENABLE_PLATFORM_DTS_AUDIO), result);
             break;
         }
       });

@@ -122,14 +122,16 @@ class RtpSenderReceiverTest
     rtp_transport_ = CreateDtlsSrtpTransport();
 
     voice_channel_ = channel_manager_->CreateVoiceChannel(
-        &fake_call_, cricket::MediaConfig(), rtp_transport_.get(),
-        rtc::Thread::Current(), cricket::CN_AUDIO, srtp_required,
-        webrtc::CryptoOptions(), &ssrc_generator_, cricket::AudioOptions());
+        &fake_call_, cricket::MediaConfig(), cricket::CN_AUDIO, srtp_required,
+        webrtc::CryptoOptions(), cricket::AudioOptions());
     video_channel_ = channel_manager_->CreateVideoChannel(
-        &fake_call_, cricket::MediaConfig(), rtp_transport_.get(),
-        rtc::Thread::Current(), cricket::CN_VIDEO, srtp_required,
-        webrtc::CryptoOptions(), &ssrc_generator_, cricket::VideoOptions(),
+        &fake_call_, cricket::MediaConfig(), cricket::CN_VIDEO, srtp_required,
+        webrtc::CryptoOptions(), cricket::VideoOptions(),
         video_bitrate_allocator_factory_.get());
+
+    voice_channel_->SetRtpTransport(rtp_transport_.get());
+    video_channel_->SetRtpTransport(rtp_transport_.get());
+
     voice_channel_->Enable(true);
     video_channel_->Enable(true);
     voice_media_channel_ = media_engine_->GetVoiceChannel(0);
@@ -169,8 +171,12 @@ class RtpSenderReceiverTest
     local_stream_ = nullptr;
     video_track_ = nullptr;
     audio_track_ = nullptr;
-    worker_thread_->Invoke<void>(RTC_FROM_HERE,
-                                 [&]() { channel_manager_.reset(); });
+
+    voice_channel_->SetRtpTransport(nullptr);
+    video_channel_->SetRtpTransport(nullptr);
+
+    channel_manager_->DestroyChannel(voice_channel_);
+    channel_manager_->DestroyChannel(video_channel_);
   }
 
   std::unique_ptr<webrtc::RtpTransportInternal> CreateDtlsSrtpTransport() {
@@ -531,7 +537,6 @@ class RtpSenderReceiverTest
   rtc::scoped_refptr<VideoTrackInterface> video_track_;
   rtc::scoped_refptr<AudioTrackInterface> audio_track_;
   bool audio_sender_destroyed_signal_fired_ = false;
-  rtc::UniqueRandomIdGenerator ssrc_generator_;
 };
 
 // Test that `voice_channel_` is updated when an audio track is associated
@@ -577,7 +582,7 @@ TEST_F(RtpSenderReceiverTest, LocalAudioSourceOptionsApplied) {
   cricket::AudioOptions options;
   options.echo_cancellation = true;
   auto source = LocalAudioSource::Create(&options);
-  CreateAudioRtpSender(source.get());
+  CreateAudioRtpSender(source);
 
   EXPECT_EQ(true, voice_media_channel_->options().echo_cancellation);
 

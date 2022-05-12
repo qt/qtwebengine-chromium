@@ -21,10 +21,10 @@ GPUComputePipeline.`
       compute: {
         module: t.device.createShaderModule({
           code: `
-            [[block]] struct Buffer { data: array<u32>; };
-            [[group(0), binding(0)]] var<storage, read_write> buffer: Buffer;
-            [[stage(compute), workgroup_size(1)]] fn main(
-                [[builtin(global_invocation_id)]] id: vec3<u32>) {
+            struct Buffer { data: array<u32>; };
+            @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
+            @stage(compute) @workgroup_size(1) fn main(
+                @builtin(global_invocation_id) id: vec3<u32>) {
               buffer.data[id.x] = buffer.data[id.x] + 1u;
             }
           `,
@@ -66,9 +66,9 @@ GPUComputePipeline.`
     const stages = iterRange(kNumIterations, i => ({
       module: t.device.createShaderModule({
         code: `
-        [[block]] struct Buffer { data: u32; };
-        [[group(0), binding(0)]] var<storage, read_write> buffer: Buffer;
-        [[stage(compute), workgroup_size(1)]] fn main${i}() {
+        struct Buffer { data: u32; };
+        @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
+        @stage(compute) @workgroup_size(1) fn main${i}() {
           buffer.data = buffer.data + 1u;
         }
         `,
@@ -110,11 +110,11 @@ groups.`
     );
     const module = t.device.createShaderModule({
       code: `
-        [[block]] struct Buffer { data: array<u32>; };
-        [[group(0), binding(0)]] var<storage, read_write> buffer1: Buffer;
-        [[group(0), binding(1)]] var<storage, read_write> buffer2: Buffer;
-        [[stage(compute), workgroup_size(1)]] fn main(
-            [[builtin(global_invocation_id)]] id: vec3<u32>) {
+        struct Buffer { data: array<u32>; };
+        @group(0) @binding(0) var<storage, read_write> buffer1: Buffer;
+        @group(0) @binding(1) var<storage, read_write> buffer2: Buffer;
+        @stage(compute) @workgroup_size(1) fn main(
+            @builtin(global_invocation_id) id: vec3<u32>) {
           buffer1.data[id.x] = buffer1.data[id.x] + 1u;
           buffer2.data[id.x] = buffer2.data[id.x] + 2u;
         }
@@ -159,10 +159,10 @@ g.test('many_dispatches')
     const buffer = t.makeBufferWithContents(data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const module = t.device.createShaderModule({
       code: `
-        [[block]] struct Buffer { data: array<u32>; };
-        [[group(0), binding(0)]] var<storage, read_write> buffer: Buffer;
-        [[stage(compute), workgroup_size(1)]] fn main(
-            [[builtin(global_invocation_id)]] id: vec3<u32>) {
+        struct Buffer { data: array<u32>; };
+        @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
+        @stage(compute) @workgroup_size(1) fn main(
+            @builtin(global_invocation_id) id: vec3<u32>) {
           buffer.data[id.x] = buffer.data[id.x] + 1u;
         }
       `,
@@ -201,10 +201,10 @@ g.test('huge_dispatches')
     const buffer = t.makeBufferWithContents(data, GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC);
     const module = t.device.createShaderModule({
       code: `
-        [[block]] struct Buffer { data: array<u32>; };
-        [[group(0), binding(0)]] var<storage, read_write> buffer: Buffer;
-        [[stage(compute), workgroup_size(1)]] fn main(
-            [[builtin(global_invocation_id)]] id: vec3<u32>) {
+        struct Buffer { data: array<u32>; };
+        @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
+        @stage(compute) @workgroup_size(1) fn main(
+            @builtin(global_invocation_id) id: vec3<u32>) {
           let index = (id.z * 512u + id.y) * 512u + id.x;
           buffer.data[index] = buffer.data[index] + 1u;
         }

@@ -149,9 +149,6 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // encryption level |level|.
   virtual size_t BufferSizeLimitForLevel(EncryptionLevel level) const;
 
-  // Returns whether the implementation supports key update.
-  virtual bool KeyUpdateSupportedLocally() const = 0;
-
   // Called to generate a decrypter for the next key phase. Each call should
   // generate the key for phase n+1.
   virtual std::unique_ptr<QuicDecrypter>
@@ -244,6 +241,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoStream : public QuicStream {
   // passed to ProcessInput as consumed.
   virtual void OnDataAvailableInSequencer(QuicStreamSequencer* sequencer,
                                           EncryptionLevel level);
+
+  QuicStreamSequencer* GetStreamSequencerForLevel(EncryptionLevel level) {
+    return &substreams_[level].sequencer;
+  }
 
  private:
   // Data sent and received in CRYPTO frames is sent at multiple encryption

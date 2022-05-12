@@ -4,6 +4,7 @@
 """Definitions of builders in the tryserver.chromium.android builder group."""
 
 load("//lib/branches.star", "branches")
+load("//lib/builder_config.star", "builder_config")
 load("//lib/builders.star", "goma", "os")
 load("//lib/try.star", "try_")
 load("//lib/consoles.star", "consoles")
@@ -18,7 +19,7 @@ try_.defaults.set(
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
     compilator_goma_jobs = goma.jobs.J300,
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     pool = try_.DEFAULT_POOL,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
 )
@@ -32,8 +33,23 @@ try_.builder(
     name = "android-10-arm64-rel",
 )
 
-try_.builder(
+try_.orchestrator_builder(
     name = "android-11-x86-rel",
+    compilator = "android-11-x86-rel-compilator",
+    # TODO(crbug.com/1137474): Enable it on branch after running on CQ
+    # branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
+    # TODO(crbug.com/1137474): Fully enable once it works fine
+    tryjob = try_.job(
+        experiment_percentage = 10,
+    ),
+)
+
+try_.compilator_builder(
+    name = "android-11-x86-rel-compilator",
+    # TODO(crbug.com/1137474): Enable it on branch after running on CQ
+    # branch_selector = branches.STANDARD_MILESTONE,
+    main_list_view = "try",
 )
 
 try_.builder(
@@ -46,6 +62,12 @@ try_.builder(
 
 try_.builder(
     name = "android-bfcache-rel",
+)
+
+try_.builder(
+    name = "android-clang-tidy-rel",
+    executable = "recipe:tricium_clang_tidy_wrapper",
+    goma_jobs = goma.jobs.J150,
 )
 
 try_.builder(
@@ -75,8 +97,6 @@ try_.builder(
         },
     },
     tryjob = try_.job(),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
     ssd = True,
 )
 
@@ -178,22 +198,6 @@ try_.compilator_builder(
     main_list_view = "try",
 )
 
-try_.builder(
-    name = "android-marshmallow-arm64-rel-rts",
-    builderless = not settings.is_main,
-    cores = 32 if settings.is_main else 16,
-    goma_jobs = goma.jobs.J300,
-    main_list_view = "try",
-    ssd = True,
-    use_java_coverage = True,
-    coverage_test_types = ["unit", "overall"],
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
-)
-
 try_.orchestrator_builder(
     name = "android-marshmallow-x86-rel",
     compilator = "android-marshmallow-x86-rel-compilator",
@@ -224,6 +228,10 @@ try_.builder(
 
 try_.builder(
     name = "android-oreo-arm64-dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Oreo Phone Tester",
+    ],
 )
 
 try_.builder(
@@ -247,6 +255,10 @@ try_.builder(
             ".+/[+]/third_party/arcore-android-sdk-client/.+",
         ],
     ),
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/android-pie-arm64-dbg",
+    ],
 )
 
 # TODO(crbug/1182468) Remove when experiment is done.
@@ -278,20 +290,6 @@ try_.compilator_builder(
 )
 
 try_.builder(
-    name = "android-pie-arm64-rel-rts",
-    builderless = not settings.is_main,
-    cores = 16,
-    goma_jobs = goma.jobs.J300,
-    ssd = True,
-    main_list_view = "try",
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
-)
-
-try_.builder(
     name = "android-pie-x86-rel",
     goma_jobs = goma.jobs.J150,
 )
@@ -314,7 +312,7 @@ try_.builder(
 )
 
 try_.builder(
-    name = "android-web-platform-pie-x86-fyi-rel",
+    name = "android-chrome-pie-x86-wpt-fyi-rel",
 )
 
 try_.builder(
@@ -343,18 +341,34 @@ try_.builder(
 
 try_.builder(
     name = "android-webview-marshmallow-arm64-dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Android WebView M (dbg)",
+    ],
 )
 
 try_.builder(
     name = "android-webview-nougat-arm64-dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Android WebView N (dbg)",
+    ],
 )
 
 try_.builder(
     name = "android-webview-oreo-arm64-dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Android WebView O (dbg)",
+    ],
 )
 
 try_.builder(
     name = "android-webview-pie-arm64-dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Android WebView P (dbg)",
+    ],
 )
 
 try_.builder(
@@ -368,6 +382,13 @@ try_.builder(
 try_.builder(
     name = "android_arm64_dbg_recipe",
     goma_jobs = goma.jobs.J300,
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
 )
 
 try_.builder(
@@ -375,29 +396,31 @@ try_.builder(
 )
 
 try_.builder(
-    name = "android_cfi_rel_ng",
-    cores = 32,
-)
-
-try_.builder(
-    name = "android_clang_dbg_recipe",
-    goma_jobs = goma.jobs.J300,
-)
-
-try_.builder(
     name = "android_compile_dbg",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/Android arm Builder (dbg)",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
     builderless = not settings.is_main,
     goma_jobs = goma.jobs.J150,
     main_list_view = "try",
     tryjob = try_.job(),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )
 
 try_.builder(
     name = "android_compile_x64_dbg",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/Android x64 Builder (dbg)",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
     cores = 16,
     ssd = True,
     main_list_view = "try",
@@ -441,8 +464,6 @@ try_.builder(
     builderless = not settings.is_main,
     main_list_view = "try",
     tryjob = try_.job(),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )
 
 try_.builder(
@@ -451,10 +472,18 @@ try_.builder(
 
 try_.builder(
     name = "android_n5x_swarming_dbg",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Marshmallow 64 bit Tester",
+    ],
 )
 
 try_.builder(
     name = "android_unswarmed_pixel_aosp",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Android WebView N (dbg)",
+    ],
 )
 
 try_.builder(
@@ -463,8 +492,6 @@ try_.builder(
     builderless = not settings.is_main,
     main_list_view = "try",
     tryjob = try_.job(),
-    # TODO(crbug/1202741)
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )
 
 try_.builder(
@@ -473,6 +500,10 @@ try_.builder(
 
 try_.builder(
     name = "try-nougat-phone-tester",
+    mirrors = [
+        "ci/Android arm64 Builder (dbg)",
+        "ci/Nougat Phone Tester",
+    ],
 )
 
 try_.gpu.optional_tests_builder(
@@ -506,18 +537,4 @@ try_.gpu.optional_tests_builder(
             ".+/[+]/ui/gl/.+",
         ],
     ),
-)
-
-# RTS builders
-
-try_.builder(
-    name = "android-marshmallow-x86-rel-rts",
-    goma_jobs = goma.jobs.J300,
-    builderless = False,
-    cores = 16,
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    ssd = True,
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )

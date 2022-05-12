@@ -155,8 +155,8 @@ template<typename Derived> class TriangularBase : public EigenBase<Derived>
   *
   * \brief Expression of a triangular part in a matrix
   *
-  * \param MatrixType the type of the object in which we are taking the triangular part
-  * \param Mode the kind of triangular matrix expression to construct. Can be #Upper,
+  * \tparam MatrixType the type of the object in which we are taking the triangular part
+  * \tparam Mode the kind of triangular matrix expression to construct. Can be #Upper,
   *             #Lower, #UnitUpper, #UnitLower, #StrictlyUpper, or #StrictlyLower.
   *             This is in fact a bit field; it must have either #Upper or #Lower,
   *             and additionally it may have #UnitDiag or #ZeroDiag or neither.
@@ -264,10 +264,10 @@ template<typename MatrixType_, unsigned int Mode_> class TriangularView
 
     typedef TriangularView<typename MatrixType::TransposeReturnType,TransposeMode> TransposeReturnType;
      /** \sa MatrixBase::transpose() */
+    template<class Dummy=int>
     EIGEN_DEVICE_FUNC
-    inline TransposeReturnType transpose()
+    inline TransposeReturnType transpose(typename internal::enable_if<Eigen::internal::is_lvalue<MatrixType>::value, Dummy*>::type = nullptr)
     {
-      EIGEN_STATIC_ASSERT_LVALUE(MatrixType)
       typename MatrixType::TransposeReturnType tmp(m_matrix);
       return TransposeReturnType(tmp);
     }

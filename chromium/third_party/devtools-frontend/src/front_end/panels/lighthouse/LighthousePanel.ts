@@ -5,6 +5,7 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -20,6 +21,7 @@ import * as LighthouseReport from '../../third_party/lighthouse/report/report.js
 import {LighthouseReportRenderer, LighthouseReportUIFeatures} from './LighthouseReportRenderer.js';
 import {Item, ReportSelector} from './LighthouseReportSelector.js';
 import {StartView} from './LighthouseStartView.js';
+import {StartViewFR} from './LighthouseStartViewFR.js';
 import {StatusView} from './LighthouseStatusView.js';
 
 const UIStrings = {
@@ -85,7 +87,11 @@ export class LighthousePanel extends UI.Panel.Panel {
 
     this.protocolService = new ProtocolService();
     this.controller = new LighthouseController(this.protocolService);
-    this.startView = new StartView(this.controller);
+    if (Root.Runtime.experiments.isEnabled('lighthousePanelFR')) {
+      this.startView = new StartViewFR(this.controller);
+    } else {
+      this.startView = new StartView(this.controller);
+    }
     this.statusView = new StatusView(this.controller);
 
     this.warningText = null;
@@ -100,10 +106,10 @@ export class LighthousePanel extends UI.Panel.Panel {
     this.controller.addEventListener(Events.PageWarningsChanged, this.refreshWarningsUI.bind(this));
     this.controller.addEventListener(Events.AuditProgressChanged, this.refreshStatusUI.bind(this));
     this.controller.addEventListener(Events.RequestLighthouseStart, _event => {
-      this.startLighthouse();
+      void this.startLighthouse();
     });
     this.controller.addEventListener(Events.RequestLighthouseCancel, _event => {
-      this.cancelLighthouse();
+      void this.cancelLighthouse();
     });
 
     this.renderToolbar();
@@ -268,9 +274,9 @@ export class LighthousePanel extends UI.Panel.Panel {
     // Linkifying requires the target be loaded. Do not block the report
     // from rendering, as this is just an embellishment and the main target
     // could take awhile to load.
-    this.waitForMainTargetLoad().then(() => {
-      LighthouseReportRenderer.linkifyNodeDetails(el);
-      LighthouseReportRenderer.linkifySourceLocationDetails(el);
+    void this.waitForMainTargetLoad().then(() => {
+      void LighthouseReportRenderer.linkifyNodeDetails(el);
+      void LighthouseReportRenderer.linkifySourceLocationDetails(el);
     });
     LighthouseReportRenderer.handleDarkMode(el);
 

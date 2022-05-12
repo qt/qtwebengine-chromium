@@ -24,18 +24,58 @@ namespace {
 
 using BindingRemapperTest = TransformTest;
 
+TEST_F(BindingRemapperTest, ShouldRunNoRemappings) {
+  auto* src = R"()";
+
+  EXPECT_FALSE(ShouldRun<BindingRemapper>(src));
+}
+
+TEST_F(BindingRemapperTest, ShouldRunEmptyRemappings) {
+  auto* src = R"()";
+
+  DataMap data;
+  data.Add<BindingRemapper::Remappings>(BindingRemapper::BindingPoints{},
+                                        BindingRemapper::AccessControls{});
+
+  EXPECT_FALSE(ShouldRun<BindingRemapper>(src, data));
+}
+
+TEST_F(BindingRemapperTest, ShouldRunBindingPointRemappings) {
+  auto* src = R"()";
+
+  DataMap data;
+  data.Add<BindingRemapper::Remappings>(
+      BindingRemapper::BindingPoints{
+          {{2, 1}, {1, 2}},
+      },
+      BindingRemapper::AccessControls{});
+
+  EXPECT_TRUE(ShouldRun<BindingRemapper>(src, data));
+}
+
+TEST_F(BindingRemapperTest, ShouldRunAccessControlRemappings) {
+  auto* src = R"()";
+
+  DataMap data;
+  data.Add<BindingRemapper::Remappings>(BindingRemapper::BindingPoints{},
+                                        BindingRemapper::AccessControls{
+                                            {{2, 1}, ast::Access::kWrite},
+                                        });
+
+  EXPECT_TRUE(ShouldRun<BindingRemapper>(src, data));
+}
+
 TEST_F(BindingRemapperTest, NoRemappings) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
-};
+}
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
@@ -52,31 +92,29 @@ fn f() {
 
 TEST_F(BindingRemapperTest, RemapBindingPoints) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
 };
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   a : f32;
-};
+}
 
-[[group(1), binding(2)]] var<storage, read> a : S;
+@group(1) @binding(2) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
@@ -86,7 +124,7 @@ fn f() {
       BindingRemapper::BindingPoints{
           {{2, 1}, {1, 2}},  // Remap
           {{4, 5}, {6, 7}},  // Not found
-                             // Keep [[group(3), binding(2)]] as is
+                             // Keep @group(3) @binding(2) as is
       },
       BindingRemapper::AccessControls{});
   auto got = Run<BindingRemapper>(src, data);
@@ -96,35 +134,33 @@ fn f() {
 
 TEST_F(BindingRemapperTest, RemapAccessControls) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
 };
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, write> b : S;
+@group(3) @binding(2) var<storage, write> b : S;
 
-[[group(4), binding(3)]] var<storage, read> c : S;
+@group(4) @binding(3) var<storage, read> c : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   a : f32;
-};
+}
 
-[[group(2), binding(1)]] var<storage, write> a : S;
+@group(2) @binding(1) var<storage, write> a : S;
 
-[[group(3), binding(2)]] var<storage, write> b : S;
+@group(3) @binding(2) var<storage, write> b : S;
 
-[[group(4), binding(3)]] var<storage, read> c : S;
+@group(4) @binding(3) var<storage, read> c : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
@@ -134,7 +170,7 @@ fn f() {
       BindingRemapper::BindingPoints{},
       BindingRemapper::AccessControls{
           {{2, 1}, ast::Access::kWrite},  // Modify access control
-          // Keep [[group(3), binding(2)]] as is
+          // Keep @group(3) @binding(2) as is
           {{4, 3}, ast::Access::kRead},  // Add access control
       });
   auto got = Run<BindingRemapper>(src, data);
@@ -143,10 +179,9 @@ fn f() {
 }
 
 // TODO(crbug.com/676): Possibly enable if the spec allows for access
-// decorations in type aliases. If not, just remove.
+// attributes in type aliases. If not, just remove.
 TEST_F(BindingRemapperTest, DISABLED_RemapAccessControlsWithAliases) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
 };
@@ -157,19 +192,18 @@ type, write WriteOnlyS = S;
 
 type A = S;
 
-[[group(2), binding(1)]] var<storage> a : ReadOnlyS;
+@group(2) @binding(1) var<storage> a : ReadOnlyS;
 
-[[group(3), binding(2)]] var<storage> b : WriteOnlyS;
+@group(3) @binding(2) var<storage> b : WriteOnlyS;
 
-[[group(4), binding(3)]] var<storage> c : A;
+@group(4) @binding(3) var<storage> c : A;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   a : f32;
 };
@@ -180,13 +214,13 @@ type, write WriteOnlyS = S;
 
 type A = S;
 
-[[group(2), binding(1)]] var<storage, write> a : S;
+@group(2) @binding(1) var<storage, write> a : S;
 
-[[group(3), binding(2)]] var<storage> b : WriteOnlyS;
+@group(3) @binding(2) var<storage> b : WriteOnlyS;
 
-[[group(4), binding(3)]] var<storage, write> c : S;
+@group(4) @binding(3) var<storage, write> c : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
@@ -196,7 +230,7 @@ fn f() {
       BindingRemapper::BindingPoints{},
       BindingRemapper::AccessControls{
           {{2, 1}, ast::Access::kWrite},  // Modify access control
-          // Keep [[group(3), binding(2)]] as is
+          // Keep @group(3) @binding(2) as is
           {{4, 3}, ast::Access::kRead},  // Add access control
       });
   auto got = Run<BindingRemapper>(src, data);
@@ -206,31 +240,29 @@ fn f() {
 
 TEST_F(BindingRemapperTest, RemapAll) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
 };
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   a : f32;
-};
+}
 
-[[group(4), binding(5)]] var<storage, write> a : S;
+@group(4) @binding(5) var<storage, write> a : S;
 
-[[group(6), binding(7)]] var<storage, write> b : S;
+@group(6) @binding(7) var<storage, write> b : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
 }
 )";
@@ -252,40 +284,38 @@ fn f() {
 
 TEST_F(BindingRemapperTest, BindingCollisionsSameEntryPoint) {
   auto* src = R"(
-[[block]]
 struct S {
   i : i32;
 };
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[group(4), binding(3)]] var<storage, read> c : S;
+@group(4) @binding(3) var<storage, read> c : S;
 
-[[group(5), binding(4)]] var<storage, read> d : S;
+@group(5) @binding(4) var<storage, read> d : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
   let x : i32 = (((a.i + b.i) + c.i) + d.i);
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   i : i32;
-};
+}
 
-[[internal(disable_validation__binding_point_collision), group(1), binding(1)]] var<storage, read> a : S;
+@internal(disable_validation__binding_point_collision) @group(1) @binding(1) var<storage, read> a : S;
 
-[[internal(disable_validation__binding_point_collision), group(1), binding(1)]] var<storage, read> b : S;
+@internal(disable_validation__binding_point_collision) @group(1) @binding(1) var<storage, read> b : S;
 
-[[internal(disable_validation__binding_point_collision), group(5), binding(4)]] var<storage, read> c : S;
+@internal(disable_validation__binding_point_collision) @group(5) @binding(4) var<storage, read> c : S;
 
-[[internal(disable_validation__binding_point_collision), group(5), binding(4)]] var<storage, read> d : S;
+@internal(disable_validation__binding_point_collision) @group(5) @binding(4) var<storage, read> d : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f() {
   let x : i32 = (((a.i + b.i) + c.i) + d.i);
 }
@@ -306,50 +336,48 @@ fn f() {
 
 TEST_F(BindingRemapperTest, BindingCollisionsDifferentEntryPoints) {
   auto* src = R"(
-[[block]]
 struct S {
   i : i32;
 };
 
-[[group(2), binding(1)]] var<storage, read> a : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(3) @binding(2) var<storage, read> b : S;
 
-[[group(4), binding(3)]] var<storage, read> c : S;
+@group(4) @binding(3) var<storage, read> c : S;
 
-[[group(5), binding(4)]] var<storage, read> d : S;
+@group(5) @binding(4) var<storage, read> d : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f1() {
   let x : i32 = (a.i + c.i);
 }
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f2() {
   let x : i32 = (b.i + d.i);
 }
 )";
 
   auto* expect = R"(
-[[block]]
 struct S {
   i : i32;
-};
+}
 
-[[group(1), binding(1)]] var<storage, read> a : S;
+@group(1) @binding(1) var<storage, read> a : S;
 
-[[group(1), binding(1)]] var<storage, read> b : S;
+@group(1) @binding(1) var<storage, read> b : S;
 
-[[group(5), binding(4)]] var<storage, read> c : S;
+@group(5) @binding(4) var<storage, read> c : S;
 
-[[group(5), binding(4)]] var<storage, read> d : S;
+@group(5) @binding(4) var<storage, read> d : S;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f1() {
   let x : i32 = (a.i + c.i);
 }
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn f2() {
   let x : i32 = (b.i + d.i);
 }
@@ -370,20 +398,20 @@ fn f2() {
 
 TEST_F(BindingRemapperTest, NoData) {
   auto* src = R"(
-[[block]]
 struct S {
   a : f32;
-};
+}
 
-[[group(2), binding(1)]] var<storage, read> a : S;
-[[group(3), binding(2)]] var<storage, read> b : S;
+@group(2) @binding(1) var<storage, read> a : S;
 
-[[stage(compute), workgroup_size(1)]]
-fn f() {}
+@group(3) @binding(2) var<storage, read> b : S;
+
+@stage(compute) @workgroup_size(1)
+fn f() {
+}
 )";
 
-  auto* expect =
-      "error: missing transform data for tint::transform::BindingRemapper";
+  auto* expect = src;
 
   auto got = Run<BindingRemapper>(src);
 

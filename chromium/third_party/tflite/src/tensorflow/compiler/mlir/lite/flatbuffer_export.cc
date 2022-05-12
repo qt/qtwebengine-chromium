@@ -169,7 +169,8 @@ static StatusOr<tflite::TensorType> GetTFLiteType(Type type,
         return itype.isUnsigned() ? tflite::TensorType_UINT8
                                   : tflite::TensorType_INT8;
       case 16:
-        return tflite::TensorType_INT16;
+        return itype.isUnsigned() ? tflite::TensorType_UINT16
+                                  : tflite::TensorType_INT16;
       case 32:
         return itype.isUnsigned() ? tflite::TensorType_UINT32
                                   : tflite::TensorType_INT32;
@@ -201,7 +202,7 @@ static StatusOr<tflite::TensorType> GetTFLiteType(Type type,
 static bool IsConst(Operation* op) {
   return isa<mlir::ConstantOp, mlir::arith::ConstantOp, mlir::TF::ConstOp,
              tfl::ConstOp, tfl::QConstOp, tfl::SparseConstOp,
-             tfl::SparseQConstOp>(op);
+             tfl::SparseQConstOp, mlir::TFL::NoValueOp>(op);
 }
 
 static bool IsTFResourceOp(Operation* op) {
@@ -2001,6 +2002,11 @@ Optional<std::string> Translator::TranslateInternal() {
                                    description, builder_.CreateVector(buffers_),
                                    metadata_buffer, *metadata, *signature_defs);
   tflite::FinishModelBuffer(builder_, model);
+  // There is a limit of 2GB for a flatbuffer.
+  if (builder_.GetSize() > 2147483648) {
+    LOG(ERROR) << "Model size is bigger than 2gb";
+    return llvm::None;
+  }
   tflite::UpdateOpVersion(builder_.GetBufferPointer());
   tflite::UpdateMinimumRuntimeVersionForModel(builder_.GetBufferPointer());
   if (supported_backends_.find("GPU") != supported_backends_.end()) {

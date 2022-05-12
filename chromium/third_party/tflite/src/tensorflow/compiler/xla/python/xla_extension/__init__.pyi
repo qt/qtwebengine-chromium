@@ -15,6 +15,7 @@
 
 import enum
 import inspect
+import types
 import typing
 from typing import Any, Callable, ClassVar, Dict, List, Optional, Sequence, Tuple, Type, TypeVar, Union, overload
 
@@ -237,6 +238,7 @@ class OpSharding_Type(enum.IntEnum):
   MAXIMAL: int
   TUPLE: int
   OTHER: int
+  MANUAL: int
 
 class OpSharding:
   Type: typing.Type[OpSharding_Type]
@@ -446,6 +448,10 @@ class Traceback:
   frames: Sequence[Frame]
   def __str__(self) -> str: ...
   def as_python_traceback(self) -> Any: ...
+  def raw_frames(self) -> Tuple[List[types.CodeType], List[int]]: ...
+
+  @staticmethod
+  def code_addr2line(code: types.CodeType, lasti: int) -> int: ...
 
 def replace_thread_exc_traceback(traceback: Any): ...
 
@@ -479,6 +485,8 @@ def collect_garbage() -> None: ...
 
 def is_optimized_build() -> bool: ...
 
+def json_to_pprof_profile(json: str) -> bytes: ...
+def pprof_profile_to_json(proto: bytes) -> str: ...
 
 class CompiledFunctionCache:
   def __init__(self, capacity: int = ...): ...

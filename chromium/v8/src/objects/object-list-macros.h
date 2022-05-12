@@ -158,6 +158,7 @@ class ZoneForwardList;
   V(JSRegExpStringIterator)                    \
   V(JSSet)                                     \
   V(JSSetIterator)                             \
+  V(JSShadowRealm)                             \
   V(JSSpecialObject)                           \
   V(JSStringIterator)                          \
   V(JSTemporalCalendar)                        \
@@ -183,6 +184,7 @@ class ZoneForwardList;
   V(Microtask)                                 \
   V(Name)                                      \
   V(NameDictionary)                            \
+  V(NameToIndexHashTable)                      \
   V(NativeContext)                             \
   V(NormalizedMapCache)                        \
   V(NumberDictionary)                          \
@@ -248,6 +250,7 @@ class ZoneForwardList;
   IF_WASM(V, WasmMemoryObject)                 \
   IF_WASM(V, WasmModuleObject)                 \
   IF_WASM(V, WasmObject)                       \
+  IF_WASM(V, WasmOnFulfilledData)              \
   IF_WASM(V, WasmStruct)                       \
   IF_WASM(V, WasmTypeInfo)                     \
   IF_WASM(V, WasmTableObject)                  \

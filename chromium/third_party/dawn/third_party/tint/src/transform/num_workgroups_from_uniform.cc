@@ -52,13 +52,21 @@ struct Accessor {
 NumWorkgroupsFromUniform::NumWorkgroupsFromUniform() = default;
 NumWorkgroupsFromUniform::~NumWorkgroupsFromUniform() = default;
 
+bool NumWorkgroupsFromUniform::ShouldRun(const Program* program,
+                                         const DataMap&) const {
+  for (auto* node : program->ASTNodes().Objects()) {
+    if (auto* attr = node->As<ast::BuiltinAttribute>()) {
+      if (attr->builtin == ast::Builtin::kNumWorkgroups) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 void NumWorkgroupsFromUniform::Run(CloneContext& ctx,
                                    const DataMap& inputs,
-                                   DataMap&) {
-  if (!Requires<CanonicalizeEntryPointIO>(ctx)) {
-    return;
-  }
-
+                                   DataMap&) const {
   auto* cfg = inputs.Get<Config>();
   if (cfg == nullptr) {
     ctx.dst->Diagnostics().add_error(
@@ -86,8 +94,8 @@ void NumWorkgroupsFromUniform::Run(CloneContext& ctx,
       }
 
       for (auto* member : str->Members()) {
-        auto* builtin = ast::GetDecoration<ast::BuiltinDecoration>(
-            member->Declaration()->decorations);
+        auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(
+            member->Declaration()->attributes);
         if (!builtin || builtin->builtin != ast::Builtin::kNumWorkgroups) {
           continue;
         }
@@ -122,12 +130,11 @@ void NumWorkgroupsFromUniform::Run(CloneContext& ctx,
       auto* num_workgroups_struct = ctx.dst->Structure(
           ctx.dst->Sym(),
           {ctx.dst->Member(kNumWorkgroupsMemberName,
-                           ctx.dst->ty.vec3(ctx.dst->ty.u32()))},
-          ast::DecorationList{ctx.dst->create<ast::StructBlockDecoration>()});
+                           ctx.dst->ty.vec3(ctx.dst->ty.u32()))});
       num_workgroups_ubo = ctx.dst->Global(
           ctx.dst->Sym(), ctx.dst->ty.Of(num_workgroups_struct),
           ast::StorageClass::kUniform,
-          ast::DecorationList{ctx.dst->GroupAndBinding(
+          ast::AttributeList{ctx.dst->GroupAndBinding(
               cfg->ubo_binding.group, cfg->ubo_binding.binding)});
     }
     return num_workgroups_ubo;

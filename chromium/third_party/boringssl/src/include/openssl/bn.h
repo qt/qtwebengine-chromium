@@ -148,14 +148,14 @@ extern "C" {
 // Projects which use |BN_*_FMT*| with outdated C headers may need to define it
 // externally.
 #if defined(OPENSSL_64_BIT)
-#define BN_ULONG uint64_t
+typedef uint64_t BN_ULONG;
 #define BN_BITS2 64
 #define BN_DEC_FMT1 "%" PRIu64
 #define BN_DEC_FMT2 "%019" PRIu64
 #define BN_HEX_FMT1 "%" PRIx64
 #define BN_HEX_FMT2 "%016" PRIx64
 #elif defined(OPENSSL_32_BIT)
-#define BN_ULONG uint32_t
+typedef uint32_t BN_ULONG;
 #define BN_BITS2 32
 #define BN_DEC_FMT1 "%" PRIu32
 #define BN_DEC_FMT2 "%09" PRIu32
@@ -657,6 +657,14 @@ struct bn_gencb_st {
   void *arg;        // callback-specific data
   int (*callback)(int event, int n, struct bn_gencb_st *);
 };
+
+// BN_GENCB_new returns a newly-allocated |BN_GENCB| object, or NULL on
+// allocation failure. The result must be released with |BN_GENCB_free| when
+// done.
+OPENSSL_EXPORT BN_GENCB *BN_GENCB_new(void);
+
+// BN_GENCB_free releases memory associated with |callback|.
+OPENSSL_EXPORT void BN_GENCB_free(BN_GENCB *callback);
 
 // BN_GENCB_set configures |callback| to call |f| and sets |callout->arg| to
 // |arg|.

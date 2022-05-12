@@ -78,7 +78,7 @@ XLA_TEST_F(SlicingTest, Simple3dLookup) {
       CreateR3Parameter<float>(BatchedAValsFull(), 0, "a", &builder, &a);
   auto index_data = CreateR0Parameter<int>(1, 1, "index", &builder, &index);
 
-  DynamicSliceInMinorDims(a, {index, xla::ConstantR0<int32>(&builder, 0)},
+  DynamicSliceInMinorDims(a, {index, xla::ConstantR0<int32_t>(&builder, 0)},
                           {1, 4});
 
   ComputeAndCompareR3<float>(&builder, {{{3, 6, 0, 1}}, {{24, 61, 82, 48}}},
@@ -167,6 +167,26 @@ XLA_TEST_F(SlicingTest, TorchIndexSelectOn0) {
       &builder,
       {{0.1427, 0.0231, -0.5414, -1.0009}, {-1.1734, -0.6571, 0.7230, -0.6004}},
       {input_data.get(), index_data.get()});
+}
+
+XLA_TEST_F(SlicingTest, TorchIndexSelectOn0Size1) {
+  xla::XlaBuilder builder(TestName());
+
+  xla::XlaOp input, index;
+  auto input_data = CreateR2Parameter<float>(
+      {{-1.1734, -0.6571, 0.7230, -0.6004}}, 0, "input", &builder, &input);
+  auto index_data =
+      CreateR1Parameter<int>({0, 0, 0, 0, 0, 0}, 1, "index", &builder, &index);
+  TorchIndexSelect(input, index, 0);
+
+  ComputeAndCompareR2<float>(&builder,
+                             {{-1.1734, -0.6571, 0.7230, -0.6004},
+                              {-1.1734, -0.6571, 0.7230, -0.6004},
+                              {-1.1734, -0.6571, 0.7230, -0.6004},
+                              {-1.1734, -0.6571, 0.7230, -0.6004},
+                              {-1.1734, -0.6571, 0.7230, -0.6004},
+                              {-1.1734, -0.6571, 0.7230, -0.6004}},
+                             {input_data.get(), index_data.get()});
 }
 
 XLA_TEST_F(SlicingTest, TorchIndexSelectOn1) {

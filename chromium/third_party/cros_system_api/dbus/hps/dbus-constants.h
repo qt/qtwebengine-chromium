@@ -7,6 +7,9 @@
 
 namespace hps {
 
+// Use of this API is restricted by policy. Consult
+// go/cros-pdd#bookmark=id.7emuxnhxv638 and Chrome OS Privacy before using.
+
 constexpr char kHpsServiceInterface[] = "org.chromium.Hps";
 constexpr char kHpsServicePath[] = "/org/chromium/Hps";
 constexpr char kHpsServiceName[] = "org.chromium.Hps";
@@ -20,7 +23,7 @@ constexpr char kDisableHpsNotify[] = "DisableHpsNotify";
 constexpr char kGetResultHpsNotify[] = "GetResultHpsNotify";
 
 // Signals emitted by hpsd.
-constexpr char kHpsSenseChanged[] = "kHpsSenseChanged";
+constexpr char kHpsSenseChanged[] = "HpsSenseChanged";
 constexpr char kHpsNotifyChanged[] = "HpsNotifyChanged";
 
 }  // namespace hps

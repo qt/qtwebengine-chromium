@@ -310,7 +310,6 @@ inline void Store(LiftoffAssembler* assm, LiftoffRegister src, MemOperand dst,
     case kOptRef:
     case kRef:
     case kRtt:
-    case kRttWithDepth:
       assm->str(src.gp(), dst);
       break;
     case kI64:
@@ -345,7 +344,6 @@ inline void Load(LiftoffAssembler* assm, LiftoffRegister dst, MemOperand src,
     case kOptRef:
     case kRef:
     case kRtt:
-    case kRttWithDepth:
       assm->ldr(dst.gp(), src);
       break;
     case kI64:
@@ -442,7 +440,7 @@ inline void EmitAnyTrue(LiftoffAssembler* assm, LiftoffRegister dst,
 
 int LiftoffAssembler::PrepareStackFrame() {
   if (!CpuFeatures::IsSupported(ARMv7)) {
-    bailout(kUnsupportedArchitecture, "Armv6 not supported");
+    bailout(kUnsupportedArchitecture, "Liftoff needs ARMv7");
     return 0;
   }
   uint32_t offset = static_cast<uint32_t>(pc_offset());
@@ -637,10 +635,6 @@ void LiftoffAssembler::SpillInstance(Register instance) {
 }
 
 void LiftoffAssembler::ResetOSRTarget() {}
-
-void LiftoffAssembler::FillInstanceInto(Register dst) {
-  ldr(dst, liftoff::GetInstanceOperand());
-}
 
 namespace liftoff {
 #define __ lasm->
@@ -901,12 +895,9 @@ inline void AtomicOp32(
   // the same register.
   Register temp = pinned.set(__ GetUnusedRegister(kGpReg, pinned)).gp();
 
-  // Make sure that {result} is unique.
-  Register result_reg = result.gp();
-  if (result_reg == value.gp() || result_reg == dst_addr ||
-      result_reg == offset_reg) {
-    result_reg = __ GetUnusedRegister(kGpReg, pinned).gp();
-  }
+  // {LiftoffCompiler::AtomicBinop} ensures that {result} is unique.
+  DCHECK(result.gp() != value.gp() && result.gp() != dst_addr &&
+         result.gp() != offset_reg);
 
   UseScratchRegisterScope temps(lasm);
   Register actual_addr = liftoff::CalculateActualAddress(
@@ -915,15 +906,12 @@ inline void AtomicOp32(
   __ dmb(ISH);
   Label retry;
   __ bind(&retry);
-  (lasm->*load)(result_reg, actual_addr, al);
-  op(lasm, temp, result_reg, value.gp());
+  (lasm->*load)(result.gp(), actual_addr, al);
+  op(lasm, temp, result.gp(), value.gp());
   (lasm->*store)(store_result, temp, actual_addr, al);
   __ cmp(store_result, Operand(0));
   __ b(ne, &retry);
   __ dmb(ISH);
-  if (result_reg != result.gp()) {
-    __ mov(result.gp(), result_reg);
-  }
 }
 
 inline void Add(LiftoffAssembler* lasm, Register dst, Register lhs,
@@ -1974,10 +1962,6 @@ void LiftoffAssembler::emit_f64_min(DoubleRegister dst, DoubleRegister lhs,
 void LiftoffAssembler::emit_f64_max(DoubleRegister dst, DoubleRegister lhs,
                                     DoubleRegister rhs) {
   liftoff::EmitFloatMinOrMax(this, dst, lhs, rhs, liftoff::MinOrMax::kMax);
-}
-
-void LiftoffAssembler::emit_u32_to_intptr(Register dst, Register src) {
-  // This is a nop on arm.
 }
 
 void LiftoffAssembler::emit_f32_copysign(DoubleRegister dst, DoubleRegister lhs,

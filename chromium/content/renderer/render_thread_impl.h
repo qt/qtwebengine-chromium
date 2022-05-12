@@ -60,8 +60,6 @@
 #include "third_party/blink/public/web/web_memory_statistics.h"
 #include "ui/gfx/native_widget_types.h"
 
-class SkBitmap;
-
 namespace blink {
 class WebResourceRequestSenderDelegate;
 class WebVideoCaptureImplManager;
@@ -105,11 +103,11 @@ class RenderThreadObserver;
 class RendererBlinkPlatformImpl;
 class VariationsRenderThreadObserver;
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 class StreamTextureFactory;
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
 class DCOMPTextureFactory;
 #endif
 
@@ -190,6 +188,7 @@ class CONTENT_EXPORT RenderThreadImpl
   void SetRendererProcessType(
       blink::scheduler::WebRendererProcessType type) override;
   blink::WebString GetUserAgent() override;
+  blink::WebString GetFullUserAgent() override;
   blink::WebString GetReducedUserAgent() override;
   const blink::UserAgentMetadata& GetUserAgentMetadata() override;
   bool IsUseZoomForDSF() override;
@@ -260,12 +259,12 @@ class CONTENT_EXPORT RenderThreadImpl
     return url_loader_throttle_provider_.get();
   }
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   scoped_refptr<StreamTextureFactory> GetStreamTexureFactory();
   bool EnableStreamTextureCopy();
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   scoped_refptr<DCOMPTextureFactory> GetDCOMPTextureFactory();
 #endif
 
@@ -278,8 +277,6 @@ class CONTENT_EXPORT RenderThreadImpl
   // Get the GPU channel. Returns NULL if the channel is not established or
   // has been lost.
   gpu::GpuChannelHost* GetGpuChannel();
-
-  base::PlatformThreadId GetIOPlatformThreadId() const;
 
   // Returns a SingleThreadTaskRunner instance corresponding to the message loop
   // of the thread on which media operations should be run. Must be called
@@ -300,7 +297,7 @@ class CONTENT_EXPORT RenderThreadImpl
   // Returns a worker context provider that will be bound on the compositor
   // thread.
   scoped_refptr<viz::RasterContextProvider>
-  SharedCompositorWorkerContextProvider(bool try_gpu_rasterization);
+  SharedCompositorWorkerContextProvider();
 
   media::GpuVideoAcceleratorFactories* GetGpuFactories();
   media::DecoderFactory* GetMediaDecoderFactory();
@@ -430,9 +427,6 @@ class CONTENT_EXPORT RenderThreadImpl
   void InitializeCompositorThread();
   void InitializeWebKit(mojo::BinderMap* binders);
 
-  void OnTransferBitmap(const SkBitmap& bitmap, int resource_id);
-  void OnGetAccessibilityTree();
-
   // mojom::Renderer:
   void CreateAgentSchedulingGroup(
       mojo::PendingReceiver<IPC::mojom::ChannelBootstrap> bootstrap,
@@ -451,10 +445,12 @@ class CONTENT_EXPORT RenderThreadImpl
                                base::TimeDelta transport_rtt,
                                double bandwidth_kbps) override;
   void SetWebKitSharedTimersSuspended(bool suspend) override;
-  void SetUserAgent(const std::string& user_agent) override;
-  void SetReducedUserAgent(const std::string& user_agent) override;
-  void SetUserAgentMetadata(const blink::UserAgentMetadata& metadata) override;
-  void SetCorsExemptHeaderList(const std::vector<std::string>& list) override;
+  void InitializeRenderer(
+      const std::string& user_agent,
+      const std::string& full_user_agent,
+      const std::string& reduced_user_agent,
+      const blink::UserAgentMetadata& user_agent_metadata,
+      const std::vector<std::string>& cors_exempt_header_list) override;
   void UpdateScrollbarTheme(
       mojom::UpdateScrollbarThemeParamsPtr params) override;
   void OnSystemColorsChanged(int32_t aqua_color_variant,
@@ -520,6 +516,7 @@ class CONTENT_EXPORT RenderThreadImpl
   absl::optional<mojom::RenderProcessVisibleState> visible_state_;
 
   blink::WebString user_agent_;
+  blink::WebString full_user_agent_;
   blink::WebString reduced_user_agent_;
   blink::UserAgentMetadata user_agent_metadata_;
 
@@ -552,11 +549,11 @@ class CONTENT_EXPORT RenderThreadImpl
   // Pool of workers used for raster operations (e.g., tile rasterization).
   scoped_refptr<CategorizedWorkerPool> categorized_worker_pool_;
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   scoped_refptr<StreamTextureFactory> stream_texture_factory_;
 #endif
 
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   scoped_refptr<DCOMPTextureFactory> dcomp_texture_factory_;
 #endif
 

@@ -89,11 +89,7 @@ void Generate_PushArguments(MacroAssembler* masm, Register array, Register argc,
   Register counter = scratch;
   Register value = temps.Acquire();
   Label loop, entry;
-  if (kJSArgcIncludesReceiver) {
-    __ sub(counter, argc, Operand(kJSArgcReceiverSlots));
-  } else {
-    __ mov(counter, argc);
-  }
+  __ sub(counter, argc, Operand(kJSArgcReceiverSlots));
   __ b(&entry);
   __ bind(&loop);
   __ ldr(value, MemOperand(array, counter, LSL, kSystemPointerSizeLog2));
@@ -162,9 +158,7 @@ void Generate_JSBuiltinsConstructStubHelper(MacroAssembler* masm) {
 
   // Remove caller arguments from the stack and return.
   __ DropArguments(scratch, TurboAssembler::kCountIsSmi,
-                   kJSArgcIncludesReceiver
-                       ? TurboAssembler::kCountIncludesReceiver
-                       : TurboAssembler::kCountExcludesReceiver);
+                   TurboAssembler::kCountIncludesReceiver);
   __ Jump(lr);
 
   __ bind(&stack_overflow);
@@ -314,9 +308,7 @@ void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
 
   // Remove caller arguments from the stack and return.
   __ DropArguments(r1, TurboAssembler::kCountIsSmi,
-                   kJSArgcIncludesReceiver
-                       ? TurboAssembler::kCountIncludesReceiver
-                       : TurboAssembler::kCountExcludesReceiver);
+                   TurboAssembler::kCountIncludesReceiver);
   __ Jump(lr);
 
   __ bind(&check_receiver);
@@ -441,9 +433,7 @@ void Builtins::Generate_ResumeGeneratorTrampoline(MacroAssembler* masm) {
   __ ldr(r3, FieldMemOperand(r4, JSFunction::kSharedFunctionInfoOffset));
   __ ldrh(r3,
           FieldMemOperand(r3, SharedFunctionInfo::kFormalParameterCountOffset));
-  if (kJSArgcIncludesReceiver) {
-    __ sub(r3, r3, Operand(kJSArgcReceiverSlots));
-  }
+  __ sub(r3, r3, Operand(kJSArgcReceiverSlots));
   __ ldr(r2,
          FieldMemOperand(r1, JSGeneratorObject::kParametersAndRegistersOffset));
   {
@@ -767,11 +757,7 @@ static void Generate_JSEntryTrampolineHelper(MacroAssembler* masm,
     // Check if we have enough stack space to push all arguments + receiver.
     // Clobbers r5.
     Label enough_stack_space, stack_overflow;
-    if (kJSArgcIncludesReceiver) {
-      __ mov(r6, r0);
-    } else {
-      __ add(r6, r0, Operand(1));  // Add one for receiver.
-    }
+    __ mov(r6, r0);
     __ StackOverflowCheck(r6, r5, &stack_overflow);
     __ b(&enough_stack_space);
     __ bind(&stack_overflow);
@@ -870,9 +856,6 @@ static void LeaveInterpreterFrame(MacroAssembler* masm, Register scratch1,
   __ ldr(actual_params_size,
          MemOperand(fp, StandardFrameConstants::kArgCOffset));
   __ lsl(actual_params_size, actual_params_size, Operand(kPointerSizeLog2));
-  if (!kJSArgcIncludesReceiver) {
-    __ add(actual_params_size, actual_params_size, Operand(kSystemPointerSize));
-  }
 
   // If actual is bigger than formal, then we should use it to free up the stack
   // arguments.
@@ -953,22 +936,16 @@ static void MaybeOptimizeCode(MacroAssembler* masm, Register feedback_vector,
   // -----------------------------------
   DCHECK(!AreAliased(feedback_vector, r1, r3, optimization_marker));
 
-  // TODO(v8:8394): The logging of first execution will break if
-  // feedback vectors are not allocated. We need to find a different way of
-  // logging these events if required.
+  TailCallRuntimeIfMarkerEquals(
+      masm, optimization_marker,
+      OptimizationMarker::kCompileTurbofan_NotConcurrent,
+      Runtime::kCompileTurbofan_NotConcurrent);
   TailCallRuntimeIfMarkerEquals(masm, optimization_marker,
-                                OptimizationMarker::kLogFirstExecution,
-                                Runtime::kFunctionFirstExecution);
-  TailCallRuntimeIfMarkerEquals(masm, optimization_marker,
-                                OptimizationMarker::kCompileOptimized,
-                                Runtime::kCompileOptimized_NotConcurrent);
-  TailCallRuntimeIfMarkerEquals(masm, optimization_marker,
-                                OptimizationMarker::kCompileOptimizedConcurrent,
-                                Runtime::kCompileOptimized_Concurrent);
+                                OptimizationMarker::kCompileTurbofan_Concurrent,
+                                Runtime::kCompileTurbofan_Concurrent);
 
-  // Marker should be one of LogFirstExecution / CompileOptimized /
-  // CompileOptimizedConcurrent. InOptimizationQueue and None shouldn't reach
-  // here.
+  // Marker should be one of CompileOptimized / CompileOptimizedConcurrent.
+  // InOptimizationQueue and None shouldn't reach here.
   if (FLAG_debug_code) {
     __ stop();
   }
@@ -1077,9 +1054,8 @@ static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
   DCHECK(!AreAliased(optimization_state, feedback_vector));
   Label maybe_has_optimized_code;
   // Check if optimized code is available
-  __ tst(
-      optimization_state,
-      Operand(FeedbackVector::kHasCompileOptimizedOrLogFirstExecutionMarker));
+  __ tst(optimization_state,
+         Operand(FeedbackVector::kHasCompileOptimizedMarker));
   __ b(eq, &maybe_has_optimized_code);
 
   Register optimization_marker = optimization_state;
@@ -1520,12 +1496,8 @@ void Builtins::Generate_InterpreterPushArgsThenCallImpl(
     __ sub(r0, r0, Operand(1));
   }
 
-  const bool skip_receiver =
-      receiver_mode == ConvertReceiverMode::kNullOrUndefined;
-  if (kJSArgcIncludesReceiver && skip_receiver) {
+  if (receiver_mode == ConvertReceiverMode::kNullOrUndefined) {
     __ sub(r3, r0, Operand(kJSArgcReceiverSlots));
-  } else if (!kJSArgcIncludesReceiver && !skip_receiver) {
-    __ add(r3, r0, Operand(1));
   } else {
     __ mov(r3, r0);
   }
@@ -1584,11 +1556,8 @@ void Builtins::Generate_InterpreterPushArgsThenConstructImpl(
     __ sub(r0, r0, Operand(1));
   }
 
-  Register argc_without_receiver = r0;
-  if (kJSArgcIncludesReceiver) {
-    argc_without_receiver = r6;
-    __ sub(argc_without_receiver, r0, Operand(kJSArgcReceiverSlots));
-  }
+  Register argc_without_receiver = r6;
+  __ sub(argc_without_receiver, r0, Operand(kJSArgcReceiverSlots));
   // Push the arguments. r4 and r5 will be modified.
   GenerateInterpreterPushArgs(masm, argc_without_receiver, r4, r5);
 
@@ -1927,10 +1896,8 @@ void Builtins::Generate_FunctionPrototypeApply(MacroAssembler* masm) {
     __ ldr(r5, MemOperand(sp, kSystemPointerSize), ge);  // thisArg
     __ cmp(r0, Operand(JSParameterCount(2)), ge);
     __ ldr(r2, MemOperand(sp, 2 * kSystemPointerSize), ge);  // argArray
-    __ DropArgumentsAndPushNewReceiver(
-        r0, r5, TurboAssembler::kCountIsInteger,
-        kJSArgcIncludesReceiver ? TurboAssembler::kCountIncludesReceiver
-                                : TurboAssembler::kCountExcludesReceiver);
+    __ DropArgumentsAndPushNewReceiver(r0, r5, TurboAssembler::kCountIsInteger,
+                                       TurboAssembler::kCountIncludesReceiver);
   }
 
   // ----------- S t a t e -------------
@@ -2006,10 +1973,8 @@ void Builtins::Generate_ReflectApply(MacroAssembler* masm) {
     __ ldr(r5, MemOperand(sp, 2 * kSystemPointerSize), ge);  // thisArgument
     __ cmp(r0, Operand(JSParameterCount(3)), ge);
     __ ldr(r2, MemOperand(sp, 3 * kSystemPointerSize), ge);  // argumentsList
-    __ DropArgumentsAndPushNewReceiver(
-        r0, r5, TurboAssembler::kCountIsInteger,
-        kJSArgcIncludesReceiver ? TurboAssembler::kCountIncludesReceiver
-                                : TurboAssembler::kCountExcludesReceiver);
+    __ DropArgumentsAndPushNewReceiver(r0, r5, TurboAssembler::kCountIsInteger,
+                                       TurboAssembler::kCountIncludesReceiver);
   }
 
   // ----------- S t a t e -------------
@@ -2051,10 +2016,8 @@ void Builtins::Generate_ReflectConstruct(MacroAssembler* masm) {
     __ ldr(r2, MemOperand(sp, 2 * kSystemPointerSize), ge);  // argumentsList
     __ cmp(r0, Operand(JSParameterCount(3)), ge);
     __ ldr(r3, MemOperand(sp, 3 * kSystemPointerSize), ge);  // new.target
-    __ DropArgumentsAndPushNewReceiver(
-        r0, r4, TurboAssembler::kCountIsInteger,
-        kJSArgcIncludesReceiver ? TurboAssembler::kCountIncludesReceiver
-                                : TurboAssembler::kCountExcludesReceiver);
+    __ DropArgumentsAndPushNewReceiver(r0, r4, TurboAssembler::kCountIsInteger,
+                                       TurboAssembler::kCountIncludesReceiver);
   }
 
   // ----------- S t a t e -------------
@@ -2103,11 +2066,7 @@ void Generate_AllocateSpaceAndShiftExistingArguments(
   Label loop, done;
   __ bind(&loop);
   __ cmp(old_sp, end);
-  if (kJSArgcIncludesReceiver) {
-    __ b(ge, &done);
-  } else {
-    __ b(gt, &done);
-  }
+  __ b(ge, &done);
   __ ldr(value, MemOperand(old_sp, kSystemPointerSize, PostIndex));
   __ str(value, MemOperand(dest, kSystemPointerSize, PostIndex));
   __ b(&loop);
@@ -2220,9 +2179,7 @@ void Builtins::Generate_CallOrConstructForwardVarargs(MacroAssembler* masm,
 
   Label stack_done, stack_overflow;
   __ ldr(r5, MemOperand(fp, StandardFrameConstants::kArgCOffset));
-  if (kJSArgcIncludesReceiver) {
-    __ sub(r5, r5, Operand(kJSArgcReceiverSlots));
-  }
+  __ sub(r5, r5, Operand(kJSArgcReceiverSlots));
   __ sub(r5, r5, r2, SetCC);
   __ b(le, &stack_done);
   {
@@ -2283,13 +2240,9 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
   //  -- r0 : the number of arguments
   //  -- r1 : the function to call (checked to be a JSFunction)
   // -----------------------------------
-  __ AssertFunction(r1);
+  __ AssertCallableFunction(r1);
 
-  Label class_constructor;
   __ ldr(r2, FieldMemOperand(r1, JSFunction::kSharedFunctionInfoOffset));
-  __ ldr(r3, FieldMemOperand(r2, SharedFunctionInfo::kFlagsOffset));
-  __ tst(r3, Operand(SharedFunctionInfo::IsClassConstructorBit::kMask));
-  __ b(ne, &class_constructor);
 
   // Enter the context of the function; ToObject has to run in the function
   // context, and we also need to take the global proxy from the function
@@ -2364,14 +2317,6 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
   __ ldrh(r2,
           FieldMemOperand(r2, SharedFunctionInfo::kFormalParameterCountOffset));
   __ InvokeFunctionCode(r1, no_reg, r2, r0, InvokeType::kJump);
-
-  // The function is a "classConstructor", need to raise an exception.
-  __ bind(&class_constructor);
-  {
-    FrameScope frame(masm, StackFrame::INTERNAL);
-    __ push(r1);
-    __ CallRuntime(Runtime::kThrowConstructorNonCallableError);
-  }
 }
 
 namespace {
@@ -2762,6 +2707,16 @@ void Builtins::Generate_GenericJSToWasmWrapper(MacroAssembler* masm) {
 }
 
 void Builtins::Generate_WasmReturnPromiseOnSuspend(MacroAssembler* masm) {
+  // TODO(v8:12191): Implement for this platform.
+  __ Trap();
+}
+
+void Builtins::Generate_WasmSuspend(MacroAssembler* masm) {
+  // TODO(v8:12191): Implement for this platform.
+  __ Trap();
+}
+
+void Builtins::Generate_WasmResume(MacroAssembler* masm) {
   // TODO(v8:12191): Implement for this platform.
   __ Trap();
 }

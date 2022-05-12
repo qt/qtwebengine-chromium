@@ -31,6 +31,7 @@
 
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "third_party/blink/public/common/metrics/post_message_counter.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_value.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -47,7 +48,7 @@
 #include "third_party/blink/renderer/core/geometry/dom_rect.h"
 #include "third_party/blink/renderer/core/loader/frame_loader.h"
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
-#include "third_party/blink/renderer/platform/heap/handle.h"
+#include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/prefinalizer.h"
 #include "third_party/blink/renderer/platform/storage/blink_storage_key.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
@@ -60,7 +61,6 @@ namespace blink {
 class BarProp;
 class CSSStyleDeclaration;
 class CustomElementRegistry;
-class DedicatedWorker;
 class Document;
 class DocumentInit;
 class DOMSelection;
@@ -68,6 +68,7 @@ class DOMVisualViewport;
 class Element;
 class ExceptionState;
 class External;
+class Fence;
 class FrameConsole;
 class History;
 class IdleRequestOptions;
@@ -89,6 +90,7 @@ class TrustedTypePolicyFactory;
 class V8FrameRequestCallback;
 class V8IdleRequestCallback;
 class V8VoidFunction;
+struct WebPictureInPictureWindowOptions;
 class WindowAgent;
 
 enum PageTransitionEventPersistence {
@@ -118,7 +120,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
 
   static LocalDOMWindow* From(const ScriptState*);
 
-  LocalDOMWindow(LocalFrame&, WindowAgent*);
+  LocalDOMWindow(LocalFrame&, WindowAgent*, bool anonymous);
   ~LocalDOMWindow() override;
 
   // Returns the token identifying the frame that this ExecutionContext was
@@ -269,7 +271,6 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
 
   DOMSelection* getSelection();
 
-  void blur() override;
   void print(ScriptState*);
   void stop();
 
@@ -364,6 +365,10 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
                   const String& features,
                   ExceptionState&);
 
+  DOMWindow* openPictureInPictureWindow(v8::Isolate*,
+                                        const WebPictureInPictureWindowOptions&,
+                                        ExceptionState&);
+
   FrameConsole* GetFrameConsole() const;
 
   void PrintErrorMessage(const String&) const;
@@ -452,13 +457,10 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   // frame is in back-forward cache.
   void DidBufferLoadWhileInBackForwardCache(size_t num_bytes);
 
-  // Adds a DedicatedWorker. This is called when a DedicatedWorker is created in
-  // this ExecutionContext.
-  void AddDedicatedWorker(DedicatedWorker* dedicated_worker);
+  // Whether the window is anonymous or not.
+  bool anonymous() const { return anonymous_; }
 
-  // Removes a DedicatedWorker This is called when a DedicatedWorker is
-  // destroyed in this ExecutionContext.
-  void RemoveDedicatedWorker(DedicatedWorker* dedicated_worker);
+  Fence* fence();
 
  protected:
   // EventTarget overrides.
@@ -478,7 +480,7 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   bool IsLocalDOMWindow() const override { return true; }
   bool IsRemoteDOMWindow() const override { return false; }
 
-  bool HasInsecureContextInAncestors() override;
+  bool HasInsecureContextInAncestors() const override;
 
   void Dispose();
 
@@ -564,12 +566,9 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   // from |DocumentPolicyViolationReport::MatchId()|.
   mutable HashSet<unsigned> document_policy_violation_reports_sent_;
 
-  // A list of the most recently recorded source frame UKM source IDs for the
-  // PostMessage.Incoming.Frame UKM event, in order to partially deduplicate
-  // logged events. Its size is limited to 20. See SchedulePostMessage() where
-  // this UKM is logged.
-  // TODO(crbug.com/1112491): Remove when no longer needed.
-  Deque<ukm::SourceId> post_message_ukm_recorded_source_ids_;
+  // Tracks metrics related to postMessage usage.
+  // TODO(crbug.com/1159586): Remove when no longer needed.
+  PostMessageCounter post_message_counter_;
 
   // The storage key for this LocalDomWindow.
   BlinkStorageKey storage_key_;
@@ -582,8 +581,13 @@ class CORE_EXPORT LocalDOMWindow final : public DOMWindow,
   // of the back-forward cache.
   size_t total_bytes_buffered_while_in_back_forward_cache_ = 0;
 
-  // The set of DedicatedWorkers that are created in this ExecutionContext.
-  HeapHashSet<Member<DedicatedWorker>> dedicated_workers_;
+  // Anonymous Iframe:
+  // https://github.com/camillelamy/explainers/blob/main/anonymous_iframes.md
+  const bool anonymous_;
+
+  // Collection of fenced frame APIs.
+  // https://github.com/shivanigithub/fenced-frame/issues/14
+  Member<Fence> fence_;
 };
 
 template <>

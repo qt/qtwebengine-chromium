@@ -27,7 +27,7 @@
 #include "third_party/base/cxx17_backports.h"
 #include "v8/include/v8-date.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include <ctype.h>
 #endif
 
@@ -52,7 +52,7 @@ const TbConvert TbConvertTable[] = {
     {L"ddd", L"%a"},  {L"dd", L"%d"},  {L"yyyy", L"%Y"}, {L"yy", L"%y"},
     {L"HH", L"%H"},   {L"hh", L"%I"},  {L"MM", L"%M"},   {L"ss", L"%S"},
     {L"TT", L"%p"},
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
     {L"tt", L"%p"},   {L"h", L"%#I"},
 #else
     {L"tt", L"%P"},   {L"h", L"%l"},
@@ -219,7 +219,7 @@ CJS_Result CJS_Util::printd(CJS_Runtime* pRuntime,
 
   for (size_t i = 0; i < pdfium::size(TbConvertTable); ++i) {
     size_t nFound = 0;
-    while (1) {
+    while (true) {
       nFound = cFormat.find(TbConvertTable[i].lpszJSMark, nFound);
       if (nFound == std::wstring::npos)
         break;
@@ -240,7 +240,7 @@ CJS_Result CJS_Util::printd(CJS_Runtime* pRuntime,
 
   for (size_t i = 0; i < pdfium::size(cTableAd); ++i) {
     size_t nFound = 0;
-    while (1) {
+    while (true) {
       nFound = cFormat.find(cTableAd[i].js_mark, nFound);
       if (nFound == std::wstring::npos)
         break;

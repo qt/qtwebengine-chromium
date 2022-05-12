@@ -127,11 +127,6 @@ export class LighthouseReportRenderer extends LighthouseReport.ReportRenderer {
         showColumnNumber: false,
         inlineFrameIndex: 0,
         maxLength: MaxLengthForLinks,
-        bypassURLTrimming: undefined,
-        className: undefined,
-        preventClick: undefined,
-        tabStop: undefined,
-        text: undefined,
       });
       UI.Tooltip.Tooltip.install(origHTMLElement, '');
       origHTMLElement.textContent = '';
@@ -140,9 +135,12 @@ export class LighthouseReportRenderer extends LighthouseReport.ReportRenderer {
   }
 
   static handleDarkMode(el: Element): void {
-    if (ThemeSupport.ThemeSupport.instance().themeName() === 'dark') {
-      el.classList.add('lh-dark');
-    }
+    const updateDarkModeIfNecessary = (): void => {
+      el.classList.toggle('lh-dark', ThemeSupport.ThemeSupport.instance().themeName() === 'dark');
+    };
+    ThemeSupport.ThemeSupport.instance().addEventListener(
+        ThemeSupport.ThemeChangeEvent.eventName, updateDarkModeIfNecessary);
+    updateDarkModeIfNecessary();
   }
 }
 
@@ -188,7 +186,7 @@ export class LighthouseReportUIFeatures extends LighthouseReport.ReportUIFeature
     const ext = blob.type.match('json') ? '.json' : '.html';
     const basename = `${sanitizedDomain}-${timestamp}${ext}`;
     const text = await blob.text();
-    Workspace.FileManager.FileManager.instance().save(basename, text, true /* forceSaveAs */);
+    void Workspace.FileManager.FileManager.instance().save(basename, text, true /* forceSaveAs */);
   }
 
   // This implements the interface ReportUIFeatures from lighthouse

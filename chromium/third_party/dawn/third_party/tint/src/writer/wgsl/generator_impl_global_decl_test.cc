@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/ast/stage_decoration.h"
+#include "src/ast/stage_attribute.h"
 #include "src/ast/variable_decl_statement.h"
 #include "src/sem/sampled_texture_type.h"
 #include "src/writer/wgsl/test_helper.h"
@@ -35,7 +35,7 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalDeclAfterFunction) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  [[stage(compute), workgroup_size(1, 1, 1)]]
+  EXPECT_EQ(gen.result(), R"(  @stage(compute) @workgroup_size(1, 1, 1)
   fn test_function() {
     var a : f32;
   }
@@ -53,7 +53,7 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalsInterleaved) {
        ast::StatementList{
            Return("a0"),
        },
-       ast::DecorationList{});
+       ast::AttributeList{});
 
   Global("a1", ty.f32(), ast::StorageClass::kPrivate);
 
@@ -65,7 +65,7 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalsInterleaved) {
            Decl(Var("s1", ty.Of(s1))),
            Assign("a1", Call("func")),
        },
-       ast::DecorationList{
+       ast::AttributeList{
            Stage(ast::PipelineStage::kCompute),
            WorkgroupSize(1),
        });
@@ -79,7 +79,7 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalsInterleaved) {
 
   struct S0 {
     a : i32;
-  };
+  }
 
   fn func() -> f32 {
     return a0;
@@ -89,9 +89,9 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalsInterleaved) {
 
   struct S1 {
     a : i32;
-  };
+  }
 
-  [[stage(compute), workgroup_size(1)]]
+  @stage(compute) @workgroup_size(1)
   fn main() {
     var s0 : S0;
     var s1 : S1;
@@ -102,9 +102,9 @@ TEST_F(WgslGeneratorImplTest, Emit_GlobalsInterleaved) {
 
 TEST_F(WgslGeneratorImplTest, Emit_Global_Sampler) {
   Global("s", ty.sampler(ast::SamplerKind::kSampler),
-         ast::DecorationList{
-             create<ast::GroupDecoration>(0),
-             create<ast::BindingDecoration>(0),
+         ast::AttributeList{
+             create<ast::GroupAttribute>(0),
+             create<ast::BindingAttribute>(0),
          });
 
   GeneratorImpl& gen = Build();
@@ -112,15 +112,15 @@ TEST_F(WgslGeneratorImplTest, Emit_Global_Sampler) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_EQ(gen.result(), "  [[group(0), binding(0)]] var s : sampler;\n");
+  EXPECT_EQ(gen.result(), "  @group(0) @binding(0) var s : sampler;\n");
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_Global_Texture) {
   auto* st = ty.sampled_texture(ast::TextureDimension::k1d, ty.f32());
   Global("t", st,
-         ast::DecorationList{
-             create<ast::GroupDecoration>(0),
-             create<ast::BindingDecoration>(0),
+         ast::AttributeList{
+             create<ast::GroupAttribute>(0),
+             create<ast::BindingAttribute>(0),
          });
 
   GeneratorImpl& gen = Build();
@@ -128,22 +128,21 @@ TEST_F(WgslGeneratorImplTest, Emit_Global_Texture) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_EQ(gen.result(),
-            "  [[group(0), binding(0)]] var t : texture_1d<f32>;\n");
+  EXPECT_EQ(gen.result(), "  @group(0) @binding(0) var t : texture_1d<f32>;\n");
 }
 
 TEST_F(WgslGeneratorImplTest, Emit_OverridableConstants) {
-  GlobalConst("a", ty.f32(), nullptr, {Override()});
-  GlobalConst("b", ty.f32(), nullptr, {Override(7u)});
+  Override("a", ty.f32(), nullptr);
+  Override("b", ty.f32(), nullptr, {Id(7u)});
 
   GeneratorImpl& gen = Build();
 
   gen.increment_indent();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_EQ(gen.result(), R"(  [[override]] let a : f32;
+  EXPECT_EQ(gen.result(), R"(  override a : f32;
 
-  [[override(7)]] let b : f32;
+  @id(7) override b : f32;
 )");
 }
 

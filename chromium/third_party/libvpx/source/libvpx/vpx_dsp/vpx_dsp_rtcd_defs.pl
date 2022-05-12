@@ -117,7 +117,7 @@ specialize qw/vpx_tm_predictor_8x8 neon dspr2 msa sse2/;
 
 add_proto qw/void vpx_dc_predictor_8x8/, "uint8_t *dst, ptrdiff_t stride, const uint8_t *above, const uint8_t *left";
 # TODO(crbug.com/webm/1522): Re-enable vsx implementation.
-specialize qw/vpx_dc_predictor_8x8 dspr2 neon msa sse2/;
+specialize qw/vpx_dc_predictor_8x8 dspr2 neon msa sse2 lsx/;
 
 add_proto qw/void vpx_dc_top_predictor_8x8/, "uint8_t *dst, ptrdiff_t stride, const uint8_t *above, const uint8_t *left";
 specialize qw/vpx_dc_top_predictor_8x8 neon msa sse2/;
@@ -155,7 +155,7 @@ add_proto qw/void vpx_tm_predictor_16x16/, "uint8_t *dst, ptrdiff_t stride, cons
 specialize qw/vpx_tm_predictor_16x16 neon msa sse2 vsx/;
 
 add_proto qw/void vpx_dc_predictor_16x16/, "uint8_t *dst, ptrdiff_t stride, const uint8_t *above, const uint8_t *left";
-specialize qw/vpx_dc_predictor_16x16 dspr2 neon msa sse2 vsx/;
+specialize qw/vpx_dc_predictor_16x16 dspr2 neon msa sse2 vsx lsx/;
 
 add_proto qw/void vpx_dc_top_predictor_16x16/, "uint8_t *dst, ptrdiff_t stride, const uint8_t *above, const uint8_t *left";
 specialize qw/vpx_dc_top_predictor_16x16 neon msa sse2 vsx/;
@@ -824,7 +824,7 @@ if (vpx_config("CONFIG_VP9_ENCODER") eq "yes") {
     specialize qw/vpx_satd avx2 sse2 neon msa/;
   }
 
-  add_proto qw/void vpx_int_pro_row/, "int16_t *hbuf, const uint8_t *ref, const int ref_stride, const int height";
+  add_proto qw/void vpx_int_pro_row/, "int16_t hbuf[16], const uint8_t *ref, const int ref_stride, const int height";
   specialize qw/vpx_int_pro_row sse2 neon msa/;
 
   add_proto qw/int16_t vpx_int_pro_col/, "const uint8_t *ref, const int width";

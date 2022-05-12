@@ -205,7 +205,7 @@ void CaptureDrawElementsInstancedBaseVertexEXT_indices(const State &glState,
 
 void CaptureMultiDrawArraysIndirectEXT_indirect(const State &glState,
                                                 bool isCallValid,
-                                                GLenum mode,
+                                                PrimitiveMode modePacked,
                                                 const void *indirect,
                                                 GLsizei drawcount,
                                                 GLsizei stride,
@@ -216,14 +216,25 @@ void CaptureMultiDrawArraysIndirectEXT_indirect(const State &glState,
 
 void CaptureMultiDrawElementsIndirectEXT_indirect(const State &glState,
                                                   bool isCallValid,
-                                                  GLenum mode,
-                                                  GLenum type,
+                                                  PrimitiveMode modePacked,
+                                                  DrawElementsType typePacked,
                                                   const void *indirect,
                                                   GLsizei drawcount,
                                                   GLsizei stride,
                                                   angle::ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    if (glState.getTargetBuffer(gl::BufferBinding::DrawIndirect) != nullptr)
+    {
+        paramCapture->value.voidConstPointerVal = indirect;
+    }
+    else
+    {
+        if (stride == 0)
+        {
+            stride = sizeof(DrawElementsIndirectCommand);
+        }
+        CaptureMemory(indirect, stride * drawcount, paramCapture);
+    }
 }
 
 void CaptureDrawRangeElementsBaseVertexEXT_indices(const State &glState,
@@ -386,7 +397,7 @@ void CaptureMultiDrawElementsANGLE_counts(const State &glState,
                                           GLsizei drawcount,
                                           ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(counts, drawcount, paramCapture);
 }
 
 void CaptureMultiDrawElementsANGLE_indices(const State &glState,
@@ -398,7 +409,7 @@ void CaptureMultiDrawElementsANGLE_indices(const State &glState,
                                            GLsizei drawcount,
                                            ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    CaptureArray(indices, drawcount, paramCapture);
 }
 
 void CaptureMultiDrawElementsInstancedANGLE_counts(const State &glState,
@@ -3050,6 +3061,16 @@ void CapturePushDebugGroupKHR_message(const State &glState,
     // Skipped
 }
 
+void CaptureGetFramebufferParameterivMESA_params(const State &glState,
+                                                 bool isCallValid,
+                                                 GLenum target,
+                                                 GLenum pname,
+                                                 GLint *params,
+                                                 angle::ParamCapture *paramCapture)
+{
+    // Skipped
+}
+
 void CaptureDeleteFencesNV_fencesPacked(const State &glState,
                                         bool isCallValid,
                                         GLsizei n,
@@ -3536,12 +3557,20 @@ void CaptureGetTexImageANGLE_pixels(const State &glState,
 
 void CaptureGetCompressedTexImageANGLE_pixels(const State &glState,
                                               bool isCallValid,
-                                              TextureTarget targetPacked,
+                                              TextureTarget target,
                                               GLint level,
                                               void *pixels,
                                               angle::ParamCapture *paramCapture)
 {
-    UNIMPLEMENTED();
+    const Texture *texture = glState.getTargetTexture(TextureTargetToType(target));
+    ASSERT(texture);
+    const gl::InternalFormat *formatInfo = texture->getFormat(target, level).info;
+    const gl::Extents &levelExtents      = texture->getExtents(target, level);
+
+    GLuint size;
+    bool result = formatInfo->computeCompressedImageSize(levelExtents, &size);
+    ASSERT(result);
+    paramCapture->readBufferSizeBytes = size;
 }
 
 void CaptureGetRenderbufferImageANGLE_pixels(const State &glState,

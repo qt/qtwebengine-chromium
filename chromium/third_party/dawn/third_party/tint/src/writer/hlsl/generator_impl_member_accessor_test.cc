@@ -13,8 +13,8 @@
 // limitations under the License.
 
 #include "gmock/gmock.h"
-#include "src/ast/stage_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/stage_attribute.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/writer/hlsl/test_helper.h"
 
 namespace tint {
@@ -96,20 +96,20 @@ class HlslGeneratorImplTest_MemberAccessorBase : public BASE {
     ProgramBuilder& b = *this;
 
     auto* s =
-        b.Structure("Data", members, {b.create<ast::StructBlockDecoration>()});
+        b.Structure("Data", members, {b.create<ast::StructBlockAttribute>()});
 
     b.Global("data", b.ty.Of(s), ast::StorageClass::kStorage,
              ast::Access::kReadWrite,
-             ast::DecorationList{
-                 b.create<ast::BindingDecoration>(0),
-                 b.create<ast::GroupDecoration>(1),
+             ast::AttributeList{
+                 b.create<ast::BindingAttribute>(0),
+                 b.create<ast::GroupAttribute>(1),
              });
   }
 
   void SetupFunction(ast::StatementList statements) {
     ProgramBuilder& b = *this;
     b.Func("main", ast::VariableList{}, b.ty.void_(), statements,
-           ast::DecorationList{
+           ast::AttributeList{
                b.Stage(ast::PipelineStage::kFragment),
            });
   }
@@ -393,7 +393,7 @@ void main() {
 TEST_F(HlslGeneratorImplTest_MemberAccessor,
        EmitExpression_IndexAccessor_StorageBuffer_Load_Int_FromArray) {
   // struct Data {
-  //   a : [[stride(4)]] array<i32, 5>;
+  //   a : @stride(4) array<i32, 5>;
   // };
   // var<storage> data : Data;
   // data.a[2];
@@ -425,7 +425,7 @@ void main() {
 TEST_F(HlslGeneratorImplTest_MemberAccessor,
        EmitExpression_IndexAccessor_StorageBuffer_Load_Int_FromArray_ExprIdx) {
   // struct Data {
-  //   a : [[stride(4)]] array<i32, 5>;
+  //   a : @stride(4) array<i32, 5>;
   // };
   // var<storage> data : Data;
   // data.a[(2 + 4) - 3];
@@ -457,7 +457,7 @@ void main() {
 
 TEST_F(HlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_ToArray) {
   // struct Data {
-  //   a : [[stride(4)]] array<i32, 5>;
+  //   a : @stride(4) array<i32, 5>;
   // };
   // var<storage> data : Data;
   // data.a[2] = 2;
@@ -491,7 +491,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor, StorageBuffer_Load_MultiLevel) {
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;
@@ -533,7 +533,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor,
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;
@@ -577,7 +577,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor,
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;
@@ -621,7 +621,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor,
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;
@@ -664,7 +664,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor, StorageBuffer_Store_MultiLevel) {
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;
@@ -705,7 +705,7 @@ TEST_F(HlslGeneratorImplTest_MemberAccessor,
   //   b : vec3<f32>;
   // };
   // struct Data {
-  //   var c : [[stride(32)]] array<Inner, 4>;
+  //   var c : @stride(32) array<Inner, 4>;
   // };
   //
   // var<storage> data : Pre;

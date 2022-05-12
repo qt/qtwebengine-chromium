@@ -15,10 +15,11 @@
 #include <memory>
 
 #include "gmock/gmock.h"
+#include "protobuf-matchers/protocol-buffer-matchers.h"
 #include "gtest/gtest.h"
-#include "third_party/nearby_connections/cpp/cal/api/ble.h"
-#include "third_party/nearby_connections/cpp/cal/base/ble_types.h"
-#include "third_party/nearby_connections/cpp/cal/public/ble.h"
+#include "third_party/nearby/cpp/cal/api/ble.h"
+#include "third_party/nearby/cpp/cal/base/ble_types.h"
+#include "third_party/nearby/cpp/cal/public/ble.h"
 
 namespace nearby {
 namespace cal {

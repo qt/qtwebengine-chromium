@@ -129,7 +129,7 @@ spv_result_t ValidateUint32ConstantOperandForDebugInfo(
   }
 
 // True if the operand of a debug info instruction |inst| at |word_index|
-// satisifies |expectation| that is given as a function. Otherwise,
+// satisfies |expectation| that is given as a function. Otherwise,
 // returns false.
 bool DoesDebugInfoOperandMatchExpectation(
     const ValidationState_t& _,
@@ -739,7 +739,8 @@ spv_result_t ValidateExtension(ValidationState_t& _, const Instruction* inst) {
 spv_result_t ValidateExtInstImport(ValidationState_t& _,
                                    const Instruction* inst) {
   const auto name_id = 1;
-  if (!_.HasExtension(kSPV_KHR_non_semantic_info)) {
+  if (_.version() <= SPV_SPIRV_VERSION_WORD(1, 5) &&
+      !_.HasExtension(kSPV_KHR_non_semantic_info)) {
     const std::string name = inst->GetOperandAs<std::string>(name_id);
     if (name.find("NonSemantic.") == 0) {
       return _.diag(SPV_ERROR_INVALID_DATA, inst)
@@ -2803,8 +2804,9 @@ spv_result_t ValidateExtInst(ValidationState_t& _, const Instruction* inst) {
             bool invalid = false;
             auto* component_count = _.FindDef(inst->word(i));
             if (IsConstIntScalarTypeWith32Or64Bits(_, component_count)) {
-              // TODO: We need a spec discussion for the bindless array.
-              if (!component_count->word(3)) {
+              // TODO: We need a spec discussion for the runtime array for
+              // OpenCL.
+              if (!vulkanDebugInfo && !component_count->word(3)) {
                 invalid = true;
               }
             } else if (component_count->words().size() > 6 &&

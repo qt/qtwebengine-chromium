@@ -140,21 +140,19 @@ AllocationResult LocalAllocationBuffer::AllocateRawAligned(
   int filler_size = Heap::GetFillToAlign(current_top, alignment);
   int aligned_size = filler_size + size_in_bytes;
   if (!allocation_info_.CanIncrementTop(aligned_size)) {
-    return AllocationResult::Retry(NEW_SPACE);
+    return AllocationResult::Failure(NEW_SPACE);
   }
   HeapObject object =
       HeapObject::FromAddress(allocation_info_.IncrementTop(aligned_size));
-  if (filler_size > 0) {
-    return heap_->PrecedeWithFiller(object, filler_size);
-  }
-
-  return AllocationResult(object);
+  return filler_size > 0 ? AllocationResult::FromObject(
+                               heap_->PrecedeWithFiller(object, filler_size))
+                         : AllocationResult::FromObject(object);
 }
 
 LocalAllocationBuffer LocalAllocationBuffer::FromResult(Heap* heap,
                                                         AllocationResult result,
                                                         intptr_t size) {
-  if (result.IsRetry()) return InvalidBuffer();
+  if (result.IsFailure()) return InvalidBuffer();
   HeapObject obj;
   bool ok = result.To(&obj);
   USE(ok);
@@ -173,6 +171,24 @@ bool LocalAllocationBuffer::TryFreeLast(HeapObject object, int object_size) {
     return allocation_info_.DecrementTopIfAdjacent(object_address, object_size);
   }
   return false;
+}
+
+bool MemoryChunkIterator::HasNext() {
+  if (current_chunk_) return true;
+
+  while (space_iterator_.HasNext()) {
+    Space* space = space_iterator_.Next();
+    current_chunk_ = space->first_page();
+    if (current_chunk_) return true;
+  }
+
+  return false;
+}
+
+MemoryChunk* MemoryChunkIterator::Next() {
+  MemoryChunk* chunk = current_chunk_;
+  current_chunk_ = chunk->list_node().next();
+  return chunk;
 }
 
 }  // namespace internal

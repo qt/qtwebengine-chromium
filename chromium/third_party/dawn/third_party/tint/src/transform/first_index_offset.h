@@ -35,25 +35,28 @@ namespace transform {
 /// Therefore, these values must by passed to the shader.
 ///
 /// Before:
-///   [[builtin(vertex_index)]] var<in> vert_idx : u32;
+/// ```
+///   @builtin(vertex_index) var<in> vert_idx : u32;
 ///   fn func() -> u32 {
 ///     return vert_idx;
 ///   }
+/// ```
 ///
 /// After:
-///   [[block]]
+/// ```
 ///   struct TintFirstIndexOffsetData {
 ///     tint_first_vertex_index : u32;
 ///     tint_first_instance_index : u32;
 ///   };
-///   [[builtin(vertex_index)]] var<in> tint_first_index_offset_vert_idx : u32;
-///   [[binding(N), group(M)]] var<uniform> tint_first_index_data :
+///   @builtin(vertex_index) var<in> tint_first_index_offset_vert_idx : u32;
+///   @binding(N) @group(M) var<uniform> tint_first_index_data :
 ///                                                    TintFirstIndexOffsetData;
 ///   fn func() -> u32 {
 ///     const vert_idx = (tint_first_index_offset_vert_idx +
 ///                       tint_first_index_data.tint_first_vertex_index);
 ///     return vert_idx;
 ///   }
+/// ```
 ///
 class FirstIndexOffset : public Castable<FirstIndexOffset, Transform> {
  public:
@@ -72,9 +75,9 @@ class FirstIndexOffset : public Castable<FirstIndexOffset, Transform> {
     /// Destructor
     ~BindingPoint() override;
 
-    /// [[binding()]] for the first vertex / first instance uniform buffer
+    /// `@binding()` for the first vertex / first instance uniform buffer
     uint32_t binding = 0;
-    /// [[group()]] for the first vertex / first instance uniform buffer
+    /// `@group()` for the first vertex / first instance uniform buffer
     uint32_t group = 0;
   };
 
@@ -112,6 +115,12 @@ class FirstIndexOffset : public Castable<FirstIndexOffset, Transform> {
   /// Destructor
   ~FirstIndexOffset() override;
 
+  /// @param program the program to inspect
+  /// @param data optional extra transform-specific input data
+  /// @returns true if this transform should be run for the given program
+  bool ShouldRun(const Program* program,
+                 const DataMap& data = {}) const override;
+
  protected:
   /// Runs the transform using the CloneContext built for transforming a
   /// program. Run() is responsible for calling Clone() on the CloneContext.
@@ -119,7 +128,9 @@ class FirstIndexOffset : public Castable<FirstIndexOffset, Transform> {
   /// ProgramBuilder
   /// @param inputs optional extra transform-specific input data
   /// @param outputs optional extra transform-specific output data
-  void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) override;
+  void Run(CloneContext& ctx,
+           const DataMap& inputs,
+           DataMap& outputs) const override;
 
  private:
   uint32_t binding_ = 0;

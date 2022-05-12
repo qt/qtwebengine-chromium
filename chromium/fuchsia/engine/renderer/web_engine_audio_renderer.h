@@ -52,7 +52,8 @@ class WEB_ENGINE_EXPORT WebEngineAudioRenderer final
   void SetVolume(float volume) override;
   void SetLatencyHint(absl::optional<base::TimeDelta> latency_hint) override;
   void SetPreservesPitch(bool preserves_pitch) override;
-  void SetAutoplayInitiated(bool autoplay_initiated) override;
+  void SetWasPlayedWithUserActivation(
+      bool was_played_with_user_activation) override;
 
   // TimeSource implementation.
   void StartTicking() override;
@@ -99,6 +100,8 @@ class WEB_ENGINE_EXPORT WebEngineAudioRenderer final
   // Connects |volume_control_|, if it hasn't been connected, and then sets
   // |volume_|.
   void UpdateVolume();
+
+  void InitializeStream();
 
   // Callback for input_buffer_collection_.AcquireBuffers().
   void OnBuffersAcquired(
@@ -169,6 +172,7 @@ class WEB_ENGINE_EXPORT WebEngineAudioRenderer final
 
   float volume_ = 1.0;
 
+  media::CdmContext* cdm_context_ = nullptr;
   media::DemuxerStream* demuxer_stream_ = nullptr;
   bool is_demuxer_read_pending_ = false;
   bool drop_next_demuxer_read_result_ = false;

@@ -8,7 +8,6 @@ import("../visibility.gni")
 
 devtools_module("text_utils") {
   sources = [
-    "CodeMirrorUtils.ts",
     "ContentProvider.ts",
     "StaticContentProvider.ts",
     "Text.ts",
@@ -21,6 +20,7 @@ devtools_module("text_utils") {
     "../../core/common:bundle",
     "../../core/platform:bundle",
     "../../core/root:bundle",
+    "../../third_party/codemirror",
   ]
 
   visibility =

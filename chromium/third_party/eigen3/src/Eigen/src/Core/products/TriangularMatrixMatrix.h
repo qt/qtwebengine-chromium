@@ -91,7 +91,7 @@ struct product_triangular_matrix_matrix<Scalar,Index,Mode,true,
   
   typedef gebp_traits<Scalar,Scalar> Traits;
   enum {
-    SmallPanelWidth   = 2 * EIGEN_PLAIN_ENUM_MAX(Traits::mr,Traits::nr),
+    SmallPanelWidth   = 2 * plain_enum_max(Traits::mr, Traits::nr),
     IsLower = (Mode&Lower) == Lower,
     SetDiag = (Mode&(ZeroDiag|UnitDiag)) ? 0 : 1
   };
@@ -249,7 +249,7 @@ struct product_triangular_matrix_matrix<Scalar,Index,Mode,false,
 {
   typedef gebp_traits<Scalar,Scalar> Traits;
   enum {
-    SmallPanelWidth   = EIGEN_PLAIN_ENUM_MAX(Traits::mr,Traits::nr),
+    SmallPanelWidth   = plain_enum_max(Traits::mr, Traits::nr),
     IsLower = (Mode&Lower) == Lower,
     SetDiag = (Mode&(ZeroDiag|UnitDiag)) ? 0 : 1
   };
@@ -453,12 +453,12 @@ struct triangular_product_impl<Mode,LhsIsTriangular,Lhs,false,Rhs,false>
     // Apply correction if the diagonal is unit and a scalar factor was nested:
     if ((Mode&UnitDiag)==UnitDiag)
     {
-      if (LhsIsTriangular && lhs_alpha!=LhsScalar(1))
+      if (LhsIsTriangular && !numext::is_exactly_one(lhs_alpha))
       {
         Index diagSize = (std::min)(lhs.rows(),lhs.cols());
         dst.topRows(diagSize) -= ((lhs_alpha-LhsScalar(1))*a_rhs).topRows(diagSize);
       }
-      else if ((!LhsIsTriangular) && rhs_alpha!=RhsScalar(1))
+      else if ((!LhsIsTriangular) && !numext::is_exactly_one(rhs_alpha))
       {
         Index diagSize = (std::min)(rhs.rows(),rhs.cols());
         dst.leftCols(diagSize) -= (rhs_alpha-RhsScalar(1))*a_lhs.leftCols(diagSize);

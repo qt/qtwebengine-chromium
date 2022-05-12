@@ -63,6 +63,9 @@ int OnFrameReceived(nghttp2_session* /* session */,
     // callbacks. This callback handles the point at which the entire logical
     // frame has been received and processed.
     case NGHTTP2_DATA:
+      if ((frame->hd.flags & NGHTTP2_FLAG_PADDED) != 0) {
+        visitor->OnDataPaddingLength(stream_id, frame->data.padlen);
+      }
       if (frame->hd.flags & NGHTTP2_FLAG_END_STREAM) {
         visitor->OnEndStream(stream_id);
       }
@@ -174,8 +177,10 @@ int OnHeader(nghttp2_session* /* session */, const nghttp2_frame* frame,
     case Http2VisitorInterface::HEADER_OK:
       return 0;
     case Http2VisitorInterface::HEADER_CONNECTION_ERROR:
+    case Http2VisitorInterface::HEADER_COMPRESSION_ERROR:
       return NGHTTP2_ERR_CALLBACK_FAILURE;
     case Http2VisitorInterface::HEADER_RST_STREAM:
+    case Http2VisitorInterface::HEADER_FIELD_INVALID:
     case Http2VisitorInterface::HEADER_HTTP_MESSAGING:
       return NGHTTP2_ERR_TEMPORAL_CALLBACK_FAILURE;
   }
@@ -204,6 +209,21 @@ int OnFrameSent(nghttp2_session* /* session */, const nghttp2_frame* frame,
   }
   return visitor->OnFrameSent(frame->hd.type, frame->hd.stream_id,
                               frame->hd.length, frame->hd.flags, error_code);
+}
+
+int OnFrameNotSent(nghttp2_session* /* session */, const nghttp2_frame* frame,
+                   int /* lib_error_code */, void* /* user_data */) {
+  if (frame->hd.type == kMetadataFrameType) {
+    auto* source = static_cast<MetadataSource*>(frame->ext.payload);
+    if (source == nullptr) {
+      QUICHE_BUG(not_sent_payload_is_nullptr)
+          << "Extension frame payload for stream " << frame->hd.stream_id
+          << " is null!";
+    } else {
+      source->OnFailure();
+    }
+  }
+  return 0;
 }
 
 int OnInvalidFrameReceived(nghttp2_session* /* session */,
@@ -312,10 +332,11 @@ nghttp2_session_callbacks_unique_ptr Create() {
   nghttp2_session_callbacks_set_before_frame_send_callback(callbacks,
                                                            &OnBeforeFrameSent);
   nghttp2_session_callbacks_set_on_frame_send_callback(callbacks, &OnFrameSent);
+  nghttp2_session_callbacks_set_on_frame_not_send_callback(callbacks,
+                                                           &OnFrameNotSent);
   nghttp2_session_callbacks_set_on_invalid_frame_recv_callback(
       callbacks, &OnInvalidFrameReceived);
   nghttp2_session_callbacks_set_error_callback2(callbacks, &OnError);
-  // on_frame_not_send_callback <- just ignored
   nghttp2_session_callbacks_set_send_data_callback(
       callbacks, &DataFrameSourceSendCallback);
   nghttp2_session_callbacks_set_pack_extension_callback(

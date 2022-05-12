@@ -30,11 +30,6 @@ class RecursiveMutex;
 
 namespace internal {
 
-constexpr int KB = 1024;
-constexpr int MB = KB * 1024;
-constexpr int GB = MB * 1024;
-constexpr int64_t TB = static_cast<int64_t>(GB) * 1024;
-
 // Determine whether we are running in a simulated environment.
 // Setting USE_SIMULATOR explicitly from the build script will force
 // the use of a simulated environment.
@@ -357,6 +352,11 @@ STATIC_ASSERT(kPointerSize == (1 << kPointerSizeLog2));
 // This type defines raw storage type for external (or off-V8 heap) pointers
 // stored on V8 heap.
 constexpr int kExternalPointerSize = sizeof(ExternalPointer_t);
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
+STATIC_ASSERT(kExternalPointerSize == kTaggedSize);
+#else
+STATIC_ASSERT(kExternalPointerSize == kSystemPointerSize);
+#endif
 
 constexpr int kEmbedderDataSlotSize = kSystemPointerSize;
 
@@ -1153,6 +1153,10 @@ inline std::ostream& operator<<(std::ostream& os, CreateArgumentsType type) {
   UNREACHABLE();
 }
 
+// Threshold calculated using a microbenckmark.
+// https://chromium-review.googlesource.com/c/v8/v8/+/3429210
+constexpr int kScopeInfoMaxInlinedLocalNamesSize = 75;
+
 enum ScopeType : uint8_t {
   CLASS_SCOPE,     // The scope introduced by a class.
   EVAL_SCOPE,      // The top-level scope for an eval source.
@@ -1647,66 +1651,37 @@ using FileAndLine = std::pair<const char*, int>;
 enum class OptimizationMarker : int32_t {
   // These values are set so that it is easy to check if there is a marker where
   // some processing needs to be done.
-  kNone = 0b000,
-  kInOptimizationQueue = 0b001,
-  kCompileOptimized = 0b010,
-  kCompileOptimizedConcurrent = 0b011,
-  kLogFirstExecution = 0b100,
-  kLastOptimizationMarker = kLogFirstExecution
+  kNone = 0b00,
+  kInOptimizationQueue = 0b01,
+  kCompileTurbofan_NotConcurrent = 0b10,
+  kCompileTurbofan_Concurrent = 0b11,
+  kLastOptimizationMarker = kCompileTurbofan_Concurrent,
 };
 // For kNone or kInOptimizationQueue we don't need any special processing.
 // To check both cases using a single mask, we expect the kNone to be 0 and
 // kInOptimizationQueue to be 1 so that we can mask off the lsb for checking.
-STATIC_ASSERT(static_cast<int>(OptimizationMarker::kNone) == 0b000 &&
+STATIC_ASSERT(static_cast<int>(OptimizationMarker::kNone) == 0b00 &&
               static_cast<int>(OptimizationMarker::kInOptimizationQueue) ==
-                  0b001);
+                  0b01);
 STATIC_ASSERT(static_cast<int>(OptimizationMarker::kLastOptimizationMarker) <=
-              0b111);
-static constexpr uint32_t kNoneOrInOptimizationQueueMask = 0b110;
+              0b11);
+static constexpr uint32_t kNoneOrInOptimizationQueueMask = 0b10;
 
 inline bool IsInOptimizationQueueMarker(OptimizationMarker marker) {
   return marker == OptimizationMarker::kInOptimizationQueue;
 }
 
-inline bool IsCompileOptimizedMarker(OptimizationMarker marker) {
-  return marker == OptimizationMarker::kCompileOptimized ||
-         marker == OptimizationMarker::kCompileOptimizedConcurrent;
-}
-
 inline std::ostream& operator<<(std::ostream& os,
                                 const OptimizationMarker& marker) {
   switch (marker) {
-    case OptimizationMarker::kLogFirstExecution:
-      return os << "OptimizationMarker::kLogFirstExecution";
     case OptimizationMarker::kNone:
       return os << "OptimizationMarker::kNone";
-    case OptimizationMarker::kCompileOptimized:
-      return os << "OptimizationMarker::kCompileOptimized";
-    case OptimizationMarker::kCompileOptimizedConcurrent:
-      return os << "OptimizationMarker::kCompileOptimizedConcurrent";
+    case OptimizationMarker::kCompileTurbofan_NotConcurrent:
+      return os << "OptimizationMarker::kCompileTurbofan_NotConcurrent";
+    case OptimizationMarker::kCompileTurbofan_Concurrent:
+      return os << "OptimizationMarker::kCompileTurbofan_Concurrent";
     case OptimizationMarker::kInOptimizationQueue:
       return os << "OptimizationMarker::kInOptimizationQueue";
-  }
-}
-
-enum class OptimizationTier {
-  kNone = 0b00,
-  kMidTier = 0b01,
-  kTopTier = 0b10,
-  kLastOptimizationTier = kTopTier
-};
-static constexpr uint32_t kNoneOrMidTierMask = 0b10;
-static constexpr uint32_t kNoneMask = 0b11;
-
-inline std::ostream& operator<<(std::ostream& os,
-                                const OptimizationTier& tier) {
-  switch (tier) {
-    case OptimizationTier::kNone:
-      return os << "OptimizationTier::kNone";
-    case OptimizationTier::kMidTier:
-      return os << "OptimizationTier::kMidTier";
-    case OptimizationTier::kTopTier:
-      return os << "OptimizationTier::kTopTier";
   }
 }
 
@@ -1729,18 +1704,19 @@ enum class BlockingBehavior { kBlock, kDontBlock };
 
 enum class ConcurrencyMode { kNotConcurrent, kConcurrent };
 
-#define FOR_EACH_ISOLATE_ADDRESS_NAME(C)                       \
-  C(Handler, handler)                                          \
-  C(CEntryFP, c_entry_fp)                                      \
-  C(CFunction, c_function)                                     \
-  C(Context, context)                                          \
-  C(PendingException, pending_exception)                       \
-  C(PendingHandlerContext, pending_handler_context)            \
-  C(PendingHandlerEntrypoint, pending_handler_entrypoint)      \
-  C(PendingHandlerConstantPool, pending_handler_constant_pool) \
-  C(PendingHandlerFP, pending_handler_fp)                      \
-  C(PendingHandlerSP, pending_handler_sp)                      \
-  C(ExternalCaughtException, external_caught_exception)        \
+#define FOR_EACH_ISOLATE_ADDRESS_NAME(C)                            \
+  C(Handler, handler)                                               \
+  C(CEntryFP, c_entry_fp)                                           \
+  C(CFunction, c_function)                                          \
+  C(Context, context)                                               \
+  C(PendingException, pending_exception)                            \
+  C(PendingHandlerContext, pending_handler_context)                 \
+  C(PendingHandlerEntrypoint, pending_handler_entrypoint)           \
+  C(PendingHandlerConstantPool, pending_handler_constant_pool)      \
+  C(PendingHandlerFP, pending_handler_fp)                           \
+  C(PendingHandlerSP, pending_handler_sp)                           \
+  C(NumFramesAbovePendingHandler, num_frames_above_pending_handler) \
+  C(ExternalCaughtException, external_caught_exception)             \
   C(JSEntrySP, js_entry_sp)
 
 enum IsolateAddressId {
@@ -1760,7 +1736,7 @@ enum IsolateAddressId {
   V(TrapRemByZero)                 \
   V(TrapFloatUnrepresentable)      \
   V(TrapFuncSigMismatch)           \
-  V(TrapDataSegmentDropped)        \
+  V(TrapDataSegmentOutOfBounds)    \
   V(TrapElemSegmentDropped)        \
   V(TrapTableOutOfBounds)          \
   V(TrapRethrowNull)               \
@@ -1768,8 +1744,6 @@ enum IsolateAddressId {
   V(TrapIllegalCast)               \
   V(TrapArrayOutOfBounds)          \
   V(TrapArrayTooLarge)
-
-enum WasmRttSubMode { kCanonicalize, kFresh };
 
 enum KeyedAccessLoadMode {
   STANDARD_LOAD,
@@ -1820,15 +1794,8 @@ constexpr int kSwissNameDictionaryInitialCapacity = 4;
 constexpr int kSmallOrderedHashSetMinCapacity = 4;
 constexpr int kSmallOrderedHashMapMinCapacity = 4;
 
-#ifdef V8_INCLUDE_RECEIVER_IN_ARGC
-constexpr bool kJSArgcIncludesReceiver = true;
 constexpr int kJSArgcReceiverSlots = 1;
 constexpr uint16_t kDontAdaptArgumentsSentinel = 0;
-#else
-constexpr bool kJSArgcIncludesReceiver = false;
-constexpr int kJSArgcReceiverSlots = 0;
-constexpr uint16_t kDontAdaptArgumentsSentinel = static_cast<uint16_t>(-1);
-#endif
 
 // Helper to get the parameter count for functions with JS linkage.
 inline constexpr int JSParameterCount(int param_count_without_receiver) {

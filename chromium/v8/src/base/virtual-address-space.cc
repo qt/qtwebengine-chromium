@@ -26,10 +26,34 @@ STATIC_ASSERT_ENUM(PagePermissions::kReadExecute,
 
 #undef STATIC_ASSERT_ENUM
 
+namespace {
+uint8_t PagePermissionsToBitset(PagePermissions permissions) {
+  switch (permissions) {
+    case PagePermissions::kNoAccess:
+      return 0b000;
+    case PagePermissions::kRead:
+      return 0b100;
+    case PagePermissions::kReadWrite:
+      return 0b110;
+    case PagePermissions::kReadWriteExecute:
+      return 0b111;
+    case PagePermissions::kReadExecute:
+      return 0b101;
+  }
+}
+}  // namespace
+
+bool IsSubset(PagePermissions lhs, PagePermissions rhs) {
+  uint8_t lhs_bits = PagePermissionsToBitset(lhs);
+  uint8_t rhs_bits = PagePermissionsToBitset(rhs);
+  return (lhs_bits & rhs_bits) == lhs_bits;
+}
+
 VirtualAddressSpace::VirtualAddressSpace()
     : VirtualAddressSpaceBase(OS::CommitPageSize(), OS::AllocatePageSize(),
                               kNullAddress,
-                              std::numeric_limits<uintptr_t>::max()) {
+                              std::numeric_limits<uintptr_t>::max(),
+                              PagePermissions::kReadWriteExecute) {
 #if V8_OS_WIN
   // On Windows, this additional step is required to lookup the VirtualAlloc2
   // and friends functions.
@@ -77,13 +101,52 @@ bool VirtualAddressSpace::SetPagePermissions(Address address, size_t size,
                             static_cast<OS::MemoryPermission>(permissions));
 }
 
+bool VirtualAddressSpace::AllocateGuardRegion(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  void* hint = reinterpret_cast<void*>(address);
+  void* result = OS::Allocate(hint, size, allocation_granularity(),
+                              OS::MemoryPermission::kNoAccess);
+  if (result && result != hint) {
+    CHECK(OS::Free(result, size));
+  }
+  return result == hint;
+}
+
+bool VirtualAddressSpace::FreeGuardRegion(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  return OS::Free(reinterpret_cast<void*>(address), size);
+}
+
 bool VirtualAddressSpace::CanAllocateSubspaces() {
   return OS::CanReserveAddressSpace();
 }
 
+Address VirtualAddressSpace::AllocateSharedPages(
+    Address hint, size_t size, PagePermissions permissions,
+    PlatformSharedMemoryHandle handle, uint64_t offset) {
+  DCHECK(IsAligned(hint, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+  DCHECK(IsAligned(offset, allocation_granularity()));
+
+  return reinterpret_cast<Address>(OS::AllocateShared(
+      reinterpret_cast<void*>(hint), size,
+      static_cast<OS::MemoryPermission>(permissions), handle, offset));
+}
+
+bool VirtualAddressSpace::FreeSharedPages(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  return OS::FreeShared(reinterpret_cast<void*>(address), size);
+}
+
 std::unique_ptr<v8::VirtualAddressSpace> VirtualAddressSpace::AllocateSubspace(
     Address hint, size_t size, size_t alignment,
-    PagePermissions max_permissions) {
+    PagePermissions max_page_permissions) {
   DCHECK(IsAligned(alignment, allocation_granularity()));
   DCHECK(IsAligned(hint, alignment));
   DCHECK(IsAligned(size, allocation_granularity()));
@@ -91,11 +154,11 @@ std::unique_ptr<v8::VirtualAddressSpace> VirtualAddressSpace::AllocateSubspace(
   base::Optional<AddressSpaceReservation> reservation =
       OS::CreateAddressSpaceReservation(
           reinterpret_cast<void*>(hint), size, alignment,
-          static_cast<OS::MemoryPermission>(max_permissions));
+          static_cast<OS::MemoryPermission>(max_page_permissions));
   if (!reservation.has_value())
     return std::unique_ptr<v8::VirtualAddressSpace>();
   return std::unique_ptr<v8::VirtualAddressSpace>(
-      new VirtualAddressSubspace(*reservation, this));
+      new VirtualAddressSubspace(*reservation, this, max_page_permissions));
 }
 
 bool VirtualAddressSpace::DiscardSystemPages(Address address, size_t size) {
@@ -117,10 +180,12 @@ bool VirtualAddressSpace::FreeSubspace(VirtualAddressSubspace* subspace) {
 }
 
 VirtualAddressSubspace::VirtualAddressSubspace(
-    AddressSpaceReservation reservation, VirtualAddressSpaceBase* parent_space)
-    : VirtualAddressSpaceBase(
-          parent_space->page_size(), parent_space->allocation_granularity(),
-          reinterpret_cast<Address>(reservation.base()), reservation.size()),
+    AddressSpaceReservation reservation, VirtualAddressSpaceBase* parent_space,
+    PagePermissions max_page_permissions)
+    : VirtualAddressSpaceBase(parent_space->page_size(),
+                              parent_space->allocation_granularity(),
+                              reinterpret_cast<Address>(reservation.base()),
+                              reservation.size(), max_page_permissions),
       reservation_(reservation),
       region_allocator_(reinterpret_cast<Address>(reservation.base()),
                         reservation.size(),
@@ -153,7 +218,7 @@ Address VirtualAddressSubspace::RandomPageAddress() {
   MutexGuard guard(&mutex_);
   // Note: the random numbers generated here aren't uniformly distributed if the
   // size isn't a power of two.
-  Address addr = base() + (rng_.NextInt64() % size());
+  Address addr = base() + (static_cast<uint64_t>(rng_.NextInt64()) % size());
   return RoundDown(addr, allocation_granularity());
 }
 
@@ -163,6 +228,7 @@ Address VirtualAddressSubspace::AllocatePages(Address hint, size_t size,
   DCHECK(IsAligned(alignment, allocation_granularity()));
   DCHECK(IsAligned(hint, alignment));
   DCHECK(IsAligned(size, allocation_granularity()));
+  DCHECK(IsSubset(permissions, max_page_permissions()));
 
   MutexGuard guard(&mutex_);
 
@@ -198,19 +264,79 @@ bool VirtualAddressSubspace::SetPagePermissions(Address address, size_t size,
                                                 PagePermissions permissions) {
   DCHECK(IsAligned(address, page_size()));
   DCHECK(IsAligned(size, page_size()));
+  DCHECK(IsSubset(permissions, max_page_permissions()));
 
   return reservation_.SetPermissions(
       reinterpret_cast<void*>(address), size,
       static_cast<OS::MemoryPermission>(permissions));
 }
 
+bool VirtualAddressSubspace::AllocateGuardRegion(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  MutexGuard guard(&mutex_);
+
+  // It is guaranteed that reserved address space is inaccessible, so we just
+  // need to mark the region as in-use in the region allocator.
+  return region_allocator_.AllocateRegionAt(address, size);
+}
+
+bool VirtualAddressSubspace::FreeGuardRegion(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  MutexGuard guard(&mutex_);
+
+  return region_allocator_.FreeRegion(address) == size;
+}
+
+Address VirtualAddressSubspace::AllocateSharedPages(
+    Address hint, size_t size, PagePermissions permissions,
+    PlatformSharedMemoryHandle handle, uint64_t offset) {
+  DCHECK(IsAligned(hint, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+  DCHECK(IsAligned(offset, allocation_granularity()));
+
+  MutexGuard guard(&mutex_);
+
+  Address address =
+      region_allocator_.AllocateRegion(hint, size, allocation_granularity());
+  if (address == RegionAllocator::kAllocationFailure) return kNullAddress;
+
+  if (!reservation_.AllocateShared(
+          reinterpret_cast<void*>(address), size,
+          static_cast<OS::MemoryPermission>(permissions), handle, offset)) {
+    CHECK_EQ(size, region_allocator_.FreeRegion(address));
+    return kNullAddress;
+  }
+
+  return address;
+}
+
+bool VirtualAddressSubspace::FreeSharedPages(Address address, size_t size) {
+  DCHECK(IsAligned(address, allocation_granularity()));
+  DCHECK(IsAligned(size, allocation_granularity()));
+
+  MutexGuard guard(&mutex_);
+  if (region_allocator_.CheckRegion(address) != size) return false;
+
+  // The order here is important: on Windows, the allocation first has to be
+  // freed to a placeholder before the placeholder can be merged (during the
+  // merge_callback) with any surrounding placeholder mappings.
+  CHECK(reservation_.FreeShared(reinterpret_cast<void*>(address), size));
+  CHECK_EQ(size, region_allocator_.FreeRegion(address));
+  return true;
+}
+
 std::unique_ptr<v8::VirtualAddressSpace>
 VirtualAddressSubspace::AllocateSubspace(Address hint, size_t size,
                                          size_t alignment,
-                                         PagePermissions max_permissions) {
+                                         PagePermissions max_page_permissions) {
   DCHECK(IsAligned(alignment, allocation_granularity()));
   DCHECK(IsAligned(hint, alignment));
   DCHECK(IsAligned(size, allocation_granularity()));
+  DCHECK(IsSubset(max_page_permissions, this->max_page_permissions()));
 
   MutexGuard guard(&mutex_);
 
@@ -222,13 +348,13 @@ VirtualAddressSubspace::AllocateSubspace(Address hint, size_t size,
   base::Optional<AddressSpaceReservation> reservation =
       reservation_.CreateSubReservation(
           reinterpret_cast<void*>(address), size,
-          static_cast<OS::MemoryPermission>(max_permissions));
+          static_cast<OS::MemoryPermission>(max_page_permissions));
   if (!reservation.has_value()) {
     CHECK_EQ(size, region_allocator_.FreeRegion(address));
     return nullptr;
   }
   return std::unique_ptr<v8::VirtualAddressSpace>(
-      new VirtualAddressSubspace(*reservation, this));
+      new VirtualAddressSubspace(*reservation, this, max_page_permissions));
 }
 
 bool VirtualAddressSubspace::DiscardSystemPages(Address address, size_t size) {

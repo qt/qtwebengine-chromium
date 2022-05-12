@@ -55,7 +55,7 @@ void CPDF_StructTree::LoadPageTree(const CPDF_Dictionary* pPageDict) {
   if (pKids->IsDictionary())
     dwKids = 1;
   else if (const CPDF_Array* pArray = pKids->AsArray())
-    dwKids = pArray->size();
+    dwKids = fxcrt::CollectionSize<uint32_t>(*pArray);
   else
     return;
 
@@ -109,6 +109,8 @@ RetainPtr<CPDF_StructElement> CPDF_StructTree::AddPageNode(
 
   if (!pParentElement->UpdateKidIfElement(pDict, pElement.Get()))
     map->erase(pDict);
+
+  pElement->SetParent(pParentElement.Get());
 
   return pElement;
 }

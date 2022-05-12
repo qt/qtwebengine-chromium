@@ -13,7 +13,7 @@ ci.defaults.set(
     executable = ci.DEFAULT_EXECUTABLE,
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     pool = ci.DEFAULT_POOL,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
 )
@@ -48,7 +48,7 @@ ci.builder(
 )
 
 ci.builder(
-    name = "android-web-platform-pie-x86-fyi-rel",
+    name = "android-chrome-pie-x86-wpt-fyi-rel",
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|web-platform",
         short_name = "P",

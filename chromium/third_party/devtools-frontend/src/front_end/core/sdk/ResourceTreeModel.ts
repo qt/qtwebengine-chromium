@@ -34,6 +34,7 @@
 
 import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
+import type * as Platform from '../platform/platform.js';
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
@@ -73,7 +74,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       networkManager.addEventListener(NetworkManagerEvents.RequestUpdateDropped, this.onRequestUpdateDropped, this);
     }
     this.agent = target.pageAgent();
-    this.agent.invoke_enable();
+    void this.agent.invoke_enable();
     this.#securityOriginManager = (target.model(SecurityOriginManager) as SecurityOriginManager);
     this.#pendingBackForwardCacheNotUsedEvents = new Set<Protocol.Page.BackForwardCacheNotUsedEvent>();
     target.registerPageDispatcher(new PageDispatcher(this));
@@ -85,7 +86,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     this.isInterstitialShowing = false;
     this.mainFrame = null;
 
-    this.agent.invoke_getResourceTree().then(event => {
+    void this.agent.invoke_getResourceTree().then(event => {
       this.processCachedResources(event.getError() ? null : event.frameTree);
     });
   }
@@ -237,8 +238,8 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     const frame = this.framesInternal.get(framePayload.id);
     if (frame && !frame.getResourcesMap().get(framePayload.url)) {
       const frameResource = this.createResourceFromFramePayload(
-          framePayload, framePayload.url, Common.ResourceType.resourceTypes.Document, framePayload.mimeType, null,
-          null);
+          framePayload, framePayload.url as Platform.DevToolsPath.UrlString, Common.ResourceType.resourceTypes.Document,
+          framePayload.mimeType, null, null);
       frameResource.isGenerated = true;
       frame.addResource(frameResource);
     }
@@ -342,25 +343,27 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
     for (let i = 0; i < frameTreePayload.resources.length; ++i) {
       const subresource = frameTreePayload.resources[i];
       const resource = this.createResourceFromFramePayload(
-          framePayload, subresource.url, Common.ResourceType.resourceTypes[subresource.type], subresource.mimeType,
-          subresource.lastModified || null, subresource.contentSize || null);
+          framePayload, subresource.url as Platform.DevToolsPath.UrlString,
+          Common.ResourceType.resourceTypes[subresource.type], subresource.mimeType, subresource.lastModified || null,
+          subresource.contentSize || null);
       frame.addResource(resource);
     }
 
     if (!frame.getResourcesMap().get(framePayload.url)) {
       const frameResource = this.createResourceFromFramePayload(
-          framePayload, framePayload.url, Common.ResourceType.resourceTypes.Document, framePayload.mimeType, null,
-          null);
+          framePayload, framePayload.url as Platform.DevToolsPath.UrlString, Common.ResourceType.resourceTypes.Document,
+          framePayload.mimeType, null, null);
       frame.addResource(frameResource);
     }
   }
 
   private createResourceFromFramePayload(
-      frame: Protocol.Page.Frame, url: string, type: Common.ResourceType.ResourceType, mimeType: string,
-      lastModifiedTime: number|null, contentSize: number|null): Resource {
+      frame: Protocol.Page.Frame, url: Platform.DevToolsPath.UrlString, type: Common.ResourceType.ResourceType,
+      mimeType: string, lastModifiedTime: number|null, contentSize: number|null): Resource {
     const lastModified = typeof lastModifiedTime === 'number' ? new Date(lastModifiedTime * 1000) : null;
     return new Resource(
-        this, null, url, frame.url, frame.id, frame.loaderId, type, mimeType, lastModified, contentSize);
+        this, null, url, frame.url as Platform.DevToolsPath.UrlString, frame.id, frame.loaderId, type, mimeType,
+        lastModified, contentSize);
   }
 
   suspendReload(): void {
@@ -391,7 +394,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
       networkManager.clearRequests();
     }
     this.dispatchEventToListeners(Events.WillReloadPage);
-    this.agent.invoke_reload({ignoreCache, scriptToEvaluateOnLoad});
+    void this.agent.invoke_reload({ignoreCache, scriptToEvaluateOnLoad});
   }
 
   // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
@@ -412,7 +415,7 @@ export class ResourceTreeModel extends SDKModel<EventTypes> {
   }
 
   navigateToHistoryEntry(entry: Protocol.Page.NavigationEntry): void {
-    this.agent.invoke_navigateToHistoryEntry({entryId: entry.id});
+    void this.agent.invoke_navigateToHistoryEntry({entryId: entry.id});
   }
 
   setLifecycleEventsEnabled(enabled: boolean): Promise<Protocol.ProtocolResponseWithError> {
@@ -601,7 +604,7 @@ export class ResourceTreeFrame {
   crossTargetParentFrameId: string|null;
   #loaderIdInternal: string;
   #nameInternal: string|null|undefined;
-  #urlInternal: string;
+  #urlInternal: Platform.DevToolsPath.UrlString;
   #domainAndRegistryInternal: string;
   #securityOriginInternal: string|null;
   #unreachableUrlInternal: string;
@@ -616,7 +619,12 @@ export class ResourceTreeFrame {
   backForwardCacheDetails: {
     restoredFromCache: boolean|undefined,
     explanations: Protocol.Page.BackForwardCacheNotRestoredExplanation[],
-  } = {restoredFromCache: undefined, explanations: []};
+    explanationsTree: Protocol.Page.BackForwardCacheNotRestoredExplanationTree|undefined,
+  } = {
+    restoredFromCache: undefined,
+    explanations: [],
+    explanationsTree: undefined,
+  };
 
   constructor(
       model: ResourceTreeModel, parentFrame: ResourceTreeFrame|null, frameId: Protocol.Page.FrameId,
@@ -628,7 +636,7 @@ export class ResourceTreeFrame {
 
     this.#loaderIdInternal = (payload && payload.loaderId) || '';
     this.#nameInternal = payload && payload.name;
-    this.#urlInternal = (payload && payload.url) || '';
+    this.#urlInternal = ((payload && payload.url) || '') as Platform.DevToolsPath.UrlString;
     this.#domainAndRegistryInternal = (payload && payload.domainAndRegistry) || '';
     this.#securityOriginInternal = payload && payload.securityOrigin;
     this.#unreachableUrlInternal = (payload && payload.unreachableUrl) || '';
@@ -680,7 +688,7 @@ export class ResourceTreeFrame {
   navigate(framePayload: Protocol.Page.Frame): void {
     this.#loaderIdInternal = framePayload.loaderId;
     this.#nameInternal = framePayload.name;
-    this.#urlInternal = framePayload.url;
+    this.#urlInternal = framePayload.url as Platform.DevToolsPath.UrlString;
     this.#domainAndRegistryInternal = framePayload.domainAndRegistry;
     this.#securityOriginInternal = framePayload.securityOrigin;
     this.#unreachableUrlInternal = framePayload.unreachableUrl || '';
@@ -688,7 +696,11 @@ export class ResourceTreeFrame {
     this.#secureContextType = framePayload.secureContextType;
     this.#crossOriginIsolatedContextType = framePayload.crossOriginIsolatedContextType;
     this.#gatedAPIFeatures = framePayload.gatedAPIFeatures;
-    this.backForwardCacheDetails = {restoredFromCache: undefined, explanations: []};
+    this.backForwardCacheDetails = {
+      restoredFromCache: undefined,
+      explanations: [],
+      explanationsTree: undefined,
+    };
 
     const mainResource = this.resourcesMap.get(this.#urlInternal);
     this.resourcesMap.clear();
@@ -710,7 +722,7 @@ export class ResourceTreeFrame {
     return this.#nameInternal || '';
   }
 
-  get url(): string {
+  get url(): Platform.DevToolsPath.UrlString {
     return this.#urlInternal;
   }
 
@@ -963,6 +975,7 @@ export class ResourceTreeFrame {
   setBackForwardCacheDetails(event: Protocol.Page.BackForwardCacheNotUsedEvent): void {
     this.backForwardCacheDetails.restoredFromCache = false;
     this.backForwardCacheDetails.explanations = event.notRestoredExplanations;
+    this.backForwardCacheDetails.explanationsTree = event.notRestoredExplanationsTree;
   }
 
   getResourcesMap(): Map<string, Resource> {
@@ -1032,7 +1045,7 @@ export class PageDispatcher implements ProtocolProxyApi.PageDispatcher {
 
   javascriptDialogOpening({hasBrowserHandler}: Protocol.Page.JavascriptDialogOpeningEvent): void {
     if (!hasBrowserHandler) {
-      this.#resourceTreeModel.agent.invoke_handleJavaScriptDialog({accept: false});
+      void this.#resourceTreeModel.agent.invoke_handleJavaScriptDialog({accept: false});
     }
   }
 

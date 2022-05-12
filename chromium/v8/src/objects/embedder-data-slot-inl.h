@@ -5,11 +5,11 @@
 #ifndef V8_OBJECTS_EMBEDDER_DATA_SLOT_INL_H_
 #define V8_OBJECTS_EMBEDDER_DATA_SLOT_INL_H_
 
-#include "src/objects/embedder-data-slot.h"
-
 #include "src/base/memory.h"
+#include "src/common/globals.h"
 #include "src/heap/heap-write-barrier-inl.h"
 #include "src/objects/embedder-data-array.h"
+#include "src/objects/embedder-data-slot.h"
 #include "src/objects/js-objects-inl.h"
 #include "src/objects/objects-inl.h"
 
@@ -27,11 +27,14 @@ EmbedderDataSlot::EmbedderDataSlot(JSObject object, int embedder_field_index)
     : SlotBase(FIELD_ADDR(
           object, object.GetEmbedderFieldOffset(embedder_field_index))) {}
 
+EmbedderDataSlot::EmbedderDataSlot(const EmbedderDataSlotSnapshot& snapshot)
+    : SlotBase(reinterpret_cast<Address>(&snapshot)) {}
+
 void EmbedderDataSlot::AllocateExternalPointerEntry(Isolate* isolate) {
-#ifdef V8_HEAP_SANDBOX
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
   // TODO(v8:10391, saelo): Use InitExternalPointerField() once
   // ExternalPointer_t is 4-bytes.
-  uint32_t index = isolate->external_pointer_table().allocate();
+  uint32_t index = isolate->external_pointer_table().Allocate();
   // Object slots don't support storing raw values, so we just "reinterpret
   // cast" the index value to Object.
   Object index_as_object(index);
@@ -74,8 +77,7 @@ void EmbedderDataSlot::store_tagged(JSObject object, int embedder_field_index,
       .Relaxed_Store(value);
   WRITE_BARRIER(object, slot_offset + kTaggedPayloadOffset, value);
 #ifdef V8_COMPRESS_POINTERS
-  // See gc_safe_store() for the reasons behind two stores and why the second is
-  // only done if !V8_HEAP_SANDBOX_BOOL
+  // See gc_safe_store() for the reasons behind two stores.
   ObjectSlot(FIELD_ADDR(object, slot_offset + kRawPayloadOffset))
       .Relaxed_Store(Smi::zero());
 #endif
@@ -88,10 +90,10 @@ bool EmbedderDataSlot::ToAlignedPointer(Isolate* isolate,
   // phase which is propely synched with GC (concurrent marker may still look
   // at the tagged part of the embedder slot but read-only access is ok).
   Address raw_value;
-#ifdef V8_HEAP_SANDBOX
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
   uint32_t index = base::Memory<uint32_t>(address() + kRawPayloadOffset);
-  raw_value = isolate->external_pointer_table().get(index) &
-              ~kEmbedderDataSlotPayloadTag;
+  raw_value =
+      isolate->external_pointer_table().Get(index, kEmbedderDataSlotPayloadTag);
 #else
   if (COMPRESS_POINTERS_BOOL) {
     // TODO(ishell, v8:8875): When pointer compression is enabled 8-byte size
@@ -109,34 +111,43 @@ bool EmbedderDataSlot::ToAlignedPointer(Isolate* isolate,
 
 bool EmbedderDataSlot::ToAlignedPointerSafe(Isolate* isolate,
                                             void** out_pointer) const {
-#ifdef V8_HEAP_SANDBOX
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
   uint32_t index = base::Memory<uint32_t>(address() + kRawPayloadOffset);
   Address raw_value;
-  if (isolate->external_pointer_table().is_valid_index(index)) {
-    raw_value = isolate->external_pointer_table().get(index) &
-                ~kEmbedderDataSlotPayloadTag;
+  if (isolate->external_pointer_table().IsValidIndex(index)) {
+    raw_value = isolate->external_pointer_table().Get(
+        index, kEmbedderDataSlotPayloadTag);
     *out_pointer = reinterpret_cast<void*>(raw_value);
-    return true;
+    // The index being valid does not guarantee that this slot contains an
+    // external pointer. After initialization, the raw part will contain the
+    // "undefined" value (see Factory::InitializeJSObjectBody) which could look
+    // like an external pointer table index as well. To deal with that, we also
+    // check that the returned value has the embedder data slot tag, since
+    // otherwise the pointer would be invalid.
+    // TODO(v8:10391) maybe initialize the slot to zero to avoid this issue.
+    return (raw_value & kExternalPointerTagMask) == 0;
   }
   return false;
 #else
   return ToAlignedPointer(isolate, out_pointer);
-#endif  // V8_HEAP_SANDBOX
+#endif  // V8_SANDBOXED_EXTERNAL_POINTERS
 }
 
 bool EmbedderDataSlot::store_aligned_pointer(Isolate* isolate, void* ptr) {
   Address value = reinterpret_cast<Address>(ptr);
   if (!HAS_SMI_TAG(value)) return false;
-#ifdef V8_HEAP_SANDBOX
-  if (V8_HEAP_SANDBOX_BOOL) {
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
+  if (V8_SANDBOXED_EXTERNAL_POINTERS_BOOL) {
+    DCHECK_EQ(0, value & kExternalPointerTagMask);
     AllocateExternalPointerEntry(isolate);
     // Raw payload contains the table index. Object slots don't support loading
     // of raw values, so we just "reinterpret cast" Object value to index.
     Object index_as_object =
         ObjectSlot(address() + kRawPayloadOffset).Relaxed_Load();
     uint32_t index = static_cast<uint32_t>(index_as_object.ptr());
-    isolate->external_pointer_table().set(index,
-                                          value | kEmbedderDataSlotPayloadTag);
+    // This also mark the entry as alive until the next GC.
+    isolate->external_pointer_table().Set(index, value,
+                                          kEmbedderDataSlotPayloadTag);
     return true;
   }
 #endif
@@ -188,6 +199,36 @@ void EmbedderDataSlot::gc_safe_store(Isolate* isolate, Address value) {
 #else
   ObjectSlot(address() + kTaggedPayloadOffset).Relaxed_Store(Smi(value));
 #endif
+}
+
+// static
+void EmbedderDataSlot::PopulateEmbedderDataSnapshot(
+    Map map, JSObject js_object, int entry_index,
+    EmbedderDataSlotSnapshot& snapshot) {
+#ifdef V8_COMPRESS_POINTERS
+  STATIC_ASSERT(sizeof(EmbedderDataSlotSnapshot) == sizeof(AtomicTagged_t) * 2);
+#else   // !V8_COMPRESS_POINTERS
+  STATIC_ASSERT(sizeof(EmbedderDataSlotSnapshot) == sizeof(AtomicTagged_t));
+#endif  // !V8_COMPRESS_POINTERS
+  STATIC_ASSERT(sizeof(EmbedderDataSlotSnapshot) == kEmbedderDataSlotSize);
+
+  const Address field_base =
+      FIELD_ADDR(js_object, js_object.GetEmbedderFieldOffset(entry_index));
+
+#if defined(V8_TARGET_BIG_ENDIAN) && defined(V8_COMPRESS_POINTERS)
+  const int index = 1;
+#else
+  const int index = 0;
+#endif
+
+  reinterpret_cast<AtomicTagged_t*>(&snapshot)[index] =
+      AsAtomicTagged::Relaxed_Load(
+          reinterpret_cast<AtomicTagged_t*>(field_base + kTaggedPayloadOffset));
+#ifdef V8_COMPRESS_POINTERS
+  reinterpret_cast<AtomicTagged_t*>(&snapshot)[1 - index] =
+      AsAtomicTagged::Relaxed_Load(
+          reinterpret_cast<AtomicTagged_t*>(field_base + kRawPayloadOffset));
+#endif  // V8_COMPRESS_POINTERS
 }
 
 }  // namespace internal

@@ -244,6 +244,8 @@ c_shader_target_language_version(glslang_target_language_version_t target_langua
         return glslang::EShTargetSpv_1_4;
     case GLSLANG_TARGET_SPV_1_5:
         return glslang::EShTargetSpv_1_5;
+    case GLSLANG_TARGET_SPV_1_6:
+        return glslang::EShTargetSpv_1_6;
     default:
         break;
     }
@@ -271,6 +273,8 @@ static glslang::EShTargetClientVersion c_shader_client_version(glslang_target_cl
         return glslang::EShTargetVulkan_1_1;
     case GLSLANG_TARGET_VULKAN_1_2:
         return glslang::EShTargetVulkan_1_2;
+    case GLSLANG_TARGET_VULKAN_1_3:
+        return glslang::EShTargetVulkan_1_3;
     case GLSLANG_TARGET_OPENGL_450:
         return glslang::EShTargetOpenGL_450;
     default:

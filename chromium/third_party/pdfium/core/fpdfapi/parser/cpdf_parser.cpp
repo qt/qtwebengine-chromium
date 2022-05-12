@@ -133,9 +133,7 @@ CPDF_Parser::CPDF_Parser(ParsedObjectsHolder* holder)
 
 CPDF_Parser::CPDF_Parser() : CPDF_Parser(nullptr) {}
 
-CPDF_Parser::~CPDF_Parser() {
-  ReleaseEncryptHandler();
-}
+CPDF_Parser::~CPDF_Parser() = default;
 
 uint32_t CPDF_Parser::GetLastObjNum() const {
   return m_CrossRefTable->objects_info().empty()
@@ -569,7 +567,7 @@ bool CPDF_Parser::ParseCrossRefV4(std::vector<CrossRefObjData>* out_objects) {
   if (m_pSyntax->GetKeyword() != "xref")
     return false;
   std::vector<CrossRefObjData> result_objects;
-  while (1) {
+  while (true) {
     FX_FILESIZE saved_pos = m_pSyntax->GetPos();
     CPDF_SyntaxParser::WordResult word_result = m_pSyntax->GetNextWord();
     const ByteString& word = word_result.word;
@@ -768,9 +766,6 @@ bool CPDF_Parser::LoadCrossRefV5(FX_FILESIZE* pos, bool bMainXRef) {
   pdfium::span<const uint8_t> data_span = pAcc->GetSpan();
   uint32_t segindex = 0;
   for (const auto& index : indices) {
-    if (index.start_obj_num < 0)
-      continue;
-
     FX_SAFE_UINT32 seg_end = segindex;
     seg_end += index.obj_count;
     seg_end *= total_width;

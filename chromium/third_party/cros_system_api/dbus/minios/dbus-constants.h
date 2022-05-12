@@ -8,7 +8,7 @@
 namespace minios {
 
 constexpr char kMiniOsServiceName[] = "org.chromium.MiniOs";
-
+constexpr char kShillEthernetLabel[] = "Ethernet";
 }  // namespace minios
 
 #endif  // SYSTEM_API_DBUS_MINIOS_DBUS_CONSTANTS_H_

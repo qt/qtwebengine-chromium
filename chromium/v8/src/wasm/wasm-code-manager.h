@@ -120,11 +120,11 @@ struct WasmModule;
   V(WasmAllocateArray_InitZero)           \
   V(WasmArrayCopy)                        \
   V(WasmArrayCopyWithChecks)              \
-  V(WasmAllocateRtt)                      \
-  V(WasmAllocateFreshRtt)                 \
+  V(WasmArrayInitFromData)                \
   V(WasmAllocateStructWithRtt)            \
   V(WasmSubtypeCheck)                     \
-  V(WasmOnStackReplace)
+  V(WasmOnStackReplace)                   \
+  V(WasmSuspend)
 
 // Sorted, disjoint and non-overlapping memory regions. A region is of the
 // form [start, end). So there's no [start, end), [end, other_end),
@@ -292,7 +292,11 @@ class V8_EXPORT_PRIVATE WasmCode final {
   uint32_t raw_tagged_parameter_slots_for_serialization() const {
     return tagged_parameter_slots_;
   }
+
   bool is_liftoff() const { return tier() == ExecutionTier::kLiftoff; }
+
+  bool is_turbofan() const { return tier() == ExecutionTier::kTurbofan; }
+
   bool contains(Address pc) const {
     return reinterpret_cast<Address>(instructions_) <= pc &&
            pc < reinterpret_cast<Address>(instructions_ + instructions_size_);
@@ -1027,13 +1031,15 @@ class V8_EXPORT_PRIVATE WasmCodeManager final {
   static size_t EstimateLiftoffCodeSize(int body_size);
   // Estimate the needed code space from a completely decoded module.
   static size_t EstimateNativeModuleCodeSize(const WasmModule* module,
-                                             bool include_liftoff);
+                                             bool include_liftoff,
+                                             DynamicTiering dynamic_tiering);
   // Estimate the needed code space from the number of functions and total code
   // section length.
   static size_t EstimateNativeModuleCodeSize(int num_functions,
                                              int num_imported_functions,
                                              int code_section_length,
-                                             bool include_liftoff);
+                                             bool include_liftoff,
+                                             DynamicTiering dynamic_tiering);
   // Estimate the size of meta data needed for the NativeModule, excluding
   // generated code. This data still be stored on the C++ heap.
   static size_t EstimateNativeModuleMetaDataSize(const WasmModule* module);
@@ -1057,10 +1063,6 @@ class V8_EXPORT_PRIVATE WasmCodeManager final {
   // current thread.
   // Can only be called if {HasMemoryProtectionKeySupport()} is {true}.
   bool MemoryProtectionKeyWritable() const;
-
-  // This allocates a memory protection key (if none was allocated before),
-  // independent of the --wasm-memory-protection-keys flag.
-  void InitializeMemoryProtectionKeyForTesting();
 
   // Initialize the current thread's permissions for the memory protection key,
   // if we have support.

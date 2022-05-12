@@ -4,6 +4,7 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Workspace from '../workspace/workspace.js';
@@ -677,8 +678,7 @@ class SourceScopeRemoteObject extends SDK.RemoteObject.RemoteObjectImpl {
       properties.push(makeProperty(namespace, (namespaces[namespace] as SDK.RemoteObject.RemoteObject)));
     }
 
-    return /** @type {!SDK.RemoteObject.GetPropertiesResult} */ {properties: properties, internalProperties: []} as
-        SDK.RemoteObject.GetPropertiesResult;
+    return {properties: properties, internalProperties: []};
   }
 }
 
@@ -1111,13 +1111,13 @@ export class DebuggerLanguagePluginManager implements
       // update the #project. It's important to check
       // for the DebuggerModel again, which may disappear
       // in the meantime...
-      rawModuleHandle.addRawModulePromise.then(sourceFileURLs => {
+      void rawModuleHandle.addRawModulePromise.then(sourceFileURLs => {
         // The script might have disappeared meanwhile...
         if (script.debuggerModel.scriptForId(script.scriptId) === script) {
           const modelData = this.#debuggerModelToData.get(script.debuggerModel);
           if (modelData) {  // The DebuggerModel could have disappeared meanwhile...
             modelData.addSourceFiles(script, sourceFileURLs);
-            this.#debuggerWorkspaceBinding.updateLocations(script);
+            void this.#debuggerWorkspaceBinding.updateLocations(script);
           }
         }
       });
@@ -1316,7 +1316,7 @@ class ModelData {
         this.uiSourceCodeToScripts.set(uiSourceCode, [script]);
 
         const contentProvider = new SDK.CompilerSourceMappingContentProvider.CompilerSourceMappingContentProvider(
-            url, Common.ResourceType.resourceTypes.SourceMapScript, initiator);
+            url as Platform.DevToolsPath.UrlString, Common.ResourceType.resourceTypes.SourceMapScript, initiator);
         const mimeType = Common.ResourceType.ResourceType.mimeFromURL(url) || 'text/javascript';
         this.project.addUISourceCodeWithProvider(uiSourceCode, contentProvider, null, mimeType);
       } else {

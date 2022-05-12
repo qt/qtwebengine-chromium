@@ -27,9 +27,8 @@ namespace wgsl {
 class Lexer {
  public:
   /// Creates a new Lexer
-  /// @param file_path the path to the file containing the source
-  /// @param content the source content
-  Lexer(const std::string& file_path, const Source::FileContent* content);
+  /// @param file the source file
+  explicit Lexer(const Source::File* file);
   ~Lexer();
 
   /// Returns the next token in the input stream.
@@ -41,8 +40,9 @@ class Lexer {
   /// at the current position.
   /// @returns error token, EOF, or uninitialized
   Token skip_whitespace_and_comments();
-  /// Advances past a comment at the current position,
-  /// if one exists.
+  /// Advances past a comment at the current position, if one exists.
+  /// Returns an error if there was an unterminated block comment,
+  /// or a null character was present.
   /// @returns uninitialized token on success, or error
   Token skip_comment();
 
@@ -50,7 +50,7 @@ class Lexer {
                                          size_t start,
                                          size_t end,
                                          int32_t base);
-  Token check_keyword(const Source&, const std::string&);
+  Token check_keyword(const Source&, std::string_view);
 
   /// The try_* methods have the following in common:
   /// - They assume there is at least one character to be consumed,
@@ -72,6 +72,9 @@ class Lexer {
 
   /// @returns true if the end of the input has been reached.
   bool is_eof() const;
+  /// @returns true if there is another character on the input and
+  /// it is not null.
+  bool is_null() const;
   /// @param ch a character
   /// @returns true if 'ch' is an alphabetic character
   bool is_alpha(char ch) const;
@@ -85,12 +88,10 @@ class Lexer {
   /// @returns true if 'ch' is a digit, an alphabetic character,
   /// or an underscore.
   bool is_alphanum_underscore(char ch) const;
-  bool matches(size_t pos, const std::string& substr);
+  bool matches(size_t pos, std::string_view substr);
 
-  /// The source file path
-  std::string const file_path_;
   /// The source file content
-  Source::FileContent const* const content_;
+  Source::File const* const file_;
   /// The length of the input
   uint32_t len_ = 0;
   /// The current position within the input

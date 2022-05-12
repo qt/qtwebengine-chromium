@@ -183,19 +183,36 @@ struct Element<UInt>
 
 }  // namespace SIMD
 
+// Vulkan 'SPIR-V Extended Instructions for GLSL' (GLSL.std.450) compliant transcendental functions
+Float4 Sin(RValue<Float4> x);
+Float4 Cos(RValue<Float4> x);
+Float4 Tan(RValue<Float4> x);
+RValue<Float4> Asin(RValue<Float4> x, bool relaxedPrecision);
+RValue<Float4> Acos(RValue<Float4> x, bool relaxedPrecision);
+Float4 Atan(RValue<Float4> x);
+Float4 Atan2(RValue<Float4> y, RValue<Float4> x);
+Float4 Exp2(RValue<Float4> x);
+Float4 Log2(RValue<Float4> x);
+Float4 Exp(RValue<Float4> x);
+Float4 Log(RValue<Float4> x);
+Float4 Pow(RValue<Float4> x, RValue<Float4> y);
+Float4 Sinh(RValue<Float4> x);
+Float4 Cosh(RValue<Float4> x);
+Float4 Tanh(RValue<Float4> x);
+Float4 Asinh(RValue<Float4> x);
+Float4 Acosh(RValue<Float4> x);
+Float4 Atanh(RValue<Float4> x);
+
+// Legacy transcendental functions
+// TODO(b/169755552): Consolidate with the functions above
 Float4 exponential2(RValue<Float4> x, bool pp = false);
 Float4 logarithm2(RValue<Float4> x, bool pp = false);
 Float4 exponential(RValue<Float4> x, bool pp = false);
 Float4 logarithm(RValue<Float4> x, bool pp = false);
 Float4 power(RValue<Float4> x, RValue<Float4> y, bool pp = false);
-Float4 reciprocal(RValue<Float4> x, bool pp = false, bool finite = false, bool exactAtPow2 = false);
+Float4 reciprocal(RValue<Float4> x, bool pp = false, bool exactAtPow2 = false);
 Float4 reciprocalSquareRoot(RValue<Float4> x, bool abs, bool pp = false);
 Float4 modulo(RValue<Float4> x, RValue<Float4> y);
-Float4 sine_pi(RValue<Float4> x, bool pp = false);    // limited to [-pi, pi] range
-Float4 cosine_pi(RValue<Float4> x, bool pp = false);  // limited to [-pi, pi] range
-Float4 sine(RValue<Float4> x, bool pp = false);
-Float4 cosine(RValue<Float4> x, bool pp = false);
-Float4 tangent(RValue<Float4> x, bool pp = false);
 Float4 arccos(RValue<Float4> x, bool pp = false);
 Float4 arcsin(RValue<Float4> x, bool pp = false);
 Float4 arctan(RValue<Float4> x, bool pp = false);
@@ -206,10 +223,6 @@ Float4 tangenth(RValue<Float4> x, bool pp = false);
 Float4 arccosh(RValue<Float4> x, bool pp = false);  // Limited to x >= 1
 Float4 arcsinh(RValue<Float4> x, bool pp = false);
 Float4 arctanh(RValue<Float4> x, bool pp = false);  // Limited to ]-1, 1[ range
-
-Float4 dot2(const Vector4f &v0, const Vector4f &v1);
-Float4 dot3(const Vector4f &v0, const Vector4f &v1);
-Float4 dot4(const Vector4f &v0, const Vector4f &v1);
 
 void transpose4x4(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
 void transpose4x3(Short4 &row0, Short4 &row1, Short4 &row2, Short4 &row3);
@@ -252,7 +265,7 @@ rr::RValue<sw::SIMD::UInt> NthBit32(rr::RValue<sw::SIMD::UInt> const &bits);
 // Returns bitCount number of of 1's starting from the LSB.
 rr::RValue<sw::SIMD::UInt> Bitmask32(rr::RValue<sw::SIMD::UInt> const &bitCount);
 
-// Performs a fused-multiply add, returning a * b + c.
+// Computes `a * b + c`, which may be fused into one operation to produce a higher-precision result.
 rr::RValue<sw::SIMD::Float> FMA(
     rr::RValue<sw::SIMD::Float> const &a,
     rr::RValue<sw::SIMD::Float> const &b,

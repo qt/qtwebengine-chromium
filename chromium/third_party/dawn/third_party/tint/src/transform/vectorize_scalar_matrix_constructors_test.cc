@@ -27,6 +27,12 @@ namespace {
 using VectorizeScalarMatrixConstructorsTest =
     TransformTestWithParam<std::pair<uint32_t, uint32_t>>;
 
+TEST_F(VectorizeScalarMatrixConstructorsTest, ShouldRunEmptyModule) {
+  auto* src = R"()";
+
+  EXPECT_FALSE(ShouldRun<VectorizeScalarMatrixConstructors>(src));
+}
+
 TEST_P(VectorizeScalarMatrixConstructorsTest, Basic) {
   uint32_t cols = GetParam().first;
   uint32_t rows = GetParam().second;
@@ -54,7 +60,7 @@ TEST_P(VectorizeScalarMatrixConstructorsTest, Basic) {
   }
 
   std::string tmpl = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn main() {
   let m = ${matrix}(${values});
 }
@@ -62,6 +68,8 @@ fn main() {
   tmpl = utils::ReplaceAll(tmpl, "${matrix}", mat_type);
   auto src = utils::ReplaceAll(tmpl, "${values}", scalar_values);
   auto expect = utils::ReplaceAll(tmpl, "${values}", vector_values);
+
+  EXPECT_TRUE(ShouldRun<VectorizeScalarMatrixConstructors>(src));
 
   auto got = Run<VectorizeScalarMatrixConstructors>(src);
 
@@ -83,7 +91,7 @@ TEST_P(VectorizeScalarMatrixConstructorsTest, NonScalarConstructors) {
   }
 
   std::string tmpl = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn main() {
   let m = ${matrix}(${columns});
 }
@@ -91,6 +99,8 @@ fn main() {
   tmpl = utils::ReplaceAll(tmpl, "${matrix}", mat_type);
   auto src = utils::ReplaceAll(tmpl, "${columns}", columns);
   auto expect = src;
+
+  EXPECT_FALSE(ShouldRun<VectorizeScalarMatrixConstructors>(src));
 
   auto got = Run<VectorizeScalarMatrixConstructors>(src);
 

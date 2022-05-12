@@ -19,10 +19,10 @@ const str_ = i18n.i18n.registerUIStrings('panels/issues/AffectedSourcesView.ts',
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class AffectedSourcesView extends AffectedResourcesView {
-  private appendAffectedSources(affectedSources: Iterable<Protocol.Audits.SourceCodeLocation>): void {
+  #appendAffectedSources(affectedSources: Iterable<Protocol.Audits.SourceCodeLocation>): void {
     let count = 0;
     for (const source of affectedSources) {
-      this.appendAffectedSource(source);
+      this.#appendAffectedSource(source);
       count++;
     }
     this.updateAffectedResourceCount(count);
@@ -32,11 +32,11 @@ export class AffectedSourcesView extends AffectedResourcesView {
     return i18nString(UIStrings.nSources, {n: count});
   }
 
-  private appendAffectedSource({url, lineNumber, columnNumber}: Protocol.Audits.SourceCodeLocation): void {
+  #appendAffectedSource({url, lineNumber, columnNumber}: Protocol.Audits.SourceCodeLocation): void {
     const cellElement = document.createElement('td');
     // TODO(chromium:1072331): Check feasibility of plumping through scriptId for `linkifyScriptLocation`
     //                         to support source maps and formatted scripts.
-    const linkifierURLOptions = ({columnNumber, lineNumber, tabStop: true} as Components.Linkifier.LinkifyURLOptions);
+    const linkifierURLOptions = {columnNumber, lineNumber, tabStop: true, showColumnNumber: false, inlineFrameIndex: 0};
     // An element created with linkifyURL can subscribe to the events
     // 'click' neither 'keydown' if that key is the 'Enter' key.
     // Also, this element has a context menu, so we should be able to
@@ -52,6 +52,6 @@ export class AffectedSourcesView extends AffectedResourcesView {
 
   update(): void {
     this.clear();
-    this.appendAffectedSources(this.issue.sources());
+    this.#appendAffectedSources(this.issue.sources());
   }
 }

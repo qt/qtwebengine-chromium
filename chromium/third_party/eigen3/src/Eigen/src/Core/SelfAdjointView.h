@@ -20,8 +20,8 @@ namespace Eigen {
   *
   * \brief Expression of a selfadjoint matrix from a triangular part of a dense matrix
   *
-  * \param MatrixType the type of the dense matrix storing the coefficients
-  * \param TriangularPart can be either \c #Lower or \c #Upper
+  * \tparam MatrixType the type of the dense matrix storing the coefficients
+  * \tparam TriangularPart can be either \c #Lower or \c #Upper
   *
   * This class is an expression of a sefladjoint matrix from a triangular part of a matrix
   * with given dense storage of the coefficients. It is the return type of MatrixBase::selfadjointView()
@@ -218,10 +218,10 @@ template<typename MatrixType_, unsigned int UpLo> class SelfAdjointView
 
     typedef SelfAdjointView<typename MatrixType::TransposeReturnType,TransposeMode> TransposeReturnType;
      /** \sa MatrixBase::transpose() */
+    template<class Dummy=int>
     EIGEN_DEVICE_FUNC
-    inline TransposeReturnType transpose()
+    inline TransposeReturnType transpose(typename internal::enable_if<Eigen::internal::is_lvalue<MatrixType>::value, Dummy*>::type = nullptr)
     {
-      EIGEN_STATIC_ASSERT_LVALUE(MatrixType)
       typename MatrixType::TransposeReturnType tmp(m_matrix);
       return TransposeReturnType(tmp);
     }

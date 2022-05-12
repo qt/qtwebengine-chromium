@@ -5,8 +5,6 @@
 #ifndef V8_SNAPSHOT_SERIALIZER_H_
 #define V8_SNAPSHOT_SERIALIZER_H_
 
-#include <map>
-
 #include "src/codegen/external-reference-encoder.h"
 #include "src/common/assert-scope.h"
 #include "src/execution/isolate.h"
@@ -311,8 +309,9 @@ class Serializer : public SerializerDeserializer {
     return (flags_ & Snapshot::kAllowActiveIsolateForTesting) != 0;
   }
 
-  bool reconstruct_read_only_object_cache_for_testing() const {
-    return (flags_ & Snapshot::kReconstructReadOnlyObjectCacheForTesting) != 0;
+  bool reconstruct_read_only_and_shared_object_caches_for_testing() const {
+    return (flags_ &
+            Snapshot::kReconstructReadOnlyAndSharedObjectCachesForTesting) != 0;
   }
 
  private:

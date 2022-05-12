@@ -377,7 +377,7 @@ struct svd_precondition_2x2_block_to_be_real<MatrixType, QRPreconditioner, true>
     const RealScalar considerAsZero = (std::numeric_limits<RealScalar>::min)();
     const RealScalar precision = NumTraits<Scalar>::epsilon();
 
-    if(n==0)
+    if(numext::is_exactly_zero(n))
     {
       // make sure first column is zero
       work_matrix.coeffRef(p,p) = work_matrix.coeffRef(q,p) = Scalar(0);
@@ -499,10 +499,10 @@ template<typename MatrixType_, int QRPreconditioner> class JacobiSVD
     enum {
       RowsAtCompileTime = MatrixType::RowsAtCompileTime,
       ColsAtCompileTime = MatrixType::ColsAtCompileTime,
-      DiagSizeAtCompileTime = EIGEN_SIZE_MIN_PREFER_DYNAMIC(RowsAtCompileTime,ColsAtCompileTime),
+      DiagSizeAtCompileTime = internal::min_size_prefer_dynamic(RowsAtCompileTime,ColsAtCompileTime),
       MaxRowsAtCompileTime = MatrixType::MaxRowsAtCompileTime,
       MaxColsAtCompileTime = MatrixType::MaxColsAtCompileTime,
-      MaxDiagSizeAtCompileTime = EIGEN_SIZE_MIN_PREFER_FIXED(MaxRowsAtCompileTime,MaxColsAtCompileTime),
+      MaxDiagSizeAtCompileTime = internal::min_size_prefer_fixed(MaxRowsAtCompileTime,MaxColsAtCompileTime),
       MatrixOptions = MatrixType::Options
     };
 
@@ -638,7 +638,7 @@ void JacobiSVD<MatrixType, QRPreconditioner>::allocate(Eigen::Index rows, Eigen:
   m_computeThinV = (computationOptions & ComputeThinV) != 0;
   eigen_assert(!(m_computeFullU && m_computeThinU) && "JacobiSVD: you can't ask for both full and thin U");
   eigen_assert(!(m_computeFullV && m_computeThinV) && "JacobiSVD: you can't ask for both full and thin V");
-  eigen_assert(EIGEN_IMPLIES(m_computeThinU || m_computeThinV, MatrixType::ColsAtCompileTime==Dynamic) &&
+  eigen_assert(internal::check_implication(m_computeThinU || m_computeThinV, MatrixType::ColsAtCompileTime==Dynamic) &&
               "JacobiSVD: thin U and V are only available when your matrix has a dynamic number of columns.");
   if (QRPreconditioner == FullPivHouseholderQRPreconditioner)
   {
@@ -684,7 +684,7 @@ JacobiSVD<MatrixType, QRPreconditioner>::compute(const MatrixType& matrix, unsig
     m_info = InvalidInput;
     return *this;
   }
-  if(scale==RealScalar(0)) scale = RealScalar(1);
+  if(numext::is_exactly_zero(scale)) scale = RealScalar(1);
   
   /*** step 1. The R-SVD step: we use a QR decomposition to reduce to the case of a square matrix */
 
@@ -777,7 +777,7 @@ JacobiSVD<MatrixType, QRPreconditioner>::compute(const MatrixType& matrix, unsig
   {
     Index pos;
     RealScalar maxRemainingSingularValue = m_singularValues.tail(m_diagSize-i).maxCoeff(&pos);
-    if(maxRemainingSingularValue == RealScalar(0))
+    if(numext::is_exactly_zero(maxRemainingSingularValue))
     {
       m_nonzeroSingularValues = i;
       break;

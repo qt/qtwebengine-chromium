@@ -23,7 +23,6 @@
 #include "call/adaptation/video_source_restrictions.h"
 #include "call/adaptation/video_stream_input_state.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/constructor_magic.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
@@ -375,7 +374,7 @@ VideoStreamAdapter::RestrictionsOrState VideoStreamAdapter::GetAdaptationUpStep(
         return increase_frame_rate;
       }
       // else, increase resolution.
-      ABSL_FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     }
     case DegradationPreference::MAINTAIN_FRAMERATE: {
       // Attempt to increase pixel count.
@@ -459,7 +458,7 @@ VideoStreamAdapter::GetAdaptationDownStep(
         return decrease_frame_rate;
       }
       // else, decrease resolution.
-      ABSL_FALLTHROUGH_INTENDED;
+      [[fallthrough]];
     }
     case DegradationPreference::MAINTAIN_FRAMERATE: {
       return DecreaseResolution(input_state, current_restrictions);

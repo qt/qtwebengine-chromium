@@ -115,6 +115,13 @@ enum DRMTraceSizes {
   DRMTraceSize_DEBUG = 1,
 };
 
+// DRMSnapshotType enum. These values must align with those in
+// org.chromium.debugd.xml
+enum DRMSnapshotType {
+  DRMSnapshotType_TRACE = 0,
+  DRMSnapshotType_MODETEST = 1,
+};
+
 // Debug log keys which should be substituted in the system info dialog.
 const char kIwlwifiDumpKey[] = "iwlwifi_dump";
 

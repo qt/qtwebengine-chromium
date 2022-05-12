@@ -57,6 +57,12 @@ QuicTime::Delta QuicConnectionPeer::GetNetworkTimeout(
 }
 
 // static
+QuicTime::Delta QuicConnectionPeer::GetHandshakeTimeout(
+    QuicConnection* connection) {
+  return connection->idle_network_detector_.handshake_timeout_;
+}
+
+// static
 void QuicConnectionPeer::SetPerspective(QuicConnection* connection,
                                         Perspective perspective) {
   connection->perspective_ = perspective;
@@ -405,12 +411,6 @@ void QuicConnectionPeer::SetServerConnectionId(
 // static
 size_t QuicConnectionPeer::NumUndecryptablePackets(QuicConnection* connection) {
   return connection->undecryptable_packets_.size();
-}
-
-// static
-size_t QuicConnectionPeer::NumPendingPathChallengesToResponse(
-    QuicConnection* connection) {
-  return connection->pending_path_challenge_payloads_.size();
 }
 
 void QuicConnectionPeer::SetConnectionClose(QuicConnection* connection) {

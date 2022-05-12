@@ -24,13 +24,16 @@
 
 #include "src/inspector/entry_point.h"
 #include "src/inspector/resource_binding.h"
-#include "src/inspector/sampler_texture_pair.h"
 #include "src/inspector/scalar.h"
 #include "src/program.h"
+#include "src/sem/sampler_texture_pair.h"
 #include "src/utils/unique_vector.h"
 
 namespace tint {
 namespace inspector {
+
+/// A temporary alias to sem::SamplerTexturePair. [DEPRECATED]
+using SamplerTexturePair = sem::SamplerTexturePair;
 
 /// Extracts information from a program
 class Inspector {
@@ -129,8 +132,17 @@ class Inspector {
   /// @param entry_point name of the entry point to get information about.
   /// @returns vector of all of the sampler/texture sampling pairs that are used
   /// by that entry point.
-  std::vector<SamplerTexturePair> GetSamplerTextureUses(
+  std::vector<sem::SamplerTexturePair> GetSamplerTextureUses(
       const std::string& entry_point);
+
+  /// @param entry_point name of the entry point to get information about.
+  /// @param placeholder the sampler binding point to use for texture-only
+  /// access (e.g., textureLoad)
+  /// @returns vector of all of the sampler/texture sampling pairs that are used
+  /// by that entry point.
+  std::vector<sem::SamplerTexturePair> GetSamplerTextureUses(
+      const std::string& entry_point,
+      const sem::BindingPoint& placeholder);
 
   /// @param entry_point name of the entry point to get information about.
   /// @returns the total size in bytes of all Workgroup storage-class storage
@@ -141,7 +153,8 @@ class Inspector {
   const Program* program_;
   diag::List diagnostics_;
   std::unique_ptr<
-      std::unordered_map<std::string, utils::UniqueVector<SamplerTexturePair>>>
+      std::unordered_map<std::string,
+                         utils::UniqueVector<sem::SamplerTexturePair>>>
       sampler_targets_;
 
   /// @param name name of the entry point to find
@@ -154,19 +167,19 @@ class Inspector {
   /// Otherwise, add the variable unless it is a builtin.
   /// @param name the name of the variable being added
   /// @param type the type of the variable
-  /// @param decorations the variable decorations
+  /// @param attributes the variable attributes
   /// @param variables the list to add the variables to
   void AddEntryPointInOutVariables(std::string name,
                                    const sem::Type* type,
-                                   const ast::DecorationList& decorations,
+                                   const ast::AttributeList& attributes,
                                    std::vector<StageVariable>& variables) const;
 
   /// Recursively determine if the type contains builtin.
-  /// If `type` is a struct, recurse into members to check for the decoration.
-  /// Otherwise, check `decorations` for the decoration.
+  /// If `type` is a struct, recurse into members to check for the attribute.
+  /// Otherwise, check `attributes` for the attribute.
   bool ContainsBuiltin(ast::Builtin builtin,
                        const sem::Type* type,
-                       const ast::DecorationList& decorations) const;
+                       const ast::AttributeList& attributes) const;
 
   /// Gathers all the texture resource bindings of the given type for the given
   /// entry point.
@@ -177,7 +190,7 @@ class Inspector {
   /// @returns vector of all of the bindings for depth textures.
   std::vector<ResourceBinding> GetTextureResourceBindings(
       const std::string& entry_point,
-      const tint::TypeInfo& texture_type,
+      const tint::TypeInfo* texture_type,
       ResourceBinding::ResourceType resource_type);
 
   /// @param entry_point name of the entry point to get information about.

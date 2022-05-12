@@ -58,13 +58,13 @@ double GCTracer::MonotonicallyIncreasingTimeInMs() {
   }
 }
 
-CollectionEpoch GCTracer::CurrentEpoch(Scope::ScopeId scope_id) {
-  if (Scope::NeedsYoungEpoch(scope_id)) {
-    return heap_->epoch_young();
-  } else {
-    return heap_->epoch_full();
-  }
+namespace {
+std::atomic<CollectionEpoch> global_epoch{0};
+
+CollectionEpoch next_epoch() {
+  return global_epoch.fetch_add(1, std::memory_order_relaxed) + 1;
 }
+}  // namespace
 
 GCTracer::Scope::Scope(GCTracer* tracer, ScopeId scope, ThreadKind thread_kind)
     : tracer_(tracer), scope_(scope), thread_kind_(thread_kind) {
@@ -72,7 +72,9 @@ GCTracer::Scope::Scope(GCTracer* tracer, ScopeId scope, ThreadKind thread_kind)
 #ifdef V8_RUNTIME_CALL_STATS
   if (V8_LIKELY(!TracingFlags::is_runtime_stats_enabled())) return;
   if (thread_kind_ == ThreadKind::kMain) {
-    DCHECK_EQ(tracer_->heap_->isolate()->thread_id(), ThreadId::Current());
+#if DEBUG
+    AssertMainThread();
+#endif  // DEBUG
     runtime_stats_ =
         tracer_->heap_->isolate()->counters()->runtime_call_stats();
     runtime_stats_->Enter(&timer_, GCTracer::RCSCounterFromScope(scope));
@@ -89,7 +91,10 @@ GCTracer::Scope::~Scope() {
   double duration_ms = tracer_->MonotonicallyIncreasingTimeInMs() - start_time_;
 
   if (thread_kind_ == ThreadKind::kMain) {
-    DCHECK_EQ(tracer_->heap_->isolate()->thread_id(), ThreadId::Current());
+#if DEBUG
+    AssertMainThread();
+#endif  // DEBUG
+
     tracer_->AddScopeSample(scope_, duration_ms);
     if (scope_ == ScopeId::MC_INCREMENTAL ||
         scope_ == ScopeId::MC_INCREMENTAL_START ||
@@ -109,6 +114,19 @@ GCTracer::Scope::~Scope() {
   runtime_stats_->Leave(&timer_);
 #endif  // defined(V8_RUNTIME_CALL_STATS)
 }
+
+#if DEBUG
+void GCTracer::Scope::AssertMainThread() {
+  Isolate* isolate = tracer_->heap_->isolate();
+  Isolate* shared_isolate = isolate->shared_isolate();
+  ThreadId thread_id = ThreadId::Current();
+
+  // Either run on isolate's main thread or on the current main thread of the
+  // shared isolate during shared GCs.
+  DCHECK(isolate->thread_id() == thread_id ||
+         (shared_isolate && shared_isolate->thread_id() == thread_id));
+}
+#endif  // DEBUG
 
 const char* GCTracer::Scope::Name(ScopeId id) {
 #define CASE(scope)  \
@@ -137,9 +155,11 @@ bool GCTracer::Scope::NeedsYoungEpoch(ScopeId id) {
   UNREACHABLE();
 }
 
-GCTracer::Event::Event(Type type, GarbageCollectionReason gc_reason,
+GCTracer::Event::Event(Type type, State state,
+                       GarbageCollectionReason gc_reason,
                        const char* collector_reason)
     : type(type),
+      state(state),
       gc_reason(gc_reason),
       collector_reason(collector_reason),
       start_time(0.0),
@@ -177,7 +197,8 @@ const char* GCTracer::Event::TypeName(bool short_name) const {
 
 GCTracer::GCTracer(Heap* heap)
     : heap_(heap),
-      current_(Event::START, GarbageCollectionReason::kUnknown, nullptr),
+      current_(Event::START, Event::State::NOT_RUNNING,
+               GarbageCollectionReason::kUnknown, nullptr),
       previous_(current_),
       incremental_marking_bytes_(0),
       incremental_marking_duration_(0.0),
@@ -210,9 +231,12 @@ GCTracer::GCTracer(Heap* heap)
 }
 
 void GCTracer::ResetForTesting() {
-  current_ = Event(Event::START, GarbageCollectionReason::kTesting, nullptr);
+  current_ = Event(Event::START, Event::State::NOT_RUNNING,
+                   GarbageCollectionReason::kTesting, nullptr);
   current_.end_time = MonotonicallyIncreasingTimeInMs();
   previous_ = current_;
+  start_of_observable_pause_ = 0.0;
+  young_gc_while_full_gc_ = false;
   ResetIncrementalMarkingCounters();
   allocation_time_ms_ = 0.0;
   new_space_allocation_counter_bytes_ = 0.0;
@@ -243,64 +267,99 @@ void GCTracer::ResetForTesting() {
 
 void GCTracer::NotifyYoungGenerationHandling(
     YoungGenerationHandling young_generation_handling) {
-  DCHECK(current_.type == Event::SCAVENGER || start_counter_ > 1);
+  DCHECK_GE(1, start_counter_);
+  DCHECK_EQ(Event::SCAVENGER, current_.type);
   heap_->isolate()->counters()->young_generation_handling()->AddSample(
       static_cast<int>(young_generation_handling));
 }
 
-void GCTracer::Start(GarbageCollector collector,
-                     GarbageCollectionReason gc_reason,
-                     const char* collector_reason) {
+void GCTracer::StartObservablePause() {
+  DCHECK_EQ(0, start_counter_);
   start_counter_++;
-  if (start_counter_ != 1) return;
 
-  previous_ = current_;
+  DCHECK(!IsInObservablePause());
+  start_of_observable_pause_ = MonotonicallyIncreasingTimeInMs();
+}
 
+void GCTracer::UpdateCurrentEvent(GarbageCollectionReason gc_reason,
+                                  const char* collector_reason) {
+  // For incremental marking, the event has already been created and we just
+  // need to update a few fields.
+  DCHECK_EQ(Event::INCREMENTAL_MARK_COMPACTOR, current_.type);
+  DCHECK_EQ(Event::State::ATOMIC, current_.state);
+  DCHECK(IsInObservablePause());
+  current_.gc_reason = gc_reason;
+  current_.collector_reason = collector_reason;
+  // TODO(chromium:1154636): The start_time of the current event contains
+  // currently the start time of the observable pause. This should be
+  // reconsidered.
+  current_.start_time = start_of_observable_pause_;
+  current_.reduce_memory = heap_->ShouldReduceMemory();
+}
+
+void GCTracer::StartCycle(GarbageCollector collector,
+                          GarbageCollectionReason gc_reason,
+                          const char* collector_reason, MarkingType marking) {
+  // We cannot start a new cycle while there's another one in its atomic pause.
+  DCHECK_NE(Event::State::ATOMIC, current_.state);
+  // We cannot start a new cycle while a young generation GC cycle has
+  // already interrupted a full GC cycle.
+  DCHECK(!young_gc_while_full_gc_);
+
+  young_gc_while_full_gc_ = current_.state != Event::State::NOT_RUNNING;
+
+  DCHECK_IMPLIES(young_gc_while_full_gc_,
+                 Heap::IsYoungGenerationCollector(collector) &&
+                     !Event::IsYoungGenerationEvent(current_.type));
+
+  Event::Type type;
   switch (collector) {
     case GarbageCollector::SCAVENGER:
-      current_ = Event(Event::SCAVENGER, gc_reason, collector_reason);
+      type = Event::SCAVENGER;
       break;
     case GarbageCollector::MINOR_MARK_COMPACTOR:
-      current_ =
-          Event(Event::MINOR_MARK_COMPACTOR, gc_reason, collector_reason);
+      type = Event::MINOR_MARK_COMPACTOR;
       break;
     case GarbageCollector::MARK_COMPACTOR:
-      if (heap_->incremental_marking()->WasActivated()) {
-        current_ = Event(Event::INCREMENTAL_MARK_COMPACTOR, gc_reason,
-                         collector_reason);
-      } else {
-        current_ = Event(Event::MARK_COMPACTOR, gc_reason, collector_reason);
-      }
+      type = marking == MarkingType::kIncremental
+                 ? Event::INCREMENTAL_MARK_COMPACTOR
+                 : Event::MARK_COMPACTOR;
       break;
   }
 
-  current_.reduce_memory = heap_->ShouldReduceMemory();
-  current_.start_time = MonotonicallyIncreasingTimeInMs();
-  current_.start_object_size = 0;
-  current_.start_memory_size = 0;
-  current_.start_holes_size = 0;
-  current_.young_object_size = 0;
+  DCHECK_IMPLIES(!young_gc_while_full_gc_,
+                 current_.state == Event::State::NOT_RUNNING);
+  DCHECK_EQ(Event::State::NOT_RUNNING, previous_.state);
 
-  current_.incremental_marking_bytes = 0;
-  current_.incremental_marking_duration = 0;
+  previous_ = current_;
+  current_ = Event(type, Event::State::MARKING, gc_reason, collector_reason);
 
-  for (int i = 0; i < Scope::NUMBER_OF_SCOPES; i++) {
-    current_.scopes[i] = 0;
+  switch (marking) {
+    case MarkingType::kAtomic:
+      DCHECK(IsInObservablePause());
+      // TODO(chromium:1154636): The start_time of the current event contains
+      // currently the start time of the observable pause. This should be
+      // reconsidered.
+      current_.start_time = start_of_observable_pause_;
+      current_.reduce_memory = heap_->ShouldReduceMemory();
+      break;
+    case MarkingType::kIncremental:
+      // The current event will be updated later.
+      DCHECK(!Heap::IsYoungGenerationCollector(collector));
+      DCHECK(!IsInObservablePause());
+      break;
   }
-
-  Counters* counters = heap_->isolate()->counters();
 
   if (Heap::IsYoungGenerationCollector(collector)) {
-    counters->scavenge_reason()->AddSample(static_cast<int>(gc_reason));
+    epoch_young_ = next_epoch();
   } else {
-    counters->mark_compact_reason()->AddSample(static_cast<int>(gc_reason));
-
-    if (FLAG_trace_gc_freelists) {
-      PrintIsolate(heap_->isolate(),
-                   "FreeLists statistics before collection:\n");
-      heap_->PrintFreeListsStats();
-    }
+    epoch_full_ = next_epoch();
   }
+}
+
+void GCTracer::StartAtomicPause() {
+  DCHECK_EQ(Event::State::MARKING, current_.state);
+  current_.state = Event::State::ATOMIC;
 }
 
 void GCTracer::StartInSafepoint() {
@@ -332,27 +391,22 @@ void GCTracer::StopInSafepoint() {
   current_.survived_young_object_size = heap_->SurvivedYoungObjectSize();
 }
 
-void GCTracer::Stop(GarbageCollector collector) {
+void GCTracer::StopObservablePause() {
   start_counter_--;
-  if (start_counter_ != 0) {
-    if (FLAG_trace_gc_verbose) {
-      heap_->isolate()->PrintWithTimestamp(
-          "[Finished reentrant %s during %s.]\n",
-          Heap::CollectorName(collector), current_.TypeName(false));
-    }
-    return;
-  }
+  DCHECK_EQ(0, start_counter_);
 
-  DCHECK_LE(0, start_counter_);
-  DCHECK((collector == GarbageCollector::SCAVENGER &&
-          current_.type == Event::SCAVENGER) ||
-         (collector == GarbageCollector::MINOR_MARK_COMPACTOR &&
-          current_.type == Event::MINOR_MARK_COMPACTOR) ||
-         (collector == GarbageCollector::MARK_COMPACTOR &&
-          (current_.type == Event::MARK_COMPACTOR ||
-           current_.type == Event::INCREMENTAL_MARK_COMPACTOR)));
+  DCHECK(IsInObservablePause());
+  start_of_observable_pause_ = 0.0;
 
+  // TODO(chromium:1154636): The end_time of the current event contains
+  // currently the end time of the observable pause. This should be
+  // reconsidered.
   current_.end_time = MonotonicallyIncreasingTimeInMs();
+}
+
+void GCTracer::UpdateStatistics(GarbageCollector collector) {
+  const bool is_young = Heap::IsYoungGenerationCollector(collector);
+  DCHECK(IsConsistentWithCollector(collector));
 
   AddAllocation(current_.end_time);
 
@@ -361,61 +415,44 @@ void GCTracer::Stop(GarbageCollector collector) {
       static_cast<int64_t>(duration * base::Time::kMicrosecondsPerMillisecond);
   auto* long_task_stats = heap_->isolate()->GetCurrentLongTaskStats();
 
-  switch (current_.type) {
-    case Event::SCAVENGER:
-    case Event::MINOR_MARK_COMPACTOR:
-      recorded_minor_gcs_total_.Push(
-          MakeBytesAndDuration(current_.young_object_size, duration));
-      recorded_minor_gcs_survived_.Push(
-          MakeBytesAndDuration(current_.survived_young_object_size, duration));
-      FetchBackgroundMinorGCCounters();
-      long_task_stats->gc_young_wall_clock_duration_us += duration_us;
-      break;
-    case Event::INCREMENTAL_MARK_COMPACTOR:
+  if (is_young) {
+    recorded_minor_gcs_total_.Push(
+        MakeBytesAndDuration(current_.young_object_size, duration));
+    recorded_minor_gcs_survived_.Push(
+        MakeBytesAndDuration(current_.survived_young_object_size, duration));
+    FetchBackgroundMinorGCCounters();
+    long_task_stats->gc_young_wall_clock_duration_us += duration_us;
+  } else {
+    if (current_.type == Event::INCREMENTAL_MARK_COMPACTOR) {
       current_.incremental_marking_bytes = incremental_marking_bytes_;
       current_.incremental_marking_duration = incremental_marking_duration_;
       for (int i = 0; i < Scope::NUMBER_OF_INCREMENTAL_SCOPES; i++) {
         current_.incremental_marking_scopes[i] = incremental_marking_scopes_[i];
         current_.scopes[i] = incremental_marking_scopes_[i].duration;
       }
-
-      RecordMutatorUtilization(
-          current_.end_time, duration + current_.incremental_marking_duration);
       RecordIncrementalMarkingSpeed(current_.incremental_marking_bytes,
                                     current_.incremental_marking_duration);
       recorded_incremental_mark_compacts_.Push(
           MakeBytesAndDuration(current_.end_object_size, duration));
-      RecordGCSumCounters(duration);
-      ResetIncrementalMarkingCounters();
-      combined_mark_compact_speed_cache_ = 0.0;
-      FetchBackgroundMarkCompactCounters();
-      long_task_stats->gc_full_atomic_wall_clock_duration_us += duration_us;
-      break;
-    case Event::MARK_COMPACTOR:
+    } else {
       DCHECK_EQ(0u, current_.incremental_marking_bytes);
       DCHECK_EQ(0, current_.incremental_marking_duration);
-      RecordMutatorUtilization(
-          current_.end_time, duration + current_.incremental_marking_duration);
       recorded_mark_compacts_.Push(
           MakeBytesAndDuration(current_.end_object_size, duration));
-      RecordGCSumCounters(duration);
-      ResetIncrementalMarkingCounters();
-      combined_mark_compact_speed_cache_ = 0.0;
-      FetchBackgroundMarkCompactCounters();
-      long_task_stats->gc_full_atomic_wall_clock_duration_us += duration_us;
-      break;
-    case Event::START:
-      UNREACHABLE();
+    }
+    RecordMutatorUtilization(current_.end_time,
+                             duration + current_.incremental_marking_duration);
+    RecordGCSumCounters(duration);
+    ResetIncrementalMarkingCounters();
+    combined_mark_compact_speed_cache_ = 0.0;
+    FetchBackgroundMarkCompactCounters();
+    long_task_stats->gc_full_atomic_wall_clock_duration_us += duration_us;
   }
   FetchBackgroundGeneralCounters();
 
   heap_->UpdateTotalGCTime(duration);
 
-  if (current_.type == Event::SCAVENGER ||
-      current_.type == Event::MINOR_MARK_COMPACTOR) {
-    ReportYoungCycleToRecorder();
-    if (FLAG_trace_gc_ignore_scavenger) return;
-  }
+  if (FLAG_trace_gc_ignore_scavenger && is_young) return;
 
   if (FLAG_trace_gc_nvp) {
     PrintNVP();
@@ -438,6 +475,49 @@ void GCTracer::Stop(GarbageCollector collector) {
   }
 }
 
+void GCTracer::StopAtomicPause() {
+  DCHECK_EQ(Event::State::ATOMIC, current_.state);
+  current_.state = Event::State::SWEEPING;
+}
+
+void GCTracer::StopCycle(GarbageCollector collector) {
+  DCHECK_EQ(Event::State::SWEEPING, current_.state);
+  current_.state = Event::State::NOT_RUNNING;
+
+  DCHECK(IsConsistentWithCollector(collector));
+
+  Counters* counters = heap_->isolate()->counters();
+  GarbageCollectionReason gc_reason = current_.gc_reason;
+
+  if (Heap::IsYoungGenerationCollector(collector)) {
+    ReportYoungCycleToRecorder();
+
+    counters->scavenge_reason()->AddSample(static_cast<int>(gc_reason));
+
+    // If a young generation GC interrupted an unfinished full GC cycle, restore
+    // the event corresponding to the full GC cycle.
+    if (young_gc_while_full_gc_) {
+      std::swap(current_, previous_);
+      young_gc_while_full_gc_ = false;
+    }
+  } else {
+    ReportFullCycleToRecorder();
+
+    counters->mark_compact_reason()->AddSample(static_cast<int>(gc_reason));
+
+    if (FLAG_trace_gc_freelists) {
+      PrintIsolate(heap_->isolate(),
+                   "FreeLists statistics before collection:\n");
+      heap_->PrintFreeListsStats();
+    }
+  }
+}
+
+void GCTracer::StopCycleIfSweeping() {
+  if (current_.state != Event::State::SWEEPING) return;
+  StopCycle(GarbageCollector::MARK_COMPACTOR);
+}
+
 void GCTracer::NotifySweepingCompleted() {
   if (FLAG_trace_gc_freelists) {
     PrintIsolate(heap_->isolate(),
@@ -450,8 +530,6 @@ void GCTracer::NotifySweepingCompleted() {
     heap_->code_space()->PrintAllocationsOrigins();
     heap_->map_space()->PrintAllocationsOrigins();
   }
-  metrics_report_pending_ = true;
-  NotifyGCCompleted();
 }
 
 void GCTracer::SampleAllocation(double current_ms,
@@ -510,7 +588,6 @@ void GCTracer::AddCompactionEvent(double duration,
       MakeBytesAndDuration(live_bytes_compacted, duration));
 }
 
-
 void GCTracer::AddSurvivalRatio(double promotion_ratio) {
   recorded_survival_ratios_.Push(promotion_ratio);
 }
@@ -564,7 +641,7 @@ void GCTracer::Print() const {
       "[%d:%p] "
       "%8.0f ms: "
       "%s%s%s %.1f (%.1f) -> %.1f (%.1f) MB, "
-      "%.1f / %.1f ms %s (average mu = %.3f, current mu = %.3f) %s %s\n",
+      "%.1f / %.1f ms %s (average mu = %.3f, current mu = %.3f) %s; %s\n",
       base::OS::GetCurrentProcessId(),
       reinterpret_cast<void*>(heap_->isolate()),
       heap_->isolate()->time_millis_since_init(),
@@ -580,7 +657,6 @@ void GCTracer::Print() const {
       Heap::GarbageCollectionReasonToString(current_.gc_reason),
       current_.collector_reason != nullptr ? current_.collector_reason : "");
 }
-
 
 void GCTracer::PrintNVP() const {
   double duration = current_.end_time - current_.start_time;
@@ -1304,22 +1380,6 @@ void GCTracer::RecordGCSumCounters(double atomic_pause_duration) {
                        "background_duration", marking_background_duration);
 }
 
-void GCTracer::NotifyGCCompleted() {
-  // Report full GC cycle metric to recorder only when both v8 and cppgc (if
-  // available) GCs have finished. This method is invoked by both v8 and cppgc.
-  if (!metrics_report_pending_) {
-    // V8 sweeping is not done yet.
-    return;
-  }
-  const auto* cpp_heap = heap_->cpp_heap();
-  if (cpp_heap &&
-      !CppHeap::From(cpp_heap)->GetMetricRecorder()->MetricsReportPending()) {
-    // Cppgc sweeping is not done yet.
-    return;
-  }
-  ReportFullCycleToRecorder();
-}
-
 namespace {
 
 void CopyTimeMetrics(
@@ -1330,6 +1390,9 @@ void CopyTimeMetrics(
   metrics.mark_wall_clock_duration_in_us = cppgc_metrics.mark_duration_us;
   DCHECK_NE(-1, cppgc_metrics.sweep_duration_us);
   metrics.sweep_wall_clock_duration_in_us = cppgc_metrics.sweep_duration_us;
+  metrics.total_wall_clock_duration_in_us =
+      metrics.mark_wall_clock_duration_in_us +
+      metrics.sweep_wall_clock_duration_in_us;
 }
 
 void CopyTimeMetrics(
@@ -1343,6 +1406,11 @@ void CopyTimeMetrics(
   metrics.sweep_wall_clock_duration_in_us = cppgc_metrics.sweep_duration_us;
   DCHECK_NE(-1, cppgc_metrics.weak_duration_us);
   metrics.weak_wall_clock_duration_in_us = cppgc_metrics.weak_duration_us;
+  metrics.total_wall_clock_duration_in_us =
+      metrics.compact_wall_clock_duration_in_us +
+      metrics.mark_wall_clock_duration_in_us +
+      metrics.sweep_wall_clock_duration_in_us +
+      metrics.weak_wall_clock_duration_in_us;
 }
 
 void CopySizeMetrics(
@@ -1373,27 +1441,39 @@ void FlushBatchedIncrementalEvents(
   DCHECK(!batched_events.events.empty());
   isolate->metrics_recorder()->AddMainThreadEvent(std::move(batched_events),
                                                   GetContextId(isolate));
+  batched_events = {};
 }
 
 }  // namespace
 
 void GCTracer::ReportFullCycleToRecorder() {
+  DCHECK(!Event::IsYoungGenerationEvent(current_.type));
+  DCHECK_EQ(Event::State::NOT_RUNNING, current_.state);
+  auto* cpp_heap = v8::internal::CppHeap::From(heap_->cpp_heap());
+  DCHECK_IMPLIES(cpp_heap,
+                 cpp_heap->GetMetricRecorder()->MetricsReportPending());
   const std::shared_ptr<metrics::Recorder>& recorder =
       heap_->isolate()->metrics_recorder();
   DCHECK_NOT_NULL(recorder);
-  if (!recorder->HasEmbedderRecorder()) return;
+  if (!recorder->HasEmbedderRecorder()) {
+    incremental_mark_batched_events_ = {};
+    if (cpp_heap) {
+      cpp_heap->GetMetricRecorder()->ClearCachedEvents();
+    }
+    return;
+  }
   if (!incremental_mark_batched_events_.events.empty()) {
     FlushBatchedIncrementalEvents(incremental_mark_batched_events_,
                                   heap_->isolate());
   }
   v8::metrics::GarbageCollectionFullCycle event;
-  if (heap_->cpp_heap()) {
-    auto* cpp_heap = v8::internal::CppHeap::From(heap_->cpp_heap());
+  if (cpp_heap) {
     cpp_heap->GetMetricRecorder()->FlushBatchedIncrementalEvents();
     const base::Optional<cppgc::internal::MetricRecorder::FullCycle>
         optional_cppgc_event =
             cpp_heap->GetMetricRecorder()->ExtractLastFullGcEvent();
     DCHECK(optional_cppgc_event.has_value());
+    DCHECK(!cpp_heap->GetMetricRecorder()->MetricsReportPending());
     const cppgc::internal::MetricRecorder::FullCycle& cppgc_event =
         optional_cppgc_event.value();
     CopyTimeMetrics(event.total_cpp, cppgc_event.total);
@@ -1416,10 +1496,10 @@ void GCTracer::ReportFullCycleToRecorder() {
   }
   // TODO(chromium:1154636): Populate v8 metrics.
   recorder->AddMainThreadEvent(event, GetContextId(heap_->isolate()));
-  metrics_report_pending_ = false;
 }
 
 void GCTracer::ReportIncrementalMarkingStepToRecorder() {
+  DCHECK_EQ(Event::Type::INCREMENTAL_MARK_COMPACTOR, current_.type);
   static constexpr int kMaxBatchedEvents =
       CppHeap::MetricRecorderAdapter::kMaxBatchedEvents;
   const std::shared_ptr<metrics::Recorder>& recorder =
@@ -1447,21 +1527,33 @@ void GCTracer::ReportIncrementalMarkingStepToRecorder() {
 }
 
 void GCTracer::ReportYoungCycleToRecorder() {
+  DCHECK(Event::IsYoungGenerationEvent(current_.type));
+  DCHECK_EQ(Event::State::NOT_RUNNING, current_.state);
   const std::shared_ptr<metrics::Recorder>& recorder =
       heap_->isolate()->metrics_recorder();
   DCHECK_NOT_NULL(recorder);
   if (!recorder->HasEmbedderRecorder()) return;
   v8::metrics::GarbageCollectionYoungCycle event;
+  // Reason:
+  event.reason = static_cast<int>(current_.gc_reason);
   // Total:
   const double total_wall_clock_duration_in_us =
       (current_.scopes[Scope::SCAVENGER] +
-       current_.scopes[Scope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL]) *
+       current_.scopes[Scope::MINOR_MARK_COMPACTOR] +
+       current_.scopes[Scope::SCAVENGER_BACKGROUND_SCAVENGE_PARALLEL] +
+       current_.scopes[Scope::MINOR_MC_BACKGROUND_EVACUATE_COPY] +
+       current_.scopes[Scope::MINOR_MC_BACKGROUND_MARKING] +
+       current_.scopes[Scope::MINOR_MC_BACKGROUND_EVACUATE_UPDATE_POINTERS]) *
       base::Time::kMicrosecondsPerMillisecond;
+  // TODO(chromium:1154636): Consider adding BACKGROUND_YOUNG_ARRAY_BUFFER_SWEEP
+  // (both for the case of the scavenger and the minor mark-compactor), and
+  // BACKGROUND_UNMAPPER (for the case of the minor mark-compactor).
   event.total_wall_clock_duration_in_us =
       static_cast<int64_t>(total_wall_clock_duration_in_us);
   // MainThread:
   const double main_thread_wall_clock_duration_in_us =
-      current_.scopes[Scope::SCAVENGER] *
+      (current_.scopes[Scope::SCAVENGER] +
+       current_.scopes[Scope::MINOR_MARK_COMPACTOR]) *
       base::Time::kMicrosecondsPerMillisecond;
   event.main_thread_wall_clock_duration_in_us =
       static_cast<int64_t>(main_thread_wall_clock_duration_in_us);

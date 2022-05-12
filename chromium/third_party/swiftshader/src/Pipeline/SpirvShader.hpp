@@ -19,6 +19,7 @@
 #include "ShaderCore.hpp"
 #include "SpirvBinary.hpp"
 #include "SpirvID.hpp"
+#include "SpirvProfiler.hpp"
 #include "Device/Config.hpp"
 #include "Device/Sampler.hpp"
 #include "System/Debug.hpp"
@@ -169,9 +170,9 @@ public:
 	class InsnIterator
 	{
 	public:
-		InsnIterator(InsnIterator const &other) = default;
-
 		InsnIterator() = default;
+		InsnIterator(InsnIterator const &other) = default;
+		InsnIterator &operator=(const InsnIterator &other) = default;
 
 		explicit InsnIterator(SpirvBinary::const_iterator iter)
 		    : iter{ iter }
@@ -389,6 +390,7 @@ public:
 
 		Block() = default;
 		Block(const Block &other) = default;
+		Block &operator=(const Block &other) = default;
 		explicit Block(InsnIterator begin, InsnIterator end);
 
 		/* range-based-for interface */
@@ -614,7 +616,8 @@ public:
 	            const vk::RenderPass *renderPass,
 	            uint32_t subpassIndex,
 	            bool robustBufferAccess,
-	            const std::shared_ptr<vk::dbg::Context> &dbgctx);
+	            const std::shared_ptr<vk::dbg::Context> &dbgctx,
+	            std::shared_ptr<SpirvProfiler> profiler);
 
 	~SpirvShader();
 
@@ -680,6 +683,8 @@ public:
 		bool DeviceGroup : 1;
 		bool MultiView : 1;
 		bool StencilExportEXT : 1;
+		bool VulkanMemoryModel : 1;
+		bool VulkanMemoryModelDeviceScope : 1;
 	};
 
 	const Capabilities &getUsedCapabilities() const
@@ -885,17 +890,27 @@ private:
 
 	Function::ID entryPoint;
 	spv::ExecutionModel executionModel = spv::ExecutionModelMax;  // Invalid prior to OpEntryPoint parsing.
-
 	ExecutionModes executionModes = {};
-	Analysis analysis = {};
 	Capabilities capabilities = {};
+	spv::AddressingModel addressingModel = spv::AddressingModelLogical;
+	spv::MemoryModel memoryModel = spv::MemoryModelSimple;
+	HandleMap<Extension> extensionsByID;
+	std::unordered_set<uint32_t> extensionsImported;
+
+	Analysis analysis = {};
+	mutable bool imageWriteEmitted = false;
+
 	HandleMap<Type> types;
 	HandleMap<Object> defs;
 	HandleMap<Function> functions;
 	std::unordered_map<StringID, String> strings;
-	HandleMap<Extension> extensionsByID;
-	std::unordered_set<uint32_t> extensionsImported;
-	mutable bool imageWriteEmitted = false;
+
+	std::shared_ptr<SpirvProfiler> profiler;
+
+	bool IsProfilingEnabled() const
+	{
+		return profiler != nullptr;
+	}
 
 	// DeclareType creates a Type for the given OpTypeX instruction, storing
 	// it into the types map. It is called from the analysis pass (constructor).
@@ -1548,12 +1563,13 @@ public:
 	}
 
 private:
-	// The phis are only accessible to SpirvShader as they are only used and
-	// exist between calls to SpirvShader::emitProlog() and
-	// SpirvShader::emitEpilog().
+	// The phis and the profile data are only accessible to SpirvShader
+	// as they are only used and exist between calls to
+	// SpirvShader::emitProlog() and SpirvShader::emitEpilog().
 	friend class SpirvShader;
 
 	std::unordered_map<SpirvShader::Object::ID, Variable> phis;
+	std::unique_ptr<SpirvProfileData> profData;
 };
 
 }  // namespace sw

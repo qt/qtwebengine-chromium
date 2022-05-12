@@ -8,6 +8,18 @@ option optimize_for = LITE_RUNTIME;
 
 package dlcservice;
 
+// This is the message that is passed into installation
+message InstallRequest {
+  // The unique ID of the DLC.
+  string id = 1;
+  // The omaha URL to download from.
+  // This field is optional.
+  string omaha_url = 2;
+  // The DLC will reserve space on installation success/failure.
+  // This field is optional.
+  bool reserve = 3;
+}
+
 // This message is used to query the DLCs that have data on disk. This allows
 // Chrome UI to show this list to the users and users can decide whether to
 // delete unused DLCs or not.

@@ -172,7 +172,7 @@ TEST_F(ResolverCallValidationTest, PointerArgument_FunctionParamWithMain) {
   // fn bar(p: ptr<function, i32>) {
   // foo(p);
   // }
-  // [[stage(fragment)]]
+  // @stage(fragment)
   // fn main() {
   //   var v: i32;
   //   bar(&v);
@@ -195,7 +195,7 @@ TEST_F(ResolverCallValidationTest, PointerArgument_FunctionParamWithMain) {
 
 TEST_F(ResolverCallValidationTest, LetPointer) {
   // fn x(p : ptr<function, i32>) -> i32 {}
-  // [[stage(fragment)]]
+  // @stage(fragment)
   // fn main() {
   //   var v: i32;
   //   let p: ptr<function, i32> = &v;
@@ -227,7 +227,7 @@ TEST_F(ResolverCallValidationTest, LetPointerPrivate) {
   // let p: ptr<private, i32> = &v;
   // fn foo(p : ptr<private, i32>) -> i32 {}
   // var v: i32;
-  // [[stage(fragment)]]
+  // @stage(fragment)
   // fn main() {
   //   var c: i32 = foo(p);
   // }
@@ -250,6 +250,19 @@ TEST_F(ResolverCallValidationTest, LetPointerPrivate) {
   EXPECT_EQ(r()->error(),
             "12:34 error: expected an address-of expression of a variable "
             "identifier expression or a function parameter");
+}
+
+TEST_F(ResolverCallValidationTest, CallVariable) {
+  // var v : i32;
+  // fn f() {
+  //   v();
+  // }
+  Global("v", ty.i32(), ast::StorageClass::kPrivate);
+  Func("f", {}, ty.void_(), {CallStmt(Call(Source{{12, 34}}, "v"))});
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(), R"(error: cannot call variable 'v'
+note: 'v' declared here)");
 }
 
 }  // namespace

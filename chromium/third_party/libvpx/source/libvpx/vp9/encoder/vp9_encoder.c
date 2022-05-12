@@ -25,6 +25,7 @@
 #endif
 #include "vpx_ports/mem.h"
 #include "vpx_ports/system_state.h"
+#include "vpx_ports/vpx_once.h"
 #include "vpx_ports/vpx_timer.h"
 #if CONFIG_BITSTREAM_DEBUG || CONFIG_MISMATCH_DEBUG
 #include "vpx_util/vpx_debug_util.h"
@@ -585,8 +586,6 @@ static void apply_roi_map(VP9_COMP *cpi) {
   int ref_frame[8];
   int internal_delta_q[MAX_SEGMENTS];
   int i;
-  static const int flag_list[4] = { 0, VP9_LAST_FLAG, VP9_GOLD_FLAG,
-                                    VP9_ALT_FLAG };
 
   // TODO(jianj): Investigate why ROI not working in speed < 5 or in non
   // realtime mode.
@@ -618,7 +617,7 @@ static void apply_roi_map(VP9_COMP *cpi) {
     }
     if (skip[i] != 0) {
       vp9_enable_segfeature(seg, i, SEG_LVL_SKIP);
-      vp9_set_segdata(seg, i, SEG_LVL_SKIP, skip[i]);
+      vp9_set_segdata(seg, i, SEG_LVL_SKIP, 0);
     }
     if (ref_frame[i] >= 0) {
       int valid_ref = 1;
@@ -627,7 +626,7 @@ static void apply_roi_map(VP9_COMP *cpi) {
         valid_ref = 0;
       // If GOLDEN is selected, make sure it's set as reference.
       if (ref_frame[i] == GOLDEN_FRAME &&
-          !(cpi->ref_frame_flags & flag_list[ref_frame[i]])) {
+          !(cpi->ref_frame_flags & ref_frame_to_flag(ref_frame[i]))) {
         valid_ref = 0;
       }
       // GOLDEN was updated in previous encoded frame, so GOLDEN and LAST are
@@ -929,23 +928,20 @@ static void vp9_swap_mi_and_prev_mi(VP9_COMMON *cm) {
   cm->prev_mi_grid_visible = cm->prev_mi_grid_base + cm->mi_stride + 1;
 }
 
-void vp9_initialize_enc(void) {
-  static volatile int init_done = 0;
-
-  if (!init_done) {
-    vp9_rtcd();
-    vpx_dsp_rtcd();
-    vpx_scale_rtcd();
-    vp9_init_intra_predictors();
-    vp9_init_me_luts();
-    vp9_rc_init_minq_luts();
-    vp9_entropy_mv_init();
+static void initialize_enc(void) {
+  vp9_rtcd();
+  vpx_dsp_rtcd();
+  vpx_scale_rtcd();
+  vp9_init_intra_predictors();
+  vp9_init_me_luts();
+  vp9_rc_init_minq_luts();
+  vp9_entropy_mv_init();
 #if !CONFIG_REALTIME_ONLY
-    vp9_temporal_filter_init();
+  vp9_temporal_filter_init();
 #endif
-    init_done = 1;
-  }
 }
+
+void vp9_initialize_enc(void) { once(initialize_enc); }
 
 static void dealloc_compressor_data(VP9_COMP *cpi) {
   VP9_COMMON *const cm = &cpi->common;
@@ -2223,6 +2219,7 @@ static INLINE void vpx_img_chroma_subsampling(vpx_img_fmt_t fmt,
   switch (fmt) {
     case VPX_IMG_FMT_I420:
     case VPX_IMG_FMT_YV12:
+    case VPX_IMG_FMT_NV12:
     case VPX_IMG_FMT_I422:
     case VPX_IMG_FMT_I42016:
     case VPX_IMG_FMT_I42216: *subsampling_x = 1; break;
@@ -2233,6 +2230,7 @@ static INLINE void vpx_img_chroma_subsampling(vpx_img_fmt_t fmt,
     case VPX_IMG_FMT_I420:
     case VPX_IMG_FMT_I440:
     case VPX_IMG_FMT_YV12:
+    case VPX_IMG_FMT_NV12:
     case VPX_IMG_FMT_I42016:
     case VPX_IMG_FMT_I44016: *subsampling_y = 1; break;
     default: *subsampling_y = 0; break;
@@ -4118,11 +4116,22 @@ static int encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
     vp9_alt_ref_aq_setup_map(cpi->alt_ref_aq, cpi);
   } else {
 #endif
-    if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ) {
+    // If ROI is enabled and skip feature is used for segmentation, apply cyclic
+    // refresh but not apply ROI for skip for the first 20 frames (defined by
+    // FRAMES_NO_SKIPPING_AFTER_KEY) after key frame to improve quality.
+    if (cpi->roi.enabled && !frame_is_intra_only(cm)) {
+      if (cpi->roi.skip[BACKGROUND_SEG_SKIP_ID]) {
+        if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ)
+          vp9_cyclic_refresh_setup(cpi);
+        if (cpi->rc.frames_since_key > FRAMES_NO_SKIPPING_AFTER_KEY)
+          apply_roi_map(cpi);
+      } else {
+        apply_roi_map(cpi);
+      }
+    } else if (cpi->oxcf.aq_mode == CYCLIC_REFRESH_AQ) {
       vp9_cyclic_refresh_setup(cpi);
-    } else if (cpi->roi.enabled && !frame_is_intra_only(cm)) {
-      apply_roi_map(cpi);
     }
+
 #if !CONFIG_REALTIME_ONLY
   }
 #endif

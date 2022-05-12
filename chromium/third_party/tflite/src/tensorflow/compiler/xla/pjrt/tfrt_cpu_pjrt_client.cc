@@ -15,7 +15,11 @@ limitations under the License.
 
 #include "tensorflow/compiler/xla/pjrt/tfrt_cpu_pjrt_client.h"
 
+#include <algorithm>
+#include <functional>
 #include <memory>
+#include <string>
+#include <utility>
 
 #include "tensorflow/compiler/xla/primitive_util.h"
 
@@ -462,7 +466,7 @@ StatusOr<std::unique_ptr<PjRtBuffer>> TfrtCpuClient::BufferFromHostBuffer(
       has_default_layout &&
       host_buffer_semantics == HostBufferSemantics::kZeroCopy &&
       ((absl::bit_cast<std::uintptr_t>(data) &
-        (cpu_function_runtime::kMinAlign - 1)) == 0);
+        (cpu_function_runtime::MinAlign() - 1)) == 0);
   absl::InlinedVector<std::shared_ptr<MaybeOwningCpuMemory>, 4> buffers;
   absl::InlinedVector<tfrt::AsyncValueRef<CpuEvent>, 4> definition_events;
   std::function<void()> on_delete_callback;
@@ -1205,6 +1209,46 @@ Status TfrtCpuBuffer::BlockHostUntilReady() {
   return status;
 }
 
+void TfrtCpuBuffer::OnReady(std::function<void(Status)> callback) {
+  std::shared_ptr<TrackedTfrtCpuDeviceBuffer> device_buffer;
+  {
+    absl::MutexLock lock(&mu_);
+    if (tracked_device_buffer_ == nullptr) {
+      callback(
+          InvalidArgument("OnReady() called on deleted or donated buffer"));
+      return;
+    }
+    device_buffer = tracked_device_buffer_;
+  }
+
+  std::vector<tfrt::RCReference<tfrt::AsyncValue>> avs;
+  avs.reserve(device_buffer->DefinitionEvents().size());
+  // Wait for all definition events to complete.
+  for (const auto& ev : device_buffer->DefinitionEvents()) {
+    avs.push_back(ev.CopyRCRef());
+  }
+
+  absl::InlinedVector<tfrt::RCReference<tfrt::AsyncValue>, 4> avs_to_move;
+  avs_to_move.reserve(avs.size());
+  for (const auto& av : avs) {
+    avs_to_move.push_back(av.CopyRef());
+  }
+
+  EnqueueWorkWhenReady(
+      client_->GetHostContext(), avs,
+      [avs = std::move(avs_to_move), callback = std::move(callback)]() {
+        Status s;
+        for (const auto& av : avs) {
+          if (auto* error = av->GetErrorIfPresent()) {
+            s.Update(FailedPrecondition(
+                "Error in OnReady waiting for buffer ready: %s",
+                error->message));
+          }
+        }
+        callback(s);
+      });
+}
+
 TfrtCpuExecutable::TfrtCpuExecutable(
     int num_replicas, int num_partitions,
     std::shared_ptr<DeviceAssignment> device_assignment,
@@ -1302,7 +1346,7 @@ static StatusOr<std::shared_ptr<MaybeOwningCpuMemory>> MemoryForAllocation(
   // by the JITed code, msan has no way of knowing their memory was
   // initialized. Mark them initialized so that msan doesn't flag loads from
   // these buffers.
-  TF_ANNOTATE_MEMORY_IS_INITIALIZED(out->data(), buffer_size);
+  ABSL_ANNOTATE_MEMORY_IS_INITIALIZED(out->data(), buffer_size);
   return out;
 }
 

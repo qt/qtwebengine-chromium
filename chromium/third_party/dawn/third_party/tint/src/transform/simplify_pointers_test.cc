@@ -23,18 +23,6 @@ namespace {
 
 using SimplifyPointersTest = TransformTest;
 
-TEST_F(SimplifyPointersTest, Error_MissingSimplifyPointers) {
-  auto* src = "";
-
-  auto* expect =
-      "error: tint::transform::SimplifyPointers depends on "
-      "tint::transform::Unshadow but the dependency was not run";
-
-  auto got = Run<SimplifyPointers>(src);
-
-  EXPECT_EQ(expect, str(got));
-}
-
 TEST_F(SimplifyPointersTest, EmptyModule) {
   auto* src = "";
   auto* expect = "";
@@ -168,7 +156,7 @@ fn matrix() {
   auto* expect = R"(
 struct S {
   i : i32;
-};
+}
 
 fn arr() {
   var a : array<S, 2>;
@@ -249,11 +237,12 @@ fn foo() -> i32 {
   return 1;
 }
 
-[[stage(fragment)]]
+@stage(fragment)
 fn main() {
   var arr = array<f32, 4>();
   for (let a = &arr[foo()]; ;) {
     let x = *a;
+    break;
   }
 }
 )";
@@ -263,12 +252,13 @@ fn foo() -> i32 {
   return 1;
 }
 
-[[stage(fragment)]]
+@stage(fragment)
 fn main() {
   var arr = array<f32, 4>();
   let a_save = foo();
   for(; ; ) {
     let x = arr[a_save];
+    break;
   }
 }
 )";
@@ -323,11 +313,11 @@ fn z() -> i32 {
 
 struct Inner {
   a : array<i32, 2>;
-};
+}
 
 struct Outer {
   a : array<Inner, 2>;
-};
+}
 
 fn f() {
   var arr : array<Outer, 2>;
@@ -348,7 +338,7 @@ TEST_F(SimplifyPointersTest, ShadowPointer) {
   auto* src = R"(
 var<private> a : array<i32, 2>;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn main() {
   let x = &a;
   var a : i32 = (*x)[0];
@@ -361,7 +351,7 @@ fn main() {
   auto* expect = R"(
 var<private> a : array<i32, 2>;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn main() {
   var a_1 : i32 = a[0];
   {

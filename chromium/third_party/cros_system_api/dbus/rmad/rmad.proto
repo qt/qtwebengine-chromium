@@ -133,13 +133,22 @@ enum RmadErrorCode {
 
   // Update RO firmware failed.
   RMAD_ERROR_UPDATE_RO_FIRMWARE_FAILED = 40;
+
+  // WP is expected to be disabled, but it is enabled.
+  RMAD_ERROR_WP_ENABLED = 41;
+
+  // Unable to write data.
+  RMAD_ERROR_CANNOT_WRITE = 42;
+
+  // Failed to save logs.
+  RMAD_ERROR_CANNOT_SAVE_LOG = 43;
 }
 
 // Defined Rmad components.
 enum RmadComponent {
   RMAD_COMPONENT_UNKNOWN = 0;
   // runtime_probe supported components.
-  RMAD_COMPONENT_AUDIO_CODEC = 1;
+  RMAD_COMPONENT_AUDIO_CODEC = 1;  // Deprecated by runtime probe.
   RMAD_COMPONENT_BATTERY = 2;
   RMAD_COMPONENT_STORAGE = 3;
   RMAD_COMPONENT_VPD_CACHED = 4;
@@ -193,6 +202,7 @@ enum CalibrationSetupInstruction {
   // Reserved for additional setup instructions.
   reserved 3 to 9;
   RMAD_CALIBRATION_INSTRUCTION_NO_NEED_CALIBRATION = 10;
+  RMAD_CALIBRATION_INSTRUCTION_NEED_TO_CHECK = 11;
 }
 
 // Defined overall status for Calibration.
@@ -214,8 +224,17 @@ message ProvisionStatus {
     RMAD_PROVISION_STATUS_FAILED_BLOCKING = 3;
     RMAD_PROVISION_STATUS_FAILED_NON_BLOCKING = 4;
   }
+  enum Error {
+    RMAD_PROVISION_ERROR_UNKNOWN = 0;
+    RMAD_PROVISION_ERROR_INTERNAL = 1;
+    RMAD_PROVISION_ERROR_WP_ENABLED = 2;
+    RMAD_PROVISION_ERROR_CANNOT_READ = 3;
+    RMAD_PROVISION_ERROR_CANNOT_WRITE = 4;
+    RMAD_PROVISION_ERROR_GENERATE_SECRET = 5;
+  }
   Status status = 1;
   double progress = 2;
+  Error error = 3;
 }
 
 // Defined Finalize progress.
@@ -227,8 +246,17 @@ message FinalizeStatus {
     RMAD_FINALIZE_STATUS_FAILED_BLOCKING = 3;
     RMAD_FINALIZE_STATUS_FAILED_NON_BLOCKING = 4;
   }
+  enum Error {
+    RMAD_FINALIZE_ERROR_UNKNOWN = 0;
+    RMAD_FINALIZE_ERROR_INTERNAL = 1;
+    RMAD_FINALIZE_ERROR_CANNOT_ENABLE_HWWP = 2;
+    RMAD_FINALIZE_ERROR_CANNOT_ENABLE_SWWP = 3;
+    RMAD_FINALIZE_ERROR_CR50 = 4;
+    RMAD_FINALIZE_ERROR_GBB = 5;
+  }
   Status status = 1;
   double progress = 2;
+  Error error = 3;
 }
 
 // Defined Rmad states.
@@ -256,6 +284,7 @@ message ComponentsRepairState {
     }
     RmadComponent component = 1;
     RepairStatus repair_status = 2;
+    string identifier = 3;
   }
   repeated ComponentRepairStatus components = 1;
   bool mainboard_rework = 2;
@@ -270,6 +299,11 @@ message DeviceDestinationState {
     RMAD_DESTINATION_DIFFERENT = 2;
   }
   Destination destination = 1;
+}
+
+// Select whether we want to wipe the device at the end of the RMA process.
+message WipeSelectionState {
+  bool wipe_device = 1;
 }
 
 // Select the method to use to disable hardware write protection (HWWP).
@@ -362,11 +396,11 @@ message UpdateDeviceInfoState {
   // User provided serial number of device.
   string serial_number = 1;
   // Chosen region index for the current choice. See |region_list| below.
-  uint32 region_index = 2;
+  int32 region_index = 2;
   // Chosen SKU index of device. See |sku_list| below.
-  uint32 sku_index = 3;
+  int32 sku_index = 3;
   // Chosen whitelabel index of device. See |whitelabel_list| below.
-  uint32 whitelabel_index = 4;
+  int32 whitelabel_index = 4;
   // User provided dram part number of device.
   string dram_part_number = 5;
 
@@ -381,11 +415,11 @@ message UpdateDeviceInfoState {
   // Serial number of device at beginning of RMA finalization.
   string original_serial_number = 201;
   // Region index of device at beginning of RMA finalization.
-  uint32 original_region_index = 202;
+  int32 original_region_index = 202;
   // SKU index of device at beginning of RMA finalization.
-  uint32 original_sku_index = 203;
+  int32 original_sku_index = 203;
   // WL index of device at beginning of RMA finalization.
-  uint32 original_whitelabel_index = 204;
+  int32 original_whitelabel_index = 204;
   // DRAM part number of device at beginning of RMA finalization.
   string original_dram_part_number = 205;
 
@@ -502,6 +536,7 @@ message RmadState {
     WriteProtectEnablePhysicalState wp_enable_physical = 16;
     FinalizeState finalize = 17;
     RepairCompleteState repair_complete = 18;
+    WipeSelectionState wipe_selection = 19;
   }
 }
 
@@ -527,4 +562,10 @@ message AbortRmaReply {
 message GetLogReply {
   RmadErrorCode error = 1;
   string log = 2;
+}
+
+// Reply for SaveLog
+message SaveLogReply {
+  RmadErrorCode error = 1;
+  string save_path = 2;
 }

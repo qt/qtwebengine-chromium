@@ -2,7 +2,6 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-import("../../../config/gni/all_devtools_files.gni")
 import("../../../scripts/build/ninja/devtools_entrypoint.gni")
 import("../../../scripts/build/ninja/devtools_module.gni")
 import("../../../scripts/build/ninja/devtools_pre_built.gni")
@@ -11,11 +10,13 @@ import("../visibility.gni")
 devtools_module("issues_manager") {
   sources = [
     "AttributionReportingIssue.ts",
+    "ClientHintIssue.ts",
     "ContentSecurityPolicyIssue.ts",
     "ContrastCheckTrigger.ts",
     "CorsIssue.ts",
     "CrossOriginEmbedderPolicyIssue.ts",
     "DeprecationIssue.ts",
+    "FederatedAuthRequestIssue.ts",
     "GenericIssue.ts",
     "HeavyAdIssue.ts",
     "Issue.ts",
@@ -32,7 +33,6 @@ devtools_module("issues_manager") {
     "SharedArrayBufferIssue.ts",
     "SourceFrameIssuesManager.ts",
     "TrustedWebActivityIssue.ts",
-    "WasmCrossOriginModuleSharingIssue.ts",
   ]
 
   deps = [
@@ -68,6 +68,8 @@ devtools_issue_description_files = [
   "arInvalidTriggerPriority.md",
   "arMissingAttributionData.md",
   "arPermissionPolicyDisabled.md",
+  "clientHintMetaTagAllowListInvalidOrigin.md",
+  "clientHintMetaTagModifiedHTML.md",
   "CoepCoopSandboxedIframeCannotNavigateToCoopPage.md",
   "CoepCorpNotSameOrigin.md",
   "CoepCorpNotSameOriginAfterDefaultedToSameOriginByCoep.md",
@@ -95,6 +97,25 @@ devtools_issue_description_files = [
   "deprecation.md",
   "deprecationNavigatorUserAgent.md",
   "genericCrossOriginPortalPostMessageError.md",
+  "federatedAuthRequestApprovalDeclined.md",
+  "federatedAuthRequestTooManyRequests.md",
+  "federatedAuthRequestManifestHttpNotFound.md",
+  "federatedAuthRequestManifestNoResponse.md",
+  "federatedAuthRequestManifestInvalidResponse.md",
+  "federatedAuthRequestClientMetadataHttpNotFound.md",
+  "federatedAuthRequestClientMetadataNoResponse.md",
+  "federatedAuthRequestClientMetadataInvalidResponse.md",
+  "federatedAuthRequestErrorFetchingSignin.md",
+  "federatedAuthRequestInvalidSigninResponse.md",
+  "federatedAuthRequestAccountsHttpNotFound.md",
+  "federatedAuthRequestAccountsNoResponse.md",
+  "federatedAuthRequestAccountsInvalidResponse.md",
+  "federatedAuthRequestIdTokenHttpNotFound.md",
+  "federatedAuthRequestIdTokenNoResponse.md",
+  "federatedAuthRequestIdTokenInvalidResponse.md",
+  "federatedAuthRequestIdTokenInvalidRequest.md",
+  "federatedAuthRequestErrorIdToken.md",
+  "federatedAuthRequestCanceled.md",
   "heavyAd.md",
   "LowTextContrast.md",
   "mixedContent.md",
@@ -117,7 +138,6 @@ devtools_issue_description_files = [
   "TwaDigitalAssetLinksFailed.md",
   "TwaHttpError.md",
   "TwaPageUnavailableOffline.md",
-  "wasmCrossOriginModuleSharing.md",
 ]
 
 devtools_pre_built("descriptions") {

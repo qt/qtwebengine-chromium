@@ -114,6 +114,11 @@ namespace stats {
   F(traced_chunks_discarded,            kSingle,  kInfo,     kTrace,    ""),   \
   F(traced_data_sources_registered,     kSingle,  kInfo,     kTrace,    ""),   \
   F(traced_data_sources_seen,           kSingle,  kInfo,     kTrace,    ""),   \
+  F(traced_final_flush_failed,          kSingle,  kDataLoss, kTrace,    ""),   \
+  F(traced_final_flush_succeeded,       kSingle,  kInfo,     kTrace,    ""),   \
+  F(traced_flushes_failed,              kSingle,  kDataLoss, kTrace,    ""),   \
+  F(traced_flushes_requested,           kSingle,  kInfo,     kTrace,    ""),   \
+  F(traced_flushes_succeeded,           kSingle,  kInfo,     kTrace,    ""),   \
   F(traced_patches_discarded,           kSingle,  kInfo,     kTrace,    ""),   \
   F(traced_producers_connected,         kSingle,  kInfo,     kTrace,    ""),   \
   F(traced_producers_seen,              kSingle,  kInfo,     kTrace,    ""),   \
@@ -212,8 +217,7 @@ enum Severity {
   kInfo,      // Diagnostic counters
   kDataLoss,  // Correct operation that still resulted in data loss
   kError      // If any kError counter is > 0 trace_processor_shell will
-              // raise an error. This is *not* surfaced in the web UI.
-              // TODO(b/148587181): Surface these errors in the UI.
+              // raise an error. This is also surfaced in the web UI.
 };
 
 enum Source {

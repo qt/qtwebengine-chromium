@@ -20,7 +20,7 @@
 #include "sql/init_status.h"
 #include "sql/meta_table.h"
 
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #include "components/history/core/browser/android/android_cache_database.h"
 #include "components/history/core/browser/android/android_urls_database.h"
 #endif
@@ -41,7 +41,7 @@ namespace history {
 // as the storage interface. Logic for manipulating this storage layer should
 // be in HistoryBackend.cc.
 class HistoryDatabase : public DownloadDatabase,
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
                         public AndroidURLsDatabase,
                         public AndroidCacheDatabase,
 #endif
@@ -80,6 +80,7 @@ class HistoryDatabase : public DownloadDatabase,
   void set_error_callback(const sql::Database::ErrorCallback& error_callback) {
     db_.set_error_callback(error_callback);
   }
+  void reset_error_callback() { db_.reset_error_callback(); }
 
   // Must call this function to complete initialization. Will return
   // sql::INIT_OK on success. Otherwise, no other function should be called. You
@@ -168,7 +169,7 @@ class HistoryDatabase : public DownloadDatabase,
   virtual void UpdateEarlyExpirationThreshold(base::Time threshold);
 
  private:
-#if defined(OS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
   // AndroidProviderBackend uses the `db_`.
   friend class AndroidProviderBackend;
   FRIEND_TEST_ALL_PREFIXES(AndroidURLsMigrationTest, MigrateToVersion22);
@@ -192,7 +193,7 @@ class HistoryDatabase : public DownloadDatabase,
   // may commit the transaction and start a new one if migration requires it.
   sql::InitStatus EnsureCurrentVersion();
 
-#if !defined(OS_WIN)
+#if !BUILDFLAG(IS_WIN)
   // Converts the time epoch in the database from being 1970-based to being
   // 1601-based which corresponds to the change in Time.internal_value_.
   void MigrateTimeEpoch();

@@ -17,7 +17,7 @@
 #include "src/execution/frames-inl.h"
 #include "src/execution/isolate-inl.h"
 #include "src/execution/messages.h"
-#include "src/execution/runtime-profiler.h"
+#include "src/execution/tiering-manager.h"
 #include "src/handles/maybe-handles.h"
 #include "src/init/bootstrapper.h"
 #include "src/logging/counters.h"
@@ -346,7 +346,6 @@ namespace {
 
 void BytecodeBudgetInterruptFromBytecode(Isolate* isolate,
                                          Handle<JSFunction> function) {
-  function->SetInterruptBudget();
   bool should_mark_for_optimization = function->has_feedback_vector();
   if (!function->has_feedback_vector()) {
     IsCompiledScope is_compiled_scope(
@@ -357,6 +356,8 @@ void BytecodeBudgetInterruptFromBytecode(Isolate* isolate,
     // OSR. When we OSR functions with lazy feedback allocation we want to have
     // a non zero invocation count so we can inline functions.
     function->feedback_vector().set_invocation_count(1, kRelaxedStore);
+  } else {
+    function->SetInterruptBudget();
   }
   if (CanCompileWithBaseline(isolate, function->shared()) &&
       !function->ActiveTierIsBaseline()) {
@@ -371,8 +372,7 @@ void BytecodeBudgetInterruptFromBytecode(Isolate* isolate,
   }
   if (should_mark_for_optimization) {
     SealHandleScope shs(isolate);
-    isolate->counters()->runtime_profiler_ticks()->Increment();
-    isolate->runtime_profiler()->MarkCandidatesForOptimizationFromBytecode();
+    isolate->tiering_manager()->OnInterruptTickFromBytecode();
   }
 }
 }  // namespace
@@ -410,24 +410,6 @@ RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromBytecode) {
   TRACE_EVENT0("v8.execute", "V8.BytecodeBudgetInterrupt");
 
   BytecodeBudgetInterruptFromBytecode(isolate, function);
-  return ReadOnlyRoots(isolate).undefined_value();
-}
-
-RUNTIME_FUNCTION(Runtime_BytecodeBudgetInterruptFromCode) {
-  HandleScope scope(isolate);
-  DCHECK_EQ(1, args.length());
-  CONVERT_ARG_HANDLE_CHECKED(FeedbackCell, feedback_cell, 0);
-
-  // TODO(leszeks): Consider checking stack interrupts here, and removing
-  // those checks for code that can have budget interrupts.
-
-  DCHECK(feedback_cell->value().IsFeedbackVector());
-
-  FeedbackVector::SetInterruptBudget(*feedback_cell);
-
-  SealHandleScope shs(isolate);
-  isolate->counters()->runtime_profiler_ticks()->Increment();
-  isolate->runtime_profiler()->MarkCandidatesForOptimizationFromCode();
   return ReadOnlyRoots(isolate).undefined_value();
 }
 
@@ -470,8 +452,6 @@ RUNTIME_FUNCTION(Runtime_AllocateInYoungGeneration) {
       AllowLargeObjectAllocationFlag::decode(flags);
   CHECK(IsAligned(size, kTaggedSize));
   CHECK_GT(size, 0);
-  CHECK(FLAG_young_generation_large_objects ||
-        size <= kMaxRegularHeapObjectSize);
   if (!allow_large_object_allocation) {
     CHECK(size <= kMaxRegularHeapObjectSize);
   }

@@ -18,6 +18,7 @@ namespace internal {
   T(DebuggerLoading, "Error loading debugger")                                 \
   T(DefaultOptionsMissing, "Internal % error. Default options are missing.")   \
   T(DeletePrivateField, "Private fields can not be deleted")                   \
+  T(PlaceholderOnly, "%")                                                      \
   T(UncaughtException, "Uncaught %")                                           \
   T(Unsupported, "Not supported")                                              \
   T(WrongServiceType, "Internal error, wrong service type: %")                 \
@@ -85,6 +86,7 @@ namespace internal {
   T(DeclarationMissingInitializer, "Missing initializer in % declaration")     \
   T(DefineDisallowed, "Cannot define property %, object is not extensible")    \
   T(DetachedOperation, "Cannot perform % on a detached ArrayBuffer")           \
+  T(DoNotUse, "Do not use %; %")                                               \
   T(DuplicateTemplateProperty, "Object template has duplicate property '%'")   \
   T(ExtendsValueNotConstructor,                                                \
     "Class extends value % is not a constructor or null")                      \
@@ -104,6 +106,7 @@ namespace internal {
   T(InstanceofNonobjectProto,                                                  \
     "Function has non-object prototype '%' in instanceof check")               \
   T(InvalidArgument, "invalid_argument")                                       \
+  T(InvalidArgumentForTemporal, "Invalid argument for Temporal %")             \
   T(InvalidInOperatorUse, "Cannot use 'in' operator to search for '%' in %")   \
   T(InvalidRegExpExecResult,                                                   \
     "RegExp exec method returned something other than an Object or null")      \
@@ -345,11 +348,12 @@ namespace internal {
   T(Invalid, "Invalid % : %")                                                  \
   T(InvalidArrayLength, "Invalid array length")                                \
   T(InvalidAtomicAccessIndex, "Invalid atomic access index")                   \
+  T(InvalidCalendar, "Invalid calendar specified: %")                          \
   T(InvalidCodePoint, "Invalid code point %")                                  \
   T(InvalidCountValue, "Invalid count value")                                  \
   T(InvalidDataViewAccessorOffset,                                             \
     "Offset is outside the bounds of the DataView")                            \
-  T(InvalidDataViewLength, "Invalid DataView length")                          \
+  T(InvalidDataViewLength, "Invalid DataView length %")                        \
   T(InvalidOffset, "Start offset % is outside the bounds of the buffer")       \
   T(InvalidHint, "Invalid hint: %")                                            \
   T(InvalidIndex, "Invalid value: not (convertible to) a safe integer")        \
@@ -358,6 +362,7 @@ namespace internal {
   T(InvalidWeakSetValue, "Invalid value used in weak set")                     \
   T(InvalidStringLength, "Invalid string length")                              \
   T(InvalidTimeValue, "Invalid time value")                                    \
+  T(InvalidTimeValueForTemporal, "Invalid time value for Temporal %")          \
   T(InvalidTimeZone, "Invalid time zone specified: %")                         \
   T(InvalidTypedArrayAlignment, "% of % should be a multiple of %")            \
   T(InvalidTypedArrayIndex, "Invalid typed array index")                       \
@@ -585,7 +590,7 @@ namespace internal {
   T(WasmTrapFuncSigMismatch, "null function or function signature mismatch")   \
   T(WasmTrapMultiReturnLengthMismatch, "multi-return length mismatch")         \
   T(WasmTrapJSTypeError, "type incompatibility when transforming from/to JS")  \
-  T(WasmTrapDataSegmentDropped, "data segment has been dropped")               \
+  T(WasmTrapDataSegmentOutOfBounds, "data segment out of bounds")              \
   T(WasmTrapElemSegmentDropped, "element segment has been dropped")            \
   T(WasmTrapRethrowNull, "rethrowing null value")                              \
   T(WasmTrapNullDereference, "dereferencing a null pointer")                   \

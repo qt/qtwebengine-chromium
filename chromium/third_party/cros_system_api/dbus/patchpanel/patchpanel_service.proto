@@ -75,6 +75,9 @@ message NetworkDevice {
   // logical or physical networks.
   string phys_ifname = 5;
 
+  // The name of the interface inside the guest.
+  string guest_ifname = 7;
+
   // The IPv4 address assigned to the guest, in network order.
   uint32 ipv4_addr = 2;
 

@@ -11,8 +11,8 @@
 #include <stdlib.h>
 
 #include <algorithm>
+#include <limits>
 #include <memory>
-#include <sstream>
 #include <utility>
 #include <vector>
 
@@ -30,6 +30,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #include "third_party/base/check.h"
 #include "third_party/base/cxx17_backports.h"
+#include "third_party/base/numerics/safe_conversions.h"
 #include "v8/include/v8-container.h"
 #include "v8/include/v8-function-callback.h"
 #include "v8/include/v8-object.h"
@@ -50,6 +51,9 @@ using pdfium::fxjse::kClassTag;
 using pdfium::fxjse::kFuncTag;
 
 namespace {
+
+// Maximum number of characters Acrobat can fit in a text box.
+constexpr int kMaxCharCount = 15654908;
 
 const double kFinancialPrecision = 0.00000001;
 
@@ -735,45 +739,29 @@ bool IsIsoDateTimeFormat(pdfium::span<const char> pData,
                          int32_t* pMilliSecond,
                          int32_t* pZoneHour,
                          int32_t* pZoneMinute) {
-  int32_t& iYear = *pYear;
-  int32_t& iMonth = *pMonth;
-  int32_t& iDay = *pDay;
-  int32_t& iHour = *pHour;
-  int32_t& iMinute = *pMinute;
-  int32_t& iSecond = *pSecond;
-  int32_t& iMilliSecond = *pMilliSecond;
-  int32_t& iZoneHour = *pZoneHour;
-  int32_t& iZoneMinute = *pZoneMinute;
-
-  iYear = 0;
-  iMonth = 0;
-  iDay = 0;
-  iHour = 0;
-  iMinute = 0;
-  iSecond = 0;
-
-  if (pData.empty())
-    return false;
+  *pYear = 0;
+  *pMonth = 0;
+  *pDay = 0;
+  *pHour = 0;
+  *pMinute = 0;
+  *pSecond = 0;
 
   size_t iIndex = 0;
-  while (pData[iIndex] != 'T' && pData[iIndex] != 't') {
-    if (iIndex >= pData.size())
-      return false;
+  while (iIndex < pData.size()) {
+    if (pData[iIndex] == 'T' || pData[iIndex] == 't')
+      break;
     ++iIndex;
   }
-  if (iIndex != 8 && iIndex != 10)
+  if (iIndex == pData.size() || (iIndex != 8 && iIndex != 10))
     return false;
+
+  pdfium::span<const char> pDateSpan = pData.subspan(0, iIndex);
+  pdfium::span<const char> pTimeSpan = pData.subspan(iIndex + 1);
 
   int32_t iStyle = -1;
-  if (!IsIsoDateFormat(pData.subspan(0, iIndex), &iStyle, &iYear, &iMonth,
-                       &iDay)) {
-    return false;
-  }
-  if (pData[iIndex] != 'T' && pData[iIndex] != 't')
-    return true;
-
-  return IsIsoTimeFormat(pData.subspan(iIndex + 1), &iHour, &iMinute, &iSecond,
-                         &iMilliSecond, &iZoneHour, &iZoneMinute);
+  return IsIsoDateFormat(pDateSpan, &iStyle, pYear, pMonth, pDay) &&
+         IsIsoTimeFormat(pTimeSpan, pHour, pMinute, pSecond, pMilliSecond,
+                         pZoneHour, pZoneMinute);
 }
 
 int32_t DateString2Num(ByteStringView bsDate) {
@@ -1204,89 +1192,86 @@ ByteString TrillionUS(ByteStringView bsData) {
   if (iFirstCount == 0)
     iFirstCount = 3;
 
-  std::ostringstream strBuf;
+  ByteString strBuf;
   int32_t iIndex = 0;
   if (iFirstCount == 3) {
     if (pData[iIndex] != '0') {
-      strBuf << kCapUnits[pData[iIndex] - '0'];
-      strBuf << kComm[0];
+      strBuf += kCapUnits[pData[iIndex] - '0'];
+      strBuf += kComm[0];
     }
     if (pData[iIndex + 1] == '0') {
-      strBuf << kCapUnits[pData[iIndex + 2] - '0'];
+      strBuf += kCapUnits[pData[iIndex + 2] - '0'];
     } else {
       if (pData[iIndex + 1] > '1') {
-        strBuf << kLastTens[pData[iIndex + 1] - '2'];
-        strBuf << "-";
-        strBuf << kUnits[pData[iIndex + 2] - '0'];
+        strBuf += kLastTens[pData[iIndex + 1] - '2'];
+        strBuf += "-";
+        strBuf += kUnits[pData[iIndex + 2] - '0'];
       } else if (pData[iIndex + 1] == '1') {
-        strBuf << kTens[pData[iIndex + 2] - '0'];
+        strBuf += kTens[pData[iIndex + 2] - '0'];
       } else if (pData[iIndex + 1] == '0') {
-        strBuf << kCapUnits[pData[iIndex + 2] - '0'];
+        strBuf += kCapUnits[pData[iIndex + 2] - '0'];
       }
     }
     iIndex += 3;
   } else if (iFirstCount == 2) {
     if (pData[iIndex] == '0') {
-      strBuf << kCapUnits[pData[iIndex + 1] - '0'];
+      strBuf += kCapUnits[pData[iIndex + 1] - '0'];
     } else {
       if (pData[iIndex] > '1') {
-        strBuf << kLastTens[pData[iIndex] - '2'];
-        strBuf << "-";
-        strBuf << kUnits[pData[iIndex + 1] - '0'];
+        strBuf += kLastTens[pData[iIndex] - '2'];
+        strBuf += "-";
+        strBuf += kUnits[pData[iIndex + 1] - '0'];
       } else if (pData[iIndex] == '1') {
-        strBuf << kTens[pData[iIndex + 1] - '0'];
+        strBuf += kTens[pData[iIndex + 1] - '0'];
       } else if (pData[iIndex] == '0') {
-        strBuf << kCapUnits[pData[iIndex + 1] - '0'];
+        strBuf += kCapUnits[pData[iIndex + 1] - '0'];
       }
     }
     iIndex += 2;
   } else if (iFirstCount == 1) {
-    strBuf << kCapUnits[pData[iIndex] - '0'];
+    strBuf += kCapUnits[pData[iIndex] - '0'];
     ++iIndex;
   }
   if (iLength > 3 && iFirstCount > 0) {
-    strBuf << kComm[iComm];
+    strBuf += kComm[iComm];
     --iComm;
   }
   while (iIndex < iLength) {
     if (pData[iIndex] != '0') {
-      strBuf << kCapUnits[pData[iIndex] - '0'];
-      strBuf << kComm[0];
+      strBuf += kCapUnits[pData[iIndex] - '0'];
+      strBuf += kComm[0];
     }
     if (pData[iIndex + 1] == '0') {
-      strBuf << kCapUnits[pData[iIndex + 2] - '0'];
+      strBuf += kCapUnits[pData[iIndex + 2] - '0'];
     } else {
       if (pData[iIndex + 1] > '1') {
-        strBuf << kLastTens[pData[iIndex + 1] - '2'];
-        strBuf << "-";
-        strBuf << kUnits[pData[iIndex + 2] - '0'];
+        strBuf += kLastTens[pData[iIndex + 1] - '2'];
+        strBuf += "-";
+        strBuf += kUnits[pData[iIndex + 2] - '0'];
       } else if (pData[iIndex + 1] == '1') {
-        strBuf << kTens[pData[iIndex + 2] - '0'];
+        strBuf += kTens[pData[iIndex + 2] - '0'];
       } else if (pData[iIndex + 1] == '0') {
-        strBuf << kCapUnits[pData[iIndex + 2] - '0'];
+        strBuf += kCapUnits[pData[iIndex + 2] - '0'];
       }
     }
     if (iIndex < iLength - 3) {
-      strBuf << kComm[iComm];
+      strBuf += kComm[iComm];
       --iComm;
     }
     iIndex += 3;
   }
-  return ByteString(strBuf);
+  return strBuf;
 }
 
-ByteString WordUS(const ByteString& bsData, int32_t iStyle) {
-  const char* pData = bsData.c_str();
-  int32_t iLength = bsData.GetLength();
-  if (iStyle < 0 || iStyle > 2) {
+ByteString WordUS(ByteStringView bsData, int32_t iStyle) {
+  if (iStyle < 0 || iStyle > 2)
     return ByteString();
-  }
 
-  std::ostringstream strBuf;
-
+  int32_t iLength = bsData.GetLength();
+  ByteString strBuf;
   int32_t iIndex = 0;
   while (iIndex < iLength) {
-    if (pData[iIndex] == '.')
+    if (bsData[iIndex] == '.')
       break;
     ++iIndex;
   }
@@ -1297,31 +1282,31 @@ ByteString WordUS(const ByteString& bsData, int32_t iStyle) {
     if (!iCount && iInteger - iIndex > 0)
       iCount = 12;
 
-    strBuf << TrillionUS(ByteStringView(pData + iIndex, iCount));
+    strBuf += TrillionUS(bsData.Substr(iIndex, iCount));
     iIndex += iCount;
     if (iIndex < iInteger)
-      strBuf << " Trillion ";
+      strBuf += " Trillion ";
   }
 
   if (iStyle > 0)
-    strBuf << " Dollars";
+    strBuf += " Dollars";
 
   if (iStyle > 1 && iInteger < iLength) {
-    strBuf << " And ";
+    strBuf += " And ";
     iIndex = iInteger + 1;
     while (iIndex < iLength) {
       int32_t iCount = (iLength - iIndex) % 12;
       if (!iCount && iLength - iIndex > 0)
         iCount = 12;
 
-      strBuf << TrillionUS(ByteStringView(pData + iIndex, iCount));
+      strBuf += TrillionUS(bsData.Substr(iIndex, iCount));
       iIndex += iCount;
       if (iIndex < iLength)
-        strBuf << " Trillion ";
+        strBuf += " Trillion ";
     }
-    strBuf << " Cents";
+    strBuf += " Cents";
   }
-  return ByteString(strBuf);
+  return strBuf;
 }
 
 v8::Local<v8::Value> GetObjectDefaultValue(v8::Isolate* pIsolate,
@@ -1665,6 +1650,17 @@ std::vector<v8::Local<v8::Value>> ParseResolveResult(
     resultValues.push_back(pParentValue);
 
   return resultValues;
+}
+
+// Returns 0 if the provided `arg` is an invalid payment period count.
+int GetValidatedPaymentPeriods(v8::Isolate* isolate, v8::Local<v8::Value> arg) {
+  double periods = ValueToDouble(isolate, arg);
+  if (periods < 1 ||
+      periods > static_cast<double>(std::numeric_limits<int32_t>::max())) {
+    return 0;
+  }
+
+  return static_cast<int>(periods);
 }
 
 }  // namespace
@@ -2703,8 +2699,8 @@ void CFXJSE_FormCalcContext::Apr(
 
   double nPrincipal = ValueToDouble(info.GetIsolate(), argOne);
   double nPayment = ValueToDouble(info.GetIsolate(), argTwo);
-  double nPeriods = ValueToDouble(info.GetIsolate(), argThree);
-  if (nPrincipal <= 0 || nPayment <= 0 || nPeriods <= 0) {
+  int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
+  if (nPrincipal <= 0 || nPayment <= 0 || nPeriods == 0) {
     pContext->ThrowArgumentMismatchException();
     return;
   }
@@ -2789,8 +2785,8 @@ void CFXJSE_FormCalcContext::FV(
 
   double nAmount = ValueToDouble(info.GetIsolate(), argOne);
   double nRate = ValueToDouble(info.GetIsolate(), argTwo);
-  double nPeriod = ValueToDouble(info.GetIsolate(), argThree);
-  if ((nRate < 0) || (nPeriod <= 0) || (nAmount <= 0)) {
+  int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
+  if (nAmount <= 0 || nRate < 0 || nPeriods == 0) {
     pContext->ThrowArgumentMismatchException();
     return;
   }
@@ -2798,12 +2794,12 @@ void CFXJSE_FormCalcContext::FV(
   double dResult = 0;
   if (nRate) {
     double nTemp = 1;
-    for (int i = 0; i < nPeriod; ++i) {
+    for (int i = 0; i < nPeriods; ++i) {
       nTemp *= 1 + nRate;
     }
     dResult = nAmount * (nTemp - 1) / nRate;
   } else {
-    dResult = nAmount * nPeriod;
+    dResult = nAmount * nPeriods;
   }
 
   info.GetReturnValue().Set(dResult);
@@ -2932,19 +2928,15 @@ void CFXJSE_FormCalcContext::Pmt(
     return;
   }
 
-  float nPrincipal = ValueToFloat(info.GetIsolate(), argOne);
-  float nRate = ValueToFloat(info.GetIsolate(), argTwo);
-  float nPeriods = ValueToFloat(info.GetIsolate(), argThree);
-  if ((nPrincipal <= 0) || (nRate <= 0) || (nPeriods <= 0)) {
+  double nPrincipal = ValueToDouble(info.GetIsolate(), argOne);
+  double nRate = ValueToDouble(info.GetIsolate(), argTwo);
+  int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
+  if (nPrincipal <= 0 || nRate <= 0 || nPeriods == 0) {
     pContext->ThrowArgumentMismatchException();
     return;
   }
 
-  float nTmp = 1 + nRate;
-  float nSum = nTmp;
-  for (int32_t i = 0; i < nPeriods - 1; ++i)
-    nSum *= nTmp;
-
+  double nSum = pow(1.0 + nRate, nPeriods);
   info.GetReturnValue().Set((nPrincipal * nRate * nSum) / (nSum - 1));
 }
 
@@ -3031,18 +3023,14 @@ void CFXJSE_FormCalcContext::PV(
 
   double nAmount = ValueToDouble(info.GetIsolate(), argOne);
   double nRate = ValueToDouble(info.GetIsolate(), argTwo);
-  double nPeriod = ValueToDouble(info.GetIsolate(), argThree);
-  if ((nAmount <= 0) || (nRate < 0) || (nPeriod <= 0)) {
+  int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
+  if (nAmount <= 0 || nRate < 0 || nPeriods == 0) {
     pContext->ThrowArgumentMismatchException();
     return;
   }
 
-  double nTemp = 1;
-  for (int32_t i = 0; i < nPeriod; ++i)
-    nTemp *= 1 + nRate;
-
-  nTemp = 1 / nTemp;
-  info.GetReturnValue().Set(nAmount * ((1 - nTemp) / nRate));
+  double nTemp = 1 / pow(1.0 + nRate, nPeriods);
+  info.GetReturnValue().Set(nAmount * ((1.0 - nTemp) / nRate));
 }
 
 // static
@@ -3067,14 +3055,13 @@ void CFXJSE_FormCalcContext::Rate(
 
   float nFuture = ValueToFloat(info.GetIsolate(), argOne);
   float nPresent = ValueToFloat(info.GetIsolate(), argTwo);
-  float nTotalNumber = ValueToFloat(info.GetIsolate(), argThree);
-  if ((nFuture <= 0) || (nPresent < 0) || (nTotalNumber <= 0)) {
+  int nPeriods = GetValidatedPaymentPeriods(info.GetIsolate(), argThree);
+  if (nFuture <= 0 || nPresent < 0 || nPeriods == 0) {
     pContext->ThrowArgumentMismatchException();
     return;
   }
 
-  info.GetReturnValue().Set(powf(nFuture / nPresent, 1.0f / nTotalNumber) -
-                            1.0f);
+  info.GetReturnValue().Set(powf(nFuture / nPresent, 1.0f / nPeriods) - 1.0f);
 }
 
 // static
@@ -4179,8 +4166,6 @@ void CFXJSE_FormCalcContext::Space(
     return;
   }
 
-  // Maximum number of characters Acrobat can fit in a text box.
-  constexpr int kMaxCharCount = 15654908;
   int count = std::max(0, ValueToInteger(info.GetIsolate(), argOne));
   if (count > kMaxCharCount) {
     ToFormCalcContext(pThis)->ThrowException("String too long.");
@@ -4212,6 +4197,10 @@ void CFXJSE_FormCalcContext::Str(
   if (argc > 1) {
     v8::Local<v8::Value> widthValue = GetSimpleValue(info, 1);
     iWidth = static_cast<int32_t>(ValueToFloat(info.GetIsolate(), widthValue));
+    if (iWidth > kMaxCharCount) {
+      ToFormCalcContext(pThis)->ThrowException("String too long.");
+      return;
+    }
   }
 
   int32_t iPrecision = 0;
@@ -4239,36 +4228,31 @@ void CFXJSE_FormCalcContext::Str(
     ++u;
   }
 
-  std::ostringstream resultBuf;
   if (u > iWidth || (iPrecision + u) >= iWidth) {
-    int32_t i = 0;
-    while (i < iWidth) {
-      resultBuf << '*';
-      ++i;
-    }
-    resultBuf << '\0';
-    info.GetReturnValue().Set(fxv8::NewStringHelper(
-        info.GetIsolate(), ByteStringView(resultBuf.str().c_str())));
+    std::vector<char, FxAllocAllocator<char>> stars(std::max(iWidth, 0), '*');
+    info.GetReturnValue().Set(
+        fxv8::NewStringHelper(info.GetIsolate(), ByteStringView(stars)));
     return;
   }
 
+  ByteString resultBuf;
   if (u == iLength) {
     if (iLength > iWidth) {
       int32_t i = 0;
       while (i < iWidth) {
-        resultBuf << '*';
+        resultBuf += '*';
         ++i;
       }
     } else {
       int32_t i = 0;
       while (i < iWidth - iLength) {
-        resultBuf << ' ';
+        resultBuf += ' ';
         ++i;
       }
-      resultBuf << pData;
+      resultBuf += pData;
     }
-    info.GetReturnValue().Set(fxv8::NewStringHelper(
-        info.GetIsolate(), ByteStringView(resultBuf.str().c_str())));
+    info.GetReturnValue().Set(
+        fxv8::NewStringHelper(info.GetIsolate(), resultBuf.AsStringView()));
     return;
   }
 
@@ -4278,16 +4262,16 @@ void CFXJSE_FormCalcContext::Str(
 
   int32_t i = 0;
   while (i < iLeavingSpace) {
-    resultBuf << ' ';
+    resultBuf += ' ';
     ++i;
   }
   i = 0;
   while (i < u) {
-    resultBuf << pData[i];
+    resultBuf += pData[i];
     ++i;
   }
   if (iPrecision != 0)
-    resultBuf << '.';
+    resultBuf += '.';
 
   u++;
   i = 0;
@@ -4295,17 +4279,16 @@ void CFXJSE_FormCalcContext::Str(
     if (i >= iPrecision)
       break;
 
-    resultBuf << pData[u];
+    resultBuf += pData[u];
     ++i;
     ++u;
   }
   while (i < iPrecision) {
-    resultBuf << '0';
+    resultBuf += '0';
     ++i;
   }
-  resultBuf << '\0';
-  info.GetReturnValue().Set(fxv8::NewStringHelper(
-      info.GetIsolate(), ByteStringView(resultBuf.str().c_str())));
+  info.GetReturnValue().Set(
+      fxv8::NewStringHelper(info.GetIsolate(), resultBuf.AsStringView()));
 }
 
 // static
@@ -4318,46 +4301,40 @@ void CFXJSE_FormCalcContext::Stuff(
     return;
   }
 
-  ByteString bsSource;
-  ByteString bsInsert;
-  int32_t iLength = 0;
-  int32_t iStart = 0;
-  int32_t iDelete = 0;
   v8::Local<v8::Value> sourceValue = GetSimpleValue(info, 0);
   v8::Local<v8::Value> startValue = GetSimpleValue(info, 1);
   v8::Local<v8::Value> deleteValue = GetSimpleValue(info, 2);
-  if (!fxv8::IsNull(sourceValue) && !fxv8::IsNull(startValue) &&
-      !fxv8::IsNull(deleteValue)) {
-    bsSource = ValueToUTF8String(info.GetIsolate(), sourceValue);
-    iLength = bsSource.GetLength();
+  if (fxv8::IsNull(sourceValue) || fxv8::IsNull(startValue) ||
+      fxv8::IsNull(deleteValue)) {
+    info.GetReturnValue().SetNull();
+    return;
+  }
+
+  int32_t iStart = 1;  // one-based character indexing.
+  int32_t iDelete = 0;
+  ByteString bsSource = ValueToUTF8String(info.GetIsolate(), sourceValue);
+  int32_t iLength = pdfium::base::checked_cast<int32_t>(bsSource.GetLength());
+  if (iLength) {
     iStart = pdfium::clamp(
         static_cast<int32_t>(ValueToFloat(info.GetIsolate(), startValue)), 1,
         iLength);
-    iDelete = std::max(
-        0, static_cast<int32_t>(ValueToFloat(info.GetIsolate(), deleteValue)));
+    iDelete = pdfium::clamp(
+        static_cast<int32_t>(ValueToFloat(info.GetIsolate(), deleteValue)), 0,
+        iLength - iStart + 1);
   }
 
+  ByteString bsInsert;
   if (argc > 3) {
     v8::Local<v8::Value> insertValue = GetSimpleValue(info, 3);
     bsInsert = ValueToUTF8String(info.GetIsolate(), insertValue);
   }
 
-  --iStart;
-  std::ostringstream szResult;
-  int32_t i = 0;
-  while (i < iStart) {
-    szResult << static_cast<char>(bsSource[i]);
-    ++i;
-  }
-  szResult << bsInsert.AsStringView();
-  i = iStart + iDelete;
-  while (i < iLength) {
-    szResult << static_cast<char>(bsSource[i]);
-    ++i;
-  }
-  szResult << '\0';
-  info.GetReturnValue().Set(fxv8::NewStringHelper(
-      info.GetIsolate(), ByteStringView(szResult.str().c_str())));
+  --iStart;  // now zero-based.
+  ByteString bsResult = {bsSource.AsStringView().First(iStart),
+                         bsInsert.AsStringView(),
+                         bsSource.AsStringView().Substr(iStart + iDelete)};
+  info.GetReturnValue().Set(
+      fxv8::NewStringHelper(info.GetIsolate(), bsResult.AsStringView()));
 }
 
 // static
@@ -4499,10 +4476,10 @@ void CFXJSE_FormCalcContext::WordNum(
     info.GetReturnValue().Set(fxv8::NewStringHelper(info.GetIsolate(), "*"));
     return;
   }
-
-  info.GetReturnValue().Set(fxv8::NewStringHelper(
-      info.GetIsolate(),
-      WordUS(ByteString::Format("%.2f", fNumber), iIdentifier).AsStringView()));
+  ByteString bsFormatted = ByteString::Format("%.2f", fNumber);
+  ByteString bsWorded = WordUS(bsFormatted.AsStringView(), iIdentifier);
+  info.GetReturnValue().Set(
+      fxv8::NewStringHelper(info.GetIsolate(), bsWorded.AsStringView()));
 }
 
 // static

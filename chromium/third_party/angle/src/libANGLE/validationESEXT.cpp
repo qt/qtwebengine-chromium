@@ -234,13 +234,10 @@ bool ValidateObjectIdentifierAndName(const Context *context,
 }
 }  // namespace
 
-bool ValidateGetTexImageANGLE(const Context *context,
-                              angle::EntryPoint entryPoint,
-                              TextureTarget target,
-                              GLint level,
-                              GLenum format,
-                              GLenum type,
-                              const void *pixels)
+bool ValidateGetTexImage(const Context *context,
+                         angle::EntryPoint entryPoint,
+                         TextureTarget target,
+                         GLint level)
 {
     if (!context->getExtensions().getImageANGLE)
     {
@@ -265,6 +262,22 @@ bool ValidateGetTexImageANGLE(const Context *context,
     if (!ValidMipLevel(context, textureType, level))
     {
         context->validationError(entryPoint, GL_INVALID_VALUE, kInvalidMipLevel);
+        return false;
+    }
+
+    return true;
+}
+
+bool ValidateGetTexImageANGLE(const Context *context,
+                              angle::EntryPoint entryPoint,
+                              TextureTarget target,
+                              GLint level,
+                              GLenum format,
+                              GLenum type,
+                              const void *pixels)
+{
+    if (!ValidateGetTexImage(context, entryPoint, target, level))
+    {
         return false;
     }
 
@@ -298,14 +311,29 @@ bool ValidateGetCompressedTexImageANGLE(const Context *context,
                                         GLint level,
                                         const void *pixels)
 {
-    if (!context->getExtensions().getImageANGLE)
+    if (!ValidateGetTexImage(context, entryPoint, target, level))
     {
-        context->validationError(entryPoint, GL_INVALID_OPERATION, kGetImageExtensionNotEnabled);
         return false;
     }
 
-    // TODO: Validate all the things. http://anglebug.com/6177
-    return false;
+    Texture *texture = context->getTextureByTarget(target);
+    if (!texture->getFormat(target, level).info->compressed)
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kGetImageNotCompressed);
+        return false;
+    }
+
+    // Check if format is emulated
+    // TODO(anglebug.com/6177): Check here for all the formats that ANGLE will use to emulate a
+    // compressed texture
+    GLenum implFormat = texture->getImplementationColorReadFormat(context);
+    if (implFormat == GL_RGBA || implFormat == GL_RG || implFormat == GL_RED)
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kInvalidEmulatedFormat);
+        return false;
+    }
+
+    return true;
 }
 
 bool ValidateGetRenderbufferImageANGLE(const Context *context,
@@ -442,7 +470,7 @@ bool ValidateMultiDrawElementsBaseVertexEXT(const Context *context,
 
 bool ValidateMultiDrawArraysIndirectEXT(const Context *context,
                                         angle::EntryPoint entryPoint,
-                                        GLenum mode,
+                                        PrimitiveMode modePacked,
                                         const void *indirect,
                                         GLsizei drawcount,
                                         GLsizei stride)
@@ -452,8 +480,7 @@ bool ValidateMultiDrawArraysIndirectEXT(const Context *context,
         return false;
     }
 
-    PrimitiveMode primitiveMode = FromGLenum<PrimitiveMode>(mode);
-    if (!ValidateDrawArraysIndirect(context, entryPoint, primitiveMode, indirect))
+    if (!ValidateDrawArraysIndirect(context, entryPoint, modePacked, indirect))
     {
         return false;
     }
@@ -463,8 +490,8 @@ bool ValidateMultiDrawArraysIndirectEXT(const Context *context,
 
 bool ValidateMultiDrawElementsIndirectEXT(const Context *context,
                                           angle::EntryPoint entryPoint,
-                                          GLenum mode,
-                                          GLenum type,
+                                          PrimitiveMode modePacked,
+                                          DrawElementsType typePacked,
                                           const void *indirect,
                                           GLsizei drawcount,
                                           GLsizei stride)
@@ -474,12 +501,9 @@ bool ValidateMultiDrawElementsIndirectEXT(const Context *context,
         return false;
     }
 
-    PrimitiveMode primitiveMode             = FromGLenum<PrimitiveMode>(mode);
-    DrawElementsType drawElementsType       = FromGLenum<DrawElementsType>(type);
     const State &state                      = context->getState();
     TransformFeedback *curTransformFeedback = state.getCurrentTransformFeedback();
-    if (!ValidateDrawElementsIndirect(context, entryPoint, primitiveMode, drawElementsType,
-                                      indirect))
+    if (!ValidateDrawElementsIndirect(context, entryPoint, modePacked, typePacked, indirect))
     {
         return false;
     }
@@ -492,7 +516,7 @@ bool ValidateMultiDrawElementsIndirectEXT(const Context *context,
         if (context->getExtensions().geometryShaderAny() || context->getClientVersion() >= ES_3_2)
         {
             if (!ValidateTransformFeedbackPrimitiveMode(
-                    context, entryPoint, curTransformFeedback->getPrimitiveMode(), primitiveMode))
+                    context, entryPoint, curTransformFeedback->getPrimitiveMode(), modePacked))
             {
                 context->validationError(entryPoint, GL_INVALID_OPERATION,
                                          kInvalidDrawModeTransformFeedback);
@@ -1777,6 +1801,27 @@ bool ValidatePrimitiveBoundingBoxEXT(const Context *context,
     return true;
 }
 
+// GL_OES_primitive_bounding_box
+bool ValidatePrimitiveBoundingBoxOES(const Context *context,
+                                     angle::EntryPoint entryPoint,
+                                     GLfloat minX,
+                                     GLfloat minY,
+                                     GLfloat minZ,
+                                     GLfloat minW,
+                                     GLfloat maxX,
+                                     GLfloat maxY,
+                                     GLfloat maxZ,
+                                     GLfloat maxW)
+{
+    if (!context->getExtensions().primitiveBoundingBoxOES)
+    {
+        context->validationError(entryPoint, GL_INVALID_OPERATION, kExtensionNotEnabled);
+        return false;
+    }
+
+    return true;
+}
+
 // GL_EXT_separate_shader_objects
 bool ValidateActiveShaderProgramEXT(const Context *context,
                                     angle::EntryPoint entryPoint,
@@ -2611,6 +2656,34 @@ bool ValidateReleaseTexturesANGLE(const Context *context,
     }
 
     return true;
+}
+
+bool ValidateFramebufferParameteriMESA(const Context *context,
+                                       angle::EntryPoint entryPoint,
+                                       GLenum target,
+                                       GLenum pname,
+                                       GLint param)
+{
+    if (pname != GL_FRAMEBUFFER_FLIP_Y_MESA)
+    {
+        context->validationError(entryPoint, GL_INVALID_ENUM, kInvalidPname);
+        return false;
+    }
+    return ValidateFramebufferParameteriBase(context, entryPoint, target, pname, param);
+}
+
+bool ValidateGetFramebufferParameterivMESA(const Context *context,
+                                           angle::EntryPoint entryPoint,
+                                           GLenum target,
+                                           GLenum pname,
+                                           const GLint *params)
+{
+    if (pname != GL_FRAMEBUFFER_FLIP_Y_MESA)
+    {
+        context->validationError(entryPoint, GL_INVALID_ENUM, kInvalidPname);
+        return false;
+    }
+    return ValidateGetFramebufferParameterivBase(context, entryPoint, target, pname, params);
 }
 
 }  // namespace gl

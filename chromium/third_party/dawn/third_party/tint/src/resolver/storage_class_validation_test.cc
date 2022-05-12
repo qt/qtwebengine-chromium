@@ -15,7 +15,7 @@
 #include "src/resolver/resolver.h"
 
 #include "gmock/gmock.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/resolver/resolver_test_helper.h"
 #include "src/sem/struct.h"
 
@@ -34,34 +34,117 @@ TEST_F(ResolverStorageClassValidationTest, GlobalVariableNoStorageClass_Fail) {
             "12:34 error: global variables must have a storage class");
 }
 
+TEST_F(ResolverStorageClassValidationTest,
+       GlobalVariableFunctionStorageClass_Fail) {
+  // var<function> g : f32;
+  Global(Source{{12, 34}}, "g", ty.f32(), ast::StorageClass::kFunction);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(r()->error(),
+            "12:34 error: variables declared at module scope must not be in "
+            "the function storage class");
+}
+
+TEST_F(ResolverStorageClassValidationTest, Private_RuntimeArray) {
+  Global(Source{{12, 34}}, "v", ty.array(ty.i32()),
+         ast::StorageClass::kPrivate);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(
+      r()->error(),
+      R"(12:34 error: runtime-sized arrays can only be used in the <storage> storage class
+12:34 note: while instantiating variable v)");
+}
+
+TEST_F(ResolverStorageClassValidationTest, Private_RuntimeArrayInStruct) {
+  auto* s = Structure("S", {Member("m", ty.array(ty.i32()))}, {StructBlock()});
+  Global(Source{{12, 34}}, "v", ty.Of(s), ast::StorageClass::kPrivate);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(
+      r()->error(),
+      R"(12:34 error: runtime-sized arrays can only be used in the <storage> storage class
+note: while analysing structure member S.m
+12:34 note: while instantiating variable v)");
+}
+
+TEST_F(ResolverStorageClassValidationTest, Workgroup_RuntimeArray) {
+  Global(Source{{12, 34}}, "v", ty.array(ty.i32()),
+         ast::StorageClass::kWorkgroup);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(
+      r()->error(),
+      R"(12:34 error: runtime-sized arrays can only be used in the <storage> storage class
+12:34 note: while instantiating variable v)");
+}
+
+TEST_F(ResolverStorageClassValidationTest, Workgroup_RuntimeArrayInStruct) {
+  auto* s = Structure("S", {Member("m", ty.array(ty.i32()))}, {StructBlock()});
+  Global(Source{{12, 34}}, "v", ty.Of(s), ast::StorageClass::kWorkgroup);
+
+  EXPECT_FALSE(r()->Resolve());
+  EXPECT_EQ(
+      r()->error(),
+      R"(12:34 error: runtime-sized arrays can only be used in the <storage> storage class
+note: while analysing structure member S.m
+12:34 note: while instantiating variable v)");
+}
+
 TEST_F(ResolverStorageClassValidationTest, StorageBufferBool) {
-  // var<storage> g : i32;
-  Global(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kStorage,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+  // var<storage> g : bool;
+  Global(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kStorage,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
 
   EXPECT_EQ(
       r()->error(),
-      R"(56:78 error: variables declared in the <storage> storage class must be of a structure type)");
+      R"(56:78 error: Type 'bool' cannot be used in storage class 'storage' as it is non-host-shareable
+56:78 note: while instantiating variable g)");
 }
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferPointer) {
-  // var<storage> g : vec4<f32>;
-  Global(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kStorage,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+  // var<storage> g : ptr<private, f32>;
+  Global(Source{{56, 78}}, "g",
+         ty.pointer(ty.f32(), ast::StorageClass::kPrivate),
+         ast::StorageClass::kStorage,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
 
   EXPECT_EQ(
       r()->error(),
-      R"(56:78 error: variables declared in the <storage> storage class must be of a structure type)");
+      R"(56:78 error: Type 'ptr<private, f32, read_write>' cannot be used in storage class 'storage' as it is non-host-shareable
+56:78 note: while instantiating variable g)");
+}
+
+TEST_F(ResolverStorageClassValidationTest, StorageBufferIntScalar) {
+  // var<storage> g : i32;
+  Global(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kStorage,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
+
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverStorageClassValidationTest, StorageBufferVector) {
+  // var<storage> g : vec4<f32>;
+  Global(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kStorage,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
+
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferArray) {
@@ -70,16 +153,12 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferArray) {
   auto* a = ty.array(ty.Of(s), 3);
   Global(Source{{56, 78}}, "g", a, ast::StorageClass::kStorage,
          ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
-  ASSERT_FALSE(r()->Resolve());
-
-  EXPECT_EQ(
-      r()->error(),
-      R"(56:78 error: variables declared in the <storage> storage class must be of a structure type)");
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, StorageBufferBoolAlias) {
@@ -87,9 +166,9 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferBoolAlias) {
   // var<storage, read> g : a;
   auto* a = Alias("a", ty.bool_());
   Global(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kStorage,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
@@ -112,35 +191,16 @@ TEST_F(ResolverStorageClassValidationTest, NotStorage_AccessMode) {
       R"(56:78 error: only variables in <storage> storage class may declare an access mode)");
 }
 
-TEST_F(ResolverStorageClassValidationTest, StorageBufferNoBlockDecoration) {
-  // struct S { x : i32 };
-  // var<storage, read> g : S;
-  auto* s = Structure(Source{{12, 34}}, "S", {Member("x", ty.i32())});
-  Global(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kStorage,
-         ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
-         });
-
-  ASSERT_FALSE(r()->Resolve());
-
-  EXPECT_EQ(
-      r()->error(),
-      R"(12:34 error: structure used as a storage buffer must be declared with the [[block]] decoration
-56:78 note: structure used as storage buffer here)");
-}
-
 TEST_F(ResolverStorageClassValidationTest, StorageBufferNoError_Basic) {
   // [[block]] struct S { x : i32 };
   // var<storage, read> g : S;
   auto* s = Structure("S", {Member(Source{{12, 34}}, "x", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   Global(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kStorage,
          ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_TRUE(r()->Resolve());
@@ -151,14 +211,14 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferNoError_Aliases) {
   // type a1 = S;
   // var<storage, read> g : a1;
   auto* s = Structure("S", {Member(Source{{12, 34}}, "x", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* a1 = Alias("a1", ty.Of(s));
   auto* a2 = Alias("a2", ty.Of(a1));
   Global(Source{{56, 78}}, "g", ty.Of(a2), ast::StorageClass::kStorage,
          ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_TRUE(r()->Resolve());
@@ -166,29 +226,31 @@ TEST_F(ResolverStorageClassValidationTest, StorageBufferNoError_Aliases) {
 
 TEST_F(ResolverStorageClassValidationTest, UniformBuffer_Struct_Runtime) {
   // [[block]] struct S { m:  array<f32>; };
-  // [[group(0), binding(0)]] var<uniform, > svar : S;
+  // @group(0) @binding(0) var<uniform, > svar : S;
 
   auto* s = Structure(Source{{12, 34}}, "S", {Member("m", ty.array<i32>())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global(Source{{56, 78}}, "svar", ty.Of(s), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "56:78 error: structure containing a runtime sized array cannot be "
-            "used as a uniform buffer\n12:34 note: structure is declared here");
+  EXPECT_EQ(
+      r()->error(),
+      R"(56:78 error: runtime-sized arrays can only be used in the <storage> storage class
+note: while analysing structure member S.m
+56:78 note: while instantiating variable svar)");
 }
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferBool) {
   // var<uniform> g : bool;
   Global(Source{{56, 78}}, "g", ty.bool_(), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
@@ -200,35 +262,59 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferBool) {
 }
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferPointer) {
-  // var<uniform> g : vec4<f32>;
-  Global(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+  // var<uniform> g : ptr<private, f32>;
+  Global(Source{{56, 78}}, "g",
+         ty.pointer(ty.f32(), ast::StorageClass::kPrivate),
+         ast::StorageClass::kUniform,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
 
   EXPECT_EQ(
       r()->error(),
-      R"(56:78 error: variables declared in the <uniform> storage class must be of a structure type)");
+      R"(56:78 error: Type 'ptr<private, f32, read_write>' cannot be used in storage class 'uniform' as it is non-host-shareable
+56:78 note: while instantiating variable g)");
+}
+
+TEST_F(ResolverStorageClassValidationTest, UniformBufferIntScalar) {
+  // var<uniform> g : i32;
+  Global(Source{{56, 78}}, "g", ty.i32(), ast::StorageClass::kUniform,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
+
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
+}
+
+TEST_F(ResolverStorageClassValidationTest, UniformBufferVector) {
+  // var<uniform> g : vec4<f32>;
+  Global(Source{{56, 78}}, "g", ty.vec4<f32>(), ast::StorageClass::kUniform,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
+
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferArray) {
+  // struct S {
+  //   @size(16) f : f32;
+  // }
   // var<uniform> g : array<S, 3>;
-  auto* s = Structure("S", {Member("a", ty.f32())});
+  auto* s = Structure("S", {Member("a", ty.f32(), {MemberSize(16)})});
   auto* a = ty.array(ty.Of(s), 3);
   Global(Source{{56, 78}}, "g", a, ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
-  ASSERT_FALSE(r()->Resolve());
-
-  EXPECT_EQ(
-      r()->error(),
-      R"(56:78 error: variables declared in the <uniform> storage class must be of a structure type)");
+  ASSERT_TRUE(r()->Resolve()) << r()->error();
 }
 
 TEST_F(ResolverStorageClassValidationTest, UniformBufferBoolAlias) {
@@ -236,9 +322,9 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferBoolAlias) {
   // var<uniform> g : a;
   auto* a = Alias("a", ty.bool_());
   Global(Source{{56, 78}}, "g", ty.Of(a), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_FALSE(r()->Resolve());
@@ -249,33 +335,15 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferBoolAlias) {
 56:78 note: while instantiating variable g)");
 }
 
-TEST_F(ResolverStorageClassValidationTest, UniformBufferNoBlockDecoration) {
-  // struct S { x : i32 };
-  // var<uniform> g : S;
-  auto* s = Structure(Source{{12, 34}}, "S", {Member("x", ty.i32())});
-  Global(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
-         });
-
-  ASSERT_FALSE(r()->Resolve());
-
-  EXPECT_EQ(
-      r()->error(),
-      R"(12:34 error: structure used as a uniform buffer must be declared with the [[block]] decoration
-56:78 note: structure used as uniform buffer here)");
-}
-
 TEST_F(ResolverStorageClassValidationTest, UniformBufferNoError_Basic) {
   // [[block]] struct S { x : i32 };
   // var<uniform> g :  S;
   auto* s = Structure("S", {Member(Source{{12, 34}}, "x", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   Global(Source{{56, 78}}, "g", ty.Of(s), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_TRUE(r()->Resolve()) << r()->error();
@@ -286,12 +354,12 @@ TEST_F(ResolverStorageClassValidationTest, UniformBufferNoError_Aliases) {
   // type a1 = S;
   // var<uniform> g : a1;
   auto* s = Structure("S", {Member(Source{{12, 34}}, "x", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* a1 = Alias("a1", ty.Of(s));
   Global(Source{{56, 78}}, "g", ty.Of(a1), ast::StorageClass::kUniform,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ASSERT_TRUE(r()->Resolve()) << r()->error();

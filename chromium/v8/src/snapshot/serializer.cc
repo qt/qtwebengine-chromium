@@ -559,13 +559,13 @@ void Serializer::ObjectSerializer::SerializeExternalString() {
   if (serializer_->external_reference_encoder_.TryEncode(resource).To(
           &reference)) {
     DCHECK(reference.is_from_api());
-#ifdef V8_HEAP_SANDBOX
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
     uint32_t external_pointer_entry =
         string->GetResourceRefForDeserialization();
 #endif
     string->SetResourceRefForSerialization(reference.index());
     SerializeObject();
-#ifdef V8_HEAP_SANDBOX
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
     string->SetResourceRefForSerialization(external_pointer_entry);
 #else
     string->set_address_as_resource(isolate(), resource);
@@ -946,14 +946,14 @@ void Serializer::ObjectSerializer::OutputExternalReference(Address target,
     sink_->Put(FixedRawDataWithSize::Encode(size_in_tagged), "FixedRawData");
     sink_->PutRaw(reinterpret_cast<byte*>(&target), target_size, "Bytes");
   } else if (encoded_reference.is_from_api()) {
-    if (V8_HEAP_SANDBOX_BOOL && sandboxify) {
+    if (V8_SANDBOXED_EXTERNAL_POINTERS_BOOL && sandboxify) {
       sink_->Put(kSandboxedApiReference, "SandboxedApiRef");
     } else {
       sink_->Put(kApiReference, "ApiRef");
     }
     sink_->PutInt(encoded_reference.index(), "reference index");
   } else {
-    if (V8_HEAP_SANDBOX_BOOL && sandboxify) {
+    if (V8_SANDBOXED_EXTERNAL_POINTERS_BOOL && sandboxify) {
       sink_->Put(kSandboxedExternalReference, "SandboxedExternalRef");
     } else {
       sink_->Put(kExternalReference, "ExternalRef");
@@ -965,7 +965,7 @@ void Serializer::ObjectSerializer::OutputExternalReference(Address target,
 void Serializer::ObjectSerializer::VisitExternalReference(Foreign host,
                                                           Address* p) {
   // "Sandboxify" external reference.
-  OutputExternalReference(host.foreign_address(), kExternalPointerSize, true);
+  OutputExternalReference(host.foreign_address(), kSystemPointerSize, true);
   bytes_processed_so_far_ += kExternalPointerSize;
 }
 
@@ -1133,13 +1133,16 @@ void Serializer::ObjectSerializer::OutputRawData(Address up_to) {
           sizeof(field_value), field_value);
     } else if (V8_EXTERNAL_CODE_SPACE_BOOL &&
                object_->IsCodeDataContainer(cage_base)) {
-      // The CodeEntryPoint field is just a cached value which will be
-      // recomputed after deserialization, so write zeros to keep the snapshot
-      // deterministic.
-      static byte field_value[kExternalPointerSize] = {0};
-      OutputRawWithCustomField(sink_, object_start, base, bytes_to_output,
-                               CodeDataContainer::kCodeEntryPointOffset,
-                               sizeof(field_value), field_value);
+      // code_cage_base and code_entry_point fields contain raw values that
+      // will be recomputed after deserialization, so write zeros to keep the
+      // snapshot deterministic.
+      CHECK_EQ(CodeDataContainer::kCodeCageBaseUpper32BitsOffset + kTaggedSize,
+               CodeDataContainer::kCodeEntryPointOffset);
+      static byte field_value[kTaggedSize + kExternalPointerSize] = {0};
+      OutputRawWithCustomField(
+          sink_, object_start, base, bytes_to_output,
+          CodeDataContainer::kCodeCageBaseUpper32BitsOffset,
+          sizeof(field_value), field_value);
     } else {
       sink_->PutRaw(reinterpret_cast<byte*>(object_start + base),
                     bytes_to_output, "Bytes");

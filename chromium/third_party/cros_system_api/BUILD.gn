@@ -8,6 +8,7 @@ group("all") {
   deps = [
     ":libsystem_api",
     ":system_api-anomaly_detector-protos",
+    ":system_api-arc_vm_status-protos",
     ":system_api-attestation-goprotos",
     ":system_api-attestation-protos",
     ":system_api-authpolicy-protos",
@@ -58,6 +59,7 @@ group("all") {
     ":system_api-vm_concierge-goprotos",
     ":system_api-vm_concierge-protos",
     ":system_api-vm_disk_management-protos",
+    ":system_api-vm_launch-protos",
     ":system_api-vm_permission_service-protos",
     ":system_api-vm_plugin_dispatcher-goprotos",
     ":system_api-vm_plugin_dispatcher-protos",
@@ -130,10 +132,10 @@ proto_library("system_api-cryptohome-protos") {
   proto_out_dir = "include/cryptohome/proto_bindings"
   sources = [
     "${proto_in_dir}/UserDataAuth.proto",
+    "${proto_in_dir}/auth_factor.proto",
     "${proto_in_dir}/fido.proto",
     "${proto_in_dir}/key.proto",
     "${proto_in_dir}/rpc.proto",
-    "${proto_in_dir}/signed_secret.proto",
   ]
   standalone = true
 
@@ -349,6 +351,13 @@ proto_library("system_api-vm_sk_forwarding-protos") {
   standalone = true
 }
 
+proto_library("system_api-vm_launch-protos") {
+  proto_in_dir = "dbus/vm_launch"
+  proto_out_dir = "include/vm_launch/proto_bindings"
+  sources = [ "${proto_in_dir}/launch.proto" ]
+  standalone = true
+}
+
 proto_library("system_api-vm_disk_management-protos") {
   proto_in_dir = "dbus/vm_disk_management"
   proto_out_dir = "include/vm_disk_management/proto_bindings"
@@ -534,5 +543,12 @@ proto_library("system_api-cdm_oemcrypto-protos") {
   proto_in_dir = "dbus/cdm_oemcrypto"
   proto_out_dir = "include/cdm_oemcrypto/proto_bindings"
   sources = [ "${proto_in_dir}/secure_buffer.proto" ]
+  standalone = true
+}
+
+proto_library("system_api-arc_vm_status-protos") {
+  proto_in_dir = "dbus/arc_vm_status"
+  proto_out_dir = "include/arc_vm_status/proto_bindings"
+  sources = [ "${proto_in_dir}/arc_vm_status.proto" ]
   standalone = true
 }

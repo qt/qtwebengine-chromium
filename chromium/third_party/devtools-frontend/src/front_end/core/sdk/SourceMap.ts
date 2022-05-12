@@ -32,6 +32,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// TODO(crbug.com/1253323): Casts to UrlString will be removed from this file when migration to branded types is complete.
+
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as Common from '../common/common.js';
 import * as i18n from '../i18n/i18n.js';
@@ -143,7 +145,7 @@ export class TextSourceMap implements SourceMap {
   readonly #sourceMappingURL: string;
   readonly #baseURL: string;
   #mappingsInternal: SourceMapEntry[]|null;
-  readonly #sourceInfos: Map<string, TextSourceMap.SourceInfo>;
+  readonly #sourceInfos: Map<Platform.DevToolsPath.UrlString, TextSourceMap.SourceInfo>;
 
   /**
    * Implements Source Map V3 model. See https://github.com/google/closure-compiler/wiki/Source-Maps
@@ -201,11 +203,11 @@ export class TextSourceMap implements SourceMap {
     return this.#sourceMappingURL;
   }
 
-  sourceURLs(): string[] {
+  sourceURLs(): Platform.DevToolsPath.UrlString[] {
     return [...this.#sourceInfos.keys()];
   }
 
-  sourceContentProvider(sourceURL: string, contentType: Common.ResourceType.ResourceType):
+  sourceContentProvider(sourceURL: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType):
       TextUtils.ContentProvider.ContentProvider {
     const info = this.#sourceInfos.get(sourceURL);
     if (info && info.content) {
@@ -215,7 +217,7 @@ export class TextSourceMap implements SourceMap {
   }
 
   embeddedContentByURL(sourceURL: string): string|null {
-    const entry = this.#sourceInfos.get(sourceURL);
+    const entry = this.#sourceInfos.get(sourceURL as Platform.DevToolsPath.UrlString);
     if (!entry) {
       return null;
     }
@@ -303,11 +305,11 @@ export class TextSourceMap implements SourceMap {
       this.eachSection(this.parseMap.bind(this));
       this.#json = null;
     }
-    return /** @type {!Array<!SourceMapEntry>} */ this.#mappingsInternal as SourceMapEntry[];
+    return this.#mappingsInternal;
   }
 
   private reversedMappings(sourceURL: string): number[] {
-    const info = this.#sourceInfos.get(sourceURL);
+    const info = this.#sourceInfos.get(sourceURL as Platform.DevToolsPath.UrlString);
     if (!info) {
       return [];
     }
@@ -357,13 +359,21 @@ export class TextSourceMap implements SourceMap {
       sourceRoot += '/';
     }
     for (let i = 0; i < sourceMap.sources.length; ++i) {
-      const href = sourceRoot + sourceMap.sources[i];
+      let href = sourceMap.sources[i];
+      // The source map v3 proposal says to prepend the sourceRoot to the source URL
+      // and if the resulting URL is not absolute, then resolve the source URL against
+      // the source map URL. Appending the sourceRoot (if one exists) is not likely to
+      // be meaningful or useful if the source URL is already absolute though. In this
+      // case, use the source URL as is without prepending the sourceRoot.
+      if (Common.ParsedURL.ParsedURL.isRelativeURL(href)) {
+        href = sourceRoot + href;
+      }
       let url = Common.ParsedURL.ParsedURL.completeURL(this.#baseURL, href) || href;
       const source = sourceMap.sourcesContent && sourceMap.sourcesContent[i];
       if (url === this.#compiledURLInternal && source) {
         url += '? [sm]';
       }
-      this.#sourceInfos.set(url, new TextSourceMap.SourceInfo(source || null, null));
+      this.#sourceInfos.set(url as Platform.DevToolsPath.UrlString, new TextSourceMap.SourceInfo(source || null, null));
       sourcesList.push(url);
     }
     sourceMapToSourceList.set(sourceMap, sourcesList);

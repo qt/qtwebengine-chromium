@@ -21,6 +21,7 @@
 #include "core/fxcrt/retain_ptr.h"
 #include "core/fxcrt/unowned_ptr.h"
 #include "core/fxge/cfx_font.h"
+#include "core/fxge/fx_freetype.h"
 
 class CFX_DIBitmap;
 class CFX_SubstFont;
@@ -88,7 +89,7 @@ class CPDF_Font : public Retainable, public Observable {
   virtual size_t CountChar(ByteStringView pString) const;
   virtual int AppendChar(char* buf, uint32_t charcode) const;
   virtual int GlyphFromCharCode(uint32_t charcode, bool* pVertGlyph) = 0;
-#if defined(OS_APPLE)
+#if BUILDFLAG(IS_APPLE)
   virtual int GlyphFromCharCodeExt(uint32_t charcode);
 #endif
   virtual WideString UnicodeFromCharCode(uint32_t charcode) const;
@@ -129,7 +130,7 @@ class CPDF_Font : public Retainable, public Observable {
  protected:
   CPDF_Font(CPDF_Document* pDocument, CPDF_Dictionary* pFontDict);
 
-  static int TT2PDF(int m, FXFT_FaceRec* face);
+  static int TT2PDF(FT_Pos m, FXFT_FaceRec* face);
   static bool FT_UseTTCharmap(FXFT_FaceRec* face,
                               int platform_id,
                               int encoding_id);

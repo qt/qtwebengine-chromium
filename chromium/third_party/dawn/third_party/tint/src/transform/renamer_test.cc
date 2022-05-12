@@ -46,10 +46,10 @@ fn test(vert_idx : u32) -> u32 {
   return vert_idx;
 }
 
-[[stage(vertex)]]
-fn entry([[builtin(vertex_index)]] vert_idx : u32
-        ) -> [[builtin(position)]] vec4<f32>  {
-  ignore(test(vert_idx));
+@stage(vertex)
+fn entry(@builtin(vertex_index) vert_idx : u32
+        ) -> @builtin(position) vec4<f32>  {
+  _ = test(vert_idx);
   return vec4<f32>();
 }
 )";
@@ -59,9 +59,9 @@ fn tint_symbol(tint_symbol_1 : u32) -> u32 {
   return tint_symbol_1;
 }
 
-[[stage(vertex)]]
-fn tint_symbol_2([[builtin(vertex_index)]] tint_symbol_1 : u32) -> [[builtin(position)]] vec4<f32> {
-  ignore(tint_symbol(tint_symbol_1));
+@stage(vertex)
+fn tint_symbol_2(@builtin(vertex_index) tint_symbol_1 : u32) -> @builtin(position) vec4<f32> {
+  _ = tint_symbol(tint_symbol_1);
   return vec4<f32>();
 }
 )";
@@ -83,8 +83,8 @@ fn tint_symbol_2([[builtin(vertex_index)]] tint_symbol_1 : u32) -> [[builtin(pos
 
 TEST_F(RenamerTest, PreserveSwizzles) {
   auto* src = R"(
-[[stage(vertex)]]
-fn entry() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn entry() -> @builtin(position) vec4<f32> {
   var v : vec4<f32>;
   var rgba : f32;
   var xyzw : f32;
@@ -93,8 +93,8 @@ fn entry() -> [[builtin(position)]] vec4<f32> {
 )";
 
   auto* expect = R"(
-[[stage(vertex)]]
-fn tint_symbol() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn tint_symbol() -> @builtin(position) vec4<f32> {
   var tint_symbol_1 : vec4<f32>;
   var tint_symbol_2 : f32;
   var tint_symbol_3 : f32;
@@ -118,18 +118,18 @@ fn tint_symbol() -> [[builtin(position)]] vec4<f32> {
   EXPECT_THAT(data->remappings, ContainerEq(expected_remappings));
 }
 
-TEST_F(RenamerTest, PreserveIntrinsics) {
+TEST_F(RenamerTest, PreserveBuiltins) {
   auto* src = R"(
-[[stage(vertex)]]
-fn entry() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn entry() -> @builtin(position) vec4<f32> {
   var blah : vec4<f32>;
   return abs(blah);
 }
 )";
 
   auto* expect = R"(
-[[stage(vertex)]]
-fn tint_symbol() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn tint_symbol() -> @builtin(position) vec4<f32> {
   var tint_symbol_1 : vec4<f32>;
   return abs(tint_symbol_1);
 }
@@ -151,7 +151,7 @@ fn tint_symbol() -> [[builtin(position)]] vec4<f32> {
 
 TEST_F(RenamerTest, PreserveBuiltinTypes) {
   auto* src = R"(
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn entry() {
   var a = modf(1.0).whole;
   var b = modf(1.0).fract;
@@ -161,7 +161,7 @@ fn entry() {
 )";
 
   auto* expect = R"(
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn tint_symbol() {
   var tint_symbol_1 = modf(1.0).whole;
   var tint_symbol_2 = modf(1.0).fract;
@@ -186,8 +186,8 @@ fn tint_symbol() {
 
 TEST_F(RenamerTest, AttemptSymbolCollision) {
   auto* src = R"(
-[[stage(vertex)]]
-fn entry() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn entry() -> @builtin(position) vec4<f32> {
   var tint_symbol : vec4<f32>;
   var tint_symbol_2 : vec4<f32>;
   var tint_symbol_4 : vec4<f32>;
@@ -196,8 +196,8 @@ fn entry() -> [[builtin(position)]] vec4<f32> {
 )";
 
   auto* expect = R"(
-[[stage(vertex)]]
-fn tint_symbol() -> [[builtin(position)]] vec4<f32> {
+@stage(vertex)
+fn tint_symbol() -> @builtin(position) vec4<f32> {
   var tint_symbol_1 : vec4<f32>;
   var tint_symbol_2 : vec4<f32>;
   var tint_symbol_3 : vec4<f32>;
@@ -229,7 +229,7 @@ TEST_P(RenamerTestGlsl, Keywords) {
   auto keyword = GetParam();
 
   auto src = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var )" + keyword +
              R"( : i32;
@@ -237,7 +237,7 @@ fn frag_main() {
 )";
 
   auto* expect = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var tint_symbol : i32;
 }
@@ -254,7 +254,7 @@ TEST_P(RenamerTestHlsl, Keywords) {
   auto keyword = GetParam();
 
   auto src = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var )" + keyword +
              R"( : i32;
@@ -262,7 +262,7 @@ fn frag_main() {
 )";
 
   auto* expect = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var tint_symbol : i32;
 }
@@ -279,7 +279,7 @@ TEST_P(RenamerTestMsl, Keywords) {
   auto keyword = GetParam();
 
   auto src = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var )" + keyword +
              R"( : i32;
@@ -287,7 +287,7 @@ fn frag_main() {
 )";
 
   auto* expect = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn frag_main() {
   var tint_symbol : i32;
 }
@@ -666,20 +666,20 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "VPOS",
                                          "VertexShader",
                                          "abort",
-                                         // "abs",  // WGSL intrinsic
-                                         // "acos",  // WGSL intrinsic
-                                         // "all",  // WGSL intrinsic
+                                         // "abs",  // WGSL builtin
+                                         // "acos",  // WGSL builtin
+                                         // "all",  // WGSL builtin
                                          "allow_uav_condition",
-                                         // "any",  // WGSL intrinsic
+                                         // "any",  // WGSL builtin
                                          "asdouble",
                                          "asfloat",
-                                         // "asin",  // WGSL intrinsic
+                                         // "asin",  // WGSL builtin
                                          "asint",
                                          // "asm",  // WGSL keyword
                                          "asm_fragment",
                                          "asuint",
-                                         // "atan",  // WGSL intrinsic
-                                         // "atan2",  // WGSL intrinsic
+                                         // "atan",  // WGSL builtin
+                                         // "atan2",  // WGSL builtin
                                          "auto",
                                          // "bool",  // WGSL keyword
                                          "bool1",
@@ -704,14 +704,14 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "bool4x4",
                                          "branch",
                                          // "break",  // WGSL keyword
-                                         // "call",  // WGSL intrinsic
+                                         // "call",  // WGSL builtin
                                          // "case",  // WGSL keyword
                                          "catch",
                                          "cbuffer",
-                                         // "ceil",  // WGSL intrinsic
+                                         // "ceil",  // WGSL builtin
                                          "centroid",
                                          "char",
-                                         // "clamp",  // WGSL intrinsic
+                                         // "clamp",  // WGSL builtin
                                          "class",
                                          "clip",
                                          "column_major",
@@ -720,10 +720,10 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          // "const",  // WGSL keyword
                                          "const_cast",
                                          // "continue",  // WGSL keyword
-                                         // "cos",  // WGSL intrinsic
-                                         // "cosh",  // WGSL intrinsic
+                                         // "cos",  // WGSL builtin
+                                         // "cosh",  // WGSL builtin
                                          "countbits",
-                                         // "cross",  // WGSL intrinsic
+                                         // "cross",  // WGSL builtin
                                          "ddx",
                                          "ddx_coarse",
                                          "ddx_fine",
@@ -733,11 +733,11 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          // "default",  // WGSL keyword
                                          "degrees",
                                          "delete",
-                                         // "determinant",  // WGSL intrinsic
+                                         // "determinant",  // WGSL builtin
                                          // "discard",  // WGSL keyword
-                                         // "distance",  // WGSL intrinsic
+                                         // "distance",  // WGSL builtin
                                          // "do",  // WGSL keyword
-                                         // "dot",  // WGSL intrinsic
+                                         // "dot",  // WGSL builtin
                                          "double",
                                          "double1",
                                          "double1x1",
@@ -785,14 +785,14 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          // "else",  // WGSL keyword
                                          // "enum",  // WGSL keyword
                                          "errorf",
-                                         // "exp",  // WGSL intrinsic
-                                         // "exp2",  // WGSL intrinsic
+                                         // "exp",  // WGSL builtin
+                                         // "exp2",  // WGSL builtin
                                          "explicit",
                                          "export",
                                          "extern",
                                          "f16to32",
                                          "f32tof16",
-                                         // "faceforward",  // WGSL intrinsic
+                                         // "faceforward",  // WGSL builtin
                                          // "false",  // WGSL keyword
                                          "fastopt",
                                          "firstbithigh",
@@ -819,15 +819,15 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "float4x2",
                                          "float4x3",
                                          "float4x4",
-                                         // "floor",  // WGSL intrinsic
-                                         // "fma",  // WGSL intrinsic
+                                         // "floor",  // WGSL builtin
+                                         // "fma",  // WGSL builtin
                                          "fmod",
                                          // "for",  // WGSL keyword
                                          "forcecase",
                                          "frac",
-                                         // "frexp",  // WGSL intrinsic
+                                         // "frexp",  // WGSL builtin
                                          "friend",
-                                         // "fwidth",  // WGSL intrinsic
+                                         // "fwidth",  // WGSL builtin
                                          "fxgroup",
                                          "goto",
                                          "groupshared",
@@ -881,22 +881,22 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "isfinite",
                                          "isinf",
                                          "isnan",
-                                         // "ldexp",  // WGSL intrinsic
-                                         // "length",  // WGSL intrinsic
+                                         // "ldexp",  // WGSL builtin
+                                         // "length",  // WGSL builtin
                                          "lerp",
                                          "line",
                                          "lineadj",
                                          "linear",
                                          "lit",
-                                         // "log",  // WGSL intrinsic
+                                         // "log",  // WGSL builtin
                                          "log10",
-                                         // "log2",  // WGSL intrinsic
+                                         // "log2",  // WGSL builtin
                                          "long",
                                          // "loop",  // WGSL keyword
                                          "mad",
                                          "matrix",
-                                         // "max",  // WGSL intrinsic
-                                         // "min",  // WGSL intrinsic
+                                         // "max",  // WGSL builtin
+                                         // "min",  // WGSL builtin
                                          "min10float",
                                          "min10float1",
                                          "min10float1x1",
@@ -1002,7 +1002,7 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "min16uint4x2",
                                          "min16uint4x3",
                                          "min16uint4x4",
-                                         // "modf",  // WGSL intrinsic
+                                         // "modf",  // WGSL builtin
                                          "msad4",
                                          "mul",
                                          "mutable",
@@ -1011,7 +1011,7 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "nointerpolation",
                                          "noise",
                                          "noperspective",
-                                         // "normalize",  // WGSL intrinsic
+                                         // "normalize",  // WGSL builtin
                                          "numthreads",
                                          "operator",
                                          // "out",  // WGSL keyword
@@ -1020,7 +1020,7 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "pixelfragment",
                                          "pixelshader",
                                          "point",
-                                         // "pow",  // WGSL intrinsic
+                                         // "pow",  // WGSL builtin
                                          "precise",
                                          "printf",
                                          // "private",  // WGSL keyword
@@ -1028,13 +1028,13 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "public",
                                          "radians",
                                          "rcp",
-                                         // "reflect",  // WGSL intrinsic
+                                         // "reflect",  // WGSL builtin
                                          "refract",
                                          "register",
                                          "reinterpret_cast",
                                          // "return",  // WGSL keyword
-                                         // "reversebits",  // WGSL intrinsic
-                                         // "round",  // WGSL intrinsic
+                                         // "reversebits",  // WGSL builtin
+                                         // "round",  // WGSL builtin
                                          "row_major",
                                          "rsqrt",
                                          "sample",
@@ -1046,25 +1046,25 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "saturate",
                                          "shared",
                                          "short",
-                                         // "sign",  // WGSL intrinsic
+                                         // "sign",  // WGSL builtin
                                          "signed",
-                                         // "sin",  // WGSL intrinsic
+                                         // "sin",  // WGSL builtin
                                          "sincos",
-                                         // "sinh",  // WGSL intrinsic
+                                         // "sinh",  // WGSL builtin
                                          "sizeof",
-                                         // "smoothstep",  // WGSL intrinsic
+                                         // "smoothstep",  // WGSL builtin
                                          "snorm",
-                                         // "sqrt",  // WGSL intrinsic
+                                         // "sqrt",  // WGSL builtin
                                          "stateblock",
                                          "stateblock_state",
                                          "static",
                                          "static_cast",
-                                         // "step",  // WGSL intrinsic
+                                         // "step",  // WGSL builtin
                                          "string",
                                          // "struct",  // WGSL keyword
                                          // "switch",  // WGSL keyword
-                                         // "tan",  // WGSL intrinsic
-                                         // "tanh",  // WGSL intrinsic
+                                         // "tan",  // WGSL builtin
+                                         // "tanh",  // WGSL builtin
                                          "tbuffer",
                                          "technique",
                                          "technique10",
@@ -1106,7 +1106,7 @@ INSTANTIATE_TEST_SUITE_P(RenamerTestHlsl,
                                          "triangle",
                                          "triangleadj",
                                          // "true",  // WGSL keyword
-                                         // "trunc",  // WGSL intrinsic
+                                         // "trunc",  // WGSL builtin
                                          "try",
                                          // "typedef",  // WGSL keyword
                                          "typename",
@@ -1201,7 +1201,7 @@ INSTANTIATE_TEST_SUITE_P(
         "operator",
         "or",
         "or_eq",
-        "override",
+        // "override", // Also used in WGSL
         // "private",  // Also used in WGSL
         "protected",
         "public",
@@ -1334,19 +1334,19 @@ INSTANTIATE_TEST_SUITE_P(
         "ptrdiff_t",
         "r16snorm",
         "r16unorm",
-        // "r8unorm",  // Also used in WGSL
+        "r8unorm",
         "reference",
         "rg11b10f",
         "rg16snorm",
         "rg16unorm",
-        // "rg8snorm",  // Also used in WGSL
-        // "rg8unorm",  // Also used in WGSL
+        "rg8snorm",
+        "rg8unorm",
         "rgb10a2",
         "rgb9e5",
         "rgba16snorm",
         "rgba16unorm",
-        // "rgba8snorm",  // Also used in WGSL
-        // "rgba8unorm",  // Also used in WGSL
+        "rgba8snorm",
+        "rgba8unorm",
         // "sampler",  // Also used in WGSL
         "short2",
         "short3",

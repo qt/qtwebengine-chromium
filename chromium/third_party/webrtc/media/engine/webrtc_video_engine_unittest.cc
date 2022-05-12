@@ -2405,116 +2405,80 @@ TEST_F(WebRtcVideoChannelBaseTest, RequestEncoderFallback) {
   EXPECT_EQ("VP8", codec.name);
 }
 
-TEST_F(WebRtcVideoChannelBaseTest, RequestEncoderSwitchWithConfig) {
-  const std::string kParam = "the-param";
-  const std::string kPing = "ping";
-  const std::string kPong = "pong";
-
+TEST_F(WebRtcVideoChannelBaseTest, RequestEncoderSwitchDefaultFallback) {
   cricket::VideoSendParameters parameters;
-  VideoCodec vp9 = GetEngineCodec("VP9");
-  vp9.params[kParam] = kPong;
-  parameters.codecs.push_back(vp9);
-
-  VideoCodec vp8 = GetEngineCodec("VP8");
-  vp8.params[kParam] = kPing;
-  parameters.codecs.push_back(vp8);
-
+  parameters.codecs.push_back(GetEngineCodec("VP9"));
+  parameters.codecs.push_back(GetEngineCodec("VP8"));
   EXPECT_TRUE(channel_->SetSendParameters(parameters));
-  channel_->SetVideoCodecSwitchingEnabled(true);
 
   VideoCodec codec;
   ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP9"));
+  EXPECT_EQ("VP9", codec.name);
 
   // RequestEncoderSwitch will post a task to the worker thread (which is also
   // the current thread), hence the ProcessMessages call.
-  webrtc::EncoderSwitchRequestCallback::Config conf1{"VP8", kParam, kPing};
-  channel_->RequestEncoderSwitch(conf1);
+  channel_->RequestEncoderSwitch(webrtc::SdpVideoFormat("UnavailableCodec"),
+                                 /*allow_default_fallback=*/true);
   rtc::Thread::Current()->ProcessMessages(30);
-  ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP8"));
-  EXPECT_THAT(codec.params, Contains(Pair(kParam, kPing)));
 
-  webrtc::EncoderSwitchRequestCallback::Config conf2{"VP9", kParam, kPong};
-  channel_->RequestEncoderSwitch(conf2);
-  rtc::Thread::Current()->ProcessMessages(30);
+  // Requested encoder is not available. Default fallback is allowed. Switch to
+  // the next negotiated codec, VP8.
   ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP9"));
-  EXPECT_THAT(codec.params, Contains(Pair(kParam, kPong)));
+  EXPECT_EQ("VP8", codec.name);
 }
 
-TEST_F(WebRtcVideoChannelBaseTest, RequestEncoderSwitchIncorrectParam) {
-  const std::string kParam = "the-param";
-  const std::string kPing = "ping";
-  const std::string kPong = "pong";
+TEST_F(WebRtcVideoChannelBaseTest, RequestEncoderSwitchStrictPreference) {
+  VideoCodec vp9 = GetEngineCodec("VP9");
+  vp9.params["profile-id"] = "0";
 
   cricket::VideoSendParameters parameters;
-  VideoCodec vp9 = GetEngineCodec("VP9");
-  vp9.params[kParam] = kPong;
+  parameters.codecs.push_back(GetEngineCodec("VP8"));
   parameters.codecs.push_back(vp9);
-
-  VideoCodec vp8 = GetEngineCodec("VP8");
-  vp8.params[kParam] = kPing;
-  parameters.codecs.push_back(vp8);
-
   EXPECT_TRUE(channel_->SetSendParameters(parameters));
-  channel_->SetVideoCodecSwitchingEnabled(true);
 
   VideoCodec codec;
   ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP9"));
+  EXPECT_EQ("VP8", codec.name);
 
-  // RequestEncoderSwitch will post a task to the worker thread (which is also
-  // the current thread), hence the ProcessMessages call.
-  webrtc::EncoderSwitchRequestCallback::Config conf1{"VP8", kParam, kPing};
-  channel_->RequestEncoderSwitch(conf1);
+  channel_->RequestEncoderSwitch(
+      webrtc::SdpVideoFormat("VP9", {{"profile-id", "1"}}),
+      /*allow_default_fallback=*/false);
   rtc::Thread::Current()->ProcessMessages(30);
-  ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP8"));
-  EXPECT_THAT(codec.params, Contains(Pair(kParam, kPing)));
 
-  // Incorrect conf2.value, expect no codec switch.
-  webrtc::EncoderSwitchRequestCallback::Config conf2{"VP9", kParam, kPing};
-  channel_->RequestEncoderSwitch(conf2);
-  rtc::Thread::Current()->ProcessMessages(30);
+  // VP9 profile_id=1 is not available. Default fallback is not allowed. Switch
+  // is not performed.
   ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP8"));
-  EXPECT_THAT(codec.params, Contains(Pair(kParam, kPing)));
+  EXPECT_EQ("VP8", codec.name);
+
+  channel_->RequestEncoderSwitch(
+      webrtc::SdpVideoFormat("VP9", {{"profile-id", "0"}}),
+      /*allow_default_fallback=*/false);
+  rtc::Thread::Current()->ProcessMessages(30);
+
+  // VP9 profile_id=0 is available. Switch encoder.
+  ASSERT_TRUE(channel_->GetSendCodec(&codec));
+  EXPECT_EQ("VP9", codec.name);
 }
 
-TEST_F(WebRtcVideoChannelBaseTest,
-       RequestEncoderSwitchWithConfigBeforeEnabling) {
-  const std::string kParam = "the-param";
-  const std::string kPing = "ping";
-  const std::string kPong = "pong";
-
+TEST_F(WebRtcVideoChannelBaseTest, SendCodecIsMovedToFrontInRtpParameters) {
   cricket::VideoSendParameters parameters;
-  VideoCodec vp9 = GetEngineCodec("VP9");
-  vp9.params[kParam] = kPong;
-  parameters.codecs.push_back(vp9);
-
-  VideoCodec vp8 = GetEngineCodec("VP8");
-  vp8.params[kParam] = kPing;
-  parameters.codecs.push_back(vp8);
-
+  parameters.codecs.push_back(GetEngineCodec("VP9"));
+  parameters.codecs.push_back(GetEngineCodec("VP8"));
   EXPECT_TRUE(channel_->SetSendParameters(parameters));
-
-  VideoCodec codec;
-  ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP9"));
-
-  webrtc::EncoderSwitchRequestCallback::Config conf{"VP8", kParam, kPing};
-  channel_->RequestEncoderSwitch(conf);
-
-  // Enable codec switching after it has been requested.
   channel_->SetVideoCodecSwitchingEnabled(true);
 
-  // RequestEncoderSwitch will post a task to the worker thread (which is also
+  auto send_codecs = channel_->GetRtpSendParameters(kSsrc).codecs;
+  ASSERT_EQ(send_codecs.size(), 2u);
+  EXPECT_THAT("VP9", send_codecs[0].name);
+
+  // RequestEncoderFallback will post a task to the worker thread (which is also
   // the current thread), hence the ProcessMessages call.
+  channel_->RequestEncoderFallback();
   rtc::Thread::Current()->ProcessMessages(30);
-  ASSERT_TRUE(channel_->GetSendCodec(&codec));
-  EXPECT_THAT(codec.name, Eq("VP8"));
-  EXPECT_THAT(codec.params, Contains(Pair(kParam, kPing)));
+
+  send_codecs = channel_->GetRtpSendParameters(kSsrc).codecs;
+  ASSERT_EQ(send_codecs.size(), 2u);
+  EXPECT_THAT("VP8", send_codecs[0].name);
 }
 
 #endif  // defined(RTC_ENABLE_VP9)
@@ -3539,16 +3503,16 @@ TEST_F(WebRtcVideoChannelTest, VerifyVp8SpecificSettings) {
   EXPECT_EQ(3u, stream->GetVideoStreams().size());
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   EXPECT_FALSE(vp8_settings.denoisingOn);
-  // Resizing and frame dropping always off for screen sharing.
+  // Resizing always off for screen sharing.
   EXPECT_FALSE(vp8_settings.automaticResizeOn);
-  EXPECT_FALSE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(vp8_settings.frameDroppingOn);
 
   stream = SetDenoisingOption(last_ssrc_, &frame_forwarder, true);
 
   ASSERT_TRUE(stream->GetVp8Settings(&vp8_settings)) << "No VP8 config set.";
   EXPECT_FALSE(vp8_settings.denoisingOn);
   EXPECT_FALSE(vp8_settings.automaticResizeOn);
-  EXPECT_FALSE(vp8_settings.frameDroppingOn);
+  EXPECT_TRUE(vp8_settings.frameDroppingOn);
 
   EXPECT_TRUE(channel_->SetVideoSend(last_ssrc_, nullptr, nullptr));
 }

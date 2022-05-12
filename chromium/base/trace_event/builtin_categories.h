@@ -66,6 +66,7 @@
   X("compositor")                                                        \
   X("content")                                                           \
   X("content_capture")                                                   \
+  X("delegated_ink_trails")                                              \
   X("device")                                                            \
   X("devtools")                                                          \
   X("devtools.contrast")                                                 \
@@ -205,6 +206,7 @@
   X(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.invalidationTracking")) \
   X(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.layers"))               \
   X(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.picture"))              \
+  X(TRACE_DISABLED_BY_DEFAULT("devtools.timeline.stack"))                \
   X(TRACE_DISABLED_BY_DEFAULT("file"))                                   \
   X(TRACE_DISABLED_BY_DEFAULT("fonts"))                                  \
   X(TRACE_DISABLED_BY_DEFAULT("gpu_cmd_queue"))                          \
@@ -248,6 +250,7 @@
   X(TRACE_DISABLED_BY_DEFAULT("v8.gc"))                                  \
   X(TRACE_DISABLED_BY_DEFAULT("v8.gc_stats"))                            \
   X(TRACE_DISABLED_BY_DEFAULT("v8.ic_stats"))                            \
+  X(TRACE_DISABLED_BY_DEFAULT("v8.inspector"))                           \
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime"))                             \
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime_stats"))                       \
   X(TRACE_DISABLED_BY_DEFAULT("v8.runtime_stats_sampling"))              \
@@ -345,7 +348,9 @@
       "viz.quads") "," TRACE_DISABLED_BY_DEFAULT("devtools.timeline.layers")) \
   X(TRACE_DISABLED_BY_DEFAULT("cc.debug.display_items") "," \
       TRACE_DISABLED_BY_DEFAULT("cc.debug.picture") "," \
-      TRACE_DISABLED_BY_DEFAULT("devtools.timeline.picture"))
+      TRACE_DISABLED_BY_DEFAULT("devtools.timeline.picture"))                 \
+  X(TRACE_DISABLED_BY_DEFAULT("v8.inspector") "," TRACE_DISABLED_BY_DEFAULT(  \
+      "v8.stack_trace"))
 
 #define INTERNAL_TRACE_INIT_CATEGORY_NAME(name) name,
 
@@ -430,7 +435,7 @@ class BASE_EXPORT BuiltinCategories {
   // All trace categories are checked against this. A static_assert is triggered
   // if at least one category fails this check.
   static constexpr bool IsAllowedCategory(const char* category) {
-#if defined(OS_WIN) && defined(COMPONENT_BUILD)
+#if BUILDFLAG(IS_WIN) && defined(COMPONENT_BUILD)
     return true;
 #else
     return IsBuiltinCategory(category) ||

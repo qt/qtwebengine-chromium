@@ -189,7 +189,7 @@ export class StubConnection implements ProtocolClient.InspectorBackend.Connectio
   }
 
   sendRawMessage(message: string): void {
-    setTimeout(this.respondWithError.bind(this, message), 0);
+    window.setTimeout(this.respondWithError.bind(this, message), 0);
   }
 
   private respondWithError(message: string): void {
@@ -213,7 +213,12 @@ export class StubConnection implements ProtocolClient.InspectorBackend.Connectio
   }
 }
 
-export class ParallelConnection implements ProtocolClient.InspectorBackend.Connection {
+export interface ParallelConnectionInterface extends ProtocolClient.InspectorBackend.Connection {
+  getSessionId: () => string;
+  getOnDisconnect: () => ((arg0: string) => void) | null;
+}
+
+export class ParallelConnection implements ParallelConnectionInterface {
   readonly #connection: ProtocolClient.InspectorBackend.Connection;
   #sessionId: string;
   onMessage: ((arg0: Object) => void)|null;
@@ -270,10 +275,10 @@ export async function initMainConnection(
         if (target) {
           const router = target.router();
           if (router) {
-            router.connection().disconnect();
+            void router.connection().disconnect();
           }
         }
-        createMainTarget();
+        void createMainTarget();
       });
 }
 

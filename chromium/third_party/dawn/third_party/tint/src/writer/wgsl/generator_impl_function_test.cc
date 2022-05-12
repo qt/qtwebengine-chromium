@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/ast/stage_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/stage_attribute.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/ast/variable_decl_statement.h"
-#include "src/ast/workgroup_decoration.h"
+#include "src/ast/workgroup_attribute.h"
 #include "src/writer/wgsl/test_helper.h"
 
 namespace tint {
@@ -30,7 +30,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Function) {
                     ast::StatementList{
                         Return(),
                     },
-                    ast::DecorationList{});
+                    ast::AttributeList{});
 
   GeneratorImpl& gen = Build();
 
@@ -50,7 +50,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithParams) {
       ast::StatementList{
           Return(),
       },
-      ast::DecorationList{});
+      ast::AttributeList{});
 
   GeneratorImpl& gen = Build();
 
@@ -63,10 +63,10 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithParams) {
 )");
 }
 
-TEST_F(WgslGeneratorImplTest, Emit_Function_WithDecoration_WorkgroupSize) {
+TEST_F(WgslGeneratorImplTest, Emit_Function_WithAttribute_WorkgroupSize) {
   auto* func = Func("my_func", ast::VariableList{}, ty.void_(),
                     ast::StatementList{Return()},
-                    ast::DecorationList{
+                    ast::AttributeList{
                         Stage(ast::PipelineStage::kCompute),
                         WorkgroupSize(2, 4, 6),
                     });
@@ -76,7 +76,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithDecoration_WorkgroupSize) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitFunction(func));
-  EXPECT_EQ(gen.result(), R"(  [[stage(compute), workgroup_size(2, 4, 6)]]
+  EXPECT_EQ(gen.result(), R"(  @stage(compute) @workgroup_size(2, 4, 6)
   fn my_func() {
     return;
   }
@@ -84,11 +84,11 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_WithDecoration_WorkgroupSize) {
 }
 
 TEST_F(WgslGeneratorImplTest,
-       Emit_Function_WithDecoration_WorkgroupSize_WithIdent) {
+       Emit_Function_WithAttribute_WorkgroupSize_WithIdent) {
   GlobalConst("height", ty.i32(), Expr(2));
   auto* func = Func("my_func", ast::VariableList{}, ty.void_(),
                     ast::StatementList{Return()},
-                    ast::DecorationList{
+                    ast::AttributeList{
                         Stage(ast::PipelineStage::kCompute),
                         WorkgroupSize(2, "height"),
                     });
@@ -98,7 +98,7 @@ TEST_F(WgslGeneratorImplTest,
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitFunction(func));
-  EXPECT_EQ(gen.result(), R"(  [[stage(compute), workgroup_size(2, height)]]
+  EXPECT_EQ(gen.result(), R"(  @stage(compute) @workgroup_size(2, height)
   fn my_func() {
     return;
   }
@@ -111,7 +111,7 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_Parameters) {
   auto* loc1 = Param("loc1", ty.f32(), {Location(1u)});
   auto* func = Func("frag_main", ast::VariableList{coord, loc1}, ty.void_(),
                     ast::StatementList{},
-                    ast::DecorationList{
+                    ast::AttributeList{
                         Stage(ast::PipelineStage::kFragment),
                     });
 
@@ -120,8 +120,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_Parameters) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitFunction(func));
-  EXPECT_EQ(gen.result(), R"(  [[stage(fragment)]]
-  fn frag_main([[builtin(position)]] coord : vec4<f32>, [[location(1)]] loc1 : f32) {
+  EXPECT_EQ(gen.result(), R"(  @stage(fragment)
+  fn frag_main(@builtin(position) coord : vec4<f32>, @location(1) loc1 : f32) {
   }
 )");
 }
@@ -131,10 +131,10 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_ReturnValue) {
                     ast::StatementList{
                         Return(1.f),
                     },
-                    ast::DecorationList{
+                    ast::AttributeList{
                         Stage(ast::PipelineStage::kFragment),
                     },
-                    ast::DecorationList{
+                    ast::AttributeList{
                         Location(1u),
                     });
 
@@ -143,8 +143,8 @@ TEST_F(WgslGeneratorImplTest, Emit_Function_EntryPoint_ReturnValue) {
   gen.increment_indent();
 
   ASSERT_TRUE(gen.EmitFunction(func));
-  EXPECT_EQ(gen.result(), R"(  [[stage(fragment)]]
-  fn frag_main() -> [[location(1)]] f32 {
+  EXPECT_EQ(gen.result(), R"(  @stage(fragment)
+  fn frag_main() -> @location(1) f32 {
     return 1.0;
   }
 )");
@@ -156,25 +156,25 @@ TEST_F(WgslGeneratorImplTest,
   // [[block]] struct Data {
   //   d : f32;
   // };
-  // [[binding(0), group(0)]] var<storage> data : Data;
+  // @binding(0) @group(0) var<storage> data : Data;
   //
-  // [[stage(compute), workgroup_size(1)]]
+  // @stage(compute) @workgroup_size(1)
   // fn a() {
   //   return;
   // }
   //
-  // [[stage(compute), workgroup_size(1)]]
+  // @stage(compute) @workgroup_size(1)
   // fn b() {
   //   return;
   // }
 
   auto* s = Structure("Data", {Member("d", ty.f32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("data", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   {
@@ -186,7 +186,7 @@ TEST_F(WgslGeneratorImplTest,
              Decl(var),
              Return(),
          },
-         ast::DecorationList{
+         ast::AttributeList{
              Stage(ast::PipelineStage::kCompute),
              WorkgroupSize(1),
          });
@@ -201,7 +201,7 @@ TEST_F(WgslGeneratorImplTest,
              Decl(var),
              Return(),
          },
-         ast::DecorationList{
+         ast::AttributeList{
              Stage(ast::PipelineStage::kCompute),
              WorkgroupSize(1),
          });
@@ -210,20 +210,20 @@ TEST_F(WgslGeneratorImplTest,
   GeneratorImpl& gen = Build();
 
   ASSERT_TRUE(gen.Generate()) << gen.error();
-  EXPECT_EQ(gen.result(), R"([[block]]
+  EXPECT_EQ(gen.result(), R"(@block
 struct Data {
   d : f32;
-};
+}
 
-[[binding(0), group(0)]] var<storage, read_write> data : Data;
+@binding(0) @group(0) var<storage, read_write> data : Data;
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn a() {
   var v : f32 = data.d;
   return;
 }
 
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn b() {
   var v : f32 = data.d;
   return;

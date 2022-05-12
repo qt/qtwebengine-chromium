@@ -389,6 +389,19 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "xnnpack_plugin",
+    hdrs = ["c/experimental/acceleration/configuration/xnnpack_plugin.h"],
+    copts = tflite_copts_warnings(),
+    visibility = [
+        "//tensorflow/lite:__subpackages__",
+        "@org_tensorflow_lite_support//tensorflow_lite_support:__subpackages__",
+    ],
+    deps = [
+        "//tensorflow/lite/experimental/acceleration/configuration/c:xnnpack_plugin",
+    ],
+)
+
 custom_c_library_with_tflite(
     name = "custom_c_api_example",
     testonly = True,
@@ -409,6 +422,7 @@ build_test(
         ":custom_c_api_example",
         ":delegate_plugin",
         ":nnapi_plugin",
+        ":xnnpack_plugin",
     ],
 )
 
@@ -471,19 +485,6 @@ cc_library(
     ],
     deps = [
         "//tensorflow/lite/java/jni",
-    ],
-)
-
-# Contains code to initialize TFLite through JNI in the internal version.
-cc_library(
-    name = "jni_initialization",
-    srcs = [],
-    # Prevent automated tools from removing this target as a dependency due to
-    # it being empty.
-    tags = ["keep_dep"],
-    visibility = [
-        "//tensorflow/lite:__subpackages__",
-        "@org_tensorflow_lite_support//tensorflow_lite_support:__subpackages__",
     ],
 )
 

@@ -21,7 +21,7 @@
 #include "src/ast/bitcast_expression.h"
 #include "src/ast/break_statement.h"
 #include "src/ast/builtin.h"
-#include "src/ast/builtin_decoration.h"
+#include "src/ast/builtin_attribute.h"
 #include "src/ast/call_statement.h"
 #include "src/ast/continue_statement.h"
 #include "src/ast/discard_statement.h"
@@ -29,12 +29,12 @@
 #include "src/ast/if_statement.h"
 #include "src/ast/loop_statement.h"
 #include "src/ast/return_statement.h"
-#include "src/ast/stage_decoration.h"
+#include "src/ast/stage_attribute.h"
 #include "src/ast/switch_statement.h"
 #include "src/ast/unary_op_expression.h"
 #include "src/ast/variable_decl_statement.h"
+#include "src/sem/builtin_type.h"
 #include "src/sem/depth_texture_type.h"
-#include "src/sem/intrinsic_type.h"
 #include "src/sem/sampled_texture_type.h"
 
 // Terms:
@@ -312,6 +312,8 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
       return "cosh";
     case GLSLstd450Cross:
       return "cross";
+    case GLSLstd450Degrees:
+      return "degrees";
     case GLSLstd450Distance:
       return "distance";
     case GLSLstd450Exp:
@@ -364,6 +366,8 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
       return "pow";
     case GLSLstd450FSign:
       return "sign";
+    case GLSLstd450Radians:
+      return "radians";
     case GLSLstd450Reflect:
       return "reflect";
     case GLSLstd450Refract:
@@ -404,8 +408,6 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
 
     case GLSLstd450SSign:
 
-    case GLSLstd450Radians:
-    case GLSLstd450Degrees:
     case GLSLstd450Asinh:
     case GLSLstd450Acosh:
     case GLSLstd450Atanh:
@@ -435,38 +437,38 @@ std::string GetGlslStd450FuncName(uint32_t ext_opcode) {
   return "";
 }
 
-// Returns the WGSL standard library function intrinsic for the
-// given instruction, or sem::IntrinsicType::kNone
-sem::IntrinsicType GetIntrinsic(SpvOp opcode) {
+// Returns the WGSL standard library function builtin for the
+// given instruction, or sem::BuiltinType::kNone
+sem::BuiltinType GetBuiltin(SpvOp opcode) {
   switch (opcode) {
     case SpvOpBitCount:
-      return sem::IntrinsicType::kCountOneBits;
+      return sem::BuiltinType::kCountOneBits;
     case SpvOpBitReverse:
-      return sem::IntrinsicType::kReverseBits;
+      return sem::BuiltinType::kReverseBits;
     case SpvOpDot:
-      return sem::IntrinsicType::kDot;
+      return sem::BuiltinType::kDot;
     case SpvOpDPdx:
-      return sem::IntrinsicType::kDpdx;
+      return sem::BuiltinType::kDpdx;
     case SpvOpDPdy:
-      return sem::IntrinsicType::kDpdy;
+      return sem::BuiltinType::kDpdy;
     case SpvOpFwidth:
-      return sem::IntrinsicType::kFwidth;
+      return sem::BuiltinType::kFwidth;
     case SpvOpDPdxFine:
-      return sem::IntrinsicType::kDpdxFine;
+      return sem::BuiltinType::kDpdxFine;
     case SpvOpDPdyFine:
-      return sem::IntrinsicType::kDpdyFine;
+      return sem::BuiltinType::kDpdyFine;
     case SpvOpFwidthFine:
-      return sem::IntrinsicType::kFwidthFine;
+      return sem::BuiltinType::kFwidthFine;
     case SpvOpDPdxCoarse:
-      return sem::IntrinsicType::kDpdxCoarse;
+      return sem::BuiltinType::kDpdxCoarse;
     case SpvOpDPdyCoarse:
-      return sem::IntrinsicType::kDpdyCoarse;
+      return sem::BuiltinType::kDpdyCoarse;
     case SpvOpFwidthCoarse:
-      return sem::IntrinsicType::kFwidthCoarse;
+      return sem::BuiltinType::kFwidthCoarse;
     default:
       break;
   }
-  return sem::IntrinsicType::kNone;
+  return sem::BuiltinType::kNone;
 }
 
 // @param opcode a SPIR-V opcode
@@ -494,8 +496,9 @@ bool IsSampledImageAccess(SpvOp opcode) {
 }
 
 // @param opcode a SPIR-V opcode
-// @returns true if the given instruction is an image sampling operation.
-bool IsImageSampling(SpvOp opcode) {
+// @returns true if the given instruction is an image sampling, gather,
+// or gather-compare operation.
+bool IsImageSamplingOrGatherOrDrefGather(SpvOp opcode) {
   switch (opcode) {
     case SpvOpImageSampleImplicitLod:
     case SpvOpImageSampleExplicitLod:
@@ -506,6 +509,8 @@ bool IsImageSampling(SpvOp opcode) {
     case SpvOpImageSampleProjExplicitLod:
     case SpvOpImageSampleProjDrefImplicitLod:
     case SpvOpImageSampleProjDrefExplicitLod:
+    case SpvOpImageGather:
+    case SpvOpImageDrefGather:
       return true;
     default:
       break;
@@ -707,8 +712,8 @@ struct LoopStatementBuilder
 
 /// @param decos a list of parsed decorations
 /// @returns true if the decorations include a SampleMask builtin
-bool HasBuiltinSampleMask(const ast::DecorationList& decos) {
-  if (auto* builtin = ast::GetDecoration<ast::BuiltinDecoration>(decos)) {
+bool HasBuiltinSampleMask(const ast::AttributeList& decos) {
+  if (auto* builtin = ast::GetAttribute<ast::BuiltinAttribute>(decos)) {
     return builtin->builtin == ast::Builtin::kSampleMask;
   }
   return false;
@@ -910,7 +915,7 @@ bool FunctionEmitter::Emit() {
     builder_.AST().AddFunction(create<ast::Function>(
         decl.source, builder_.Symbols().Register(decl.name),
         std::move(decl.params), decl.return_type->Build(builder_), body,
-        std::move(decl.decorations), ast::DecorationList{}));
+        std::move(decl.attributes), ast::AttributeList{}));
   }
 
   if (ep_info_ && !ep_info_->inner_name.empty()) {
@@ -948,7 +953,7 @@ const ast::BlockStatement* FunctionEmitter::MakeFunctionBody() {
 
 bool FunctionEmitter::EmitPipelineInput(std::string var_name,
                                         const Type* var_type,
-                                        ast::DecorationList* decos,
+                                        ast::AttributeList* attrs,
                                         std::vector<int> index_prefix,
                                         const Type* tip_type,
                                         const Type* forced_param_type,
@@ -961,123 +966,139 @@ bool FunctionEmitter::EmitPipelineInput(std::string var_name,
   }
 
   // Recursively flatten matrices, arrays, and structures.
-  if (auto* matrix_type = tip_type->As<Matrix>()) {
-    index_prefix.push_back(0);
-    const auto num_columns = static_cast<int>(matrix_type->columns);
-    const Type* vec_ty = ty_.Vector(matrix_type->type, matrix_type->rows);
-    for (int col = 0; col < num_columns; col++) {
-      index_prefix.back() = col;
-      if (!EmitPipelineInput(var_name, var_type, decos, index_prefix, vec_ty,
-                             forced_param_type, params, statements)) {
-        return false;
-      }
-    }
-    return success();
-  } else if (auto* array_type = tip_type->As<Array>()) {
-    if (array_type->size == 0) {
-      return Fail() << "runtime-size array not allowed on pipeline IO";
-    }
-    index_prefix.push_back(0);
-    const Type* elem_ty = array_type->type;
-    for (int i = 0; i < static_cast<int>(array_type->size); i++) {
-      index_prefix.back() = i;
-      if (!EmitPipelineInput(var_name, var_type, decos, index_prefix, elem_ty,
-                             forced_param_type, params, statements)) {
-        return false;
-      }
-    }
-    return success();
-  } else if (auto* struct_type = tip_type->As<Struct>()) {
-    const auto& members = struct_type->members;
-    index_prefix.push_back(0);
-    for (int i = 0; i < static_cast<int>(members.size()); ++i) {
-      index_prefix.back() = i;
-      ast::DecorationList member_decos(*decos);
-      if (!parser_impl_.ConvertPipelineDecorations(
-              struct_type,
-              parser_impl_.GetMemberPipelineDecorations(*struct_type, i),
-              &member_decos)) {
-        return false;
-      }
-      if (!EmitPipelineInput(var_name, var_type, &member_decos, index_prefix,
-                             members[i], forced_param_type, params,
-                             statements)) {
-        return false;
-      }
-      // Copy the location as updated by nested expansion of the member.
-      parser_impl_.SetLocation(decos, GetLocation(member_decos));
-    }
-    return success();
-  }
+  return Switch(
+      tip_type,
+      [&](const Matrix* matrix_type) -> bool {
+        index_prefix.push_back(0);
+        const auto num_columns = static_cast<int>(matrix_type->columns);
+        const Type* vec_ty = ty_.Vector(matrix_type->type, matrix_type->rows);
+        for (int col = 0; col < num_columns; col++) {
+          index_prefix.back() = col;
+          if (!EmitPipelineInput(var_name, var_type, attrs, index_prefix,
+                                 vec_ty, forced_param_type, params,
+                                 statements)) {
+            return false;
+          }
+        }
+        return success();
+      },
+      [&](const Array* array_type) -> bool {
+        if (array_type->size == 0) {
+          return Fail() << "runtime-size array not allowed on pipeline IO";
+        }
+        index_prefix.push_back(0);
+        const Type* elem_ty = array_type->type;
+        for (int i = 0; i < static_cast<int>(array_type->size); i++) {
+          index_prefix.back() = i;
+          if (!EmitPipelineInput(var_name, var_type, attrs, index_prefix,
+                                 elem_ty, forced_param_type, params,
+                                 statements)) {
+            return false;
+          }
+        }
+        return success();
+      },
+      [&](const Struct* struct_type) -> bool {
+        const auto& members = struct_type->members;
+        index_prefix.push_back(0);
+        for (int i = 0; i < static_cast<int>(members.size()); ++i) {
+          index_prefix.back() = i;
+          ast::AttributeList member_attrs(*attrs);
+          if (!parser_impl_.ConvertPipelineDecorations(
+                  struct_type,
+                  parser_impl_.GetMemberPipelineDecorations(*struct_type, i),
+                  &member_attrs)) {
+            return false;
+          }
+          if (!EmitPipelineInput(var_name, var_type, &member_attrs,
+                                 index_prefix, members[i], forced_param_type,
+                                 params, statements)) {
+            return false;
+          }
+          // Copy the location as updated by nested expansion of the member.
+          parser_impl_.SetLocation(attrs, GetLocation(member_attrs));
+        }
+        return success();
+      },
+      [&](Default) {
+        const bool is_builtin =
+            ast::HasAttribute<ast::BuiltinAttribute>(*attrs);
 
-  const bool is_builtin = ast::HasDecoration<ast::BuiltinDecoration>(*decos);
+        const Type* param_type = is_builtin ? forced_param_type : tip_type;
 
-  const Type* param_type = is_builtin ? forced_param_type : tip_type;
+        const auto param_name = namer_.MakeDerivedName(var_name + "_param");
+        // Create the parameter.
+        // TODO(dneto): Note: If the parameter has non-location decorations,
+        // then those decoration AST nodes will be reused between multiple
+        // elements of a matrix, array, or structure.  Normally that's
+        // disallowed but currently the SPIR-V reader will make duplicates when
+        // the entire AST is cloned at the top level of the SPIR-V reader flow.
+        // Consider rewriting this to avoid this node-sharing.
+        params->push_back(
+            builder_.Param(param_name, param_type->Build(builder_), *attrs));
 
-  const auto param_name = namer_.MakeDerivedName(var_name + "_param");
-  // Create the parameter.
-  // TODO(dneto): Note: If the parameter has non-location decorations,
-  // then those decoration AST nodes will be reused between multiple elements
-  // of a matrix, array, or structure.  Normally that's disallowed but currently
-  // the SPIR-V reader will make duplicates when the entire AST is cloned
-  // at the top level of the SPIR-V reader flow.  Consider rewriting this
-  // to avoid this node-sharing.
-  params->push_back(
-      builder_.Param(param_name, param_type->Build(builder_), *decos));
+        // Add a body statement to copy the parameter to the corresponding
+        // private variable.
+        const ast::Expression* param_value = builder_.Expr(param_name);
+        const ast::Expression* store_dest = builder_.Expr(var_name);
 
-  // Add a body statement to copy the parameter to the corresponding private
-  // variable.
-  const ast::Expression* param_value = builder_.Expr(param_name);
-  const ast::Expression* store_dest = builder_.Expr(var_name);
+        // Index into the LHS as needed.
+        auto* current_type =
+            var_type->UnwrapAlias()->UnwrapRef()->UnwrapAlias();
+        for (auto index : index_prefix) {
+          Switch(
+              current_type,
+              [&](const Matrix* matrix_type) {
+                store_dest =
+                    builder_.IndexAccessor(store_dest, builder_.Expr(index));
+                current_type = ty_.Vector(matrix_type->type, matrix_type->rows);
+              },
+              [&](const Array* array_type) {
+                store_dest =
+                    builder_.IndexAccessor(store_dest, builder_.Expr(index));
+                current_type = array_type->type->UnwrapAlias();
+              },
+              [&](const Struct* struct_type) {
+                store_dest = builder_.MemberAccessor(
+                    store_dest, builder_.Expr(parser_impl_.GetMemberName(
+                                    *struct_type, index)));
+                current_type = struct_type->members[index];
+              });
+        }
 
-  // Index into the LHS as needed.
-  auto* current_type = var_type->UnwrapAlias()->UnwrapRef()->UnwrapAlias();
-  for (auto index : index_prefix) {
-    if (auto* matrix_type = current_type->As<Matrix>()) {
-      store_dest = builder_.IndexAccessor(store_dest, builder_.Expr(index));
-      current_type = ty_.Vector(matrix_type->type, matrix_type->rows);
-    } else if (auto* array_type = current_type->As<Array>()) {
-      store_dest = builder_.IndexAccessor(store_dest, builder_.Expr(index));
-      current_type = array_type->type->UnwrapAlias();
-    } else if (auto* struct_type = current_type->As<Struct>()) {
-      store_dest = builder_.MemberAccessor(
-          store_dest,
-          builder_.Expr(parser_impl_.GetMemberName(*struct_type, index)));
-      current_type = struct_type->members[index];
-    }
-  }
+        if (is_builtin && (tip_type != forced_param_type)) {
+          // The parameter will have the WGSL type, but we need bitcast to
+          // the variable store type.
+          param_value = create<ast::BitcastExpression>(
+              tip_type->Build(builder_), param_value);
+        }
 
-  if (is_builtin && (tip_type != forced_param_type)) {
-    // The parameter will have the WGSL type, but we need bitcast to
-    // the variable store type.
-    param_value =
-        create<ast::BitcastExpression>(tip_type->Build(builder_), param_value);
-  }
+        statements->push_back(builder_.Assign(store_dest, param_value));
 
-  statements->push_back(builder_.Assign(store_dest, param_value));
+        // Increment the location attribute, in case more parameters will
+        // follow.
+        IncrementLocation(attrs);
 
-  // Increment the location attribute, in case more parameters will follow.
-  IncrementLocation(decos);
-
-  return success();
+        return success();
+      });
 }
 
-void FunctionEmitter::IncrementLocation(ast::DecorationList* decos) {
-  for (auto*& deco : *decos) {
-    if (auto* loc_deco = deco->As<ast::LocationDecoration>()) {
-      // Replace this location decoration with a new one with one higher index.
+void FunctionEmitter::IncrementLocation(ast::AttributeList* attributes) {
+  for (auto*& attr : *attributes) {
+    if (auto* loc_attr = attr->As<ast::LocationAttribute>()) {
+      // Replace this location attribute with a new one with one higher index.
       // The old one doesn't leak because it's kept in the builder's AST node
       // list.
-      deco = builder_.Location(loc_deco->source, loc_deco->value + 1);
+      attr = builder_.Location(loc_attr->source, loc_attr->value + 1);
     }
   }
 }
 
-const ast::Decoration* FunctionEmitter::GetLocation(
-    const ast::DecorationList& decos) {
-  for (auto* const& deco : decos) {
-    if (deco->Is<ast::LocationDecoration>()) {
-      return deco;
+const ast::Attribute* FunctionEmitter::GetLocation(
+    const ast::AttributeList& attributes) {
+  for (auto* const& attr : attributes) {
+    if (attr->Is<ast::LocationAttribute>()) {
+      return attr;
     }
   }
   return nullptr;
@@ -1085,7 +1106,7 @@ const ast::Decoration* FunctionEmitter::GetLocation(
 
 bool FunctionEmitter::EmitPipelineOutput(std::string var_name,
                                          const Type* var_type,
-                                         ast::DecorationList* decos,
+                                         ast::AttributeList* decos,
                                          std::vector<int> index_prefix,
                                          const Type* tip_type,
                                          const Type* forced_member_type,
@@ -1097,106 +1118,120 @@ bool FunctionEmitter::EmitPipelineOutput(std::string var_name,
   }
 
   // Recursively flatten matrices, arrays, and structures.
-  if (auto* matrix_type = tip_type->As<Matrix>()) {
-    index_prefix.push_back(0);
-    const auto num_columns = static_cast<int>(matrix_type->columns);
-    const Type* vec_ty = ty_.Vector(matrix_type->type, matrix_type->rows);
-    for (int col = 0; col < num_columns; col++) {
-      index_prefix.back() = col;
-      if (!EmitPipelineOutput(var_name, var_type, decos, index_prefix, vec_ty,
-                              forced_member_type, return_members,
-                              return_exprs)) {
-        return false;
-      }
-    }
-    return success();
-  } else if (auto* array_type = tip_type->As<Array>()) {
-    if (array_type->size == 0) {
-      return Fail() << "runtime-size array not allowed on pipeline IO";
-    }
-    index_prefix.push_back(0);
-    const Type* elem_ty = array_type->type;
-    for (int i = 0; i < static_cast<int>(array_type->size); i++) {
-      index_prefix.back() = i;
-      if (!EmitPipelineOutput(var_name, var_type, decos, index_prefix, elem_ty,
-                              forced_member_type, return_members,
-                              return_exprs)) {
-        return false;
-      }
-    }
-    return success();
-  } else if (auto* struct_type = tip_type->As<Struct>()) {
-    const auto& members = struct_type->members;
-    index_prefix.push_back(0);
-    for (int i = 0; i < static_cast<int>(members.size()); ++i) {
-      index_prefix.back() = i;
-      ast::DecorationList member_decos(*decos);
-      if (!parser_impl_.ConvertPipelineDecorations(
-              struct_type,
-              parser_impl_.GetMemberPipelineDecorations(*struct_type, i),
-              &member_decos)) {
-        return false;
-      }
-      if (!EmitPipelineOutput(var_name, var_type, &member_decos, index_prefix,
-                              members[i], forced_member_type, return_members,
-                              return_exprs)) {
-        return false;
-      }
-      // Copy the location as updated by nested expansion of the member.
-      parser_impl_.SetLocation(decos, GetLocation(member_decos));
-    }
-    return success();
-  }
+  return Switch(
+      tip_type,
+      [&](const Matrix* matrix_type) -> bool {
+        index_prefix.push_back(0);
+        const auto num_columns = static_cast<int>(matrix_type->columns);
+        const Type* vec_ty = ty_.Vector(matrix_type->type, matrix_type->rows);
+        for (int col = 0; col < num_columns; col++) {
+          index_prefix.back() = col;
+          if (!EmitPipelineOutput(var_name, var_type, decos, index_prefix,
+                                  vec_ty, forced_member_type, return_members,
+                                  return_exprs)) {
+            return false;
+          }
+        }
+        return success();
+      },
+      [&](const Array* array_type) -> bool {
+        if (array_type->size == 0) {
+          return Fail() << "runtime-size array not allowed on pipeline IO";
+        }
+        index_prefix.push_back(0);
+        const Type* elem_ty = array_type->type;
+        for (int i = 0; i < static_cast<int>(array_type->size); i++) {
+          index_prefix.back() = i;
+          if (!EmitPipelineOutput(var_name, var_type, decos, index_prefix,
+                                  elem_ty, forced_member_type, return_members,
+                                  return_exprs)) {
+            return false;
+          }
+        }
+        return success();
+      },
+      [&](const Struct* struct_type) -> bool {
+        const auto& members = struct_type->members;
+        index_prefix.push_back(0);
+        for (int i = 0; i < static_cast<int>(members.size()); ++i) {
+          index_prefix.back() = i;
+          ast::AttributeList member_attrs(*decos);
+          if (!parser_impl_.ConvertPipelineDecorations(
+                  struct_type,
+                  parser_impl_.GetMemberPipelineDecorations(*struct_type, i),
+                  &member_attrs)) {
+            return false;
+          }
+          if (!EmitPipelineOutput(var_name, var_type, &member_attrs,
+                                  index_prefix, members[i], forced_member_type,
+                                  return_members, return_exprs)) {
+            return false;
+          }
+          // Copy the location as updated by nested expansion of the member.
+          parser_impl_.SetLocation(decos, GetLocation(member_attrs));
+        }
+        return success();
+      },
+      [&](Default) {
+        const bool is_builtin =
+            ast::HasAttribute<ast::BuiltinAttribute>(*decos);
 
-  const bool is_builtin = ast::HasDecoration<ast::BuiltinDecoration>(*decos);
+        const Type* member_type = is_builtin ? forced_member_type : tip_type;
+        // Derive the member name directly from the variable name.  They can't
+        // collide.
+        const auto member_name = namer_.MakeDerivedName(var_name);
+        // Create the member.
+        // TODO(dneto): Note: If the parameter has non-location decorations,
+        // then those decoration AST nodes  will be reused between multiple
+        // elements of a matrix, array, or structure.  Normally that's
+        // disallowed but currently the SPIR-V reader will make duplicates when
+        // the entire AST is cloned at the top level of the SPIR-V reader flow.
+        // Consider rewriting this to avoid this node-sharing.
+        return_members->push_back(
+            builder_.Member(member_name, member_type->Build(builder_), *decos));
 
-  const Type* member_type = is_builtin ? forced_member_type : tip_type;
-  // Derive the member name directly from the variable name.  They can't
-  // collide.
-  const auto member_name = namer_.MakeDerivedName(var_name);
-  // Create the member.
-  // TODO(dneto): Note: If the parameter has non-location decorations,
-  // then those decoration AST nodes  will be reused between multiple elements
-  // of a matrix, array, or structure.  Normally that's disallowed but currently
-  // the SPIR-V reader will make duplicates when the entire AST is cloned
-  // at the top level of the SPIR-V reader flow.  Consider rewriting this
-  // to avoid this node-sharing.
-  return_members->push_back(
-      builder_.Member(member_name, member_type->Build(builder_), *decos));
+        // Create an expression to evaluate the part of the variable indexed by
+        // the index_prefix.
+        const ast::Expression* load_source = builder_.Expr(var_name);
 
-  // Create an expression to evaluate the part of the variable indexed by
-  // the index_prefix.
-  const ast::Expression* load_source = builder_.Expr(var_name);
+        // Index into the variable as needed to pick out the flattened member.
+        auto* current_type =
+            var_type->UnwrapAlias()->UnwrapRef()->UnwrapAlias();
+        for (auto index : index_prefix) {
+          Switch(
+              current_type,
+              [&](const Matrix* matrix_type) {
+                load_source =
+                    builder_.IndexAccessor(load_source, builder_.Expr(index));
+                current_type = ty_.Vector(matrix_type->type, matrix_type->rows);
+              },
+              [&](const Array* array_type) {
+                load_source =
+                    builder_.IndexAccessor(load_source, builder_.Expr(index));
+                current_type = array_type->type->UnwrapAlias();
+              },
+              [&](const Struct* struct_type) {
+                load_source = builder_.MemberAccessor(
+                    load_source, builder_.Expr(parser_impl_.GetMemberName(
+                                     *struct_type, index)));
+                current_type = struct_type->members[index];
+              });
+        }
 
-  // Index into the variable as needed to pick out the flattened member.
-  auto* current_type = var_type->UnwrapAlias()->UnwrapRef()->UnwrapAlias();
-  for (auto index : index_prefix) {
-    if (auto* matrix_type = current_type->As<Matrix>()) {
-      load_source = builder_.IndexAccessor(load_source, builder_.Expr(index));
-      current_type = ty_.Vector(matrix_type->type, matrix_type->rows);
-    } else if (auto* array_type = current_type->As<Array>()) {
-      load_source = builder_.IndexAccessor(load_source, builder_.Expr(index));
-      current_type = array_type->type->UnwrapAlias();
-    } else if (auto* struct_type = current_type->As<Struct>()) {
-      load_source = builder_.MemberAccessor(
-          load_source,
-          builder_.Expr(parser_impl_.GetMemberName(*struct_type, index)));
-      current_type = struct_type->members[index];
-    }
-  }
+        if (is_builtin && (tip_type != forced_member_type)) {
+          // The member will have the WGSL type, but we need bitcast to
+          // the variable store type.
+          load_source = create<ast::BitcastExpression>(
+              forced_member_type->Build(builder_), load_source);
+        }
+        return_exprs->push_back(load_source);
 
-  if (is_builtin && (tip_type != forced_member_type)) {
-    // The member will have the WGSL type, but we need bitcast to
-    // the variable store type.
-    load_source = create<ast::BitcastExpression>(
-        forced_member_type->Build(builder_), load_source);
-  }
-  return_exprs->push_back(load_source);
+        // Increment the location attribute, in case more parameters will
+        // follow.
+        IncrementLocation(decos);
 
-  // Increment the location attribute, in case more parameters will follow.
-  IncrementLocation(decos);
-
-  return success();
+        return success();
+      });
 }
 
 bool FunctionEmitter::EmitEntryPointAsWrapper() {
@@ -1219,7 +1254,7 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
     TINT_ASSERT(Reader, var->opcode() == SpvOpVariable);
     auto* store_type = GetVariableStoreType(*var);
     auto* forced_param_type = store_type;
-    ast::DecorationList param_decos;
+    ast::AttributeList param_decos;
     if (!parser_impl_.ConvertDecorationsForVariable(var_id, &forced_param_type,
                                                     &param_decos, true)) {
       // This occurs, and is not an error, for the PointSize builtin.
@@ -1288,8 +1323,8 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
         // The SPIR-V gl_PerVertex variable has already been remapped to
         // a gl_Position variable.  Substitute the type.
         const Type* param_type = ty_.Vector(ty_.F32(), 4);
-        ast::DecorationList out_decos{
-            create<ast::BuiltinDecoration>(source, ast::Builtin::kPosition)};
+        ast::AttributeList out_decos{
+            create<ast::BuiltinAttribute>(source, ast::Builtin::kPosition)};
 
         const auto var_name = namer_.GetName(var_id);
         return_members.push_back(
@@ -1302,7 +1337,7 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
         TINT_ASSERT(Reader, var->opcode() == SpvOpVariable);
         const Type* store_type = GetVariableStoreType(*var);
         const Type* forced_member_type = store_type;
-        ast::DecorationList out_decos;
+        ast::AttributeList out_decos;
         if (!parser_impl_.ConvertDecorationsForVariable(
                 var_id, &forced_member_type, &out_decos, true)) {
           // This occurs, and is not an error, for the PointSize builtin.
@@ -1344,7 +1379,7 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
     } else {
       // Create and register the result type.
       auto* str = create<ast::Struct>(Source{}, return_struct_sym,
-                                      return_members, ast::DecorationList{});
+                                      return_members, ast::AttributeList{});
       parser_impl_.AddTypeDecl(return_struct_sym, str);
       return_type = builder_.ty.Of(str);
 
@@ -1356,8 +1391,8 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
   }
 
   auto* body = create<ast::BlockStatement>(source, stmts);
-  ast::DecorationList fn_decos;
-  fn_decos.emplace_back(create<ast::StageDecoration>(source, ep_info_->stage));
+  ast::AttributeList fn_attrs;
+  fn_attrs.emplace_back(create<ast::StageAttribute>(source, ep_info_->stage));
 
   if (ep_info_->stage == ast::PipelineStage::kCompute) {
     auto& size = ep_info_->workgroup_size;
@@ -1367,15 +1402,14 @@ bool FunctionEmitter::EmitEntryPointAsWrapper() {
           size.y ? builder_.Expr(static_cast<int>(size.y)) : nullptr;
       const ast::Expression* z =
           size.z ? builder_.Expr(static_cast<int>(size.z)) : nullptr;
-      fn_decos.emplace_back(
-          create<ast::WorkgroupDecoration>(Source{}, x, y, z));
+      fn_attrs.emplace_back(create<ast::WorkgroupAttribute>(Source{}, x, y, z));
     }
   }
 
   builder_.AST().AddFunction(
       create<ast::Function>(source, builder_.Symbols().Register(ep_info_->name),
                             std::move(decl.params), return_type, body,
-                            std::move(fn_decos), ast::DecorationList{}));
+                            std::move(fn_attrs), ast::AttributeList{}));
 
   return true;
 }
@@ -1406,8 +1440,8 @@ bool FunctionEmitter::ParseFunctionDeclaration(FunctionDeclaration* decl) {
         auto* type = parser_impl_.ConvertType(param->type_id());
         if (type != nullptr) {
           auto* ast_param = parser_impl_.MakeVariable(
-              param->result_id(), ast::StorageClass::kNone, type, true, nullptr,
-              ast::DecorationList{});
+              param->result_id(), ast::StorageClass::kNone, type, true, false,
+              nullptr, ast::AttributeList{});
           // Parameters are treated as const declarations.
           ast_params.emplace_back(ast_param);
           // The value is accessible by name.
@@ -1423,7 +1457,7 @@ bool FunctionEmitter::ParseFunctionDeclaration(FunctionDeclaration* decl) {
   decl->name = name;
   decl->params = std::move(ast_params);
   decl->return_type = ret_ty;
-  decl->decorations.clear();
+  decl->attributes.clear();
 
   return success();
 }
@@ -2508,7 +2542,7 @@ bool FunctionEmitter::EmitFunctionVariables() {
     }
     auto* var = parser_impl_.MakeVariable(
         inst.result_id(), ast::StorageClass::kNone, var_store_type, false,
-        constructor, ast::DecorationList{});
+        false, constructor, ast::AttributeList{});
     auto* var_decl_stmt = create<ast::VariableDeclStatement>(Source{}, var);
     AddStatement(var_decl_stmt);
     auto* var_type = ty_.Reference(var_store_type, ast::StorageClass::kNone);
@@ -3410,9 +3444,9 @@ bool FunctionEmitter::EmitStatementsInBasicBlock(const BlockInfo& block_info,
     auto* storage_type =
         RemapStorageClass(parser_impl_.ConvertType(def_inst->type_id()), id);
     AddStatement(create<ast::VariableDeclStatement>(
-        Source{},
-        parser_impl_.MakeVariable(id, ast::StorageClass::kNone, storage_type,
-                                  false, nullptr, ast::DecorationList{})));
+        Source{}, parser_impl_.MakeVariable(id, ast::StorageClass::kNone,
+                                            storage_type, false, false, nullptr,
+                                            ast::AttributeList{})));
     auto* type = ty_.Reference(storage_type, ast::StorageClass::kNone);
     identifier_types_.emplace(id, type);
   }
@@ -3484,8 +3518,8 @@ bool FunctionEmitter::EmitConstDefinition(
 
   expr = AddressOfIfNeeded(expr, &inst);
   auto* ast_const = parser_impl_.MakeVariable(
-      inst.result_id(), ast::StorageClass::kNone, expr.type, true, expr.expr,
-      ast::DecorationList{});
+      inst.result_id(), ast::StorageClass::kNone, expr.type, true, false,
+      expr.expr, ast::AttributeList{});
   if (!ast_const) {
     return false;
   }
@@ -3884,9 +3918,9 @@ TypedExpression FunctionEmitter::MaybeEmitCombinatorialValue(
                 std::move(params))};
   }
 
-  const auto intrinsic = GetIntrinsic(opcode);
-  if (intrinsic != sem::IntrinsicType::kNone) {
-    return MakeIntrinsicCall(inst);
+  const auto builtin = GetBuiltin(opcode);
+  if (builtin != sem::BuiltinType::kNone) {
+    return MakeBuiltinCall(inst);
   }
 
   if (opcode == SpvOpFMod) {
@@ -4108,41 +4142,6 @@ TypedExpression FunctionEmitter::EmitGlslStd450ExtInst(
       }
       default:
         break;
-    }
-  }
-
-  // Some GLSLStd450 builtins don't have a WGSL equivalent. Polyfill them.
-  switch (ext_opcode) {
-    case GLSLstd450Radians: {
-      auto degrees = MakeOperand(inst, 2);
-      TINT_ASSERT(Reader, degrees.type->IsFloatScalarOrVector());
-
-      constexpr auto kPiOver180 = static_cast<float>(3.141592653589793 / 180.0);
-      auto* factor = builder_.Expr(kPiOver180);
-      if (degrees.type->Is<F32>()) {
-        return {degrees.type, builder_.Mul(degrees.expr, factor)};
-      } else {
-        uint32_t size = degrees.type->As<Vector>()->size;
-        return {degrees.type,
-                builder_.Mul(degrees.expr,
-                             builder_.vec(builder_.ty.f32(), size, factor))};
-      }
-    }
-
-    case GLSLstd450Degrees: {
-      auto radians = MakeOperand(inst, 2);
-      TINT_ASSERT(Reader, radians.type->IsFloatScalarOrVector());
-
-      constexpr auto k180OverPi = static_cast<float>(180.0 / 3.141592653589793);
-      auto* factor = builder_.Expr(k180OverPi);
-      if (radians.type->Is<F32>()) {
-        return {radians.type, builder_.Mul(radians.expr, factor)};
-      } else {
-        uint32_t size = radians.type->As<Vector>()->size;
-        return {radians.type,
-                builder_.Mul(radians.expr,
-                             builder_.vec(builder_.ty.f32(), size, factor))};
-      }
     }
   }
 
@@ -5112,10 +5111,10 @@ bool FunctionEmitter::EmitControlBarrier(
   return true;
 }
 
-TypedExpression FunctionEmitter::MakeIntrinsicCall(
+TypedExpression FunctionEmitter::MakeBuiltinCall(
     const spvtools::opt::Instruction& inst) {
-  const auto intrinsic = GetIntrinsic(inst.opcode());
-  auto* name = sem::str(intrinsic);
+  const auto builtin = GetBuiltin(inst.opcode());
+  auto* name = sem::str(builtin);
   auto* ident = create<ast::IdentifierExpression>(
       Source{}, builder_.Symbols().Register(name));
 
@@ -5237,7 +5236,7 @@ const ast::Expression* FunctionEmitter::GetSamplerExpression(
 }
 
 bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
-  ast::ExpressionList params;
+  ast::ExpressionList args;
   const auto opcode = inst.opcode();
 
   // Form the texture operand.
@@ -5245,17 +5244,19 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
   if (!image) {
     return false;
   }
-  params.push_back(GetImageExpression(inst));
+  args.push_back(GetImageExpression(inst));
 
+  // Form the sampler operand, if needed.
   if (IsSampledImageAccess(opcode)) {
     // Form the sampler operand.
     if (auto* sampler = GetSamplerExpression(inst)) {
-      params.push_back(sampler);
+      args.push_back(sampler);
     } else {
       return false;
     }
   }
 
+  // Find the texture type.
   const Pointer* texture_ptr_type = parser_impl_.GetTypeForHandleVar(*image);
   if (!texture_ptr_type) {
     return Fail();
@@ -5275,15 +5276,30 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
   if (coords.empty()) {
     return false;
   }
-  params.insert(params.end(), coords.begin(), coords.end());
+  args.insert(args.end(), coords.begin(), coords.end());
   // Skip the coordinates operand.
   arg_index++;
 
   const auto num_args = inst.NumInOperands();
 
+  // Consumes the depth-reference argument, pushing it onto the end of
+  // the parameter list. Issues a diagnostic and returns false on error.
+  auto consume_dref = [&]() -> bool {
+    if (arg_index < num_args) {
+      args.push_back(MakeOperand(inst, arg_index).expr);
+      arg_index++;
+    } else {
+      return Fail()
+             << "image depth-compare instruction is missing a Dref operand: "
+             << inst.PrettyPrint();
+    }
+    return true;
+  };
+
   std::string builtin_name;
   bool use_level_of_detail_suffix = true;
   bool is_dref_sample = false;
+  bool is_gather_or_dref_gather = false;
   bool is_non_dref_sample = false;
   switch (opcode) {
     case SpvOpImageSampleImplicitLod:
@@ -5299,18 +5315,27 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
     case SpvOpImageSampleProjDrefExplicitLod:
       is_dref_sample = true;
       builtin_name = "textureSampleCompare";
-      if (arg_index < num_args) {
-        params.push_back(MakeOperand(inst, arg_index).expr);
-        arg_index++;
-      } else {
-        return Fail()
-               << "image depth-compare instruction is missing a Dref operand: "
-               << inst.PrettyPrint();
+      if (!consume_dref()) {
+        return false;
       }
       break;
     case SpvOpImageGather:
+      is_gather_or_dref_gather = true;
+      builtin_name = "textureGather";
+      if (!texture_type->Is<DepthTexture>()) {
+        // The explicit component is the *first* argument in WGSL.
+        args.insert(args.begin(), ToI32(MakeOperand(inst, arg_index)).expr);
+      }
+      // Skip over the component operand, even for depth textures.
+      arg_index++;
+      break;
     case SpvOpImageDrefGather:
-      return Fail() << " image gather is not yet supported";
+      is_gather_or_dref_gather = true;
+      builtin_name = "textureGatherCompare";
+      if (!consume_dref()) {
+        return false;
+      }
+      break;
     case SpvOpImageFetch:
     case SpvOpImageRead:
       // Read a single texel from a sampled or storage image.
@@ -5328,7 +5353,7 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
           return false;
         }
 
-        params.push_back(converted_texel);
+        args.push_back(converted_texel);
         arg_index++;
       } else {
         return Fail() << "image write is missing a Texel operand: "
@@ -5354,8 +5379,13 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                        "level-of-detail bias: "
                     << inst.PrettyPrint();
     }
+    if (is_gather_or_dref_gather) {
+      return Fail() << "WGSL does not support image gather with "
+                       "level-of-detail bias: "
+                    << inst.PrettyPrint();
+    }
     builtin_name += "Bias";
-    params.push_back(MakeOperand(inst, arg_index).expr);
+    args.push_back(MakeOperand(inst, arg_index).expr);
     image_operands_mask ^= SpvImageOperandsBiasMask;
     arg_index++;
   }
@@ -5363,9 +5393,11 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
     if (use_level_of_detail_suffix) {
       builtin_name += "Level";
     }
-    if (is_dref_sample) {
+    if (is_dref_sample || is_gather_or_dref_gather) {
       // Metal only supports Lod = 0 for comparison sampling without
       // derivatives.
+      // Vulkan SPIR-V does not allow Lod with OpImageGather or
+      // OpImageDrefGather.
       if (!IsFloatZero(inst.GetSingleWordInOperand(arg_index))) {
         return Fail() << "WGSL comparison sampling without derivatives "
                          "requires level-of-detail 0.0"
@@ -5380,7 +5412,7 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
         // Convert it to a signed integer type.
         lod = ToI32(lod);
       }
-      params.push_back(lod.expr);
+      args.push_back(lod.expr);
     }
 
     image_operands_mask ^= SpvImageOperandsLodMask;
@@ -5390,7 +5422,7 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                   ->IsAnyOf<DepthMultisampledTexture, MultisampledTexture>()) {
     // textureLoad requires an explicit level-of-detail parameter for
     // non-multisampled texture types.
-    params.push_back(parser_impl_.MakeNullValue(ty_.I32()));
+    args.push_back(parser_impl_.MakeNullValue(ty_.I32()));
   }
   if (arg_index + 1 < num_args &&
       (image_operands_mask & SpvImageOperandsGradMask)) {
@@ -5399,16 +5431,22 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                        "explicit gradient: "
                     << inst.PrettyPrint();
     }
+    if (is_gather_or_dref_gather) {
+      return Fail() << "WGSL does not support image gather with "
+                       "explicit gradient: "
+                    << inst.PrettyPrint();
+    }
     builtin_name += "Grad";
-    params.push_back(MakeOperand(inst, arg_index).expr);
-    params.push_back(MakeOperand(inst, arg_index + 1).expr);
+    args.push_back(MakeOperand(inst, arg_index).expr);
+    args.push_back(MakeOperand(inst, arg_index + 1).expr);
     image_operands_mask ^= SpvImageOperandsGradMask;
     arg_index += 2;
   }
   if (arg_index < num_args &&
       (image_operands_mask & SpvImageOperandsConstOffsetMask)) {
-    if (!IsImageSampling(opcode)) {
-      return Fail() << "ConstOffset is only permitted for sampling operations: "
+    if (!IsImageSamplingOrGatherOrDrefGather(opcode)) {
+      return Fail() << "ConstOffset is only permitted for sampling, gather, or "
+                       "depth-reference gather operations: "
                     << inst.PrettyPrint();
     }
     switch (texture_type->dims) {
@@ -5422,14 +5460,14 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                       << inst.PrettyPrint();
     }
 
-    params.push_back(ToSignedIfUnsigned(MakeOperand(inst, arg_index)).expr);
+    args.push_back(ToSignedIfUnsigned(MakeOperand(inst, arg_index)).expr);
     image_operands_mask ^= SpvImageOperandsConstOffsetMask;
     arg_index++;
   }
   if (arg_index < num_args &&
       (image_operands_mask & SpvImageOperandsSampleMask)) {
     // TODO(dneto): only permitted with ImageFetch
-    params.push_back(ToI32(MakeOperand(inst, arg_index)).expr);
+    args.push_back(ToI32(MakeOperand(inst, arg_index)).expr);
     image_operands_mask ^= SpvImageOperandsSampleMask;
     arg_index++;
   }
@@ -5438,10 +5476,16 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
                   << "): " << inst.PrettyPrint();
   }
 
+  // If any of the arguments are nullptr, then we've failed.
+  if (std::any_of(args.begin(), args.end(),
+                  [](auto* expr) { return expr == nullptr; })) {
+    return false;
+  }
+
   auto* ident = create<ast::IdentifierExpression>(
       Source{}, builder_.Symbols().Register(builtin_name));
   auto* call_expr =
-      create<ast::CallExpression>(Source{}, ident, std::move(params));
+      create<ast::CallExpression>(Source{}, ident, std::move(args));
 
   if (inst.type_id() != 0) {
     // It returns a value.
@@ -5461,8 +5505,8 @@ bool FunctionEmitter::EmitImageAccess(const spvtools::opt::Instruction& inst) {
     //   compare sample      f32   DrefImplicitLod      f32
     //   compare sample      f32   DrefExplicitLod      f32
     //   texel load          vec4  ImageFetch           f32
-    //   normal gather       vec4  ImageGather          vec4 TODO(dneto)
-    //   dref gather         vec4  ImageFetch           vec4 TODO(dneto)
+    //   normal gather       vec4  ImageGather          vec4
+    //   dref gather         vec4  ImageDrefGather      vec4
     // Construct a 4-element vector with the result from the builtin in the
     // first component.
     if (texture_type->IsAnyOf<DepthTexture, DepthMultisampledTexture>()) {
@@ -5850,7 +5894,7 @@ TypedExpression FunctionEmitter::MakeArrayLength(
   auto* member_access = create<ast::MemberAccessorExpression>(
       Source{}, member_expr.expr, member_ident);
 
-  // Generate the intrinsic function call.
+  // Generate the builtin function call.
   auto* call_expr =
       builder_.Call(Source{}, "arrayLength", builder_.AddressOf(member_access));
 

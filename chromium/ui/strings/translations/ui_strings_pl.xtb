@@ -100,6 +100,7 @@
 <translation id="4250229828105606438">Zrzut ekranu</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{miesiąc temu}few{# miesiące temu}many{# miesięcy temu}other{# miesiąca temu}}</translation>
 <translation id="4289300219472526559">Zacznij mówić</translation>
+<translation id="4289540628985791613">Przegląd</translation>
 <translation id="4306392492252714209">Usuń ze schowka.</translation>
 <translation id="4491109536499578614">Obraz</translation>
 <translation id="4565377596337484307">Ukryj hasło</translation>
@@ -167,7 +168,7 @@
 <translation id="7238427729722629793">{MINUTES,plural, =1{Pozostała 1 min}few{Pozostały # min}many{Pozostało # min}other{Pozostało # min}}</translation>
 <translation id="7365057348334984696">{MINUTES,plural, =1{1 min temu}few{# min temu}many{# min temu}other{# min temu}}</translation>
 <translation id="7389409599945284130">– <ph name="MESSAGE" /></translation>
-<translation id="7410957453383678442">{MINUTES,plural, =1{Pozostała 1 minuta}few{Pozostały # minuty}many{Pozostały # minut}other{Pozostało # minuty}}</translation>
+<translation id="7410957453383678442">{MINUTES,plural, =1{Pozostała 1 minuta}few{Pozostały # minuty}many{Pozostało # minut}other{Pozostało # minuty}}</translation>
 <translation id="7437971918971306061">Kolumna <ph name="COLUMN_NAME" /> nie została posortowana.</translation>
 <translation id="7460907917090416791"><ph name="QUANTITY" /> TB</translation>
 <translation id="7507604095951736240">Emotikony</translation>

@@ -158,7 +158,7 @@ void CLZWDecoder::AddCode(uint32_t prefix_code, uint8_t append_char) {
 }
 
 void CLZWDecoder::DecodeString(uint32_t code) {
-  while (1) {
+  while (true) {
     int index = code - 258;
     if (index < 0 || static_cast<uint32_t>(index) >= current_code_)
       break;
@@ -196,7 +196,7 @@ bool CLZWDecoder::Decode() {
   // this size.
   dest_buf_size_ = 512;
   dest_buf_.reset(FX_Alloc(uint8_t, dest_buf_size_));
-  while (1) {
+  while (true) {
     if (src_bit_pos_ + code_len_ > src_span_.size() * 8)
       break;
 
@@ -533,7 +533,9 @@ void FlateUncompress(pdfium::span<const uint8_t> src_buf,
   FlateInput(context.get(), src_buf);
 
   const uint32_t kMaxInitialAllocSize = 10000000;
-  uint32_t guess_size = orig_size ? orig_size : src_buf.size() * 2;
+  uint32_t guess_size =
+      orig_size ? orig_size
+                : pdfium::base::checked_cast<uint32_t>(src_buf.size() * 2);
   guess_size = std::min(guess_size, kMaxInitialAllocSize);
 
   uint32_t buf_size = guess_size;
@@ -545,7 +547,7 @@ void FlateUncompress(pdfium::span<const uint8_t> src_buf,
   std::vector<std::unique_ptr<uint8_t, FxFreeDeleter>> result_tmp_bufs;
   {
     std::unique_ptr<uint8_t, FxFreeDeleter> cur_buf = std::move(guess_buf);
-    while (1) {
+    while (true) {
       uint32_t ret = FlateOutput(context.get(), cur_buf.get(), buf_size);
       uint32_t avail_buf_size = FlateGetAvailOut(context.get());
       if (ret != Z_OK || avail_buf_size != 0) {
@@ -865,14 +867,15 @@ bool FlateModule::Encode(pdfium::span<const uint8_t> src_span,
                          std::unique_ptr<uint8_t, FxFreeDeleter>* dest_buf,
                          uint32_t* dest_size) {
   const uint8_t* src_buf = src_span.data();
-  uint32_t src_size = src_span.size();
-  *dest_size = src_size + src_size / 1000 + 12;
+  FX_SAFE_UINT32 src_size = src_span.size();
+  *dest_size = (src_size + src_size / 1000 + 12).ValueOrDie();
   dest_buf->reset(FX_Alloc(uint8_t, *dest_size));
   unsigned long temp_size = *dest_size;
-  if (!FlateCompress(dest_buf->get(), &temp_size, src_buf, src_size))
+  if (!FlateCompress(dest_buf->get(), &temp_size, src_buf,
+                     src_size.ValueOrDie())) {
     return false;
-
-  *dest_size = (uint32_t)temp_size;
+  }
+  *dest_size = pdfium::base::checked_cast<uint32_t>(temp_size);
   return true;
 }
 

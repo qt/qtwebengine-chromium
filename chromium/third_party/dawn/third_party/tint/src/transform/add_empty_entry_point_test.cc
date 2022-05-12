@@ -24,11 +24,26 @@ namespace {
 
 using AddEmptyEntryPointTest = TransformTest;
 
+TEST_F(AddEmptyEntryPointTest, ShouldRunEmptyModule) {
+  auto* src = R"()";
+
+  EXPECT_TRUE(ShouldRun<AddEmptyEntryPoint>(src));
+}
+
+TEST_F(AddEmptyEntryPointTest, ShouldRunExistingEntryPoint) {
+  auto* src = R"(
+[[stage(compute), workgroup_size(1)]]
+fn existing() {}
+)";
+
+  EXPECT_FALSE(ShouldRun<AddEmptyEntryPoint>(src));
+}
+
 TEST_F(AddEmptyEntryPointTest, EmptyModule) {
   auto* src = R"()";
 
   auto* expect = R"(
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn unused_entry_point() {
 }
 )";
@@ -40,7 +55,7 @@ fn unused_entry_point() {
 
 TEST_F(AddEmptyEntryPointTest, ExistingEntryPoint) {
   auto* src = R"(
-[[stage(fragment)]]
+@stage(fragment)
 fn main() {
 }
 )";
@@ -56,7 +71,7 @@ TEST_F(AddEmptyEntryPointTest, NameClash) {
   auto* src = R"(var<private> unused_entry_point : f32;)";
 
   auto* expect = R"(
-[[stage(compute), workgroup_size(1)]]
+@stage(compute) @workgroup_size(1)
 fn unused_entry_point_1() {
 }
 

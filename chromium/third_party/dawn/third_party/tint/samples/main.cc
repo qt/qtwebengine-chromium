@@ -30,6 +30,7 @@
 #endif  // TINT_BUILD_SPV_READER
 
 #include "src/utils/io/command.h"
+#include "src/utils/string.h"
 #include "src/val/val.h"
 #include "tint/tint.h"
 
@@ -103,10 +104,7 @@ const char kUsage[] = R"(Usage: tint [options] <input-file>
   -o <name>                 -- Output file name.  Use "-" for standard output
   --transform <name list>   -- Runs transforms, name list is comma separated
                                Available transforms:
-                                first_index_offset
-                                fold_trivial_single_use_lets
-                                renamer
-                                robustness
+${transforms}
   --parse-only              -- Stop after parsing the input
   --disable-workgroup-init  -- Disable workgroup memory zero initialization.
   --demangle                -- Preserve original source names. Demangle them.
@@ -253,80 +251,42 @@ std::string SampledKindToString(
   return "Unknown";
 }
 
-std::string ImageFormatToString(
-    tint::inspector::ResourceBinding::ImageFormat format) {
+std::string TexelFormatToString(
+    tint::inspector::ResourceBinding::TexelFormat format) {
   switch (format) {
-    case tint::inspector::ResourceBinding::ImageFormat::kR8Unorm:
-      return "R8Unorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kR8Snorm:
-      return "R8Snorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kR8Uint:
-      return "R8Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR8Sint:
-      return "R8Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR16Uint:
-      return "R16Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR16Sint:
-      return "R16Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR16Float:
-      return "R16Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg8Unorm:
-      return "Rg8Unorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg8Snorm:
-      return "Rg8Snorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg8Uint:
-      return "Rg8Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg8Sint:
-      return "Rg8Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR32Uint:
+    case tint::inspector::ResourceBinding::TexelFormat::kR32Uint:
       return "R32Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR32Sint:
+    case tint::inspector::ResourceBinding::TexelFormat::kR32Sint:
       return "R32Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kR32Float:
+    case tint::inspector::ResourceBinding::TexelFormat::kR32Float:
       return "R32Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg16Uint:
-      return "Rg16Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg16Sint:
-      return "Rg16Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg16Float:
-      return "Rg16Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba8Unorm:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba8Unorm:
       return "Rgba8Unorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba8UnormSrgb:
-      return "Rgba8UnormSrgb";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba8Snorm:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba8Snorm:
       return "Rgba8Snorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba8Uint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba8Uint:
       return "Rgba8Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba8Sint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba8Sint:
       return "Rgba8Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kBgra8Unorm:
-      return "Bgra8Unorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kBgra8UnormSrgb:
-      return "Bgra8UnormSrgb";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgb10A2Unorm:
-      return "Rgb10A2Unorm";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg11B10Float:
-      return "Rg11B10Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg32Uint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRg32Uint:
       return "Rg32Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg32Sint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRg32Sint:
       return "Rg32Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRg32Float:
+    case tint::inspector::ResourceBinding::TexelFormat::kRg32Float:
       return "Rg32Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba16Uint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba16Uint:
       return "Rgba16Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba16Sint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba16Sint:
       return "Rgba16Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba16Float:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba16Float:
       return "Rgba16Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba32Uint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba32Uint:
       return "Rgba32Uint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba32Sint:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba32Sint:
       return "Rgba32Sint";
-    case tint::inspector::ResourceBinding::ImageFormat::kRgba32Float:
+    case tint::inspector::ResourceBinding::TexelFormat::kRgba32Float:
       return "Rgba32Float";
-    case tint::inspector::ResourceBinding::ImageFormat::kNone:
+    case tint::inspector::ResourceBinding::TexelFormat::kNone:
       return "None";
   }
   return "Unknown";
@@ -475,13 +435,7 @@ bool ReadFile(const std::string& input_file, std::vector<T>* buffer) {
   }
 
   fseek(file, 0, SEEK_END);
-  uint64_t tell_file_size = static_cast<uint64_t>(ftell(file));
-  if (tell_file_size <= 0) {
-    std::cerr << "Input file of incorrect size: " << input_file << std::endl;
-    fclose(file);
-    return {};
-  }
-  const auto file_size = static_cast<size_t>(tell_file_size);
+  const auto file_size = static_cast<size_t>(ftell(file));
   if (0 != (file_size % sizeof(T))) {
     std::cerr << "File " << input_file
               << " does not contain an integral number of objects: "
@@ -868,17 +822,17 @@ EShLanguage pipeline_stage_to_esh_language(tint::ast::PipelineStage stage) {
 /// @returns true on success
 bool GenerateGlsl(const tint::Program* program, const Options& options) {
 #if TINT_BUILD_GLSL_WRITER
-  bool success = true;
   if (options.validate) {
     glslang::InitializeProcess();
   }
-  tint::writer::glsl::Options gen_options;
-  tint::inspector::Inspector inspector(program);
-  for (auto& entry_point : inspector.GetEntryPoints()) {
+
+  auto generate = [&](const tint::Program* prg,
+                      const std::string entry_point_name) -> bool {
+    tint::writer::glsl::Options gen_options;
     auto result =
-        tint::writer::glsl::Generate(program, gen_options, entry_point.name);
+        tint::writer::glsl::Generate(prg, gen_options, entry_point_name);
     if (!result.success) {
-      PrintWGSL(std::cerr, *program);
+      PrintWGSL(std::cerr, *prg);
       std::cerr << "Failed to generate: " << result.error << std::endl;
       return false;
     }
@@ -902,10 +856,24 @@ bool GenerateGlsl(const tint::Program* program, const Options& options) {
           std::cerr << "Error parsing GLSL shader:\n"
                     << shader.getInfoLog() << "\n"
                     << shader.getInfoDebugLog() << "\n";
-          success = false;
+          return false;
         }
       }
     }
+    return true;
+  };
+
+  tint::inspector::Inspector inspector(program);
+
+  if (inspector.GetEntryPoints().empty()) {
+    // Pass empty string here so that the GLSL generator will generate
+    // code for all functions, reachable or not.
+    return generate(program, "");
+  }
+
+  bool success = true;
+  for (auto& entry_point : inspector.GetEntryPoints()) {
+    success &= generate(program, entry_point.name);
   }
   return success;
 #else
@@ -939,8 +907,43 @@ int main(int argc, const char** argv) {
     return 1;
   }
 
+  struct TransformFactory {
+    const char* name;
+    std::function<void(tint::transform::Manager& manager,
+                       tint::transform::DataMap& inputs)>
+        make;
+  };
+  std::vector<TransformFactory> transforms = {
+      {"first_index_offset",
+       [](tint::transform::Manager& m, tint::transform::DataMap& i) {
+         i.Add<tint::transform::FirstIndexOffset::BindingPoint>(0, 0);
+         m.Add<tint::transform::FirstIndexOffset>();
+       }},
+      {"fold_trivial_single_use_lets",
+       [](tint::transform::Manager& m, tint::transform::DataMap&) {
+         m.Add<tint::transform::FoldTrivialSingleUseLets>();
+       }},
+      {"renamer",
+       [](tint::transform::Manager& m, tint::transform::DataMap&) {
+         m.Add<tint::transform::Renamer>();
+       }},
+      {"robustness",
+       [](tint::transform::Manager& m, tint::transform::DataMap&) {
+         m.Add<tint::transform::Robustness>();
+       }},
+  };
+  auto transform_names = [&] {
+    std::stringstream names;
+    for (auto& t : transforms) {
+      names << "   " << t.name << std::endl;
+    }
+    return names.str();
+  };
+
   if (options.show_help) {
-    std::cout << kUsage << std::endl;
+    std::string usage =
+        tint::utils::ReplaceAll(kUsage, "${transforms}", transform_names());
+    std::cout << usage << std::endl;
     return 0;
   }
 
@@ -1073,18 +1076,17 @@ int main(int argc, const char** argv) {
     // be run that needs user input. Should we find a way to support that here
     // maybe through a provided file?
 
-    if (name == "first_index_offset") {
-      transform_inputs.Add<tint::transform::FirstIndexOffset::BindingPoint>(0,
-                                                                            0);
-      transform_manager.Add<tint::transform::FirstIndexOffset>();
-    } else if (name == "fold_trivial_single_use_lets") {
-      transform_manager.Add<tint::transform::FoldTrivialSingleUseLets>();
-    } else if (name == "renamer") {
-      transform_manager.Add<tint::transform::Renamer>();
-    } else if (name == "robustness") {
-      transform_manager.Add<tint::transform::Robustness>();
-    } else {
-      std::cerr << "Unknown transform name: " << name << std::endl;
+    bool found = false;
+    for (auto& t : transforms) {
+      if (t.name == name) {
+        t.make(transform_manager, transform_inputs);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      std::cerr << "Unknown transform: " << name << std::endl;
+      std::cerr << "Available transforms: " << std::endl << transform_names();
       return 1;
     }
   }
@@ -1107,9 +1109,6 @@ int main(int argc, const char** argv) {
     }
 #if TINT_BUILD_GLSL_WRITER
     case Format::kGlsl: {
-      transform_inputs.Add<tint::transform::Renamer::Config>(
-          tint::transform::Renamer::Target::kGlslKeywords);
-      transform_manager.Add<tint::transform::Renamer>();
       break;
     }
 #endif  // TINT_BUILD_GLSL_WRITER
@@ -1162,7 +1161,7 @@ int main(int argc, const char** argv) {
         std::cout << "\t\t sampled_kind = "
                   << SampledKindToString(binding.sampled_kind) << std::endl;
         std::cout << "\t\t image_format = "
-                  << ImageFormatToString(binding.image_format) << std::endl;
+                  << TexelFormatToString(binding.image_format) << std::endl;
       }
     }
     std::cout << std::string(80, '-') << std::endl;

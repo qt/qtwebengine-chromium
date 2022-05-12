@@ -15,7 +15,7 @@ ci.defaults.set(
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
     goma_jobs = goma.jobs.MANY_JOBS_FOR_CI,
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     main_console_view = "main",
     pool = ci.DEFAULT_POOL,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
@@ -108,6 +108,8 @@ linux_memory_builder(
     # TODO(crbug.com/1030593): Builds take more than 3 hours sometimes. Remove
     # once the builds are faster.
     execution_timeout = 6 * time.hour,
+    ssd = True,
+    cores = 16,
 )
 
 linux_memory_builder(
@@ -126,6 +128,8 @@ linux_memory_builder(
         short_name = "bld",
     ),
     execution_timeout = 4 * time.hour,
+    ssd = True,
+    cores = 16,
 )
 
 linux_memory_builder(
@@ -209,7 +213,6 @@ ci.builder(
         category = "linux|webkit",
         short_name = "asn",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
     goma_backend = None,
     reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
     reclient_instance = rbe_instance.DEFAULT,
@@ -221,7 +224,6 @@ ci.builder(
         category = "linux|webkit",
         short_name = "lk",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
     goma_backend = None,
     reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
     reclient_instance = rbe_instance.DEFAULT,
@@ -233,7 +235,6 @@ ci.builder(
         category = "linux|webkit",
         short_name = "msn",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
     goma_backend = None,
     reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
     reclient_instance = rbe_instance.DEFAULT,
@@ -245,7 +246,6 @@ ci.builder(
         category = "android",
         short_name = "asn",
     ),
-    os = os.LINUX_DEFAULT,
     sheriff_rotations = sheriff_rotations.ANDROID,
     tree_closing = False,
 )
@@ -259,7 +259,6 @@ ci.builder(
     builderless = 1,
     cores = 32,
     tree_closing = False,
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(

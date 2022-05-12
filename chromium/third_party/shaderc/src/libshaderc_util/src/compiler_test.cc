@@ -165,7 +165,7 @@ void main() { o = clamp(i, vec4(0.5), vec4(1.0)); }
 std::string Disassemble(const std::vector<uint32_t> binary) {
   std::string result;
   shaderc_util::SpirvToolsDisassemble(Compiler::TargetEnv::Vulkan,
-                                      Compiler::TargetEnvVersion::Vulkan_1_2,
+                                      Compiler::TargetEnvVersion::Vulkan_1_3,
                                       binary, &result);
   return result;
 }
@@ -385,6 +385,12 @@ TEST_F(CompilerTest, SpirvTargetVersion1_4Succeeds) {
 
 TEST_F(CompilerTest, SpirvTargetVersion1_5Succeeds) {
   compiler_.SetTargetSpirv(Compiler::SpirvVersion::v1_5);
+  EXPECT_TRUE(SimpleCompilationSucceeds(kVulkanVertexShader, EShLangVertex));
+  EXPECT_THAT(errors_, Eq(""));
+}
+
+TEST_F(CompilerTest, SpirvTargetVersion1_6Succeeds) {
+  compiler_.SetTargetSpirv(Compiler::SpirvVersion::v1_6);
   EXPECT_TRUE(SimpleCompilationSucceeds(kVulkanVertexShader, EShLangVertex));
   EXPECT_THAT(errors_, Eq(""));
 }

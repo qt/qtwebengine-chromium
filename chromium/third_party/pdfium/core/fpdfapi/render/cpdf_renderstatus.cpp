@@ -1126,11 +1126,12 @@ void CPDF_RenderStatus::DrawTextPathWithPattern(const CPDF_TextObject* textobj,
     }
     matrix.Concat(CFX_Matrix(font_size, 0, 0, font_size, charpos.m_Origin.x,
                              charpos.m_Origin.y));
+    matrix.Concat(mtTextMatrix);
     path.set_stroke(stroke);
     path.set_filltype(fill ? CFX_FillRenderOptions::FillType::kWinding
                            : CFX_FillRenderOptions::FillType::kNoFill);
     path.path().Append(*pPath, &matrix);
-    path.SetPathMatrix(mtTextMatrix);
+    path.SetPathMatrix(CFX_Matrix());
     ProcessPath(&path, mtObj2Device);
   }
 }
@@ -1402,7 +1403,7 @@ RetainPtr<CFX_DIBitmap> CPDF_RenderStatus::LoadSMask(
   int width = pClipRect->right - pClipRect->left;
   int height = pClipRect->bottom - pClipRect->top;
   FXDIB_Format format;
-#if defined(OS_APPLE) || defined(_SKIA_SUPPORT_) || \
+#if BUILDFLAG(IS_APPLE) || defined(_SKIA_SUPPORT_) || \
     defined(_SKIA_SUPPORT_PATHS_)
   format = bLuminosity ? FXDIB_Format::kRgb32 : FXDIB_Format::k8bppMask;
 #else

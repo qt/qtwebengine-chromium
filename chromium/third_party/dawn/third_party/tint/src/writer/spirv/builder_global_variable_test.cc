@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/ast/override_decoration.h"
-#include "src/ast/stage_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/id_attribute.h"
+#include "src/ast/stage_attribute.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/writer/spirv/spv_dump.h"
 #include "src/writer/spirv/test_helper.h"
 
@@ -130,9 +130,9 @@ TEST_F(BuilderTest, GlobalVar_Complex_ConstructorWithExtract) {
 TEST_F(BuilderTest, GlobalVar_WithBindingAndGroup) {
   auto* v = Global("var", ty.sampler(ast::SamplerKind::kSampler),
                    ast::StorageClass::kNone, nullptr,
-                   ast::DecorationList{
-                       create<ast::BindingDecoration>(2),
-                       create<ast::GroupDecoration>(3),
+                   ast::AttributeList{
+                       create<ast::BindingAttribute>(2),
+                       create<ast::GroupAttribute>(3),
                    });
 
   spirv::Builder& b = Build();
@@ -150,10 +150,10 @@ OpDecorate %1 DescriptorSet 3
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Bool) {
-  auto* v = GlobalConst("var", ty.bool_(), Expr(true),
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(1200),
-                        });
+  auto* v = Override("var", ty.bool_(), Expr(true),
+                     ast::AttributeList{
+                         Id(1200),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -168,10 +168,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Bool) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Bool_ZeroValue) {
-  auto* v = GlobalConst("var", ty.bool_(), Construct<bool>(),
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(1200),
-                        });
+  auto* v = Override("var", ty.bool_(), Construct<bool>(),
+                     ast::AttributeList{
+                         Id(1200),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -186,10 +186,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Bool_ZeroValue) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Bool_NoConstructor) {
-  auto* v = GlobalConst("var", ty.bool_(), nullptr,
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(1200),
-                        });
+  auto* v = Override("var", ty.bool_(), nullptr,
+                     ast::AttributeList{
+                         Id(1200),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -204,10 +204,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Bool_NoConstructor) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Scalar) {
-  auto* v = GlobalConst("var", ty.f32(), Expr(2.f),
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(0),
-                        });
+  auto* v = Override("var", ty.f32(), Expr(2.f),
+                     ast::AttributeList{
+                         Id(0),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -222,10 +222,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Scalar) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Scalar_ZeroValue) {
-  auto* v = GlobalConst("var", ty.f32(), Construct<f32>(),
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(0),
-                        });
+  auto* v = Override("var", ty.f32(), Construct<f32>(),
+                     ast::AttributeList{
+                         Id(0),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -240,10 +240,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Scalar_ZeroValue) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Scalar_F32_NoConstructor) {
-  auto* v = GlobalConst("var", ty.f32(), nullptr,
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(0),
-                        });
+  auto* v = Override("var", ty.f32(), nullptr,
+                     ast::AttributeList{
+                         Id(0),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -258,10 +258,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Scalar_F32_NoConstructor) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Scalar_I32_NoConstructor) {
-  auto* v = GlobalConst("var", ty.i32(), nullptr,
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(0),
-                        });
+  auto* v = Override("var", ty.i32(), nullptr,
+                     ast::AttributeList{
+                         Id(0),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -276,10 +276,10 @@ TEST_F(BuilderTest, GlobalVar_Override_Scalar_I32_NoConstructor) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_Scalar_U32_NoConstructor) {
-  auto* v = GlobalConst("var", ty.u32(), nullptr,
-                        ast::DecorationList{
-                            create<ast::OverrideDecoration>(0),
-                        });
+  auto* v = Override("var", ty.u32(), nullptr,
+                     ast::AttributeList{
+                         Id(0),
+                     });
 
   spirv::Builder& b = Build();
 
@@ -294,14 +294,11 @@ TEST_F(BuilderTest, GlobalVar_Override_Scalar_U32_NoConstructor) {
 }
 
 TEST_F(BuilderTest, GlobalVar_Override_NoId) {
-  auto* var_a = GlobalConst("a", ty.bool_(), Expr(true),
-                            ast::DecorationList{
-                                create<ast::OverrideDecoration>(0),
-                            });
-  auto* var_b = GlobalConst("b", ty.bool_(), Expr(false),
-                            ast::DecorationList{
-                                create<ast::OverrideDecoration>(),
-                            });
+  auto* var_a = Override("a", ty.bool_(), Expr(true),
+                         ast::AttributeList{
+                             Id(0),
+                         });
+  auto* var_b = Override("b", ty.bool_(), Expr(false));
 
   spirv::Builder& b = Build();
 
@@ -385,18 +382,17 @@ TEST_F(BuilderTest, GlobalVar_DeclReadOnly) {
                           Member("a", ty.i32()),
                           Member("b", ty.i32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
-  auto* var =
-      Global("b", ty.Of(A), ast::StorageClass::kStorage, ast::Access::kRead,
-             ast::DecorationList{
-                 create<ast::BindingDecoration>(0),
-                 create<ast::GroupDecoration>(0),
-             });
+  Global("b", ty.Of(A), ast::StorageClass::kStorage, ast::Access::kRead,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
 
-  spirv::Builder& b = Build();
+  spirv::Builder& b = SanitizeAndBuild();
 
-  EXPECT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+  ASSERT_TRUE(b.Build());
 
   EXPECT_EQ(DumpInstructions(b.annots()), R"(OpDecorate %3 Block
 OpMemberDecorate %3 0 Offset 0
@@ -409,11 +405,14 @@ OpDecorate %1 DescriptorSet 0
 OpMemberName %3 0 "a"
 OpMemberName %3 1 "b"
 OpName %1 "b"
+OpName %7 "unused_entry_point"
 )");
   EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
 %3 = OpTypeStruct %4 %4
 %2 = OpTypePointer StorageBuffer %3
 %1 = OpVariable %2 StorageBuffer
+%6 = OpTypeVoid
+%5 = OpTypeFunction %6
 )");
 }
 
@@ -425,18 +424,17 @@ TEST_F(BuilderTest, GlobalVar_TypeAliasDeclReadOnly) {
   // var b<storage, read> : B
 
   auto* A = Structure("A", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* B = Alias("B", ty.Of(A));
-  auto* var =
-      Global("b", ty.Of(B), ast::StorageClass::kStorage, ast::Access::kRead,
-             ast::DecorationList{
-                 create<ast::BindingDecoration>(0),
-                 create<ast::GroupDecoration>(0),
-             });
+  Global("b", ty.Of(B), ast::StorageClass::kStorage, ast::Access::kRead,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
 
-  spirv::Builder& b = Build();
+  spirv::Builder& b = SanitizeAndBuild();
 
-  EXPECT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+  ASSERT_TRUE(b.Build());
 
   EXPECT_EQ(DumpInstructions(b.annots()), R"(OpDecorate %3 Block
 OpMemberDecorate %3 0 Offset 0
@@ -447,11 +445,14 @@ OpDecorate %1 DescriptorSet 0
   EXPECT_EQ(DumpInstructions(b.debug()), R"(OpName %3 "A"
 OpMemberName %3 0 "a"
 OpName %1 "b"
+OpName %7 "unused_entry_point"
 )");
   EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
 %3 = OpTypeStruct %4
 %2 = OpTypePointer StorageBuffer %3
 %1 = OpVariable %2 StorageBuffer
+%6 = OpTypeVoid
+%5 = OpTypeFunction %6
 )");
 }
 
@@ -463,18 +464,17 @@ TEST_F(BuilderTest, GlobalVar_TypeAliasAssignReadOnly) {
   // var<storage, read> b : B
 
   auto* A = Structure("A", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* B = Alias("B", ty.Of(A));
-  auto* var =
-      Global("b", ty.Of(B), ast::StorageClass::kStorage, ast::Access::kRead,
-             ast::DecorationList{
-                 create<ast::BindingDecoration>(0),
-                 create<ast::GroupDecoration>(0),
-             });
+  Global("b", ty.Of(B), ast::StorageClass::kStorage, ast::Access::kRead,
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
+         });
 
-  spirv::Builder& b = Build();
+  spirv::Builder& b = SanitizeAndBuild();
 
-  EXPECT_TRUE(b.GenerateGlobalVariable(var)) << b.error();
+  ASSERT_TRUE(b.Build());
 
   EXPECT_EQ(DumpInstructions(b.annots()), R"(OpDecorate %3 Block
 OpMemberDecorate %3 0 Offset 0
@@ -485,11 +485,14 @@ OpDecorate %1 DescriptorSet 0
   EXPECT_EQ(DumpInstructions(b.debug()), R"(OpName %3 "A"
 OpMemberName %3 0 "a"
 OpName %1 "b"
+OpName %7 "unused_entry_point"
 )");
   EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
 %3 = OpTypeStruct %4
 %2 = OpTypePointer StorageBuffer %3
 %1 = OpVariable %2 StorageBuffer
+%6 = OpTypeVoid
+%5 = OpTypeFunction %6
 )");
 }
 
@@ -501,24 +504,21 @@ TEST_F(BuilderTest, GlobalVar_TwoVarDeclReadOnly) {
   // var<storage, read_write> c : A
 
   auto* A = Structure("A", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
-  auto* var_b =
-      Global("b", ty.Of(A), ast::StorageClass::kStorage, ast::Access::kRead,
-             ast::DecorationList{
-                 create<ast::GroupDecoration>(0),
-                 create<ast::BindingDecoration>(0),
-             });
-  auto* var_c = Global("c", ty.Of(A), ast::StorageClass::kStorage,
-                       ast::Access::kReadWrite,
-                       ast::DecorationList{
-                           create<ast::GroupDecoration>(1),
-                           create<ast::BindingDecoration>(0),
-                       });
+                      {create<ast::StructBlockAttribute>()});
+  Global("b", ty.Of(A), ast::StorageClass::kStorage, ast::Access::kRead,
+         ast::AttributeList{
+             create<ast::GroupAttribute>(0),
+             create<ast::BindingAttribute>(0),
+         });
+  Global("c", ty.Of(A), ast::StorageClass::kStorage, ast::Access::kReadWrite,
+         ast::AttributeList{
+             create<ast::GroupAttribute>(1),
+             create<ast::BindingAttribute>(0),
+         });
 
-  spirv::Builder& b = Build();
+  spirv::Builder& b = SanitizeAndBuild();
 
-  EXPECT_TRUE(b.GenerateGlobalVariable(var_b)) << b.error();
-  EXPECT_TRUE(b.GenerateGlobalVariable(var_c)) << b.error();
+  ASSERT_TRUE(b.Build());
 
   EXPECT_EQ(DumpInstructions(b.annots()),
             R"(OpDecorate %3 Block
@@ -533,12 +533,15 @@ OpDecorate %5 Binding 0
 OpMemberName %3 0 "a"
 OpName %1 "b"
 OpName %5 "c"
+OpName %8 "unused_entry_point"
 )");
   EXPECT_EQ(DumpInstructions(b.types()), R"(%4 = OpTypeInt 32 1
 %3 = OpTypeStruct %4
 %2 = OpTypePointer StorageBuffer %3
 %1 = OpVariable %2 StorageBuffer
 %5 = OpVariable %2 StorageBuffer
+%7 = OpTypeVoid
+%6 = OpTypeFunction %7
 )");
 }
 
@@ -546,13 +549,13 @@ TEST_F(BuilderTest, GlobalVar_TextureStorageWriteOnly) {
   // var<uniform_constant> a : texture_storage_2d<r32uint, write>;
 
   auto* type =
-      ty.storage_texture(ast::TextureDimension::k2d, ast::ImageFormat::kR32Uint,
+      ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Uint,
                          ast::Access::kWrite);
 
   auto* var_a = Global("a", type,
-                       ast::DecorationList{
-                           create<ast::BindingDecoration>(0),
-                           create<ast::GroupDecoration>(0),
+                       ast::AttributeList{
+                           create<ast::BindingAttribute>(0),
+                           create<ast::GroupAttribute>(0),
                        });
 
   spirv::Builder& b = Build();
@@ -579,21 +582,21 @@ TEST_F(BuilderTest, DISABLED_GlobalVar_TextureStorageWithDifferentAccess) {
   // var<uniform_constant> b : texture_storage_2d<r32uint, write>;
 
   auto* type_a =
-      ty.storage_texture(ast::TextureDimension::k2d, ast::ImageFormat::kR32Uint,
+      ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Uint,
                          ast::Access::kReadWrite);
   auto* var_a = Global("a", type_a, ast::StorageClass::kNone,
-                       ast::DecorationList{
-                           create<ast::BindingDecoration>(0),
-                           create<ast::GroupDecoration>(0),
+                       ast::AttributeList{
+                           create<ast::BindingAttribute>(0),
+                           create<ast::GroupAttribute>(0),
                        });
 
   auto* type_b =
-      ty.storage_texture(ast::TextureDimension::k2d, ast::ImageFormat::kR32Uint,
+      ty.storage_texture(ast::TextureDimension::k2d, ast::TexelFormat::kR32Uint,
                          ast::Access::kWrite);
   auto* var_b = Global("b", type_b, ast::StorageClass::kNone,
-                       ast::DecorationList{
-                           create<ast::BindingDecoration>(1),
-                           create<ast::GroupDecoration>(0),
+                       ast::AttributeList{
+                           create<ast::BindingAttribute>(1),
+                           create<ast::GroupAttribute>(0),
                        });
 
   spirv::Builder& b = Build();

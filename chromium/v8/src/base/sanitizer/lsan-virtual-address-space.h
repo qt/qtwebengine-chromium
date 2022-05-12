@@ -35,16 +35,31 @@ class V8_BASE_EXPORT LsanVirtualAddressSpace final
 
   bool FreePages(Address address, size_t size) override;
 
+  Address AllocateSharedPages(Address hint, size_t size,
+                              PagePermissions permissions,
+                              PlatformSharedMemoryHandle handle,
+                              uint64_t offset) override;
+
+  bool FreeSharedPages(Address address, size_t size) override;
+
   bool SetPagePermissions(Address address, size_t size,
                           PagePermissions permissions) override {
     return vas_->SetPagePermissions(address, size, permissions);
+  }
+
+  bool AllocateGuardRegion(Address address, size_t size) override {
+    return vas_->AllocateGuardRegion(address, size);
+  }
+
+  bool FreeGuardRegion(Address address, size_t size) override {
+    return vas_->FreeGuardRegion(address, size);
   }
 
   bool CanAllocateSubspaces() override { return vas_->CanAllocateSubspaces(); }
 
   std::unique_ptr<VirtualAddressSpace> AllocateSubspace(
       Address hint, size_t size, size_t alignment,
-      PagePermissions max_permissions) override;
+      PagePermissions max_page_permissions) override;
 
   bool DiscardSystemPages(Address address, size_t size) override {
     return vas_->DiscardSystemPages(address, size);

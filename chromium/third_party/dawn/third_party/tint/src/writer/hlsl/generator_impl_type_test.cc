@@ -14,8 +14,8 @@
 
 #include "gmock/gmock.h"
 #include "src/ast/call_statement.h"
-#include "src/ast/stage_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/stage_attribute.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/sem/depth_texture_type.h"
 #include "src/sem/multisampled_texture_type.h"
 #include "src/sem/sampled_texture_type.h"
@@ -189,11 +189,11 @@ TEST_F(HlslGeneratorImplTest_Type, EmitType_StructDecl_OmittedIfStorageBuffer) {
                           Member("a", ty.i32()),
                           Member("b", ty.f32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   Global("g", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   GeneratorImpl& gen = Build();
@@ -242,7 +242,7 @@ TEST_F(HlslGeneratorImplTest_Type, EmitType_Struct_WithOffsetAttributes) {
                           Member("a", ty.i32(), {MemberOffset(0)}),
                           Member("b", ty.f32(), {MemberOffset(8)}),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   Global("g", ty.Of(s), ast::StorageClass::kPrivate);
 
   GeneratorImpl& gen = Build();
@@ -333,9 +333,9 @@ TEST_P(HlslDepthTexturesTest, Emit) {
   auto* t = ty.depth_texture(params.dim);
 
   Global("tex", t,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(1),
-             create<ast::GroupDecoration>(2),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(1),
+             create<ast::GroupAttribute>(2),
          });
 
   Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
@@ -364,9 +364,9 @@ TEST_F(HlslDepthMultisampledTexturesTest, Emit) {
   auto* t = ty.depth_multisampled_texture(ast::TextureDimension::k2d);
 
   Global("tex", t,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(1),
-             create<ast::GroupDecoration>(2),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(1),
+             create<ast::GroupAttribute>(2),
          });
 
   Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
@@ -409,9 +409,9 @@ TEST_P(HlslSampledTexturesTest, Emit) {
   auto* t = ty.sampled_texture(params.dim, datatype);
 
   Global("tex", t,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(1),
-             create<ast::GroupDecoration>(2),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(1),
+             create<ast::GroupAttribute>(2),
          });
 
   Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
@@ -532,7 +532,7 @@ TEST_F(HlslGeneratorImplTest_Type, EmitMultisampledTexture) {
 
 struct HlslStorageTextureData {
   ast::TextureDimension dim;
-  ast::ImageFormat imgfmt;
+  ast::TexelFormat imgfmt;
   std::string result;
 };
 inline std::ostream& operator<<(std::ostream& out,
@@ -546,7 +546,7 @@ TEST_P(HlslStorageTexturesTest, Emit) {
 
   auto* t = ty.storage_texture(params.dim, params.imgfmt, ast::Access::kWrite);
 
-  Global("tex", t, ast::DecorationList{GroupAndBinding(2, 1)});
+  Global("tex", t, ast::AttributeList{GroupAndBinding(2, 1)});
 
   Func("main", {}, ty.void_(), {CallStmt(Call("textureDimensions", "tex"))},
        {Stage(ast::PipelineStage::kFragment)});
@@ -561,43 +561,43 @@ INSTANTIATE_TEST_SUITE_P(
     HlslStorageTexturesTest,
     testing::Values(
         HlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba8Unorm,
+            ast::TextureDimension::k1d, ast::TexelFormat::kRgba8Unorm,
             "RWTexture1D<float4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k2d, ast::ImageFormat::kRgba16Float,
+            ast::TextureDimension::k2d, ast::TexelFormat::kRgba16Float,
             "RWTexture2D<float4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Float,
+            ast::TextureDimension::k2dArray, ast::TexelFormat::kR32Float,
             "RWTexture2DArray<float4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k3d, ast::ImageFormat::kRg32Float,
+            ast::TextureDimension::k3d, ast::TexelFormat::kRg32Float,
             "RWTexture3D<float4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba32Float,
+            ast::TextureDimension::k1d, ast::TexelFormat::kRgba32Float,
             "RWTexture1D<float4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k2d, ast::ImageFormat::kRgba16Uint,
+            ast::TextureDimension::k2d, ast::TexelFormat::kRgba16Uint,
             "RWTexture2D<uint4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Uint,
+            ast::TextureDimension::k2dArray, ast::TexelFormat::kR32Uint,
             "RWTexture2DArray<uint4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k3d, ast::ImageFormat::kRg32Uint,
+            ast::TextureDimension::k3d, ast::TexelFormat::kRg32Uint,
             "RWTexture3D<uint4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba32Uint,
+            ast::TextureDimension::k1d, ast::TexelFormat::kRgba32Uint,
             "RWTexture1D<uint4> tex : register(u1, space2);"},
         HlslStorageTextureData{ast::TextureDimension::k2d,
-                               ast::ImageFormat::kRgba16Sint,
+                               ast::TexelFormat::kRgba16Sint,
                                "RWTexture2D<int4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k2dArray, ast::ImageFormat::kR32Sint,
+            ast::TextureDimension::k2dArray, ast::TexelFormat::kR32Sint,
             "RWTexture2DArray<int4> tex : register(u1, space2);"},
         HlslStorageTextureData{ast::TextureDimension::k3d,
-                               ast::ImageFormat::kRg32Sint,
+                               ast::TexelFormat::kRg32Sint,
                                "RWTexture3D<int4> tex : register(u1, space2);"},
         HlslStorageTextureData{
-            ast::TextureDimension::k1d, ast::ImageFormat::kRgba32Sint,
+            ast::TextureDimension::k1d, ast::TexelFormat::kRgba32Sint,
             "RWTexture1D<int4> tex : register(u1, space2);"}));
 
 }  // namespace

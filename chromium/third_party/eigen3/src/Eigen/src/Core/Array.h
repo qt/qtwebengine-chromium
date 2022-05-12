@@ -21,6 +21,10 @@ struct traits<Array<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_> > : tra
   typedef ArrayXpr XprKind;
   typedef ArrayBase<Array<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_> > XprBase;
 };
+
+template<typename Scalar_, int Rows_, int Cols_, int Options_, int MaxRows_, int MaxCols_>
+struct has_trivially_copyable_storage<Array<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_> >
+    : has_trivially_copyable_storage<Matrix<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_> > {};
 }
 
 /** \class Array
@@ -120,6 +124,12 @@ class Array
       return Base::_set(other);
     }
 
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Array& operator=(
+        const Array& other) requires internal::has_trivially_copyable_storage<Array>::value = default;
+#endif
+
     /** Default constructor.
       *
       * For fixed-size matrices, does nothing.
@@ -147,7 +157,6 @@ class Array
     }
 #endif
 
-#if EIGEN_HAS_RVALUE_REFERENCES
     EIGEN_DEVICE_FUNC
     Array(Array&& other) EIGEN_NOEXCEPT_IF(std::is_nothrow_move_constructible<Scalar>::value)
       : Base(std::move(other))
@@ -159,9 +168,14 @@ class Array
       Base::operator=(std::move(other));
       return *this;
     }
+
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC Array(Array&& other) EIGEN_NOEXCEPT
+        requires internal::has_trivially_copyable_storage<Array>::value = default;
+    EIGEN_DEVICE_FUNC Array& operator=(Array&& other) EIGEN_NOEXCEPT
+        requires internal::has_trivially_copyable_storage<Array>::value = default;
 #endif
 
-    #if EIGEN_HAS_CXX11
     /** \copydoc PlainObjectBase(const Scalar& a0, const Scalar& a1, const Scalar& a2, const Scalar& a3, const ArgTypes&... args)
      *
      * Example: \include Array_variadic_ctor_cxx11.cpp
@@ -198,7 +212,6 @@ class Array
       */
     EIGEN_DEVICE_FUNC
     EIGEN_STRONG_INLINE Array(const std::initializer_list<std::initializer_list<Scalar>>& list) : Base(list) {}
-    #endif // end EIGEN_HAS_CXX11
 
     #ifndef EIGEN_PARSED_BY_DOXYGEN
     template<typename T>
@@ -269,6 +282,12 @@ class Array
     EIGEN_STRONG_INLINE Array(const Array& other)
             : Base(other)
     { }
+
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Array(const Array& other) requires internal::has_trivially_copyable_storage<Array>::value =
+        default;
+#endif
 
   private:
     struct PrivateType {};
@@ -354,8 +373,6 @@ EIGEN_MAKE_ARRAY_TYPEDEFS_ALL_SIZES(std::complex<double>, cd)
 #undef EIGEN_MAKE_ARRAY_TYPEDEFS
 #undef EIGEN_MAKE_ARRAY_FIXED_TYPEDEFS
 
-#if EIGEN_HAS_CXX11
-
 #define EIGEN_MAKE_ARRAY_TYPEDEFS(Size, SizeSuffix)               \
 /** \ingroup arraytypedefs */                                     \
 /** \brief \cpp11 */                                              \
@@ -386,8 +403,6 @@ EIGEN_MAKE_ARRAY_FIXED_TYPEDEFS(4)
 
 #undef EIGEN_MAKE_ARRAY_TYPEDEFS
 #undef EIGEN_MAKE_ARRAY_FIXED_TYPEDEFS
-
-#endif // EIGEN_HAS_CXX11
 
 #define EIGEN_USING_ARRAY_TYPEDEFS_FOR_TYPE_AND_SIZE(TypeSuffix, SizeSuffix) \
 using Eigen::Matrix##SizeSuffix##TypeSuffix; \

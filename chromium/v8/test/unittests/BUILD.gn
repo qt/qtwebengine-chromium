@@ -16,6 +16,7 @@ if (is_fuchsia) {
 
   fuchsia_package_runner("v8_unittests_fuchsia") {
     testonly = true
+    use_cfv2 = false
     package = ":v8_unittests_pkg"
     package_name_override = "v8_unittests"
   }
@@ -162,10 +163,9 @@ v8_source_set("cppgc_unittests_sources") {
 v8_executable("unittests") {
   testonly = true
 
-  # TODO(machenbach): Translate from gyp.
-  #['OS=="aix"', {
-  #  'ldflags': [ '-Wl,-bbigtoc' ],
-  #}],
+  if (current_os == "aix") {
+    ldflags = [ "-Wl,-bbigtoc" ]
+  }
 
   deps = [
     ":unittests_sources",
@@ -233,6 +233,7 @@ v8_source_set("unittests_sources") {
     "base/threaded-list-unittest.cc",
     "base/utils/random-number-generator-unittest.cc",
     "base/vector-unittest.cc",
+    "base/virtual-address-space-unittest.cc",
     "base/vlq-base64-unittest.cc",
     "base/vlq-unittest.cc",
     "codegen/aligned-slot-allocator-unittest.cc",
@@ -375,7 +376,7 @@ v8_source_set("unittests_sources") {
     "regress/regress-crbug-938251-unittest.cc",
     "run-all-unittests.cc",
     "runtime/runtime-debug-unittest.cc",
-    "security/virtual-memory-cage-unittest.cc",
+    "sandbox/sandbox-unittest.cc",
     "strings/char-predicates-unittest.cc",
     "strings/unicode-unittest.cc",
     "tasks/background-compile-task-unittest.cc",
@@ -522,6 +523,7 @@ v8_source_set("unittests_sources") {
     "../..:v8_libbase",
     "../..:v8_libplatform",
     "../..:v8_shared_internal_headers",
+    "../..:v8_version",
     "../../third_party/inspector_protocol:crdtp_test",
     "//build/win:default_exe_manifest",
     "//testing/gmock",

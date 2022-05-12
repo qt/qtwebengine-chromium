@@ -78,6 +78,8 @@ class QUICHE_EXPORT_PRIVATE Http2VisitorInterface {
     kInvalidPushPromise,
     // The peer exceeded the max concurrent streams limit.
     kExceededMaxConcurrentStreams,
+    // The peer caused a flow control error.
+    kFlowControlError,
   };
   virtual void OnConnectionError(ConnectionError error) = 0;
 
@@ -121,9 +123,14 @@ class QUICHE_EXPORT_PRIVATE Http2VisitorInterface {
     HEADER_CONNECTION_ERROR,
     // The application rejects the header and requests the stream be reset.
     HEADER_RST_STREAM,
-    // The header is a violation of HTTP messaging semantics and will be reset
+    // The header field is invalid and will be reset with error code
+    // PROTOCOL_ERROR.
+    HEADER_FIELD_INVALID,
+    // The headers are a violation of HTTP messaging semantics and will be reset
     // with error code PROTOCOL_ERROR.
     HEADER_HTTP_MESSAGING,
+    // The headers caused a compression context error.
+    HEADER_COMPRESSION_ERROR,
   };
   virtual OnHeaderResult OnHeaderForStream(Http2StreamId stream_id,
                                            absl::string_view key,
@@ -138,6 +145,12 @@ class QUICHE_EXPORT_PRIVATE Http2VisitorInterface {
   // payload will be provided via subsequent calls to OnDataForStream().
   virtual bool OnBeginDataForStream(Http2StreamId stream_id,
                                     size_t payload_length) = 0;
+
+  // Called when the optional padding length field is parsed as part of a DATA
+  // frame payload. `padding_length` represents the total amount of padding for
+  // this frame, including the length byte itself.
+  virtual bool OnDataPaddingLength(Http2StreamId stream_id,
+                                   size_t padding_length) = 0;
 
   // Called when the connection receives some |data| (as part of a DATA frame
   // payload) for a stream.

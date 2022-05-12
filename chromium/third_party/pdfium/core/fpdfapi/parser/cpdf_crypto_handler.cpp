@@ -167,7 +167,7 @@ bool CPDF_CryptoHandler::CryptStream(void* context,
   }
   uint32_t src_off = 0;
   uint32_t src_left = source.size();
-  while (1) {
+  while (true) {
     uint32_t copy_size = 16 - pContext->m_BlockOffset;
     if (copy_size > src_left) {
       copy_size = src_left;
@@ -245,7 +245,7 @@ ByteString CPDF_CryptoHandler::Decrypt(uint32_t objnum,
   void* context = DecryptStart(objnum, gennum);
   DecryptStream(context, str.raw_span(), dest_buf);
   DecryptFinish(context, dest_buf);
-  return ByteString(dest_buf.GetBuffer(), dest_buf.GetSize());
+  return ByteString(dest_buf.GetSpan());
 }
 
 size_t CPDF_CryptoHandler::DecryptGetSize(size_t src_size) {

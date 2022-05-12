@@ -22,6 +22,24 @@ namespace {
 
 using ForLoopToLoopTest = TransformTest;
 
+TEST_F(ForLoopToLoopTest, ShouldRunEmptyModule) {
+  auto* src = R"()";
+
+  EXPECT_FALSE(ShouldRun<ForLoopToLoop>(src));
+}
+
+TEST_F(ForLoopToLoopTest, ShouldRunHasForLoop) {
+  auto* src = R"(
+fn f() {
+  for (;;) {
+    break;
+  }
+}
+)";
+
+  EXPECT_TRUE(ShouldRun<ForLoopToLoop>(src));
+}
+
 TEST_F(ForLoopToLoopTest, EmptyModule) {
   auto* src = "";
   auto* expect = src;
@@ -36,6 +54,7 @@ TEST_F(ForLoopToLoopTest, Empty) {
   auto* src = R"(
 fn f() {
   for (;;) {
+    break;
   }
 }
 )";
@@ -43,6 +62,7 @@ fn f() {
   auto* expect = R"(
 fn f() {
   loop {
+    break;
   }
 }
 )";
@@ -80,7 +100,7 @@ TEST_F(ForLoopToLoopTest, InitializerStatementDecl) {
   auto* src = R"(
 fn f() {
   for (var i: i32;;) {
-
+    break;
   }
 }
 )";
@@ -90,6 +110,7 @@ fn f() {
   {
     var i : i32;
     loop {
+      break;
     }
   }
 }
@@ -106,6 +127,7 @@ TEST_F(ForLoopToLoopTest, InitializerStatementDeclEqual) {
   auto* src = R"(
 fn f() {
   for (var i: i32 = 0;;) {
+    break;
   }
 }
 )";
@@ -115,6 +137,7 @@ fn f() {
   {
     var i : i32 = 0;
     loop {
+      break;
     }
   }
 }
@@ -130,6 +153,7 @@ TEST_F(ForLoopToLoopTest, InitializerStatementConstDecl) {
   auto* src = R"(
 fn f() {
   for (let i: i32 = 0;;) {
+    break;
   }
 }
 )";
@@ -139,6 +163,7 @@ fn f() {
   {
     let i : i32 = 0;
     loop {
+      break;
     }
   }
 }
@@ -155,7 +180,7 @@ TEST_F(ForLoopToLoopTest, InitializerStatementAssignment) {
 fn f() {
   var i: i32;
   for (i = 0;;) {
-
+    break;
   }
 }
 )";
@@ -166,6 +191,7 @@ fn f() {
   {
     i = 0;
     loop {
+      break;
     }
   }
 }
@@ -185,7 +211,9 @@ fn a(x : i32, y : i32) {
 fn f() {
   var b : i32;
   var c : i32;
-  for (a(b,c);;) { }
+  for (a(b,c);;) {
+    break;
+  }
 }
 )";
 
@@ -199,6 +227,7 @@ fn f() {
   {
     a(b, c);
     loop {
+      break;
     }
   }
 }
@@ -239,6 +268,7 @@ TEST_F(ForLoopToLoopTest, ContinuingAssignment) {
 fn f() {
   var x: i32;
   for (;;x = 2) {
+    break;
   }
 }
 )";
@@ -247,6 +277,7 @@ fn f() {
 fn f() {
   var x : i32;
   loop {
+    break;
 
     continuing {
       x = 2;
@@ -270,6 +301,7 @@ fn f() {
   var b : i32;
   var c : i32;
   for (;;a(b,c)) {
+    break;
   }
 }
 )";
@@ -282,6 +314,7 @@ fn f() {
   var b : i32;
   var c : i32;
   loop {
+    break;
 
     continuing {
       a(b, c);

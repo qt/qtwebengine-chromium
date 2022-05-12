@@ -36,6 +36,7 @@ GpuVendor GetGpuVendor(const std::string& gpu_description) {
       {"intel", GpuVendor::kIntel},
       {"nvidia", GpuVendor::kNvidia},
       {"amd", GpuVendor::kAMD},
+      {"radeon", GpuVendor::kAMD},
       {"power", GpuVendor::kPowerVR},
   };
   for (const auto& v : kMapping) {
@@ -325,13 +326,26 @@ int AdrenoInfo::GetComputeUnitsCount() const {
 
 AppleInfo::AppleInfo(const std::string& gpu_description) {
   const std::map<std::string, AppleGpu> kMapping = {
-      {"apple a7 gpu", AppleGpu::kA7},     {"apple a8 gpu", AppleGpu::kA8},
-      {"apple a8x gpu", AppleGpu::kA8X},   {"apple a9 gpu", AppleGpu::kA9},
-      {"apple a9x gpu", AppleGpu::kA9X},   {"apple a10 gpu", AppleGpu::kA10},
-      {"apple a10x gpu", AppleGpu::kA10X}, {"apple a11 gpu", AppleGpu::kA11},
-      {"apple a12 gpu", AppleGpu::kA12},   {"apple a12x gpu", AppleGpu::kA12X},
-      {"apple a12z gpu", AppleGpu::kA12Z}, {"apple a13 gpu", AppleGpu::kA13},
-      {"apple a14 gpu", AppleGpu::kA14},   {"apple a15 gpu", AppleGpu::kA15},
+      {"apple a7 gpu", AppleGpu::kA7},
+      {"apple a8 gpu", AppleGpu::kA8},
+      {"apple a8x gpu", AppleGpu::kA8X},
+      {"apple a9 gpu", AppleGpu::kA9},
+      {"apple a9x gpu", AppleGpu::kA9X},
+      {"apple a10 gpu", AppleGpu::kA10},
+      {"apple a10x gpu", AppleGpu::kA10X},
+      {"apple a11 gpu", AppleGpu::kA11},
+      {"apple a12 gpu", AppleGpu::kA12},
+      {"apple a12x gpu", AppleGpu::kA12X},
+      {"apple a12z gpu", AppleGpu::kA12Z},
+      {"apple a13 gpu", AppleGpu::kA13},
+      {"apple a14 gpu", AppleGpu::kA14},
+      {"apple a15 gpu", AppleGpu::kA15},
+      // on tablets we have metal device name "apple m1 gpu"
+      // and on notebooks "apple m1"
+      {"apple m1 gpu", AppleGpu::kM1},
+      {"apple m1", AppleGpu::kM1},
+      {"apple m1 pro", AppleGpu::kM1Pro},
+      {"apple m1 max", AppleGpu::kM1Max},
   };
   auto it = kMapping.find(gpu_description);
   if (it != kMapping.end()) {
@@ -354,7 +368,18 @@ bool AppleInfo::IsBionic() const {
   return gpu_type == AppleGpu::kA11 || gpu_type == AppleGpu::kA12 ||
          gpu_type == AppleGpu::kA12X || gpu_type == AppleGpu::kA12Z ||
          gpu_type == AppleGpu::kA13 || gpu_type == AppleGpu::kA14 ||
-         gpu_type == AppleGpu::kA15;
+         gpu_type == AppleGpu::kA15 || gpu_type == AppleGpu::kM1 ||
+         gpu_type == AppleGpu::kM1Pro || gpu_type == AppleGpu::kM1Max;
+}
+
+bool AppleInfo::IsSIMDMatMulSupported() const {
+  return gpu_type == AppleGpu::kA14 || gpu_type == AppleGpu::kA15 ||
+         gpu_type == AppleGpu::kM1 || gpu_type == AppleGpu::kM1Pro ||
+         gpu_type == AppleGpu::kM1Max;
+}
+
+bool AppleInfo::IsSIMDMatMulFp32Perf2x() const {
+  return gpu_type == AppleGpu::kA15;
 }
 
 bool AppleInfo::IsRoundToNearestSupported() const { return IsBionic(); }
@@ -387,11 +412,22 @@ int AppleInfo::GetComputeUnitsCount() const {
       return 4;
     case AppleGpu::kA14:
       return 4;
+    // For A15, M1, M1 Pro and M1 Max we can not receive exact CU count from
+    // name. No official Metal API to receive this info.
     case AppleGpu::kA15:
       if (compute_units != -1) {
         return compute_units;
       }
       return 5;
+    case AppleGpu::kM1:
+      // approximate, can be 7 or 8
+      return 8;
+    case AppleGpu::kM1Pro:
+      // approximate, can be 14 or 16
+      return 16;
+    case AppleGpu::kM1Max:
+      // approximate, can be 24 or 32
+      return 32;
     case AppleGpu::kUnknown:
       return 4;
   }
@@ -492,8 +528,39 @@ std::string OpenClVersionToString(OpenClVersion version) {
   }
 }
 
+bool OpenGlInfo::SupportsExplicitFp16() const {
+  bool supports_f16_alu = false;
+  bool supports_f16_storage = false;
+  for (const auto& ext : extensions) {
+    if (ext == "GL_EXT_shader_explicit_arithmetic_types_float16") {
+      supports_f16_alu = true;
+    }
+    if (ext == "GL_EXT_shader_16bit_storage") {
+      supports_f16_storage = true;
+    }
+  }
+  return supports_f16_alu && supports_f16_storage;
+}
+
+bool VulkanInfo::SupportsExplicitFp16() const {
+  bool supports_f16_alu = false;
+  bool supports_f16_storage = false;
+  for (const auto& ext : extensions) {
+    if (ext == "VK_KHR_shader_float16_int8") {
+      supports_f16_alu = true;
+    }
+    if (ext == "VK_KHR_16bit_storage") {
+      supports_f16_storage = true;
+    }
+  }
+  return supports_f16_alu && supports_f16_storage;
+}
+
 bool OpenClInfo::IsImage2dFromBufferSupported() const {
   if (image_pitch_alignment == 0) {
+    return false;
+  }
+  if (image_base_address_alignment == 0) {
     return false;
   }
   if (cl_version == OpenClVersion::kCl2_0 ||
@@ -785,9 +852,10 @@ uint64_t GpuInfo::GetMaxImage2DArrayLayers() const {
 uint64_t GpuInfo::GetMaxImage3DWidth() const {
   if (IsApiOpenCl()) {
     return opencl_info.image3d_max_width;
-  }
-  if (IsApiMetal()) {
+  } else if (IsApiMetal()) {
     return metal_info.image3d_max_width;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_image_dimension_3d;
   }
   return 256;
 }
@@ -795,9 +863,10 @@ uint64_t GpuInfo::GetMaxImage3DWidth() const {
 uint64_t GpuInfo::GetMaxImage3DHeight() const {
   if (IsApiOpenCl()) {
     return opencl_info.image3d_max_height;
-  }
-  if (IsApiMetal()) {
+  } else if (IsApiMetal()) {
     return metal_info.image3d_max_height;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_image_dimension_3d;
   }
   return 256;
 }
@@ -805,9 +874,10 @@ uint64_t GpuInfo::GetMaxImage3DHeight() const {
 uint64_t GpuInfo::GetMaxImage3DDepth() const {
   if (IsApiOpenCl()) {
     return opencl_info.image3d_max_depth;
-  }
-  if (IsApiMetal()) {
+  } else if (IsApiMetal()) {
     return metal_info.image3d_max_depth;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_image_dimension_3d;
   }
   return 256;
 }
@@ -817,6 +887,8 @@ uint64_t GpuInfo::GetMaxBufferSize() const {
     return opencl_info.buffer_max_size;
   } else if (IsApiMetal()) {
     return metal_info.buffer_max_size;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_storage_buffer_range;
   }
   return 128 * 1024 * 1024;
 }
@@ -826,6 +898,8 @@ uint64_t GpuInfo::GetMaxMemoryAllocationSize() const {
     return opencl_info.max_allocation_size;
   } else if (IsApiMetal()) {
     return metal_info.buffer_max_size;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_storage_buffer_range;
   }
   return 128 * 1024 * 1024;
 }
@@ -833,6 +907,8 @@ uint64_t GpuInfo::GetMaxMemoryAllocationSize() const {
 uint64_t GpuInfo::GetMaxImageBufferWidth() const {
   if (IsApiOpenCl()) {
     return opencl_info.image_buffer_max_size;
+  } else if (IsApiVulkan()) {
+    return vulkan_info.max_texel_buffer_elements;
   }
   return 64 * 1024;
 }
@@ -870,6 +946,16 @@ bool GpuInfo::IsApiMetal() const { return gpu_api == GpuApi::kMetal; }
 bool GpuInfo::IsApiOpenCl() const { return gpu_api == GpuApi::kOpenCl; }
 
 bool GpuInfo::IsGlsl() const { return IsApiOpenGl() || IsApiVulkan(); }
+
+bool GpuInfo::IsGlslSupportsExplicitFp16() const {
+  if (IsApiOpenGl() && opengl_info.SupportsExplicitFp16()) {
+    return true;
+  }
+  if (IsApiVulkan() && vulkan_info.SupportsExplicitFp16()) {
+    return true;
+  }
+  return false;
+}
 
 bool GpuInfo::IsCL11OrHigher() const {
   if (!IsApiOpenCl()) {

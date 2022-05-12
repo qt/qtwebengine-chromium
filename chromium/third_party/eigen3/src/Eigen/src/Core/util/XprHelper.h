@@ -14,7 +14,7 @@
 // just a workaround because GCC seems to not really like empty structs
 // FIXME: gcc 4.3 generates bad code when strict-aliasing is enabled
 // so currently we simply disable this optimization for gcc 4.3
-#if EIGEN_COMP_GNUC && !EIGEN_GNUC_AT(4,3)
+#if EIGEN_COMP_GNUC
   #define EIGEN_EMPTY_STRUCT_CTOR(X) \
     EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE X() {} \
     EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE X(const X& ) {}
@@ -39,15 +39,7 @@ inline IndexDest convert_index(const IndexSrc& idx) {
 // true if T can be considered as an integral index (i.e., and integral type or enum)
 template<typename T> struct is_valid_index_type
 {
-  enum { value =
-#if EIGEN_HAS_TYPE_TRAITS
-    internal::is_integral<T>::value || std::is_enum<T>::value
-#elif EIGEN_COMP_MSVC
-    internal::is_integral<T>::value || __is_enum(T)
-#else
-    // without C++11, we use is_convertible to Index instead of is_integral in order to treat enums as Index.
-    internal::is_convertible<T,Index>::value && !internal::is_same<T,float>::value && !is_same<T,double>::value
-#endif
+  enum { value = internal::is_integral<T>::value || std::is_enum<T>::value
   };
 };
 
@@ -511,8 +503,8 @@ struct generic_xpr_base<Derived, XprKind, Dense>
 template<typename XprType, typename CastType> struct cast_return_type
 {
   typedef typename XprType::Scalar CurrentScalarType;
-  typedef typename remove_all<CastType>::type _CastType;
-  typedef typename _CastType::Scalar NewScalarType;
+  typedef typename remove_all<CastType>::type CastType_;
+  typedef typename CastType_::Scalar NewScalarType;
   typedef typename conditional<is_same<CurrentScalarType,NewScalarType>::value,
                               const XprType&,CastType>::type type;
 };
@@ -630,8 +622,9 @@ struct plain_col_type
 template<typename ExpressionType, typename Scalar = typename ExpressionType::Scalar>
 struct plain_diag_type
 {
-  enum { diag_size = EIGEN_SIZE_MIN_PREFER_DYNAMIC(ExpressionType::RowsAtCompileTime, ExpressionType::ColsAtCompileTime),
-         max_diag_size = EIGEN_SIZE_MIN_PREFER_FIXED(ExpressionType::MaxRowsAtCompileTime, ExpressionType::MaxColsAtCompileTime)
+  enum { diag_size = internal::min_size_prefer_dynamic(ExpressionType::RowsAtCompileTime, ExpressionType::ColsAtCompileTime),
+         max_diag_size = min_size_prefer_fixed(ExpressionType::MaxRowsAtCompileTime,
+                                               ExpressionType::MaxColsAtCompileTime)
   };
   typedef Matrix<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1> MatrixDiagType;
   typedef Array<Scalar, diag_size, 1, ExpressionType::PlainObject::Options & ~RowMajor, max_diag_size, 1> ArrayDiagType;

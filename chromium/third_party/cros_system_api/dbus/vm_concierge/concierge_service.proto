@@ -115,6 +115,7 @@ message VmInfo {
     TERMINA = 1;
     ARC_VM = 2;
     PLUGIN_VM = 3;
+    BOREALIS = 4;
   };
 
   // What type of VM this is.
@@ -542,6 +543,8 @@ message GetVmEnterpriseReportingInfoResponse {
   string vm_kernel_version = 3;
 }
 
+// TODO(kalutes, b:188858559) Deprecate this request once usage is updated to
+// ArcVmBootCompleteSignal.
 // Request for creating RT vCPUs.
 message MakeRtVcpuRequest {
   // The name of the VM.
@@ -551,6 +554,8 @@ message MakeRtVcpuRequest {
   string owner_id = 2;
 }
 
+// TODO(kalutes, b:188858559) Deprecate this request once usage is updated to
+// ArcVmBootCompleteSignal.
 // Response sent back by vm_concierge for a MakeRtVcpuRequest dbus message.
 message MakeRtVcpuResponse {
   // If true, the request succeeded.

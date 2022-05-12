@@ -4,6 +4,7 @@
 """Definitions of builders in the tryserver.chromium.linux builder group."""
 
 load("//lib/branches.star", "branches")
+load("//lib/builder_config.star", "builder_config")
 load("//lib/builders.star", "goma", "os")
 load("//lib/try.star", "try_")
 load("//lib/consoles.star", "consoles")
@@ -18,14 +19,17 @@ try_.defaults.set(
     execution_timeout = try_.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
     compilator_goma_jobs = goma.jobs.J150,
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     pool = try_.DEFAULT_POOL,
     service_account = try_.DEFAULT_SERVICE_ACCOUNT,
 )
 
 consoles.list_view(
     name = "tryserver.chromium.linux",
-    branch_selector = branches.CROS_LTS_MILESTONE,
+    branch_selector = [
+        branches.CROS_LTS_MILESTONE,
+        branches.FUCHSIA_LTS_MILESTONE,
+    ],
 )
 
 try_.builder(
@@ -64,24 +68,8 @@ try_.builder(
 )
 
 try_.builder(
-    name = "cast-binary-size",
-    builderless = True,
-    executable = "recipe:binary_size_cast_trybot",
-    properties = {
-        "$build/binary_size": {
-            "analyze_targets": [
-                "//chromecast:cast_shell",
-            ],
-            "compile_targets": [
-                "cast_shell",
-            ],
-        },
-    },
-)
-
-try_.builder(
     name = "fuchsia-binary-size",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     builderless = True,
     executable = "recipe:binary_size_fuchsia_trybot",
     properties = {
@@ -100,14 +88,23 @@ try_.builder(
 )
 
 try_.builder(
+    name = "fuchsia-clang-tidy-rel",
+    executable = "recipe:tricium_clang_tidy_wrapper",
+    goma_jobs = goma.jobs.J150,
+)
+
+try_.builder(
     name = "fuchsia-arm64-cast",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     main_list_view = "try",
     tryjob = try_.job(
         location_regexp = [
             ".+/[+]/chromecast/.+",
         ],
     ),
+    mirrors = [
+        "ci/fuchsia-arm64-cast",
+    ],
 )
 
 try_.builder(
@@ -118,6 +115,13 @@ try_.builder(
             ".+/[+]/fuchsia/.+",
             ".+/[+]/media/fuchsia/.+",
         ],
+    ),
+    mirrors = [
+        "ci/fuchsia-x64-dbg",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
     ),
 )
 
@@ -148,26 +152,35 @@ try_.builder(
 
 try_.builder(
     name = "fuchsia-x64-cast",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     builderless = not settings.is_main,
     main_list_view = "try",
     tryjob = try_.job(),
+    mirrors = [
+        "ci/fuchsia-x64-cast",
+    ],
 )
 
 try_.builder(
     name = "fuchsia_arm64",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     builderless = not settings.is_main,
     main_list_view = "try",
     tryjob = try_.job(),
+    mirrors = [
+        "ci/Fuchsia ARM64",
+    ],
 )
 
 try_.builder(
     name = "fuchsia_x64",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     builderless = not settings.is_main,
     main_list_view = "try",
     tryjob = try_.job(),
+    mirrors = [
+        "ci/Fuchsia x64",
+    ],
 )
 
 try_.builder(
@@ -180,6 +193,13 @@ try_.builder(
 
 try_.builder(
     name = "linux-1mbu-compile-fyi-rel",
+    mirrors = [
+        "ci/Linux Builder",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
     builderless = False,
     goma_jobs = goma.jobs.J150,
     tryjob = try_.job(
@@ -240,6 +260,7 @@ try_.builder(
 
 try_.builder(
     name = "linux-dcheck-off-rel",
+    mirrors = builder_config.copy_from("linux-rel"),
 )
 
 try_.builder(
@@ -261,14 +282,21 @@ try_.builder(
 
 try_.builder(
     name = "linux-inverse-fieldtrials-fyi-rel",
+    mirrors = builder_config.copy_from("linux-rel"),
+)
+
+try_.builder(
+    name = "linux-fieldtrial-fyi-rel",
 )
 
 try_.builder(
     name = "linux-mbi-mode-per-render-process-host-rel",
+    mirrors = builder_config.copy_from("linux-rel"),
 )
 
 try_.builder(
     name = "linux-mbi-mode-per-site-instance-rel",
+    mirrors = builder_config.copy_from("linux-rel"),
 )
 
 try_.builder(
@@ -310,6 +338,17 @@ try_.orchestrator_builder(
     name = "linux-rel",
     compilator = "linux-rel-compilator",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/Linux Builder",
+        "ci/Linux Tests",
+        "ci/GPU Linux Builder",
+        "ci/Linux Release (NVIDIA)",
+    ],
+    try_settings = builder_config.try_settings(
+        rts_config = builder_config.rts_config(
+            condition = builder_config.rts_condition.QUICK_RUN_ONLY,
+        ),
+    ),
     main_list_view = "try",
     use_clang_coverage = True,
     coverage_test_types = ["unit", "overall"],
@@ -322,17 +361,31 @@ try_.compilator_builder(
     main_list_view = "try",
 )
 
-try_.builder(
-    name = "linux-rel-reclient",
-    branch_selector = branches.STANDARD_MILESTONE,
-    main_list_view = "try",
-    reclient_jobs = 150,
-    goma_backend = None,
-    reclient_instance = "rbe-chromium-gvisor-shadow",
-    tryjob = try_.job(
-        experiment_percentage = 10,
+# crbug.com/1270571: Experimental bot to test pre-warming
+try_.orchestrator_builder(
+    name = "linux-rel-warmed",
+    compilator = "linux-rel-warmed-compilator",
+    mirrors = [
+        "ci/Linux Builder",
+        "ci/Linux Tests",
+        "ci/GPU Linux Builder",
+        "ci/Linux Release (NVIDIA)",
+    ],
+    try_settings = builder_config.try_settings(
+        rts_config = builder_config.rts_config(
+            condition = builder_config.rts_condition.QUICK_RUN_ONLY,
+        ),
     ),
+    main_list_view = "try",
     use_clang_coverage = True,
+    coverage_test_types = ["unit", "overall"],
+)
+
+# crbug.com/1270571: Experimental bot to test pre-warming
+try_.compilator_builder(
+    name = "linux-rel-warmed-compilator",
+    main_list_view = "try",
+    builder_cache_name = "linux_rel_warmed_compilator_warmed_cache",
 )
 
 try_.builder(
@@ -398,16 +451,6 @@ try_.compilator_builder(
 )
 
 try_.builder(
-    name = "linux_chromium_asan_rel_ng_rts",
-    goma_jobs = goma.jobs.J150,
-    ssd = True,
-    main_list_view = "try",
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-)
-
-try_.builder(
     name = "linux_chromium_cfi_rel_ng",
     cores = 32,
     # TODO(thakis): Remove once https://crbug.com/927738 is resolved.
@@ -444,6 +487,11 @@ try_.builder(
 try_.builder(
     name = "linux_chromium_compile_dbg_ng",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = ["ci/Linux Builder (dbg)"],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
     builderless = not settings.is_main,
     caches = [
         swarming.cache(
@@ -458,11 +506,22 @@ try_.builder(
 
 try_.builder(
     name = "linux_chromium_compile_rel_ng",
+    mirrors = [
+        "ci/Linux Builder",
+    ],
+    try_settings = builder_config.try_settings(
+        include_all_triggered_testers = True,
+        is_compile_only = True,
+    ),
 )
 
 try_.builder(
     name = "linux_chromium_dbg_ng",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/Linux Builder (dbg)",
+        "Linux Tests (dbg)(1)",
+    ],
     caches = [
         swarming.cache(
             name = "builder",
@@ -498,22 +557,28 @@ try_.compilator_builder(
 )
 
 try_.builder(
-    name = "linux_chromium_tsan_rel_ng_rts",
-    builderless = not settings.is_main,
-    goma_jobs = goma.jobs.J150,
-    main_list_view = "try",
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-)
-
-try_.builder(
     name = "linux_chromium_ubsan_rel_ng",
 )
 
 try_.builder(
     name = "linux_layout_tests_layout_ng_disabled",
     branch_selector = branches.STANDARD_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+        ),
+        test_results_config = builder_config.test_results_config(
+            config = "staging_server",
+        ),
+    ),
     main_list_view = "try",
     tryjob = try_.job(
         location_regexp = [
@@ -578,6 +643,26 @@ try_.builder(
 
 try_.gpu.optional_tests_builder(
     name = "linux_optional_gpu_tests_rel",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "angle_internal",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+        ),
+        build_gs_bucket = "chromium-gpu-fyi-archive",
+    ),
+    try_settings = builder_config.try_settings(
+        retry_failed_shards = False,
+    ),
     branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
     tryjob = try_.job(
@@ -604,47 +689,4 @@ try_.gpu.optional_tests_builder(
             ".+/[+]/ui/gl/.+",
         ],
     ),
-)
-
-# Stable testing builders
-
-try_.builder(
-    name = "linux-stable-filter-rel",
-    builderless = False,
-    goma_jobs = goma.jobs.J150,
-    use_clang_coverage = True,
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
-)
-
-try_.builder(
-    name = "linux-stable-filter-combined-rel",
-    builderless = False,
-    goma_jobs = goma.jobs.J150,
-    use_clang_coverage = True,
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
-)
-
-# RTS builders (https://crbug.com/1203048)
-
-try_.builder(
-    name = "linux-rel-rts",
-    builderless = False,
-    goma_jobs = goma.jobs.J150,
-    use_clang_coverage = True,
-    tryjob = try_.job(
-        experiment_percentage = 5,
-    ),
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
-)
-
-try_.builder(
-    name = "fuchsia_x64_rts",
-    builderless = False,
-    os = os.LINUX_XENIAL_OR_BIONIC_REMOVE,
 )

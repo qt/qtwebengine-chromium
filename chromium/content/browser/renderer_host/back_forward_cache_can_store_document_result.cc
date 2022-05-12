@@ -73,6 +73,8 @@ const char* BrowsingInstanceSwapResultToString(
         kNo_UnloadHandlerExistsOnSameSiteNavigation:
       return "BI not swapped - unload handler exists and the navigation is "
              "same-site";
+    case ShouldSwapBrowsingInstance::kNo_NotPrimaryMainFrame:
+      return "BI not swapped - not a primary main frame";
   }
 }
 
@@ -82,7 +84,7 @@ ProtoEnum::BackForwardCacheNotRestoredReason NotRestoredReasonToTraceEnum(
     BackForwardCacheMetrics::NotRestoredReason reason) {
   using Reason = BackForwardCacheMetrics::NotRestoredReason;
   switch (reason) {
-    case Reason::kNotMainFrame:
+    case Reason::kNotPrimaryMainFrame:
       return ProtoEnum::NOT_MAIN_FRAME;
     case Reason::kBackForwardCacheDisabled:
       return ProtoEnum::BACK_FORWARD_CACHE_DISABLED;
@@ -155,8 +157,6 @@ ProtoEnum::BackForwardCacheNotRestoredReason NotRestoredReasonToTraceEnum(
       return ProtoEnum::NETWORK_EXCEEDS_BUFFER_LIMIT;
     case Reason::kNavigationCancelledWhileRestoring:
       return ProtoEnum::NAVIGATION_CANCELLED_WHILE_RESTORING;
-    case Reason::kBackForwardCacheDisabledForPrerender:
-      return ProtoEnum::BACK_FORWARD_CACHE_DISABLED_FOR_PRERENDER;
     case Reason::kUserAgentOverrideDiffers:
       return ProtoEnum::USER_AGENT_OVERRIDE_DIFFERS;
     case Reason::kForegroundCacheLimit:
@@ -183,6 +183,8 @@ ProtoEnum::BackForwardCacheNotRestoredReason NotRestoredReasonToTraceEnum(
       return ProtoEnum::NO_RESPONSE_HEAD;
     case Reason::kActivationNavigationsDisallowedForBug1234857:
       return ProtoEnum::ACTIVATION_NAVIGATION_DISALLOWED_FOR_BUG_1234857;
+    case Reason::kErrorDocument:
+      return ProtoEnum::ERROR_DOCUMENT;
     case Reason::kBlocklistedFeatures:
       return ProtoEnum::BLOCKLISTED_FEATURES;
     case Reason::kUnknown:
@@ -273,7 +275,7 @@ std::string BackForwardCacheCanStoreDocumentResult::NotRestoredReasonToString(
   using Reason = BackForwardCacheMetrics::NotRestoredReason;
 
   switch (reason) {
-    case Reason::kNotMainFrame:
+    case Reason::kNotPrimaryMainFrame:
       return "not a main frame";
     case Reason::kBackForwardCacheDisabled:
       return "BackForwardCache disabled";
@@ -356,8 +358,6 @@ std::string BackForwardCacheCanStoreDocumentResult::NotRestoredReasonToString(
       return "Network request is open for too long and exceeds time limit";
     case Reason::kNetworkExceedsBufferLimit:
       return "Network request reads too much data and exceeds buffer limit";
-    case Reason::kBackForwardCacheDisabledForPrerender:
-      return "BackForwardCache is disabled for Prerender";
     case Reason::kUserAgentOverrideDiffers:
       return "User-agent override differs";
     case Reason::kNetworkRequestDatapipeDrainedAsBytesConsumer:
@@ -396,6 +396,8 @@ std::string BackForwardCacheCanStoreDocumentResult::NotRestoredReasonToString(
       return "Activation navigations are disallowed to avoid bypassing "
              "PasswordProtectionService as a workaround for "
              "https://crbug.com/1234857.";
+    case Reason::kErrorDocument:
+      return "Error documents cannot be stored in bfcache";
   }
 }
 

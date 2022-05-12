@@ -17,6 +17,7 @@
 #include "core/fpdfapi/parser/cpdf_number.h"
 #include "core/fpdfapi/parser/cpdf_stream_acc.h"
 #include "core/fpdfapi/parser/fpdf_parser_decode.h"
+#include "core/fpdfapi/parser/fpdf_parser_utility.h"
 #include "core/fxcrt/fx_stream.h"
 #include "core/fxcrt/span_util.h"
 #include "third_party/base/containers/contains.h"
@@ -25,7 +26,8 @@
 namespace {
 
 bool IsMetaDataStreamDictionary(const CPDF_Dictionary* dict) {
-  return dict && dict->GetNameFor("Type") == "Metadata" &&
+  // See ISO 32000-1:2008 spec, table 315.
+  return ValidateDictType(dict, "Metadata") &&
          dict->GetNameFor("Subtype") == "XML";
 }
 
@@ -123,7 +125,7 @@ void CPDF_Stream::SetDataAndRemoveFilter(pdfium::span<const uint8_t> pData) {
 }
 
 void CPDF_Stream::SetDataFromStringstreamAndRemoveFilter(
-    std::ostringstream* stream) {
+    fxcrt::ostringstream* stream) {
   if (stream->tellp() <= 0) {
     SetDataAndRemoveFilter({});
     return;
@@ -155,7 +157,7 @@ void CPDF_Stream::TakeData(std::unique_ptr<uint8_t, FxFreeDeleter> pData,
   m_pDict->SetNewFor<CPDF_Number>("Length", static_cast<int>(size));
 }
 
-void CPDF_Stream::SetDataFromStringstream(std::ostringstream* stream) {
+void CPDF_Stream::SetDataFromStringstream(fxcrt::ostringstream* stream) {
   if (stream->tellp() <= 0) {
     SetData({});
     return;

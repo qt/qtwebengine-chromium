@@ -134,15 +134,10 @@ class V8_EXPORT_PRIVATE Zone final {
   // Seals the zone to prevent any further allocation.
   void Seal() { sealed_ = true; }
 
-  // Allows the zone to be safely reused. Releases the memory and fires zone
-  // destruction and creation events for the accounting allocator.
-  void ReleaseMemory();
-
-  // Returns true if more memory has been allocated in zones than
-  // the limit allows.
-  bool excess_allocation() const {
-    return segment_bytes_allocated_ > kExcessLimit;
-  }
+  // Allows the zone to be safely reused. Releases the memory except for the
+  // last page, and fires zone destruction and creation events for the
+  // accounting allocator.
+  void Reset();
 
   size_t segment_bytes_allocated() const { return segment_bytes_allocated_; }
 
@@ -201,9 +196,6 @@ class V8_EXPORT_PRIVATE Zone final {
 
   // Never allocate segments larger than this size in bytes.
   static const size_t kMaximumSegmentSize = 32 * KB;
-
-  // Report zone excess when allocation exceeds this limit.
-  static const size_t kExcessLimit = 256 * MB;
 
   // The number of bytes allocated in this zone so far.
   size_t allocation_size_ = 0;

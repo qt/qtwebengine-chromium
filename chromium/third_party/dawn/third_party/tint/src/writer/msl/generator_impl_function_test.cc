@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/ast/stage_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/stage_attribute.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/ast/variable_decl_statement.h"
 #include "src/writer/msl/test_helper.h"
 
@@ -72,7 +72,7 @@ TEST_F(MslGeneratorImplTest, Emit_Function_WithParams) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Decoration_EntryPoint_NoReturn_Void) {
+TEST_F(MslGeneratorImplTest, Emit_Attribute_EntryPoint_NoReturn_Void) {
   Func("main", ast::VariableList{}, ty.void_(),
        ast::StatementList{/* no explicit return */},
        {Stage(ast::PipelineStage::kFragment)});
@@ -90,8 +90,8 @@ fragment void main() {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Decoration_EntryPoint_WithInOutVars) {
-  // fn frag_main([[location(0)]] foo : f32) -> [[location(1)]] f32 {
+TEST_F(MslGeneratorImplTest, Emit_Attribute_EntryPoint_WithInOutVars) {
+  // fn frag_main(@location(0) foo : f32) -> @location(1) f32 {
   //   return foo;
   // }
   auto* foo_in = Param("foo", ty.f32(), {Location(0)});
@@ -107,6 +107,7 @@ using namespace metal;
 struct tint_symbol_1 {
   float foo [[user(locn0)]];
 };
+
 struct tint_symbol_2 {
   float value [[color(1)]];
 };
@@ -125,8 +126,8 @@ fragment tint_symbol_2 frag_main(tint_symbol_1 tint_symbol [[stage_in]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest, Emit_Decoration_EntryPoint_WithInOut_Builtins) {
-  // fn frag_main([[position(0)]] coord : vec4<f32>) -> [[frag_depth]] f32 {
+TEST_F(MslGeneratorImplTest, Emit_Attribute_EntryPoint_WithInOut_Builtins) {
+  // fn frag_main(@position(0) coord : vec4<f32>) -> @frag_depth f32 {
   //   return coord.x;
   // }
   auto* coord_in =
@@ -161,11 +162,11 @@ fragment tint_symbol frag_main(float4 coord [[position]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Decoration_EntryPoint_SharedStruct_DifferentStages) {
+       Emit_Attribute_EntryPoint_SharedStruct_DifferentStages) {
   // struct Interface {
-  //   [[location(1)]] col1 : f32;
-  //   [[location(2)]] col2 : f32;
-  //   [[builtin(position)]] pos : vec4<f32>;
+  //   @location(1) col1 : f32;
+  //   @location(2) col2 : f32;
+  //   @builtin(position) pos : vec4<f32>;
   // };
   // fn vert_main() -> Interface {
   //   return Interface(0.4, 0.6, vec4<f32>());
@@ -207,14 +208,11 @@ struct Interface {
   float col2;
   float4 pos;
 };
+
 struct tint_symbol {
   float col1 [[user(locn1)]];
   float col2 [[user(locn2)]];
   float4 pos [[position]];
-};
-struct tint_symbol_2 {
-  float col1 [[user(locn1)]];
-  float col2 [[user(locn2)]];
 };
 
 Interface vert_main_inner() {
@@ -231,6 +229,11 @@ vertex tint_symbol vert_main() {
   return wrapper_result;
 }
 
+struct tint_symbol_2 {
+  float col1 [[user(locn1)]];
+  float col2 [[user(locn2)]];
+};
+
 void frag_main_inner(Interface colors) {
   float const r = colors.col1;
   float const g = colors.col2;
@@ -246,9 +249,9 @@ fragment void frag_main(float4 pos [[position]], tint_symbol_2 tint_symbol_1 [[s
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_Decoration_EntryPoint_SharedStruct_HelperFunction) {
+       Emit_Attribute_EntryPoint_SharedStruct_HelperFunction) {
   // struct VertexOutput {
-  //   [[builtin(position)]] pos : vec4<f32>;
+  //   @builtin(position) pos : vec4<f32>;
   // };
   // fn foo(x : f32) -> VertexOutput {
   //   return VertexOutput(vec4<f32>(x, x, x, 1.0));
@@ -285,17 +288,15 @@ using namespace metal;
 struct VertexOutput {
   float4 pos;
 };
-struct tint_symbol {
-  float4 pos [[position]];
-};
-struct tint_symbol_1 {
-  float4 pos [[position]];
-};
 
 VertexOutput foo(float x) {
   VertexOutput const tint_symbol_2 = {.pos=float4(x, x, x, 1.0f)};
   return tint_symbol_2;
 }
+
+struct tint_symbol {
+  float4 pos [[position]];
+};
 
 VertexOutput vert_main1_inner() {
   return foo(0.5f);
@@ -307,6 +308,10 @@ vertex tint_symbol vert_main1() {
   wrapper_result.pos = inner_result.pos;
   return wrapper_result;
 }
+
+struct tint_symbol_1 {
+  float4 pos [[position]];
+};
 
 VertexOutput vert_main2_inner() {
   return foo(0.25f);
@@ -323,19 +328,19 @@ vertex tint_symbol_1 vert_main2() {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_FunctionDecoration_EntryPoint_With_RW_StorageBuffer) {
+       Emit_FunctionAttribute_EntryPoint_With_RW_StorageBuffer) {
   auto* s = Structure("Data",
                       {
                           Member("a", ty.i32()),
                           Member("b", ty.f32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("coord", ty.Of(s), ast::StorageClass::kStorage,
          ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   auto* var = Var("v", ty.f32(), ast::StorageClass::kNone,
@@ -370,18 +375,18 @@ fragment void frag_main(device Data* tint_symbol [[buffer(0)]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_FunctionDecoration_EntryPoint_With_RO_StorageBuffer) {
+       Emit_FunctionAttribute_EntryPoint_With_RO_StorageBuffer) {
   auto* s = Structure("Data",
                       {
                           Member("a", ty.i32()),
                           Member("b", ty.f32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("coord", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   auto* var = Var("v", ty.f32(), ast::StorageClass::kNone,
@@ -415,14 +420,13 @@ fragment void frag_main(const device Data* tint_symbol [[buffer(0)]]) {
 )");
 }
 
-TEST_F(MslGeneratorImplTest,
-       Emit_Decoration_Called_By_EntryPoint_With_Uniform) {
+TEST_F(MslGeneratorImplTest, Emit_Attribute_Called_By_EntryPoint_With_Uniform) {
   auto* ubo_ty = Structure("UBO", {Member("coord", ty.vec4<f32>())},
-                           {create<ast::StructBlockDecoration>()});
+                           {create<ast::StructBlockAttribute>()});
   auto* ubo = Global("ubo", ty.Of(ubo_ty), ast::StorageClass::kUniform,
-                     ast::DecorationList{
-                         create<ast::BindingDecoration>(0),
-                         create<ast::GroupDecoration>(0),
+                     ast::AttributeList{
+                         create<ast::BindingAttribute>(0),
+                         create<ast::GroupAttribute>(0),
                      });
 
   Func("sub_func",
@@ -469,19 +473,19 @@ fragment void frag_main(const constant UBO* tint_symbol_1 [[buffer(0)]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_FunctionDecoration_Called_By_EntryPoint_With_RW_StorageBuffer) {
+       Emit_FunctionAttribute_Called_By_EntryPoint_With_RW_StorageBuffer) {
   auto* s = Structure("Data",
                       {
                           Member("a", ty.i32()),
                           Member("b", ty.f32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("coord", ty.Of(s), ast::StorageClass::kStorage,
          ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ast::VariableList params;
@@ -527,18 +531,18 @@ fragment void frag_main(device Data* tint_symbol_1 [[buffer(0)]]) {
 }
 
 TEST_F(MslGeneratorImplTest,
-       Emit_FunctionDecoration_Called_By_EntryPoint_With_RO_StorageBuffer) {
+       Emit_FunctionAttribute_Called_By_EntryPoint_With_RO_StorageBuffer) {
   auto* s = Structure("Data",
                       {
                           Member("a", ty.i32()),
                           Member("b", ty.f32()),
                       },
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("coord", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   ast::VariableList params;
@@ -643,25 +647,25 @@ TEST_F(MslGeneratorImplTest,
   // [[block]] struct Data {
   //   d : f32;
   // };
-  // [[binding(0), group(0)]] var<storage> data : Data;
+  // @binding(0) @group(0) var<storage> data : Data;
   //
-  // [[stage(compute), workgroup_size(1)]]
+  // @stage(compute) @workgroup_size(1)
   // fn a() {
   //   return;
   // }
   //
-  // [[stage(compute), workgroup_size(1)]]
+  // @stage(compute) @workgroup_size(1)
   // fn b() {
   //   return;
   // }
 
   auto* s = Structure("Data", {Member("d", ty.f32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
 
   Global("data", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kReadWrite,
-         ast::DecorationList{
-             create<ast::BindingDecoration>(0),
-             create<ast::GroupDecoration>(0),
+         ast::AttributeList{
+             create<ast::BindingAttribute>(0),
+             create<ast::GroupAttribute>(0),
          });
 
   {

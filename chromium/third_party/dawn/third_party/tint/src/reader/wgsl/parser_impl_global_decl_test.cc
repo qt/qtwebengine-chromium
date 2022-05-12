@@ -93,7 +93,7 @@ TEST_F(ParserImplTest, GlobalDecl_TypeAlias) {
 TEST_F(ParserImplTest, GlobalDecl_TypeAlias_StructIdent) {
   auto p = parser(R"(struct A {
   a : f32;
-};
+}
 type B = A;)");
   p->expect_global_decl();
   p->expect_global_decl();
@@ -131,8 +131,8 @@ TEST_F(ParserImplTest, GlobalDecl_Function) {
             "main");
 }
 
-TEST_F(ParserImplTest, GlobalDecl_Function_WithDecoration) {
-  auto p = parser("[[workgroup_size(2)]] fn main() { return; }");
+TEST_F(ParserImplTest, GlobalDecl_Function_WithAttribute) {
+  auto p = parser("@workgroup_size(2) fn main() { return; }");
   p->expect_global_decl();
   ASSERT_FALSE(p->has_error()) << p->error();
 
@@ -150,7 +150,7 @@ TEST_F(ParserImplTest, GlobalDecl_Function_Invalid) {
 }
 
 TEST_F(ParserImplTest, GlobalDecl_ParsesStruct) {
-  auto p = parser("struct A { b: i32; c: f32;};");
+  auto p = parser("struct A { b: i32; c: f32;}");
   p->expect_global_decl();
   ASSERT_FALSE(p->has_error()) << p->error();
 
@@ -167,7 +167,7 @@ TEST_F(ParserImplTest, GlobalDecl_ParsesStruct) {
 }
 
 TEST_F(ParserImplTest, GlobalDecl_Struct_WithStride) {
-  auto p = parser("struct A { data: [[stride(4)]] array<f32>; };");
+  auto p = parser("struct A { data: @stride(4) array<f32>; }");
 
   p->expect_global_decl();
   ASSERT_FALSE(p->has_error()) << p->error();
@@ -182,20 +182,20 @@ TEST_F(ParserImplTest, GlobalDecl_Struct_WithStride) {
   auto* str = t->As<ast::Struct>();
   EXPECT_EQ(str->name, program.Symbols().Get("A"));
   EXPECT_EQ(str->members.size(), 1u);
-  EXPECT_FALSE(str->IsBlockDecorated());
 
   const auto* ty = str->members[0]->type;
   ASSERT_TRUE(ty->Is<ast::Array>());
   const auto* arr = ty->As<ast::Array>();
 
-  ASSERT_EQ(arr->decorations.size(), 1u);
-  auto* stride = arr->decorations[0];
-  ASSERT_TRUE(stride->Is<ast::StrideDecoration>());
-  ASSERT_EQ(stride->As<ast::StrideDecoration>()->stride, 4u);
+  ASSERT_EQ(arr->attributes.size(), 1u);
+  auto* stride = arr->attributes[0];
+  ASSERT_TRUE(stride->Is<ast::StrideAttribute>());
+  ASSERT_EQ(stride->As<ast::StrideAttribute>()->stride, 4u);
 }
 
-TEST_F(ParserImplTest, GlobalDecl_Struct_WithDecoration) {
-  auto p = parser("[[block]] struct A { data: f32; };");
+// TODO(crbug.com/tint/1324): DEPRECATED: Remove when @block is removed.
+TEST_F(ParserImplTest, GlobalDecl_Struct_WithAttribute) {
+  auto p = parser("[[block]] struct A { data: f32; }");
   p->expect_global_decl();
   ASSERT_FALSE(p->has_error()) << p->error();
 
@@ -209,21 +209,13 @@ TEST_F(ParserImplTest, GlobalDecl_Struct_WithDecoration) {
   auto* str = t->As<ast::Struct>();
   EXPECT_EQ(str->name, program.Symbols().Get("A"));
   EXPECT_EQ(str->members.size(), 1u);
-  EXPECT_TRUE(str->IsBlockDecorated());
 }
 
 TEST_F(ParserImplTest, GlobalDecl_Struct_Invalid) {
-  auto p = parser("[[block]] A {};");
+  auto p = parser("A {}");
   p->expect_global_decl();
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:11: expected declaration after decorations");
-}
-
-TEST_F(ParserImplTest, GlobalDecl_StructMissing_Semi) {
-  auto p = parser("[[block]] struct A {}");
-  p->expect_global_decl();
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:22: expected ';' for struct declaration");
+  EXPECT_EQ(p->error(), "1:1: unexpected token");
 }
 
 }  // namespace

@@ -195,3 +195,43 @@ message IsU2fEnabledRequest {}
 message IsU2fEnabledResponse {
   bool enabled = 1;
 }
+
+message CountCredentialsInTimeRangeRequest {
+  // Timestamp that indicates start of the specified time range.
+  int64 created_not_before_seconds = 1;
+  // Timestamp that indicates end of the specified time range.
+  int64 created_not_after_seconds = 2;
+}
+
+message CountCredentialsInTimeRangeResponse {
+  enum CountCredentialsInTimeRangeStatus {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    INVALID_REQUEST = 2;
+    INTERNAL_ERROR = 3;
+  }
+
+  CountCredentialsInTimeRangeStatus status = 1;
+  // Number of platform credentials in the specified time range.
+  uint64 num_credentials = 2;
+}
+
+message DeleteCredentialsInTimeRangeRequest {
+  // Timestamp that indicates start of the specified time range.
+  int64 created_not_before_seconds = 1;
+  // Timestamp that indicates end of the specified time range.
+  int64 created_not_after_seconds = 2;
+}
+
+message DeleteCredentialsInTimeRangeResponse {
+  enum DeleteCredentialsInTimeRangeStatus {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    INVALID_REQUEST = 2;
+    INTERNAL_ERROR = 3;
+  }
+
+  DeleteCredentialsInTimeRangeStatus status = 1;
+  // Number of platform credentials deleted in the specified time range.
+  uint64 num_credentials_deleted = 2;
+}

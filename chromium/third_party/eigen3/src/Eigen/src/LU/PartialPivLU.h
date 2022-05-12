@@ -378,7 +378,7 @@ struct partial_lu_impl
 
       row_transpositions[k] = PivIndex(row_of_biggest_in_col);
 
-      if(biggest_in_corner != Score(0))
+      if(!numext::is_exactly_zero(biggest_in_corner))
       {
         if(k != row_of_biggest_in_col)
         {
@@ -404,7 +404,7 @@ struct partial_lu_impl
     {
       Index k = endk;
       row_transpositions[k] = PivIndex(k);
-      if (Scoring()(lu(k, k)) == Score(0) && first_zero_pivot == -1)
+      if (numext::is_exactly_zero(Scoring()(lu(k, k))) && first_zero_pivot == -1)
         first_zero_pivot = k;
     }
 
@@ -514,7 +514,7 @@ void partial_lu_inplace(MatrixType& lu, TranspositionType& row_transpositions, t
   partial_lu_impl
     < typename MatrixType::Scalar, MatrixType::Flags&RowMajorBit?RowMajor:ColMajor,
       typename TranspositionType::StorageIndex,
-      EIGEN_SIZE_MIN_PREFER_FIXED(MatrixType::RowsAtCompileTime,MatrixType::ColsAtCompileTime)>
+      internal::min_size_prefer_fixed(MatrixType::RowsAtCompileTime, MatrixType::ColsAtCompileTime)>
     ::blocked_lu(lu.rows(), lu.cols(), &lu.coeffRef(0,0), lu.outerStride(), &row_transpositions.coeffRef(0), nb_transpositions);
 }
 

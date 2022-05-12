@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "src/ast/override_decoration.h"
-#include "src/ast/struct_block_decoration.h"
+#include "src/ast/struct_block_attribute.h"
 #include "src/writer/wgsl/test_helper.h"
 
 namespace tint {
@@ -45,47 +44,46 @@ TEST_F(WgslGeneratorImplTest, EmitVariable_StorageClass) {
 
 TEST_F(WgslGeneratorImplTest, EmitVariable_Access_Read) {
   auto* s = Structure("S", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* v =
       Global("a", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kRead,
-             ast::DecorationList{
-                 create<ast::BindingDecoration>(0),
-                 create<ast::GroupDecoration>(0),
+             ast::AttributeList{
+                 create<ast::BindingAttribute>(0),
+                 create<ast::GroupAttribute>(0),
              });
 
   GeneratorImpl& gen = Build();
 
   std::stringstream out;
   ASSERT_TRUE(gen.EmitVariable(out, v)) << gen.error();
-  EXPECT_EQ(out.str(), R"([[binding(0), group(0)]] var<storage, read> a : S;)");
+  EXPECT_EQ(out.str(), R"(@binding(0) @group(0) var<storage, read> a : S;)");
 }
 
 TEST_F(WgslGeneratorImplTest, EmitVariable_Access_Write) {
   auto* s = Structure("S", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* v =
       Global("a", ty.Of(s), ast::StorageClass::kStorage, ast::Access::kWrite,
-             ast::DecorationList{
-                 create<ast::BindingDecoration>(0),
-                 create<ast::GroupDecoration>(0),
+             ast::AttributeList{
+                 create<ast::BindingAttribute>(0),
+                 create<ast::GroupAttribute>(0),
              });
 
   GeneratorImpl& gen = Build();
 
   std::stringstream out;
   ASSERT_TRUE(gen.EmitVariable(out, v)) << gen.error();
-  EXPECT_EQ(out.str(),
-            R"([[binding(0), group(0)]] var<storage, write> a : S;)");
+  EXPECT_EQ(out.str(), R"(@binding(0) @group(0) var<storage, write> a : S;)");
 }
 
 TEST_F(WgslGeneratorImplTest, EmitVariable_Access_ReadWrite) {
   auto* s = Structure("S", {Member("a", ty.i32())},
-                      {create<ast::StructBlockDecoration>()});
+                      {create<ast::StructBlockAttribute>()});
   auto* v = Global("a", ty.Of(s), ast::StorageClass::kStorage,
                    ast::Access::kReadWrite,
-                   ast::DecorationList{
-                       create<ast::BindingDecoration>(0),
-                       create<ast::GroupDecoration>(0),
+                   ast::AttributeList{
+                       create<ast::BindingAttribute>(0),
+                       create<ast::GroupAttribute>(0),
                    });
 
   GeneratorImpl& gen = Build();
@@ -93,22 +91,22 @@ TEST_F(WgslGeneratorImplTest, EmitVariable_Access_ReadWrite) {
   std::stringstream out;
   ASSERT_TRUE(gen.EmitVariable(out, v)) << gen.error();
   EXPECT_EQ(out.str(),
-            R"([[binding(0), group(0)]] var<storage, read_write> a : S;)");
+            R"(@binding(0) @group(0) var<storage, read_write> a : S;)");
 }
 
 TEST_F(WgslGeneratorImplTest, EmitVariable_Decorated) {
   auto* v = Global("a", ty.sampler(ast::SamplerKind::kSampler),
                    ast::StorageClass::kNone, nullptr,
-                   ast::DecorationList{
-                       create<ast::GroupDecoration>(1),
-                       create<ast::BindingDecoration>(2),
+                   ast::AttributeList{
+                       create<ast::GroupAttribute>(1),
+                       create<ast::BindingAttribute>(2),
                    });
 
   GeneratorImpl& gen = Build();
 
   std::stringstream out;
   ASSERT_TRUE(gen.EmitVariable(out, v)) << gen.error();
-  EXPECT_EQ(out.str(), R"([[group(1), binding(2)]] var a : sampler;)");
+  EXPECT_EQ(out.str(), R"(@group(1) @binding(2) var a : sampler;)");
 }
 
 TEST_F(WgslGeneratorImplTest, EmitVariable_Constructor) {

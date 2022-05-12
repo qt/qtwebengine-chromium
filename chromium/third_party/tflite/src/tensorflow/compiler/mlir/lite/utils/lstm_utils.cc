@@ -29,7 +29,6 @@ limitations under the License.
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
-#include "mlir/IR/Identifier.h"  // from @llvm-project
 #include "mlir/IR/Location.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/OpDefinition.h"  // from @llvm-project
@@ -85,8 +84,8 @@ Value CreateI32DenseConst(OpBuilder* builder, ArrayRef<int32_t> values,
 }
 
 Value CreateNoneValue(OpBuilder* builder, mlir::Location location) {
-  return builder->create<mlir::ConstantOp>(location, builder->getNoneType(),
-                                           builder->getUnitAttr());
+  return builder->create<TFL::NoValueOp>(location, builder->getNoneType(),
+                                         builder->getUnitAttr());
 }
 
 Value Transpose(OpBuilder* builder, Value value_to_transpose,
@@ -720,8 +719,7 @@ LogicalResult ConvertKerasLSTMLayer(mlir::FuncOp func_op, OpBuilder* builder) {
       output_shape,
       final_inputs.getType().cast<RankedTensorType>().getElementType());
 
-  Value none = builder->create<mlir::ConstantOp>(
-      func_op.getLoc(), builder->getNoneType(), builder->getUnitAttr());
+  Value none = CreateNoneValue(builder, func_op.getLoc());
   auto lstm = builder->create<mlir::TFL::UnidirectionalSequenceLSTMOp>(
       func_op.getLoc(), result_type, /*input=*/final_inputs,
       /*input_to_input_weights=*/weights_array->getResult(0),

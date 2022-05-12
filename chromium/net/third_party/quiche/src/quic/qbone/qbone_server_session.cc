@@ -12,8 +12,9 @@
 #include "quic/core/quic_types.h"
 #include "quic/core/quic_utils.h"
 #include "quic/qbone/qbone_constants.h"
+#include "common/platform/api/quiche_command_line_flags.h"
 
-DEFINE_QUIC_COMMAND_LINE_FLAG(
+DEFINE_QUICHE_COMMAND_LINE_FLAG(
     bool, qbone_server_defer_control_stream_creation, true,
     "If true, control stream in QBONE server session is created after "
     "encryption established.");
@@ -70,6 +71,17 @@ void QboneServerSession::CreateControlStream() {
       std::make_unique<QboneServerControlStream>(this, handler_);
   control_stream_ = control_stream.get();
   ActivateStream(std::move(control_stream));
+}
+
+QuicStream* QboneServerSession::CreateControlStreamFromPendingStream(
+    PendingStream* pending) {
+  QUICHE_DCHECK(control_stream_ == nullptr);
+  // Register the reserved control stream.
+  auto control_stream =
+      std::make_unique<QboneServerControlStream>(pending, this, handler_);
+  control_stream_ = control_stream.get();
+  ActivateStream(std::move(control_stream));
+  return control_stream_;
 }
 
 void QboneServerSession::Initialize() {

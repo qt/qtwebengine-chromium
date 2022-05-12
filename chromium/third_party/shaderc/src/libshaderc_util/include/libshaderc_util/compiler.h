@@ -85,6 +85,7 @@ class Compiler {
     Vulkan_1_0 = ((1 << 22)),              // Vulkan 1.0
     Vulkan_1_1 = ((1 << 22) | (1 << 12)),  // Vulkan 1.1
     Vulkan_1_2 = ((1 << 22) | (2 << 12)),  // Vulkan 1.2
+    Vulkan_1_3 = ((1 << 22) | (3 << 12)),  // Vulkan 1.2
     // For OpenGL, use the numbering from #version in shaders.
     OpenGL_4_5 = 450,
   };
@@ -97,6 +98,7 @@ class Compiler {
     v1_3 = 0x010300u,
     v1_4 = 0x010400u,
     v1_5 = 0x010500u,
+    v1_6 = 0x010600u,
   };
 
   enum class OutputType {

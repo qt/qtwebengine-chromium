@@ -4,7 +4,7 @@
  *
  *   FreeType high-level API and common types (specification only).
  *
- * Copyright (C) 1996-2021 by
+ * Copyright (C) 1996-2022 by
  * David Turner, Robert Wilhelm, and Werner Lemberg.
  *
  * This file is part of the FreeType project, and may only be used,
@@ -153,6 +153,7 @@ FT_BEGIN_HEADER
    *   FT_FACE_FLAG_GLYPH_NAMES
    *   FT_FACE_FLAG_EXTERNAL_STREAM
    *   FT_FACE_FLAG_HINTER
+   *   FT_FACE_FLAG_SVG
    *
    *   FT_HAS_HORIZONTAL
    *   FT_HAS_VERTICAL
@@ -161,6 +162,7 @@ FT_BEGIN_HEADER
    *   FT_HAS_GLYPH_NAMES
    *   FT_HAS_COLOR
    *   FT_HAS_MULTIPLE_MASTERS
+   *   FT_HAS_SVG
    *
    *   FT_IS_SFNT
    *   FT_IS_SCALABLE
@@ -522,13 +524,15 @@ FT_BEGIN_HEADER
    *   size.
    *
    * @note:
-   *   An @FT_Face has one _active_ @FT_Size object that is used by functions
-   *   like @FT_Load_Glyph to determine the scaling transformation that in
-   *   turn is used to load and hint glyphs and metrics.
+   *   An @FT_Face has one _active_ `FT_Size` object that is used by
+   *   functions like @FT_Load_Glyph to determine the scaling transformation
+   *   that in turn is used to load and hint glyphs and metrics.
    *
-   *   You can use @FT_Set_Char_Size, @FT_Set_Pixel_Sizes, @FT_Request_Size
+   *   A newly created `FT_Size` object contains only meaningless zero values.
+   *   You must use @FT_Set_Char_Size, @FT_Set_Pixel_Sizes, @FT_Request_Size
    *   or even @FT_Select_Size to change the content (i.e., the scaling
-   *   values) of the active @FT_Size.
+   *   values) of the active `FT_Size`.  Otherwise, the scaling and hinting
+   *   will not be performed.
    *
    *   You can use @FT_New_Size to create additional size objects for a given
    *   @FT_Face, but they won't be used by other functions until you activate
@@ -1228,6 +1232,9 @@ FT_BEGIN_HEADER
    *     altered with @FT_Set_MM_Design_Coordinates,
    *     @FT_Set_Var_Design_Coordinates, or @FT_Set_Var_Blend_Coordinates.
    *     This flag is unset by a call to @FT_Set_Named_Instance.
+   *
+   *   FT_FACE_FLAG_SVG ::
+   *     [Since 2.12] The face has an 'SVG~' OpenType table.
    */
 #define FT_FACE_FLAG_SCALABLE          ( 1L <<  0 )
 #define FT_FACE_FLAG_FIXED_SIZES       ( 1L <<  1 )
@@ -1245,6 +1252,7 @@ FT_BEGIN_HEADER
 #define FT_FACE_FLAG_TRICKY            ( 1L << 13 )
 #define FT_FACE_FLAG_COLOR             ( 1L << 14 )
 #define FT_FACE_FLAG_VARIATION         ( 1L << 15 )
+#define FT_FACE_FLAG_SVG               ( 1L << 16 )
 
 
   /**************************************************************************
@@ -1483,6 +1491,22 @@ FT_BEGIN_HEADER
    */
 #define FT_HAS_COLOR( face ) \
           ( !!( (face)->face_flags & FT_FACE_FLAG_COLOR ) )
+
+
+  /**************************************************************************
+   *
+   * @macro:
+   *   FT_HAS_SVG
+   *
+   * @description:
+   *   A macro that returns true whenever a face object contains an 'SVG~'
+   *   OpenType table.
+   *
+   * @since:
+   *   2.12
+   */
+#define FT_HAS_SVG( face ) \
+          ( !!( (face)->face_flags & FT_FACE_FLAG_SVG ) )
 
 
   /**************************************************************************
@@ -2702,8 +2726,8 @@ FT_BEGIN_HEADER
    *   'https://www.freetype.org/freetype2/docs/glyphs/glyphs-2.html'.
    *
    *   Contrary to @FT_Set_Char_Size, this function doesn't have special code
-   *   to normalize zero-valued widths, heights, or resolutions (which lead
-   *   to errors in most cases).
+   *   to normalize zero-valued widths, heights, or resolutions, which are
+   *   treated as @FT_LOAD_NO_SCALE.
    *
    *   Don't use this function if you are using the FreeType cache API.
    */
@@ -2819,7 +2843,7 @@ FT_BEGIN_HEADER
    *
    *   load_flags ::
    *     A flag indicating what to load for this glyph.  The @FT_LOAD_XXX
-   *     constants can be used to control the glyph loading process (e.g.,
+   *     flags can be used to control the glyph loading process (e.g.,
    *     whether the outline should be scaled, whether to load bitmaps or
    *     not, whether to hint the outline, etc).
    *
@@ -2827,8 +2851,10 @@ FT_BEGIN_HEADER
    *   FreeType error code.  0~means success.
    *
    * @note:
-   *   The loaded glyph may be transformed.  See @FT_Set_Transform for the
-   *   details.
+   *   For proper scaling and hinting, the active @FT_Size object owned by
+   *   the face has to be meaningfully initialized by calling
+   *   @FT_Set_Char_Size before this function, for example.  The loaded
+   *   glyph may be transformed.  See @FT_Set_Transform for the details.
    *
    *   For subsetted CID-keyed fonts, `FT_Err_Invalid_Argument` is returned
    *   for invalid CID values (this is, for CID values that don't have a
@@ -2918,6 +2944,8 @@ FT_BEGIN_HEADER
    *
    *   FT_LOAD_NO_SCALE ::
    *     Don't scale the loaded outline glyph but keep it in font units.
+   *     This flag is also assumed if @FT_Size owned by the face was not
+   *     properly initialized.
    *
    *     This flag implies @FT_LOAD_NO_HINTING and @FT_LOAD_NO_BITMAP, and
    *     unsets @FT_LOAD_RENDER.
@@ -3004,21 +3032,31 @@ FT_BEGIN_HEADER
    *     Disable the auto-hinter.  See also the note below.
    *
    *   FT_LOAD_COLOR ::
-   *     Load colored glyphs.  There are slight differences depending on the
-   *     font format.
+   *     Load colored glyphs.  FreeType searches in the following order;
+   *     there are slight differences depending on the font format.
    *
-   *     [Since 2.5] Load embedded color bitmap images.  The resulting color
-   *     bitmaps, if available, will have the @FT_PIXEL_MODE_BGRA format,
-   *     with pre-multiplied color channels.  If the flag is not set and
-   *     color bitmaps are found, they are converted to 256-level gray
-   *     bitmaps, using the @FT_PIXEL_MODE_GRAY format.
+   *     [Since 2.5] Load embedded color bitmap images (provided
+   *     @FT_LOAD_NO_BITMAP is not set).  The resulting color bitmaps, if
+   *     available, have the @FT_PIXEL_MODE_BGRA format, with pre-multiplied
+   *     color channels.  If the flag is not set and color bitmaps are found,
+   *     they are converted to 256-level gray bitmaps, using the
+   *     @FT_PIXEL_MODE_GRAY format.
    *
-   *     [Since 2.10, experimental] If the glyph index contains an entry in
+   *     [Since 2.12] If the glyph index maps to an entry in the face's
+   *     'SVG~' table, load the associated SVG document from this table and
+   *     set the `format` field of @FT_GlyphSlotRec to @FT_GLYPH_FORMAT_SVG.
+   *     Note that FreeType itself can't render SVG documents; however, the
+   *     library provides hooks to seamlessly integrate an external renderer.
+   *     See sections @ot_svg_driver and @svg_fonts for more.
+   *
+   *     [Since 2.10, experimental] If the glyph index maps to an entry in
    *     the face's 'COLR' table with a 'CPAL' palette table (as defined in
    *     the OpenType specification), make @FT_Render_Glyph provide a default
    *     blending of the color glyph layers associated with the glyph index,
    *     using the same bitmap format as embedded color bitmap images.  This
-   *     is mainly for convenience; for full control of color layers use
+   *     is mainly for convenience and works only for glyphs in 'COLR' v0
+   *     tables (or glyphs in 'COLR' v1 tables that exclusively use v0
+   *     features).  For full control of color layers use
    *     @FT_Get_Color_Glyph_Layer and FreeType's color functions like
    *     @FT_Palette_Select instead of setting @FT_LOAD_COLOR for rendering
    *     so that the client application can handle blending by itself.
@@ -3069,15 +3107,15 @@ FT_BEGIN_HEADER
    *
    */
 #define FT_LOAD_DEFAULT                      0x0
-#define FT_LOAD_NO_SCALE                     ( 1L << 0 )
-#define FT_LOAD_NO_HINTING                   ( 1L << 1 )
-#define FT_LOAD_RENDER                       ( 1L << 2 )
-#define FT_LOAD_NO_BITMAP                    ( 1L << 3 )
-#define FT_LOAD_VERTICAL_LAYOUT              ( 1L << 4 )
-#define FT_LOAD_FORCE_AUTOHINT               ( 1L << 5 )
-#define FT_LOAD_CROP_BITMAP                  ( 1L << 6 )
-#define FT_LOAD_PEDANTIC                     ( 1L << 7 )
-#define FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH  ( 1L << 9 )
+#define FT_LOAD_NO_SCALE                     ( 1L << 0  )
+#define FT_LOAD_NO_HINTING                   ( 1L << 1  )
+#define FT_LOAD_RENDER                       ( 1L << 2  )
+#define FT_LOAD_NO_BITMAP                    ( 1L << 3  )
+#define FT_LOAD_VERTICAL_LAYOUT              ( 1L << 4  )
+#define FT_LOAD_FORCE_AUTOHINT               ( 1L << 5  )
+#define FT_LOAD_CROP_BITMAP                  ( 1L << 6  )
+#define FT_LOAD_PEDANTIC                     ( 1L << 7  )
+#define FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH  ( 1L << 9  )
 #define FT_LOAD_NO_RECURSE                   ( 1L << 10 )
 #define FT_LOAD_IGNORE_TRANSFORM             ( 1L << 11 )
 #define FT_LOAD_MONOCHROME                   ( 1L << 12 )
@@ -3091,8 +3129,9 @@ FT_BEGIN_HEADER
   /* */
 
   /* used internally only by certain font drivers */
-#define FT_LOAD_ADVANCE_ONLY                 ( 1L << 8 )
+#define FT_LOAD_ADVANCE_ONLY                 ( 1L << 8  )
 #define FT_LOAD_SBITS_ONLY                   ( 1L << 14 )
+#define FT_LOAD_SVG_ONLY                     ( 1L << 23 )
 
 
   /**************************************************************************
@@ -3410,7 +3449,7 @@ FT_BEGIN_HEADER
    *     @FT_Render_Mode for a list of possible values.
    *
    *     If @FT_RENDER_MODE_NORMAL is used, a previous call of @FT_Load_Glyph
-   *     with flag @FT_LOAD_COLOR makes FT_Render_Glyph provide a default
+   *     with flag @FT_LOAD_COLOR makes `FT_Render_Glyph` provide a default
    *     blending of colored glyph layers associated with the current glyph
    *     slot (provided the font contains such layers) instead of rendering
    *     the glyph slot's outline.  This is an experimental feature; see
@@ -3420,9 +3459,6 @@ FT_BEGIN_HEADER
    *   FreeType error code.  0~means success.
    *
    * @note:
-   *   To get meaningful results, font scaling values must be set with
-   *   functions like @FT_Set_Char_Size before calling `FT_Render_Glyph`.
-   *
    *   When FreeType outputs a bitmap of a glyph, it really outputs an alpha
    *   coverage map.  If a pixel is completely covered by a filled-in
    *   outline, the bitmap contains 0xFF at that pixel, meaning that

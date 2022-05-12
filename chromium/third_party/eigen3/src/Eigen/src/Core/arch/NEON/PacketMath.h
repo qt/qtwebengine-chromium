@@ -139,13 +139,13 @@ EIGEN_STRONG_INLINE Packet4f vec4f_unpackhi(const Packet4f& a, const Packet4f& b
 #define vec4f_duplane(a, p) \
   vdupq_lane_f32(vget_low_f32(a), p)
 
-#define _EIGEN_DECLARE_CONST_Packet4f(NAME,X) \
+#define EIGEN_DECLARE_CONST_Packet4f(NAME,X) \
   const Packet4f p4f_##NAME = pset1<Packet4f>(X)
 
-#define _EIGEN_DECLARE_CONST_Packet4f_FROM_INT(NAME,X) \
+#define EIGEN_DECLARE_CONST_Packet4f_FROM_INT(NAME,X) \
   const Packet4f p4f_##NAME = vreinterpretq_f32_u32(pset1<int32_t>(X))
 
-#define _EIGEN_DECLARE_CONST_Packet4i(NAME,X) \
+#define EIGEN_DECLARE_CONST_Packet4i(NAME,X) \
   const Packet4i p4i_##NAME = pset1<Packet4i>(X)
 
 #if EIGEN_ARCH_ARM64
@@ -449,15 +449,6 @@ struct packet_traits<uint64_t> : default_packet_traits
     HasBlend     = 0
   };
 };
-
-#if EIGEN_GNUC_AT_MOST(4, 4) && !EIGEN_COMP_LLVM
-// workaround gcc 4.2, 4.3 and 4.4 compilation issue
-EIGEN_STRONG_INLINE float32x4_t vld1q_f32(const float* x) { return ::vld1q_f32((const float32_t*)x); }
-EIGEN_STRONG_INLINE float32x2_t vld1_f32(const float* x) { return ::vld1_f32 ((const float32_t*)x); }
-EIGEN_STRONG_INLINE float32x2_t vld1_dup_f32(const float* x) { return ::vld1_dup_f32 ((const float32_t*)x); }
-EIGEN_STRONG_INLINE void vst1q_f32(float* to, float32x4_t from) { ::vst1q_f32((float32_t*)to,from); }
-EIGEN_STRONG_INLINE void vst1_f32 (float* to, float32x2_t from) { ::vst1_f32 ((float32_t*)to,from); }
-#endif
 
 template<> struct unpacket_traits<Packet2f>
 {
@@ -4028,6 +4019,7 @@ struct packet_traits<Eigen::half> : default_packet_traits {
     HasCos = 0,
     HasLog = 0,
     HasExp = 0,
+    HasTanh = packet_traits<float>::HasTanh,  // tanh<half> calls tanh<float>
     HasSqrt = 1,
     HasRsqrt = 1,
     HasErf = EIGEN_FAST_MATH,

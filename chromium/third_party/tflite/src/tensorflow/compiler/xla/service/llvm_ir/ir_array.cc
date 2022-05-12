@@ -30,7 +30,6 @@ limitations under the License.
 #include "tensorflow/compiler/xla/util.h"
 #include "tensorflow/compiler/xla/xla_data.pb.h"
 #include "tensorflow/core/platform/logging.h"
-#include "tensorflow/core/platform/types.h"
 
 namespace xla {
 namespace llvm_ir {
@@ -182,8 +181,7 @@ IrArray::IrArray(llvm::Value* base_ptr, Shape shape)
   TF_CHECK_OK(ShapeUtil::ValidateShape(shape));
   CHECK(base_ptr_->getType()->isPointerTy());
   int depth = 0;
-  element_type_ =
-      llvm::cast<llvm::PointerType>(base_ptr_->getType())->getElementType();
+  element_type_ = base_ptr_->getType()->getPointerElementType();
   while (llvm::ArrayType* array_type =
              llvm::dyn_cast<llvm::ArrayType>(element_type_)) {
     element_type_ = array_type->getElementType();
@@ -247,15 +245,13 @@ IrArray::Index IrArray::Index::SourceIndexOfReshape(
     }
   } else {
     const auto common_factors =
-        CommonFactors(AsInt64Slice(input_shape.dimensions()),
-                      AsInt64Slice(output_shape.dimensions()));
+        CommonFactors(input_shape.dimensions(), output_shape.dimensions());
     // We compute the source indices in each common factor from only the target
     // indices in the same common factor.
     for (ssize_t k = common_factors.size() - 2; k >= 0; --k) {
-      absl::Span<int64_t const> dimensions =
-          AsInt64Slice(output_shape.dimensions())
-              .subspan(common_factors[k].second,
-                       common_factors[k + 1].second - common_factors[k].second);
+      absl::Span<int64_t const> dimensions = output_shape.dimensions().subspan(
+          common_factors[k].second,
+          common_factors[k + 1].second - common_factors[k].second);
       llvm::Value* logical_linear_index =
           Index(absl::Span<llvm::Value* const>(multidim_).subspan(
                     common_factors[k].second,

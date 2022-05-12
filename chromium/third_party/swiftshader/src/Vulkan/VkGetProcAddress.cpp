@@ -117,11 +117,6 @@ static const std::unordered_map<std::string, PFN_vkVoidFunction> instanceFunctio
 	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateXcbSurfaceKHR),
 	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceXcbPresentationSupportKHR),
 #endif
-#ifdef VK_USE_PLATFORM_XLIB_KHR
-	// VK_KHR_xlib_surface
-	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateXlibSurfaceKHR),
-	MAKE_VULKAN_INSTANCE_ENTRY(vkGetPhysicalDeviceXlibPresentationSupportKHR),
-#endif
 #ifdef VK_USE_PLATFORM_WAYLAND_KHR
 	// VK_KHR_wayland_surface
 	MAKE_VULKAN_INSTANCE_ENTRY(vkCreateWaylandSurfaceKHR),
@@ -435,6 +430,23 @@ static const std::vector<std::pair<const char *, std::unordered_map<std::string,
 	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdDrawIndirectCountKHR),
 	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdDrawIndexedIndirectCountKHR),
 	    } },
+	// VK_EXT_extended_dynamic_state
+	{
+	    VK_EXT_EXTENDED_DYNAMIC_STATE_EXTENSION_NAME,
+	    {
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdBindVertexBuffers2EXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetCullModeEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetDepthBoundsTestEnableEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetDepthCompareOpEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetDepthTestEnableEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetDepthWriteEnableEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetFrontFaceEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetPrimitiveTopologyEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetScissorWithCountEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetStencilOpEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetStencilTestEnableEXT),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetViewportWithCountEXT),
+	    } },
 	// VK_EXT_line_rasterization
 	{
 	    VK_EXT_LINE_RASTERIZATION_EXTENSION_NAME,
@@ -446,6 +458,23 @@ static const std::vector<std::pair<const char *, std::unordered_map<std::string,
 	    VK_EXT_HOST_QUERY_RESET_EXTENSION_NAME,
 	    {
 	        MAKE_VULKAN_DEVICE_ENTRY(vkResetQueryPoolEXT),
+	    } },
+	// VK_EXT_tooling_info
+	{
+	    VK_EXT_TOOLING_INFO_EXTENSION_NAME,
+	    {
+	        MAKE_VULKAN_DEVICE_ENTRY(vkGetPhysicalDeviceToolPropertiesEXT),
+	    } },
+	// VK_KHR_synchronization2
+	{
+	    VK_KHR_SYNCHRONIZATION_2_EXTENSION_NAME,
+	    {
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdPipelineBarrier2KHR),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdResetEvent2KHR),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdSetEvent2KHR),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdWaitEvents2KHR),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkCmdWriteTimestamp2KHR),
+	        MAKE_VULKAN_DEVICE_ENTRY(vkQueueSubmit2KHR),
 	    } },
 #ifndef __ANDROID__
 	// VK_KHR_swapchain

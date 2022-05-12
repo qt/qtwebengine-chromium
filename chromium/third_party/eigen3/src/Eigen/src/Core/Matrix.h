@@ -52,6 +52,14 @@ public:
     Alignment = actual_alignment
   };
 };
+
+template<typename Scalar_, int Rows_, int Cols_, int Options_, int MaxRows_, int MaxCols_>
+struct has_trivially_copyable_storage<Matrix<Scalar_, Rows_, Cols_, Options_, MaxRows_, MaxCols_> >
+{
+  // Must be identical to the type of PlainObjectBase::m_storage.
+  typedef DenseStorage<Scalar_, internal::size_at_compile_time<MaxRows_, MaxCols_>::ret, Rows_, Cols_, Options_> Storage;
+  static const bool value = std::is_trivially_copyable<Storage>::value;
+};
 }
 
 /** \class Matrix
@@ -210,6 +218,12 @@ class Matrix
       return Base::_set(other);
     }
 
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Matrix& operator=(
+        const Matrix& other) requires internal::has_trivially_copyable_storage<Matrix>::value = default;
+#endif
+
     /** \internal
       * \brief Copies the value of the expression \a other into \c *this with automatic resizing.
       *
@@ -269,7 +283,6 @@ class Matrix
       : Base(internal::constructor_without_unaligned_array_assert())
     { EIGEN_INITIALIZE_COEFFS_IF_THAT_OPTION_IS_ENABLED }
 
-#if EIGEN_HAS_RVALUE_REFERENCES
     EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE
     Matrix(Matrix&& other) EIGEN_NOEXCEPT_IF(std::is_nothrow_move_constructible<Scalar>::value)
       : Base(std::move(other)) {}
@@ -279,9 +292,14 @@ class Matrix
       Base::operator=(std::move(other));
       return *this;
     }
+
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Matrix(Matrix&& other) EIGEN_NOEXCEPT
+        requires internal::has_trivially_copyable_storage<Matrix>::value = default;
+    EIGEN_DEVICE_FUNC EIGEN_STRONG_INLINE Matrix& operator=(Matrix&& other) EIGEN_NOEXCEPT
+        requires internal::has_trivially_copyable_storage<Matrix>::value = default;
 #endif
 
-#if EIGEN_HAS_CXX11
     /** \copydoc PlainObjectBase(const Scalar&, const Scalar&, const Scalar&,  const Scalar&, const ArgTypes&... args)
      *
      * Example: \include Matrix_variadic_ctor_cxx11.cpp
@@ -317,7 +335,6 @@ class Matrix
       */
     EIGEN_DEVICE_FUNC
     explicit EIGEN_STRONG_INLINE Matrix(const std::initializer_list<std::initializer_list<Scalar>>& list) : Base(list) {}
-#endif // end EIGEN_HAS_CXX11
 
 #ifndef EIGEN_PARSED_BY_DOXYGEN
 
@@ -407,6 +424,12 @@ class Matrix
     EIGEN_DEVICE_FUNC
     EIGEN_STRONG_INLINE Matrix(const Matrix& other) : Base(other)
     { }
+
+#if EIGEN_COMP_HAS_P0848R3
+    EIGEN_DEVICE_FUNC
+    EIGEN_STRONG_INLINE Matrix(const Matrix& other) requires internal::has_trivially_copyable_storage<Matrix>::value =
+        default;
+#endif
 
     /** \brief Copy constructor for generic expressions.
       * \sa MatrixBase::operator=(const EigenBase<OtherDerived>&)
@@ -505,8 +528,6 @@ EIGEN_MAKE_TYPEDEFS_ALL_SIZES(std::complex<double>, cd)
 #undef EIGEN_MAKE_TYPEDEFS
 #undef EIGEN_MAKE_FIXED_TYPEDEFS
 
-#if EIGEN_HAS_CXX11
-
 #define EIGEN_MAKE_TYPEDEFS(Size, SizeSuffix)                     \
 /** \ingroup matrixtypedefs */                                    \
 /** \brief \cpp11 */                                              \
@@ -551,8 +572,6 @@ using RowVector = Matrix<Type, 1, Size>;
 
 #undef EIGEN_MAKE_TYPEDEFS
 #undef EIGEN_MAKE_FIXED_TYPEDEFS
-
-#endif // EIGEN_HAS_CXX11
 
 } // end namespace Eigen
 

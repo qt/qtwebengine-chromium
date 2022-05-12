@@ -169,7 +169,6 @@ ci.builder(
         category = "ToT Code Coverage",
         short_name = "and",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -354,24 +353,6 @@ ci.builder(
     console_view_entry = consoles.console_view_entry(
         category = "ToT Windows|Asan",
         short_name = "fuz",
-    ),
-    os = os.WINDOWS_ANY,
-)
-
-ci.builder(
-    name = "ToTWinCFI",
-    console_view_entry = consoles.console_view_entry(
-        category = "CFI|Win",
-        short_name = "x86",
-    ),
-    os = os.WINDOWS_ANY,
-)
-
-ci.builder(
-    name = "ToTWinCFI64",
-    console_view_entry = consoles.console_view_entry(
-        category = "CFI|Win",
-        short_name = "x64",
     ),
     os = os.WINDOWS_ANY,
 )

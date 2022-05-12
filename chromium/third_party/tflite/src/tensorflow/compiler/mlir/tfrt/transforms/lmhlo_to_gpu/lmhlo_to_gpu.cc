@@ -45,6 +45,8 @@ void populateCholeskyConversionPattern(RewritePatternSet&, TypeConverter&);
 void populateConvolutionConversionPattern(RewritePatternSet&, TypeConverter&);
 void populateCustomCallConversionPattern(RewritePatternSet&, TypeConverter&);
 void populateGemmConversionPattern(RewritePatternSet&, TypeConverter&);
+void populateReplicaAndPartitionConversionPattern(RewritePatternSet&,
+                                                  TypeConverter&);
 void populateTriangularSolveConversionPattern(RewritePatternSet&,
                                               TypeConverter&);
 
@@ -56,7 +58,7 @@ namespace {
 struct ConvertLmhloToGpuPass
     : public ConvertLmhloToGpuPassBase<ConvertLmhloToGpuPass> {
  private:
-  void runOnFunction() override;
+  void runOnOperation() override;
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<mlir::gpu::GPUDialect, tfrt::compiler::TFRTDialect,
@@ -68,7 +70,7 @@ struct ConvertLmhloToGpuPass
 
 }  // namespace
 
-void ConvertLmhloToGpuPass::runOnFunction() {
+void ConvertLmhloToGpuPass::runOnOperation() {
   auto* context = &getContext();
   TypeConverter converter = tfrt::gpu::createMemrefToTfrtGpuConverter();
 
@@ -78,8 +80,9 @@ void ConvertLmhloToGpuPass::runOnFunction() {
   populateConvolutionConversionPattern(patterns, converter);
   populateCustomCallConversionPattern(patterns, converter);
   populateGemmConversionPattern(patterns, converter);
+  populateReplicaAndPartitionConversionPattern(patterns, converter);
   populateTriangularSolveConversionPattern(patterns, converter);
-  populateFuncOpTypeConversionPattern(patterns, converter);
+  populateFunctionOpInterfaceTypeConversionPattern<FuncOp>(patterns, converter);
   populateReturnOpTypeConversionPattern(patterns, converter);
 
   // Set of ops that need to be wrapped in tfrt_gpu_conversion.async.execute
@@ -88,10 +91,10 @@ void ConvertLmhloToGpuPass::runOnFunction() {
   // hand, ops which lower to the gpu dialect do not need to be wrapped.
   ConversionTarget wrap_target(*context);
   wrap_target.addLegalDialect<lmhlo_gpu::LmhloGpuDialect>();
-  wrap_target.addLegalOp<lmhlo::AllGatherOp, lmhlo::AllReduceOp,
-                         lmhlo::ReduceScatterOp, lmhlo::AllToAllOp,
-                         lmhlo::CollectivePermuteOp, lmhlo::CustomCallOp,
-                         lmhlo::TriangularSolveOp>();
+  wrap_target.addLegalOp<
+      lmhlo::AllGatherOp, lmhlo::AllReduceOp, lmhlo::ReduceScatterOp,
+      lmhlo::AllToAllOp, lmhlo::CollectivePermuteOp, lmhlo::CustomCallOp,
+      lmhlo::TriangularSolveOp, lmhlo::ReplicaIdOp, lmhlo::PartitionIdOp>();
   tfrt::gpu::populateGpuAsyncConversionPatterns(patterns, converter,
                                                 wrap_target);
 
@@ -115,7 +118,7 @@ void ConvertLmhloToGpuPass::runOnFunction() {
     return signalPassFailure();
 }
 
-std::unique_ptr<FunctionPass> createConvertLmhloToGpuPass() {
+std::unique_ptr<OperationPass<FuncOp>> createConvertLmhloToGpuPass() {
   return std::make_unique<ConvertLmhloToGpuPass>();
 }
 

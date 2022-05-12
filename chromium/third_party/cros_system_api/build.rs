@@ -61,6 +61,10 @@ const BINDINGS_TO_GENERATE: &[(&str, &str, BindingsType)] = &[
 // When adding additional protos, remember to include the source project and subtree in the
 // ebuild. Otherwise, the source files will not be accessible when building dev-rust/system_api.
 const PROTOS_TO_GENERATE: &[(&str, &str)] = &[
+    (
+        "auth_factor",
+        "system_api/dbus/cryptohome/auth_factor.proto",
+    ),
     ("fido", "system_api/dbus/cryptohome/fido.proto"),
     ("key", "system_api/dbus/cryptohome/key.proto"),
     ("rpc", "system_api/dbus/cryptohome/rpc.proto"),

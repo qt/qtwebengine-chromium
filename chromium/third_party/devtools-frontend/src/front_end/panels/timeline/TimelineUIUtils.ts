@@ -1521,7 +1521,7 @@ export class TimelineUIUtils {
       if (!color) {
         throw new Error('Unable to parse color from TimelineUIUtils.categories().scripting.color');
       }
-      return /** @type {string} */ color.setAlpha(0.3).asString(null) as string;
+      return color.setAlpha(0.3).asString(null) as string;
     }
 
     return color;
@@ -1871,15 +1871,8 @@ export class TimelineUIUtils {
         if (url) {
           const options = {
             tabStop: true,
-            className: undefined,
-            columnNumber: undefined,
             showColumnNumber: false,
             inlineFrameIndex: 0,
-            text: undefined,
-            lineNumber: undefined,
-            preventClick: undefined,
-            maxLength: undefined,
-            bypassURLTrimming: undefined,
           };
           details = Components.Linkifier.Linkifier.linkifyURL(url, options);
         }
@@ -2126,15 +2119,8 @@ export class TimelineUIUtils {
         if (url) {
           const options = {
             tabStop: true,
-            className: undefined,
-            columnNumber: undefined,
             showColumnNumber: false,
             inlineFrameIndex: 0,
-            lineNumber: undefined,
-            text: undefined,
-            preventClick: undefined,
-            maxLength: undefined,
-            bypassURLTrimming: undefined,
           };
           contentHelper.appendElementRow(
               i18nString(UIStrings.resource), Components.Linkifier.Linkifier.linkifyURL(url, options));
@@ -2264,15 +2250,8 @@ export class TimelineUIUtils {
         if (url) {
           const options = {
             tabStop: true,
-            className: undefined,
-            columnNumber: undefined,
             showColumnNumber: false,
-            lineNumber: undefined,
             inlineFrameIndex: 0,
-            text: undefined,
-            preventClick: undefined,
-            maxLength: undefined,
-            bypassURLTrimming: undefined,
           };
           contentHelper.appendElementRow(
               i18nString(UIStrings.imageUrl), Components.Linkifier.Linkifier.linkifyURL(url, options));
@@ -2285,15 +2264,8 @@ export class TimelineUIUtils {
         if (url) {
           const options = {
             tabStop: true,
-            className: undefined,
-            columnNumber: undefined,
             showColumnNumber: false,
             inlineFrameIndex: 0,
-            lineNumber: undefined,
-            text: undefined,
-            preventClick: undefined,
-            maxLength: undefined,
-            bypassURLTrimming: undefined,
           };
           contentHelper.appendElementRow(
               i18nString(UIStrings.stylesheetUrl), Components.Linkifier.Linkifier.linkifyURL(url, options));
@@ -2641,15 +2613,8 @@ export class TimelineUIUtils {
     if (request.url) {
       const options = {
         tabStop: true,
-        className: undefined,
-        columnNumber: undefined,
         showColumnNumber: false,
-        text: undefined,
         inlineFrameIndex: 0,
-        lineNumber: undefined,
-        preventClick: undefined,
-        maxLength: undefined,
-        bypassURLTrimming: undefined,
       };
       contentHelper.appendElementRow(
           i18n.i18n.lockedString('URL'), Components.Linkifier.Linkifier.linkifyURL(request.url, options));
@@ -2711,7 +2676,7 @@ export class TimelineUIUtils {
     const topFrame = TimelineModel.TimelineModel.TimelineData.forEvent(sendRequest).topFrame();
     if (topFrame) {
       const link = linkifier.maybeLinkifyConsoleCallFrame(
-          target, topFrame, {tabStop: true, className: undefined, inlineFrameIndex: 0, showColumnNumber: true});
+          target, topFrame, {tabStop: true, inlineFrameIndex: 0, showColumnNumber: true});
       if (link) {
         contentHelper.appendElementRow(title, link);
       }
@@ -2720,9 +2685,8 @@ export class TimelineUIUtils {
       if (initiator) {
         const initiatorURL = TimelineModel.TimelineModel.TimelineData.forEvent(initiator).url;
         if (initiatorURL) {
-          const link = linkifier.maybeLinkifyScriptLocation(
-              target, null, initiatorURL, 0,
-              {tabStop: true, className: undefined, inlineFrameIndex: 0, columnNumber: undefined});
+          const link =
+              linkifier.maybeLinkifyScriptLocation(target, null, initiatorURL, 0, {tabStop: true, inlineFrameIndex: 0});
           if (link) {
             contentHelper.appendElementRow(title, link);
           }
@@ -3145,7 +3109,7 @@ export class TimelineUIUtils {
     if (filmStripFrame) {
       const filmStripPreview = document.createElement('div');
       filmStripPreview.classList.add('timeline-filmstrip-preview');
-      filmStripFrame.imageDataPromise()
+      void filmStripFrame.imageDataPromise()
           .then(data => UI.UIUtils.loadImageFromData(data))
           .then(image => image && filmStripPreview.appendChild(image));
       contentHelper.appendElementRow('', filmStripPreview);
@@ -3582,7 +3546,7 @@ export class InvalidationsGroupElement extends UI.TreeOutline.TreeElement {
     const node = (invalidation.nodeId && this.relatedNodesMap) ? this.relatedNodesMap.get(invalidation.nodeId) : null;
     if (node) {
       const nodeSpan = document.createElement('span');
-      Common.Linkifier.Linkifier.linkify(node).then(link => nodeSpan.appendChild(link));
+      void Common.Linkifier.Linkifier.linkify(node).then(link => nodeSpan.appendChild(link));
       return nodeSpan;
     }
     if (invalidation.nodeName) {
@@ -3714,15 +3678,9 @@ export class TimelineDetailsContentHelper {
 
     const options = {
       tabStop: true,
-      className: undefined,
       columnNumber: startColumn,
       showColumnNumber: true,
       inlineFrameIndex: 0,
-      text: undefined,
-      lineNumber: undefined,
-      preventClick: undefined,
-      maxLength: undefined,
-      bypassURLTrimming: undefined,
     };
     const link = this.linkifierInternal.maybeLinkifyScriptLocation(this.target, null, url, startLine, options);
     if (!link) {
@@ -3737,8 +3695,7 @@ export class TimelineDetailsContentHelper {
     }
     const locationContent = document.createElement('span');
     const link = this.linkifierInternal.maybeLinkifyScriptLocation(
-        this.target, null, url, startLine,
-        {tabStop: true, className: undefined, inlineFrameIndex: 0, columnNumber: undefined});
+        this.target, null, url, startLine, {tabStop: true, inlineFrameIndex: 0});
     if (!link) {
       return;
     }

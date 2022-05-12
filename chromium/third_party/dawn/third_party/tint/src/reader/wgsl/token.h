@@ -16,6 +16,8 @@
 #define SRC_READER_WGSL_TOKEN_H_
 
 #include <string>
+#include <string_view>
+#include <variant>  // NOLINT: cpplint doesn't recognise this
 
 #include "src/source.h"
 
@@ -50,9 +52,11 @@ class Token {
     kAndAnd,
     /// A '->'
     kArrow,
-    /// A '[['
+    /// A '@'
+    kAttr,
+    /// A '[[' - [DEPRECATED] now '@'
     kAttrLeft,
-    /// A ']]'
+    /// A ']]' - [DEPRECATED] now '@'
     kAttrRight,
     /// A '/'
     kForwardSlash,
@@ -153,84 +157,12 @@ class Token {
     kFn,
     // A 'for'
     kFor,
-    // A 'Bgra8Unorm' format
-    kFormatBgra8Unorm,
-    // A 'Bgra8UnormSrgb' format
-    kFormatBgra8UnormSrgb,
-    // A 'R16Float' format
-    kFormatR16Float,
-    // A 'R16Sint' format
-    kFormatR16Sint,
-    // A 'R16Uint' format
-    kFormatR16Uint,
-    // A 'R32Float' format
-    kFormatR32Float,
-    // A 'R32Sint' format
-    kFormatR32Sint,
-    // A 'R32Uint' format
-    kFormatR32Uint,
-    // A 'R8Sint' format
-    kFormatR8Sint,
-    // A 'R8Snorm' format
-    kFormatR8Snorm,
-    // A 'R8Uint' format
-    kFormatR8Uint,
-    // A 'R8Unorm' format
-    kFormatR8Unorm,
-    // A 'Rg11B10Float' format
-    kFormatRg11B10Float,
-    // A 'Rg16Float' format
-    kFormatRg16Float,
-    // A 'Rg16Sint' format
-    kFormatRg16Sint,
-    // A 'Rg16Uint' format
-    kFormatRg16Uint,
-    // A 'Rg32Float' format
-    kFormatRg32Float,
-    // A 'Rg32Sint' format
-    kFormatRg32Sint,
-    // A 'Rg32Uint' format
-    kFormatRg32Uint,
-    // A 'Rg8Sint' format
-    kFormatRg8Sint,
-    // A 'Rg8Snorm' format
-    kFormatRg8Snorm,
-    // A 'Rg8Uint' format
-    kFormatRg8Uint,
-    // A 'Rg8Unorm' format
-    kFormatRg8Unorm,
-    // A 'Rgb10A2Unorm' format
-    kFormatRgb10A2Unorm,
-    // A 'Rgba16Float' format
-    kFormatRgba16Float,
-    // A 'Rgba16Sint' format
-    kFormatRgba16Sint,
-    // A 'Rgba16Uint' format
-    kFormatRgba16Uint,
-    // A 'Rgba32Float' format
-    kFormatRgba32Float,
-    // A 'Rgba32Sint' format
-    kFormatRgba32Sint,
-    // A 'Rgba32Uint' format
-    kFormatRgba32Uint,
-    // A 'Rgba8Sint' format
-    kFormatRgba8Sint,
-    // A 'Rgba8Snorm' format
-    kFormatRgba8Snorm,
-    // A 'Rgba8Uint' format
-    kFormatRgba8Uint,
-    // A 'Rgba8Unorm' format
-    kFormatRgba8Unorm,
-    // A 'Rgba8UnormSrgb' format
-    kFormatRgba8UnormSrgb,
     /// A 'function'
     kFunction,
     /// A 'i32'
     kI32,
     /// A 'if'
     kIf,
-    /// A 'image'
-    kImage,
     /// A 'import'
     kImport,
     /// A 'let'
@@ -255,6 +187,8 @@ class Token {
     kMat4x3,
     /// A 'mat4x4'
     kMat4x4,
+    /// A 'override'
+    kOverride,
     /// A 'private'
     kPrivate,
     /// A 'ptr'
@@ -328,7 +262,7 @@ class Token {
   /// Converts a token type to a name
   /// @param type the type to convert
   /// @returns the token type as as string
-  static std::string TypeToName(Type type);
+  static std::string_view TypeToName(Type type);
 
   /// Creates an uninitialized token
   Token();
@@ -340,8 +274,18 @@ class Token {
   /// Create a string Token
   /// @param type the Token::Type of the token
   /// @param source the source of the token
-  /// @param val the source string for the token
-  Token(Type type, const Source& source, const std::string& val);
+  /// @param view the source string view for the token
+  Token(Type type, const Source& source, const std::string_view& view);
+  /// Create a string Token
+  /// @param type the Token::Type of the token
+  /// @param source the source of the token
+  /// @param str the source string for the token
+  Token(Type type, const Source& source, const std::string& str);
+  /// Create a string Token
+  /// @param type the Token::Type of the token
+  /// @param source the source of the token
+  /// @param str the source string for the token
+  Token(Type type, const Source& source, const char* str);
   /// Create a unsigned integer Token
   /// @param source the source of the token
   /// @param val the source unsigned for the token
@@ -364,6 +308,11 @@ class Token {
   /// @param b the token to copy
   /// @return Token
   Token& operator=(const Token& b);
+
+  /// Equality operator with an identifier
+  /// @param ident the identifier string
+  /// @return true if this token is an identifier and is equal to ident.
+  bool operator==(std::string_view ident);
 
   /// Returns true if the token is of the given type
   /// @param t the type to check against.
@@ -422,7 +371,7 @@ class Token {
   Source source() const { return source_; }
 
   /// Returns the string value of the token
-  /// @return const std::string&
+  /// @return std::string
   std::string to_str() const;
   /// Returns the float value of the token. 0 is returned if the token does not
   /// contain a float value.
@@ -438,21 +387,15 @@ class Token {
   int32_t to_i32() const;
 
   /// @returns the token type as string
-  std::string to_name() const { return Token::TypeToName(type_); }
+  std::string_view to_name() const { return Token::TypeToName(type_); }
 
  private:
   /// The Token::Type of the token
   Type type_ = Type::kError;
   /// The source where the token appeared
   Source source_;
-  /// The string represented by the token
-  std::string val_str_;
-  /// The signed integer represented by the token
-  int32_t val_int_ = 0;
-  /// The unsigned integer represented by the token
-  uint32_t val_uint_ = 0;
-  /// The float value represented by the token
-  float val_float_ = 0.0;
+  /// The value represented by the token
+  std::variant<int32_t, uint32_t, float, std::string, std::string_view> value_;
 };
 
 #ifndef NDEBUG

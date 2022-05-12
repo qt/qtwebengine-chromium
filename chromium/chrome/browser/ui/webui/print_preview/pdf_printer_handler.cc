@@ -47,7 +47,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "url/gurl.h"
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
 #include "chrome/common/printing/printer_capabilities_mac.h"
 #endif
 
@@ -242,7 +242,7 @@ void PdfPrinterHandler::StartGetCapability(const std::string& destination_id,
                                            GetCapabilityCallback callback) {
   DCHECK_CURRENTLY_ON(content::BrowserThread::UI);
 
-#if defined(OS_MAC)
+#if BUILDFLAG(IS_MAC)
   // Read the Mac custom paper sizes on a separate thread.
   // USER_VISIBLE because the result is displayed in the print preview dialog.
   base::ThreadPool::PostTaskAndReplyWithResult(
@@ -311,11 +311,13 @@ void PdfPrinterHandler::FileSelected(const base::FilePath& path,
   download_prefs->SetSaveFilePath(path.DirName());
   sticky_settings_->SaveInPrefs(profile_->GetPrefs());
   print_to_pdf_path_ = path;
+  select_file_dialog_.reset();
   PostPrintToPdfTask();
 }
 
 void PdfPrinterHandler::FileSelectionCanceled(void* params) {
   std::move(print_callback_).Run(base::Value("PDFPrintCanceled"));
+  select_file_dialog_.reset();
 }
 
 void PdfPrinterHandler::SetPdfSavedClosureForTesting(
@@ -332,9 +334,9 @@ void PdfPrinterHandler::SetPrintToPdfPathForTesting(
 base::FilePath PdfPrinterHandler::GetFileNameForPrintJobTitle(
     const std::u16string& job_title) {
   DCHECK(!job_title.empty());
-#if defined(OS_WIN)
+#if BUILDFLAG(IS_WIN)
   base::FilePath::StringType print_job_title(base::AsWString(job_title));
-#elif defined(OS_POSIX)
+#elif BUILDFLAG(IS_POSIX)
   base::FilePath::StringType print_job_title = base::UTF16ToUTF8(job_title);
 #endif
 
@@ -476,6 +478,10 @@ void PdfPrinterHandler::OnGotUniqueFileName(const base::FilePath& path) {
 
 void PdfPrinterHandler::OnDirectorySelected(const base::FilePath& filename,
                                             const base::FilePath& directory) {
+  // Early return if the select file dialog is already active.
+  if (select_file_dialog_)
+    return;
+
   base::FilePath path = directory.Append(filename);
 
   // Prompts the user to select the file.

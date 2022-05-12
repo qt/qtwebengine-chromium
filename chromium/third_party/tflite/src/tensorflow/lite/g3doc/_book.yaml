@@ -52,6 +52,8 @@ upper_tabs:
       - heading: "Audio"
       - title: "Audio classification with Model Maker"
         path: /lite/tutorials/model_maker_audio_classification
+      - title: "Speech recognition with Model Maker"
+        path: /lite/tutorials/model_maker_speech_recognition
 
       - heading: "Microcontrollers"
       - title: "Gesture recognition"
@@ -94,14 +96,14 @@ upper_tabs:
           path: /lite/convert/metadata_writer_tutorial
       - title: "Sample models"
         path: /lite/guide/hosted_models
-      - title: "API updates"
-        path: /lite/convert/api_updates
       - title: "Model Analyzer"
         path: /lite/guide/model_analyzer
         status: experimental
       - title: "Authoring tool"
         path: /lite/guide/authoring
         status: experimental
+      - title: "Release notes"
+        path: /lite/convert/api_updates
 
       - heading: "Create a model"
       - title: "TensorFlow Lite Model Maker"

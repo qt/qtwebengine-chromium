@@ -68,6 +68,7 @@ static bool is_valid_spirv_version(uint32_t version)
 	case 0x10300: // SPIR-V 1.3
 	case 0x10400: // SPIR-V 1.4
 	case 0x10500: // SPIR-V 1.5
+	case 0x10600: // SPIR-V 1.6
 		return true;
 
 	default:
@@ -290,7 +291,15 @@ void Parser::parse(const Instruction &instruction)
 	{
 		// The SPIR-V debug information extended instructions might come at global scope.
 		if (current_block)
+		{
 			current_block->ops.push_back(instruction);
+			if (length >= 2)
+			{
+				const auto *type = maybe_get<SPIRType>(ops[0]);
+				if (type)
+					ir.load_type_width.insert({ ops[1], type->width });
+			}
+		}
 		break;
 	}
 
@@ -341,6 +350,22 @@ void Parser::parse(const Instruction &instruction)
 		default:
 			break;
 		}
+		break;
+	}
+
+	case OpExecutionModeId:
+	{
+		auto &execution = ir.entry_points[ops[0]];
+		auto mode = static_cast<ExecutionMode>(ops[1]);
+		execution.flags.set(mode);
+
+		if (mode == ExecutionModeLocalSizeId)
+		{
+			execution.workgroup_size.id_x = ops[2];
+			execution.workgroup_size.id_y = ops[3];
+			execution.workgroup_size.id_z = ops[4];
+		}
+
 		break;
 	}
 
@@ -1194,10 +1219,9 @@ void Parser::parse(const Instruction &instruction)
 		{
 			const auto *type = maybe_get<SPIRType>(ops[0]);
 			if (type)
-			{
 				ir.load_type_width.insert({ ops[1], type->width });
-			}
 		}
+
 		if (!current_block)
 			SPIRV_CROSS_THROW("Currently no block to insert opcode.");
 

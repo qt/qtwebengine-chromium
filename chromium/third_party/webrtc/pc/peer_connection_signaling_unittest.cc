@@ -659,7 +659,7 @@ TEST_P(PeerConnectionSignalingTest,
   // Process all currently pending messages by waiting for a posted task to run.
   bool checkpoint_reached = false;
   rtc::Thread::Current()->PostTask(
-      RTC_FROM_HERE, [&checkpoint_reached] { checkpoint_reached = true; });
+      [&checkpoint_reached] { checkpoint_reached = true; });
   EXPECT_TRUE_WAIT(checkpoint_reached, kWaitTimeout);
   // If resolving the observer was pending, it must now have been called.
   EXPECT_TRUE(observer->called());
@@ -674,8 +674,9 @@ TEST_P(PeerConnectionSignalingTest, SetRemoteDescriptionExecutesImmediately) {
 
   // By not waiting for the observer's callback we can verify that the operation
   // executed immediately.
-  callee->pc()->SetRemoteDescription(std::move(offer),
-                                     new FakeSetRemoteDescriptionObserver());
+  callee->pc()->SetRemoteDescription(
+      std::move(offer),
+      rtc::make_ref_counted<FakeSetRemoteDescriptionObserver>());
   EXPECT_EQ(2u, callee->pc()->GetReceivers().size());
 }
 
@@ -693,8 +694,9 @@ TEST_P(PeerConnectionSignalingTest, CreateOfferBlocksSetRemoteDescription) {
   // SetRemoteDescription() operation should be chained to be executed
   // asynchronously, when CreateOffer() completes.
   callee->pc()->CreateOffer(offer_observer, RTCOfferAnswerOptions());
-  callee->pc()->SetRemoteDescription(std::move(offer),
-                                     new FakeSetRemoteDescriptionObserver());
+  callee->pc()->SetRemoteDescription(
+      std::move(offer),
+      rtc::make_ref_counted<FakeSetRemoteDescriptionObserver>());
   // CreateOffer() is asynchronous; without message processing this operation
   // should not have completed.
   EXPECT_FALSE(offer_observer->called());
@@ -1113,8 +1115,9 @@ TEST_F(PeerConnectionSignalingUnifiedPlanTest,
   // the new observer should also be invoked synchronously - as is ensured by
   // other tests.)
   RTC_DCHECK(!caller->pc()->GetTransceivers()[0]->mid().has_value());
-  caller->pc()->SetLocalDescription(std::move(offer),
-                                    new FakeSetLocalDescriptionObserver());
+  caller->pc()->SetLocalDescription(
+      std::move(offer),
+      rtc::make_ref_counted<FakeSetLocalDescriptionObserver>());
   EXPECT_TRUE(caller->pc()->GetTransceivers()[0]->mid().has_value());
 }
 
@@ -1132,7 +1135,7 @@ TEST_F(PeerConnectionSignalingUnifiedPlanTest,
             // operation executed immediately.
             RTC_DCHECK(!pc->GetTransceivers()[0]->mid().has_value());
             pc->SetLocalDescription(
-                new rtc::RefCountedObject<MockSetSessionDescriptionObserver>(),
+                rtc::make_ref_counted<MockSetSessionDescriptionObserver>(),
                 desc);
             EXPECT_TRUE(pc->GetTransceivers()[0]->mid().has_value());
           });

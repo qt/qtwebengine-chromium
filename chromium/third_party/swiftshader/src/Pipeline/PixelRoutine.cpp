@@ -163,7 +163,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 					WWWW += *Pointer<Float4>(constants + OFFSET(Constants, weight) + 16 * cMask[q]);
 				}
 
-				WWWW = Rcp(WWWW, Precision::Relaxed);
+				WWWW = Rcp(WWWW, true /* relaxedPrecision */);
 				XXXX *= WWWW;
 				YYYY *= WWWW;
 
@@ -174,7 +174,7 @@ void PixelRoutine::quad(Pointer<Byte> cBuffer[MAX_COLOR_BUFFERS], Pointer<Byte> 
 			if(interpolateW())
 			{
 				w = interpolate(xxxx, Dw, rhw, primitive + OFFSET(Primitive, w), false, false);
-				rhw = reciprocal(w, false, false, true);
+				rhw = reciprocal(w, false, true);
 
 				if(state.centroid || shaderContainsInterpolation)  // TODO(b/194714095)
 				{

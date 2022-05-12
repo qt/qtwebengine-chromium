@@ -29,6 +29,7 @@ const char kSetUpdateOverCellularPermission[] =
     "SetUpdateOverCellularPermission";
 const char kSetUpdateOverCellularTarget[] = "SetUpdateOverCellularTarget";
 const char kToggleFeature[] = "ToggleFeature";
+const char kIsFeatureEnabled[] = "IsFeatureEnabled";
 
 // Signals.
 const char kStatusUpdateAdvanced[] = "StatusUpdateAdvanced";
@@ -55,6 +56,7 @@ const char kUpdateStatusCleanupPreviousUpdate[] =
 
 // Feature names.
 const char kFeatureRepeatedUpdates[] = "feature-repeated-updates";
+const char kFeatureConsumerAutoUpdate[] = "feature-consumer-auto-update";
 
 // Action exit codes.
 // Reference common/error_code.h in update_engine repo for direct mappings and

@@ -133,6 +133,7 @@ void WebEngineAudioRenderer::Initialize(media::DemuxerStream* stream,
   DCHECK(!init_cb_);
   init_cb_ = std::move(init_cb);
 
+  cdm_context_ = cdm_context;
   demuxer_stream_ = stream;
   client_ = client;
 
@@ -147,28 +148,39 @@ void WebEngineAudioRenderer::Initialize(media::DemuxerStream* stream,
   audio_consumer_.events().OnEndOfStream = [this]() { OnEndOfStream(); };
   RequestAudioConsumerStatus();
 
+  InitializeStream();
+
+  // Call `init_cb_`, unless it's been called by OnError().
+  if (init_cb_) {
+    std::move(init_cb_).Run(media::PIPELINE_OK);
+  }
+}
+
+void WebEngineAudioRenderer::InitializeStream() {
   // AAC streams require bitstream conversion. Without it the demuxer may
   // produce decoded stream without ADTS headers which are required for AAC
   // streams in AudioConsumer.
   // TODO(crbug.com/1120095): Reconsider this logic.
-  if (stream->audio_decoder_config().codec() == media::AudioCodec::kAAC) {
-    stream->EnableBitstreamConverter();
+  if (demuxer_stream_->audio_decoder_config().codec() ==
+      media::AudioCodec::kAAC) {
+    demuxer_stream_->EnableBitstreamConverter();
   }
 
-  if (stream->audio_decoder_config().is_encrypted()) {
-    if (!cdm_context) {
+  if (demuxer_stream_->audio_decoder_config().is_encrypted()) {
+    if (!cdm_context_) {
       DLOG(ERROR) << "No cdm context for encrypted stream.";
       OnError(media::AUDIO_RENDERER_ERROR);
       return;
     }
 
-    media::FuchsiaCdmContext* fuchsia_cdm = cdm_context->GetFuchsiaCdmContext();
+    media::FuchsiaCdmContext* fuchsia_cdm =
+        cdm_context_->GetFuchsiaCdmContext();
     if (fuchsia_cdm) {
       sysmem_buffer_stream_ = fuchsia_cdm->CreateStreamDecryptor(false);
     } else {
       sysmem_buffer_stream_ =
           std::make_unique<media::DecryptingSysmemBufferStream>(
-              &sysmem_allocator_, cdm_context, media::Decryptor::kAudio);
+              &sysmem_allocator_, cdm_context_, media::Decryptor::kAudio);
     }
 
   } else {
@@ -178,8 +190,6 @@ void WebEngineAudioRenderer::Initialize(media::DemuxerStream* stream,
   }
 
   sysmem_buffer_stream_->Initialize(this, kBufferSize, kNumBuffers);
-
-  std::move(init_cb_).Run(media::PIPELINE_OK);
 }
 
 void WebEngineAudioRenderer::UpdateVolume() {
@@ -294,11 +304,17 @@ void WebEngineAudioRenderer::SetLatencyHint(
     absl::optional<base::TimeDelta> latency_hint) {
   // TODO(crbug.com/1131116): Implement at some later date after we've vetted
   // the API shape and usefulness outside of fuchsia.
+  NOTIMPLEMENTED();
 }
 
-void WebEngineAudioRenderer::SetPreservesPitch(bool preserves_pitch) {}
+void WebEngineAudioRenderer::SetPreservesPitch(bool preserves_pitch) {
+  NOTIMPLEMENTED();
+}
 
-void WebEngineAudioRenderer::SetAutoplayInitiated(bool autoplay_initiated) {}
+void WebEngineAudioRenderer::SetWasPlayedWithUserActivation(
+    bool was_played_with_user_activation) {
+  NOTIMPLEMENTED();
+}
 
 void WebEngineAudioRenderer::StartTicking() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -588,9 +604,14 @@ void WebEngineAudioRenderer::OnDemuxerStreamReadDone(
       OnError(media::PIPELINE_ERROR_READ);
     } else if (read_status == media::DemuxerStream::kConfigChanged) {
       stream_sink_.Unbind();
-      sysmem_buffer_stream_->Reset();
 
-      InitializeStreamSink();
+      // Re-initialize the stream for the new config.
+      InitializeStream();
+
+      // Continue reading the stream. Decryptor won't finish output buffer
+      // initialization until it starts receiving data on the input.
+      ScheduleReadDemuxerStream();
+
       client_->OnAudioConfigChange(demuxer_stream_->audio_decoder_config());
     } else {
       DCHECK_EQ(read_status, media::DemuxerStream::kAborted);

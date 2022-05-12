@@ -25,7 +25,7 @@ using StructTest = TestHelper;
 TEST_F(StructTest, Creation) {
   auto name = Sym("S");
   auto* impl =
-      create<ast::Struct>(name, ast::StructMemberList{}, ast::DecorationList{});
+      create<ast::Struct>(name, ast::StructMemberList{}, ast::AttributeList{});
   auto* ptr = impl;
   auto* s =
       create<sem::Struct>(impl, impl->name, StructMemberList{}, 4 /* align */,
@@ -39,7 +39,7 @@ TEST_F(StructTest, Creation) {
 TEST_F(StructTest, TypeName) {
   auto name = Sym("my_struct");
   auto* impl =
-      create<ast::Struct>(name, ast::StructMemberList{}, ast::DecorationList{});
+      create<ast::Struct>(name, ast::StructMemberList{}, ast::AttributeList{});
   auto* s =
       create<sem::Struct>(impl, impl->name, StructMemberList{}, 4 /* align */,
                           4 /* size */, 4 /* size_no_padding */);
@@ -49,11 +49,52 @@ TEST_F(StructTest, TypeName) {
 TEST_F(StructTest, FriendlyName) {
   auto name = Sym("my_struct");
   auto* impl =
-      create<ast::Struct>(name, ast::StructMemberList{}, ast::DecorationList{});
+      create<ast::Struct>(name, ast::StructMemberList{}, ast::AttributeList{});
   auto* s =
       create<sem::Struct>(impl, impl->name, StructMemberList{}, 4 /* align */,
                           4 /* size */, 4 /* size_no_padding */);
   EXPECT_EQ(s->FriendlyName(Symbols()), "my_struct");
+}
+
+TEST_F(StructTest, Layout) {
+  auto* inner_st =  //
+      Structure("Inner", {
+                             Member("a", ty.i32()),
+                             Member("b", ty.u32()),
+                             Member("c", ty.f32()),
+                             Member("d", ty.vec3<f32>()),
+                             Member("e", ty.mat4x2<f32>()),
+                         });
+
+  auto* outer_st =
+      Structure("Outer", {
+                             Member("inner", ty.type_name("Inner")),
+                             Member("a", ty.i32()),
+                         });
+
+  auto p = Build();
+  ASSERT_TRUE(p.IsValid()) << p.Diagnostics().str();
+
+  auto* sem_inner_st = p.Sem().Get(inner_st);
+  auto* sem_outer_st = p.Sem().Get(outer_st);
+
+  EXPECT_EQ(sem_inner_st->Layout(p.Symbols()),
+            R"(/*            align(16) size(64) */ struct Inner {
+/* offset( 0) align( 4) size( 4) */   a : i32;
+/* offset( 4) align( 4) size( 4) */   b : u32;
+/* offset( 8) align( 4) size( 4) */   c : f32;
+/* offset(12) align( 1) size( 4) */   // -- implicit field alignment padding --;
+/* offset(16) align(16) size(12) */   d : vec3<f32>;
+/* offset(28) align( 1) size( 4) */   // -- implicit field alignment padding --;
+/* offset(32) align( 8) size(32) */   e : mat4x2<f32>;
+/*                               */ };)");
+
+  EXPECT_EQ(sem_outer_st->Layout(p.Symbols()),
+            R"(/*            align(16) size(80) */ struct Outer {
+/* offset( 0) align(16) size(64) */   inner : Inner;
+/* offset(64) align( 4) size( 4) */   a : i32;
+/* offset(68) align( 1) size(12) */   // -- implicit struct size padding --;
+/*                               */ };)");
 }
 
 }  // namespace

@@ -168,7 +168,7 @@ void ObjCCallClient::CreatePeerConnection() {
 
 void ObjCCallClient::Connect() {
   webrtc::MutexLock lock(&pc_mutex_);
-  pc_->CreateOffer(new rtc::RefCountedObject<CreateOfferObserver>(pc_),
+  pc_->CreateOffer(rtc::make_ref_counted<CreateOfferObserver>(pc_),
                    webrtc::PeerConnectionInterface::RTCOfferAnswerOptions());
 }
 
@@ -214,13 +214,13 @@ void CreateOfferObserver::OnSuccess(webrtc::SessionDescriptionInterface* desc) {
   RTC_LOG(LS_INFO) << "Created offer: " << sdp;
 
   // Ownership of desc was transferred to us, now we transfer it forward.
-  pc_->SetLocalDescription(new rtc::RefCountedObject<SetLocalSessionDescriptionObserver>(), desc);
+  pc_->SetLocalDescription(rtc::make_ref_counted<SetLocalSessionDescriptionObserver>(), desc);
 
   // Generate a fake answer.
   std::unique_ptr<webrtc::SessionDescriptionInterface> answer(
       webrtc::CreateSessionDescription(webrtc::SdpType::kAnswer, sdp));
   pc_->SetRemoteDescription(std::move(answer),
-                            new rtc::RefCountedObject<SetRemoteSessionDescriptionObserver>());
+                            rtc::make_ref_counted<SetRemoteSessionDescriptionObserver>());
 }
 
 void CreateOfferObserver::OnFailure(webrtc::RTCError error) {

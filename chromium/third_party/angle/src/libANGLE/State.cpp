@@ -346,6 +346,7 @@ State::State(const State *shareContextState,
       mClientType(clientType),
       mContextPriority(contextPriority),
       mHasProtectedContent(hasProtectedContent),
+      mIsDebugContext(debug),
       mClientVersion(clientVersion),
       mShareGroup(shareGroup),
       mBufferManager(AllocateOrGetSharedResourceManager(shareContextState, &State::mBufferManager)),
@@ -409,6 +410,7 @@ State::State(const State *shareContextState,
       mSetBlendIndexedInvoked(false),
       mSetBlendFactorsIndexedInvoked(false),
       mSetBlendEquationsIndexedInvoked(false),
+      mDisplayTextureShareGroup(shareTextures != nullptr),
       mBoundingBoxMinX(-1.0f),
       mBoundingBoxMinY(-1.0f),
       mBoundingBoxMinZ(-1.0f),
@@ -2174,6 +2176,7 @@ angle::Result State::detachBuffer(Context *context, const Buffer *buffer)
     if (curTransformFeedback)
     {
         ANGLE_TRY(curTransformFeedback->detachBuffer(context, bufferID));
+        context->getStateCache().onActiveTransformFeedbackChange(context);
     }
 
     if (getVertexArray()->detachBuffer(context, bufferID))

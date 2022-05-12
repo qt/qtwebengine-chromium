@@ -34,12 +34,11 @@ namespace transform {
 ///
 /// The generated uniform buffer will have the form:
 /// ```
-/// [[block]]
 /// struct buffer_size_struct {
 ///  buffer_size : array<u32, 8>;
 /// };
 ///
-/// [[group(0), binding(30)]]
+/// @group(0) @binding(30)
 /// var<uniform> buffer_size_ubo : buffer_size_struct;
 /// ```
 /// The binding group and number used for this uniform buffer is provided via
@@ -50,6 +49,9 @@ namespace transform {
 /// This transform assumes that the `SimplifyPointers`
 /// transforms have been run before it so that arguments to the arrayLength
 /// builtin always have the form `&resource.array`.
+///
+/// @note Depends on the following transforms to have been run first:
+/// * SimplifyPointers
 class ArrayLengthFromUniform
     : public Castable<ArrayLengthFromUniform, Transform> {
  public:
@@ -82,6 +84,8 @@ class ArrayLengthFromUniform
   };
 
   /// Information produced about what the transform did.
+  /// If there were no calls to the arrayLength() builtin, then no Result will
+  /// be emitted.
   struct Result : public Castable<Result, transform::Data> {
     /// Constructor
     /// @param used_size_indices Indices into the UBO that are statically used.
@@ -97,6 +101,12 @@ class ArrayLengthFromUniform
     const std::unordered_set<uint32_t> used_size_indices;
   };
 
+  /// @param program the program to inspect
+  /// @param data optional extra transform-specific input data
+  /// @returns true if this transform should be run for the given program
+  bool ShouldRun(const Program* program,
+                 const DataMap& data = {}) const override;
+
  protected:
   /// Runs the transform using the CloneContext built for transforming a
   /// program. Run() is responsible for calling Clone() on the CloneContext.
@@ -104,7 +114,9 @@ class ArrayLengthFromUniform
   /// ProgramBuilder
   /// @param inputs optional extra transform-specific input data
   /// @param outputs optional extra transform-specific output data
-  void Run(CloneContext& ctx, const DataMap& inputs, DataMap& outputs) override;
+  void Run(CloneContext& ctx,
+           const DataMap& inputs,
+           DataMap& outputs) const override;
 };
 
 }  // namespace transform

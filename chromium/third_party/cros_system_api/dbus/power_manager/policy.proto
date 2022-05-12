@@ -98,7 +98,17 @@ message PowerManagementPolicy {
     // there is no point to have a quick dim that is slower than a standard dim.
     optional int64 quick_dim_ms = 6;
 
-    // Next ID to use: 7
+    // Similar to the `screen_lock_ms`, also controls when the screen will be
+    // locked, in milliseconds.
+    // A quick lock may happen after this delay, before a standard screen lock
+    // if this is set and hps result is negative. Therefore this only applies on
+    // a device that has hps.
+    // 0 disables quick_lock; so do values that are >= screen_lock_ms, since
+    // there is no point to have a quick lock that is slower than a standard
+    // lock.
+    optional int64 quick_lock_ms = 7;
+
+    // Next ID to use: 8
   }
 
   // Action to perform when |idle_ms| (see Delays) is reached without any

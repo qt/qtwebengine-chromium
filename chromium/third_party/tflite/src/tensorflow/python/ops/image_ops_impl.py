@@ -17,6 +17,7 @@
 import functools
 import numpy as np
 
+from tensorflow.python.eager import context
 from tensorflow.python.eager import def_function
 from tensorflow.python.framework import config
 from tensorflow.python.framework import constant_op
@@ -1357,7 +1358,7 @@ def resize_image_with_crop_or_pad(image, target_height, target_width):
 
 
 @tf_export(v1=['image.ResizeMethod'])
-class ResizeMethodV1(object):
+class ResizeMethodV1:
   """See `v1.image.resize` for details."""
   BILINEAR = 0
   NEAREST_NEIGHBOR = 1
@@ -1366,7 +1367,7 @@ class ResizeMethodV1(object):
 
 
 @tf_export('image.ResizeMethod', v1=[])
-class ResizeMethod(object):
+class ResizeMethod:
   """See `tf.image.resize` for details."""
   BILINEAR = 'bilinear'
   NEAREST_NEIGHBOR = 'nearest'
@@ -2695,6 +2696,7 @@ def adjust_hue(image, delta, name=None):
   Raises:
     InvalidArgumentError: image must have at least 3 dimensions.
     InvalidArgumentError: The size of the last dimension must be 3.
+    ValueError: if `delta` is not in the interval of `[-1, 1]`.
 
   Usage Example:
 
@@ -2712,6 +2714,9 @@ def adjust_hue(image, delta, name=None):
         [17, 16, 18]]], dtype=int32)>
   """
   with ops.name_scope(name, 'adjust_hue', [image]) as name:
+    if context.executing_eagerly():
+      if delta < -1 or delta > 1:
+        raise ValueError('delta must be in the interval [-1, 1]')
     image = ops.convert_to_tensor(image, name='image')
     # Remember original dtype to so we can convert back if needed
     orig_dtype = image.dtype
@@ -3752,12 +3757,12 @@ def non_max_suppression_with_scores(boxes,
   Bodla et al, https://arxiv.org/abs/1704.04503) where boxes reduce the score
   of other overlapping boxes instead of directly causing them to be pruned.
   Consequently, in contrast to `tf.image.non_max_suppression`,
-  `tf.image.non_max_suppression_padded` returns the new scores of each input box
+  `tf.image.non_max_suppression_with_scores` returns the new scores of each input box
   in the second output, `selected_scores`.
 
   To enable this Soft-NMS mode, set the `soft_nms_sigma` parameter to be
   larger than 0.  When `soft_nms_sigma` equals 0, the behavior of
-  `tf.image.non_max_suppression_padded` is identical to that of
+  `tf.image.non_max_suppression_with_scores` is identical to that of
   `tf.image.non_max_suppression` (except for the extra output) both in function
   and in running time.
 

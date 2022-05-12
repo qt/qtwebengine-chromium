@@ -33,6 +33,10 @@ ASSERT_NO_FATAL_FAILURE(Init());
 
 ASSERT_NO_FATAL_FAILURE(InitFramework());
 ASSERT_NO_FATAL_FAILURE(InitState());
+
+// For Best Practices tests
+ASSERT_NO_FATAL_FAILURE(InitBestPracticesFramework());
+ASSERT_NO_FATAL_FAILURE(InitState());
 ```
 
 to set it up. This will create the `VkInstance` and `VkDevice` for you.
@@ -53,12 +57,12 @@ AddRequiredExtensions(VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME);
 ASSERT_NO_FATAL_FAILURE(InitFramework());
 
 // Check that all extensions and their dependencies were enabled successfully
-if (!IsRequestedExtensionsEnabled()) {
-    printf("%s test requires KHR multiplane extensions, not available.  Skipping.\n", kSkipPrefix);
+if (!AreRequestedExtensionsEnabled()) {
+    printf("%s test requires %s extensions which are not available.\n", kSkipPrefix, VK_KHR_SAMPLER_YCBCR_CONVERSION_EXTENSION_NAME);
     return;
 }
 
-// Finish initializing state, including creating the VkDevice that will be used for the test
+// Finish initializing state, including creating the VkDevice (whith extensions added) that will be used for the test
 ASSERT_NO_FATAL_FAILURE(InitState());
 ```
 
@@ -187,6 +191,31 @@ This is an example of injecting the `VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT` featur
 fpvkGetOriginalPhysicalDeviceFormatPropertiesEXT(gpu(), VK_FORMAT_R32G32B32A32_UINT, &formatProps);
 formatProps.optimalTilingFeatures |= VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT;
 fpvkSetPhysicalDeviceFormatPropertiesEXT(gpu(), VK_FORMAT_R32G32B32A32_UINT, formatProps);
+```
+
+If you are in need of `VkFormatProperties3` the following is an example how to use the layer
+
+```cpp
+PFN_vkSetPhysicalDeviceFormatProperties2EXT fpvkSetPhysicalDeviceFormatProperties2EXT = nullptr;
+PFN_vkGetOriginalPhysicalDeviceFormatProperties2EXT fpvkGetOriginalPhysicalDeviceFormatProperties2EXT = nullptr;
+if (!LoadDeviceProfileLayer(fpvkSetPhysicalDeviceFormatProperties2EXT, fpvkGetOriginalPhysicalDeviceFormatProperties2EXT)) {
+    printf("%s Failed to device profile layer.\n", kSkipPrefix);
+    return;
+}
+
+auto fmt_props_3 = LvlInitStruct<VkFormatProperties3>();
+auto fmt_props = LvlInitStruct<VkFormatProperties2>(&fmt_props_3);
+
+// Removes unwanted support
+fpvkGetOriginalPhysicalDeviceFormatProperties2EXT(gpu(), image_format, &fmt_props);
+// VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT == VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT
+// Need to edit both VkFormatFeatureFlags/VkFormatFeatureFlags2
+fmt_props.formatProperties.optimalTilingFeatures = (fmt_props.formatProperties.optimalTilingFeatures & ~VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT);
+fmt_props_3.optimalTilingFeatures = (fmt_props_3.optimalTilingFeatures & ~VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT);
+// Was added with VkFormatFeatureFlags2 so only need to edit here
+fmt_props_3.optimalTilingFeatures = (fmt_props_3.optimalTilingFeatures & ~VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT);
+fpvkSetPhysicalDeviceFormatProperties2EXT(gpu(), image_format, fmt_props);
+
 ```
 
 ### Device Profile Limits

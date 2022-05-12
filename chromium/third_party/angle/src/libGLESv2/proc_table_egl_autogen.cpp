@@ -88,6 +88,7 @@ const ProcEntry g_procTable[] = {
     {"eglLockSurfaceKHR", P(EGL_LockSurfaceKHR)},
     {"eglMakeCurrent", P(EGL_MakeCurrent)},
     {"eglPostSubBufferNV", P(EGL_PostSubBufferNV)},
+    {"eglPrepareSwapBuffersANGLE", P(EGL_PrepareSwapBuffersANGLE)},
     {"eglPresentationTimeANDROID", P(EGL_PresentationTimeANDROID)},
     {"eglProgramCacheGetAttribANGLE", P(EGL_ProgramCacheGetAttribANGLE)},
     {"eglProgramCachePopulateANGLE", P(EGL_ProgramCachePopulateANGLE)},
@@ -113,6 +114,7 @@ const ProcEntry g_procTable[] = {
     {"eglReleaseTexImage", P(EGL_ReleaseTexImage)},
     {"eglReleaseThread", P(EGL_ReleaseThread)},
     {"eglSetBlobCacheFuncsANDROID", P(EGL_SetBlobCacheFuncsANDROID)},
+    {"eglSetDamageRegionKHR", P(EGL_SetDamageRegionKHR)},
     {"eglSignalSyncKHR", P(EGL_SignalSyncKHR)},
     {"eglStreamAttribKHR", P(EGL_StreamAttribKHR)},
     {"eglStreamConsumerAcquireKHR", P(EGL_StreamConsumerAcquireKHR)},
@@ -346,6 +348,7 @@ const ProcEntry g_procTable[] = {
     {"glFogxv", P(GL_Fogxv)},
     {"glFramebufferFetchBarrierEXT", P(GL_FramebufferFetchBarrierEXT)},
     {"glFramebufferParameteri", P(GL_FramebufferParameteri)},
+    {"glFramebufferParameteriMESA", P(GL_FramebufferParameteriMESA)},
     {"glFramebufferRenderbuffer", P(GL_FramebufferRenderbuffer)},
     {"glFramebufferRenderbufferOES", P(GL_FramebufferRenderbufferOES)},
     {"glFramebufferTexture", P(GL_FramebufferTexture)},
@@ -414,6 +417,7 @@ const ProcEntry g_procTable[] = {
     {"glGetFramebufferAttachmentParameterivRobustANGLE",
      P(GL_GetFramebufferAttachmentParameterivRobustANGLE)},
     {"glGetFramebufferParameteriv", P(GL_GetFramebufferParameteriv)},
+    {"glGetFramebufferParameterivMESA", P(GL_GetFramebufferParameterivMESA)},
     {"glGetFramebufferParameterivRobustANGLE", P(GL_GetFramebufferParameterivRobustANGLE)},
     {"glGetGraphicsResetStatus", P(GL_GetGraphicsResetStatus)},
     {"glGetGraphicsResetStatusEXT", P(GL_GetGraphicsResetStatusEXT)},
@@ -664,6 +668,7 @@ const ProcEntry g_procTable[] = {
     {"glPopMatrix", P(GL_PopMatrix)},
     {"glPrimitiveBoundingBox", P(GL_PrimitiveBoundingBox)},
     {"glPrimitiveBoundingBoxEXT", P(GL_PrimitiveBoundingBoxEXT)},
+    {"glPrimitiveBoundingBoxOES", P(GL_PrimitiveBoundingBoxOES)},
     {"glProgramBinary", P(GL_ProgramBinary)},
     {"glProgramBinaryOES", P(GL_ProgramBinaryOES)},
     {"glProgramParameteri", P(GL_ProgramParameteri)},
@@ -927,5 +932,5 @@ const ProcEntry g_procTable[] = {
     {"glWaitSync", P(GL_WaitSync)},
     {"glWeightPointerOES", P(GL_WeightPointerOES)}};
 
-const size_t g_numProcs = 894;
+const size_t g_numProcs = 899;
 }  // namespace egl

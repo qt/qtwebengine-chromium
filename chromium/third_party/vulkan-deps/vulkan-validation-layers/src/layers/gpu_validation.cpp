@@ -1,6 +1,6 @@
-/* Copyright (c) 2018-2021 The Khronos Group Inc.
- * Copyright (c) 2018-2021 Valve Corporation
- * Copyright (c) 2018-2021 LunarG, Inc.
+/* Copyright (c) 2018-2022 The Khronos Group Inc.
+ * Copyright (c) 2018-2022 Valve Corporation
+ * Copyright (c) 2018-2022 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -743,7 +743,7 @@ struct GPUAV_RESTORABLE_PIPELINE_STATE {
             pipeline_layout = last_bound.pipeline_layout;
             descriptor_sets.reserve(last_bound.per_set.size());
             for (std::size_t i = 0; i < last_bound.per_set.size(); i++) {
-                const auto *bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
+                const auto &bound_descriptor_set = last_bound.per_set[i].bound_descriptor_set;
                 if (bound_descriptor_set) {
                     descriptor_sets.push_back(bound_descriptor_set->GetSet());
                     if (bound_descriptor_set->IsPushDescriptor()) {
@@ -932,7 +932,7 @@ void GpuAssisted::PreCallRecordCmdBuildAccelerationStructureNV(VkCommandBuffer c
 
     // Save a copy of the compute pipeline state that needs to be restored.
     GPUAV_RESTORABLE_PIPELINE_STATE restorable_state;
-    restorable_state.Create(cb_state, VK_PIPELINE_BIND_POINT_COMPUTE);
+    restorable_state.Create(cb_state.get(), VK_PIPELINE_BIND_POINT_COMPUTE);
 
     // Switch to and launch the validation compute shader to find, replace, and report invalid acceleration structure handles.
     DispatchCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_COMPUTE, as_validation_state.pipeline);
@@ -1070,7 +1070,7 @@ bool GpuAssisted::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, ui
     if (srcStageMask & VK_PIPELINE_STAGE_HOST_BIT) {
         ReportSetupProblem(commandBuffer,
                            "CmdWaitEvents recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
-                           "GPU_Assisted validation waits on queue completion. "
+                           "GPU-Assisted validation waits on queue completion. "
                            "This wait could block the host's signaling of this event, resulting in deadlock.");
     }
     ValidationStateTracker::PreCallValidateCmdWaitEvents(commandBuffer, eventCount, pEvents, srcStageMask, dstStageMask,
@@ -1081,20 +1081,39 @@ bool GpuAssisted::PreCallValidateCmdWaitEvents(VkCommandBuffer commandBuffer, ui
 
 bool GpuAssisted::PreCallValidateCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
                                                    const VkDependencyInfoKHR *pDependencyInfos) const {
-    VkPipelineStageFlags2KHR srcStageMask = 0;
+    VkPipelineStageFlags2KHR src_stage_mask = 0;
 
     for (uint32_t i = 0; i < eventCount; i++) {
         auto stage_masks = sync_utils::GetGlobalStageMasks(pDependencyInfos[i]);
-        srcStageMask = stage_masks.src;
+        src_stage_mask |= stage_masks.src;
     }
 
-    if (srcStageMask & VK_PIPELINE_STAGE_HOST_BIT) {
+    if (src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
         ReportSetupProblem(commandBuffer,
                            "CmdWaitEvents2KHR recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
-                           "GPU_Assisted validation waits on queue completion. "
+                           "GPU-Assisted validation waits on queue completion. "
                            "This wait could block the host's signaling of this event, resulting in deadlock.");
     }
     ValidationStateTracker::PreCallValidateCmdWaitEvents2KHR(commandBuffer, eventCount, pEvents, pDependencyInfos);
+    return false;
+}
+
+bool GpuAssisted::PreCallValidateCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent *pEvents,
+                                                const VkDependencyInfo *pDependencyInfos) const {
+    VkPipelineStageFlags2 src_stage_mask = 0;
+
+    for (uint32_t i = 0; i < eventCount; i++) {
+        auto stage_masks = sync_utils::GetGlobalStageMasks(pDependencyInfos[i]);
+        src_stage_mask |= stage_masks.src;
+    }
+
+    if (src_stage_mask & VK_PIPELINE_STAGE_HOST_BIT) {
+        ReportSetupProblem(commandBuffer,
+                           "CmdWaitEvents2 recorded with VK_PIPELINE_STAGE_HOST_BIT set. "
+                           "GPU-Assisted validation waits on queue completion. "
+                           "This wait could block the host's signaling of this event, resulting in deadlock.");
+    }
+    ValidationStateTracker::PreCallValidateCmdWaitEvents2(commandBuffer, eventCount, pEvents, pDependencyInfos);
     return false;
 }
 
@@ -1259,7 +1278,7 @@ void GpuAssisted::PreCallRecordDestroyRenderPass(VkDevice device, VkRenderPass r
 }
 
 // Call the SPIR-V Optimizer to run the instrumentation pass on the shader.
-bool GpuAssisted::InstrumentShader(const VkShaderModuleCreateInfo *pCreateInfo, std::vector<unsigned int> &new_pgm,
+bool GpuAssisted::InstrumentShader(const VkShaderModuleCreateInfo *pCreateInfo, std::vector<uint32_t> &new_pgm,
                                    uint32_t *unique_shader_id) {
     if (aborted) return false;
     if (pCreateInfo->pCode[0] != spv::MagicNumber) return false;
@@ -1320,7 +1339,7 @@ void GpuAssisted::PreCallRecordCreateShaderModule(VkDevice device, const VkShade
     bool pass = InstrumentShader(pCreateInfo, csm_state->instrumented_pgm, &csm_state->unique_shader_id);
     if (pass) {
         csm_state->instrumented_create_info.pCode = csm_state->instrumented_pgm.data();
-        csm_state->instrumented_create_info.codeSize = csm_state->instrumented_pgm.size() * sizeof(unsigned int);
+        csm_state->instrumented_create_info.codeSize = csm_state->instrumented_pgm.size() * sizeof(uint32_t);
     }
     ValidationStateTracker::PreCallRecordCreateShaderModule(device, pCreateInfo, pAllocator, pShaderModule, csm_state_data);
 }
@@ -1458,7 +1477,7 @@ void GpuAssisted::AnalyzeAndGenerateMessages(VkCommandBuffer command_buffer, VkQ
     std::string vuid_msg;
     VkShaderModule shader_module_handle = VK_NULL_HANDLE;
     VkPipeline pipeline_handle = VK_NULL_HANDLE;
-    std::vector<unsigned int> pgm;
+    std::vector<uint32_t> pgm;
     // The first record starts at this offset after the total_words.
     const uint32_t *debug_record = &debug_output_buffer[kDebugOutputDataOffset];
     // Lookup the VkShaderModule handle and SPIR-V code used to create the shader, using the unique shader ID value returned
@@ -1504,6 +1523,16 @@ void GpuAssisted::SetDescriptorInitialized(uint32_t *pData, uint32_t index, cons
             auto buffer_view_state = static_cast<const cvdescriptorset::TexelDescriptor *>(descriptor)->GetBufferViewState();
             pData[index] = static_cast<uint32_t>(buffer_view_state->buffer_state->createInfo.size);
         }
+    } else if (descriptor->GetClass() == cvdescriptorset::DescriptorClass::Mutable) {
+        if (descriptor->active_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER ||
+            descriptor->active_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_BUFFER ||
+            descriptor->active_descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER ||
+            descriptor->active_descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER) {
+            const auto size = static_cast<const cvdescriptorset::MutableDescriptor *>(descriptor)->GetBufferSize();
+            pData[index] = static_cast<uint32_t>(size);
+        } else {
+            pData[index] = 1;
+        }
     } else {
         pData[index] = 1;
     }
@@ -1530,7 +1559,7 @@ void GpuAssisted::UpdateInstrumentationBuffer(CMD_BUFFER_STATE_GPUAV *cb_node) {
 
 void GpuAssisted::PreRecordCommandBuffer(VkCommandBuffer command_buffer) {
     auto cb_node = GetCBState(command_buffer);
-    UpdateInstrumentationBuffer(cb_node);
+    UpdateInstrumentationBuffer(cb_node.get());
     for (auto *secondary_cmd_buffer : cb_node->linkedCommandBuffers) {
         UpdateInstrumentationBuffer(static_cast<CMD_BUFFER_STATE_GPUAV *>(secondary_cmd_buffer));
     }
@@ -1545,11 +1574,21 @@ void GpuAssisted::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, 
         }
     }
 }
+
 void GpuAssisted::PreCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR *pSubmits,
                                                VkFence fence) {
     ValidationStateTracker::PreCallRecordQueueSubmit2KHR(queue, submitCount, pSubmits, fence);
     for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
         const VkSubmitInfo2KHR *submit = &pSubmits[submit_idx];
+        for (uint32_t i = 0; i < submit->commandBufferInfoCount; i++) {
+            PreRecordCommandBuffer(submit->pCommandBufferInfos[i].commandBuffer);
+        }
+    }
+}
+
+void GpuAssisted::PreCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits, VkFence fence) {
+    for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
+        const VkSubmitInfo2 *submit = &pSubmits[submit_idx];
         for (uint32_t i = 0; i < submit->commandBufferInfoCount; i++) {
             PreRecordCommandBuffer(submit->pCommandBufferInfos[i].commandBuffer);
         }
@@ -1575,11 +1614,11 @@ bool GpuAssisted::CommandBufferNeedsProcessing(VkCommandBuffer command_buffer) {
 void GpuAssisted::ProcessCommandBuffer(VkQueue queue, VkCommandBuffer command_buffer) {
     auto cb_node = GetCBState(command_buffer);
 
-    UtilProcessInstrumentationBuffer(queue, cb_node, this);
-    ProcessAccelerationStructureBuildValidationBuffer(queue, cb_node);
+    UtilProcessInstrumentationBuffer(queue, cb_node.get(), this);
+    ProcessAccelerationStructureBuildValidationBuffer(queue, cb_node.get());
     for (auto *secondary_cmd_buffer : cb_node->linkedCommandBuffers) {
         UtilProcessInstrumentationBuffer(queue, secondary_cmd_buffer, this);
-        ProcessAccelerationStructureBuildValidationBuffer(queue, cb_node);
+        ProcessAccelerationStructureBuildValidationBuffer(queue, cb_node.get());
     }
 }
 
@@ -1613,15 +1652,13 @@ void GpuAssisted::PostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount,
     }
 }
 
-void GpuAssisted::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR *pSubmits,
+void GpuAssisted::RecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2 *pSubmits,
                                                 VkFence fence, VkResult result) {
-    ValidationStateTracker::PostCallRecordQueueSubmit2KHR(queue, submitCount, pSubmits, fence, result);
-
     if (aborted || (result != VK_SUCCESS)) return;
     bool buffers_present = false;
     // Don't QueueWaitIdle if there's nothing to process
     for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
-        const VkSubmitInfo2KHR *submit = &pSubmits[submit_idx];
+        const VkSubmitInfo2 *submit = &pSubmits[submit_idx];
         for (uint32_t i = 0; i < submit->commandBufferInfoCount; i++) {
             buffers_present |= CommandBufferNeedsProcessing(submit->pCommandBufferInfos[i].commandBuffer);
         }
@@ -1633,11 +1670,23 @@ void GpuAssisted::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCo
     DispatchQueueWaitIdle(queue);
 
     for (uint32_t submit_idx = 0; submit_idx < submitCount; submit_idx++) {
-        const VkSubmitInfo2KHR *submit = &pSubmits[submit_idx];
+        const VkSubmitInfo2 *submit = &pSubmits[submit_idx];
         for (uint32_t i = 0; i < submit->commandBufferInfoCount; i++) {
             ProcessCommandBuffer(queue, submit->pCommandBufferInfos[i].commandBuffer);
         }
     }
+}
+
+void GpuAssisted::PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits,
+    VkFence fence, VkResult result) {
+    ValidationStateTracker::PostCallRecordQueueSubmit2KHR(queue, submitCount, pSubmits, fence, result);
+    RecordQueueSubmit2(queue, submitCount, pSubmits, fence, result);
+}
+
+void GpuAssisted::PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits,
+    VkFence fence, VkResult result) {
+    ValidationStateTracker::PostCallRecordQueueSubmit2(queue, submitCount, pSubmits, fence, result);
+    RecordQueueSubmit2(queue, submitCount, pSubmits, fence, result);
 }
 
 void GpuAssisted::PreCallRecordCmdDraw(VkCommandBuffer commandBuffer, uint32_t vertexCount, uint32_t instanceCount,
@@ -1805,7 +1854,7 @@ void GpuAssisted::PostCallRecordCmdTraceRaysNV(VkCommandBuffer commandBuffer, Vk
         missShaderBindingOffset, missShaderBindingStride, hitShaderBindingTableBuffer, hitShaderBindingOffset,
         hitShaderBindingStride, callableShaderBindingTableBuffer, callableShaderBindingOffset, callableShaderBindingStride, width,
         height, depth);
-    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    auto cb_state = Get<CMD_BUFFER_STATE>(commandBuffer);
     cb_state->hasTraceRaysCmd = true;
 }
 
@@ -1829,7 +1878,7 @@ void GpuAssisted::PostCallRecordCmdTraceRaysKHR(VkCommandBuffer commandBuffer,
     ValidationStateTracker::PostCallRecordCmdTraceRaysKHR(commandBuffer, pRaygenShaderBindingTable, pMissShaderBindingTable,
                                                           pHitShaderBindingTable, pCallableShaderBindingTable, width, height,
                                                           depth);
-    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    auto cb_state = Get<CMD_BUFFER_STATE>(commandBuffer);
     cb_state->hasTraceRaysCmd = true;
 }
 
@@ -1854,7 +1903,7 @@ void GpuAssisted::PostCallRecordCmdTraceRaysIndirectKHR(VkCommandBuffer commandB
     ValidationStateTracker::PostCallRecordCmdTraceRaysIndirectKHR(commandBuffer, pRaygenShaderBindingTable, pMissShaderBindingTable,
                                                                   pHitShaderBindingTable, pCallableShaderBindingTable,
                                                                   indirectDeviceAddress);
-    CMD_BUFFER_STATE *cb_state = GetCBState(commandBuffer);
+    auto cb_state = Get<CMD_BUFFER_STATE>(commandBuffer);
     cb_state->hasTraceRaysCmd = true;
 }
 
@@ -2072,7 +2121,7 @@ void GpuAssisted::AllocateValidationResources(const VkCommandBuffer cmd_buffer, 
 
         // Save current graphics pipeline state
         GPUAV_RESTORABLE_PIPELINE_STATE restorable_state;
-        restorable_state.Create(cb_node, VK_PIPELINE_BIND_POINT_GRAPHICS);
+        restorable_state.Create(cb_node.get(), VK_PIPELINE_BIND_POINT_GRAPHICS);
 
         // Save parameters for error message
         pre_draw_resources.buffer = cdi_state->buffer;

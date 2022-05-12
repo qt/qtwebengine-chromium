@@ -262,10 +262,6 @@ class Entitlements(object):
 
   def LoadDefaults(self, defaults):
     for key, value in defaults.items():
-      # TODO(crbug.com/1270127): Re-enable this entitlement after verifying
-      # that it doesn't increase memory usage.
-      if key == "com.apple.developer.kernel.extended-virtual-addressing":
-        continue
       if key not in self._data:
         self._data[key] = value
 
@@ -405,7 +401,7 @@ def GenerateBundleInfoPlist(bundle, plist_compiler, partial_plist):
 
   # Invoke the plist_compiler script. It needs to be a python script.
   subprocess.check_call([
-      'python',
+      'python3',
       plist_compiler,
       'merge',
       '-f',

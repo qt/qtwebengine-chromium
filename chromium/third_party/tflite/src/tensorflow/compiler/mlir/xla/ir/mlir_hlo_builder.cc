@@ -14,6 +14,9 @@ limitations under the License.
 ==============================================================================*/
 #include "tensorflow/compiler/mlir/xla/ir/mlir_hlo_builder.h"
 
+#include <string>
+#include <utility>
+
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/Support/raw_ostream.h"
 #include "mlir/IR/Builders.h"  // from @llvm-project
@@ -130,8 +133,8 @@ StatusOr<XlaOp> MlirHloBuilder::FftInternal(
 }
 
 StatusOr<XlaOp> MlirHloBuilder::CustomCallInternal(
-    const string& call_target_name, absl::Span<const XlaOp> operands,
-    const Shape& shape, const string& opaque,
+    const std::string& call_target_name, absl::Span<const XlaOp> operands,
+    const Shape& shape, const std::string& opaque,
     absl::optional<absl::Span<const Shape>> operand_shapes_with_layout,
     bool has_side_effect,
     absl::Span<const std::pair<ShapeIndex, std::pair<int64_t, ShapeIndex>>>
@@ -305,12 +308,31 @@ StatusOr<XlaOp> MlirHloBuilder::WhileInternal(const Shape& shape,
                                               XlaOp init) {
   TF_ASSIGN_OR_RETURN(mlir::Type ty, ConvertShapeToType<mlir::RankedTensorType>(
                                          shape, builder_));
-  auto op = builder_.create<mlir::mhlo::WhileOp>(loc_, ty, GetValue(init));
-  TF_RETURN_IF_ERROR(ImportComputation(condition.proto(), &op.cond()));
-  TF_RETURN_IF_ERROR(ImportComputation(body.proto(), &op.body()));
-  // TODO(jpienaar): Support multi-operand while op.
-  if (op.getNumResults() != 1)
-    return Unimplemented("Only single result MHLO WhileOp's can be import.");
+
+  llvm::SmallVector<mlir::Value> flattened_operands;
+  llvm::SmallVector<mlir::Type> flattened_operand_types;
+
+  HloFunctionImporter::FlattenTupleType(ty, flattened_operand_types);
+  HloFunctionImporter::FlattenTupleValue(&builder_, loc_, GetValue(init),
+                                         flattened_operands);
+
+  auto op = builder_.create<mlir::mhlo::WhileOp>(loc_, flattened_operand_types,
+                                                 flattened_operands);
+
+  TF_RETURN_IF_ERROR(ImportComputation(condition.proto(), &op.cond(),
+                                       /*flatten_region_arg_tuple*/ true));
+  TF_RETURN_IF_ERROR(ImportComputation(body.proto(), &op.body(),
+                                       /*flatten_region_arg_tuple*/ true));
+
+  if (ty.isa<mlir::TupleType>()) {
+    llvm::SmallVector<mlir::Value> flattened_results = op->getResults();
+    llvm::MutableArrayRef<mlir::Value> flattened_results_ref(flattened_results);
+    auto result = HloFunctionImporter::CreateTupleValue(
+        &builder_, loc_, flattened_results_ref, ty);
+    auto defining_tuple_op = result.getDefiningOp<mlir::mhlo::TupleOp>();
+    return MakeXlaOp(defining_tuple_op);
+  }
+
   return MakeXlaOp(op.getResult(0));
 }
 
@@ -396,9 +418,24 @@ StatusOr<XlaOp> MlirHloBuilder::RngBitGeneratorInternal(
     XlaOp initial_state) {
   TF_ASSIGN_OR_RETURN(mlir::Type ty, ConvertShapeToType<mlir::RankedTensorType>(
                                          full_result_shape, builder_));
+
+  llvm::SmallVector<mlir::Type> flattened_ret_types;
+  HloFunctionImporter::FlattenTupleType(ty, flattened_ret_types);
+
   auto op = builder_.create<mlir::mhlo::RngBitGeneratorOp>(
-      loc_, ty, builder_.getI32IntegerAttr(algorithm), GetValue(initial_state));
-  return MakeXlaOp(op);
+      loc_, flattened_ret_types, builder_.getI32IntegerAttr(algorithm),
+      GetValue(initial_state));
+
+  if (ty.isa<mlir::TupleType>()) {
+    llvm::SmallVector<mlir::Value> flattened_results = op->getResults();
+    llvm::MutableArrayRef<mlir::Value> flattened_results_ref(flattened_results);
+    auto result = HloFunctionImporter::CreateTupleValue(
+        &builder_, loc_, flattened_results_ref, ty);
+    auto defining_tuple_op = result.getDefiningOp<mlir::mhlo::TupleOp>();
+    return MakeXlaOp(defining_tuple_op);
+  }
+
+  return MakeXlaOp(op.getResult(0));
 }
 
 StatusOr<XlaOp> MlirHloBuilder::ReshapeInternal(const Shape& shape,
@@ -506,20 +543,44 @@ StatusOr<XlaOp> MlirHloBuilder::CholeskyInternal(const Shape& shape, XlaOp a,
 }
 
 StatusOr<XlaOp> MlirHloBuilder::InfeedWithTokenInternal(
-    const Shape& infeed_instruction_shape, XlaOp token, const string& config) {
+    const Shape& infeed_instruction_shape, XlaOp token,
+    const std::string& config) {
   TF_ASSIGN_OR_RETURN(mlir::Type result_type,
                       ConvertShapeToType<mlir::RankedTensorType>(
                           infeed_instruction_shape, builder_));
-  mlir::ArrayAttr layout;
-  return MakeXlaOp(
-      builder_.create<mlir::mhlo::InfeedOp>(loc_, result_type, GetValue(token),
-                                            /*infeed_config=*/config,
-                                            /*layout=*/layout));
+
+  if (result_type.isa<mlir::TupleType>()) {
+    // TODO(@sdasgup): The current branch need to be removed once the
+    // allowance of tuple-return-type for infeed is revoked.
+    mlir::ArrayAttr layout;
+    return MakeXlaOp(builder_
+                         .create<mlir::mhlo::InfeedOp>(loc_, result_type,
+                                                       GetValue(token),
+                                                       /*infeed_config=*/config,
+                                                       /*layout=*/layout)
+                         .getResult(0));
+  } else {
+    llvm::SmallVector<mlir::Type> flattened_ret_types;
+    HloFunctionImporter::FlattenTupleType(result_type, flattened_ret_types);
+
+    mlir::ArrayAttr layout;
+    auto op = builder_.create<mlir::mhlo::InfeedOp>(loc_, flattened_ret_types,
+                                                    GetValue(token),
+                                                    /*infeed_config=*/config,
+                                                    /*layout=*/layout);
+
+    llvm::SmallVector<mlir::Value> flattened_results = op->getResults();
+    llvm::MutableArrayRef<mlir::Value> flattened_results_ref(flattened_results);
+    auto result = HloFunctionImporter::CreateTupleValue(
+        &builder_, loc_, flattened_results_ref, result_type);
+    auto defining_tuple_op = result.getDefiningOp<mlir::mhlo::TupleOp>();
+    return MakeXlaOp(defining_tuple_op);
+  }
 }
 
 StatusOr<XlaOp> MlirHloBuilder::OutfeedWithTokenInternal(
     XlaOp operand, XlaOp token, const Shape& shape_with_layout,
-    const string& outfeed_config) {
+    const std::string& outfeed_config) {
   auto token_type = mlir::mhlo::TokenType::get(builder_.getContext());
   return MakeXlaOp(builder_.create<mlir::mhlo::OutfeedOp>(
       loc_, token_type, GetValue(operand), GetValue(token), outfeed_config));
@@ -622,7 +683,8 @@ StatusOr<XlaOp> MlirHloBuilder::CreateOp(
 }
 
 Status MlirHloBuilder::ImportComputation(const HloModuleProto& computation,
-                                         mlir::Region* region) {
+                                         mlir::Region* region,
+                                         bool flatten_region_arg_tuple) {
   TF_ASSIGN_OR_RETURN(auto module_config,
                       xla::HloModule::CreateModuleConfigFromProto(
                           computation, xla::DebugOptions()));
@@ -630,7 +692,8 @@ Status MlirHloBuilder::ImportComputation(const HloModuleProto& computation,
                                            computation, module_config));
 
   return HloFunctionImporter::ImportAsRegion(*hlo_module->entry_computation(),
-                                             region, &builder_);
+                                             region, &builder_,
+                                             flatten_region_arg_tuple);
 }
 
 StatusOr<const Shape*> MlirHloBuilder::GetShapePtr(XlaOp op) const {

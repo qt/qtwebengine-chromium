@@ -104,17 +104,24 @@ struct ANGLEPlatformDisplay
     ANGLEPlatformDisplay() = default;
 
     ANGLEPlatformDisplay(EGLNativeDisplayType nativeDisplayType)
-        : nativeDisplayType(nativeDisplayType), powerPreference(EGL_LOW_POWER_ANGLE)
+        : nativeDisplayType(nativeDisplayType),
+          powerPreference(EGL_LOW_POWER_ANGLE),
+          platformANGLEType(EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)
     {}
 
-    ANGLEPlatformDisplay(EGLNativeDisplayType nativeDisplayType, EGLAttrib powerPreference)
-        : nativeDisplayType(nativeDisplayType), powerPreference(powerPreference)
+    ANGLEPlatformDisplay(EGLNativeDisplayType nativeDisplayType,
+                         EGLAttrib powerPreference,
+                         EGLAttrib platformANGLEType)
+        : nativeDisplayType(nativeDisplayType),
+          powerPreference(powerPreference),
+          platformANGLEType(platformANGLEType)
     {}
 
-    auto tie() const { return std::tie(nativeDisplayType, powerPreference); }
+    auto tie() const { return std::tie(nativeDisplayType, powerPreference, platformANGLEType); }
 
     EGLNativeDisplayType nativeDisplayType;
     EGLAttrib powerPreference;
+    EGLAttrib platformANGLEType;
 };
 
 inline bool operator<(const ANGLEPlatformDisplay &a, const ANGLEPlatformDisplay &b)
@@ -360,10 +367,13 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
             impl = new rx::DisplayWGL(state);
 #    elif defined(ANGLE_PLATFORM_LINUX)
 #        if defined(ANGLE_USE_GBM)
-            if (platformType == 0)
+            if (platformType == 0 ||
+                platformType == EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE)
             {
                 // If platformType is unknown, use DisplayGbm now. In the future, it should use
                 // DisplayEGL letting native EGL decide what display to use.
+                // platformType == EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE is a hack,
+                // to allow ChromeOS GLES backend to continue functioning when Vulkan is enabled.
                 impl = new rx::DisplayGbm(state);
                 break;
             }
@@ -544,6 +554,29 @@ void ANGLESetDefaultDisplayPlatform(angle::EGLDisplayType display)
     platformMethods->logInfo    = Display_logInfo;
 }
 
+void UpdateAttribsFromEnvironment(AttributeMap &attribMap)
+{
+    EGLAttrib displayType =
+        attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
+    if (displayType == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)
+    {
+        displayType = GetDisplayTypeFromEnvironment();
+        attribMap.insert(EGL_PLATFORM_ANGLE_TYPE_ANGLE, displayType);
+    }
+    EGLAttrib deviceType = attribMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, 0);
+    if (deviceType == 0)
+    {
+        deviceType = GetDeviceTypeFromEnvironment();
+        attribMap.insert(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, deviceType);
+    }
+    EGLAttrib platformType = attribMap.get(EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE, 0);
+    if (platformType == 0)
+    {
+        platformType = GetPlatformTypeFromEnvironment();
+        attribMap.insert(EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE, platformType);
+    }
+}
+
 static constexpr uint32_t kScratchBufferLifetime = 64u;
 
 }  // anonymous namespace
@@ -569,6 +602,11 @@ void ShareGroup::finishAllContexts()
 void ShareGroup::addSharedContext(gl::Context *context)
 {
     mContexts.insert(context);
+}
+
+void ShareGroup::removeSharedContext(gl::Context *context)
+{
+    mContexts.erase(context);
 }
 
 ShareGroup::~ShareGroup()
@@ -641,9 +679,16 @@ Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay
 {
     Display *display = nullptr;
 
-    EGLAttrib powerPreference = attribMap.get(EGL_POWER_PREFERENCE_ANGLE, EGL_LOW_POWER_ANGLE);
+    AttributeMap updatedAttribMap(attribMap);
+    UpdateAttribsFromEnvironment(updatedAttribMap);
+
+    EGLAttrib powerPreference =
+        updatedAttribMap.get(EGL_POWER_PREFERENCE_ANGLE, EGL_LOW_POWER_ANGLE);
+    EGLAttrib platformANGLEType =
+        updatedAttribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
     ANGLEPlatformDisplayMap *displays = GetANGLEPlatformDisplayMap();
-    const auto &iter = displays->find(ANGLEPlatformDisplay(nativeDisplay, powerPreference));
+    const auto &iter =
+        displays->find(ANGLEPlatformDisplay(nativeDisplay, powerPreference, platformANGLEType));
     if (iter != displays->end())
     {
         display = iter->second;
@@ -658,15 +703,13 @@ Display *Display::GetDisplayFromNativeDisplay(EGLNativeDisplayType nativeDisplay
         }
 
         display = new Display(EGL_PLATFORM_ANGLE_ANGLE, nativeDisplay, nullptr);
-        displays->insert(
-            std::make_pair(ANGLEPlatformDisplay(nativeDisplay, powerPreference), display));
+        displays->insert(std::make_pair(
+            ANGLEPlatformDisplay(nativeDisplay, powerPreference, platformANGLEType), display));
     }
     // Apply new attributes if the display is not initialized yet.
     if (!display->isInitialized())
     {
-        display->setAttributes(attribMap);
-
-        display->updateAttribsFromEnvironment(attribMap);
+        display->setAttributes(updatedAttribMap);
 
         EGLAttrib displayType = display->mAttributeMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
         EGLAttrib deviceType  = display->mAttributeMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE);
@@ -782,6 +825,10 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mConfigSet(),
       mContextSet(),
       mStreamSet(),
+      mInvalidImageSet(),
+      mInvalidStreamSet(),
+      mInvalidSurfaceSet(),
+      mInvalidSyncSet(),
       mInitialized(false),
       mDeviceLost(false),
       mCaps(),
@@ -807,7 +854,9 @@ Display::~Display()
     {
         ANGLEPlatformDisplayMap *displays      = GetANGLEPlatformDisplayMap();
         ANGLEPlatformDisplayMap::iterator iter = displays->find(ANGLEPlatformDisplay(
-            mState.displayId, mAttributeMap.get(EGL_POWER_PREFERENCE_ANGLE, EGL_LOW_POWER_ANGLE)));
+            mState.displayId, mAttributeMap.get(EGL_POWER_PREFERENCE_ANGLE, EGL_LOW_POWER_ANGLE),
+            mAttributeMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE,
+                              EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)));
         if (iter != displays->end())
         {
             displays->erase(iter);
@@ -881,29 +930,6 @@ void Display::setupDisplayPlatform(rx::DisplayImpl *impl)
     mState.featuresAllDisabled =
         static_cast<bool>(mAttributeMap.get(EGL_FEATURE_ALL_DISABLED_ANGLE, 0));
     mImplementation->addObserver(&mGPUSwitchedBinding);
-}
-
-void Display::updateAttribsFromEnvironment(const AttributeMap &attribMap)
-{
-    EGLAttrib displayType =
-        attribMap.get(EGL_PLATFORM_ANGLE_TYPE_ANGLE, EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE);
-    if (displayType == EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE)
-    {
-        displayType = GetDisplayTypeFromEnvironment();
-        mAttributeMap.insert(EGL_PLATFORM_ANGLE_TYPE_ANGLE, displayType);
-    }
-    EGLAttrib deviceType = attribMap.get(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, 0);
-    if (deviceType == 0)
-    {
-        deviceType = GetDeviceTypeFromEnvironment();
-        mAttributeMap.insert(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE, deviceType);
-    }
-    EGLAttrib platformType = attribMap.get(EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE, 0);
-    if (platformType == 0)
-    {
-        platformType = GetPlatformTypeFromEnvironment();
-        mAttributeMap.insert(EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE, platformType);
-    }
 }
 
 Error Display::initialize()
@@ -1005,6 +1031,52 @@ Error Display::initialize()
     return NoError();
 }
 
+Error Display::destroyInvalidEglObjects()
+{
+    // Destroy invalid EGL objects
+
+    ImageSet images     = {};
+    StreamSet streams   = {};
+    SurfaceSet surfaces = {};
+    SyncSet syncs       = {};
+    {
+        // Retrieve objects to be destroyed
+        std::lock_guard<std::mutex> lock(mInvalidEglObjectsMutex);
+        images   = mInvalidImageSet;
+        streams  = mInvalidStreamSet;
+        surfaces = mInvalidSurfaceSet;
+        syncs    = mInvalidSyncSet;
+
+        // Update invalid object sets
+        mInvalidImageSet.clear();
+        mInvalidStreamSet.clear();
+        mInvalidSurfaceSet.clear();
+        mInvalidSyncSet.clear();
+    }
+
+    while (!images.empty())
+    {
+        destroyImageImpl(*images.begin(), &images);
+    }
+
+    while (!streams.empty())
+    {
+        destroyStreamImpl(*streams.begin(), &streams);
+    }
+
+    while (!surfaces.empty())
+    {
+        ANGLE_TRY(destroySurfaceImpl(*surfaces.begin(), &surfaces));
+    }
+
+    while (!syncs.empty())
+    {
+        destroySyncImpl(*syncs.begin(), &syncs);
+    }
+
+    return NoError();
+}
+
 Error Display::terminate(Thread *thread, TerminateReason terminateReason)
 {
     mIsTerminated = true;
@@ -1016,10 +1088,30 @@ Error Display::terminate(Thread *thread, TerminateReason terminateReason)
 
     // EGL 1.5 Specification
     // 3.2 Initialization
-    // If contexts or surfaces, created with respect to dpy are current (see section 3.7.3) to any
-    // thread, then they are not actually destroyed while they remain current. If other resources
-    // created with respect to dpy are in use by any current context or surface, then they are also
-    // not destroyed until the corresponding context or surface is no longer current.
+    // Termination marks all EGL-specific resources, such as contexts and surfaces, associated
+    // with the specified display for deletion. Handles to all such resources are invalid as soon
+    // as eglTerminate returns
+    // Cache EGL objects that are no longer valid
+    // TODO (http://www.anglebug.com/6798): Invalidate context handles as well.
+    {
+        std::lock_guard<std::mutex> lock(mInvalidEglObjectsMutex);
+
+        mInvalidImageSet.insert(mImageSet.begin(), mImageSet.end());
+        mImageSet.clear();
+
+        mInvalidStreamSet.insert(mStreamSet.begin(), mStreamSet.end());
+        mStreamSet.clear();
+
+        mInvalidSurfaceSet.insert(mState.surfaceSet.begin(), mState.surfaceSet.end());
+        mState.surfaceSet.clear();
+
+        mInvalidSyncSet.insert(mSyncSet.begin(), mSyncSet.end());
+        mSyncSet.clear();
+    }
+
+    // All EGL objects, except contexts, have been marked invalid by the block above and will be
+    // cleaned up during eglReleaseThread. If no contexts are current on any thread, perform the
+    // cleanup right away.
     for (gl::Context *context : mContextSet)
     {
         if (context->getRefCount() > 0)
@@ -1052,25 +1144,8 @@ Error Display::terminate(Thread *thread, TerminateReason terminateReason)
     ASSERT(mGlobalTextureShareGroupUsers == 0 && mTextureManager == nullptr);
     ASSERT(mGlobalSemaphoreShareGroupUsers == 0 && mSemaphoreManager == nullptr);
 
-    while (!mImageSet.empty())
-    {
-        destroyImage(*mImageSet.begin());
-    }
-
-    while (!mStreamSet.empty())
-    {
-        destroyStream(*mStreamSet.begin());
-    }
-
-    while (!mSyncSet.empty())
-    {
-        destroySync(*mSyncSet.begin());
-    }
-
-    while (!mState.surfaceSet.empty())
-    {
-        ANGLE_TRY(destroySurface(*mState.surfaceSet.begin()));
-    }
+    // Now that contexts have been destroyed, clean up any remaining invalid objects
+    ANGLE_TRY(destroyInvalidEglObjects());
 
     mConfigSet.clear();
 
@@ -1102,7 +1177,8 @@ Error Display::prepareForCall()
 
 Error Display::releaseThread()
 {
-    return mImplementation->releaseThread();
+    ANGLE_TRY(mImplementation->releaseThread());
+    return destroyInvalidEglObjects();
 }
 
 std::vector<const Config *> Display::getConfigs(const egl::AttributeMap &attribs) const
@@ -1490,7 +1566,7 @@ Error Display::restoreLostDevice()
     return mImplementation->restoreLostDevice(this);
 }
 
-Error Display::destroySurface(Surface *surface)
+Error Display::destroySurfaceImpl(Surface *surface, SurfaceSet *surfaces)
 {
     if (surface->getType() == EGL_WINDOW_BIT)
     {
@@ -1512,22 +1588,24 @@ Error Display::destroySurface(Surface *surface)
         ASSERT(surfaceRemoved);
     }
 
-    mState.surfaceSet.erase(surface);
+    auto iter = surfaces->find(surface);
+    ASSERT(iter != surfaces->end());
+    surfaces->erase(iter);
     ANGLE_TRY(surface->onDestroy(this));
     return NoError();
 }
 
-void Display::destroyImage(egl::Image *image)
+void Display::destroyImageImpl(Image *image, ImageSet *images)
 {
-    auto iter = mImageSet.find(image);
-    ASSERT(iter != mImageSet.end());
+    auto iter = images->find(image);
+    ASSERT(iter != images->end());
     (*iter)->release(this);
-    mImageSet.erase(iter);
+    images->erase(iter);
 }
 
-void Display::destroyStream(egl::Stream *stream)
+void Display::destroyStreamImpl(Stream *stream, StreamSet *streams)
 {
-    mStreamSet.erase(stream);
+    streams->erase(stream);
     SafeDelete(stream);
 }
 
@@ -1630,12 +1708,32 @@ Error Display::destroyContext(Thread *thread, gl::Context *context)
     return NoError();
 }
 
-void Display::destroySync(egl::Sync *sync)
+void Display::destroySyncImpl(Sync *sync, SyncSet *syncs)
 {
-    auto iter = mSyncSet.find(sync);
-    ASSERT(iter != mSyncSet.end());
+    auto iter = syncs->find(sync);
+    ASSERT(iter != syncs->end());
     (*iter)->release(this);
-    mSyncSet.erase(iter);
+    syncs->erase(iter);
+}
+
+void Display::destroyImage(Image *image)
+{
+    return destroyImageImpl(image, &mImageSet);
+}
+
+void Display::destroyStream(Stream *stream)
+{
+    return destroyStreamImpl(stream, &mStreamSet);
+}
+
+Error Display::destroySurface(Surface *surface)
+{
+    return destroySurfaceImpl(surface, &mState.surfaceSet);
+}
+
+void Display::destroySync(Sync *sync)
+{
+    return destroySyncImpl(sync, &mSyncSet);
 }
 
 bool Display::isDeviceLost() const
@@ -1783,6 +1881,7 @@ static ClientExtensions GenerateClientExtensions()
 #    else
     extensions.platformANGLED3D11ON12 = IsWindows10OrGreater();
 #    endif
+    extensions.platformANGLEDeviceId = true;
 #endif
 
 #if defined(ANGLE_ENABLE_OPENGL)
@@ -1808,7 +1907,8 @@ static ClientExtensions GenerateClientExtensions()
 #endif
 
 #if defined(ANGLE_ENABLE_METAL)
-    extensions.platformANGLEMetal = true;
+    extensions.platformANGLEMetal    = true;
+    extensions.platformANGLEDeviceId = true;
 #endif
 
 #if defined(ANGLE_USE_X11)
@@ -1988,7 +2088,7 @@ void Display::initVendorString()
 
 void Display::initVersionString()
 {
-    mVersionString = mImplementation->getVersionString();
+    mVersionString = mImplementation->getVersionString(true);
 }
 
 void Display::initializeFrontendFeatures()
@@ -2000,13 +2100,13 @@ void Display::initializeFrontendFeatures()
     // No longer enable this on any Impl - crbug.com/1165751
     ANGLE_FEATURE_CONDITION((&mFrontendFeatures), scalarizeVecAndMatConstructorArgs, false);
 
-    mImplementation->initializeFrontendFeatures(&mFrontendFeatures);
-
-    rx::ApplyFeatureOverrides(&mFrontendFeatures, mState);
-
     // Disabled by default. To reduce the risk, create a feature to enable
     // compressing pipeline cache in multi-thread pool.
     ANGLE_FEATURE_CONDITION(&mFrontendFeatures, enableCompressingPipelineCacheInThreadPool, false);
+
+    mImplementation->initializeFrontendFeatures(&mFrontendFeatures);
+
+    rx::ApplyFeatureOverrides(&mFrontendFeatures, mState);
 }
 
 const DisplayExtensions &Display::getExtensions() const
@@ -2039,9 +2139,9 @@ std::string Display::getBackendVendorString() const
     return mImplementation->getVendorString();
 }
 
-std::string Display::getBackendVersionString() const
+std::string Display::getBackendVersionString(bool includeFullVersion) const
 {
-    return mImplementation->getVersionString();
+    return mImplementation->getVersionString(includeFullVersion);
 }
 
 Device *Display::getDevice() const

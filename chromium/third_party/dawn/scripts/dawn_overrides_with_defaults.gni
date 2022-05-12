@@ -41,16 +41,8 @@ if (!defined(dawn_glfw_dir)) {
   dawn_glfw_dir = "//third_party/glfw"
 }
 
-if (!defined(dawn_glm_dir)) {
-  dawn_glm_dir = "//third_party/glm"
-}
-
 if (!defined(dawn_googletest_dir)) {
   dawn_googletest_dir = "//third_party/googletest"
-}
-
-if (!defined(dawn_spirv_cross_dir)) {
-  dawn_spirv_cross_dir = "//third_party/vulkan-deps/spirv-cross/src"
 }
 
 if (!defined(dawn_spirv_tools_dir)) {

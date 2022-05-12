@@ -12,8 +12,7 @@ const char kFeaturedServicePath[] = "/org/chromium/featured";
 const char kFeaturedServiceName[] = "org.chromium.featured";
 
 // Methods.
-const char kPlatformFeatureList[] = "PlatformFeatureList";
-const char kPlatformFeatureEnable[] = "PlatformFeatureEnable";
+const char kIsPlatformFeatureEnabled[] = "IsPlatformFeatureEnabled";
 
 }  // namespace featured
 

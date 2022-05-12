@@ -139,24 +139,6 @@ INSTANTIATE_TEST_SUITE_P(ParserImplTest,
                                          VecData{"vec3<f32", 3, {}},
                                          VecData{"vec4<f32", 4, {}}));
 
-class VecMissingLessThanTest : public ParserImplTestWithParam<VecData> {};
-
-TEST_P(VecMissingLessThanTest, Handles_Missing_GreaterThan) {
-  auto params = GetParam();
-  auto p = parser(params.input);
-  auto t = p->type_decl();
-  EXPECT_TRUE(t.errored);
-  EXPECT_FALSE(t.matched);
-  ASSERT_EQ(t.value, nullptr);
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(p->error(), "1:5: expected '<' for vector");
-}
-INSTANTIATE_TEST_SUITE_P(ParserImplTest,
-                         VecMissingLessThanTest,
-                         testing::Values(VecData{"vec2", 2, {}},
-                                         VecData{"vec3", 3, {}},
-                                         VecData{"vec4", 4, {}}));
-
 class VecMissingType : public ParserImplTestWithParam<VecData> {};
 
 TEST_P(VecMissingType, Handles_Missing_Type) {
@@ -409,7 +391,7 @@ TEST_F(ParserImplTest, TypeDecl_Array_SintLiteralSize) {
   auto* a = t.value->As<ast::Array>();
   ASSERT_FALSE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
-  EXPECT_EQ(a->decorations.size(), 0u);
+  EXPECT_EQ(a->attributes.size(), 0u);
   EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 1u}, {1u, 14u}}));
 
   auto* size = a->count->As<ast::SintLiteralExpression>();
@@ -429,7 +411,7 @@ TEST_F(ParserImplTest, TypeDecl_Array_UintLiteralSize) {
   auto* a = t.value->As<ast::Array>();
   ASSERT_FALSE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
-  EXPECT_EQ(a->decorations.size(), 0u);
+  EXPECT_EQ(a->attributes.size(), 0u);
   EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 1u}, {1u, 15u}}));
 
   auto* size = a->count->As<ast::UintLiteralExpression>();
@@ -449,7 +431,7 @@ TEST_F(ParserImplTest, TypeDecl_Array_ConstantSize) {
   auto* a = t.value->As<ast::Array>();
   ASSERT_FALSE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
-  EXPECT_EQ(a->decorations.size(), 0u);
+  EXPECT_EQ(a->attributes.size(), 0u);
   EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 1u}, {1u, 17u}}));
 
   auto* count_expr = a->count->As<ast::IdentifierExpression>();
@@ -458,7 +440,7 @@ TEST_F(ParserImplTest, TypeDecl_Array_ConstantSize) {
 }
 
 TEST_F(ParserImplTest, TypeDecl_Array_Stride) {
-  auto p = parser("[[stride(16)]] array<f32, 5>");
+  auto p = parser("@stride(16) array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.matched);
   EXPECT_FALSE(t.errored);
@@ -474,15 +456,15 @@ TEST_F(ParserImplTest, TypeDecl_Array_Stride) {
   ASSERT_NE(size, nullptr);
   EXPECT_EQ(size->ValueAsI32(), 5);
 
-  ASSERT_EQ(a->decorations.size(), 1u);
-  auto* stride = a->decorations[0];
-  ASSERT_TRUE(stride->Is<ast::StrideDecoration>());
-  ASSERT_EQ(stride->As<ast::StrideDecoration>()->stride, 16u);
-  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 16u}, {1u, 29u}}));
+  ASSERT_EQ(a->attributes.size(), 1u);
+  auto* stride = a->attributes[0];
+  ASSERT_TRUE(stride->Is<ast::StrideAttribute>());
+  ASSERT_EQ(stride->As<ast::StrideAttribute>()->stride, 16u);
+  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 13u}, {1u, 26u}}));
 }
 
 TEST_F(ParserImplTest, TypeDecl_Array_Runtime_Stride) {
-  auto p = parser("[[stride(16)]] array<f32>");
+  auto p = parser("@stride(16) array<f32>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.matched);
   EXPECT_FALSE(t.errored);
@@ -494,15 +476,15 @@ TEST_F(ParserImplTest, TypeDecl_Array_Runtime_Stride) {
   ASSERT_TRUE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
 
-  ASSERT_EQ(a->decorations.size(), 1u);
-  auto* stride = a->decorations[0];
-  ASSERT_TRUE(stride->Is<ast::StrideDecoration>());
-  ASSERT_EQ(stride->As<ast::StrideDecoration>()->stride, 16u);
-  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 16u}, {1u, 26u}}));
+  ASSERT_EQ(a->attributes.size(), 1u);
+  auto* stride = a->attributes[0];
+  ASSERT_TRUE(stride->Is<ast::StrideAttribute>());
+  ASSERT_EQ(stride->As<ast::StrideAttribute>()->stride, 16u);
+  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 13u}, {1u, 23u}}));
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_MultipleDecorations_OneBlock) {
-  auto p = parser("[[stride(16), stride(32)]] array<f32>");
+TEST_F(ParserImplTest, TypeDecl_Array_MultipleAttributes_OneBlock) {
+  auto p = parser("@stride(16) @stride(32) array<f32>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.matched);
   EXPECT_FALSE(t.errored);
@@ -514,17 +496,17 @@ TEST_F(ParserImplTest, TypeDecl_Array_MultipleDecorations_OneBlock) {
   ASSERT_TRUE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
 
-  auto& decos = a->decorations;
-  ASSERT_EQ(decos.size(), 2u);
-  EXPECT_TRUE(decos[0]->Is<ast::StrideDecoration>());
-  EXPECT_EQ(decos[0]->As<ast::StrideDecoration>()->stride, 16u);
-  EXPECT_TRUE(decos[1]->Is<ast::StrideDecoration>());
-  EXPECT_EQ(decos[1]->As<ast::StrideDecoration>()->stride, 32u);
-  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 28u}, {1u, 38u}}));
+  auto& attrs = a->attributes;
+  ASSERT_EQ(attrs.size(), 2u);
+  EXPECT_TRUE(attrs[0]->Is<ast::StrideAttribute>());
+  EXPECT_EQ(attrs[0]->As<ast::StrideAttribute>()->stride, 16u);
+  EXPECT_TRUE(attrs[1]->Is<ast::StrideAttribute>());
+  EXPECT_EQ(attrs[1]->As<ast::StrideAttribute>()->stride, 32u);
+  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 25u}, {1u, 35u}}));
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_MultipleDecorations_MultipleBlocks) {
-  auto p = parser("[[stride(16)]] [[stride(32)]] array<f32>");
+TEST_F(ParserImplTest, TypeDecl_Array_MultipleAttributes_MultipleBlocks) {
+  auto p = parser("@stride(16) @stride(32) array<f32>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.matched);
   EXPECT_FALSE(t.errored);
@@ -536,95 +518,177 @@ TEST_F(ParserImplTest, TypeDecl_Array_MultipleDecorations_MultipleBlocks) {
   ASSERT_TRUE(a->IsRuntimeArray());
   ASSERT_TRUE(a->type->Is<ast::F32>());
 
-  auto& decos = a->decorations;
-  ASSERT_EQ(decos.size(), 2u);
-  EXPECT_TRUE(decos[0]->Is<ast::StrideDecoration>());
-  EXPECT_EQ(decos[0]->As<ast::StrideDecoration>()->stride, 16u);
-  EXPECT_TRUE(decos[1]->Is<ast::StrideDecoration>());
-  EXPECT_EQ(decos[1]->As<ast::StrideDecoration>()->stride, 32u);
-  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 31u}, {1u, 41u}}));
+  auto& attrs = a->attributes;
+  ASSERT_EQ(attrs.size(), 2u);
+  EXPECT_TRUE(attrs[0]->Is<ast::StrideAttribute>());
+  EXPECT_EQ(attrs[0]->As<ast::StrideAttribute>()->stride, 16u);
+  EXPECT_TRUE(attrs[1]->Is<ast::StrideAttribute>());
+  EXPECT_EQ(attrs[1]->As<ast::StrideAttribute>()->stride, 32u);
+  EXPECT_EQ(t.value->source.range, (Source::Range{{1u, 25u}, {1u, 35u}}));
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Decoration_MissingArray) {
-  auto p = parser("[[stride(16)]] f32");
+TEST_F(ParserImplTest, TypeDecl_Array_Attribute_MissingArray) {
+  auto p = parser("@stride(16) f32");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:3: unexpected decorations");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:2: use of deprecated language feature: the @stride attribute is deprecated; use a larger type if necessary
+1:2: unexpected attributes)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Decoration_MissingClosingAttr) {
+TEST_F(ParserImplTest, TypeDecl_Array_Attribute_UnknownAttribute) {
+  auto p = parser("@unknown(16) array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), R"(1:2: expected attribute)");
+}
+
+TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingLeftParen) {
+  auto p = parser("@stride 4) array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), R"(1:9: expected '(' for stride attribute)");
+}
+
+TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingRightParen) {
+  auto p = parser("@stride(4 array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(
+      p->error(),
+      R"(1:2: use of deprecated language feature: the @stride attribute is deprecated; use a larger type if necessary
+1:11: expected ')' for stride attribute)");
+}
+
+TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingValue) {
+  auto p = parser("@stride() array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:9: expected signed integer literal for stride attribute");
+}
+
+TEST_F(ParserImplTest, TypeDecl_Array_Stride_InvalidValue) {
+  auto p = parser("@stride(invalid) array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(),
+            "1:9: expected signed integer literal for stride attribute");
+}
+
+TEST_F(ParserImplTest, TypeDecl_Array_Stride_InvalidValue_Negative) {
+  auto p = parser("@stride(-1) array<f32, 5>");
+  auto t = p->type_decl();
+  EXPECT_TRUE(t.errored);
+  EXPECT_FALSE(t.matched);
+  ASSERT_EQ(t.value, nullptr);
+  ASSERT_TRUE(p->has_error());
+  EXPECT_EQ(p->error(), "1:9: stride attribute must be greater than 0");
+}
+
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Attribute_MissingClosingAttr) {
   auto p = parser("[[stride(16) array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:14: expected ']]' for decoration list");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:3: use of deprecated language feature: the @stride attribute is deprecated; use a larger type if necessary
+1:14: expected ']]' for attribute list)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Decoration_UnknownDecoration) {
-  auto p = parser("[[unknown 16]] array<f32, 5>");
-  auto t = p->type_decl();
-  EXPECT_TRUE(t.errored);
-  EXPECT_FALSE(t.matched);
-  ASSERT_EQ(t.value, nullptr);
-  ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:3: expected decoration");
-}
-
-TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingLeftParen) {
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Stride_MissingLeftParen) {
   auto p = parser("[[stride 4)]] array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:10: expected '(' for stride decoration");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:10: expected '(' for stride attribute)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingRightParen) {
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Stride_MissingRightParen) {
   auto p = parser("[[stride(4]] array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:11: expected ')' for stride decoration");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:3: use of deprecated language feature: the @stride attribute is deprecated; use a larger type if necessary
+1:11: expected ')' for stride attribute)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Stride_MissingValue) {
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Stride_MissingValue) {
   auto p = parser("[[stride()]] array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(),
-            "1:10: expected signed integer literal for stride decoration");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:10: expected signed integer literal for stride attribute)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Stride_InvalidValue) {
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Stride_InvalidValue) {
   auto p = parser("[[stride(invalid)]] array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(),
-            "1:10: expected signed integer literal for stride decoration");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:10: expected signed integer literal for stride attribute)");
 }
 
-TEST_F(ParserImplTest, TypeDecl_Array_Stride_InvalidValue_Negative) {
+// TODO(crbug.com/tint/1382): Remove
+TEST_F(ParserImplTest, DEPRECATED_TypeDecl_Array_Stride_InvalidValue_Negative) {
   auto p = parser("[[stride(-1)]] array<f32, 5>");
   auto t = p->type_decl();
   EXPECT_TRUE(t.errored);
   EXPECT_FALSE(t.matched);
   ASSERT_EQ(t.value, nullptr);
   ASSERT_TRUE(p->has_error());
-  EXPECT_EQ(p->error(), "1:10: stride decoration must be greater than 0");
+  EXPECT_EQ(
+      p->error(),
+      R"(1:1: use of deprecated language feature: [[attribute]] style attributes have been replaced with @attribute style
+1:10: stride attribute must be greater than 0)");
 }
 
 TEST_F(ParserImplTest, TypeDecl_Array_Runtime) {
@@ -773,30 +837,6 @@ INSTANTIATE_TEST_SUITE_P(ParserImplTest,
                                          MatrixData{"mat4x2<f32", 4, 2, {}},
                                          MatrixData{"mat4x3<f32", 4, 3, {}},
                                          MatrixData{"mat4x4<f32", 4, 4, {}}));
-
-class MatrixMissingLessThanTest : public ParserImplTestWithParam<MatrixData> {};
-
-TEST_P(MatrixMissingLessThanTest, Handles_Missing_GreaterThan) {
-  auto params = GetParam();
-  auto p = parser(params.input);
-  auto t = p->type_decl();
-  EXPECT_TRUE(t.errored);
-  EXPECT_FALSE(t.matched);
-  ASSERT_EQ(t.value, nullptr);
-  ASSERT_TRUE(p->has_error());
-  ASSERT_EQ(p->error(), "1:8: expected '<' for matrix");
-}
-INSTANTIATE_TEST_SUITE_P(ParserImplTest,
-                         MatrixMissingLessThanTest,
-                         testing::Values(MatrixData{"mat2x2 f32>", 2, 2, {}},
-                                         MatrixData{"mat2x3 f32>", 2, 3, {}},
-                                         MatrixData{"mat2x4 f32>", 2, 4, {}},
-                                         MatrixData{"mat3x2 f32>", 3, 2, {}},
-                                         MatrixData{"mat3x3 f32>", 3, 3, {}},
-                                         MatrixData{"mat3x4 f32>", 3, 4, {}},
-                                         MatrixData{"mat4x2 f32>", 4, 2, {}},
-                                         MatrixData{"mat4x3 f32>", 4, 3, {}},
-                                         MatrixData{"mat4x4 f32>", 4, 4, {}}));
 
 class MatrixMissingType : public ParserImplTestWithParam<MatrixData> {};
 

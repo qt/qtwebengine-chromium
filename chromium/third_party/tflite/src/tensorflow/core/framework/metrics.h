@@ -98,6 +98,11 @@ void RecordTFDataIteratorBusy(uint64 duration_us);
 // first `GetNext()` request and responding to the last `GetNext()` request.
 void RecordTFDataIteratorLifetime(uint64 duration_us);
 
+// Records the time histogram (in microseconds) between `IteratorResource`
+// responding to a `GetNext()` request and receiving the next `GetNext()`
+// request.
+void RecordTFDataIteratorGap(uint64 duration_us);
+
 // Records the number of independent graph changes resulting from the
 // application of a tf.data optimization.
 //
@@ -274,7 +279,6 @@ class ScopedCounter final {
 // passes.
 monitoring::Counter<2>* GetGraphOptimizationCounter();
 
-
 // Updates metrics for time to distribute variables to all TPU hosts.
 void UpdateTpuVariableDistributionTime(const uint64 distribution_time_usecs);
 
@@ -302,6 +306,7 @@ class TestDelta {
   const monitoring::CounterCell* cell_;
   int64 last_value_;
 };
+void UpdateTpuErrorCounter(const string& op, const string& error_type);
 
 }  // namespace metrics
 }  // namespace tensorflow

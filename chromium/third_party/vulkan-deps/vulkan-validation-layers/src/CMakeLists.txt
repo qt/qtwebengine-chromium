@@ -1,6 +1,6 @@
 # ~~~
-# Copyright (c) 2014-2021 Valve Corporation
-# Copyright (c) 2014-2021 LunarG, Inc.
+# Copyright (c) 2014-2022 Valve Corporation
+# Copyright (c) 2014-2022 LunarG, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -251,11 +251,16 @@ option(BUILD_LAYERS "Build layers" ON)
 option(BUILD_LAYER_SUPPORT_FILES "Generate layer files" OFF) # For generating files when not building layers
 option(USE_ROBIN_HOOD_HASHING "Use robin-hood-hashing" ON)
 if (USE_ROBIN_HOOD_HASHING)
-    find_package(robin_hood REQUIRED CONFIG)
+    if (NOT TARGET robin_hood::robin_hood)
+        find_package(robin_hood REQUIRED CONFIG)
+    endif()
 endif()
 
+set(SPIRV_HEADERS_INCLUDE_DIR "" CACHE STRING "")
 if(BUILD_LAYERS OR BUILD_TESTS)
-    find_package(SPIRV-Headers REQUIRED CONFIG)
+    if (SPIRV_HEADERS_INCLUDE_DIR STREQUAL "")
+        find_package(SPIRV-Headers REQUIRED CONFIG)
+    endif()
 endif()
 
 if(BUILD_TESTS)
@@ -318,7 +323,7 @@ add_library(VkLayer_utils
             layers/vk_layer_config.cpp
             layers/vk_layer_extension_utils.cpp
             layers/vk_layer_utils.cpp
-            layers/vk_format_utils.cpp)
+            layers/generated/vk_format_utils.cpp)
 target_link_libraries(VkLayer_utils PUBLIC Vulkan::Headers)
 set_target_properties(VkLayer_utils PROPERTIES CXX_STANDARD ${VVL_CPP_STANDARD})
 if (VVL_ENABLE_ASAN)

@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2021 The Khronos Group Inc.
- * Copyright (c) 2015-2021 Valve Corporation
- * Copyright (c) 2015-2021 LunarG, Inc.
- * Copyright (C) 2015-2021 Google Inc.
+/* Copyright (c) 2015-2022 The Khronos Group Inc.
+ * Copyright (c) 2015-2022 Valve Corporation
+ * Copyright (c) 2015-2022 LunarG, Inc.
+ * Copyright (C) 2015-2022 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -75,8 +75,6 @@ class UPDATE_TEMPLATE_STATE;
 //
 // Added from VK_KHR_create_renderpass2
 enum RenderPassCreateVersion { RENDER_PASS_VERSION_1 = 0, RENDER_PASS_VERSION_2 = 1 };
-// Added from VK_KHR_copy_commands2
-enum CopyCommandVersion { COPY_COMMAND_VERSION_1 = 0, COPY_COMMAND_VERSION_2 = 1 };
 // Added from VK_KHR_device_group but added to VK_KHR_swapchain with Vulkan 1.1
 enum AcquireVersion { ACQUIRE_VERSION_1 = 0, ACQUIRE_VERSION_2 = 1 };
 
@@ -127,7 +125,7 @@ struct create_buffer_api_state {
 struct create_shader_module_api_state {
     uint32_t unique_shader_id;
     VkShaderModuleCreateInfo instrumented_create_info;
-    std::vector<unsigned int> instrumented_pgm;
+    std::vector<uint32_t> instrumented_pgm;
 };
 
 #define VALSTATETRACK_MAP_AND_TRAITS_IMPL(handle_type, state_type, map_member, instance_scope)        \
@@ -255,11 +253,12 @@ class ValidationStateTracker : public ValidationObject {
     struct AccessorTraitsTypes {
         using StateType = StateType_;
         using HandleType = typename AccessorStateHandle<StateType>::HandleType;
-        using ReturnType = StateType*;
         using SharedType = std::shared_ptr<StateType>;
         using ConstSharedType = std::shared_ptr<const StateType>;
+        using ReadLockedType = LockedSharedPtr<const StateType, ReadLockGuard>;
+        using WriteLockedType = LockedSharedPtr<StateType, WriteLockGuard>;
         using MappedType = std::shared_ptr<StateType>;
-        using MapType = layer_data::unordered_map<HandleType, MappedType>;
+        using MapType = vl_concurrent_unordered_map<HandleType, MappedType>;
     };
 
     template <typename State, typename Traits = AccessorTraits<State>>
@@ -280,24 +279,19 @@ class ValidationStateTracker : public ValidationObject {
     template <typename State>
     void Add(std::shared_ptr<State>&& state_object) {
         auto& map = GetStateMap<State>();
-        using KeyType = typename AccessorTraits<State>::MapType::key_type;
-
-        auto handle = state_object->Handle().template Cast<KeyType>();
-        auto result = map.emplace(handle, state_object);
-        // there shouldn't be anything in the map. If there is, we missed a destroy and then the driver reused the handle.
-        assert(result.second);
-        if (!result.second) {
-            result.first->second = std::move(state_object);
-        }
+        auto handle = state_object->Handle().template Cast<typename AccessorTraits<State>::HandleType>();
+        // Finish setting up the object node tree, which cannot be done from the state object contructors
+        // due to use of shared_from_this()
+        state_object->LinkChildNodes();
+        map.insert_or_assign(handle, std::move(state_object));
     }
 
     template <typename State>
     void Destroy(typename AccessorTraits<State>::HandleType handle) {
         auto& map = GetStateMap<State>();
-        auto iter = map.find(handle);
+        auto iter = map.pop(handle);
         if (iter != map.end()) {
             iter->second->Destroy();
-            map.erase(iter);
         }
     }
 
@@ -309,7 +303,7 @@ class ValidationStateTracker : public ValidationObject {
     template <typename State>
     void ForEach(std::function<void(const State& s)> fn) const {
         const auto& map = GetStateMap<State>();
-        for (const auto& entry : map) {
+        for (const auto& entry : map.snapshot()) {
             fn(*entry.second);
         }
     }
@@ -317,7 +311,7 @@ class ValidationStateTracker : public ValidationObject {
     template <typename State>
     bool AnyOf(std::function<bool(const State& s)> fn) const {
         const auto& map = GetStateMap<State>();
-        for (const auto& entry : map) {
+        for (const auto& entry : map.snapshot()) {
             if (fn(*entry.second)) {
                 return true;
             }
@@ -326,43 +320,54 @@ class ValidationStateTracker : public ValidationObject {
     }
 
     template <typename State>
-    typename AccessorTraits<State>::ReturnType Get(typename AccessorTraits<State>::HandleType handle) {
+    typename AccessorTraits<State>::SharedType Get(typename AccessorTraits<State>::HandleType handle) {
         const auto& map = GetStateMap<State>();
         const auto found_it = map.find(handle);
         if (found_it == map.end()) {
             return nullptr;
         }
-        return found_it->second.get();
+        // NOTE: vl_concurrent_unordered_map::find() makes a copy of the value, so it is safe to move out.
+        // But this will break everything, when switching to a different map type.
+        return std::move(found_it->second);
     };
 
     template <typename State>
-    const typename AccessorTraits<State>::ReturnType Get(typename AccessorTraits<State>::HandleType handle) const {
-        const auto& map = GetStateMap<State>();
-        const auto found_it = map.find(handle);
-        if (found_it == map.cend()) {
-            return nullptr;
-        }
-        return found_it->second.get();
-    };
-
-    template <typename State>
-    typename AccessorTraits<State>::SharedType GetShared(typename AccessorTraits<State>::HandleType handle) {
+    typename AccessorTraits<State>::ConstSharedType Get(typename AccessorTraits<State>::HandleType handle) const {
         const auto& map = GetStateMap<State>();
         const auto found_it = map.find(handle);
         if (found_it == map.end()) {
             return nullptr;
         }
-        return found_it->second;
+        return std::move(found_it->second);
+    };
+
+    // GetRead() and GetWrite() return an already locked state object. Currently this is only supported by
+    // CMD_BUFFER_STATE, because it has public ReadLock() and WriteLock() methods.
+    // NOTE: Calling base class hook methods with a CMD_BUFFER_STATE lock held will lead to deadlock. Instead,
+    // call the base class hook method before getting/locking the command buffer state for processing in the
+    // derived class method.
+    template <typename State>
+    typename AccessorTraits<State>::ReadLockedType GetRead(typename AccessorTraits<State>::HandleType handle) const {
+        using LockedPtrType = typename AccessorTraits<State>::ReadLockedType;
+        auto ptr = Get<State>(handle);
+        if (ptr) {
+            auto guard = ptr->ReadLock();
+            return LockedPtrType(std::move(ptr), std::move(guard));
+        } else {
+            return LockedPtrType();
+        }
     };
 
     template <typename State>
-    typename AccessorTraits<State>::ConstSharedType GetShared(typename AccessorTraits<State>::HandleType handle) const {
-        const auto& map = GetStateMap<State>();
-        const auto found_it = map.find(handle);
-        if (found_it == map.cend()) {
-            return nullptr;
+    typename AccessorTraits<State>::WriteLockedType GetWrite(typename AccessorTraits<State>::HandleType handle) {
+        using LockedPtrType = typename AccessorTraits<State>::WriteLockedType;
+        auto ptr = Get<State>(handle);
+        if (ptr) {
+            auto guard = ptr->WriteLock();
+            return LockedPtrType(std::move(ptr), std::move(guard));
+        } else {
+            return LockedPtrType();
         }
-        return found_it->second;
     };
 
     // When needing to share ownership, control over constness of access with another object (i.e. adding references while
@@ -371,10 +376,10 @@ class ValidationStateTracker : public ValidationObject {
     typename AccessorTraits<State>::SharedType GetConstCastShared(typename AccessorTraits<State>::HandleType handle) const {
         const auto& map = GetStateMap<State>();
         const auto found_it = map.find(handle);
-        if (found_it == map.cend()) {
+        if (found_it == map.end()) {
             return nullptr;
         }
-        return found_it->second;
+        return std::move(found_it->second);
     };
 
     using CommandBufferResetCallback = std::function<void(VkCommandBuffer)>;
@@ -418,6 +423,8 @@ class ValidationStateTracker : public ValidationObject {
                                                     VkMemoryRequirements2* pMemoryRequirements) override;
     void PostCallRecordGetBufferMemoryRequirements2KHR(VkDevice device, const VkBufferMemoryRequirementsInfo2* pInfo,
                                                        VkMemoryRequirements2* pMemoryRequirements) override;
+    void PostCallRecordGetDeviceQueue(VkDevice device, uint32_t queueFamilyIndex, uint32_t queueIndex, VkQueue* pQueue) override;
+    void PostCallRecordGetDeviceQueue2(VkDevice device, const VkDeviceQueueInfo2* pQueueInfo, VkQueue* pQueue) override;
     void PostCallRecordGetFenceFdKHR(VkDevice device, const VkFenceGetFdInfoKHR* pGetFdInfo, int* pFd, VkResult result) override;
     void PostCallRecordGetFenceStatus(VkDevice device, VkFence fence, VkResult result) override;
 #ifdef VK_USE_PLATFORM_WIN32_KHR
@@ -759,7 +766,9 @@ class ValidationStateTracker : public ValidationObject {
     void PreCallRecordCmdBeginRenderPass(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                          VkSubpassContents contents) override;
     void PreCallRecordCmdBeginRenderingKHR(VkCommandBuffer commandBuffer, const VkRenderingInfoKHR* pRenderingInfo) override;
+    void PreCallRecordCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo* pRenderingInfo) override;
     void PreCallRecordCmdEndRenderingKHR(VkCommandBuffer commandBuffer) override;
+    void PreCallRecordCmdEndRendering(VkCommandBuffer commandBuffer) override;
     void PreCallRecordCmdBeginRenderPass2(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
                                           const VkSubpassBeginInfo* pSubpassBeginInfo) override;
     void PreCallRecordCmdBeginRenderPass2KHR(VkCommandBuffer commandBuffer, const VkRenderPassBeginInfo* pRenderPassBegin,
@@ -789,6 +798,7 @@ class ValidationStateTracker : public ValidationObject {
                                    VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageBlit* pRegions,
                                    VkFilter filter) override;
     void PreCallRecordCmdBlitImage2KHR(VkCommandBuffer commandBuffer, const VkBlitImageInfo2KHR* pBlitImageInfo) override;
+    void PreCallRecordCmdBlitImage2(VkCommandBuffer commandBuffer, const VkBlitImageInfo2* pBlitImageInfo) override;
     void PostCallRecordCmdBuildAccelerationStructureNV(VkCommandBuffer commandBuffer, const VkAccelerationStructureInfoNV* pInfo,
                                                        VkBuffer instanceData, VkDeviceSize instanceOffset, VkBool32 update,
                                                        VkAccelerationStructureNV dst, VkAccelerationStructureNV src,
@@ -805,18 +815,24 @@ class ValidationStateTracker : public ValidationObject {
     void PreCallRecordCmdCopyBuffer(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkBuffer dstBuffer, uint32_t regionCount,
                                     const VkBufferCopy* pRegions) override;
     void PreCallRecordCmdCopyBuffer2KHR(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2KHR* pCopyBufferInfos) override;
+    void PreCallRecordCmdCopyBuffer2(VkCommandBuffer commandBuffer, const VkCopyBufferInfo2* pCopyBufferInfos) override;
     void PreCallRecordCmdCopyBufferToImage(VkCommandBuffer commandBuffer, VkBuffer srcBuffer, VkImage dstImage,
                                            VkImageLayout dstImageLayout, uint32_t regionCount,
                                            const VkBufferImageCopy* pRegions) override;
     void PreCallRecordCmdCopyBufferToImage2KHR(VkCommandBuffer commandBuffer,
                                                const VkCopyBufferToImageInfo2KHR* pCopyBufferToImageInfo) override;
+    void PreCallRecordCmdCopyBufferToImage2(VkCommandBuffer commandBuffer,
+                                            const VkCopyBufferToImageInfo2* pCopyBufferToImageInfo) override;
     void PreCallRecordCmdCopyImage(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout, VkImage dstImage,
                                    VkImageLayout dstImageLayout, uint32_t regionCount, const VkImageCopy* pRegions) override;
     void PreCallRecordCmdCopyImage2KHR(VkCommandBuffer commandBuffer, const VkCopyImageInfo2KHR* pCopyImageInfo) override;
+    void PreCallRecordCmdCopyImage2(VkCommandBuffer commandBuffer, const VkCopyImageInfo2* pCopyImageInfo) override;
     void PreCallRecordCmdCopyImageToBuffer(VkCommandBuffer commandBuffer, VkImage srcImage, VkImageLayout srcImageLayout,
                                            VkBuffer dstBuffer, uint32_t regionCount, const VkBufferImageCopy* pRegions) override;
     void PreCallRecordCmdCopyImageToBuffer2KHR(VkCommandBuffer commandBuffer,
                                                const VkCopyImageToBufferInfo2KHR* pCopyImageToBufferInfo) override;
+    void PreCallRecordCmdCopyImageToBuffer2(VkCommandBuffer commandBuffer,
+                                            const VkCopyImageToBufferInfo2* pCopyImageToBufferInfo) override;
     void PostCallRecordCmdCopyQueryPoolResults(VkCommandBuffer commandBuffer, VkQueryPool queryPool, uint32_t firstQuery,
                                                uint32_t queryCount, VkBuffer dstBuffer, VkDeviceSize dstOffset, VkDeviceSize stride,
                                                VkQueryResultFlags flags) override;
@@ -913,6 +929,7 @@ class ValidationStateTracker : public ValidationObject {
                                       VkImage dstImage, VkImageLayout dstImageLayout, uint32_t regionCount,
                                       const VkImageResolve* pRegions) override;
     void PreCallRecordCmdResolveImage2KHR(VkCommandBuffer commandBuffer, const VkResolveImageInfo2KHR* pResolveImageInfo) override;
+    void PreCallRecordCmdResolveImage2(VkCommandBuffer commandBuffer, const VkResolveImageInfo2* pResolveImageInfo) override;
     void PreCallRecordCmdSetBlendConstants(VkCommandBuffer commandBuffer, const float blendConstants[4]) override;
     void PreCallRecordCmdSetDepthBias(VkCommandBuffer commandBuffer, float depthBiasConstantFactor, float depthBiasClamp,
                                       float depthBiasSlopeFactor) override;
@@ -957,7 +974,7 @@ class ValidationStateTracker : public ValidationObject {
                                            uint32_t vertexAttributeDescriptionCount,
                                            const VkVertexInputAttributeDescription2EXT* pVertexAttributeDescriptions) override;
     template <typename CreateInfo>
-    VkFormatFeatureFlags GetExternalFormatFeaturesANDROID(const CreateInfo* create_info) const;
+    VkFormatFeatureFlags2KHR GetExternalFormatFeaturesANDROID(const CreateInfo* create_info) const;
 #ifdef VK_USE_PLATFORM_ANDROID_KHR
     void PostCallRecordGetAndroidHardwareBufferPropertiesANDROID(VkDevice device, const struct AHardwareBuffer* buffer,
                                                                  VkAndroidHardwareBufferPropertiesANDROID* pProperties,
@@ -1014,10 +1031,10 @@ class ValidationStateTracker : public ValidationObject {
                                                 VkResult result) override;
 
     // State Utilty functions
-    std::vector<std::shared_ptr<const IMAGE_VIEW_STATE>> GetSharedAttachmentViews(const VkRenderPassBeginInfo& rp_begin,
-                                                                                  const FRAMEBUFFER_STATE& fb_state) const;
+    std::vector<std::shared_ptr<const IMAGE_VIEW_STATE>> GetAttachmentViews(const VkRenderPassBeginInfo& rp_begin,
+                                                                            const FRAMEBUFFER_STATE& fb_state) const;
 
-    VkFormatFeatureFlags GetPotentialFormatFeatures(VkFormat format) const;
+    VkFormatFeatureFlags2KHR GetPotentialFormatFeatures(VkFormat format) const;
     void PerformUpdateDescriptorSetsWithTemplateKHR(VkDescriptorSet descriptorSet, const UPDATE_TEMPLATE_STATE* template_state,
                                                     const void* pData);
     void RecordAcquireNextImageState(VkDevice device, VkSwapchainKHR swapchain, uint64_t timeout, VkSemaphore semaphore,
@@ -1035,6 +1052,7 @@ class ValidationStateTracker : public ValidationObject {
                                                                           uint32_t queueFamilyIndex, uint32_t* pCounterCount,
                                                                           VkPerformanceCounterKHR* pCounters);
     void RecordGetBufferMemoryRequirementsState(VkBuffer buffer);
+    void RecordGetDeviceQueueState(uint32_t queue_family_index, VkDeviceQueueCreateFlags flags, VkQueue queue);
     void RecordGetExternalFenceState(VkFence fence, VkExternalFenceHandleTypeFlagBits handle_type);
     void RecordGetImageMemoryRequirementsState(VkImage image, const VkImageMemoryRequirementsInfo2* pInfo);
     void RecordImportSemaphoreState(VkSemaphore semaphore, VkExternalSemaphoreHandleTypeFlagBits handle_type,
@@ -1060,24 +1078,47 @@ class ValidationStateTracker : public ValidationObject {
                                                     const VkCopyAccelerationStructureInfoKHR* pInfo, VkResult result) override;
     void PostCallRecordCmdCopyAccelerationStructureKHR(VkCommandBuffer commandBuffer,
                                                        const VkCopyAccelerationStructureInfoKHR* pInfo) override;
-
+    void PreCallRecordCmdSetCullMode(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode) override;
     void PreCallRecordCmdSetCullModeEXT(VkCommandBuffer commandBuffer, VkCullModeFlags cullMode) override;
+    void PreCallRecordCmdSetFrontFace(VkCommandBuffer commandBuffer, VkFrontFace frontFace) override;
     void PreCallRecordCmdSetFrontFaceEXT(VkCommandBuffer commandBuffer, VkFrontFace frontFace) override;
     void PreCallRecordCmdSetPrimitiveTopologyEXT(VkCommandBuffer commandBuffer, VkPrimitiveTopology primitiveTopology) override;
+    void PreCallRecordCmdSetPrimitiveTopology(VkCommandBuffer commandBuffer, VkPrimitiveTopology primitiveTopology) override;
+    void RecordCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount, const VkViewport* pViewports,
+                                       CMD_TYPE cmdType);
     void PreCallRecordCmdSetViewportWithCountEXT(VkCommandBuffer commandBuffer, uint32_t viewportCount,
                                                  const VkViewport* pViewports) override;
+    void PreCallRecordCmdSetViewportWithCount(VkCommandBuffer commandBuffer, uint32_t viewportCount,
+                                              const VkViewport* pViewports) override;
+    void RecordCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount, const VkRect2D* pScissors,
+                                      CMD_TYPE cmdType);
     void PreCallRecordCmdSetScissorWithCountEXT(VkCommandBuffer commandBuffer, uint32_t scissorCount,
                                                 const VkRect2D* pScissors) override;
+    void PreCallRecordCmdSetScissorWithCount(VkCommandBuffer commandBuffer, uint32_t scissorCount,
+                                             const VkRect2D* pScissors) override;
+    void RecordCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
+                                     const VkBuffer* pBuffers, const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes,
+                                     const VkDeviceSize* pStrides, CMD_TYPE cmd_type);
     void PreCallRecordCmdBindVertexBuffers2EXT(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
                                                const VkBuffer* pBuffers, const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes,
                                                const VkDeviceSize* pStrides) override;
+    void PreCallRecordCmdBindVertexBuffers2(VkCommandBuffer commandBuffer, uint32_t firstBinding, uint32_t bindingCount,
+                                            const VkBuffer* pBuffers, const VkDeviceSize* pOffsets, const VkDeviceSize* pSizes,
+                                            const VkDeviceSize* pStrides) override;
     void PreCallRecordCmdSetDepthTestEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable) override;
+    void PreCallRecordCmdSetDepthTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable) override;
     void PreCallRecordCmdSetDepthWriteEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthWriteEnable) override;
+    void PreCallRecordCmdSetDepthWriteEnable(VkCommandBuffer commandBuffer, VkBool32 depthWriteEnable) override;
     void PreCallRecordCmdSetDepthCompareOpEXT(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp) override;
+    void PreCallRecordCmdSetDepthCompareOp(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp) override;
     void PreCallRecordCmdSetDepthBoundsTestEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthBoundsTestEnable) override;
+    void PreCallRecordCmdSetDepthBoundsTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthBoundsTestEnable) override;
     void PreCallRecordCmdSetStencilTestEnableEXT(VkCommandBuffer commandBuffer, VkBool32 stencilTestEnable) override;
+    void PreCallRecordCmdSetStencilTestEnable(VkCommandBuffer commandBuffer, VkBool32 stencilTestEnable) override;
     void PreCallRecordCmdSetStencilOpEXT(VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, VkStencilOp failOp,
                                          VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp) override;
+    void PreCallRecordCmdSetStencilOp(VkCommandBuffer commandBuffer, VkStencilFaceFlags faceMask, VkStencilOp failOp,
+                                      VkStencilOp passOp, VkStencilOp depthFailOp, VkCompareOp compareOp) override;
     void PreCallRecordCmdSetDiscardRectangleEXT(VkCommandBuffer commandBuffer, uint32_t firstDiscardRectangle,
                                                 uint32_t discardRectangleCount, const VkRect2D* pDiscardRectangles) override;
     void PreCallRecordCmdSetSampleLocationsEXT(VkCommandBuffer commandBuffer,
@@ -1089,8 +1130,11 @@ class ValidationStateTracker : public ValidationObject {
     void PreCallRecordCmdSetPatchControlPointsEXT(VkCommandBuffer commandBuffer, uint32_t patchControlPoints) override;
     void PreCallRecordCmdSetLogicOpEXT(VkCommandBuffer commandBuffer, VkLogicOp logicOp) override;
     void PreCallRecordCmdSetRasterizerDiscardEnableEXT(VkCommandBuffer commandBuffer, VkBool32 rasterizerDiscardEnable) override;
+    void PreCallRecordCmdSetRasterizerDiscardEnable(VkCommandBuffer commandBuffer, VkBool32 rasterizerDiscardEnable) override;
     void PreCallRecordCmdSetDepthBiasEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthBiasEnable) override;
+    void PreCallRecordCmdSetDepthBiasEnable(VkCommandBuffer commandBuffer, VkBool32 depthBiasEnable) override;
     void PreCallRecordCmdSetPrimitiveRestartEnableEXT(VkCommandBuffer commandBuffer, VkBool32 primitiveRestartEnable) override;
+    void PreCallRecordCmdSetPrimitiveRestartEnable(VkCommandBuffer commandBuffer, VkBool32 primitiveRestartEnable) override;
 
     void PostCallRecordCmdPipelineBarrier(VkCommandBuffer commandBuffer, VkPipelineStageFlags srcStageMask,
                                           VkPipelineStageFlags dstStageMask, VkDependencyFlags dependencyFlags,
@@ -1100,16 +1144,26 @@ class ValidationStateTracker : public ValidationObject {
                                           const VkImageMemoryBarrier* pImageMemoryBarriers) override;
 
     void PreCallRecordCmdPipelineBarrier2KHR(VkCommandBuffer commandBuffer, const VkDependencyInfoKHR* pDependencyInfo) override;
+    void PreCallRecordCmdPipelineBarrier2(VkCommandBuffer commandBuffer, const VkDependencyInfo* pDependencyInfo) override;
 
     void PreCallRecordCmdSetEvent2KHR(VkCommandBuffer commandBuffer, VkEvent event,
                                       const VkDependencyInfoKHR* pDependencyInfo) override;
+    void PreCallRecordCmdSetEvent2(VkCommandBuffer commandBuffer, VkEvent event, const VkDependencyInfo* pDependencyInfo) override;
     void PreCallRecordCmdResetEvent2KHR(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2KHR stageMask) override;
+    void PreCallRecordCmdResetEvent2(VkCommandBuffer commandBuffer, VkEvent event, VkPipelineStageFlags2 stageMask) override;
     void PreCallRecordCmdWaitEvents2KHR(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
                                         const VkDependencyInfoKHR* pDependencyInfos) override;
+    void PreCallRecordCmdWaitEvents2(VkCommandBuffer commandBuffer, uint32_t eventCount, const VkEvent* pEvents,
+                                     const VkDependencyInfo* pDependencyInfos) override;
     void PostCallRecordCmdWriteTimestamp2KHR(VkCommandBuffer commandBuffer, VkPipelineStageFlags2KHR stage, VkQueryPool queryPool,
                                              uint32_t query) override;
+    void PostCallRecordCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 stage, VkQueryPool queryPool,
+                                          uint32_t query) override;
+    void RecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence, VkResult result);
     void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2KHR* pSubmits, VkFence fence,
                                        VkResult result) override;
+    void PostCallRecordQueueSubmit2(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
+                                    VkResult result) override;
 
     void RecordGetBufferDeviceAddress(const VkBufferDeviceAddressInfo* pInfo, VkDeviceAddress address);
     void PostCallRecordGetBufferDeviceAddress(VkDevice device, const VkBufferDeviceAddressInfo* pInfo,
@@ -1145,13 +1199,20 @@ class ValidationStateTracker : public ValidationObject {
 
     DeviceFeatures enabled_features = {};
     // Device specific data
+    std::set<std::string> phys_dev_extensions;
     VkPhysicalDeviceMemoryProperties phys_dev_mem_props = {};
     VkPhysicalDeviceProperties phys_dev_props = {};
     VkPhysicalDeviceVulkan11Properties phys_dev_props_core11 = {};
     VkPhysicalDeviceVulkan12Properties phys_dev_props_core12 = {};
+    VkPhysicalDeviceVulkan13Properties phys_dev_props_core13 = {};
     VkDeviceGroupDeviceCreateInfo device_group_create_info = {};
     uint32_t physical_device_count;
     uint32_t custom_border_color_sampler_count = 0;
+
+    // VK_KHR_format_feature_flags2 changes the behavior of the
+    // app/layers/spec if present. So it needs its own special boolean unlike
+    // the enabled_fatures.
+    bool has_format_feature2;
 
     // Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2::pNext chain
     struct DeviceExtensionProperties {
@@ -1199,8 +1260,8 @@ class ValidationStateTracker : public ValidationObject {
     std::vector<DeviceQueueInfo> device_queue_info_list;
     // If vkGetBufferDeviceAddress is called, keep track of buffer <-> address mapping.
     // TODO is it sufficient to track a pointer, or do we need a std::shared_ptr<BUFFER_STATE>?
-    layer_data::unordered_map<VkDeviceAddress, BUFFER_STATE*> buffer_address_map_;
-    layer_data::unordered_map<uint64_t, VkFormatFeatureFlags> ahb_ext_formats_map;
+    vl_concurrent_unordered_map<VkDeviceAddress, BUFFER_STATE*> buffer_address_map_;
+    vl_concurrent_unordered_map<uint64_t, VkFormatFeatureFlags2KHR> ahb_ext_formats_map;
 
   private:
     VALSTATETRACK_MAP_AND_TRAITS(VkQueue, QUEUE_STATE, queue_map_)

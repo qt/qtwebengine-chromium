@@ -28,6 +28,7 @@
 #include "include/v8-initialization.h"
 #include "include/v8-inspector.h"
 #include "include/v8-json.h"
+#include "include/v8-locker.h"
 #include "include/v8-profiler.h"
 #include "include/v8-wasm.h"
 #include "src/api/api-inl.h"
@@ -45,9 +46,11 @@
 #include "src/debug/debug-interface.h"
 #include "src/deoptimizer/deoptimizer.h"
 #include "src/diagnostics/basic-block-profiler.h"
+#include "src/execution/v8threads.h"
 #include "src/execution/vm-state-inl.h"
 #include "src/flags/flags.h"
 #include "src/handles/maybe-handles.h"
+#include "src/heap/parked-scope.h"
 #include "src/init/v8.h"
 #include "src/interpreter/interpreter.h"
 #include "src/logging/counters.h"
@@ -460,8 +463,7 @@ base::OS::MemoryMappedFile* Shell::counters_file_ = nullptr;
 CounterCollection Shell::local_counters_;
 CounterCollection* Shell::counters_ = &local_counters_;
 base::LazyMutex Shell::context_mutex_;
-const base::TimeTicks Shell::kInitialTicks =
-    base::TimeTicks::HighResolutionNow();
+const base::TimeTicks Shell::kInitialTicks = base::TimeTicks::Now();
 Global<Function> Shell::stringify_function_;
 base::LazyMutex Shell::workers_mutex_;
 bool Shell::allow_new_workers_ = true;
@@ -1265,6 +1267,11 @@ void Shell::HostInitializeImportMetaObject(Local<Context> context,
   meta->CreateDataProperty(context, url_key, url).ToChecked();
 }
 
+MaybeLocal<Context> Shell::HostCreateShadowRealmContext(
+    Local<Context> initiator_context) {
+  return v8::Context::New(initiator_context->GetIsolate());
+}
+
 void Shell::DoHostImportModuleDynamically(void* import_data) {
   DynamicImportData* import_data_ =
       static_cast<DynamicImportData*>(import_data);
@@ -1365,11 +1372,15 @@ bool Shell::ExecuteModule(Isolate* isolate, const char* file_name) {
   // isolate->ReportPendingMessages().
   TryCatch try_catch(isolate);
 
+  ModuleEmbedderData* d = GetModuleDataFromContext(realm);
   Local<Module> root_module;
-
-  if (!FetchModuleTree(Local<Module>(), realm, absolute_path,
-                       ModuleType::kJavaScript)
-           .ToLocal(&root_module)) {
+  auto module_it = d->module_map.find(
+      std::make_pair(absolute_path, ModuleType::kJavaScript));
+  if (module_it != d->module_map.end()) {
+    root_module = module_it->second.Get(isolate);
+  } else if (!FetchModuleTree(Local<Module>(), realm, absolute_path,
+                              ModuleType::kJavaScript)
+                  .ToLocal(&root_module)) {
     CHECK(try_catch.HasCaught());
     ReportException(isolate, &try_catch);
     return false;
@@ -1390,11 +1401,9 @@ bool Shell::ExecuteModule(Isolate* isolate, const char* file_name) {
   }
 
   // Loop until module execution finishes
-  // TODO(cbruni): This is a bit wonky. "Real" engines would not be
-  // able to just busy loop waiting for execution to finish.
   Local<Promise> result_promise(result.As<Promise>());
   while (result_promise->State() == Promise::kPending) {
-    isolate->PerformMicrotaskCheckpoint();
+    Shell::CompleteMessageLoop(isolate);
   }
 
   if (result_promise->State() == Promise::kRejected) {
@@ -1421,6 +1430,8 @@ bool Shell::ExecuteWebSnapshot(Isolate* isolate, const char* file_name) {
   PerIsolateData* data = PerIsolateData::Get(isolate);
   Local<Context> realm = data->realms_[data->realm_current_].Get(isolate);
   Context::Scope context_scope(realm);
+  TryCatch try_catch(isolate);
+  bool success = false;
 
   std::string absolute_path = NormalizePath(file_name, GetWorkingDirectory());
 
@@ -1428,12 +1439,17 @@ bool Shell::ExecuteWebSnapshot(Isolate* isolate, const char* file_name) {
   std::unique_ptr<uint8_t[]> snapshot_data(
       reinterpret_cast<uint8_t*>(ReadChars(absolute_path.c_str(), &length)));
   if (length == 0) {
-    isolate->ThrowError("Error reading the web snapshot");
-    return false;
+    isolate->ThrowError("Could not read the web snapshot file");
+  } else {
+    i::WebSnapshotDeserializer deserializer(isolate, snapshot_data.get(),
+                                            static_cast<size_t>(length));
+    success = deserializer.Deserialize();
   }
-  i::WebSnapshotDeserializer deserializer(isolate);
-  return deserializer.UseWebSnapshot(snapshot_data.get(),
-                                     static_cast<size_t>(length));
+  if (!success) {
+    CHECK(try_catch.HasCaught());
+    ReportException(isolate, &try_catch);
+  }
+  return success;
 }
 
 PerIsolateData::PerIsolateData(Isolate* isolate)
@@ -1620,8 +1636,7 @@ void Shell::PerformanceNow(const v8::FunctionCallbackInfo<v8::Value>& args) {
   if (i::FLAG_verify_predictable) {
     args.GetReturnValue().Set(g_platform->MonotonicallyIncreasingTime());
   } else {
-    base::TimeDelta delta =
-        base::TimeTicks::HighResolutionNow() - kInitialTicks;
+    base::TimeDelta delta = base::TimeTicks::Now() - kInitialTicks;
     args.GetReturnValue().Set(delta.InMillisecondsF());
   }
 }
@@ -1985,9 +2000,10 @@ void Shell::RealmUseWebSnapshot(
   // Deserialize the snapshot in the specified Realm.
   {
     PerIsolateData::ExplicitRealmScope realm_scope(data, index);
-    i::WebSnapshotDeserializer deserializer(isolate);
-    bool success = deserializer.UseWebSnapshot(
-        snapshot_data_shared->buffer, snapshot_data_shared->buffer_size);
+    i::WebSnapshotDeserializer deserializer(isolate,
+                                            snapshot_data_shared->buffer,
+                                            snapshot_data_shared->buffer_size);
+    bool success = deserializer.Deserialize();
     args.GetReturnValue().Set(success);
   }
 }
@@ -2123,6 +2139,12 @@ void Shell::TestVerifySourcePositions(
   }
 }
 
+void Shell::InstallConditionalFeatures(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  Isolate* isolate = args.GetIsolate();
+  isolate->InstallConditionalFeatures(isolate->GetCurrentContext());
+}
+
 // async_hooks.createHook() registers functions to be called for different
 // lifetime events of each async operation.
 void Shell::AsyncHooksCreateHook(
@@ -2164,6 +2186,7 @@ void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
         "--correctness-fuzzer-suppressions");
     return;
   }
+#ifdef V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
   Local<Context> context = isolate->GetCurrentContext();
   HandleScope handle_scope(isolate);
 
@@ -2174,6 +2197,11 @@ void Shell::SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args) {
     args[3]->IsFunction() ? args[3].As<Function>() : Local<Function>());
 
   args.GetReturnValue().Set(v8::Undefined(isolate));
+#else   // V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
+  isolate->ThrowError(
+      "d8.promise.setHooks is disabled due to missing build flag "
+      "v8_enabale_javascript_in_promise_hooks");
+#endif  // V8_ENABLE_JAVASCRIPT_PROMISE_HOOKS
 }
 
 void WriteToFile(FILE* file, const v8::FunctionCallbackInfo<v8::Value>& args) {
@@ -2572,11 +2600,18 @@ void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
                       ->Int32Value(args->GetIsolate()->GetCurrentContext())
                       .FromMaybe(0);
   WaitForRunningWorkers();
-  args->GetIsolate()->Exit();
+  Isolate* isolate = args->GetIsolate();
+  isolate->Exit();
+
   // As we exit the process anyway, we do not dispose the platform and other
-  // global data. Other isolates might still be running, so disposing here can
-  // cause them to crash.
-  OnExit(args->GetIsolate(), false);
+  // global data and manually unlock to quell DCHECKs. Other isolates might
+  // still be running, so disposing here can cause them to crash.
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  if (i_isolate->thread_manager()->IsLockedByCurrentThread()) {
+    i_isolate->thread_manager()->Unlock();
+  }
+
+  OnExit(isolate, false);
   base::OS::ExitProcess(exit_code);
 }
 
@@ -3067,6 +3102,11 @@ Local<ObjectTemplate> Shell::CreateD8Template(Isolate* isolate) {
       test_template->Set(isolate, "LeafInterfaceType",
                          Shell::CreateLeafInterfaceTypeTemplate(isolate));
     }
+    // Allows testing code paths that are triggered when Origin Trials are
+    // added in the browser.
+    test_template->Set(
+        isolate, "installConditionalFeatures",
+        FunctionTemplate::New(isolate, Shell::InstallConditionalFeatures));
 
     d8_template->Set(isolate, "test", test_template);
   }
@@ -3173,6 +3213,8 @@ void Shell::Initialize(Isolate* isolate, D8Console* console,
       Shell::HostImportModuleDynamically);
   isolate->SetHostInitializeImportMetaObjectCallback(
       Shell::HostInitializeImportMetaObject);
+  isolate->SetHostCreateShadowRealmContextCallback(
+      Shell::HostCreateShadowRealmContext);
 
 #ifdef V8_FUZZILLI
   // Let the parent process (Fuzzilli) know we are ready.
@@ -3213,8 +3255,8 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
     isolate->SetWasmLoadSourceMapCallback(Shell::WasmLoadSourceMapCallback);
   }
   InitializeModuleEmbedderData(context);
+  Context::Scope scope(context);
   if (options.include_arguments) {
-    Context::Scope scope(context);
     const std::vector<const char*>& args = options.arguments;
     int size = static_cast<int>(args.size());
     Local<Array> array = Array::New(isolate, size);
@@ -3228,6 +3270,15 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
         isolate, "arguments", NewStringType::kInternalized);
     context->Global()->Set(context, name, array).FromJust();
   }
+  {
+    // setup console global.
+    Local<String> name = String::NewFromUtf8Literal(
+        isolate, "console", NewStringType::kInternalized);
+    Local<Value> console =
+        context->GetExtrasBindingObject()->Get(context, name).ToLocalChecked();
+    context->Global()->Set(context, name, console).FromJust();
+  }
+
   return handle_scope.Escape(context);
 }
 
@@ -4001,8 +4052,8 @@ Worker::Worker(const char* script) : script_(i::StrDup(script)) {
 }
 
 Worker::~Worker() {
+  CHECK(state_.load() == State::kTerminated);
   DCHECK_NULL(isolate_);
-
   delete thread_;
   thread_ = nullptr;
   delete[] script_;
@@ -4013,16 +4064,15 @@ bool Worker::is_running() const { return state_.load() == State::kRunning; }
 
 bool Worker::StartWorkerThread(std::shared_ptr<Worker> worker) {
   auto expected = State::kReady;
-  CHECK(worker->state_.compare_exchange_strong(expected, State::kRunning));
+  CHECK(
+      worker->state_.compare_exchange_strong(expected, State::kPrepareRunning));
   auto thread = new WorkerThread(worker);
   worker->thread_ = thread;
-  if (thread->Start()) {
-    // Wait until the worker is ready to receive messages.
-    worker->started_semaphore_.Wait();
-    Shell::AddRunningWorker(std::move(worker));
-    return true;
-  }
-  return false;
+  if (!thread->Start()) return false;
+  // Wait until the worker is ready to receive messages.
+  worker->started_semaphore_.Wait();
+  Shell::AddRunningWorker(std::move(worker));
+  return true;
 }
 
 void Worker::WorkerThread::Run() {
@@ -4054,10 +4104,8 @@ class ProcessMessageTask : public i::CancelableTask {
 };
 
 void Worker::PostMessage(std::unique_ptr<SerializationData> data) {
-  if (!is_running()) return;
-  // Hold the worker_mutex_ so that the worker thread can't delete task_runner_
-  // after we've checked is_running().
   base::MutexGuard lock_guard(&worker_mutex_);
+  if (!is_running()) return;
   std::unique_ptr<v8::Task> task(new ProcessMessageTask(
       task_manager_, shared_from_this(), std::move(data)));
   task_runner_->PostNonNestableTask(std::move(task));
@@ -4071,11 +4119,8 @@ class TerminateTask : public i::CancelableTask {
 
   void RunInternal() override {
     auto expected = Worker::State::kTerminating;
-    if (!worker_->state_.compare_exchange_strong(expected,
-                                                 Worker::State::kTerminated)) {
-      // Thread was joined in the meantime.
-      CHECK_EQ(worker_->state_.load(), Worker::State::kTerminatingAndJoining);
-    }
+    CHECK(worker_->state_.compare_exchange_strong(expected,
+                                                  Worker::State::kTerminated));
   }
 
  private:
@@ -4095,34 +4140,19 @@ std::unique_ptr<SerializationData> Worker::GetMessage() {
 
 void Worker::TerminateAndWaitForThread() {
   Terminate();
-  // Don't double-join a terminated thread.
-  auto expected = State::kTerminating;
-  if (!state_.compare_exchange_strong(expected,
-                                      State::kTerminatingAndJoining)) {
-    expected = State::kTerminated;
-    if (!state_.compare_exchange_strong(expected,
-                                        State::kTerminatingAndJoining)) {
-      // Avoid double-joining thread.
-      DCHECK(state_.load() == State::kTerminatingAndJoining ||
-             state_.load() == State::kTerminatedAndJoined);
-      return;
-    }
+  {
+    base::MutexGuard lock_guard(&worker_mutex_);
+    // Prevent double-joining.
+    if (is_joined_) return;
+    is_joined_ = true;
   }
-
   thread_->Join();
-  expected = State::kTerminatingAndJoining;
-  CHECK(state_.compare_exchange_strong(expected, State::kTerminatedAndJoined));
 }
 
 void Worker::Terminate() {
+  base::MutexGuard lock_guard(&worker_mutex_);
   auto expected = State::kRunning;
   if (!state_.compare_exchange_strong(expected, State::kTerminating)) return;
-  // Hold the worker_mutex_ so that the worker thread can't delete task_runner_
-  // after we've checked state_.
-  base::MutexGuard lock_guard(&worker_mutex_);
-  CHECK(state_.load() == State::kTerminating ||
-        state_.load() == State::kTerminatingAndJoining);
-  // Post a task to wake up the worker thread.
   std::unique_ptr<v8::Task> task(
       new TerminateTask(task_manager_, shared_from_this()));
   task_runner_->PostTask(std::move(task));
@@ -4141,9 +4171,7 @@ void Worker::ProcessMessage(std::unique_ptr<SerializationData> data) {
       context, String::NewFromUtf8Literal(isolate_, "onmessage",
                                           NewStringType::kInternalized));
   Local<Value> onmessage;
-  if (!maybe_onmessage.ToLocal(&onmessage) || !onmessage->IsFunction()) {
-    return;
-  }
+  if (!maybe_onmessage.ToLocal(&onmessage) || !onmessage->IsFunction()) return;
   Local<Function> onmessage_fun = onmessage.As<Function>();
 
   v8::TryCatch try_catch(isolate_);
@@ -4174,12 +4202,14 @@ void Worker::ExecuteInThread() {
   create_params.array_buffer_allocator = Shell::array_buffer_allocator;
   create_params.experimental_attach_to_shared_isolate = Shell::shared_isolate;
   isolate_ = Isolate::New(create_params);
-  {
-    base::MutexGuard lock_guard(&worker_mutex_);
-    task_runner_ = g_default_platform->GetForegroundTaskRunner(isolate_);
-    task_manager_ =
-        reinterpret_cast<i::Isolate*>(isolate_)->cancelable_task_manager();
-  }
+
+  task_runner_ = g_default_platform->GetForegroundTaskRunner(isolate_);
+  task_manager_ =
+      reinterpret_cast<i::Isolate*>(isolate_)->cancelable_task_manager();
+
+  auto expected = State::kPrepareRunning;
+  CHECK(state_.compare_exchange_strong(expected, State::kRunning));
+
   // The Worker is now ready to receive messages.
   started_semaphore_.Signal();
 
@@ -4236,17 +4266,15 @@ void Worker::ExecuteInThread() {
     }
     Shell::CollectGarbage(isolate_);
   }
-  // TODO(cbruni): Check for unhandled promises here.
+
   {
-    // Hold the mutex to ensure task_runner_ changes state
-    // atomically (see Worker::PostMessage which reads them).
     base::MutexGuard lock_guard(&worker_mutex_);
-    // Mark worker as terminated if it's still running.
-    auto expected = State::kRunning;
-    state_.compare_exchange_strong(expected, State::kTerminated);
+    state_.store(State::kTerminated);
+    CHECK(!is_running());
     task_runner_.reset();
     task_manager_ = nullptr;
   }
+
   context_.Reset();
   platform::NotifyIsolateShutdown(g_default_platform, isolate_);
   isolate_->Dispose();
@@ -4331,7 +4359,8 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       argv[i] = nullptr;
     } else if (strcmp(argv[i], "--invoke-weak-callbacks") == 0) {
       options.invoke_weak_callbacks = true;
-      // TODO(jochen) See issue 3351
+      // TODO(v8:3351): Invoking weak callbacks does not always collect all
+      // available garbage.
       options.send_idle_notification = true;
       argv[i] = nullptr;
     } else if (strcmp(argv[i], "--omit-quit") == 0) {
@@ -4609,6 +4638,12 @@ int Shell::RunMain(Isolate* isolate, bool last_run) {
     }
   }
   CollectGarbage(isolate);
+
+  // Park the main thread here to prevent deadlocks in shared GCs when waiting
+  // in JoinThread.
+  i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+  i::ParkedScope parked(i_isolate->main_thread_local_isolate());
+
   for (int i = 1; i < options.num_isolates; ++i) {
     if (last_run) {
       options.isolate_sources[i].JoinThread();
@@ -4860,6 +4895,30 @@ class Serializer : public ValueSerializer::Delegate {
 
   void FreeBufferMemory(void* buffer) override { base::Free(buffer); }
 
+  bool SupportsSharedValues() const override { return true; }
+
+  Maybe<uint32_t> GetSharedValueId(Isolate* isolate,
+                                   Local<Value> shared_value) override {
+    DCHECK_NOT_NULL(data_);
+    for (size_t index = 0; index < data_->shared_values_.size(); ++index) {
+      if (data_->shared_values_[index] == shared_value) {
+        return Just<uint32_t>(static_cast<uint32_t>(index));
+      }
+    }
+
+    size_t index = data_->shared_values_.size();
+    // Shared values in transit are kept alive by global handles in the shared
+    // isolate. No code ever runs in the shared Isolate, so locking it does not
+    // contend with long-running tasks.
+    {
+      DCHECK_EQ(reinterpret_cast<i::Isolate*>(isolate)->shared_isolate(),
+                reinterpret_cast<i::Isolate*>(Shell::shared_isolate));
+      v8::Locker locker(Shell::shared_isolate);
+      data_->shared_values_.emplace_back(Shell::shared_isolate, shared_value);
+    }
+    return Just<uint32_t>(static_cast<uint32_t>(index));
+  }
+
  private:
   Maybe<bool> PrepareTransfer(Local<Context> context, Local<Value> transfer) {
     if (transfer->IsArray()) {
@@ -4926,6 +4985,12 @@ class Serializer : public ValueSerializer::Delegate {
   size_t current_memory_usage_;
 };
 
+void SerializationData::ClearSharedValuesUnderLockIfNeeded() {
+  if (shared_values_.empty()) return;
+  v8::Locker locker(Shell::shared_isolate);
+  shared_values_.clear();
+}
+
 class Deserializer : public ValueDeserializer::Delegate {
  public:
   Deserializer(Isolate* isolate, std::unique_ptr<SerializationData> data)
@@ -4933,6 +4998,12 @@ class Deserializer : public ValueDeserializer::Delegate {
         deserializer_(isolate, data->data(), data->size(), this),
         data_(std::move(data)) {
     deserializer_.SetSupportsLegacyWireFormat(true);
+  }
+
+  ~Deserializer() {
+    DCHECK_EQ(reinterpret_cast<i::Isolate*>(isolate_)->shared_isolate(),
+              reinterpret_cast<i::Isolate*>(Shell::shared_isolate));
+    data_->ClearSharedValuesUnderLockIfNeeded();
   }
 
   Deserializer(const Deserializer&) = delete;
@@ -4970,6 +5041,17 @@ class Deserializer : public ValueDeserializer::Delegate {
     if (transfer_id >= data_->compiled_wasm_modules().size()) return {};
     return WasmModuleObject::FromCompiledModule(
         isolate_, data_->compiled_wasm_modules().at(transfer_id));
+  }
+
+  bool SupportsSharedValues() const override { return true; }
+
+  MaybeLocal<Value> GetSharedValueFromId(Isolate* isolate,
+                                         uint32_t id) override {
+    DCHECK_NOT_NULL(data_);
+    if (id < data_->shared_values().size()) {
+      return data_->shared_values().at(id).Get(isolate);
+    }
+    return MaybeLocal<Value>();
   }
 
  private:
@@ -5169,9 +5251,9 @@ int Shell::Main(int argc, char* argv[]) {
     V8::SetFlagsFromString("--redirect-code-traces-to=code.asm");
   }
   v8::V8::InitializePlatform(g_platform.get());
-#ifdef V8_VIRTUAL_MEMORY_CAGE
-  if (!v8::V8::InitializeVirtualMemoryCage()) {
-    FATAL("Could not initialize the virtual memory cage");
+#ifdef V8_SANDBOX
+  if (!v8::V8::InitializeSandbox()) {
+    FATAL("Could not initialize the sandbox");
   }
 #endif
   v8::V8::Initialize();
@@ -5308,24 +5390,31 @@ int Shell::Main(int argc, char* argv[]) {
         }
       } else if (options.code_cache_options !=
                  ShellOptions::CodeCacheOptions::kNoProduceCache) {
-        printf("============ Run: Produce code cache ============\n");
-        // First run to produce the cache
-        Isolate::CreateParams create_params2;
-        create_params2.array_buffer_allocator = Shell::array_buffer_allocator;
-        create_params2.experimental_attach_to_shared_isolate =
-            Shell::shared_isolate;
-        i::FLAG_hash_seed ^= 1337;  // Use a different hash seed.
-        Isolate* isolate2 = Isolate::New(create_params2);
-        i::FLAG_hash_seed ^= 1337;  // Restore old hash seed.
         {
-          D8Console console2(isolate2);
-          Initialize(isolate2, &console2);
-          PerIsolateData data2(isolate2);
-          Isolate::Scope isolate_scope(isolate2);
+          // Park the main thread here in case the new isolate wants to perform
+          // a shared GC to prevent a deadlock.
+          i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
+          i::ParkedScope parked(i_isolate->main_thread_local_isolate());
 
-          result = RunMain(isolate2, false);
+          printf("============ Run: Produce code cache ============\n");
+          // First run to produce the cache
+          Isolate::CreateParams create_params2;
+          create_params2.array_buffer_allocator = Shell::array_buffer_allocator;
+          create_params2.experimental_attach_to_shared_isolate =
+              Shell::shared_isolate;
+          i::FLAG_hash_seed ^= 1337;  // Use a different hash seed.
+          Isolate* isolate2 = Isolate::New(create_params2);
+          i::FLAG_hash_seed ^= 1337;  // Restore old hash seed.
+          {
+            D8Console console2(isolate2);
+            Initialize(isolate2, &console2);
+            PerIsolateData data2(isolate2);
+            Isolate::Scope isolate_scope(isolate2);
+
+            result = RunMain(isolate2, false);
+          }
+          isolate2->Dispose();
         }
-        isolate2->Dispose();
 
         // Change the options to consume cache
         DCHECK(options.compile_options == v8::ScriptCompiler::kEagerCompile ||

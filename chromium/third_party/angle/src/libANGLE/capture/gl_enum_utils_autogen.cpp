@@ -1225,6 +1225,8 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_MATRIX_INDEX_ARRAY_BUFFER_BINDING_OES";
                 case 0x8B9F:
                     return "GL_POINT_SIZE_ARRAY_BUFFER_BINDING_OES";
+                case 0x8BBB:
+                    return "GL_FRAMEBUFFER_FLIP_Y_MESA";
                 case 0x8BE7:
                     return "GL_SAMPLER_EXTERNAL_2D_Y2Y_EXT";
                 case 0x8BFA:
@@ -2433,8 +2435,6 @@ const char *GLenumToString(GLenumGroup enumGroup, unsigned int value)
                     return "GL_TEXTURE_2D";
                 case 0x2A00:
                     return "GL_POLYGON_OFFSET_UNITS";
-                case 0x8009:
-                    return "GL_BLEND_EQUATION_EXT";
                 case 0x8037:
                     return "GL_POLYGON_OFFSET_FILL";
                 case 0x8038:

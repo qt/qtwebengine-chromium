@@ -59,9 +59,8 @@ TEST_F(ResolverIndexAccessorTest, Matrix_Dynamic) {
   auto* acc = IndexAccessor("my_const", Expr(Source{{12, 34}}, idx));
   WrapInFunction(Decl(idx), acc);
 
-  EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error: index must be signed or unsigned integer literal");
+  EXPECT_TRUE(r()->Resolve());
+  EXPECT_EQ(r()->error(), "");
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_XDimension_Dynamic) {
@@ -70,9 +69,8 @@ TEST_F(ResolverIndexAccessorTest, Matrix_XDimension_Dynamic) {
   auto* acc = IndexAccessor("my_var", Expr(Source{{12, 34}}, idx));
   WrapInFunction(Decl(idx), acc);
 
-  EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error: index must be signed or unsigned integer literal");
+  EXPECT_TRUE(r()->Resolve());
+  EXPECT_EQ(r()->error(), "");
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix_BothDimension_Dynamic) {
@@ -82,9 +80,8 @@ TEST_F(ResolverIndexAccessorTest, Matrix_BothDimension_Dynamic) {
       IndexAccessor(IndexAccessor("my_var", Expr(Source{{12, 34}}, idx)), 1);
   WrapInFunction(Decl(idx), acc);
 
-  EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error: index must be signed or unsigned integer literal");
+  EXPECT_TRUE(r()->Resolve());
+  EXPECT_EQ(r()->error(), "");
 }
 
 TEST_F(ResolverIndexAccessorTest, Matrix) {
@@ -219,11 +216,10 @@ TEST_F(ResolverIndexAccessorTest, Array_Dynamic_I32) {
            Decl(idx),
            Decl(f),
        },
-       ast::DecorationList{});
+       ast::AttributeList{});
 
-  EXPECT_FALSE(r()->Resolve());
-  EXPECT_EQ(r()->error(),
-            "12:34 error: index must be signed or unsigned integer literal");
+  EXPECT_TRUE(r()->Resolve());
+  EXPECT_EQ(r()->error(), "");
 }
 
 TEST_F(ResolverIndexAccessorTest, Array_Literal_F32) {
@@ -237,7 +233,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_F32) {
            Decl(a),
            Decl(f),
        },
-       ast::DecorationList{});
+       ast::AttributeList{});
   EXPECT_FALSE(r()->Resolve());
   EXPECT_EQ(r()->error(),
             "12:34 error: index must be of type 'i32' or 'u32', found: 'f32'");
@@ -253,7 +249,7 @@ TEST_F(ResolverIndexAccessorTest, Array_Literal_I32) {
            Decl(a),
            Decl(f),
        },
-       ast::DecorationList{});
+       ast::AttributeList{});
   EXPECT_TRUE(r()->Resolve()) << r()->error();
 }
 

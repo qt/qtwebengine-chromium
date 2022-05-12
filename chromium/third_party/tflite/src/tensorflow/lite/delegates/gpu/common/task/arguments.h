@@ -34,10 +34,6 @@ namespace cl {
 class CLArguments;
 }
 
-namespace metal {
-class MetalArguments;
-}
-
 class ArgumentsBinder {
  public:
   virtual absl::Status SetInt(const std::string& name, int value) = 0;
@@ -155,8 +151,10 @@ class Arguments : public ArgumentsBinder {
   friend absl::Status Decode(const tflite::gpu::data::Arguments* fb_args,
                              Arguments* args);
 
+  absl::Status ResolveKernelGlobalSpaceBuffers(const GpuInfo& gpu_info,
+                                               std::string* code);
+
   friend class cl::CLArguments;
-  friend class metal::MetalArguments;
 
   static constexpr char kArgsPrefix[] = "args.";
 

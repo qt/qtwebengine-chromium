@@ -15,6 +15,9 @@ limitations under the License.
 
 #include "tensorflow/core/distributed_runtime/rpc/coordination/grpc_coordination_client.h"
 
+#include <string>
+#include <utility>
+
 #include "tensorflow/core/distributed_runtime/coordination/coordination_client.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_channel.h"
 #include "tensorflow/core/distributed_runtime/rpc/grpc_client_cq_tag.h"
@@ -151,6 +154,25 @@ class GrpcCoordinationClient : public CoordinationClient {
         &target_);
   }
 
+  void BarrierAsync(const BarrierRequest* request, BarrierResponse* response,
+                    StatusCallback done) override {
+    new RPCState<protobuf::Message>(
+        &stub_, cq_, "/tensorflow.CoordinationService/Barrier", *request,
+        response, std::move(done), /*call_opts=*/nullptr,
+        /*threadpool=*/nullptr, /*max_retries=*/0, /*fail_fast=*/true,
+        &target_);
+  }
+
+  void CancelBarrierAsync(const CancelBarrierRequest* request,
+                          CancelBarrierResponse* response,
+                          StatusCallback done) override {
+    new RPCState<protobuf::Message>(
+        &stub_, cq_, "/tensorflow.CoordinationService/CancelBarrier", *request,
+        response, std::move(done), /*call_opts=*/nullptr,
+        /*threadpool=*/nullptr, /*max_retries=*/0, /*fail_fast=*/true,
+        &target_);
+  }
+
  private:
   ::grpc::GenericStub stub_;
   ::grpc::CompletionQueue* cq_;
@@ -186,7 +208,6 @@ class GrpcCoordinationClientCache : public CoordinationClientCache {
 
   std::unique_ptr<CoordinationClient> GetOwnedClient(
       const string& target) override {
-    mutex_lock l(clients_mu_);
     SharedGrpcChannelPtr channel = channel_cache_->FindWorkerChannel(target);
     if (channel == nullptr) {
       VLOG(2) << "Coordination client for target " << target << " not found.";

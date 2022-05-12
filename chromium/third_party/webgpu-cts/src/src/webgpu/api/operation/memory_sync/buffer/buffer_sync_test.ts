@@ -53,12 +53,12 @@ export class BufferSyncTest extends GPUTest {
   // Create a compute pipeline and write given data into storage buffer.
   createStorageWriteComputePipeline(value: number): GPUComputePipeline {
     const wgslCompute = `
-      [[block]] struct Data {
+      struct Data {
         a : i32;
       };
 
-      [[group(0), binding(0)]] var<storage, read_write> data : Data;
-      [[stage(compute), workgroup_size(1)]] fn main() {
+      @group(0) @binding(0) var<storage, read_write> data : Data;
+      @stage(compute) @workgroup_size(1) fn main() {
         data.a = ${value};
         return;
       }
@@ -78,18 +78,18 @@ export class BufferSyncTest extends GPUTest {
   createStorageWriteRenderPipeline(value: number): GPURenderPipeline {
     const wgslShaders = {
       vertex: `
-      [[stage(vertex)]] fn vert_main() -> [[builtin(position)]] vec4<f32> {
+      @stage(vertex) fn vert_main() -> @builtin(position) vec4<f32> {
         return vec4<f32>(0.5, 0.5, 0.0, 1.0);
       }
     `,
 
       fragment: `
-      [[block]] struct Data {
+      struct Data {
         a : i32;
       };
 
-      [[group(0), binding(0)]] var<storage, read_write> data : Data;
-      [[stage(fragment)]] fn frag_main() -> [[location(0)]] vec4<f32> {
+      @group(0) @binding(0) var<storage, read_write> data : Data;
+      @stage(fragment) fn frag_main() -> @location(0) vec4<f32> {
         data.a = ${value};
         return vec4<f32>(1.0, 0.0, 0.0, 1.0);
       }

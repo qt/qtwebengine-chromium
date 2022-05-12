@@ -194,7 +194,7 @@ class V8_EXPORT_PRIVATE PagedSpace
   void ResetFreeList();
 
   // Empty space linear allocation area, returning unused area to free list.
-  void FreeLinearAllocationArea();
+  void FreeLinearAllocationArea() override;
 
   void MakeLinearAllocationAreaIterable();
 
@@ -216,7 +216,7 @@ class V8_EXPORT_PRIVATE PagedSpace
 
   void RefineAllocatedBytesAfterSweeping(Page* page);
 
-  Page* InitializePage(MemoryChunk* chunk);
+  Page* InitializePage(MemoryChunk* chunk) override;
 
   void ReleasePage(Page* page);
 
@@ -289,9 +289,11 @@ class V8_EXPORT_PRIVATE PagedSpace
   inline void UnlinkFreeListCategories(Page* page);
   inline size_t RelinkFreeListCategories(Page* page);
 
-  Page* first_page() { return reinterpret_cast<Page*>(Space::first_page()); }
-  const Page* first_page() const {
-    return reinterpret_cast<const Page*>(Space::first_page());
+  Page* first_page() override {
+    return reinterpret_cast<Page*>(memory_chunk_list_.front());
+  }
+  const Page* first_page() const override {
+    return reinterpret_cast<const Page*>(memory_chunk_list_.front());
   }
 
   iterator begin() { return iterator(first_page()); }
@@ -374,7 +376,7 @@ class V8_EXPORT_PRIVATE PagedSpace
   // a memory area of the given size in it. If successful the method returns
   // the address and size of the area.
   base::Optional<std::pair<Address, size_t>> ExpandBackground(
-      LocalHeap* local_heap, size_t size_in_bytes);
+      size_t size_in_bytes);
 
   Page* AllocatePage();
 
@@ -413,8 +415,7 @@ class V8_EXPORT_PRIVATE PagedSpace
                                               AllocationOrigin origin);
 
   V8_WARN_UNUSED_RESULT base::Optional<std::pair<Address, size_t>>
-  TryAllocationFromFreeListBackground(LocalHeap* local_heap,
-                                      size_t min_size_in_bytes,
+  TryAllocationFromFreeListBackground(size_t min_size_in_bytes,
                                       size_t max_size_in_bytes,
                                       AllocationAlignment alignment,
                                       AllocationOrigin origin);
@@ -485,6 +486,8 @@ class CompactionSpaceCollection : public Malloced {
                                      CompactionSpaceKind compaction_space_kind)
       : old_space_(heap, OLD_SPACE, Executability::NOT_EXECUTABLE,
                    compaction_space_kind),
+        map_space_(heap, MAP_SPACE, Executability::NOT_EXECUTABLE,
+                   compaction_space_kind),
         code_space_(heap, CODE_SPACE, Executability::EXECUTABLE,
                     compaction_space_kind) {}
 
@@ -492,6 +495,8 @@ class CompactionSpaceCollection : public Malloced {
     switch (space) {
       case OLD_SPACE:
         return &old_space_;
+      case MAP_SPACE:
+        return &map_space_;
       case CODE_SPACE:
         return &code_space_;
       default:
@@ -502,6 +507,7 @@ class CompactionSpaceCollection : public Malloced {
 
  private:
   CompactionSpace old_space_;
+  CompactionSpace map_space_;
   CompactionSpace code_space_;
 };
 

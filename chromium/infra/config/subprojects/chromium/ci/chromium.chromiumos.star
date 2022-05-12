@@ -16,7 +16,7 @@ ci.defaults.set(
     executable = ci.DEFAULT_EXECUTABLE,
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
-    os = os.LINUX_BIONIC_SWITCH_TO_DEFAULT,
+    os = os.LINUX_DEFAULT,
     pool = ci.DEFAULT_POOL,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     sheriff_rotations = sheriff_rotations.CHROMIUM,
@@ -53,7 +53,7 @@ ci.builder(
             "cipd_archive_datas": [
                 {
                     "yaml_files": [
-                        "gen_linux_ash_chromium_cipd_yaml_cipd.yaml",
+                        "test_ash_chrome.yaml",
                     ],
                     "refs": [
                         "{%channel%}",
@@ -132,11 +132,26 @@ ci.builder(
 ci.builder(
     name = "chromeos-amd64-generic-rel",
     branch_selector = branches.CROS_LTS_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        build_gs_bucket = "chromium-chromiumos-archive",
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = ["mb"],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.CHROMEOS,
+            cros_boards_with_qemu_images = "amd64-generic-vm",
+        ),
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = ["chromeos"],
+        ),
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "simple|release|x64",
         short_name = "rel",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
 )
@@ -172,7 +187,6 @@ ci.builder(
         category = "simple|release",
         short_name = "arm",
     ),
-    os = os.LINUX_BIONIC_REMOVE,
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
 )
@@ -180,6 +194,29 @@ ci.builder(
 ci.builder(
     name = "chromeos-kevin-rel",
     branch_selector = branches.CROS_LTS_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "arm",
+                "chromeos",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.ARM,
+            target_bits = 32,
+            target_cros_boards = [
+                "kevin",
+            ],
+            target_platform = builder_config.target_platform.CHROMEOS,
+        ),
+        build_gs_bucket = "chromium-chromiumos-archive",
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "simple|release",
         short_name = "kvn",
@@ -215,7 +252,8 @@ ci.builder(
                         "chrome_100_percent.pak",
                         "chrome_200_percent.pak",
                         "chrome_crashpad_handler",
-                        "headless_lib.pak",
+                        "headless_lib_data.pak",
+                        "headless_lib_strings.pak",
                         "icudtl.dat",
                         "nacl_helper",
                         "nacl_irt_x86_64.nexe",
@@ -241,7 +279,6 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -271,13 +308,31 @@ ci.builder(
 ci.builder(
     name = "linux-chromeos-rel",
     branch_selector = branches.CROS_LTS_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "use_clang_coverage",
+                "chromeos",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+        ),
+        build_gs_bucket = "chromium-chromiumos-archive",
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "default",
         short_name = "rel",
     ),
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -289,7 +344,6 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -303,19 +357,35 @@ ci.builder(
     cq_mirrors_console_view = "mirrors",
     triggered_by = ["linux-lacros-builder-rel"],
     tree_closing = False,
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
     name = "linux-lacros-dbg",
     branch_selector = branches.STANDARD_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "chromeos",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.DEBUG,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+        ),
+        build_gs_bucket = "chromium-chromiumos-archive",
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "debug",
         short_name = "lcr",
     ),
     cq_mirrors_console_view = "mirrors",
     main_console_view = "main",
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 # For Chromebox for meetings(CfM)

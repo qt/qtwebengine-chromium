@@ -106,7 +106,7 @@ void IRContext::InvalidateAnalyses(IRContext::Analysis analyses_to_invalidate) {
     analyses_to_invalidate |= kAnalysisDebugInfo;
   }
 
-  // The dominator analysis hold the psuedo entry and exit nodes from the CFG.
+  // The dominator analysis hold the pseudo entry and exit nodes from the CFG.
   // Also if the CFG change the dominators many changed as well, so the
   // dominator analysis should be invalidated as well.
   if (analyses_to_invalidate & kAnalysisCFG) {
@@ -317,7 +317,7 @@ bool IRContext::IsConsistent() {
 #else
   if (AreAnalysesValid(kAnalysisDefUse)) {
     analysis::DefUseManager new_def_use(module());
-    if (*get_def_use_mgr() != new_def_use) {
+    if (!CompareAndPrintDifferences(*get_def_use_mgr(), new_def_use)) {
       return false;
     }
   }

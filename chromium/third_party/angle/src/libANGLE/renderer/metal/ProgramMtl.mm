@@ -577,7 +577,7 @@ angle::Result ProgramMtl::resizeDefaultUniformBlocksMemory(
     return angle::Result::Continue;
 }
 
-angle::Result ProgramMtl::getSpecializedShader(mtl::Context *context,
+angle::Result ProgramMtl::getSpecializedShader(ContextMtl *context,
                                                gl::ShaderType shaderType,
                                                const mtl::RenderPipelineDesc &renderPipelineDesc,
                                                id<MTLFunction> *shaderOut)
@@ -675,10 +675,20 @@ angle::Result ProgramMtl::getSpecializedShader(mtl::Context *context,
                     [NSString stringWithUTF8String:sh::mtl::kCoverageMaskEnabledConstName];
             }
 
+            NSString *depthWriteEnabledStr =
+                [NSString stringWithUTF8String:sh::mtl::kDepthWriteEnabledConstName];
+
             funcConstants = [[MTLFunctionConstantValues alloc] init];
             [funcConstants setConstantValue:&emulateCoverageMask
                                        type:MTLDataTypeBool
                                    withName:coverageMaskEnabledStr];
+
+            MTLPixelFormat depthPixelFormat =
+                (MTLPixelFormat)renderPipelineDesc.outputDescriptor.depthAttachmentPixelFormat;
+            BOOL fragDepthWriteEnabled = depthPixelFormat != MTLPixelFormatInvalid;
+            [funcConstants setConstantValue:&fragDepthWriteEnabled
+                                       type:MTLDataTypeBool
+                                   withName:depthWriteEnabledStr];
         }
 
     }  // gl::ShaderType::Fragment
@@ -726,7 +736,7 @@ bool ProgramMtl::hasSpecializedShader(gl::ShaderType shaderType,
 }
 
 angle::Result ProgramMtl::createMslShaderLib(
-    mtl::Context *context,
+    ContextMtl *context,
     gl::ShaderType shaderType,
     gl::InfoLog &infoLog,
     mtl::TranslatedShaderInfo *translatedMslInfo,
@@ -734,15 +744,14 @@ angle::Result ProgramMtl::createMslShaderLib(
 {
     ANGLE_MTL_OBJC_SCOPE
     {
-        DisplayMtl *display     = context->getDisplay();
-        id<MTLDevice> mtlDevice = display->getMetalDevice();
+        const mtl::ContextDevice &metalDevice = context->getMetalDevice();
 
         // Convert to actual binary shader
         mtl::AutoObjCPtr<NSError *> err = nil;
         bool disableFastMath = (context->getDisplay()->getFeatures().intelDisableFastMath.enabled &&
                                 translatedMslInfo->hasInvariantOrAtan);
         translatedMslInfo->metalLibrary =
-            mtl::CreateShaderLibrary(mtlDevice, translatedMslInfo->metalShaderSource,
+            mtl::CreateShaderLibrary(metalDevice, translatedMslInfo->metalShaderSource,
                                      substitutionMacros, !disableFastMath, &err);
         if (err && !translatedMslInfo->metalLibrary)
         {

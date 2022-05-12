@@ -47,14 +47,16 @@ cc_library(
         "//tensorflow/compiler/xla/service/gpu:__pkg__",
     ],
     deps = [
+        ":lmhlo_to_gpu",
+        ":lmhlo_to_gpu_binary",
         ":lmhlo_to_tfrt_gpu",
         "//tensorflow/compiler/mlir/tensorflow:dump_mlir_util",
-        "//tensorflow/compiler/mlir/tfrt/transforms/lmhlo_to_gpu",
-        "//tensorflow/compiler/mlir/tfrt/transforms/lmhlo_to_gpu:lmhlo_to_gpu_binary",
         "//tensorflow/core/platform:errors",
         "//tensorflow/core/platform:status",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
+        "@tf_runtime//backends/gpu:gpu_passes",
+        "@tf_runtime//backends/gpu:gpu_wrapper",
     ],
 )
 
@@ -67,6 +69,7 @@ cc_library(
         "custom_call_pattern.cc",
         "gemm_pattern.cc",
         "lmhlo_to_gpu.cc",
+        "replica_and_partition_pattern.cc",
         "triangular_solve_pattern.cc",
     ],
     hdrs = [
@@ -126,11 +129,12 @@ cc_library(
         "//tensorflow/compiler/xla/service/gpu:__pkg__",
     ],
     deps = [
-        "//tensorflow/compiler/mlir/tfrt/transforms/lmhlo_to_gpu",
+        ":lmhlo_to_gpu",
         "@llvm-project//mlir:GPUTransforms",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
         "@llvm-project//mlir:TransformUtils",
+        "@llvm-project//mlir:Transforms",
         "@tf_runtime//backends/gpu:gpu_opdefs",
         "@tf_runtime//backends/gpu:gpu_passes",
     ],
@@ -156,6 +160,7 @@ cc_library(
     ],
     deps = [
         ":GpuPassesIncGen",
+        ":pattern_utils",
         "//tensorflow/compiler/mlir/hlo:lhlo",
         "//tensorflow/compiler/mlir/hlo:lhlo_gpu",
         "//tensorflow/compiler/mlir/tensorflow",

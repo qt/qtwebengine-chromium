@@ -160,7 +160,7 @@ UseInfo TruncatingUseInfoFromRepresentation(MachineRepresentation rep) {
       return UseInfo::Bool();
     case MachineRepresentation::kCompressedPointer:
     case MachineRepresentation::kCompressed:
-    case MachineRepresentation::kCagedPointer:
+    case MachineRepresentation::kSandboxedPointer:
     case MachineRepresentation::kSimd128:
     case MachineRepresentation::kNone:
       break;
@@ -1074,8 +1074,7 @@ class RepresentationSelector {
     } else if (type.Is(Type::BigInt()) && use.IsUsedAsWord64()) {
       return MachineRepresentation::kWord64;
     } else if (type.Is(Type::ExternalPointer()) ||
-               type.Is(Type::SandboxedExternalPointer()) ||
-               type.Is(Type::CagedPointer())) {
+               type.Is(Type::SandboxedPointer())) {
       return MachineType::PointerRepresentation();
     }
     return MachineRepresentation::kTagged;
@@ -2100,17 +2099,6 @@ class RepresentationSelector {
       //------------------------------------------------------------------
       // JavaScript operators.
       //------------------------------------------------------------------
-      case IrOpcode::kToBoolean: {
-        if (truncation.IsUsedAsBool()) {
-          ProcessInput<T>(node, 0, UseInfo::Bool());
-          SetOutput<T>(node, MachineRepresentation::kBit);
-          if (lower<T>()) DeferReplacement(node, node->InputAt(0));
-        } else {
-          VisitInputs<T>(node);
-          SetOutput<T>(node, MachineRepresentation::kTaggedPointer);
-        }
-        return;
-      }
       case IrOpcode::kJSToNumber:
       case IrOpcode::kJSToNumberConvertBigInt:
       case IrOpcode::kJSToNumeric: {
@@ -2135,6 +2123,17 @@ class RepresentationSelector {
       //------------------------------------------------------------------
       // Simplified operators.
       //------------------------------------------------------------------
+      case IrOpcode::kToBoolean: {
+        if (truncation.IsUsedAsBool()) {
+          ProcessInput<T>(node, 0, UseInfo::Bool());
+          SetOutput<T>(node, MachineRepresentation::kBit);
+          if (lower<T>()) DeferReplacement(node, node->InputAt(0));
+        } else {
+          VisitInputs<T>(node);
+          SetOutput<T>(node, MachineRepresentation::kTaggedPointer);
+        }
+        return;
+      }
       case IrOpcode::kBooleanNot: {
         if (lower<T>()) {
           NodeInfo* input_info = GetInfo(node->InputAt(0));
@@ -3074,22 +3073,6 @@ class RepresentationSelector {
       case IrOpcode::kTypeOf: {
         return VisitUnop<T>(node, UseInfo::AnyTagged(),
                             MachineRepresentation::kTaggedPointer);
-      }
-      case IrOpcode::kTierUpCheck: {
-        ProcessInput<T>(node, 0, UseInfo::AnyTagged());
-        ProcessInput<T>(node, 1, UseInfo::AnyTagged());
-        ProcessInput<T>(node, 2, UseInfo::AnyTagged());
-        ProcessInput<T>(node, 3, UseInfo::TruncatingWord32());
-        ProcessInput<T>(node, 4, UseInfo::AnyTagged());
-        ProcessRemainingInputs<T>(node, 5);
-        SetOutput<T>(node, MachineRepresentation::kNone);
-        return;
-      }
-      case IrOpcode::kUpdateInterruptBudget: {
-        ProcessInput<T>(node, 0, UseInfo::AnyTagged());
-        ProcessRemainingInputs<T>(node, 1);
-        SetOutput<T>(node, MachineRepresentation::kNone);
-        return;
       }
       case IrOpcode::kNewConsString: {
         ProcessInput<T>(node, 0, UseInfo::TruncatingWord32());  // length

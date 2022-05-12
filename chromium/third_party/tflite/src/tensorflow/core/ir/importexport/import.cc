@@ -41,7 +41,6 @@ limitations under the License.
 #include "mlir/IR/BuiltinAttributes.h"  // from @llvm-project
 #include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/IR/BuiltinTypes.h"  // from @llvm-project
-#include "mlir/IR/Identifier.h"  // from @llvm-project
 #include "mlir/IR/Location.h"  // from @llvm-project
 #include "mlir/IR/MLIRContext.h"  // from @llvm-project
 #include "mlir/IR/OpDefinition.h"  // from @llvm-project
@@ -85,6 +84,7 @@ limitations under the License.
 #include "tensorflow/core/platform/statusor.h"
 #include "tensorflow/core/platform/types.h"
 #include "tensorflow/core/protobuf/graph_debug_info.pb.h"
+#include "tensorflow/core/protobuf/meta_graph.pb.h"
 
 #define DEBUG_TYPE "graphdef-to-mlir"
 
@@ -438,7 +438,7 @@ Location GraphImporter::GetLocation(const Node& node) {
     std::string debug_info_key = (name + "@" + function_name).str();
     std::string name_for_name_loc =
         function_name.empty() ? name.str() : (name + "@" + function_name).str();
-    auto name_loc_id = Identifier::get(name_for_name_loc, context_);
+    auto name_loc_id = StringAttr::get(context_, name_for_name_loc);
 
     llvm::SmallVector<Location, 4> locations;
     // Prefer stack traces if available, fallback to debug info if not, and then
@@ -448,7 +448,7 @@ Location GraphImporter::GetLocation(const Node& node) {
       absl::Span<const StackFrame> frames = stack_trace->ToFrames();
       locations.reserve(frames.size());
       for (const StackFrame& frame : llvm::reverse(frames)) {
-        auto file_name = Identifier::get(frame.file_name, context_);
+        auto file_name = StringAttr::get(context_, frame.file_name);
         // Use col 1 as there is no column info in StackTrace.
         auto file_line_loc =
             FileLineColLoc::get(file_name, frame.line_number, 1);
@@ -464,7 +464,7 @@ Location GraphImporter::GetLocation(const Node& node) {
         locations.reserve(trace.file_line_cols_size());
         for (const auto& location : trace.file_line_cols()) {
           const auto& file = debug_info_.files(location.file_index());
-          auto file_name = Identifier::get(file, context_);
+          auto file_name = StringAttr::get(context_, file);
           auto file_line_loc =
               FileLineColLoc::get(file_name, location.line(), location.col());
           locations.push_back(file_line_loc);
@@ -592,7 +592,7 @@ Status GraphImporter::ConvertNode(const Node& node) {
     const AttrValue& tf_attr = namedAttr.second;
     TF_ASSIGN_OR_RETURN(Attribute attr,
                         ConvertAttributeValue(tf_attr, builder_, dialect_));
-    result.addAttribute(name, attr);
+    result.addAttribute(PromoteToTFGAttribute(name), attr);
   }
   Attribute assigned_device =
       result.attributes.get(dialect_->getAssignedDeviceAttrIdentifier());
@@ -708,8 +708,9 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
   // Create the func operation in which we will convert the individual nodes.
   OpBuilder builder = OpBuilder::atBlockEnd(module.getBody());
   MLIRContext* context = module->getContext();
+  Location unknown_loc = builder.getUnknownLoc();
   GraphFuncOp func_op = builder.create<GraphFuncOp>(
-      builder.getUnknownLoc(), name, FunctionType::get(context, {}, {}),
+      unknown_loc, name, FunctionType::get(context, {}, {}),
       /*generic=*/false);
   TFGraphDialect* tfgDialect = cast<TFGraphDialect>(func_op->getDialect());
   const OpDef& signature = fdef.signature();
@@ -762,7 +763,7 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
   {
     llvm::SmallVector<Attribute> arg_attrs;
     arg_types.reserve(fbody->arg_types.size() * 2);
-    for (auto enumerated_arg : llvm::enumerate(fbody->arg_nodes)) {
+    for (auto& enumerated_arg : llvm::enumerate(fbody->arg_nodes)) {
       int arg_id = enumerated_arg.index();
       Node* arg = enumerated_arg.value();
       // Find node in the graph using the node id instead of using `arg`
@@ -776,11 +777,11 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
         return InvalidArgument(
             "Expect `_Arg` node to have a single output, got ",
             arg_op->getNumResults());
-      body->addArgument(arg_op->getResult(0).getType());
+      body->addArgument(arg_op->getResult(0).getType(), unknown_loc);
       arg_types.push_back(arg_op->getResult(0).getType());
       arg_op->getResult(0).replaceAllUsesWith(body->getArguments().back());
 
-      body->addArgument(arg_op->getResult(1).getType());
+      body->addArgument(arg_op->getResult(1).getType(), unknown_loc);
       arg_types.push_back(arg_op->getResult(1).getType());
       arg_op->getResult(1).replaceAllUsesWith(body->getArguments().back());
 
@@ -820,15 +821,15 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
       arg_attrs.push_back(builder.getDictionaryAttr({}));
     }
     attrs.push_back(
-        builder.getNamedAttr(function_like_impl::getArgDictAttrName(),
+        builder.getNamedAttr(function_interface_impl::getArgDictAttrName(),
                              builder.getArrayAttr(arg_attrs)));
   }
 
-  llvm::SmallVector<Value> ret_operands;
-  llvm::SmallVector<Type> ret_types;
-  NamedAttrList return_attrs;
+  SmallVector<Value> ret_operands;
+  SmallVector<Type> ret_types;
+  SmallVector<Attribute> control_ret_attrs;
   {
-    llvm::SmallVector<Attribute> res_attrs;
+    SmallVector<Attribute> res_attrs;
     ret_types.reserve(fbody->ret_types.size() * 2);
     for (Node* ret : fbody->ret_nodes) {
       // Find node in the graph using the node id instead of using `arg`
@@ -870,15 +871,13 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
       res_attrs.push_back(output_attrs.getDictionary(context));
     }
     attrs.push_back(
-        builder.getNamedAttr(function_like_impl::getResultDictAttrName(),
+        builder.getNamedAttr(function_interface_impl::getResultDictAttrName(),
                              builder.getArrayAttr(res_attrs)));
     DenseMap<StringRef, Node*> control_ret_nodes;
     for (Node* node : fbody->control_ret_nodes)
       control_ret_nodes.insert({node->name(), node});
-    for (const auto& enumerated_ret :
-         llvm::enumerate(signature.control_output())) {
-      int ret_id = enumerated_ret.index();
-      const std::string& sig_name = enumerated_ret.value();
+
+    for (const std::string& sig_name : signature.control_output()) {
       auto it = fdef.control_ret().find(sig_name);
       if (it == fdef.control_ret().end())
         return InvalidArgument(
@@ -892,12 +891,11 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
             "'");
       // Find node in the graph using the node id instead of using `arg`
       // directly because the graph has been cloned.
-      Operation* control_ret_op = importer.GetOperationForNode(ret->id());
-      ret_operands.push_back(
-          control_ret_op->getResult(control_ret_op->getNumResults() - 1));
-      return_attrs.append(
-          absl::StrCat("tfg.control_ret_name_", res_attrs.size() + ret_id),
-          builder.getStringAttr(fdef.signature().control_output(ret_id)));
+      TFOp control_ret_op = importer.GetOperationForNode(ret->id());
+      ret_operands.push_back(control_ret_op.controlRet());
+      control_ret_attrs.push_back(builder.getDictionaryAttr(
+          NamedAttribute(tfgDialect->getTfgNameAttrIdentifier(),
+                         builder.getStringAttr(sig_name))));
     }
   }
 
@@ -907,8 +905,8 @@ tensorflow::StatusOr<GraphFuncOp> ImportFunctionDef(
       "type", TypeAttr::get(builder.getFunctionType(arg_types, ret_types)));
 
   builder = OpBuilder::atBlockEnd(func_op.getBody());
-  builder.create<ReturnOp>(module.getLoc(), ret_operands)
-      ->setAttrs(return_attrs);
+  builder.create<ReturnOp>(module.getLoc(), ret_operands,
+                           builder.getArrayAttr(control_ret_attrs));
 
   return func_op;
 }
@@ -947,12 +945,13 @@ tensorflow::StatusOr<ArrayAttr> ConvertHandleData(
 }
 // Convert a Graph and function libs to a MLIR module containing the graph and
 // expressed in TFG dialect.
-tensorflow::StatusOr<OwningModuleRef> ImportGraphAndFunctionsToMlir(
+tensorflow::StatusOr<OwningOpRef<mlir::ModuleOp>> ImportGraphAndFunctionsToMlir(
     MLIRContext* context, const Graph& graph, const GraphDebugInfo& debug_info,
     const FunctionLibraryDefinition& flib_def) {
   LoadDialects(context);
   // Create the graph operation in which we will convert the individual nodes.
-  OwningModuleRef module = ModuleOp::create(UnknownLoc::get(context));
+  OwningOpRef<mlir::ModuleOp> module =
+      ModuleOp::create(UnknownLoc::get(context));
   OpBuilder builder = OpBuilder::atBlockEnd(module->getBody());
 
   auto graph_op = builder.create<GraphOp>(
@@ -982,7 +981,7 @@ tensorflow::StatusOr<OwningModuleRef> ImportGraphAndFunctionsToMlir(
 
 // Convert a GraphDef to a MLIR module containing the graph and expressed in TFG
 // dialect.
-tensorflow::StatusOr<OwningModuleRef> ImportGraphDefToMlir(
+tensorflow::StatusOr<OwningOpRef<mlir::ModuleOp>> ImportGraphDefToMlir(
     MLIRContext* context, const GraphDebugInfo& debug_info,
     const GraphDef& graphdef) {
   VLOG(4) << "ConvertGraphdefToMlir begin";
@@ -995,6 +994,24 @@ tensorflow::StatusOr<OwningModuleRef> ImportGraphDefToMlir(
   TF_RETURN_IF_ERROR(ConvertGraphDefToGraph(options, graphdef, &graph));
   return ImportGraphAndFunctionsToMlir(context, graph, debug_info,
                                        graph.flib_def());
+}
+
+tensorflow::StatusOr<OwningOpRef<mlir::ModuleOp>> ImportSavedModelToMlir(
+    mlir::MLIRContext* context, const tensorflow::GraphDebugInfo& debug_info,
+    const tensorflow::SavedModel& saved_model) {
+  if (saved_model.meta_graphs_size() == 0) {
+    return tensorflow::errors::InvalidArgument(
+        "Input saved model has no meta graphs");
+  }
+
+  if (saved_model.meta_graphs_size() > 1) {
+    return tensorflow::errors::InvalidArgument(
+        "Input saved model has more than one meta graph, currently not "
+        "supported");
+  }
+
+  const auto& graphdef = saved_model.meta_graphs(0).graph_def();
+  return ImportGraphDefToMlir(context, debug_info, graphdef);
 }
 
 }  // namespace tfg

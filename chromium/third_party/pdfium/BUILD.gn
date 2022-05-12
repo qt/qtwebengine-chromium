@@ -216,6 +216,9 @@ config("pdfium_common_config") {
     # TODO(crbug.com/1213098): Remove once this is in //build.
     cflags += [ "-Wdeprecated-copy" ]
 
+    # May flag some issues when converting int to size_t.
+    cflags += [ "-Wtautological-unsigned-zero-compare" ]
+
     # Catch misuse of cppgc in XFA.
     if (pdf_enable_xfa && clang_use_chrome_plugins) {
       cflags += [
@@ -260,10 +263,6 @@ config("pdfium_public_config") {
       }
     }
   }
-
-  if (pdf_use_win32_gdi) {
-    defines += [ "PDFIUM_PRINT_TEXT_WITH_GDI" ]
-  }
 }
 
 config("pdfium_core_config") {
@@ -288,6 +287,13 @@ config("pdfium_strict_config") {
     "//build/config/compiler:wexit_time_destructors",
     "//build/config/compiler:wglobal_constructors",
   ]
+}
+
+config("pdfium_noshorten_config") {
+  cflags = []
+  if (is_clang) {
+    cflags += [ "-Wshorten-64-to-32" ]
+  }
 }
 
 source_set("pdfium_public_headers_impl") {

@@ -35,7 +35,7 @@
 <translation id="2006524834898217237">Siguraduhing nakakonekta ang device na ito sa Internet.</translation>
 <translation id="208586643495776849">Pakisubukang muli</translation>
 <translation id="2141853158323869627">{DAYS,plural, =1{1 araw}one{# araw}other{# na araw}}</translation>
-<translation id="2148716181193084225">Ngayon</translation>
+<translation id="2148716181193084225">Ngayong Araw</translation>
 <translation id="2161656808144014275">Text</translation>
 <translation id="2168039046890040389">Pataas</translation>
 <translation id="2190355936436201913">(walang laman)</translation>
@@ -100,6 +100,7 @@
 <translation id="4250229828105606438">Screenshot</translation>
 <translation id="4266252015790371705">{MONTHS,plural, =1{1 buwan ang nakalipas}one{# buwan ang nakalipas}other{# na buwan ang nakalipas}}</translation>
 <translation id="4289300219472526559">Simulan ang Pagsasalita</translation>
+<translation id="4289540628985791613">Pangkalahatang-ideya</translation>
 <translation id="4306392492252714209">Alisin sa clipboard.</translation>
 <translation id="4491109536499578614">Larawan</translation>
 <translation id="4565377596337484307">Itago ang password</translation>

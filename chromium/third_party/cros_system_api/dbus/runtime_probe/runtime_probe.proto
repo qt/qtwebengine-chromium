@@ -32,7 +32,7 @@ message ProbeRequest {
   // The name style here is on purposely align with factory probe output.
   enum SupportCategory {
     UNKNOWN = 0;
-    audio_codec = 1;
+    reserved 1;
     battery = 2;
     storage = 3;
     vpd_cached = 4;

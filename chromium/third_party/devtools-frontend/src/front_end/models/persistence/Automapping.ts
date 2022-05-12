@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import * as i18n from '../../core/i18n/i18n.js';
+import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Bindings from '../bindings/bindings.js';
@@ -13,22 +13,12 @@ import type {FileSystem} from './FileSystemWorkspaceBinding.js';
 import {FileSystemWorkspaceBinding} from './FileSystemWorkspaceBinding.js';
 import {PathEncoder, PersistenceImpl} from './PersistenceImpl.js';
 
-const UIStrings = {
-  /**
-  *@description Error message when attempting to create a binding from a malformed URI.
-  *@example {file://%E0%A4%A} PH1
-  */
-  theAttemptToBindSInTheWorkspace: 'The attempt to bind "{PH1}" in the workspace failed as this URI is malformed.',
-};
-const str_ = i18n.i18n.registerUIStrings('models/persistence/Automapping.ts', UIStrings);
-const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
-
 export class Automapping {
   private readonly workspace: Workspace.Workspace.WorkspaceImpl;
   private readonly onStatusAdded: (arg0: AutomappingStatus) => Promise<void>;
   private readonly onStatusRemoved: (arg0: AutomappingStatus) => Promise<void>;
   private readonly statuses: Set<AutomappingStatus>;
-  private readonly fileSystemUISourceCodes: Map<string, Workspace.UISourceCode.UISourceCode>;
+  private readonly fileSystemUISourceCodes: FileSystemUISourceCodes;
   private readonly sweepThrottler: Common.Throttler.Throttler;
   private readonly sourceCodeToProcessingPromiseMap: WeakMap<Workspace.UISourceCode.UISourceCode, Promise<void>>;
   private readonly sourceCodeToAutoMappingStatusMap: WeakMap<Workspace.UISourceCode.UISourceCode, AutomappingStatus>;
@@ -47,7 +37,7 @@ export class Automapping {
     this.onStatusRemoved = onStatusRemoved;
     this.statuses = new Set();
 
-    this.fileSystemUISourceCodes = new Map();
+    this.fileSystemUISourceCodes = new FileSystemUISourceCodes();
     this.sweepThrottler = new Common.Throttler.Throttler(100);
 
     this.sourceCodeToProcessingPromiseMap = new WeakMap();
@@ -92,7 +82,7 @@ export class Automapping {
   }
 
   private scheduleSweep(): void {
-    this.sweepThrottler.schedule(sweepUnmapped.bind(this));
+    void this.sweepThrottler.schedule(sweepUnmapped.bind(this));
 
     function sweepUnmapped(this: Automapping): Promise<void> {
       const networkProjects = this.workspace.projectsForType(Workspace.Workspace.projectTypes.Network);
@@ -144,7 +134,7 @@ export class Automapping {
         return;
       }
       this.filesIndex.addPath(uiSourceCode.url());
-      this.fileSystemUISourceCodes.set(uiSourceCode.url(), uiSourceCode);
+      this.fileSystemUISourceCodes.add(uiSourceCode);
       this.scheduleSweep();
     } else if (project.type() === Workspace.Workspace.projectTypes.Network) {
       this.computeNetworkStatus(uiSourceCode);
@@ -179,7 +169,7 @@ export class Automapping {
     }
 
     this.filesIndex.addPath(uiSourceCode.url());
-    this.fileSystemUISourceCodes.set(uiSourceCode.url(), uiSourceCode);
+    this.fileSystemUISourceCodes.add(uiSourceCode);
     this.scheduleSweep();
   }
 
@@ -287,7 +277,7 @@ export class Automapping {
           this.scheduleSweep();
         }
       }
-      this.onStatusAdded.call(null, status);
+      void this.onStatusAdded.call(null, status);
     }
   }
 
@@ -316,17 +306,13 @@ export class Automapping {
         this.activeFoldersIndex.removeFolder(projectFolder);
       }
     }
-    this.onStatusRemoved.call(null, status);
+    void this.onStatusRemoved.call(null, status);
   }
 
   private createBinding(networkSourceCode: Workspace.UISourceCode.UISourceCode): Promise<AutomappingStatus|null> {
     const url = networkSourceCode.url();
     if (url.startsWith('file://') || url.startsWith('snippet://')) {
-      const decodedUrl = sanitizeSourceUrl(url);
-      if (!decodedUrl) {
-        return Promise.resolve(null as AutomappingStatus | null);
-      }
-      const fileSourceCode = this.fileSystemUISourceCodes.get(decodedUrl);
+      const fileSourceCode = this.fileSystemUISourceCodes.get(url);
       const status = fileSourceCode ? new AutomappingStatus(networkSourceCode, fileSourceCode, false) : null;
       return Promise.resolve(status);
     }
@@ -337,32 +323,17 @@ export class Automapping {
     }
 
     if (networkPath.endsWith('/')) {
-      networkPath += 'index.html';
-    }
-
-    const urlDecodedNetworkPath = sanitizeSourceUrl(networkPath);
-    if (!urlDecodedNetworkPath) {
-      return Promise.resolve(null as AutomappingStatus | null);
+      networkPath = networkPath + 'index.html' as Platform.DevToolsPath.EncodedPathString;
     }
 
     const similarFiles =
-        this.filesIndex.similarFiles(urlDecodedNetworkPath).map(path => this.fileSystemUISourceCodes.get(path)) as
+        this.filesIndex.similarFiles(networkPath).map(path => this.fileSystemUISourceCodes.get(path)) as
         Workspace.UISourceCode.UISourceCode[];
     if (!similarFiles.length) {
       return Promise.resolve(null as AutomappingStatus | null);
     }
 
     return this.pullMetadatas(similarFiles.concat(networkSourceCode)).then(onMetadatas.bind(this));
-
-    function sanitizeSourceUrl(url: string): string|null {
-      try {
-        const decodedUrl = decodeURI(url);
-        return decodedUrl;
-      } catch (error) {
-        Common.Console.Console.instance().error(i18nString(UIStrings.theAttemptToBindSInTheWorkspace, {PH1: url}));
-        return null;
-      }
-    }
 
     function onMetadatas(this: Automapping): AutomappingStatus|null {
       const activeFiles =
@@ -486,6 +457,33 @@ class FolderIndex {
     const encodedPath = this.encoder.encode(path);
     const commonPrefix = this.index.longestPrefix(encodedPath, true);
     return this.encoder.decode(commonPrefix);
+  }
+}
+
+class FileSystemUISourceCodes {
+  private readonly sourceCodes: Map<string, Workspace.UISourceCode.UISourceCode>;
+
+  constructor() {
+    this.sourceCodes = new Map();
+  }
+
+  private getPlatformCanonicalFileUrl(path: string): string {
+    return Host.Platform.isWin() ? path.toLowerCase() : path;
+  }
+
+  add(sourceCode: Workspace.UISourceCode.UISourceCode): void {
+    const fileUrl = this.getPlatformCanonicalFileUrl(sourceCode.url());
+    this.sourceCodes.set(fileUrl, sourceCode);
+  }
+
+  get(fileUrl: string): Workspace.UISourceCode.UISourceCode|undefined {
+    fileUrl = this.getPlatformCanonicalFileUrl(fileUrl);
+    return this.sourceCodes.get(fileUrl);
+  }
+
+  delete(fileUrl: string): void {
+    fileUrl = this.getPlatformCanonicalFileUrl(fileUrl);
+    this.sourceCodes.delete(fileUrl);
   }
 }
 

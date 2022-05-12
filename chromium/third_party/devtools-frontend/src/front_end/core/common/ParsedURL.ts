@@ -29,7 +29,40 @@
  */
 
 import * as Platform from '../platform/platform.js';
-import * as Root from '../root/root.js';
+
+/**
+ * http://tools.ietf.org/html/rfc3986#section-5.2.4
+ */
+export function normalizePath(path: string): string {
+  if (path.indexOf('..') === -1 && path.indexOf('.') === -1) {
+    return path;
+  }
+
+  const normalizedSegments = [];
+  const segments = path.split('/');
+  for (const segment of segments) {
+    if (segment === '.') {
+      continue;
+    } else if (segment === '..') {
+      normalizedSegments.pop();
+    } else if (segment) {
+      normalizedSegments.push(segment);
+    }
+  }
+  let normalizedPath = normalizedSegments.join('/');
+  if (normalizedPath[normalizedPath.length - 1] === '/') {
+    return normalizedPath;
+  }
+  if (path[0] === '/' && normalizedPath) {
+    normalizedPath = '/' + normalizedPath;
+  }
+  if ((path[path.length - 1] === '/') || (segments[segments.length - 1] === '.') ||
+      (segments[segments.length - 1] === '..')) {
+    normalizedPath = normalizedPath + '/';
+  }
+
+  return normalizedPath;
+}
 
 export class ParsedURL {
   isValid: boolean;
@@ -110,26 +143,88 @@ export class ParsedURL {
     return null;
   }
 
-  static rawPathToUrlString(fileSystemPath: Platform.DevToolsPath.RawPathString): Platform.DevToolsPath.UrlString {
-    let rawPath: string = fileSystemPath;
-    rawPath = rawPath.replace(/\\/g, '/');
-    if (!rawPath.startsWith('file://')) {
-      if (rawPath.startsWith('/')) {
-        rawPath = 'file://' + rawPath;
-      } else {
-        rawPath = 'file:///' + rawPath;
-      }
+  private static preEncodeSpecialCharactersInPath(path: string): string {
+    // Based on net::FilePathToFileURL. Ideally we would handle
+    // '\\' as well on non-Windows file systems.
+    for (const specialChar of ['%', ';', '#', '?']) {
+      (path as string) = path.replaceAll(specialChar, encodeURIComponent(specialChar));
     }
-    return rawPath as Platform.DevToolsPath.UrlString;
+    return path;
   }
 
-  static capFilePrefix(fileURL: Platform.DevToolsPath.UrlString, isWindows?: boolean):
+  static rawPathToEncodedPathString(path: Platform.DevToolsPath.RawPathString):
+      Platform.DevToolsPath.EncodedPathString {
+    const partiallyEncoded = ParsedURL.preEncodeSpecialCharactersInPath(path);
+    if (path.startsWith('/')) {
+      return new URL(partiallyEncoded, 'file:///').pathname as Platform.DevToolsPath.EncodedPathString;
+    }
+    // URL prepends a '/'
+    return new URL('/' + partiallyEncoded, 'file:///').pathname.substr(1) as Platform.DevToolsPath.EncodedPathString;
+  }
+
+  /**
+   * @param name Must not be encoded
+   */
+  static encodedFromParentPathAndName(parentPath: Platform.DevToolsPath.EncodedPathString, name: string):
+      Platform.DevToolsPath.EncodedPathString {
+    return ParsedURL.concatenate(parentPath, '/', encodeURIComponent(name));
+  }
+
+  /**
+   * @param name Must not be encoded
+   */
+  static urlFromParentUrlAndName(parentUrl: Platform.DevToolsPath.UrlString, name: string):
+      Platform.DevToolsPath.UrlString {
+    return ParsedURL.concatenate(parentUrl, '/', encodeURIComponent(name));
+  }
+
+  static encodedPathToRawPathString(encPath: Platform.DevToolsPath.EncodedPathString):
+      Platform.DevToolsPath.RawPathString {
+    return decodeURIComponent(encPath) as Platform.DevToolsPath.RawPathString;
+  }
+
+  static rawPathToUrlString(fileSystemPath: Platform.DevToolsPath.RawPathString): Platform.DevToolsPath.UrlString {
+    let preEncodedPath: string = ParsedURL.preEncodeSpecialCharactersInPath(
+        fileSystemPath.replace(/\\/g, '/') as Platform.DevToolsPath.RawPathString);
+    preEncodedPath = preEncodedPath.replace(/\\/g, '/');
+    if (!preEncodedPath.startsWith('file://')) {
+      if (preEncodedPath.startsWith('/')) {
+        preEncodedPath = 'file://' + preEncodedPath;
+      } else {
+        preEncodedPath = 'file:///' + preEncodedPath;
+      }
+    }
+    return new URL(preEncodedPath).toString() as Platform.DevToolsPath.UrlString;
+  }
+
+  static relativePathToUrlString(
+      relativePath: Platform.DevToolsPath.RawPathString,
+      baseURL: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
+    const preEncodedPath: string = ParsedURL.preEncodeSpecialCharactersInPath(
+        relativePath.replace(/\\/g, '/') as Platform.DevToolsPath.RawPathString);
+    return new URL(preEncodedPath, baseURL).toString() as Platform.DevToolsPath.UrlString;
+  }
+
+  static urlToRawPathString(fileURL: Platform.DevToolsPath.UrlString, isWindows?: boolean):
       Platform.DevToolsPath.RawPathString {
     console.assert(fileURL.startsWith('file://'), 'This must be a file URL.');
+    const decodedFileURL = decodeURIComponent(fileURL);
     if (isWindows) {
-      return fileURL.substr('file:///'.length).replace(/\//g, '\\') as Platform.DevToolsPath.RawPathString;
+      return decodedFileURL.substr('file:///'.length).replace(/\//g, '\\') as Platform.DevToolsPath.RawPathString;
     }
-    return fileURL.substr('file://'.length) as Platform.DevToolsPath.RawPathString;
+    return decodedFileURL.substr('file://'.length) as Platform.DevToolsPath.RawPathString;
+  }
+
+  static substr<DevToolsPathType extends Platform.DevToolsPath.UrlString|Platform.DevToolsPath.RawPathString|
+                                         Platform.DevToolsPath.EncodedPathString>(
+      devToolsPath: DevToolsPathType, from: number, length?: number): DevToolsPathType {
+    return devToolsPath.substr(from, length) as DevToolsPathType;
+  }
+
+  static concatenate<DevToolsPathType extends Platform.DevToolsPath.UrlString|Platform.DevToolsPath
+                                                  .RawPathString|Platform.DevToolsPath.EncodedPathString>(
+      devToolsPath: DevToolsPathType, ...appendage: string[]): DevToolsPathType {
+    return devToolsPath.concat(...appendage) as DevToolsPathType;
   }
 
   static urlWithoutHash(url: string): string {
@@ -167,9 +262,9 @@ export class ParsedURL {
     return ParsedURL.urlRegexInstance;
   }
 
-  static extractPath(url: string): string {
+  static extractPath(url: string): Platform.DevToolsPath.EncodedPathString {
     const parsedURL = this.fromString(url);
-    return parsedURL ? parsedURL.path : '';
+    return (parsedURL ? parsedURL.path : '') as Platform.DevToolsPath.EncodedPathString;
   }
 
   static extractOrigin(url: string): string {
@@ -214,10 +309,13 @@ export class ParsedURL {
       return href;
     }
 
-    // Return absolute URLs as-is.
+    // Return absolute URLs with normalized path and other components as-is.
     const parsedHref = this.fromString(trimmedHref);
     if (parsedHref && parsedHref.scheme) {
-      return trimmedHref;
+      const securityOrigin = parsedHref.securityOrigin();
+      const pathText = parsedHref.path;
+      const hrefSuffix = trimmedHref.substring(securityOrigin.length + pathText.length);
+      return securityOrigin + normalizePath(pathText) + hrefSuffix;
     }
 
     const parsedURL = this.fromString(baseURL);
@@ -260,7 +358,7 @@ export class ParsedURL {
     if (hrefPath.charAt(0) !== '/') {
       hrefPath = parsedURL.folderPathComponents + '/' + hrefPath;
     }
-    return securityOrigin + Root.Runtime.Runtime.normalizePath(hrefPath) + hrefSuffix;
+    return securityOrigin + normalizePath(hrefPath) + hrefSuffix;
   }
 
   static splitLineAndColumn(string: string): {

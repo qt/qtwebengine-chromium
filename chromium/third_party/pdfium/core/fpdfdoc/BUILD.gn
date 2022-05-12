@@ -77,7 +77,10 @@ source_set("fpdfdoc") {
     "cpvt_wordrange.h",
     "ipvt_fontmap.h",
   ]
-  configs += [ "../../:pdfium_strict_config" ]
+  configs += [
+    "../../:pdfium_strict_config",
+    "../../:pdfium_noshorten_config",
+  ]
   deps = [
     "../../constants",
     "../fpdfapi/font",

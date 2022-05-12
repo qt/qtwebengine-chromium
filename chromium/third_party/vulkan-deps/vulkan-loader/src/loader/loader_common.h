@@ -1,8 +1,8 @@
 /*
  *
- * Copyright (c) 2014-2021 The Khronos Group Inc.
- * Copyright (c) 2014-2021 Valve Corporation
- * Copyright (c) 2014-2021 LunarG, Inc.
+ * Copyright (c) 2014-2022 The Khronos Group Inc.
+ * Copyright (c) 2014-2022 Valve Corporation
+ * Copyright (c) 2014-2022 LunarG, Inc.
  * Copyright (C) 2015 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
@@ -104,12 +104,30 @@ struct loader_override_expiration {
     uint8_t minute;
 };
 
+// This structure is used to store the json file version in a more manageable way.
+typedef struct {
+    uint16_t major;
+    uint16_t minor;
+    uint16_t patch;
+} loader_api_version;
+
+// Enumeration used to clearly identify reason for library load failure.
+enum loader_layer_library_status {
+    LOADER_LAYER_LIB_NOT_LOADED = 0,
+
+    LOADER_LAYER_LIB_SUCCESS_LOADED = 1,
+
+    LOADER_LAYER_LIB_ERROR_WRONG_BIT_TYPE = 20,
+    LOADER_LAYER_LIB_ERROR_FAILED_TO_LOAD = 21,
+};
+
 struct loader_layer_properties {
     VkLayerProperties info;
     enum layer_type_flags type_flags;
     uint32_t interface_version;  // PFN_vkNegotiateLoaderLayerInterfaceVersion
     char manifest_file_name[MAX_STRING_SIZE];
     char lib_name[MAX_STRING_SIZE];
+    enum loader_layer_library_status lib_status;
     loader_platform_dl_handle lib_handle;
     struct loader_layer_functions functions;
     struct loader_extension_list instance_extension_list;
@@ -210,6 +228,7 @@ struct loader_icd_term {
     struct loader_icd_term *next;
 
     PFN_PhysDevExt phys_dev_ext[MAX_NUM_UNKNOWN_EXTS];
+    bool supports_get_dev_prop_2;
 };
 
 // Per ICD library structure
@@ -330,8 +349,13 @@ struct loader_instance {
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
     bool wsi_screen_surface_enabled;
 #endif
+#ifdef VK_USE_PLATFORM_VI_NN
+    bool wsi_vi_surface_enabled;
+#endif
     bool wsi_display_enabled;
     bool wsi_display_props2_enabled;
+    bool create_terminator_invalid_extension;
+    bool supports_get_dev_prop_2;
 };
 
 // VkPhysicalDevice requires special treatment by loader.  Firstly, terminator
@@ -364,6 +388,44 @@ struct loader_physical_device_term {
     struct loader_icd_term *this_icd_term;
     uint8_t icd_index;
     VkPhysicalDevice phys_dev;  // object from ICD
+};
+
+#ifdef LOADER_ENABLE_LINUX_SORT
+// Structure for storing the relevent device information for selecting a device.
+// NOTE: Needs to be defined here so we can store this content in the term structrue
+//       for quicker sorting.
+struct LinuxSortedDeviceInfo {
+    // Associated Vulkan Physical Device
+    VkPhysicalDevice physical_device;
+    bool default_device;
+
+    // Loader specific items about the driver providing support for this physical device
+    uint32_t icd_index;
+    struct loader_icd_term *icd_term;
+
+    // Some generic device properties
+    VkPhysicalDeviceType device_type;
+    char device_name[VK_MAX_PHYSICAL_DEVICE_NAME_SIZE];
+    uint32_t vendor_id;
+    uint32_t device_id;
+
+    // PCI information on this device
+    bool has_pci_bus_info;
+    uint32_t pci_domain;
+    uint32_t pci_bus;
+    uint32_t pci_device;
+    uint32_t pci_function;
+};
+#endif  // LOADER_ENABLE_LINUX_SORT
+
+// Per enumerated PhysicalDeviceGroup structure, used to wrap in terminator code
+struct loader_physical_device_group_term {
+    struct loader_icd_term *this_icd_term;
+    uint8_t icd_index;
+    VkPhysicalDeviceGroupProperties group_props;
+#ifdef LOADER_ENABLE_LINUX_SORT
+    struct LinuxSortedDeviceInfo internal_device_info[VK_MAX_DEVICE_GROUP_SIZE];
+#endif  // LOADER_ENABLE_LINUX_SORT
 };
 
 struct loader_struct {

@@ -1044,7 +1044,7 @@ TEST_FACTOR(3, 1, 3, 0)
 #endif
 
 TEST_SCALETO(Scale, 1, 1)
-//TEST_SCALETO(Scale, 256, 144) /* 128x72 * 2 */
+// TEST_SCALETO(Scale, 256, 144) /* 128x72 * 2 */
 TEST_SCALETO(Scale, 320, 240)
 TEST_SCALETO(Scale, 569, 480)
 TEST_SCALETO(Scale, 640, 360)
@@ -1221,10 +1221,6 @@ extern "C" void ScaleRowUp2_16_NEON(const uint16_t* src_ptr,
                                     ptrdiff_t src_stride,
                                     uint16_t* dst,
                                     int dst_width);
-extern "C" void ScaleRowUp2_16_MMI(const uint16_t* src_ptr,
-                                   ptrdiff_t src_stride,
-                                   uint16_t* dst,
-                                   int dst_width);
 extern "C" void ScaleRowUp2_16_C(const uint16_t* src_ptr,
                                  ptrdiff_t src_stride,
                                  uint16_t* dst,
@@ -1248,13 +1244,6 @@ TEST_F(LibYUVScaleTest, TestScaleRowUp2_16) {
     int has_neon = TestCpuFlag(kCpuHasNEON);
     if (has_neon) {
       ScaleRowUp2_16_NEON(&orig_pixels[0], 640, &dst_pixels_opt[0], 1280);
-    } else {
-      ScaleRowUp2_16_C(&orig_pixels[0], 640, &dst_pixels_opt[0], 1280);
-    }
-#elif !defined(LIBYUV_DISABLE_MMI) && defined(_MIPS_ARCH_LOONGSON3A)
-    int has_mmi = TestCpuFlag(kCpuHasMMI);
-    if (has_mmi) {
-      ScaleRowUp2_16_MMI(&orig_pixels[0], 640, &dst_pixels_opt[0], 1280);
     } else {
       ScaleRowUp2_16_C(&orig_pixels[0], 640, &dst_pixels_opt[0], 1280);
     }
@@ -1418,8 +1407,8 @@ TEST_F(LibYUVScaleTest, PlaneTest3x) {
   }
   align_buffer_page_end(dest_pixels, kDstStride);
 
-  int iterations160 =
-      (benchmark_width_ * benchmark_height_ + (160 - 1)) / 160 * benchmark_iterations_;
+  int iterations160 = (benchmark_width_ * benchmark_height_ + (160 - 1)) / 160 *
+                      benchmark_iterations_;
   for (int i = 0; i < iterations160; ++i) {
     ScalePlane(orig_pixels, kSrcStride, 480, 3, dest_pixels, kDstStride, 160, 1,
                kFilterBilinear);
@@ -1446,8 +1435,8 @@ TEST_F(LibYUVScaleTest, PlaneTest4x) {
   }
   align_buffer_page_end(dest_pixels, kDstStride);
 
-  int iterations160 =
-      (benchmark_width_ * benchmark_height_ + (160 - 1)) / 160 * benchmark_iterations_;
+  int iterations160 = (benchmark_width_ * benchmark_height_ + (160 - 1)) / 160 *
+                      benchmark_iterations_;
   for (int i = 0; i < iterations160; ++i) {
     ScalePlane(orig_pixels, kSrcStride, 640, 4, dest_pixels, kDstStride, 160, 1,
                kFilterBilinear);

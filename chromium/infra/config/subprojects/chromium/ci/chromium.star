@@ -3,9 +3,10 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium builder group."""
 
+load("//lib/builder_config.star", "builder_config")
 load("//lib/builders.star", "goma", "os", "sheriff_rotations")
 load("//lib/branches.star", "branches")
-load("//lib/ci.star", "ci")
+load("//lib/ci.star", "ci", "rbe_instance", "rbe_jobs")
 load("//lib/consoles.star", "consoles")
 
 ci.defaults.set(
@@ -14,6 +15,7 @@ ci.defaults.set(
     execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
     goma_backend = goma.backend.RBE_PROD,
     main_console_view = "main",
+    os = os.LINUX_DEFAULT,
     pool = ci.DEFAULT_POOL,
     service_account = ci.DEFAULT_SERVICE_ACCOUNT,
     sheriff_rotations = sheriff_rotations.CHROMIUM,
@@ -21,7 +23,10 @@ ci.defaults.set(
 
 consoles.console_view(
     name = "chromium",
-    branch_selector = branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
+    branch_selector = [
+        branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
+        branches.FUCHSIA_LTS_MILESTONE,
+    ],
     include_experimental_builds = True,
     ordering = {
         "*type*": consoles.ordering(short_names = ["dbg", "rel", "off"]),
@@ -42,7 +47,6 @@ ci.builder(
     ),
     cores = 8,
     execution_timeout = 4 * time.hour,
-    os = os.LINUX_BIONIC_REMOVE,
     tree_closing = True,
 )
 
@@ -53,7 +57,6 @@ ci.builder(
         short_name = "rel",
     ),
     cores = 32,
-    os = os.LINUX_BIONIC_REMOVE,
     properties = {
         # The format of these properties is defined at archive/properties.proto
         "$build/archive": {
@@ -80,12 +83,11 @@ ci.builder(
     # See https://crbug.com/1153349#c22, as we update symbol_level=2, build
     # needs longer time to complete.
     execution_timeout = 7 * time.hour,
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
     name = "fuchsia-official",
-    branch_selector = branches.STANDARD_MILESTONE,
+    branch_selector = branches.FUCHSIA_LTS_MILESTONE,
     builderless = False,
     console_view_entry = [
         consoles.console_view_entry(
@@ -103,7 +105,6 @@ ci.builder(
     # TODO: Change this back down to something reasonable once these builders
     # have populated their cached by getting through the compile step
     execution_timeout = 10 * time.hour,
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -114,8 +115,10 @@ ci.builder(
     ),
     # Bump to 32 if needed.
     cores = 8,
-    os = os.LINUX_BIONIC_REMOVE,
     tree_closing = True,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.HIGH_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -126,7 +129,6 @@ ci.builder(
     ),
     cores = 32,
     notifies = ["linux-archive-rel"],
-    os = os.LINUX_BIONIC_REMOVE,
     properties = {
         # The format of these properties is defined at archive/properties.proto
         "$build/archive": {
@@ -139,6 +141,9 @@ ci.builder(
         },
     },
     tree_closing = True,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.DEFAULT,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.builder(
@@ -150,7 +155,6 @@ ci.builder(
     ),
     cores = 32,
     execution_timeout = 7 * time.hour,
-    os = os.LINUX_BIONIC_REMOVE,
     properties = {
         # The format of these properties is defined at archive/properties.proto
         "$build/archive": {
@@ -212,7 +216,6 @@ ci.builder(
     ),
     cores = 32,
     execution_timeout = 7 * time.hour,
-    os = os.LINUX_BIONIC_REMOVE,
 )
 
 ci.builder(
@@ -332,17 +335,30 @@ ci.builder(
 
 ci.builder(
     name = "mac-official",
+    branch_selector = branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "checkout_pgo_profiles",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            target_bits = 64,
+        ),
+    ),
     builderless = False,
-    # TODO(crbug.com/1072012) Use the default console view and use the default
-    # main console view once the build is green
-    main_console_view = None,
     console_view_entry = consoles.console_view_entry(
-        console_view = "chromium.fyi",
         category = "mac",
         short_name = "off",
     ),
     # TODO(crbug.com/1279290) builds with PGO change take long time.
-    execution_timeout = 30 * time.hour,
+    # Keep in sync with mac-official in try/chromium.star.
+    execution_timeout = 7 * time.hour,
     os = os.MAC_ANY,
 )
 
@@ -405,6 +421,21 @@ ci.builder(
 ci.builder(
     name = "win-official",
     branch_selector = branches.DESKTOP_EXTENDED_STABLE_MILESTONE,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "checkout_pgo_profiles",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            target_bits = 64,
+        ),
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "win|off",
         short_name = "64",
@@ -482,4 +513,19 @@ ci.builder(
     # TODO(crbug.com/1155416) builds with PGO change take long time.
     execution_timeout = 7 * time.hour,
     os = os.WINDOWS_DEFAULT,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "checkout_pgo_profiles",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            target_bits = 32,
+        ),
+    ),
 )

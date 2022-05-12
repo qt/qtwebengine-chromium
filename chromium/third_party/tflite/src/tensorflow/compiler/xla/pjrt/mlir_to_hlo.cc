@@ -57,16 +57,20 @@ Status MlirToXlaComputation(mlir::ModuleOp module,
   }
 
   HloProto proto;
+  mlir::MlirToHloConversionOptions options;
+  // We don't want the conversion to muck with our operator names.
+  options.legalize_node_names = false;
   TF_RETURN_IF_ERROR(
-      ConvertMlirHloToHlo(module, &proto, use_tuple_args, return_tuple));
+      ConvertMlirHloToHlo(module, &proto, use_tuple_args, return_tuple,
+                          /*shape_representation_fn=*/nullptr, options));
 
   xla_computation = XlaComputation(std::move(*proto.mutable_hlo_module()));
   return Status::OK();
 }
 
-StatusOr<mlir::OwningModuleRef> ParseMlirModuleString(
+StatusOr<mlir::OwningOpRef<mlir::ModuleOp>> ParseMlirModuleString(
     absl::string_view mlir_module_str, mlir::MLIRContext& context) {
-  mlir::OwningModuleRef module;
+  mlir::OwningOpRef<mlir::ModuleOp> module;
   context.loadDialect<mlir::StandardOpsDialect>();
   context.loadDialect<mlir::mhlo::MhloDialect>();
   context.loadDialect<mlir::chlo::HloClientDialect>();
@@ -77,7 +81,7 @@ StatusOr<mlir::OwningModuleRef> ParseMlirModuleString(
   if (!module) {
     return diagnostic_handler.ConsumeStatus();
   }
-  if (failed(module->verify())) {
+  if (failed(module->verifyInvariants())) {
     VLOG(1) << "MLIR verification failed.";
     module->dump();
     return diagnostic_handler.ConsumeStatus();
@@ -89,7 +93,7 @@ Status ParseMlirModuleStringAndConvertToXlaComputation(
     absl::string_view mlir_module_str, XlaComputation& xla_computation,
     bool use_tuple_args, bool return_tuple) {
   mlir::MLIRContext context;
-  TF_ASSIGN_OR_RETURN(mlir::OwningModuleRef module,
+  TF_ASSIGN_OR_RETURN(mlir::OwningOpRef<mlir::ModuleOp> module,
                       xla::ParseMlirModuleString(mlir_module_str, context));
   return xla::MlirToXlaComputation(*module, xla_computation, use_tuple_args,
                                    return_tuple);
