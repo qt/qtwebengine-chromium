@@ -1004,8 +1004,8 @@ void GetOptionStringsFromElement(const WebSelectElement& select_element,
   for (const auto& list_item : list_items) {
     if (IsOptionElement(list_item)) {
       const WebOptionElement option = list_item.ToConst<WebOptionElement>();
-      options->push_back({.value = option.Value().Utf16(),
-                          .content = option.GetText().Utf16()});
+      options->push_back({/*.value =*/ option.Value().Utf16(),
+                          /*.content =*/ option.GetText().Utf16()});
     }
   }
 }
