@@ -202,8 +202,7 @@ bool StructTraits<
       !data.ReadThrottlingProfileId(&out->throttling_profile_id) ||
       !data.ReadFetchWindowId(&out->fetch_window_id) ||
       !data.ReadDevtoolsRequestId(&out->devtools_request_id) ||
-      !data.ReadRecursivePrefetchToken(&out->recursive_prefetch_token) ||
-      !data.ReadNavigationRedirectChain(&out->navigation_redirect_chain)) {
+      !data.ReadRecursivePrefetchToken(&out->recursive_prefetch_token)) {
     // Note that data.ReadTrustTokenParams is temporarily handled below.
     return false;
   }
@@ -243,7 +242,6 @@ bool StructTraits<
   out->is_signed_exchange_prefetch_cache_enabled =
       data.is_signed_exchange_prefetch_cache_enabled();
   out->obey_origin_policy = data.obey_origin_policy();
-  out->original_destination = data.original_destination();
   return true;
 }
 

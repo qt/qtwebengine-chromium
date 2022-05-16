@@ -161,10 +161,6 @@ FetchRequestData* FetchRequestData::Create(
   // we deprecate SetContext.
 
   request->SetDestination(fetch_api_request->destination);
-  if (fetch_api_request->request_initiator)
-    request->SetOrigin(fetch_api_request->request_initiator);
-  request->SetNavigationRedirectChain(
-      fetch_api_request->navigation_redirect_chain);
   request->SetReferrerString(AtomicString(Referrer::NoReferrer()));
   if (fetch_api_request->referrer) {
     if (!fetch_api_request->referrer->url.IsEmpty()) {
@@ -185,7 +181,6 @@ FetchRequestData* FetchRequestData::Create(
       fetch_api_request->priority));
   if (fetch_api_request->fetch_window_id)
     request->SetWindowId(fetch_api_request->fetch_window_id.value());
-
   return request;
 }
 
@@ -195,7 +190,6 @@ FetchRequestData* FetchRequestData::CloneExceptBody() {
   request->method_ = method_;
   request->header_list_ = header_list_->Clone();
   request->origin_ = origin_;
-  request->navigation_redirect_chain_ = navigation_redirect_chain_;
   request->isolated_world_origin_ = isolated_world_origin_;
   request->context_ = context_;
   request->destination_ = destination_;
@@ -210,7 +204,6 @@ FetchRequestData* FetchRequestData::CloneExceptBody() {
   request->integrity_ = integrity_;
   request->priority_ = priority_;
   request->importance_ = importance_;
-  request->original_destination_ = original_destination_;
   request->keepalive_ = keepalive_;
   request->is_history_navigation_ = is_history_navigation_;
   request->window_id_ = window_id_;

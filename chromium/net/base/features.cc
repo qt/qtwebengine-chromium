@@ -195,7 +195,5 @@ extern const base::FeatureParam<base::TimeDelta> kTimeoutTcpConnectAttemptMax(
     "TimeoutTcpConnectAttemptMax",
     base::TimeDelta::FromSeconds(30));
 
-const base::Feature kSameSiteCookiesBugfix1166211{
-    "SameSiteCookiesBugfix1166211", base::FEATURE_ENABLED_BY_DEFAULT};
 }  // namespace features
 }  // namespace net

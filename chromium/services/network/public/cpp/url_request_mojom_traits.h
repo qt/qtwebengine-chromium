@@ -109,10 +109,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
       const network::ResourceRequest& request) {
     return request.request_initiator;
   }
-  static const std::vector<GURL> navigation_redirect_chain(
-      const network::ResourceRequest& request) {
-    return request.navigation_redirect_chain;
-  }
   static const base::Optional<url::Origin>& isolated_world_origin(
       const network::ResourceRequest& request) {
     return request.isolated_world_origin;
@@ -251,10 +247,6 @@ struct COMPONENT_EXPORT(NETWORK_CPP_BASE)
   }
   static bool obey_origin_policy(const network::ResourceRequest& request) {
     return request.obey_origin_policy;
-  }
-  static network::mojom::RequestDestination original_destination(
-      const network::ResourceRequest& request) {
-    return request.original_destination;
   }
   static const base::Optional<network::ResourceRequest::TrustedParams>&
   trusted_params(const network::ResourceRequest& request) {

@@ -433,23 +433,6 @@ void URLRequest::SetDefaultCookiePolicyToBlock() {
   g_default_can_use_cookies = false;
 }
 
-void URLRequest::SetURLChain(const std::vector<GURL>& url_chain) {
-  DCHECK(!job_);
-  DCHECK(!is_pending_);
-  DCHECK_EQ(url_chain_.size(), 1u);
-
-  if (url_chain.size() < 2)
-    return;
-
-  // In most cases the current request URL will match the last URL in the
-  // explicitly set URL chain.  In some cases, however, a throttle will modify
-  // the request URL resulting in a different request URL.  We handle this by
-  // using previous values from the explicitly set URL chain, but with the
-  // request URL as the final entry in the chain.
-  url_chain_.insert(url_chain_.begin(), url_chain.begin(),
-                    url_chain.begin() + url_chain.size() - 1);
-}
-
 void URLRequest::set_site_for_cookies(const SiteForCookies& site_for_cookies) {
   DCHECK(!is_pending_);
   site_for_cookies_ = site_for_cookies;
@@ -553,7 +536,6 @@ URLRequest::URLRequest(const GURL& url,
                                       NetLogSourceType::URL_REQUEST)),
       url_chain_(1, url),
       force_ignore_site_for_cookies_(false),
-      force_main_frame_for_same_site_cookies_(false),
       method_("GET"),
       referrer_policy_(
           ReferrerPolicy::CLEAR_ON_TRANSITION_FROM_SECURE_TO_INSECURE),

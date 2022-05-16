@@ -77,8 +77,7 @@ ResourceRequestHead::ResourceRequestHead(const KURL& url)
       referrer_policy_(network::mojom::ReferrerPolicy::kDefault),
       is_external_request_(false),
       cors_preflight_policy_(
-          network::mojom::CorsPreflightPolicy::kConsiderPreflight),
-      original_destination_(network::mojom::RequestDestination::kEmpty) {}
+          network::mojom::CorsPreflightPolicy::kConsiderPreflight) {}
 
 ResourceRequestHead::ResourceRequestHead(const ResourceRequestHead&) = default;
 
