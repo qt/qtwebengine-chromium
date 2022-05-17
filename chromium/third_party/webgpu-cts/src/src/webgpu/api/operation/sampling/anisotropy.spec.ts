@@ -6,7 +6,7 @@ Note that anisotropic filtering is never guaranteed to occur, but we might be ab
 things. If there are no guarantees we can issue warnings instead of failures. Ideas:
   - No *more* than the provided maxAnisotropy samples are used, by testing how many unique
     sample values come out of the sample operation.
-  - Check anisotropy is done in the correct direciton (by having a 2D gradient and checking we get
+  - Check anisotropy is done in the correct direction (by having a 2D gradient and checking we get
     more of the color in the correct direction).
 `;
 
@@ -59,8 +59,8 @@ class SamplerAnisotropicFilteringSlantedPlaneTest extends GPUTest {
         module: this.device.createShaderModule({
           code: `
             struct Outputs {
-              @builtin(position) Position : vec4<f32>;
-              @location(0) fragUV : vec2<f32>;
+              @builtin(position) Position : vec4<f32>,
+              @location(0) fragUV : vec2<f32>,
             };
 
             @stage(vertex) fn main(
@@ -143,14 +143,15 @@ class SamplerAnisotropicFilteringSlantedPlaneTest extends GPUTest {
         {
           view: colorAttachmentView,
           storeOp: 'store',
-          loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
         },
       ],
     });
     pass.setPipeline(this.pipeline);
     pass.setBindGroup(0, bindGroup);
     pass.draw(6);
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([encoder.finish()]);
 
     return colorAttachment;

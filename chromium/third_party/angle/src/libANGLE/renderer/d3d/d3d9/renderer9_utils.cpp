@@ -786,6 +786,9 @@ void GenerateCaps(IDirect3D9 *d3d9,
 
     // D3D9 does not support vertex attribute aliasing
     limitations->noVertexAttributeAliasing = true;
+
+    // D3D9 does not support compressed textures where the base mip level is not a multiple of 4
+    limitations->compressedBaseMipLevelMultipleOfFour = true;
 }
 
 }  // namespace d3d9_gl
@@ -836,10 +839,6 @@ void InitializeFeatures(angle::FeaturesD3D *features)
 
     // crbug.com/1011627 Turn this on for D3D9.
     ANGLE_FEATURE_CONDITION(features, allowClearForRobustResourceInit, true);
-
-    // Call platform hooks for testing overrides.
-    auto *platform = ANGLEPlatformCurrent();
-    platform->overrideWorkaroundsD3D(platform, features);
 }
 
 }  // namespace d3d9

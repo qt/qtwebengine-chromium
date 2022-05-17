@@ -10,24 +10,36 @@
 
 #include <stdint.h>
 
-#include <algorithm>
-#include <memory>
+#include <cstdlib>
+#include <iterator>
 #include <string>
+#include <tuple>
 #include <vector>
 
+#include "absl/algorithm/container.h"
 #include "absl/types/optional.h"
 #include "api/data_channel_interface.h"
-#include "api/dtmf_sender_interface.h"
+#include "api/dtls_transport_interface.h"
 #include "api/peer_connection_interface.h"
 #include "api/scoped_refptr.h"
+#include "api/sctp_transport_interface.h"
+#include "api/stats/rtc_stats_report.h"
+#include "api/stats/rtcstats_objects.h"
 #include "api/units/time_delta.h"
+#include "p2p/base/transport_description.h"
+#include "p2p/base/transport_info.h"
+#include "pc/media_session.h"
+#include "pc/session_description.h"
 #include "pc/test/integration_test_helpers.h"
 #include "pc/test/mock_peer_connection_observers.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/ref_counted_object.h"
+#include "rtc_base/helpers.h"
+#include "rtc_base/logging.h"
+#include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/virtual_socket_server.h"
-#include "system_wrappers/include/field_trial.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 namespace webrtc {
@@ -44,13 +56,12 @@ namespace {
 #define DISABLED_ON_ANDROID(t) t
 #endif
 
-class DataChannelIntegrationTest : public PeerConnectionIntegrationBaseTest,
-                                   public ::testing::WithParamInterface<
-                                       std::tuple<SdpSemantics, std::string>> {
+class DataChannelIntegrationTest
+    : public PeerConnectionIntegrationBaseTest,
+      public ::testing::WithParamInterface<SdpSemantics> {
  protected:
   DataChannelIntegrationTest()
-      : PeerConnectionIntegrationBaseTest(std::get<0>(GetParam()),
-                                          std::get<1>(GetParam())) {}
+      : PeerConnectionIntegrationBaseTest(GetParam()) {}
 };
 
 // Fake clock must be set before threads are started to prevent race on
@@ -76,7 +87,7 @@ class DataChannelIntegrationTestPlanB
     : public PeerConnectionIntegrationBaseTest {
  protected:
   DataChannelIntegrationTestPlanB()
-      : PeerConnectionIntegrationBaseTest(SdpSemantics::kPlanB) {}
+      : PeerConnectionIntegrationBaseTest(SdpSemantics::kPlanB_DEPRECATED) {}
 };
 
 class DataChannelIntegrationTestUnifiedPlan
@@ -408,7 +419,7 @@ TEST_P(DataChannelIntegrationTest, SctpDataChannelConfigSentToOtherSide) {
   EXPECT_FALSE(callee()->data_channel()->negotiated());
 }
 
-// Test usrsctp's ability to process unordered data stream, where data actually
+// Test sctp's ability to process unordered data stream, where data actually
 // arrives out of order using simulated delays. Previously there have been some
 // bugs in this area.
 TEST_P(DataChannelIntegrationTest, StressTestUnorderedSctpDataChannel) {
@@ -832,17 +843,8 @@ TEST_P(DataChannelIntegrationTest,
   EXPECT_GT(202u, callee()->data_observer()->received_message_count());
   EXPECT_LE(2u, callee()->data_observer()->received_message_count());
   // Then, check that observed behavior (lose some messages) has not changed
-  if (!webrtc::field_trial::IsDisabled("WebRTC-DataChannel-Dcsctp")) {
-    // DcSctp loses all messages. This is correct.
-    EXPECT_EQ(2u, callee()->data_observer()->received_message_count());
-  } else {
-    // Usrsctp loses some messages, but keeps messages not attempted.
-    // THIS IS THE WRONG BEHAVIOR. According to discussion in
-    // https://github.com/sctplab/usrsctp/issues/584, all these packets
-    // should be discarded.
-    // TODO(bugs.webrtc.org/12731): Fix this.
-    EXPECT_EQ(90u, callee()->data_observer()->received_message_count());
-  }
+  // DcSctp loses all messages. This is correct.
+  EXPECT_EQ(2u, callee()->data_observer()->received_message_count());
 }
 
 TEST_P(DataChannelIntegrationTest,
@@ -906,12 +908,10 @@ TEST_P(DataChannelIntegrationTest,
             callee()->data_observer()->received_message_count());
 }
 
-INSTANTIATE_TEST_SUITE_P(
-    DataChannelIntegrationTest,
-    DataChannelIntegrationTest,
-    Combine(Values(SdpSemantics::kPlanB, SdpSemantics::kUnifiedPlan),
-            Values("WebRTC-DataChannel-Dcsctp/Enabled/",
-                   "WebRTC-DataChannel-Dcsctp/Disabled/")));
+INSTANTIATE_TEST_SUITE_P(DataChannelIntegrationTest,
+                         DataChannelIntegrationTest,
+                         Values(SdpSemantics::kPlanB_DEPRECATED,
+                                SdpSemantics::kUnifiedPlan));
 
 TEST_F(DataChannelIntegrationTestUnifiedPlan,
        EndToEndCallWithBundledSctpDataChannel) {

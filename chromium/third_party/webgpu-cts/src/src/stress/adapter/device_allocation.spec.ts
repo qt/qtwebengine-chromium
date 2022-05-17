@@ -8,7 +8,7 @@ import { attemptGarbageCollection } from '../../common/util/collect_garbage.js';
 import { keysOf } from '../../common/util/data_tables.js';
 import { getGPU } from '../../common/util/navigator_gpu.js';
 import { assert, iterRange } from '../../common/util/util.js';
-import { DefaultLimits } from '../../webgpu/constants.js';
+import { kLimitInfo } from '../../webgpu/capability_info.js';
 
 /** Adapter preference identifier to option. */
 const kAdapterTypeOptions: {
@@ -35,7 +35,7 @@ class DeviceAllocationTests extends Fixture {
     const kNumPipelines = 64;
     const kNumBindgroups = 128;
     const kNumBufferElements =
-      DefaultLimits.maxComputeWorkgroupSizeX * DefaultLimits.maxComputeWorkgroupSizeY;
+      kLimitInfo.maxComputeWorkgroupSizeX.default * kLimitInfo.maxComputeWorkgroupSizeY.default;
     const kBufferSize = kNumBufferElements * 4;
     const kBufferData = new Uint32Array([...iterRange(kNumBufferElements, x => x)]);
 
@@ -52,8 +52,8 @@ class DeviceAllocationTests extends Fixture {
               @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
               @stage(compute) @workgroup_size(1) fn main(
                   @builtin(global_invocation_id) id: vec3<u32>) {
-                buffer.data[id.x * ${DefaultLimits.maxComputeWorkgroupSizeX}u + id.y] =
-                  buffer.data[id.x * ${DefaultLimits.maxComputeWorkgroupSizeX}u + id.y] +
+                buffer.data[id.x * ${kLimitInfo.maxComputeWorkgroupSizeX.default}u + id.y] =
+                  buffer.data[id.x * ${kLimitInfo.maxComputeWorkgroupSizeX.default}u + id.y] +
                     ${pipelineIndex}u;
               }
             `,
@@ -77,10 +77,10 @@ class DeviceAllocationTests extends Fixture {
         pass.setPipeline(pipeline);
         pass.setBindGroup(0, bindgroup);
         pass.dispatch(
-          DefaultLimits.maxComputeWorkgroupSizeX,
-          DefaultLimits.maxComputeWorkgroupSizeY
+          kLimitInfo.maxComputeWorkgroupSizeX.default,
+          kLimitInfo.maxComputeWorkgroupSizeY.default
         );
-        pass.endPass();
+        pass.end();
         commands.push(encoder.finish());
       }
     }
@@ -170,7 +170,7 @@ class DeviceAllocationTests extends Fixture {
           colorAttachments: [
             {
               view: texture.createView(),
-              loadValue: 'load',
+              loadOp: 'load',
               storeOp: 'store',
             },
           ],
@@ -178,7 +178,7 @@ class DeviceAllocationTests extends Fixture {
         pass.setPipeline(pipeline);
         pass.setBindGroup(0, bindgroup);
         pass.draw(kSize * kSize);
-        pass.endPass();
+        pass.end();
         commands.push(encoder.finish());
       }
     }
@@ -223,7 +223,7 @@ g.test('coexisting')
     const adapter = await getGPU().requestAdapter(kAdapterTypeOptions[adapterType]);
     assert(adapter !== null, 'Failed to get adapter.');
 
-    // Based on Vulkan comformance test requirement to be able to create multiple devices.
+    // Based on Vulkan conformance test requirement to be able to create multiple devices.
     const kNumDevices = 5;
 
     const devices = [];
@@ -284,7 +284,7 @@ implicitly keep the device in scope.`
         t.expect((await adapter.requestDevice()) !== null, 'unexpected null device');
       })();
       if (i % 10 === 0) {
-        // We need to occassionally wait for GC to clear out stale devices.
+        // We need to occasionally wait for GC to clear out stale devices.
         await attemptGarbageCollection();
       }
     }

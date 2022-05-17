@@ -41,7 +41,7 @@ if with_exynos
   libkms_include += include_directories('../exynos')
 endif
 
-libkms = shared_library(
+libkms = library(
   'kms',
   [files_libkms, config_file],
   c_args : libdrm_c_args,
@@ -56,20 +56,26 @@ ext_libkms = declare_dependency(
   include_directories : [libkms_include],
 )
 
+if meson.version().version_compare('>= 0.54.0')
+  meson.override_dependency('kms', ext_libkms)
+endif
+
 install_headers('libkms.h', subdir : 'libkms')
 
 pkg.generate(
+  libkms,
   name : 'libkms',
-  libraries : libkms,
   subdirs : ['libkms'],
   version : '1.0.0',
-  requires_private : 'libdrm',
   description : 'Library that abstracts away the different mm interfaces for kernel drivers',
 )
 
 test(
-  'kms-symbol-check',
-  find_program('kms-symbol-check'),
-  env : env_test,
-  args : libkms,
+  'kms-symbols-check',
+  symbols_check,
+  args : [
+    '--lib', libkms,
+    '--symbols-file', files('kms-symbols.txt'),
+    '--nm', prog_nm.path(),
+  ],
 )

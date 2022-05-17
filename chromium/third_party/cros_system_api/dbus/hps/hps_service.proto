@@ -17,16 +17,6 @@ message FeatureConfig {
   // A filter that changes state when number of same consecutive inference
   // results is above a count limit.
   message ConsecutiveResultsFilterConfig {
-    // 'count' overrides positive_count_threshold, negative_count_threshold and
-    // uncertain_count_threshold if set.
-    int32 count = 1;
-    // 'threshold' overrides positive_score_threshold and
-    // negative_score_threshold if set.
-    int32 threshold = 2;
-    // 'initial_state' is ignored and will be removed soon since all filters are
-    // initialized as HpsResult::UNKNOWN.
-    bool initial_state = 3;
-
     // *threshold are values that a single inference score is compared against.
     // (1) A single inference score is converted into an inference result as:
     // inference_result = score >= positive_score_threshold
@@ -56,6 +46,9 @@ message FeatureConfig {
     int32 positive_count_threshold = 6;
     int32 negative_count_threshold = 7;
     int32 uncertain_count_threshold = 8;
+
+    // Deprecated fields that were removed.
+    reserved 1, 2, 3;
   }
 
   message AverageFilterConfig {

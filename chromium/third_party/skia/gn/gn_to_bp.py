@@ -180,7 +180,7 @@ cc_library_static {
           "android",
         ],
       },
-      linux_glibc: {
+      host_linux: {
         srcs: [
           $linux_srcs
         ],
@@ -448,6 +448,10 @@ cc_library_shared {
 android_test {
     name: "CtsSkQPTestCases",
     defaults: ["cts_defaults"],
+    test_suites: [
+        "general-tests",
+        "cts",
+    ],
 
     libs: ["android.test.runner.stubs"],
     jni_libs: ["libskqp_jni"],
@@ -465,6 +469,7 @@ android_test {
     srcs: ["platform_tools/android/apps/skqp/src/main/java/**/*.java"],
 
     sdk_version: "test_current",
+
 }
 ''')
 
@@ -490,6 +495,8 @@ def generate_args(target_os, enable_gpu, renderengine = False):
 
     'skia_use_fontconfig':                  'false',
     'skia_include_multiframe_procs':        'false',
+    # Required for some SKSL tests
+    'skia_enable_sksl_tracing':             'true',
   }
   d['target_os'] = target_os
   if target_os == '"android"':
@@ -655,6 +662,10 @@ gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'cflags_cc',
                                    skqp_cflags_cc, None)
 gn_to_bp_utils.GrabDependentValues(js_skqp, '//:libskqp_app', 'defines',
                                    skqp_defines, None)
+
+skqp_defines.add("SK_ENABLE_DUMP_GPU")
+skqp_defines.add("SK_BUILD_FOR_SKQP")
+skqp_defines.add("SK_ALLOW_STATIC_GLOBAL_INITIALIZERS=1")
 
 skqp_srcs = strip_headers(skqp_srcs)
 skqp_cflags = gn_to_bp_utils.CleanupCFlags(skqp_cflags)

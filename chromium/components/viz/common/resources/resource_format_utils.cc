@@ -11,7 +11,6 @@
 #include <ostream>
 
 #include "base/check_op.h"
-#include "base/cxx17_backports.h"
 #include "base/notreached.h"
 #include "build/chromeos_buildflags.h"
 #include "ui/gfx/buffer_types.h"
@@ -210,7 +209,7 @@ unsigned int GLDataType(ResourceFormat format) {
       GL_ZERO,                             // YUV_420_BIPLANAR
       GL_ZERO,                             // P010
   };
-  static_assert(base::size(format_gl_data_type) == (RESOURCE_FORMAT_MAX + 1),
+  static_assert(std::size(format_gl_data_type) == (RESOURCE_FORMAT_MAX + 1),
                 "format_gl_data_type does not handle all cases.");
 
   return format_gl_data_type[format];
@@ -241,7 +240,7 @@ unsigned int GLDataFormat(ResourceFormat format) {
       GL_ZERO,       // YUV_420_BIPLANAR
       GL_ZERO,       // P010
   };
-  static_assert(base::size(format_gl_data_format) == (RESOURCE_FORMAT_MAX + 1),
+  static_assert(std::size(format_gl_data_format) == (RESOURCE_FORMAT_MAX + 1),
                 "format_gl_data_format does not handle all cases.");
 
   return format_gl_data_format[format];
@@ -299,7 +298,7 @@ unsigned int GLCopyTextureInternalFormat(ResourceFormat format) {
       GL_ZERO,       // P010
   };
 
-  static_assert(base::size(format_gl_data_format) == (RESOURCE_FORMAT_MAX + 1),
+  static_assert(std::size(format_gl_data_format) == (RESOURCE_FORMAT_MAX + 1),
                 "format_gl_data_format does not handle all cases.");
 
   return format_gl_data_format[format];
@@ -605,6 +604,8 @@ wgpu::TextureFormat ToDawnFormat(ResourceFormat format) {
       return wgpu::TextureFormat::RGBA16Float;
     case RGBA_1010102:
       return wgpu::TextureFormat::RGB10A2Unorm;
+    case YUV_420_BIPLANAR:
+      return wgpu::TextureFormat::R8BG8Biplanar420Unorm;
     case RGBA_4444:
     case RGB_565:
     case BGR_565:
@@ -612,7 +613,6 @@ wgpu::TextureFormat ToDawnFormat(ResourceFormat format) {
     case RG16_EXT:
     case BGRA_1010102:
     case YVU_420:
-    case YUV_420_BIPLANAR:
     case ETC1:
     case LUMINANCE_F16:
     case P010:
@@ -623,6 +623,54 @@ wgpu::TextureFormat ToDawnFormat(ResourceFormat format) {
 
 WGPUTextureFormat ToWGPUFormat(ResourceFormat format) {
   return static_cast<WGPUTextureFormat>(ToDawnFormat(format));
+}
+
+size_t AlphaBitsForSkColorType(SkColorType color_type) {
+  switch (color_type) {
+    case kAlpha_8_SkColorType:
+      return 8;
+    case kRGB_565_SkColorType:
+      return 0;
+    case kARGB_4444_SkColorType:
+      return 4;
+    case kRGBA_8888_SkColorType:
+      return 8;
+    case kRGB_888x_SkColorType:
+      return 0;
+    case kBGRA_8888_SkColorType:
+      return 8;
+    case kRGBA_1010102_SkColorType:
+    case kBGRA_1010102_SkColorType:
+      return 2;
+    case kRGB_101010x_SkColorType:
+    case kBGR_101010x_SkColorType:
+    case kGray_8_SkColorType:
+      return 0;
+    case kRGBA_F16Norm_SkColorType:
+    case kRGBA_F16_SkColorType:
+      return 16;
+    case kRGBA_F32_SkColorType:
+      return 32;
+    case kR8G8_unorm_SkColorType:
+      return 0;
+    case kA16_float_SkColorType:
+      return 16;
+    case kR16G16_float_SkColorType:
+      return 0;
+    case kA16_unorm_SkColorType:
+      return 16;
+    case kR16G16_unorm_SkColorType:
+      return 0;
+    case kR16G16B16A16_unorm_SkColorType:
+      return 16;
+    case kSRGBA_8888_SkColorType:
+      return 8;
+    case kR8_unorm_SkColorType:
+      return 0;
+    case kUnknown_SkColorType:
+    default:
+      return 0;
+  }
 }
 
 }  // namespace viz

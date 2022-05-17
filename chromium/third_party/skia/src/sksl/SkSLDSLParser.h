@@ -8,23 +8,44 @@
 #ifndef SKSL_DSLPARSER
 #define SKSL_DSLPARSER
 
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
 #include "include/private/SkSLProgramKind.h"
-#include "include/sksl/DSL.h"
-#include "include/sksl/DSLSymbols.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTHash.h"
+#include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLLayout.h"
+#include "include/sksl/DSLModifiers.h"
+#include "include/sksl/DSLStatement.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLOperator.h"
+#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLLexer.h"
-#include "src/sksl/ir/SkSLProgram.h"
+#include "src/sksl/SkSLProgramSettings.h"
 
 #include <memory>
 #include <optional>
+#include <string>
 #include <string_view>
-#include <unordered_map>
 
 namespace SkSL {
 
-class ErrorReporter;
-struct Modifiers;
 struct ParsedModule;
-class SymbolTable;
+struct Program;
+
+namespace dsl {
+class DSLBlock;
+class DSLCase;
+class DSLGlobalVar;
+class DSLParameter;
+template <typename T> class DSLWrapper;
+
+}
+
+class AutoDSLDepth;
 
 /**
  * Consumes .sksl text and invokes DSL functions to instantiate the program.
@@ -54,9 +75,7 @@ public:
 
     std::string_view text(Token token);
 
-    PositionInfo position(Token token);
-
-    PositionInfo position(int line);
+    Position position(Token token);
 
 private:
     static void InitLayoutMap();
@@ -117,7 +136,11 @@ private:
     bool expectIdentifier(Token* result);
 
     void error(Token token, std::string msg);
-    void error(int line, std::string msg);
+    void error(Position position, std::string msg);
+
+    // Returns the range from `start` to the current parse position.
+    Position rangeFrom(Position start);
+    Position rangeFrom(Token start);
 
     // these functions parse individual grammar rules from the current parse position; you probably
     // don't need to call any of these outside of the parser. The function declarations in the .cpp
@@ -125,18 +148,26 @@ private:
 
     void declarations();
 
-    SKSL_INT arraySize();
+    /**
+     * Parses an expression representing an array size. Reports errors if the array size is not
+     * valid (out of bounds, not a literal integer). Returns true if an expression was
+     * successfully parsed, even if that array size is not actually valid. In the event of a true
+     * return, outResult always contains a valid array size (even if the parsed array size was not
+     * actually valid; invalid array sizes result in a 1 to avoid additional errors downstream).
+     */
+    bool arraySize(SKSL_INT* outResult);
 
     void directive();
 
     bool declaration();
 
-    bool functionDeclarationEnd(const dsl::DSLModifiers& modifiers,
+    bool functionDeclarationEnd(Position start,
+                                const dsl::DSLModifiers& modifiers,
                                 dsl::DSLType type,
                                 const Token& name);
 
     struct VarDeclarationsPrefix {
-        PositionInfo fPosition;
+        Position fPosition;
         dsl::DSLModifiers fModifiers;
         dsl::DSLType fType = dsl::DSLType(dsl::kVoid_Type);
         Token fName;
@@ -150,16 +181,17 @@ private:
 
     std::optional<dsl::DSLType> structDeclaration();
 
-    SkTArray<dsl::DSLGlobalVar> structVarDeclaration(const dsl::DSLModifiers& modifiers);
+    SkTArray<dsl::DSLGlobalVar> structVarDeclaration(Position start,
+                                                     const dsl::DSLModifiers& modifiers);
 
-    bool parseArrayDimensions(int line, dsl::DSLType* type);
+    bool parseArrayDimensions(Position pos, dsl::DSLType* type);
 
-    bool parseInitializer(int line, dsl::DSLExpression* initializer);
+    bool parseInitializer(Position pos, dsl::DSLExpression* initializer);
 
-    void globalVarDeclarationEnd(PositionInfo position, const dsl::DSLModifiers& mods,
+    void globalVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
             dsl::DSLType baseType, std::string_view name);
 
-    dsl::DSLStatement localVarDeclarationEnd(PositionInfo position, const dsl::DSLModifiers& mods,
+    dsl::DSLStatement localVarDeclarationEnd(Position position, const dsl::DSLModifiers& mods,
             dsl::DSLType baseType, std::string_view name);
 
     std::optional<dsl::DSLWrapper<dsl::DSLParameter>> parameter(size_t paramIndex);
@@ -202,6 +234,10 @@ private:
 
     dsl::DSLStatement expressionStatement();
 
+    using BinaryParseFn = dsl::DSLExpression (DSLParser::*)();
+    bool SK_WARN_UNUSED_RESULT operatorRight(AutoDSLDepth& depth, Operator::Kind op,
+            BinaryParseFn rightFn, dsl::DSLExpression& result);
+
     dsl::DSLExpression expression();
 
     dsl::DSLExpression assignmentExpression();
@@ -234,9 +270,10 @@ private:
 
     dsl::DSLExpression postfixExpression();
 
-    dsl::DSLExpression swizzle(int line, dsl::DSLExpression base, std::string_view swizzleMask);
+    dsl::DSLExpression swizzle(Position pos, dsl::DSLExpression base,
+            std::string_view swizzleMask);
 
-    dsl::DSLExpression call(int line, dsl::DSLExpression base, ExpressionArray args);
+    dsl::DSLExpression call(Position pos, dsl::DSLExpression base, ExpressionArray args);
 
     dsl::DSLExpression suffix(dsl::DSLExpression base);
 
@@ -284,7 +321,7 @@ private:
     private:
         class ForwardingErrorReporter : public ErrorReporter {
         public:
-            void handleError(std::string_view msg, PositionInfo pos) override {
+            void handleError(std::string_view msg, Position pos) override {
                 fErrors.push_back({std::string(msg), pos});
             }
 
@@ -297,7 +334,7 @@ private:
         private:
             struct Error {
                 std::string fMsg;
-                PositionInfo fPos;
+                Position fPos;
             };
 
             SkTArray<Error> fErrors;
@@ -305,7 +342,7 @@ private:
 
         void restoreErrorReporter() {
             SkASSERT(fOldErrorReporter);
-            fErrorReporter.reportPendingErrors(PositionInfo());
+            fErrorReporter.reportPendingErrors(Position());
             dsl::SetErrorReporter(fOldErrorReporter);
             fOldErrorReporter = nullptr;
         }
@@ -318,7 +355,7 @@ private:
         bool fOldEncounteredFatalError;
     };
 
-    static std::unordered_map<std::string_view, LayoutToken>* layoutTokens;
+    static SkTHashMap<std::string_view, LayoutToken>* sLayoutTokens;
 
     Compiler& fCompiler;
     ProgramSettings fSettings;

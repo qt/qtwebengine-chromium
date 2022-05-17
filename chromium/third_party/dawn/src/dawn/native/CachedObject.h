@@ -12,10 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DAWNNATIVE_CACHED_OBJECT_H_
-#define DAWNNATIVE_CACHED_OBJECT_H_
+#ifndef SRC_DAWN_NATIVE_CACHEDOBJECT_H_
+#define SRC_DAWN_NATIVE_CACHEDOBJECT_H_
+
+#include "dawn/native/CacheKey.h"
+#include "dawn/native/Forward.h"
 
 #include <cstddef>
+#include <string>
 
 namespace dawn::native {
 
@@ -35,6 +39,13 @@ namespace dawn::native {
         size_t GetContentHash() const;
         void SetContentHash(size_t contentHash);
 
+        // Returns the cache key for the object only, i.e. without device/adapter information.
+        const CacheKey& GetCacheKey() const;
+
+      protected:
+        // Protected accessor for derived classes to access and modify the key.
+        CacheKey* GetCacheKey();
+
       private:
         friend class DeviceBase;
         void SetIsCachedReference();
@@ -46,8 +57,9 @@ namespace dawn::native {
 
         size_t mContentHash = 0;
         bool mIsContentHashInitialized = false;
+        CacheKey mCacheKey;
     };
 
 }  // namespace dawn::native
 
-#endif  // DAWNNATIVE_CACHED_OBJECT_H_
+#endif  // SRC_DAWN_NATIVE_CACHEDOBJECT_H_

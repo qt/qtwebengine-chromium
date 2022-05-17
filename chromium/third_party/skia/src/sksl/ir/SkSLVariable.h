@@ -42,22 +42,25 @@ public:
 
     inline static constexpr Kind kSymbolKind = Kind::kVariable;
 
-    Variable(int line, const Modifiers* modifiers, std::string_view name, const Type* type,
-             bool builtin, Storage storage)
-    : INHERITED(line, kSymbolKind, name, type)
+    Variable(Position pos, Position modifiersPosition, const Modifiers* modifiers,
+            std::string_view name, const Type* type, bool builtin, Storage storage)
+    : INHERITED(pos, kSymbolKind, name, type)
+    , fModifiersPosition(modifiersPosition)
     , fModifiers(modifiers)
     , fStorage(storage)
     , fBuiltin(builtin) {}
 
     ~Variable() override;
 
-    static std::unique_ptr<Variable> Convert(const Context& context, int line,
-            const Modifiers& modifiers, const Type* baseType, std::string_view name, bool isArray,
-            std::unique_ptr<Expression> arraySize, Variable::Storage storage);
+    static std::unique_ptr<Variable> Convert(const Context& context, Position pos,
+            Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
+            std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
+            Variable::Storage storage);
 
-    static std::unique_ptr<Variable> Make(const Context& context, int line,
-            const Modifiers& modifiers, const Type* baseType, std::string_view name, bool isArray,
-            std::unique_ptr<Expression> arraySize, Variable::Storage storage);
+    static std::unique_ptr<Variable> Make(const Context& context, Position pos,
+            Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
+            std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
+            Variable::Storage storage);
 
     /**
      * Creates a local scratch variable and the associated VarDeclaration statement.
@@ -79,6 +82,10 @@ public:
 
     void setModifiers(const Modifiers* modifiers) {
         fModifiers = modifiers;
+    }
+
+    Position modifiersPosition() const {
+        return fModifiersPosition;
     }
 
     bool isBuiltin() const {
@@ -109,6 +116,8 @@ public:
 
 private:
     VarDeclaration* fDeclaration = nullptr;
+    // We don't store the position in the Modifiers object itself because they are pooled
+    Position fModifiersPosition;
     const Modifiers* fModifiers;
     VariableStorage fStorage;
     bool fBuiltin;

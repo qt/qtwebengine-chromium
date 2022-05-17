@@ -8,8 +8,8 @@ import { kCanvasTextureFormats } from '../../capability_info.js';
 import { GPUTest } from '../../gpu_test.js';
 import { checkElementsEqual } from '../../util/check_contents.js';
 import {
-  allCanvasTypes,
-  canvasTypes,
+  kAllCanvasTypes,
+  CanvasType,
   createCanvas,
   createOnscreenCanvas,
 } from '../../util/create_elements.js';
@@ -40,7 +40,7 @@ const webglExpect = /* prettier-ignore */ new Uint8ClampedArray([
 async function initCanvasContent(
   t: GPUTest,
   format: GPUTextureFormat,
-  canvasType: canvasTypes
+  canvasType: CanvasType
 ): Promise<HTMLCanvasElement | OffscreenCanvas> {
   const canvas = createCanvas(t, canvasType, 2, 2);
   const ctx = canvas.getContext('webgpu');
@@ -63,9 +63,11 @@ async function initCanvasContent(
 
   const clearOnePixel = (origin: GPUOrigin3D, color: GPUColor) => {
     const pass = encoder.beginRenderPass({
-      colorAttachments: [{ view: tempTextureView, loadValue: color, storeOp: 'store' }],
+      colorAttachments: [
+        { view: tempTextureView, clearValue: color, loadOp: 'clear', storeOp: 'store' },
+      ],
     });
-    pass.endPass();
+    pass.end();
     encoder.copyTextureToTexture(
       { texture: tempTexture },
       { texture: canvasTexture, origin },
@@ -132,10 +134,10 @@ g.test('onscreenCanvas,snapshot')
         break;
       }
       case 'toBlob': {
-        const blobFromCanvs = new Promise(resolve => {
+        const blobFromCanvas = new Promise(resolve => {
           canvas.toBlob(blob => resolve(blob));
         });
-        const blob = (await blobFromCanvs) as Blob;
+        const blob = (await blobFromCanvas) as Blob;
         const url = URL.createObjectURL(blob);
         const img = new Image(canvas.width, canvas.height);
         img.src = url;
@@ -278,8 +280,8 @@ g.test('drawTo2DCanvas')
   .params(u =>
     u //
       .combine('format', kCanvasTextureFormats)
-      .combine('webgpuCanvasType', allCanvasTypes)
-      .combine('canvas2DType', allCanvasTypes)
+      .combine('webgpuCanvasType', kAllCanvasTypes)
+      .combine('canvas2DType', kAllCanvasTypes)
   )
   .fn(async t => {
     const { format, webgpuCanvasType, canvas2DType } = t.params;

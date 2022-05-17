@@ -66,8 +66,8 @@ public:
         kContainsRTAdjust
     };
 
-    Expression(int line, Kind kind, const Type* type)
-        : INHERITED(line, (int) kind)
+    Expression(Position pos, Kind kind, const Type* type)
+        : INHERITED(pos, (int) kind)
         , fType(type) {
         SkASSERT(kind >= Kind::kFirst && kind <= Kind::kLast);
     }
@@ -205,6 +205,15 @@ public:
     }
 
     virtual std::unique_ptr<Expression> clone() const = 0;
+
+    /**
+     * Returns a clone with a modified position.
+     */
+    std::unique_ptr<Expression> clone(Position pos) {
+        std::unique_ptr<Expression> result = this->clone();
+        result->fPosition = pos;
+        return result;
+    }
 
 private:
     const Type* fType;

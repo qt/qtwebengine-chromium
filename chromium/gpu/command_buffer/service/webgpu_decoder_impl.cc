@@ -17,6 +17,7 @@
 #include "base/bits.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/numerics/checked_math.h"
 #include "base/path_service.h"
@@ -37,6 +38,7 @@
 #include "gpu/command_buffer/service/webgpu_decoder.h"
 #include "gpu/config/gpu_preferences.h"
 #include "ipc/ipc_channel.h"
+#include "third_party/skia/include/core/SkPromiseImageTexture.h"
 #include "third_party/skia/include/gpu/GrBackendSemaphore.h"
 #include "ui/gl/gl_context_egl.h"
 #include "ui/gl/gl_surface_egl.h"
@@ -66,10 +68,10 @@ constexpr size_t kDawnReturnCmdsOffset =
 
 static_assert(kDawnReturnCmdsOffset < kMaxWireBufferSize, "");
 
-// TODO(crbug.com/1266549): Support Storage usage
 static constexpr uint32_t kAllowedWritableMailboxTextureUsages =
     static_cast<uint32_t>(WGPUTextureUsage_CopyDst |
-                          WGPUTextureUsage_RenderAttachment);
+                          WGPUTextureUsage_RenderAttachment |
+                          WGPUTextureUsage_StorageBinding);
 
 static constexpr uint32_t kAllowedReadableMailboxTextureUsages =
     static_cast<uint32_t>(WGPUTextureUsage_CopySrc |
@@ -184,7 +186,7 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
   ~WebGPUDecoderImpl() override;
 
   // WebGPUDecoder implementation
-  ContextResult Initialize() override;
+  ContextResult Initialize(const GpuFeatureInfo& gpu_feature_info) override;
 
   // DecoderContext implementation.
   base::WeakPtr<DecoderContext> AsWeakPtr() override {
@@ -531,6 +533,7 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
         case viz::ResourceFormat::RGBA_8888:
 #endif  // !BUILDFLAG(IS_MAC)
         case viz::ResourceFormat::BGRA_8888:
+        case viz::ResourceFormat::RGBA_F16:
           break;
         default:
           return nullptr;
@@ -691,6 +694,17 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
       // Unmap the buffer.
       procs_.bufferUnmap(buffer);
 
+      // Transition the image back to the desired end state. This is used for
+      // transitioning the image to the external queue for Vulkan/GL interop.
+      if (scoped_read_access->end_state()) {
+        if (!shared_context_state_->gr_context()->setBackendTextureState(
+                scoped_read_access->promise_image_texture()->backendTexture(),
+                *scoped_read_access->end_state())) {
+          DLOG(ERROR) << "setBackendTextureState() failed.";
+          return false;
+        }
+      }
+
       // ReadPixels finished; signal the semaphores.
       SignalSemaphores(std::move(end_semaphores));
 
@@ -832,6 +846,16 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
                            /*x*/ 0, /*y*/ 0);
 
       procs_.bufferRelease(buffer);
+
+      // Transition the image back to the desired end state. This is used for
+      // transitioning the image to the external queue for Vulkan/GL interop.
+      if (scoped_write_access->end_state()) {
+        // It's ok to pass in empty GrFlushInfo here since SignalSemaphores()
+        // will populate it with semaphores and call GrDirectContext::flush.
+        scoped_write_access->surface()->flush(/*info=*/{},
+                                              scoped_write_access->end_state());
+      }
+
       SignalSemaphores(std::move(end_semaphores));
 
       return true;
@@ -1008,7 +1032,13 @@ void WebGPUDecoderImpl::Destroy(bool have_context) {
   destroyed_ = true;
 }
 
-ContextResult WebGPUDecoderImpl::Initialize() {
+ContextResult WebGPUDecoderImpl::Initialize(
+    const GpuFeatureInfo& gpu_feature_info) {
+  if (kGpuFeatureStatusSoftware ==
+      gpu_feature_info.status_values[GPU_FEATURE_TYPE_ACCELERATED_WEBGPU]) {
+    use_webgpu_adapter_ = WebGPUAdapterName::kSwiftShader;
+  }
+
   if (use_webgpu_adapter_ == WebGPUAdapterName::kCompat) {
     gl_surface_ = new gl::SurfacelessEGL(gfx::Size(1, 1));
     gl::GLContextAttribs attribs;
@@ -1033,7 +1063,7 @@ error::Error WebGPUDecoderImpl::DoRequestDevice(
     return error::kOutOfBounds;
   }
 
-  WGPUDeviceDescriptor device_descriptor;
+  WGPUDeviceDescriptor device_descriptor = {};
 
   // We need to request internal usage to be able to do operations with internal
   // methods that would need specific usages.
@@ -1060,16 +1090,31 @@ error::Error WebGPUDecoderImpl::DoRequestDevice(
   if (request_device_properties.depthClamping) {
     required_features.push_back(WGPUFeatureName_DepthClamping);
   }
+  if (request_device_properties.depth24UnormStencil8) {
+    required_features.push_back(WGPUFeatureName_Depth24UnormStencil8);
+  }
+  if (request_device_properties.depth32FloatStencil8) {
+    required_features.push_back(WGPUFeatureName_Depth32FloatStencil8);
+  }
   if (request_device_properties.invalidFeature) {
     // Pass something invalid.
     required_features.push_back(static_cast<WGPUFeatureName>(-1));
   }
+
+  // Always enable "multi-planar-formats" as long as available.
+  if (dawn_adapters_[requested_adapter_index]
+          .GetAdapterProperties()
+          .multiPlanarFormats) {
+    required_features.push_back(WGPUFeatureName_DawnMultiPlanarFormats);
+  }
+
   device_descriptor.requiredFeatures = required_features.data();
   device_descriptor.requiredFeaturesCount = required_features.size();
 
   // If a new toggle is added here, ForceDawnTogglesForWebGPU() which collects
   // info for about:gpu should be updated as well.
   WGPUDawnTogglesDeviceDescriptor dawn_toggles;
+  dawn_toggles.chain.next = nullptr;
   std::vector<const char*> force_enabled_toggles;
   std::vector<const char*> force_disabled_toggles;
 
@@ -1365,7 +1410,7 @@ error::Error WebGPUDecoderImpl::DoCommands(unsigned int num_commands,
 
     const unsigned int arg_count = size - 1;
     unsigned int command_index = command - kFirstWebGPUCommand;
-    if (command_index < base::size(command_info)) {
+    if (command_index < std::size(command_info)) {
       // Prevent all further WebGPU commands from being processed if the server
       // is destroyed.
       if (destroyed_) {
@@ -1500,7 +1545,8 @@ error::Error WebGPUDecoderImpl::HandleRequestAdapter(
     force_fallback_adapter = true;
   }
 
-  if (gr_context_type_ != GrContextType::kVulkan) {
+  if (gr_context_type_ != GrContextType::kVulkan &&
+      use_webgpu_adapter_ != WebGPUAdapterName::kCompat) {
 #if BUILDFLAG(IS_LINUX)
     SendAdapterProperties(request_adapter_serial, -1, nullptr,
                           "WebGPU on Linux requires command-line flag "
@@ -1630,6 +1676,14 @@ WebGPUDecoderImpl::AssociateMailboxDawn(const Mailbox& mailbox,
     DLOG(ERROR) << "AssociateMailbox: Couldn't produce shared image";
     return nullptr;
   }
+
+#if !BUILDFLAG(IS_WIN)
+  if (usage & WGPUTextureUsage_StorageBinding) {
+    DLOG(ERROR) << "AssociateMailbox: WGPUTextureUsage_StorageBinding is NOT "
+                   "supported yet.";
+    return nullptr;
+  }
+#endif
 
   if (flags & WEBGPU_MAILBOX_DISCARD) {
     // Set contents to uncleared.
@@ -1807,8 +1861,15 @@ error::Error WebGPUDecoderImpl::HandleDissociateMailboxForPresent(
     render_pass_descriptor.colorAttachmentCount = 1;
     render_pass_descriptor.colorAttachments = &color_attachment;
 
+    WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
+        .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
+        .useInternalUsages = true,
+    };
+    WGPUCommandEncoderDescriptor command_encoder_desc = {
+        .nextInChain = &internal_usage_desc.chain,
+    };
     WGPUCommandEncoder encoder =
-        procs.deviceCreateCommandEncoder(device, nullptr);
+        procs.deviceCreateCommandEncoder(device, &command_encoder_desc);
     WGPURenderPassEncoder pass =
         procs.commandEncoderBeginRenderPass(encoder, &render_pass_descriptor);
     procs.renderPassEncoderEndPass(pass);

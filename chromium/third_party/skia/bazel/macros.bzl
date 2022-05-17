@@ -2,6 +2,19 @@
 This file contains general helper macros that make our BUILD.bazel files easier to read.
 """
 
+# https://github.com/bazelbuild/bazel-skylib
+load("@bazel_skylib//lib:selects.bzl", _selects = "selects")
+load("@rules_python//python:defs.bzl", _py_binary = "py_binary")
+load("@py_deps//:requirements.bzl", _requirement = "requirement")
+load("@bazel_gazelle//:def.bzl", _gazelle = "gazelle")
+
+# re-export symbols that are commonly used or that are not supported in G3
+# (and thus we need to stub out)
+selects = _selects
+py_binary = _py_binary
+requirement = _requirement
+gazelle = _gazelle
+
 def select_multi(values_map, default, name = ""):
     """select() but allowing multiple matches of the keys.
 
@@ -50,11 +63,14 @@ def select_multi(values_map, default, name = ""):
         })
     return rv
 
-def generated_cc_atom(name, **kwargs):
+def generated_cc_atom(name, enforce_iwyu = False, **kwargs):
     """A self-annotating label for a generated cc_library for exactly one file.
 
     Args:
         name: string, the name of the cc_library
+        enforce_iwyu: boolean, if true, this file will fail to compile if the headers to not comply
+            with the include-what-you-use standards. This does not affect dependencies nor
+            dependents, only the file listed in srcs/hdrs.
         **kwargs: All other arguments are passed verbatim to cc_library
     """
     if len(kwargs.get("srcs", [])) > 1 or len(kwargs.get("hdrs", [])) > 1:
@@ -66,7 +82,18 @@ def generated_cc_atom(name, **kwargs):
     deps = kwargs.get("deps", [])
     deps.append("//bazel:defines_from_flags")
     kwargs["deps"] = deps
+
+    features = kwargs.get("features", [])
+    if enforce_iwyu:
+        features.append("skia_opt_file_into_iwyu")
     native.cc_library(
         name = name,
+        features = features,
         **kwargs
     )
+
+# buildifier: disable=unnamed-macro
+# buildifier: disable=native-package
+def enforce_iwyu_on_package():
+    """A self-annotating macro to set force_iwyu = True on all rules in this package."""
+    native.package(features = ["skia_opt_file_into_iwyu"])

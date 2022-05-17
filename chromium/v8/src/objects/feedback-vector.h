@@ -36,9 +36,9 @@ enum class FeedbackSlotKind : uint8_t {
 
   // Sloppy kinds come first, for easy language mode testing.
   kStoreGlobalSloppy,
-  kStoreNamedSloppy,
-  kStoreKeyedSloppy,
-  kLastSloppyKind = kStoreKeyedSloppy,
+  kSetNamedSloppy,
+  kSetKeyedSloppy,
+  kLastSloppyKind = kSetKeyedSloppy,
 
   // Strict and language mode unaware kinds.
   kCall,
@@ -48,14 +48,14 @@ enum class FeedbackSlotKind : uint8_t {
   kLoadKeyed,
   kHasKeyed,
   kStoreGlobalStrict,
-  kStoreNamedStrict,
-  kStoreOwnNamed,
-  kDefineOwnKeyed,
-  kStoreKeyedStrict,
+  kSetNamedStrict,
+  kDefineNamedOwn,
+  kDefineKeyedOwn,
+  kSetKeyedStrict,
   kStoreInArrayLiteral,
   kBinaryOp,
   kCompareOp,
-  kStoreDataPropertyInLiteral,
+  kDefineKeyedOwnPropertyInLiteral,
   kTypeProfile,
   kLiteral,
   kForIn,
@@ -94,30 +94,26 @@ inline bool IsStoreGlobalICKind(FeedbackSlotKind kind) {
          kind == FeedbackSlotKind::kStoreGlobalStrict;
 }
 
-inline bool IsStoreICKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kStoreNamedSloppy ||
-         kind == FeedbackSlotKind::kStoreNamedStrict;
+inline bool IsSetNamedICKind(FeedbackSlotKind kind) {
+  return kind == FeedbackSlotKind::kSetNamedSloppy ||
+         kind == FeedbackSlotKind::kSetNamedStrict;
 }
 
-inline bool IsStoreOwnICKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kStoreOwnNamed;
+inline bool IsDefineNamedOwnICKind(FeedbackSlotKind kind) {
+  return kind == FeedbackSlotKind::kDefineNamedOwn;
 }
 
-inline bool IsKeyedDefineOwnICKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kDefineOwnKeyed;
+inline bool IsDefineKeyedOwnICKind(FeedbackSlotKind kind) {
+  return kind == FeedbackSlotKind::kDefineKeyedOwn;
 }
 
-inline bool IsDefineOwnICKind(FeedbackSlotKind kind) {
-  return IsKeyedDefineOwnICKind(kind);
-}
-
-inline bool IsStoreDataPropertyInLiteralKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kStoreDataPropertyInLiteral;
+inline bool IsDefineKeyedOwnPropertyInLiteralKind(FeedbackSlotKind kind) {
+  return kind == FeedbackSlotKind::kDefineKeyedOwnPropertyInLiteral;
 }
 
 inline bool IsKeyedStoreICKind(FeedbackSlotKind kind) {
-  return kind == FeedbackSlotKind::kStoreKeyedSloppy ||
-         kind == FeedbackSlotKind::kStoreKeyedStrict;
+  return kind == FeedbackSlotKind::kSetKeyedSloppy ||
+         kind == FeedbackSlotKind::kSetKeyedStrict;
 }
 
 inline bool IsStoreInArrayLiteralICKind(FeedbackSlotKind kind) {
@@ -144,14 +140,14 @@ inline TypeofMode GetTypeofModeFromSlotKind(FeedbackSlotKind kind) {
 }
 
 inline LanguageMode GetLanguageModeFromSlotKind(FeedbackSlotKind kind) {
-  DCHECK(IsStoreICKind(kind) || IsStoreOwnICKind(kind) ||
+  DCHECK(IsSetNamedICKind(kind) || IsDefineNamedOwnICKind(kind) ||
          IsStoreGlobalICKind(kind) || IsKeyedStoreICKind(kind) ||
-         IsDefineOwnICKind(kind));
+         IsDefineKeyedOwnICKind(kind));
   STATIC_ASSERT(FeedbackSlotKind::kStoreGlobalSloppy <=
                 FeedbackSlotKind::kLastSloppyKind);
-  STATIC_ASSERT(FeedbackSlotKind::kStoreKeyedSloppy <=
+  STATIC_ASSERT(FeedbackSlotKind::kSetKeyedSloppy <=
                 FeedbackSlotKind::kLastSloppyKind);
-  STATIC_ASSERT(FeedbackSlotKind::kStoreNamedSloppy <=
+  STATIC_ASSERT(FeedbackSlotKind::kSetNamedSloppy <=
                 FeedbackSlotKind::kLastSloppyKind);
   return (kind <= FeedbackSlotKind::kLastSloppyKind) ? LanguageMode::kSloppy
                                                      : LanguageMode::kStrict;
@@ -191,30 +187,24 @@ class ClosureFeedbackCellArray : public FixedArray {
 
 class NexusConfig;
 
-// A FeedbackVector has a fixed header with:
-//  - shared function info (which includes feedback metadata)
-//  - invocation count
-//  - runtime profiler ticks
-//  - optimized code cell (weak cell or Smi marker)
-// followed by an array of feedback slots, of length determined by the feedback
-// metadata.
+// A FeedbackVector has a fixed header followed by an array of feedback slots,
+// of length determined by the feedback metadata.
 class FeedbackVector
     : public TorqueGeneratedFeedbackVector<FeedbackVector, HeapObject> {
  public:
   NEVER_READ_ONLY_SPACE
   DEFINE_TORQUE_GENERATED_FEEDBACK_VECTOR_FLAGS()
-  STATIC_ASSERT(OptimizationMarker::kLastOptimizationMarker <=
-                OptimizationMarkerBits::kMax);
+  STATIC_ASSERT(TieringState::kLastTieringState <= TieringStateBits::kMax);
 
   static const bool kFeedbackVectorMaybeOptimizedCodeIsStoreRelease = true;
   using TorqueGeneratedFeedbackVector<FeedbackVector,
                                       HeapObject>::maybe_optimized_code;
   DECL_RELEASE_ACQUIRE_WEAK_ACCESSORS(maybe_optimized_code)
 
-  static constexpr uint32_t kHasCompileOptimizedMarker =
-      kNoneOrInOptimizationQueueMask << OptimizationMarkerBits::kShift;
-  static constexpr uint32_t kHasOptimizedCodeOrCompileOptimizedMarkerMask =
-      MaybeHasOptimizedCodeBit::kMask | kHasCompileOptimizedMarker;
+  static constexpr uint32_t kTieringStateIsAnyRequestMask =
+      kNoneOrInProgressMask << TieringStateBits::kShift;
+  static constexpr uint32_t kHasOptimizedCodeOrTieringStateIsAnyRequestMask =
+      MaybeHasOptimizedCodeBit::kMask | kTieringStateIsAnyRequestMask;
 
   inline bool is_empty() const;
 
@@ -238,24 +228,19 @@ class FeedbackVector
   // the world, thus 'maybe'.
   inline bool maybe_has_optimized_code() const;
   inline void set_maybe_has_optimized_code(bool value);
-
-  inline bool has_optimization_marker() const;
-  inline OptimizationMarker optimization_marker() const;
+  void SetOptimizedCode(Handle<CodeT> code);
   void EvictOptimizedCodeMarkedForDeoptimization(SharedFunctionInfo shared,
                                                  const char* reason);
-  static void SetOptimizedCode(Handle<FeedbackVector> vector,
-                               Handle<CodeT> code);
   void ClearOptimizedCode();
-  void SetOptimizationMarker(OptimizationMarker marker);
-  void InitializeOptimizationState();
 
-  // Clears the optimization marker in the feedback vector.
-  void ClearOptimizationMarker();
+  inline TieringState tiering_state() const;
+  void set_tiering_state(TieringState state);
+  void reset_tiering_state();
 
-  // Sets the interrupt budget based on the optimized code available on the
-  // feedback vector. This function expects that the feedback cell contains a
-  // feedback vector.
-  static void SetInterruptBudget(FeedbackCell feedback_cell);
+  TieringState osr_tiering_state();
+  void set_osr_tiering_state(TieringState marker);
+
+  void reset_flags();
 
   // Conversion from a slot to an integer index to the underlying array.
   static int GetIndex(FeedbackSlot slot) { return slot.ToInt(); }
@@ -305,8 +290,8 @@ class FeedbackVector
   DEFINE_SLOT_KIND_PREDICATE(IsLoadIC)
   DEFINE_SLOT_KIND_PREDICATE(IsLoadGlobalIC)
   DEFINE_SLOT_KIND_PREDICATE(IsKeyedLoadIC)
-  DEFINE_SLOT_KIND_PREDICATE(IsStoreIC)
-  DEFINE_SLOT_KIND_PREDICATE(IsStoreOwnIC)
+  DEFINE_SLOT_KIND_PREDICATE(IsSetNamedIC)
+  DEFINE_SLOT_KIND_PREDICATE(IsDefineNamedOwnIC)
   DEFINE_SLOT_KIND_PREDICATE(IsStoreGlobalIC)
   DEFINE_SLOT_KIND_PREDICATE(IsKeyedStoreIC)
   DEFINE_SLOT_KIND_PREDICATE(IsTypeProfile)
@@ -420,22 +405,22 @@ class V8_EXPORT_PRIVATE FeedbackVectorSpec {
 
   FeedbackSlotKind GetStoreICSlot(LanguageMode language_mode) {
     STATIC_ASSERT(LanguageModeSize == 2);
-    return is_strict(language_mode) ? FeedbackSlotKind::kStoreNamedStrict
-                                    : FeedbackSlotKind::kStoreNamedSloppy;
+    return is_strict(language_mode) ? FeedbackSlotKind::kSetNamedStrict
+                                    : FeedbackSlotKind::kSetNamedSloppy;
   }
 
   FeedbackSlot AddStoreICSlot(LanguageMode language_mode) {
     return AddSlot(GetStoreICSlot(language_mode));
   }
 
-  FeedbackSlot AddStoreOwnICSlot() {
-    return AddSlot(FeedbackSlotKind::kStoreOwnNamed);
+  FeedbackSlot AddDefineNamedOwnICSlot() {
+    return AddSlot(FeedbackSlotKind::kDefineNamedOwn);
   }
 
-  // Identical to StoreOwnKeyed, but will throw if a private field already
+  // Similar to DefinedNamedOwn, but will throw if a private field already
   // exists.
-  FeedbackSlot AddKeyedDefineOwnICSlot() {
-    return AddSlot(FeedbackSlotKind::kDefineOwnKeyed);
+  FeedbackSlot AddDefineKeyedOwnICSlot() {
+    return AddSlot(FeedbackSlotKind::kDefineKeyedOwn);
   }
 
   FeedbackSlot AddStoreGlobalICSlot(LanguageMode language_mode) {
@@ -447,8 +432,8 @@ class V8_EXPORT_PRIVATE FeedbackVectorSpec {
 
   FeedbackSlotKind GetKeyedStoreICSlotKind(LanguageMode language_mode) {
     STATIC_ASSERT(LanguageModeSize == 2);
-    return is_strict(language_mode) ? FeedbackSlotKind::kStoreKeyedStrict
-                                    : FeedbackSlotKind::kStoreKeyedSloppy;
+    return is_strict(language_mode) ? FeedbackSlotKind::kSetKeyedStrict
+                                    : FeedbackSlotKind::kSetKeyedSloppy;
   }
 
   FeedbackSlot AddKeyedStoreICSlot(LanguageMode language_mode) {
@@ -475,8 +460,8 @@ class V8_EXPORT_PRIVATE FeedbackVectorSpec {
 
   FeedbackSlot AddLiteralSlot() { return AddSlot(FeedbackSlotKind::kLiteral); }
 
-  FeedbackSlot AddStoreDataPropertyInLiteralICSlot() {
-    return AddSlot(FeedbackSlotKind::kStoreDataPropertyInLiteral);
+  FeedbackSlot AddDefineKeyedOwnPropertyInLiteralICSlot() {
+    return AddSlot(FeedbackSlotKind::kDefineKeyedOwnPropertyInLiteral);
   }
 
   FeedbackSlot AddTypeProfileSlot();

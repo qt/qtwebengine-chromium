@@ -8,15 +8,12 @@
 #ifndef SKSL_STRING
 #define SKSL_STRING
 
+#include "include/core/SkTypes.h"
 #include "include/private/SkSLDefines.h"
-#include <cstring>
+
 #include <stdarg.h>
 #include <string>
 #include <string_view>
-
-#ifndef SKSL_STANDALONE
-#include "include/core/SkString.h"
-#endif
 
 namespace SkSL {
 

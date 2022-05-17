@@ -234,12 +234,22 @@ void av1_cyclic_refresh_update_segment(const AV1_COMP *cpi, MACROBLOCK *const x,
 
   // Update entries in the cyclic refresh map with new_map_value, and
   // copy mbmi->segment_id into global segmentation map.
-  for (int mi_y = 0; mi_y < ymis; mi_y += sh) {
-    for (int mi_x = 0; mi_x < xmis; mi_x += sh) {
-      const int map_offset = block_index + mi_y * cm->mi_params.mi_cols + mi_x;
-      cr->map[map_offset] = new_map_value;
-      cpi->enc_seg.map[map_offset] = mbmi->segment_id;
-      cm->cur_frame->seg_map[map_offset] = mbmi->segment_id;
+  if (sh == 1) {
+    for (int mi_y = 0; mi_y < ymis; mi_y += sh) {
+      const int map_offset = block_index + mi_y * cm->mi_params.mi_cols;
+      memset(&cr->map[map_offset], new_map_value, xmis);
+      memset(&cpi->enc_seg.map[map_offset], mbmi->segment_id, xmis);
+      memset(&cm->cur_frame->seg_map[map_offset], mbmi->segment_id, xmis);
+    }
+  } else {
+    for (int mi_y = 0; mi_y < ymis; mi_y += sh) {
+      for (int mi_x = 0; mi_x < xmis; mi_x += sh) {
+        const int map_offset =
+            block_index + mi_y * cm->mi_params.mi_cols + mi_x;
+        cr->map[map_offset] = new_map_value;
+        cpi->enc_seg.map[map_offset] = mbmi->segment_id;
+        cm->cur_frame->seg_map[map_offset] = mbmi->segment_id;
+      }
     }
   }
   // Accumulate cyclic refresh update counters.
@@ -597,4 +607,14 @@ void av1_cyclic_refresh_reset_resize(AV1_COMP *const cpi) {
   cpi->refresh_frame.golden_frame = true;
   cr->apply_cyclic_refresh = 0;
   cr->counter_encode_maxq_scene_change = 0;
+}
+
+int av1_cyclic_refresh_disable_lf_cdef(AV1_COMP *const cpi) {
+  CYCLIC_REFRESH *const cr = cpi->cyclic_refresh;
+  // TODO(marpan): Tune these conditons, add QP dependence.
+  if (cpi->rc.frames_since_key > 30 && cr->percent_refresh > 0 &&
+      cr->counter_encode_maxq_scene_change > 300 / cr->percent_refresh &&
+      cpi->rc.frame_source_sad < 1000)
+    return 1;
+  return 0;
 }

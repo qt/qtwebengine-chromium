@@ -181,7 +181,6 @@ source_set("client_api") {
     ":wire_protocol",
     "../../../gn:default_deps",
     "../../base",
-    "../common:proc_utils",
   ]
   sources = [ "client_api.cc" ]
 }
@@ -257,6 +256,7 @@ source_set("daemon") {
     "../common:callstack_trie",
     "../common:interner",
     "../common:interning_output",
+    "../common:proc_cmdline",
     "../common:proc_utils",
     "../common:producer_support",
     "../common:profiler_guardrails",
@@ -296,7 +296,6 @@ source_set("client") {
     "../../../gn:default_deps",
     "../../base",
     "../../base:unix_socket",
-    "../common:proc_utils",
   ]
   public_deps = [ "../../../gn:libunwindstack" ]
   sources = [

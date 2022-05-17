@@ -55,13 +55,14 @@ export class FileSystemWorkspaceBinding {
     void this.isolatedFileSystemManager.waitForFileSystems().then(this.onFileSystemsLoaded.bind(this));
   }
 
-  static projectId(fileSystemPath: string): string {
+  static projectId(fileSystemPath: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
     return fileSystemPath;
   }
 
   static relativePath(uiSourceCode: Workspace.UISourceCode.UISourceCode): Platform.DevToolsPath.EncodedPathString[] {
     const baseURL = (uiSourceCode.project() as FileSystem).fileSystemBaseURL;
-    return uiSourceCode.url().substring(baseURL.length).split('/') as Platform.DevToolsPath.EncodedPathString[];
+    return Common.ParsedURL.ParsedURL.split(
+        Common.ParsedURL.ParsedURL.sliceUrlToEncodedPathString(uiSourceCode.url(), baseURL.length), '/');
   }
 
   static tooltipForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode): string {
@@ -84,7 +85,7 @@ export class FileSystemWorkspaceBinding {
     return Common.ParsedURL.ParsedURL.concatenate(fsProject.fileSystemBaseURL, relativePath);
   }
 
-  static fileSystemPath(projectId: string): string {
+  static fileSystemPath(projectId: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
     return projectId;
   }
 
@@ -156,9 +157,9 @@ export class FileSystemWorkspaceBinding {
 export class FileSystem extends Workspace.Workspace.ProjectStore {
   readonly fileSystemInternal: PlatformFileSystem;
   readonly fileSystemBaseURL: Platform.DevToolsPath.UrlString;
-  private readonly fileSystemParentURL: string;
+  private readonly fileSystemParentURL: Platform.DevToolsPath.UrlString;
   private readonly fileSystemWorkspaceBinding: FileSystemWorkspaceBinding;
-  private readonly fileSystemPathInternal: string;
+  private readonly fileSystemPathInternal: Platform.DevToolsPath.UrlString;
   private readonly creatingFilesGuard: Set<string>;
   constructor(
       fileSystemWorkspaceBinding: FileSystemWorkspaceBinding, isolatedFileSystem: PlatformFileSystem,
@@ -172,7 +173,8 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
 
     this.fileSystemInternal = isolatedFileSystem;
     this.fileSystemBaseURL = Common.ParsedURL.ParsedURL.concatenate(this.fileSystemInternal.path(), '/');
-    this.fileSystemParentURL = this.fileSystemBaseURL.substr(0, fileSystemPath.lastIndexOf('/') + 1);
+    this.fileSystemParentURL =
+        Common.ParsedURL.ParsedURL.substr(this.fileSystemBaseURL, 0, fileSystemPath.lastIndexOf('/') + 1);
     this.fileSystemWorkspaceBinding = fileSystemWorkspaceBinding;
     this.fileSystemPathInternal = fileSystemPath;
     this.creatingFilesGuard = new Set();
@@ -181,7 +183,7 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     this.populate();
   }
 
-  fileSystemPath(): string {
+  fileSystemPath(): Platform.DevToolsPath.UrlString {
     return this.fileSystemPathInternal;
   }
 
@@ -193,14 +195,15 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     return this.fileSystemInternal.mimeFromPath(uiSourceCode.url());
   }
 
-  initialGitFolders(): Platform.DevToolsPath.EncodedPathString[] {
-    return this.fileSystemInternal.initialGitFolders().map(folder => this.fileSystemPathInternal + '/' + folder) as
-        Platform.DevToolsPath.EncodedPathString[];
+  initialGitFolders(): Platform.DevToolsPath.UrlString[] {
+    return this.fileSystemInternal.initialGitFolders().map(
+        folder => Common.ParsedURL.ParsedURL.concatenate(this.fileSystemPathInternal, '/', folder));
   }
 
   private filePathForUISourceCode(uiSourceCode: Workspace.UISourceCode.UISourceCode):
       Platform.DevToolsPath.EncodedPathString {
-    return uiSourceCode.url().substring(this.fileSystemPathInternal.length) as Platform.DevToolsPath.EncodedPathString;
+    return Common.ParsedURL.ParsedURL.sliceUrlToEncodedPathString(
+        uiSourceCode.url(), this.fileSystemPathInternal.length);
   }
 
   isServiceProject(): boolean {
@@ -257,9 +260,9 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
   }
 
   rename(
-      uiSourceCode: Workspace.UISourceCode.UISourceCode, newName: string,
+      uiSourceCode: Workspace.UISourceCode.UISourceCode, newName: Platform.DevToolsPath.RawPathString,
       callback:
-          (arg0: boolean, arg1?: string|undefined, arg2?: string|undefined,
+          (arg0: boolean, arg1?: string|undefined, arg2?: Platform.DevToolsPath.UrlString|undefined,
            arg3?: Common.ResourceType.ResourceType|undefined) => void): void {
     if (newName === uiSourceCode.name()) {
       callback(true, uiSourceCode.name(), uiSourceCode.url(), uiSourceCode.contentType());
@@ -279,7 +282,7 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
       const parentPath = Common.ParsedURL.ParsedURL.substr(filePath, 0, slash);
       filePath = Common.ParsedURL.ParsedURL.encodedFromParentPathAndName(parentPath, newName);
       filePath = Common.ParsedURL.ParsedURL.substr(filePath, 1);
-      const newURL = this.fileSystemBaseURL + filePath;
+      const newURL = Common.ParsedURL.ParsedURL.concatenate(this.fileSystemBaseURL, filePath);
       const newContentType = this.fileSystemInternal.contentType(newName);
       this.renameUISourceCode(uiSourceCode, newName);
       callback(true, newName, newURL, newContentType);
@@ -298,9 +301,9 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
   }
 
   async findFilesMatchingSearchRequest(
-      searchConfig: Workspace.Workspace.ProjectSearchConfig, filesMathingFileQuery: string[],
+      searchConfig: Workspace.Workspace.ProjectSearchConfig, filesMatchingFileQuery: Platform.DevToolsPath.UrlString[],
       progress: Common.Progress.Progress): Promise<string[]> {
-    let result: string[] = filesMathingFileQuery;
+    let result: string[] = filesMatchingFileQuery;
     const queriesToRun = searchConfig.queries().slice();
     if (!queriesToRun.length) {
       queriesToRun.push('');
@@ -338,13 +341,13 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     }
   }
 
-  excludeFolder(url: string): void {
-    let relativeFolder = url.substring(this.fileSystemBaseURL.length);
+  excludeFolder(url: Platform.DevToolsPath.UrlString): void {
+    let relativeFolder = Common.ParsedURL.ParsedURL.sliceUrlToEncodedPathString(url, this.fileSystemBaseURL.length);
     if (!relativeFolder.startsWith('/')) {
-      relativeFolder = '/' + relativeFolder;
+      relativeFolder = Common.ParsedURL.ParsedURL.prepend('/', relativeFolder);
     }
     if (!relativeFolder.endsWith('/')) {
-      relativeFolder += '/';
+      relativeFolder = Common.ParsedURL.ParsedURL.concatenate(relativeFolder, '/');
     }
     this.fileSystemInternal.addExcludedFolder(relativeFolder);
 
@@ -357,7 +360,7 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     }
   }
 
-  canExcludeFolder(path: string): boolean {
+  canExcludeFolder(path: Platform.DevToolsPath.EncodedPathString): boolean {
     return this.fileSystemInternal.canExcludeFolder(path);
   }
 
@@ -365,8 +368,9 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     return true;
   }
 
-  async createFile(path: string, name: string|null, content: string, isBase64?: boolean):
-      Promise<Workspace.UISourceCode.UISourceCode|null> {
+  async createFile(
+      path: Platform.DevToolsPath.EncodedPathString, name: Platform.DevToolsPath.RawPathString|null, content: string,
+      isBase64?: boolean): Promise<Workspace.UISourceCode.UISourceCode|null> {
     const guardFileName = this.fileSystemPathInternal + path + (!path.endsWith('/') ? '/' : '') + name;
     this.creatingFilesGuard.add(guardFileName);
     const filePath = await this.fileSystemInternal.createFile(path, name);
@@ -392,14 +396,15 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
     this.fileSystemWorkspaceBinding.isolatedFileSystemManager.removeFileSystem(this.fileSystemInternal);
   }
 
-  private addFile(filePath: string): Workspace.UISourceCode.UISourceCode {
+  private addFile(filePath: Platform.DevToolsPath.EncodedPathString): Workspace.UISourceCode.UISourceCode {
     const contentType = this.fileSystemInternal.contentType(filePath);
-    const uiSourceCode = this.createUISourceCode(this.fileSystemBaseURL + filePath, contentType);
+    const uiSourceCode =
+        this.createUISourceCode(Common.ParsedURL.ParsedURL.concatenate(this.fileSystemBaseURL, filePath), contentType);
     this.addUISourceCode(uiSourceCode);
     return uiSourceCode;
   }
 
-  fileChanged(path: string): void {
+  fileChanged(path: Platform.DevToolsPath.UrlString): void {
     // Ignore files that are being created but do not have content yet.
     if (this.creatingFilesGuard.has(path)) {
       return;
@@ -426,7 +431,7 @@ export class FileSystem extends Workspace.Workspace.ProjectStore {
 const sourceCodeToMetadataMap =
     new WeakMap<Workspace.UISourceCode.UISourceCode, Promise<Workspace.UISourceCode.UISourceCodeMetadata|null>>();
 export interface FilesChangedData {
-  changed: Platform.MapUtilities.Multimap<string, string>;
-  added: Platform.MapUtilities.Multimap<string, string>;
-  removed: Platform.MapUtilities.Multimap<string, string>;
+  changed: Platform.MapUtilities.Multimap<Platform.DevToolsPath.UrlString, Platform.DevToolsPath.UrlString>;
+  added: Platform.MapUtilities.Multimap<Platform.DevToolsPath.UrlString, Platform.DevToolsPath.UrlString>;
+  removed: Platform.MapUtilities.Multimap<Platform.DevToolsPath.UrlString, Platform.DevToolsPath.UrlString>;
 }

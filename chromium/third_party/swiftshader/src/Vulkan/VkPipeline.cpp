@@ -81,6 +81,10 @@ sw::SpirvBinary optimizeSpirv(const vk::PipelineCache::SpirvBinaryKey &key)
 
 	if(optimize)
 	{
+		// Remove DontInline flags so the optimizer force-inlines all functions,
+		// as we currently don't support OpFunctionCall (b/141246700).
+		opt.RegisterPass(spvtools::CreateRemoveDontInlinePass());
+
 		// Full optimization list taken from spirv-opt.
 		opt.RegisterPerformancePasses();
 	}
@@ -93,6 +97,7 @@ sw::SpirvBinary optimizeSpirv(const vk::PipelineCache::SpirvBinaryKey &key)
 	spvtools::ValidatorOptions validatorOptions = {};
 	validatorOptions.SetScalarBlockLayout(true);            // VK_EXT_scalar_block_layout
 	validatorOptions.SetUniformBufferStandardLayout(true);  // VK_KHR_uniform_buffer_standard_layout
+	validatorOptions.SetAllowLocalSizeId(true);             // VK_KHR_maintenance4
 	optimizerOptions.set_validator_options(validatorOptions);
 #endif
 

@@ -21,6 +21,7 @@
 
 #include "absl/types/optional.h"
 #include "api/adaptation/resource.h"
+#include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
@@ -79,7 +80,8 @@ class VideoStreamEncoderResourceManager
       Clock* clock,
       bool experiment_cpu_load_estimator,
       std::unique_ptr<OveruseFrameDetector> overuse_detector,
-      DegradationPreferenceProvider* degradation_preference_provider);
+      DegradationPreferenceProvider* degradation_preference_provider,
+      const FieldTrialsView& field_trials);
   ~VideoStreamEncoderResourceManager() override;
 
   void Initialize(rtc::TaskQueue* encoder_queue);
@@ -181,6 +183,7 @@ class VideoStreamEncoderResourceManager
       const std::map<VideoAdaptationReason, VideoAdaptationCounters>&
           active_counts);
 
+  const FieldTrialsView& field_trials_;
   DegradationPreferenceProvider* const degradation_preference_provider_;
   std::unique_ptr<BitrateConstraint> bitrate_constraint_
       RTC_GUARDED_BY(encoder_queue_);

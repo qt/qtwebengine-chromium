@@ -30,6 +30,7 @@ class JSMap;
 class JSPrimitiveWrapper;
 class JSRegExp;
 class JSSet;
+class JSSharedStruct;
 class Object;
 class Oddball;
 class Smi;
@@ -131,6 +132,8 @@ class ValueSerializer {
       V8_WARN_UNUSED_RESULT;
   Maybe<bool> WriteJSArrayBufferView(JSArrayBufferView array_buffer);
   Maybe<bool> WriteJSError(Handle<JSObject> error) V8_WARN_UNUSED_RESULT;
+  Maybe<bool> WriteJSSharedStruct(Handle<JSSharedStruct> shared_struct)
+      V8_WARN_UNUSED_RESULT;
 #if V8_ENABLE_WEBASSEMBLY
   Maybe<bool> WriteWasmModule(Handle<WasmModuleObject> object)
       V8_WARN_UNUSED_RESULT;
@@ -209,7 +212,7 @@ class ValueDeserializer {
   /*
    * Deserializes a V8 object from the buffer.
    */
-  MaybeHandle<Object> ReadObject() V8_WARN_UNUSED_RESULT;
+  MaybeHandle<Object> ReadObjectWrapper() V8_WARN_UNUSED_RESULT;
 
   /*
    * Reads an object, consuming the entire buffer.
@@ -253,6 +256,7 @@ class ValueDeserializer {
   Maybe<double> ReadDouble() V8_WARN_UNUSED_RESULT;
   Maybe<base::Vector<const uint8_t>> ReadRawBytes(size_t size)
       V8_WARN_UNUSED_RESULT;
+  MaybeHandle<Object> ReadObject() V8_WARN_UNUSED_RESULT;
 
   // Reads a string if it matches the one provided.
   // Returns true if this was the case. Otherwise, nothing is consumed.
@@ -319,6 +323,8 @@ class ValueDeserializer {
   const bool supports_shared_values_;
   uint32_t version_ = 0;
   uint32_t next_id_ = 0;
+  bool version_13_broken_data_mode_ = false;
+  bool suppress_deserialization_errors_ = false;
 
   // Always global handles.
   Handle<FixedArray> id_map_;

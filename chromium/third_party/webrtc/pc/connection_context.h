@@ -15,13 +15,13 @@
 #include <string>
 
 #include "api/call/call_factory_interface.h"
+#include "api/field_trials_view.h"
 #include "api/media_stream_interface.h"
 #include "api/peer_connection_interface.h"
 #include "api/ref_counted_base.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/transport/sctp_transport_factory_interface.h"
-#include "api/transport/webrtc_key_value_config.h"
 #include "media/base/media_engine.h"
 #include "p2p/base/basic_packet_socket_factory.h"
 #include "pc/channel_manager.h"
@@ -29,6 +29,7 @@
 #include "rtc_base/network.h"
 #include "rtc_base/network_monitor_factory.h"
 #include "rtc_base/rtc_certificate_generator.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/thread_annotations.h"
 
@@ -74,7 +75,7 @@ class ConnectionContext final
   rtc::Thread* network_thread() { return network_thread_; }
   const rtc::Thread* network_thread() const { return network_thread_; }
 
-  const WebRtcKeyValueConfig& trials() const { return *trials_.get(); }
+  const FieldTrialsView& trials() const { return *trials_.get(); }
 
   // Accessors only used from the PeerConnectionFactory class
   rtc::BasicNetworkManager* default_network_manager() {
@@ -111,6 +112,10 @@ class ConnectionContext final
   rtc::Thread* const network_thread_;
   rtc::Thread* const worker_thread_;
   rtc::Thread* const signaling_thread_;
+
+  // Accessed both on signaling thread and worker thread.
+  std::unique_ptr<FieldTrialsView> const trials_;
+
   // channel_manager is accessed both on signaling thread and worker thread.
   std::unique_ptr<cricket::ChannelManager> channel_manager_;
   std::unique_ptr<rtc::NetworkMonitorFactory> const network_monitor_factory_
@@ -123,8 +128,6 @@ class ConnectionContext final
   std::unique_ptr<rtc::BasicPacketSocketFactory> default_socket_factory_
       RTC_GUARDED_BY(signaling_thread_);
   std::unique_ptr<SctpTransportFactoryInterface> const sctp_factory_;
-  // Accessed both on signaling thread and worker thread.
-  std::unique_ptr<WebRtcKeyValueConfig> const trials_;
 };
 
 }  // namespace webrtc

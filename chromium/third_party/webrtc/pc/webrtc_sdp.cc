@@ -12,9 +12,9 @@
 
 #include <ctype.h>
 #include <limits.h>
-#include <stdio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -25,12 +25,14 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"
+#include "absl/strings/ascii.h"
 #include "api/candidate.h"
 #include "api/crypto_params.h"
 #include "api/jsep_ice_candidate.h"
 #include "api/jsep_session_description.h"
 #include "api/media_types.h"
 // for RtpExtension
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/rtc_error.h"
 #include "api/rtp_parameters.h"
@@ -348,7 +350,7 @@ static bool ParseFmtpAttributes(const std::string& line,
                                 const cricket::MediaType media_type,
                                 MediaContentDescription* media_desc,
                                 SdpParseError* error);
-static bool ParseFmtpParam(const std::string& line,
+static bool ParseFmtpParam(absl::string_view line,
                            std::string* parameter,
                            std::string* value,
                            SdpParseError* error);
@@ -3642,14 +3644,14 @@ bool ParseRtpmapAttribute(const std::string& line,
   return true;
 }
 
-bool ParseFmtpParam(const std::string& line,
+bool ParseFmtpParam(absl::string_view line,
                     std::string* parameter,
                     std::string* value,
                     SdpParseError* error) {
   if (!rtc::tokenize_first(line, kSdpDelimiterEqualChar, parameter, value)) {
     // Support for non-key-value lines like RFC 2198 or RFC 4733.
     *parameter = "";
-    *value = line;
+    *value = std::string(line);
     return true;
   }
   // a=fmtp:<payload_type> <param1>=<value1>; <param2>=<value2>; ...
@@ -3692,14 +3694,13 @@ bool ParseFmtpAttributes(const std::string& line,
   }
 
   // Parse out format specific parameters.
-  std::vector<std::string> fields;
-  rtc::split(line_params, kSdpDelimiterSemicolonChar, &fields);
-
   cricket::CodecParameterMap codec_params;
-  for (auto& iter : fields) {
+  for (absl::string_view param :
+       rtc::split(line_params, kSdpDelimiterSemicolonChar)) {
     std::string name;
     std::string value;
-    if (!ParseFmtpParam(rtc::string_trim(iter), &name, &value, error)) {
+    if (!ParseFmtpParam(absl::StripAsciiWhitespace(param), &name, &value,
+                        error)) {
       return false;
     }
     if (codec_params.find(name) != codec_params.end()) {

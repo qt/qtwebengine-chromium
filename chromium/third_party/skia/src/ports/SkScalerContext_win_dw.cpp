@@ -13,6 +13,7 @@
 
 #include "include/codec/SkCodec.h"
 #include "include/core/SkBitmap.h"
+#include "include/core/SkData.h"
 #include "include/core/SkDrawable.h"
 #include "include/core/SkFontMetrics.h"
 #include "include/core/SkPath.h"
@@ -43,6 +44,7 @@
 #include <dwrite_3.h>
 
 namespace {
+static inline const constexpr bool kSkShowTextBlitCoverage = false;
 
 /* Note:
  * In versions 8 and 8.1 of Windows, some calls in DWrite are not thread safe.
@@ -281,7 +283,7 @@ SkScalerContext_DW::SkScalerContext_DW(sk_sp<DWriteFontTypeface> typefaceRef,
     // horizontal glyphs and the subpixel flag should not affect glyph shapes.
 
     SkVector scale;
-    fRec.computeMatrices(SkScalerContextRec::kVertical_PreMatrixScale, &scale, &fSkXform);
+    fRec.computeMatrices(SkScalerContextRec::PreMatrixScale::kVertical, &scale, &fSkXform);
 
     fXform.m11 = SkScalarToFloat(fSkXform.getScaleX());
     fXform.m12 = SkScalarToFloat(fSkXform.getSkewY());
@@ -775,7 +777,7 @@ void SkScalerContext_DW::generateMetrics(SkGlyph* glyph, SkArenaAlloc* alloc) {
                                   &bbox),
              "Fallback bounding box could not be determined.");
         if (glyphCheckAndSetBounds(glyph, bbox)) {
-            glyph->fForceBW = 1;
+            glyph->fScalerContextBits |= ScalerContextBits::ForceBW;
             glyph->fMaskFormat = SkMask::kBW_Format;
         }
     }
@@ -1067,21 +1069,22 @@ void SkScalerContext_DW::drawColorGlyphImage(const SkGlyph& glyph, SkCanvas& can
     }
     canvas.concat(fSkXform);
 
+    DWriteFontTypeface* typeface = this->getDWriteTypeface();
+    size_t paletteEntryCount = typeface->fPaletteEntryCount;
+    SkColor* palette = typeface->fPalette.get();
     BOOL hasNextRun = FALSE;
     while (SUCCEEDED(colorLayers->MoveNext(&hasNextRun)) && hasNextRun) {
         const DWRITE_COLOR_GLYPH_RUN* colorGlyph;
         HRVM(colorLayers->GetCurrentRun(&colorGlyph), "Could not get current color glyph run");
 
         SkColor color;
-        if (colorGlyph->paletteIndex != 0xffff) {
-            color = SkColorSetARGB(sk_float_round2int(colorGlyph->runColor.a * 255),
-                                   sk_float_round2int(colorGlyph->runColor.r * 255),
-                                   sk_float_round2int(colorGlyph->runColor.g * 255),
-                                   sk_float_round2int(colorGlyph->runColor.b * 255));
-        } else {
-            // If all components of runColor are 0 or (equivalently) paletteIndex is 0xFFFF then
-            // the 'foreground color' is used.
+        if (colorGlyph->paletteIndex == 0xffff) {
             color = fRec.fForegroundColor;
+        } else if (colorGlyph->paletteIndex < paletteEntryCount) {
+            color = palette[colorGlyph->paletteIndex];
+        } else {
+            SK_TRACEHR(DWRITE_E_NOCOLOR, "Invalid palette index.");
+            color = SK_ColorBLACK;
         }
         paint.setColor(color);
 
@@ -1117,11 +1120,11 @@ void SkScalerContext_DW::generateColorGlyphImage(const SkGlyph& glyph) {
     dstBitmap.setPixels(glyph.fImage);
 
     SkCanvas canvas(dstBitmap);
-#ifdef SK_SHOW_TEXT_BLIT_COVERAGE
-    canvas.clear(0x33FF0000);
-#else
-    canvas.clear(SK_ColorTRANSPARENT);
-#endif
+    if constexpr (kSkShowTextBlitCoverage) {
+        canvas.clear(0x33FF0000);
+    } else {
+        canvas.clear(SK_ColorTRANSPARENT);
+    }
     canvas.translate(-SkIntToScalar(glyph.fLeft), -SkIntToScalar(glyph.fTop));
 
     this->drawColorGlyphImage(glyph, canvas);
@@ -1177,7 +1180,7 @@ void SkScalerContext_DW::generateImage(const SkGlyph& glyph) {
     //Create the mask.
     DWRITE_RENDERING_MODE renderingMode = fRenderingMode;
     DWRITE_TEXTURE_TYPE textureType = fTextureType;
-    if (glyph.fForceBW) {
+    if (glyph.fScalerContextBits & ScalerContextBits::ForceBW) {
         renderingMode = DWRITE_RENDERING_MODE_ALIASED;
         textureType = DWRITE_TEXTURE_ALIASED_1x1;
     }

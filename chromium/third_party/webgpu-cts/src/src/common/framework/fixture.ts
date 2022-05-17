@@ -189,7 +189,10 @@ export class Fixture {
         await p;
         niceStack.message = 'resolved as expected' + m;
       } catch (ex) {
-        niceStack.message = `REJECTED${m}\n${ex.message}`;
+        niceStack.message = `REJECTED${m}`;
+        if (ex instanceof Error) {
+          niceStack.message += '\n' + ex.message;
+        }
         this.rec.expectationFailed(niceStack);
       }
     });
@@ -243,9 +246,9 @@ export class Fixture {
     return cond;
   }
 
-  /** If the argument is an Error, fail (or warn). Otherwise, no-op. */
+  /** If the argument is an `Error`, fail (or warn). If it's `undefined`, no-op. */
   expectOK(
-    error: Error | unknown,
+    error: Error | undefined,
     { mode = 'fail', niceStack }: { mode?: 'fail' | 'warn'; niceStack?: Error } = {}
   ): void {
     if (error instanceof Error) {
@@ -260,5 +263,14 @@ export class Fixture {
         unreachable();
       }
     }
+  }
+
+  eventualExpectOK(
+    error: Promise<Error | undefined>,
+    { mode = 'fail' }: { mode?: 'fail' | 'warn' } = {}
+  ) {
+    this.eventualAsyncExpectation(async niceStack => {
+      this.expectOK(await error, { mode, niceStack });
+    });
   }
 }

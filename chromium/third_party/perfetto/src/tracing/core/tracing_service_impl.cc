@@ -53,7 +53,6 @@
 #include "perfetto/base/status.h"
 #include "perfetto/base/task_runner.h"
 #include "perfetto/ext/base/android_utils.h"
-#include "perfetto/ext/base/crash_keys.h"
 #include "perfetto/ext/base/file_utils.h"
 #include "perfetto/ext/base/metatrace.h"
 #include "perfetto/ext/base/string_utils.h"
@@ -1964,13 +1963,11 @@ void TracingServiceImpl::PeriodicClearIncrementalStateTask(
 
   // Queue the IPCs to producers with active data sources that opted in.
   std::map<ProducerID, std::vector<DataSourceInstanceID>> clear_map;
-  int ds_clear_count = 0;
   for (const auto& kv : tracing_session->data_source_instances) {
     ProducerID producer_id = kv.first;
     const DataSourceInstance& data_source = kv.second;
     if (data_source.handles_incremental_state_clear) {
       clear_map[producer_id].push_back(data_source.instance_id);
-      ++ds_clear_count;
     }
   }
 
@@ -2072,12 +2069,6 @@ bool TracingServiceImpl::ReadBuffersIntoFile(TracingSessionID tsid) {
   if (!tracing_session->seized_for_bugreport &&
       IsWaitingForTrigger(tracing_session))
     return false;
-
-  // Speculative fix for the memory watchdog crash in b/195145848. This function
-  // uses the heap extensively and might need a M_PURGE. window.gc() is back.
-  // TODO(primiano): if this fixes the crash we might want to coalesce the purge
-  // and throttle it.
-  auto on_ret = base::OnScopeExit([] { base::MaybeReleaseAllocatorMemToOS(); });
 
   // ReadBuffers() can allocate memory internally, for filtering. By limiting
   // the data that ReadBuffers() reads to kWriteIntoChunksSize per iteration,
@@ -2275,6 +2266,13 @@ std::vector<TracePacket> TracingServiceImpl::ReadBuffers(
   }
 
   MaybeFilterPackets(tracing_session, &packets);
+
+  if (!*has_more) {
+    // We've observed some extremely high memory usage by scudo after
+    // MaybeFilterPackets in the past. The original bug (b/195145848) is fixed
+    // now, but this code asks scudo to release memory just in case.
+    base::MaybeReleaseAllocatorMemToOS();
+  }
 
   return packets;
 }

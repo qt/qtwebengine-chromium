@@ -62,7 +62,11 @@ namespace dawn::native {
         return {};
     }
 
-    MaybeError ValidateTimestampQuery(QuerySetBase* querySet, uint32_t queryIndex) {
+    MaybeError ValidateTimestampQuery(const DeviceBase* device,
+                                      const QuerySetBase* querySet,
+                                      uint32_t queryIndex) {
+        DAWN_TRY(device->ValidateObject(querySet));
+
         DAWN_INVALID_IF(querySet->GetQueryType() != wgpu::QueryType::Timestamp,
                         "The type of %s is not %s.", querySet, wgpu::QueryType::Timestamp);
 
@@ -382,8 +386,17 @@ namespace dawn::native {
     MaybeError ValidateLinearToDepthStencilCopyRestrictions(const ImageCopyTexture& dst) {
         Aspect aspectUsed;
         DAWN_TRY_ASSIGN(aspectUsed, SingleAspectUsedByImageCopyTexture(dst));
-        DAWN_INVALID_IF(aspectUsed == Aspect::Depth, "Cannot copy into the depth aspect of %s.",
-                        dst.texture);
+
+        const Format& format = dst.texture->GetFormat();
+        switch (format.format) {
+            case wgpu::TextureFormat::Depth16Unorm:
+                return {};
+            default:
+                DAWN_INVALID_IF(aspectUsed == Aspect::Depth,
+                                "Cannot copy into the depth aspect of %s with format %s.",
+                                dst.texture, format.format);
+                break;
+        }
 
         return {};
     }

@@ -15,6 +15,7 @@
 #include "dawn/native/CachedObject.h"
 
 #include "dawn/common/Assert.h"
+#include "dawn/native/Device.h"
 
 namespace dawn::native {
 
@@ -39,6 +40,14 @@ namespace dawn::native {
         ASSERT(!mIsContentHashInitialized);
         mContentHash = contentHash;
         mIsContentHashInitialized = true;
+    }
+
+    const CacheKey& CachedObject::GetCacheKey() const {
+        return mCacheKey;
+    }
+
+    CacheKey* CachedObject::GetCacheKey() {
+        return &mCacheKey;
     }
 
 }  // namespace dawn::native

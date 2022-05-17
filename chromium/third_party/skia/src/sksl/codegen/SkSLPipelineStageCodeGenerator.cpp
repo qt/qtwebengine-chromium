@@ -7,38 +7,54 @@
 
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 
+#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || SK_GRAPHITE_ENABLED
+
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "include/private/SkSLLayout.h"
+#include "include/private/SkSLModifiers.h"
 #include "include/private/SkSLProgramElement.h"
+#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkSLStatement.h"
+#include "include/private/SkSLString.h"
+#include "include/private/SkTArray.h"
+#include "include/private/SkTHash.h"
+#include "include/sksl/SkSLOperator.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/SkSLOperators.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
+#include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLChildCall.h"
 #include "src/sksl/ir/SkSLConstructor.h"
-#include "src/sksl/ir/SkSLConstructorArrayCast.h"
 #include "src/sksl/ir/SkSLDoStatement.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
-#include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
 #include "src/sksl/ir/SkSLPrefixExpression.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
 #include "src/sksl/ir/SkSLStructDefinition.h"
+#include "src/sksl/ir/SkSLSwitchCase.h"
 #include "src/sksl/ir/SkSLSwitchStatement.h"
 #include "src/sksl/ir/SkSLSwizzle.h"
 #include "src/sksl/ir/SkSLTernaryExpression.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
-
-#include <unordered_map>
-
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU
+#include <memory>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace SkSL {
 namespace PipelineStage {
@@ -126,9 +142,9 @@ private:
     const char*    fDestColor;
     Callbacks*     fCallbacks;
 
-    std::unordered_map<const Variable*, std::string>            fVariableNames;
-    std::unordered_map<const FunctionDeclaration*, std::string> fFunctionNames;
-    std::unordered_map<const Type*, std::string>                fStructNames;
+    SkTHashMap<const Variable*, std::string>            fVariableNames;
+    SkTHashMap<const FunctionDeclaration*, std::string> fFunctionNames;
+    SkTHashMap<const Type*, std::string>                fStructNames;
 
     StringStream* fBuffer = nullptr;
     bool          fCastReturnsToHalf = false;
@@ -268,12 +284,8 @@ void PipelineStageCodeGenerator::writeVariableReference(const VariableReference&
         return;
     }
 
-    auto it = fVariableNames.find(var);
-    if (it != fVariableNames.end()) {
-        this->write(it->second);
-    } else {
-        this->write(var->name());
-    }
+    std::string* name = fVariableNames.find(var);
+    this->write(name ? *name : var->name());
 }
 
 void PipelineStageCodeGenerator::writeIfStatement(const IfStatement& stmt) {
@@ -332,13 +344,13 @@ std::string PipelineStageCodeGenerator::functionName(const FunctionDeclaration& 
         return std::string(fCallbacks->getMainName());
     }
 
-    auto it = fFunctionNames.find(&decl);
-    if (it != fFunctionNames.end()) {
-        return it->second;
+    std::string* name = fFunctionNames.find(&decl);
+    if (name) {
+        return *name;
     }
 
     std::string mangledName = fCallbacks->getMangledName(std::string(decl.name()).c_str());
-    fFunctionNames.insert({&decl, mangledName});
+    fFunctionNames.set(&decl, mangledName);
     return mangledName;
 }
 
@@ -405,7 +417,7 @@ void PipelineStageCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclar
         // Don't re-declare these. (eg, sk_FragCoord, or fragmentProcessor children)
     } else if (var.modifiers().fFlags & Modifiers::kUniform_Flag) {
         std::string uniformName = fCallbacks->declareUniform(&decl);
-        fVariableNames.insert({&var, std::move(uniformName)});
+        fVariableNames.set(&var, std::move(uniformName));
     } else {
         std::string mangledName = fCallbacks->getMangledName(std::string(var.name()).c_str());
         std::string declaration = this->modifierString(var.modifiers()) +
@@ -419,7 +431,7 @@ void PipelineStageCodeGenerator::writeGlobalVarDeclaration(const GlobalVarDeclar
         }
         declaration += ";\n";
         fCallbacks->declareGlobal(declaration.c_str());
-        fVariableNames.insert({&var, std::move(mangledName)});
+        fVariableNames.set(&var, std::move(mangledName));
     }
 }
 
@@ -431,7 +443,7 @@ void PipelineStageCodeGenerator::writeStructDefinition(const StructDefinition& s
         definition += this->typedVariable(*f.fType, f.fName) + ";\n";
     }
     definition += "};\n";
-    fStructNames.insert({&type, std::move(mangledName)});
+    fStructNames.set(&type, std::move(mangledName));
     fCallbacks->defineStruct(definition.c_str());
 }
 
@@ -477,8 +489,8 @@ std::string PipelineStageCodeGenerator::typeName(const Type& raw) {
         return arrayName;
     }
 
-    auto it = fStructNames.find(&type);
-    return it != fStructNames.end() ? it->second : std::string(type.name());
+    std::string* name = fStructNames.find(&type);
+    return name ? *name : std::string(type.name());
 }
 
 void PipelineStageCodeGenerator::writeType(const Type& type) {

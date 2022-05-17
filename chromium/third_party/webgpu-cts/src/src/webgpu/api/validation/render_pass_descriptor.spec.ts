@@ -6,6 +6,11 @@ TODO: review for completeness
 `;
 
 import { makeTestGroup } from '../../../common/framework/test_group.js';
+import {
+  kDepthStencilFormats,
+  kRenderableColorTextureFormats,
+  kTextureFormatInfo,
+} from '../../capability_info.js';
 
 import { ValidationTest } from './validation_test.js';
 
@@ -48,7 +53,8 @@ class F extends ValidationTest {
 
     return {
       view,
-      loadValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+      clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+      loadOp: 'clear',
       storeOp: 'store',
     };
   }
@@ -61,9 +67,11 @@ class F extends ValidationTest {
 
     return {
       view,
-      depthLoadValue: 1.0,
+      depthClearValue: 1.0,
+      depthLoadOp: 'clear',
       depthStoreOp: 'store',
-      stencilLoadValue: 0,
+      stencilClearValue: 0,
+      stencilLoadOp: 'clear',
       stencilStoreOp: 'store',
     };
   }
@@ -71,7 +79,7 @@ class F extends ValidationTest {
   async tryRenderPass(success: boolean, descriptor: GPURenderPassDescriptor): Promise<void> {
     const commandEncoder = this.device.createCommandEncoder();
     const renderPass = commandEncoder.beginRenderPass(descriptor);
-    renderPass.endPass();
+    renderPass.end();
 
     this.expectValidationError(() => {
       commandEncoder.finish();
@@ -340,7 +348,8 @@ g.test('it_is_invalid_to_set_resolve_target_if_color_attachment_is_non_multisamp
         {
           view: colorTexture.createView(),
           resolveTarget: resolveTargetTexture.createView(),
-          loadValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          clearValue: { r: 1.0, g: 0.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -579,3 +588,90 @@ g.test('check_depth_stencil_attachment_sample_counts_mismatch').fn(async t => {
     t.tryRenderPass(true, descriptor);
   }
 });
+
+g.test('depth_stencil_attachment')
+  .desc(
+    `
+  Test GPURenderPassDepthStencilAttachment Usage:
+  - depthReadOnly and stencilReadOnly must match if the format is a combined depth-stencil format.
+  - depthLoadOp and depthStoreOp must be provided iff the format has a depth aspect and depthReadOnly is not true.
+  - stencilLoadOp and stencilStoreOp must be provided iff the format has a stencil aspect and stencilReadOnly is not true.
+  `
+  )
+  .paramsSubcasesOnly(u =>
+    u //
+      .combine('format', kDepthStencilFormats)
+      .combine('depthReadOnly', [false, true])
+      .combine('stencilReadOnly', [false, true])
+      .combine('setDepthLoadStoreOp', [false, true])
+      .combine('setStencilLoadStoreOp', [false, true])
+  )
+  .fn(async t => {
+    const {
+      format,
+      depthReadOnly,
+      stencilReadOnly,
+      setDepthLoadStoreOp,
+      setStencilLoadStoreOp,
+    } = t.params;
+    await t.selectDeviceForTextureFormatOrSkipTestCase(format);
+
+    let isValid = true;
+    const info = kTextureFormatInfo[format];
+    if (info.depth && info.stencil) {
+      isValid &&= depthReadOnly === stencilReadOnly;
+    }
+
+    if (info.depth && !depthReadOnly) {
+      isValid &&= setDepthLoadStoreOp;
+    } else {
+      isValid &&= !setDepthLoadStoreOp;
+    }
+
+    if (info.stencil && !stencilReadOnly) {
+      isValid &&= setStencilLoadStoreOp;
+    } else {
+      isValid &&= !setStencilLoadStoreOp;
+    }
+
+    const depthStencilAttachment: GPURenderPassDepthStencilAttachment = {
+      view: t.createTexture({ format }).createView(),
+      depthReadOnly,
+      stencilReadOnly,
+    };
+
+    if (setDepthLoadStoreOp) {
+      depthStencilAttachment.depthLoadOp = 'clear';
+      depthStencilAttachment.depthStoreOp = 'store';
+    }
+    if (setStencilLoadStoreOp) {
+      depthStencilAttachment.stencilLoadOp = 'clear';
+      depthStencilAttachment.stencilStoreOp = 'store';
+    }
+
+    const descriptor = {
+      colorAttachments: [t.getColorAttachment(t.createTexture())],
+      depthStencilAttachment,
+    };
+
+    t.tryRenderPass(isValid, descriptor);
+  });
+
+g.test('multisample_render_target_formats_support_resolve')
+  .params(u =>
+    u
+      .combine('format', kRenderableColorTextureFormats)
+      .filter(t => kTextureFormatInfo[t.format].multisample)
+  )
+  .fn(async t => {
+    const { format } = t.params;
+    const multisampledColorTexture = t.createTexture({ format, sampleCount: 4 });
+    const resolveTarget = t.createTexture({ format });
+
+    const colorAttachment = t.getColorAttachment(multisampledColorTexture);
+    colorAttachment.resolveTarget = resolveTarget.createView();
+
+    t.tryRenderPass(kTextureFormatInfo[format].resolve, {
+      colorAttachments: [colorAttachment],
+    });
+  });

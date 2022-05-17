@@ -8,7 +8,6 @@ group("all") {
   deps = [
     ":libsystem_api",
     ":system_api-anomaly_detector-protos",
-    ":system_api-arc_vm_status-protos",
     ":system_api-attestation-goprotos",
     ":system_api-attestation-protos",
     ":system_api-authpolicy-protos",
@@ -19,6 +18,7 @@ group("all") {
     ":system_api-chaps-protos",
     ":system_api-chunneld-protos",
     ":system_api-cryptohome-goprotos",
+    ":system_api-dlcservice-goprotos",
     ":system_api-dlcservice-protos",
     ":system_api-dlp-protos",
     ":system_api-fusebox-protos",
@@ -33,6 +33,7 @@ group("all") {
     ":system_api-metrics_event-goprotos",
     ":system_api-metrics_event-protos",
     ":system_api-minios-protos",
+    ":system_api-ml-protos",
     ":system_api-oobe_config-protos",
     ":system_api-patchpanel-goprotos",
     ":system_api-patchpanel-protos",
@@ -107,6 +108,7 @@ proto_library("system_api-power_manager-protos") {
     "${proto_in_dir}/suspend.proto",
     "${proto_in_dir}/switch_states.proto",
     "${proto_in_dir}/thermal.proto",
+    "${proto_in_dir}/user_charging_event.proto",
   ]
   standalone = true
 }
@@ -124,6 +126,7 @@ goproto_library("system_api-power_manager-goprotos") {
     "${proto_in_dir}/suspend.proto",
     "${proto_in_dir}/switch_states.proto",
     "${proto_in_dir}/thermal.proto",
+    "${proto_in_dir}/user_charging_event.proto",
   ]
 }
 
@@ -422,6 +425,12 @@ proto_library("system_api-dlcservice-protos") {
   standalone = true
 }
 
+goproto_library("system_api-dlcservice-goprotos") {
+  proto_in_dir = "dbus/dlcservice"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/dlcservice.proto" ]
+}
+
 proto_library("system_api-update_engine-protos") {
   proto_in_dir = "dbus/update_engine"
   proto_out_dir = "include/update_engine/proto_bindings"
@@ -542,13 +551,20 @@ proto_library("system_api-privacy_screen-protos") {
 proto_library("system_api-cdm_oemcrypto-protos") {
   proto_in_dir = "dbus/cdm_oemcrypto"
   proto_out_dir = "include/cdm_oemcrypto/proto_bindings"
-  sources = [ "${proto_in_dir}/secure_buffer.proto" ]
+  sources = [
+    "${proto_in_dir}/client_information.proto",
+    "${proto_in_dir}/secure_buffer.proto",
+  ]
   standalone = true
+
+  # system_api-cdm_oemcrypto-protos is used by a shared_library
+  # object, so we need to build it with "-fPIC" instead of "-fPIE".
+  use_pic = true
 }
 
-proto_library("system_api-arc_vm_status-protos") {
-  proto_in_dir = "dbus/arc_vm_status"
-  proto_out_dir = "include/arc_vm_status/proto_bindings"
-  sources = [ "${proto_in_dir}/arc_vm_status.proto" ]
+proto_library("system_api-ml-protos") {
+  proto_in_dir = "dbus/ml"
+  proto_out_dir = "include/ml/proto_bindings"
+  sources = [ "${proto_in_dir}/ranker_example.proto" ]
   standalone = true
 }

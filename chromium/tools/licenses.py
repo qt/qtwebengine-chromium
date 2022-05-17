@@ -131,6 +131,8 @@ ADDITIONAL_PATHS = (
     os.path.join('third_party', 'boringssl', 'src', 'third_party', 'fiat'),
     os.path.join('third_party', 'devtools-frontend', 'src', 'front_end',
                  'third_party'),
+    os.path.join('third_party', 'devtools-frontend-internal', 'front_end',
+                 'third_party'),
     os.path.join('tools', 'gyp'),
     os.path.join('tools', 'page_cycler', 'acid3'),
     os.path.join('url', 'third_party', 'mozilla'),
@@ -173,6 +175,12 @@ SPECIAL_CASES = {
         "License": "BSD",
         # Absolute path here is resolved as relative to the source root.
         "License File": "/LICENSE.chromium_os",
+    },
+    os.path.join('third_party', 'ipcz'): {
+        "Name": "ipcz",
+        "URL" : "https://chromium.googlesource.com/chromium/src/third_party/ipcz",
+        "License": "BSD",
+        "License File": "/third_party/ipcz/LICENSE",
     },
     os.path.join('third_party', 'lss'): {
         "Name": "linux-syscall-support",
@@ -325,6 +333,13 @@ SPECIAL_CASES = {
         "License Android Compatible": "yes",
         "License File": "/third_party/swiftshader/LICENSE.txt",
     },
+    os.path.join('third_party', 'swiftshader', 'third_party', 'SPIRV-Tools'): {
+        "Name": "SPIRV-Tools",
+        "URL": "https://github.com/KhronosGroup/SPIRV-Tools",
+        "License": "Apache 2.0",
+        "License File":
+        "/third_party/swiftshader/third_party/SPIRV-Tools/LICENSE",
+    },
 }
 
 # Special value for 'License File' field used to indicate that the license file
@@ -361,7 +376,6 @@ KNOWN_NON_IOS_LIBRARIES = set([
     os.path.join('third_party', 'isimpledom'),
     os.path.join('third_party', 'jsoncpp'),
     os.path.join('third_party', 'khronos'),
-    os.path.join('third_party', 'libXNVCtrl'),
     os.path.join('third_party', 'libevent'),
     os.path.join('third_party', 'libjpeg'),
     os.path.join('third_party', 'libusb'),

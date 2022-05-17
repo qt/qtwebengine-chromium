@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 270
+#define ANGLE_SH_VERSION 272
 
 enum ShShaderSpec
 {
@@ -247,7 +247,9 @@ const ShCompileOptions SH_SELECT_VIEW_IN_NV_GLSL_VERTEX_SHADER = UINT64_C(1) << 
 // ShBuiltInResources in vertex shaders.
 const ShCompileOptions SH_CLAMP_POINT_SIZE = UINT64_C(1) << 32;
 
-// Bit 33 is available.
+// This flag indicates whether advanced blend equation should be emulated.  Currently only
+// implemented for the Vulkan backend.
+const ShCompileOptions SH_ADD_ADVANCED_BLEND_EQUATIONS_EMULATION = UINT64_C(1) << 33;
 
 // Don't use loops to initialize uninitialized variables. Only has an effect if some kind of
 // variable initialization is turned on.
@@ -418,6 +420,7 @@ struct ShBuiltInResources
     int OES_primitive_bounding_box;
     int ANGLE_base_vertex_base_instance_shader_builtin;
     int ANDROID_extension_pack_es31a;
+    int KHR_blend_equation_advanced;
 
     // Set to 1 to enable replacing GL_EXT_draw_buffers #extension directives
     // with GL_NV_draw_buffers in ESSL output. This flag can be used to emulate
@@ -793,6 +796,10 @@ GLenum GetTessGenMode(const ShHandle handle);
 GLenum GetTessGenSpacing(const ShHandle handle);
 GLenum GetTessGenVertexOrder(const ShHandle handle);
 GLenum GetTessGenPointMode(const ShHandle handle);
+
+// Returns the blend equation list supported in the fragment shader.  This is a bitset of
+// gl::BlendEquationType, and can only include bits from KHR_blend_equation_advanced.
+uint32_t GetAdvancedBlendEquations(const ShHandle handle);
 
 //
 // Helper function to identify specs that are based on the WebGL spec.

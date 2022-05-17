@@ -96,7 +96,7 @@
 #include "src/profiler/heap-profiler.h"
 #include "src/profiler/tracing-cpu-profiler.h"
 #include "src/regexp/regexp-stack.h"
-#include "src/snapshot/embedded/embedded-data.h"
+#include "src/snapshot/embedded/embedded-data-inl.h"
 #include "src/snapshot/embedded/embedded-file-writer-interface.h"
 #include "src/snapshot/read-only-deserializer.h"
 #include "src/snapshot/shared-heap-deserializer.h"
@@ -115,6 +115,10 @@
 #include "unicode/locid.h"
 #include "unicode/uobject.h"
 #endif  // V8_INTL_SUPPORT
+
+#if V8_ENABLE_MAGLEV
+#include "src/maglev/maglev-concurrent-dispatcher.h"
+#endif  // V8_ENABLE_MAGLEV
 
 #if V8_ENABLE_WEBASSEMBLY
 #include "src/trap-handler/trap-handler.h"
@@ -279,7 +283,7 @@ bool Isolate::CurrentEmbeddedBlobIsBinaryEmbedded() {
   // embedded blob may change (e.g. in tests or mksnapshot). If the blob is
   // binary-embedded, it is immortal immovable.
   const uint8_t* code =
-      current_embedded_blob_code_.load(std::memory_order::memory_order_relaxed);
+      current_embedded_blob_code_.load(std::memory_order_relaxed);
   if (code == nullptr) return false;
   return code == DefaultEmbeddedBlobCode();
 }
@@ -356,26 +360,22 @@ uint32_t Isolate::embedded_blob_data_size() const {
 
 // static
 const uint8_t* Isolate::CurrentEmbeddedBlobCode() {
-  return current_embedded_blob_code_.load(
-      std::memory_order::memory_order_relaxed);
+  return current_embedded_blob_code_.load(std::memory_order_relaxed);
 }
 
 // static
 uint32_t Isolate::CurrentEmbeddedBlobCodeSize() {
-  return current_embedded_blob_code_size_.load(
-      std::memory_order::memory_order_relaxed);
+  return current_embedded_blob_code_size_.load(std::memory_order_relaxed);
 }
 
 // static
 const uint8_t* Isolate::CurrentEmbeddedBlobData() {
-  return current_embedded_blob_data_.load(
-      std::memory_order::memory_order_relaxed);
+  return current_embedded_blob_data_.load(std::memory_order_relaxed);
 }
 
 // static
 uint32_t Isolate::CurrentEmbeddedBlobDataSize() {
-  return current_embedded_blob_data_size_.load(
-      std::memory_order::memory_order_relaxed);
+  return current_embedded_blob_data_size_.load(std::memory_order_relaxed);
 }
 
 // static
@@ -521,12 +521,16 @@ void Isolate::InitializeOncePerProcess() {
   CHECK(isolate_key_created_.compare_exchange_strong(
       expected, true, std::memory_order_relaxed));
   per_isolate_thread_data_key_ = base::Thread::CreateThreadLocalKey();
+
+  Heap::InitializeOncePerProcess();
 }
 
 void Isolate::DisposeOncePerProcess() {
+  base::Thread::DeleteThreadLocalKey(isolate_key_);
   bool expected = true;
   CHECK(isolate_key_created_.compare_exchange_strong(
       expected, false, std::memory_order_relaxed));
+  base::Thread::DeleteThreadLocalKey(per_isolate_thread_data_key_);
 }
 
 Address Isolate::get_address_from_id(IsolateAddressId id) {
@@ -901,7 +905,8 @@ bool GetStackTraceLimit(Isolate* isolate, int* result) {
   Handle<JSObject> error = isolate->error_function();
 
   Handle<String> key = isolate->factory()->stackTraceLimit_string();
-  Handle<Object> stack_trace_limit = JSReceiver::GetDataProperty(error, key);
+  Handle<Object> stack_trace_limit =
+      JSReceiver::GetDataProperty(isolate, error, key);
   if (!stack_trace_limit->IsNumber()) return false;
 
   // Ensure that limit is not negative.
@@ -976,6 +981,25 @@ void CaptureAsyncStackTrace(Isolate* isolate, Handle<JSPromise> promise,
       builder->AppendPromiseCombinatorFrame(function, combinator);
 
       // Now peak into the Promise.all() resolve element context to
+      // find the promise capability that's being resolved when all
+      // the concurrent promises resolve.
+      int const index =
+          PromiseBuiltins::kPromiseAllResolveElementCapabilitySlot;
+      Handle<PromiseCapability> capability(
+          PromiseCapability::cast(context->get(index)), isolate);
+      if (!capability->promise().IsJSPromise()) return;
+      promise = handle(JSPromise::cast(capability->promise()), isolate);
+    } else if (IsBuiltinFunction(
+                   isolate, reaction->fulfill_handler(),
+                   Builtin::kPromiseAllSettledResolveElementClosure)) {
+      Handle<JSFunction> function(JSFunction::cast(reaction->fulfill_handler()),
+                                  isolate);
+      Handle<Context> context(function->context(), isolate);
+      Handle<JSFunction> combinator(
+          context->native_context().promise_all_settled(), isolate);
+      builder->AppendPromiseCombinatorFrame(function, combinator);
+
+      // Now peak into the Promise.allSettled() resolve element context to
       // find the promise capability that's being resolved when all
       // the concurrent promises resolve.
       int const index =
@@ -1226,7 +1250,7 @@ MaybeHandle<JSObject> Isolate::CaptureAndSetErrorStack(
 Handle<FixedArray> Isolate::GetDetailedStackTrace(
     Handle<JSReceiver> error_object) {
   Handle<Object> error_stack = JSReceiver::GetDataProperty(
-      error_object, factory()->error_stack_symbol());
+      this, error_object, factory()->error_stack_symbol());
   if (!error_stack->IsErrorStackData()) {
     return Handle<FixedArray>();
   }
@@ -1243,7 +1267,7 @@ Handle<FixedArray> Isolate::GetDetailedStackTrace(
 Handle<FixedArray> Isolate::GetSimpleStackTrace(
     Handle<JSReceiver> error_object) {
   Handle<Object> error_stack = JSReceiver::GetDataProperty(
-      error_object, factory()->error_stack_symbol());
+      this, error_object, factory()->error_stack_symbol());
   if (error_stack->IsFixedArray()) {
     return Handle<FixedArray>::cast(error_stack);
   }
@@ -1503,8 +1527,6 @@ bool Isolate::MayAccess(Handle<Context> accessing_context,
     callback = v8::ToCData<v8::AccessCheckCallback>(fun_obj);
     data = handle(access_check_info.data(), this);
   }
-
-  LOG(this, ApiSecurityCheck());
 
   {
     // Leaving JavaScript.
@@ -1847,6 +1869,8 @@ class SetThreadInWasmFlagScope {
 }  // namespace
 
 Object Isolate::UnwindAndFindHandler() {
+  // TODO(v8:12676): Fix gcmole failures in this function.
+  DisableGCMole no_gcmole;
 #if V8_ENABLE_WEBASSEMBLY
   // Create the {SetThreadInWasmFlagScope} first in this function so that its
   // destructor gets called after all the other destructors. It is important
@@ -2349,19 +2373,19 @@ bool Isolate::ComputeLocationFromException(MessageLocation* target,
 
   Handle<Name> start_pos_symbol = factory()->error_start_pos_symbol();
   Handle<Object> start_pos = JSReceiver::GetDataProperty(
-      Handle<JSObject>::cast(exception), start_pos_symbol);
+      this, Handle<JSObject>::cast(exception), start_pos_symbol);
   if (!start_pos->IsSmi()) return false;
   int start_pos_value = Handle<Smi>::cast(start_pos)->value();
 
   Handle<Name> end_pos_symbol = factory()->error_end_pos_symbol();
   Handle<Object> end_pos = JSReceiver::GetDataProperty(
-      Handle<JSObject>::cast(exception), end_pos_symbol);
+      this, Handle<JSObject>::cast(exception), end_pos_symbol);
   if (!end_pos->IsSmi()) return false;
   int end_pos_value = Handle<Smi>::cast(end_pos)->value();
 
   Handle<Name> script_symbol = factory()->error_script_symbol();
   Handle<Object> script = JSReceiver::GetDataProperty(
-      Handle<JSObject>::cast(exception), script_symbol);
+      this, Handle<JSObject>::cast(exception), script_symbol);
   if (!script->IsScript()) return false;
 
   Handle<Script> cast_script(Script::cast(*script), this);
@@ -2593,21 +2617,22 @@ bool Isolate::OptionalRescheduleException(bool clear_exception) {
 }
 
 void Isolate::PushPromise(Handle<JSObject> promise) {
-  ThreadLocalTop* tltop = thread_local_top();
-  PromiseOnStack* prev = tltop->promise_on_stack_;
-  Handle<JSObject> global_promise = global_handles()->Create(*promise);
-  tltop->promise_on_stack_ = new PromiseOnStack(global_promise, prev);
+  Handle<Object> promise_on_stack(debug()->thread_local_.promise_stack_, this);
+  promise_on_stack = factory()->NewPromiseOnStack(promise_on_stack, promise);
+  debug()->thread_local_.promise_stack_ = *promise_on_stack;
 }
 
-bool Isolate::PopPromise() {
-  ThreadLocalTop* tltop = thread_local_top();
-  if (tltop->promise_on_stack_ == nullptr) return false;
-  PromiseOnStack* prev = tltop->promise_on_stack_->prev();
-  Handle<Object> global_promise = tltop->promise_on_stack_->promise();
-  delete tltop->promise_on_stack_;
-  tltop->promise_on_stack_ = prev;
-  global_handles()->Destroy(global_promise.location());
-  return true;
+void Isolate::PopPromise() {
+  if (!IsPromiseStackEmpty()) {
+    debug()->thread_local_.promise_stack_ =
+        PromiseOnStack::cast(debug()->thread_local_.promise_stack_).prev();
+  }
+}
+
+bool Isolate::IsPromiseStackEmpty() const {
+  DCHECK_IMPLIES(!debug()->thread_local_.promise_stack_.IsSmi(),
+                 debug()->thread_local_.promise_stack_.IsPromiseOnStack());
+  return debug()->thread_local_.promise_stack_.IsSmi();
 }
 
 namespace {
@@ -2620,7 +2645,8 @@ bool PromiseIsRejectHandler(Isolate* isolate, Handle<JSReceiver> handler) {
   //    has a dependency edge to the generated outer Promise.
   // Otherwise, this is a real reject handler for the Promise.
   Handle<Symbol> key = isolate->factory()->promise_forwarding_handler_symbol();
-  Handle<Object> forwarding_handler = JSReceiver::GetDataProperty(handler, key);
+  Handle<Object> forwarding_handler =
+      JSReceiver::GetDataProperty(isolate, handler, key);
   return forwarding_handler->IsUndefined(isolate);
 }
 
@@ -2664,7 +2690,8 @@ bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
     if (promise->status() == Promise::kPending) {
       promises.push(promise);
     }
-    Handle<Object> outer_promise_obj = JSObject::GetDataProperty(promise, key);
+    Handle<Object> outer_promise_obj =
+        JSObject::GetDataProperty(this, promise, key);
     if (!outer_promise_obj->IsJSPromise()) break;
     promise = Handle<JSPromise>::cast(outer_promise_obj);
   }
@@ -2679,15 +2706,14 @@ bool Isolate::PromiseHasUserDefinedRejectHandler(Handle<JSPromise> promise) {
 
 Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
   Handle<Object> undefined = factory()->undefined_value();
-  ThreadLocalTop* tltop = thread_local_top();
-  if (tltop->promise_on_stack_ == nullptr) return undefined;
+  if (IsPromiseStackEmpty()) return undefined;
   // Find the top-most try-catch or try-finally handler.
   CatchType prediction = PredictExceptionCatcher();
   if (prediction == NOT_CAUGHT || prediction == CAUGHT_BY_EXTERNAL) {
     return undefined;
   }
   Handle<Object> retval = undefined;
-  PromiseOnStack* promise_on_stack = tltop->promise_on_stack_;
+  Handle<Object> promise_stack(debug()->thread_local_.promise_stack_, this);
   for (StackFrameIterator it(this); !it.done(); it.Advance()) {
     StackFrame* frame = it.frame();
     HandlerTable::CatchPrediction catch_prediction;
@@ -2719,10 +2745,16 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
           Handle<JSPromise>::cast(retval)->set_handled_hint(true);
         }
         return retval;
-      case HandlerTable::PROMISE:
-        return promise_on_stack
-                   ? Handle<Object>::cast(promise_on_stack->promise())
-                   : undefined;
+      case HandlerTable::PROMISE: {
+        Handle<JSObject> promise;
+        if (promise_stack->IsPromiseOnStack() &&
+            PromiseOnStack::GetPromise(
+                Handle<PromiseOnStack>::cast(promise_stack))
+                .ToHandle(&promise)) {
+          return promise;
+        }
+        return undefined;
+      }
       case HandlerTable::UNCAUGHT_ASYNC_AWAIT:
       case HandlerTable::ASYNC_AWAIT: {
         // If in the initial portion of async/await, continue the loop to pop up
@@ -2730,15 +2762,21 @@ Handle<Object> Isolate::GetPromiseOnStackOnThrow() {
         // dependents is found, or a non-async stack frame is encountered, in
         // order to handle the synchronous async/await catch prediction case:
         // assume that async function calls are awaited.
-        if (!promise_on_stack) return retval;
-        retval = promise_on_stack->promise();
+        if (!promise_stack->IsPromiseOnStack()) {
+          return retval;
+        }
+        Handle<PromiseOnStack> promise_on_stack =
+            Handle<PromiseOnStack>::cast(promise_stack);
+        if (!PromiseOnStack::GetPromise(promise_on_stack).ToHandle(&retval)) {
+          return retval;
+        }
         if (retval->IsJSPromise()) {
           if (PromiseHasUserDefinedRejectHandler(
                   Handle<JSPromise>::cast(retval))) {
             return retval;
           }
         }
-        promise_on_stack = promise_on_stack->prev();
+        promise_stack = handle(promise_on_stack->prev(), this);
         continue;
       }
     }
@@ -3363,9 +3401,14 @@ void Isolate::Deinit() {
     cancelable_task_manager()->CancelAndWait();
   }
 
-  // Cancel all baseline compiler tasks.
+  // Cancel all compiler tasks.
   delete baseline_batch_compiler_;
   baseline_batch_compiler_ = nullptr;
+
+#ifdef V8_ENABLE_MAGLEV
+  delete maglev_concurrent_dispatcher_;
+  maglev_concurrent_dispatcher_ = nullptr;
+#endif  // V8_ENABLE_MAGLEV
 
   if (lazy_compile_dispatcher_) {
     lazy_compile_dispatcher_->AbortAll();
@@ -3773,10 +3816,14 @@ void Isolate::AddCrashKeysForIsolateAndHeapPointers() {
       heap()->read_only_space()->FirstPageAddress();
   add_crash_key_callback_(v8::CrashKeyId::kReadonlySpaceFirstPageAddress,
                           AddressToString(ro_space_firstpage_address));
-  const uintptr_t map_space_firstpage_address =
-      heap()->map_space()->FirstPageAddress();
-  add_crash_key_callback_(v8::CrashKeyId::kMapSpaceFirstPageAddress,
-                          AddressToString(map_space_firstpage_address));
+
+  if (heap()->map_space()) {
+    const uintptr_t map_space_firstpage_address =
+        heap()->map_space()->FirstPageAddress();
+    add_crash_key_callback_(v8::CrashKeyId::kMapSpaceFirstPageAddress,
+                            AddressToString(map_space_firstpage_address));
+  }
+
   const uintptr_t code_space_firstpage_address =
       heap()->code_space()->FirstPageAddress();
   add_crash_key_callback_(v8::CrashKeyId::kCodeSpaceFirstPageAddress,
@@ -3874,6 +3921,9 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
         this, V8::GetCurrentPlatform(), FLAG_stack_size);
   }
   baseline_batch_compiler_ = new baseline::BaselineBatchCompiler(this);
+#ifdef V8_ENABLE_MAGLEV
+  maglev_concurrent_dispatcher_ = new maglev::MaglevConcurrentDispatcher(this);
+#endif  // V8_ENABLE_MAGLEV
 
 #if USE_SIMULATOR
   simulator_data_ = new SimulatorData;
@@ -4071,7 +4121,9 @@ bool Isolate::Init(SnapshotData* startup_snapshot_data,
   setup_delegate_ = nullptr;
 
   Builtins::InitializeIsolateDataTables(this);
-  Builtins::EmitCodeCreateEvents(this);
+
+  // Extra steps in the logger after the heap has been set up.
+  logger_->LateSetup(this);
 
 #ifdef DEBUG
   // Verify that the current heap state (usually deserialized from the snapshot)
@@ -4308,8 +4360,8 @@ CodeTracer* Isolate::GetCodeTracer() {
 
 bool Isolate::use_optimizer() {
   // TODO(v8:7700): Update this predicate for a world with multiple tiers.
-  return FLAG_opt && !serializer_enabled_ && CpuFeatures::SupportsOptimizer() &&
-         !is_precise_count_code_coverage();
+  return (FLAG_opt || FLAG_maglev) && !serializer_enabled_ &&
+         CpuFeatures::SupportsOptimizer() && !is_precise_count_code_coverage();
 }
 
 void Isolate::IncreaseTotalRegexpCodeGenerated(Handle<HeapObject> code) {
@@ -4478,16 +4530,16 @@ ISOLATE_INIT_ARRAY_LIST(ISOLATE_FIELD_OFFSET)
 Handle<Symbol> Isolate::SymbolFor(RootIndex dictionary_index,
                                   Handle<String> name, bool private_symbol) {
   Handle<String> key = factory()->InternalizeString(name);
-  Handle<NameDictionary> dictionary =
-      Handle<NameDictionary>::cast(root_handle(dictionary_index));
+  Handle<RegisteredSymbolTable> dictionary =
+      Handle<RegisteredSymbolTable>::cast(root_handle(dictionary_index));
   InternalIndex entry = dictionary->FindEntry(this, key);
   Handle<Symbol> symbol;
   if (entry.is_not_found()) {
     symbol =
         private_symbol ? factory()->NewPrivateSymbol() : factory()->NewSymbol();
     symbol->set_description(*key);
-    dictionary = NameDictionary::Add(this, dictionary, key, symbol,
-                                     PropertyDetails::Empty(), &entry);
+    dictionary = RegisteredSymbolTable::Add(this, dictionary, key, symbol);
+
     switch (dictionary_index) {
       case RootIndex::kPublicSymbolTable:
         symbol->set_is_in_public_symbol_table(true);
@@ -4999,6 +5051,53 @@ void Isolate::OnPromiseAfter(Handle<JSPromise> promise) {
     }
   }
   if (debug()->is_active()) PopPromise();
+}
+
+void Isolate::OnTerminationDuringRunMicrotasks() {
+  // This performs cleanup for when RunMicrotasks (in
+  // builtins-microtask-queue-gen.cc) is aborted via a termination exception.
+  // This has to be kept in sync with the code in said file. Currently this
+  // includes:
+  //
+  //  (1) Resetting the |current_microtask| slot on the Isolate to avoid leaking
+  //      memory (and also to keep |current_microtask| not being undefined as an
+  //      indicator that we're currently pumping the microtask queue).
+  //  (2) Empty the promise stack to avoid leaking memory.
+  //  (3) If the |current_microtask| is a promise reaction or resolve thenable
+  //      job task, then signal the async event delegate and debugger that the
+  //      microtask finished running.
+  //
+
+  // Reset the |current_microtask| global slot.
+  Handle<Microtask> current_microtask(
+      Microtask::cast(heap()->current_microtask()), this);
+  heap()->set_current_microtask(ReadOnlyRoots(this).undefined_value());
+
+  // Empty the promise stack.
+  debug()->thread_local_.promise_stack_ = Smi::zero();
+
+  if (current_microtask->IsPromiseReactionJobTask()) {
+    Handle<PromiseReactionJobTask> promise_reaction_job_task =
+        Handle<PromiseReactionJobTask>::cast(current_microtask);
+    Handle<HeapObject> promise_or_capability(
+        promise_reaction_job_task->promise_or_capability(), this);
+    if (promise_or_capability->IsPromiseCapability()) {
+      promise_or_capability = handle(
+          Handle<PromiseCapability>::cast(promise_or_capability)->promise(),
+          this);
+    }
+    if (promise_or_capability->IsJSPromise()) {
+      OnPromiseAfter(Handle<JSPromise>::cast(promise_or_capability));
+    }
+  } else if (current_microtask->IsPromiseResolveThenableJobTask()) {
+    Handle<PromiseResolveThenableJobTask> promise_resolve_thenable_job_task =
+        Handle<PromiseResolveThenableJobTask>::cast(current_microtask);
+    Handle<JSPromise> promise_to_resolve(
+        promise_resolve_thenable_job_task->promise_to_resolve(), this);
+    OnPromiseAfter(promise_to_resolve);
+  }
+
+  SetTerminationOnExternalTryCatch();
 }
 
 void Isolate::SetPromiseRejectCallback(PromiseRejectCallback callback) {

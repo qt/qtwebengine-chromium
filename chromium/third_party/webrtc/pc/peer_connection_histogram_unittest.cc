@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/async_resolver_factory.h"
 #include "api/call/call_factory_interface.h"
 #include "api/jsep.h"
 #include "api/jsep_session_description.h"
@@ -22,7 +23,9 @@
 #include "api/rtc_error.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/default_task_queue_factory.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "media/base/fake_media_engine.h"
+#include "media/base/media_engine.h"
 #include "p2p/base/mock_async_resolver.h"
 #include "p2p/base/port_allocator.h"
 #include "p2p/client/basic_port_allocator.h"
@@ -39,13 +42,14 @@
 #include "rtc_base/fake_mdns_responder.h"
 #include "rtc_base/fake_network.h"
 #include "rtc_base/gunit.h"
+#include "rtc_base/mdns_responder_interface.h"
 #include "rtc_base/ref_counted_object.h"
-#include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/thread.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "system_wrappers/include/metrics.h"
 #include "test/gmock.h"
+#include "test/gtest.h"
 
 namespace webrtc {
 
@@ -71,10 +75,10 @@ int MakeUsageFingerprint(std::set<UsageEvent> events) {
 }
 
 class PeerConnectionFactoryForUsageHistogramTest
-    : public rtc::RefCountedObject<PeerConnectionFactory> {
+    : public PeerConnectionFactory {
  public:
   PeerConnectionFactoryForUsageHistogramTest()
-      : rtc::RefCountedObject<PeerConnectionFactory>([] {
+      : PeerConnectionFactory([] {
           PeerConnectionFactoryDependencies dependencies;
           dependencies.network_thread = rtc::Thread::Current();
           dependencies.worker_thread = rtc::Thread::Current();
@@ -326,8 +330,8 @@ class PeerConnectionUsageHistogramTest : public ::testing::Test {
       const RTCConfiguration& config,
       const PeerConnectionFactoryInterface::Options factory_options,
       PeerConnectionDependencies deps) {
-    rtc::scoped_refptr<PeerConnectionFactoryForUsageHistogramTest> pc_factory(
-        new PeerConnectionFactoryForUsageHistogramTest());
+    auto pc_factory =
+        rtc::make_ref_counted<PeerConnectionFactoryForUsageHistogramTest>();
     pc_factory->SetOptions(factory_options);
 
     // If no allocator is provided, one will be created using a network manager
@@ -342,14 +346,15 @@ class PeerConnectionUsageHistogramTest : public ::testing::Test {
     auto observer = std::make_unique<ObserverForUsageHistogramTest>();
     deps.observer = observer.get();
 
-    auto pc = pc_factory->CreatePeerConnection(config, std::move(deps));
-    if (!pc) {
+    auto result =
+        pc_factory->CreatePeerConnectionOrError(config, std::move(deps));
+    if (!result.ok()) {
       return nullptr;
     }
 
-    observer->SetPeerConnectionInterface(pc.get());
+    observer->SetPeerConnectionInterface(result.value());
     auto wrapper = std::make_unique<PeerConnectionWrapperForUsageHistogramTest>(
-        pc_factory, pc, std::move(observer));
+        pc_factory, result.MoveValue(), std::move(observer));
     return wrapper;
   }
 

@@ -8,10 +8,13 @@
 #include "src/shaders/gradients/SkSweepGradient.h"
 
 #include "include/private/SkFloatingPoint.h"
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
+#endif
 
 SkSweepGradient::SkSweepGradient(const SkPoint& center, SkScalar t0, SkScalar t1,
                                  const Descriptor& desc)
@@ -98,7 +101,7 @@ skvm::F32 SkSweepGradient::transformT(skvm::Builder* p, skvm::Uniforms* uniforms
 
 #if SK_SUPPORT_GPU
 
-#include "src/gpu/gradients/GrGradientShader.h"
+#include "src/gpu/ganesh/gradients/GrGradientShader.h"
 
 std::unique_ptr<GrFragmentProcessor> SkSweepGradient::asFragmentProcessor(
         const GrFPArgs& args) const {
@@ -107,10 +110,10 @@ std::unique_ptr<GrFragmentProcessor> SkSweepGradient::asFragmentProcessor(
 
 #endif
 
-void SkSweepGradient::addToKey(SkShaderCodeDictionary* dict,
-                               SkBackend backend,
+#ifdef SK_ENABLE_SKSL
+void SkSweepGradient::addToKey(const SkKeyContext& keyContext,
                                SkPaintParamsKeyBuilder* builder,
-                               SkUniformBlock* uniformBlock) const {
+                               SkPipelineDataGatherer* gatherer) const {
     GradientShaderBlocks::GradientData data(kSweep_GradientType,
                                             fCenter, { 0.0f, 0.0f },
                                             0.0, 0.0f,
@@ -119,5 +122,6 @@ void SkSweepGradient::addToKey(SkShaderCodeDictionary* dict,
                                             fOrigColors4f,
                                             fOrigPos);
 
-    GradientShaderBlocks::AddToKey(dict, backend, builder, uniformBlock, data);
+    GradientShaderBlocks::AddToKey(keyContext, builder, gatherer, data);
 }
+#endif

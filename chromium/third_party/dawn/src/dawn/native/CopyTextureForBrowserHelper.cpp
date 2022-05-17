@@ -222,8 +222,7 @@ namespace dawn::native {
         static_assert(sizeof(Uniform) == 176);
 
         // TODO(crbug.com/dawn/856): Expand copyTextureForBrowser to support any
-        // non-depth, non-stencil, non-compressed texture format pair copy. Now this API
-        // supports CopyImageBitmapToTexture normal format pairs.
+        // non-depth, non-stencil, non-compressed texture format pair copy.
         MaybeError ValidateCopyTextureFormatConversion(const wgpu::TextureFormat srcFormat,
                                                        const wgpu::TextureFormat dstFormat) {
             switch (srcFormat) {
@@ -326,6 +325,13 @@ namespace dawn::native {
                                              const CopyTextureForBrowserOptions* options) {
         DAWN_TRY(device->ValidateObject(source->texture));
         DAWN_TRY(device->ValidateObject(destination->texture));
+
+        DAWN_INVALID_IF(source->texture->GetTextureState() == TextureBase::TextureState::Destroyed,
+                        "Source texture %s is destroyed.", source->texture);
+
+        DAWN_INVALID_IF(
+            destination->texture->GetTextureState() == TextureBase::TextureState::Destroyed,
+            "Destination texture %s is destroyed.", destination->texture);
 
         DAWN_TRY_CONTEXT(ValidateImageCopyTexture(device, *source, *copySize),
                          "validating the ImageCopyTexture for the source");
@@ -549,9 +555,8 @@ namespace dawn::native {
                                        {{0, uniformBuffer}, {1, sampler}, {2, srcTextureView}}));
 
         // Create command encoder.
-        CommandEncoderDescriptor encoderDesc = {};
-        // TODO(dawn:723): change to not use AcquireRef for reentrant object creation.
-        Ref<CommandEncoder> encoder = AcquireRef(device->APICreateCommandEncoder(&encoderDesc));
+        Ref<CommandEncoder> encoder;
+        DAWN_TRY_ASSIGN(encoder, device->CreateCommandEncoder());
 
         // Prepare dst texture view as color Attachment.
         TextureViewDescriptor dstTextureViewDesc;
@@ -569,15 +574,13 @@ namespace dawn::native {
         colorAttachmentDesc.view = dstView.Get();
         colorAttachmentDesc.loadOp = wgpu::LoadOp::Load;
         colorAttachmentDesc.storeOp = wgpu::StoreOp::Store;
-        colorAttachmentDesc.clearColor = {0.0, 0.0, 0.0, 1.0};
+        colorAttachmentDesc.clearValue = {0.0, 0.0, 0.0, 1.0};
 
         // Create render pass.
         RenderPassDescriptor renderPassDesc;
         renderPassDesc.colorAttachmentCount = 1;
         renderPassDesc.colorAttachments = &colorAttachmentDesc;
-        // TODO(dawn:723): change to not use AcquireRef for reentrant object creation.
-        Ref<RenderPassEncoder> passEncoder =
-            AcquireRef(encoder->APIBeginRenderPass(&renderPassDesc));
+        Ref<RenderPassEncoder> passEncoder = encoder->BeginRenderPass(&renderPassDesc);
 
         // Start pipeline  and encode commands to complete
         // the copy from src texture to dst texture with transformation.
@@ -589,8 +592,8 @@ namespace dawn::native {
         passEncoder->APIEnd();
 
         // Finsh encoding.
-        // TODO(dawn:723): change to not use AcquireRef for reentrant object creation.
-        Ref<CommandBufferBase> commandBuffer = AcquireRef(encoder->APIFinish());
+        Ref<CommandBufferBase> commandBuffer;
+        DAWN_TRY_ASSIGN(commandBuffer, encoder->Finish());
         CommandBufferBase* submitCommandBuffer = commandBuffer.Get();
 
         // Submit command buffer.

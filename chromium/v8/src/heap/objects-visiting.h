@@ -30,6 +30,7 @@ namespace internal {
   V(FixedDoubleArray)                   \
   V(JSArrayBuffer)                      \
   V(JSDataView)                         \
+  V(JSExternalObject)                   \
   V(JSFinalizationRegistry)             \
   V(JSFunction)                         \
   V(JSObject)                           \
@@ -39,7 +40,9 @@ namespace internal {
   V(JSWeakRef)                          \
   V(Map)                                \
   V(NativeContext)                      \
+  V(Oddball)                            \
   V(PreparseData)                       \
+  V(PromiseOnStack)                     \
   V(PropertyArray)                      \
   V(PropertyCell)                       \
   V(PrototypeInfo)                      \

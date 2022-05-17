@@ -156,7 +156,7 @@ namespace wgpu::binding {
         Converter conv(env);
 
         wgpu::Buffer b{};
-        uint32_t o = 0;
+        uint64_t o = 0;
 
         if (!conv(b, indirectBuffer) ||  //
             !conv(o, indirectOffset)) {
@@ -172,7 +172,7 @@ namespace wgpu::binding {
         Converter conv(env);
 
         wgpu::Buffer b{};
-        uint32_t o = 0;
+        uint64_t o = 0;
 
         if (!conv(b, indirectBuffer) ||  //
             !conv(o, indirectOffset)) {
@@ -181,11 +181,12 @@ namespace wgpu::binding {
         enc_.DrawIndexedIndirect(b, o);
     }
 
-    std::optional<std::string> GPURenderBundleEncoder::getLabel(Napi::Env) {
+    std::variant<std::string, interop::UndefinedType> GPURenderBundleEncoder::getLabel(Napi::Env) {
         UNIMPLEMENTED();
     }
 
-    void GPURenderBundleEncoder::setLabel(Napi::Env, std::optional<std::string> value) {
+    void GPURenderBundleEncoder::setLabel(Napi::Env,
+                                          std::variant<std::string, interop::UndefinedType> value) {
         UNIMPLEMENTED();
     }
 

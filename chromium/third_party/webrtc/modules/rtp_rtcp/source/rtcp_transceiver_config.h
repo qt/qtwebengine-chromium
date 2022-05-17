@@ -97,6 +97,13 @@ class RtpStreamRtcpHandler {
     int last_clock_rate_ = 90'000;
   };
   virtual RtpStats SentStats() = 0;
+
+  virtual void OnNack(uint32_t sender_ssrc,
+                      rtc::ArrayView<const uint16_t> sequence_numbers) {}
+  virtual void OnFir(uint32_t sender_ssrc) {}
+  virtual void OnPli(uint32_t sender_ssrc) {}
+  virtual void OnReportBlock(uint32_t sender_ssrc,
+                             const rtcp::ReportBlock& report_block) {}
 };
 
 struct RtcpTransceiverConfig {
@@ -149,10 +156,10 @@ struct RtcpTransceiverConfig {
   // Initial state if `outgoing_transport` ready to accept packets.
   bool initial_ready_to_send = true;
   // Delay before 1st periodic compound packet.
-  int initial_report_delay_ms = 500;
+  TimeDelta initial_report_delay = TimeDelta::Millis(500);
 
   // Period between periodic compound packets.
-  int report_period_ms = 1000;
+  TimeDelta report_period = TimeDelta::Seconds(1);
 
   //
   // Flags for features and experiments.
@@ -161,6 +168,15 @@ struct RtcpTransceiverConfig {
   // Estimate RTT as non-sender as described in
   // https://tools.ietf.org/html/rfc3611#section-4.4 and #section-4.5
   bool non_sender_rtt_measurement = false;
+
+  // Reply to incoming RRTR messages so that remote endpoint may estimate RTT as
+  // non-sender as described in https://tools.ietf.org/html/rfc3611#section-4.4
+  // and #section-4.5
+  bool reply_to_non_sender_rtt_measurement = true;
+
+  // Reply to incoming RRTR messages multiple times, one per sender SSRC, to
+  // support clients that calculate and process RTT per sender SSRC.
+  bool reply_to_non_sender_rtt_mesaurments_on_all_ssrcs = true;
 
   // Allows a REMB message to be sent immediately when SetRemb is called without
   // having to wait for the next compount message to be sent.

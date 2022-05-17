@@ -8,14 +8,13 @@
 #ifndef SKSL_BUILTINMAP
 #define SKSL_BUILTINMAP
 
-#include "include/private/SkSLString.h"
+#include "include/private/SkSLProgramElement.h"
+#include "include/private/SkTHash.h"
 
 #include <memory>
-#include <unordered_map>
+#include <string>
 
 namespace SkSL {
-
-class ProgramElement;
 
 /**
  * Represents the builtin elements in the Context.
@@ -38,7 +37,7 @@ private:
         bool fAlreadyIncluded = false;
     };
 
-    std::unordered_map<std::string, BuiltinElement> fElements;
+    SkTHashMap<std::string, BuiltinElement> fElements;
     BuiltinMap* fParent = nullptr;
 };
 

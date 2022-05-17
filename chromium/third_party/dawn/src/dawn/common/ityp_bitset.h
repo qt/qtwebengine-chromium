@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef COMMON_ITYP_BITSET_H_
-#define COMMON_ITYP_BITSET_H_
+#ifndef SRC_DAWN_COMMON_ITYP_BITSET_H_
+#define SRC_DAWN_COMMON_ITYP_BITSET_H_
 
 #include "dawn/common/BitSetIterator.h"
 #include "dawn/common/TypedInteger.h"
@@ -30,10 +30,12 @@ namespace ityp {
 
         static_assert(sizeof(I) <= sizeof(size_t));
 
-        constexpr bitset(const Base& rhs) : Base(rhs) {
+        explicit constexpr bitset(const Base& rhs) : Base(rhs) {
         }
 
       public:
+        using reference = typename Base::reference;
+
         constexpr bitset() noexcept : Base() {
         }
 
@@ -131,4 +133,56 @@ namespace ityp {
 
 }  // namespace ityp
 
-#endif  // COMMON_ITYP_BITSET_H_
+// Assume we have bitset of at most 64 bits
+// Returns i which is the next integer of the index of the highest bit
+// i == 0 if there is no bit set to true
+// i == 1 if only the least significant bit (at index 0) is the bit set to true with the
+// highest index
+// ...
+// i == 64 if the most significant bit (at index 64) is the bit set to true with the highest
+// index
+template <typename Index, size_t N>
+Index GetHighestBitIndexPlusOne(const ityp::bitset<Index, N>& bitset) {
+    using I = UnderlyingType<Index>;
+#if defined(DAWN_COMPILER_MSVC)
+    if constexpr (N > 32) {
+#    if defined(DAWN_PLATFORM_64_BIT)
+        unsigned long firstBitIndex = 0ul;
+        unsigned char ret = _BitScanReverse64(&firstBitIndex, bitset.to_ullong());
+        if (ret == 0) {
+            return Index(static_cast<I>(0));
+        }
+        return Index(static_cast<I>(firstBitIndex + 1));
+#    else   // defined(DAWN_PLATFORM_64_BIT)
+        if (bitset.none()) {
+            return Index(static_cast<I>(0));
+        }
+        for (size_t i = 0u; i < N; i++) {
+            if (bitset.test(Index(static_cast<I>(N - 1 - i)))) {
+                return Index(static_cast<I>(N - i));
+            }
+        }
+        UNREACHABLE();
+#    endif  // defined(DAWN_PLATFORM_64_BIT)
+    } else {
+        unsigned long firstBitIndex = 0ul;
+        unsigned char ret = _BitScanReverse(&firstBitIndex, bitset.to_ulong());
+        if (ret == 0) {
+            return Index(static_cast<I>(0));
+        }
+        return Index(static_cast<I>(firstBitIndex + 1));
+    }
+#else   // defined(DAWN_COMPILER_MSVC)
+    if (bitset.none()) {
+        return Index(static_cast<I>(0));
+    }
+    if constexpr (N > 32) {
+        return Index(
+            static_cast<I>(64 - static_cast<uint32_t>(__builtin_clzll(bitset.to_ullong()))));
+    } else {
+        return Index(static_cast<I>(32 - static_cast<uint32_t>(__builtin_clz(bitset.to_ulong()))));
+    }
+#endif  // defined(DAWN_COMPILER_MSVC)
+}
+
+#endif  // SRC_DAWN_COMMON_ITYP_BITSET_H_

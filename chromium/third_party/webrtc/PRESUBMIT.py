@@ -26,7 +26,6 @@ CPPLINT_EXCEPTIONS = [
     'examples/objc',
     'media/base/stream_params.h',
     'media/base/video_common.h',
-    'media/sctp/usrsctp_transport.cc',
     'modules/audio_coding',
     'modules/audio_device',
     'modules/audio_processing',
@@ -819,21 +818,23 @@ def RunPythonTests(input_api, output_api):
   def Join(*args):
     return input_api.os_path.join(input_api.PresubmitLocalPath(), *args)
 
+  excluded_files = [
+      # These tests should be run manually after webrtc_dashboard_upload target
+      # has been built.
+      'catapult_uploader_test.py',
+      'process_perf_results_test.py',
+  ]
+
   test_directories = [
       input_api.PresubmitLocalPath(),
       Join('rtc_tools', 'py_event_log_analyzer'),
       Join('audio', 'test', 'unittests'),
   ] + [
       root for root, _, files in os.walk(Join('tools_webrtc')) if any(
-          f.endswith('_test.py') for f in files)
+          f.endswith('_test.py') and f not in excluded_files for f in files)
   ]
 
   tests = []
-  skipped_tests = [
-      # This test should be run manually after webrtc_dashboard_upload target
-      # has been built.
-      r'catapult_uploader_test\.py$'
-  ]
 
   for directory in test_directories:
     tests.extend(
@@ -842,7 +843,6 @@ def RunPythonTests(input_api, output_api):
             output_api,
             directory,
             files_to_check=[r'.+_test\.py$'],
-            files_to_skip=skipped_tests,
             run_on_python2=False))
   return input_api.RunTests(tests, parallel=True)
 
@@ -936,8 +936,6 @@ def CommonChecks(input_api, output_api):
               r'^testing[\\\/].*\.py$',
               r'^third_party[\\\/].*\.py$',
               r'^tools[\\\/].*\.py$',
-              # TODO(bugs.webrtc.org/13605): should arguably be checked.
-              r'^tools_webrtc[\\\/]mb[\\\/].*\.py$',
               r'^xcodebuild.*[\\\/].*\.py$',
           ),
           pylintrc='pylintrc',

@@ -244,7 +244,6 @@ tests_sources = [
   "$_tests/SkRemoteGlyphCacheTest.cpp",
   "$_tests/SkResourceCacheTest.cpp",
   "$_tests/SkRuntimeEffectTest.cpp",
-  "$_tests/SkSLDSLErrorLineNumbers.cpp",
   "$_tests/SkSLDSLOnlyTest.cpp",
   "$_tests/SkSLDSLTest.cpp",
   "$_tests/SkSLES2ConformanceTest.cpp",
@@ -335,16 +334,15 @@ metal_tests_sources = [
 
 graphite_tests_sources = [
   "$_tests/graphite/BackendTextureTest.cpp",
-  "$_tests/graphite/ComboTest.cpp",
   "$_tests/graphite/CommandBufferTest.cpp",
   "$_tests/graphite/IntersectionTreeTest.cpp",
   "$_tests/graphite/KeyTest.cpp",
   "$_tests/graphite/MaskTest.cpp",
+  "$_tests/graphite/PipelineDataCacheTest.cpp",
   "$_tests/graphite/RecorderTest.cpp",
   "$_tests/graphite/RectTest.cpp",
   "$_tests/graphite/ShapeTest.cpp",
   "$_tests/graphite/TransformTest.cpp",
-  "$_tests/graphite/UniformCacheTest.cpp",
   "$_tests/graphite/UniformTest.cpp",
 ]
 

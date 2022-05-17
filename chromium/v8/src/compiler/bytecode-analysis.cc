@@ -212,9 +212,9 @@ void UpdateInLiveness(BytecodeLivenessState* in_liveness,
   if (BytecodeOperands::WritesAccumulator(implicit_register_use)) {
     in_liveness->MarkAccumulatorDead();
   }
-  ITERATE_PACK(
-      UpdateInLivenessForOutOperand<bytecode, operand_types, operand_index>(
-          in_liveness, iterator));
+  (UpdateInLivenessForOutOperand<bytecode, operand_types, operand_index>(
+       in_liveness, iterator),
+   ...);
 
   if (Bytecodes::WritesImplicitRegister(bytecode)) {
     in_liveness->MarkRegisterDead(Register::FromShortStar(bytecode).index());
@@ -223,9 +223,9 @@ void UpdateInLiveness(BytecodeLivenessState* in_liveness,
   if (BytecodeOperands::ReadsAccumulator(implicit_register_use)) {
     in_liveness->MarkAccumulatorLive();
   }
-  ITERATE_PACK(
-      UpdateInLivenessForInOperand<bytecode, operand_types, operand_index>(
-          in_liveness, iterator));
+  (UpdateInLivenessForInOperand<bytecode, operand_types, operand_index>(
+       in_liveness, iterator),
+   ...);
 }
 
 template <Bytecode bytecode, ImplicitRegisterUse implicit_register_use,
@@ -771,6 +771,12 @@ const LoopInfo& BytecodeAnalysis::GetLoopInfoFor(int header_offset) const {
   DCHECK(IsLoopHeader(header_offset));
 
   return header_to_info_.find(header_offset)->second;
+}
+
+const LoopInfo* BytecodeAnalysis::TryGetLoopInfoFor(int header_offset) const {
+  auto it = header_to_info_.find(header_offset);
+  if (it == header_to_info_.end()) return nullptr;
+  return &it->second;
 }
 
 const BytecodeLivenessState* BytecodeAnalysis::GetInLivenessFor(

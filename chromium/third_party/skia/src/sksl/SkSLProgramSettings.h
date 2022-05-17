@@ -30,6 +30,10 @@ struct ProgramSettings {
     bool fForceHighPrecision = false;
     // if true, add -0.5 bias to LOD of all texture lookups
     bool fSharpenTextures = false;
+    // If true, sk_FragCoord, the dFdy gradient, and sk_Clockwise won't be modified by the
+    // rtFlip. Additionally, the 'fUseFlipRTUniform' boolean will be forced to false so no rtFlip
+    // uniform will be emitted.
+    bool fForceNoRTFlip = false;
     // if the program needs to create an RTFlip uniform, this is its offset in the uniform buffer
     int fRTFlipOffset = -1;
     // if the program needs to create an RTFlip uniform and is creating SPIR-V, this is the binding
@@ -61,10 +65,6 @@ struct ProgramSettings {
     bool fValidateSPIRV = true;
     // If true, any synthetic uniforms must use push constant syntax
     bool fUsePushConstants = false;
-    // Permits static if/switch statements to be used with non-constant tests. This is used when
-    // producing H and CPP code; the static tests don't have to have constant values *yet*, but
-    // the generated code will contain a static test which then does have to be a constant.
-    bool fPermitInvalidStaticTests = false;
     // If true, configurations which demand strict ES2 conformance (runtime effects, generic
     // programs, and SkVM rendering) will fail during compilation if ES2 restrictions are violated.
     bool fEnforceES2Restrictions = true;

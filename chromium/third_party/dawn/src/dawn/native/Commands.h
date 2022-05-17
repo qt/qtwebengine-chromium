@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DAWNNATIVE_COMMANDS_H_
-#define DAWNNATIVE_COMMANDS_H_
+#ifndef SRC_DAWN_NATIVE_COMMANDS_H_
+#define SRC_DAWN_NATIVE_COMMANDS_H_
 
 #include "dawn/common/Constants.h"
 
@@ -68,7 +68,14 @@ namespace dawn::native {
         WriteTimestamp,
     };
 
-    struct BeginComputePassCmd {};
+    struct TimestampWrite {
+        Ref<QuerySetBase> querySet;
+        uint32_t queryIndex;
+    };
+
+    struct BeginComputePassCmd {
+        std::vector<TimestampWrite> timestampWrites;
+    };
 
     struct BeginOcclusionQueryCmd {
         Ref<QuerySetBase> querySet;
@@ -106,6 +113,7 @@ namespace dawn::native {
         uint32_t height;
 
         Ref<QuerySetBase> occlusionQuerySet;
+        std::vector<TimestampWrite> timestampWrites;
     };
 
     struct BufferCopy {
@@ -184,14 +192,18 @@ namespace dawn::native {
         uint64_t indirectOffset;
     };
 
-    struct EndComputePassCmd {};
+    struct EndComputePassCmd {
+        std::vector<TimestampWrite> timestampWrites;
+    };
 
     struct EndOcclusionQueryCmd {
         Ref<QuerySetBase> querySet;
         uint32_t queryIndex;
     };
 
-    struct EndRenderPassCmd {};
+    struct EndRenderPassCmd {
+        std::vector<TimestampWrite> timestampWrites;
+    };
 
     struct ExecuteBundlesCmd {
         uint32_t count;
@@ -287,4 +299,4 @@ namespace dawn::native {
 
 }  // namespace dawn::native
 
-#endif  // DAWNNATIVE_COMMANDS_H_
+#endif  // SRC_DAWN_NATIVE_COMMANDS_H_

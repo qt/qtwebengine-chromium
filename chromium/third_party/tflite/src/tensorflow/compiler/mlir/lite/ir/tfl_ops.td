@@ -524,7 +524,7 @@ class TFL_ConvOp<string mnemonic, string opSummary, int index,
   let arguments = (
     ins TFL_TensorOf<[F32, QI8, QUI8, QI16]>:$input,
     TFL_TensorOf<[F32, QI8, QUI8]>:$filter,
-    TFL_TensorOfOrNone<[F32, I32, I64]>:$bias,
+    TFL_1DTensorOfOrNone<[F32, I32, I64]>:$bias,
     I32Attr:$dilation_h_factor,
     I32Attr:$dilation_w_factor,
     TFL_AFAttr:$fused_activation_function,
@@ -586,9 +586,16 @@ def TFL_AddOp : TFL_Op<"add", [
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 1;
 }
@@ -1263,9 +1270,16 @@ def TFL_LessEqualOp : TFL_Op<"less_equal", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 0;
 }
@@ -1326,9 +1340,16 @@ def TFL_GreaterEqualOp : TFL_Op<"greater_equal", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 0;
 }
@@ -1526,9 +1547,16 @@ def TFL_NotEqualOp : TFL_Op<"not_equal", [
       }]>
   ];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_DivOp : TFL_Op<"div", [
@@ -1554,9 +1582,16 @@ def TFL_DivOp : TFL_Op<"div", [
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 1;
 
@@ -1793,9 +1828,16 @@ def TFL_FloorDivOp : TFL_Op<"floor_div", [
 
   let builders = [TFL_BroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_FloorModOp : TFL_Op<"floor_mod", [
@@ -1840,9 +1882,16 @@ def TFL_GreaterOp : TFL_Op<"greater", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_HardSwishOp: TFL_Op<"hard_swish", [
@@ -1944,9 +1993,16 @@ def TFL_LessOp : TFL_Op<"less", [
 
   let builders = [TFL_ComparisonBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_LogicalAndOp : TFL_Op<"logical_and", [NoSideEffect]> {
@@ -1962,9 +2018,16 @@ def TFL_LogicalAndOp : TFL_Op<"logical_and", [NoSideEffect]> {
 
   let results = (outs TFL_BoolTensor:$output);
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_LogicalNotOp : TFL_Op<"logical_not", [
@@ -1994,9 +2057,16 @@ def TFL_LogicalOrOp : TFL_Op<"logical_or", [NoSideEffect]> {
 
   let results = (outs TFL_BoolTensor:$output);
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_LogisticOp: TFL_Op<"logistic", [
@@ -2434,9 +2504,16 @@ def TFL_MulOp : TFL_Op<"mul", [
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 1;
 }
@@ -2661,9 +2738,16 @@ def TFL_PowOp : TFL_Op<"pow", [
 
   let results = (outs TFL_TensorOf<[F32, I32]>:$output);
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let builders = [TFL_BroadcastableBinaryBuilder];
 }
@@ -2806,7 +2890,8 @@ def TFL_Relu1Op: TFL_Op<"relu_n1_to_1", [
 def TFL_ReshapeOp: TFL_Op<"reshape", [
     QuantizableResult,
     NoSideEffect,
-    SameOperandsAndResultsScale]> {
+    SameOperandsAndResultsScale,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
   let summary = "Reshape operator";
 
   let description = [{
@@ -2821,8 +2906,11 @@ def TFL_ReshapeOp: TFL_Op<"reshape", [
   let results = (outs AnyTensor:$output);
   let hasCanonicalizer = 0b1;
   let hasFolder = 1;
-
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    static bool isCompatibleReturnTypes(TypeRange l, TypeRange r);
+  }];
 }
 
 def TFL_ReverseSequenceOp : TFL_Op<"reverse_sequence", [
@@ -3152,9 +3240,16 @@ def TFL_SubOp : TFL_Op<"sub", [
 
   let builders = [TFL_FusedBroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 
   let hasOptions = 1;
 }
@@ -3180,9 +3275,16 @@ def TFL_SquaredDifferenceOp : TFL_Op<"squared_difference", [
 
   let builders = [TFL_BroadcastableBinaryBuilder];
 
-  let parser = [{ return parseOneResultSameOperandTypeOp(parser, result); }];
+  let hasCustomAssemblyFormat = 1;
 
-  let printer = [{ return printOneResultOp(getOperation(), p); }];
+  let extraClassDefinition = [{
+    ParseResult $cppClass::parse(OpAsmParser &parser, OperationState &result) {
+      return parseOneResultSameOperandTypeOp(parser, result);
+    }
+    void $cppClass::print(OpAsmPrinter &p) {
+      return printOneResultOp(getOperation(), p);
+    }
+  }];
 }
 
 def TFL_TanhOp: TFL_Op<"tanh", [
@@ -3621,7 +3723,12 @@ def TFL_SparseToDenseOp : TFL_Op<"sparse_to_dense", [
       TFL_TCresVTEtIsSameAsOp<0, 3>>,
     TFL_OperandHasRankAtMost<0, 2>,
     TFL_OperandHasRankAtMost<1, 1>,
-    TFL_OperandHasRankAtMost<2, 1>]> {
+    TFL_OperandHasRankAtMost<2, 1>,
+    PredOpTrait<"the first operand should have a rank <= 2, when its rank is 2 and has static shape, the second dim should be <= 4",
+      Or<[TFL_OperandIsUnrankedPred<0>,
+          CPred<"$_op.getOperand(0).getType().cast<ShapedType>().getRank() <= 1">,
+          CPred<"$_op.getOperand(0).getType().cast<ShapedType>().getRank() == 2 && !$_op.getOperand(0).getType().cast<ShapedType>().hasStaticShape()">,
+          CPred<"$_op.getOperand(0).getType().cast<ShapedType>().getRank() == 2 && $_op.getOperand(0).getType().cast<ShapedType>().getShape()[1] <= 4">]>>]> {
   let summary = "Converts a sparse representation into a dense tensor.";
 
   let description = [{
@@ -3714,10 +3821,10 @@ def TFL_CastOp : TFL_Op<"cast", [
   }];
 
   let arguments = (ins
-    TFL_TensorOf<[F32, I1, I16, I32, UI32, I64, TFL_Quint8, UI8, I8, Complex<F<32>>]>:$input
+    TFL_TensorOf<[F32, I1, I16, UI16, I32, UI32, I64, TFL_Quint8, UI8, I8, Complex<F<32>>]>:$input
   );
 
-  let results = (outs TFL_TensorOf<[F32, I1, I16, I32, UI32, I64, TFL_Quint8, UI8, I8, Complex<F<32>>]>:$output);
+  let results = (outs TFL_TensorOf<[F32, I1, I16, UI16, I32, UI32, I64, TFL_Quint8, UI8, I8, Complex<F<32>>]>:$output);
 
   // TFLite's cast op does not utilize CastOptions, instead derives types
   // from the TfLiteTensors.
@@ -3817,6 +3924,30 @@ def TFL_GeluOp: TFL_Op<"gelu", [
   let results = (outs TFL_TensorOf<[F32, QI8, QUI8]>:$output);
 
   let hasOptions = 1;
+}
+
+def TFL_DynamicUpdateSliceOp: TFL_Op<"dynamic_update_slice", [
+    NoSideEffect,
+    PredOpTrait<"input and output must have same element type",
+      TFL_TCresVTEtIsSameAsOp<0, 0>>]> {
+  let summary = "DynamicUpdateSlice.";
+  let description = [{
+    DynamicUpdateSlice op that have the same semantics with XLA
+    DynamicUpdateSlice.
+    Generates a result which is the value of the input array
+    operand, with a slice update overwritten at start_indices.
+
+    See https://www.tensorflow.org/xla/operation_semantics#dynamicupdateslice.
+  }];
+
+  let arguments = (ins
+    TFL_TensorOf<[I1, I8, I32, I64, F32]>:$operand,
+    TFL_TensorOf<[I1, I8, I32, I64, F32]>:$update,
+    TFL_I32Tensor:$start_indices
+  );
+
+  let results = (
+    outs TFL_TensorOf<[I1, I8, I32, I64, F32]>:$output);
 }
 
 //===----------------------------------------------------------------------===//
@@ -4748,7 +4879,6 @@ def TFL_IfOp : Op<TFL_Dialect, "if", [
     DeclareOpInterfaceMethods<RegionBranchOpInterface>,
     SingleBlockImplicitTerminator<"YieldOp">,
     RecursiveSideEffects,
-    QuantizableResult,
     NoRegionArguments,
     DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = [{if-then-else operation}];
@@ -4821,9 +4951,8 @@ def TFL_IfOp : Op<TFL_Dialect, "if", [
 }
 
 def TFL_WhileOp : Op<TFL_Dialect, "while", [
-    DeclareOpInterfaceMethods<LoopLikeOpInterface>,
+    DeclareOpInterfaceMethods<LoopLikeOpInterface, ["isDefinedOutsideOfLoop"]>,
     SingleBlockImplicitTerminator<"YieldOp">,
-    QuantizableResult,
     DeclareOpInterfaceMethods<TFL_RuntimeVerification>]> {
   let summary = [{While loop}];
 
@@ -5025,7 +5154,7 @@ def TFL_VarHandleOp : TFL_Op<"var_handle", []> {
   let hasOptions = 1;
 }
 
-def TFL_AssignVariableOp : TFL_Op<"assign_variable", [QuantizableResult]> {
+def TFL_AssignVariableOp : TFL_Op<"assign_variable", []> {
   let summary = "Assigns a new value to a variable.";
 
   let description = [{
@@ -5041,7 +5170,7 @@ this value or a subsequent newer value of the variable.
   let results = (outs);
 }
 
-def TFL_ReadVariableOp : TFL_Op<"read_variable", [QuantizableResult]> {
+def TFL_ReadVariableOp : TFL_Op<"read_variable", []> {
   let summary = "Reads variable value.";
 
   let description = [{

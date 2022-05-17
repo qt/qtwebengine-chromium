@@ -557,6 +557,9 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   inline void SmiUntag(Register dst, const MemOperand& src);
   inline void SmiUntag(Register smi);
 
+  inline void SmiTag(Register dst, Register src);
+  inline void SmiTag(Register smi);
+
   inline void SmiToInt32(Register smi);
 
   // Calls Abort(msg) if the condition cond is not satisfied.
@@ -862,15 +865,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // kSRegSizeInBits are supported.
   //
   // Otherwise, (Push|Pop)(CPU|X|W|D|S)RegList is preferred.
-  //
-  // The methods take an optional LoadLRMode or StoreLRMode template argument.
-  // When control flow integrity measures are enabled and the link register is
-  // included in 'registers', passing kSignLR to PushCPURegList will sign the
-  // link register before pushing the list, and passing kAuthLR to
-  // PopCPURegList will authenticate it after popping the list.
-  template <StoreLRMode lr_mode = kDontStoreLR>
   void PushCPURegList(CPURegList registers);
-  template <LoadLRMode lr_mode = kDontLoadLR>
   void PopCPURegList(CPURegList registers);
 
   // Calculate how much stack space (in bytes) are required to store caller
@@ -1752,27 +1747,23 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
     tbx(vd, vn, vn2, vn3, vn4, vm);
   }
 
-  // For the 'lr_mode' template argument of the following methods, see
-  // PushCPURegList/PopCPURegList.
-  template <StoreLRMode lr_mode = kDontStoreLR>
-  inline void PushSizeRegList(
-      RegList registers, unsigned reg_size,
-      CPURegister::RegisterType type = CPURegister::kRegister) {
-    PushCPURegList<lr_mode>(CPURegList(type, reg_size, registers));
+  inline void PushSizeRegList(RegList registers, unsigned reg_size) {
+    PushCPURegList(CPURegList(reg_size, registers));
   }
-  template <LoadLRMode lr_mode = kDontLoadLR>
-  inline void PopSizeRegList(
-      RegList registers, unsigned reg_size,
-      CPURegister::RegisterType type = CPURegister::kRegister) {
-    PopCPURegList<lr_mode>(CPURegList(type, reg_size, registers));
+  inline void PushSizeRegList(DoubleRegList registers, unsigned reg_size) {
+    PushCPURegList(CPURegList(reg_size, registers));
   }
-  template <StoreLRMode lr_mode = kDontStoreLR>
+  inline void PopSizeRegList(RegList registers, unsigned reg_size) {
+    PopCPURegList(CPURegList(reg_size, registers));
+  }
+  inline void PopSizeRegList(DoubleRegList registers, unsigned reg_size) {
+    PopCPURegList(CPURegList(reg_size, registers));
+  }
   inline void PushXRegList(RegList regs) {
-    PushSizeRegList<lr_mode>(regs, kXRegSizeInBits);
+    PushSizeRegList(regs, kXRegSizeInBits);
   }
-  template <LoadLRMode lr_mode = kDontLoadLR>
   inline void PopXRegList(RegList regs) {
-    PopSizeRegList<lr_mode>(regs, kXRegSizeInBits);
+    PopSizeRegList(regs, kXRegSizeInBits);
   }
   inline void PushWRegList(RegList regs) {
     PushSizeRegList(regs, kWRegSizeInBits);
@@ -1780,23 +1771,23 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   inline void PopWRegList(RegList regs) {
     PopSizeRegList(regs, kWRegSizeInBits);
   }
-  inline void PushQRegList(RegList regs) {
-    PushSizeRegList(regs, kQRegSizeInBits, CPURegister::kVRegister);
+  inline void PushQRegList(DoubleRegList regs) {
+    PushSizeRegList(regs, kQRegSizeInBits);
   }
-  inline void PopQRegList(RegList regs) {
-    PopSizeRegList(regs, kQRegSizeInBits, CPURegister::kVRegister);
+  inline void PopQRegList(DoubleRegList regs) {
+    PopSizeRegList(regs, kQRegSizeInBits);
   }
-  inline void PushDRegList(RegList regs) {
-    PushSizeRegList(regs, kDRegSizeInBits, CPURegister::kVRegister);
+  inline void PushDRegList(DoubleRegList regs) {
+    PushSizeRegList(regs, kDRegSizeInBits);
   }
-  inline void PopDRegList(RegList regs) {
-    PopSizeRegList(regs, kDRegSizeInBits, CPURegister::kVRegister);
+  inline void PopDRegList(DoubleRegList regs) {
+    PopSizeRegList(regs, kDRegSizeInBits);
   }
-  inline void PushSRegList(RegList regs) {
-    PushSizeRegList(regs, kSRegSizeInBits, CPURegister::kVRegister);
+  inline void PushSRegList(DoubleRegList regs) {
+    PushSizeRegList(regs, kSRegSizeInBits);
   }
-  inline void PopSRegList(RegList regs) {
-    PopSizeRegList(regs, kSRegSizeInBits, CPURegister::kVRegister);
+  inline void PopSRegList(DoubleRegList regs) {
+    PopSizeRegList(regs, kSRegSizeInBits);
   }
 
   // Push the specified register 'count' times.
@@ -1850,9 +1841,6 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   Operand ReceiverOperand(const Register arg_count);
 
   // ---- SMI and Number Utilities ----
-
-  inline void SmiTag(Register dst, Register src);
-  inline void SmiTag(Register smi);
 
   inline void JumpIfNotSmi(Register value, Label* not_smi_label);
 
@@ -2154,8 +2142,8 @@ class V8_NODISCARD UseScratchRegisterScope {
   explicit UseScratchRegisterScope(TurboAssembler* tasm)
       : available_(tasm->TmpList()),
         availablefp_(tasm->FPTmpList()),
-        old_available_(available_->list()),
-        old_availablefp_(availablefp_->list()) {
+        old_available_(available_->bits()),
+        old_availablefp_(availablefp_->bits()) {
     DCHECK_EQ(available_->type(), CPURegister::kRegister);
     DCHECK_EQ(availablefp_->type(), CPURegister::kVRegister);
   }
@@ -2205,8 +2193,8 @@ class V8_NODISCARD UseScratchRegisterScope {
   CPURegList* availablefp_;  // kVRegister
 
   // The state of the available lists at the start of this scope.
-  RegList old_available_;    // kRegister
-  RegList old_availablefp_;  // kVRegister
+  uint64_t old_available_;    // kRegister
+  uint64_t old_availablefp_;  // kVRegister
 };
 
 }  // namespace internal

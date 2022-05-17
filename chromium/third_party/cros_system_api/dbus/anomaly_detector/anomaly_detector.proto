@@ -14,3 +14,10 @@ message GuestFileCorruptionSignal {
   // The vsock context identifier used by the VM that triggered this signal.
   int32 vsock_cid = 1;
 }
+
+// This signal is sent whenever anomaly_detector sees that the Termina
+// VM has killed a process via the kernel OOM killer.
+message GuestOomEventSignal {
+  // The vsock context identifier used by the VM that triggered this signal.
+  int32 vsock_cid = 1;
+}

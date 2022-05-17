@@ -39,11 +39,11 @@
 
 
   /* NOTE: These table sizes are given by the specification. */
-#define SVG_TABLE_HEADER_SIZE           10U
-#define SVG_DOCUMENT_RECORD_SIZE        12U
-#define SVG_DOCUMENT_LIST_MINIMUM_SIZE  2U + SVG_DOCUMENT_RECORD_SIZE
-#define SVG_MINIMUM_SIZE                SVG_TABLE_HEADER_SIZE +        \
-                                        SVG_DOCUMENT_LIST_MINIMUM_SIZE
+#define SVG_TABLE_HEADER_SIZE           (10U)
+#define SVG_DOCUMENT_RECORD_SIZE        (12U)
+#define SVG_DOCUMENT_LIST_MINIMUM_SIZE  (2U + SVG_DOCUMENT_RECORD_SIZE)
+#define SVG_MINIMUM_SIZE                (SVG_TABLE_HEADER_SIZE +        \
+                                         SVG_DOCUMENT_LIST_MINIMUM_SIZE)
 
 
   typedef struct  Svg_
@@ -319,7 +319,7 @@
 #ifdef FT_CONFIG_OPTION_USE_ZLIB
 
       FT_ULong  uncomp_size;
-      FT_Byte*  uncomp_buffer;
+      FT_Byte*  uncomp_buffer = NULL;
 
 
       /*

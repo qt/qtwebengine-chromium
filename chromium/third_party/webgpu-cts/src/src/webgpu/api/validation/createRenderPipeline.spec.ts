@@ -422,7 +422,7 @@ g.test('pipeline_output_targets')
   - The componentCount of the fragment output (e.g. f32, vec2, vec3, vec4) must not have fewer
     channels than that of the color attachment texture formats. Extra components are allowed and are discarded.
 
-  MAINTAINENCE_TODO: update this test after the WebGPU SPEC ISSUE 50 "define what 'compatible' means
+  MAINTENANCE_TODO: update this test after the WebGPU SPEC ISSUE 50 "define what 'compatible' means
   for render target formats" is resolved.`
   )
   .params(u =>
@@ -668,10 +668,9 @@ g.test('pipeline_layout,device_mismatch')
       await t.selectMismatchedDeviceOrSkipTestCase(undefined);
     }
 
-    const layoutDescriptor = { bindGroupLayouts: [] };
-    const layout = mismatched
-      ? t.mismatchedDevice.createPipelineLayout(layoutDescriptor)
-      : t.device.createPipelineLayout(layoutDescriptor);
+    const device = mismatched ? t.mismatchedDevice : t.device;
+
+    const layout = device.createPipelineLayout({ bindGroupLayouts: [] });
 
     const descriptor = {
       layout,
@@ -738,3 +737,9 @@ g.test('shader_module,device_mismatch')
 
     t.doCreateRenderPipelineTest(isAsync, _success, descriptor);
   });
+
+g.test('entry_point_name_must_match')
+  .desc(
+    'TODO: Test the matching of entrypoint names for vertex and fragment (see the equivalent test for createComputePipeline).'
+  )
+  .unimplemented();

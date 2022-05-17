@@ -12,7 +12,7 @@
 
 #include <stdio.h>
 
-#include <memory>
+#include <cstdint>
 
 #include "absl/algorithm/container.h"
 #include "absl/types/optional.h"
@@ -20,11 +20,16 @@
 #include "api/candidate.h"
 #include "api/data_channel_interface.h"
 #include "api/media_stream_track.h"
+#include "api/media_types.h"
+#include "api/rtp_sender_interface.h"
 #include "api/scoped_refptr.h"
 #include "call/call.h"
 #include "media/base/media_channel.h"
 #include "modules/audio_processing/include/audio_processing_statistics.h"
+#include "p2p/base/ice_transport_internal.h"
 #include "pc/media_stream.h"
+#include "pc/rtp_receiver.h"
+#include "pc/rtp_sender.h"
 #include "pc/sctp_data_channel.h"
 #include "pc/test/fake_peer_connection_for_stats.h"
 #include "pc/test/fake_video_track_source.h"
@@ -43,6 +48,7 @@
 #include "rtc_base/string_encode.h"
 #include "rtc_base/third_party/base64/base64.h"
 #include "rtc_base/thread.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 using cricket::ConnectionInfo;
@@ -83,7 +89,6 @@ class FakeAudioProcessor : public AudioProcessorInterface {
   AudioProcessorInterface::AudioProcessorStatistics GetStats(
       bool has_recv_streams) override {
     AudioProcessorStatistics stats;
-    stats.typing_noise_detected = true;
     if (has_recv_streams) {
       stats.apm_statistics.echo_return_loss = 2.0;
       stats.apm_statistics.echo_return_loss_enhancement = 3.0;
@@ -126,7 +131,6 @@ class FakeAudioProcessorWithInitValue : public AudioProcessorInterface {
   AudioProcessorInterface::AudioProcessorStatistics GetStats(
       bool /*has_recv_streams*/) override {
     AudioProcessorStatistics stats;
-    stats.typing_noise_detected = false;
     return stats;
   }
 };
@@ -482,10 +486,6 @@ void VerifyVoiceSenderInfoReport(const StatsReport* report,
   EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameAudioInputLevel,
                        &value_in_report));
   EXPECT_EQ(rtc::ToString(sinfo.audio_level), value_in_report);
-  EXPECT_TRUE(GetValue(report, StatsReport::kStatsValueNameTypingNoiseState,
-                       &value_in_report));
-  std::string typing_detected = sinfo.typing_noise_detected ? "true" : "false";
-  EXPECT_EQ(typing_detected, value_in_report);
   EXPECT_TRUE(GetValue(report,
                        StatsReport::kStatsValueNameAnaBitrateActionCounter,
                        &value_in_report));
@@ -545,7 +545,6 @@ void InitVoiceSenderInfo(cricket::VoiceSenderInfo* voice_sender_info,
   voice_sender_info->apm_statistics.echo_return_loss_enhancement = 109;
   voice_sender_info->apm_statistics.delay_median_ms = 110;
   voice_sender_info->apm_statistics.delay_standard_deviation_ms = 111;
-  voice_sender_info->typing_noise_detected = false;
   voice_sender_info->ana_statistics.bitrate_action_counter = 112;
   voice_sender_info->ana_statistics.channel_action_counter = 113;
   voice_sender_info->ana_statistics.dtx_action_counter = 114;
@@ -562,8 +561,6 @@ void UpdateVoiceSenderInfoFromAudioTrack(
   audio_track->GetSignalLevel(&voice_sender_info->audio_level);
   AudioProcessorInterface::AudioProcessorStatistics audio_processor_stats =
       audio_track->GetAudioProcessor()->GetStats(has_remote_tracks);
-  voice_sender_info->typing_noise_detected =
-      audio_processor_stats.typing_noise_detected;
   voice_sender_info->apm_statistics = audio_processor_stats.apm_statistics;
 }
 
@@ -764,9 +761,8 @@ static rtc::scoped_refptr<MockRtpReceiverInternal> CreateMockReceiver(
           Return(track->kind() == MediaStreamTrackInterface::kAudioKind
                      ? cricket::MEDIA_TYPE_AUDIO
                      : cricket::MEDIA_TYPE_VIDEO));
-  EXPECT_CALL(*receiver, SetMediaChannel(_)).Times(AtMost(1));
-  EXPECT_CALL(*receiver, Stop());
-  EXPECT_CALL(*receiver, StopAndEndTrack());
+  EXPECT_CALL(*receiver, SetMediaChannel(_)).WillRepeatedly(Return());
+  EXPECT_CALL(*receiver, Stop()).WillRepeatedly(Return());
   return receiver;
 }
 

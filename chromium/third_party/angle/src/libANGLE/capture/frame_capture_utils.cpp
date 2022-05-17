@@ -1045,8 +1045,6 @@ void SerializeProgramState(JsonSerializer *json, const gl::ProgramState &program
                                      programState.getSecondaryOutputLocations());
     json->addScalar("BinaryRetrieveableHint", programState.hasBinaryRetrieveableHint());
     json->addScalar("Separable", programState.isSeparable());
-    json->addScalar("EarlyFragmentTestsOptimization",
-                    programState.hasEarlyFragmentTestsOptimization());
     json->addScalar("NumViews", programState.getNumViews());
     json->addScalar("DrawIDLocation", programState.getDrawIDLocation());
     json->addScalar("BaseVertexLocation", programState.getBaseVertexLocation());
@@ -1222,7 +1220,9 @@ Result SerializeTextureData(JsonSerializer *json,
         ASSERT(index.getType() == gl::TextureType::_2D || index.getType() == gl::TextureType::_3D ||
                index.getType() == gl::TextureType::_2DArray ||
                index.getType() == gl::TextureType::CubeMap ||
-               index.getType() == gl::TextureType::CubeMapArray);
+               index.getType() == gl::TextureType::CubeMapArray ||
+               index.getType() == gl::TextureType::_2DMultisampleArray ||
+               index.getType() == gl::TextureType::_2DMultisample);
 
         GLenum glFormat = format.format;
         GLenum glType   = format.type;

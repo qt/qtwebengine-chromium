@@ -109,7 +109,8 @@ WasmCompilationResult WasmCompilationUnit::ExecuteFunctionCompilation(
       // them to be compiled for debugging, see documentation.
       if (V8_LIKELY(FLAG_wasm_tier_mask_for_testing == 0) ||
           func_index_ >= 32 ||
-          ((FLAG_wasm_tier_mask_for_testing & (1 << func_index_)) == 0)) {
+          ((FLAG_wasm_tier_mask_for_testing & (1 << func_index_)) == 0) ||
+          FLAG_liftoff_only) {
         // We do not use the debug side table, we only (optionally) pass it to
         // cover different code paths in Liftoff for testing.
         std::unique_ptr<DebugSideTable> unused_debug_sidetable;
@@ -126,6 +127,10 @@ WasmCompilationResult WasmCompilationUnit::ExecuteFunctionCompilation(
                 .set_debug_sidetable(debug_sidetable_ptr));
         if (result.succeeded()) break;
       }
+
+      // If --liftoff-only, do not fall back to turbofan, even if compilation
+      // failed.
+      if (FLAG_liftoff_only) break;
 
       // If Liftoff failed, fall back to turbofan.
       // TODO(wasm): We could actually stop or remove the tiering unit for this
@@ -179,7 +184,7 @@ bool UseGenericWrapper(const FunctionSig* sig) {
     ValueType ret = sig->GetReturn(0);
     if (ret.kind() == kS128) return false;
     if (ret.is_reference()) {
-      if (ret.heap_representation() != wasm::HeapType::kExtern &&
+      if (ret.heap_representation() != wasm::HeapType::kAny &&
           ret.heap_representation() != wasm::HeapType::kFunc) {
         return false;
       }
@@ -189,7 +194,7 @@ bool UseGenericWrapper(const FunctionSig* sig) {
     if (type.kind() != kI32 && type.kind() != kI64 && type.kind() != kF32 &&
         type.kind() != kF64 &&
         !(type.is_reference() &&
-          type.heap_representation() == wasm::HeapType::kExtern)) {
+          type.heap_representation() == wasm::HeapType::kAny)) {
       return false;
     }
   }

@@ -22,10 +22,11 @@
 #include <type_traits>
 #include <utility>
 
+#include "internal/platform/count_down_latch.h"
 #include "internal/platform/feature_flags.h"
+#include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/prng.h"
-#include "internal/platform/count_down_latch.h"
 
 namespace location {
 namespace nearby {
@@ -59,6 +60,7 @@ void MediumEnvironment::Reset() {
     bluetooth_adapters_.clear();
     bluetooth_mediums_.clear();
     ble_mediums_.clear();
+    ble_v2_mediums_.clear();
 #ifndef NO_WEBRTC
     webrtc_signaling_message_callback_.clear();
     webrtc_signaling_complete_callback_.clear();
@@ -226,6 +228,24 @@ void MediumEnvironment::OnBlePeripheralStateChanged(
       info.discovery_callback.peripheral_lost_cb(peripheral, service_id);
     }
   });
+}
+
+void MediumEnvironment::OnBleV2PeripheralStateChanged(
+    bool enabled, BleV2MediumContext& context,
+    const api::ble_v2::BleAdvertisementData& ble_advertisement_data,
+    api::ble_v2::BlePeripheral& peripheral) {
+  if (!enabled_) return;
+  NEARBY_LOGS(INFO) << "G3 OnBleServiceStateChanged [peripheral impl="
+                    << &peripheral << "]; medium_context=" << &context
+                    << "; notify=" << enable_notifications_.load();
+  if (!enable_notifications_) return;
+  NEARBY_LOGS(INFO) << "G3 [Run] OnBleServiceStateChanged [peripheral impl="
+                    << &peripheral << "]; context=" << &context
+                    << "; notify=" << enabled;
+  if (enabled) {
+    context.scan_callback.advertisement_found_cb(peripheral,
+                                                 ble_advertisement_data);
+  }
 }
 
 void MediumEnvironment::OnWifiLanServiceStateChanged(
@@ -477,6 +497,104 @@ void MediumEnvironment::CallBleAcceptedConnectionCallback(
         info.accepted_connection_callback.accepted_cb(socket, service_id);
       });
 }
+
+void MediumEnvironment::RegisterBleV2Medium(api::ble_v2::BleMedium& medium) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread([this, &medium]() {
+    ble_v2_mediums_.insert({&medium, BleV2MediumContext{}});
+    NEARBY_LOGS(INFO) << "G3 Registered: medium:" << &medium;
+  });
+}
+
+void MediumEnvironment::UpdateBleV2MediumForAdvertising(
+    bool enabled, api::ble_v2::BleMedium& medium,
+    api::ble_v2::BlePeripheral& peripheral,
+    const api::ble_v2::BleAdvertisementData& advertisement_data) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread(
+      [this, &medium, &peripheral, advertisement_data = advertisement_data,
+       enabled]() {
+        auto it = ble_v2_mediums_.find(&medium);
+        if (it == ble_v2_mediums_.end()) {
+          NEARBY_LOGS(INFO)
+              << "G3 UpdateBleV2MediumForAdvertising failed. There is no "
+                 "medium registered.";
+          return;
+        }
+        auto& context = it->second;
+        context.ble_peripheral = &peripheral;
+        context.advertising = enabled;
+        context.advertisement_data = advertisement_data;
+        NEARBY_LOGS(INFO) << "G3 UpdateBleV2MediumForAdvertising: this=" << this
+                          << ", medium=" << &medium
+                          << ", medium_context=" << &context
+                          << ", peripheral=" << &peripheral
+                          << ", enabled=" << enabled;
+        for (auto& medium_info : ble_v2_mediums_) {
+          const api::ble_v2::BleMedium* remote_medium = medium_info.first;
+          const BleV2MediumContext& remote_context = medium_info.second;
+          // Do not send notification to the same medium.
+          if (remote_medium == &medium) continue;
+          NEARBY_LOGS(INFO)
+              << "G3 UpdateBleV2MediumForAdvertising, found other medium="
+              << remote_medium << ", remote_medium_context=" << &remote_context
+              << ", remote_context.peripheral=" << remote_context.ble_peripheral
+              << ". Ready to call OnBleV2PeripheralStateChanged.";
+          OnBleV2PeripheralStateChanged(enabled, context,
+                                        context.advertisement_data,
+                                        *context.ble_peripheral);
+        }
+      });
+}
+
+void MediumEnvironment::UpdateBleV2MediumForScanning(
+    bool enabled, BleScanCallback callback, api::ble_v2::BleMedium& medium) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread(
+      [this, &medium, callback = std::move(callback), enabled]() {
+        auto it = ble_v2_mediums_.find(&medium);
+        if (it == ble_v2_mediums_.end()) {
+          NEARBY_LOGS(INFO)
+              << "G3 UpdateBleV2MediumForScanning failed. There is no medium "
+                 "registered.";
+          return;
+        }
+        BleV2MediumContext& context = it->second;
+        context.scan_callback = std::move(callback);
+        NEARBY_LOGS(INFO) << "G3 UpdateBleV2MediumForScanning: this=" << this
+                          << ", medium=" << &medium
+                          << ", medium_context=" << &context
+                          << ", enabled=" << enabled;
+        if (enabled) {
+          for (const auto& medium_info : ble_v2_mediums_) {
+            const api::ble_v2::BleMedium* remote_medium = medium_info.first;
+            const BleV2MediumContext& remote_context = medium_info.second;
+            // Do not send notification to the same or the non-advertising
+            // medium.
+            if (remote_medium == &medium || !remote_context.advertising)
+              continue;
+            NEARBY_LOGS(INFO)
+                << "G3 UpdateBleV2MediumForScanning, found other medium="
+                << remote_medium
+                << ", remote_medium_context=" << &remote_context
+                << ". Ready to call OnBleV2PeripheralStateChanged.";
+            OnBleV2PeripheralStateChanged(enabled, context,
+                                          remote_context.advertisement_data,
+                                          *remote_context.ble_peripheral);
+          }
+        }
+      });
+}
+
+void MediumEnvironment::UnregisterBleV2Medium(api::ble_v2::BleMedium& medium) {
+  if (!enabled_) return;
+  RunOnMediumEnvironmentThread([this, &medium]() {
+    auto item = ble_v2_mediums_.extract(&medium);
+    if (item.empty()) return;
+    NEARBY_LOGS(INFO) << "G3 Unregistered Ble medium";
+  });
+}
+
 #ifndef NO_WEBRTC
 void MediumEnvironment::RegisterWebRtcSignalingMessenger(
     absl::string_view self_id, OnSignalingMessageCallback message_callback,

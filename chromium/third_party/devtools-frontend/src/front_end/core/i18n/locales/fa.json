@@ -993,7 +993,7 @@
     "message": "نقاشی"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | reloadPage": {
-    "message": "بازخوانی صفحه"
+    "message": "بازآوری صفحه"
   },
   "entrypoints/inspector_main/inspector_main-meta.ts | rendering": {
     "message": "درحال پرداز زدن"
@@ -1152,19 +1152,19 @@
     "message": "تنظیم قالب رنگ روی RGB"
   },
   "entrypoints/main/main-meta.ts | switchToDarkTheme": {
-    "message": "جابه‌جایی به طرح زمینه تیره"
+    "message": "جابه‌جایی به طرح‌زمینه تیره"
   },
   "entrypoints/main/main-meta.ts | switchToLightTheme": {
     "message": "جابه‌جایی به زمینه روشن"
   },
   "entrypoints/main/main-meta.ts | switchToSystemPreferredColor": {
-    "message": "رفتن به طرح زمینه رنگ ترجیحی سیستم"
+    "message": "رفتن به طرح‌زمینه رنگ ترجیحی سیستم"
   },
   "entrypoints/main/main-meta.ts | systemPreference": {
     "message": "اولویت‌های سیستم"
   },
   "entrypoints/main/main-meta.ts | theme": {
-    "message": "طرح زمینه:"
+    "message": "طرح‌زمینه:"
   },
   "entrypoints/main/main-meta.ts | toggleDrawer": {
     "message": "فعال/غیرفعال کردن کشو"
@@ -1325,6 +1325,21 @@
   "models/issues_manager/ContentSecurityPolicyIssue.ts | trustedTypesPolicyViolation": {
     "message": "انواع معتمد - نقض خط‌مشی"
   },
+  "models/issues_manager/CookieIssue.ts | aSecure": {
+    "message": "امن"
+  },
+  "models/issues_manager/CookieIssue.ts | anInsecure": {
+    "message": "غیرایمن"
+  },
+  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
+    "message": "مشخصه First-Party Sets و SameParty"
+  },
+  "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
+    "message": "نحوه عملکرد Schemeful Same-Site"
+  },
+  "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
+    "message": "توضیحات بیشتر درباره کوکی‌های SameSite"
+  },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "هم‌رسانی منبع بین‌مبدائی (CORS)"
   },
@@ -1336,6 +1351,9 @@
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Same-Site و Same-Origin"
+  },
+  "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
+    "message": "Federated Credential Management API"
   },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "پورتال‌ها - کانال‌های ارتباطی با مبدأ یکسان"
@@ -1373,29 +1391,11 @@
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "حالت سازگاری سند"
   },
-  "models/issues_manager/SameSiteCookieIssue.ts | aSecure": {
-    "message": "امن"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | anInsecure": {
-    "message": "غیرایمن"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | firstPartySetsExplained": {
-    "message": "مشخصه First-Party Sets و SameParty"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | howSchemefulSamesiteWorks": {
-    "message": "نحوه عملکرد Schemeful Same-Site"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | samesiteCookiesExplained": {
-    "message": "توضیحات بیشتر درباره کوکی‌های SameSite"
-  },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "در حال فعال کردن SharedArrayBuffer"
   },
   "models/issues_manager/TrustedWebActivityIssue.ts | changesToQualityCriteriaForPwas": {
     "message": "تغییرات در معیارهای کیفیت برای برنامه‌های وب پیشرو (PWA) بااستفاده از «فعالیت وب معتمد»"
-  },
-  "models/issues_manager/WasmCrossOriginModuleSharingIssue.ts | linkTitle": {
-    "message": "محدودسازی مدول Wasm که با same-origin هم‌رسانی می‌کند"
   },
   "models/logs/NetworkLog.ts | anonymous": {
     "message": "<ناشناس>"
@@ -1420,9 +1420,6 @@
   },
   "models/logs/logs-meta.ts | reset": {
     "message": "بازنشانی"
-  },
-  "models/persistence/Automapping.ts | theAttemptToBindSInTheWorkspace": {
-    "message": "تلاش برای متصل کردن «{PH1}» در فضای کاری انجام نشد چون این URI ناقص است."
   },
   "models/persistence/EditFileSystemView.ts | add": {
     "message": "افزودن"
@@ -1794,7 +1791,7 @@
     "message": "هدف این عنصر را نشان می‌دهد؛ مثلاً سبک خاص واسط کاربری یک ابزارک، یا نقش ساختاری در یک سند."
   },
   "panels/accessibility/AccessibilityStrings.ts | invalidUserEntry": {
-    "message": "ورودی کاربر نامعتبر است"
+    "message": "درونداد کاربر نامعتبر است"
   },
   "panels/accessibility/AccessibilityStrings.ts | labeledBy": {
     "message": "برچسب‌گذاری‌شده براساس"
@@ -2070,7 +2067,7 @@
     "message": "رنگ پس‌زمینه تیره"
   },
   "panels/application/AppManifestView.ts | darkThemeColor": {
-    "message": "رنگ طرح زمینه تیره"
+    "message": "رنگ طرح‌زمینه تیره"
   },
   "panels/application/AppManifestView.ts | description": {
     "message": "شرح"
@@ -2250,7 +2247,7 @@
     "message": "پلاتفرم برنامه مشخص‌شده در Android پشتیبانی نمی‌شود"
   },
   "panels/application/AppManifestView.ts | themeColor": {
-    "message": "رنگ طرح زمینه"
+    "message": "رنگ طرح‌زمینه"
   },
   "panels/application/ApplicationPanelCacheSection.ts | backForwardCache": {
     "message": "حافظه پنهان عقب-جلو"
@@ -2554,6 +2551,15 @@
   },
   "panels/application/IndexedDBViews.ts | version": {
     "message": "نسخه"
+  },
+  "panels/application/InterestGroupStorageView.ts | clickToDisplayBody": {
+    "message": "برای نمایش وضعیت فعلی گروه، روی یکی از رویدادهای گروه ذی‌نفع کلیک کنید"
+  },
+  "panels/application/InterestGroupStorageView.ts | noDataAvailable": {
+    "message": "هیچ جزئیاتی برای گروه ذی‌نفع انتخابی وجود ندارد. ممکن است مرورگر این گروه را ترک کرده باشد."
+  },
+  "panels/application/InterestGroupTreeElement.ts | interestGroups": {
+    "message": "گروه‌های ذی‌نفع"
   },
   "panels/application/OpenedWindowDetailsView.ts | accessToOpener": {
     "message": "دسترسی به بازکننده"
@@ -3230,6 +3236,9 @@
   "panels/application/components/BackForwardCacheView.ts | backForwardCacheTitle": {
     "message": "حافظه پنهان عقب-جلو"
   },
+  "panels/application/components/BackForwardCacheView.ts | blockingExtensionId": {
+    "message": "شناسه افزونه: "
+  },
   "panels/application/components/BackForwardCacheView.ts | circumstantial": {
     "message": "غیرقابل‌اقدام"
   },
@@ -3419,6 +3428,24 @@
   "panels/application/components/FrameDetailsView.ts | yes": {
     "message": "بله"
   },
+  "panels/application/components/InterestGroupAccessGrid.ts | allInterestGroupStorageEvents": {
+    "message": "همه رویدادهای ذخیره‌سازی گروه ذی‌نفع."
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventTime": {
+    "message": "زمان رویداد"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventType": {
+    "message": "نوع دسترسی"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupName": {
+    "message": "نام"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupOwner": {
+    "message": "مالک"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | noEvents": {
+    "message": "رویدادی برای گروه ذی‌نفع ضبط نشده است."
+  },
   "panels/application/components/OriginTrialTreeView.ts | expiryTime": {
     "message": "زمان انقضا"
   },
@@ -3458,6 +3485,9 @@
   "panels/application/components/PermissionsPolicySection.ts | clickToShowIframe": {
     "message": "برای آشکار کردن بالاترین iframe که این ویژگی را در پانل عناصر مجاز نمی‌کند، کلیک کنید"
   },
+  "panels/application/components/PermissionsPolicySection.ts | disabledByFencedFrame": {
+    "message": "در fencedframe غیرفعال است"
+  },
   "panels/application/components/PermissionsPolicySection.ts | disabledByHeader": {
     "message": "توسط سرصفحه «Permissions-Policy»غیرفعال شده"
   },
@@ -3473,8 +3503,17 @@
   "panels/application/components/PermissionsPolicySection.ts | showDetails": {
     "message": "نمایش جزئیات"
   },
+  "panels/application/components/ReportsGrid.ts | destination": {
+    "message": "مقصد"
+  },
+  "panels/application/components/ReportsGrid.ts | generatedAt": {
+    "message": "زمان ایجاد:"
+  },
   "panels/application/components/ReportsGrid.ts | noReportsToDisplay": {
     "message": "هیچ گزارشی برای نمایش وجود ندارد"
+  },
+  "panels/application/components/ReportsGrid.ts | status": {
+    "message": "وضعیت"
   },
   "panels/application/components/StackTrace.ts | cannotRenderStackTrace": {
     "message": "ردیابی پشته‌ای پرداز نمی‌شود"
@@ -3549,7 +3588,7 @@
     "message": "لغوانتخاب‌شده"
   },
   "panels/browser_debugger/ObjectEventListenersSidebarPane.ts | refreshGlobalListeners": {
-    "message": "بازخوانی کردن شنوندگان جهانی"
+    "message": "بازآوری شنوندگان جهانی"
   },
   "panels/browser_debugger/XHRBreakpointsSidebarPane.ts | addBreakpoint": {
     "message": "افزودن نقطه توقف"
@@ -4586,6 +4625,12 @@
   "panels/elements/EventListenersWidget.ts | showListenersOnTheAncestors": {
     "message": "نمایش شنونده‌ها در نیاکان"
   },
+  "panels/elements/LayersWidget.ts | cssLayersTitle": {
+    "message": "لایه‌های CSS"
+  },
+  "panels/elements/LayersWidget.ts | toggleCSSLayers": {
+    "message": "فعال/ غیرفعال کردن نمای لایه‌های CSS"
+  },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "نقطه توقف DOM"
   },
@@ -4667,8 +4712,17 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "مشاهده مقدار محاسبه‌شده"
   },
+  "panels/elements/StylesSidebarPane.ts | clickToRevealLayer": {
+    "message": "برای نمایش لایه در درخت لایه‌ای، کلیک کنید"
+  },
   "panels/elements/StylesSidebarPane.ts | constructedStylesheet": {
     "message": "برگه سبک نگارش ساخته‌شده"
+  },
+  "panels/elements/StylesSidebarPane.ts | copiedToClipboard": {
+    "message": "در بریده‌دان کپی شد"
+  },
+  "panels/elements/StylesSidebarPane.ts | copyAllCSSChanges": {
+    "message": "کپی کردن همه تغییرات CSS"
   },
   "panels/elements/StylesSidebarPane.ts | copyAllDeclarations": {
     "message": "کپی کردن همه تعریف‌ها"
@@ -4680,10 +4734,10 @@
     "message": "کپی کردن selector"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
-    "message": "نام دارایی CSS"
+    "message": "نام خصوصیت CSS: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
-    "message": "مقدار دارایی CSS"
+    "message": "مقدار خصوصیت CSS: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssSelector": {
     "message": "انتخاب‌گر CSS"
@@ -4714,6 +4768,9 @@
   },
   "panels/elements/StylesSidebarPane.ts | invalidString": {
     "message": "{PH1}، نام دارایی: {PH2}، مقدار دارایی: {PH3}"
+  },
+  "panels/elements/StylesSidebarPane.ts | layer": {
+    "message": "لایه"
   },
   "panels/elements/StylesSidebarPane.ts | newStyleRule": {
     "message": "قانون سبک جدید"
@@ -5483,27 +5540,6 @@
   "panels/issues/IssuesPane.ts | trustedWebActivity": {
     "message": "فعالیت وب معتمد"
   },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | blocked": {
-    "message": "مسدودشده"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | nModuleTransfers": {
-    "message": "{n,plural, =1{‏# مدول}one{‏# مدول}other{‏# مدول}}"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | sourceOrigin": {
-    "message": "مبدأ منبع"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | status": {
-    "message": "وضعیت"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | targetOrigin": {
-    "message": "مبدأ هدف"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | warned": {
-    "message": "هشدار"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | wasmModuleUrl": {
-    "message": "نشانی وب مدول Wasm"
-  },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "پنهان کردن مشکلات"
   },
@@ -5744,6 +5780,12 @@
   "panels/lighthouse/LighthouseController.ts | isThisPageUsableByPeopleWith": {
     "message": "آیا این صفحه برای افرادی که ناتوانی یا اختلالی دارند قابل‌استفاده است"
   },
+  "panels/lighthouse/LighthouseController.ts | legacyNavigation": {
+    "message": "پیمایش قدیمی"
+  },
+  "panels/lighthouse/LighthouseController.ts | lighthouseMode": {
+    "message": "حالت Lighthouse"
+  },
   "panels/lighthouse/LighthouseController.ts | localStorage": {
     "message": "محل ذخیره محلی"
   },
@@ -5752,6 +5794,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | multipleTabsAreBeingControlledBy": {
     "message": "یک service worker چندین برگه را کنترل می‌کند. برای پیگیری این صفحه، برگه‌های دیگری را که در مبدأ یکسانی هستند ببندید."
+  },
+  "panels/lighthouse/LighthouseController.ts | navigation": {
+    "message": "پیمایش"
   },
   "panels/lighthouse/LighthouseController.ts | performance": {
     "message": "عملکرد"
@@ -5765,6 +5810,9 @@
   "panels/lighthouse/LighthouseController.ts | resetStorageLocalstorage": {
     "message": "فضای ذخیره‌سازی (cache، service workers و غیره) قبل‌از بررسی بازنشانی می‌شود. (برای آزمایش PWA و عملکرد مفید است)"
   },
+  "panels/lighthouse/LighthouseController.ts | runLighthouseInMode": {
+    "message": "اجرا کردن Lighthouse در حالت پیمایش، بازه زمانی، یا عکس آنی"
+  },
   "panels/lighthouse/LighthouseController.ts | seo": {
     "message": "بهینه‌سازی موتور جستجو"
   },
@@ -5774,11 +5822,20 @@
   "panels/lighthouse/LighthouseController.ts | simulatedThrottling": {
     "message": "محدودسازی شبیه‌سازی‌شده"
   },
+  "panels/lighthouse/LighthouseController.ts | snapshot": {
+    "message": "عکس آنی"
+  },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingLoadingPlural": {
     "message": "ممکن است داده‌های ذخیره‌شده‌ای وجود داشته باشند که عملکرد بار کردن در این مکان‌ها را تحت‌تأثیر قرار دهند: {PH1} برای جلوگیری از اثرگذاری این منابع بر امتیازهایتان، این صفحه را در پنجره ناشناس بررسی کنید."
   },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "ممکن است داده‌های ذخیره‌شده‌ای وجود داشته باشد که عملکرد بار کردن در این مکان را تحت‌تأثیر قرار دهد: {PH1} برای جلوگیری از اثرگذاری این منابع بر امتیازهایتان، این صفحه را در پنجره ناشناس پیگیری کنید."
+  },
+  "panels/lighthouse/LighthouseController.ts | timespan": {
+    "message": "بازه زمانی"
+  },
+  "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
+    "message": "وقتی در حالت پیمایش هستید، صفحه بااستفاده از Lighthouse قدیمی ارزیابی می‌شود."
   },
   "panels/lighthouse/LighthouseController.ts | webSql": {
     "message": "SQL وب"
@@ -5836,6 +5893,18 @@
   },
   "panels/lighthouse/LighthouseStartView.ts | learnMore": {
     "message": "بیشتر بدانید"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
+    "message": "تجزیه‌وتحلیل پیمایش"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
+    "message": "تجزیه‌وتحلیل عکس آنی"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
+    "message": "حالت"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
+    "message": "شروع بازه زمانی"
   },
   "panels/lighthouse/LighthouseStatusView.ts | OfGlobalMobileUsersInWereOnGOrG": {
     "message": "٪۷۵ کاربران تلفن همراه در سراسر جهان در سال ۲۰۱۶ از شبکه 2G یا 3G استفاده می‌کردند [منبع: GSMA Mobile]"
@@ -5923,6 +5992,18 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | walmartSawAIncreaseInRevenueFor": {
     "message": "Walmart برای هر ۱۰۰ میلی‌ثانیه بهبود در بارگیری صفحه، ۱٪ افزایش درآمد داشته است. [منبع: WPO Stats]"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | cancel": {
+    "message": "لغو"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | endTimespan": {
+    "message": "پایان بازه زمانی"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarted": {
+    "message": "بازه زمانی شروع شد، با صفحه تعامل داشته باشید"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarting": {
+    "message": "درحال شروع بازه زمانی…"
   },
   "panels/lighthouse/lighthouse-meta.ts | showLighthouse": {
     "message": "نمایش Lighthouse"
@@ -9656,6 +9737,24 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "بازخوانی عبارت‌های نظارت"
   },
+  "panels/sources/components/HeadersView.ts | addHeader": {
+    "message": "افزودن سرصفحه"
+  },
+  "panels/sources/components/HeadersView.ts | addHeaderOverride": {
+    "message": "افزودن ملغی کردن سرصفحه"
+  },
+  "panels/sources/components/HeadersView.ts | errorWhenParsing": {
+    "message": "هنگام تجزیه «{PH1}» خطایی رخ داد."
+  },
+  "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
+    "message": "به احتمال زیاد این مشکل به‌دلیل خطای نحوی در «{PH1}» پیش آمده است. این فایل را در ویرایشگر خارجی باز کنید تا خطا برطرف شود یا فایل را حذف کنید و رونویسی را دوباره ایجاد کنید."
+  },
+  "panels/sources/components/HeadersView.ts | removeBlock": {
+    "message": "برداشتن این بخش «ApplyTo»"
+  },
+  "panels/sources/components/HeadersView.ts | removeHeader": {
+    "message": "برداشتن این سرصفحه"
+  },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "فعال کردن نقاط توقف"
   },
@@ -10051,6 +10150,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | onIgnoreList": {
     "message": "در فهرست نادیده گرفتن"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
+    "message": "قابی که بخشی از آن ارائه شده است"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | raster": {
     "message": "تصویر نقطه‌ای"
@@ -10828,6 +10930,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | pinchUpdate": {
     "message": "به‌روزرسانی نزدیک یا دور کردن انگشتان"
+  },
+  "panels/timeline/TimelineUIUtils.ts | prePaint": {
+    "message": "پیش‌رنگ"
   },
   "panels/timeline/TimelineUIUtils.ts | preview": {
     "message": "پیش‌نمایش"

@@ -27,6 +27,17 @@ const char kVmLaunchServiceStartWaylandServerMethod[] = "StartWaylandServer";
 // Clean-up helper for the above method.
 const char kVmLaunchServiceStopWaylandServerMethod[] = "StopWaylandServer";
 
+// Provide a token that will be used to allow/disallow certain VMs from running.
+//
+// TODO(b/218403711): Remove this method.
+const char kVmLaunchServiceProvideVmTokenMethod[] = "ProvideVmToken";
+
+// Ask chrome to launch a VM product (crostini, borealis, etc). This is
+// preferable to using `vmc start` directly as the required arguments for that
+// method changes depending on configuration, and Chrome is the source-of-truth
+// as to what the correct arguments should be.
+const char kVmLaunchServiceEnsureVmLaunchedMethod[] = "EnsureVmLaunched";
+
 }  // namespace launch
 }  // namespace vm_tools
 

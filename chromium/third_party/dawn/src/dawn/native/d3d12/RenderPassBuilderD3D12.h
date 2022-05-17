@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DAWNNATIVE_D3D12_RENDERPASSBUILDERD3D12_H_
-#define DAWNNATIVE_D3D12_RENDERPASSBUILDERD3D12_H_
+#ifndef SRC_DAWN_NATIVE_D3D12_RENDERPASSBUILDERD3D12_H_
+#define SRC_DAWN_NATIVE_D3D12_RENDERPASSBUILDERD3D12_H_
 
 #include "dawn/common/Constants.h"
 #include "dawn/common/ityp_array.h"
@@ -37,7 +37,9 @@ namespace dawn::native::d3d12 {
       public:
         RenderPassBuilder(bool hasUAV);
 
-        ColorAttachmentIndex GetColorAttachmentCount() const;
+        // Returns the highest color attachment index + 1. If there is no color attachment, returns
+        // 0. Range: [0, kMaxColorAttachments + 1)
+        ColorAttachmentIndex GetHighestColorAttachmentIndexPlusOne() const;
 
         // Returns descriptors that are fed directly to BeginRenderPass, or are used as parameter
         // storage if D3D12 render pass API is unavailable.
@@ -50,7 +52,7 @@ namespace dawn::native::d3d12 {
         // Returns attachment RTVs to use with OMSetRenderTargets.
         const D3D12_CPU_DESCRIPTOR_HANDLE* GetRenderTargetViews() const;
 
-        bool HasDepth() const;
+        bool HasDepthOrStencil() const;
 
         // Functions that set the appropriate values in the render pass descriptors.
         void SetDepthAccess(wgpu::LoadOp loadOp,
@@ -75,12 +77,13 @@ namespace dawn::native::d3d12 {
         void SetStencilNoAccess();
 
         void SetRenderTargetView(ColorAttachmentIndex attachmentIndex,
-                                 D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor);
+                                 D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor,
+                                 bool isNullRTV);
         void SetDepthStencilView(D3D12_CPU_DESCRIPTOR_HANDLE baseDescriptor);
 
       private:
-        ColorAttachmentIndex mColorAttachmentCount{uint8_t(0)};
-        bool mHasDepth = false;
+        ColorAttachmentIndex mHighestColorAttachmentIndexPlusOne{uint8_t(0)};
+        bool mHasDepthOrStencil = false;
         D3D12_RENDER_PASS_FLAGS mRenderPassFlags = D3D12_RENDER_PASS_FLAG_NONE;
         D3D12_RENDER_PASS_DEPTH_STENCIL_DESC mRenderPassDepthStencilDesc;
         ityp::
@@ -95,4 +98,4 @@ namespace dawn::native::d3d12 {
     };
 }  // namespace dawn::native::d3d12
 
-#endif  // DAWNNATIVE_D3D12_RENDERPASSBUILDERD3D12_H_
+#endif  // SRC_DAWN_NATIVE_D3D12_RENDERPASSBUILDERD3D12_H_

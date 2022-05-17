@@ -3,7 +3,8 @@ Validation tests for setVertexBuffer on render pass and render bundle.
 `;
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
-import { GPUConst, DefaultLimits } from '../../../../../constants.js';
+import { kLimitInfo } from '../../../../../capability_info.js';
+import { GPUConst } from '../../../../../constants.js';
 import { kResourceStates } from '../../../../../gpu_test.js';
 import { ValidationTest } from '../../../validation_test.js';
 
@@ -20,8 +21,8 @@ Tests slot must be less than the maxVertexBuffers in device limits.
   .paramsSubcasesOnly(
     kRenderEncodeTypeParams.combine('slot', [
       0,
-      DefaultLimits.maxVertexBuffers - 1,
-      DefaultLimits.maxVertexBuffers,
+      kLimitInfo.maxVertexBuffers.default - 1,
+      kLimitInfo.maxVertexBuffers.default,
     ] as const)
   )
   .fn(t => {
@@ -33,10 +34,10 @@ Tests slot must be less than the maxVertexBuffers in device limits.
 
     const { encoder, validateFinish } = t.createEncoder(encoderType);
     encoder.setVertexBuffer(slot, vertexBuffer);
-    validateFinish(slot < DefaultLimits.maxVertexBuffers);
+    validateFinish(slot < kLimitInfo.maxVertexBuffers.default);
   });
 
-g.test('vertex_buffer')
+g.test('vertex_buffer_state')
   .desc(
     `
 Tests vertex buffer must be valid.
@@ -58,7 +59,25 @@ Tests vertex buffer must be valid.
 g.test('vertex_buffer,device_mismatch')
   .desc('Tests setVertexBuffer cannot be called with a vertex buffer created from another device')
   .paramsSubcasesOnly(kRenderEncodeTypeParams.combine('mismatched', [true, false]))
-  .unimplemented();
+  .fn(async t => {
+    const { encoderType, mismatched } = t.params;
+
+    if (mismatched) {
+      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
+    }
+
+    const device = mismatched ? t.mismatchedDevice : t.device;
+
+    const vertexBuffer = device.createBuffer({
+      size: 16,
+      usage: GPUBufferUsage.VERTEX,
+    });
+    t.trackForCleanup(vertexBuffer);
+
+    const { encoder, validateFinish } = t.createEncoder(encoderType);
+    encoder.setVertexBuffer(0, vertexBuffer);
+    validateFinish(!mismatched);
+  });
 
 g.test('vertex_buffer_usage')
   .desc(

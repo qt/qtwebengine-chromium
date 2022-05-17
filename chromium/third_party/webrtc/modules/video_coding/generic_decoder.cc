@@ -23,12 +23,13 @@
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
-#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 
-VCMDecodedFrameCallback::VCMDecodedFrameCallback(VCMTiming* timing,
-                                                 Clock* clock)
+VCMDecodedFrameCallback::VCMDecodedFrameCallback(
+    VCMTiming* timing,
+    Clock* clock,
+    const FieldTrialsView& field_trials)
     : _clock(clock),
       _timing(timing),
       _timestampMap(kDecoderFrameMemoryLength),
@@ -40,10 +41,10 @@ VCMDecodedFrameCallback::VCMDecodedFrameCallback(VCMTiming* timing,
       _clock->CurrentNtpInMilliseconds() - _clock->TimeInMilliseconds();
 
   ParseFieldTrial({&_extra_decode_time},
-                  field_trial::FindFullName("WebRTC-SlowDownDecoder"));
+                  field_trials.Lookup("WebRTC-SlowDownDecoder"));
   ParseFieldTrial({&low_latency_renderer_enabled_,
                    &low_latency_renderer_include_predecode_buffer_},
-                  field_trial::FindFullName("WebRTC-LowLatencyRenderer"));
+                  field_trials.Lookup("WebRTC-LowLatencyRenderer"));
 }
 
 VCMDecodedFrameCallback::~VCMDecodedFrameCallback() {}
@@ -142,7 +143,7 @@ void VCMDecodedFrameCallback::Decoded(VideoFrame& decodedImage,
   const TimeDelta decode_time = decode_time_ms
                                     ? TimeDelta::Millis(*decode_time_ms)
                                     : now - *frameInfo->decodeStart;
-  _timing->StopDecodeTimer(decode_time.ms(), now.ms());
+  _timing->StopDecodeTimer(decode_time, now);
   decodedImage.set_processing_time(
       {*frameInfo->decodeStart, *frameInfo->decodeStart + decode_time});
 

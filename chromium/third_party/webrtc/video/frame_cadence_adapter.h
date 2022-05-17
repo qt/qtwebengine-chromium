@@ -14,6 +14,7 @@
 #include <memory>
 
 #include "absl/base/attributes.h"
+#include "api/field_trials_view.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
 #include "api/video/video_frame.h"
@@ -79,7 +80,8 @@ class FrameCadenceAdapterInterface
   // Callback::OnFrame on the |queue|.
   static std::unique_ptr<FrameCadenceAdapterInterface> Create(
       Clock* clock,
-      TaskQueueBase* queue);
+      TaskQueueBase* queue,
+      const FieldTrialsView& field_trials);
 
   // Call before using the rest of the API.
   virtual void Initialize(Callback* callback) = 0;

@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/field_trials_view.h"
 #include "api/rtp_parameters.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "media/base/media_constants.h"
@@ -75,7 +76,8 @@ struct RTC_EXPORT Codec {
   virtual ~Codec();
 
   // Indicates if this codec is compatible with the specified codec.
-  bool Matches(const Codec& codec) const;
+  bool Matches(const Codec& codec,
+               const webrtc::FieldTrialsView* field_trials = nullptr) const;
   bool MatchesCapability(const webrtc::RtpCodecCapability& capability) const;
 
   // Find the parameter for `name` and write the value to `out`.
@@ -132,7 +134,8 @@ struct AudioCodec : public Codec {
   ~AudioCodec() override = default;
 
   // Indicates if this codec is compatible with the specified codec.
-  bool Matches(const AudioCodec& codec) const;
+  bool Matches(const AudioCodec& codec,
+               const webrtc::FieldTrialsView* field_trials = nullptr) const;
 
   std::string ToString() const;
 
@@ -163,7 +166,8 @@ struct RTC_EXPORT VideoCodec : public Codec {
   // Indicates if this video codec is the same as the other video codec, e.g. if
   // they are both VP8 or VP9, or if they are both H264 with the same H264
   // profile. H264 levels however are not compared.
-  bool Matches(const VideoCodec& codec) const;
+  bool Matches(const VideoCodec& codec,
+               const webrtc::FieldTrialsView* field_trials = nullptr) const;
 
   std::string ToString() const;
 

@@ -122,6 +122,7 @@ enum ContextLookupFlags {
   V(FAST_TEMPLATE_INSTANTIATIONS_CACHE_INDEX, FixedArray,                      \
     fast_template_instantiations_cache)                                        \
   V(FUNCTION_FUNCTION_INDEX, JSFunction, function_function)                    \
+  V(FUNCTION_PROTOTYPE_INDEX, JSObject, function_prototype)                    \
   V(GENERATOR_FUNCTION_FUNCTION_INDEX, JSFunction,                             \
     generator_function_function)                                               \
   V(GENERATOR_OBJECT_PROTOTYPE_MAP_INDEX, Map, generator_object_prototype_map) \
@@ -209,6 +210,8 @@ enum ContextLookupFlags {
     temporal_zoned_date_time_function)                                         \
   V(TEMPORAL_INSTANT_FIXED_ARRAY_FROM_ITERABLE_FUNCTION_INDEX, JSFunction,     \
     temporal_instant_fixed_array_from_iterable)                                \
+  V(STRING_FIXED_ARRAY_FROM_ITERABLE_FUNCTION_INDEX, JSFunction,               \
+    string_fixed_array_from_iterable)                                          \
   /* Context maps */                                                           \
   V(NATIVE_CONTEXT_MAP_INDEX, Map, native_context_map)                         \
   V(FUNCTION_CONTEXT_MAP_INDEX, Map, function_context_map)                     \
@@ -231,6 +234,7 @@ enum ContextLookupFlags {
   V(NORMALIZED_MAP_CACHE_INDEX, Object, normalized_map_cache)                  \
   V(NUMBER_FUNCTION_INDEX, JSFunction, number_function)                        \
   V(OBJECT_FUNCTION_INDEX, JSFunction, object_function)                        \
+  V(OBJECT_FUNCTION_PROTOTYPE_INDEX, JSObject, object_function_prototype)      \
   V(OBJECT_FUNCTION_PROTOTYPE_MAP_INDEX, Map, object_function_prototype_map)   \
   V(PROMISE_HOOK_INIT_FUNCTION_INDEX, Object, promise_hook_init_function)      \
   V(PROMISE_HOOK_BEFORE_FUNCTION_INDEX, Object, promise_hook_before_function)  \
@@ -341,6 +345,7 @@ enum ContextLookupFlags {
   V(OBJECT_TO_STRING, JSFunction, object_to_string)                            \
   V(OBJECT_VALUE_OF_FUNCTION_INDEX, JSFunction, object_value_of_function)      \
   V(PROMISE_ALL_INDEX, JSFunction, promise_all)                                \
+  V(PROMISE_ALL_SETTLED_INDEX, JSFunction, promise_all_settled)                \
   V(PROMISE_ANY_INDEX, JSFunction, promise_any)                                \
   V(PROMISE_FUNCTION_INDEX, JSFunction, promise_function)                      \
   V(RANGE_ERROR_FUNCTION_INDEX, JSFunction, range_error_function)              \
@@ -362,8 +367,9 @@ enum ContextLookupFlags {
   V(WEAKMAP_GET_INDEX, JSFunction, weakmap_get)                                \
   V(WEAKMAP_DELETE_INDEX, JSFunction, weakmap_delete)                          \
   V(WEAKSET_ADD_INDEX, JSFunction, weakset_add)                                \
+  V(WRAPPED_FUNCTION_MAP_INDEX, Map, wrapped_function_map)                     \
   V(RETAINED_MAPS, Object, retained_maps)                                      \
-  V(OSR_CODE_CACHE_INDEX, WeakFixedArray, osr_code_cache)
+  V(OSR_CODE_CACHE_INDEX, OSROptimizedCodeCache, osr_code_cache)
 
 #include "torque-generated/src/objects/contexts-tq.inc"
 
@@ -770,8 +776,6 @@ class NativeContext : public Context {
   inline Object OptimizedCodeListHead();
   inline void SetDeoptimizedCodeListHead(Object head);
   inline Object DeoptimizedCodeListHead();
-
-  inline OSROptimizedCodeCache GetOSROptimizedCodeCache();
 
   void ResetErrorsThrown();
   void IncrementErrorsThrown();

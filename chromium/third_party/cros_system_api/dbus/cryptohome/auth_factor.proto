@@ -18,6 +18,7 @@ package user_data_auth;
 enum AuthFactorType {
   AUTH_FACTOR_TYPE_UNSPECIFIED = 0;
   AUTH_FACTOR_TYPE_PASSWORD = 1;
+  AUTH_FACTOR_TYPE_PIN = 2;
 }
 
 // AuthFactorIdentifier provides some identificaiton information for a given
@@ -31,18 +32,37 @@ message PasswordAuthInput {
   bytes secret = 1;
 }
 
+// Pin AuthFactor requires a secret to be passed for derivation and
+// creation of key.
+message PinAuthInput {
+  bytes secret = 1;
+}
+
 // AuthInput is a wrapper around any secret or input data that is required to
 // authenticate or create an AuthFactor on disk.
 message AuthInput {
   // An AuthFactor could also carry with itself some input in some cases,
   // such as password, the secret would be user supplied. In those cases the
   // secret can be passed here.
-  oneof input { PasswordAuthInput password_input = 1; }
+  oneof input {
+    PasswordAuthInput password_input = 1;
+    PinAuthInput pin_input = 2;
+  }
 }
 
 // Password AuthFactor does not store any special metadata. Although this could
 // change in the future and keeping that in mind, an empty proto is defined.
 message PasswordMetadata {}
+
+message PinMetadata {
+  // If true, the key is "locked" after too many unsuccessful authorization
+  // attempts. Future authentication attempts against a locked key fail with
+  // CRYPTOHOME_ERROR_TPM_DEFEND_LOCK error.
+  // Currently, such locking is supported only for keys with
+  // |low_entropy_credential| policy set to true,
+  // This field is ignored when registering a new key.
+  bool auth_locked = 1;
+}
 
 // AuthFactor is a backing store for any secret stored on Chrome OS in the USS
 // World. This proto definition is used to communicate with the client side.
@@ -64,5 +84,8 @@ message AuthFactor {
   // An AuthFactor could also carry with itself some metadata. Since an
   // AuthFactor could only be one type, oneof is used to define the usage of
   // metadata.
-  oneof metadata { PasswordMetadata password_metadata = 3; }
+  oneof metadata {
+    PasswordMetadata password_metadata = 3;
+    PinMetadata pin_metadata = 4;
+  }
 }

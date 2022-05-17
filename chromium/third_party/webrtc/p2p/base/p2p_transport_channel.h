@@ -28,6 +28,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "absl/base/attributes.h"
@@ -36,12 +37,14 @@
 #include "api/async_dns_resolver.h"
 #include "api/async_resolver_factory.h"
 #include "api/candidate.h"
+#include "api/ice_transport_interface.h"
 #include "api/rtc_error.h"
 #include "api/sequence_checker.h"
 #include "api/transport/enums.h"
 #include "api/transport/stun.h"
 #include "logging/rtc_event_log/events/rtc_event_ice_candidate_pair_config.h"
 #include "logging/rtc_event_log/ice_logger.h"
+#include "p2p/base/basic_async_resolver_factory.h"
 #include "p2p/base/candidate_pair_interface.h"
 #include "p2p/base/connection.h"
 #include "p2p/base/ice_controller_factory_interface.h"
@@ -104,23 +107,15 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal {
   static std::unique_ptr<P2PTransportChannel> Create(
       const std::string& transport_name,
       int component,
-      PortAllocator* allocator,
-      webrtc::AsyncDnsResolverFactoryInterface* async_dns_resolver_factory,
-      webrtc::RtcEventLog* event_log = nullptr,
-      IceControllerFactoryInterface* ice_controller_factory = nullptr);
+      webrtc::IceTransportInit init);
+
   // For testing only.
   // TODO(zstein): Remove once AsyncDnsResolverFactory is required.
   P2PTransportChannel(const std::string& transport_name,
                       int component,
-                      PortAllocator* allocator);
-  ABSL_DEPRECATED("bugs.webrtc.org/12598")
-  P2PTransportChannel(
-      const std::string& transport_name,
-      int component,
-      PortAllocator* allocator,
-      webrtc::AsyncResolverFactory* async_resolver_factory,
-      webrtc::RtcEventLog* event_log = nullptr,
-      IceControllerFactoryInterface* ice_controller_factory = nullptr);
+                      PortAllocator* allocator,
+                      const webrtc::FieldTrialsView* field_trials = nullptr);
+
   ~P2PTransportChannel() override;
 
   P2PTransportChannel(const P2PTransportChannel&) = delete;
@@ -250,8 +245,9 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal {
       // on release, this pointer is set.
       std::unique_ptr<webrtc::AsyncDnsResolverFactoryInterface>
           owned_dns_resolver_factory,
-      webrtc::RtcEventLog* event_log = nullptr,
-      IceControllerFactoryInterface* ice_controller_factory = nullptr);
+      webrtc::RtcEventLog* event_log,
+      IceControllerFactoryInterface* ice_controller_factory,
+      const webrtc::FieldTrialsView* field_trials);
   bool IsGettingPorts() {
     RTC_DCHECK_RUN_ON(network_thread_);
     return allocator_session()->IsGettingPorts();
@@ -403,6 +399,8 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal {
   int64_t ComputeEstimatedDisconnectedTimeMs(int64_t now,
                                              Connection* old_connection);
 
+  void ParseFieldTrials(const webrtc::FieldTrialsView* field_trials);
+
   webrtc::ScopedTaskSafety task_safety_;
   std::string transport_name_ RTC_GUARDED_BY(network_thread_);
   int component_ RTC_GUARDED_BY(network_thread_);
@@ -490,6 +488,12 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal {
       Candidate candidate,
       const webrtc::AsyncDnsResolverResult& result);
 
+  // Bytes/packets sent/received on this channel.
+  uint64_t bytes_sent_ = 0;
+  uint64_t bytes_received_ = 0;
+  uint64_t packets_sent_ = 0;
+  uint64_t packets_received_ = 0;
+
   // Number of times the selected_connection_ has been modified.
   uint32_t selected_candidate_pair_changes_ = 0;
 
@@ -497,7 +501,8 @@ class RTC_EXPORT P2PTransportChannel : public IceTransportInternal {
   // from connection->last_data_received() that uses rtc::TimeMillis().
   int64_t last_data_received_ms_ = 0;
 
-  IceFieldTrials field_trials_;
+  // Parsed field trials.
+  IceFieldTrials ice_field_trials_;
 };
 
 }  // namespace cricket

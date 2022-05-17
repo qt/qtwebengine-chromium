@@ -61,7 +61,6 @@
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/cpu_info.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 #include "video/call_stats2.h"
 #include "video/send_delay_stats.h"
@@ -248,7 +247,7 @@ class Call final : public webrtc::Call,
 
   Stats GetStats() const override;
 
-  const WebRtcKeyValueConfig& trials() const override;
+  const FieldTrialsView& trials() const override;
 
   TaskQueueBase* network_thread() const override;
   TaskQueueBase* worker_thread() const override;
@@ -380,7 +379,7 @@ class Call final : public webrtc::Call,
   const std::unique_ptr<BitrateAllocator> bitrate_allocator_;
   const Call::Config config_ RTC_GUARDED_BY(worker_thread_);
   // Maps to config_.trials, can be used from any thread via `trials()`.
-  const WebRtcKeyValueConfig& trials_;
+  const FieldTrialsView& trials_;
 
   NetworkState audio_network_state_ RTC_GUARDED_BY(worker_thread_);
   NetworkState video_network_state_ RTC_GUARDED_BY(worker_thread_);
@@ -824,7 +823,8 @@ Call::Call(Clock* clock,
                        absl::bind_front(&PacketRouter::SendRemb,
                                         transport_send->packet_router()),
                        /*network_state_estimator=*/nullptr),
-      receive_time_calculator_(ReceiveTimeCalculator::CreateFromFieldTrial()),
+      receive_time_calculator_(
+          ReceiveTimeCalculator::CreateFromFieldTrial(*config.trials)),
       video_send_delay_stats_(new SendDelayStats(clock_)),
       start_of_call_(clock_->CurrentTime()),
       transport_send_ptr_(transport_send.get()),
@@ -915,7 +915,7 @@ webrtc::AudioSendStream* Call::CreateAudioSendStream(
   AudioSendStream* send_stream = new AudioSendStream(
       clock_, config, config_.audio_state, task_queue_factory_,
       transport_send_.get(), bitrate_allocator_.get(), event_log_,
-      call_stats_->AsRtcpRttStats(), suspended_rtp_state);
+      call_stats_->AsRtcpRttStats(), suspended_rtp_state, trials());
   RTC_DCHECK(audio_send_ssrcs_.find(config.rtp.ssrc) ==
              audio_send_ssrcs_.end());
   audio_send_ssrcs_[config.rtp.ssrc] = send_stream;
@@ -1056,7 +1056,8 @@ webrtc::VideoSendStream* Call::CreateVideoSendStream(
       call_stats_->AsRtcpRttStats(), transport_send_.get(),
       bitrate_allocator_.get(), video_send_delay_stats_.get(), event_log_,
       std::move(config), std::move(encoder_config), suspended_video_send_ssrcs_,
-      suspended_video_payload_states_, std::move(fec_controller));
+      suspended_video_payload_states_, std::move(fec_controller),
+      *config_.trials);
 
   for (uint32_t ssrc : ssrcs) {
     RTC_DCHECK(video_send_ssrcs_.find(ssrc) == video_send_ssrcs_.end());
@@ -1153,7 +1154,7 @@ webrtc::VideoReceiveStream* Call::CreateVideoReceiveStream(
   VideoReceiveStream2* receive_stream = new VideoReceiveStream2(
       task_queue_factory_, this, num_cpu_cores_,
       transport_send_->packet_router(), std::move(configuration),
-      call_stats_.get(), clock_, new VCMTiming(clock_),
+      call_stats_.get(), clock_, std::make_unique<VCMTiming>(clock_, trials()),
       &nack_periodic_processor_, decode_sync_.get());
   // TODO(bugs.webrtc.org/11993): Set this up asynchronously on the network
   // thread.
@@ -1294,7 +1295,7 @@ Call::Stats Call::GetStats() const {
   return stats;
 }
 
-const WebRtcKeyValueConfig& Call::trials() const {
+const FieldTrialsView& Call::trials() const {
   return trials_;
 }
 

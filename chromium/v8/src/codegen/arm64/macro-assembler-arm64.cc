@@ -56,6 +56,46 @@ constexpr int kStackSavedSavedFPSizeInBits = kDRegSizeInBits;
 
 }  // namespace
 
+void TurboAssembler::PushCPURegList(CPURegList registers) {
+  // If LR was stored here, we would need to sign it if
+  // V8_ENABLE_CONTROL_FLOW_INTEGRITY is on.
+  DCHECK(!registers.IncludesAliasOf(lr));
+
+  int size = registers.RegisterSizeInBytes();
+  DCHECK_EQ(0, (size * registers.Count()) % 16);
+
+  // Push up to four registers at a time.
+  while (!registers.IsEmpty()) {
+    int count_before = registers.Count();
+    const CPURegister& src0 = registers.PopHighestIndex();
+    const CPURegister& src1 = registers.PopHighestIndex();
+    const CPURegister& src2 = registers.PopHighestIndex();
+    const CPURegister& src3 = registers.PopHighestIndex();
+    int count = count_before - registers.Count();
+    PushHelper(count, size, src0, src1, src2, src3);
+  }
+}
+
+void TurboAssembler::PopCPURegList(CPURegList registers) {
+  int size = registers.RegisterSizeInBytes();
+  DCHECK_EQ(0, (size * registers.Count()) % 16);
+
+  // If LR was loaded here, we would need to authenticate it if
+  // V8_ENABLE_CONTROL_FLOW_INTEGRITY is on.
+  DCHECK(!registers.IncludesAliasOf(lr));
+
+  // Pop up to four registers at a time.
+  while (!registers.IsEmpty()) {
+    int count_before = registers.Count();
+    const CPURegister& dst0 = registers.PopLowestIndex();
+    const CPURegister& dst1 = registers.PopLowestIndex();
+    const CPURegister& dst2 = registers.PopLowestIndex();
+    const CPURegister& dst3 = registers.PopLowestIndex();
+    int count = count_before - registers.Count();
+    PopHelper(count, size, dst0, dst1, dst2, dst3);
+  }
+}
+
 int TurboAssembler::RequiredStackSizeForCallerSaved(SaveFPRegsMode fp_mode,
                                                     Register exclusion) const {
   auto list = kCallerSaved;
@@ -79,7 +119,7 @@ int TurboAssembler::PushCallerSaved(SaveFPRegsMode fp_mode,
   list.Remove(exclusion);
   list.Align();
 
-  PushCPURegList<kDontStoreLR>(list);
+  PushCPURegList(list);
 
   int bytes = list.TotalSizeInBytes();
 
@@ -106,7 +146,7 @@ int TurboAssembler::PopCallerSaved(SaveFPRegsMode fp_mode, Register exclusion) {
   list.Remove(exclusion);
   list.Align();
 
-  PopCPURegList<kDontLoadLR>(list);
+  PopCPURegList(list);
   bytes += list.TotalSizeInBytes();
 
   return bytes;
@@ -2219,15 +2259,8 @@ void TurboAssembler::CallForDeoptimization(
   BlockPoolsScope scope(this);
   bl(jump_deoptimization_entry_label);
   DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-            (kind == DeoptimizeKind::kLazy)
-                ? Deoptimizer::kLazyDeoptExitSize
-                : Deoptimizer::kNonLazyDeoptExitSize);
-
-  if (kind == DeoptimizeKind::kEagerWithResume) {
-    b(ret);
-    DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-              Deoptimizer::kEagerWithResumeBeforeArgsSize);
-  }
+            (kind == DeoptimizeKind::kLazy) ? Deoptimizer::kLazyDeoptExitSize
+                                            : Deoptimizer::kEagerDeoptExitSize);
 }
 
 void MacroAssembler::LoadStackLimit(Register destination, StackLimitKind kind) {
@@ -3134,9 +3167,9 @@ void TurboAssembler::LoadExternalPointerField(Register destination,
 }
 
 void TurboAssembler::MaybeSaveRegisters(RegList registers) {
-  if (registers == 0) return;
+  if (registers.is_empty()) return;
   ASM_CODE_COMMENT(this);
-  CPURegList regs(CPURegister::kRegister, kXRegSizeInBits, registers);
+  CPURegList regs(kXRegSizeInBits, registers);
   // If we were saving LR, we might need to sign it.
   DCHECK(!regs.IncludesAliasOf(lr));
   regs.Align();
@@ -3144,9 +3177,9 @@ void TurboAssembler::MaybeSaveRegisters(RegList registers) {
 }
 
 void TurboAssembler::MaybeRestoreRegisters(RegList registers) {
-  if (registers == 0) return;
+  if (registers.is_empty()) return;
   ASM_CODE_COMMENT(this);
-  CPURegList regs(CPURegister::kRegister, kXRegSizeInBits, registers);
+  CPURegList regs(kXRegSizeInBits, registers);
   // If we were saving LR, we might need to sign it.
   DCHECK(!regs.IncludesAliasOf(lr));
   regs.Align();
@@ -3346,7 +3379,7 @@ void TurboAssembler::Abort(AbortReason reason) {
 
   // We need some scratch registers for the MacroAssembler, so make sure we have
   // some. This is safe here because Abort never returns.
-  RegList old_tmp_list = TmpList()->list();
+  uint64_t old_tmp_list = TmpList()->bits();
   TmpList()->Combine(MacroAssembler::DefaultTmpList());
 
   if (should_abort_hard()) {
@@ -3371,7 +3404,7 @@ void TurboAssembler::Abort(AbortReason reason) {
     Call(BUILTIN_CODE(isolate(), Abort), RelocInfo::CODE_TARGET);
   }
 
-  TmpList()->set_list(old_tmp_list);
+  TmpList()->set_bits(old_tmp_list);
 }
 
 void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
@@ -3421,8 +3454,8 @@ void TurboAssembler::PrintfNoPreserve(const char* format,
   // Override the TurboAssembler's scratch register list. The lists will be
   // reset automatically at the end of the UseScratchRegisterScope.
   UseScratchRegisterScope temps(this);
-  TmpList()->set_list(tmp_list.list());
-  FPTmpList()->set_list(fp_tmp_list.list());
+  TmpList()->set_bits(tmp_list.bits());
+  FPTmpList()->set_bits(fp_tmp_list.bits());
 
   // Copies of the printf vararg registers that we can pop from.
   CPURegList pcs_varargs = kPCSVarargs;
@@ -3570,10 +3603,10 @@ void TurboAssembler::Printf(const char* format, CPURegister arg0,
   ASM_CODE_COMMENT(this);
   // Printf is expected to preserve all registers, so make sure that none are
   // available as scratch registers until we've preserved them.
-  RegList old_tmp_list = TmpList()->list();
-  RegList old_fp_tmp_list = FPTmpList()->list();
-  TmpList()->set_list(0);
-  FPTmpList()->set_list(0);
+  uint64_t old_tmp_list = TmpList()->bits();
+  uint64_t old_fp_tmp_list = FPTmpList()->bits();
+  TmpList()->set_bits(0);
+  FPTmpList()->set_bits(0);
 
   CPURegList saved_registers = kCallerSaved;
   saved_registers.Align();
@@ -3581,7 +3614,7 @@ void TurboAssembler::Printf(const char* format, CPURegister arg0,
   // Preserve all caller-saved registers as well as NZCV.
   // PushCPURegList asserts that the size of each list is a multiple of 16
   // bytes.
-  PushCPURegList<kDontStoreLR>(saved_registers);
+  PushCPURegList(saved_registers);
   PushCPURegList(kCallerSavedV);
 
   // We can use caller-saved registers as scratch values (except for argN).
@@ -3589,8 +3622,8 @@ void TurboAssembler::Printf(const char* format, CPURegister arg0,
   CPURegList fp_tmp_list = kCallerSavedV;
   tmp_list.Remove(arg0, arg1, arg2, arg3);
   fp_tmp_list.Remove(arg0, arg1, arg2, arg3);
-  TmpList()->set_list(tmp_list.list());
-  FPTmpList()->set_list(fp_tmp_list.list());
+  TmpList()->set_bits(tmp_list.bits());
+  FPTmpList()->set_bits(fp_tmp_list.bits());
 
   {
     UseScratchRegisterScope temps(this);
@@ -3634,15 +3667,15 @@ void TurboAssembler::Printf(const char* format, CPURegister arg0,
   }
 
   PopCPURegList(kCallerSavedV);
-  PopCPURegList<kDontLoadLR>(saved_registers);
+  PopCPURegList(saved_registers);
 
-  TmpList()->set_list(old_tmp_list);
-  FPTmpList()->set_list(old_fp_tmp_list);
+  TmpList()->set_bits(old_tmp_list);
+  FPTmpList()->set_bits(old_fp_tmp_list);
 }
 
 UseScratchRegisterScope::~UseScratchRegisterScope() {
-  available_->set_list(old_available_);
-  availablefp_->set_list(old_availablefp_);
+  available_->set_bits(old_available_);
+  availablefp_->set_bits(old_availablefp_);
 }
 
 Register UseScratchRegisterScope::AcquireSameSizeAs(const Register& reg) {

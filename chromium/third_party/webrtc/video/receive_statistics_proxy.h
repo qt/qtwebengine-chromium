@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/types/optional.h"
+#include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
 #include "call/video_receive_stream.h"
 #include "modules/include/module_common_types.h"
@@ -42,7 +43,9 @@ class ReceiveStatisticsProxy : public VCMReceiveStatisticsCallback,
                                public RtcpPacketTypeCounterObserver,
                                public CallStatsObserver {
  public:
-  ReceiveStatisticsProxy(uint32_t remote_ssrc, Clock* clock);
+  ReceiveStatisticsProxy(uint32_t remote_ssrc,
+                         Clock* clock,
+                         const FieldTrialsView* field_trials = nullptr);
   ~ReceiveStatisticsProxy() = default;
 
   VideoReceiveStream::Stats GetStats() const;

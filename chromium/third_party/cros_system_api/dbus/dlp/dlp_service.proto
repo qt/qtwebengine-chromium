@@ -63,13 +63,13 @@ message AddFileResponse {
 }
 
 message RequestFileAccessRequest {
-  // Inode number of the file an access to which is requested.
-  optional uint64 inode = 1;
+  // Inode numbers of the files to which access is requested.
+  repeated uint64 inodes = 1;
 
   // Process id for which an access is requested.
   optional int32 process_id = 2;
 
-  // Destination where the file will be targeted by the process.
+  // Destination where the files will be targeted by the process.
   optional string destination_url = 3;
 }
 
@@ -77,14 +77,14 @@ message RequestFileAccessResponse {
   // Error message, empty if no error occurred.
   optional string error_message = 1;
 
-  // Whether file access was approved.
+  // Whether file access for all requested files was approved.
   optional bool allowed = 2;
 }
 
 message IsRestrictedRequest {
-  // URL from where the file was downloaded.
-  optional string source_url = 1;
-  // URL where the file is going to be uploaded.
+  // URLs from where the files were downloaded.
+  repeated string source_urls = 1;
+  // URL where the files are going to be uploaded.
   optional string destination_url = 2;
 }
 

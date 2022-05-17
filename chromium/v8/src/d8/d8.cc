@@ -184,7 +184,7 @@ class ShellArrayBufferAllocator : public ArrayBufferAllocatorBase {
     v8::PageAllocator* page_allocator = i::GetArrayBufferPageAllocator();
     size_t page_size = page_allocator->AllocatePageSize();
     size_t allocated = RoundUp(length, page_size);
-    CHECK(i::FreePages(page_allocator, data, allocated));
+    i::FreePages(page_allocator, data, allocated);
   }
 };
 
@@ -1022,7 +1022,7 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
                                           ModuleType module_type) {
   DCHECK(IsAbsolutePath(file_name));
   Isolate* isolate = context->GetIsolate();
-  Local<String> source_text = ReadFile(isolate, file_name.c_str(), false);
+  MaybeLocal<String> source_text = ReadFile(isolate, file_name.c_str(), false);
   if (source_text.IsEmpty() && options.fuzzy_module_file_extensions) {
     std::string fallback_file_name = file_name + ".js";
     source_text = ReadFile(isolate, fallback_file_name.c_str(), false);
@@ -1053,14 +1053,16 @@ MaybeLocal<Module> Shell::FetchModuleTree(Local<Module> referrer,
 
   Local<Module> module;
   if (module_type == ModuleType::kJavaScript) {
-    ScriptCompiler::Source source(source_text, origin);
-    if (!CompileString<Module>(isolate, context, source_text, origin)
+    ScriptCompiler::Source source(source_text.ToLocalChecked(), origin);
+    if (!CompileString<Module>(isolate, context, source_text.ToLocalChecked(),
+                               origin)
              .ToLocal(&module)) {
       return MaybeLocal<Module>();
     }
   } else if (module_type == ModuleType::kJSON) {
     Local<Value> parsed_json;
-    if (!v8::JSON::Parse(context, source_text).ToLocal(&parsed_json)) {
+    if (!v8::JSON::Parse(context, source_text.ToLocalChecked())
+             .ToLocal(&parsed_json)) {
       return MaybeLocal<Module>();
     }
 
@@ -1441,15 +1443,53 @@ bool Shell::ExecuteWebSnapshot(Isolate* isolate, const char* file_name) {
   if (length == 0) {
     isolate->ThrowError("Could not read the web snapshot file");
   } else {
-    i::WebSnapshotDeserializer deserializer(isolate, snapshot_data.get(),
-                                            static_cast<size_t>(length));
-    success = deserializer.Deserialize();
+    for (int r = 0; r < DeserializationRunCount(); ++r) {
+      bool skip_exports = r > 0;
+      i::WebSnapshotDeserializer deserializer(isolate, snapshot_data.get(),
+                                              static_cast<size_t>(length));
+      success = deserializer.Deserialize({}, skip_exports);
+    }
   }
   if (!success) {
     CHECK(try_catch.HasCaught());
     ReportException(isolate, &try_catch);
   }
   return success;
+}
+
+// Treat every line as a JSON value and parse it.
+bool Shell::LoadJSON(Isolate* isolate, const char* file_name) {
+  HandleScope handle_scope(isolate);
+  PerIsolateData* isolate_data = PerIsolateData::Get(isolate);
+  Local<Context> realm =
+      isolate_data->realms_[isolate_data->realm_current_].Get(isolate);
+  Context::Scope context_scope(realm);
+  TryCatch try_catch(isolate);
+
+  std::string absolute_path = NormalizePath(file_name, GetWorkingDirectory());
+  int length = 0;
+  std::unique_ptr<char[]> data(ReadChars(absolute_path.c_str(), &length));
+  if (length == 0) {
+    printf("Error reading '%s'\n", file_name);
+    base::OS::ExitProcess(1);
+  }
+  std::stringstream stream(data.get());
+  std::string line;
+  while (std::getline(stream, line, '\n')) {
+    for (int r = 0; r < DeserializationRunCount(); ++r) {
+      Local<String> source =
+          String::NewFromUtf8(isolate, line.c_str()).ToLocalChecked();
+      MaybeLocal<Value> maybe_value = JSON::Parse(realm, source);
+
+      Local<Value> value;
+      if (!maybe_value.ToLocal(&value)) {
+        DCHECK(try_catch.HasCaught());
+        ReportException(isolate, &try_catch);
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 PerIsolateData::PerIsolateData(Isolate* isolate)
@@ -1751,8 +1791,8 @@ MaybeLocal<Context> Shell::CreateRealm(
   Local<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
   Local<Context> context =
       Context::New(isolate, nullptr, global_template, global_object);
-  DCHECK(!try_catch.HasCaught());
   if (context.IsEmpty()) return MaybeLocal<Context>();
+  DCHECK(!try_catch.HasCaught());
   InitializeModuleEmbedderData(context);
   data->realms_[index].Reset(isolate, context);
   data->realms_[index].AnnotateStrongRetainer(kGlobalHandleLabel);
@@ -2055,8 +2095,9 @@ void Shell::TestVerifySourcePositions(
     return;
   }
   auto arg_handle = Utils::OpenHandle(*args[0]);
-  if (!arg_handle->IsHeapObject() || !i::Handle<i::HeapObject>::cast(arg_handle)
-                                          ->IsJSFunctionOrBoundFunction()) {
+  if (!arg_handle->IsHeapObject() ||
+      !i::Handle<i::HeapObject>::cast(arg_handle)
+           ->IsJSFunctionOrBoundFunctionOrWrappedFunction()) {
     isolate->ThrowError("Expected function as single argument.");
     return;
   }
@@ -2064,18 +2105,21 @@ void Shell::TestVerifySourcePositions(
   i::Isolate* i_isolate = reinterpret_cast<i::Isolate*>(isolate);
   HandleScope handle_scope(isolate);
 
-  auto callable = i::Handle<i::JSFunctionOrBoundFunction>::cast(arg_handle);
+  auto callable =
+      i::Handle<i::JSFunctionOrBoundFunctionOrWrappedFunction>::cast(
+          arg_handle);
   while (callable->IsJSBoundFunction()) {
     internal::DisallowGarbageCollection no_gc;
     auto bound_function = i::Handle<i::JSBoundFunction>::cast(callable);
     auto bound_target = bound_function->bound_target_function();
-    if (!bound_target.IsJSFunctionOrBoundFunction()) {
+    if (!bound_target.IsJSFunctionOrBoundFunctionOrWrappedFunction()) {
       internal::AllowGarbageCollection allow_gc;
       isolate->ThrowError("Expected function as bound target.");
       return;
     }
-    callable =
-        handle(i::JSFunctionOrBoundFunction::cast(bound_target), i_isolate);
+    callable = handle(
+        i::JSFunctionOrBoundFunctionOrWrappedFunction::cast(bound_target),
+        i_isolate);
   }
 
   i::Handle<i::JSFunction> function = i::Handle<i::JSFunction>::cast(callable);
@@ -2266,8 +2310,8 @@ void Shell::ReadFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
       return;
     }
   }
-  Local<String> source = ReadFile(args.GetIsolate(), *file_name);
-  if (source.IsEmpty()) return;
+  Local<String> source;
+  if (!ReadFile(args.GetIsolate(), *file_name).ToLocal(&source)) return;
   args.GetReturnValue().Set(source);
 }
 
@@ -2320,8 +2364,8 @@ void Shell::ExecuteFile(const v8::FunctionCallbackInfo<v8::Value>& args) {
           String::NewFromUtf8(isolate, oss.str().c_str()).ToLocalChecked());
       return;
     }
-    Local<String> source = ReadFile(isolate, *file_name);
-    if (source.IsEmpty()) return;
+    Local<String> source;
+    if (!ReadFile(isolate, *file_name).ToLocal(&source)) return;
     if (!ExecuteString(
             args.GetIsolate(), source,
             String::NewFromUtf8(isolate, *file_name).ToLocalChecked(),
@@ -2461,8 +2505,9 @@ MaybeLocal<String> Shell::ReadSource(
         return MaybeLocal<String>();
       }
       String::Utf8Value filename(isolate, args[index]);
-      source = Shell::ReadFile(isolate, *filename);
-      if (source.IsEmpty()) return MaybeLocal<String>();
+      if (!Shell::ReadFile(isolate, *filename).ToLocal(&source)) {
+        return MaybeLocal<String>();
+      };
       break;
     }
     case CodeType::kString:
@@ -2599,7 +2644,6 @@ void Shell::QuitOnce(v8::FunctionCallbackInfo<v8::Value>* args) {
   int exit_code = (*args)[0]
                       ->Int32Value(args->GetIsolate()->GetCurrentContext())
                       .FromMaybe(0);
-  WaitForRunningWorkers();
   Isolate* isolate = args->GetIsolate();
   isolate->Exit();
 
@@ -3240,7 +3284,7 @@ void Shell::Initialize(Isolate* isolate, D8Console* console,
 
 Local<String> Shell::WasmLoadSourceMapCallback(Isolate* isolate,
                                                const char* path) {
-  return Shell::ReadFile(isolate, path, false);
+  return Shell::ReadFile(isolate, path, false).ToLocalChecked();
 }
 
 Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
@@ -3250,7 +3294,8 @@ Local<Context> Shell::CreateEvaluationContext(Isolate* isolate) {
   Local<ObjectTemplate> global_template = CreateGlobalTemplate(isolate);
   EscapableHandleScope handle_scope(isolate);
   Local<Context> context = Context::New(isolate, nullptr, global_template);
-  DCHECK(!context.IsEmpty());
+  DCHECK_IMPLIES(context.IsEmpty(), isolate->IsExecutionTerminating());
+  if (context.IsEmpty()) return {};
   if (i::FLAG_perf_prof_annotate_wasm || i::FLAG_vtune_prof_annotate_wasm) {
     isolate->SetWasmLoadSourceMapCallback(Shell::WasmLoadSourceMapCallback);
   }
@@ -3538,32 +3583,12 @@ V8_NOINLINE void FuzzerMonitor::UseOfUninitializedValue() {
 #endif
 }
 
-static FILE* FOpen(const char* path, const char* mode) {
-#if defined(_MSC_VER) && (defined(_WIN32) || defined(_WIN64))
-  FILE* result;
-  if (fopen_s(&result, path, mode) == 0) {
-    return result;
-  } else {
-    return nullptr;
-  }
-#else
-  FILE* file = base::Fopen(path, mode);
-  if (file == nullptr) return nullptr;
-  struct stat file_stat;
-  if (fstat(fileno(file), &file_stat) != 0) return nullptr;
-  bool is_regular_file = ((file_stat.st_mode & S_IFREG) != 0);
-  if (is_regular_file) return file;
-  base::Fclose(file);
-  return nullptr;
-#endif
-}
-
 char* Shell::ReadChars(const char* name, int* size_out) {
   if (options.read_from_tcp_port >= 0) {
     return ReadCharsFromTcpPort(name, size_out);
   }
 
-  FILE* file = FOpen(name, "rb");
+  FILE* file = base::OS::FOpen(name, "rb");
   if (file == nullptr) return nullptr;
 
   fseek(file, 0, SEEK_END);
@@ -3588,11 +3613,12 @@ char* Shell::ReadChars(const char* name, int* size_out) {
 MaybeLocal<PrimitiveArray> Shell::ReadLines(Isolate* isolate,
                                             const char* name) {
   int length;
-  const char* data = reinterpret_cast<const char*>(ReadChars(name, &length));
-  if (data == nullptr) {
+  std::unique_ptr<char[]> data(ReadChars(name, &length));
+
+  if (data.get() == nullptr) {
     return MaybeLocal<PrimitiveArray>();
   }
-  std::stringstream stream(data);
+  std::stringstream stream(data.get());
   std::string line;
   std::vector<std::string> lines;
   while (std::getline(stream, line, '\n')) {
@@ -3638,33 +3664,31 @@ void Shell::ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args) {
 }
 
 // Reads a file into a v8 string.
-Local<String> Shell::ReadFile(Isolate* isolate, const char* name,
-                              bool should_throw) {
+MaybeLocal<String> Shell::ReadFile(Isolate* isolate, const char* name,
+                                   bool should_throw) {
   std::unique_ptr<base::OS::MemoryMappedFile> file(
       base::OS::MemoryMappedFile::open(
           name, base::OS::MemoryMappedFile::FileMode::kReadOnly));
   if (!file) {
     if (should_throw) {
       std::ostringstream oss;
-      oss << "Error loading file: \"" << name << '"';
+      oss << "Error loading file: " << name;
       isolate->ThrowError(
-          v8::String::NewFromUtf8(isolate, oss.str().c_str()).ToLocalChecked());
+          v8::String::NewFromUtf8(
+              isolate, oss.str().substr(0, String::kMaxLength).c_str())
+              .ToLocalChecked());
     }
-    return Local<String>();
+    return MaybeLocal<String>();
   }
 
   int size = static_cast<int>(file->size());
   char* chars = static_cast<char*>(file->memory());
-  Local<String> result;
   if (i::FLAG_use_external_strings && i::String::IsAscii(chars, size)) {
     String::ExternalOneByteStringResource* resource =
         new ExternalOwningOneByteStringResource(std::move(file));
-    result = String::NewExternalOneByte(isolate, resource).ToLocalChecked();
-  } else {
-    result = String::NewFromUtf8(isolate, chars, NewStringType::kNormal, size)
-                 .ToLocalChecked();
+    return String::NewExternalOneByte(isolate, resource);
   }
-  return result;
+  return String::NewFromUtf8(isolate, chars, NewStringType::kNormal, size);
 }
 
 void Shell::WriteChars(const char* name, uint8_t* buffer, size_t buffer_size) {
@@ -3940,6 +3964,15 @@ bool SourceGroup::Execute(Isolate* isolate) {
         break;
       }
       continue;
+    } else if (strcmp(arg, "--json") == 0 && i + 1 < end_offset_) {
+      // Treat the next file as a JSON file.
+      arg = argv_[++i];
+      Shell::set_script_executed();
+      if (!Shell::LoadJSON(isolate, arg)) {
+        success = false;
+        break;
+      }
+      continue;
     } else if (arg[0] == '-') {
       // Ignore other options. They have been parsed already.
       continue;
@@ -3949,8 +3982,8 @@ bool SourceGroup::Execute(Isolate* isolate) {
     HandleScope handle_scope(isolate);
     Local<String> file_name =
         String::NewFromUtf8(isolate, arg).ToLocalChecked();
-    Local<String> source = Shell::ReadFile(isolate, arg);
-    if (source.IsEmpty()) {
+    Local<String> source;
+    if (!Shell::ReadFile(isolate, arg).ToLocal(&source)) {
       printf("Error reading '%s'\n", arg);
       base::OS::ExitProcess(1);
     }
@@ -3979,7 +4012,11 @@ void SourceGroup::ExecuteInThread() {
   Shell::Initialize(isolate, &console, false);
 
   for (int i = 0; i < Shell::options.stress_runs; ++i) {
-    next_semaphore_.Wait();
+    {
+      i::ParkedScope parked_scope(
+          reinterpret_cast<i::Isolate*>(isolate)->main_thread_local_isolate());
+      next_semaphore_.Wait();
+    }
     {
       Isolate::Scope iscope(isolate);
       PerIsolateData data(isolate);
@@ -4156,6 +4193,10 @@ void Worker::Terminate() {
   std::unique_ptr<v8::Task> task(
       new TerminateTask(task_manager_, shared_from_this()));
   task_runner_->PostTask(std::move(task));
+  // Also schedule an interrupt in case the worker is running code and never
+  // returning to the event queue. Since we checked the state before, and we are
+  // holding the {worker_mutex_}, it's safe to access the isolate.
+  isolate_->TerminateExecution();
 }
 
 void Worker::ProcessMessage(std::unique_ptr<SerializationData> data) {
@@ -4215,12 +4256,15 @@ void Worker::ExecuteInThread() {
 
   D8Console console(isolate_);
   Shell::Initialize(isolate_, &console, false);
-  {
+  // This is not really a loop, but the loop allows us to break out of this
+  // block easily.
+  for (bool execute = true; execute; execute = false) {
     Isolate::Scope iscope(isolate_);
     {
       HandleScope scope(isolate_);
       PerIsolateData data(isolate_);
       Local<Context> context = Shell::CreateEvaluationContext(isolate_);
+      if (context.IsEmpty()) break;
       context_.Reset(isolate_, context);
       {
         Context::Scope cscope(context);
@@ -4306,6 +4350,41 @@ void Worker::PostMessageOut(const v8::FunctionCallbackInfo<v8::Value>& args) {
     worker->out_semaphore_.Signal();
   }
 }
+
+#if V8_TARGET_OS_WIN
+// Enable support for unicode filename path on windows.
+// We first convert ansi encoded argv[i] to utf16 encoded, and then
+// convert utf16 encoded to utf8 encoded with setting the argv[i]
+// to the utf8 encoded arg. We allocate memory for the utf8 encoded
+// arg, and we will free it and reset it to nullptr after using
+// the filename path arg. And because Execute may be called multiple
+// times, we need to free the allocated unicode filename when exit.
+
+// Save the allocated utf8 filenames, and we will free them when exit.
+std::vector<char*> utf8_filenames;
+#include <shellapi.h>
+// Convert utf-16 encoded string to utf-8 encoded.
+char* ConvertUtf16StringToUtf8(const wchar_t* str) {
+  // On Windows wchar_t must be a 16-bit value.
+  static_assert(sizeof(wchar_t) == 2, "wrong wchar_t size");
+  int len =
+      WideCharToMultiByte(CP_UTF8, 0, str, -1, nullptr, 0, nullptr, FALSE);
+  DCHECK_LT(0, len);
+  char* utf8_str = new char[len];
+  utf8_filenames.push_back(utf8_str);
+  WideCharToMultiByte(CP_UTF8, 0, str, -1, utf8_str, len, nullptr, FALSE);
+  return utf8_str;
+}
+
+// Convert ansi encoded argv[i] to utf8 encoded.
+void PreProcessUnicodeFilenameArg(char* argv[], int i) {
+  int argc;
+  wchar_t** wargv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  argv[i] = ConvertUtf16StringToUtf8(wargv[i]);
+  LocalFree(wargv);
+}
+
+#endif
 
 bool Shell::SetOptions(int argc, char* argv[]) {
   bool logfile_per_isolate = false;
@@ -4479,6 +4558,9 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       options.cpu_profiler = true;
       options.cpu_profiler_print = true;
       argv[i] = nullptr;
+    } else if (strcmp(argv[i], "--stress-deserialize") == 0) {
+      options.stress_deserialize = true;
+      argv[i] = nullptr;
     } else if (strncmp(argv[i], "--web-snapshot-config=", 22) == 0) {
       options.web_snapshot_config = argv[i] + 22;
       argv[i] = nullptr;
@@ -4530,6 +4612,10 @@ bool Shell::SetOptions(int argc, char* argv[]) {
     } else if (strcmp(argv[i], "--expose-fast-api") == 0) {
       options.expose_fast_api = true;
       argv[i] = nullptr;
+    } else {
+#ifdef V8_TARGET_OS_WIN
+      PreProcessUnicodeFilenameArg(argv, i);
+#endif
     }
   }
 
@@ -4573,7 +4659,8 @@ bool Shell::SetOptions(int argc, char* argv[]) {
       current++;
       current->Begin(argv, i + 1);
     } else if (strcmp(str, "--module") == 0 ||
-               strcmp(str, "--web-snapshot") == 0) {
+               strcmp(str, "--web-snapshot") == 0 ||
+               strcmp(str, "--json") == 0) {
       // Pass on to SourceGroup, which understands these options.
     } else if (strncmp(str, "--", 2) == 0) {
       if (!i::FLAG_correctness_fuzzer_suppressions) {
@@ -4963,7 +5050,8 @@ class Serializer : public ValueSerializer::Delegate {
       Local<ArrayBuffer> array_buffer =
           Local<ArrayBuffer>::New(isolate_, global_array_buffer);
       if (!array_buffer->IsDetachable()) {
-        isolate_->ThrowError("ArrayBuffer could not be transferred");
+        isolate_->ThrowError(
+            "ArrayBuffer is not detachable and could not be transferred");
         return Nothing<bool>();
       }
 
@@ -5159,7 +5247,9 @@ void Shell::WaitForRunningWorkers() {
 
 namespace {
 
-bool HasFlagThatRequiresSharedIsolate() { return i::FLAG_shared_string_table; }
+bool HasFlagThatRequiresSharedIsolate() {
+  return i::FLAG_shared_string_table || i::FLAG_harmony_struct;
+}
 
 }  // namespace
 
@@ -5315,6 +5405,9 @@ int Shell::Main(int argc, char* argv[]) {
 
   if (HasFlagThatRequiresSharedIsolate()) {
     Isolate::CreateParams shared_create_params;
+    shared_create_params.constraints.ConfigureDefaults(
+        base::SysInfo::AmountOfPhysicalMemory(),
+        base::SysInfo::AmountOfVirtualMemory());
     shared_create_params.array_buffer_allocator = Shell::array_buffer_allocator;
     shared_isolate =
         reinterpret_cast<Isolate*>(i::Isolate::NewShared(shared_create_params));
@@ -5507,6 +5600,16 @@ int Shell::Main(int argc, char* argv[]) {
     tracing_controller->StopTracing();
   }
   g_platform.reset();
+
+#ifdef V8_TARGET_OS_WIN
+  // We need to free the allocated utf8 filenames in
+  // PreProcessUnicodeFilenameArg.
+  for (char* utf8_str : utf8_filenames) {
+    delete[] utf8_str;
+  }
+  utf8_filenames.clear();
+#endif
+
   return result;
 }
 

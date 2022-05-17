@@ -30,17 +30,15 @@
 #	include <emmintrin.h>
 #endif
 
-namespace {
-rr::RValue<rr::Int> PackFields(rr::Int4 const &ints, const sw::int4 shifts)
+namespace sw {
+
+static rr::RValue<rr::Int> PackFields(rr::Int4 const &ints, const sw::int4 shifts)
 {
 	return (rr::Int(ints.x) << shifts[0]) |
 	       (rr::Int(ints.y) << shifts[1]) |
 	       (rr::Int(ints.z) << shifts[2]) |
 	       (rr::Int(ints.w) << shifts[3]);
 }
-}  // namespace
-
-namespace sw {
 
 Blitter::Blitter()
     : blitMutex()
@@ -467,13 +465,13 @@ Float4 Blitter::readFloat4(Pointer<Byte> element, const State &state)
 		c.z = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
 		c.w = Float(Int(*Pointer<UShort>(element) & UShort(0x000F)));
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		c.w = Float(Int((*Pointer<UShort>(element) & UShort(0xF000)) >> UShort(12)));
 		c.z = Float(Int((*Pointer<UShort>(element) & UShort(0x0F00)) >> UShort(8)));
 		c.y = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
 		c.x = Float(Int(*Pointer<UShort>(element) & UShort(0x000F)));
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		c.w = Float(Int((*Pointer<UShort>(element) & UShort(0xF000)) >> UShort(12)));
 		c.x = Float(Int((*Pointer<UShort>(element) & UShort(0x0F00)) >> UShort(8)));
 		c.y = Float(Int((*Pointer<UShort>(element) & UShort(0x00F0)) >> UShort(4)));
@@ -602,7 +600,7 @@ void Blitter::write(Float4 &c, Pointer<Byte> element, const State &state)
 			                            (UShort(PackFields(RoundInt(c) & Int4(0xF), { 4, 8, 12, 0 })) & UShort(mask));
 		}
 		break;
-	case VK_FORMAT_A4R4G4B4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
 		if(writeRGBA)
 		{
 			*Pointer<UShort>(element) = UShort(PackFields(RoundInt(c) & Int4(0xF), { 8, 4, 0, 12 }));
@@ -618,7 +616,7 @@ void Blitter::write(Float4 &c, Pointer<Byte> element, const State &state)
 			                            (UShort(PackFields(RoundInt(c) & Int4(0xF), { 8, 4, 0, 12 })) & UShort(mask));
 		}
 		break;
-	case VK_FORMAT_A4B4G4R4_UNORM_PACK16_EXT:
+	case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
 		if(writeRGBA)
 		{
 			*Pointer<UShort>(element) = UShort(PackFields(RoundInt(c) & Int4(0xF), { 0, 4, 8, 12 }));
@@ -1450,7 +1448,7 @@ void Blitter::ApplyScaleAndClamp(Float4 &value, const State &state, bool preScal
 	{
 		value *= preScaled ? Float4(1.0f / scale.x, 1.0f / scale.y, 1.0f / scale.z, 1.0f / scale.w) :  // Unapply scale
 		             Float4(1.0f / unscale.x, 1.0f / unscale.y, 1.0f / unscale.z, 1.0f / unscale.w);   // Apply unscale
-		value = (srcSRGB && !preScaled) ? sRGBtoLinear(value) : LinearToSRGB(value);
+		value.xyz = (srcSRGB && !preScaled) ? sRGBtoLinear(value) : linearToSRGB(value);
 		value *= Float4(scale.x, scale.y, scale.z, scale.w);  // Apply scale
 	}
 	else if(unscale != scale)
@@ -1482,30 +1480,6 @@ Int Blitter::ComputeOffset(Int &x, Int &y, Int &pitchB, int bytes)
 Int Blitter::ComputeOffset(Int &x, Int &y, Int &z, Int &sliceB, Int &pitchB, int bytes)
 {
 	return z * sliceB + y * pitchB + x * bytes;
-}
-
-Float4 Blitter::LinearToSRGB(const Float4 &c)
-{
-	Float4 lc = Min(c, Float4(0.0031308f)) * Float4(12.92f);
-	Float4 ec = Float4(1.055f) * power(c, Float4(1.0f / 2.4f)) - Float4(0.055f);
-
-	Float4 s = c;
-	s.xyz = Max(lc, ec);
-
-	return s;
-}
-
-Float4 Blitter::sRGBtoLinear(const Float4 &c)
-{
-	Float4 lc = c * Float4(1.0f / 12.92f);
-	Float4 ec = power((c + Float4(0.055f)) * Float4(1.0f / 1.055f), Float4(2.4f));
-
-	Int4 linear = CmpLT(c, Float4(0.04045f));
-
-	Float4 s = c;
-	s.xyz = As<Float4>((linear & As<Int4>(lc)) | (~linear & As<Int4>(ec)));  // TODO: IfThenElse()
-
-	return s;
 }
 
 Float4 Blitter::sample(Pointer<Byte> &source, Float &x, Float &y, Float &z,

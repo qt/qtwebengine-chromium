@@ -1,3 +1,20 @@
+/*
+ * Copyright (C) 2022 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import {GenericSet} from '../base/generic_set';
 import {Area, PivotTableReduxQuery} from '../common/state';
 import {toNs} from '../common/time';
 import {
@@ -48,35 +65,8 @@ export const tables: Table[] = [
 // Pair of table name and column name.
 export type TableColumn = [string, string];
 
-// ES6 Set does not allow to reasonably store compound objects; this class
-// rectifies the problem by providing a domain-specific set of pairs of strings.
-export class ColumnSet {
-  // Should've been Set<TableColumn>, but JavaScript Set does not support custom
-  // hashing/equality predicates, so TableColumn is keyed by a string generated
-  // by columnKey method.
-  backingMap = new Map<string, TableColumn>();
-
-  private static columnKey(column: TableColumn): string {
-    // None of table and column names used in Perfetto tables contain periods,
-    // so this function should not lead to collisions.
-    return `${column[0]}.${column[1]}`;
-  }
-
-  has(column: TableColumn): boolean {
-    return this.backingMap.has(ColumnSet.columnKey(column));
-  }
-
-  add(column: TableColumn) {
-    this.backingMap.set(ColumnSet.columnKey(column), column);
-  }
-
-  delete(column: TableColumn) {
-    this.backingMap.delete(ColumnSet.columnKey(column));
-  }
-
-  values(): Iterable<[string, string]> {
-    return this.backingMap.values();
-  }
+export function createColumnSet(): GenericSet<TableColumn> {
+  return new GenericSet((column: TableColumn) => `${column[0]}.${column[1]}`);
 }
 
 // Exception thrown by query generator in case incoming parameters are not
@@ -88,6 +78,14 @@ export class QueryGeneratorError extends Error {}
 function aggregationAlias(
     aggregationIndex: number, rolloverLevel: number): string {
   return `agg_${aggregationIndex}_level_${rolloverLevel}`;
+}
+
+export function areaFilter(area: Area): string {
+  return `
+    ts > ${toNs(area.startSec)}
+    and ts < ${toNs(area.endSec)}
+    and track_id in (${getSelectedTrackIds(area).join(', ')})
+  `;
 }
 
 function generateInnerQuery(
@@ -107,23 +105,17 @@ function generateInnerQuery(
 
   // The condition is inverted because flipped order of literals makes JS
   // formatter insert huge amounts of whitespace for no good reason.
-  const filter = !constrainToArea ? '' : `
-    where
-      ts > ${toNs(area.startSec)}
-      and ts < ${toNs(area.endSec)}
-      and track_id in (${getSelectedTrackIds(area).join(', ')})
-  `;
-
   return `
     select
       ${pivotColumns.concat(aggregationColumns).join(',\n')}
     from ${table}
-    ${filter}
+    ${(constrainToArea ? `where ${areaFilter(area)}` : '')}
     group by ${pivotColumns.join(', ')}
   `;
 }
 
-function computeSliceTableAggregations(selectedAggregations: ColumnSet):
+function computeSliceTableAggregations(
+    selectedAggregations: GenericSet<TableColumn>):
     {tableName: string, flatAggregations: string[]} {
   let hasThreadSliceColumn = false;
   const allColumns = [];
@@ -153,8 +145,8 @@ export function aggregationIndex(
 }
 
 export function generateQuery(
-    selectedPivots: ColumnSet,
-    selectedAggregations: ColumnSet,
+    selectedPivots: GenericSet<TableColumn>,
+    selectedAggregations: GenericSet<TableColumn>,
     area: Area,
     constrainToArea: boolean): PivotTableReduxQuery {
   const sliceTableAggregations =
@@ -232,6 +224,7 @@ export function generateQuery(
   return {
     text,
     metadata: {
+      tableName: sliceTableAggregations.tableName,
       pivotColumns: nonSlicePivots.concat(slicePivots.map(
           column => `${sliceTableAggregations.tableName}.${column}`)),
       aggregationColumns: sliceTableAggregations.flatAggregations.map(

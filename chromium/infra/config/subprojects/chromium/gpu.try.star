@@ -62,11 +62,6 @@ gpu_android_builder(
 )
 
 gpu_android_builder(
-    name = "gpu-fyi-try-android-m-nexus-9-64",
-    pool = "luci.chromium.gpu.android.nexus9.try",
-)
-
-gpu_android_builder(
     name = "gpu-fyi-try-android-nvidia-shield-tv",
     pool = "luci.chromium.gpu.android.nvidia.shield.tv.try",
 )
@@ -119,6 +114,12 @@ gpu_chromeos_builder(
 gpu_chromeos_builder(
     name = "gpu-fyi-try-chromeos-octopus-exp",
     pool = "luci.chromium.gpu.chromeos.octopus.try",
+)
+
+gpu_chromeos_builder(
+    name = "gpu-fyi-try-chromeos-zork-exp",
+    mirrors = ["ci/gpu-fyi-chromeos-zork-exp"],
+    pool = "luci.chromium.gpu.chromeos.zork.try",
 )
 
 def gpu_linux_builder(*, name, **kwargs):

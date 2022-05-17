@@ -177,12 +177,22 @@ namespace dawn::native {
         : mInstance(adapter->GetInstance()), mAdapter(adapter), mNextPipelineCompatibilityToken(1) {
         ASSERT(descriptor != nullptr);
 
+        AdapterProperties adapterProperties;
+        adapter->APIGetProperties(&adapterProperties);
+
         const DawnTogglesDeviceDescriptor* togglesDesc = nullptr;
         FindInChain(descriptor->nextInChain, &togglesDesc);
         if (togglesDesc != nullptr) {
             ApplyToggleOverrides(togglesDesc);
         }
         ApplyFeatures(descriptor);
+
+        DawnCacheDeviceDescriptor defaultCacheDesc = {};
+        const DawnCacheDeviceDescriptor* cacheDesc = nullptr;
+        FindInChain(descriptor->nextInChain, &cacheDesc);
+        if (cacheDesc == nullptr) {
+            cacheDesc = &defaultCacheDesc;
+        }
 
         if (descriptor->requiredLimits != nullptr) {
             mLimits.v1 = ReifyDefaultLimits(descriptor->requiredLimits->limits);
@@ -192,6 +202,16 @@ namespace dawn::native {
 
         mFormatTable = BuildFormatTable(this);
         SetDefaultToggles();
+
+        if (descriptor->label != nullptr && strlen(descriptor->label) != 0) {
+            mLabel = descriptor->label;
+        }
+
+        // Record the cache key from the properties. Note that currently, if a new extension
+        // descriptor is added (and probably handled here), the cache key recording needs to be
+        // updated.
+        mDeviceCacheKey.Record(adapterProperties, mEnabledFeatures.featuresBitSet,
+                               mEnabledToggles.toggleBitset, cacheDesc);
     }
 
     DeviceBase::DeviceBase() : mState(State::Alive) {
@@ -204,8 +224,8 @@ namespace dawn::native {
         mQueue = nullptr;
     }
 
-    MaybeError DeviceBase::Initialize(QueueBase* defaultQueue) {
-        mQueue = AcquireRef(defaultQueue);
+    MaybeError DeviceBase::Initialize(Ref<QueueBase> defaultQueue) {
+        mQueue = std::move(defaultQueue);
 
 #if defined(DAWN_ENABLE_ASSERTS)
         mUncapturedErrorCallback = [](WGPUErrorType, char const*, void*) {
@@ -267,10 +287,10 @@ namespace dawn::native {
 
     void DeviceBase::DestroyObjects() {
         // List of object types in reverse "dependency" order so we can iterate and delete the
-        // objects safely starting at leaf objects. We define dependent here such that if B has
-        // a ref to A, then B depends on A. We therefore try to destroy B before destroying A. Note
-        // that this only considers the immediate frontend dependencies, while backend objects could
-        // add complications and extra dependencies.
+        // objects safely. We define dependent here such that if B has a ref to A, then B depends on
+        // A. We therefore try to destroy B before destroying A. Note that this only considers the
+        // immediate frontend dependencies, while backend objects could add complications and extra
+        // dependencies.
         //
         // Note that AttachmentState is not an ApiObject so it cannot be eagerly destroyed. However,
         // since AttachmentStates are cached by the device, objects that hold references to
@@ -310,8 +330,9 @@ namespace dawn::native {
             const std::lock_guard<std::mutex> lock(objList.mutex);
             objList.objects.MoveInto(&objects);
         }
-        for (LinkNode<ApiObjectBase>* node : objects) {
-            node->value()->Destroy();
+        while (!objects.empty()) {
+            // The destroy call should also remove the object from the list.
+            objects.head()->value()->Destroy();
         }
     }
 
@@ -394,6 +415,7 @@ namespace dawn::native {
         mPersistentCache = nullptr;
         mEmptyBindGroupLayout = nullptr;
         mInternalPipelineStore = nullptr;
+        mExternalTextureDummyView = nullptr;
 
         AssumeCommandsComplete();
 
@@ -405,12 +427,6 @@ namespace dawn::native {
     }
 
     void DeviceBase::APIDestroy() {
-        // TODO(crbug.com/dawn/628) Re-enable once CTS testing is in place and passing.
-        if (IsToggleEnabled(Toggle::DisallowUnsafeAPIs)) {
-            ConsumedError(DAWN_VALIDATION_ERROR(
-                "Explicit device.destroy() is disallowed because it is not fully implemented"));
-            return;
-        }
         Destroy();
     }
 
@@ -536,17 +552,25 @@ namespace dawn::native {
     }
 
     bool DeviceBase::APIPopErrorScope(wgpu::ErrorCallback callback, void* userdata) {
+        // TODO(crbug.com/dawn/1324) Remove return and make function void when users are updated.
+        bool returnValue = true;
+        if (callback == nullptr) {
+            static wgpu::ErrorCallback defaultCallback = [](WGPUErrorType, char const*, void*) {};
+            callback = defaultCallback;
+        }
+        // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
+        if (IsLost()) {
+            callback(WGPUErrorType_DeviceLost, "GPU device disconnected", userdata);
+            return returnValue;
+        }
         if (mErrorScopeStack->Empty()) {
-            return false;
+            callback(WGPUErrorType_Unknown, "No error scopes to pop", userdata);
+            return returnValue;
         }
         ErrorScope scope = mErrorScopeStack->Pop();
-        if (callback != nullptr) {
-            // TODO(crbug.com/dawn/1122): Call callbacks only on wgpuInstanceProcessEvents
-            callback(static_cast<WGPUErrorType>(scope.GetErrorType()), scope.GetErrorMessage(),
-                     userdata);
-        }
-
-        return true;
+        callback(static_cast<WGPUErrorType>(scope.GetErrorType()), scope.GetErrorMessage(),
+                 userdata);
+        return returnValue;
     }
 
     PersistentCache* DeviceBase::GetPersistentCache() {
@@ -672,7 +696,7 @@ namespace dawn::native {
     }
 
     ResultOrError<const Format*> DeviceBase::GetInternalFormat(wgpu::TextureFormat format) const {
-        size_t index = ComputeFormatIndex(format);
+        FormatIndex index = ComputeFormatIndex(format);
         DAWN_INVALID_IF(index >= mFormatTable.size(), "Unknown texture format %s.", format);
 
         const Format* internalFormat = &mFormatTable[index];
@@ -682,7 +706,13 @@ namespace dawn::native {
     }
 
     const Format& DeviceBase::GetValidInternalFormat(wgpu::TextureFormat format) const {
-        size_t index = ComputeFormatIndex(format);
+        FormatIndex index = ComputeFormatIndex(format);
+        ASSERT(index < mFormatTable.size());
+        ASSERT(mFormatTable[index].isSupported);
+        return mFormatTable[index];
+    }
+
+    const Format& DeviceBase::GetValidInternalFormat(FormatIndex index) const {
         ASSERT(index < mFormatTable.size());
         ASSERT(mFormatTable[index].isSupported);
         return mFormatTable[index];
@@ -779,6 +809,35 @@ namespace dawn::native {
         ASSERT(obj->IsCachedReference());
         size_t removedCount = mCaches->computePipelines.erase(obj);
         ASSERT(removedCount == 1);
+    }
+
+    ResultOrError<Ref<TextureViewBase>>
+    DeviceBase::GetOrCreateDummyTextureViewForExternalTexture() {
+        if (!mExternalTextureDummyView.Get()) {
+            Ref<TextureBase> externalTextureDummy;
+            TextureDescriptor textureDesc;
+            textureDesc.dimension = wgpu::TextureDimension::e2D;
+            textureDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+            textureDesc.label = "Dawn_External_Texture_Dummy_Texture";
+            textureDesc.size = {1, 1, 1};
+            textureDesc.usage = wgpu::TextureUsage::TextureBinding;
+
+            DAWN_TRY_ASSIGN(externalTextureDummy, CreateTexture(&textureDesc));
+
+            TextureViewDescriptor textureViewDesc;
+            textureViewDesc.arrayLayerCount = 1;
+            textureViewDesc.aspect = wgpu::TextureAspect::All;
+            textureViewDesc.baseArrayLayer = 0;
+            textureViewDesc.dimension = wgpu::TextureViewDimension::e2D;
+            textureViewDesc.format = wgpu::TextureFormat::RGBA8Unorm;
+            textureViewDesc.label = "Dawn_External_Texture_Dummy_Texture_View";
+            textureViewDesc.mipLevelCount = 1;
+
+            DAWN_TRY_ASSIGN(mExternalTextureDummyView,
+                            CreateTextureView(externalTextureDummy.Get(), &textureViewDesc));
+        }
+
+        return mExternalTextureDummyView;
     }
 
     ResultOrError<Ref<PipelineLayoutBase>> DeviceBase::GetOrCreatePipelineLayout(
@@ -949,11 +1008,6 @@ namespace dawn::native {
     }
     CommandEncoder* DeviceBase::APICreateCommandEncoder(
         const CommandEncoderDescriptor* descriptor) {
-        const CommandEncoderDescriptor defaultDescriptor = {};
-        if (descriptor == nullptr) {
-            descriptor = &defaultDescriptor;
-        }
-
         Ref<CommandEncoder> result;
         if (ConsumedError(CreateCommandEncoder(descriptor), &result,
                           "calling %s.CreateCommandEncoder(%s).", this, descriptor)) {
@@ -1321,6 +1375,11 @@ namespace dawn::native {
 
     ResultOrError<Ref<CommandEncoder>> DeviceBase::CreateCommandEncoder(
         const CommandEncoderDescriptor* descriptor) {
+        const CommandEncoderDescriptor defaultDescriptor = {};
+        if (descriptor == nullptr) {
+            descriptor = &defaultDescriptor;
+        }
+
         DAWN_TRY(ValidateIsAlive());
         if (IsValidationEnabled()) {
             DAWN_TRY(ValidateCommandEncoderDescriptor(this, descriptor));
@@ -1586,7 +1645,10 @@ namespace dawn::native {
         const TextureViewDescriptor* descriptor) {
         DAWN_TRY(ValidateIsAlive());
         DAWN_TRY(ValidateObject(texture));
-        TextureViewDescriptor desc = GetTextureViewDescriptorWithDefaults(texture, descriptor);
+
+        TextureViewDescriptor desc;
+        DAWN_TRY_ASSIGN(desc, GetTextureViewDescriptorWithDefaults(texture, descriptor));
+
         if (IsValidationEnabled()) {
             DAWN_TRY_CONTEXT(ValidateTextureViewDescriptor(this, texture, &desc),
                              "validating %s against %s.", &desc, texture);
@@ -1617,7 +1679,7 @@ namespace dawn::native {
     }
 
     void DeviceBase::ForceSetToggle(Toggle toggle, bool isEnabled) {
-        if (!mOverridenToggles.Has(toggle) && mEnabledToggles.Has(toggle) != isEnabled) {
+        if (mOverridenToggles.Has(toggle) && mEnabledToggles.Has(toggle) != isEnabled) {
             dawn::WarningLog() << "Forcing toggle \"" << ToggleEnumToName(toggle) << "\" to "
                                << isEnabled << " when it was overriden to be " << !isEnabled;
         }
@@ -1736,6 +1798,10 @@ namespace dawn::native {
 
     PipelineCompatibilityToken DeviceBase::GetNextPipelineCompatibilityToken() {
         return PipelineCompatibilityToken(mNextPipelineCompatibilityToken++);
+    }
+
+    const CacheKey& DeviceBase::GetCacheKey() const {
+        return mDeviceCacheKey;
     }
 
     const std::string& DeviceBase::GetLabel() const {

@@ -1,10 +1,11 @@
 import { SkipTestCase } from '../../common/framework/fixture.js';
 import { getGPU } from '../../common/util/navigator_gpu.js';
 import { assert, raceWithRejectOnTimeout, assertReject } from '../../common/util/util.js';
-import { DefaultLimits } from '../constants.js';
+import { kLimitInfo, kLimits } from '../capability_info.js';
 
 export interface DeviceProvider {
   acquire(): GPUDevice;
+  expectDeviceLost(reason: GPUDeviceLostReason): void;
 }
 
 class TestFailedButDeviceReusable extends Error {}
@@ -20,14 +21,21 @@ export class DevicePool {
   /** Request a device from the pool. */
   async reserve(descriptor?: UncanonicalizedDeviceDescriptor): Promise<DeviceProvider> {
     // Always attempt to initialize default device, to see if it succeeds.
+    let errorMessage = '';
     if (this.defaultHolder === 'uninitialized') {
       try {
         this.defaultHolder = await DeviceHolder.create(undefined);
       } catch (ex) {
         this.defaultHolder = 'failed';
+        if (ex instanceof Error) {
+          errorMessage = ` with ${ex.name} "${ex.message}"`;
+        }
       }
     }
-    assert(this.defaultHolder !== 'failed', 'WebGPU device failed to initialize; not retrying');
+    assert(
+      this.defaultHolder !== 'failed',
+      `WebGPU device failed to initialize${errorMessage}; not retrying`
+    );
 
     let holder;
     if (descriptor === undefined) {
@@ -55,7 +63,10 @@ export class DevicePool {
       // (Hopefully if the device was lost, it has been reported by the time endErrorScopes()
       // has finished (or timed out). If not, it could cause a finite number of extra test
       // failures following this one (but should recover eventually).)
-      assert(holder.lostInfo === undefined, `Device was unexpectedly lost: ${holder.lostInfo}`);
+      assert(
+        holder.lostInfo === undefined,
+        `Device was unexpectedly lost. Reason: ${holder.lostInfo?.reason}, Message: ${holder.lostInfo?.message}`
+      );
     } catch (ex) {
       // Any error that isn't explicitly TestFailedButDeviceReusable forces a new device to be
       // created for the next test.
@@ -69,7 +80,17 @@ export class DevicePool {
           holder.device.destroy();
         }
       }
-      throw ex;
+      // In the try block, we may throw an error if the device is lost in order to force device
+      // reinitialization, however, if the device lost was expected we want to suppress the error
+      // The device lost is expected when `holder.expectedLostReason` is equal to
+      // `holder.lostInfo.reason`.
+      const expectedDeviceLost =
+        holder.expectedLostReason !== undefined &&
+        holder.lostInfo !== undefined &&
+        holder.expectedLostReason === holder.lostInfo.reason;
+      if (!expectedDeviceLost) {
+        throw ex;
+      }
     } finally {
       // Mark the holder as free. (This only has an effect if the pool still has the holder.)
       // This could be done at the top but is done here to guard against async-races during release.
@@ -188,11 +209,12 @@ function canonicalizeDescriptor(
    * specified _and_ non-default. */
   const limitsCanonicalized: Record<string, number> = {};
   if (desc.requiredLimits) {
-    for (const [k, defaultValue] of Object.entries(DefaultLimits)) {
-      const requestedValue = desc.requiredLimits[k];
+    for (const limit of kLimits) {
+      const requestedValue = desc.requiredLimits[limit];
+      const defaultValue = kLimitInfo[limit].default;
       // Skip adding a limit to limitsCanonicalized if it is the same as the default.
       if (requestedValue !== undefined && requestedValue !== defaultValue) {
-        limitsCanonicalized[k] = requestedValue;
+        limitsCanonicalized[limit] = requestedValue;
       }
     }
   }
@@ -238,6 +260,8 @@ class DeviceHolder implements DeviceProvider {
   state: DeviceHolderState = 'free';
   // initially undefined; becomes set when the device is lost
   lostInfo?: GPUDeviceLostInfo;
+  // Set if the device is expected to be lost.
+  expectedLostReason?: GPUDeviceLostReason;
 
   // Gets a device and creates a DeviceHolder.
   // If the device is lost, DeviceHolder.lost gets set.
@@ -269,6 +293,10 @@ class DeviceHolder implements DeviceProvider {
     return this.device;
   }
 
+  expectDeviceLost(reason: GPUDeviceLostReason) {
+    this.expectedLostReason = reason;
+  }
+
   async ensureRelease(): Promise<void> {
     const kPopErrorScopeTimeoutMS = 5000;
 
@@ -294,6 +322,9 @@ class DeviceHolder implements DeviceProvider {
     let gpuValidationError: GPUValidationError | GPUOutOfMemoryError | null;
     let gpuOutOfMemoryError: GPUValidationError | GPUOutOfMemoryError | null;
 
+    // Submit to the queue to attempt to force a GPU flush.
+    this.device.queue.submit([]);
+
     try {
       // May reject if the device was lost.
       gpuValidationError = await this.device.popErrorScope();
@@ -304,6 +335,11 @@ class DeviceHolder implements DeviceProvider {
         'popErrorScope failed; should only happen if device has been lost'
       );
       throw ex;
+    }
+
+    // Attempt to wait for the queue to be idle.
+    if (this.device.queue.onSubmittedWorkDone) {
+      await this.device.queue.onSubmittedWorkDone();
     }
 
     await assertReject(

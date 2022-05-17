@@ -1,8 +1,27 @@
+/*
+ * Copyright (C) 2022 The Android Open Source Project
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 import {Actions} from '../common/actions';
 import {Engine} from '../common/engine';
 import {featureFlags} from '../common/feature_flags';
 import {ColumnType} from '../common/query_result';
-import {PivotTableReduxResult} from '../common/state';
+import {
+  PivotTableReduxQueryMetadata,
+  PivotTableReduxResult
+} from '../common/state';
 import {aggregationIndex} from '../frontend/pivot_table_redux_query_generator';
 
 import {Controller} from './controller';
@@ -99,7 +118,8 @@ class TreeBuilder {
   }
 }
 
-function createEmptyQueryResult(): PivotTableReduxResult {
+function createEmptyQueryResult(metadata: PivotTableReduxQueryMetadata):
+    PivotTableReduxResult {
   return {
     tree: {
       aggregates: [],
@@ -107,10 +127,7 @@ function createEmptyQueryResult(): PivotTableReduxResult {
       children: new Map(),
       rows: [],
     },
-    metadata: {
-      pivotColumns: [],
-      aggregationColumns: [],
-    }
+    metadata
   };
 }
 
@@ -165,7 +182,7 @@ export class PivotTableReduxController extends Controller<{}> {
             pivotTableState: {
               queryId: this.lastStartedQueryId,
               query: null,
-              queryResult: createEmptyQueryResult(),
+              queryResult: createEmptyQueryResult(query.metadata),
               selectionArea: pivotTableState.selectionArea
             }
           }));

@@ -379,7 +379,7 @@ export class NetworkRequest extends Common.ObjectWrapper.ObjectWrapper<EventType
       backendRequestId: Protocol.Network.RequestId, requestURL: Platform.DevToolsPath.UrlString,
       initiator?: Protocol.Network.Initiator): NetworkRequest {
     return new NetworkRequest(
-        backendRequestId, backendRequestId, requestURL, '' as Platform.DevToolsPath.UrlString, null, null,
+        backendRequestId, backendRequestId, requestURL, Platform.DevToolsPath.EmptyUrlString, null, null,
         initiator || null);
   }
 
@@ -1718,7 +1718,7 @@ export interface ExtraResponseInfo {
 }
 
 export interface WebBundleInfo {
-  resourceUrls?: string[];
+  resourceUrls?: Platform.DevToolsPath.UrlString[];
   errorMessage?: string;
 }
 

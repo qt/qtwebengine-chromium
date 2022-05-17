@@ -54,8 +54,9 @@
 class SkDescriptor;
 
 
-// Set to make glyph bounding boxes visible.
-#define SK_SHOW_TEXT_BLIT_COVERAGE 0
+namespace {
+static inline const constexpr bool kSkShowTextBlitCoverage = false;
+}
 
 static void sk_memset_rect32(uint32_t* ptr, uint32_t value,
                              int width, int height, size_t rowBytes) {
@@ -128,7 +129,7 @@ SkScalerContext_Mac::SkScalerContext_Mac(sk_sp<SkTypeface_Mac> typeface,
     // As a result, it is necessary to know the actual device size and request that.
     SkVector scale;
     SkMatrix skTransform;
-    bool invertible = fRec.computeMatrices(SkScalerContextRec::kVertical_PreMatrixScale,
+    bool invertible = fRec.computeMatrices(SkScalerContextRec::PreMatrixScale::kVertical,
                                            &scale, &skTransform, nullptr, nullptr, nullptr);
     fTransform = MatrixToCGAffineTransform(skTransform);
     // CGAffineTransformInvert documents that if the transform is non-invertible it will return the
@@ -409,9 +410,9 @@ static inline uint8_t rgb_to_a8(CGRGBPixel rgb, const uint8_t* table8) {
     U8CPU g = 0xFF - ((rgb >>  8) & 0xFF);
     U8CPU b = 0xFF - ((rgb >>  0) & 0xFF);
     U8CPU lum = sk_apply_lut_if<APPLY_PREBLEND>(SkComputeLuminance(r, g, b), table8);
-#if SK_SHOW_TEXT_BLIT_COVERAGE
-    lum = std::max(lum, (U8CPU)0x30);
-#endif
+    if constexpr (kSkShowTextBlitCoverage) {
+        lum = std::max(lum, (U8CPU)0x30);
+    }
     return lum;
 }
 
@@ -438,11 +439,11 @@ static uint16_t RGBToLcd16(CGRGBPixel rgb,
     U8CPU r = sk_apply_lut_if<APPLY_PREBLEND>(0xFF - ((rgb >> 16) & 0xFF), tableR);
     U8CPU g = sk_apply_lut_if<APPLY_PREBLEND>(0xFF - ((rgb >>  8) & 0xFF), tableG);
     U8CPU b = sk_apply_lut_if<APPLY_PREBLEND>(0xFF - ((rgb >>  0) & 0xFF), tableB);
-#if SK_SHOW_TEXT_BLIT_COVERAGE
-    r = std::max(r, (U8CPU)0x30);
-    g = std::max(g, (U8CPU)0x30);
-    b = std::max(b, (U8CPU)0x30);
-#endif
+    if constexpr (kSkShowTextBlitCoverage) {
+        r = std::max(r, (U8CPU)0x30);
+        g = std::max(g, (U8CPU)0x30);
+        b = std::max(b, (U8CPU)0x30);
+    }
     return SkPack888ToRGB16(r, g, b);
 }
 
@@ -469,9 +470,9 @@ static SkPMColor cgpixels_to_pmcolor(CGRGBPixel rgb) {
     U8CPU r = (rgb >> 16) & 0xFF;
     U8CPU g = (rgb >>  8) & 0xFF;
     U8CPU b = (rgb >>  0) & 0xFF;
-#if SK_SHOW_TEXT_BLIT_COVERAGE
-    a = std::max(a, (U8CPU)0x30);
-#endif
+    if constexpr (kSkShowTextBlitCoverage) {
+        a = std::max(a, (U8CPU)0x30);
+    }
     return SkPackARGB32(a, r, g, b);
 }
 
@@ -659,10 +660,10 @@ bool SkScalerContext_Mac::generatePath(const SkGlyph& glyph, SkPath* path) {
         scaleX = scaleY = kScaleForSubPixelPositionHinting;
         // now see if we need to restore hinting for axis-aligned baselines
         switch (this->computeAxisAlignmentForHText()) {
-            case kX_SkAxisAlignment:
+            case SkAxisAlignment::kX:
                 scaleY = SK_Scalar1; // want hinting in the Y direction
                 break;
-            case kY_SkAxisAlignment:
+            case SkAxisAlignment::kY:
                 scaleX = SK_Scalar1; // want hinting in the X direction
                 break;
             default:
@@ -718,8 +719,8 @@ void SkScalerContext_Mac::generateFontMetrics(SkFontMetrics* metrics) {
     metrics->fFlags |= SkFontMetrics::kUnderlineThicknessIsValid_Flag;
     metrics->fFlags |= SkFontMetrics::kUnderlinePositionIsValid_Flag;
 
-    SkUniqueCFRef<CFArrayRef> ctAxes(CTFontCopyVariationAxes(fCTFont.get()));
-    if (ctAxes && CFArrayGetCount(ctAxes.get()) > 0) {
+    CFArrayRef ctAxes = ((SkTypeface_Mac*)this->getTypeface())->getVariationAxes();
+    if (ctAxes && CFArrayGetCount(ctAxes) > 0) {
         // The bounds are only valid for the default variation.
         metrics->fFlags |= SkFontMetrics::kBoundsInvalid_Flag;
     }

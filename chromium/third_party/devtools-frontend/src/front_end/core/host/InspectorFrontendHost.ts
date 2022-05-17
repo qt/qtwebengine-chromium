@@ -53,7 +53,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 const MAX_RECORDED_HISTOGRAMS_SIZE = 100;
 
 export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
-  readonly #urlsBeingSaved: Map<string, string[]>;
+  readonly #urlsBeingSaved: Map<Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, string[]>;
   events!: Common.EventTarget.EventTarget<EventTypes>;
 
   recordedEnumeratedHistograms: {actionName: EnumeratedHistogram, actionCode: number}[] = [];
@@ -122,7 +122,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   setInjectedScriptForOrigin(origin: string, script: string): void {
   }
 
-  inspectedURLChanged(url: string): void {
+  inspectedURLChanged(url: Platform.DevToolsPath.UrlString): void {
     document.title = i18nString(UIStrings.devtoolsS, {PH1: url.replace(/^https?:\/\//, '')});
   }
 
@@ -133,16 +133,17 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
     void navigator.clipboard.writeText(text);
   }
 
-  openInNewTab(url: string): void {
+  openInNewTab(url: Platform.DevToolsPath.UrlString): void {
     window.open(url, '_blank');
   }
 
-  showItemInFolder(fileSystemPath: string): void {
+  showItemInFolder(fileSystemPath: Platform.DevToolsPath.RawPathString): void {
     Common.Console.Console.instance().error(
         'Show item in folder is not enabled in hosted mode. Please inspect using chrome://inspect');
   }
 
-  save(url: string, content: string, forceSaveAs: boolean): void {
+  save(url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, content: string, forceSaveAs: boolean):
+      void {
     let buffer = this.#urlsBeingSaved.get(url);
     if (!buffer) {
       buffer = [];
@@ -152,7 +153,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
     this.events.dispatchEventToListeners(Events.SavedURL, {url, fileSystemPath: url});
   }
 
-  append(url: string, content: string): void {
+  append(url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, content: string): void {
     const buffer = this.#urlsBeingSaved.get(url);
     if (buffer) {
       buffer.push(content);
@@ -160,7 +161,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
     }
   }
 
-  close(url: string): void {
+  close(url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString): void {
     const buffer = this.#urlsBeingSaved.get(url) || [];
     this.#urlsBeingSaved.delete(url);
     let fileName = '';
@@ -211,7 +212,7 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   addFileSystem(type?: string): void {
   }
 
-  removeFileSystem(fileSystemPath: string): void {
+  removeFileSystem(fileSystemPath: Platform.DevToolsPath.RawPathString): void {
   }
 
   isolatedFileSystem(fileSystemId: string, registeredName: string): FileSystem|null {
@@ -286,13 +287,13 @@ export class InspectorFrontendHostStub implements InspectorFrontendHostAPI {
   upgradeDraggedFileSystemPermissions(fileSystem: FileSystem): void {
   }
 
-  indexPath(requestId: number, fileSystemPath: string, excludedFolders: string): void {
+  indexPath(requestId: number, fileSystemPath: Platform.DevToolsPath.RawPathString, excludedFolders: string): void {
   }
 
   stopIndexing(requestId: number): void {
   }
 
-  searchInPath(requestId: number, fileSystemPath: string, query: string): void {
+  searchInPath(requestId: number, fileSystemPath: Platform.DevToolsPath.RawPathString, query: string): void {
   }
 
   zoomFactor(): number {

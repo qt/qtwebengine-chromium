@@ -10,6 +10,7 @@
 
 #include "include/core/SkScalar.h"
 #include "include/core/SkTypes.h"
+#include "include/private/SkTDArray.h"
 #include "src/core/SkScalerContext.h"
 #include "src/ports/SkTypeface_win_dw.h"
 
@@ -35,6 +36,11 @@ protected:
     void generateFontMetrics(SkFontMetrics*) override;
 
 private:
+    struct ScalerContextBits {
+        using value_type = decltype(SkGlyph::fScalerContextBits);
+        static const constexpr value_type ForceBW = 1 << 0;
+    };
+
     static void BilevelToBW(const uint8_t* SK_RESTRICT src, const SkGlyph& glyph);
 
     template<bool APPLY_PREBLEND>

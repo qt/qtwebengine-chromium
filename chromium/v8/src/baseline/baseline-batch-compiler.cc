@@ -27,6 +27,11 @@ namespace v8 {
 namespace internal {
 namespace baseline {
 
+static bool CanCompileWithConcurrentBaseline(SharedFunctionInfo shared,
+                                             Isolate* isolate) {
+  return !shared.HasBaselineCode() && CanCompileWithBaseline(isolate, shared);
+}
+
 class BaselineCompilerTask {
  public:
   BaselineCompilerTask(Isolate* isolate, PersistentHandles* handles,
@@ -60,15 +65,13 @@ class BaselineCompilerTask {
     }
     // Don't install the code if the bytecode has been flushed or has
     // already some baseline code installed.
-    if (!shared_function_info_->is_compiled() ||
-        shared_function_info_->HasBaselineCode()) {
+    if (!CanCompileWithConcurrentBaseline(*shared_function_info_, isolate)) {
       return;
     }
     shared_function_info_->set_baseline_code(ToCodeT(*code), kReleaseStore);
     if (V8_LIKELY(FLAG_use_osr)) {
-      // Arm back edges for OSR
       shared_function_info_->GetBytecodeArray(isolate)
-          .set_osr_loop_nesting_level(AbstractCode::kMaxLoopNestingMarker);
+          .RequestOsrAtNextOpportunity();
     }
     if (FLAG_trace_baseline_concurrent_compilation) {
       CodeTracer::Scope scope(isolate->GetCodeTracer());
@@ -102,7 +105,7 @@ class BaselineBatchCompilerJob {
       if (!maybe_sfi.GetHeapObjectIfWeak(&obj)) continue;
       // Skip functions where the bytecode has been flushed.
       SharedFunctionInfo shared = SharedFunctionInfo::cast(obj);
-      if (ShouldSkipFunction(shared, isolate)) continue;
+      if (!CanCompileWithConcurrentBaseline(shared, isolate)) continue;
       tasks_.emplace_back(isolate, handles_.get(), shared);
     }
     if (FLAG_trace_baseline_concurrent_compilation) {
@@ -110,11 +113,6 @@ class BaselineBatchCompilerJob {
       PrintF(scope.file(), "[Concurrent Sparkplug] compiling %zu functions\n",
              tasks_.size());
     }
-  }
-
-  static bool ShouldSkipFunction(SharedFunctionInfo shared, Isolate* isolate) {
-    return !shared.is_compiled() || shared.HasBaselineCode() ||
-           !CanCompileWithBaseline(isolate, shared);
   }
 
   // Executed in the background thread.

@@ -90,6 +90,10 @@ module.exports = function (grunt) {
         cmd: 'node',
         args: ['node_modules/eslint/bin/eslint', 'src/**/*.ts', '--max-warnings=0'],
       },
+      presubmit: {
+        cmd: 'node',
+        args: ['tools/presubmit'],
+      },
       fix: {
         cmd: 'node',
         args: ['node_modules/eslint/bin/eslint', 'src/**/*.ts', '--fix'],
@@ -101,6 +105,10 @@ module.exports = function (grunt) {
       tsdoc: {
         cmd: 'node',
         args: ['node_modules/typedoc/bin/typedoc'],
+      },
+      'tsdoc-treatWarningsAsErrors': {
+        cmd: 'node',
+        args: ['node_modules/typedoc/bin/typedoc', '--treatWarningsAsErrors'],
       },
 
       serve: {
@@ -180,9 +188,10 @@ module.exports = function (grunt) {
     'run:build-out-node',
     'build-done-message',
     'ts:check',
+    'run:presubmit',
     'run:unittest',
     'run:lint',
-    'run:tsdoc',
+    'run:tsdoc-treatWarningsAsErrors',
   ]);
   registerTaskAndAddToHelp('standalone', 'Build standalone and typecheck', [
     'set-quiet-mode',

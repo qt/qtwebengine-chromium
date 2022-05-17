@@ -61,12 +61,11 @@ class HeapType {
  public:
   enum Representation : uint32_t {
     kFunc = kV8MaxWasmTypes,  // shorthand: c
-    kExtern,                  // shorthand: e
     kEq,                      // shorthand: q
     kI31,                     // shorthand: j
     kData,                    // shorthand: o
     kArray,                   // shorthand: g
-    kAny,                     // shorthand: a
+    kAny,                     // shorthand: a. Aka kExtern.
     // This value is used to represent failures in the parsing of heap types and
     // does not correspond to a wasm heap type. It has to be last in this list.
     kBottom
@@ -76,13 +75,12 @@ class HeapType {
     switch (code) {
       case ValueTypeCode::kFuncRefCode:
         return HeapType(kFunc);
-      case ValueTypeCode::kExternRefCode:
-        return HeapType(kExtern);
       case ValueTypeCode::kEqRefCode:
         return HeapType(kEq);
       case ValueTypeCode::kI31RefCode:
         return HeapType(kI31);
       case ValueTypeCode::kAnyRefCode:
+      case ValueTypeCode::kAnyRefCodeAlias:
         return HeapType(kAny);
       case ValueTypeCode::kDataRefCode:
         return HeapType(kData);
@@ -132,8 +130,6 @@ class HeapType {
     switch (representation_) {
       case kFunc:
         return std::string("func");
-      case kExtern:
-        return std::string("extern");
       case kEq:
         return std::string("eq");
       case kI31:
@@ -143,7 +139,7 @@ class HeapType {
       case kArray:
         return std::string("array");
       case kAny:
-        return std::string("any");
+        return std::string(FLAG_experimental_wasm_gc ? "any" : "extern");
       default:
         return std::to_string(representation_);
     }
@@ -157,8 +153,6 @@ class HeapType {
     switch (representation_) {
       case kFunc:
         return mask | kFuncRefCode;
-      case kExtern:
-        return mask | kExternRefCode;
       case kEq:
         return mask | kEqRefCode;
       case kI31:
@@ -214,19 +208,19 @@ constexpr bool is_object_reference(ValueKind kind) {
   return kind == kRef || kind == kOptRef;
 }
 
-constexpr int element_size_log2(ValueKind kind) {
-  constexpr int8_t kElementSizeLog2[] = {
-#define ELEM_SIZE_LOG2(kind, log2Size, ...) log2Size,
-      FOREACH_VALUE_TYPE(ELEM_SIZE_LOG2)
-#undef ELEM_SIZE_LOG2
+constexpr int value_kind_size_log2(ValueKind kind) {
+  constexpr int8_t kValueKindSizeLog2[] = {
+#define VALUE_KIND_SIZE_LOG2(kind, log2Size, ...) log2Size,
+      FOREACH_VALUE_TYPE(VALUE_KIND_SIZE_LOG2)
+#undef VALUE_KIND_SIZE_LOG2
   };
 
-  int size_log_2 = kElementSizeLog2[kind];
+  int size_log_2 = kValueKindSizeLog2[kind];
   DCHECK_LE(0, size_log_2);
   return size_log_2;
 }
 
-constexpr int element_size_bytes(ValueKind kind) {
+constexpr int value_kind_size(ValueKind kind) {
   constexpr int8_t kElementSize[] = {
 #define ELEM_SIZE_LOG2(kind, log2Size, ...) \
   log2Size == -1 ? -1 : (1 << std::max(0, log2Size)),
@@ -237,6 +231,14 @@ constexpr int element_size_bytes(ValueKind kind) {
   int size = kElementSize[kind];
   DCHECK_LT(0, size);
   return size;
+}
+
+constexpr int value_kind_full_size(ValueKind kind) {
+  if (is_reference(kind)) {
+    // Uncompressed pointer size.
+    return kSystemPointerSize;
+  }
+  return value_kind_size(kind);
 }
 
 constexpr char short_name(ValueKind kind) {
@@ -285,12 +287,14 @@ constexpr bool is_defaultable(ValueKind kind) {
   return kind != kRef && !is_rtt(kind);
 }
 
-// A ValueType is encoded by three components: A ValueKind, a heap
-// representation (for reference types), and an inheritance depth (for rtts
-// only). Those are encoded into 32 bits using base::BitField. The underlying
-// ValueKind enumeration includes four elements which do not strictly correspond
-// to value types: the two packed types i8 and i16, the void type (for control
-// structures), and a bottom value (for internal use).
+// A ValueType is encoded by two components: a ValueKind and a heap
+// representation (for reference types/rtts). Those are encoded into 32 bits
+// using base::BitField. The underlying ValueKind enumeration includes four
+// elements which do not strictly correspond to value types: the two packed
+// types i8 and i16, the void type (for control structures), and a bottom value
+// (for internal use).
+// ValueType encoding includes an additional bit marking the index of a type as
+// relative. This should only be used during type canonicalization.
 class ValueType {
  public:
   /******************************* Constructors *******************************/
@@ -313,6 +317,11 @@ class ValueType {
     DCHECK(HeapType(type_index).is_index());
     return ValueType(KindField::encode(kRtt) |
                      HeapTypeField::encode(type_index));
+  }
+
+  static constexpr ValueType FromIndex(ValueKind kind, uint32_t index) {
+    DCHECK(kind == kOptRef || kind == kRef || kind == kRtt);
+    return ValueType(KindField::encode(kind) | HeapTypeField::encode(index));
   }
 
   // Useful when deserializing a type stored in a runtime object.
@@ -394,12 +403,16 @@ class ValueType {
     return offsetof(ValueType, bit_field_);
   }
 
-  constexpr int element_size_log2() const {
-    return wasm::element_size_log2(kind());
+  constexpr int value_kind_size_log2() const {
+    return wasm::value_kind_size_log2(kind());
   }
 
-  constexpr int element_size_bytes() const {
-    return wasm::element_size_bytes(kind());
+  constexpr int value_kind_size() const {
+    return wasm::value_kind_size(kind());
+  }
+
+  constexpr int value_kind_full_size() const {
+    return wasm::value_kind_full_size(kind());
   }
 
   /*************************** Machine-type related ***************************/
@@ -424,7 +437,7 @@ class ValueType {
       case MachineRepresentation::kFloat64:
         return Primitive(kF64);
       case MachineRepresentation::kTaggedPointer:
-        return Ref(HeapType::kExtern, kNullable);
+        return Ref(HeapType::kAny, kNullable);
       case MachineRepresentation::kSimd128:
         return Primitive(kS128);
       default:
@@ -447,8 +460,6 @@ class ValueType {
         switch (heap_representation()) {
           case HeapType::kFunc:
             return kFuncRefCode;
-          case HeapType::kExtern:
-            return kExternRefCode;
           case HeapType::kEq:
             return kEqRefCode;
           case HeapType::kAny:
@@ -492,15 +503,12 @@ class ValueType {
                heap_representation() != HeapType::kData;
       case kOptRef:
         return heap_representation() != HeapType::kFunc &&
-               heap_representation() != HeapType::kExtern &&
                heap_representation() != HeapType::kEq &&
                heap_representation() != HeapType::kAny;
       default:
         return false;
     }
   }
-
-  static constexpr int kLastUsedBit = 24;
 
   /****************************** Pretty-printing *****************************/
   constexpr char short_name() const { return wasm::short_name(kind()); }
@@ -526,23 +534,40 @@ class ValueType {
     return buf.str();
   }
 
-  // We only use 31 bits so ValueType fits in a Smi. This can be changed if
-  // needed.
+  /********************** Type canonicalization utilities *********************/
+  static constexpr ValueType CanonicalWithRelativeIndex(ValueKind kind,
+                                                        uint32_t index) {
+    return ValueType(KindField::encode(kind) | HeapTypeField::encode(index) |
+                     CanonicalRelativeField::encode(true));
+  }
+
+  constexpr bool is_canonical_relative() const {
+    return has_index() && CanonicalRelativeField::decode(bit_field_);
+  }
+
+  /**************************** Static constants ******************************/
+  static constexpr int kLastUsedBit = 25;
   static constexpr int kKindBits = 5;
   static constexpr int kHeapTypeBits = 20;
 
  private:
-  STATIC_ASSERT(kV8MaxWasmTypes < (1u << kHeapTypeBits));
-
   // {hash_value} directly reads {bit_field_}.
   friend size_t hash_value(ValueType type);
 
   using KindField = base::BitField<ValueKind, 0, kKindBits>;
   using HeapTypeField = KindField::Next<uint32_t, kHeapTypeBits>;
+  // Marks a type as a canonical type which uses an index relative to its
+  // recursive group start. Used only during type canonicalization.
+  using CanonicalRelativeField = HeapTypeField::Next<bool, 1>;
 
+  static_assert(kV8MaxWasmTypes < (1u << kHeapTypeBits),
+                "Type indices fit in kHeapTypeBits");
   // This is implemented defensively against field order changes.
-  STATIC_ASSERT(kLastUsedBit ==
-                std::max(KindField::kLastUsedBit, HeapTypeField::kLastUsedBit));
+  static_assert(kLastUsedBit ==
+                    std::max(KindField::kLastUsedBit,
+                             std::max(HeapTypeField::kLastUsedBit,
+                                      CanonicalRelativeField::kLastUsedBit)),
+                "kLastUsedBit is consistent");
 
   constexpr explicit ValueType(uint32_t bit_field) : bit_field_(bit_field) {}
 
@@ -576,24 +601,22 @@ constexpr ValueType kWasmI8 = ValueType::Primitive(kI8);
 constexpr ValueType kWasmI16 = ValueType::Primitive(kI16);
 constexpr ValueType kWasmVoid = ValueType::Primitive(kVoid);
 constexpr ValueType kWasmBottom = ValueType::Primitive(kBottom);
-// Established reference-type proposal shorthands.
+// Established reference-type and wasm-gc proposal shorthands.
 constexpr ValueType kWasmFuncRef = ValueType::Ref(HeapType::kFunc, kNullable);
-constexpr ValueType kWasmExternRef =
-    ValueType::Ref(HeapType::kExtern, kNullable);
+constexpr ValueType kWasmAnyRef = ValueType::Ref(HeapType::kAny, kNullable);
 constexpr ValueType kWasmEqRef = ValueType::Ref(HeapType::kEq, kNullable);
 constexpr ValueType kWasmI31Ref = ValueType::Ref(HeapType::kI31, kNonNullable);
 constexpr ValueType kWasmDataRef =
     ValueType::Ref(HeapType::kData, kNonNullable);
 constexpr ValueType kWasmArrayRef =
     ValueType::Ref(HeapType::kArray, kNonNullable);
-constexpr ValueType kWasmAnyRef = ValueType::Ref(HeapType::kAny, kNullable);
 
 // Constants used by the generic js-to-wasm wrapper.
 constexpr int kWasmValueKindBitsMask = (1u << ValueType::kKindBits) - 1;
 
 // This is used in wasm.tq.
-constexpr ValueType kWasmExternNonNullableRef =
-    ValueType::Ref(HeapType::kExtern, kNonNullable);
+constexpr ValueType kWasmAnyNonNullableRef =
+    ValueType::Ref(HeapType::kAny, kNonNullable);
 
 #define FOREACH_WASMVALUE_CTYPES(V) \
   V(kI32, int32_t)                  \

@@ -1,5 +1,7 @@
 load("//bazel:macros.bzl", "generated_cc_atom")
 
+licenses(["notice"])
+
 generated_cc_atom(
     name = "ANGLEWindowContext_win_src",
     srcs = ["ANGLEWindowContext_win.cpp"],
@@ -7,7 +9,7 @@ generated_cc_atom(
     deps = [
         ":WindowContextFactory_win_hdr",
         "//include/gpu/gl:GrGLAssembleInterface_hdr",
-        "//src/gpu/gl:GrGLDefines_hdr",
+        "//src/gpu/ganesh/gl:GrGLDefines_impl_hdr",
         "//tools/sk_app:GLWindowContext_hdr",
     ],
 )
@@ -32,9 +34,7 @@ generated_cc_atom(
     visibility = ["//:__subpackages__"],
     deps = [
         ":WindowContextFactory_win_hdr",
-        "//dawn:dawn_wsi_hdr",
-        "//dawn_native:D3D12Backend_hdr",
-        "//dawn_native:DawnNative_hdr",
+        "//third_party:dawn",
         "//tools/sk_app:DawnWindowContext_hdr",
     ],
 )
@@ -71,8 +71,8 @@ generated_cc_atom(
         ":WindowContextFactory_win_hdr",
         ":Window_win_hdr",
         "//include/gpu/vk:GrVkVulkan_hdr",
-        "//src/gpu/vk:GrVkInterface_hdr",
-        "//src/gpu/vk:GrVkUtil_hdr",
+        "//src/gpu/ganesh/vk:GrVkInterface_hdr",
+        "//src/gpu/ganesh/vk:GrVkUtil_hdr",
         "//tools/gpu/vk:VkTestUtils_hdr",
         "//tools/sk_app:VulkanWindowContext_hdr",
     ],

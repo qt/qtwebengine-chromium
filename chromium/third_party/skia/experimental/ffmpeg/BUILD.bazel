@@ -1,5 +1,7 @@
 load("//bazel:macros.bzl", "generated_cc_atom")
 
+licenses(["notice"])
+
 generated_cc_atom(
     name = "SkVideoDecoder_hdr",
     hdrs = ["SkVideoDecoder.h"],
@@ -13,8 +15,10 @@ generated_cc_atom(
     visibility = ["//:__subpackages__"],
     deps = [
         ":SkVideoDecoder_hdr",
+        "//include/core:SkBitmap_hdr",
         "//include/core:SkColorSpace_hdr",
         "//include/core:SkImage_hdr",
+        "//include/core:SkStream_hdr",
         "//include/core:SkYUVAPixmaps_hdr",
     ],
 )

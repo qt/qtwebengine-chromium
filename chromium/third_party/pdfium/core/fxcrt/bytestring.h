@@ -17,8 +17,8 @@
 #include <iterator>
 #include <utility>
 
+#include "core/fxcrt/fx_string_wrappers.h"
 #include "core/fxcrt/retain_ptr.h"
-#include "core/fxcrt/stl_util.h"
 #include "core/fxcrt/string_data_template.h"
 #include "core/fxcrt/string_view_template.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -48,9 +48,10 @@ class ByteString {
   // Move-construct a ByteString. After construction, |other| is empty.
   ByteString(ByteString&& other) noexcept;
 
+  // Make a one-character string from a char.
+  explicit ByteString(char ch);
+
   // Deliberately implicit to avoid calling on every string literal.
-  // NOLINTNEXTLINE(runtime/explicit)
-  ByteString(char ch);
   // NOLINTNEXTLINE(runtime/explicit)
   ByteString(const char* ptr);
 

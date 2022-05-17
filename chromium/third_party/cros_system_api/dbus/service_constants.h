@@ -11,7 +11,6 @@
 // Chromium OS and Chromium environment.
 #include "anomaly_detector/dbus-constants.h"
 #include "arc-data-snapshotd/dbus-constants.h"
-#include "arc_vm_status/dbus-constants.h"
 #include "audio/dbus-constants.h"
 #include "authpolicy/dbus-constants.h"
 #include "biod/dbus-constants.h"
@@ -36,6 +35,7 @@
 #include "login_manager/dbus-constants.h"
 #include "lorgnette/dbus-constants.h"
 #include "missive/dbus-constants.h"
+#include "modemfwd/dbus-constants.h"
 #include "ocr/dbus-constants.h"
 #include "oobe_config/dbus-constants.h"
 #include "os_install_service/dbus-constants.h"
@@ -44,6 +44,7 @@
 #include "power_manager/dbus-constants.h"
 #include "privacy_screen/dbus-constants.h"
 #include "resource_manager/dbus-constants.h"
+#include "rgbkbd/dbus-constants.h"
 #include "rmad/dbus-constants.h"
 #include "runtime_probe/dbus-constants.h"
 #include "seneschal/dbus-constants.h"
@@ -217,6 +218,8 @@ const char kUserAuthenticationServicePath[] =
 const char kUserAuthenticationServiceInterface[] =
     "org.chromium.UserAuthenticationServiceInterface";
 const char kUserAuthenticationServiceShowAuthDialogMethod[] = "ShowAuthDialog";
+const char kUserAuthenticationServiceShowAuthDialogV2Method[] =
+    "ShowAuthDialogV2";
 const char kUserAuthenticationServiceCancelMethod[] = "Cancel";
 const char kUserAuthenticationServiceIsAuthenticatorAvailableMethod[] =
     "IsAuthenticatorAvailable";
@@ -458,6 +461,7 @@ const char kBootstrapCdmFactoryDaemonMojoConnection[] =
     "BootstrapCdmFactoryDaemonMojoConnection";
 const char kGetFactoryTransportKeyMaterial[] = "GetFactoryTransportKeyMaterial";
 const char kWrapFactoryKeybox[] = "WrapFactoryKeybox";
+const char kGetClientInformation[] = "GetClientInformation";
 }  // namespace cdm_oemcrypto
 
 namespace midis {
@@ -629,16 +633,6 @@ constexpr char kArcCameraServiceInterface[] = "org.chromium.ArcCamera";
 // Method names.
 constexpr char kStartServiceMethod[] = "StartService";
 }  // namespace arc_camera
-
-namespace modemfwd {
-const char kModemfwdInterface[] = "org.chromium.Modemfwd";
-const char kModemfwdServicePath[] = "/org/chromium/Modemfwd";
-const char kModemfwdServiceName[] = "org.chromium.Modemfwd";
-
-// Methods.
-const char kSetDebugMode[] = "SetDebugMode";
-
-}  // namespace modemfwd
 
 namespace lock_to_single_user {
 const char kLockToSingleUserInterface[] = "org.chromium.LockToSingleUser";

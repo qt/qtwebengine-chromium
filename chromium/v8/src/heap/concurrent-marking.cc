@@ -10,6 +10,7 @@
 #include "include/v8config.h"
 #include "src/common/globals.h"
 #include "src/execution/isolate.h"
+#include "src/heap/gc-tracer-inl.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/heap-inl.h"
 #include "src/heap/heap.h"
@@ -114,6 +115,10 @@ class ConcurrentMarkingVisitor final
 
   int VisitJSObjectFast(Map map, JSObject object) {
     return VisitJSObjectSubclassFast(map, object);
+  }
+
+  int VisitJSExternalObject(Map map, JSExternalObject object) {
+    return VisitJSObjectSubclass(map, object);
   }
 
 #if V8_ENABLE_WEBASSEMBLY

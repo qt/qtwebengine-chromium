@@ -21,6 +21,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_client.h"
 #include "third_party/blink/renderer/core/frame/settings.h"
+#include "third_party/blink/renderer/core/html/closewatcher/close_watcher.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/html_dialog_element.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
@@ -29,6 +30,7 @@
 #include "third_party/blink/renderer/core/input/scroll_manager.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/focus_controller.h"
+#include "third_party/blink/renderer/core/page/focusgroup_controller.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation.h"
 #include "third_party/blink/renderer/core/page/spatial_navigation_controller.h"
@@ -435,6 +437,12 @@ void KeyboardEventManager::DefaultArrowEventHandler(
   if (!page)
     return;
 
+  if (RuntimeEnabledFeatures::FocusgroupEnabled() &&
+      FocusgroupController::HandleArrowKeyboardEvent(event, frame_)) {
+    event->SetDefaultHandled();
+    return;
+  }
+
   if (IsSpatialNavigationEnabled(frame_) &&
       !frame_->GetDocument()->InDesignMode()) {
     if (page->GetSpatialNavigationController().HandleArrowKeyboardEvent(
@@ -550,8 +558,12 @@ void KeyboardEventManager::DefaultEscapeEventHandler(KeyboardEvent* event) {
     page->GetSpatialNavigationController().HandleEscapeKeyboardEvent(event);
   }
 
-  if (HTMLDialogElement* dialog = frame_->GetDocument()->ActiveModalDialog())
+  HTMLDialogElement* dialog = frame_->GetDocument()->ActiveModalDialog();
+  if (dialog && !RuntimeEnabledFeatures::CloseWatcherEnabled()) {
     dialog->DispatchEvent(*Event::CreateCancelable(event_type_names::kCancel));
+  }
+
+  frame_->DomWindow()->closewatcher_stack()->EscapeKeyHandler(event);
 }
 
 void KeyboardEventManager::DefaultEnterEventHandler(KeyboardEvent* event) {

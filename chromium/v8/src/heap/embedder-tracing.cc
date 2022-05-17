@@ -6,7 +6,6 @@
 
 #include "include/v8-cppgc.h"
 #include "src/base/logging.h"
-#include "src/common/allow-deprecated.h"
 #include "src/handles/global-handles.h"
 #include "src/heap/embedder-tracing-inl.h"
 #include "src/heap/gc-tracer.h"
@@ -70,8 +69,7 @@ void LocalEmbedderHeapTracer::TraceEpilogue() {
       EmbedderHeapTracer::EmbedderStackState::kMayContainHeapPointers;
 
   if (cpp_heap_) {
-    cpp_heap()->TraceEpilogue(
-        cppgc::internal::GarbageCollector::Config::CollectionType::kMajor);
+    cpp_heap()->TraceEpilogue();
   } else {
     EmbedderHeapTracer::TraceSummary summary;
     remote_tracer_->TraceEpilogue(&summary);
@@ -114,15 +112,6 @@ bool LocalEmbedderHeapTracer::IsRemoteTracingDone() {
                                 : remote_tracer_->IsTracingDone());
 }
 
-void LocalEmbedderHeapTracer::SetEmbedderStackStateForNextFinalization(
-    EmbedderHeapTracer::EmbedderStackState stack_state) {
-  if (!InUse()) return;
-
-  embedder_stack_state_ = stack_state;
-  if (EmbedderHeapTracer::EmbedderStackState::kNoHeapPointers == stack_state)
-    NotifyEmptyEmbedderStack();
-}
-
 LocalEmbedderHeapTracer::ProcessingScope::ProcessingScope(
     LocalEmbedderHeapTracer* tracer)
     : tracer_(tracer), wrapper_descriptor_(tracer->wrapper_descriptor_) {
@@ -149,7 +138,7 @@ LocalEmbedderHeapTracer::ExtractWrapperInfo(Isolate* isolate,
 
 void LocalEmbedderHeapTracer::ProcessingScope::TracePossibleWrapper(
     JSObject js_object) {
-  DCHECK(js_object.IsApiWrapper());
+  DCHECK(js_object.MayHaveEmbedderFields());
   WrapperInfo info;
   if (ExtractWrappableInfo(tracer_->isolate_, js_object, wrapper_descriptor_,
                            &info)) {
@@ -199,7 +188,7 @@ void LocalEmbedderHeapTracer::NotifyEmptyEmbedderStack() {
 void LocalEmbedderHeapTracer::EmbedderWriteBarrier(Heap* heap,
                                                    JSObject js_object) {
   DCHECK(InUse());
-  DCHECK(js_object.IsApiWrapper());
+  DCHECK(js_object.MayHaveEmbedderFields());
   if (cpp_heap_) {
     DCHECK_NOT_NULL(heap->mark_compact_collector());
     const EmbedderDataSlot type_slot(js_object,
@@ -220,13 +209,6 @@ bool DefaultEmbedderRootsHandler::IsRoot(
     const v8::TracedReference<v8::Value>& handle) {
   return !tracer_ || tracer_->IsRootForNonTracingGC(handle);
 }
-
-START_ALLOW_USE_DEPRECATED()
-bool DefaultEmbedderRootsHandler::IsRoot(
-    const v8::TracedGlobal<v8::Value>& handle) {
-  return !tracer_ || tracer_->IsRootForNonTracingGC(handle);
-}
-END_ALLOW_USE_DEPRECATED()
 
 void DefaultEmbedderRootsHandler::ResetRoot(
     const v8::TracedReference<v8::Value>& handle) {

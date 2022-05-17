@@ -298,6 +298,8 @@ export class TextureZeroInitTest extends GPUTest {
     subresourceRange?: SubresourceRange
   ): void {
     const commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.pushDebugGroup('initializeWithStoreOp');
+
     for (const viewDescriptor of this.generateTextureViewDescriptorsForRendering(
       this.p.aspect,
       subresourceRange
@@ -309,26 +311,36 @@ export class TextureZeroInitTest extends GPUTest {
               {
                 view: texture.createView(viewDescriptor),
                 storeOp: 'store',
-                loadValue: initializedStateAsColor(state, this.p.format),
+                clearValue: initializedStateAsColor(state, this.p.format),
+                loadOp: 'clear',
               },
             ],
           })
-          .endPass();
+          .end();
       } else {
+        const depthStencilAttachment: GPURenderPassDepthStencilAttachment = {
+          view: texture.createView(viewDescriptor),
+        };
+        if (kTextureFormatInfo[this.p.format].depth && this.p.aspect !== 'stencil-only') {
+          depthStencilAttachment.depthClearValue = initializedStateAsDepth[state];
+          depthStencilAttachment.depthLoadOp = 'clear';
+          depthStencilAttachment.depthStoreOp = 'store';
+        }
+        if (kTextureFormatInfo[this.p.format].stencil && this.p.aspect !== 'depth-only') {
+          depthStencilAttachment.stencilClearValue = initializedStateAsStencil[state];
+          depthStencilAttachment.stencilLoadOp = 'clear';
+          depthStencilAttachment.stencilStoreOp = 'store';
+        }
         commandEncoder
           .beginRenderPass({
             colorAttachments: [],
-            depthStencilAttachment: {
-              view: texture.createView(viewDescriptor),
-              depthStoreOp: 'store',
-              depthLoadValue: initializedStateAsDepth[state],
-              stencilStoreOp: 'store',
-              stencilLoadValue: initializedStateAsStencil[state],
-            },
+            depthStencilAttachment,
           })
-          .endPass();
+          .end();
       }
     }
+
+    commandEncoder.popDebugGroup();
     this.queue.submit([commandEncoder.finish()]);
   }
 
@@ -399,6 +411,7 @@ export class TextureZeroInitTest extends GPUTest {
 
   discardTexture(texture: GPUTexture, subresourceRange: SubresourceRange): void {
     const commandEncoder = this.device.createCommandEncoder();
+    commandEncoder.pushDebugGroup('discardTexture');
 
     for (const desc of this.generateTextureViewDescriptorsForRendering(
       this.p.aspect,
@@ -411,26 +424,33 @@ export class TextureZeroInitTest extends GPUTest {
               {
                 view: texture.createView(desc),
                 storeOp: 'discard',
-                loadValue: 'load',
+                loadOp: 'load',
               },
             ],
           })
-          .endPass();
+          .end();
       } else {
+        const depthStencilAttachment: GPURenderPassDepthStencilAttachment = {
+          view: texture.createView(desc),
+        };
+        if (kTextureFormatInfo[this.p.format].depth && this.p.aspect !== 'stencil-only') {
+          depthStencilAttachment.depthLoadOp = 'load';
+          depthStencilAttachment.depthStoreOp = 'discard';
+        }
+        if (kTextureFormatInfo[this.p.format].stencil && this.p.aspect !== 'depth-only') {
+          depthStencilAttachment.stencilLoadOp = 'load';
+          depthStencilAttachment.stencilStoreOp = 'discard';
+        }
         commandEncoder
           .beginRenderPass({
             colorAttachments: [],
-            depthStencilAttachment: {
-              view: texture.createView(desc),
-              depthStoreOp: 'discard',
-              depthLoadValue: 'load',
-              stencilStoreOp: 'discard',
-              stencilLoadValue: 'load',
-            },
+            depthStencilAttachment,
           })
-          .endPass();
+          .end();
       }
     }
+
+    commandEncoder.popDebugGroup();
     this.queue.submit([commandEncoder.finish()]);
   }
 }
@@ -512,7 +532,8 @@ const kTestParams = kUnitCaseParamsBuilder
 
     return (
       ((usage & GPUConst.TextureUsage.RENDER_ATTACHMENT) !== 0 && !info.renderable) ||
-      ((usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.storage)
+      ((usage & GPUConst.TextureUsage.STORAGE_BINDING) !== 0 && !info.storage) ||
+      (sampleCount > 1 && !info.multisample)
     );
   })
   .combine('nonPowerOfTwo', [false, true])

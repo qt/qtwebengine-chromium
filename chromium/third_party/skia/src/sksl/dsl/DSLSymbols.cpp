@@ -7,14 +7,24 @@
 
 #include "include/sksl/DSLSymbols.h"
 
+#include "include/private/SkSLSymbol.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLVariable.h"
+
+#include <string>
+#include <type_traits>
+#include <utility>
 
 namespace SkSL {
 
 namespace dsl {
+
+class DSLVarBase;
 
 static bool is_type_in_symbol_table(std::string_view name, SkSL::SymbolTable* symbols) {
     const SkSL::Symbol* s = (*symbols)[name];
@@ -33,8 +43,8 @@ std::shared_ptr<SymbolTable> CurrentSymbolTable() {
     return ThreadContext::SymbolTable();
 }
 
-DSLPossibleExpression Symbol(std::string_view name, PositionInfo pos) {
-    return ThreadContext::Compiler().convertIdentifier(pos.line(), name);
+DSLExpression Symbol(std::string_view name, Position pos) {
+    return DSLExpression(ThreadContext::Compiler().convertIdentifier(pos, name), pos);
 }
 
 bool IsType(std::string_view name) {
@@ -45,7 +55,7 @@ bool IsBuiltinType(std::string_view name) {
     return is_type_in_symbol_table(name, CurrentSymbolTable()->builtinParent());
 }
 
-void AddToSymbolTable(DSLVarBase& var, PositionInfo pos) {
+void AddToSymbolTable(DSLVarBase& var, Position pos) {
     const SkSL::Variable* skslVar = DSLWriter::Var(var);
     if (skslVar) {
         CurrentSymbolTable()->addWithoutOwnership(skslVar);

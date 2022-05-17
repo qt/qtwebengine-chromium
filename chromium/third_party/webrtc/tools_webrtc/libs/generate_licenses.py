@@ -40,7 +40,6 @@ LIB_TO_LICENSES_DICT = {
         'third_party/android_deps/libs/'
         'com_google_auto_service_auto_service/LICENSE'
     ],
-    'bazel': ['third_party/bazel/LICENSE'],
     'boringssl': ['third_party/boringssl/src/LICENSE'],
     'crc32c': ['third_party/crc32c/src/LICENSE'],
     'errorprone': [
@@ -65,7 +64,6 @@ LIB_TO_LICENSES_DICT = {
     'pffft': ['third_party/pffft/LICENSE'],
     'protobuf': ['third_party/protobuf/LICENSE'],
     'rnnoise': ['third_party/rnnoise/COPYING'],
-    'usrsctp': ['third_party/usrsctp/LICENSE'],
     'webrtc': ['LICENSE'],
     'zlib': ['third_party/zlib/LICENSE'],
     'base64': ['rtc_base/third_party/base64/LICENSE'],

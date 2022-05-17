@@ -428,22 +428,14 @@ void MacroAssembler::RecordWriteField(Register object, int offset,
 }
 
 void TurboAssembler::MaybeSaveRegisters(RegList registers) {
-  if (registers == 0) return;
-  ASM_CODE_COMMENT(this);
-  for (int i = 0; i < Register::kNumRegisters; ++i) {
-    if ((registers >> i) & 1u) {
-      push(Register::from_code(i));
-    }
+  for (Register reg : registers) {
+    push(reg);
   }
 }
 
 void TurboAssembler::MaybeRestoreRegisters(RegList registers) {
-  if (registers == 0) return;
-  ASM_CODE_COMMENT(this);
-  for (int i = Register::kNumRegisters - 1; i >= 0; --i) {
-    if ((registers >> i) & 1u) {
-      pop(Register::from_code(i));
-    }
+  for (Register reg : base::Reversed(registers)) {
+    pop(reg);
   }
 }
 
@@ -1465,14 +1457,6 @@ void MacroAssembler::LoadNativeContextSlot(Register destination, int index) {
   mov(destination, Operand(destination, Context::SlotOffset(index)));
 }
 
-int MacroAssembler::SafepointRegisterStackIndex(int reg_code) {
-  // The registers are pushed starting with the lowest encoding,
-  // which means that lowest encodings are furthest away from
-  // the stack pointer.
-  DCHECK(reg_code >= 0 && reg_code < kNumSafepointRegisters);
-  return kNumSafepointRegisters - reg_code - 1;
-}
-
 void TurboAssembler::Ret() { ret(0); }
 
 void TurboAssembler::Ret(int bytes_dropped, Register scratch) {
@@ -2049,19 +2033,8 @@ void TurboAssembler::CallForDeoptimization(Builtin target, int, Label* exit,
   ASM_CODE_COMMENT(this);
   CallBuiltin(target);
   DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-            (kind == DeoptimizeKind::kLazy)
-                ? Deoptimizer::kLazyDeoptExitSize
-                : Deoptimizer::kNonLazyDeoptExitSize);
-
-  if (kind == DeoptimizeKind::kEagerWithResume) {
-    bool old_predictable_code_size = predictable_code_size();
-    set_predictable_code_size(true);
-
-    jmp(ret);
-    DCHECK_EQ(SizeOfCodeGeneratedSince(exit),
-              Deoptimizer::kEagerWithResumeBeforeArgsSize);
-    set_predictable_code_size(old_predictable_code_size);
-  }
+            (kind == DeoptimizeKind::kLazy) ? Deoptimizer::kLazyDeoptExitSize
+                                            : Deoptimizer::kEagerDeoptExitSize);
 }
 
 void TurboAssembler::Trap() { int3(); }

@@ -26,6 +26,7 @@
 #include "src/core/SkTaskGroup.h"
 #include "src/utils/SkOSPath.h"
 #include "tests/Test.h"
+#include "tests/TestHarness.h"
 #include "tools/AutoreleasePool.h"
 #include "tools/HashAndEncode.h"
 #include "tools/ProcStats.h"
@@ -59,6 +60,7 @@
 extern bool gSkForceRasterPipelineBlitter;
 extern bool gUseSkVMBlitter;
 extern bool gSkVMAllowJIT;
+extern bool gSkBlobAsSlugTesting;
 
 static DEFINE_string(src, "tests gm skp mskp lottie rive svg image colorImage",
                      "Source types to test.");
@@ -94,6 +96,7 @@ static DEFINE_string(mskps, "", "Directory to read mskps from, or a single mskp 
 static DEFINE_bool(forceRasterPipeline, false, "sets gSkForceRasterPipelineBlitter");
 static DEFINE_bool(skvm, false, "sets gUseSkVMBlitter");
 static DEFINE_bool(jit,  true,  "sets gSkVMAllowJIT");
+static DEFINE_bool(blobAsSlugTesting, false, "sets gSkBlobAsSlugTesting");
 
 static DEFINE_string(bisect, "",
         "Pair of: SKP file to bisect, followed by an l/r bisect trail string (e.g., 'lrll'). The "
@@ -141,7 +144,6 @@ static DEFINE_bool2(verbose, v, false, "enable verbose output from the test driv
 
 static DEFINE_string(skps, "skps", "Directory to read skps from.");
 static DEFINE_string(lotties, "lotties", "Directory to read (Bodymovin) jsons from.");
-static DEFINE_string(rives, "rives", "Directory to read Rive/Flare files from.");
 static DEFINE_string(svgs, "", "Directory to read SVGs from, or a single SVG file.");
 
 static DEFINE_int_2(threads, j, -1,
@@ -887,9 +889,6 @@ static bool gather_srcs() {
 #if defined(SK_ENABLE_SKOTTIE)
     gather_file_srcs<SkottieSrc>(FLAGS_lotties, "json", "lottie");
 #endif
-#if defined(SK_ENABLE_SKRIVE)
-    gather_file_srcs<SkRiveSrc>(FLAGS_rives, "flr", "rive");
-#endif
 #if defined(SK_ENABLE_SVG)
     gather_file_srcs<SVGSrc>(FLAGS_svgs, "svg");
 #endif
@@ -968,6 +967,8 @@ static Sink* create_sink(const GrContextOptions& grCtxOptions, const SkCommandLi
                 return new GPUDDLSink(gpuConfig, grCtxOptions);
             } else if (gpuConfig->getOOPRish()) {
                 return new GPUOOPRSink(gpuConfig, grCtxOptions);
+            } else if (gpuConfig->getSlug()) {
+                return new GPUSlugSink(gpuConfig, grCtxOptions);
             } else {
                 return new GPUSink(gpuConfig, grCtxOptions);
             }
@@ -1483,6 +1484,12 @@ static void run_test(skiatest::Test test, const GrContextOptions& grCtxOptions) 
 
 /*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
 
+TestHarness CurrentTestHarness() {
+    return TestHarness::kDM;
+}
+
+/*~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~*/
+
 int main(int argc, char** argv) {
 #if defined(__MSVC_RUNTIME_CHECKS)
     _RTC_SetErrorFunc(RuntimeCheckErrorFunc);
@@ -1506,6 +1513,7 @@ int main(int argc, char** argv) {
     gSkForceRasterPipelineBlitter = FLAGS_forceRasterPipeline;
     gUseSkVMBlitter               = FLAGS_skvm;
     gSkVMAllowJIT                 = FLAGS_jit;
+    gSkBlobAsSlugTesting          = FLAGS_blobAsSlugTesting;
 
     // The bots like having a verbose.log to upload, so always touch the file even if --verbose.
     if (!FLAGS_writePath.isEmpty()) {

@@ -25,12 +25,13 @@
 #include "connections/implementation/client_proxy.h"
 #include "connections/implementation/endpoint_channel.h"
 #include "connections/implementation/endpoint_channel_manager.h"
+#include "connections/implementation/proto/offline_wire_formats.pb.h"
 #include "connections/listeners.h"
 #include "internal/platform/byte_array.h"
-#include "internal/platform/runnable.h"
 #include "internal/platform/condition_variable.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/multi_thread_executor.h"
+#include "internal/platform/runnable.h"
 #include "internal/platform/single_thread_executor.h"
 #include "internal/platform/system_clock.h"
 
@@ -48,7 +49,7 @@ namespace connections {
 // PayloadManager::SendPayload() before control is transferred over to
 // EndpointManager::SendPayloadChunk(). This work happens on one of three
 // dedicated writer threads belonging to the PayloadManager. The writer thread
-// that is used depends on the Payload::Type.
+// that is used depends on the PayloadType.
 //
 // The EndpointManager has one dedicated reader thread for each registered
 // endpoint, and the receiving of every incoming payload (and its subsequent

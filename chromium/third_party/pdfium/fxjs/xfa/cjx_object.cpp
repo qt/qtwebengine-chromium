@@ -603,9 +603,10 @@ void CJX_Object::SetContent(const WideString& wsContent,
           break;
 
         CXFA_Node* pChildValue = pValue->GetFirstChild();
-        DCHECK(pChildValue);
-        pChildValue->JSObject()->SetContent(wsContent, wsContent, bNotify,
-                                            bScriptModify, false);
+        if (pChildValue) {
+          pChildValue->JSObject()->SetContent(wsContent, wsContent, bNotify,
+                                              bScriptModify, false);
+        }
       }
       pBindNode = GetXFANode()->GetBindData();
       if (pBindNode && bSyncData) {
@@ -1184,7 +1185,7 @@ void CJX_Object::ScriptSomBorderWidth(v8::Isolate* pIsolate,
     return;
 
   WideString wsThickness = fxv8::ReentrantToWideStringHelper(pIsolate, *pValue);
-  for (int32_t i = 0; i < border->CountEdges(); ++i) {
+  for (size_t i = 0; i < border->CountEdges(); ++i) {
     CXFA_Edge* edge = border->GetEdgeIfExists(i);
     if (edge)
       edge->SetMSThickness(CXFA_Measurement(wsThickness.AsStringView()));

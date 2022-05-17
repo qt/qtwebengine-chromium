@@ -3,27 +3,31 @@ Validation tests for resolveQuerySet.
 `;
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { GPUConst } from '../../../../constants.js';
+import { kResourceStates } from '../../../../gpu_test.js';
 import { ValidationTest } from '../../validation_test.js';
 
 export const g = makeTestGroup(ValidationTest);
 
 export const kQueryCount = 2;
 
-g.test('invalid_queryset_and_destination_buffer')
+g.test('queryset_and_destination_buffer_state')
   .desc(
     `
-Tests that resolve query set with invalid object.
-- invalid GPUQuerySet that failed during creation.
-- invalid destination buffer that failed during creation.
+Tests that resolve query set must be with valid query set and destination buffer.
+- {invalid, destroyed} GPUQuerySet results in validation error.
+- {invalid, destroyed} destination buffer results in validation error.
   `
   )
-  .paramsSubcasesOnly([
-    { querySetState: 'valid', destinationState: 'valid' }, // control case
-    { querySetState: 'invalid', destinationState: 'valid' },
-    { querySetState: 'valid', destinationState: 'invalid' },
-  ] as const)
+  .params(u =>
+    u //
+      .combine('querySetState', kResourceStates)
+      .combine('destinationState', kResourceStates)
+  )
   .fn(async t => {
     const { querySetState, destinationState } = t.params;
+
+    const shouldBeValid = querySetState !== 'invalid' && destinationState !== 'invalid';
+    const shouldSubmitSuccess = querySetState === 'valid' && destinationState === 'valid';
 
     const querySet = t.createQuerySetWithState(querySetState);
 
@@ -34,7 +38,7 @@ Tests that resolve query set with invalid object.
 
     const encoder = t.createEncoder('non-pass');
     encoder.encoder.resolveQuerySet(querySet, 0, 1, destination, 0);
-    encoder.validateFinish(querySetState === 'valid' && destinationState === 'valid');
+    encoder.validateFinishAndSubmit(shouldBeValid, shouldSubmitSuccess);
   });
 
 g.test('first_query_and_query_count')
@@ -149,4 +153,30 @@ g.test('query_set_buffer,device_mismatch')
     { querySetMismatched: true, bufferMismatched: false },
     { querySetMismatched: false, bufferMismatched: true },
   ] as const)
-  .unimplemented();
+  .fn(async t => {
+    const { querySetMismatched, bufferMismatched } = t.params;
+    const mismatched = querySetMismatched || bufferMismatched;
+
+    if (mismatched) {
+      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
+    }
+
+    const device = mismatched ? t.mismatchedDevice : t.device;
+    const queryCout = 1;
+
+    const querySet = device.createQuerySet({
+      type: 'occlusion',
+      count: queryCout,
+    });
+    t.trackForCleanup(querySet);
+
+    const buffer = device.createBuffer({
+      size: queryCout * 8,
+      usage: GPUBufferUsage.QUERY_RESOLVE,
+    });
+    t.trackForCleanup(buffer);
+
+    const encoder = t.createEncoder('non-pass');
+    encoder.encoder.resolveQuerySet(querySet, 0, queryCout, buffer, 0);
+    encoder.validateFinish(!mismatched);
+  });

@@ -347,6 +347,9 @@ enum VmStatus {
 
   // The VM can't start because its disk/image is being manipulated.
   VM_STATUS_DISK_OP_IN_PROGRESS = 4;
+
+  // The VM is stopped.
+  VM_STATUS_STOPPED = 5;
 }
 
 // Information sent back by vm_concierge in response to a StartVm dbus message.
@@ -543,26 +546,30 @@ message GetVmEnterpriseReportingInfoResponse {
   string vm_kernel_version = 3;
 }
 
-// TODO(kalutes, b:188858559) Deprecate this request once usage is updated to
-// ArcVmBootCompleteSignal.
-// Request for creating RT vCPUs.
-message MakeRtVcpuRequest {
-  // The name of the VM.
-  string name = 1;
-
+// Request for completing the boot process of the ARC VM
+message ArcVmCompleteBootRequest {
   // The owner of the vm.
-  string owner_id = 2;
+  string owner_id = 1;
 }
 
-// TODO(kalutes, b:188858559) Deprecate this request once usage is updated to
-// ArcVmBootCompleteSignal.
-// Response sent back by vm_concierge for a MakeRtVcpuRequest dbus message.
-message MakeRtVcpuResponse {
-  // If true, the request succeeded.
-  bool success = 1;
+// Result of an ArcVmCompleteBootRequest
+enum ArcVmCompleteBootResult {
+  // Not used
+  UNKNOWN = 0;
 
-  // The failure_reason if the request could not be processed.
-  string failure_reason = 2;
+  // ArcVm boot completion operations completed successfully.
+  SUCCESS = 1;
+
+  // The incoming boot complete request was mal-formed
+  BAD_REQUEST = 2;
+
+  // ArcVm does not exist or could not be found
+  ARCVM_NOT_FOUND = 3;
+}
+
+// Response sent back by vm_concierge for a ArcVmCompleteBoot dbus message.
+message ArcVmCompleteBootResponse {
+  ArcVmCompleteBootResult result = 1;
 }
 
 // The type of storage location for a disk image.
@@ -1099,8 +1106,13 @@ enum CpuCgroup {
 enum CpuRestrictionState {
   // The CPU usage is relaxed.
   CPU_RESTRICTION_FOREGROUND = 0;
-  // The CPU usage is tightly restricted.
+  // The CPU usage is tightly restricted with cpu.shares.
   CPU_RESTRICTION_BACKGROUND = 1;
+  // The CPU usage is tightly restricted with both cpu.shares and
+  // cpu.cfs_quota_us cgroup. The latter sets an absolute quota for the VM
+  // even when other (non-VM) processes are not busy. Currently, this works
+  // only for ARCVM.
+  CPU_RESTRICTION_BACKGROUND_WITH_CFS_QUOTA_ENFORCED = 2;
 }
 
 // Information that must be included with every SetVmCpuRestriction dbus
@@ -1195,4 +1207,39 @@ message ReclaimVmMemoryResponse {
 
   // If the attempt to reclaim memory failed, the reason for failure.
   string failure_reason = 2;
+}
+
+// Request a list of all VMs owned by an id. Returns all VMs in Concierge's
+// VmMap that match the owner_id, which includes starting and running VMs, but
+// not stopped.
+message ListVmsRequest {
+  // The cryptohome id to get the list of VMs for.
+  string owner_id = 1;
+}
+
+// Message used for listing VMs.
+message ExtendedVmInfo {
+  // The name of the VM which has started.
+  string name = 1;
+
+  // The owner of the vm.
+  string owner_id = 2;
+
+  // Information about the VM that was started, if successful.
+  VmInfo vm_info = 3;
+
+  // Status of the VM.
+  VmStatus status = 4;
+}
+
+// Response to a ListVmsRequest.
+message ListVmsResponse {
+  // If true, vms is valid.
+  bool success = 1;
+
+  // If getting a list of VMs failed, the reason for the failure.
+  string failure_reason = 2;
+
+  // The list of VMs that concierge is managing.
+  repeated ExtendedVmInfo vms = 3;
 }

@@ -13,6 +13,7 @@
 
 #include <memory>
 
+#include "api/field_trials_view.h"
 #include "api/metronome/metronome.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/video/encoded_frame.h"
@@ -47,7 +48,8 @@ class FrameBufferProxy {
       FrameSchedulingReceiver* receiver,
       TimeDelta max_wait_for_keyframe,
       TimeDelta max_wait_for_frame,
-      DecodeSynchronizer* decode_sync);
+      DecodeSynchronizer* decode_sync,
+      const FieldTrialsView& field_trials);
   virtual ~FrameBufferProxy() = default;
 
   // Run on the worker thread.

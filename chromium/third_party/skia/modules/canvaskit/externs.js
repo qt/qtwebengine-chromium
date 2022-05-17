@@ -72,6 +72,10 @@ var CanvasKit = {
   // Defined by emscripten.
   createContext: function() {},
 
+  // Added by debugger when it extends canvaskit
+  MinVersion: function() {},
+  SkpFilePlayer: function() {},
+
   // private API (i.e. things declared in the bindings that we use
   // in the pre-js file)
   _MakeGrContext: function() {},
@@ -755,6 +759,11 @@ var CanvasKit = {
   },
 
   TextStyle: function() {},
+
+  SkpDebugPlayer: {
+    // public API (from C++ bindings)
+    loadSkp: function() {},
+  },
 
   // Constants and Enums
   gpu: {},

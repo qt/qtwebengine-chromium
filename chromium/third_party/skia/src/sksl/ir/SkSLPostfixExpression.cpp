@@ -14,28 +14,26 @@
 
 namespace SkSL {
 
-std::unique_ptr<Expression> PostfixExpression::Convert(const Context& context,
-                                                       std::unique_ptr<Expression> base,
-                                                       Operator op) {
+std::unique_ptr<Expression> PostfixExpression::Convert(const Context& context, Position pos,
+        std::unique_ptr<Expression> base, Operator op) {
     const Type& baseType = base->type();
     if (!baseType.isNumber()) {
-        context.fErrors->error(base->fLine, "'" + std::string(op.tightOperatorName()) +
-                                            "' cannot operate on '" + baseType.displayName() + "'");
+        context.fErrors->error(pos, "'" + std::string(op.tightOperatorName()) +
+                "' cannot operate on '" + baseType.displayName() + "'");
         return nullptr;
     }
     if (!Analysis::UpdateVariableRefKind(base.get(), VariableRefKind::kReadWrite,
                                          context.fErrors)) {
         return nullptr;
     }
-    return PostfixExpression::Make(context, std::move(base), op);
+    return PostfixExpression::Make(context, pos, std::move(base), op);
 }
 
-std::unique_ptr<Expression> PostfixExpression::Make(const Context&,
-                                                    std::unique_ptr<Expression> base,
-                                                    Operator op) {
+std::unique_ptr<Expression> PostfixExpression::Make(const Context& context, Position pos,
+        std::unique_ptr<Expression> base, Operator op) {
     SkASSERT(base->type().isNumber());
     SkASSERT(Analysis::IsAssignable(*base));
-    return std::make_unique<PostfixExpression>(std::move(base), op);
+    return std::make_unique<PostfixExpression>(pos, std::move(base), op);
 }
 
 }  // namespace SkSL

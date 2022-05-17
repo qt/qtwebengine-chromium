@@ -1028,11 +1028,10 @@ void InterpreterAssembler::UpdateInterruptBudget(TNode<Int32T> weight,
 
     BIND(&interrupt_check);
     // JumpLoop should do a stack check as part of the interrupt.
-    CallRuntime(
-        bytecode() == Bytecode::kJumpLoop
-            ? Runtime::kBytecodeBudgetInterruptWithStackCheckFromBytecode
-            : Runtime::kBytecodeBudgetInterruptFromBytecode,
-        GetContext(), function);
+    CallRuntime(bytecode() == Bytecode::kJumpLoop
+                    ? Runtime::kBytecodeBudgetInterruptWithStackCheck
+                    : Runtime::kBytecodeBudgetInterrupt,
+                GetContext(), function);
     Goto(&done);
 
     BIND(&ok);
@@ -1308,16 +1307,18 @@ void InterpreterAssembler::UpdateInterruptBudgetOnReturn() {
   // length of the back-edge, so we just have to correct for the non-zero offset
   // of the first bytecode.
 
-  const int kFirstBytecodeOffset = BytecodeArray::kHeaderSize - kHeapObjectTag;
   TNode<Int32T> profiling_weight =
       Int32Sub(TruncateIntPtrToInt32(BytecodeOffset()),
                Int32Constant(kFirstBytecodeOffset));
   UpdateInterruptBudget(profiling_weight, true);
 }
 
-TNode<Int8T> InterpreterAssembler::LoadOsrNestingLevel() {
-  return LoadObjectField<Int8T>(BytecodeArrayTaggedPointer(),
-                                BytecodeArray::kOsrLoopNestingLevelOffset);
+TNode<Int16T> InterpreterAssembler::LoadOsrUrgencyAndInstallTarget() {
+  // We're loading a 16-bit field, mask it.
+  return UncheckedCast<Int16T>(Word32And(
+      LoadObjectField<Int16T>(BytecodeArrayTaggedPointer(),
+                              BytecodeArray::kOsrUrgencyAndInstallTargetOffset),
+      0xFFFF));
 }
 
 void InterpreterAssembler::Abort(AbortReason abort_reason) {

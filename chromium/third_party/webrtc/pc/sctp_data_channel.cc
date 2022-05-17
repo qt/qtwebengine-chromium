@@ -158,11 +158,8 @@ rtc::scoped_refptr<SctpDataChannel> SctpDataChannel::Create(
 rtc::scoped_refptr<DataChannelInterface> SctpDataChannel::CreateProxy(
     rtc::scoped_refptr<SctpDataChannel> channel) {
   // TODO(bugs.webrtc.org/11547): incorporate the network thread in the proxy.
-  // Also, consider allowing the proxy object to own the reference (std::move).
-  // As is, the proxy has a raw pointer and no reference to the channel object
-  // and trusting that the lifetime management aligns with the
-  // sctp_data_channels_ array in SctpDataChannelController.
-  return DataChannelProxy::Create(channel->signaling_thread_, channel.get());
+  auto* signaling_thread = channel->signaling_thread_;
+  return DataChannelProxy::Create(signaling_thread, std::move(channel));
 }
 
 SctpDataChannel::SctpDataChannel(const InternalDataChannelInit& config,
@@ -258,7 +255,7 @@ uint64_t SctpDataChannel::buffered_amount() const {
 
 void SctpDataChannel::Close() {
   RTC_DCHECK_RUN_ON(signaling_thread_);
-  if (state_ == kClosed)
+  if (state_ == kClosing || state_ == kClosed)
     return;
   SetState(kClosing);
   // Will send queued data before beginning the underlying closing procedure.

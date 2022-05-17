@@ -31,9 +31,9 @@
 #include "src/core/SkTaskGroup.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkVMBlitter.h"
-#include "src/gpu/GrDirectContextPriv.h"
-#include "src/gpu/GrGpu.h"
-#include "src/gpu/GrPersistentCacheUtils.h"
+#include "src/gpu/ganesh/GrDirectContextPriv.h"
+#include "src/gpu/ganesh/GrGpu.h"
+#include "src/gpu/ganesh/GrPersistentCacheUtils.h"
 #include "src/image/SkImage_Base.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/utils/SkJSONWriter.h"
@@ -58,8 +58,8 @@
 #include "tools/viewer/SvgSlide.h"
 
 #if SK_GPU_V1
-#include "src/gpu/ops/AtlasPathRenderer.h"
-#include "src/gpu/ops/TessellationPathRenderer.h"
+#include "src/gpu/ganesh/ops/AtlasPathRenderer.h"
+#include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
 #endif
 
 #include <cstdlib>
@@ -74,9 +74,6 @@
 
 #if defined(SK_ENABLE_SKOTTIE)
     #include "tools/viewer/SkottieSlide.h"
-#endif
-#if defined(SK_ENABLE_SKRIVE)
-    #include "tools/viewer/SkRiveSlide.h"
 #endif
 
 class CapturingShaderErrorHandler : public GrContextOptions::ShaderErrorHandler {
@@ -171,7 +168,6 @@ static DEFINE_string(jxls   , PATH_PREFIX "jxls"   , "Directory to read jxls fro
 static DEFINE_string(skps   , PATH_PREFIX "skps"   , "Directory to read skps from.");
 static DEFINE_string(mskps  , PATH_PREFIX "mskps"  , "Directory to read mskps from.");
 static DEFINE_string(lotties, PATH_PREFIX "lotties", "Directory to read (Bodymovin) jsons from.");
-static DEFINE_string(rives  , PATH_PREFIX "rives"  , "Directory to read Rive (Flare) files from.");
 #undef PATH_PREFIX
 
 static DEFINE_string(svgs, "", "Directory to read SVGs from, or a single SVG file.");
@@ -781,12 +777,6 @@ void Viewer::initSlides() {
                 return sk_make_sp<SkottieSlide>(name, path);}
         },
 #endif
-    #if defined(SK_ENABLE_SKRIVE)
-            { ".flr", "skrive-dir", FLAGS_rives,
-                [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
-                    return sk_make_sp<SkRiveSlide>(name, path);}
-            },
-    #endif
 #if defined(SK_ENABLE_SVG)
         { ".svg", "svg-dir", FLAGS_svgs,
             [](const SkString& name, const SkString& path) -> sk_sp<Slide> {
@@ -1389,6 +1379,10 @@ public:
         sk_sp<SkTextBlob> cache;
         sk_sp<SkTextBlob> blob = glyphRunList.makeBlob();
         this->filterTextBlob(paint, blob.get(), &cache);
+        if (!cache) {
+            this->SkPaintFilterCanvas::onDrawGlyphRunList(glyphRunList, paint);
+            return;
+        }
         SkGlyphRunBuilder builder;
         const SkGlyphRunList& filtered = builder.blobToGlyphRunList(*cache, glyphRunList.origin());
         this->SkPaintFilterCanvas::onDrawGlyphRunList(filtered, paint);
@@ -2342,12 +2336,12 @@ void Viewer::drawImGui() {
                 ImGui::Checkbox("Override Size", &fFontOverrides.fSize);
                 if (fFontOverrides.fSize) {
                     ImGui::DragFloat2("TextRange", fFontOverrides.fSizeRange,
-                                      0.001f, -10.0f, 300.0f, "%.6f", 2.0f);
+                                      0.001f, -10.0f, 300.0f, "%.6f", ImGuiSliderFlags_Logarithmic);
                     float textSize = fFont.getSize();
                     if (ImGui::DragFloat("TextSize", &textSize, 0.001f,
                                          fFontOverrides.fSizeRange[0],
                                          fFontOverrides.fSizeRange[1],
-                                         "%.6f", 2.0f))
+                                         "%.6f", ImGuiSliderFlags_Logarithmic))
                     {
                         fFont.setSize(textSize);
                         uiParamsChanged = true;
@@ -2569,6 +2563,7 @@ void Viewer::drawImGui() {
 
                 // If we are changing the compile mode, we want to reset the cache and redo
                 // everything.
+                static bool sDoDeferredView = false;
                 if (doDump || newOptLevel != fOptLevel) {
                     sksl = doDump || (newOptLevel == kShaderOptLevel_Source);
                     fOptLevel = (ShaderOptLevel)newOptLevel;
@@ -2595,11 +2590,12 @@ void Viewer::drawImGui() {
                             sksl ? GrContextOptions::ShaderCacheStrategy::kSkSL
                                  : GrContextOptions::ShaderCacheStrategy::kBackendSource;
                     displayParamsChanged = true;
-                    doView = true;
 
                     fDeferredActions.push_back([=]() {
                         // Reset the cache.
                         fPersistentCache.reset();
+                        sDoDeferredView = true;
+
                         // Dump the cache once we have drawn a frame with it.
                         if (doDump) {
                             fDeferredActions.push_back([this]() {
@@ -2636,10 +2632,11 @@ void Viewer::drawImGui() {
                 }
                 ImGui::EndChild();
 
-                if (doView) {
+                if (doView || sDoDeferredView) {
                     fPersistentCache.reset();
                     ctx->priv().getGpu()->resetShaderCacheForTesting();
                     gLoadPending = true;
+                    sDoDeferredView = false;
                 }
 
                 // We don't support updating SPIRV shaders. We could re-assemble them (with edits),

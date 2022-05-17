@@ -1,5 +1,7 @@
 load("//bazel:macros.bzl", "generated_cc_atom")
 
+licenses(["notice"])
+
 generated_cc_atom(
     name = "Sk1DPathEffect_hdr",
     hdrs = ["Sk1DPathEffect.h"],
@@ -82,7 +84,11 @@ generated_cc_atom(
     name = "SkGradientShader_hdr",
     hdrs = ["SkGradientShader.h"],
     visibility = ["//:__subpackages__"],
-    deps = ["//include/core:SkShader_hdr"],
+    deps = [
+        "//include/core:SkRefCnt_hdr",
+        "//include/core:SkShader_hdr",
+        "//include/core:SkTileMode_hdr",
+    ],
 )
 
 generated_cc_atom(
@@ -172,7 +178,6 @@ generated_cc_atom(
         "//include/core:SkString_hdr",
         "//include/private:SkOnce_hdr",
         "//include/private:SkSLSampleUsage_hdr",
-        "//include/private:SkTOptional_hdr",
     ],
 )
 

@@ -1325,6 +1325,21 @@
   "models/issues_manager/ContentSecurityPolicyIssue.ts | trustedTypesPolicyViolation": {
     "message": "Trusted Types – käytäntörikkomus"
   },
+  "models/issues_manager/CookieIssue.ts | aSecure": {
+    "message": "suojattu"
+  },
+  "models/issues_manager/CookieIssue.ts | anInsecure": {
+    "message": "epävarma"
+  },
+  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
+    "message": "Määritteet First-Party Sets ja SameParty"
+  },
+  "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
+    "message": "Skeemapohjaisen Same-Siten toiminta"
+  },
+  "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
+    "message": "SameSite-evästeiden kuvaus"
+  },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Eri lähteistä peräisin olevien resurssien jakaminen (CORS)"
   },
@@ -1336,6 +1351,9 @@
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Same-Site ja Same-Origin"
+  },
+  "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
+    "message": "Federated Credential Management API"
   },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "Portaalit – saman alkuperän viestintäkanavat"
@@ -1373,29 +1391,11 @@
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "Dokumentti-yhteensopivuustila"
   },
-  "models/issues_manager/SameSiteCookieIssue.ts | aSecure": {
-    "message": "suojattu"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | anInsecure": {
-    "message": "epävarma"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | firstPartySetsExplained": {
-    "message": "Määritteet First-Party Sets ja SameParty"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | howSchemefulSamesiteWorks": {
-    "message": "Skeemapohjaisen Same-Siten toiminta"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | samesiteCookiesExplained": {
-    "message": "SameSite-evästeiden kuvaus"
-  },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "SharedArrayBuffer otetaan käyttöön"
   },
   "models/issues_manager/TrustedWebActivityIssue.ts | changesToQualityCriteriaForPwas": {
     "message": "Luotettua verkkotoimintaa käyttävien PWA-sovellusten laatukriteerien muutokset"
-  },
-  "models/issues_manager/WasmCrossOriginModuleSharingIssue.ts | linkTitle": {
-    "message": "Same-originiin jakavan Wasm-moduulin rajoittaminen"
   },
   "models/logs/NetworkLog.ts | anonymous": {
     "message": "<anonyymi>"
@@ -1420,9 +1420,6 @@
   },
   "models/logs/logs-meta.ts | reset": {
     "message": "resetoi"
-  },
-  "models/persistence/Automapping.ts | theAttemptToBindSInTheWorkspace": {
-    "message": "Kun {PH1} yritettiin sitoa työtilassa, yritys epäonnistui, koska URI on väärin muotoiltu."
   },
   "models/persistence/EditFileSystemView.ts | add": {
     "message": "Lisää"
@@ -2555,6 +2552,15 @@
   "panels/application/IndexedDBViews.ts | version": {
     "message": "Versio"
   },
+  "panels/application/InterestGroupStorageView.ts | clickToDisplayBody": {
+    "message": "Valitse haluamasi ryhmä, niin näet sen tämänhetkisen tilan"
+  },
+  "panels/application/InterestGroupStorageView.ts | noDataAvailable": {
+    "message": "Valitusta ryhmästä ei ole saatavilla tietoja. Selain on saatettu poistaa ryhmästä."
+  },
+  "panels/application/InterestGroupTreeElement.ts | interestGroups": {
+    "message": "Ryhmät"
+  },
   "panels/application/OpenedWindowDetailsView.ts | accessToOpener": {
     "message": "Pääsy avaajaan"
   },
@@ -3230,6 +3236,9 @@
   "panels/application/components/BackForwardCacheView.ts | backForwardCacheTitle": {
     "message": "Siirtymisvälimuisti"
   },
+  "panels/application/components/BackForwardCacheView.ts | blockingExtensionId": {
+    "message": "Laajennustunnus: "
+  },
   "panels/application/components/BackForwardCacheView.ts | circumstantial": {
     "message": "Toimenpiteet eivät mahdollisia"
   },
@@ -3419,6 +3428,24 @@
   "panels/application/components/FrameDetailsView.ts | yes": {
     "message": "Kyllä"
   },
+  "panels/application/components/InterestGroupAccessGrid.ts | allInterestGroupStorageEvents": {
+    "message": "Kaikki ryhmän tallennustilatapahtumat"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventTime": {
+    "message": "Tapahtuman aika"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventType": {
+    "message": "Pääsyoikeustyyppi"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupName": {
+    "message": "Nimi"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupOwner": {
+    "message": "Omistaja"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | noEvents": {
+    "message": "Ei tallennettuja ryhmän tapahtumia"
+  },
   "panels/application/components/OriginTrialTreeView.ts | expiryTime": {
     "message": "Vanhenemisaika"
   },
@@ -3458,6 +3485,9 @@
   "panels/application/components/PermissionsPolicySection.ts | clickToShowIframe": {
     "message": "Klikkaa nähdäksesi ylin iframe, joka ei salli ominaisuutta elementit-paneelissa."
   },
+  "panels/application/components/PermissionsPolicySection.ts | disabledByFencedFrame": {
+    "message": "poistettu käytöstä tämän sisällä: fencedframe"
+  },
   "panels/application/components/PermissionsPolicySection.ts | disabledByHeader": {
     "message": "otsikon \"Permissions-Policy\" estämä"
   },
@@ -3473,8 +3503,17 @@
   "panels/application/components/PermissionsPolicySection.ts | showDetails": {
     "message": "Näytä tiedot"
   },
+  "panels/application/components/ReportsGrid.ts | destination": {
+    "message": "Kohde"
+  },
+  "panels/application/components/ReportsGrid.ts | generatedAt": {
+    "message": "Luotu"
+  },
   "panels/application/components/ReportsGrid.ts | noReportsToDisplay": {
     "message": "Ei näytettäviä raportteja"
+  },
+  "panels/application/components/ReportsGrid.ts | status": {
+    "message": "Tila"
   },
   "panels/application/components/StackTrace.ts | cannotRenderStackTrace": {
     "message": "Jäljityslistaa ei voi renderöidä"
@@ -4586,6 +4625,12 @@
   "panels/elements/EventListenersWidget.ts | showListenersOnTheAncestors": {
     "message": "Näytä kuuntelijat edeltäjissä"
   },
+  "panels/elements/LayersWidget.ts | cssLayersTitle": {
+    "message": "CSS-tasot"
+  },
+  "panels/elements/LayersWidget.ts | toggleCSSLayers": {
+    "message": "CSS-tasojen näkymä päälle/pois"
+  },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "DOM-raja-arvo"
   },
@@ -4667,8 +4712,17 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "Katso laskettu arvo"
   },
+  "panels/elements/StylesSidebarPane.ts | clickToRevealLayer": {
+    "message": "Klikkaa nähdäksesi taso tasopuussa"
+  },
   "panels/elements/StylesSidebarPane.ts | constructedStylesheet": {
     "message": "muodostettu tyyliarkki"
+  },
+  "panels/elements/StylesSidebarPane.ts | copiedToClipboard": {
+    "message": "Kopioitu leikepöydälle"
+  },
+  "panels/elements/StylesSidebarPane.ts | copyAllCSSChanges": {
+    "message": "Kopioi kaikki CSS-muutokset"
   },
   "panels/elements/StylesSidebarPane.ts | copyAllDeclarations": {
     "message": "Kopioi kaikki määrittelyt"
@@ -4680,10 +4734,10 @@
     "message": "Kopioi selector"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
-    "message": "Ominaisuuden nimi: CSS"
+    "message": "CSS-omaisuuden nimi {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
-    "message": "Omaisuuden arvo: CSS"
+    "message": "CSS-omaisuuden arvo: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssSelector": {
     "message": "Valitsin: CSS"
@@ -4714,6 +4768,9 @@
   },
   "panels/elements/StylesSidebarPane.ts | invalidString": {
     "message": "{PH1}, ominaisuuden nimi: {PH2}, ominaisuuden arvo: {PH3}"
+  },
+  "panels/elements/StylesSidebarPane.ts | layer": {
+    "message": "Taso"
   },
   "panels/elements/StylesSidebarPane.ts | newStyleRule": {
     "message": "Uusi tyylisääntö"
@@ -4839,7 +4896,7 @@
     "message": "Valitse tarkasteltava sivun elementti"
   },
   "panels/elements/elements-meta.ts | showDetailedInspectTooltip": {
-    "message": "Näytä yksityiskohtainen tarkastuksen työkaluvinkki"
+    "message": "Näytä yksityiskohtainen tarkastuksen vihjeteksti"
   },
   "panels/elements/elements-meta.ts | showElements": {
     "message": "Näytä elementit"
@@ -5483,27 +5540,6 @@
   "panels/issues/IssuesPane.ts | trustedWebActivity": {
     "message": "Luotettu verkkotoiminta"
   },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | blocked": {
-    "message": "estetty"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | nModuleTransfers": {
-    "message": "{n,plural, =1{# moduuli}other{# moduulia}}"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | sourceOrigin": {
-    "message": "Lähteen alkuperä"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | status": {
-    "message": "Tila"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | targetOrigin": {
-    "message": "Kohteen alkuperä"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | warned": {
-    "message": "varoitus"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | wasmModuleUrl": {
-    "message": "Wasm-moduulin URL-osoite"
-  },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "Piilota ongelmat"
   },
@@ -5744,6 +5780,12 @@
   "panels/lighthouse/LighthouseController.ts | isThisPageUsableByPeopleWith": {
     "message": "Voiko tätä sivua käyttää vamman tai muiden erikoistarpeiden kanssa"
   },
+  "panels/lighthouse/LighthouseController.ts | legacyNavigation": {
+    "message": "Vanha navigointi"
+  },
+  "panels/lighthouse/LighthouseController.ts | lighthouseMode": {
+    "message": "Lighthouse-tila"
+  },
   "panels/lighthouse/LighthouseController.ts | localStorage": {
     "message": "Paikallinen tallennustila"
   },
@@ -5752,6 +5794,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | multipleTabsAreBeingControlledBy": {
     "message": "Sama service worker hallinnoi useita välilehtiä. Sulje saman alkuperän muut välilehdet voidaksesi auditoida tämän sivun."
+  },
+  "panels/lighthouse/LighthouseController.ts | navigation": {
+    "message": "Navigointi"
   },
   "panels/lighthouse/LighthouseController.ts | performance": {
     "message": "Suorituskyky"
@@ -5765,6 +5810,9 @@
   "panels/lighthouse/LighthouseController.ts | resetStorageLocalstorage": {
     "message": "Tyhjennä tallennustila (cache, service workers jne.) ennen auditointia (hyödyllinen suorituskyky- ja PWA-testauksessa)."
   },
+  "panels/lighthouse/LighthouseController.ts | runLighthouseInMode": {
+    "message": "Käytä Lighthousea navigointi-, aikajana tai tilannekuvatilassa"
+  },
   "panels/lighthouse/LighthouseController.ts | seo": {
     "message": "SEO"
   },
@@ -5774,11 +5822,20 @@
   "panels/lighthouse/LighthouseController.ts | simulatedThrottling": {
     "message": "Simuloitu rajoittaminen"
   },
+  "panels/lighthouse/LighthouseController.ts | snapshot": {
+    "message": "Tilannekuva"
+  },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingLoadingPlural": {
     "message": "Näihin sijainteihin on voitu tallentaa dataa, joka vaikuttaa lataukseen: {PH1}. Tarkista sivu incognito-ikkunassa, jotta voit estää kyseisten resurssien vaikutuksen tuloksiisi."
   },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "Tähän sijaintiin on voitu tallentaa dataa, joka vaikuttaa lataukseen: {PH1}. Tarkista sivu incognito-ikkunassa, jotta voit estää kyseisten resurssien vaikutuksen tuloksiisi."
+  },
+  "panels/lighthouse/LighthouseController.ts | timespan": {
+    "message": "Aikaväli"
+  },
+  "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
+    "message": "Analysoi sivu navigointitilassa klassisella Lighthousella."
   },
   "panels/lighthouse/LighthouseController.ts | webSql": {
     "message": "Web SQL"
@@ -5836,6 +5893,18 @@
   },
   "panels/lighthouse/LighthouseStartView.ts | learnMore": {
     "message": "Lue lisää"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
+    "message": "Analysoi sivulla siirtyminen"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
+    "message": "Analysoi sivun tila"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
+    "message": "Tila"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
+    "message": "Aloita aikaväli"
   },
   "panels/lighthouse/LighthouseStatusView.ts | OfGlobalMobileUsersInWereOnGOrG": {
     "message": "Vuonna 2016 75 % kaikista maailman puhelinkäyttäjistä oli joko 2G- tai 3G-verkossa [Lähde: GSMA Mobile]"
@@ -5923,6 +5992,18 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | walmartSawAIncreaseInRevenueFor": {
     "message": "Walmartin tulot kasvoivat 1 %:n aina kun sivun lataus parantui 100 ms [Lähde: WPO Stats]"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | cancel": {
+    "message": "Peru"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | endTimespan": {
+    "message": "Lopeta aikaväli"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarted": {
+    "message": "Aikaväli alkanut, käytä sivua"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarting": {
+    "message": "Aikaväli alkaa…"
   },
   "panels/lighthouse/lighthouse-meta.ts | showLighthouse": {
     "message": "Näytä Lighthouse"
@@ -9656,6 +9737,24 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Päivitä katselun lausekkeet"
   },
+  "panels/sources/components/HeadersView.ts | addHeader": {
+    "message": "Lisää otsikko"
+  },
+  "panels/sources/components/HeadersView.ts | addHeaderOverride": {
+    "message": "Lisää otsikon ohitus"
+  },
+  "panels/sources/components/HeadersView.ts | errorWhenParsing": {
+    "message": "Virhe jäsentämisessä: {PH1}."
+  },
+  "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
+    "message": "Tämä johtuu todennäköisesti syntaksivirheestä: {PH1}. Kokeile avata tiedosto ulkoisella muokkausohjelmalla, jotta voit korjata virheen tai poistaa tiedoston ja luoda ohitukset uudelleen."
+  },
+  "panels/sources/components/HeadersView.ts | removeBlock": {
+    "message": "Poista tämä ApplyTo-osio"
+  },
+  "panels/sources/components/HeadersView.ts | removeHeader": {
+    "message": "Poista tämä otsikko"
+  },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "Aktivoi pysäytyspisteet"
   },
@@ -10051,6 +10150,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | onIgnoreList": {
     "message": "Ohitusluettelossa"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
+    "message": "Osittain näkyvä kehys"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | raster": {
     "message": "Rasteri"
@@ -10828,6 +10930,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | pinchUpdate": {
     "message": "Nipistyksen päivitys"
+  },
+  "panels/timeline/TimelineUIUtils.ts | prePaint": {
+    "message": "Esipiirtäminen"
   },
   "panels/timeline/TimelineUIUtils.ts | preview": {
     "message": "Esikatselu"

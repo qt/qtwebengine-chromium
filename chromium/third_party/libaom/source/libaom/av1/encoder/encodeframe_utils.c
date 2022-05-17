@@ -323,6 +323,28 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
     }
     if (mi_addr->uv_mode == UV_CFL_PRED && !is_cfl_allowed(xd))
       mi_addr->uv_mode = UV_DC_PRED;
+
+    if (!dry_run && !mi_addr->skip_txfm) {
+      int cdf_num;
+      const int spatial_pred = av1_get_spatial_seg_pred(cm, xd, &cdf_num);
+      const int coded_id = av1_neg_interleave(mi_addr->segment_id, spatial_pred,
+                                              seg->last_active_segid + 1);
+      int64_t spatial_cost = x->mode_costs.spatial_pred_cost[cdf_num][coded_id];
+      td->rd_counts.seg_tmp_pred_cost[0] += spatial_cost;
+
+      const int pred_segment_id =
+          cm->last_frame_seg_map
+              ? get_segment_id(mi_params, cm->last_frame_seg_map, bsize, mi_row,
+                               mi_col)
+              : 0;
+      const int use_tmp_pred = pred_segment_id == mi_addr->segment_id;
+      const int tmp_pred_ctx = av1_get_pred_context_seg_id(xd);
+      td->rd_counts.seg_tmp_pred_cost[1] +=
+          x->mode_costs.tmp_pred_cost[tmp_pred_ctx][use_tmp_pred];
+      if (!use_tmp_pred) {
+        td->rd_counts.seg_tmp_pred_cost[1] += spatial_cost;
+      }
+    }
   }
 
   // Count zero motion vector.
@@ -347,17 +369,17 @@ void av1_update_state(const AV1_COMP *const cpi, ThreadData *td,
   for (i = 0; i < 2; ++i) pd[i].color_index_map = ctx->color_index_map[i];
   // Restore the coding context of the MB to that that was in place
   // when the mode was picked for it
-  for (y = 0; y < mi_height; y++) {
-    for (x_idx = 0; x_idx < mi_width; x_idx++) {
-      if ((xd->mb_to_right_edge >> (3 + MI_SIZE_LOG2)) + mi_width > x_idx &&
-          (xd->mb_to_bottom_edge >> (3 + MI_SIZE_LOG2)) + mi_height > y) {
-        xd->mi[x_idx + y * mis] = mi_addr;
-      }
-    }
+
+  const int cols =
+      AOMMIN((xd->mb_to_right_edge >> (3 + MI_SIZE_LOG2)) + mi_width, mi_width);
+  const int rows = AOMMIN(
+      (xd->mb_to_bottom_edge >> (3 + MI_SIZE_LOG2)) + mi_height, mi_height);
+  for (y = 0; y < rows; y++) {
+    for (x_idx = 0; x_idx < cols; x_idx++) xd->mi[x_idx + y * mis] = mi_addr;
   }
 
   if (cpi->oxcf.q_cfg.aq_mode)
-    av1_init_plane_quantizers(cpi, x, mi_addr->segment_id);
+    av1_init_plane_quantizers(cpi, x, mi_addr->segment_id, 0);
 
   if (dry_run) return;
 
@@ -761,7 +783,9 @@ int av1_get_rdmult_delta(AV1_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
     return orig_rdmult;
   }
 
+#ifndef NDEBUG
   int mi_count = 0;
+#endif
   const int mi_col_sr =
       coded_to_superres_mi(mi_col, cm->superres_scale_denominator);
   const int mi_col_end_sr =
@@ -781,7 +805,9 @@ int av1_get_rdmult_delta(AV1_COMP *cpi, BLOCK_SIZE bsize, int mi_row,
                  this_stats->mc_dep_dist);
       intra_cost += this_stats->recrf_dist << RDDIV_BITS;
       mc_dep_cost += (this_stats->recrf_dist << RDDIV_BITS) + mc_dep_delta;
+#ifndef NDEBUG
       mi_count++;
+#endif
     }
   }
   assert(mi_count <= MAX_TPL_BLK_IN_SB * MAX_TPL_BLK_IN_SB);
@@ -968,7 +994,9 @@ int av1_get_q_for_deltaq_objective(AV1_COMP *const cpi, ThreadData *td,
   int tpl_stride = tpl_frame->stride;
   if (!tpl_frame->is_valid) return base_qindex;
 
+#ifndef NDEBUG
   int mi_count = 0;
+#endif
   const int mi_col_sr =
       coded_to_superres_mi(mi_col, cm->superres_scale_denominator);
   const int mi_col_end_sr =
@@ -994,7 +1022,9 @@ int av1_get_q_for_deltaq_objective(AV1_COMP *const cpi, ThreadData *td,
       srcrf_dist += (double)(this_stats->srcrf_dist << RDDIV_BITS);
       srcrf_sse += (double)(this_stats->srcrf_sse << RDDIV_BITS);
       srcrf_rate += (double)this_stats->srcrf_rate;
+#ifndef NDEBUG
       mi_count++;
+#endif
       cbcmp_base += cbcmp;
     }
   }
@@ -1082,6 +1112,7 @@ int av1_get_q_for_hdr(AV1_COMP *const cpi, MACROBLOCK *const x,
 
 void av1_reset_simple_motion_tree_partition(SIMPLE_MOTION_DATA_TREE *sms_tree,
                                             BLOCK_SIZE bsize) {
+  if (sms_tree == NULL) return;
   sms_tree->partitioning = PARTITION_NONE;
 
   if (bsize >= BLOCK_8X8) {
@@ -1220,7 +1251,6 @@ void av1_avg_cdf_symbols(FRAME_CONTEXT *ctx_left, FRAME_CONTEXT *ctx_tr,
   avg_nmv(&ctx_left->nmvc, &ctx_tr->nmvc, wt_left, wt_tr);
   avg_nmv(&ctx_left->ndvc, &ctx_tr->ndvc, wt_left, wt_tr);
   AVERAGE_CDF(ctx_left->intrabc_cdf, ctx_tr->intrabc_cdf, 2);
-  AVERAGE_CDF(ctx_left->seg.tree_cdf, ctx_tr->seg.tree_cdf, MAX_SEGMENTS);
   AVERAGE_CDF(ctx_left->seg.pred_cdf, ctx_tr->seg.pred_cdf, 2);
   AVERAGE_CDF(ctx_left->seg.spatial_pred_seg_cdf,
               ctx_tr->seg.spatial_pred_seg_cdf, MAX_SEGMENTS);
@@ -1282,7 +1312,8 @@ void av1_avg_cdf_symbols(FRAME_CONTEXT *ctx_left, FRAME_CONTEXT *ctx_tr,
 
 // Grade the temporal variation of the source by comparing the current sb and
 // its collocated block in the last frame.
-void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, int offset) {
+void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, int mi_row,
+                           int mi_col) {
   unsigned int tmp_sse;
   unsigned int tmp_variance;
   const BLOCK_SIZE bsize = cpi->common.seq_params->sb_size;
@@ -1290,6 +1321,7 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, int offset) {
   int src_ystride = cpi->source->y_stride;
   uint8_t *last_src_y = cpi->last_source->y_buffer;
   int last_src_ystride = cpi->last_source->y_stride;
+  const int offset = cpi->source->y_stride * (mi_row << 2) + (mi_col << 2);
   uint64_t avg_source_sse_threshold = 100000;        // ~5*5*(64*64)
   uint64_t avg_source_sse_threshold_high = 1000000;  // ~15*15*(64*64)
   uint64_t sum_sq_thresh = 10000;  // sum = sqrt(thresh / 64*64)) ~1.5
@@ -1316,6 +1348,47 @@ void av1_source_content_sb(AV1_COMP *cpi, MACROBLOCK *x, int offset) {
       x->content_state_sb.lighting_change = 1;
     if ((tmp_sse - tmp_variance) < (sum_sq_thresh >> 1))
       x->content_state_sb.low_sumdiff = 1;
+  }
+
+  if (cpi->last_source->y_width != cpi->source->y_width ||
+      cpi->last_source->y_height != cpi->source->y_height)
+    return;
+  if (!cpi->sf.rt_sf.use_rtc_tf) return;
+
+  // In-place temporal filter. If psnr calculation is enabled, we store the
+  // source for that.
+  AV1_COMMON *const cm = &cpi->common;
+  // Calculate n*mean^2
+  const unsigned int nmean2 = tmp_sse - tmp_variance;
+  const int ac_q_step = av1_ac_quant_QTX(cm->quant_params.base_qindex, 0,
+                                         cm->seq_params->bit_depth);
+  const unsigned int threshold = 3 * ac_q_step * ac_q_step / 2;
+
+  // TODO(yunqing): use a weighted sum instead of averaging in filtering.
+  if (tmp_variance <= threshold && nmean2 <= 15) {
+    const int shift_x[2] = { 0, cpi->source->subsampling_x };
+    const int shift_y[2] = { 0, cpi->source->subsampling_y };
+    const uint8_t h = block_size_high[bsize];
+    const uint8_t w = block_size_wide[bsize];
+
+    for (int plane = 0; plane < av1_num_planes(cm); ++plane) {
+      uint8_t *src = cpi->source->buffers[plane];
+      const int src_stride = cpi->source->strides[plane != 0];
+      uint8_t *last_src = cpi->last_source->buffers[plane];
+      const int last_src_stride = cpi->last_source->strides[plane != 0];
+      src += src_stride * (mi_row << (2 - shift_y[plane != 0])) +
+             (mi_col << (2 - shift_x[plane != 0]));
+      last_src += last_src_stride * (mi_row << (2 - shift_y[plane != 0])) +
+                  (mi_col << (2 - shift_x[plane != 0]));
+
+      for (int i = 0; i < (h >> shift_y[plane != 0]); ++i) {
+        for (int j = 0; j < (w >> shift_x[plane != 0]); ++j) {
+          src[j] = (last_src[j] + src[j]) >> 1;
+        }
+        src += src_stride;
+        last_src += last_src_stride;
+      }
+    }
   }
 }
 

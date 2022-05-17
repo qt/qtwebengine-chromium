@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
 #include "api/video/encoded_frame.h"
 #include "modules/video_coding/include/video_coding_defines.h"
@@ -47,7 +48,8 @@ class FrameBuffer {
  public:
   FrameBuffer(Clock* clock,
               VCMTiming* timing,
-              VCMReceiveStatisticsCallback* stats_callback);
+              VCMReceiveStatisticsCallback* stats_callback,
+              const FieldTrialsView& field_trials);
 
   FrameBuffer() = delete;
   FrameBuffer(const FrameBuffer&) = delete;
@@ -118,7 +120,7 @@ class FrameBuffer {
   // Check that the references of `frame` are valid.
   bool ValidReferences(const EncodedFrame& frame) const;
 
-  int64_t FindNextFrame(int64_t now_ms) RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  int64_t FindNextFrame(Timestamp now) RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
   std::unique_ptr<EncodedFrame> GetNextFrame()
       RTC_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

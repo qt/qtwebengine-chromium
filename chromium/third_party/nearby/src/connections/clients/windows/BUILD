@@ -26,10 +26,12 @@ cc_windows_dll(
     ],
     copts = ["-DCORE_ADAPTER_BUILD_DLL -DCOMPILING_CORE"],
     defines = ["CORE_ADAPTER_DLL"],
+    hdrs_deps = ["//connections:core"],
     tags = ["windows-dll"],
     deps = [
         "//third_party/dart_lang/v2:dart_api_dl",
         "//connections:core",
+        "//internal/platform:base",
         "//internal/platform/implementation/windows",
         "//third_party/webrtc/files/stable/webrtc/api:create_peerconnection_factory",
         "@com_google_absl//absl/strings",
@@ -54,6 +56,7 @@ cc_windows_dll(
     deps = [
         "//third_party/dart_lang/v2:dart_api_dl",
         "//connections:core",
+        "//internal/platform:base",
         "//internal/platform/implementation/windows",
         "//third_party/webrtc/files/stable/webrtc/api:create_peerconnection_factory",
         "@com_google_absl//absl/strings",

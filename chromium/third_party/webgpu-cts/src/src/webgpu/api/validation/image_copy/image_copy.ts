@@ -22,7 +22,7 @@ export class ImageCopyTest extends ValidationTest {
       method: ImageCopyType;
       dataSize: number;
       success: boolean;
-      /** If submit is true, the validaton error is expected to come from the submit and encoding
+      /** If submit is true, the validation error is expected to come from the submit and encoding
        * should succeed. */
       submit?: boolean;
     }
@@ -145,16 +145,30 @@ export class ImageCopyTest extends ValidationTest {
         break;
       }
       case 'CopyB2T': {
-        const { encoder, validateFinishAndSubmit } = this.createEncoder('non-pass');
+        const { encoder, validateFinish, validateFinishAndSubmit } = this.createEncoder('non-pass');
         encoder.copyBufferToTexture({ buffer, ...textureDataLayout }, { texture }, size);
-        validateFinishAndSubmit(success, submit);
+
+        if (submit) {
+          // validation error is expected to come from the submit and encoding should succeed
+          validateFinishAndSubmit(true, success);
+        } else {
+          // validation error is expected to come from the encoding
+          validateFinish(success);
+        }
 
         break;
       }
       case 'CopyT2B': {
-        const { encoder, validateFinishAndSubmit } = this.createEncoder('non-pass');
+        const { encoder, validateFinish, validateFinishAndSubmit } = this.createEncoder('non-pass');
         encoder.copyTextureToBuffer({ texture }, { buffer, ...textureDataLayout }, size);
-        validateFinishAndSubmit(success, submit);
+
+        if (submit) {
+          // validation error is expected to come from the submit and encoding should succeed
+          validateFinishAndSubmit(true, success);
+        } else {
+          // validation error is expected to come from the encoding
+          validateFinish(success);
+        }
 
         break;
       }

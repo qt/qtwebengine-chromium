@@ -1,4 +1,5 @@
 import { assert } from '../../../../../common/util/util.js';
+import { resolvePerAspectFormat } from '../../../../capability_info.js';
 import { GPUTest } from '../../../../gpu_test.js';
 import { virtualMipSize } from '../../../../util/texture/base.js';
 import { CheckContents } from '../texture_zero.spec.js';
@@ -35,8 +36,8 @@ function getDepthTestEqualPipeline(
       module: t.device.createShaderModule({
         code: `
         struct Outputs {
-          @builtin(frag_depth) FragDepth : f32;
-          @location(0) outSuccess : f32;
+          @builtin(frag_depth) FragDepth : f32,
+          @location(0) outSuccess : f32,
         };
 
         @stage(fragment)
@@ -130,31 +131,35 @@ const checkContents: (type: 'depth' | 'stencil', ...args: Parameters<CheckConten
     }
 
     const commandEncoder = t.device.createCommandEncoder();
+    commandEncoder.pushDebugGroup('checkContentsWithDepthStencil');
+
     const pass = commandEncoder.beginRenderPass({
       colorAttachments: [
         {
           view: renderTexture.createView(),
           resolveTarget,
-          loadValue: [0, 0, 0, 0],
+          clearValue: [0, 0, 0, 0],
+          loadOp: 'load',
           storeOp: 'store',
         },
       ],
       depthStencilAttachment: {
         view: texture.createView(viewDescriptor),
-        depthStoreOp: 'store',
-        depthLoadValue: 'load',
-        stencilStoreOp: 'store',
-        stencilLoadValue: 'load',
+        depthStoreOp: type === 'depth' ? 'store' : undefined,
+        depthLoadOp: type === 'depth' ? 'load' : undefined,
+        stencilStoreOp: type === 'stencil' ? 'store' : undefined,
+        stencilLoadOp: type === 'stencil' ? 'load' : undefined,
       },
     });
 
+    const pipelineDSFormat = resolvePerAspectFormat(params.format, params.aspect);
     switch (type) {
       case 'depth': {
         const expectedDepth = t.stateToTexelComponents[state].Depth;
         assert(expectedDepth !== undefined);
 
         pass.setPipeline(
-          getDepthTestEqualPipeline(t, params.format, params.sampleCount, expectedDepth)
+          getDepthTestEqualPipeline(t, pipelineDSFormat, params.sampleCount, expectedDepth)
         );
         break;
       }
@@ -163,15 +168,16 @@ const checkContents: (type: 'depth' | 'stencil', ...args: Parameters<CheckConten
         const expectedStencil = t.stateToTexelComponents[state].Stencil;
         assert(expectedStencil !== undefined);
 
-        pass.setPipeline(getStencilTestEqualPipeline(t, params.format, params.sampleCount));
+        pass.setPipeline(getStencilTestEqualPipeline(t, pipelineDSFormat, params.sampleCount));
         pass.setStencilReference(expectedStencil);
         break;
       }
     }
 
     pass.draw(3);
-    pass.endPass();
+    pass.end();
 
+    commandEncoder.popDebugGroup();
     t.queue.submit([commandEncoder.finish()]);
 
     t.expectSingleColor(resolveTexture || renderTexture, 'r8unorm', {

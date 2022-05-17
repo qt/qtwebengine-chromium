@@ -31,7 +31,7 @@ static MaybeHandle<SharedFunctionInfo> GetFunctionInfo(Isolate* isolate,
                                                        Handle<String> source,
                                                        REPLMode repl_mode) {
   ScriptDetails script_details(isolate->factory()->empty_string(),
-                               ScriptOriginOptions(false, true));
+                               ScriptOriginOptions(true, true));
   script_details.repl_mode = repl_mode;
   return Compiler::GetSharedFunctionInfoForScript(
       isolate, source, script_details, ScriptCompiler::kNoCompileOptions,
@@ -283,8 +283,8 @@ void DebugEvaluate::ContextBuilder::UpdateValues() {
       for (int i = 0; i < keys->length(); i++) {
         DCHECK(keys->get(i).IsString());
         Handle<String> key(String::cast(keys->get(i)), isolate_);
-        Handle<Object> value =
-            JSReceiver::GetDataProperty(element.materialized_object, key);
+        Handle<Object> value = JSReceiver::GetDataProperty(
+            isolate_, element.materialized_object, key);
         scope_iterator_.SetVariableValue(key, value);
       }
     }
@@ -433,8 +433,8 @@ bool BytecodeHasNoSideEffect(interpreter::Bytecode bytecode) {
     // Loads.
     case Bytecode::kLdaLookupSlot:
     case Bytecode::kLdaGlobal:
-    case Bytecode::kLdaNamedProperty:
-    case Bytecode::kLdaKeyedProperty:
+    case Bytecode::kGetNamedProperty:
+    case Bytecode::kGetKeyedProperty:
     case Bytecode::kLdaGlobalInsideTypeof:
     case Bytecode::kLdaLookupSlotInsideTypeof:
     case Bytecode::kGetIterator:
@@ -985,11 +985,11 @@ DebugInfo::SideEffectState BuiltinGetSideEffectState(Builtin id) {
 bool BytecodeRequiresRuntimeCheck(interpreter::Bytecode bytecode) {
   using interpreter::Bytecode;
   switch (bytecode) {
-    case Bytecode::kStaNamedProperty:
-    case Bytecode::kStaNamedOwnProperty:
-    case Bytecode::kStaKeyedProperty:
+    case Bytecode::kSetNamedProperty:
+    case Bytecode::kDefineNamedOwnProperty:
+    case Bytecode::kSetKeyedProperty:
     case Bytecode::kStaInArrayLiteral:
-    case Bytecode::kStaDataPropertyInLiteral:
+    case Bytecode::kDefineKeyedOwnPropertyInLiteral:
     case Bytecode::kStaCurrentContextSlot:
       return true;
     default:

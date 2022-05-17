@@ -13,18 +13,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <cmath>
-#include <memory>
+#include <list>
 #include <set>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/candidate.h"
 #include "api/data_channel_interface.h"
+#include "api/field_trials_view.h"
 #include "api/media_types.h"
-#include "api/rtp_receiver_interface.h"
 #include "api/rtp_sender_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
@@ -39,6 +41,8 @@
 #include "pc/channel_interface.h"
 #include "pc/data_channel_utils.h"
 #include "pc/rtp_receiver.h"
+#include "pc/rtp_receiver_proxy.h"
+#include "pc/rtp_sender_proxy.h"
 #include "pc/rtp_transceiver.h"
 #include "pc/transport_stats.h"
 #include "rtc_base/checks.h"
@@ -52,7 +56,6 @@
 #include "rtc_base/thread.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/trace_event.h"
-#include "system_wrappers/include/field_trial.h"
 
 namespace webrtc {
 namespace {
@@ -140,10 +143,7 @@ void ExtractCommonReceiveProperties(const cricket::MediaReceiverInfo& info,
 }
 
 void SetAudioProcessingStats(StatsReport* report,
-                             bool typing_noise_detected,
                              const AudioProcessingStats& apm_stats) {
-  report->AddBoolean(StatsReport::kStatsValueNameTypingNoiseState,
-                     typing_noise_detected);
   if (apm_stats.delay_median_ms) {
     report->AddInt(StatsReport::kStatsValueNameEchoDelayMedian,
                    *apm_stats.delay_median_ms);
@@ -242,8 +242,7 @@ void ExtractStats(const cricket::VoiceSenderInfo& info,
                   bool use_standard_bytes_stats) {
   ExtractCommonSendProperties(info, report, use_standard_bytes_stats);
 
-  SetAudioProcessingStats(report, info.typing_noise_detected,
-                          info.apm_statistics);
+  SetAudioProcessingStats(report, info.apm_statistics);
 
   const FloatForAdd floats[] = {
       {StatsReport::kStatsValueNameTotalAudioEnergy, info.total_input_energy},
@@ -540,7 +539,7 @@ StatsCollector::StatsCollector(PeerConnectionInternal* pc)
     : pc_(pc),
       stats_gathering_started_(0),
       use_standard_bytes_stats_(
-          webrtc::field_trial::IsEnabled(kUseStandardBytesStats)) {
+          pc->trials().IsEnabled(kUseStandardBytesStats)) {
   RTC_DCHECK(pc_);
 }
 
@@ -1351,8 +1350,7 @@ void StatsCollector::UpdateReportFromAudioTrack(AudioTrackInterface* track,
     AudioProcessorInterface::AudioProcessorStatistics stats =
         audio_processor->GetStats(has_remote_tracks);
 
-    SetAudioProcessingStats(report, stats.typing_noise_detected,
-                            stats.apm_statistics);
+    SetAudioProcessingStats(report, stats.apm_statistics);
   }
 }
 

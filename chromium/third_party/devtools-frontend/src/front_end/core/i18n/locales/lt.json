@@ -1325,6 +1325,21 @@
   "models/issues_manager/ContentSecurityPolicyIssue.ts | trustedTypesPolicyViolation": {
     "message": "Patikimi tipai – politikos pažeidimas"
   },
+  "models/issues_manager/CookieIssue.ts | aSecure": {
+    "message": "saugus"
+  },
+  "models/issues_manager/CookieIssue.ts | anInsecure": {
+    "message": "nesaugus"
+  },
+  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
+    "message": "First-Party Sets ir SameParty atributas"
+  },
+  "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
+    "message": "Kaip veikia struktūrinė „Same-Site“"
+  },
+  "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
+    "message": "„SameSite“ slapukai paaiškinti"
+  },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Kelių šaltinių bendrinimas (CORS)"
   },
@@ -1336,6 +1351,9 @@
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "„Same-Site“ ir „Same-Origin“"
+  },
+  "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
+    "message": "Sietinio prisijungimo duomenų valdymo API"
   },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "Portalai – vieno šaltinio ryšio kanalai"
@@ -1373,29 +1391,11 @@
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "Dokumentų suderinamumo režimas"
   },
-  "models/issues_manager/SameSiteCookieIssue.ts | aSecure": {
-    "message": "saugus"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | anInsecure": {
-    "message": "nesaugus"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets ir SameParty atributas"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | howSchemefulSamesiteWorks": {
-    "message": "Kaip veikia struktūrinė „Same-Site“"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | samesiteCookiesExplained": {
-    "message": "„SameSite“ slapukai paaiškinti"
-  },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "SharedArrayBuffer įgalinimas"
   },
   "models/issues_manager/TrustedWebActivityIssue.ts | changesToQualityCriteriaForPwas": {
     "message": "LŽP, naudojančių patikimą žiniatinklio veiklą, kokybės kriterijų pakeitimai"
-  },
-  "models/issues_manager/WasmCrossOriginModuleSharingIssue.ts | linkTitle": {
-    "message": "Ribojamas „Wasm“ vieno šaltinio modulių bendrinimas"
   },
   "models/logs/NetworkLog.ts | anonymous": {
     "message": "<anoniminis>"
@@ -1420,9 +1420,6 @@
   },
   "models/logs/logs-meta.ts | reset": {
     "message": "nustatyti iš naujo"
-  },
-  "models/persistence/Automapping.ts | theAttemptToBindSInTheWorkspace": {
-    "message": "Bandymas susieti „{PH1}“ darbo srityje nepavyko, nes šis URI netinkamai suformatuotas."
   },
   "models/persistence/EditFileSystemView.ts | add": {
     "message": "Pridėti"
@@ -2555,6 +2552,15 @@
   "panels/application/IndexedDBViews.ts | version": {
     "message": "Versija"
   },
+  "panels/application/InterestGroupStorageView.ts | clickToDisplayBody": {
+    "message": "Spustelėkite bet kurį pomėgių grupės įvykį, kad būtų pateikta grupės dabartinė būsena"
+  },
+  "panels/application/InterestGroupStorageView.ts | noDataAvailable": {
+    "message": "Nepasiekiama jokia pasirinktos pomėgių grupės išsami informacija. Gali būti, kad naršantis asmuo išėjo iš grupės."
+  },
+  "panels/application/InterestGroupTreeElement.ts | interestGroups": {
+    "message": "Pomėgių grupės"
+  },
   "panels/application/OpenedWindowDetailsView.ts | accessToOpener": {
     "message": "Prieiga prie atidarymo programos"
   },
@@ -3230,6 +3236,9 @@
   "panels/application/components/BackForwardCacheView.ts | backForwardCacheTitle": {
     "message": "Ilgalaikis viso puslapio saugojimas talpykloje"
   },
+  "panels/application/components/BackForwardCacheView.ts | blockingExtensionId": {
+    "message": "Plėtinio ID: "
+  },
   "panels/application/components/BackForwardCacheView.ts | circumstantial": {
     "message": "Nereikia imtis veiksmų"
   },
@@ -3419,6 +3428,24 @@
   "panels/application/components/FrameDetailsView.ts | yes": {
     "message": "Taip"
   },
+  "panels/application/components/InterestGroupAccessGrid.ts | allInterestGroupStorageEvents": {
+    "message": "Visi pomėgių grupės saugyklos įvykiai."
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventTime": {
+    "message": "Įvykio laikas"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventType": {
+    "message": "Prieigos tipas"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupName": {
+    "message": "Pavadinimas"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupOwner": {
+    "message": "Savininkas"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | noEvents": {
+    "message": "Neįrašyta jokių pomėgių grupių įvykių."
+  },
   "panels/application/components/OriginTrialTreeView.ts | expiryTime": {
     "message": "Galiojimo pabaiga"
   },
@@ -3458,6 +3485,9 @@
   "panels/application/components/PermissionsPolicySection.ts | clickToShowIframe": {
     "message": "Spustelėkite, kad būtų parodytas svarbiausias „iframe“, kuris neleidžia šios funkcijos naudoti elementų skydelyje."
   },
+  "panels/application/components/PermissionsPolicySection.ts | disabledByFencedFrame": {
+    "message": "išjungta fencedframe viduje"
+  },
   "panels/application/components/PermissionsPolicySection.ts | disabledByHeader": {
     "message": "išjungė ši antraštė: Permissions-Policy"
   },
@@ -3473,8 +3503,17 @@
   "panels/application/components/PermissionsPolicySection.ts | showDetails": {
     "message": "Rodyti išsamią informaciją"
   },
+  "panels/application/components/ReportsGrid.ts | destination": {
+    "message": "Kelionės tikslas"
+  },
+  "panels/application/components/ReportsGrid.ts | generatedAt": {
+    "message": "Sugeneruota"
+  },
   "panels/application/components/ReportsGrid.ts | noReportsToDisplay": {
     "message": "Nėra ataskaitų, kurias būtų galima rodyti"
+  },
+  "panels/application/components/ReportsGrid.ts | status": {
+    "message": "Būsena"
   },
   "panels/application/components/StackTrace.ts | cannotRenderStackTrace": {
     "message": "Nepavyksta pateikti dėklo pėdsako"
@@ -4586,6 +4625,12 @@
   "panels/elements/EventListenersWidget.ts | showListenersOnTheAncestors": {
     "message": "Rodyti apdorojimo priemones prototipuose"
   },
+  "panels/elements/LayersWidget.ts | cssLayersTitle": {
+    "message": "CSS kalbos sluoksniai"
+  },
+  "panels/elements/LayersWidget.ts | toggleCSSLayers": {
+    "message": "Perjungti CSS kalbos sluoksnių rodinį"
+  },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "DOM atskaitos taškas"
   },
@@ -4667,8 +4712,17 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "Žr. apskaičiuotą vertę"
   },
+  "panels/elements/StylesSidebarPane.ts | clickToRevealLayer": {
+    "message": "Spustelėkite, kad būtų parodytas sudėtinių sluoksnių medis"
+  },
   "panels/elements/StylesSidebarPane.ts | constructedStylesheet": {
     "message": "sukonstruotas stiliaus aprašas"
+  },
+  "panels/elements/StylesSidebarPane.ts | copiedToClipboard": {
+    "message": "Nukopijuota į iškarpinę"
+  },
+  "panels/elements/StylesSidebarPane.ts | copyAllCSSChanges": {
+    "message": "Kopijuokite visus CSS kalbos pakeitimus"
   },
   "panels/elements/StylesSidebarPane.ts | copyAllDeclarations": {
     "message": "Kopijuoti visas deklaracijas"
@@ -4680,10 +4734,10 @@
     "message": "Kopijuoti selector"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
-    "message": "CSS nuosavybės pavadinimas"
+    "message": "CSS nuosavybės pavadinimas: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
-    "message": "CSS nuosavybės vertė"
+    "message": "CSS nuosavybės vertė: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssSelector": {
     "message": "CSS parinkiklis"
@@ -4714,6 +4768,9 @@
   },
   "panels/elements/StylesSidebarPane.ts | invalidString": {
     "message": "{PH1}, nuosavybės pavadinimas: {PH2}, nuosavybės vertė: {PH3}"
+  },
+  "panels/elements/StylesSidebarPane.ts | layer": {
+    "message": "Sluoksnis"
   },
   "panels/elements/StylesSidebarPane.ts | newStyleRule": {
     "message": "Nauja stiliaus taisyklė"
@@ -5483,27 +5540,6 @@
   "panels/issues/IssuesPane.ts | trustedWebActivity": {
     "message": "Patikima žiniatinklio veikla"
   },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | blocked": {
-    "message": "užblokuota"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | nModuleTransfers": {
-    "message": "{n,plural, =1{# modulis}one{# modulis}few{# moduliai}many{# modulio}other{# modulių}}"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | sourceOrigin": {
-    "message": "Šaltinio kilmė"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | status": {
-    "message": "Būsena"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | targetOrigin": {
-    "message": "Paskirties šaltinis"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | warned": {
-    "message": "įspėjimas"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | wasmModuleUrl": {
-    "message": "„Wasm“ modulio URL"
-  },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "Problemų slėpimas"
   },
@@ -5744,6 +5780,12 @@
   "panels/lighthouse/LighthouseController.ts | isThisPageUsableByPeopleWith": {
     "message": "Ar šį puslapį naudoja neįgalieji arba sutrikimų turintys asmenys"
   },
+  "panels/lighthouse/LighthouseController.ts | legacyNavigation": {
+    "message": "Pasenusios naršymo funkcijos"
+  },
+  "panels/lighthouse/LighthouseController.ts | lighthouseMode": {
+    "message": "„Lighthouse“ režimas"
+  },
   "panels/lighthouse/LighthouseController.ts | localStorage": {
     "message": "Vietinė saugykla"
   },
@@ -5752,6 +5794,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | multipleTabsAreBeingControlledBy": {
     "message": "Kelis skirtukus valdo tas pats service worker. Uždarykite kitus to paties šaltinio skirtukus, kad galėtumėte patikrinti šį puslapį."
+  },
+  "panels/lighthouse/LighthouseController.ts | navigation": {
+    "message": "Naršymas"
   },
   "panels/lighthouse/LighthouseController.ts | performance": {
     "message": "Našumas"
@@ -5765,6 +5810,9 @@
   "panels/lighthouse/LighthouseController.ts | resetStorageLocalstorage": {
     "message": "Iš naujo nustatykite saugyklą (cache, service workers ir kt.) prieš tikrindami. (Naudinga norint padidinti našumą ir atlikti PWA testavimą)"
   },
+  "panels/lighthouse/LighthouseController.ts | runLighthouseInMode": {
+    "message": "Vykdykite „Lighthouse“ naršymo, laikotarpio arba glaustos informacijos režimu"
+  },
   "panels/lighthouse/LighthouseController.ts | seo": {
     "message": "PVO"
   },
@@ -5774,11 +5822,20 @@
   "panels/lighthouse/LighthouseController.ts | simulatedThrottling": {
     "message": "Simuliuojamas duomenų srauto ribojimas"
   },
+  "panels/lighthouse/LighthouseController.ts | snapshot": {
+    "message": "Glausta informacija"
+  },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingLoadingPlural": {
     "message": "Šiose vietose gali būti išsaugotų duomenų, turinčių poveikio įkėlimo našumui: {PH1}. Patikrinkite šį puslapį inkognito lange, kad šie šaltiniai nepaveiktų rezultatų."
   },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "Šioje vietoje gali būti išsaugotų duomenų, turinčių poveikio įkėlimo našumui: {PH1}. Patikrinkite šį puslapį inkognito lange, kad šie šaltiniai nepaveiktų rezultatų."
+  },
+  "panels/lighthouse/LighthouseController.ts | timespan": {
+    "message": "Laikotarpis"
+  },
+  "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
+    "message": "Analizuokite puslapį naudodami klasikinės versijos „Lighthouse“ naršymo režimu."
   },
   "panels/lighthouse/LighthouseController.ts | webSql": {
     "message": "Žiniatinklio SQL"
@@ -5836,6 +5893,18 @@
   },
   "panels/lighthouse/LighthouseStartView.ts | learnMore": {
     "message": "Sužinokite daugiau"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
+    "message": "Analizuoti naršymą"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
+    "message": "Analizuoti glaustą informaciją"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
+    "message": "Režimas"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
+    "message": "Pradėti laikotarpį"
   },
   "panels/lighthouse/LighthouseStatusView.ts | OfGlobalMobileUsersInWereOnGOrG": {
     "message": "75 proc. mobiliųjų įrenginių naudotojų visame pasaulyje 2016 m. naudojo 2G arba 3G ryšį (šaltinis: GSMA Mobile)"
@@ -5923,6 +5992,18 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | walmartSawAIncreaseInRevenueFor": {
     "message": "„Walmart“ pastebėjo, kad su kiekvienu 100 ms puslapio įkėlimo patobulinimu pajamos didėjo 1 proc. (šaltinis: WPO Stats)"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | cancel": {
+    "message": "Atšaukti"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | endTimespan": {
+    "message": "Baigti laikotarpį"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarted": {
+    "message": "Laikotarpis pradėtas; sąveikaukite su puslapiu"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarting": {
+    "message": "Pradedamas laikotarpis…"
   },
   "panels/lighthouse/lighthouse-meta.ts | showLighthouse": {
     "message": "Rodyti „Lighthouse“"
@@ -9656,6 +9737,24 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Atnaujinti stebėjimo išraiškas"
   },
+  "panels/sources/components/HeadersView.ts | addHeader": {
+    "message": "Pridėti antraštę"
+  },
+  "panels/sources/components/HeadersView.ts | addHeaderOverride": {
+    "message": "Pridėti antraštės nepaisymą"
+  },
+  "panels/sources/components/HeadersView.ts | errorWhenParsing": {
+    "message": "Analizuojant „{PH1}“ įvyko klaida."
+  },
+  "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
+    "message": "Greičiausiai tai įvyko dėl „{PH1}“ sintaksės klaidos. Pabandykite atidaryti šį failą išorinėje redagavimo priemonėje, kad pašalintumėte klaidą, arba ištrinkite failą ir iš naujo sukurkite pakeistą failą."
+  },
+  "panels/sources/components/HeadersView.ts | removeBlock": {
+    "message": "Pašalinti skiltį „ApplyTo“"
+  },
+  "panels/sources/components/HeadersView.ts | removeHeader": {
+    "message": "Pašalinti šią antraštę"
+  },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "Suaktyvinti stabdos taškus"
   },
@@ -10051,6 +10150,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | onIgnoreList": {
     "message": "Nepaisomų elementų sąraše"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
+    "message": "Iš dalies rodomas rėmelis"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | raster": {
     "message": "Rastras"
@@ -10828,6 +10930,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | pinchUpdate": {
     "message": "Suimti atnaujinimą"
+  },
+  "panels/timeline/TimelineUIUtils.ts | prePaint": {
+    "message": "Išankstinis piešimas"
   },
   "panels/timeline/TimelineUIUtils.ts | preview": {
     "message": "Peržiūrėti"

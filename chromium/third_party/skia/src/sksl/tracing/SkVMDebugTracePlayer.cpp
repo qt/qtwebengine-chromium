@@ -7,6 +7,11 @@
 
 #include "src/sksl/tracing/SkVMDebugTracePlayer.h"
 
+#include <limits.h>
+#include <algorithm>
+#include <type_traits>
+#include <utility>
+
 namespace SkSL {
 
 void SkVMDebugTracePlayer::reset(sk_sp<SkVMDebugTrace> debugTrace) {
@@ -25,15 +30,17 @@ void SkVMDebugTracePlayer::reset(sk_sp<SkVMDebugTrace> debugTrace) {
     fDirtyMask.emplace(nslots);
     fReturnValues.emplace(nslots);
 
-    for (size_t slotIdx = 0; slotIdx < nslots; ++slotIdx) {
-        if (fDebugTrace->fSlotInfo[slotIdx].fnReturnValue >= 0) {
-            fReturnValues->set(slotIdx);
+    if (fDebugTrace) {
+        for (size_t slotIdx = 0; slotIdx < nslots; ++slotIdx) {
+            if (fDebugTrace->fSlotInfo[slotIdx].fnReturnValue >= 0) {
+                fReturnValues->set(slotIdx);
+            }
         }
-    }
 
-    for (const SkVMTraceInfo& trace : fDebugTrace->fTraceInfo) {
-        if (trace.op == SkVMTraceInfo::Op::kLine) {
-            fLineNumbers[trace.data[0]] += 1;
+        for (const SkVMTraceInfo& trace : fDebugTrace->fTraceInfo) {
+            if (trace.op == SkVMTraceInfo::Op::kLine) {
+                fLineNumbers[trace.data[0]] += 1;
+            }
         }
     }
 }

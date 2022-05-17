@@ -31,9 +31,9 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
+import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Persistence from '../../models/persistence/persistence.js';
-import type * as Platform from '../../core/platform/platform.js';
 import * as Workspace from '../../models/workspace/workspace.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Snippets from '../snippets/snippets.js';
@@ -339,7 +339,8 @@ export class SnippetsNavigatorView extends NavigatorView {
     const newButton = new UI.Toolbar.ToolbarButton(
         i18nString(UIStrings.newSnippet), 'largeicon-add', i18nString(UIStrings.newSnippet));
     newButton.addEventListener(UI.Toolbar.ToolbarButton.Events.Click, _event => {
-      void this.create(Snippets.ScriptSnippetFileSystem.findSnippetsProject(), '');
+      void this.create(
+          Snippets.ScriptSnippetFileSystem.findSnippetsProject(), '' as Platform.DevToolsPath.EncodedPathString);
     });
     toolbar.appendToolbarItem(newButton);
     this.contentElement.insertBefore(toolbar.element, this.contentElement.firstChild);
@@ -360,7 +361,8 @@ export class SnippetsNavigatorView extends NavigatorView {
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
     contextMenu.headerSection().appendItem(
         i18nString(UIStrings.createNewSnippet),
-        () => this.create(Snippets.ScriptSnippetFileSystem.findSnippetsProject(), ''));
+        () => this.create(
+            Snippets.ScriptSnippetFileSystem.findSnippetsProject(), '' as Platform.DevToolsPath.EncodedPathString));
     void contextMenu.show();
   }
 
@@ -406,7 +408,7 @@ export class ActionDelegate implements UI.ActionRegistration.ActionDelegate {
     switch (actionId) {
       case 'sources.create-snippet':
         void Snippets.ScriptSnippetFileSystem.findSnippetsProject()
-            .createFile('', null, '')
+            .createFile(Platform.DevToolsPath.EmptyEncodedPathString, null, '')
             .then(uiSourceCode => Common.Revealer.reveal(uiSourceCode));
         return true;
       case 'sources.add-folder-to-workspace':

@@ -36,10 +36,6 @@ extern "C" {
 #define MIN_TPL_BSIZE_1D 16
 //! Maximum number of tpl block in a super block
 #define MAX_TPL_BLK_IN_SB (MAX_SB_SIZE / MIN_TPL_BSIZE_1D)
-//! Number of intra winner modes kept
-#define MAX_WINNER_MODE_COUNT_INTRA 3
-//! Number of inter winner modes kept
-#define MAX_WINNER_MODE_COUNT_INTER 1
 //! Number of txfm hash records kept for the partition block.
 #define RD_RECORD_BUFFER_LEN 8
 
@@ -675,6 +671,16 @@ typedef struct {
   //! sgrproj_restore_cost
   int sgrproj_restore_cost[2];
   /**@}*/
+
+  /*****************************************************************************
+   * \name Segmentation Mode Costs
+   ****************************************************************************/
+  /**@{*/
+  //! tmp_pred_cost
+  int tmp_pred_cost[SEG_TEMPORAL_PRED_CTXS][2];
+  //! spatial_pred_cost
+  int spatial_pred_cost[SPATIAL_PREDICTION_PROBS][MAX_SEGMENTS];
+  /**@}*/
 } ModeCosts;
 
 /*! \brief Holds mv costs for encoding and motion search.
@@ -894,7 +900,7 @@ typedef struct macroblock {
    */
   int rdmult;
 
-  // Intra only, per sb rd adjustment.
+  //! Intra only, per sb rd adjustment.
   int intra_sb_rdmult_modifier;
 
   //! Superblock level distortion propagation factor.
@@ -957,6 +963,15 @@ typedef struct macroblock {
   /*!\brief Number of zero motion vectors
    */
   int cnt_zeromv;
+
+  /*!\brief Flag to force zeromv-skip block, for nonrd path.
+   */
+  int force_zeromv_skip;
+
+  /*! \brief Previous segment id for which qmatrices were updated.
+   * This is used to bypass setting of qmatrices if no change in qindex.
+   */
+  int prev_segment_id;
   /**@}*/
 
   /*****************************************************************************
@@ -1211,9 +1226,7 @@ typedef struct macroblock {
    *
    *  Pointer to the array of structures to store source variance information of
    *  each 4x4 sub-block in a superblock. Block4x4VarInfo structure is used to
-   *  store source variance and log of source variance of each 4x4 sub-block
-   *  which is retrieved in subsequent calls to log_sub_block_var() and
-   *  intra_rd_variance_factor() functions.
+   *  store source variance and log of source variance of each 4x4 sub-block.
    */
   Block4x4VarInfo *src_var_info_of_4x4_sub_blocks;
 } MACROBLOCK;
@@ -1225,6 +1238,10 @@ typedef struct macroblock {
 // size, not the whole array).
 static INLINE void zero_winner_mode_stats(BLOCK_SIZE bsize, int n_stats,
                                           WinnerModeStats *stats) {
+  // When winner mode stats are not required, the memory allocation is avoided
+  // for x->winner_mode_stats. The stats pointer will be NULL in such cases.
+  if (stats == NULL) return;
+
   const int block_height = block_size_high[bsize];
   const int block_width = block_size_wide[bsize];
   for (int i = 0; i < n_stats; ++i) {

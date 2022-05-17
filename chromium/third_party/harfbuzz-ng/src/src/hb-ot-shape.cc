@@ -47,6 +47,9 @@
 
 #include "hb-aat-layout.hh"
 
+static inline bool
+_hb_codepoint_is_regional_indicator (hb_codepoint_t u)
+{ return hb_in_range<hb_codepoint_t> (u, 0x1F1E6u, 0x1F1FFu); }
 
 #ifndef HB_NO_AAT_SHAPE
 static inline bool
@@ -504,9 +507,9 @@ hb_set_unicode_props (hb_buffer_t *buffer)
     }
     /* Regional_Indicators are hairy as hell...
      * https://github.com/harfbuzz/harfbuzz/issues/2265 */
-    else if (unlikely (i && hb_in_range<hb_codepoint_t> (info[i].codepoint, 0x1F1E6u, 0x1F1FFu)))
+    else if (unlikely (i && _hb_codepoint_is_regional_indicator (info[i].codepoint)))
     {
-      if (hb_in_range<hb_codepoint_t> (info[i - 1].codepoint, 0x1F1E6u, 0x1F1FFu) &&
+      if (_hb_codepoint_is_regional_indicator (info[i - 1].codepoint) &&
 	  !_hb_glyph_info_is_continuation (&info[i - 1]))
 	_hb_glyph_info_set_continuation (&info[i]);
     }
@@ -598,24 +601,33 @@ hb_ensure_native_direction (hb_buffer_t *buffer)
    * direction, so that features like ligatures will work as intended.
    *
    * https://github.com/harfbuzz/harfbuzz/issues/501
+   *
+   * Similar thing about Regional_Indicators; They are bidi=L, but Script=Common.
+   * If they are present in a run of natively-RTL text, they get assigned a script
+   * with natively RTL direction, which would result in wrong shaping if we
+   * assign such native RTL direction to them then. Detect that as well.
+   *
+   * https://github.com/harfbuzz/harfbuzz/issues/3314
    */
   if (unlikely (horiz_dir == HB_DIRECTION_RTL && direction == HB_DIRECTION_LTR))
   {
-    bool found_number = false, found_letter = false;
+    bool found_number = false, found_letter = false, found_ri = false;
     const auto* info = buffer->info;
     const auto count = buffer->len;
     for (unsigned i = 0; i < count; i++)
     {
       auto gc = _hb_glyph_info_get_general_category (&info[i]);
       if (gc == HB_UNICODE_GENERAL_CATEGORY_DECIMAL_NUMBER)
-        found_number = true;
+	found_number = true;
       else if (HB_UNICODE_GENERAL_CATEGORY_IS_LETTER (gc))
       {
-        found_letter = true;
-        break;
+	found_letter = true;
+	break;
       }
+      else if (_hb_codepoint_is_regional_indicator (info[i].codepoint))
+	found_ri = true;
     }
-    if (found_number && !found_letter)
+    if ((found_number || found_ri) && !found_letter)
       horiz_dir = HB_DIRECTION_LTR;
   }
 
@@ -935,16 +947,22 @@ hb_ot_substitute_pre (const hb_ot_shape_context_t *c)
   _hb_buffer_allocate_gsubgpos_vars (c->buffer);
 
   hb_ot_substitute_complex (c);
+
+#ifndef HB_NO_AAT_SHAPE
+  if (c->plan->apply_morx && c->plan->apply_gpos)
+    hb_aat_layout_remove_deleted_glyphs (c->buffer);
+#endif
 }
 
 static inline void
 hb_ot_substitute_post (const hb_ot_shape_context_t *c)
 {
-  hb_ot_hide_default_ignorables (c->buffer, c->font);
 #ifndef HB_NO_AAT_SHAPE
-  if (c->plan->apply_morx)
+  if (c->plan->apply_morx && !c->plan->apply_gpos)
     hb_aat_layout_remove_deleted_glyphs (c->buffer);
 #endif
+
+  hb_ot_hide_default_ignorables (c->buffer, c->font);
 
   if (c->plan->shaper->postprocess_glyphs &&
     c->buffer->message(c->font, "start postprocess-glyphs")) {
@@ -1034,7 +1052,7 @@ hb_ot_position_complex (const hb_ot_shape_context_t *c)
    * hanging over the next glyph after the final reordering.
    *
    * Note: If fallback positinoing happens, we don't care about
-   * this as it will be overriden.
+   * this as it will be overridden.
    */
   bool adjust_offsets_when_zeroing = c->plan->adjust_mark_positioning_when_zeroing &&
 				     HB_DIRECTION_IS_FORWARD (c->buffer->props.direction);
@@ -1120,7 +1138,7 @@ hb_propagate_flags (hb_buffer_t *buffer)
   /* Propagate cluster-level glyph flags to be the same on all cluster glyphs.
    * Simplifies using them. */
 
-  if (!(buffer->scratch_flags & HB_BUFFER_SCRATCH_FLAG_HAS_UNSAFE_TO_BREAK))
+  if (!(buffer->scratch_flags & HB_BUFFER_SCRATCH_FLAG_HAS_GLYPH_FLAGS))
     return;
 
   hb_glyph_info_t *info = buffer->info;
@@ -1129,11 +1147,7 @@ hb_propagate_flags (hb_buffer_t *buffer)
   {
     unsigned int mask = 0;
     for (unsigned int i = start; i < end; i++)
-      if (info[i].mask & HB_GLYPH_FLAG_UNSAFE_TO_BREAK)
-      {
-	 mask = HB_GLYPH_FLAG_UNSAFE_TO_BREAK;
-	 break;
-      }
+      mask |= info[i].mask & HB_GLYPH_FLAG_DEFINED;
     if (mask)
       for (unsigned int i = start; i < end; i++)
 	info[i].mask |= mask;

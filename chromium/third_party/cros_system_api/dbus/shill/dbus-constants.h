@@ -39,6 +39,7 @@ const char kRequestScanFunction[] = "RequestScan";
 const char kSetNetworkThrottlingFunction[] = "SetNetworkThrottlingStatus";
 const char kSetDNSProxyDOHProvidersFunction[] = "SetDNSProxyDOHProviders";
 const char kAddPasspointCredentialsFunction[] = "AddPasspointCredentials";
+const char kRemovePasspointCredentialsFunction[] = "RemovePasspointCredentials";
 
 // Service function names.
 const char kClearPropertiesFunction[] = "ClearProperties";
@@ -87,6 +88,7 @@ const char kConnectionStateProperty[] = "ConnectionState";
 const char kDefaultServiceProperty[] = "DefaultService";
 const char kDefaultTechnologyProperty[] = "DefaultTechnology";
 const char kDevicesProperty[] = "Devices";
+const char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
 const char kDisableWiFiVHTProperty[] = "DisableWiFiVHT";
 const char kDNSProxyDOHProvidersProperty[] = "DNSProxyDOHProviders";
 const char kEnabledTechnologiesProperty[] = "EnabledTechnologies";
@@ -111,10 +113,6 @@ const char kCheckPortalListProperty[] = "CheckPortalList";
 const char kIgnoredDNSSearchPathsProperty[] = "IgnoredDNSSearchPaths";
 const char kNoAutoConnectTechnologiesProperty[] = "NoAutoConnectTechnologies";
 const char kProhibitedTechnologiesProperty[] = "ProhibitedTechnologies";
-
-// DHCP property names for both Manager and Service.
-const char kDhcpPropertyHostnameProperty[] = "DHCPProperty.Hostname";
-const char kDhcpPropertyVendorClassProperty[] = "DHCPProperty.VendorClass";
 
 // Base Service property names.
 const char kAutoConnectProperty[] = "AutoConnect";
@@ -198,13 +196,11 @@ const char kEapUseProactiveKeyCachingProperty[] = "EAP.UseProactiveKeyCaching";
 const char kEapUseSystemCasProperty[] = "EAP.UseSystemCAs";
 const char kEapSubjectAlternativeNameMatchTypeProperty[] = "Type";
 const char kEapSubjectAlternativeNameMatchValueProperty[] = "Value";
-
-// PPPoE Service property names.
-const char kPPPoELCPEchoFailureProperty[] = "PPPoE.LCPEchoFailure";
-const char kPPPoELCPEchoIntervalProperty[] = "PPPoE.LCPEchoInterval";
-const char kPPPoEMaxAuthFailureProperty[] = "PPPoE.MaxAuthFailure";
-const char kPPPoEPasswordProperty[] = "PPPoE.Password";
-const char kPPPoEUsernameProperty[] = "PPPoE.Username";
+const char kPasspointFQDNProperty[] = "Passpoint.FQDN";
+const char kPasspointProvisioningSourceProperty[] =
+    "Passpoint.ProvisioningSource";
+const char kPasspointMatchTypeProperty[] = "Passpoint.MatchType";
+const char kPasspointIDProperty[] = "Passpoint.ID";
 
 // WiFi Service property names.
 const char kCountryProperty[] = "Country";
@@ -247,22 +243,6 @@ const char kIKEv2RemoteIdentityProperty[] = "IKEv2.RemoteIdentity";
 const char kIKEv2AuthenticationTypePSK[] = "PSK";
 const char kIKEv2AuthenticationTypeEAP[] = "EAP";
 const char kIKEv2AuthenticationTypeCert[] = "Cert";
-
-// Deprecated. Use the next group of constants instead.
-// TODO(jiejiang): Remove this group after the references in chrome are removed.
-const char kL2tpIpsecCaCertPemProperty[] = "L2TPIPsec.CACertPEM";
-const char kL2tpIpsecClientCertIdProperty[] = "L2TPIPsec.ClientCertID";
-const char kL2tpIpsecClientCertSlotProperty[] = "L2TPIPsec.ClientCertSlot";
-const char kL2tpIpsecLcpEchoDisabledProperty[] = "L2TPIPsec.LCPEchoDisabled";
-const char kL2tpIpsecPasswordProperty[] = "L2TPIPsec.Password";
-const char kL2tpIpsecPinProperty[] = "L2TPIPsec.PIN";
-const char kL2tpIpsecPskProperty[] = "L2TPIPsec.PSK";
-const char kL2tpIpsecPskRequiredProperty[] = "L2TPIPsec.PSKRequired";
-const char kL2tpIpsecTunnelGroupProperty[] = "L2TPIPsec.TunnelGroup";
-const char kL2tpIpsecUseLoginPasswordProperty[] = "L2TPIPsec.UseLoginPassword";
-const char kL2tpIpsecUserProperty[] = "L2TPIPsec.User";
-const char kL2tpIpsecXauthPasswordProperty[] = "L2TPIPsec.XauthPassword";
-const char kL2tpIpsecXauthUserProperty[] = "L2TPIPsec.XauthUser";
 
 // L2TPIPsec Service property names.
 const char kL2TPIPsecCaCertPemProperty[] = "L2TPIPsec.CACertPEM";
@@ -360,6 +340,7 @@ const char kiSNSOptionDataProperty[] = "iSNSOptionData";  // For RFC 4174.
 
 // Passpoint credentials property names.
 // EAP properties are defined above for EAP service.
+const char kPasspointCredentialsFQDNProperty[] = "FQDN";
 const char kPasspointCredentialsDomainsProperty[] = "Domains";
 const char kPasspointCredentialsRealmProperty[] = "Realm";
 const char kPasspointCredentialsHomeOIsProperty[] = "HomeOIs";
@@ -377,17 +358,18 @@ const char kIPv6DisabledProperty[] = "IPv6Disabled";
 const char kInterfaceProperty[] = "Interface";  // Network interface name.
 // kNameProperty: Defined above for Service. DEPRECATED (crbug.com/1011136).
 const char kPoweredProperty[] = "Powered";
-const char kReceiveByteCountProperty[] = "ReceiveByteCount";
 const char kScanIntervalProperty[] =
     "ScanInterval";                           // For both Cellular and WiFi.
 const char kScanningProperty[] = "Scanning";  // For both Cellular and WiFi.
 const char kSelectedServiceProperty[] = "SelectedService";
-const char kTransmitByteCountProperty[] = "TransmitByteCount";
 
 // Property names common to Cellular Device and Cellular Service.
 const char kEidProperty[] = "Cellular.EID";
 const char kIccidProperty[] = "Cellular.ICCID";
 const char kImsiProperty[] = "Cellular.IMSI";
+
+// kIccidProperty value when SIM card exists but ICCID is not available.
+const char kUnknownIccid[] = "unknown-iccid";
 
 // Cellular Device property names.
 const char kCellularApnListProperty[] = "Cellular.APNList";
@@ -422,7 +404,6 @@ const char kEapAuthenticationCompletedProperty[] = "EapAuthenticationCompleted";
 const char kEapAuthenticatorDetectedProperty[] = "EapAuthenticatorDetected";
 const char kDeviceBusTypeProperty[] = "Ethernet.DeviceBusType";
 const char kLinkUpProperty[] = "Ethernet.LinkUp";
-const char kPPPoEProperty[] = "Ethernet.PPPoE";
 const char kUsbEthernetMacAddressSourceProperty[] =
     "Ethernet.UsbEthernetMacAddressSource";
 
@@ -482,6 +463,11 @@ const char kRoamStateIdle[] = "idle";
 const char kRoamStateAssociation[] = "association";
 const char kRoamStateConfiguration[] = "configuration";
 const char kRoamStateReady[] = "ready";
+
+// Shill Passpoint match type options.
+const char kPasspointMatchTypeHome[] = "home";
+const char kPasspointMatchTypeRoaming[] = "roaming";
+const char kPasspointMatchTypeUnknown[] = "unknown";
 
 // Flimflam portal phase and status.
 const char kPortalDetectionPhaseConnection[] = "Connection";
@@ -616,7 +602,6 @@ const char kTypeEthernet[] = "ethernet";
 const char kTypeWifi[] = "wifi";
 const char kTypeCellular[] = "cellular";
 const char kTypeVPN[] = "vpn";
-const char kTypePPPoE[] = "pppoe";
 
 // Flimflam mode options.
 const char kModeManaged[] = "managed";

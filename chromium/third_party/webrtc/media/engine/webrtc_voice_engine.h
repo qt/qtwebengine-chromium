@@ -17,11 +17,11 @@
 #include <vector>
 
 #include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/field_trials_view.h"
 #include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/transport/rtp/rtp_source.h"
-#include "api/transport/webrtc_key_value_config.h"
 #include "call/audio_state.h"
 #include "call/call.h"
 #include "media/base/media_engine.h"
@@ -55,7 +55,7 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
       rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
       rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing,
       webrtc::AudioFrameProcessor* audio_frame_processor,
-      const webrtc::WebRtcKeyValueConfig& trials);
+      const webrtc::FieldTrialsView& trials);
 
   WebRtcVoiceEngine() = delete;
   WebRtcVoiceEngine(const WebRtcVoiceEngine&) = delete;
@@ -130,9 +130,6 @@ class WebRtcVoiceEngine final : public VoiceEngineInterface {
   int audio_jitter_buffer_min_delay_ms_ = 0;
   bool audio_jitter_buffer_enable_rtx_handling_ = false;
 
-  // If this field is enabled, we will negotiate and use RFC 2198
-  // redundancy for opus audio.
-  const bool audio_red_for_opus_enabled_;
   const bool minimized_remsampling_on_mobile_trial_enabled_;
 };
 
@@ -325,8 +322,6 @@ class WebRtcVoiceMediaChannel final : public VoiceMediaChannel,
   // Unsignaled streams have an option to have a frame decryptor set on them.
   rtc::scoped_refptr<webrtc::FrameDecryptorInterface>
       unsignaled_frame_decryptor_;
-
-  const bool audio_red_for_opus_enabled_;
 };
 }  // namespace cricket
 

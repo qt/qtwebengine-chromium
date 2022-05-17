@@ -17,7 +17,6 @@
 #include <memory>
 #include <queue>
 #include <string>
-#include <type_traits>
 #include <utility>
 
 #include "absl/algorithm/container.h"
@@ -63,7 +62,6 @@
 #include "rtc_base/string_encode.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/trace_event.h"
-#include "system_wrappers/include/field_trial.h"
 #include "system_wrappers/include/metrics.h"
 
 using cricket::ContentInfo;
@@ -88,11 +86,11 @@ namespace webrtc {
 
 namespace {
 
+constexpr const char* kDefaultScreencastMinBitrateKillSwitch =
+    "WebRTC-DefaultScreencastMinBitrateKillSwitch";
+
 typedef webrtc::PeerConnectionInterface::RTCOfferAnswerOptions
     RTCOfferAnswerOptions;
-
-constexpr const char* kAlwaysAllowPayloadTypeDemuxingFieldTrialName =
-    "WebRTC-AlwaysAllowPayloadTypeDemuxing";
 
 // Error messages
 const char kInvalidSdp[] = "Invalid session description.";
@@ -1189,16 +1187,23 @@ std::unique_ptr<SdpOfferAnswerHandler> SdpOfferAnswerHandler::Create(
     PeerConnectionDependencies& dependencies,
     ConnectionContext* context) {
   auto handler = absl::WrapUnique(new SdpOfferAnswerHandler(pc, context));
-  handler->Initialize(configuration, dependencies);
+  handler->Initialize(configuration, dependencies, context);
   return handler;
 }
 
 void SdpOfferAnswerHandler::Initialize(
     const PeerConnectionInterface::RTCConfiguration& configuration,
-    PeerConnectionDependencies& dependencies) {
+    PeerConnectionDependencies& dependencies,
+    ConnectionContext* context) {
   RTC_DCHECK_RUN_ON(signaling_thread());
   video_options_.screencast_min_bitrate_kbps =
       configuration.screencast_min_bitrate;
+  // Use 100 kbps as the default minimum screencast bitrate unless this path is
+  // kill-switched.
+  if (!video_options_.screencast_min_bitrate_kbps.has_value() &&
+      !context_->trials().IsEnabled(kDefaultScreencastMinBitrateKillSwitch)) {
+    video_options_.screencast_min_bitrate_kbps = 100;
+  }
   audio_options_.combined_audio_video_bwe =
       configuration.combined_audio_video_bwe;
 
@@ -1225,9 +1230,8 @@ void SdpOfferAnswerHandler::Initialize(
 
   webrtc_session_desc_factory_ =
       std::make_unique<WebRtcSessionDescriptionFactory>(
-          signaling_thread(), channel_manager(), this, pc_->session_id(),
-          pc_->dtls_enabled(), std::move(dependencies.cert_generator),
-          certificate,
+          context, this, pc_->session_id(), pc_->dtls_enabled(),
+          std::move(dependencies.cert_generator), certificate,
           [this](const rtc::scoped_refptr<rtc::RTCCertificate>& certificate) {
             RTC_DCHECK_RUN_ON(signaling_thread());
             transport_controller_s()->SetLocalCertificate(certificate);
@@ -2924,6 +2928,7 @@ RTCError SdpOfferAnswerHandler::Rollback(SdpType desc_type) {
       if (transceiver->internal()->reused_for_addtrack()) {
         transceiver->internal()->set_created_by_addtrack(true);
       } else {
+        transceiver->internal()->StopTransceiverProcedure();
         transceivers()->Remove(transceiver);
       }
     }
@@ -3386,9 +3391,9 @@ RTCError SdpOfferAnswerHandler::UpdateTransceiversAndDataChannels(
           AssociateTransceiver(source, new_session.GetType(), i, new_content,
                                old_local_content, old_remote_content);
       if (!transceiver_or_error.ok()) {
-        // In the case where a transceiver is rejected locally, we don't
-        // expect to find a transceiver, but might find it in the case
-        // where state is still "stopping", not "stopped".
+        // In the case where a transceiver is rejected locally prior to being
+        // associated, we don't expect to find a transceiver, but might find it
+        // in the case where state is still "stopping", not "stopped".
         if (new_content.rejected) {
           continue;
         }
@@ -3397,6 +3402,36 @@ RTCError SdpOfferAnswerHandler::UpdateTransceiversAndDataChannels(
       auto transceiver = transceiver_or_error.MoveValue();
       RTCError error =
           UpdateTransceiverChannel(transceiver, new_content, bundle_group);
+      // Handle locally rejected content. This code path is only needed for apps
+      // that SDP munge. Remote rejected content is handled in
+      // ApplyRemoteDescriptionUpdateTransceiverState().
+      if (source == cricket::ContentSource::CS_LOCAL && new_content.rejected) {
+        // Local offer.
+        if (new_session.GetType() == SdpType::kOffer) {
+          // If the RtpTransceiver API was used, it would already have made the
+          // transceiver stopping. But if the rejection was caused by SDP
+          // munging then we need to ensure the transceiver is stopping here.
+          if (!transceiver->internal()->stopping()) {
+            transceiver->internal()->StopStandard();
+          }
+          RTC_DCHECK(transceiver->internal()->stopping());
+        } else {
+          // Local answer.
+          RTC_DCHECK(new_session.GetType() == SdpType::kAnswer ||
+                     new_session.GetType() == SdpType::kPrAnswer);
+          // When RtpTransceiver API is used, rejection happens in the offer and
+          // the transceiver will already be stopped at local answer time
+          // (calling stop between SRD(offer) and SLD(answer) would not reject
+          // the content in the answer - instead this would trigger a follow-up
+          // O/A exchange). So if the content was rejected but the transceiver
+          // is not already stopped, SDP munging has happened and we need to
+          // ensure the transceiver is stopped.
+          if (!transceiver->internal()->stopped()) {
+            transceiver->internal()->StopTransceiverProcedure();
+          }
+          RTC_DCHECK(transceiver->internal()->stopped());
+        }
+      }
       if (!error.ok()) {
         return error;
       }
@@ -5090,13 +5125,6 @@ bool SdpOfferAnswerHandler::UpdatePayloadTypeDemuxingState(
   bool bundled_pt_demux_allowed_video = !IsUnifiedPlan() ||
                                         mid_header_extension_missing_video ||
                                         pt_demuxing_has_been_used_video_;
-  // Kill switch for the above change.
-  if (field_trial::IsEnabled(kAlwaysAllowPayloadTypeDemuxingFieldTrialName)) {
-    // TODO(https://crbug.com/webrtc/12814): If disabling PT-based demux does
-    // not trigger regressions, remove this kill switch.
-    bundled_pt_demux_allowed_audio = true;
-    bundled_pt_demux_allowed_video = true;
-  }
 
   // Gather all updates ahead of time so that all channels can be updated in a
   // single Invoke; necessary due to thread guards.

@@ -364,7 +364,7 @@ class CXFA_Node : public CXFA_Object, public GCedTreeNodeMixin<CXFA_Node> {
   CXFA_Node* GetExclGroupNextMember(CXFA_Node* pNode);
 
   bool IsChoiceListAllowTextEntry();
-  int32_t CountChoiceListItems(bool bSaveValue);
+  size_t CountChoiceListItems(bool bSaveValue);
   absl::optional<WideString> GetChoiceListItem(int32_t nIndex, bool bSaveValue);
   bool IsChoiceListMultiSelect();
   bool IsChoiceListCommitOnSelect();
@@ -388,8 +388,7 @@ class CXFA_Node : public CXFA_Object, public GCedTreeNodeMixin<CXFA_Node> {
   void SetItemState(int32_t nIndex,
                     bool bSelected,
                     bool bNotify,
-                    bool bScriptModify,
-                    bool bSyncData);
+                    bool bScriptModify);
 
   WideString GetItemValue(WideStringView wsLabel);
 

@@ -9,7 +9,6 @@
  *****************************************************************************************/
 #ifndef SKSL_Lexer
 #define SKSL_Lexer
-#include <cstddef>
 #include <cstdint>
 #include <string_view>
 namespace SkSL {
@@ -108,13 +107,12 @@ struct Token {
     };
 
     Token() {}
-    Token(Kind kind, int32_t offset, int32_t length, int32_t line)
-            : fKind(kind), fOffset(offset), fLength(length), fLine(line) {}
+    Token(Kind kind, int32_t offset, int32_t length)
+            : fKind(kind), fOffset(offset), fLength(length) {}
 
     Kind fKind = Kind::TK_NONE;
     int32_t fOffset = -1;
     int32_t fLength = -1;
-    int32_t fLine = -1;
 };
 
 class Lexer {
@@ -122,27 +120,21 @@ public:
     void start(std::string_view text) {
         fText = text;
         fOffset = 0;
-        fLine = 1;
     }
 
     Token next();
 
     struct Checkpoint {
         int32_t fOffset;
-        int32_t fLine;
     };
 
-    Checkpoint getCheckpoint() const { return {fOffset, fLine}; }
+    Checkpoint getCheckpoint() const { return {fOffset}; }
 
-    void rewindToCheckpoint(Checkpoint checkpoint) {
-        fOffset = checkpoint.fOffset;
-        fLine = checkpoint.fLine;
-    }
+    void rewindToCheckpoint(Checkpoint checkpoint) { fOffset = checkpoint.fOffset; }
 
 private:
     std::string_view fText;
     int32_t fOffset;
-    int32_t fLine;
 };
 
 }  // namespace SkSL

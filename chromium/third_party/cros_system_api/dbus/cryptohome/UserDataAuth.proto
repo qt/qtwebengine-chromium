@@ -87,6 +87,11 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_INVALID_AUTH_SESSION_TOKEN = 49;
   CRYPTOHOME_ADD_CREDENTIALS_FAILED = 50;
   CRYPTOHOME_ERROR_UNAUTHENTICATED_AUTH_SESSION = 51;
+  CRYPTOHOME_ERROR_UNKNOWN_LEGACY = 52;
+  // Note: After adding new fields to this enum, the new enum should be added
+  // to ash/components/login/auth/auth_session_authenticator.cc's
+  // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
+  // can handle them properly.
 }
 
 // This is used by MountRequest to store details about the mount to create
@@ -107,6 +112,135 @@ message CreateRequest {
 
   // If set to true, always use eCryptfs as the encryption method.
   bool force_ecryptfs = 3;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Error handling related
+///////////////////////////////////////////////////////////////////////////////
+
+// PrimaryAction is used to indicate that cryptohomed believes that a certain
+// condition is true and thus the corresponding action should be carried out or
+// it can resolve the issues.
+enum PrimaryAction {
+  // PRIMARY_NO_ERROR indicates that there's no error.
+  PRIMARY_NO_ERROR = 0;
+
+  // PRIMARY_NONE indicates that cryptohomed is not sure. Caller should check
+  // PossibleAction.
+  PRIMARY_NONE = 1;
+
+  // PRIMARY_CREATE_REQUIRED indicates that the user doesn't exist and the
+  // caller should add CreateRequest to the Mount() call.
+  PRIMARY_CREATE_REQUIRED = 2;
+
+  // PRIMARY_NOTIFY_OLD_ENCRYPTION_POLICY indicates that the vault is using
+  // legacy crypto and the policy doesn't allow it. The caller should notify
+  // users regarding the policy.
+  PRIMARY_NOTIFY_OLD_ENCRYPTION_POLICY = 3;
+
+  // PRIMARY_RESUME_PREVIOUS_MIGRATION indicates that eCryptfs is being
+  // migrated to dircrypto but it's not completed yet. Caller should finish
+  // the migration before trying again.
+  PRIMARY_RESUME_PREVIOUS_MIGRATION = 4;
+
+  // PRIMARY_TPM_UDPATE_REQUIRED indicates that the TPM firmware should be
+  // updated before proceeding.
+  PRIMARY_TPM_UDPATE_REQUIRED = 5;
+
+  // PRIMARY_TPM_NEEDS_REBOOT indicates that the TPM encountered a critical
+  // error that can only be resolved by rebooting.
+  PRIMARY_TPM_NEEDS_REBOOT = 6;
+
+  // PRIMARY_TPM_LOCKOUT indicates that the TPM is in dictionary attack lockout
+  // state. The caller should advise the user to wait it out.
+  PRIMARY_TPM_LOCKOUT = 7;
+
+  // PRIMARY_INCORRECT_AUTH indicates that the supplied auth material
+  // (password) is incorrect. The caller should notify the user as such.
+  // Note that it is a special case, see CryptohomeErrorInfo's
+  // probable_action field for more info.
+  PRIMARY_INCORRECT_AUTH = 8;
+}
+
+// PossibleAction is used to indicate that cryptohomed believies some actions
+// are more likely to resolve the error than other actions.
+enum PossibleAction {
+  // POSSIBLY_NONE is not used, it's defined to take the 0 position.
+  POSSIBLY_NONE = 0;
+
+  // POSSIBLY_RETRY suggests the caller to retry immediately.
+  POSSIBLY_RETRY = 1;
+
+  // POSSIBLY_REBOOT suggests the caller to reboot then retry.
+  POSSIBLY_REBOOT = 2;
+
+  // POSSIBLY_AUTH suggests the caller to try another authentication method.
+  POSSIBLY_AUTH = 3;
+
+  // POSSIBLY_INCORRECT_AUTH suggests that incorrect auth material (password)
+  // have been supplied. The caller should notify the user as such.
+  POSSIBLY_INCORRECT_AUTH = 4;
+
+  // POSSIBLY_DELETE_VAULT suggests the caller to delete the user's vault
+  // because it's unrecoverable.
+  POSSIBLY_DELETE_VAULT = 5;
+
+  // POSSIBLY_POWERWASH suggests the caller to powerwash because certain TPM
+  // state is corrupted and can only be obtained at OOBE.
+  POSSIBLY_POWERWASH = 6;
+
+  // POSSIBLY_DEV_CHECK_UNEXPECTED_STATE suggests that it's the developer's
+  // problem. Software developers should investigate if this error ever occurs.
+  POSSIBLY_DEV_CHECK_UNEXPECTED_STATE = 7;
+
+  // POSSIBLY_FATAL suggests that there's no way to resolve the issue.
+  // It should not have happened and the caller should not retry.
+  POSSIBLY_FATAL = 8;
+}
+
+// CryptohomeErrorInfo contains the information regarding an error or a
+// condition that occurred.
+message CryptohomeErrorInfo {
+  // error_id is a unique identifier that identifies the location that the
+  // error occurred within cryptohome. More effectively, it's a "smart
+  // stacktrace" that remains the same from version to version for the same
+  // error.
+  // There's no guarantee on the exact formatting to users external to
+  // cryptohome, except that it should be short enough to be displayed on
+  // one line and contains fine-grained and detailed information on the error.
+  // For cryptohome developers, see cryptohome/docs/error_reporting.md.
+  // Example: "42-15-3"
+  string error_id = 1;
+
+  // readable_error_id is the human readable version of the error_id. It
+  // encompasses all information that is in error_id and is more human
+  // readable. However, it may or may not remain the same from version to
+  // version.
+  // There's no guarantee on the exact formatting of this field to users
+  // external to cryptohome, except that it should be at most a few lines in
+  // length and should be reasonable to write to the logs.
+  // For cryptohome developers, see cryptohome/docs/error_reporting.md.
+  string readable_error_id = 2;
+
+  // primary_action is when cryptohome is quite certain that something can
+  // be done to resolve the error/condition. Usually primary_action is used
+  // to indicate to the Chromium side that an action should be done.
+  PrimaryAction primary_action = 3;
+
+  // probable_action is when cryptohome is not quite sure how the error
+  // occurred, but believes that some of the actions (as listed in this field)
+  // are more likely to resolve the error than other actions.
+  // The entries in this repeated field are not ordered.
+  // This field can be ignored if primary_action is not PRIMARY_NONE or
+  // PRIMARY_INCORRECT_AUTH.
+  // Note that primary_action = PRIMARY_INCORRECT_AUTH is a special case,
+  // because the Chromium side will handle it different depending the number
+  // of times it happened. Therefore, for the case when primary_action =
+  // PRIMARY_INCORRECT_AUTH, the probable_action field will be populated with
+  // any PossibleAction entry that might be relevant (if any).
+  // In the future we intend to weed out any false positives in reporting
+  // PRIMARY_INCORRECT_AUTH, and thus probable_action will eventually be empty.
+  repeated PossibleAction possible_actions = 4;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -180,6 +314,7 @@ message MountRequest {
 // Output parameters for Mount()
 message MountReply {
   // Indicate an error when |error| is not empty.
+  // This will be replaced by |error_info| soon.
   CryptohomeErrorCode error = 1;
   // |recreated| is set when the cryptohome had to be wiped
   // because the key or data was an unrecoverable.  It does not imply
@@ -188,6 +323,10 @@ message MountReply {
   bool recreated = 2;
   // Returns the filesystem-sanitized username.
   string sanitized_username = 3;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above.
+  CryptohomeErrorInfo error_info = 10;
 }
 
 // Input parameters to Remove()
@@ -254,6 +393,8 @@ message CheckKeyRequest {
   cryptohome.AccountIdentifier account_id = 1;
   // The authentication credentials to check against the keys
   cryptohome.AuthorizationRequest authorization_request = 2;
+  // Whether the webauthn secret should be unlocked.
+  bool unlock_webauthn_secret = 3;
 }
 
 // Output parameters for CheckKey()

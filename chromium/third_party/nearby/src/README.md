@@ -1,11 +1,11 @@
 # Nearby C++ Library
 
-The repository contains the Nearby project C++ library code. This is not an
+The repository contains the Nearby project C++ library source code. This is not an
 officially supported Google product.
 
 # About the Nearby Project
 
-## Near Connection
+## Nearby Connection
 Nearby Connections is a high level protocol on top of Bluetooth/WiFi that acts
 as a medium-agnostic socket. Devices are able to advertise, scan, and connect
 with one another over any shared medium (eg. BT <-> BT).
@@ -26,13 +26,44 @@ git submodule update --init --recursive
 ```
 
 # Building Nearby, Unit Testing and Sample Apps
-We support multiple platforms including Linux, iOS & Windows. The ultimate goal
-is to build from source (coming soon!). The offical build system we support is
-[bazel] (https://bazel.build). Before that is accomplished, we provide
-precompiled libraries as stop-gap solutions. See the following pages for
-platform specific instructions.
+We support multiple platforms including Linux, iOS & Windows.
+## Building for Linux
+Currently we support building from source using [bazel] (https://bazel.build). Other BUILD system such as cmake may be added later.
 
-* [iOS](https://github.com/google/nearby/blob/master/docs/ios_build.md)
+###Prerequisites:
+
+1. Bazel
+2. clang with support for c++ 17+
+3. Openssl libcrypto.so (-lssl;-lcrypto).
 
 
-**Last Updated:** Feb 2022
+To build the Nearby Connection Core library:
+
+```shell
+CC=clang CXX=clang++ bazel build -s --check_visibility=false //connections:core  --spawn_strategy=standalone --verbose_failures
+```
+
+
+## Building for macOS and iOS
+
+Currently we support building with [Swift Package Manager](https://www.swift.org/package-manager).
+
+###Prerequisites:
+
+1. Xcode. Available from Apple Store.
+2. Google Protobuf Compiler (protoc). If you have [homebrew](https://brew.sh/) installed, you can do `brew install protobuf`.
+
+To build the Nearby Connection library:
+
+```shell
+swift build
+```
+
+We also provide a iOS [sample app using the Nearby Connections library]
+(https://github.com/google/nearby/blob/master/internal/platform/implementation/ios/Example/NearbyConnectionsExample/README.md).
+
+
+###Limitation
+The only Medium supported is Wifi LAN.
+
+**Last Updated:** April 7, 2022

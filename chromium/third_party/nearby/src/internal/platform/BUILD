@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//tools/build_defs/cc:cc_fake_binary.bzl", "cc_fake_binary")
+
 
 licenses(["notice"])
 
@@ -35,12 +35,14 @@ cc_library(
         "input_stream.h",
         "listeners.h",
         "nsd_service_info.h",
+        "os_name.h",
         "output_stream.h",
         "payload_id.h",
         "prng.h",
         "runnable.h",
         "socket.h",
         "types.h",
+        "wifi_hotspot_credential.h",
     ],
     copts = ["-DCORE_ADAPTER_DLL"],
     defines = ["NO_WEBRTC"],
@@ -50,9 +52,12 @@ cc_library(
         "//internal/platform:__subpackages__",
         "//internal/platform/implementation:__subpackages__",
         "//internal/proto/analytics:__subpackages__",
+        "//location/nearby/cpp/sharing:__subpackages__",
         "//third_party/nearby/cpp/cal:__subpackages__",
+        "//third_party/nearby/presence:__subpackages__",
     ],
     deps = [
+        "//proto:connections_enums_cc_proto",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/meta:type_traits",
         "@com_google_absl//absl/strings",
@@ -194,6 +199,7 @@ cc_test(
         ":test_util",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
+        "@com_google_absl//absl/hash:hash_testing",
         "@com_google_googletest//:gtest_main",
     ],
 )
@@ -285,6 +291,7 @@ cc_library(
         "//internal/platform:__pkg__",
         "//internal/platform/implementation/ios:__subpackages__",
         "//internal/platform/implementation/windows:__subpackages__",
+        "//location/nearby/cpp/sharing:__subpackages__",
     ],
     deps = [
         ":base",
@@ -294,6 +301,7 @@ cc_library(
         "//internal/platform/implementation:types",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/time",
+        "@com_google_glog//:glog",
     ],
 )
 
@@ -301,14 +309,18 @@ cc_library(
     name = "comm",
     srcs = [
         "ble.cc",
+        "ble_v2.cc",
         "bluetooth_classic.cc",
         "file.cc",
+        "wifi_hotspot.cc",
         "wifi_lan.cc",
     ],
     hdrs = [
         "ble.h",
+        "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "wifi_hotspot.h",
         "wifi_lan.h",
     ],
     copts = ["-DCORE_ADAPTER_DLL"],
@@ -339,6 +351,7 @@ cc_test(
         "atomic_boolean_test.cc",
         "atomic_reference_test.cc",
         "ble_test.cc",
+        "ble_v2_test.cc",
         "bluetooth_adapter_test.cc",
         "bluetooth_classic_test.cc",
         "cancelable_alarm_test.cc",
@@ -352,6 +365,7 @@ cc_test(
         "pipe_test.cc",
         "scheduled_executor_test.cc",
         "single_thread_executor_test.cc",
+        "wifi_hotspot_test.cc",
         "wifi_lan_test.cc",
     ],
     copts = ["-DCORE_ADAPTER_DLL"],
@@ -369,28 +383,5 @@ cc_test(
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",
-    ],
-)
-
-cc_fake_binary(
-    name = "thread_check_nocompile",
-    srcs = ["thread_check_nocompile.cc"],
-    deps = [
-        ":types",
-        "@com_google_absl//absl/time",
-    ],
-)
-
-py_test(
-    name = "thread_check_nocompile_test",
-    size = "large",
-    srcs = ["thread_check_nocompile_test.py"],
-    data = ["thread_check_nocompile"],
-    python_version = "PY3",
-    srcs_version = "PY3",
-    tags = ["non_compile_test"],
-    deps = [
-        "//testing/pybase",
-        "//testing/pybase:fake_target_util",
     ],
 )

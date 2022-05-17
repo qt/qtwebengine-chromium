@@ -12,12 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DAWN_NODE_BINDING_GPUDEVICE_H_
-#define DAWN_NODE_BINDING_GPUDEVICE_H_
+#ifndef SRC_DAWN_NODE_BINDING_GPUDEVICE_H_
+#define SRC_DAWN_NODE_BINDING_GPUDEVICE_H_
 
 #include "dawn/webgpu_cpp.h"
-#include "napi.h"
+
 #include "src/dawn/node/binding/AsyncRunner.h"
+#include "src/dawn/node/interop/Napi.h"
 #include "src/dawn/node/interop/WebGPU.h"
 
 namespace wgpu::binding {
@@ -81,8 +82,8 @@ namespace wgpu::binding {
             Napi::Env env) override;
         void pushErrorScope(Napi::Env, interop::GPUErrorFilter filter) override;
         interop::Promise<std::optional<interop::GPUError>> popErrorScope(Napi::Env env) override;
-        std::optional<std::string> getLabel(Napi::Env) override;
-        void setLabel(Napi::Env, std::optional<std::string> value) override;
+        std::variant<std::string, interop::UndefinedType> getLabel(Napi::Env) override;
+        void setLabel(Napi::Env, std::variant<std::string, interop::UndefinedType> value) override;
         interop::Interface<interop::EventHandler> getOnuncapturederror(Napi::Env) override;
         void setOnuncapturederror(Napi::Env,
                                   interop::Interface<interop::EventHandler> value) override;
@@ -104,10 +105,12 @@ namespace wgpu::binding {
         Napi::Env env_;
         wgpu::Device device_;
         std::shared_ptr<AsyncRunner> async_;
-        std::vector<interop::Promise<interop::Interface<interop::GPUDeviceLostInfo>>>
-            lost_promises_;
+
+        // This promise's JS object lives as long as the device because it is stored in .lost
+        // of the wrapper JS object.
+        interop::Promise<interop::Interface<interop::GPUDeviceLostInfo>> lost_promise_;
     };
 
 }  // namespace wgpu::binding
 
-#endif  // DAWN_NODE_BINDING_GPUDEVICE_H_
+#endif  // SRC_DAWN_NODE_BINDING_GPUDEVICE_H_

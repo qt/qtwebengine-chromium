@@ -25,6 +25,7 @@
 #include "src/objects/js-array-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/js-regexp-inl.h"
+#include "src/objects/js-struct-inl.h"
 #include "src/objects/map-updater.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/objects.h"
@@ -590,6 +591,8 @@ Maybe<bool> ValueSerializer::WriteJSReceiver(Handle<JSReceiver> receiver) {
       return WriteJSArrayBufferView(JSArrayBufferView::cast(*receiver));
     case JS_ERROR_TYPE:
       return WriteJSError(Handle<JSObject>::cast(receiver));
+    case JS_SHARED_STRUCT_TYPE:
+      return WriteJSSharedStruct(Handle<JSSharedStruct>::cast(receiver));
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_MODULE_OBJECT_TYPE:
       return WriteWasmModule(Handle<WasmModuleObject>::cast(receiver));
@@ -904,10 +907,6 @@ Maybe<bool> ValueSerializer::WriteJSArrayBuffer(
     WriteVarint(index.FromJust());
     return ThrowIfOutOfMemory();
   }
-  if (!array_buffer->is_detachable()) {
-    return ThrowDataCloneError(
-        MessageTemplate::kDataCloneErrorNonDetachableArrayBuffer);
-  }
 
   uint32_t* transfer_entry = array_buffer_transfer_map_.Find(array_buffer);
   if (transfer_entry) {
@@ -1025,6 +1024,12 @@ Maybe<bool> ValueSerializer::WriteJSError(Handle<JSObject> error) {
   return ThrowIfOutOfMemory();
 }
 
+Maybe<bool> ValueSerializer::WriteJSSharedStruct(
+    Handle<JSSharedStruct> shared_struct) {
+  // TODO(v8:12547): Support copying serialization for shared structs as well.
+  return WriteSharedObject(shared_struct);
+}
+
 #if V8_ENABLE_WEBASSEMBLY
 Maybe<bool> ValueSerializer::WriteWasmModule(Handle<WasmModuleObject> object) {
   if (delegate_ == nullptr) {
@@ -1061,8 +1066,7 @@ Maybe<bool> ValueSerializer::WriteWasmMemory(Handle<WasmMemoryObject> object) {
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 Maybe<bool> ValueSerializer::WriteSharedObject(Handle<HeapObject> object) {
-  // Currently only strings are shareable.
-  DCHECK(String::cast(*object).IsShared());
+  DCHECK(object->IsShared());
   DCHECK(supports_shared_values_);
   DCHECK_NOT_NULL(delegate_);
   DCHECK(delegate_->SupportsSharedValues());
@@ -1367,6 +1371,32 @@ void ValueDeserializer::TransferArrayBuffer(
   }
 }
 
+MaybeHandle<Object> ValueDeserializer::ReadObjectWrapper() {
+  // We had a bug which produced invalid version 13 data (see
+  // crbug.com/1284506). This compatibility mode tries to first read the data
+  // normally, and if it fails, and the version is 13, tries to read the broken
+  // format.
+  const uint8_t* original_position = position_;
+  suppress_deserialization_errors_ = true;
+  MaybeHandle<Object> result = ReadObject();
+
+  // The deserialization code doesn't throw errors for invalid data. It throws
+  // errors for stack overflows, though, and in that case we won't retry.
+  if (result.is_null() && version_ == 13 &&
+      !isolate_->has_pending_exception()) {
+    version_13_broken_data_mode_ = true;
+    position_ = original_position;
+    result = ReadObject();
+  }
+
+  if (result.is_null() && !isolate_->has_pending_exception()) {
+    isolate_->Throw(*isolate_->factory()->NewError(
+        MessageTemplate::kDataCloneDeserializationError));
+  }
+
+  return result;
+}
+
 MaybeHandle<Object> ValueDeserializer::ReadObject() {
   DisallowJavascriptExecution no_js(isolate_);
   // If we are at the end of the stack, abort. This function may recurse.
@@ -1384,7 +1414,8 @@ MaybeHandle<Object> ValueDeserializer::ReadObject() {
     result = ReadJSArrayBufferView(Handle<JSArrayBuffer>::cast(object));
   }
 
-  if (result.is_null() && !isolate_->has_pending_exception()) {
+  if (result.is_null() && !suppress_deserialization_errors_ &&
+      !isolate_->has_pending_exception()) {
     isolate_->Throw(*isolate_->factory()->NewError(
         MessageTemplate::kDataCloneDeserializationError));
   }
@@ -1960,7 +1991,8 @@ MaybeHandle<JSArrayBufferView> ValueDeserializer::ReadJSArrayBufferView(
       byte_length > buffer_byte_length - byte_offset) {
     return MaybeHandle<JSArrayBufferView>();
   }
-  if (version_ >= 14 && !ReadVarint<uint32_t>().To(&flags)) {
+  const bool should_read_flags = version_ >= 14 || version_13_broken_data_mode_;
+  if (should_read_flags && !ReadVarint<uint32_t>().To(&flags)) {
     return MaybeHandle<JSArrayBufferView>();
   }
   uint32_t id = next_id_++;
@@ -1995,6 +2027,8 @@ MaybeHandle<JSArrayBufferView> ValueDeserializer::ReadJSArrayBufferView(
 }
 
 MaybeHandle<Object> ValueDeserializer::ReadJSError() {
+  uint32_t id = next_id_++;
+
   Handle<Object> message = isolate_->factory()->undefined_value();
   Handle<Object> options = isolate_->factory()->undefined_value();
   Handle<Object> stack = isolate_->factory()->undefined_value();
@@ -2073,6 +2107,7 @@ MaybeHandle<Object> ValueDeserializer::ReadJSError() {
   }
 
   ErrorUtils::SetFormattedStack(isolate_, error, stack);
+  AddObjectWithID(id, error);
   return error;
 }
 
@@ -2144,8 +2179,7 @@ MaybeHandle<HeapObject> ValueDeserializer::ReadSharedObject() {
   }
   Handle<HeapObject> shared_object =
       Handle<HeapObject>::cast(Utils::OpenHandle(*shared_value));
-  // Currently only strings are shareable.
-  DCHECK(String::cast(*shared_object).IsShared());
+  DCHECK(shared_object->IsShared());
   return shared_object;
 }
 

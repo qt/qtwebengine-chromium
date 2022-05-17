@@ -8,21 +8,56 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <memory>
+#include <stddef.h>
 
+#include <algorithm>
+#include <map>
+#include <memory>
+#include <string>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include "absl/strings/string_view.h"
+#include "absl/types/optional.h"
+#include "api/call/call_factory_interface.h"
+#include "api/field_trials_view.h"
+#include "api/jsep.h"
+#include "api/media_stream_interface.h"
+#include "api/media_types.h"
+#include "api/peer_connection_interface.h"
+#include "api/rtc_error.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_receiver_interface.h"
+#include "api/rtp_sender_interface.h"
+#include "api/rtp_transceiver_direction.h"
+#include "api/rtp_transceiver_interface.h"
+#include "api/scoped_refptr.h"
 #include "api/task_queue/default_task_queue_factory.h"
+#include "api/task_queue/task_queue_factory.h"
 #include "api/transport/field_trial_based_config.h"
+#include "api/transport/sctp_transport_factory_interface.h"
+#include "media/base/media_engine.h"
+#include "media/base/stream_params.h"
 #include "media/engine/webrtc_media_engine.h"
 #include "media/engine/webrtc_media_engine_defaults.h"
+#include "modules/audio_device/include/audio_device.h"
+#include "p2p/base/p2p_constants.h"
+#include "p2p/base/port_allocator.h"
+#include "p2p/base/transport_info.h"
+#include "pc/channel_interface.h"
 #include "pc/media_session.h"
-#include "pc/peer_connection_factory.h"
 #include "pc/peer_connection_wrapper.h"
 #include "pc/sdp_utils.h"
+#include "pc/session_description.h"
+#include "pc/test/mock_peer_connection_observers.h"
+#include "rtc_base/rtc_certificate_generator.h"
+#include "rtc_base/thread.h"
+#include "test/gtest.h"
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
 #endif
 #include "pc/test/fake_audio_capture_module.h"
-#include "rtc_base/gunit.h"
 #include "rtc_base/virtual_socket_server.h"
 #include "test/gmock.h"
 #include "test/pc/sctp/fake_sctp_transport.h"
@@ -82,15 +117,15 @@ class PeerConnectionJsepTest : public ::testing::Test {
         CreateModularPeerConnectionFactory(
             CreatePeerConnectionFactoryDependencies());
     auto observer = std::make_unique<MockPeerConnectionObserver>();
-    auto pc = pc_factory->CreatePeerConnection(config, nullptr, nullptr,
-                                               observer.get());
-    if (!pc) {
+    auto result = pc_factory->CreatePeerConnectionOrError(
+        config, PeerConnectionDependencies(observer.get()));
+    if (!result.ok()) {
       return nullptr;
     }
 
-    observer->SetPeerConnectionInterface(pc.get());
-    return std::make_unique<PeerConnectionWrapper>(pc_factory, pc,
-                                                   std::move(observer));
+    observer->SetPeerConnectionInterface(result.value());
+    return std::make_unique<PeerConnectionWrapper>(
+        pc_factory, result.MoveValue(), std::move(observer));
   }
 
   std::unique_ptr<rtc::VirtualSocketServer> vss_;
@@ -1605,7 +1640,7 @@ TEST_F(PeerConnectionJsepTest, AnswerBeforeOfferFails) {
 // two video tracks.
 TEST_F(PeerConnectionJsepTest, TwoVideoPlanBToUnifiedPlanFails) {
   RTCConfiguration config_planb;
-  config_planb.sdp_semantics = SdpSemantics::kPlanB;
+  config_planb.sdp_semantics = SdpSemantics::kPlanB_DEPRECATED;
   auto caller = CreatePeerConnection(config_planb);
   auto callee = CreatePeerConnection();
   caller->AddVideoTrack("video1");
@@ -1621,7 +1656,7 @@ TEST_F(PeerConnectionJsepTest, TwoVideoPlanBToUnifiedPlanFails) {
 TEST_F(PeerConnectionJsepTest, OneVideoUnifiedPlanToTwoVideoPlanBFails) {
   auto caller = CreatePeerConnection();
   RTCConfiguration config_planb;
-  config_planb.sdp_semantics = SdpSemantics::kPlanB;
+  config_planb.sdp_semantics = SdpSemantics::kPlanB_DEPRECATED;
   auto callee = CreatePeerConnection(config_planb);
   caller->AddVideoTrack("video");
   callee->AddVideoTrack("video1");
@@ -1774,7 +1809,7 @@ TEST_F(PeerConnectionJsepTest, RollbackSupportedInUnifiedPlan) {
 
 TEST_F(PeerConnectionJsepTest, RollbackNotSupportedInPlanB) {
   RTCConfiguration config;
-  config.sdp_semantics = SdpSemantics::kPlanB;
+  config.sdp_semantics = SdpSemantics::kPlanB_DEPRECATED;
   config.enable_implicit_rollback = true;
   auto caller = CreatePeerConnection(config);
   auto callee = CreatePeerConnection(config);
@@ -1892,10 +1927,17 @@ TEST_F(PeerConnectionJsepTest, RollbackRemovesTransceiver) {
   caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
   auto callee = CreatePeerConnection();
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
-  EXPECT_EQ(callee->pc()->GetTransceivers().size(), 1u);
+  ASSERT_EQ(callee->pc()->GetTransceivers().size(), 1u);
+  auto transceiver = callee->pc()->GetTransceivers()[0];
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateRollback()));
   EXPECT_EQ(callee->pc()->GetTransceivers().size(), 0u);
   EXPECT_EQ(callee->observer()->remove_track_events_.size(), 1u);
+  // The removed transceiver should be stopped and its receiver track should be
+  // ended.
+  EXPECT_TRUE(transceiver->stopping());
+  EXPECT_TRUE(transceiver->stopping());
+  EXPECT_EQ(transceiver->receiver()->track()->state(),
+            MediaStreamTrackInterface::kEnded);
 }
 
 TEST_F(PeerConnectionJsepTest, RollbackKeepsTransceiverAndClearsMid) {
@@ -1914,6 +1956,13 @@ TEST_F(PeerConnectionJsepTest, RollbackKeepsTransceiverAndClearsMid) {
   EXPECT_TRUE(callee->SetRemoteDescription(caller->CreateOffer()));
   EXPECT_EQ(callee->pc()->GetTransceivers().size(), 1u);
   EXPECT_EQ(callee->observer()->remove_track_events_.size(), 1u);
+  // Because the transceiver is reusable, it must not be stopped and its
+  // receiver track must still be live.
+  auto transceiver = callee->pc()->GetTransceivers()[0];
+  EXPECT_FALSE(transceiver->stopping());
+  EXPECT_FALSE(transceiver->stopping());
+  EXPECT_EQ(transceiver->receiver()->track()->state(),
+            MediaStreamTrackInterface::kLive);
 }
 
 TEST_F(PeerConnectionJsepTest,

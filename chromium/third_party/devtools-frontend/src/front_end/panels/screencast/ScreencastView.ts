@@ -32,6 +32,7 @@ import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
+import type * as Platform from '../../core/platform/platform.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
@@ -717,7 +718,7 @@ export class ScreencastView extends UI.Widget.VBox implements SDK.OverlayModel.H
     // encodeURI ensures an encoded URL is always passed to the backend
     // This allows the input field to support both encoded and decoded URLs
     if (this.resourceTreeModel) {
-      void this.resourceTreeModel.navigate(encodeURI(decodeURI(url)));
+      void this.resourceTreeModel.navigate(encodeURI(decodeURI(url)) as Platform.DevToolsPath.UrlString);
     }
     this.canvasElement.focus();
   }
@@ -743,7 +744,9 @@ export class ScreencastView extends UI.Widget.VBox implements SDK.OverlayModel.H
     if (match) {
       url = match[1];
     }
-    Host.InspectorFrontendHost.InspectorFrontendHostInstance.inspectedURLChanged(url);
+    // TODO(crbug.com/1253323): Cast to UrlString will be removed when migration to branded types is complete.
+    Host.InspectorFrontendHost.InspectorFrontendHostInstance.inspectedURLChanged(
+        url as Platform.DevToolsPath.UrlString);
     this.navigationUrl.value = decodeURI(url);
   }
 

@@ -98,6 +98,7 @@
   pointer-events: none;
   margin-left: 0;
   position: relative;
+  cursor: default;
 }
 
 .tabbed-pane-header-contents > * {
@@ -334,6 +335,7 @@
   align-items: center;
   justify-content: center;
   margin-left: 3px;
+  flex-shrink: 0;
 }
 
 .-theme-with-dark-background .preview-icon,

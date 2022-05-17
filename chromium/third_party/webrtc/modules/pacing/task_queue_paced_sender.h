@@ -14,12 +14,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <functional>
 #include <memory>
-#include <queue>
 #include <vector>
 
+#include "absl/base/attributes.h"
 #include "absl/types/optional.h"
+#include "api/field_trials_view.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/task_queue_factory.h"
 #include "api/units/data_size.h"
@@ -28,30 +28,28 @@
 #include "modules/pacing/pacing_controller.h"
 #include "modules/pacing/rtp_packet_pacer.h"
 #include "modules/rtp_rtcp/source/rtp_packet_to_send.h"
+#include "rtc_base/experiments/field_trial_parser.h"
 #include "rtc_base/numerics/exp_filter.h"
-#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue.h"
 #include "rtc_base/thread_annotations.h"
 
 namespace webrtc {
 class Clock;
-class RtcEventLog;
 
 class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
  public:
+  static const int kNoPacketHoldback;
+
   // The `hold_back_window` parameter sets a lower bound on time to sleep if
   // there is currently a pacer queue and packets can't immediately be
   // processed. Increasing this reduces thread wakeups at the expense of higher
   // latency.
-  // TODO(bugs.webrtc.org/10809): Remove default values.
-  TaskQueuePacedSender(
-      Clock* clock,
-      PacingController::PacketSender* packet_sender,
-      RtcEventLog* event_log,
-      const WebRtcKeyValueConfig* field_trials,
-      TaskQueueFactory* task_queue_factory,
-      TimeDelta max_hold_back_window = PacingController::kMinSleepTime,
-      int max_hold_back_window_in_packets = -1);
+  TaskQueuePacedSender(Clock* clock,
+                       PacingController::PacketSender* packet_sender,
+                       const FieldTrialsView& field_trials,
+                       TaskQueueFactory* task_queue_factory,
+                       TimeDelta max_hold_back_window,
+                       int max_hold_back_window_in_packets);
 
   ~TaskQueuePacedSender() override;
 
@@ -75,8 +73,7 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
   // Resume sending packets.
   void Resume() override;
 
-  void SetCongestionWindow(DataSize congestion_window_size) override;
-  void UpdateOutstandingData(DataSize outstanding_data) override;
+  void SetCongested(bool congested) override;
 
   // Sets the pacing rates. Must be called once before packets can be sent.
   void SetPacingRates(DataRate pacing_rate, DataRate padding_rate) override;
@@ -133,6 +130,24 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
   Stats GetStats() const;
 
   Clock* const clock_;
+  struct SlackedPacerFlags {
+    // Parses `kSlackedTaskQueuePacedSenderFieldTrial`. Example:
+    // --force-fieldtrials=WebRTC-SlackedTaskQueuePacedSender/Enabled,max_queue_time:75ms/
+    explicit SlackedPacerFlags(const FieldTrialsView& field_trials);
+    // When "Enabled", delayed tasks invoking MaybeProcessPackets() are
+    // scheduled using low precision instead of high precision, resulting in
+    // less idle wake ups and packets being sent in bursts if the `task_queue_`
+    // implementation supports slack. When probing, high precision is used
+    // regardless to ensure good bandwidth estimation.
+    FieldTrialFlag allow_low_precision;
+    // Controlled via the "max_queue_time" experiment arm. If set, uses high
+    // precision scheduling of MaybeProcessPackets() whenever the expected queue
+    // time is greater than or equal to this value.
+    FieldTrialOptional<TimeDelta> max_low_precision_expected_queue_time;
+  };
+  const SlackedPacerFlags slacked_pacer_flags_;
+  // The holdback window prevents too frequent delayed MaybeProcessPackets()
+  // calls. These are only applicable if `allow_low_precision` is false.
   const TimeDelta max_hold_back_window_;
   const int max_hold_back_window_in_packets_;
 
@@ -156,6 +171,7 @@ class TaskQueuePacedSender : public RtpPacketPacer, public RtpPacketSender {
 
   // Filtered size of enqueued packets, in bytes.
   rtc::ExpFilter packet_size_ RTC_GUARDED_BY(task_queue_);
+  bool include_overhead_ RTC_GUARDED_BY(task_queue_);
 
   mutable Mutex stats_mutex_;
   Stats current_stats_ RTC_GUARDED_BY(stats_mutex_);

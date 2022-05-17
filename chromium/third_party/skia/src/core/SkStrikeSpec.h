@@ -16,7 +16,7 @@
 #include <tuple>
 
 #if SK_SUPPORT_GPU
-#include "src/gpu/text/GrSDFTControl.h"
+#include "src/gpu/ganesh/text/GrSDFTControl.h"
 class GrStrikeCache;
 class GrTextStrike;
 #endif
@@ -132,6 +132,20 @@ public:
     const SkGlyph* glyph(SkGlyphID glyphID);
     void findIntercepts(const SkScalar bounds[2], SkScalar scale, SkScalar xPos,
                         const SkGlyph* glyph, SkScalar* array, int* count);
+
+private:
+    inline static constexpr int kTypicalGlyphCount = 20;
+    SkAutoSTArray<kTypicalGlyphCount, const SkGlyph*> fGlyphs;
+    sk_sp<SkStrike> fStrike;
+};
+
+class SkBulkGlyphMetricsAndDrawables {
+public:
+    explicit SkBulkGlyphMetricsAndDrawables(const SkStrikeSpec& spec);
+    explicit SkBulkGlyphMetricsAndDrawables(sk_sp<SkStrike>&& strike);
+    ~SkBulkGlyphMetricsAndDrawables();
+    SkSpan<const SkGlyph*> glyphs(SkSpan<const SkGlyphID> glyphIDs);
+    const SkGlyph* glyph(SkGlyphID glyphID);
 
 private:
     inline static constexpr int kTypicalGlyphCount = 20;

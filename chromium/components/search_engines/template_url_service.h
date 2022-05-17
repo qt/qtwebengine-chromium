@@ -21,6 +21,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
 #include "base/time/default_clock.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "components/keyed_service/core/keyed_service.h"
 #include "components/prefs/pref_change_registrar.h"
@@ -302,6 +303,15 @@ class TemplateURLService : public WebDataServiceConsumer,
   // Returns true if the |url| is a search results page from the default search
   // provider.
   bool IsSearchResultsPageFromDefaultSearchProvider(const GURL& url) const;
+
+  // Returns true if the default search provider supports the side search
+  // feature.
+  bool IsSideSearchSupportedForDefaultSearchProvider() const;
+
+  // Generates a side search URL for the default search provider's search url.
+  GURL GenerateSideSearchURLForDefaultSearchProvider(
+      const GURL& search_url,
+      const std::string& version) const;
 
   // Returns true if the default search is managed through group policy.
   bool is_default_search_managed() const {

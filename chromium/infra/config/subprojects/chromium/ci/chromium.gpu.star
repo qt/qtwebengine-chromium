@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.gpu builder group."""
 
+load("//lib/args.star", "args")
 load("//lib/branches.star", "branches")
 load("//lib/builder_config.star", "builder_config")
 load("//lib/builders.star", "goma", "sheriff_rotations")
@@ -81,6 +82,7 @@ ci.gpu.linux_builder(
     goma_backend = None,
     reclient_jobs = rbe_jobs.DEFAULT,
     reclient_instance = rbe_instance.DEFAULT,
+    sheriff_rotations = args.ignore_default(None),
 )
 
 ci.gpu.mac_builder(
@@ -116,6 +118,7 @@ ci.gpu.mac_builder(
     console_view_entry = consoles.console_view_entry(
         category = "Mac",
     ),
+    sheriff_rotations = args.ignore_default(None),
     tree_closing = False,
 )
 
@@ -144,6 +147,9 @@ ci.gpu.windows_builder(
         category = "Windows",
     ),
     cq_mirrors_console_view = "mirrors",
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.LOW_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.gpu.windows_builder(
@@ -151,7 +157,11 @@ ci.gpu.windows_builder(
     console_view_entry = consoles.console_view_entry(
         category = "Windows",
     ),
+    sheriff_rotations = args.ignore_default(None),
     tree_closing = False,
+    goma_backend = None,
+    reclient_jobs = rbe_jobs.LOW_JOBS_FOR_CI,
+    reclient_instance = rbe_instance.DEFAULT,
 )
 
 ci.thin_tester(
@@ -159,6 +169,7 @@ ci.thin_tester(
     console_view_entry = consoles.console_view_entry(
         category = "Linux",
     ),
+    sheriff_rotations = args.ignore_default(None),
     triggered_by = ["GPU Linux Builder (dbg)"],
     tree_closing = False,
 )
@@ -196,6 +207,7 @@ ci.thin_tester(
     console_view_entry = consoles.console_view_entry(
         category = "Mac",
     ),
+    sheriff_rotations = args.ignore_default(None),
     triggered_by = ["GPU Mac Builder (dbg)"],
     tree_closing = False,
 )

@@ -23,6 +23,7 @@
 #include "src/shaders/SkShaderBase.h"
 
 class SkBitmap;
+class SkColorSpace;
 struct SkDrawShadowRec;
 class SkGlyphRun;
 class SkGlyphRunList;
@@ -33,7 +34,12 @@ class SkRasterHandleAllocator;
 class SkSpecialImage;
 
 namespace skif { class Mapping; }
-namespace skgpu { class BaseDevice; }
+namespace skgpu {
+class BaseDevice;
+}
+namespace skgpu::graphite {
+class Device;
+}
 
 class SkBaseDevice : public SkRefCnt, public SkMatrixProvider {
 public:
@@ -182,13 +188,15 @@ public:
     void setLocalToDevice(const SkM44& localToDevice) {
         fLocalToDevice = localToDevice;
         fLocalToDevice33 = fLocalToDevice.asM33();
+        fLocalToDeviceDirty = true;
     }
     void setGlobalCTM(const SkM44& ctm);
     virtual void validateDevBounds(const SkIRect&) {}
 
     virtual bool android_utils_clipWithStencil() { return false; }
 
-    virtual skgpu::BaseDevice* asGpuDevice() { return nullptr; }
+    virtual skgpu::BaseDevice* asGaneshDevice() { return nullptr; }
+    virtual skgpu::graphite::Device* asGraphiteDevice() { return nullptr; }
 
     // Ensure that non-RSXForm runs are passed to onDrawGlyphRunList.
     void drawGlyphRunList(SkCanvas*, const SkGlyphRunList& glyphRunList, const SkPaint& paint);
@@ -264,7 +272,14 @@ protected:
     virtual void drawImageLattice(const SkImage*, const SkCanvas::Lattice&,
                                   const SkRect& dst, SkFilterMode, const SkPaint&);
 
-    virtual void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&) = 0;
+    /**
+     * If skipColorXform is true, then the implementation should assume that the provided
+     * vertex colors are already in the destination color space.
+     */
+    virtual void drawVertices(const SkVertices*,
+                              sk_sp<SkBlender>,
+                              const SkPaint&,
+                              bool skipColorXform = false) = 0;
 #ifdef SK_ENABLE_SKSL
     virtual void drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender>, const SkPaint&) = 0;
 #endif
@@ -303,7 +318,7 @@ protected:
     virtual sk_sp<GrSlug> convertGlyphRunListToSlug(
             const SkGlyphRunList& glyphRunList,
             const SkPaint& paint);
-    virtual void drawSlug(SkCanvas*, GrSlug* slug);
+    virtual void drawSlug(SkCanvas*, const GrSlug* slug);
 #endif
 
     /**
@@ -407,6 +422,13 @@ protected:
     // inspect a layer's device to know if calling drawDevice() later is allowed.
     virtual bool isNoPixelsDevice() const { return false; }
 
+    // Returns whether or not localToDevice() has changed since the last call to this function.
+    bool checkLocalToDeviceDirty() {
+        bool wasDirty = fLocalToDeviceDirty;
+        fLocalToDeviceDirty = false;
+        return wasDirty;
+    }
+
 private:
     friend class SkAndroidFrameworkUtils;
     friend class SkCanvas;
@@ -462,23 +484,20 @@ private:
     // fLocalToDevice (inherited from SkMatrixProvider) is the device CTM, not the global CTM
     // It maps from local space to the device's coordinate space.
     // fDeviceToGlobal * fLocalToDevice will match the canvas' CTM.
+    //
+    // setGlobalCTM and setLocalToDevice are intentionally not virtual for performance reasons.
+    // However, track a dirty bit for subclasses that want to defer local-to-device dependent
+    // calculations until needed for a clip or draw.
+    bool fLocalToDeviceDirty = true;
 
     using INHERITED = SkRefCnt;
 };
 
 class SkNoPixelsDevice : public SkBaseDevice {
 public:
+    SkNoPixelsDevice(const SkIRect& bounds, const SkSurfaceProps& props);
     SkNoPixelsDevice(const SkIRect& bounds, const SkSurfaceProps& props,
-                     sk_sp<SkColorSpace> colorSpace = nullptr)
-            : SkBaseDevice(SkImageInfo::Make(bounds.size(), kUnknown_SkColorType,
-                                             kUnknown_SkAlphaType, std::move(colorSpace)),
-                           props) {
-        // this fails if we enable this assert: DiscardableImageMapTest.GetDiscardableImagesInRectMaxImage
-        //SkASSERT(bounds.width() >= 0 && bounds.height() >= 0);
-
-        this->setOrigin(SkM44(), bounds.left(), bounds.top());
-        this->resetClipStack();
-    }
+                     sk_sp<SkColorSpace> colorSpace);
 
     void resetForNextPicture(const SkIRect& bounds) {
         //SkASSERT(bounds.width() >= 0 && bounds.height() >= 0);
@@ -519,7 +538,7 @@ protected:
     void drawRRect(const SkRRect&, const SkPaint&) override {}
     void drawPath(const SkPath&, const SkPaint&, bool) override {}
     void drawDevice(SkBaseDevice*, const SkSamplingOptions&, const SkPaint&) override {}
-    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&) override {}
+    void drawVertices(const SkVertices*, sk_sp<SkBlender>, const SkPaint&, bool) override {}
 #ifdef SK_ENABLE_SKSL
     void drawCustomMesh(SkCustomMesh, sk_sp<SkBlender>, const SkPaint&) override {}
 #endif

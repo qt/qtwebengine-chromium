@@ -35,6 +35,9 @@ try_.builder(
 try_.builder(
     name = "chromeos-amd64-generic-dbg",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/chromeos-amd64-generic-dbg",
+    ],
     main_list_view = "try",
     tryjob = try_.job(
         location_regexp = [
@@ -74,6 +77,12 @@ try_.builder(
 )
 
 try_.builder(
+    name = "chromeos-arm64-generic-rel",
+    branch_selector = branches.CROS_LTS_MILESTONE,
+    mirrors = ["ci/chromeos-arm64-generic-rel"],
+)
+
+try_.builder(
     name = "lacros-amd64-generic-rel",
     branch_selector = branches.STANDARD_MILESTONE,
     builderless = not settings.is_main,
@@ -82,7 +91,15 @@ try_.builder(
 )
 
 try_.builder(
+    name = "chromeos-amd64-generic-lacros-dbg",
+    branch_selector = branches.STANDARD_MILESTONE,
+)
+
+try_.builder(
     name = "lacros-arm-generic-rel",
+    mirrors = [
+        "ci/lacros-arm-generic-rel",
+    ],
     branch_selector = branches.STANDARD_MILESTONE,
     builderless = not settings.is_main,
     main_list_view = "try",
@@ -165,6 +182,10 @@ try_.builder(
 
 try_.builder(
     name = "linux-lacros-rel",
+    mirrors = [
+        "ci/linux-lacros-builder-rel",
+        "ci/linux-lacros-tester-rel",
+    ],
     branch_selector = branches.STANDARD_MILESTONE,
     builderless = not settings.is_main,
     cores = 16,
@@ -176,6 +197,10 @@ try_.builder(
 
 try_.builder(
     name = "linux-lacros-rel-code-coverage",
+    mirrors = [
+        "ci/linux-lacros-builder-rel",
+        "ci/linux-lacros-tester-rel",
+    ],
     cores = 16,
     ssd = True,
     goma_jobs = goma.jobs.J300,
@@ -216,8 +241,8 @@ try_.builder(
         location_regexp = [
             ".+/[+]/chromeos/components/chromebox_for_meetings/.+",
             ".+/[+]/chromeos/dbus/chromebox_for_meetings/.+",
-            ".+/[+]/chromeos/services/chromebox_for_meetings/.+",
-            ".+/[+]/chrome/browser/chromeos/chromebox_for_meetings/.+",
+            ".+/[+]/ash/services/chromebox_for_meetings/.+",
+            ".+/[+]/chrome/browser/ash/chromebox_for_meetings/.+",
             ".+/[+]/chrome/browser/resources/chromeos/chromebox_for_meetings/.+",
             ".+/[+]/chrome/browser/ui/webui/chromeos/chromebox_for_meetings/.+",
             ".+/[+]/chrome/test/data/webui/chromeos/chromebox_for_meetings/.+",
@@ -241,6 +266,6 @@ try_.builder(
     use_clang_coverage = True,
     coverage_test_types = ["unit", "overall"],
     tryjob = try_.job(
-        experiment_percentage = 1,
+        experiment_percentage = 5,
     ),
 )

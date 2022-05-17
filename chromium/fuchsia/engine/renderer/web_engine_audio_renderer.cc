@@ -12,6 +12,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequenced_task_runner_handle.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/renderer_client.h"
@@ -334,7 +335,7 @@ void WebEngineAudioRenderer::StartAudioConsumer() {
   DCHECK(stream_sink_);
 
   fuchsia::media::AudioConsumerStartFlags flags{};
-  if (demuxer_stream_->liveness() == media::DemuxerStream::LIVENESS_LIVE) {
+  if (demuxer_stream_->liveness() == media::StreamLiveness::kLive) {
     flags = fuchsia::media::AudioConsumerStartFlags::LOW_LATENCY;
   }
 

@@ -7,22 +7,34 @@
 
 #include "include/sksl/DSLFunction.h"
 
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLModifiers.h"
+#include "include/private/SkSLProgramElement.h"
+#include "include/private/SkSLStatement.h"
+#include "include/private/SkSLString.h"
 #include "include/sksl/DSLVar.h"
-#include "src/sksl/SkSLAnalysis.h"
-#include "src/sksl/SkSLCompiler.h"
+#include "include/sksl/DSLWrapper.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/dsl/priv/DSLWriter.h"
+#include "src/sksl/ir/SkSLBlock.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
-#include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLVariable.h"
+
+#include <memory>
+#include <string>
+#include <vector>
 
 namespace SkSL {
 
 namespace dsl {
 
 void DSLFunction::init(DSLModifiers modifiers, const DSLType& returnType, std::string_view name,
-                       SkTArray<DSLParameter*> params, PositionInfo pos) {
+                       SkTArray<DSLParameter*> params, Position pos) {
     fPosition = pos;
     // Conservatively assume all user-defined functions have side effects.
     if (!ThreadContext::IsModule()) {
@@ -54,7 +66,8 @@ void DSLFunction::init(DSLModifiers modifiers, const DSLType& returnType, std::s
     SkASSERT(paramVars.size() == params.size());
     fDecl = SkSL::FunctionDeclaration::Convert(ThreadContext::Context(),
                                                *ThreadContext::SymbolTable(),
-                                               pos.line(),
+                                               pos,
+                                               modifiers.fPosition,
                                                ThreadContext::Modifiers(modifiers.fModifiers),
                                                name == "main" ? name : DSLWriter::Name(name),
                                                std::move(paramVars), &returnType.skslType());
@@ -68,12 +81,13 @@ void DSLFunction::init(DSLModifiers modifiers, const DSLType& returnType, std::s
         // case the definition is delayed. If we end up defining the function immediately, we'll
         // remove the prototype in define().
         ThreadContext::ProgramElements().push_back(std::make_unique<SkSL::FunctionPrototype>(
-                pos.line(), fDecl, ThreadContext::IsModule()));
+                pos, fDecl, ThreadContext::IsModule()));
     }
 }
 
-void DSLFunction::define(DSLBlock block, PositionInfo pos) {
+void DSLFunction::define(DSLBlock block, Position pos) {
     std::unique_ptr<SkSL::Block> body = block.release();
+    body->fPosition = pos;
     if (!fDecl) {
         // Evidently we failed to create the declaration; error should already have been reported.
         // Release the block so we don't fail its destructor assert.
@@ -98,7 +112,7 @@ void DSLFunction::define(DSLBlock block, PositionInfo pos) {
     }
     std::unique_ptr<FunctionDefinition> function = FunctionDefinition::Convert(
             ThreadContext::Context(),
-            pos.line(),
+            pos,
             *fDecl,
             std::move(body),
             /*builtin=*/false);
@@ -107,7 +121,7 @@ void DSLFunction::define(DSLBlock block, PositionInfo pos) {
     ThreadContext::ProgramElements().push_back(std::move(function));
 }
 
-DSLExpression DSLFunction::call(SkTArray<DSLWrapper<DSLExpression>> args, PositionInfo pos) {
+DSLExpression DSLFunction::call(SkTArray<DSLWrapper<DSLExpression>> args, Position pos) {
     ExpressionArray released;
     released.reserve_back(args.size());
     for (DSLWrapper<DSLExpression>& arg : args) {
@@ -116,9 +130,9 @@ DSLExpression DSLFunction::call(SkTArray<DSLWrapper<DSLExpression>> args, Positi
     return this->call(std::move(released));
 }
 
-DSLExpression DSLFunction::call(ExpressionArray args, PositionInfo pos) {
+DSLExpression DSLFunction::call(ExpressionArray args, Position pos) {
     std::unique_ptr<SkSL::Expression> result = SkSL::FunctionCall::Convert(ThreadContext::Context(),
-            pos.line(), *fDecl, std::move(args));
+            pos, *fDecl, std::move(args));
     return DSLExpression(std::move(result), pos);
 }
 

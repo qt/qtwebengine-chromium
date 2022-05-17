@@ -1325,6 +1325,21 @@
   "models/issues_manager/ContentSecurityPolicyIssue.ts | trustedTypesPolicyViolation": {
     "message": "Typer, der er tillid til –politikovertrædelse"
   },
+  "models/issues_manager/CookieIssue.ts | aSecure": {
+    "message": "sikker"
+  },
+  "models/issues_manager/CookieIssue.ts | anInsecure": {
+    "message": "an insecure"
+  },
+  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
+    "message": "First-Party Sets og attributten SameParty"
+  },
+  "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
+    "message": "Sådan fungerer Schemeful Same-Site"
+  },
+  "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
+    "message": "Beskrivelse af SameSite-cookies"
+  },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Ressourcedeling på tværs af oprindelse (CORS)"
   },
@@ -1336,6 +1351,9 @@
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Same-Site og Same-Origin"
+  },
+  "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
+    "message": "Federated Credential Management API"
   },
   "models/issues_manager/GenericIssue.ts | crossOriginPortalPostMessage": {
     "message": "Portaler – kommunikationskanaler fra samme oprindelse"
@@ -1373,29 +1391,11 @@
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "Kompatibilitetstilstand for dokument"
   },
-  "models/issues_manager/SameSiteCookieIssue.ts | aSecure": {
-    "message": "sikker"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | anInsecure": {
-    "message": "an insecure"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets og attributten SameParty"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | howSchemefulSamesiteWorks": {
-    "message": "Sådan fungerer Schemeful Same-Site"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | samesiteCookiesExplained": {
-    "message": "Beskrivelse af SameSite-cookies"
-  },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "Aktiverer SharedArrayBuffer"
   },
   "models/issues_manager/TrustedWebActivityIssue.ts | changesToQualityCriteriaForPwas": {
     "message": "Ændringer af kvalitetskriterier for PWA'er ved hjælp af webaktivitet, der er tillid til"
-  },
-  "models/issues_manager/WasmCrossOriginModuleSharingIssue.ts | linkTitle": {
-    "message": "Begrænsning af Wasm-moduldeling til same-origin"
   },
   "models/logs/NetworkLog.ts | anonymous": {
     "message": "<anonym>"
@@ -1420,9 +1420,6 @@
   },
   "models/logs/logs-meta.ts | reset": {
     "message": "nulstil"
-  },
-  "models/persistence/Automapping.ts | theAttemptToBindSInTheWorkspace": {
-    "message": "Forsøget på at binde \"{PH1}\" i arbejdsområdet blev ikke gennemført, da denne URI er udformet forkert."
   },
   "models/persistence/EditFileSystemView.ts | add": {
     "message": "Tilføj"
@@ -1950,7 +1947,7 @@
     "message": "Om dette tekstfelt må have mere end én linje."
   },
   "panels/accessibility/AccessibilityStrings.ts | whetherThisToggleButtonIs": {
-    "message": "Hvorvidt denne kontakt i øjeblikket er trykket ind."
+    "message": "Hvorvidt denne skydeknap i øjeblikket er trykket ind."
   },
   "panels/accessibility/SourceOrderView.ts | noSourceOrderInformation": {
     "message": "Der er ingen tilgængelige oplysninger om kilderækkefølgen"
@@ -2554,6 +2551,15 @@
   },
   "panels/application/IndexedDBViews.ts | version": {
     "message": "Version"
+  },
+  "panels/application/InterestGroupStorageView.ts | clickToDisplayBody": {
+    "message": "Klik på en hvilken som helst interessegruppehændelse for at se gruppens aktuelle tilstand"
+  },
+  "panels/application/InterestGroupStorageView.ts | noDataAvailable": {
+    "message": "Der er ingen tilgængelige oplysninger om den valgte interessegruppe. Browseren har muligvis forladt gruppen."
+  },
+  "panels/application/InterestGroupTreeElement.ts | interestGroups": {
+    "message": "Interessegrupper"
   },
   "panels/application/OpenedWindowDetailsView.ts | accessToOpener": {
     "message": "Adgang til åbner"
@@ -3230,6 +3236,9 @@
   "panels/application/components/BackForwardCacheView.ts | backForwardCacheTitle": {
     "message": "Back/forward-cache"
   },
+  "panels/application/components/BackForwardCacheView.ts | blockingExtensionId": {
+    "message": "Udvidelses-id: "
+  },
   "panels/application/components/BackForwardCacheView.ts | circumstantial": {
     "message": "Ikke handlingsrettet"
   },
@@ -3419,6 +3428,24 @@
   "panels/application/components/FrameDetailsView.ts | yes": {
     "message": "Ja"
   },
+  "panels/application/components/InterestGroupAccessGrid.ts | allInterestGroupStorageEvents": {
+    "message": "Alle lagerpladshændelser for interessegruppen."
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventTime": {
+    "message": "Hændelsestid"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | eventType": {
+    "message": "Adgangstype"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupName": {
+    "message": "Navn"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | groupOwner": {
+    "message": "Ejer"
+  },
+  "panels/application/components/InterestGroupAccessGrid.ts | noEvents": {
+    "message": "Der blev ikke registreret nogen interessegruppehændelser."
+  },
   "panels/application/components/OriginTrialTreeView.ts | expiryTime": {
     "message": "Udløbstidspunkt"
   },
@@ -3458,6 +3485,9 @@
   "panels/application/components/PermissionsPolicySection.ts | clickToShowIframe": {
     "message": "Klik for at vise den øverste iframe, som ikke tillader denne funktion i panelet med elementer."
   },
+  "panels/application/components/PermissionsPolicySection.ts | disabledByFencedFrame": {
+    "message": "deaktiveret inde i et fencedframe"
+  },
   "panels/application/components/PermissionsPolicySection.ts | disabledByHeader": {
     "message": "deaktiveret af headeren \"Permissions-Policy\""
   },
@@ -3473,8 +3503,17 @@
   "panels/application/components/PermissionsPolicySection.ts | showDetails": {
     "message": "Vis oplysninger"
   },
+  "panels/application/components/ReportsGrid.ts | destination": {
+    "message": "Destination"
+  },
+  "panels/application/components/ReportsGrid.ts | generatedAt": {
+    "message": "Genereret"
+  },
   "panels/application/components/ReportsGrid.ts | noReportsToDisplay": {
     "message": "Der er ingen rapporter at vise"
+  },
+  "panels/application/components/ReportsGrid.ts | status": {
+    "message": "Status"
   },
   "panels/application/components/StackTrace.ts | cannotRenderStackTrace": {
     "message": "Staksporingen kan ikke gengives"
@@ -4586,6 +4625,12 @@
   "panels/elements/EventListenersWidget.ts | showListenersOnTheAncestors": {
     "message": "Vis hændelsesfunktioner på overordnede elementer"
   },
+  "panels/elements/LayersWidget.ts | cssLayersTitle": {
+    "message": "CSS-lag"
+  },
+  "panels/elements/LayersWidget.ts | toggleCSSLayers": {
+    "message": "Skift visningen af CSS-lag"
+  },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "DOM-skillepunkt"
   },
@@ -4667,8 +4712,17 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "Se beregnede værdier"
   },
+  "panels/elements/StylesSidebarPane.ts | clickToRevealLayer": {
+    "message": "Klik for at se laget i lagtræet"
+  },
   "panels/elements/StylesSidebarPane.ts | constructedStylesheet": {
     "message": "konstrueret typografiark"
+  },
+  "panels/elements/StylesSidebarPane.ts | copiedToClipboard": {
+    "message": "Kopieret til udklipsholder"
+  },
+  "panels/elements/StylesSidebarPane.ts | copyAllCSSChanges": {
+    "message": "Kopiér alle CSS-ændringerne"
   },
   "panels/elements/StylesSidebarPane.ts | copyAllDeclarations": {
     "message": "Kopiér alle erklæringer"
@@ -4680,10 +4734,10 @@
     "message": "Kopiér selector"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
-    "message": "CSS-ejendomsnavn"
+    "message": "CSS-ejendomsnavn: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
-    "message": "CSS-ejendomsværdi"
+    "message": "CSS-ejendomsværdi: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssSelector": {
     "message": "CSS-vælger"
@@ -4714,6 +4768,9 @@
   },
   "panels/elements/StylesSidebarPane.ts | invalidString": {
     "message": "{PH1}, egenskabsnavn: {PH2}, egenskabsværdi: {PH3}"
+  },
+  "panels/elements/StylesSidebarPane.ts | layer": {
+    "message": "Lag"
   },
   "panels/elements/StylesSidebarPane.ts | newStyleRule": {
     "message": "Ny typografiregel"
@@ -5483,27 +5540,6 @@
   "panels/issues/IssuesPane.ts | trustedWebActivity": {
     "message": "Webaktivitet, der er tillid til"
   },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | blocked": {
-    "message": "blokeret"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | nModuleTransfers": {
-    "message": "{n,plural, =1{# modul}one{# modul}other{# moduler}}"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | sourceOrigin": {
-    "message": "Kildeoprindelse"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | status": {
-    "message": "Status"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | targetOrigin": {
-    "message": "Måloprindelse"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | warned": {
-    "message": "advarsel"
-  },
-  "panels/issues/WasmCrossOriginModuleSharingAffectedResourcesView.ts | wasmModuleUrl": {
-    "message": "Webadresse til Wasm-modul"
-  },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "Skjul problemer"
   },
@@ -5744,6 +5780,12 @@
   "panels/lighthouse/LighthouseController.ts | isThisPageUsableByPeopleWith": {
     "message": "Kan denne side bruges af personer med handicap eller nedsat funktion?"
   },
+  "panels/lighthouse/LighthouseController.ts | legacyNavigation": {
+    "message": "Gammel navigationstilstand"
+  },
+  "panels/lighthouse/LighthouseController.ts | lighthouseMode": {
+    "message": "Lighthouse-tilstand"
+  },
   "panels/lighthouse/LighthouseController.ts | localStorage": {
     "message": "Lokalt lager"
   },
@@ -5752,6 +5794,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | multipleTabsAreBeingControlledBy": {
     "message": "Flere faner styres af den samme service worker. Luk dine andre faner på den samme oprindelse for at kontrollere denne side."
+  },
+  "panels/lighthouse/LighthouseController.ts | navigation": {
+    "message": "Navigation"
   },
   "panels/lighthouse/LighthouseController.ts | performance": {
     "message": "Effektivitet"
@@ -5765,6 +5810,9 @@
   "panels/lighthouse/LighthouseController.ts | resetStorageLocalstorage": {
     "message": "Nulstil lagerplads (cache, service workers osv.) inden revision. (God til effektivitetsoptimering og PWA-tests)"
   },
+  "panels/lighthouse/LighthouseController.ts | runLighthouseInMode": {
+    "message": "Kør Lighthouse i navigationstilstand, periodetilstand eller tilstanden for øjebliksbillede"
+  },
   "panels/lighthouse/LighthouseController.ts | seo": {
     "message": "SEO"
   },
@@ -5774,11 +5822,20 @@
   "panels/lighthouse/LighthouseController.ts | simulatedThrottling": {
     "message": "Simuleret begrænsning"
   },
+  "panels/lighthouse/LighthouseController.ts | snapshot": {
+    "message": "Øjebliksbillede"
+  },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingLoadingPlural": {
     "message": "Der kan være gemte data, som påvirker indlæsningseffektiviteten på følgende placeringer: {PH1}. Gennemgå denne side i et inkognitovindue for at forhindre, at disse ressourcer påvirker dine resultater."
   },
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "Der kan være gemte data, som påvirker indlæsningseffektiviteten på følgende placering: {PH1}. Kontrollér denne side i et inkognitovindue for at forhindre, at disse ressourcer påvirker dine resultater."
+  },
+  "panels/lighthouse/LighthouseController.ts | timespan": {
+    "message": "Tidsperiode"
+  },
+  "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
+    "message": "Analysér siden ved hjælp af den klassiske version af Lighthouse, når du er i navigationstilstand."
   },
   "panels/lighthouse/LighthouseController.ts | webSql": {
     "message": "Web SQL"
@@ -5836,6 +5893,18 @@
   },
   "panels/lighthouse/LighthouseStartView.ts | learnMore": {
     "message": "Få flere oplysninger"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
+    "message": "Analysér navigationen"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
+    "message": "Analysér øjebliksbillede"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
+    "message": "Tilstand"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
+    "message": "Start tidsperioden"
   },
   "panels/lighthouse/LighthouseStatusView.ts | OfGlobalMobileUsersInWereOnGOrG": {
     "message": "75 % af globale mobilbrugere i 2016 var på 2G eller 3G [Kilde: GSMA Mobile]"
@@ -5923,6 +5992,18 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | walmartSawAIncreaseInRevenueFor": {
     "message": "Walmart oplevede, at deres omsætning steg med 1 %, hver gang sideindlæsningen blev forbedret med 100 ms [Kilde: WPO Stats]"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | cancel": {
+    "message": "Annuller"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | endTimespan": {
+    "message": "Afslut tidsperioden"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarted": {
+    "message": "Tidsperioden blev startet, interager med siden"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarting": {
+    "message": "Tidesperioden starter…"
   },
   "panels/lighthouse/lighthouse-meta.ts | showLighthouse": {
     "message": "Vis Lighthouse"
@@ -9656,6 +9737,24 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Opdater kontrolværdiudtryk"
   },
+  "panels/sources/components/HeadersView.ts | addHeader": {
+    "message": "Tilføj et sidehoved"
+  },
+  "panels/sources/components/HeadersView.ts | addHeaderOverride": {
+    "message": "Tilføj tilsidesættelse af sidehoved"
+  },
+  "panels/sources/components/HeadersView.ts | errorWhenParsing": {
+    "message": "Der opstod en fejl under parsingen af \"{PH1}\"."
+  },
+  "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
+    "message": "Dette skyldes højst sandsynligt, at der er en syntaksfejl i ''{PH1}''. Prøv at åbne denne fil i et eksternt redigeringsprogram for at rette fejlen eller slette filen og oprette tilsidesættelsen igen."
+  },
+  "panels/sources/components/HeadersView.ts | removeBlock": {
+    "message": "Fjern denne \"ApplyTo\"-sektion"
+  },
+  "panels/sources/components/HeadersView.ts | removeHeader": {
+    "message": "Fjern dette sidehoved"
+  },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "Aktivér stoppunkter"
   },
@@ -10051,6 +10150,9 @@
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | onIgnoreList": {
     "message": "På listen over ignorerede"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
+    "message": "Delvist præsenteret ramme"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | raster": {
     "message": "Raster"
@@ -10828,6 +10930,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | pinchUpdate": {
     "message": "Opdatering af knib"
+  },
+  "panels/timeline/TimelineUIUtils.ts | prePaint": {
+    "message": "Forudfyldning"
   },
   "panels/timeline/TimelineUIUtils.ts | preview": {
     "message": "Forhåndsvisning"

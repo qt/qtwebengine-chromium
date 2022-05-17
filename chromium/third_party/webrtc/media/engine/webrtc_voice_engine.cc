@@ -23,7 +23,7 @@
 #include "api/audio/audio_frame_processor.h"
 #include "api/audio_codecs/audio_codec_pair_id.h"
 #include "api/call/audio_sink.h"
-#include "api/transport/webrtc_key_value_config.h"
+#include "api/field_trials_view.h"
 #include "media/base/audio_source.h"
 #include "media/base/media_constants.h"
 #include "media/base/stream_params.h"
@@ -125,9 +125,10 @@ bool IsCodec(const AudioCodec& codec, const char* ref_name) {
 
 bool FindCodec(const std::vector<AudioCodec>& codecs,
                const AudioCodec& codec,
-               AudioCodec* found_codec) {
+               AudioCodec* found_codec,
+               const webrtc::FieldTrialsView* field_trials) {
   for (const AudioCodec& c : codecs) {
-    if (c.Matches(codec)) {
+    if (c.Matches(codec, field_trials)) {
       if (found_codec != NULL) {
         *found_codec = c;
       }
@@ -205,14 +206,8 @@ absl::optional<int> ComputeSendBitrate(int max_send_bitrate_bps,
   }
 }
 
-bool IsEnabled(const webrtc::WebRtcKeyValueConfig& config,
-               absl::string_view trial) {
+bool IsEnabled(const webrtc::FieldTrialsView& config, absl::string_view trial) {
   return absl::StartsWith(config.Lookup(trial), "Enabled");
-}
-
-bool IsDisabled(const webrtc::WebRtcKeyValueConfig& config,
-                absl::string_view trial) {
-  return absl::StartsWith(config.Lookup(trial), "Disabled");
 }
 
 struct AdaptivePtimeConfig {
@@ -233,7 +228,7 @@ struct AdaptivePtimeConfig {
         "use_slow_adaptation", &use_slow_adaptation);
   }
 
-  explicit AdaptivePtimeConfig(const webrtc::WebRtcKeyValueConfig& trials) {
+  explicit AdaptivePtimeConfig(const webrtc::FieldTrialsView& trials) {
     Parser()->Parse(trials.Lookup("WebRTC-Audio-AdaptivePtime"));
 #if WEBRTC_ENABLE_PROTOBUF
     webrtc::audio_network_adaptor::config::ControllerManager config;
@@ -303,7 +298,7 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
     rtc::scoped_refptr<webrtc::AudioMixer> audio_mixer,
     rtc::scoped_refptr<webrtc::AudioProcessing> audio_processing,
     webrtc::AudioFrameProcessor* audio_frame_processor,
-    const webrtc::WebRtcKeyValueConfig& trials)
+    const webrtc::FieldTrialsView& trials)
     : task_queue_factory_(task_queue_factory),
       adm_(adm),
       encoder_factory_(encoder_factory),
@@ -311,8 +306,6 @@ WebRtcVoiceEngine::WebRtcVoiceEngine(
       audio_mixer_(audio_mixer),
       apm_(audio_processing),
       audio_frame_processor_(audio_frame_processor),
-      audio_red_for_opus_enabled_(
-          !IsDisabled(trials, "WebRTC-Audio-Red-For-Opus")),
       minimized_remsampling_on_mobile_trial_enabled_(
           IsEnabled(trials, "WebRTC-Audio-MinimizeResamplingOnMobile")) {
   // This may be called from any thread, so detach thread checkers.
@@ -399,10 +392,8 @@ void WebRtcVoiceEngine::Init() {
 #if defined(WEBRTC_IOS)
     // On iOS, VPIO provides built-in NS.
     options.noise_suppression = false;
-    options.typing_detection = false;
 #else
     options.noise_suppression = true;
-    options.typing_detection = true;
 #endif
     options.highpass_filter = true;
     options.stereo_swapping = false;
@@ -457,11 +448,6 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
   }
 #elif defined(WEBRTC_ANDROID)
   use_mobile_software_aec = true;
-#endif
-
-// Override noise suppression options for Android.
-#if defined(WEBRTC_ANDROID)
-  options.typing_detection = false;
 #endif
 
 // Set and adjust gain control options.
@@ -608,10 +594,6 @@ bool WebRtcVoiceEngine::ApplyOptions(const AudioOptions& options_in) {
     RTC_LOG(LS_INFO) << "NS set to " << enabled;
   }
 
-  if (options.typing_detection) {
-    RTC_LOG(LS_WARNING) << "Typing detection is requested, but unsupported.";
-  }
-
   ap->ApplyConfig(apm_config);
   return true;
 }
@@ -738,7 +720,7 @@ std::vector<AudioCodec> WebRtcVoiceEngine::CollectCodecs(
 
       out.push_back(codec);
 
-      if (codec.name == kOpusCodecName && audio_red_for_opus_enabled_) {
+      if (codec.name == kOpusCodecName) {
         std::string redFmtp =
             rtc::ToString(codec.id) + "/" + rtc::ToString(codec.id);
         map_format({kRedCodecName, 48000, 2, {{"", redFmtp}}}, &out);
@@ -1311,9 +1293,7 @@ WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel(
       engine_(engine),
       call_(call),
       audio_config_(config.audio),
-      crypto_options_(crypto_options),
-      audio_red_for_opus_enabled_(
-          !IsDisabled(call->trials(), "WebRTC-Audio-Red-For-Opus")) {
+      crypto_options_(crypto_options) {
   network_thread_checker_.Detach();
   RTC_LOG(LS_VERBOSE) << "WebRtcVoiceMediaChannel::WebRtcVoiceMediaChannel";
   RTC_DCHECK(call);
@@ -1566,7 +1546,7 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
     // Log a warning if a codec's payload type is changing. This used to be
     // treated as an error. It's abnormal, but not really illegal.
     AudioCodec old_codec;
-    if (FindCodec(recv_codecs_, codec, &old_codec) &&
+    if (FindCodec(recv_codecs_, codec, &old_codec, &call_->trials()) &&
         old_codec.id != codec.id) {
       RTC_LOG(LS_WARNING) << codec.name << " mapped to a second payload type ("
                           << codec.id << ", was already mapped to "
@@ -1574,7 +1554,7 @@ bool WebRtcVoiceMediaChannel::SetRecvCodecs(
     }
     auto format = AudioCodecToSdpAudioFormat(codec);
     if (!IsCodec(codec, kCnCodecName) && !IsCodec(codec, kDtmfCodecName) &&
-        (!audio_red_for_opus_enabled_ || !IsCodec(codec, kRedCodecName)) &&
+        !IsCodec(codec, kRedCodecName) &&
         !engine()->decoder_factory_->IsSupportedDecoder(format)) {
       RTC_LOG(LS_ERROR) << "Unsupported codec: " << rtc::ToString(format);
       return false;
@@ -1760,19 +1740,17 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
     }
   }
 
-  if (audio_red_for_opus_enabled_) {
-    // Loop through the codecs to find the RED codec that matches opus
-    // with respect to clockrate and number of channels.
-    size_t red_codec_position = 0;
-    for (const AudioCodec& red_codec : codecs) {
-      if (red_codec_position < send_codec_position &&
-          IsCodec(red_codec, kRedCodecName) &&
-          CheckRedParameters(red_codec, *send_codec_spec)) {
-        send_codec_spec->red_payload_type = red_codec.id;
-        break;
-      }
-      red_codec_position++;
+  // Loop through the codecs to find the RED codec that matches opus
+  // with respect to clockrate and number of channels.
+  size_t red_codec_position = 0;
+  for (const AudioCodec& red_codec : codecs) {
+    if (red_codec_position < send_codec_position &&
+        IsCodec(red_codec, kRedCodecName) &&
+        CheckRedParameters(red_codec, *send_codec_spec)) {
+      send_codec_spec->red_payload_type = red_codec.id;
+      break;
     }
+    red_codec_position++;
   }
 
   if (send_codec_spec_ != send_codec_spec) {
@@ -1796,7 +1774,6 @@ bool WebRtcVoiceMediaChannel::SetSendCodecs(
                         "streams.";
     recv_transport_cc_enabled_ = send_codec_spec_->transport_cc_enabled;
     recv_nack_enabled_ = send_codec_spec_->nack_enabled;
-    enable_non_sender_rtt_ = send_codec_spec_->enable_non_sender_rtt;
     for (auto& kv : recv_streams_) {
       kv.second->SetUseTransportCc(recv_transport_cc_enabled_,
                                    recv_nack_enabled_);
@@ -2349,7 +2326,6 @@ bool WebRtcVoiceMediaChannel::GetStats(VoiceMediaInfo* info,
     sinfo.audio_level = stats.audio_level;
     sinfo.total_input_energy = stats.total_input_energy;
     sinfo.total_input_duration = stats.total_input_duration;
-    sinfo.typing_noise_detected = (send_ ? stats.typing_noise_detected : false);
     sinfo.ana_statistics = stats.ana_statistics;
     sinfo.apm_statistics = stats.apm_statistics;
     sinfo.report_block_datas = std::move(stats.report_block_datas);

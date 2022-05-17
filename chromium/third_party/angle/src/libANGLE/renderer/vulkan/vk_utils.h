@@ -196,8 +196,12 @@ class Context : angle::NonCopyable
     VkDevice getDevice() const;
     RendererVk *getRenderer() const { return mRenderer; }
 
+    const angle::VulkanPerfCounters &getPerfCounters() const { return mPerfCounters; }
+    angle::VulkanPerfCounters &getPerfCounters() { return mPerfCounters; }
+
   protected:
     RendererVk *const mRenderer;
+    angle::VulkanPerfCounters mPerfCounters;
 };
 
 class RenderPassDesc;
@@ -493,7 +497,7 @@ enum class RecordingMode
 // Helper class to handle RAII patterns for initialization. Requires that T have a destroy method
 // that takes a VkDevice and returns void.
 template <typename T>
-class DeviceScoped final : angle::NonCopyable
+class ANGLE_NO_DISCARD DeviceScoped final : angle::NonCopyable
 {
   public:
     DeviceScoped(VkDevice device) : mDevice(device) {}
@@ -510,7 +514,7 @@ class DeviceScoped final : angle::NonCopyable
 };
 
 template <typename T>
-class AllocatorScoped final : angle::NonCopyable
+class ANGLE_NO_DISCARD AllocatorScoped final : angle::NonCopyable
 {
   public:
     AllocatorScoped(const Allocator &allocator) : mAllocator(allocator) {}
@@ -529,7 +533,7 @@ class AllocatorScoped final : angle::NonCopyable
 // Similar to DeviceScoped, but releases objects instead of destroying them. Requires that T have a
 // release method that takes a ContextVk * and returns void.
 template <typename T>
-class ContextScoped final : angle::NonCopyable
+class ANGLE_NO_DISCARD ContextScoped final : angle::NonCopyable
 {
   public:
     ContextScoped(ContextVk *contextVk) : mContextVk(contextVk) {}
@@ -546,7 +550,7 @@ class ContextScoped final : angle::NonCopyable
 };
 
 template <typename T>
-class RendererScoped final : angle::NonCopyable
+class ANGLE_NO_DISCARD RendererScoped final : angle::NonCopyable
 {
   public:
     RendererScoped(RendererVk *renderer) : mRenderer(renderer) {}
@@ -785,6 +789,7 @@ class Recycler final : angle::NonCopyable
         {
             object.destroy(device);
         }
+        mObjectFreeList.clear();
     }
 
     bool empty() const { return mObjectFreeList.empty(); }
@@ -913,7 +918,7 @@ class BufferBlock final : angle::NonCopyable
     ~BufferBlock();
 
     void destroy(RendererVk *renderer);
-    angle::Result init(ContextVk *contextVk,
+    angle::Result init(Context *context,
                        Buffer &buffer,
                        vma::VirtualBlockCreateFlags flags,
                        DeviceMemory &deviceMemory,
@@ -1004,6 +1009,7 @@ class BufferSuballocation final : angle::NonCopyable
     BufferSerial getBlockSerial() const;
     uint8_t *getBlockMemory() const;
     VkDeviceSize getBlockMemorySize() const;
+    bool isSuballocated() const { return mBufferBlock->hasVirtualBlock(); }
 
   private:
     // Only used by DynamicBuffer where DynamicBuffer does the actual suballocation and pass the
@@ -1239,12 +1245,21 @@ constexpr bool kOutputCumulativePerfCounters = false;
 struct RenderPassPerfCounters
 {
     // load/storeOps. Includes ops for resolve attachment. Maximum value = 2.
-    uint8_t depthClears;
-    uint8_t depthLoads;
-    uint8_t depthStores;
-    uint8_t stencilClears;
-    uint8_t stencilLoads;
-    uint8_t stencilStores;
+    uint8_t colorLoadOpClears;
+    uint8_t colorLoadOpLoads;
+    uint8_t colorLoadOpNones;
+    uint8_t colorStoreOpStores;
+    uint8_t colorStoreOpNones;
+    uint8_t depthLoadOpClears;
+    uint8_t depthLoadOpLoads;
+    uint8_t depthLoadOpNones;
+    uint8_t depthStoreOpStores;
+    uint8_t depthStoreOpNones;
+    uint8_t stencilLoadOpClears;
+    uint8_t stencilLoadOpLoads;
+    uint8_t stencilLoadOpNones;
+    uint8_t stencilStoreOpStores;
+    uint8_t stencilStoreOpNones;
     // Number of unresolve and resolve operations.  Maximum value for color =
     // gl::IMPLEMENTATION_MAX_DRAW_BUFFERS and for depth/stencil = 1 each.
     uint8_t colorAttachmentUnresolves;
@@ -1255,41 +1270,6 @@ struct RenderPassPerfCounters
     uint8_t stencilAttachmentResolves;
     // Whether the depth/stencil attachment is using a read-only layout.
     uint8_t readOnlyDepthStencil;
-};
-
-struct PerfCounters
-{
-    uint32_t primaryBuffers;
-    uint32_t renderPasses;
-    uint32_t writeDescriptorSets;
-    uint32_t flushedOutsideRenderPassCommandBuffers;
-    uint32_t resolveImageCommands;
-    uint32_t depthClears;
-    uint32_t depthLoads;
-    uint32_t depthStores;
-    uint32_t stencilClears;
-    uint32_t stencilLoads;
-    uint32_t stencilStores;
-    uint32_t colorAttachmentUnresolves;
-    uint32_t depthAttachmentUnresolves;
-    uint32_t stencilAttachmentUnresolves;
-    uint32_t colorAttachmentResolves;
-    uint32_t depthAttachmentResolves;
-    uint32_t stencilAttachmentResolves;
-    uint32_t readOnlyDepthStencilRenderPasses;
-    uint32_t descriptorSetAllocations;
-    uint32_t descriptorSetCacheTotalSize;
-    uint32_t uniformsAndXfbDescriptorSetCacheHits;
-    uint32_t uniformsAndXfbDescriptorSetCacheMisses;
-    uint32_t uniformsAndXfbDescriptorSetCacheTotalSize;
-    uint32_t textureDescriptorSetCacheHits;
-    uint32_t textureDescriptorSetCacheMisses;
-    uint32_t textureDescriptorSetCacheTotalSize;
-    uint32_t shaderBuffersDescriptorSetCacheHits;
-    uint32_t shaderBuffersDescriptorSetCacheMisses;
-    uint32_t shaderBuffersDescriptorSetCacheTotalSize;
-    uint32_t buffersGhosted;
-    uint32_t vertexArraySyncStateCalls;
 };
 
 // A Vulkan image level index.
@@ -1499,9 +1479,6 @@ enum class RenderPassClosureReason
     TemporaryForImageClear,
     TemporaryForImageCopy,
     TemporaryForOverlayDraw,
-
-    // Misc
-    OverlayFontCreation,
 
     InvalidEnum,
     EnumCount = InvalidEnum,

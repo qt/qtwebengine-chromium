@@ -16,10 +16,11 @@
 #include "include/core/SkTypes.h"
 #include "include/private/SkTArray.h"
 #include "src/core/SkArenaAlloc.h"
+
 #include <functional>
-#include <vector>  // TODO: unused
 
 class SkData;
+struct skcms_TransferFunction;
 
 /**
  * SkRasterPipeline provides a cheap way to chain together a pixel processing pipeline.
@@ -31,7 +32,7 @@ class SkData;
  * at runtime, so we can scale this problem linearly rather than combinatorically.
  *
  * Each stage is represented by a function conforming to a common interface and by an
- * arbitrary context pointer.  The stage funciton arguments and calling convention are
+ * arbitrary context pointer.  The stage function arguments and calling convention are
  * designed to maximize the amount of data we can pass along the pipeline cheaply, and
  * vary depending on CPU feature detection.
  */
@@ -126,6 +127,8 @@ struct SkRasterPipeline_GatherCtx {
     int         stride;
     float       width;
     float       height;
+
+    float       weights[16];  // for bicubic and bicubic_clamp_8888
 };
 
 // State shared by save_xy, accumulate, and bilinear_* / bicubic_*.
@@ -136,6 +139,8 @@ struct SkRasterPipeline_SamplerCtx {
     float     fy[SkRasterPipeline_kMaxStride];
     float scalex[SkRasterPipeline_kMaxStride];
     float scaley[SkRasterPipeline_kMaxStride];
+
+    float weights[16];  // for bicubic_[np][13][xy]
 };
 
 struct SkRasterPipeline_TileCtx {

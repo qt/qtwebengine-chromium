@@ -48,10 +48,10 @@ extern macro AllocateWasmArray(
 }
 
 namespace wasm {
-const kExternTableType: constexpr int31
-    generates 'wasm::kWasmExternRef.raw_bit_field()';
-const kExternNonNullTableType: constexpr int31
-    generates 'wasm::kWasmExternNonNullableRef.raw_bit_field()';
+const kAnyTableType: constexpr int31
+    generates 'wasm::kWasmAnyRef.raw_bit_field()';
+const kAnyNonNullTableType: constexpr int31
+    generates 'wasm::kWasmAnyNonNullableRef.raw_bit_field()';
 
 extern macro WasmBuiltinsAssembler::LoadInstanceFromFrame(): WasmInstanceObject;
 
@@ -213,8 +213,8 @@ builtin WasmTableSet(tableIndex: intptr, index: int32, value: Object): Object {
     // function dispatch tables.
     // TODO(7748): Update this if further table types are supported.
     const tableType: Smi = table.raw_type;
-    if (tableType != SmiConstant(kExternTableType) &&
-        tableType != SmiConstant(kExternNonNullTableType)) {
+    if (tableType != SmiConstant(kAnyTableType) &&
+        tableType != SmiConstant(kAnyNonNullTableType)) {
       goto CallRuntime;
     }
 
@@ -491,8 +491,8 @@ macro GetTargetAndInstance(funcref: WasmInternalFunction): TargetAndInstance {
 
 // Vector format:
 // Two slots per call_ref instruction. These slots' values can be:
-// - uninitialized: (undefined, <unused>). Note: we use {undefined} as the
-//   sentinel as an optimization, as it's the default value for FixedArrays.
+// - uninitialized: (0, <unused>). Note: we use {0} as the sentinel because
+//   it also works as default for vector slots used as counts.
 // - monomorphic: (funcref, count (smi)). The second slot is a counter for how
 //   often the funcref in the first slot has been seen.
 // - polymorphic: (fixed_array, <unused>). In this case, the array
@@ -526,7 +526,8 @@ builtin CallRefIC(
   // All other cases are some sort of miss and must compute the target/
   // instance. They all fall through to returning the computed data.
   const result = GetTargetAndInstance(funcref);
-  if (TaggedEqual(value, Undefined)) {
+  if (TaggedEqual(value, SmiConstant(0))) {
+    // Was uninitialized.
     vector.objects[index] = funcref;
     vector.objects[index + 1] = SmiConstant(1);
   } else if (Is<FixedArray>(value)) {

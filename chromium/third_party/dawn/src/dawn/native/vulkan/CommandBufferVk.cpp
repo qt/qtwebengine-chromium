@@ -246,6 +246,9 @@ namespace dawn::native::vulkan {
                      IterateBitSet(renderPass->attachmentState->GetColorAttachmentsMask())) {
                     auto& attachmentInfo = renderPass->colorAttachments[i];
                     TextureView* view = ToBackend(attachmentInfo.view.Get());
+                    if (view == nullptr) {
+                        continue;
+                    }
 
                     attachments[attachmentCount] = view->GetHandle();
 
@@ -441,12 +444,12 @@ namespace dawn::native::vulkan {
         : CommandBufferBase(encoder, descriptor) {
     }
 
-    void CommandBuffer::RecordCopyImageWithTemporaryBuffer(
+    MaybeError CommandBuffer::RecordCopyImageWithTemporaryBuffer(
         CommandRecordingContext* recordingContext,
         const TextureCopy& srcCopy,
         const TextureCopy& dstCopy,
         const Extent3D& copySize) {
-        ASSERT(srcCopy.texture->GetFormat().format == dstCopy.texture->GetFormat().format);
+        ASSERT(srcCopy.texture->GetFormat().CopyCompatibleWith(dstCopy.texture->GetFormat()));
         ASSERT(srcCopy.aspect == dstCopy.aspect);
         dawn::native::Format format = srcCopy.texture->GetFormat();
         const TexelBlockInfo& blockInfo = format.GetAspectInfo(srcCopy.aspect).block;
@@ -464,12 +467,12 @@ namespace dawn::native::vulkan {
         tempBufferDescriptor.usage = wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::CopyDst;
 
         Device* device = ToBackend(GetDevice());
-        // TODO(dawn:723): change to not use AcquireRef for reentrant object creation.
-        Ref<Buffer> tempBuffer =
-            AcquireRef(ToBackend(device->APICreateBuffer(&tempBufferDescriptor)));
+        Ref<BufferBase> tempBufferBase;
+        DAWN_TRY_ASSIGN(tempBufferBase, device->CreateBuffer(&tempBufferDescriptor));
+        Buffer* tempBuffer = ToBackend(tempBufferBase.Get());
 
         BufferCopy tempBufferCopy;
-        tempBufferCopy.buffer = tempBuffer.Get();
+        tempBufferCopy.buffer = tempBuffer;
         tempBufferCopy.rowsPerImage = heightInBlocks;
         tempBufferCopy.offset = 0;
         tempBufferCopy.bytesPerRow = copySize.width / blockInfo.width * blockInfo.byteSize;
@@ -497,6 +500,8 @@ namespace dawn::native::vulkan {
                                         &tempBufferToDstRegion);
 
         recordingContext->tempBuffers.emplace_back(tempBuffer);
+
+        return {};
     }
 
     MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingContext) {
@@ -703,8 +708,8 @@ namespace dawn::native::vulkan {
                                                     1, &region);
                         }
                     } else {
-                        RecordCopyImageWithTemporaryBuffer(recordingContext, src, dst,
-                                                           copy->copySize);
+                        DAWN_TRY(RecordCopyImageWithTemporaryBuffer(recordingContext, src, dst,
+                                                                    copy->copySize));
                     }
 
                     break;

@@ -634,6 +634,8 @@ class GraphicsPipelineDesc final
     void setRenderPassDesc(const RenderPassDesc &renderPassDesc);
     void updateRenderPassDesc(GraphicsPipelineTransitionBits *transition,
                               const RenderPassDesc &renderPassDesc);
+    void setRenderPassSampleCount(GLint samples);
+    void setRenderPassColorAttachmentFormat(size_t colorIndexGL, angle::FormatID formatID);
 
     // Blend states
     void setSingleBlend(uint32_t colorIndexGL,
@@ -1142,6 +1144,8 @@ class DescriptorSetDesc
 
     void reset() { mPayload.clear(); }
 
+    size_t getKeySizeBytes() const { return mPayload.size() * sizeof(uint32_t); }
+
     bool operator==(const DescriptorSetDesc &other) const
     {
         return (mPayload.size() == other.mPayload.size()) &&
@@ -1321,6 +1325,7 @@ class FramebufferDesc
     void updateLayerCount(uint32_t layerCount);
     uint32_t getLayerCount() const { return mLayerCount; }
     void updateFramebufferFetchMode(bool hasFramebufferFetch);
+    bool hasFramebufferFetch() const { return mHasFramebufferFetch; }
 
     bool isMultiview() const { return mIsMultiview; }
 
@@ -1513,6 +1518,18 @@ class CacheStats final : angle::NonCopyable
   public:
     CacheStats() { reset(); }
     ~CacheStats() {}
+
+    CacheStats(const CacheStats &rhs)
+        : mHitCount(rhs.mHitCount), mMissCount(rhs.mMissCount), mSize(rhs.mSize)
+    {}
+
+    CacheStats &operator=(const CacheStats &rhs)
+    {
+        mHitCount  = rhs.mHitCount;
+        mMissCount = rhs.mMissCount;
+        mSize      = rhs.mSize;
+        return *this;
+    }
 
     ANGLE_INLINE void hit() { mHitCount++; }
     ANGLE_INLINE void miss() { mMissCount++; }
@@ -1789,8 +1806,8 @@ class DriverUniformsDescriptorSetCache final
     size_t getSize() const { return mPayload.size(); }
 
   private:
-    static constexpr uint32_t kFastMapSize = 16;
-    angle::FastUnorderedMap<uint32_t, VkDescriptorSet, kFastMapSize> mPayload;
+    static constexpr uint32_t kFlatMapSize = 16;
+    angle::FlatUnorderedMap<uint32_t, VkDescriptorSet, kFlatMapSize> mPayload;
 };
 
 // Templated Descriptors Cache
@@ -1800,36 +1817,44 @@ class DescriptorSetCache final : angle::NonCopyable
     DescriptorSetCache() = default;
     ~DescriptorSetCache() { ASSERT(mPayload.empty()); }
 
-    void destroy(RendererVk *rendererVk, VulkanCacheType cacheType);
+    ANGLE_INLINE void clear() { mPayload.clear(); }
 
-    ANGLE_INLINE bool get(const vk::DescriptorSetDesc &desc, VkDescriptorSet *descriptorSet)
+    ANGLE_INLINE bool get(const vk::DescriptorSetDesc &desc,
+                          VkDescriptorSet *descriptorSet,
+                          CacheStats *cacheStats)
     {
         auto iter = mPayload.find(desc);
         if (iter != mPayload.end())
         {
             *descriptorSet = iter->second;
-            mCacheStats.hit();
+            cacheStats->hit();
             return true;
         }
-        mCacheStats.miss();
+        cacheStats->miss();
         return false;
     }
 
-    ANGLE_INLINE void insert(const vk::DescriptorSetDesc &desc, VkDescriptorSet descriptorSet)
+    ANGLE_INLINE void insert(const vk::DescriptorSetDesc &desc,
+                             VkDescriptorSet descriptorSet,
+                             CacheStats *cacheStats)
     {
         mPayload.emplace(desc, descriptorSet);
-        mCacheStats.incrementSize();
+        cacheStats->incrementSize();
     }
 
-    template <typename Accumulator>
-    void accumulateCacheStats(VulkanCacheType cacheType, Accumulator *accumulator)
+    size_t getTotalCacheKeySizeBytes() const
     {
-        accumulator->accumulateCacheStats(cacheType, mCacheStats);
+        size_t totalSize = 0;
+        for (const auto &iter : mPayload)
+        {
+            const vk::DescriptorSetDesc &desc = iter.first;
+            totalSize += desc.getKeySizeBytes();
+        }
+        return totalSize;
     }
 
   private:
     angle::HashMap<vk::DescriptorSetDesc, VkDescriptorSet> mPayload;
-    CacheStats mCacheStats;
 };
 
 // Only 1 driver uniform binding is used.

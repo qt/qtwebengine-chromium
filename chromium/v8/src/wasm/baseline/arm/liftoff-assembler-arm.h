@@ -55,7 +55,7 @@ inline constexpr Condition ToCondition(LiftoffCondition liftoff_cond) {
 //   1   | return addr (lr)   |
 //   0   | previous frame (fp)|
 //  -----+--------------------+  <-- frame ptr (fp)
-//  -1   | 0xa: WASM          |
+//  -1   | StackFrame::WASM   |
 //  -2   |    instance        |
 //  -3   |    feedback vector |
 //  -4   |    tiering budget  |
@@ -155,9 +155,9 @@ inline void I64Binop(LiftoffAssembler* assm, LiftoffRegister dst,
                      LiftoffRegister lhs, LiftoffRegister rhs) {
   Register dst_low = dst.low_gp();
   if (dst_low == lhs.high_gp() || dst_low == rhs.high_gp()) {
-    dst_low = assm->GetUnusedRegister(
-                      kGpReg, LiftoffRegList::ForRegs(lhs, rhs, dst.high_gp()))
-                  .gp();
+    dst_low =
+        assm->GetUnusedRegister(kGpReg, LiftoffRegList{lhs, rhs, dst.high_gp()})
+            .gp();
   }
   (assm->*op)(dst_low, lhs.low_gp(), rhs.low_gp(), SetCC, al);
   (assm->*op_with_carry)(dst.high_gp(), lhs.high_gp(), Operand(rhs.high_gp()),
@@ -193,7 +193,7 @@ inline void I64Shiftop(LiftoffAssembler* assm, LiftoffRegister dst,
   // Left shift writes {dst_high} then {dst_low}, right shifts write {dst_low}
   // then {dst_high}.
   Register clobbered_dst_reg = is_left_shift ? dst_high : dst_low;
-  LiftoffRegList pinned = LiftoffRegList::ForRegs(clobbered_dst_reg, src);
+  LiftoffRegList pinned = {clobbered_dst_reg, src};
   Register amount_capped =
       pinned.set(assm->GetUnusedRegister(kGpReg, pinned)).gp();
   assm->and_(amount_capped, amount, Operand(0x3F));
@@ -565,7 +565,7 @@ constexpr int LiftoffAssembler::StaticStackFrameSize() {
 int LiftoffAssembler::SlotSizeForType(ValueKind kind) {
   switch (kind) {
     case kS128:
-      return element_size_bytes(kind);
+      return value_kind_size(kind);
     default:
       return kStackSlotSize;
   }
@@ -950,8 +950,7 @@ inline void AtomicBinop32(LiftoffAssembler* lasm, Register dst_addr,
                           StoreType type,
                           void (*op)(LiftoffAssembler*, Register, Register,
                                      Register)) {
-  LiftoffRegList pinned =
-      LiftoffRegList::ForRegs(dst_addr, offset_reg, value, result);
+  LiftoffRegList pinned = {dst_addr, offset_reg, value, result};
   switch (type.value()) {
     case StoreType::kI64Store8:
       __ LoadConstant(result.high(), WasmValue(0));
@@ -1002,16 +1001,14 @@ inline void AtomicOp64(LiftoffAssembler* lasm, Register dst_addr,
   // Make sure {dst_low} and {dst_high} are not occupied by any other value.
   Register value_low = value.low_gp();
   Register value_high = value.high_gp();
-  LiftoffRegList pinned = LiftoffRegList::ForRegs(
-      dst_addr, offset_reg, value_low, value_high, dst_low, dst_high);
+  LiftoffRegList pinned = {dst_addr,   offset_reg, value_low,
+                           value_high, dst_low,    dst_high};
   __ ClearRegister(dst_low, {&dst_addr, &offset_reg, &value_low, &value_high},
                    pinned);
-  pinned = pinned |
-           LiftoffRegList::ForRegs(dst_addr, offset_reg, value_low, value_high);
+  pinned = pinned | LiftoffRegList{dst_addr, offset_reg, value_low, value_high};
   __ ClearRegister(dst_high, {&dst_addr, &offset_reg, &value_low, &value_high},
                    pinned);
-  pinned = pinned |
-           LiftoffRegList::ForRegs(dst_addr, offset_reg, value_low, value_high);
+  pinned = pinned | LiftoffRegList{dst_addr, offset_reg, value_low, value_high};
 
   // Make sure that {result}, if it exists, also does not overlap with
   // {dst_low} and {dst_high}. We don't have to transfer the value stored in
@@ -1275,7 +1272,7 @@ void LiftoffAssembler::AtomicCompareExchange(
   void (Assembler::*load)(Register, Register, Condition) = nullptr;
   void (Assembler::*store)(Register, Register, Register, Condition) = nullptr;
 
-  LiftoffRegList pinned = LiftoffRegList::ForRegs(dst_addr, offset_reg);
+  LiftoffRegList pinned = {dst_addr, offset_reg};
   // We need to remember the high word of {result}, so we can set it to zero in
   // the end if necessary.
   Register result_high = no_reg;
@@ -1614,7 +1611,7 @@ inline void GeneratePopCnt(Assembler* assm, Register dst, Register src,
 }  // namespace liftoff
 
 bool LiftoffAssembler::emit_i32_popcnt(Register dst, Register src) {
-  LiftoffRegList pinned = LiftoffRegList::ForRegs(dst);
+  LiftoffRegList pinned = {dst};
   Register scratch1 = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
   Register scratch2 = GetUnusedRegister(kGpReg, pinned).gp();
   liftoff::GeneratePopCnt(this, dst, src, scratch1, scratch2);
@@ -1855,7 +1852,7 @@ bool LiftoffAssembler::emit_i64_popcnt(LiftoffRegister dst,
   // overwrite the second src register before using it.
   Register src1 = src.high_gp() == dst.low_gp() ? src.high_gp() : src.low_gp();
   Register src2 = src.high_gp() == dst.low_gp() ? src.low_gp() : src.high_gp();
-  LiftoffRegList pinned = LiftoffRegList::ForRegs(dst, src2);
+  LiftoffRegList pinned = {dst, src2};
   Register scratch1 = pinned.set(GetUnusedRegister(kGpReg, pinned)).gp();
   Register scratch2 = GetUnusedRegister(kGpReg, pinned).gp();
   liftoff::GeneratePopCnt(this, dst.low_gp(), src1, scratch1, scratch2);
@@ -1864,6 +1861,14 @@ bool LiftoffAssembler::emit_i64_popcnt(LiftoffRegister dst,
   add(dst.low_gp(), dst.low_gp(), dst.high_gp());
   mov(dst.high_gp(), Operand(0));
   return true;
+}
+
+void LiftoffAssembler::IncrementSmi(LiftoffRegister dst, int offset) {
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  ldr(scratch, MemOperand(dst.gp(), offset));
+  add(scratch, scratch, Operand(Smi::FromInt(1)));
+  str(scratch, MemOperand(dst.gp(), offset));
 }
 
 bool LiftoffAssembler::emit_f32_ceil(DoubleRegister dst, DoubleRegister src) {
@@ -2924,12 +2929,12 @@ void LiftoffAssembler::emit_i64x2_mul(LiftoffRegister dst, LiftoffRegister lhs,
   QwNeonRegister tmp2 = right;
 
   LiftoffRegList used_plus_dst =
-      cache_state()->used_registers | LiftoffRegList::ForRegs(dst);
+      cache_state()->used_registers | LiftoffRegList{dst};
 
   if (used_plus_dst.has(lhs) && used_plus_dst.has(rhs)) {
     tmp1 = temps.AcquireQ();
     // We only have 1 scratch Q register, so acquire another ourselves.
-    LiftoffRegList pinned = LiftoffRegList::ForRegs(dst);
+    LiftoffRegList pinned = {dst};
     LiftoffRegister unused_pair = GetUnusedRegister(kFpRegPair, pinned);
     tmp2 = liftoff::GetSimd128Register(unused_pair);
   } else if (used_plus_dst.has(lhs)) {
@@ -3055,7 +3060,7 @@ void LiftoffAssembler::emit_i32x4_bitmask(LiftoffRegister dst,
 
   if (cache_state()->is_used(src)) {
     // We only have 1 scratch Q register, so try and reuse src.
-    LiftoffRegList pinned = LiftoffRegList::ForRegs(src);
+    LiftoffRegList pinned = {src};
     LiftoffRegister unused_pair = GetUnusedRegister(kFpRegPair, pinned);
     mask = liftoff::GetSimd128Register(unused_pair);
   }
@@ -3240,7 +3245,7 @@ void LiftoffAssembler::emit_i16x8_bitmask(LiftoffRegister dst,
 
   if (cache_state()->is_used(src)) {
     // We only have 1 scratch Q register, so try and reuse src.
-    LiftoffRegList pinned = LiftoffRegList::ForRegs(src);
+    LiftoffRegList pinned = {src};
     LiftoffRegister unused_pair = GetUnusedRegister(kFpRegPair, pinned);
     mask = liftoff::GetSimd128Register(unused_pair);
   }
@@ -3452,8 +3457,13 @@ void LiftoffAssembler::emit_i8x16_shuffle(LiftoffRegister dst,
     // to q14 and q15, which will be unused since they are not allocatable in
     // Liftoff. If the operands are the same, then we build a smaller list
     // operand below.
-    static_assert(!(kLiftoffAssemblerFpCacheRegs &
-                    (d28.bit() | d29.bit() | d30.bit() | d31.bit())),
+    static_assert(!kLiftoffAssemblerFpCacheRegs.has(d28),
+                  "This only works if q14-q15 (d28-d31) are not used.");
+    static_assert(!kLiftoffAssemblerFpCacheRegs.has(d29),
+                  "This only works if q14-q15 (d28-d31) are not used.");
+    static_assert(!kLiftoffAssemblerFpCacheRegs.has(d30),
+                  "This only works if q14-q15 (d28-d31) are not used.");
+    static_assert(!kLiftoffAssemblerFpCacheRegs.has(d31),
                   "This only works if q14-q15 (d28-d31) are not used.");
     vmov(q14, src1);
     src1 = q14;
@@ -3550,7 +3560,7 @@ void LiftoffAssembler::emit_i8x16_bitmask(LiftoffRegister dst,
 
   if (cache_state()->is_used(src)) {
     // We only have 1 scratch Q register, so try and reuse src.
-    LiftoffRegList pinned = LiftoffRegList::ForRegs(src);
+    LiftoffRegList pinned = {src};
     LiftoffRegister unused_pair = GetUnusedRegister(kFpRegPair, pinned);
     mask = liftoff::GetSimd128Register(unused_pair);
   }
@@ -4065,7 +4075,7 @@ void LiftoffAssembler::AssertUnreachable(AbortReason reason) {
 
 void LiftoffAssembler::PushRegisters(LiftoffRegList regs) {
   RegList core_regs = regs.GetGpList();
-  if (core_regs != 0) {
+  if (!core_regs.is_empty()) {
     stm(db_w, sp, core_regs);
   }
   LiftoffRegList fp_regs = regs & kFpCacheRegList;
@@ -4104,20 +4114,19 @@ void LiftoffAssembler::PopRegisters(LiftoffRegList regs) {
     vldm(ia_w, sp, first, last);
   }
   RegList core_regs = regs.GetGpList();
-  if (core_regs != 0) {
+  if (!core_regs.is_empty()) {
     ldm(ia_w, sp, core_regs);
   }
 }
 
-void LiftoffAssembler::RecordSpillsInSafepoint(Safepoint& safepoint,
-                                               LiftoffRegList all_spills,
-                                               LiftoffRegList ref_spills,
-                                               int spill_offset) {
+void LiftoffAssembler::RecordSpillsInSafepoint(
+    SafepointTableBuilder::Safepoint& safepoint, LiftoffRegList all_spills,
+    LiftoffRegList ref_spills, int spill_offset) {
   int spill_space_size = 0;
   while (!all_spills.is_empty()) {
     LiftoffRegister reg = all_spills.GetLastRegSet();
     if (ref_spills.has(reg)) {
-      safepoint.DefinePointerSlot(spill_offset);
+      safepoint.DefineTaggedStackSlot(spill_offset);
     }
     all_spills.clear(reg);
     ++spill_offset;
@@ -4168,7 +4177,7 @@ void LiftoffAssembler::CallC(const ValueKindSig* sig,
         UNREACHABLE();
     }
     args++;
-    arg_bytes += element_size_bytes(param_kind);
+    arg_bytes += value_kind_size(param_kind);
   }
   DCHECK_LE(arg_bytes, stack_bytes);
 

@@ -28,10 +28,12 @@
 #include "src/compiler/backend/register-allocator-verifier.h"
 #include "src/compiler/backend/register-allocator.h"
 #include "src/compiler/basic-block-instrumentor.h"
+#include "src/compiler/branch-condition-duplicator.h"
 #include "src/compiler/branch-elimination.h"
 #include "src/compiler/bytecode-graph-builder.h"
 #include "src/compiler/checkpoint-elimination.h"
 #include "src/compiler/common-operator-reducer.h"
+#include "src/compiler/common-operator.h"
 #include "src/compiler/compilation-dependencies.h"
 #include "src/compiler/compiler-source-position-table.h"
 #include "src/compiler/constant-folding-reducer.h"
@@ -503,7 +505,7 @@ class PipelineData {
     if (call_descriptor && call_descriptor->RequiresFrameAsIncoming()) {
       sequence_->instruction_blocks()[0]->mark_needs_frame();
     } else {
-      DCHECK_EQ(0u, call_descriptor->CalleeSavedFPRegisters());
+      DCHECK(call_descriptor->CalleeSavedFPRegisters().is_empty());
     }
   }
 
@@ -1066,7 +1068,7 @@ PipelineStatistics* CreatePipelineStatistics(
 
 }  // namespace
 
-class PipelineCompilationJob final : public OptimizedCompilationJob {
+class PipelineCompilationJob final : public TurbofanCompilationJob {
  public:
   PipelineCompilationJob(Isolate* isolate,
                          Handle<SharedFunctionInfo> shared_info,
@@ -1104,16 +1106,16 @@ PipelineCompilationJob::PipelineCompilationJob(
     // Note that the OptimizedCompilationInfo is not initialized at the time
     // we pass it to the CompilationJob constructor, but it is not
     // dereferenced there.
-    : OptimizedCompilationJob(&compilation_info_, "TurboFan"),
-      zone_(function->GetIsolate()->allocator(),
-            kPipelineCompilationJobZoneName),
-      zone_stats_(function->GetIsolate()->allocator()),
-      compilation_info_(&zone_, function->GetIsolate(), shared_info, function,
-                        code_kind, osr_offset, osr_frame),
+    : TurbofanCompilationJob(&compilation_info_,
+                             CompilationJob::State::kReadyToPrepare),
+      zone_(isolate->allocator(), kPipelineCompilationJobZoneName),
+      zone_stats_(isolate->allocator()),
+      compilation_info_(&zone_, isolate, shared_info, function, code_kind,
+                        osr_offset, osr_frame),
       pipeline_statistics_(CreatePipelineStatistics(
           handle(Script::cast(shared_info->script()), isolate),
-          compilation_info(), function->GetIsolate(), &zone_stats_)),
-      data_(&zone_stats_, function->GetIsolate(), compilation_info(),
+          compilation_info(), isolate, &zone_stats_)),
+      data_(&zone_stats_, isolate, compilation_info(),
             pipeline_statistics_.get()),
       pipeline_(&data_),
       linkage_(nullptr) {}
@@ -1337,9 +1339,9 @@ struct InliningPhase {
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common(), temp_zone);
     CheckpointElimination checkpoint_elimination(&graph_reducer);
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kJS);
     JSCallReducer::Flags call_reducer_flags = JSCallReducer::kNoFlags;
     if (data->info()->bailout_on_uninitialized()) {
       call_reducer_flags |= JSCallReducer::kBailoutOnUninitialized;
@@ -1403,9 +1405,9 @@ struct JSWasmInliningPhase {
                                data->broker(), data->jsgraph()->Dead());
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common(), temp_zone);
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kMachine);
     JSInliningHeuristic inlining(&graph_reducer, temp_zone, data->info(),
                                  data->jsgraph(), data->broker(),
                                  data->source_positions(),
@@ -1508,12 +1510,12 @@ struct TypedLoweringPhase {
         &graph_reducer, data->jsgraph(), data->broker());
     TypedOptimization typed_optimization(&graph_reducer, data->dependencies(),
                                          data->jsgraph(), data->broker());
-    SimplifiedOperatorReducer simple_reducer(&graph_reducer, data->jsgraph(),
-                                             data->broker());
+    SimplifiedOperatorReducer simple_reducer(
+        &graph_reducer, data->jsgraph(), data->broker(), BranchSemantics::kJS);
     CheckpointElimination checkpoint_elimination(&graph_reducer);
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kJS);
     AddReducer(data, &graph_reducer, &dead_code_elimination);
 
     AddReducer(data, &graph_reducer, &create_lowering);
@@ -1581,7 +1583,7 @@ struct SimplifiedLoweringPhase {
     SimplifiedLowering lowering(data->jsgraph(), data->broker(), temp_zone,
                                 data->source_positions(), data->node_origins(),
                                 &data->info()->tick_counter(), linkage,
-                                data->observe_node_manager());
+                                data->info(), data->observe_node_manager());
 
     // RepresentationChanger accesses the heap.
     UnparkedScopeIfNeeded scope(data->broker());
@@ -1620,7 +1622,7 @@ struct WasmInliningPhase {
   void Run(PipelineData* data, Zone* temp_zone, wasm::CompilationEnv* env,
            uint32_t function_index, const wasm::WireBytesStorage* wire_bytes,
            std::vector<compiler::WasmLoopInfo>* loop_info) {
-    if (WasmInliner::any_inlining_impossible(data->graph()->NodeCount())) {
+    if (!WasmInliner::graph_size_allows_inlining(data->graph()->NodeCount())) {
       return;
     }
     GraphReducer graph_reducer(
@@ -1628,9 +1630,11 @@ struct WasmInliningPhase {
         data->jsgraph()->Dead(), data->observe_node_manager());
     DeadCodeElimination dead(&graph_reducer, data->graph(), data->common(),
                              temp_zone);
+    std::unique_ptr<char[]> debug_name = data->info()->GetDebugName();
     WasmInliner inliner(&graph_reducer, env, function_index,
                         data->source_positions(), data->node_origins(),
-                        data->mcgraph(), wire_bytes, loop_info);
+                        data->mcgraph(), wire_bytes, loop_info,
+                        debug_name.get());
     AddReducer(data, &graph_reducer, &dead);
     AddReducer(data, &graph_reducer, &inliner);
     graph_reducer.ReduceGraph();
@@ -1737,13 +1741,14 @@ struct EarlyOptimizationPhase {
     DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                               data->common(), temp_zone);
     SimplifiedOperatorReducer simple_reducer(&graph_reducer, data->jsgraph(),
-                                             data->broker());
+                                             data->broker(),
+                                             BranchSemantics::kMachine);
     RedundancyElimination redundancy_elimination(&graph_reducer, temp_zone);
     ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
     MachineOperatorReducer machine_reducer(&graph_reducer, data->jsgraph());
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kMachine);
     AddReducer(data, &graph_reducer, &dead_code_elimination);
     AddReducer(data, &graph_reducer, &simple_reducer);
     AddReducer(data, &graph_reducer, &redundancy_elimination);
@@ -1811,9 +1816,9 @@ struct EffectControlLinearizationPhase {
                                  data->observe_node_manager());
       DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                                 data->common(), temp_zone);
-      CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                           data->broker(), data->common(),
-                                           data->machine(), temp_zone);
+      CommonOperatorReducer common_reducer(
+          &graph_reducer, data->graph(), data->broker(), data->common(),
+          data->machine(), temp_zone, BranchSemantics::kMachine);
       AddReducer(data, &graph_reducer, &dead_code_elimination);
       AddReducer(data, &graph_reducer, &common_reducer);
       graph_reducer.ReduceGraph();
@@ -1855,9 +1860,9 @@ struct LoadEliminationPhase {
                                      temp_zone);
     CheckpointElimination checkpoint_elimination(&graph_reducer);
     ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kJS);
     TypedOptimization typed_optimization(&graph_reducer, data->dependencies(),
                                          data->jsgraph(), data->broker());
     ConstantFoldingReducer constant_folding_reducer(
@@ -1920,9 +1925,9 @@ struct LateOptimizationPhase {
                                               data->common(), temp_zone);
     ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
     MachineOperatorReducer machine_reducer(&graph_reducer, data->jsgraph());
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kMachine);
     JSGraphAssembler graph_assembler(data->jsgraph(), temp_zone);
     SelectLowering select_lowering(&graph_assembler, data->graph());
     AddReducer(data, &graph_reducer, &branch_condition_elimination);
@@ -1976,6 +1981,16 @@ struct DecompressionOptimizationPhase {
   }
 };
 
+struct BranchConditionDuplicationPhase {
+  DECL_PIPELINE_PHASE_CONSTANTS(BranchConditionDuplication)
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    BranchConditionDuplicator compare_zero_branch_optimizer(temp_zone,
+                                                            data->graph());
+    compare_zero_branch_optimizer.Reduce();
+  }
+};
+
 #if V8_ENABLE_WEBASSEMBLY
 struct WasmOptimizationPhase {
   DECL_PIPELINE_PHASE_CONSTANTS(WasmOptimization)
@@ -1994,9 +2009,9 @@ struct WasmOptimizationPhase {
                                              allow_signalling_nan);
       DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                                 data->common(), temp_zone);
-      CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                           data->broker(), data->common(),
-                                           data->machine(), temp_zone);
+      CommonOperatorReducer common_reducer(
+          &graph_reducer, data->graph(), data->broker(), data->common(),
+          data->machine(), temp_zone, BranchSemantics::kMachine);
       ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
       CsaLoadElimination load_elimination(&graph_reducer, data->jsgraph(),
                                           temp_zone);
@@ -2020,9 +2035,9 @@ struct WasmOptimizationPhase {
                                              allow_signalling_nan);
       DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                                 data->common(), temp_zone);
-      CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                           data->broker(), data->common(),
-                                           data->machine(), temp_zone);
+      CommonOperatorReducer common_reducer(
+          &graph_reducer, data->graph(), data->broker(), data->common(),
+          data->machine(), temp_zone, BranchSemantics::kMachine);
       ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
       BranchElimination branch_condition_elimination(
           &graph_reducer, data->jsgraph(), temp_zone, data->source_positions());
@@ -2053,9 +2068,9 @@ struct CsaEarlyOptimizationPhase {
                                              true);
       DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                                 data->common(), temp_zone);
-      CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                           data->broker(), data->common(),
-                                           data->machine(), temp_zone);
+      CommonOperatorReducer common_reducer(
+          &graph_reducer, data->graph(), data->broker(), data->common(),
+          data->machine(), temp_zone, BranchSemantics::kMachine);
       ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
       CsaLoadElimination load_elimination(&graph_reducer, data->jsgraph(),
                                           temp_zone);
@@ -2075,9 +2090,9 @@ struct CsaEarlyOptimizationPhase {
                                              true);
       DeadCodeElimination dead_code_elimination(&graph_reducer, data->graph(),
                                                 data->common(), temp_zone);
-      CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                           data->broker(), data->common(),
-                                           data->machine(), temp_zone);
+      CommonOperatorReducer common_reducer(
+          &graph_reducer, data->graph(), data->broker(), data->common(),
+          data->machine(), temp_zone, BranchSemantics::kMachine);
       ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
       BranchElimination branch_condition_elimination(
           &graph_reducer, data->jsgraph(), temp_zone, data->source_positions());
@@ -2104,9 +2119,9 @@ struct CsaOptimizationPhase {
                                               data->common(), temp_zone);
     MachineOperatorReducer machine_reducer(&graph_reducer, data->jsgraph(),
                                            allow_signalling_nan);
-    CommonOperatorReducer common_reducer(&graph_reducer, data->graph(),
-                                         data->broker(), data->common(),
-                                         data->machine(), temp_zone);
+    CommonOperatorReducer common_reducer(
+        &graph_reducer, data->graph(), data->broker(), data->common(),
+        data->machine(), temp_zone, BranchSemantics::kMachine);
     ValueNumberingReducer value_numbering(temp_zone, data->graph()->zone());
     AddReducer(data, &graph_reducer, &branch_condition_elimination);
     AddReducer(data, &graph_reducer, &dead_code_elimination);
@@ -2259,6 +2274,17 @@ struct AllocateFPRegistersPhase {
   void Run(PipelineData* data, Zone* temp_zone) {
     RegAllocator allocator(data->top_tier_register_allocation_data(),
                            RegisterKind::kDouble, temp_zone);
+    allocator.AllocateRegisters();
+  }
+};
+
+template <typename RegAllocator>
+struct AllocateSimd128RegistersPhase {
+  DECL_PIPELINE_PHASE_CONSTANTS(AllocateSIMD128Registers)
+
+  void Run(PipelineData* data, Zone* temp_zone) {
+    RegAllocator allocator(data->top_tier_register_allocation_data(),
+                           RegisterKind::kSimd128, temp_zone);
     allocator.AllocateRegisters();
   }
 };
@@ -2471,7 +2497,7 @@ struct VerifyGraphPhase {
 #undef DECL_PIPELINE_PHASE_CONSTANTS_HELPER
 
 #if V8_ENABLE_WEBASSEMBLY
-class WasmHeapStubCompilationJob final : public OptimizedCompilationJob {
+class WasmHeapStubCompilationJob final : public TurbofanCompilationJob {
  public:
   WasmHeapStubCompilationJob(Isolate* isolate, CallDescriptor* call_descriptor,
                              std::unique_ptr<Zone> zone, Graph* graph,
@@ -2481,8 +2507,7 @@ class WasmHeapStubCompilationJob final : public OptimizedCompilationJob {
       // Note that the OptimizedCompilationInfo is not initialized at the time
       // we pass it to the CompilationJob constructor, but it is not
       // dereferenced there.
-      : OptimizedCompilationJob(&info_, "TurboFan",
-                                CompilationJob::State::kReadyToExecute),
+      : TurbofanCompilationJob(&info_, CompilationJob::State::kReadyToExecute),
         debug_name_(std::move(debug_name)),
         info_(base::CStrVector(debug_name_.get()), graph->zone(), kind),
         call_descriptor_(call_descriptor),
@@ -2516,14 +2541,11 @@ class WasmHeapStubCompilationJob final : public OptimizedCompilationJob {
 };
 
 // static
-std::unique_ptr<OptimizedCompilationJob>
-Pipeline::NewWasmHeapStubCompilationJob(Isolate* isolate,
-                                        CallDescriptor* call_descriptor,
-                                        std::unique_ptr<Zone> zone,
-                                        Graph* graph, CodeKind kind,
-                                        std::unique_ptr<char[]> debug_name,
-                                        const AssemblerOptions& options,
-                                        SourcePositionTable* source_positions) {
+std::unique_ptr<TurbofanCompilationJob> Pipeline::NewWasmHeapStubCompilationJob(
+    Isolate* isolate, CallDescriptor* call_descriptor,
+    std::unique_ptr<Zone> zone, Graph* graph, CodeKind kind,
+    std::unique_ptr<char[]> debug_name, const AssemblerOptions& options,
+    SourcePositionTable* source_positions) {
   return std::make_unique<WasmHeapStubCompilationJob>(
       isolate, call_descriptor, std::move(zone), graph, kind,
       std::move(debug_name), options, source_positions);
@@ -2780,6 +2802,9 @@ bool PipelineImpl::OptimizeGraph(Linkage* linkage) {
   Run<DecompressionOptimizationPhase>();
   RunPrintAndVerify(DecompressionOptimizationPhase::phase_name(), true);
 
+  Run<BranchConditionDuplicationPhase>();
+  RunPrintAndVerify(BranchConditionDuplicationPhase::phase_name(), true);
+
   data->source_positions()->RemoveDecorator();
   if (data->info()->trace_turbo_json()) {
     data->node_origins()->RemoveDecorator();
@@ -2920,6 +2945,10 @@ MaybeHandle<Code> Pipeline::GenerateCodeForCodeStub(
   pipeline.RunPrintAndVerify(DecompressionOptimizationPhase::phase_name(),
                              true);
 
+  pipeline.Run<BranchConditionDuplicationPhase>();
+  pipeline.RunPrintAndVerify(BranchConditionDuplicationPhase::phase_name(),
+                             true);
+
   pipeline.Run<VerifyGraphPhase>(true);
 
   int graph_hash_before_scheduling = 0;
@@ -3039,7 +3068,7 @@ wasm::WasmCompilationResult Pipeline::GenerateCodeForWasmNativeStub(
   wasm::WasmCompilationResult result;
   code_generator->tasm()->GetCode(
       nullptr, &result.code_desc, code_generator->safepoint_table_builder(),
-      static_cast<int>(code_generator->GetHandlerTableOffset()));
+      static_cast<int>(code_generator->handler_table_offset()));
   result.instr_buffer = code_generator->tasm()->ReleaseBuffer();
   result.source_positions = code_generator->GetSourcePositionTable();
   result.protected_instructions_data =
@@ -3161,7 +3190,7 @@ void Pipeline::GenerateCodeForWasmFunction(
   CodeGenerator* code_generator = pipeline.code_generator();
   code_generator->tasm()->GetCode(
       nullptr, &result->code_desc, code_generator->safepoint_table_builder(),
-      static_cast<int>(code_generator->GetHandlerTableOffset()));
+      static_cast<int>(code_generator->handler_table_offset()));
 
   result->instr_buffer = code_generator->tasm()->ReleaseBuffer();
   result->frame_slot_count = code_generator->frame()->GetTotalFrameSlotCount();
@@ -3207,8 +3236,10 @@ void Pipeline::GenerateCodeForWasmFunction(
                    << time.InMilliseconds() << " ms and "
                    << zone_stats.GetMaxAllocatedBytes() << " / "
                    << zone_stats.GetTotalAllocatedBytes()
-                   << " max/total bytes, codesize " << codesize << " name "
-                   << data.info()->GetDebugName().get() << std::endl;
+                   << " max/total bytes; bodysize "
+                   << function_body.end - function_body.start << " codesize "
+                   << codesize << " name " << data.info()->GetDebugName().get()
+                   << std::endl;
   }
 
   DCHECK(result->succeeded());
@@ -3232,7 +3263,7 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
 
   {
     CompilationHandleScope compilation_scope(isolate, info);
-    CanonicalHandleScope canonical(isolate, info);
+    CanonicalHandleScopeForTurbofan canonical(isolate, info);
     info->ReopenHandlesInNewHandleScope(isolate);
     pipeline.InitializeHeapBroker();
   }
@@ -3307,11 +3338,10 @@ MaybeHandle<Code> Pipeline::GenerateCodeForTesting(
 }
 
 // static
-std::unique_ptr<OptimizedCompilationJob> Pipeline::NewCompilationJob(
+std::unique_ptr<TurbofanCompilationJob> Pipeline::NewCompilationJob(
     Isolate* isolate, Handle<JSFunction> function, CodeKind code_kind,
     bool has_script, BytecodeOffset osr_offset, JavaScriptFrame* osr_frame) {
-  Handle<SharedFunctionInfo> shared =
-      handle(function->shared(), function->GetIsolate());
+  Handle<SharedFunctionInfo> shared(function->shared(), isolate);
   return std::make_unique<PipelineCompilationJob>(
       isolate, shared, function, osr_offset, osr_frame, code_kind);
 }
@@ -3457,14 +3487,15 @@ bool PipelineImpl::SelectInstructions(Linkage* linkage) {
   const RegisterConfiguration* config = RegisterConfiguration::Default();
   std::unique_ptr<const RegisterConfiguration> restricted_config;
   bool use_mid_tier_register_allocator =
-      FLAG_turbo_force_mid_tier_regalloc ||
-      (FLAG_turbo_use_mid_tier_regalloc_for_huge_functions &&
-       data->sequence()->VirtualRegisterCount() >
-           kTopTierVirtualRegistersLimit);
+      !CodeKindIsStaticallyCompiled(data->info()->code_kind()) &&
+      (FLAG_turbo_force_mid_tier_regalloc ||
+       (FLAG_turbo_use_mid_tier_regalloc_for_huge_functions &&
+        data->sequence()->VirtualRegisterCount() >
+            kTopTierVirtualRegistersLimit));
 
   if (call_descriptor->HasRestrictedAllocatableRegisters()) {
     RegList registers = call_descriptor->AllocatableRegisters();
-    DCHECK_LT(0, NumRegs(registers));
+    DCHECK_LT(0, registers.Count());
     restricted_config.reset(
         RegisterConfiguration::RestrictGeneralRegisters(registers));
     config = restricted_config.get();
@@ -3569,7 +3600,7 @@ void PipelineImpl::AssembleCode(Linkage* linkage) {
   data->BeginPhaseKind("V8.TFCodeGeneration");
   data->InitializeCodeGenerator(linkage);
 
-  UnparkedScopeIfNeeded unparked_scope(data->broker(), FLAG_code_comments);
+  UnparkedScopeIfNeeded unparked_scope(data->broker());
 
   Run<AssembleCodePhase>();
   if (data->info()->trace_turbo_json()) {
@@ -3733,6 +3764,11 @@ void PipelineImpl::AllocateRegistersForTopTier(
 
   if (data->sequence()->HasFPVirtualRegisters()) {
     Run<AllocateFPRegistersPhase<LinearScanAllocator>>();
+  }
+
+  if (data->sequence()->HasSimd128VirtualRegisters() &&
+      (kFPAliasing == AliasingKind::kIndependent)) {
+    Run<AllocateSimd128RegistersPhase<LinearScanAllocator>>();
   }
 
   Run<DecideSpillingModePhase>();

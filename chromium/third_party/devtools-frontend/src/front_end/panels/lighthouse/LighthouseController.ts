@@ -109,15 +109,19 @@ const UIStrings = {
    */
   lighthouseMode: 'Lighthouse mode',
   /**
-   * @description Tooltip text of a radio button to select the Lighthouse mode.
+   * @description Tooltip text of a radio button to select the Lighthouse mode. "Navigation" is a Lighthouse mode that audits a page navigation. "Timespan" is a Lighthouse mode that audits user interactions over a period of time. "Snapshot" is a Lighthouse mode that audits the current page state.
    */
   runLighthouseInMode: 'Run Lighthouse in navigation, timespan, or snapshot mode',
   /**
-   * @description Text for Lighthouse navigation mode.
+   * @description Label of a radio option for a Lighthouse mode that audits a page navigation.
    */
   navigation: 'Navigation',
   /**
-   * @description Text for Lighthouse snapshot mode.
+   * @description Label of a radio option for a Lighthouse mode that audits user interactions over a period of time.
+   */
+  timespan: 'Timespan',
+  /**
+   * @description Label of a radio option for a Lighthouse mode that audits the current page state.
    */
   snapshot: 'Snapshot',
   /**
@@ -146,9 +150,9 @@ const UIStrings = {
    */
   legacyNavigation: 'Legacy navigation',
   /**
-   * @description Tooltip text that appears when hovering over the 'Legacy navigation' checkbox in the settings pane opened by clicking the setting cog in the start view of the audits panel
+   * @description Tooltip text that appears when hovering over the 'Legacy navigation' checkbox in the settings pane opened by clicking the setting cog in the start view of the audits panel. "Navigation mode" is a Lighthouse mode that analyzes a page navigation.
    */
-  useLegacyNavigation: 'Audit the page using classic Lighthouse when in navigation mode.',
+  useLegacyNavigation: 'Analyze the page using classic Lighthouse when in navigation mode.',
   /**
   * @description Tooltip text of checkbox to reset storage features prior to running audits in
   * Lighthouse. Resetting the storage clears/empties it to a neutral state.
@@ -267,7 +271,11 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
       return '';
     }
     const mainTarget = this.manager.target();
-    const usageData = await mainTarget.storageAgent().invoke_getUsageAndQuota({origin: mainTarget.inspectedURL()});
+    const origin = mainTarget.inspectedURL();
+    if (!origin) {
+      return '';
+    }
+    const usageData = await mainTarget.storageAgent().invoke_getUsageAndQuota({origin});
     const locations = usageData.usageBreakdown.filter(usage => usage.usage)
                           .map(usage => STORAGE_TYPE_NAMES.get(usage.storageType))
                           .map(i18nStringFn => i18nStringFn ? i18nStringFn() : undefined)
@@ -305,6 +313,7 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
     internalDisableDeviceScreenEmulation: boolean,
     emulatedFormFactor: (string|undefined),
     legacyNavigation: boolean,
+    mode: string,
   } {
     const flags = {
       // DevTools handles all the emulation. This tells Lighthouse to not bother with emulation.
@@ -317,6 +326,7 @@ export class LighthouseController extends Common.ObjectWrapper.ObjectWrapper<Eve
       internalDisableDeviceScreenEmulation: boolean,
       emulatedFormFactor: (string | undefined),
       legacyNavigation: boolean,
+      mode: string,
     };
   }
 
@@ -447,6 +457,7 @@ export const RuntimeSettings: RuntimeSetting[] = [
     },
     options: [
       {label: i18nLazyString(UIStrings.navigation), value: 'navigation'},
+      {label: i18nLazyString(UIStrings.timespan), value: 'timespan'},
       {label: i18nLazyString(UIStrings.snapshot), value: 'snapshot'},
     ],
     learnMore: undefined,
@@ -495,6 +506,8 @@ export enum Events {
   PageAuditabilityChanged = 'PageAuditabilityChanged',
   PageWarningsChanged = 'PageWarningsChanged',
   AuditProgressChanged = 'AuditProgressChanged',
+  RequestLighthouseTimespanStart = 'RequestLighthouseTimespanStart',
+  RequestLighthouseTimespanEnd = 'RequestLighthouseTimespanEnd',
   RequestLighthouseStart = 'RequestLighthouseStart',
   RequestLighthouseCancel = 'RequestLighthouseCancel',
 }
@@ -515,6 +528,8 @@ export type EventTypes = {
   [Events.PageAuditabilityChanged]: PageAuditabilityChangedEvent,
   [Events.PageWarningsChanged]: PageWarningsChangedEvent,
   [Events.AuditProgressChanged]: AuditProgressChangedEvent,
+  [Events.RequestLighthouseTimespanStart]: boolean,
+  [Events.RequestLighthouseTimespanEnd]: boolean,
   [Events.RequestLighthouseStart]: boolean,
   [Events.RequestLighthouseCancel]: void,
 };

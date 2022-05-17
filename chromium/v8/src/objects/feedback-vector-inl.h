@@ -80,16 +80,16 @@ int FeedbackMetadata::GetSlotSize(FeedbackSlotKind kind) {
     case FeedbackSlotKind::kLoadGlobalNotInsideTypeof:
     case FeedbackSlotKind::kLoadKeyed:
     case FeedbackSlotKind::kHasKeyed:
-    case FeedbackSlotKind::kStoreNamedSloppy:
-    case FeedbackSlotKind::kStoreNamedStrict:
-    case FeedbackSlotKind::kStoreOwnNamed:
-    case FeedbackSlotKind::kDefineOwnKeyed:
+    case FeedbackSlotKind::kSetNamedSloppy:
+    case FeedbackSlotKind::kSetNamedStrict:
+    case FeedbackSlotKind::kDefineNamedOwn:
+    case FeedbackSlotKind::kDefineKeyedOwn:
     case FeedbackSlotKind::kStoreGlobalSloppy:
     case FeedbackSlotKind::kStoreGlobalStrict:
-    case FeedbackSlotKind::kStoreKeyedSloppy:
-    case FeedbackSlotKind::kStoreKeyedStrict:
+    case FeedbackSlotKind::kSetKeyedSloppy:
+    case FeedbackSlotKind::kSetKeyedStrict:
     case FeedbackSlotKind::kStoreInArrayLiteral:
-    case FeedbackSlotKind::kStoreDataPropertyInLiteral:
+    case FeedbackSlotKind::kDefineKeyedOwnPropertyInLiteral:
       return 2;
 
     case FeedbackSlotKind::kInvalid:
@@ -139,8 +139,8 @@ CodeT FeedbackVector::optimized_code() const {
   return code;
 }
 
-OptimizationMarker FeedbackVector::optimization_marker() const {
-  return OptimizationMarkerBits::decode(flags());
+TieringState FeedbackVector::tiering_state() const {
+  return TieringStateBits::decode(flags());
 }
 
 bool FeedbackVector::has_optimized_code() const {
@@ -154,10 +154,6 @@ bool FeedbackVector::maybe_has_optimized_code() const {
 
 void FeedbackVector::set_maybe_has_optimized_code(bool value) {
   set_flags(MaybeHasOptimizedCodeBit::update(flags(), value));
-}
-
-bool FeedbackVector::has_optimization_marker() const {
-  return optimization_marker() != OptimizationMarker::kNone;
 }
 
 // Conversion from an integer index to either a slot or an ic slot.

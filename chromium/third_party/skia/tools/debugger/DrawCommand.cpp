@@ -7,37 +7,56 @@
 
 #include "tools/debugger/DrawCommand.h"
 
-#include <algorithm>
+#include "include/core/SkAlphaType.h"
+#include "include/core/SkBitmap.h"
+#include "include/core/SkBlurTypes.h"
 #include "include/core/SkColorFilter.h"
+#include "include/core/SkColorType.h"
 #include "include/core/SkDrawable.h"
+#include "include/core/SkFlattenable.h"
+#include "include/core/SkFont.h"
+#include "include/core/SkFontTypes.h"
 #include "include/core/SkImageFilter.h"
+#include "include/core/SkImageInfo.h"
+#include "include/core/SkMaskFilter.h"
 #include "include/core/SkPathEffect.h"
+#include "include/core/SkPathTypes.h"
 #include "include/core/SkPicture.h"
+#include "include/core/SkPixmap.h"
+#include "include/core/SkPoint3.h"
+#include "include/core/SkRSXform.h"
+#include "include/core/SkSamplingOptions.h"
+#include "include/core/SkSize.h"
+#include "include/core/SkStream.h"
 #include "include/core/SkTypeface.h"
-#include "include/effects/SkDashPathEffect.h"
 #include "include/encode/SkPngEncoder.h"
+#include "include/private/SkMalloc.h"
 #include "include/private/SkShadowFlags.h"
-#include "include/private/SkTHash.h"
+#include "include/private/gpu/ganesh/GrImageContext.h"
 #include "src/core/SkAutoMalloc.h"
 #include "src/core/SkCanvasPriv.h"
-#include "src/core/SkLatticeIter.h"
 #include "src/core/SkMaskFilterBase.h"
 #include "src/core/SkPaintDefaults.h"
-#include "src/core/SkPaintPriv.h"
-#include "src/core/SkReadBuffer.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTextBlobPriv.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
+#include "src/utils/SkJSONWriter.h"
+#include "tools/UrlDataManager.h"
 #include "tools/debugger/DebugLayerManager.h"
 #include "tools/debugger/JsonWriteBuffer.h"
 
-#if SK_SUPPORT_GPU
-#include "include/gpu/GrDirectContext.h"
-#else
+#include <algorithm>
+#include <string>
+#include <utility>
+
 class GrDirectContext;
+
+#if SK_SUPPORT_GPU
+#include "include/gpu/GrRecordingContext.h"
 #endif
 
+#define DEBUGCANVAS_ATTRIBUTE_DUMP "dump"
 #define DEBUGCANVAS_ATTRIBUTE_COMMAND "command"
 #define DEBUGCANVAS_ATTRIBUTE_VISIBLE "visible"
 #define DEBUGCANVAS_ATTRIBUTE_MATRIX "matrix"
@@ -56,6 +75,7 @@ class GrDirectContext;
 #define DEBUGCANVAS_ATTRIBUTE_COLOR "color"
 #define DEBUGCANVAS_ATTRIBUTE_ALPHA "alpha"
 #define DEBUGCANVAS_ATTRIBUTE_BLENDMODE "blendMode"
+#define DEBUGCANVAS_ATTRIBUTE_SAMPLING "sampling"
 #define DEBUGCANVAS_ATTRIBUTE_STYLE "style"
 #define DEBUGCANVAS_ATTRIBUTE_STROKEWIDTH "strokeWidth"
 #define DEBUGCANVAS_ATTRIBUTE_STROKEMITER "strokeMiter"
@@ -465,6 +485,13 @@ void DrawCommand::MakeJsonMatrix44(SkJSONWriter& writer, const SkM44& matrix) {
 
 void DrawCommand::MakeJsonPath(SkJSONWriter& writer, const SkPath& path) {
     writer.beginObject();
+
+    SkDynamicMemoryWStream wstream;
+    path.dump(&wstream, false);
+    auto data = wstream.detachAsData();
+    SkString dumpString((char*)data->bytes(), data->size());
+    writer.appendString(DEBUGCANVAS_ATTRIBUTE_DUMP, dumpString.c_str());
+
     switch (path.getFillType()) {
         case SkPathFillType::kWinding:
             writer.appendString(DEBUGCANVAS_ATTRIBUTE_FILLTYPE, DEBUGCANVAS_FILLTYPE_WINDING);
@@ -541,6 +568,16 @@ void DrawCommand::MakeJsonRegion(SkJSONWriter& writer, const SkRegion& region) {
     SkPath path;
     region.getBoundaryPath(&path);
     MakeJsonPath(writer, path);
+}
+
+void DrawCommand::MakeJsonSampling(SkJSONWriter& writer, const SkSamplingOptions& sampling) {
+    writer.beginObject();
+    writer.appendBool("useCubic", sampling.useCubic);
+    writer.appendS32("filter", (int)sampling.filter);
+    writer.appendS32("mipmap", (int)sampling.mipmap);
+    writer.appendFloat("cubic.B", sampling.cubic.B);
+    writer.appendFloat("cubic.C", sampling.cubic.C);
+    writer.endObject();
 }
 
 static const char* clipop_name(SkClipOp op) {
@@ -1188,6 +1225,8 @@ void DrawImageCommand::toJSON(SkJSONWriter& writer, UrlDataManager& urlDataManag
         writer.appendName(DEBUGCANVAS_ATTRIBUTE_PAINT);
         MakeJsonPaint(writer, *fPaint, urlDataManager);
     }
+    writer.appendName(DEBUGCANVAS_ATTRIBUTE_SAMPLING);
+    MakeJsonSampling(writer, fSampling);
 
     writer.appendU32(DEBUGCANVAS_ATTRIBUTE_UNIQUE_ID, fImage->uniqueID());
     writer.appendS32(DEBUGCANVAS_ATTRIBUTE_WIDTH, fImage->width());
@@ -1293,6 +1332,8 @@ void DrawImageRectCommand::toJSON(SkJSONWriter& writer, UrlDataManager& urlDataM
     MakeJsonRect(writer, fSrc);
     writer.appendName(DEBUGCANVAS_ATTRIBUTE_DST);
     MakeJsonRect(writer, fDst);
+    writer.appendName(DEBUGCANVAS_ATTRIBUTE_SAMPLING);
+    MakeJsonSampling(writer, fSampling);
     if (fPaint.isValid()) {
         writer.appendName(DEBUGCANVAS_ATTRIBUTE_PAINT);
         MakeJsonPaint(writer, *fPaint, urlDataManager);
@@ -1352,6 +1393,8 @@ void DrawImageRectLayerCommand::toJSON(SkJSONWriter& writer, UrlDataManager& url
 
     writer.appendName(DEBUGCANVAS_ATTRIBUTE_DST);
     MakeJsonRect(writer, fDst);
+    writer.appendName(DEBUGCANVAS_ATTRIBUTE_SAMPLING);
+    MakeJsonSampling(writer, fSampling);
     if (fPaint.isValid()) {
         writer.appendName(DEBUGCANVAS_ATTRIBUTE_PAINT);
         MakeJsonPaint(writer, *fPaint, urlDataManager);

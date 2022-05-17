@@ -393,6 +393,7 @@ void RendererVk::ensureCapsInitialized() const
     mNativeExtensions.EGLImageExternalWrapModesEXT = true;
     mNativeExtensions.EGLImageExternalEssl3OES     = true;
     mNativeExtensions.EGLImageArrayEXT             = true;
+    mNativeExtensions.EGLImageStorageEXT           = true;
     mNativeExtensions.memoryObjectEXT              = true;
     mNativeExtensions.memoryObjectFdEXT            = getFeatures().supportsExternalMemoryFd.enabled;
     mNativeExtensions.memoryObjectFlagsANGLE       = true;
@@ -523,6 +524,18 @@ void RendererVk::ensureCapsInitialized() const
     constexpr unsigned int kNotSupportedSampleCounts = VK_SAMPLE_COUNT_64_BIT;
     mNativeExtensions.sampleVariablesOES =
         supportSampleRateShading && vk_gl::GetMaxSampleCount(kNotSupportedSampleCounts) == 0;
+
+    // GL_KHR_blend_equation_advanced.  According to the spec, only color attachment zero can be
+    // used with advanced blend:
+    //
+    // > Advanced blending equations are supported only when rendering to a single
+    // > color buffer using fragment color zero.
+    //
+    // Vulkan requires advancedBlendMaxColorAttachments to be at least one, so we can support
+    // advanced blend as long as the Vulkan extension is supported.  Otherwise, the extension is
+    // emulated where possible.
+    mNativeExtensions.blendEquationAdvancedKHR = mFeatures.supportsBlendOperationAdvanced.enabled ||
+                                                 mFeatures.emulateAdvancedBlendEquations.enabled;
 
     // Enable EXT_unpack_subimage
     mNativeExtensions.unpackSubimageEXT = true;
@@ -789,7 +802,10 @@ void RendererVk::ensureCapsInitialized() const
     // Set maxShaderAtomicCounters to zero if atomic is not supported.
     if (!mPhysicalDeviceFeatures.vertexPipelineStoresAndAtomics)
     {
-        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::Vertex] = 0;
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::Vertex]         = 0;
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::Geometry]       = 0;
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::TessControl]    = 0;
+        mNativeCaps.maxShaderAtomicCounters[gl::ShaderType::TessEvaluation] = 0;
     }
     if (!mPhysicalDeviceFeatures.fragmentStoresAndAtomics)
     {
@@ -865,7 +881,8 @@ void RendererVk::ensureCapsInitialized() const
     {
         reservedVaryingComponentCount += kReservedVaryingComponentsForGLLineRasterization;
     }
-    if (getFeatures().supportsTransformFeedbackExtension.enabled)
+    if (getFeatures().supportsTransformFeedbackExtension.enabled &&
+        !getFeatures().supportsDepthClipControl.enabled)
     {
         reservedVaryingComponentCount += kReservedVaryingComponentsForTransformFeedbackExtension;
     }

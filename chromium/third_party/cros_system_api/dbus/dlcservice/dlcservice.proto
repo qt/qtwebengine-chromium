@@ -7,6 +7,7 @@ syntax = "proto3";
 option optimize_for = LITE_RUNTIME;
 
 package dlcservice;
+option go_package = "chromiumos/system_api/dlcservice_proto";
 
 // This is the message that is passed into installation
 message InstallRequest {

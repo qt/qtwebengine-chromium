@@ -1865,8 +1865,8 @@ def atrous_conv2d(value, filters, rate, padding, name=None):
     A `Tensor` with the same type as `value`.
     Output shape with `'VALID'` padding is:
 
-        [batch, height - 2 * (filter_width - 1),
-         width - 2 * (filter_height - 1), out_channels].
+        [batch, height - rate * (filter_width - 1),
+         width - rate * (filter_height - 1), out_channels].
 
     Output shape with `'SAME'` padding is:
 
@@ -3699,6 +3699,10 @@ def gelu(features, approximate=False, name=None):
   """
   with ops.name_scope(name, "Gelu", [features]):
     features = ops.convert_to_tensor(features, name="features")
+    if not features.dtype.is_floating:
+      raise ValueError(
+          "`features.dtype` must be a floating point tensor."
+          f"Received:features.dtype={features.dtype}")
     if approximate:
       coeff = math_ops.cast(0.044715, features.dtype)
       return 0.5 * features * (

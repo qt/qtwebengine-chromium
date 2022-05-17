@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 // Platform-specific code for MacOS goes here. Code shared between iOS and
-// macOS is in platform-xnu.cc, while the POSIX-compatible are in in
+// macOS is in platform-darwin.cc, while the POSIX-compatible are in in
 // platform-posix.cc.
 
 #include <mach/mach.h>
@@ -85,6 +85,33 @@ void* OS::AllocateShared(void* hint, size_t size, MemoryPermission access,
 
   if (kr != KERN_SUCCESS) return nullptr;
   return reinterpret_cast<void*>(addr);
+}
+
+// static
+bool OS::RemapPages(const void* address, size_t size, void* new_address,
+                    MemoryPermission access) {
+  DCHECK(IsAligned(reinterpret_cast<uintptr_t>(address), AllocatePageSize()));
+  DCHECK(
+      IsAligned(reinterpret_cast<uintptr_t>(new_address), AllocatePageSize()));
+  DCHECK(IsAligned(size, AllocatePageSize()));
+
+  vm_prot_t cur_protection = GetVMProtFromMemoryPermission(access);
+  vm_prot_t max_protection;
+  // Asks the kernel to remap *on top* of an existing mapping, rather than
+  // copying the data.
+  int flags = VM_FLAGS_FIXED | VM_FLAGS_OVERWRITE;
+  mach_vm_address_t target = reinterpret_cast<mach_vm_address_t>(new_address);
+  kern_return_t ret =
+      mach_vm_remap(mach_task_self(), &target, size, 0, flags, mach_task_self(),
+                    reinterpret_cast<mach_vm_address_t>(address), FALSE,
+                    &cur_protection, &max_protection, VM_INHERIT_NONE);
+
+  if (ret != KERN_SUCCESS) return false;
+
+  // Did we get the address we wanted?
+  CHECK_EQ(new_address, reinterpret_cast<void*>(target));
+
+  return true;
 }
 
 bool AddressSpaceReservation::AllocateShared(void* address, size_t size,

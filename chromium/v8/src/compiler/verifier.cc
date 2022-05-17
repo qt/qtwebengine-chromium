@@ -49,6 +49,9 @@ class Verifier::Visitor {
 
  private:
   void CheckNotTyped(Node* node) {
+    // Verification of simplified lowering sets types of many additional nodes.
+    if (FLAG_verify_simplified_lowering) return;
+
     if (NodeProperties::IsTyped(node)) {
       std::ostringstream str;
       str << "TypeError: node #" << node->id() << ":" << *node->op()
@@ -152,6 +155,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
   // consumed as an effect input somewhere else.
   // TODO(mvstanton): support this kind of verification for Wasm compiles, too.
   if (code_type != kWasm && node->op()->EffectOutputCount() > 0) {
+#ifdef DEBUG
     int effect_edges = 0;
     for (Edge edge : node->use_edges()) {
       if (all.IsLive(edge.from()) && NodeProperties::IsEffectEdge(edge)) {
@@ -159,6 +163,7 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       }
     }
     DCHECK_GT(effect_edges, 0);
+#endif
   }
 
   // Verify that frame state has been inserted for the nodes that need it.
@@ -367,7 +372,6 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       break;
     case IrOpcode::kDeoptimizeIf:
     case IrOpcode::kDeoptimizeUnless:
-    case IrOpcode::kDynamicCheckMapsWithDeoptUnless:
     case IrOpcode::kPlug:
     case IrOpcode::kTrapIf:
     case IrOpcode::kTrapUnless:
@@ -736,30 +740,31 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckTypeIs(node, Type::Any());
       CHECK(LoadGlobalParametersOf(node->op()).feedback().IsValid());
       break;
-    case IrOpcode::kJSStoreProperty:
+    case IrOpcode::kJSSetKeyedProperty:
       CheckNotTyped(node);
       CHECK(PropertyAccessOf(node->op()).feedback().IsValid());
       break;
-    case IrOpcode::kJSDefineProperty:
+    case IrOpcode::kJSDefineKeyedOwnProperty:
       CheckNotTyped(node);
       CHECK(PropertyAccessOf(node->op()).feedback().IsValid());
       break;
-    case IrOpcode::kJSStoreNamed:
+    case IrOpcode::kJSSetNamedProperty:
       CheckNotTyped(node);
       break;
     case IrOpcode::kJSStoreGlobal:
       CheckNotTyped(node);
       CHECK(StoreGlobalParametersOf(node->op()).feedback().IsValid());
       break;
-    case IrOpcode::kJSStoreNamedOwn:
+    case IrOpcode::kJSDefineNamedOwnProperty:
       CheckNotTyped(node);
-      CHECK(StoreNamedOwnParametersOf(node->op()).feedback().IsValid());
+      CHECK(
+          DefineNamedOwnPropertyParametersOf(node->op()).feedback().IsValid());
       break;
     case IrOpcode::kJSGetIterator:
       CheckValueInputIs(node, 0, Type::Any());
       CheckTypeIs(node, Type::Any());
       break;
-    case IrOpcode::kJSStoreDataPropertyInLiteral:
+    case IrOpcode::kJSDefineKeyedOwnPropertyInLiteral:
     case IrOpcode::kJSStoreInArrayLiteral:
       CheckNotTyped(node);
       CHECK(FeedbackParameterOf(node->op()).feedback().IsValid());
@@ -1444,10 +1449,6 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CheckValueInputIs(node, 0, Type::Any());
       CheckNotTyped(node);
       break;
-    case IrOpcode::kDynamicCheckMaps:
-      CheckValueInputIs(node, 0, Type::Any());
-      CheckNotTyped(node);
-      break;
     case IrOpcode::kCompareMaps:
       CheckValueInputIs(node, 0, Type::Any());
       CheckTypeIs(node, Type::Boolean());
@@ -1629,6 +1630,10 @@ void Verifier::Visitor::Check(Node* node, const AllNodes& all) {
       CHECK_GE(value_count, 1);
       CheckValueInputIs(node, 0, Type::Any());  // receiver
       break;
+    case IrOpcode::kSLVerifierHint:
+      // SLVerifierHint is internal to SimplifiedLowering and should never be
+      // seen by the verifier.
+      UNREACHABLE();
 #if V8_ENABLE_WEBASSEMBLY
     case IrOpcode::kJSWasmCall:
       CHECK_GE(value_count, 3);
@@ -2135,7 +2140,6 @@ void Verifier::VerifyNode(Node* node) {
   bool check_no_control = node->op()->ControlOutputCount() == 0;
   bool check_no_effect = node->op()->EffectOutputCount() == 0;
   bool check_no_frame_state = node->opcode() != IrOpcode::kFrameState;
-  int effect_edges = 0;
   if (check_no_effect || check_no_control) {
     for (Edge edge : node->use_edges()) {
       Node* const user = edge.from();
@@ -2144,7 +2148,6 @@ void Verifier::VerifyNode(Node* node) {
         DCHECK(!check_no_control);
       } else if (NodeProperties::IsEffectEdge(edge)) {
         DCHECK(!check_no_effect);
-        effect_edges++;
       } else if (NodeProperties::IsFrameStateEdge(edge)) {
         DCHECK(!check_no_frame_state);
       }

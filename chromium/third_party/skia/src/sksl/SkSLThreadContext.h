@@ -8,25 +8,36 @@
 #ifndef SKSL_THREADCONTEXT
 #define SKSL_THREADCONTEXT
 
-#include "include/private/SkSLModifiers.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "include/private/SkSLProgramKind.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLMangler.h"
+#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLProgram.h"
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-#include "src/gpu/GrFragmentProcessor.h"
-#endif // !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
+
 #include <list>
+#include <memory>
 #include <stack>
 #include <string_view>
+#include <vector>
+
+#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#endif
 
 namespace SkSL {
 
 class Compiler;
-class Context;
-struct ParsedModule;
+class ModifiersPool;
+class Pool;
+class Position;
 class ProgramElement;
 class SymbolTable;
-class Type;
 class Variable;
+struct Modifiers;
+struct ParsedModule;
 
 namespace dsl {
 
@@ -161,6 +172,14 @@ public:
     }
 #endif // !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
 
+    static const char* Filename() {
+        return Instance().fFilename;
+    }
+
+    static void SetFilename(const char* filename) {
+        Instance().fFilename = filename;
+    }
+
     /**
      * Returns the ErrorReporter associated with the current thread. This object will be notified
      * when any DSL errors occur.
@@ -175,12 +194,12 @@ public:
      * Notifies the current ErrorReporter that an error has occurred. The default error handler
      * prints the message to stderr and aborts.
      */
-    static void ReportError(std::string_view msg, PositionInfo info = PositionInfo::Capture());
+    static void ReportError(std::string_view msg, Position pos = {});
 
     /**
      * Forwards any pending errors to the DSL ErrorReporter.
      */
-    static void ReportErrors(PositionInfo pos);
+    static void ReportErrors(Position pos);
 
     static ThreadContext& Instance();
 
@@ -188,7 +207,7 @@ public:
 
 private:
     class DefaultErrorReporter : public ErrorReporter {
-        void handleError(std::string_view msg, PositionInfo pos) override;
+        void handleError(std::string_view msg, Position pos) override;
     };
 
     void setupSymbolTable();
@@ -207,6 +226,8 @@ private:
     Mangler fMangler;
     RTAdjustData fRTAdjust;
     Program::Inputs fInputs;
+    // for DSL error reporting purposes
+    const char* fFilename = "";
 
 #if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
     struct StackFrame {

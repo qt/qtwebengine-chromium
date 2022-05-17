@@ -14,6 +14,7 @@
 #include "base/test/bind.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread_task_runner_handle.h"
+#include "base/time/time.h"
 #include "media/base/cdm_context.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/renderer_client.h"
@@ -74,7 +75,9 @@ class TestDemuxerStream : public media::DemuxerStream {
     return media::VideoDecoderConfig();
   }
   Type type() const override { return AUDIO; }
-  Liveness liveness() const override { return LIVENESS_RECORDED; }
+  media::StreamLiveness liveness() const override {
+    return media::StreamLiveness::kRecorded;
+  }
   bool SupportsConfigChanges() override { return true; }
 
  private:

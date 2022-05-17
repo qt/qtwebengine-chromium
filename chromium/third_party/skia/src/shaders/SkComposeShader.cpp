@@ -11,7 +11,6 @@
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkBlendModePriv.h"
 #include "src/core/SkBlenderBase.h"
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkRuntimeEffectPriv.h"
@@ -19,6 +18,10 @@
 #include "src/core/SkWriteBuffer.h"
 #include "src/shaders/SkColorShader.h"
 #include "src/shaders/SkComposeShader.h"
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
+#endif
 
 namespace {
 
@@ -169,8 +172,8 @@ skvm::Color SkShader_Blend::onProgram(skvm::Builder* p,
 #if SK_SUPPORT_GPU
 
 #include "include/gpu/GrRecordingContext.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/effects/GrBlendFragmentProcessor.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
 
 std::unique_ptr<GrFragmentProcessor> SkShader_Blend::asFragmentProcessor(
         const GrFPArgs& orig_args) const {
@@ -189,13 +192,14 @@ std::unique_ptr<GrFragmentProcessor> SkShader_Blend::asFragmentProcessor(
 }
 #endif
 
-void SkShader_Blend::addToKey(SkShaderCodeDictionary* dict,
-                              SkBackend backend,
+#ifdef SK_ENABLE_SKSL
+void SkShader_Blend::addToKey(const SkKeyContext& keyContext,
                               SkPaintParamsKeyBuilder* builder,
-                              SkUniformBlock* uniformBlock) const {
+                              SkPipelineDataGatherer* gatherer) const {
     // TODO: add blender support
     SkASSERT(!fBlender);
 
-    BlendShaderBlock::AddToKey(dict, backend, builder, uniformBlock,
+    BlendShaderBlock::AddToKey(keyContext, builder, gatherer,
                                { fDst.get(), fSrc.get(), fMode });
 }
+#endif

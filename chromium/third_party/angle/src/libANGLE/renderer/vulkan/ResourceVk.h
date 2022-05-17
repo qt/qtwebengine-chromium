@@ -45,6 +45,12 @@ class SharedResourceUse final : angle::NonCopyable
         return *this;
     }
 
+    void copy(SharedResourceUse &src)
+    {
+        mUse = src.mUse;
+        mUse->counter++;
+    }
+
     ANGLE_INLINE bool valid() const { return mUse != nullptr; }
 
     void init()
@@ -120,18 +126,26 @@ class SharedBufferSuballocationGarbage
   public:
     SharedBufferSuballocationGarbage() = default;
     SharedBufferSuballocationGarbage(SharedBufferSuballocationGarbage &&other)
-        : mLifetime(std::move(other.mLifetime)), mGarbage(std::move(other.mGarbage))
+        : mLifetime(std::move(other.mLifetime)),
+          mSuballocation(std::move(other.mSuballocation)),
+          mBuffer(std::move(other.mBuffer))
     {}
-    SharedBufferSuballocationGarbage(SharedResourceUse &&use, BufferSuballocation &&garbage)
-        : mLifetime(std::move(use)), mGarbage(std::move(garbage))
+    SharedBufferSuballocationGarbage(SharedResourceUse &&use,
+                                     BufferSuballocation &&suballocation,
+                                     Buffer &&buffer)
+        : mLifetime(std::move(use)),
+          mSuballocation(std::move(suballocation)),
+          mBuffer(std::move(buffer))
     {}
     ~SharedBufferSuballocationGarbage() = default;
 
     bool destroyIfComplete(RendererVk *renderer, Serial completedSerial);
+    bool usedInRecordedCommands() const { return mLifetime.usedInRecordedCommands(); }
 
   private:
     SharedResourceUse mLifetime;
-    BufferSuballocation mGarbage;
+    BufferSuballocation mSuballocation;
+    Buffer mBuffer;
 };
 using SharedBufferSuballocationGarbageList = std::queue<SharedBufferSuballocationGarbage>;
 
@@ -145,6 +159,7 @@ class SharedGarbage
     SharedGarbage &operator=(SharedGarbage &&rhs);
 
     bool destroyIfComplete(RendererVk *renderer, Serial completedSerial);
+    bool usedInRecordedCommands() const { return mLifetime.usedInRecordedCommands(); }
 
   private:
     SharedResourceUse mLifetime;
@@ -163,6 +178,7 @@ class ResourceUseList final : angle::NonCopyable
     ResourceUseList &operator=(ResourceUseList &&rhs);
 
     void add(const SharedResourceUse &resourceUse);
+    void copy(ResourceUseList &srcResourceUse);
 
     void releaseResourceUses();
     void releaseResourceUsesAndUpdateSerials(Serial serial);

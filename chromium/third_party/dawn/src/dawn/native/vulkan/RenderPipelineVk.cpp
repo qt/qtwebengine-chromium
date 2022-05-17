@@ -332,6 +332,7 @@ namespace dawn::native::vulkan {
 
     MaybeError RenderPipeline::Initialize() {
         Device* device = ToBackend(GetDevice());
+        PipelineLayout* layout = ToBackend(GetLayout());
 
         // There are at most 2 shader stages in render pipeline, i.e. vertex and fragment
         std::array<VkPipelineShaderStageCreateInfo, 2> shaderStages;
@@ -344,10 +345,11 @@ namespace dawn::native::vulkan {
             VkPipelineShaderStageCreateInfo shaderStage;
 
             const ProgrammableStage& programmableStage = GetStage(stage);
-            DAWN_TRY_ASSIGN(shaderStage.module,
-                            ToBackend(programmableStage.module)
-                                ->GetTransformedModuleHandle(programmableStage.entryPoint.c_str(),
-                                                             ToBackend(GetLayout())));
+            ShaderModule* module = ToBackend(programmableStage.module.Get());
+            const ShaderModule::Spirv* spirv;
+            DAWN_TRY_ASSIGN(
+                std::tie(shaderStage.module, spirv),
+                module->GetHandleAndSpirv(programmableStage.entryPoint.c_str(), layout));
 
             shaderStage.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
             shaderStage.pNext = nullptr;
@@ -379,6 +381,9 @@ namespace dawn::native::vulkan {
             DAWN_ASSERT(stageCount < 2);
             shaderStages[stageCount] = shaderStage;
             stageCount++;
+
+            // Record cache key for each shader since it will become inaccessible later on.
+            GetCacheKey()->Record(stage).RecordIterable(*spirv);
         }
 
         PipelineVertexInputStateCreateInfoTemporaryAllocations tempAllocations;
@@ -457,8 +462,21 @@ namespace dawn::native::vulkan {
         if (GetStageMask() & wgpu::ShaderStage::Fragment) {
             // Initialize the "blend state info" that will be chained in the "create info" from the
             // data pre-computed in the ColorState
+            for (auto& blend : colorBlendAttachments) {
+                blend.blendEnable = VK_FALSE;
+                blend.srcColorBlendFactor = VK_BLEND_FACTOR_ONE;
+                blend.dstColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+                blend.colorBlendOp = VK_BLEND_OP_ADD;
+                blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+                blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+                blend.alphaBlendOp = VK_BLEND_OP_ADD;
+                blend.colorWriteMask = 0;
+            }
+
             const auto& fragmentOutputsWritten =
                 GetStage(SingleShaderStage::Fragment).metadata->fragmentOutputsWritten;
+            ColorAttachmentIndex highestColorAttachmentIndexPlusOne =
+                GetHighestBitIndexPlusOne(GetColorAttachmentsMask());
             for (ColorAttachmentIndex i : IterateBitSet(GetColorAttachmentsMask())) {
                 const ColorTargetState* target = GetColorTargetState(i);
                 colorBlendAttachments[i] = ComputeColorDesc(target, fragmentOutputsWritten[i]);
@@ -470,7 +488,7 @@ namespace dawn::native::vulkan {
             // LogicOp isn't supported so we disable it.
             colorBlend.logicOpEnable = VK_FALSE;
             colorBlend.logicOp = VK_LOGIC_OP_CLEAR;
-            colorBlend.attachmentCount = static_cast<uint32_t>(GetColorAttachmentsMask().count());
+            colorBlend.attachmentCount = static_cast<uint8_t>(highestColorAttachmentIndexPlusOne);
             colorBlend.pAttachments = colorBlendAttachments.data();
             // The blend constant is always dynamic so we fill in a dummy value
             colorBlend.blendConstants[0] = 0.0f;
@@ -513,6 +531,7 @@ namespace dawn::native::vulkan {
 
             query.SetSampleCount(GetSampleCount());
 
+            GetCacheKey()->Record(query);
             DAWN_TRY_ASSIGN(renderPass, device->GetRenderPassCache()->GetRenderPass(query));
         }
 
@@ -540,6 +559,10 @@ namespace dawn::native::vulkan {
         createInfo.basePipelineHandle = VkPipeline{};
         createInfo.basePipelineIndex = -1;
 
+        // Record cache key information now since createInfo is not stored.
+        GetCacheKey()->Record(createInfo,
+                              static_cast<const RenderPipeline*>(this)->GetLayout()->GetCacheKey());
+
         DAWN_TRY(CheckVkSuccess(
             device->fn.CreateGraphicsPipelines(device->GetVkDevice(), VkPipelineCache{}, 1,
                                                &createInfo, nullptr, &*mHandle),
@@ -551,8 +574,7 @@ namespace dawn::native::vulkan {
     }
 
     void RenderPipeline::SetLabelImpl() {
-        SetDebugName(ToBackend(GetDevice()), VK_OBJECT_TYPE_PIPELINE,
-                     reinterpret_cast<uint64_t&>(mHandle), "Dawn_RenderPipeline", GetLabel());
+        SetDebugName(ToBackend(GetDevice()), mHandle, "Dawn_RenderPipeline", GetLabel());
     }
 
     VkPipelineVertexInputStateCreateInfo RenderPipeline::ComputeVertexInputDesc(

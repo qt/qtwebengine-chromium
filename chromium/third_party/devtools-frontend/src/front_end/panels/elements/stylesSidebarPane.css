@@ -142,11 +142,13 @@
 }
 
 .styles-sidebar-pane-toolbar-container {
+  --override-toolbar-background-color: var(--color-background-elevation-1);
+
   flex-shrink: 0;
   overflow: hidden;
   position: sticky;
   top: 0;
-  background-color: var(--color-background-elevation-1);
+  background-color: var(--override-toolbar-background-color);
   z-index: 2;
 }
 
@@ -215,6 +217,10 @@
   text-overflow: ellipsis;
   vertical-align: middle;
   margin-left: 2px;
+}
+
+.sidebar-separator.layer-separator {
+  display: flex;
 }
 
 .sidebar-pane-section-toolbar {

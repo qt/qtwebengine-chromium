@@ -120,10 +120,10 @@ void WasmGlobalObject::set_type(wasm::ValueType value) {
   set_raw_type(static_cast<int>(value.raw_bit_field()));
 }
 
-int WasmGlobalObject::type_size() const { return type().element_size_bytes(); }
+int WasmGlobalObject::type_size() const { return type().value_kind_size(); }
 
 Address WasmGlobalObject::address() const {
-  DCHECK_NE(type(), wasm::kWasmExternRef);
+  DCHECK_NE(type(), wasm::kWasmAnyRef);
   DCHECK_LE(offset() + type_size(), untagged_buffer().byte_length());
   return Address(untagged_buffer().backing_store()) + offset();
 }
@@ -167,8 +167,7 @@ void WasmGlobalObject::SetF64(double value) {
 }
 
 void WasmGlobalObject::SetExternRef(Handle<Object> value) {
-  DCHECK(type().is_reference_to(wasm::HeapType::kExtern) ||
-         type().is_reference_to(wasm::HeapType::kAny));
+  DCHECK(type().is_reference_to(wasm::HeapType::kAny));
   tagged_buffer().set(offset(), *value);
 }
 
@@ -591,7 +590,7 @@ int WasmArray::SizeFor(Map map, int length) {
 uint32_t WasmArray::element_offset(uint32_t index) {
   DCHECK_LE(index, length());
   return WasmArray::kHeaderSize +
-         index * type()->element_type().element_size_bytes();
+         index * type()->element_type().value_kind_size();
 }
 
 Address WasmArray::ElementAddress(uint32_t index) {

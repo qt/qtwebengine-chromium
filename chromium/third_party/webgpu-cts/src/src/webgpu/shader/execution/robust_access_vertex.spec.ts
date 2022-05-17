@@ -351,7 +351,7 @@ class F extends GPUTest {
       let currAttribute = 0;
       for (let i = 0; i < bufferCount; i++) {
         for (let j = 0; j < attributesPerBuffer; j++) {
-          layoutStr += `@location(${currAttribute}) a_${currAttribute} : ${typeInfo.wgslType};\n`;
+          layoutStr += `@location(${currAttribute}) a_${currAttribute} : ${typeInfo.wgslType},\n`;
           attributeNames.push(`a_${currAttribute}`);
           currAttribute++;
         }
@@ -499,7 +499,8 @@ class F extends GPUTest {
         {
           view: colorAttachmentView,
           storeOp: 'store',
-          loadValue: { r: 0.0, g: 1.0, b: 0.0, a: 1.0 },
+          clearValue: { r: 0.0, g: 1.0, b: 0.0, a: 1.0 },
+          loadOp: 'clear',
         },
       ],
     });
@@ -508,7 +509,7 @@ class F extends GPUTest {
     // Run the draw variant
     drawCall.insertInto(pass, isIndexed, isIndirect);
 
-    pass.endPass();
+    pass.end();
     this.device.queue.submit([encoder.finish()]);
 
     // Validate we see green on the left pixel, showing that no failure case is detected

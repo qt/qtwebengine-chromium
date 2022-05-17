@@ -27,10 +27,6 @@ class V8_EXPORT_PRIVATE DefaultEmbedderRootsHandler final
  public:
   bool IsRoot(const v8::TracedReference<v8::Value>& handle) final;
 
-  START_ALLOW_USE_DEPRECATED()
-  bool IsRoot(const v8::TracedGlobal<v8::Value>& handle) final;
-  END_ALLOW_USE_DEPRECATED()
-
   void ResetRoot(const v8::TracedReference<v8::Value>& handle) final;
 
   void SetTracer(EmbedderHeapTracer* tracer) { tracer_ = tracer; }
@@ -116,9 +112,6 @@ class V8_EXPORT_PRIVATE LocalEmbedderHeapTracer final {
     return !FLAG_incremental_marking_wrappers || !InUse() ||
            (IsRemoteTracingDone() && embedder_worklist_empty_);
   }
-
-  void SetEmbedderStackStateForNextFinalization(
-      EmbedderHeapTracer::EmbedderStackState stack_state);
 
   void SetEmbedderWorklistEmpty(bool is_empty) {
     embedder_worklist_empty_ = is_empty;
@@ -228,26 +221,6 @@ class V8_EXPORT_PRIVATE LocalEmbedderHeapTracer final {
   WrapperDescriptor wrapper_descriptor_ = GetDefaultWrapperDescriptor();
 
   friend class EmbedderStackStateScope;
-};
-
-class V8_EXPORT_PRIVATE V8_NODISCARD EmbedderStackStateScope final {
- public:
-  EmbedderStackStateScope(LocalEmbedderHeapTracer* local_tracer,
-                          EmbedderHeapTracer::EmbedderStackState stack_state)
-      : local_tracer_(local_tracer),
-        old_stack_state_(local_tracer_->embedder_stack_state_) {
-    local_tracer_->embedder_stack_state_ = stack_state;
-    if (EmbedderHeapTracer::EmbedderStackState::kNoHeapPointers == stack_state)
-      local_tracer_->NotifyEmptyEmbedderStack();
-  }
-
-  ~EmbedderStackStateScope() {
-    local_tracer_->embedder_stack_state_ = old_stack_state_;
-  }
-
- private:
-  LocalEmbedderHeapTracer* const local_tracer_;
-  const EmbedderHeapTracer::EmbedderStackState old_stack_state_;
 };
 
 }  // namespace internal

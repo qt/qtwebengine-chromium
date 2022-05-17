@@ -7,10 +7,13 @@
 
 #include "src/shaders/gradients/SkRadialGradient.h"
 
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkWriteBuffer.h"
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
+#endif
 
 namespace {
 
@@ -74,7 +77,7 @@ skvm::F32 SkRadialGradient::transformT(skvm::Builder* p, skvm::Uniforms*,
 
 #if SK_SUPPORT_GPU
 
-#include "src/gpu/gradients/GrGradientShader.h"
+#include "src/gpu/ganesh/gradients/GrGradientShader.h"
 
 std::unique_ptr<GrFragmentProcessor> SkRadialGradient::asFragmentProcessor(
         const GrFPArgs& args) const {
@@ -83,10 +86,10 @@ std::unique_ptr<GrFragmentProcessor> SkRadialGradient::asFragmentProcessor(
 
 #endif
 
-void SkRadialGradient::addToKey(SkShaderCodeDictionary* dict,
-                                SkBackend backend,
+#ifdef SK_ENABLE_SKSL
+void SkRadialGradient::addToKey(const SkKeyContext& keyContext,
                                 SkPaintParamsKeyBuilder* builder,
-                                SkUniformBlock* uniformBlock) const {
+                                SkPipelineDataGatherer* gatherer) const {
     GradientShaderBlocks::GradientData data(kRadial_GradientType,
                                             fCenter, { 0.0f, 0.0f },
                                             fRadius, 0.0f,
@@ -95,5 +98,6 @@ void SkRadialGradient::addToKey(SkShaderCodeDictionary* dict,
                                             fOrigColors4f,
                                             fOrigPos);
 
-    GradientShaderBlocks::AddToKey(dict, backend, builder, uniformBlock, data);
+    GradientShaderBlocks::AddToKey(keyContext, builder, gatherer, data);
 }
+#endif

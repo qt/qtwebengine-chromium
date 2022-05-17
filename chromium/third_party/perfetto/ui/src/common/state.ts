@@ -79,7 +79,8 @@ export const MAX_TIME = 180;
 // typed key/value because a `Map` does not preserve type during
 // serialisation+deserialisation.
 // 15: Added state for Pivot Table V2
-export const STATE_VERSION = 15;
+// 16: Added boolean tracking if the flamegraph modal was dismissed
+export const STATE_VERSION = 16;
 
 export const SCROLLING_TRACK_GROUP = 'ScrollingTracks';
 
@@ -91,7 +92,9 @@ export enum TrackKindPriority {
   'MAIN_THREAD' = 0,
   'RENDER_THREAD' = 1,
   'GPU_COMPLETION' = 2,
-  'ORDINARY' = 3
+  'CHROME_IO_THREAD' = 3,
+  'CHROME_COMPOSITOR' = 4,
+  'ORDINARY' = 5
 }
 
 export type FlamegraphStateViewingOption =
@@ -153,7 +156,10 @@ export interface TrackState {
   labels?: string[];
   trackKindPriority: TrackKindPriority;
   trackGroup?: string;
-  config: {};
+  config: {
+    trackId?: number;
+    trackIds?: number[];
+  };
 }
 
 export interface TrackGroupState {
@@ -335,6 +341,7 @@ export interface PivotTableState {
 // correctly. Generated together with the text of query and passed without the
 // change to the query response.
 export interface PivotTableReduxQueryMetadata {
+  tableName: string;
   pivotColumns: string[];
   aggregationColumns: string[];
 }
@@ -449,6 +456,7 @@ export interface State {
   highlightedSliceId: number;
   focusedFlowIdLeft: number;
   focusedFlowIdRight: number;
+  pendingScrollId?: number;
 
   searchIndex: number;
   currentTab?: string;
@@ -459,6 +467,7 @@ export interface State {
   recordingInProgress: boolean;
   recordingCancelled: boolean;
   extensionInstalled: boolean;
+  flamegraphModalDismissed: boolean;
   recordingTarget: RecordingTarget;
   availableAdbDevices: AdbRecordingTarget[];
   lastRecordingError?: string;
@@ -511,7 +520,8 @@ export function isAdbTarget(target: RecordingTarget):
 }
 
 export function hasActiveProbes(config: RecordConfig) {
-  const fieldsWithEmptyResult = new Set<string>(['hpBlockClient']);
+  const fieldsWithEmptyResult =
+      new Set<string>(['hpBlockClient', 'allAtraceApps']);
   let key: keyof RecordConfig;
   for (key in config) {
     if (typeof (config[key]) === 'boolean' && config[key] === true &&

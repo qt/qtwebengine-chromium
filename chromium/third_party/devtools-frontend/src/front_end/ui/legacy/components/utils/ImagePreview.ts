@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+// TODO(crbug.com/1253323): Casts to UrlString will be removed from this file when migration to branded types is complete.
+
 import * as Common from '../../../../core/common/common.js';
 import * as Host from '../../../../core/host/host.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
@@ -52,7 +54,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export interface PrecomputedFeatures {
   renderedWidth: number;
   renderedHeight: number;
-  currentSrc?: string;
+  currentSrc?: Platform.DevToolsPath.UrlString;
 }
 
 function isImageResource(resource: SDK.Resource.Resource|null): boolean {
@@ -60,17 +62,18 @@ function isImageResource(resource: SDK.Resource.Resource|null): boolean {
 }
 
 export class ImagePreview {
-  static async build(target: SDK.Target.Target, originalImageURL: string, showDimensions: boolean, options: {
-    precomputedFeatures: (PrecomputedFeatures|undefined),
-    imageAltText: (string|undefined),
-  }|undefined = {precomputedFeatures: undefined, imageAltText: undefined}): Promise<Element|null> {
+  static async build(
+      target: SDK.Target.Target, originalImageURL: Platform.DevToolsPath.UrlString, showDimensions: boolean, options: {
+        precomputedFeatures: (PrecomputedFeatures|undefined),
+        imageAltText: (string|undefined),
+      }|undefined = {precomputedFeatures: undefined, imageAltText: undefined}): Promise<Element|null> {
     const {precomputedFeatures, imageAltText} = options;
     const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
     if (!resourceTreeModel) {
       return null;
     }
     let resource = resourceTreeModel.resourceForURL(originalImageURL);
-    let imageURL: string = originalImageURL;
+    let imageURL = originalImageURL;
     if (!isImageResource(resource) && precomputedFeatures && precomputedFeatures.currentSrc) {
       imageURL = precomputedFeatures.currentSrc;
       resource = resourceTreeModel.resourceForURL(imageURL);
@@ -113,7 +116,8 @@ export class ImagePreview {
 
         // Open image in new tab.
         link.addEventListener('click', () => {
-          Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(imageURL);
+          Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+              imageURL as Platform.DevToolsPath.UrlString);
         });
 
         const intrinsicWidth = imageElement.naturalWidth;
@@ -158,7 +162,8 @@ export class ImagePreview {
              HTMLLinkElement);
         sourceLink.textContent = sourceText;
         sourceLink.addEventListener('click', () => {
-          Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(imageURL);
+          Host.InspectorFrontendHost.InspectorFrontendHostInstance.openInNewTab(
+              imageURL as Platform.DevToolsPath.UrlString);
         });
         resolve(shadowBoundary);
       }
@@ -178,12 +183,16 @@ export class ImagePreview {
 
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // @ts-expect-error
-    const featuresObject = object.callFunctionJSON(features, undefined);
+    const featuresObject = await object.callFunctionJSON(features, undefined);
     object.release();
     return featuresObject;
 
     function features(this: HTMLImageElement): PrecomputedFeatures {
-      return {renderedWidth: this.width, renderedHeight: this.height, currentSrc: this.currentSrc};
+      return {
+        renderedWidth: this.width,
+        renderedHeight: this.height,
+        currentSrc: this.currentSrc as Platform.DevToolsPath.UrlString,
+      };
     }
   }
 

@@ -83,7 +83,7 @@ class F extends GPUTest {
     computePass.setBindGroup(0, bindGroup);
     computePass.setPipeline(computePipeline);
     computePass.dispatch(1);
-    computePass.endPass();
+    computePass.end();
     this.queue.submit([encoder.finish()]);
 
     this.CheckBufferAndOutputTexture(buffer, boundBufferSize + bufferOffset, outputTexture);
@@ -134,12 +134,13 @@ class F extends GPUTest {
       colorAttachments: [
         {
           view: texture.createView(),
-          loadValue: color,
+          clearValue: color,
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
     });
-    renderPass.endPass();
+    renderPass.end();
   }
 
   CheckBufferAndOutputTexture(
@@ -457,12 +458,13 @@ remaining part of it will be initialized to 0.`
               arrayLayerCount: 1,
               baseMipLevel: copyMipLevel,
             }),
-            loadValue: { r: layer + 1, g: 0, b: 0, a: 0 },
+            clearValue: { r: layer + 1, g: 0, b: 0, a: 0 },
+            loadOp: 'clear',
             storeOp: 'store',
           },
         ],
       });
-      renderPass.endPass();
+      renderPass.end();
     }
 
     // Do texture-to-buffer copy
@@ -474,7 +476,7 @@ remaining part of it will be initialized to 0.`
     );
     t.queue.submit([encoder.finish()]);
 
-    // Check if the contents of the destination bufer are what we expect.
+    // Check if the contents of the destination buffer are what we expect.
     const expectedData = new Uint8Array(dstBufferSize);
     for (let layer = 0; layer < arrayLayerCount; ++layer) {
       for (let y = 0; y < layout.mipSize[1]; ++y) {
@@ -505,7 +507,7 @@ g.test('uniform_buffer')
     const computeShaderModule = t.device.createShaderModule({
       code: `
   struct UBO {
-      value : vec4<u32>;
+      value : vec4<u32>
   };
   @group(0) @binding(0) var<uniform> ubo : UBO;
   @group(0) @binding(1) var outImage : texture_storage_2d<rgba8unorm, write>;
@@ -540,7 +542,7 @@ g.test('readonly_storage_buffer')
     const computeShaderModule = t.device.createShaderModule({
       code: `
     struct SSBO {
-        value : vec4<u32>;
+        value : vec4<u32>
     };
     @group(0) @binding(0) var<storage, read> ssbo : SSBO;
     @group(0) @binding(1) var outImage : texture_storage_2d<rgba8unorm, write>;
@@ -575,7 +577,7 @@ g.test('storage_buffer')
     const computeShaderModule = t.device.createShaderModule({
       code: `
     struct SSBO {
-        value : vec4<u32>;
+        value : vec4<u32>
     };
     @group(0) @binding(0) var<storage, read_write> ssbo : SSBO;
     @group(0) @binding(1) var outImage : texture_storage_2d<rgba8unorm, write>;
@@ -606,8 +608,8 @@ g.test('vertex_buffer')
       t.device.createShaderModule({
         code: `
       struct VertexOut {
-        @location(0) color : vec4<f32>;
-        @builtin(position) position : vec4<f32>;
+        @location(0) color : vec4<f32>,
+        @builtin(position) position : vec4<f32>,
       };
 
       @stage(vertex) fn main(@location(0) pos : vec4<f32>) -> VertexOut {
@@ -641,7 +643,8 @@ g.test('vertex_buffer')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -649,7 +652,7 @@ g.test('vertex_buffer')
     renderPass.setVertexBuffer(0, vertexBuffer, bufferOffset);
     renderPass.setPipeline(renderPipeline);
     renderPass.draw(1);
-    renderPass.endPass();
+    renderPass.end();
     t.queue.submit([encoder.finish()]);
 
     t.CheckBufferAndOutputTexture(vertexBuffer, bufferSize, outputTexture);
@@ -668,8 +671,8 @@ GPUBuffer, all the contents in that GPUBuffer have been initialized to 0.`
       t.device.createShaderModule({
         code: `
     struct VertexOut {
-      @location(0) color : vec4<f32>;
-      @builtin(position) position : vec4<f32>;
+      @location(0) color : vec4<f32>,
+      @builtin(position) position : vec4<f32>,
     };
 
     @stage(vertex)
@@ -705,7 +708,8 @@ GPUBuffer, all the contents in that GPUBuffer have been initialized to 0.`
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+          clearValue: { r: 0.0, g: 0.0, b: 0.0, a: 0.0 },
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -713,7 +717,7 @@ GPUBuffer, all the contents in that GPUBuffer have been initialized to 0.`
     renderPass.setPipeline(renderPipeline);
     renderPass.setIndexBuffer(indexBuffer, 'uint16', bufferOffset, 4);
     renderPass.drawIndexed(1);
-    renderPass.endPass();
+    renderPass.end();
     t.queue.submit([encoder.finish()]);
 
     t.CheckBufferAndOutputTexture(indexBuffer, bufferSize, outputTexture);
@@ -735,8 +739,8 @@ have been initialized to 0.`
       t.device.createShaderModule({
         code: `
     struct VertexOut {
-      @location(0) color : vec4<f32>;
-      @builtin(position) position : vec4<f32>;
+      @location(0) color : vec4<f32>,
+      @builtin(position) position : vec4<f32>,
     };
 
     @stage(vertex) fn main() -> VertexOut {
@@ -772,7 +776,7 @@ have been initialized to 0.`
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: 'load',
+          loadOp: 'load',
           storeOp: 'store',
         },
       ],
@@ -791,7 +795,7 @@ have been initialized to 0.`
       renderPass.drawIndirect(indirectBuffer, bufferOffset);
     }
 
-    renderPass.endPass();
+    renderPass.end();
     t.queue.submit([encoder.finish()]);
 
     // The indirect buffer should be lazily cleared to 0, so we actually draw nothing and the color
@@ -858,7 +862,7 @@ creation of that GPUBuffer, all the contents in that GPUBuffer have been initial
     computePass.setBindGroup(0, bindGroup);
     computePass.setPipeline(computePipeline);
     computePass.dispatchIndirect(indirectBuffer, bufferOffset);
-    computePass.endPass();
+    computePass.end();
     t.queue.submit([encoder.finish()]);
 
     // The indirect buffer should be lazily cleared to 0, so we actually draw nothing and the color

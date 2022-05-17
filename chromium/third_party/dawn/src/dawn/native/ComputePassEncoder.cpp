@@ -113,10 +113,23 @@ namespace dawn::native {
     ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
                                            const ComputePassDescriptor* descriptor,
                                            CommandEncoder* commandEncoder,
-                                           EncodingContext* encodingContext)
+                                           EncodingContext* encodingContext,
+                                           std::vector<TimestampWrite> timestampWritesAtEnd)
         : ProgrammableEncoder(device, descriptor->label, encodingContext),
-          mCommandEncoder(commandEncoder) {
+          mCommandEncoder(commandEncoder),
+          mTimestampWritesAtEnd(std::move(timestampWritesAtEnd)) {
         TrackInDevice();
+    }
+
+    // static
+    Ref<ComputePassEncoder> ComputePassEncoder::Create(
+        DeviceBase* device,
+        const ComputePassDescriptor* descriptor,
+        CommandEncoder* commandEncoder,
+        EncodingContext* encodingContext,
+        std::vector<TimestampWrite> timestampWritesAtEnd) {
+        return AcquireRef(new ComputePassEncoder(device, descriptor, commandEncoder,
+                                                 encodingContext, std::move(timestampWritesAtEnd)));
     }
 
     ComputePassEncoder::ComputePassEncoder(DeviceBase* device,
@@ -126,10 +139,12 @@ namespace dawn::native {
         : ProgrammableEncoder(device, encodingContext, errorTag), mCommandEncoder(commandEncoder) {
     }
 
-    ComputePassEncoder* ComputePassEncoder::MakeError(DeviceBase* device,
-                                                      CommandEncoder* commandEncoder,
-                                                      EncodingContext* encodingContext) {
-        return new ComputePassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError);
+    // static
+    Ref<ComputePassEncoder> ComputePassEncoder::MakeError(DeviceBase* device,
+                                                          CommandEncoder* commandEncoder,
+                                                          EncodingContext* encodingContext) {
+        return AcquireRef(
+            new ComputePassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError));
     }
 
     void ComputePassEncoder::DestroyImpl() {
@@ -150,7 +165,11 @@ namespace dawn::native {
                         DAWN_TRY(ValidateProgrammableEncoderEnd());
                     }
 
-                    allocator->Allocate<EndComputePassCmd>(Command::EndComputePass);
+                    EndComputePassCmd* cmd =
+                        allocator->Allocate<EndComputePassCmd>(Command::EndComputePass);
+                    // The query availability has already been updated at the beginning of compute
+                    // pass, and no need to do update here.
+                    cmd->timestampWrites = std::move(mTimestampWritesAtEnd);
 
                     return {};
                 },
@@ -415,8 +434,7 @@ namespace dawn::native {
             this,
             [&](CommandAllocator* allocator) -> MaybeError {
                 if (IsValidationEnabled()) {
-                    DAWN_TRY(GetDevice()->ValidateObject(querySet));
-                    DAWN_TRY(ValidateTimestampQuery(querySet, queryIndex));
+                    DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
                 }
 
                 mCommandEncoder->TrackQueryAvailability(querySet, queryIndex);

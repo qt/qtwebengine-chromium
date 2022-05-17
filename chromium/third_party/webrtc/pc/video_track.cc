@@ -10,7 +10,6 @@
 
 #include "pc/video_track.h"
 
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -18,7 +17,6 @@
 #include "api/sequence_checker.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/location.h"
-#include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
 
 namespace webrtc {
@@ -134,12 +132,12 @@ void VideoTrack::OnChanged() {
 
 rtc::scoped_refptr<VideoTrack> VideoTrack::Create(
     const std::string& id,
-    VideoTrackSourceInterface* source,
+    rtc::scoped_refptr<VideoTrackSourceInterface> source,
     rtc::Thread* worker_thread) {
   rtc::scoped_refptr<
       VideoTrackSourceProxyWithInternal<VideoTrackSourceInterface>>
-      source_proxy = VideoTrackSourceProxy::Create(rtc::Thread::Current(),
-                                                   worker_thread, source);
+      source_proxy = VideoTrackSourceProxy::Create(
+          rtc::Thread::Current(), worker_thread, std::move(source));
 
   return rtc::make_ref_counted<VideoTrack>(id, std::move(source_proxy),
                                            worker_thread);

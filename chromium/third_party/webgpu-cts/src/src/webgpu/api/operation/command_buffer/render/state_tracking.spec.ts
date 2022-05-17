@@ -15,12 +15,12 @@ class VertexAndIndexStateTrackingTest extends GPUTest {
         module: this.device.createShaderModule({
           code: `
         struct Inputs {
-          @location(0) vertexPosition : f32;
-          @location(1) vertexColor : vec4<f32>;
+          @location(0) vertexPosition : f32,
+          @location(1) vertexColor : vec4<f32>,
         };
         struct Outputs {
-          @builtin(position) position : vec4<f32>;
-          @location(0) color : vec4<f32>;
+          @builtin(position) position : vec4<f32>,
+          @location(0) color : vec4<f32>,
         };
         @stage(vertex)
         fn main(input : Inputs)-> Outputs {
@@ -54,7 +54,7 @@ class VertexAndIndexStateTrackingTest extends GPUTest {
         module: this.device.createShaderModule({
           code: `
         struct Input {
-          @location(0) color : vec4<f32>;
+          @location(0) color : vec4<f32>
         };
         @stage(fragment)
         fn main(input : Input) -> @location(0) vec4<f32> {
@@ -139,7 +139,8 @@ g.test('set_index_buffer_without_changing_buffer')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: [0, 0, 0, 1],
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -165,7 +166,7 @@ g.test('set_index_buffer_without_changing_buffer')
     renderPass.setIndexBuffer(indexBuffer, 'uint16', 6, 4);
     renderPass.drawIndexed(2);
 
-    renderPass.endPass();
+    renderPass.end();
     t.queue.submit([encoder.finish()]);
 
     for (let i = 0; i < kPositions.length - 1; ++i) {
@@ -233,7 +234,8 @@ g.test('set_vertex_buffer_without_changing_buffer')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: [0, 0, 0, 1],
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -269,7 +271,7 @@ g.test('set_vertex_buffer_without_changing_buffer')
     );
     renderPass.draw(4);
 
-    renderPass.endPass();
+    renderPass.end();
     t.queue.submit([encoder.finish()]);
 
     for (let i = 0; i < kPositions.length; ++i) {
@@ -335,7 +337,8 @@ g.test('change_pipeline_before_and_after_vertex_buffer')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: [0, 0, 0, 1],
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -354,7 +357,7 @@ g.test('change_pipeline_before_and_after_vertex_buffer')
     renderPass.setPipeline(renderPipeline1);
     renderPass.draw(2);
 
-    renderPass.endPass();
+    renderPass.end();
 
     t.queue.submit([encoder.finish()]);
 
@@ -392,7 +395,7 @@ g.test('set_vertex_buffer_but_not_used_in_draw')
       module: t.device.createShaderModule({
         code: `
       struct Input {
-        @location(0) color : vec4<f32>;
+        @location(0) color : vec4<f32>
       };
       @stage(fragment)
       fn main(input : Input) -> @location(0) vec4<f32> {
@@ -409,12 +412,12 @@ g.test('set_vertex_buffer_but_not_used_in_draw')
         module: t.device.createShaderModule({
           code: `
         struct Inputs {
-          @location(0) vertexColor : vec4<f32>;
-          @location(1) vertexPosition : f32;
+          @location(0) vertexColor : vec4<f32>,
+          @location(1) vertexPosition : f32,
         };
         struct Outputs {
-          @builtin(position) position : vec4<f32>;
-          @location(0) color : vec4<f32>;
+          @builtin(position) position : vec4<f32>,
+          @location(0) color : vec4<f32>,
         };
         @stage(vertex)
         fn main(input : Inputs)-> Outputs {
@@ -460,12 +463,12 @@ g.test('set_vertex_buffer_but_not_used_in_draw')
         module: t.device.createShaderModule({
           code: `
         struct Inputs {
-          @builtin(vertex_index) vertexIndex : u32;
-          @location(0) vertexColor : vec4<f32>;
+          @builtin(vertex_index) vertexIndex : u32,
+          @location(0) vertexColor : vec4<f32>,
         };
         struct Outputs {
-          @builtin(position) position : vec4<f32>;
-          @location(0) color : vec4<f32>;
+          @builtin(position) position : vec4<f32>,
+          @location(0) color : vec4<f32>,
         };
         @stage(vertex)
         fn main(input : Inputs)-> Outputs {
@@ -509,7 +512,8 @@ g.test('set_vertex_buffer_but_not_used_in_draw')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: [0, 0, 0, 1],
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -523,7 +527,7 @@ g.test('set_vertex_buffer_but_not_used_in_draw')
     renderPass.setPipeline(renderPipeline2);
     renderPass.draw(2);
 
-    renderPass.endPass();
+    renderPass.end();
 
     t.queue.submit([encoder.finish()]);
 
@@ -593,7 +597,8 @@ g.test('set_index_buffer_before_non_indexed_draw')
       colorAttachments: [
         {
           view: outputTexture.createView(),
-          loadValue: [0, 0, 0, 1],
+          clearValue: [0, 0, 0, 1],
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -608,7 +613,7 @@ g.test('set_index_buffer_before_non_indexed_draw')
     // The second draw call is a non-indexed one (the first and second color are involved)
     renderPass.draw(2);
 
-    renderPass.endPass();
+    renderPass.end();
 
     t.queue.submit([encoder.finish()]);
 

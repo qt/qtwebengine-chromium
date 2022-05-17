@@ -382,7 +382,7 @@ export class ServiceWorkerCacheView extends UI.View.SimpleView {
   private createRequest(entry: Protocol.CacheStorage.DataEntry): SDK.NetworkRequest.NetworkRequest {
     const request = SDK.NetworkRequest.NetworkRequest.createWithoutBackendRequest(
         'cache-storage-' + entry.requestURL, entry.requestURL as Platform.DevToolsPath.UrlString,
-        '' as Platform.DevToolsPath.UrlString, null);
+        Platform.DevToolsPath.EmptyUrlString, null);
     request.requestMethod = entry.requestMethod;
     request.setRequestHeaders(entry.requestHeaders);
     request.statusCode = entry.responseStatus;
@@ -480,7 +480,12 @@ export class DataGridNode extends DataGrid.DataGrid.DataGridNode<DataGridNode> {
         tooltip = i18nString(UIStrings.varyHeaderWarning);
       }
     }
-    DataGrid.DataGrid.DataGridImpl.setElementText(cell, value || '', true);
+    const parentElement = cell.parentElement;
+    let gridNode;
+    if (parentElement && this.dataGrid) {
+      gridNode = this.dataGrid.elementToDataGridNode.get(parentElement);
+    }
+    DataGrid.DataGrid.DataGridImpl.setElementText(cell, value || '', /* longText= */ true, gridNode);
     UI.Tooltip.Tooltip.install(cell, tooltip);
     return cell;
   }

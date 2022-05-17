@@ -37,6 +37,14 @@ enum UpdateUrgency {
   CRITICAL = 1;
 }
 
+message Feature {
+  // The name of the feature.
+  string name = 1;
+
+  // Whether the feature is enabled or not.
+  bool enabled = 2;
+}
+
 // This is the message transferred between update_engine and other processes
 // about the current status of the update_engine. It is used either in
 // |GetUpdateStatusAdvanced| DBus method or |StatusUpdateAdvanced| signal.
@@ -84,6 +92,9 @@ message StatusResult {
 
   // Indicates how important an update is.
   UpdateUrgency update_urgency = 12;
+
+  // List of features managed by update_engine.
+  repeated Feature features = 13;
 }
 
 // This is the message flags that influences how updates are performed.

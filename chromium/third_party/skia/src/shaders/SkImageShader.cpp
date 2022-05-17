@@ -11,21 +11,28 @@
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
 #include "src/core/SkMipmapAccessor.h"
 #include "src/core/SkOpts.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
-#include "src/core/SkSamplingPriv.h"
-#include "src/core/SkScopeExit.h"
 #include "src/core/SkVM.h"
 #include "src/core/SkWriteBuffer.h"
 #include "src/image/SkImage_Base.h"
 #include "src/shaders/SkBitmapProcShader.h"
 #include "src/shaders/SkEmptyShader.h"
 #include "src/shaders/SkTransformShader.h"
+
+#ifdef SK_ENABLE_SKSL
+
+#ifdef SK_GRAPHITE_ENABLED
+#include "src/gpu/graphite/Image_Graphite.h"
+#endif
+
+#include "src/core/SkKeyContext.h"
+#include "src/core/SkKeyHelpers.h"
+#endif
 
 SkM44 SkImageShader::CubicResamplerMatrix(float B, float C) {
 #if 0
@@ -129,7 +136,7 @@ sk_sp<SkFlattenable> SkImageShader::CreateProc(SkReadBuffer& buffer) {
         // we just default to Nearest in sampling
     }
     if (readSampling) {
-        sampling = SkSamplingPriv::Read(buffer);
+        sampling = buffer.readSampling();
     }
 
     SkMatrix localMatrix;
@@ -153,7 +160,7 @@ void SkImageShader::flatten(SkWriteBuffer& buffer) const {
     buffer.writeUInt((unsigned)fTileModeX);
     buffer.writeUInt((unsigned)fTileModeY);
 
-    SkSamplingPriv::Write(buffer, fSampling);
+    buffer.writeSampling(fSampling);
 
     buffer.writeMatrix(this->getLocalMatrix());
     buffer.writeImage(fImage.get());
@@ -169,13 +176,6 @@ void SkImageShader::flatten(SkWriteBuffer& buffer) const {
 bool SkImageShader::isOpaque() const {
     return fImage->isOpaque() &&
            fTileModeX != SkTileMode::kDecal && fTileModeY != SkTileMode::kDecal;
-}
-
-constexpr SkCubicResampler kDefaultCubicResampler{1.0f/3, 1.0f/3};
-
-static bool is_default_cubic_resampler(SkCubicResampler cubic) {
-    return SkScalarNearlyEqual(cubic.B, kDefaultCubicResampler.B) &&
-           SkScalarNearlyEqual(cubic.C, kDefaultCubicResampler.C);
 }
 
 #ifdef SK_ENABLE_LEGACY_SHADERCONTEXT
@@ -334,8 +334,8 @@ sk_sp<SkShader> SkImageShader::MakeSubset(sk_sp<SkImage> image,
 
 #if SK_SUPPORT_GPU
 
-#include "src/gpu/GrColorInfo.h"
-#include "src/gpu/effects/GrBlendFragmentProcessor.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/effects/GrBlendFragmentProcessor.h"
 
 std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
         const GrFPArgs& args) const {
@@ -364,7 +364,7 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
                                            kPremul_SkAlphaType);
 
         if (fImage->isAlphaOnly()) {
-            fp = GrBlendFragmentProcessor::Make(std::move(fp), nullptr, SkBlendMode::kDstIn);
+            fp = GrBlendFragmentProcessor::Make<SkBlendMode::kDstIn>(std::move(fp), nullptr);
         }
     }
 
@@ -373,12 +373,28 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 
 #endif
 
-void SkImageShader::addToKey(SkShaderCodeDictionary* dict,
-                             SkBackend backend,
+#ifdef SK_ENABLE_SKSL
+void SkImageShader::addToKey(const SkKeyContext& keyContext,
                              SkPaintParamsKeyBuilder* builder,
-                             SkUniformBlock* uniformBlock) const {
-    ImageShaderBlock::AddToKey(dict, backend, builder, uniformBlock, { fTileModeX, fTileModeY });
+                             SkPipelineDataGatherer* gatherer) const {
+    ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset);
+
+#ifdef SK_GRAPHITE_ENABLED
+    if (as_IB(fImage)->isGraphiteBacked()) {
+        skgpu::graphite::Image* grImage = static_cast<skgpu::graphite::Image*>(fImage.get());
+
+        auto mipmapped = (fSampling.mipmap != SkMipmapMode::kNone) ?
+                skgpu::graphite::Mipmapped::kYes : skgpu::graphite::Mipmapped::kNo;
+        // TODO: In practice which SkBudgeted value used shouldn't matter because we're not going
+        // to create a new texture here. But should the SkImage know its SkBudgeted state?
+        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped, SkBudgeted::kNo);
+        imgData.fTextureProxy = view.refProxy();
+    }
+#endif
+
+    ImageShaderBlock::AddToKey(keyContext, builder, gatherer, imgData);
 }
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 #include "src/core/SkImagePriv.h"
@@ -455,15 +471,9 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
     SkASSERT(!needs_subset(fImage.get(), fSubset)); // TODO(skbug.com/12784)
     // We only support certain sampling options in stages so far
     auto sampling = fSampling;
-    if (sampling.useCubic) {
-        if (!is_default_cubic_resampler(sampling.cubic)) {
-            return false;
-        }
-    } else if (sampling.mipmap == SkMipmapMode::kLinear) {
+    if (sampling.mipmap == SkMipmapMode::kLinear) {
         return false;
     }
-
-
     if (updater && (sampling.mipmap != SkMipmapMode::kNone)) {
         // TODO: medium: recall RequestBitmap and update width/height accordingly
         return false;
@@ -506,6 +516,9 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
     gather->stride = pm.rowBytesAsPixels();
     gather->width  = pm.width();
     gather->height = pm.height();
+    if (sampling.useCubic) {
+        CubicResamplerMatrix(sampling.cubic.B, sampling.cubic.C).getColMajor(gather->weights);
+    }
 
     auto limit_x = alloc->make<SkRasterPipeline_TileCtx>(),
          limit_y = alloc->make<SkRasterPipeline_TileCtx>();
@@ -689,6 +702,8 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
     };
 
     if (sampling.useCubic) {
+        CubicResamplerMatrix(sampling.cubic.B, sampling.cubic.C).getColMajor(sampler->weights);
+
         p->append(SkRasterPipeline::save_xy, sampler);
 
         sample(SkRasterPipeline::bicubic_n3x, SkRasterPipeline::bicubic_n3y);

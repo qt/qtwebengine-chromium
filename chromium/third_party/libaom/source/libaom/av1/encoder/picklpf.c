@@ -195,12 +195,19 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
   const SequenceHeader *const seq_params = cm->seq_params;
   const int num_planes = av1_num_planes(cm);
   struct loopfilter *const lf = &cm->lf;
+  int disable_filter_rt_screen = 0;
   (void)sd;
 
   lf->sharpness_level = 0;
   cpi->td.mb.rdmult = cpi->rd.RDMULT;
 
-  if (cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_NONE ||
+  if (cpi->oxcf.tune_cfg.content == AOM_CONTENT_SCREEN &&
+      cpi->oxcf.q_cfg.aq_mode == CYCLIC_REFRESH_AQ &&
+      cpi->sf.rt_sf.skip_lf_screen)
+    disable_filter_rt_screen = av1_cyclic_refresh_disable_lf_cdef(cpi);
+
+  if (disable_filter_rt_screen ||
+      cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_NONE ||
       (cpi->oxcf.algo_cfg.loopfilter_control == LOOPFILTER_REFERENCE &&
        cpi->svc.non_reference_frame)) {
     lf->filter_level[0] = 0;
@@ -280,17 +287,10 @@ void av1_pick_filter_level(const YV12_BUFFER_CONFIG *sd, AV1_COMP *cpi,
   } else {
     int last_frame_filter_level[4] = { 0 };
     if (!frame_is_intra_only(cm)) {
-#if CONFIG_FRAME_PARALLEL_ENCODE
       last_frame_filter_level[0] = cpi->ppi->filter_level[0];
       last_frame_filter_level[1] = cpi->ppi->filter_level[1];
       last_frame_filter_level[2] = cpi->ppi->filter_level_u;
       last_frame_filter_level[3] = cpi->ppi->filter_level_v;
-#else
-      last_frame_filter_level[0] = lf->filter_level[0];
-      last_frame_filter_level[1] = lf->filter_level[1];
-      last_frame_filter_level[2] = lf->filter_level_u;
-      last_frame_filter_level[3] = lf->filter_level_v;
-#endif
     }
     // The frame buffer last_frame_uf is used to store the non-loop filtered
     // reconstructed frame in search_filter_level().

@@ -1,5 +1,7 @@
 load("//bazel:macros.bzl", "generated_cc_atom")
 
+licenses(["notice"])
+
 generated_cc_atom(
     name = "SkBitmapKey_hdr",
     hdrs = ["SkBitmapKey.h"],
@@ -118,6 +120,7 @@ generated_cc_atom(
         ":SkPDFUtils_hdr",
         "//include/core:SkBitmap_hdr",
         "//include/core:SkData_hdr",
+        "//include/core:SkEncodedImageFormat_hdr",
         "//include/core:SkExecutor_hdr",
         "//include/core:SkImage_hdr",
         "//include/core:SkStream_hdr",

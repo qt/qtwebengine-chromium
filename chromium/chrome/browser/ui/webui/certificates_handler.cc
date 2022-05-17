@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <map>
 #include <utility>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
@@ -19,7 +20,6 @@
 #include "base/posix/safe_strerror.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
-#include "base/task/post_task.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/values.h"
@@ -100,10 +100,10 @@ struct DictionaryIdComparator {
     std::u16string a_str;
     std::u16string b_str;
     const std::string* ptr =
-        a_dict->FindStringKey(kCertificatesHandlerNameField);
+        a_dict->GetDict().FindString(kCertificatesHandlerNameField);
     if (ptr)
       a_str = base::UTF8ToUTF16(*ptr);
-    ptr = b_dict->FindStringKey(kCertificatesHandlerNameField);
+    ptr = b_dict->GetDict().FindString(kCertificatesHandlerNameField);
     if (ptr)
       b_str = base::UTF8ToUTF16(*ptr);
     if (collator_ == nullptr)
@@ -406,8 +406,7 @@ void CertificatesHandler::FileSelectionCanceled(void* params) {
   }
 }
 
-void CertificatesHandler::HandleViewCertificate(
-    base::Value::ConstListView args) {
+void CertificatesHandler::HandleViewCertificate(const base::Value::List& args) {
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 0 /* arg_index */);
   if (!cert_info)
@@ -418,18 +417,22 @@ void CertificatesHandler::HandleViewCertificate(
       std::move(certs), web_ui()->GetWebContents(), GetParentWindow());
 }
 
-void CertificatesHandler::AssignWebUICallbackId(
-    base::Value::ConstListView args) {
+bool CertificatesHandler::AssignWebUICallbackId(const base::Value::List& args) {
   CHECK_LE(1U, args.size());
-  CHECK(webui_callback_id_.empty());
+  if (!webui_callback_id_.empty())
+    return false;
   webui_callback_id_ = args[0].GetString();
+  return true;
 }
 
-void CertificatesHandler::HandleGetCATrust(base::Value::ConstListView args) {
+void CertificatesHandler::HandleGetCATrust(const base::Value::List& args) {
   AllowJavascript();
 
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 1 /* arg_index */);
@@ -441,21 +444,24 @@ void CertificatesHandler::HandleGetCATrust(base::Value::ConstListView args) {
                                                           net::CA_CERT);
   std::unique_ptr<base::DictionaryValue> ca_trust_info(
       new base::DictionaryValue);
-  ca_trust_info->SetBoolKey(
+  ca_trust_info->GetDict().Set(
       kCertificatesHandlerSslField,
       static_cast<bool>(trust_bits & net::NSSCertDatabase::TRUSTED_SSL));
-  ca_trust_info->SetBoolKey(
+  ca_trust_info->GetDict().Set(
       kCertificatesHandlerEmailField,
       static_cast<bool>(trust_bits & net::NSSCertDatabase::TRUSTED_EMAIL));
-  ca_trust_info->SetBoolKey(
+  ca_trust_info->GetDict().Set(
       kCertificatesHandlerObjSignField,
       static_cast<bool>(trust_bits & net::NSSCertDatabase::TRUSTED_OBJ_SIGN));
   ResolveCallback(*ca_trust_info);
 }
 
-void CertificatesHandler::HandleEditCATrust(base::Value::ConstListView args) {
+void CertificatesHandler::HandleEditCATrust(const base::Value::List& args) {
   CHECK_EQ(5U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 1 /* arg_index */);
@@ -492,14 +498,16 @@ void CertificatesHandler::HandleEditCATrust(base::Value::ConstListView args) {
   }
 }
 
-void CertificatesHandler::HandleExportPersonal(
-    base::Value::ConstListView args) {
+void CertificatesHandler::HandleExportPersonal(const base::Value::List& args) {
   // Early return if the select file dialog is already active.
   if (select_file_dialog_)
     return;
 
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 1 /* arg_index */);
@@ -532,9 +540,12 @@ void CertificatesHandler::ExportPersonalFileSelected(
 }
 
 void CertificatesHandler::HandleExportPersonalPasswordSelected(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
   password_ = UTF8ToUTF16(args[1].GetString());  // CHECKs if non-string.
 
   // Currently, we don't support exporting more than one at a time.  If we do,
@@ -586,8 +597,7 @@ void CertificatesHandler::ExportPersonalFileWritten(const int* write_errno,
   }
 }
 
-void CertificatesHandler::HandleImportPersonal(
-    base::Value::ConstListView args) {
+void CertificatesHandler::HandleImportPersonal(const base::Value::List& args) {
   // Early return if the select file dialog is already active.
   if (select_file_dialog_)
     return;
@@ -600,7 +610,10 @@ void CertificatesHandler::HandleImportPersonal(
   }
 
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
   use_hardware_backed_ = args[1].GetBool();
 
   ui::SelectFileDialog::FileTypeInfo file_type_info;
@@ -679,9 +692,12 @@ void CertificatesHandler::ImportPersonalFileRead(const int* read_errno,
 }
 
 void CertificatesHandler::HandleImportPersonalPasswordSelected(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
   password_ = UTF8ToUTF16(args[1].GetString());  // CHECKs if non-string.
 
   if (use_hardware_backed_) {
@@ -739,7 +755,7 @@ void CertificatesHandler::ImportPersonalSlotUnlocked() {
 }
 
 void CertificatesHandler::HandleCancelImportExportProcess(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   ImportExportCleanup();
 }
 
@@ -759,14 +775,16 @@ void CertificatesHandler::ImportExportCleanup() {
   select_file_dialog_.reset();
 }
 
-
-void CertificatesHandler::HandleImportServer(base::Value::ConstListView args) {
+void CertificatesHandler::HandleImportServer(const base::Value::List& args) {
   // Early return if the select file dialog is already active.
   if (select_file_dialog_)
     return;
 
   CHECK_EQ(1U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this,
@@ -831,7 +849,7 @@ void CertificatesHandler::ImportServerFileRead(const int* read_errno,
   ImportExportCleanup();
 }
 
-void CertificatesHandler::HandleImportCA(base::Value::ConstListView args) {
+void CertificatesHandler::HandleImportCA(const base::Value::List& args) {
   // Early return if the select file dialog is already active.
   if (select_file_dialog_)
     return;
@@ -844,7 +862,10 @@ void CertificatesHandler::HandleImportCA(base::Value::ConstListView args) {
   }
 
   CHECK_EQ(1U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this,
@@ -900,9 +921,12 @@ void CertificatesHandler::ImportCAFileRead(const int* read_errno,
 }
 
 void CertificatesHandler::HandleImportCATrustSelected(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CHECK_EQ(4U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   const bool trust_ssl = args[1].GetBool();
   const bool trust_email = args[2].GetBool();
@@ -935,7 +959,7 @@ void CertificatesHandler::HandleImportCATrustSelected(
 }
 
 void CertificatesHandler::HandleExportCertificate(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 0 /* arg_index */);
   if (!cert_info)
@@ -948,9 +972,12 @@ void CertificatesHandler::HandleExportCertificate(
 }
 
 void CertificatesHandler::HandleDeleteCertificate(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   CHECK_EQ(2U, args.size());
-  AssignWebUICallbackId(args);
+  if (!AssignWebUICallbackId(args)) {
+    RejectJavascriptCallback(base::Value(args[0].GetString()), base::Value());
+    return;
+  }
 
   CertificateManagerModel::CertInfo* cert_info =
       GetCertInfoFromCallbackArgs(args, 1 /* arg_index */);
@@ -998,7 +1025,7 @@ void CertificatesHandler::CertificateManagerModelReady() {
 }
 
 void CertificatesHandler::HandleRefreshCertificates(
-    base::Value::ConstListView args) {
+    const base::Value::List& args) {
   AllowJavascript();
 
   if (certificate_manager_model_) {
@@ -1040,10 +1067,11 @@ void CertificatesHandler::PopulateTree(const std::string& tab_name,
   for (auto& org_grouping_map_entry : org_grouping_map) {
     // Populate first level (org name).
     base::DictionaryValue org_dict;
-    org_dict.SetKey(kCertificatesHandlerKeyField,
-                    base::Value(OrgNameToId(org_grouping_map_entry.first)));
-    org_dict.SetKey(kCertificatesHandlerNameField,
-                    base::Value(org_grouping_map_entry.first));
+    org_dict.GetDict().Set(
+        kCertificatesHandlerKeyField,
+        base::Value(OrgNameToId(org_grouping_map_entry.first)));
+    org_dict.GetDict().Set(kCertificatesHandlerNameField,
+                           base::Value(org_grouping_map_entry.first));
 
     // Populate second level (certs).
     base::ListValue subnodes;
@@ -1055,26 +1083,26 @@ void CertificatesHandler::PopulateTree(const std::string& tab_name,
           base::NumberToString(cert_info_id_map_.Add(std::move(org_cert)));
 
       base::DictionaryValue cert_dict;
-      cert_dict.SetKey(kCertificatesHandlerKeyField, base::Value(id));
-      cert_dict.SetKey(kCertificatesHandlerNameField,
-                       base::Value(cert_info->name()));
-      cert_dict.SetKey(kCertificatesHandlerCanBeDeletedField,
-                       base::Value(CanDeleteCertificate(cert_info)));
-      cert_dict.SetKey(kCertificatesHandlerCanBeEditedField,
-                       base::Value(CanEditCertificate(cert_info)));
-      cert_dict.SetKey(kCertificatesHandlerUntrustedField,
-                       base::Value(cert_info->untrusted()));
-      cert_dict.SetKey(
+      cert_dict.GetDict().Set(kCertificatesHandlerKeyField, base::Value(id));
+      cert_dict.GetDict().Set(kCertificatesHandlerNameField,
+                              base::Value(cert_info->name()));
+      cert_dict.GetDict().Set(kCertificatesHandlerCanBeDeletedField,
+                              base::Value(CanDeleteCertificate(cert_info)));
+      cert_dict.GetDict().Set(kCertificatesHandlerCanBeEditedField,
+                              base::Value(CanEditCertificate(cert_info)));
+      cert_dict.GetDict().Set(kCertificatesHandlerUntrustedField,
+                              base::Value(cert_info->untrusted()));
+      cert_dict.GetDict().Set(
           kCertificatesHandlerPolicyInstalledField,
           base::Value(cert_info->source() ==
                       CertificateManagerModel::CertInfo::Source::kPolicy));
-      cert_dict.SetKey(kCertificatesHandlerWebTrustAnchorField,
-                       base::Value(cert_info->web_trust_anchor()));
+      cert_dict.GetDict().Set(kCertificatesHandlerWebTrustAnchorField,
+                              base::Value(cert_info->web_trust_anchor()));
       // TODO(hshi): This should be determined by testing for PKCS #11
       // CKA_EXTRACTABLE attribute. We may need to use the NSS function
       // PK11_ReadRawAttribute to do that.
-      cert_dict.SetKey(kCertificatesHandlerExtractableField,
-                       base::Value(!cert_info->hardware_backed()));
+      cert_dict.GetDict().Set(kCertificatesHandlerExtractableField,
+                              base::Value(!cert_info->hardware_backed()));
       // TODO(mattm): Other columns.
       subnodes.Append(std::move(cert_dict));
 
@@ -1085,9 +1113,10 @@ void CertificatesHandler::PopulateTree(const std::string& tab_name,
     std::sort(subnodes.GetListDeprecated().begin(),
               subnodes.GetListDeprecated().end(), comparator);
 
-    org_dict.SetKey(kCertificatesHandlerContainsPolicyCertsField,
-                    base::Value(contains_policy_certs));
-    org_dict.SetKey(kCertificatesHandlerSubnodesField, std::move(subnodes));
+    org_dict.GetDict().Set(kCertificatesHandlerContainsPolicyCertsField,
+                           base::Value(contains_policy_certs));
+    org_dict.GetDict().Set(kCertificatesHandlerSubnodesField,
+                           std::move(subnodes));
     nodes.Append(std::move(org_dict));
   }
   std::sort(nodes.GetListDeprecated().begin(), nodes.GetListDeprecated().end(),
@@ -1114,8 +1143,8 @@ void CertificatesHandler::RejectCallback(const base::Value& response) {
 void CertificatesHandler::RejectCallbackWithError(const std::string& title,
                                                   const std::string& error) {
   std::unique_ptr<base::DictionaryValue> error_info(new base::DictionaryValue);
-  error_info->SetStringKey(kCertificatesHandlerErrorTitle, title);
-  error_info->SetStringKey(kCertificatesHandlerErrorDescription, error);
+  error_info->GetDict().Set(kCertificatesHandlerErrorTitle, title);
+  error_info->GetDict().Set(kCertificatesHandlerErrorDescription, error);
   RejectCallback(*error_info);
 }
 
@@ -1138,17 +1167,17 @@ void CertificatesHandler::RejectCallbackWithImportError(
   for (size_t i = 0; i < not_imported.size(); ++i) {
     const net::NSSCertDatabase::ImportCertFailure& failure = not_imported[i];
     std::unique_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
-    dict->SetStringKey(kCertificatesHandlerNameField,
-                       x509_certificate_model::GetSubjectDisplayName(
-                           failure.certificate.get()));
-    dict->SetStringKey(kCertificatesHandlerErrorField,
-                       NetErrorToString(failure.net_error));
+    dict->GetDict().Set(kCertificatesHandlerNameField,
+                        x509_certificate_model::GetSubjectDisplayName(
+                            failure.certificate.get()));
+    dict->GetDict().Set(kCertificatesHandlerErrorField,
+                        NetErrorToString(failure.net_error));
     cert_error_list->Append(std::move(dict));
   }
 
   std::unique_ptr<base::DictionaryValue> error_info(new base::DictionaryValue);
-  error_info->SetStringKey(kCertificatesHandlerErrorTitle, title);
-  error_info->SetStringKey(kCertificatesHandlerErrorDescription, error);
+  error_info->GetDict().Set(kCertificatesHandlerErrorTitle, title);
+  error_info->GetDict().Set(kCertificatesHandlerErrorDescription, error);
   error_info->Set(kCertificatesHandlerCertificateErrors,
                   std::move(cert_error_list));
   RejectCallback(*error_info);
@@ -1159,9 +1188,8 @@ gfx::NativeWindow CertificatesHandler::GetParentWindow() {
 }
 
 CertificateManagerModel::CertInfo*
-CertificatesHandler::GetCertInfoFromCallbackArgs(
-    base::Value::ConstListView args,
-    size_t arg_index) {
+CertificatesHandler::GetCertInfoFromCallbackArgs(const base::Value::List& args,
+                                                 size_t arg_index) {
   if (arg_index >= args.size())
     return nullptr;
   const auto& arg = args[arg_index];

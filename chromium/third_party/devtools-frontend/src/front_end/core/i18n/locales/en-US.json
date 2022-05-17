@@ -1325,6 +1325,21 @@
   "models/issues_manager/ContentSecurityPolicyIssue.ts | trustedTypesPolicyViolation": {
     "message": "Trusted Types - Policy violation"
   },
+  "models/issues_manager/CookieIssue.ts | anInsecure": {
+    "message": "an insecure"
+  },
+  "models/issues_manager/CookieIssue.ts | aSecure": {
+    "message": "a secure"
+  },
+  "models/issues_manager/CookieIssue.ts | firstPartySetsExplained": {
+    "message": "First-Party Sets and the SameParty attribute"
+  },
+  "models/issues_manager/CookieIssue.ts | howSchemefulSamesiteWorks": {
+    "message": "How Schemeful Same-Site Works"
+  },
+  "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
+    "message": "SameSite cookies explained"
+  },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Cross-Origin Resource Sharing (CORS)"
   },
@@ -1336,6 +1351,12 @@
   },
   "models/issues_manager/CrossOriginEmbedderPolicyIssue.ts | samesiteAndSameorigin": {
     "message": "Same-Site and Same-Origin"
+  },
+  "models/issues_manager/DeprecationIssue.ts | deprecationExample": {
+    "message": "This is an example of a translated deprecation issue message."
+  },
+  "models/issues_manager/DeprecationIssue.ts | title": {
+    "message": "Deprecated Feature Used"
   },
   "models/issues_manager/FederatedAuthRequestIssue.ts | fedCm": {
     "message": "Federated Credential Management API"
@@ -1375,21 +1396,6 @@
   },
   "models/issues_manager/QuirksModeIssue.ts | documentCompatibilityMode": {
     "message": "Document compatibility mode"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | anInsecure": {
-    "message": "an insecure"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | aSecure": {
-    "message": "a secure"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | firstPartySetsExplained": {
-    "message": "First-Party Sets and the SameParty attribute"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | howSchemefulSamesiteWorks": {
-    "message": "How Schemeful Same-Site Works"
-  },
-  "models/issues_manager/SameSiteCookieIssue.ts | samesiteCookiesExplained": {
-    "message": "SameSite cookies explained"
   },
   "models/issues_manager/SharedArrayBufferIssue.ts | enablingSharedArrayBuffer": {
     "message": "Enabling SharedArrayBuffer"
@@ -2549,6 +2555,12 @@
   "panels/application/components/BackForwardCacheStrings.ts | enteredBackForwardCacheBeforeServiceWorkerHostAdded": {
     "message": "A service worker was activated while the page was in back/forward cache."
   },
+  "panels/application/components/BackForwardCacheStrings.ts | errorDocument": {
+    "message": "Back/forward cache is disabled due to a document error."
+  },
+  "panels/application/components/BackForwardCacheStrings.ts | fencedFramesEmbedder": {
+    "message": "Pages using FencedFrames cannot be stored in bfcache."
+  },
   "panels/application/components/BackForwardCacheStrings.ts | foregroundCacheLimit": {
     "message": "The page was evicted from the cache to allow another page to be cached."
   },
@@ -2762,11 +2774,23 @@
   "panels/application/components/BackForwardCacheView.ts | backForwardCacheTitle": {
     "message": "Back/forward cache"
   },
+  "panels/application/components/BackForwardCacheView.ts | blockingExtensionId": {
+    "message": "Extension id: "
+  },
   "panels/application/components/BackForwardCacheView.ts | circumstantial": {
     "message": "Not Actionable"
   },
   "panels/application/components/BackForwardCacheView.ts | circumstantialExplanation": {
     "message": "These reasons are not actionable i.e. caching was prevented by something outside of the direct control of the page."
+  },
+  "panels/application/components/BackForwardCacheView.ts | framesPerIssue": {
+    "message": "{n, plural, =1 {# frame} other {# frames}}"
+  },
+  "panels/application/components/BackForwardCacheView.ts | framesTitle": {
+    "message": "Frames"
+  },
+  "panels/application/components/BackForwardCacheView.ts | issuesInFrames": {
+    "message": "{x, plural, =1 {# issue} other {# issues}} found in {y, plural, =1 {# frame} other {# frames}}."
   },
   "panels/application/components/BackForwardCacheView.ts | learnMore": {
     "message": "Learn more: back/forward cache eligibility"
@@ -3680,6 +3704,12 @@
   "panels/changes/ChangesView.ts | binaryData": {
     "message": "Binary data"
   },
+  "panels/changes/ChangesView.ts | copy": {
+    "message": "Copy"
+  },
+  "panels/changes/ChangesView.ts | copyAllChangesFromCurrentFile": {
+    "message": "Copy all changes from current file"
+  },
   "panels/changes/ChangesView.ts | noChanges": {
     "message": "No changes"
   },
@@ -3839,6 +3869,9 @@
   "panels/console/ConsoleView.ts | allLevels": {
     "message": "All levels"
   },
+  "panels/console/ConsoleView.ts | autocompleteFromHistory": {
+    "message": "Autocomplete from history"
+  },
   "panels/console/ConsoleView.ts | consoleCleared": {
     "message": "Console cleared"
   },
@@ -3920,6 +3953,9 @@
   "panels/console/ConsoleView.ts | logLevelS": {
     "message": "Log level: {PH1}"
   },
+  "panels/console/ConsoleView.ts | logXMLHttpRequests": {
+    "message": "Log XMLHttpRequests"
+  },
   "panels/console/ConsoleView.ts | onlyShowMessagesFromTheCurrentContext": {
     "message": "Only show messages from the current context (top, iframe, worker, extension)"
   },
@@ -3952,6 +3988,9 @@
   },
   "panels/console/ConsoleView.ts | sOnly": {
     "message": "{PH1} only"
+  },
+  "panels/console/ConsoleView.ts | treatEvaluationAsUserActivation": {
+    "message": "Treat evaluation as user activation"
   },
   "panels/console/ConsoleView.ts | verbose": {
     "message": "Verbose"
@@ -4751,6 +4790,12 @@
   "panels/elements/EventListenersWidget.ts | showListenersOnTheAncestors": {
     "message": "Show listeners on the ancestors"
   },
+  "panels/elements/LayersWidget.ts | cssLayersTitle": {
+    "message": "CSS layers"
+  },
+  "panels/elements/LayersWidget.ts | toggleCSSLayers": {
+    "message": "Toggle CSS Layers view"
+  },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "DOM Breakpoint"
   },
@@ -4786,6 +4831,48 @@
   },
   "panels/elements/PropertiesWidget.ts | showAllTooltip": {
     "message": "When unchecked, only properties whose values are neither null nor undefined will be shown"
+  },
+  "panels/elements/StylePropertiesSection.ts | constructedStylesheet": {
+    "message": "constructed stylesheet"
+  },
+  "panels/elements/StylePropertiesSection.ts | copyAllCSSChanges": {
+    "message": "Copy all CSS changes"
+  },
+  "panels/elements/StylePropertiesSection.ts | copyAllDeclarations": {
+    "message": "Copy all declarations"
+  },
+  "panels/elements/StylePropertiesSection.ts | copyRule": {
+    "message": "Copy rule"
+  },
+  "panels/elements/StylePropertiesSection.ts | copySelector": {
+    "message": "Copy selector"
+  },
+  "panels/elements/StylePropertiesSection.ts | cssSelector": {
+    "message": "CSS selector"
+  },
+  "panels/elements/StylePropertiesSection.ts | injectedStylesheet": {
+    "message": "injected stylesheet"
+  },
+  "panels/elements/StylePropertiesSection.ts | insertStyleRuleBelow": {
+    "message": "Insert Style Rule Below"
+  },
+  "panels/elements/StylePropertiesSection.ts | sattributesStyle": {
+    "message": "{PH1}[Attributes Style]"
+  },
+  "panels/elements/StylePropertiesSection.ts | showAllPropertiesSMore": {
+    "message": "Show All Properties ({PH1} more)"
+  },
+  "panels/elements/StylePropertiesSection.ts | styleAttribute": {
+    "message": "style attribute"
+  },
+  "panels/elements/StylePropertiesSection.ts | userAgentStylesheet": {
+    "message": "user agent stylesheet"
+  },
+  "panels/elements/StylePropertiesSection.ts | viaInspector": {
+    "message": "via inspector"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | copyAllCSSChanges": {
+    "message": "Copy all CSS changes"
   },
   "panels/elements/StylePropertyTreeElement.ts | copyAllCssDeclarationsAsJs": {
     "message": "Copy all declarations as JS"
@@ -4832,32 +4919,17 @@
   "panels/elements/StylePropertyTreeElement.ts | viewComputedValue": {
     "message": "View computed value"
   },
-  "panels/elements/StylesSidebarPane.ts | constructedStylesheet": {
-    "message": "constructed stylesheet"
+  "panels/elements/StylesSidebarPane.ts | automaticDarkMode": {
+    "message": "Automatic dark mode"
   },
-  "panels/elements/StylesSidebarPane.ts | copiedToClipboard": {
-    "message": "Copied to clipboard"
-  },
-  "panels/elements/StylesSidebarPane.ts | copyAllCSSChanges": {
-    "message": "Copy all the CSS changes"
-  },
-  "panels/elements/StylesSidebarPane.ts | copyAllDeclarations": {
-    "message": "Copy all declarations"
-  },
-  "panels/elements/StylesSidebarPane.ts | copyRule": {
-    "message": "Copy rule"
-  },
-  "panels/elements/StylesSidebarPane.ts | copySelector": {
-    "message": "Copy selector"
+  "panels/elements/StylesSidebarPane.ts | clickToRevealLayer": {
+    "message": "Click to reveal layer in layer tree"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyName": {
     "message": "CSS property name: {PH1}"
   },
   "panels/elements/StylesSidebarPane.ts | cssPropertyValue": {
     "message": "CSS property value: {PH1}"
-  },
-  "panels/elements/StylesSidebarPane.ts | cssSelector": {
-    "message": "CSS selector"
   },
   "panels/elements/StylesSidebarPane.ts | filter": {
     "message": "Filter"
@@ -4874,17 +4946,17 @@
   "panels/elements/StylesSidebarPane.ts | inheritedFroms": {
     "message": "Inherited from "
   },
-  "panels/elements/StylesSidebarPane.ts | injectedStylesheet": {
-    "message": "injected stylesheet"
-  },
-  "panels/elements/StylesSidebarPane.ts | insertStyleRuleBelow": {
-    "message": "Insert Style Rule Below"
+  "panels/elements/StylesSidebarPane.ts | inheritedFromSPseudoOf": {
+    "message": "Inherited from ::{PH1} pseudo of "
   },
   "panels/elements/StylesSidebarPane.ts | invalidPropertyValue": {
     "message": "Invalid property value"
   },
   "panels/elements/StylesSidebarPane.ts | invalidString": {
     "message": "{PH1}, property name: {PH2}, property value: {PH3}"
+  },
+  "panels/elements/StylesSidebarPane.ts | layer": {
+    "message": "Layer"
   },
   "panels/elements/StylesSidebarPane.ts | newStyleRule": {
     "message": "New Style Rule"
@@ -4895,23 +4967,11 @@
   "panels/elements/StylesSidebarPane.ts | pseudoSElement": {
     "message": "Pseudo ::{PH1} element"
   },
-  "panels/elements/StylesSidebarPane.ts | sattributesStyle": {
-    "message": "{PH1}[Attributes Style]"
-  },
-  "panels/elements/StylesSidebarPane.ts | showAllPropertiesSMore": {
-    "message": "Show All Properties ({PH1} more)"
-  },
-  "panels/elements/StylesSidebarPane.ts | styleAttribute": {
-    "message": "style attribute"
+  "panels/elements/StylesSidebarPane.ts | toggleRenderingEmulations": {
+    "message": "Toggle common rendering emulations"
   },
   "panels/elements/StylesSidebarPane.ts | unknownPropertyName": {
     "message": "Unknown property name"
-  },
-  "panels/elements/StylesSidebarPane.ts | userAgentStylesheet": {
-    "message": "user agent stylesheet"
-  },
-  "panels/elements/StylesSidebarPane.ts | viaInspector": {
-    "message": "via inspector"
   },
   "panels/emulation/DeviceModeToolbar.ts | addDevicePixelRatio": {
     "message": "Add device pixel ratio"
@@ -5326,6 +5386,9 @@
   },
   "panels/issues/AttributionReportingIssueDetailsView.ts | untrustworthyOrigin": {
     "message": "Untrustworthy origin"
+  },
+  "panels/issues/ComboBoxOfCheckBoxes.ts | genericMenuLabel": {
+    "message": "Menu"
   },
   "panels/issues/components/HideIssuesMenu.ts | tooltipTitle": {
     "message": "Hide issues"
@@ -5819,8 +5882,11 @@
   "panels/lighthouse/LighthouseController.ts | thereMayBeStoredDataAffectingSingular": {
     "message": "There may be stored data affecting loading performance in this location: {PH1}. Audit this page in an incognito window to prevent those resources from affecting your scores."
   },
+  "panels/lighthouse/LighthouseController.ts | timespan": {
+    "message": "Timespan"
+  },
   "panels/lighthouse/LighthouseController.ts | useLegacyNavigation": {
-    "message": "Audit the page using classic Lighthouse when in navigation mode."
+    "message": "Analyze the page using classic Lighthouse when in navigation mode."
   },
   "panels/lighthouse/LighthouseController.ts | webSql": {
     "message": "Web SQL"
@@ -5879,8 +5945,17 @@
   "panels/lighthouse/LighthouseStartView.ts | learnMore": {
     "message": "Learn more"
   },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeNavigation": {
+    "message": "Analyze navigation"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | analyzeSnapshot": {
+    "message": "Analyze snapshot"
+  },
   "panels/lighthouse/LighthouseStartViewFR.ts | mode": {
     "message": "Mode"
+  },
+  "panels/lighthouse/LighthouseStartViewFR.ts | startTimespan": {
+    "message": "Start timespan"
   },
   "panels/lighthouse/LighthouseStatusView.ts | ahSorryWeRanIntoAnError": {
     "message": "Ah, sorry! We ran into an error."
@@ -5968,6 +6043,18 @@
   },
   "panels/lighthouse/LighthouseStatusView.ts | walmartSawAIncreaseInRevenueFor": {
     "message": "Walmart saw a 1% increase in revenue for every 100ms improvement in page load [Source: WPO Stats]"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | cancel": {
+    "message": "Cancel"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | endTimespan": {
+    "message": "End timespan"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarted": {
+    "message": "Timespan started, interact with the page"
+  },
+  "panels/lighthouse/LighthouseTimespanView.ts | timespanStarting": {
+    "message": "Timespan starting…"
   },
   "panels/media/EventDisplayTable.ts | eventDisplay": {
     "message": "Event display"
@@ -6511,6 +6598,9 @@
   },
   "panels/network/NetworkConfigView.ts | enterACustomUserAgent": {
     "message": "Enter a custom user agent"
+  },
+  "panels/network/NetworkConfigView.ts | networkConditionsPanelShown": {
+    "message": "Network conditions shown"
   },
   "panels/network/NetworkConfigView.ts | networkThrottling": {
     "message": "Network throttling"
@@ -7126,6 +7216,9 @@
   },
   "panels/network/RequestHeadersView.ts | general": {
     "message": "General"
+  },
+  "panels/network/RequestHeadersView.ts | headerOverrides": {
+    "message": "Header overrides"
   },
   "panels/network/RequestHeadersView.ts | learnMore": {
     "message": "Learn more"
@@ -9206,6 +9299,24 @@
   "panels/sources/CallStackSidebarPane.ts | showMore": {
     "message": "Show more"
   },
+  "panels/sources/components/HeadersView.ts | addHeader": {
+    "message": "Add a header"
+  },
+  "panels/sources/components/HeadersView.ts | addHeaderOverride": {
+    "message": "Add header override"
+  },
+  "panels/sources/components/HeadersView.ts | errorWhenParsing": {
+    "message": "Error when parsing ''{PH1}''."
+  },
+  "panels/sources/components/HeadersView.ts | parsingErrorExplainer": {
+    "message": "This is most likely due to a syntax error in ''{PH1}''. Try opening this file in an external editor to fix the error or delete the file and re-create the override."
+  },
+  "panels/sources/components/HeadersView.ts | removeBlock": {
+    "message": "Remove this 'ApplyTo'-section"
+  },
+  "panels/sources/components/HeadersView.ts | removeHeader": {
+    "message": "Remove this header"
+  },
   "panels/sources/CoveragePlugin.ts | clickToShowCoveragePanel": {
     "message": "Click to show Coverage Panel"
   },
@@ -10945,6 +11056,9 @@
   },
   "panels/timeline/TimelineUIUtils.ts | pinchUpdate": {
     "message": "Pinch Update"
+  },
+  "panels/timeline/TimelineUIUtils.ts | prePaint": {
+    "message": "Pre-Paint"
   },
   "panels/timeline/TimelineUIUtils.ts | preview": {
     "message": "Preview"

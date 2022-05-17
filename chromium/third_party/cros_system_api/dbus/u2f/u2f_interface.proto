@@ -43,7 +43,8 @@ message MakeCredentialRequest {
   // MakeCredential should fail if any excluded credential belongs to this
   // device.
   repeated bytes excluded_credential_id = 5;
-  // Id used to idenfity the window that initiated the request.
+  // Id used to idenfity the window that initiated the request. Will be
+  // deprecated by request_id_str.
   uint64 request_id = 6;
   // User display name for listing credentials to the user.
   string user_display_name = 7;
@@ -59,6 +60,8 @@ message MakeCredentialRequest {
   // Whether the credential should be a resident key, a.k.a. discoverable
   // credential.
   bool resident_key_required = 12;
+  // Id used to idenfity the window that initiated the request.
+  string request_id_str = 13;
 }
 
 message MakeCredentialResponse {
@@ -103,11 +106,14 @@ message GetAssertionRequest {
   bytes client_data_hash = 3;
   // Currently must not be empty; resident credentials not implemented yet.
   repeated bytes allowed_credential_id = 4;
-  // Id used to identify the window that initiated the request.
+  // Id used to identify the window that initiated the request. Will be
+  // deprecated by request_id_str.
   uint64 request_id = 5;
   // App id extension. Used in place of rp id for legacy u2f credentials.
   string app_id = 6;
-  // Next ID: 7
+  // Id used to idenfity the window that initiated the request.
+  string request_id_str = 7;
+  // Next ID: 8
 }
 
 message Assertion {
@@ -171,8 +177,11 @@ message HasCredentialsResponse {
 
 // Dismiss user verification UI and abort the operation.
 message CancelWebAuthnFlowRequest {
-  // Id used to identify the window that initiated the request.
+  // Id used to identify the window that initiated the request. Will be
+  // deprecated by request_id_str.
   uint64 request_id = 1;
+  // Id used to idenfity the window that initiated the request.
+  string request_id_str = 2;
 }
 
 message CancelWebAuthnFlowResponse {
@@ -234,4 +243,18 @@ message DeleteCredentialsInTimeRangeResponse {
   DeleteCredentialsInTimeRangeStatus status = 1;
   // Number of platform credentials deleted in the specified time range.
   uint64 num_credentials_deleted = 2;
+}
+
+// Check what public key algorithms are supported in the platform authenticator.
+message GetAlgorithmsRequest {}
+
+message GetAlgorithmsResponse {
+  enum GetAlgorithmsStatus {
+    UNKNOWN = 0;
+    SUCCESS = 1;
+    INTERNAL_ERROR = 2;
+  }
+
+  GetAlgorithmsStatus status = 1;
+  repeated int32 algorithm = 2;
 }

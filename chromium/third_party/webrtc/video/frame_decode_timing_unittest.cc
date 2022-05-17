@@ -18,6 +18,7 @@
 #include "rtc_base/containers/flat_map.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
+#include "test/scoped_key_value_config.h"
 
 namespace webrtc {
 
@@ -30,22 +31,21 @@ namespace {
 
 class FakeVCMTiming : public webrtc::VCMTiming {
  public:
-  explicit FakeVCMTiming(Clock* clock) : webrtc::VCMTiming(clock) {}
+  explicit FakeVCMTiming(Clock* clock, const FieldTrialsView& field_trials)
+      : webrtc::VCMTiming(clock, field_trials) {}
 
-  int64_t RenderTimeMs(uint32_t frame_timestamp,
-                       int64_t now_ms) const override {
+  Timestamp RenderTime(uint32_t frame_timestamp, Timestamp now) const override {
     RTC_DCHECK(render_time_map_.contains(frame_timestamp));
     auto it = render_time_map_.find(frame_timestamp);
-    return it->second.ms();
+    return it->second;
   }
 
-  int64_t MaxWaitingTime(int64_t render_time_ms,
-                         int64_t now_ms,
-                         bool too_many_frames_queued) const override {
-    auto render_time = Timestamp::Millis(render_time_ms);
+  TimeDelta MaxWaitingTime(Timestamp render_time,
+                           Timestamp now,
+                           bool too_many_frames_queued) const override {
     RTC_DCHECK(wait_time_map_.contains(render_time));
     auto it = wait_time_map_.find(render_time);
-    return it->second.ms();
+    return it->second;
   }
 
   void SetTimes(uint32_t frame_timestamp,
@@ -65,10 +65,11 @@ class FrameDecodeTimingTest : public ::testing::Test {
  public:
   FrameDecodeTimingTest()
       : clock_(Timestamp::Millis(1000)),
-        timing_(&clock_),
+        timing_(&clock_, field_trials_),
         frame_decode_scheduler_(&clock_, &timing_) {}
 
  protected:
+  test::ScopedKeyValueConfig field_trials_;
   SimulatedClock clock_;
   FakeVCMTiming timing_;
   FrameDecodeTiming frame_decode_scheduler_;

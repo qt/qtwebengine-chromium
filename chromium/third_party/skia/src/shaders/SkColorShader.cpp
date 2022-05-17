@@ -11,11 +11,14 @@
 #include "src/core/SkArenaAlloc.h"
 #include "src/core/SkColorSpacePriv.h"
 #include "src/core/SkColorSpaceXformSteps.h"
-#include "src/core/SkKeyHelpers.h"
 #include "src/core/SkRasterPipeline.h"
 #include "src/core/SkReadBuffer.h"
 #include "src/core/SkUtils.h"
 #include "src/core/SkVM.h"
+
+#ifdef SK_ENABLE_SKSL
+#include "src/core/SkKeyHelpers.h"
+#endif
 
 SkColorShader::SkColorShader(SkColor c) : fColor(c) {}
 
@@ -116,10 +119,10 @@ skvm::Color SkColor4Shader::onProgram(skvm::Builder* p,
 
 #if SK_SUPPORT_GPU
 
-#include "src/gpu/GrColorInfo.h"
-#include "src/gpu/GrColorSpaceXform.h"
-#include "src/gpu/GrFragmentProcessor.h"
-#include "src/gpu/SkGr.h"
+#include "src/gpu/ganesh/GrColorInfo.h"
+#include "src/gpu/ganesh/GrColorSpaceXform.h"
+#include "src/gpu/ganesh/GrFragmentProcessor.h"
+#include "src/gpu/ganesh/SkGr.h"
 
 std::unique_ptr<GrFragmentProcessor> SkColorShader::asFragmentProcessor(
         const GrFPArgs& args) const {
@@ -137,17 +140,17 @@ std::unique_ptr<GrFragmentProcessor> SkColor4Shader::asFragmentProcessor(
 
 #endif
 
-void SkColorShader::addToKey(SkShaderCodeDictionary* dict,
-                             SkBackend backend,
+#ifdef SK_ENABLE_SKSL
+void SkColorShader::addToKey(const SkKeyContext& keyContext,
                              SkPaintParamsKeyBuilder* builder,
-                             SkUniformBlock* uniformBlock) const {
-    SolidColorShaderBlock::AddToKey(dict, backend, builder, uniformBlock,
-                                    SkColor4f::FromColor(fColor));
+                             SkPipelineDataGatherer* gatherer) const {
+    SolidColorShaderBlock::AddToKey(keyContext, builder, gatherer,
+                                    SkColor4f::FromColor(fColor).premul());
 }
 
-void SkColor4Shader::addToKey(SkShaderCodeDictionary* dict,
-                              SkBackend backend,
+void SkColor4Shader::addToKey(const SkKeyContext& keyContext,
                               SkPaintParamsKeyBuilder* builder,
-                              SkUniformBlock* uniformBlock) const {
-    SolidColorShaderBlock::AddToKey(dict, backend, builder, uniformBlock, fColor);
+                              SkPipelineDataGatherer* gatherer) const {
+    SolidColorShaderBlock::AddToKey(keyContext, builder, gatherer, fColor.premul());
 }
+#endif

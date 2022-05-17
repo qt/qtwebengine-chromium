@@ -24,6 +24,7 @@
 #include "src/heap/code-object-registry.h"
 #include "src/heap/concurrent-allocator.h"
 #include "src/heap/evacuation-allocator-inl.h"
+#include "src/heap/gc-tracer-inl.h"
 #include "src/heap/gc-tracer.h"
 #include "src/heap/heap.h"
 #include "src/heap/incremental-marking-inl.h"
@@ -43,6 +44,7 @@
 #include "src/heap/read-only-heap.h"
 #include "src/heap/read-only-spaces.h"
 #include "src/heap/safepoint.h"
+#include "src/heap/slot-set.h"
 #include "src/heap/spaces-inl.h"
 #include "src/heap/sweeper.h"
 #include "src/heap/weak-object-worklists.h"
@@ -217,7 +219,7 @@ class FullMarkingVerifier : public MarkingVerifier {
     VerifyMarking(heap_->new_lo_space());
     VerifyMarking(heap_->old_space());
     VerifyMarking(heap_->code_space());
-    VerifyMarking(heap_->map_space());
+    if (heap_->map_space()) VerifyMarking(heap_->map_space());
     VerifyMarking(heap_->lo_space());
     VerifyMarking(heap_->code_lo_space());
   }
@@ -395,11 +397,12 @@ class FullEvacuationVerifier : public EvacuationVerifier {
   explicit FullEvacuationVerifier(Heap* heap) : EvacuationVerifier(heap) {}
 
   void Run() override {
+    DCHECK(!heap_->mark_compact_collector()->sweeping_in_progress());
     VerifyRoots();
     VerifyEvacuation(heap_->new_space());
     VerifyEvacuation(heap_->old_space());
     VerifyEvacuation(heap_->code_space());
-    VerifyEvacuation(heap_->map_space());
+    if (heap_->map_space()) VerifyEvacuation(heap_->map_space());
   }
 
  protected:
@@ -560,7 +563,7 @@ bool MarkCompactCollector::StartCompaction(StartCompactionMode mode) {
 
   CollectEvacuationCandidates(heap()->old_space());
 
-  if (FLAG_compact_map_space) {
+  if (heap()->map_space() && FLAG_compact_maps) {
     CollectEvacuationCandidates(heap()->map_space());
   }
 
@@ -571,7 +574,7 @@ bool MarkCompactCollector::StartCompaction(StartCompactionMode mode) {
     TraceFragmentation(heap()->code_space());
   }
 
-  if (FLAG_trace_fragmentation) {
+  if (FLAG_trace_fragmentation && heap()->map_space()) {
     TraceFragmentation(heap()->map_space());
   }
 
@@ -607,7 +610,7 @@ void MarkCompactCollector::StartMarking() {
   if (FLAG_verify_heap) {
     VerifyMarkbitsAreClean();
   }
-#endif
+#endif  // VERIFY_HEAP
 }
 
 void MarkCompactCollector::CollectGarbage() {
@@ -663,7 +666,9 @@ void MarkCompactCollector::VerifyMarkbitsAreClean(LargeObjectSpace* space) {
 void MarkCompactCollector::VerifyMarkbitsAreClean() {
   VerifyMarkbitsAreClean(heap_->old_space());
   VerifyMarkbitsAreClean(heap_->code_space());
-  VerifyMarkbitsAreClean(heap_->map_space());
+  if (heap_->map_space()) {
+    VerifyMarkbitsAreClean(heap_->map_space());
+  }
   VerifyMarkbitsAreClean(heap_->new_space());
   // Read-only space should always be black since we never collect any objects
   // in it or linked from it.
@@ -675,26 +680,57 @@ void MarkCompactCollector::VerifyMarkbitsAreClean() {
 
 #endif  // VERIFY_HEAP
 
-void MarkCompactCollector::EnsureSweepingCompleted() {
-  if (!sweeper()->sweeping_in_progress()) return;
+void MarkCompactCollector::FinishSweepingIfOutOfWork() {
+  if (sweeper()->sweeping_in_progress() && FLAG_concurrent_sweeping &&
+      !sweeper()->AreSweeperTasksRunning()) {
+    // At this point we know that all concurrent sweeping tasks have run
+    // out of work and quit: all pages are swept. The main thread still needs
+    // to complete sweeping though.
+    EnsureSweepingCompleted(SweepingForcedFinalizationMode::kV8Only);
+  }
+  if (heap()->cpp_heap()) {
+    // Ensure that sweeping is also completed for the C++ managed heap, if one
+    // exists and it's out of work.
+    CppHeap::From(heap()->cpp_heap())->FinishSweepingIfOutOfWork();
+  }
+}
 
-  TRACE_GC_EPOCH(heap()->tracer(), GCTracer::Scope::MC_COMPLETE_SWEEPING,
-                 ThreadKind::kMain);
+void MarkCompactCollector::EnsureSweepingCompleted(
+    SweepingForcedFinalizationMode mode) {
+  if (sweeper()->sweeping_in_progress()) {
+    TRACE_GC_EPOCH(heap()->tracer(), GCTracer::Scope::MC_COMPLETE_SWEEPING,
+                   ThreadKind::kMain);
 
-  sweeper()->EnsureCompleted();
-  heap()->old_space()->RefillFreeList();
-  heap()->code_space()->RefillFreeList();
-  heap()->map_space()->RefillFreeList();
-  heap()->map_space()->SortFreeList();
+    sweeper()->EnsureCompleted();
+    heap()->old_space()->RefillFreeList();
+    heap()->code_space()->RefillFreeList();
+    if (heap()->map_space()) {
+      heap()->map_space()->RefillFreeList();
+      heap()->map_space()->SortFreeList();
+    }
 
-  heap()->tracer()->NotifySweepingCompleted();
+    heap()->tracer()->NotifySweepingCompleted();
 
 #ifdef VERIFY_HEAP
-  if (FLAG_verify_heap && !evacuation()) {
-    FullEvacuationVerifier verifier(heap());
-    verifier.Run();
-  }
+    if (FLAG_verify_heap && !evacuation()) {
+      FullEvacuationVerifier verifier(heap());
+      verifier.Run();
+    }
 #endif
+  }
+
+  if (mode == SweepingForcedFinalizationMode::kUnifiedHeap &&
+      heap()->cpp_heap()) {
+    // Ensure that sweeping is also completed for the C++ managed heap, if one
+    // exists.
+    CppHeap::From(heap()->cpp_heap())->FinishSweepingIfRunning();
+    DCHECK(
+        !CppHeap::From(heap()->cpp_heap())->sweeper().IsSweepingInProgress());
+  }
+
+  DCHECK_IMPLIES(mode == SweepingForcedFinalizationMode::kUnifiedHeap ||
+                     !heap()->cpp_heap(),
+                 !heap()->tracer()->IsSweepingInProgress());
 }
 
 void MarkCompactCollector::EnsurePageIsSwept(Page* page) {
@@ -933,8 +969,6 @@ void MarkCompactCollector::AbortCompaction() {
 }
 
 void MarkCompactCollector::Prepare() {
-  was_marked_incrementally_ = heap()->incremental_marking()->IsMarking();
-
 #ifdef DEBUG
   DCHECK(state_ == IDLE);
   state_ = PREPARE_GC;
@@ -942,17 +976,22 @@ void MarkCompactCollector::Prepare() {
 
   DCHECK(!sweeping_in_progress());
 
-  if (!was_marked_incrementally_) {
+  if (!heap()->incremental_marking()->IsMarking()) {
+    const auto embedder_flags = heap_->flags_for_embedder_tracer();
     {
       TRACE_GC(heap()->tracer(), GCTracer::Scope::MC_MARK_EMBEDDER_PROLOGUE);
-      auto embedder_flags = heap_->flags_for_embedder_tracer();
       // PrepareForTrace should be called before visitor initialization in
       // StartMarking.
       heap_->local_embedder_heap_tracer()->PrepareForTrace(embedder_flags);
-      heap_->local_embedder_heap_tracer()->TracePrologue(embedder_flags);
     }
     StartCompaction(StartCompactionMode::kAtomic);
     StartMarking();
+    {
+      TRACE_GC(heap()->tracer(), GCTracer::Scope::MC_MARK_EMBEDDER_PROLOGUE);
+      // TracePrologue immediately starts marking which requires V8 worklists to
+      // be set up.
+      heap_->local_embedder_heap_tracer()->TracePrologue(embedder_flags);
+    }
   }
 
   heap_->FreeLinearAllocationAreas();
@@ -983,6 +1022,9 @@ void MarkCompactCollector::FinishConcurrentMarking() {
         non_atomic_marking_state());
     heap()->concurrent_marking()->FlushNativeContexts(&native_context_stats_);
   }
+  if (auto* cpp_heap = CppHeap::From(heap_->cpp_heap())) {
+    cpp_heap->FinishConcurrentMarkingIfNeeded();
+  }
 }
 
 void MarkCompactCollector::VerifyMarking() {
@@ -997,7 +1039,7 @@ void MarkCompactCollector::VerifyMarking() {
 #ifdef VERIFY_HEAP
   if (FLAG_verify_heap) {
     heap()->old_space()->VerifyLiveBytes();
-    heap()->map_space()->VerifyLiveBytes();
+    if (heap()->map_space()) heap()->map_space()->VerifyLiveBytes();
     heap()->code_space()->VerifyLiveBytes();
   }
 #endif
@@ -1176,7 +1218,12 @@ class MarkCompactCollector::CustomRootBodyMarkingVisitor final
   V8_INLINE void MarkObject(HeapObject host, Object object) {
     if (!object.IsHeapObject()) return;
     HeapObject heap_object = HeapObject::cast(object);
-    if (!collector_->is_shared_heap() && heap_object.InSharedHeap()) return;
+    // We use this visitor both in client and shared GCs. The client GC should
+    // not mark objects in the shared heap. In shared GCs we are marking each
+    // client's top stack frame, so it is actually legal to encounter references
+    // into the client heap here in a shared GC. We need to bail out in these
+    // cases as well.
+    if (collector_->is_shared_heap() != heap_object.InSharedHeap()) return;
     collector_->MarkObject(host, heap_object);
   }
 
@@ -1244,7 +1291,7 @@ class MarkCompactCollector::SharedHeapObjectVisitor final
     if (!object.IsHeapObject()) return;
     HeapObject heap_object = HeapObject::cast(object);
     if (!heap_object.InSharedHeap()) return;
-    RememberedSet<CLIENT_TO_SHARED>::Insert<AccessMode::NON_ATOMIC>(
+    RememberedSet<OLD_TO_SHARED>::Insert<AccessMode::NON_ATOMIC>(
         MemoryChunk::FromHeapObject(host), slot.address());
     collector_->MarkRootObject(Root::kClientHeap, heap_object);
   }
@@ -1253,8 +1300,8 @@ class MarkCompactCollector::SharedHeapObjectVisitor final
                                  HeapObject target) {
     if (ShouldRecordRelocSlot(host, rinfo, target)) {
       RecordRelocSlotInfo info = ProcessRelocInfo(host, rinfo, target);
-      RememberedSet<CLIENT_TO_SHARED>::InsertTyped(info.memory_chunk,
-                                                   info.slot_type, info.offset);
+      RememberedSet<OLD_TO_SHARED>::InsertTyped(info.memory_chunk,
+                                                info.slot_type, info.offset);
     }
   }
 
@@ -1479,7 +1526,6 @@ class RecordMigratedSlotVisitor : public ObjectVisitorWithCageBases {
 
         MemoryChunk* chunk = MemoryChunk::FromHeapObject(host);
         DCHECK(chunk->SweepingDone());
-        DCHECK_NULL(chunk->sweeping_slot_set<AccessMode::NON_ATOMIC>());
         RememberedSet<OLD_TO_NEW>::Insert<AccessMode::NON_ATOMIC>(chunk, slot);
       } else if (p->IsEvacuationCandidate()) {
         if (V8_EXTERNAL_CODE_SPACE_BOOL &&
@@ -2321,14 +2367,12 @@ void MarkCompactCollector::MarkLiveObjects() {
   // with the C stack limit check.
   PostponeInterruptsScope postpone(isolate());
 
+  bool was_marked_incrementally = false;
   {
     TRACE_GC(heap()->tracer(), GCTracer::Scope::MC_MARK_FINISH_INCREMENTAL);
-    IncrementalMarking* incremental_marking = heap_->incremental_marking();
-    if (was_marked_incrementally_) {
-      incremental_marking->Finalize();
+    if (heap_->incremental_marking()->Stop()) {
       MarkingBarrier::PublishAll(heap());
-    } else {
-      CHECK(incremental_marking->IsStopped());
+      was_marked_incrementally = true;
     }
   }
 
@@ -2438,8 +2482,13 @@ void MarkCompactCollector::MarkLiveObjects() {
           &IsUnmarkedHeapObject);
     }
   }
-  if (was_marked_incrementally_) {
+
+  if (was_marked_incrementally) {
+    // Disable the marking barrier after concurrent/parallel marking has
+    // finished as it will reset page flags that share the same bitmap as
+    // the evacuation candidate bit.
     MarkingBarrier::DeactivateAll(heap());
+    GlobalHandles::DisableMarkingBarrier(heap()->isolate());
   }
 
   epoch_++;
@@ -2595,7 +2644,6 @@ void MarkCompactCollector::FlushBytecodeFromSFI(
   MemoryChunk* chunk = MemoryChunk::FromAddress(compiled_data_start);
 
   // Clear any recorded slots for the compiled data as being invalid.
-  DCHECK_NULL(chunk->sweeping_slot_set());
   RememberedSet<OLD_TO_NEW>::RemoveRange(
       chunk, compiled_data_start, compiled_data_start + compiled_data_size,
       SlotSet::FREE_EMPTY_BUCKETS);
@@ -2848,7 +2896,6 @@ void MarkCompactCollector::RightTrimDescriptorArray(DescriptorArray array,
   Address start = array.GetDescriptorSlot(new_nof_all_descriptors).address();
   Address end = array.GetDescriptorSlot(old_nof_all_descriptors).address();
   MemoryChunk* chunk = MemoryChunk::FromHeapObject(array);
-  DCHECK_NULL(chunk->sweeping_slot_set());
   RememberedSet<OLD_TO_NEW>::RemoveRange(chunk, start, end,
                                          SlotSet::FREE_EMPTY_BUCKETS);
   RememberedSet<OLD_TO_OLD>::RemoveRange(chunk, start, end,
@@ -2907,12 +2954,16 @@ void MarkCompactCollector::ClearWeakCollections() {
       if (FLAG_verify_heap) {
         Object value = table.ValueAt(i);
         if (value.IsHeapObject()) {
-          CHECK_IMPLIES(non_atomic_marking_state()->IsBlackOrGrey(key),
-                        non_atomic_marking_state()->IsBlackOrGrey(
-                            HeapObject::cast(value)));
+          HeapObject heap_object = HeapObject::cast(value);
+          CHECK_IMPLIES(
+              (!is_shared_heap_ && key.InSharedHeap()) ||
+                  non_atomic_marking_state()->IsBlackOrGrey(key),
+              (!is_shared_heap_ && heap_object.InSharedHeap()) ||
+                  non_atomic_marking_state()->IsBlackOrGrey(heap_object));
         }
       }
 #endif
+      if (!is_shared_heap_ && key.InSharedHeap()) continue;
       if (!non_atomic_marking_state()->IsBlackOrGrey(key)) {
         table.RemoveEntry(i);
       }
@@ -3182,7 +3233,6 @@ static inline SlotCallbackResult UpdateSlot(PtrComprCageBase cage_base,
   } else {
     DCHECK(MarkCompactCollector::IsMapOrForwardedMap(map_word.ToMap()));
   }
-  // OLD_TO_OLD slots are always removed after updating.
   return REMOVE_SLOT;
 }
 
@@ -3470,13 +3520,17 @@ void MarkCompactCollector::EvacuateEpilogue() {
   heap()->memory_allocator()->unmapper()->FreeQueuedChunks();
 
 #ifdef DEBUG
-  // Old-to-old slot sets must be empty after evacuation.
-  for (Page* p : *heap()->old_space()) {
-    DCHECK_NULL((p->slot_set<OLD_TO_OLD, AccessMode::ATOMIC>()));
-    DCHECK_NULL((p->slot_set<CLIENT_TO_SHARED, AccessMode::NON_ATOMIC>()));
-    DCHECK_NULL((p->typed_slot_set<OLD_TO_OLD, AccessMode::ATOMIC>()));
-    DCHECK_NULL(p->invalidated_slots<OLD_TO_OLD>());
-    DCHECK_NULL(p->invalidated_slots<OLD_TO_NEW>());
+  MemoryChunkIterator chunk_iterator(heap());
+
+  while (chunk_iterator.HasNext()) {
+    MemoryChunk* chunk = chunk_iterator.Next();
+
+    // Old-to-old slot sets must be empty after evacuation.
+    DCHECK_NULL((chunk->slot_set<OLD_TO_OLD, AccessMode::ATOMIC>()));
+    DCHECK_NULL((chunk->slot_set<OLD_TO_SHARED, AccessMode::NON_ATOMIC>()));
+    DCHECK_NULL((chunk->typed_slot_set<OLD_TO_OLD, AccessMode::ATOMIC>()));
+    DCHECK_NULL(chunk->invalidated_slots<OLD_TO_OLD>());
+    DCHECK_NULL(chunk->invalidated_slots<OLD_TO_NEW>());
   }
 #endif
 }
@@ -3935,13 +3989,6 @@ void MarkCompactCollector::EvacuatePagesInParallel() {
         this, std::move(evacuation_items), nullptr);
   }
 
-  // After evacuation there might still be swept pages that weren't
-  // added to one of the compaction space but still reside in the
-  // sweeper's swept_list_. Merge remembered sets for those pages as
-  // well such that after mark-compact all pages either store slots
-  // in the sweeping or old-to-new remembered set.
-  sweeper()->MergeOldToNewRememberedSetsForSweptPages();
-
   const size_t aborted_pages = PostProcessEvacuationCandidates();
 
   if (FLAG_trace_evacuation) {
@@ -4332,11 +4379,6 @@ class RememberedSetUpdatingItem : public UpdatingItem {
 
   void UpdateUntypedPointers() {
     if (chunk_->slot_set<OLD_TO_NEW, AccessMode::NON_ATOMIC>() != nullptr) {
-      DCHECK_IMPLIES(
-          collector == GarbageCollector::MARK_COMPACTOR,
-          chunk_->SweepingDone() &&
-              chunk_->sweeping_slot_set<AccessMode::NON_ATOMIC>() == nullptr);
-
       InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToNew(chunk_);
       int slots = RememberedSet<OLD_TO_NEW>::Iterate(
           chunk_,
@@ -4353,30 +4395,6 @@ class RememberedSetUpdatingItem : public UpdatingItem {
       }
     }
 
-    if (chunk_->sweeping_slot_set<AccessMode::NON_ATOMIC>()) {
-      DCHECK_IMPLIES(
-          collector == GarbageCollector::MARK_COMPACTOR,
-          !chunk_->SweepingDone() &&
-              (chunk_->slot_set<OLD_TO_NEW, AccessMode::NON_ATOMIC>()) ==
-                  nullptr);
-      DCHECK(!chunk_->IsLargePage());
-
-      InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToNew(chunk_);
-      int slots = RememberedSetSweeping::Iterate(
-          chunk_,
-          [this, &filter](MaybeObjectSlot slot) {
-            if (!filter.IsValid(slot.address())) return REMOVE_SLOT;
-            return CheckAndUpdateOldToNewSlot(slot);
-          },
-          SlotSet::FREE_EMPTY_BUCKETS);
-
-      DCHECK_IMPLIES(collector == GarbageCollector::MARK_COMPACTOR, slots == 0);
-
-      if (slots == 0) {
-        chunk_->ReleaseSweepingSlotSet();
-      }
-    }
-
     if (chunk_->invalidated_slots<OLD_TO_NEW>() != nullptr) {
       // The invalidated slots are not needed after old-to-new slots were
       // processed.
@@ -4390,10 +4408,14 @@ class RememberedSetUpdatingItem : public UpdatingItem {
       RememberedSet<OLD_TO_OLD>::Iterate(
           chunk_,
           [&filter, cage_base](MaybeObjectSlot slot) {
-            if (!filter.IsValid(slot.address())) return REMOVE_SLOT;
-            return UpdateSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
+            if (filter.IsValid(slot.address())) {
+              UpdateSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
+            }
+            // Always keep slot since all slots are dropped at once after
+            // iteration.
+            return KEEP_SLOT;
           },
-          SlotSet::FREE_EMPTY_BUCKETS);
+          SlotSet::KEEP_EMPTY_BUCKETS);
       chunk_->ReleaseSlotSet<OLD_TO_OLD>();
     }
     if ((updating_mode_ == RememberedSetUpdatingMode::ALL) &&
@@ -4454,11 +4476,14 @@ class RememberedSetUpdatingItem : public UpdatingItem {
         // Using UpdateStrongSlot is OK here, because there are no weak
         // typed slots.
         PtrComprCageBase cage_base = heap_->isolate();
-        return UpdateTypedSlotHelper::UpdateTypedSlot(
+        UpdateTypedSlotHelper::UpdateTypedSlot(
             heap_, slot_type, slot, [cage_base](FullMaybeObjectSlot slot) {
               return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
             });
+        // Always keep slot since all slots are dropped at once after iteration.
+        return KEEP_SLOT;
       });
+      chunk_->ReleaseTypedSlotSet<OLD_TO_OLD>();
     }
   }
 
@@ -4491,18 +4516,15 @@ int MarkCompactCollectorBase::CollectRememberedSetUpdatingItems(
     const bool contains_old_to_new_slots =
         chunk->slot_set<OLD_TO_NEW>() != nullptr ||
         chunk->typed_slot_set<OLD_TO_NEW>() != nullptr;
-    const bool contains_old_to_new_sweeping_slots =
-        chunk->sweeping_slot_set() != nullptr;
     const bool contains_old_to_old_invalidated_slots =
         chunk->invalidated_slots<OLD_TO_OLD>() != nullptr;
     const bool contains_old_to_new_invalidated_slots =
         chunk->invalidated_slots<OLD_TO_NEW>() != nullptr;
-    if (!contains_old_to_new_slots && !contains_old_to_new_sweeping_slots &&
-        !contains_old_to_old_slots && !contains_old_to_old_invalidated_slots &&
+    if (!contains_old_to_new_slots && !contains_old_to_old_slots &&
+        !contains_old_to_old_invalidated_slots &&
         !contains_old_to_new_invalidated_slots && !contains_old_to_code_slots)
       continue;
     if (mode == RememberedSetUpdatingMode::ALL || contains_old_to_new_slots ||
-        contains_old_to_new_sweeping_slots ||
         contains_old_to_old_invalidated_slots ||
         contains_old_to_new_invalidated_slots) {
       items->emplace_back(CreateRememberedSetUpdatingItem(chunk, mode));
@@ -4596,8 +4618,10 @@ void MarkCompactCollector::UpdatePointersAfterEvacuation() {
                                       RememberedSetUpdatingMode::ALL);
     CollectRememberedSetUpdatingItems(&updating_items, heap()->code_lo_space(),
                                       RememberedSetUpdatingMode::ALL);
-    CollectRememberedSetUpdatingItems(&updating_items, heap()->map_space(),
-                                      RememberedSetUpdatingMode::ALL);
+    if (heap()->map_space()) {
+      CollectRememberedSetUpdatingItems(&updating_items, heap()->map_space(),
+                                        RememberedSetUpdatingMode::ALL);
+    }
 
     // Iterating to space may require a valid body descriptor for e.g.
     // WasmStruct which races with updating a slot in Map. Since to space is
@@ -4643,16 +4667,16 @@ void MarkCompactCollector::UpdatePointersInClientHeap(Isolate* client) {
     MemoryChunk* chunk = chunk_iterator.Next();
     CodePageMemoryModificationScope unprotect_code_page(chunk);
 
-    RememberedSet<CLIENT_TO_SHARED>::Iterate(
+    RememberedSet<OLD_TO_SHARED>::Iterate(
         chunk,
         [cage_base](MaybeObjectSlot slot) {
           return UpdateSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
         },
         SlotSet::KEEP_EMPTY_BUCKETS);
 
-    chunk->ReleaseSlotSet<CLIENT_TO_SHARED>();
+    chunk->ReleaseSlotSet<OLD_TO_SHARED>();
 
-    RememberedSet<CLIENT_TO_SHARED>::IterateTyped(
+    RememberedSet<OLD_TO_SHARED>::IterateTyped(
         chunk, [this](SlotType slot_type, Address slot) {
           // Using UpdateStrongSlot is OK here, because there are no weak
           // typed slots.
@@ -4664,7 +4688,7 @@ void MarkCompactCollector::UpdatePointersInClientHeap(Isolate* client) {
               });
         });
 
-    chunk->ReleaseTypedSlotSet<CLIENT_TO_SHARED>();
+    chunk->ReleaseTypedSlotSet<OLD_TO_SHARED>();
   }
 
 #ifdef VERIFY_HEAP
@@ -4706,8 +4730,6 @@ void ReRecordPage(
   // might not have recorded them in first place.
 
   // Remove outdated slots.
-  RememberedSetSweeping::RemoveRange(page, page->address(), failed_start,
-                                     SlotSet::FREE_EMPTY_BUCKETS);
   RememberedSet<OLD_TO_NEW>::RemoveRange(page, page->address(), failed_start,
                                          SlotSet::FREE_EMPTY_BUCKETS);
   RememberedSet<OLD_TO_NEW>::RemoveRangeTyped(page, page->address(),
@@ -4759,6 +4781,7 @@ size_t MarkCompactCollector::PostProcessEvacuationCandidates() {
     }
   }
   DCHECK_EQ(aborted_pages_verified, aborted_pages);
+  USE(aborted_pages_verified);
   return aborted_pages;
 }
 
@@ -4832,7 +4855,7 @@ void MarkCompactCollector::StartSweepSpaces() {
           heap()->tracer(), GCTracer::Scope::MC_SWEEP_CODE, ThreadKind::kMain);
       StartSweepSpace(heap()->code_space());
     }
-    {
+    if (heap()->map_space()) {
       GCTracer::Scope sweep_scope(
           heap()->tracer(), GCTracer::Scope::MC_SWEEP_MAP, ThreadKind::kMain);
       StartSweepSpace(heap()->map_space());
@@ -4893,8 +4916,7 @@ class YoungGenerationMarkingVerifier : public MarkingVerifier {
     VerifyHeapObjectImpl(target);
   }
   void VisitEmbeddedPointer(Code host, RelocInfo* rinfo) override {
-    PtrComprCageBase cage_base = host.main_cage_base();
-    VerifyHeapObjectImpl(rinfo->target_object(cage_base));
+    VerifyHeapObjectImpl(rinfo->target_object(cage_base()));
   }
   void VerifyRootPointers(FullObjectSlot start, FullObjectSlot end) override {
     VerifyPointersImpl(start, end);
@@ -4928,11 +4950,12 @@ class YoungGenerationEvacuationVerifier : public EvacuationVerifier {
       : EvacuationVerifier(heap) {}
 
   void Run() override {
+    DCHECK(!heap_->mark_compact_collector()->sweeping_in_progress());
     VerifyRoots();
     VerifyEvacuation(heap_->new_space());
     VerifyEvacuation(heap_->old_space());
     VerifyEvacuation(heap_->code_space());
-    VerifyEvacuation(heap_->map_space());
+    if (heap_->map_space()) VerifyEvacuation(heap_->map_space());
   }
 
  protected:
@@ -5200,8 +5223,11 @@ void MinorMarkCompactCollector::UpdatePointersAfterEvacuation() {
                                     RememberedSetUpdatingMode::OLD_TO_NEW_ONLY);
   CollectRememberedSetUpdatingItems(&updating_items, heap()->code_space(),
                                     RememberedSetUpdatingMode::OLD_TO_NEW_ONLY);
-  CollectRememberedSetUpdatingItems(&updating_items, heap()->map_space(),
-                                    RememberedSetUpdatingMode::OLD_TO_NEW_ONLY);
+  if (heap()->map_space()) {
+    CollectRememberedSetUpdatingItems(
+        &updating_items, heap()->map_space(),
+        RememberedSetUpdatingMode::OLD_TO_NEW_ONLY);
+  }
   CollectRememberedSetUpdatingItems(&updating_items, heap()->lo_space(),
                                     RememberedSetUpdatingMode::OLD_TO_NEW_ONLY);
   CollectRememberedSetUpdatingItems(&updating_items, heap()->code_lo_space(),
@@ -5575,14 +5601,6 @@ class PageMarkingItem : public ParallelWorkItem {
   void MarkUntypedPointers(YoungGenerationMarkingTask* task) {
     InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToNew(chunk_);
     RememberedSet<OLD_TO_NEW>::Iterate(
-        chunk_,
-        [this, task, &filter](MaybeObjectSlot slot) {
-          if (!filter.IsValid(slot.address())) return REMOVE_SLOT;
-          return CheckAndMarkObject(task, slot);
-        },
-        SlotSet::FREE_EMPTY_BUCKETS);
-    filter = InvalidatedSlotsFilter::OldToNew(chunk_);
-    RememberedSetSweeping::Iterate(
         chunk_,
         [this, task, &filter](MaybeObjectSlot slot) {
           if (!filter.IsValid(slot.address())) return REMOVE_SLOT;

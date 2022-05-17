@@ -32,6 +32,11 @@
 
 namespace v8 {
 namespace internal {
+
+namespace maglev {
+class MaglevCompilationInfo;
+}
+
 namespace compiler {
 
 class ObjectRef;
@@ -150,6 +155,12 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   // them.
   void DetachLocalIsolate(OptimizedCompilationInfo* info);
 
+  // TODO(v8:7700): Refactor this once the broker is no longer
+  // Turbofan-specific.
+  void AttachLocalIsolateForMaglev(maglev::MaglevCompilationInfo* info,
+                                   LocalIsolate* local_isolate);
+  void DetachLocalIsolateForMaglev(maglev::MaglevCompilationInfo* info);
+
   bool StackHasOverflowed() const;
 
 #ifdef DEBUG
@@ -222,10 +233,6 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   PropertyAccessInfo GetPropertyAccessInfo(
       MapRef map, NameRef name, AccessMode access_mode,
       CompilationDependencies* dependencies);
-
-  MinimorphicLoadPropertyAccessInfo GetPropertyAccessInfo(
-      MinimorphicLoadPropertyAccessFeedback const& feedback,
-      FeedbackSource const& source);
 
   StringRef GetTypedArrayStringTag(ElementsKind kind);
 
@@ -445,9 +452,6 @@ class V8_EXPORT_PRIVATE JSHeapBroker {
   ZoneUnorderedMap<PropertyAccessTarget, PropertyAccessInfo,
                    PropertyAccessTarget::Hash, PropertyAccessTarget::Equal>
       property_access_infos_;
-  ZoneUnorderedMap<FeedbackSource, MinimorphicLoadPropertyAccessInfo,
-                   FeedbackSource::Hash, FeedbackSource::Equal>
-      minimorphic_property_access_infos_;
 
   CompilationDependencies* dependencies_ = nullptr;
 

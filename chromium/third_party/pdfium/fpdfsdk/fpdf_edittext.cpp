@@ -24,6 +24,7 @@
 #include "core/fpdfapi/render/charposlist.h"
 #include "core/fpdftext/cpdf_textpage.h"
 #include "core/fxcrt/fx_extension.h"
+#include "core/fxcrt/fx_string_wrappers.h"
 #include "core/fxcrt/stl_util.h"
 #include "core/fxge/cfx_fontmgr.h"
 #include "core/fxge/fx_font.h"
@@ -33,6 +34,7 @@
 #include "third_party/base/check.h"
 #include "third_party/base/check_op.h"
 #include "third_party/base/containers/contains.h"
+#include "third_party/base/numerics/safe_conversions.h"
 
 // These checks are here because core/ and public/ cannot depend on each other.
 static_assert(static_cast<int>(TextRenderingMode::MODE_UNKNOWN) ==
@@ -291,8 +293,8 @@ RetainPtr<CPDF_Font> LoadSimpleFont(CPDF_Document* pDoc,
   pFontDict->SetNewFor<CPDF_Name>("BaseFont", name);
 
   uint32_t dwGlyphIndex;
-  uint32_t dwCurrentChar =
-      FT_Get_First_Char(pFont->GetFaceRec(), &dwGlyphIndex);
+  uint32_t dwCurrentChar = static_cast<uint32_t>(
+      FT_Get_First_Char(pFont->GetFaceRec(), &dwGlyphIndex));
   static constexpr uint32_t kMaxSimpleFontChar = 0xFF;
   if (dwCurrentChar > kMaxSimpleFontChar || dwGlyphIndex == 0)
     return nullptr;
@@ -301,8 +303,8 @@ RetainPtr<CPDF_Font> LoadSimpleFont(CPDF_Document* pDoc,
   CPDF_Array* widthsArray = pDoc->NewIndirect<CPDF_Array>();
   while (true) {
     widthsArray->AppendNew<CPDF_Number>(pFont->GetGlyphWidth(dwGlyphIndex));
-    uint32_t nextChar =
-        FT_Get_Next_Char(pFont->GetFaceRec(), dwCurrentChar, &dwGlyphIndex);
+    uint32_t nextChar = static_cast<uint32_t>(
+        FT_Get_Next_Char(pFont->GetFaceRec(), dwCurrentChar, &dwGlyphIndex));
     // Simple fonts have 1-byte charcodes only.
     if (nextChar > kMaxSimpleFontChar || dwGlyphIndex == 0)
       break;
@@ -358,8 +360,8 @@ RetainPtr<CPDF_Font> LoadCompositeFont(CPDF_Document* pDoc,
                                       pFontDesc->GetObjNum());
 
   uint32_t dwGlyphIndex;
-  uint32_t dwCurrentChar =
-      FT_Get_First_Char(pFont->GetFaceRec(), &dwGlyphIndex);
+  uint32_t dwCurrentChar = static_cast<uint32_t>(
+      FT_Get_First_Char(pFont->GetFaceRec(), &dwGlyphIndex));
   static constexpr uint32_t kMaxUnicode = 0x10FFFF;
   // If it doesn't have a single char, just fail
   if (dwGlyphIndex == 0 || dwCurrentChar > kMaxUnicode)
@@ -374,8 +376,8 @@ RetainPtr<CPDF_Font> LoadCompositeFont(CPDF_Document* pDoc,
     if (!pdfium::Contains(widths, dwGlyphIndex))
       widths[dwGlyphIndex] = pFont->GetGlyphWidth(dwGlyphIndex);
     to_unicode.emplace(dwGlyphIndex, dwCurrentChar);
-    dwCurrentChar =
-        FT_Get_Next_Char(pFont->GetFaceRec(), dwCurrentChar, &dwGlyphIndex);
+    dwCurrentChar = static_cast<uint32_t>(
+        FT_Get_Next_Char(pFont->GetFaceRec(), dwCurrentChar, &dwGlyphIndex));
     if (dwGlyphIndex == 0)
       break;
   }
@@ -642,8 +644,8 @@ FPDFFont_GetFontName(FPDF_FONT font, char* buffer, unsigned long length) {
 
   CFX_Font* pCfxFont = pFont->GetFont();
   ByteString name = pCfxFont->GetFamilyName();
-  unsigned long dwStringLen = name.GetLength() + 1;
-
+  const unsigned long dwStringLen =
+      pdfium::base::checked_cast<unsigned long>(name.GetLength() + 1);
   if (buffer && length >= dwStringLen)
     memcpy(buffer, name.c_str(), dwStringLen);
 
@@ -723,19 +725,23 @@ FPDFFont_GetGlyphPath(FPDF_FONT font, uint32_t glyph, float font_size) {
   if (!pFont)
     return nullptr;
 
-  std::vector<TextCharPos> pos = GetCharPosList(
-      std::vector<uint32_t>{
-          pFont->CharCodeFromUnicode(static_cast<wchar_t>(glyph))},
-      std::vector<float>{0.0f}, pFont, font_size);
+  if (!pdfium::base::IsValueInRangeForNumericType<wchar_t>(glyph))
+    return nullptr;
+
+  uint32_t charcode = pFont->CharCodeFromUnicode(static_cast<wchar_t>(glyph));
+  std::vector<TextCharPos> pos =
+      GetCharPosList(pdfium::make_span(&charcode, 1),
+                     pdfium::span<const float>(), pFont, font_size);
 
   CFX_Font* pCfxFont;
   if (pos[0].m_FallbackFontPosition == -1) {
     pCfxFont = pFont->GetFont();
+    DCHECK(pCfxFont);  // Never null.
   } else {
     pCfxFont = pFont->GetFontFallback(pos[0].m_FallbackFontPosition);
+    if (!pCfxFont)
+      return nullptr;
   }
-  if (!pCfxFont)
-    return nullptr;
 
   const CFX_Path* pPath =
       pCfxFont->LoadGlyphPath(pos[0].m_GlyphIndex, pos[0].m_FontCharWidth);

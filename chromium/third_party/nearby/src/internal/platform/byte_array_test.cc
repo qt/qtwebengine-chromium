@@ -17,6 +17,7 @@
 #include <cstring>
 
 #include "gtest/gtest.h"
+#include "absl/hash/hash_testing.h"
 
 namespace {
 
@@ -85,6 +86,23 @@ TEST(ByteArrayTest, CreateFromNonNullTerminatedStdArray) {
   EXPECT_EQ(bytes.size(), 3);
   EXPECT_EQ(bytes.size(), std::string(bytes).size());
   EXPECT_EQ(std::string(bytes), std::string(data.data(), data.size()));
+}
+
+TEST(ByteArrayTest, CreateFromAbslStringReturnsTheSame) {
+  const absl::string_view kTestString = "Test String";
+  ByteArray bytes{std::string(kTestString)};
+
+  EXPECT_EQ(bytes.size(), kTestString.size());
+  EXPECT_EQ(bytes.AsStringView(), kTestString);
+}
+
+TEST(ByteArrayTest, Hash) {
+  EXPECT_TRUE(absl::VerifyTypeImplementsAbslHashCorrectly({
+      ByteArray(),
+      ByteArray("12345"),
+      ByteArray("ABCDE"),
+      ByteArray("A1B2Z"),
+  }));
 }
 
 }  // namespace

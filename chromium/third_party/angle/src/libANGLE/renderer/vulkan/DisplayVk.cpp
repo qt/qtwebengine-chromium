@@ -344,6 +344,8 @@ void DisplayVk::generateExtensions(egl::DisplayExtensions *outExtensions) const
 
     outExtensions->lockSurface3KHR =
         getRenderer()->getFeatures().supportsLockSurfaceExtension.enabled;
+
+    outExtensions->partialUpdateKHR = true;
 }
 
 void DisplayVk::generateCaps(egl::Caps *outCaps) const
@@ -431,6 +433,18 @@ void ShareGroupVk::onDestroy(const egl::Display *display)
     mDescriptorSetLayoutCache.destroy(renderer);
 
     ASSERT(mResourceUseLists.empty());
+}
+
+void ShareGroupVk::releaseResourceUseLists(const Serial &submitSerial)
+{
+    if (!mResourceUseLists.empty())
+    {
+        for (vk::ResourceUseList &it : mResourceUseLists)
+        {
+            it.releaseResourceUsesAndUpdateSerials(submitSerial);
+        }
+        mResourceUseLists.clear();
+    }
 }
 
 vk::BufferPool *ShareGroupVk::getDefaultBufferPool(RendererVk *renderer,

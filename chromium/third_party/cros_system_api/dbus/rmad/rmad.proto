@@ -142,6 +142,9 @@ enum RmadErrorCode {
 
   // Failed to save logs.
   RMAD_ERROR_CANNOT_SAVE_LOG = 43;
+
+  // Failed to record browser actions.
+  RMAD_ERROR_CANNOT_RECORD_BROWSER_ACTION = 44;
 }
 
 // Defined Rmad components.
@@ -231,6 +234,10 @@ message ProvisionStatus {
     RMAD_PROVISION_ERROR_CANNOT_READ = 3;
     RMAD_PROVISION_ERROR_CANNOT_WRITE = 4;
     RMAD_PROVISION_ERROR_GENERATE_SECRET = 5;
+    RMAD_PROVISION_ERROR_MISSING_BASE_ACCELEROMETER = 6;
+    RMAD_PROVISION_ERROR_MISSING_LID_ACCELEROMETER = 7;
+    RMAD_PROVISION_ERROR_MISSING_BASE_GYROSCOPE = 8;
+    RMAD_PROVISION_ERROR_MISSING_LID_GYROSCOPE = 9;
   }
   Status status = 1;
   double progress = 2;
@@ -513,7 +520,10 @@ message RepairCompleteState {
     RMAD_REPAIR_COMPLETE_SHUTDOWN = 2;
     RMAD_REPAIR_COMPLETE_BATTERY_CUTOFF = 3;
   }
+  // Provided by client.
   ShutdownMethod shutdown = 1;
+  // Provided by daemon.
+  bool powerwash_required = 2;
 }
 
 message RmadState {
@@ -568,4 +578,15 @@ message GetLogReply {
 message SaveLogReply {
   RmadErrorCode error = 1;
   string save_path = 2;
+}
+
+// Request from browser to record actions into metric.
+message RecordBrowserActionMetricRequest {
+  bool diagnostics = 1;
+  bool os_update = 2;
+}
+
+// Reply for BrowserActionMetric.
+message RecordBrowserActionMetricReply {
+  RmadErrorCode error = 1;
 }

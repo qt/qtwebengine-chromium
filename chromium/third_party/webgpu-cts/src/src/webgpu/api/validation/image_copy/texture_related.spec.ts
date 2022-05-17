@@ -10,6 +10,7 @@ import {
   textureDimensionAndFormatCompatible,
 } from '../../../capability_info.js';
 import { GPUConst } from '../../../constants.js';
+import { kResourceStates } from '../../../gpu_test.js';
 import { align } from '../../../util/math.js';
 import { virtualMipSize } from '../../../util/texture/base.js';
 import { kImageCopyTypes } from '../../../util/texture/layout.js';
@@ -35,7 +36,7 @@ Test that the texture must be valid and not destroyed.
   .params(u =>
     u //
       .combine('method', kImageCopyTypes)
-      .combine('textureState', ['valid', 'destroyed', 'error'])
+      .combine('textureState', kResourceStates)
       .combineWithParams([
         { dimension: '1d', size: [4, 1, 1] },
         { dimension: '2d', size: [4, 4, 1] },
@@ -46,27 +47,15 @@ Test that the texture must be valid and not destroyed.
   .fn(async t => {
     const { method, textureState, size, dimension } = t.params;
 
-    // A valid texture.
-    let texture = t.device.createTexture({
+    const texture = t.createTextureWithState(textureState, {
       size,
       dimension,
       format: 'rgba8unorm',
       usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
     });
 
-    switch (textureState) {
-      case 'destroyed': {
-        texture.destroy();
-        break;
-      }
-      case 'error': {
-        texture = t.getErrorTexture();
-        break;
-      }
-    }
-
     const success = textureState === 'valid';
-    const submit = textureState === 'destroyed';
+    const submit = textureState !== 'invalid';
 
     t.testRun(
       { texture },
@@ -81,14 +70,28 @@ g.test('texture,device_mismatch')
   .paramsSubcasesOnly(u =>
     u.combine('method', kImageCopyTypes).combine('mismatched', [true, false])
   )
-  .unimplemented();
+  .fn(async t => {
+    const { method, mismatched } = t.params;
 
-g.test('buffer,device_mismatch')
-  .desc('Tests the image copies cannot be called with a buffer created from another device')
-  .paramsSubcasesOnly(u =>
-    u.combine('method', ['CopyB2T', 'CopyT2B'] as const).combine('mismatched', [true, false])
-  )
-  .unimplemented();
+    if (mismatched) {
+      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
+    }
+
+    const device = mismatched ? t.mismatchedDevice : t.device;
+
+    const texture = device.createTexture({
+      size: { width: 4, height: 4, depthOrArrayLayers: 1 },
+      format: 'rgba8unorm',
+      usage: GPUTextureUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
+    });
+
+    t.testRun(
+      { texture },
+      { bytesPerRow: 0 },
+      { width: 0, height: 0, depthOrArrayLayers: 0 },
+      { dataSize: 1, method, success: !mismatched }
+    );
+  });
 
 g.test('usage')
   .desc(
@@ -386,7 +389,7 @@ Test that the copy size must be aligned to the texture's format's block size.
 - for various copy methods
 - for all formats (depth-stencil formats require a full copy)
 - for all texture dimensions
-- for the size's parameters to test (width / height / dpeth)
+- for the size's parameters to test (width / height / depth)
 - for various values for that copy size parameters, depending on the block size
 `
   )

@@ -15,15 +15,16 @@ bool Expression::isIncomplete(const Context& context) const {
     switch (this->kind()) {
         case Kind::kFunctionReference:
         case Kind::kExternalFunctionReference:
-            context.fErrors->error(fLine, "expected '(' to begin function call");
+            context.fErrors->error(fPosition.after(), "expected '(' to begin function call");
             return true;
 
         case Kind::kMethodReference:
-            context.fErrors->error(fLine, "expected '(' to begin method call");
+            context.fErrors->error(fPosition.after(), "expected '(' to begin method call");
             return true;
 
         case Kind::kTypeReference:
-            context.fErrors->error(fLine, "expected '(' to begin constructor invocation");
+            context.fErrors->error(fPosition.after(),
+                    "expected '(' to begin constructor invocation");
             return true;
 
         default:

@@ -54,7 +54,7 @@ namespace dawn::native {
                                          EncodingContext* encodingContext,
                                          RenderPassResourceUsageTracker usageTracker,
                                          Ref<AttachmentState> attachmentState,
-                                         QuerySetBase* occlusionQuerySet,
+                                         std::vector<TimestampWrite> timestampWritesAtEnd,
                                          uint32_t renderTargetWidth,
                                          uint32_t renderTargetHeight,
                                          bool depthReadOnly,
@@ -68,9 +68,29 @@ namespace dawn::native {
           mCommandEncoder(commandEncoder),
           mRenderTargetWidth(renderTargetWidth),
           mRenderTargetHeight(renderTargetHeight),
-          mOcclusionQuerySet(occlusionQuerySet) {
+          mOcclusionQuerySet(descriptor->occlusionQuerySet),
+          mTimestampWritesAtEnd(std::move(timestampWritesAtEnd)) {
         mUsageTracker = std::move(usageTracker);
         TrackInDevice();
+    }
+
+    // static
+    Ref<RenderPassEncoder> RenderPassEncoder::Create(
+        DeviceBase* device,
+        const RenderPassDescriptor* descriptor,
+        CommandEncoder* commandEncoder,
+        EncodingContext* encodingContext,
+        RenderPassResourceUsageTracker usageTracker,
+        Ref<AttachmentState> attachmentState,
+        std::vector<TimestampWrite> timestampWritesAtEnd,
+        uint32_t renderTargetWidth,
+        uint32_t renderTargetHeight,
+        bool depthReadOnly,
+        bool stencilReadOnly) {
+        return AcquireRef(new RenderPassEncoder(
+            device, descriptor, commandEncoder, encodingContext, std::move(usageTracker),
+            std::move(attachmentState), std::move(timestampWritesAtEnd), renderTargetWidth,
+            renderTargetHeight, depthReadOnly, stencilReadOnly));
     }
 
     RenderPassEncoder::RenderPassEncoder(DeviceBase* device,
@@ -80,10 +100,12 @@ namespace dawn::native {
         : RenderEncoderBase(device, encodingContext, errorTag), mCommandEncoder(commandEncoder) {
     }
 
-    RenderPassEncoder* RenderPassEncoder::MakeError(DeviceBase* device,
-                                                    CommandEncoder* commandEncoder,
-                                                    EncodingContext* encodingContext) {
-        return new RenderPassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError);
+    // static
+    Ref<RenderPassEncoder> RenderPassEncoder::MakeError(DeviceBase* device,
+                                                        CommandEncoder* commandEncoder,
+                                                        EncodingContext* encodingContext) {
+        return AcquireRef(
+            new RenderPassEncoder(device, commandEncoder, encodingContext, ObjectBase::kError));
     }
 
     void RenderPassEncoder::DestroyImpl() {
@@ -109,26 +131,30 @@ namespace dawn::native {
     }
 
     void RenderPassEncoder::APIEnd() {
-        if (mEncodingContext->TryEncode(
-                this,
-                [&](CommandAllocator* allocator) -> MaybeError {
-                    if (IsValidationEnabled()) {
-                        DAWN_TRY(ValidateProgrammableEncoderEnd());
+        mEncodingContext->TryEncode(
+            this,
+            [&](CommandAllocator* allocator) -> MaybeError {
+                if (IsValidationEnabled()) {
+                    DAWN_TRY(ValidateProgrammableEncoderEnd());
 
-                        DAWN_INVALID_IF(
-                            mOcclusionQueryActive,
-                            "Render pass %s ended with incomplete occlusion query index %u of %s.",
-                            this, mCurrentOcclusionQueryIndex, mOcclusionQuerySet.Get());
-                    }
+                    DAWN_INVALID_IF(
+                        mOcclusionQueryActive,
+                        "Render pass %s ended with incomplete occlusion query index %u of %s.",
+                        this, mCurrentOcclusionQueryIndex, mOcclusionQuerySet.Get());
+                }
 
+                EndRenderPassCmd* cmd =
                     allocator->Allocate<EndRenderPassCmd>(Command::EndRenderPass);
-                    DAWN_TRY(mEncodingContext->ExitRenderPass(this, std::move(mUsageTracker),
-                                                              mCommandEncoder.Get(),
-                                                              std::move(mIndirectDrawMetadata)));
-                    return {};
-                },
-                "encoding %s.End().", this)) {
-        }
+                // The query availability has already been updated at the beginning of render
+                // pass, and no need to do update here.
+                cmd->timestampWrites = std::move(mTimestampWritesAtEnd);
+
+                DAWN_TRY(mEncodingContext->ExitRenderPass(this, std::move(mUsageTracker),
+                                                          mCommandEncoder.Get(),
+                                                          std::move(mIndirectDrawMetadata)));
+                return {};
+            },
+            "encoding %s.End().", this);
     }
 
     void RenderPassEncoder::APIEndPass() {
@@ -254,12 +280,13 @@ namespace dawn::native {
                     for (uint32_t i = 0; i < count; ++i) {
                         DAWN_TRY(GetDevice()->ValidateObject(renderBundles[i]));
 
-                        // TODO(dawn:563): Give more detail about why the states are incompatible.
-                        DAWN_INVALID_IF(
-                            attachmentState != renderBundles[i]->GetAttachmentState(),
-                            "Attachment state of renderBundles[%i] (%s) is not compatible with "
-                            "attachment state of %s.",
-                            i, renderBundles[i], this);
+                        DAWN_INVALID_IF(attachmentState != renderBundles[i]->GetAttachmentState(),
+                                        "Attachment state of renderBundles[%i] (%s) is not "
+                                        "compatible with %s.\n"
+                                        "%s expects an attachment state of %s.\n"
+                                        "renderBundles[%i] (%s) has an attachment state of %s.",
+                                        i, renderBundles[i], this, this, attachmentState, i,
+                                        renderBundles[i], renderBundles[i]->GetAttachmentState());
 
                         bool depthReadOnlyInBundle = renderBundles[i]->IsDepthReadOnly();
                         DAWN_INVALID_IF(
@@ -375,8 +402,7 @@ namespace dawn::native {
             this,
             [&](CommandAllocator* allocator) -> MaybeError {
                 if (IsValidationEnabled()) {
-                    DAWN_TRY(GetDevice()->ValidateObject(querySet));
-                    DAWN_TRY(ValidateTimestampQuery(querySet, queryIndex));
+                    DAWN_TRY(ValidateTimestampQuery(GetDevice(), querySet, queryIndex));
                     DAWN_TRY_CONTEXT(
                         ValidateQueryIndexOverwrite(querySet, queryIndex,
                                                     mUsageTracker.GetQueryAvailabilityMap()),

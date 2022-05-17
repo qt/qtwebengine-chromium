@@ -118,7 +118,7 @@ bool IsNoopDelay(const VideoPlayoutDelay& delay) {
 }
 
 absl::optional<VideoPlayoutDelay> LoadVideoPlayoutDelayOverride(
-    const WebRtcKeyValueConfig* key_value_config) {
+    const FieldTrialsView* key_value_config) {
   RTC_DCHECK(key_value_config);
   FieldTrialOptional<int> playout_delay_min_ms("min_ms", absl::nullopt);
   FieldTrialOptional<int> playout_delay_max_ms("max_ms", absl::nullopt);
@@ -534,7 +534,7 @@ bool RTPSenderVideo::SendVideo(
   RTC_DCHECK_LE(packet_capacity, single_packet->capacity());
   single_packet->SetPayloadType(payload_type);
   single_packet->SetTimestamp(rtp_timestamp);
-  single_packet->set_capture_time_ms(capture_time_ms);
+  single_packet->set_capture_time(Timestamp::Millis(capture_time_ms));
 
   // Construct the absolute capture time extension if not provided.
   if (!video_header.absolute_capture_time.has_value()) {
@@ -695,7 +695,7 @@ bool RTPSenderVideo::SendVideo(
 
     // Put packetization finish timestamp into extension.
     if (packet->HasExtension<VideoTimingExtension>()) {
-      packet->set_packetization_finish_time_ms(clock_->TimeInMilliseconds());
+      packet->set_packetization_finish_time(clock_->CurrentTime());
     }
 
     packet->set_fec_protect_packet(use_fec);

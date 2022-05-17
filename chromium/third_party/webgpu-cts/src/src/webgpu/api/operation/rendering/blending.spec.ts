@@ -180,7 +180,7 @@ g.test('GPUBlendComponent')
         module: t.device.createShaderModule({
           code: `
 struct Uniform {
-  color: vec4<f32>;
+  color: vec4<f32>
 };
 @group(0) @binding(0) var<uniform> u : Uniform;
 
@@ -217,7 +217,8 @@ struct Uniform {
       colorAttachments: [
         {
           view: renderTarget.createView(),
-          loadValue: dstColor,
+          clearValue: dstColor,
+          loadOp: 'clear',
           storeOp: 'store',
         },
       ],
@@ -244,7 +245,7 @@ struct Uniform {
       })
     );
     renderPass.draw(1);
-    renderPass.endPass();
+    renderPass.end();
 
     t.device.queue.submit([commandEncoder.finish()]);
 

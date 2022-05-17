@@ -25,8 +25,9 @@ namespace internal {
 
 #include "torque-generated/src/objects/js-function-tq-inl.inc"
 
-TQ_OBJECT_CONSTRUCTORS_IMPL(JSFunctionOrBoundFunction)
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSFunctionOrBoundFunctionOrWrappedFunction)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSBoundFunction)
+TQ_OBJECT_CONSTRUCTORS_IMPL(JSWrappedFunction)
 TQ_OBJECT_CONSTRUCTORS_IMPL(JSFunction)
 
 ACCESSORS(JSFunction, raw_feedback_cell, FeedbackCell, kFeedbackCellOffset)
@@ -43,81 +44,12 @@ ClosureFeedbackCellArray JSFunction::closure_feedback_cell_array() const {
   return ClosureFeedbackCellArray::cast(raw_feedback_cell().value());
 }
 
-bool JSFunction::HasOptimizationMarker() {
-  return has_feedback_vector() && feedback_vector().has_optimization_marker();
-}
-
-void JSFunction::ClearOptimizationMarker() {
+void JSFunction::reset_tiering_state() {
   DCHECK(has_feedback_vector());
-  feedback_vector().ClearOptimizationMarker();
+  feedback_vector().reset_tiering_state();
 }
 
-bool JSFunction::ChecksOptimizationMarker() {
-  return code().checks_optimization_marker();
-}
-
-bool JSFunction::IsMarkedForOptimization() {
-  return has_feedback_vector() &&
-         feedback_vector().optimization_marker() ==
-             OptimizationMarker::kCompileTurbofan_NotConcurrent;
-}
-
-bool JSFunction::IsMarkedForConcurrentOptimization() {
-  return has_feedback_vector() &&
-         feedback_vector().optimization_marker() ==
-             OptimizationMarker::kCompileTurbofan_Concurrent;
-}
-
-void JSFunction::SetInterruptBudget() {
-  if (has_feedback_vector()) {
-    FeedbackVector::SetInterruptBudget(raw_feedback_cell());
-  } else {
-    DCHECK(shared().is_compiled());
-    raw_feedback_cell().set_interrupt_budget(
-        shared().GetBytecodeArray(GetIsolate()).length() *
-        FLAG_interrupt_budget_factor_for_feedback_allocation);
-  }
-}
-
-void JSFunction::MarkForOptimization(ConcurrencyMode mode) {
-  Isolate* isolate = GetIsolate();
-  if (!isolate->concurrent_recompilation_enabled() ||
-      isolate->bootstrapper()->IsActive()) {
-    mode = ConcurrencyMode::kNotConcurrent;
-  }
-
-  DCHECK(!is_compiled() || ActiveTierIsIgnition() || ActiveTierIsBaseline());
-  DCHECK(!ActiveTierIsTurbofan());
-  DCHECK(shared().HasBytecodeArray());
-  DCHECK(shared().allows_lazy_compilation() ||
-         !shared().optimization_disabled());
-
-  if (mode == ConcurrencyMode::kConcurrent) {
-    if (IsInOptimizationQueue()) {
-      if (FLAG_trace_concurrent_recompilation) {
-        PrintF("  ** Not marking ");
-        ShortPrint();
-        PrintF(" -- already in optimization queue.\n");
-      }
-      return;
-    }
-    if (FLAG_trace_concurrent_recompilation) {
-      PrintF("  ** Marking ");
-      ShortPrint();
-      PrintF(" for concurrent recompilation.\n");
-    }
-  }
-
-  SetOptimizationMarker(
-      mode == ConcurrencyMode::kConcurrent
-          ? OptimizationMarker::kCompileTurbofan_Concurrent
-          : OptimizationMarker::kCompileTurbofan_NotConcurrent);
-}
-
-bool JSFunction::IsInOptimizationQueue() {
-  if (!has_feedback_vector()) return false;
-  return IsInOptimizationQueueMarker(feedback_vector().optimization_marker());
-}
+bool JSFunction::ChecksTieringState() { return code().checks_tiering_state(); }
 
 void JSFunction::CompleteInobjectSlackTrackingIfActive() {
   if (!has_prototype_slot()) return;
@@ -170,12 +102,25 @@ void JSFunction::set_shared(SharedFunctionInfo value, WriteBarrierMode mode) {
   CONDITIONAL_WRITE_BARRIER(*this, kSharedFunctionInfoOffset, value, mode);
 }
 
-void JSFunction::SetOptimizationMarker(OptimizationMarker marker) {
-  DCHECK(has_feedback_vector());
-  DCHECK(ChecksOptimizationMarker());
-  DCHECK(!ActiveTierIsTurbofan());
+TieringState JSFunction::tiering_state() const {
+  if (!has_feedback_vector()) return TieringState::kNone;
+  return feedback_vector().tiering_state();
+}
 
-  feedback_vector().SetOptimizationMarker(marker);
+void JSFunction::set_tiering_state(TieringState state) {
+  DCHECK(has_feedback_vector());
+  DCHECK(IsNone(state) || ChecksTieringState());
+  feedback_vector().set_tiering_state(state);
+}
+
+TieringState JSFunction::osr_tiering_state() {
+  DCHECK(has_feedback_vector());
+  return feedback_vector().osr_tiering_state();
+}
+
+void JSFunction::set_osr_tiering_state(TieringState marker) {
+  DCHECK(has_feedback_vector());
+  feedback_vector().set_osr_tiering_state(marker);
 }
 
 bool JSFunction::has_feedback_vector() const {

@@ -110,7 +110,7 @@ namespace dawn::native::metal {
                                               NSPRef<id<MTLDevice>> mtlDevice,
                                               const DeviceDescriptor* descriptor) {
         Ref<Device> device = AcquireRef(new Device(adapter, std::move(mtlDevice), descriptor));
-        DAWN_TRY(device->Initialize());
+        DAWN_TRY(device->Initialize(descriptor));
         return device;
     }
 
@@ -124,7 +124,7 @@ namespace dawn::native::metal {
         Destroy();
     }
 
-    MaybeError Device::Initialize() {
+    MaybeError Device::Initialize(const DeviceDescriptor* descriptor) {
         InitTogglesFromDriver();
 
         mCommandQueue.Acquire([*mMtlDevice newCommandQueue]);
@@ -134,7 +134,8 @@ namespace dawn::native::metal {
 
         DAWN_TRY(mCommandContext.PrepareNextCommandBuffer(*mCommandQueue));
 
-        if (IsFeatureEnabled(Feature::TimestampQuery)) {
+        if (IsFeatureEnabled(Feature::TimestampQuery) &&
+            !IsToggleEnabled(Toggle::DisableTimestampQueryConversion)) {
             // Make a best guess of timestamp period based on device vendor info, and converge it to
             // an accurate value by the following calculations.
             mTimestampPeriod = gpu_info::IsIntel(GetAdapter()->GetVendorId()) ? 83.333f : 1.0f;
@@ -154,7 +155,7 @@ namespace dawn::native::metal {
             }
         }
 
-        return DeviceBase::Initialize(new Queue(this));
+        return DeviceBase::Initialize(AcquireRef(new Queue(this, &descriptor->defaultQueue)));
     }
 
     void Device::InitTogglesFromDriver() {
@@ -431,21 +432,18 @@ namespace dawn::native::metal {
     }
 
     Ref<Texture> Device::CreateTextureWrappingIOSurface(const ExternalImageDescriptor* descriptor,
-                                                        IOSurfaceRef ioSurface,
-                                                        uint32_t plane) {
+                                                        IOSurfaceRef ioSurface) {
         const TextureDescriptor* textureDescriptor = FromAPI(descriptor->cTextureDescriptor);
 
         if (ConsumedError(ValidateTextureDescriptor(this, textureDescriptor))) {
             return nullptr;
         }
-        if (ConsumedError(
-                ValidateIOSurfaceCanBeWrapped(this, textureDescriptor, ioSurface, plane))) {
+        if (ConsumedError(ValidateIOSurfaceCanBeWrapped(this, textureDescriptor, ioSurface))) {
             return nullptr;
         }
 
         Ref<Texture> result;
-        if (ConsumedError(Texture::CreateFromIOSurface(this, descriptor, ioSurface, plane),
-                          &result)) {
+        if (ConsumedError(Texture::CreateFromIOSurface(this, descriptor, ioSurface), &result)) {
             return nullptr;
         }
         return result;

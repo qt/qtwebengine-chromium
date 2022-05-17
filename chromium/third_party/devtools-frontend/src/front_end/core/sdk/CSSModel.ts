@@ -63,7 +63,7 @@ export class CSSModel extends SDKModel<EventTypes> {
   readonly #sourceMapManager: SourceMapManager<CSSStyleSheetHeader>;
   readonly #styleLoader: ComputedStyleLoader;
   readonly #stylePollingThrottler: Common.Throttler.Throttler;
-  readonly #styleSheetIdsForURL: Map<string, Map<string, Set<Protocol.CSS.StyleSheetId>>>;
+  readonly #styleSheetIdsForURL: Map<Platform.DevToolsPath.UrlString, Map<string, Set<Protocol.CSS.StyleSheetId>>>;
   readonly #styleSheetIdToHeader: Map<Protocol.CSS.StyleSheetId, CSSStyleSheetHeader>;
   #cachedMatchedCascadeNode: DOMNode|null;
   #cachedMatchedCascadePromise: Promise<CSSMatchedStyles|null>|null;
@@ -111,7 +111,7 @@ export class CSSModel extends SDKModel<EventTypes> {
         .addChangeListener(event => this.#sourceMapManager.setEnabled((event.data as boolean)));
   }
 
-  headersForSourceURL(sourceURL: string): CSSStyleSheetHeader[] {
+  headersForSourceURL(sourceURL: Platform.DevToolsPath.UrlString): CSSStyleSheetHeader[] {
     const headers = [];
     for (const headerId of this.getStyleSheetIdsForURL(sourceURL)) {
       const header = this.styleSheetHeaderForId(headerId);
@@ -122,7 +122,9 @@ export class CSSModel extends SDKModel<EventTypes> {
     return headers;
   }
 
-  createRawLocationsByURL(sourceURL: string, lineNumber: number, columnNumber: number|undefined = 0): CSSLocation[] {
+  createRawLocationsByURL(
+      sourceURL: Platform.DevToolsPath.UrlString, lineNumber: number,
+      columnNumber: number|undefined = 0): CSSLocation[] {
     const headers = this.headersForSourceURL(sourceURL);
     headers.sort(stylesheetComparator);
     const endIndex = Platform.ArrayUtilities.upperBound(
@@ -148,6 +150,10 @@ export class CSSModel extends SDKModel<EventTypes> {
 
   sourceMapManager(): SourceMapManager<CSSStyleSheetHeader> {
     return this.#sourceMapManager;
+  }
+
+  static readableLayerName(text: string): string {
+    return text || '<anonymous>';
   }
 
   static trimSourceURL(text: string): string {
@@ -261,9 +267,14 @@ export class CSSModel extends SDKModel<EventTypes> {
     await this.agent.invoke_stopRuleUsageTracking();
   }
 
-  async mediaQueriesPromise(): Promise<CSSMedia[]> {
+  async getMediaQueries(): Promise<CSSMedia[]> {
     const {medias} = await this.agent.invoke_getMediaQueries();
     return medias ? CSSMedia.parseMediaArrayPayload(this, medias) : [];
+  }
+
+  async getRootLayer(nodeId: Protocol.DOM.NodeId): Promise<Protocol.CSS.CSSLayerData> {
+    const {rootLayer} = await this.agent.invoke_getLayersForNode({nodeId});
+    return rootLayer;
   }
 
   isEnabled(): boolean {
@@ -279,7 +290,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     this.dispatchEventToListeners(Events.ModelWasEnabled);
   }
 
-  async matchedStylesPromise(nodeId: Protocol.DOM.NodeId): Promise<CSSMatchedStyles|null> {
+  async getMatchedStyles(nodeId: Protocol.DOM.NodeId): Promise<CSSMatchedStyles|null> {
     const response = await this.agent.invoke_getMatchedStylesForNode({nodeId});
 
     if (response.getError()) {
@@ -294,19 +305,19 @@ export class CSSModel extends SDKModel<EventTypes> {
     return new CSSMatchedStyles(
         this, (node as DOMNode), response.inlineStyle || null, response.attributesStyle || null,
         response.matchedCSSRules || [], response.pseudoElements || [], response.inherited || [],
-        response.cssKeyframesRules || []);
+        response.inheritedPseudoElements || [], response.cssKeyframesRules || []);
   }
 
-  async classNamesPromise(styleSheetId: Protocol.CSS.StyleSheetId): Promise<string[]> {
+  async getClassNames(styleSheetId: Protocol.CSS.StyleSheetId): Promise<string[]> {
     const {classNames} = await this.agent.invoke_collectClassNames({styleSheetId});
     return classNames || [];
   }
 
-  computedStylePromise(nodeId: Protocol.DOM.NodeId): Promise<Map<string, string>|null> {
+  getComputedStyle(nodeId: Protocol.DOM.NodeId): Promise<Map<string, string>|null> {
     return this.#styleLoader.computedStylePromise(nodeId);
   }
 
-  async backgroundColorsPromise(nodeId: Protocol.DOM.NodeId): Promise<ContrastInfo|null> {
+  async getBackgroundColors(nodeId: Protocol.DOM.NodeId): Promise<ContrastInfo|null> {
     const response = await this.agent.invoke_getBackgroundColors({nodeId});
     if (response.getError()) {
       return null;
@@ -319,7 +330,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     };
   }
 
-  async platformFontsPromise(nodeId: Protocol.DOM.NodeId): Promise<Protocol.CSS.PlatformFontUsage[]|null> {
+  async getPlatformFonts(nodeId: Protocol.DOM.NodeId): Promise<Protocol.CSS.PlatformFontUsage[]|null> {
     const {fonts} = await this.agent.invoke_getPlatformFontsForNode({nodeId});
     return fonts;
   }
@@ -340,7 +351,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     return values;
   }
 
-  async inlineStylesPromise(nodeId: Protocol.DOM.NodeId): Promise<InlineStyleResult|null> {
+  async getInlineStyles(nodeId: Protocol.DOM.NodeId): Promise<InlineStyleResult|null> {
     const response = await this.agent.invoke_getInlineStylesForNode({nodeId});
 
     if (response.getError() || !response.inlineStyle) {
@@ -593,7 +604,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     this.dispatchEventToListeners(Events.StyleSheetRemoved, header);
   }
 
-  getStyleSheetIdsForURL(url: string): Protocol.CSS.StyleSheetId[] {
+  getStyleSheetIdsForURL(url: Platform.DevToolsPath.UrlString): Protocol.CSS.StyleSheetId[] {
     const frameIdToStyleSheetIds = this.#styleSheetIdsForURL.get(url);
     if (!frameIdToStyleSheetIds) {
       return [];
@@ -619,7 +630,7 @@ export class CSSModel extends SDKModel<EventTypes> {
 
     await this.ensureOriginalStyleSheetText(styleSheetId);
     const response = await this.agent.invoke_setStyleSheetText({styleSheetId: header.id, text: newText});
-    const sourceMapURL = response.sourceMapURL;
+    const sourceMapURL = response.sourceMapURL as Platform.DevToolsPath.UrlString;
 
     this.#sourceMapManager.detachSourceMap(header);
     header.setSourceMapURL(sourceMapURL);
@@ -693,7 +704,7 @@ export class CSSModel extends SDKModel<EventTypes> {
     this.#cachedMatchedCascadeNode = node;
     if (!this.#cachedMatchedCascadePromise) {
       if (node.id) {
-        this.#cachedMatchedCascadePromise = this.matchedStylesPromise(node.id);
+        this.#cachedMatchedCascadePromise = this.getMatchedStyles(node.id);
       } else {
         return Promise.resolve(null);
       }
@@ -821,7 +832,7 @@ export class Edit {
 export class CSSLocation {
   readonly #cssModelInternal: CSSModel;
   styleSheetId: Protocol.CSS.StyleSheetId;
-  url: string;
+  url: Platform.DevToolsPath.UrlString;
   lineNumber: number;
   columnNumber: number;
   constructor(header: CSSStyleSheetHeader, lineNumber: number, columnNumber?: number) {

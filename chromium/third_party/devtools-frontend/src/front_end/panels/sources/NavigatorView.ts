@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+// TODO(crbug.com/1253323): Casts to Branded Types will be removed from this file when migration to branded types is complete.
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -224,10 +226,11 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     return order;
   }
 
-  static appendSearchItem(contextMenu: UI.ContextMenu.ContextMenu, path?: string): void {
+  static appendSearchItem(contextMenu: UI.ContextMenu.ContextMenu, path?: Platform.DevToolsPath.EncodedPathString):
+      void {
     let searchLabel = i18nString(UIStrings.searchInFolder);
     if (!path || !path.trim()) {
-      path = '*';
+      path = '*' as Platform.DevToolsPath.EncodedPathString;
       searchLabel = i18nString(UIStrings.searchInAllFiles);
     }
     contextMenu.viewSection().appendItem(searchLabel, () => {
@@ -287,16 +290,16 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     // Update folder titles.
     const pathTokens =
         Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(binding.fileSystem);
-    let folderPath = '';
+    let folderPath = '' as Platform.DevToolsPath.EncodedPathString;
     for (let i = 0; i < pathTokens.length - 1; ++i) {
-      folderPath += pathTokens[i];
+      folderPath = Common.ParsedURL.ParsedURL.concatenate(folderPath, pathTokens[i]);
       const folderId =
           this.folderNodeId(binding.fileSystem.project(), null, null, binding.fileSystem.origin(), folderPath);
       const folderNode = this.subfolderNodes.get(folderId);
       if (folderNode) {
         folderNode.updateTitle();
       }
-      folderPath += '/';
+      folderPath = Common.ParsedURL.ParsedURL.concatenate(folderPath, '/');
     }
 
     // Update fileSystem root title.
@@ -535,7 +538,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
   private folderNodeId(
       project: Workspace.Workspace.Project, target: SDK.Target.Target|null,
-      frame: SDK.ResourceTreeModel.ResourceTreeFrame|null, projectOrigin: string, path: string): string {
+      frame: SDK.ResourceTreeModel.ResourceTreeFrame|null, projectOrigin: string,
+      path: Platform.DevToolsPath.EncodedPathString): string {
     const targetId = target ? target.id() : '';
     const projectId = project.type() === Workspace.Workspace.projectTypes.FileSystem ? project.id() : '';
     const frameId = this.groupByFrame && frame ? frame.id : '';
@@ -554,7 +558,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
       return this.domainNode(uiSourceCode, project, target, frame, projectOrigin);
     }
 
-    const folderPath = path.join('/');
+    const folderPath = Common.ParsedURL.ParsedURL.join(path, '/');
     const folderId = this.folderNodeId(project, target, frame, projectOrigin, folderPath);
     let folderNode = this.subfolderNodes.get(folderId);
     if (folderNode) {
@@ -739,7 +743,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
 
       const folderId = this.folderNodeId(
           project, target, frame, uiSourceCode.origin(),
-          currentNode instanceof NavigatorFolderTreeNode && currentNode.folderPath || '');
+          currentNode instanceof NavigatorFolderTreeNode && currentNode.folderPath ||
+              '' as Platform.DevToolsPath.EncodedPathString);
       this.subfolderNodes.delete(folderId);
       parentNode.removeChild(currentNode);
       currentNode = (parentNode as NavigatorUISourceCodeTreeNode | null);
@@ -775,11 +780,12 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   }
 
   private handleContextMenuCreate(
-      project: Workspace.Workspace.Project, path: string, uiSourceCode?: Workspace.UISourceCode.UISourceCode): void {
+      project: Workspace.Workspace.Project, path: Platform.DevToolsPath.EncodedPathString,
+      uiSourceCode?: Workspace.UISourceCode.UISourceCode): void {
     if (uiSourceCode) {
       const relativePath = Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.relativePath(uiSourceCode);
       relativePath.pop();
-      path = relativePath.join('/');
+      path = Common.ParsedURL.ParsedURL.join(relativePath, '/');
     }
     void this.create(project, path, uiSourceCode);
   }
@@ -788,7 +794,8 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     this.rename(node, false);
   }
 
-  private async handleContextMenuExclude(project: Workspace.Workspace.Project, path: string): Promise<void> {
+  private async handleContextMenuExclude(
+      project: Workspace.Workspace.Project, path: Platform.DevToolsPath.EncodedPathString): Promise<void> {
     const shouldExclude = await UI.UIUtils.ConfirmDialog.show(i18nString(UIStrings.areYouSureYouWantToExcludeThis));
     if (shouldExclude) {
       UI.UIUtils.startBatchUpdate();
@@ -814,7 +821,9 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
     if (project.type() === Workspace.Workspace.projectTypes.FileSystem) {
       contextMenu.editSection().appendItem(i18nString(UIStrings.rename), this.handleContextMenuRename.bind(this, node));
       contextMenu.editSection().appendItem(
-          i18nString(UIStrings.makeACopy), this.handleContextMenuCreate.bind(this, project, '', uiSourceCode));
+          i18nString(UIStrings.makeACopy),
+          this.handleContextMenuCreate.bind(
+              this, project, '' as Platform.DevToolsPath.EncodedPathString, uiSourceCode));
       contextMenu.editSection().appendItem(
           i18nString(UIStrings.delete), this.handleContextMenuDelete.bind(this, uiSourceCode));
     }
@@ -843,7 +852,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   }
 
   handleFolderContextMenu(event: Event, node: NavigatorTreeNode): void {
-    const path = (node as NavigatorFolderTreeNode).folderPath || '';
+    const path = (node as NavigatorFolderTreeNode).folderPath || Platform.DevToolsPath.EmptyEncodedPathString;
     const project = (node as NavigatorFolderTreeNode).project || null;
 
     const contextMenu = new UI.ContextMenu.ContextMenu(event);
@@ -908,7 +917,7 @@ export class NavigatorView extends UI.Widget.VBox implements SDK.TargetManager.O
   }
 
   async create(
-      project: Workspace.Workspace.Project, path: string,
+      project: Workspace.Workspace.Project, path: Platform.DevToolsPath.EncodedPathString,
       uiSourceCodeToCopy?: Workspace.UISourceCode.UISourceCode): Promise<void> {
     let content = '';
     if (uiSourceCodeToCopy) {
@@ -1413,7 +1422,9 @@ export class NavigatorUISourceCodeTreeNode extends NavigatorTreeNode {
         if (this.treeElement) {
           this.treeElement.title = newTitle;
         }
-        void this.uiSourceCodeInternal.rename(newTitle).then(renameCallback.bind(this));
+        // necessary cast to RawPathString as alternative would be altering type of Config<T>
+        void this.uiSourceCodeInternal.rename(newTitle as Platform.DevToolsPath.RawPathString)
+            .then(renameCallback.bind(this));
         return;
       }
       afterEditing.call(this, true);
@@ -1453,15 +1464,15 @@ export class NavigatorUISourceCodeTreeNode extends NavigatorTreeNode {
 
 export class NavigatorFolderTreeNode extends NavigatorTreeNode {
   project: Workspace.Workspace.Project|null;
-  readonly folderPath: string;
+  readonly folderPath: Platform.DevToolsPath.EncodedPathString;
   title: string;
   treeElement!: NavigatorFolderTreeElement|null;
   constructor(
       navigatorView: NavigatorView, project: Workspace.Workspace.Project|null, id: string, type: string,
-      folderPath: string, title: string) {
+      folderPath: Platform.DevToolsPath.EncodedPathString, title: string) {
     super(navigatorView, id, type);
     this.project = project;
-    this.folderPath = folderPath;
+    this.folderPath = folderPath as Platform.DevToolsPath.EncodedPathString;
     this.title = title;
   }
 
@@ -1478,9 +1489,10 @@ export class NavigatorFolderTreeNode extends NavigatorTreeNode {
     if (!this.treeElement || !this.project || this.project.type() !== Workspace.Workspace.projectTypes.FileSystem) {
       return;
     }
-    const absoluteFileSystemPath =
-        Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemPath(this.project.id()) + '/' +
-        this.folderPath;
+    const absoluteFileSystemPath = Common.ParsedURL.ParsedURL.concatenate(
+        Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemPath(
+            this.project.id() as Platform.DevToolsPath.UrlString),
+        '/', this.folderPath);
     const hasMappedFiles =
         Persistence.Persistence.PersistenceImpl.instance().filePathHasBindings(absoluteFileSystemPath);
     this.treeElement.listItemElement.classList.toggle('has-mapped-files', hasMappedFiles);
@@ -1638,8 +1650,8 @@ export class NavigatorGroupTreeNode extends NavigatorTreeNode {
     if (!this.treeElement || this.project.type() !== Workspace.Workspace.projectTypes.FileSystem) {
       return;
     }
-    const fileSystemPath =
-        Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemPath(this.project.id());
+    const fileSystemPath = Persistence.FileSystemWorkspaceBinding.FileSystemWorkspaceBinding.fileSystemPath(
+        this.project.id() as Platform.DevToolsPath.UrlString);
     const wasActive = this.treeElement.listItemElement.classList.contains('has-mapped-files');
     const isActive = Persistence.Persistence.PersistenceImpl.instance().filePathHasBindings(fileSystemPath);
     if (wasActive === isActive) {

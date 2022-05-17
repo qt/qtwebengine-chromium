@@ -225,21 +225,7 @@ try_.builder(
 )
 
 try_.builder(
-    name = "linux-bionic-rel",
-    goma_jobs = goma.jobs.J150,
-    os = os.LINUX_BIONIC,
-)
-
-try_.builder(
-    name = "linux-blink-heap-concurrent-marking-tsan-rel",
-)
-
-try_.builder(
     name = "linux-blink-heap-verification-try",
-)
-
-try_.builder(
-    name = "linux-blink-v8-oilpan",
 )
 
 try_.builder(
@@ -353,6 +339,9 @@ try_.orchestrator_builder(
     use_clang_coverage = True,
     coverage_test_types = ["unit", "overall"],
     tryjob = try_.job(),
+    experiments = {
+        "remove_src_checkout_experiment": 100,
+    },
 )
 
 try_.compilator_builder(
@@ -397,18 +386,6 @@ try_.builder(
 )
 
 try_.builder(
-    name = "linux-trusty-rel",
-    goma_jobs = goma.jobs.J150,
-    os = os.LINUX_TRUSTY,
-)
-
-try_.builder(
-    name = "linux-xenial-rel",
-    goma_jobs = goma.jobs.J150,
-    os = os.LINUX_XENIAL,
-)
-
-try_.builder(
     name = "linux-viz-rel",
 )
 
@@ -442,6 +419,15 @@ try_.orchestrator_builder(
     branch_selector = branches.STANDARD_MILESTONE,
     main_list_view = "try",
     tryjob = try_.job(),
+    mirrors = [
+        "ci/Linux ASan LSan Builder",
+        "ci/Linux ASan LSan Tests (1)",
+    ],
+    try_settings = builder_config.try_settings(
+        rts_config = builder_config.rts_config(
+            condition = builder_config.rts_condition.QUICK_RUN_ONLY,
+        ),
+    ),
 )
 
 try_.compilator_builder(
@@ -478,10 +464,6 @@ try_.builder(
 
 try_.builder(
     name = "linux_chromium_clobber_rel_ng",
-)
-
-try_.builder(
-    name = "linux_chromium_compile_dbg_32_ng",
 )
 
 try_.builder(
@@ -594,25 +576,25 @@ try_.builder(
 )
 
 try_.builder(
-    name = "linux_mojo",
-)
-
-try_.builder(
-    name = "linux_mojo_chromeos",
-)
-
-try_.builder(
     name = "linux_upload_clang",
     builderless = True,
     cores = 32,
     executable = "recipe:chromium_upload_clang",
     goma_backend = None,
+    # This builder produces the clang binaries used on all builders. Since it
+    # uses the system's sysroot when compiling, the builder needs to run on the
+    # OS version that's the oldest used on any bot.
+    # TODO(crbug.com/1199405): Move this to bionic once _all_ builders have
+    # migrated.
     os = os.LINUX_TRUSTY,
 )
 
 try_.builder(
     name = "linux_vr",
     branch_selector = branches.STANDARD_MILESTONE,
+    mirrors = [
+        "ci/VR Linux",
+    ],
     main_list_view = "try",
     tryjob = try_.job(
         location_regexp = [

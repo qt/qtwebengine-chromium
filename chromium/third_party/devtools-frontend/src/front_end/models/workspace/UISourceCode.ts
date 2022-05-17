@@ -54,8 +54,8 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes> implements
     TextUtils.ContentProvider.ContentProvider {
   private projectInternal: Project;
-  private urlInternal: string;
-  private readonly originInternal: string;
+  private urlInternal: Platform.DevToolsPath.UrlString;
+  private readonly originInternal: Platform.DevToolsPath.UrlString;
   private readonly parentURLInternal: Platform.DevToolsPath.UrlString;
   private nameInternal: string;
   private contentTypeInternal: Common.ResourceType.ResourceType;
@@ -73,7 +73,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   private disableEditInternal: boolean;
   private contentEncodedInternal?: boolean;
 
-  constructor(project: Project, url: string, contentType: Common.ResourceType.ResourceType) {
+  constructor(project: Project, url: Platform.DevToolsPath.UrlString, contentType: Common.ResourceType.ResourceType) {
     super();
     this.projectInternal = project;
     this.urlInternal = url;
@@ -81,7 +81,8 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     const parsedURL = Common.ParsedURL.ParsedURL.fromString(url);
     if (parsedURL) {
       this.originInternal = parsedURL.securityOrigin();
-      this.parentURLInternal = this.originInternal + parsedURL.folderPathComponents as Platform.DevToolsPath.UrlString;
+      this.parentURLInternal =
+          Common.ParsedURL.ParsedURL.concatenate(this.originInternal, parsedURL.folderPathComponents);
       if (parsedURL.queryParams) {
         // in case file name contains query params, it doesn't look like a normal file name anymore
         // so it can as well remain encoded
@@ -91,8 +92,8 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
         this.nameInternal = decodeURIComponent(parsedURL.lastPathComponent);
       }
     } else {
-      this.originInternal = '';
-      this.parentURLInternal = '' as Platform.DevToolsPath.UrlString;
+      this.originInternal = Platform.DevToolsPath.EmptyUrlString;
+      this.parentURLInternal = Platform.DevToolsPath.EmptyUrlString;
       this.nameInternal = url;
     }
 
@@ -123,14 +124,14 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
   }
 
   url(): Platform.DevToolsPath.UrlString {
-    return this.urlInternal as Platform.DevToolsPath.UrlString;
+    return this.urlInternal;
   }
 
   parentURL(): Platform.DevToolsPath.UrlString {
     return this.parentURLInternal;
   }
 
-  origin(): string {
+  origin(): Platform.DevToolsPath.UrlString {
     return this.originInternal;
   }
 
@@ -150,7 +151,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     return this.projectInternal.canRename();
   }
 
-  rename(newName: string): Promise<boolean> {
+  rename(newName: Platform.DevToolsPath.RawPathString): Promise<boolean> {
     let fulfill: (arg0: boolean) => void;
     const promise = new Promise<boolean>(x => {
       fulfill = x;
@@ -159,10 +160,12 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     return promise;
 
     function innerCallback(
-        this: UISourceCode, success: boolean, newName?: string, newURL?: string,
+        this: UISourceCode, success: boolean, newName?: string, newURL?: Platform.DevToolsPath.UrlString,
         newContentType?: Common.ResourceType.ResourceType): void {
       if (success) {
-        this.updateName(newName as string, newURL as string, newContentType as Common.ResourceType.ResourceType);
+        this.updateName(
+            newName as Platform.DevToolsPath.RawPathString, newURL as Platform.DevToolsPath.UrlString,
+            newContentType as Common.ResourceType.ResourceType);
       }
       fulfill(success);
     }
@@ -172,14 +175,15 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     this.projectInternal.deleteFile(this);
   }
 
-  private updateName(name: string, url: string, contentType?: Common.ResourceType.ResourceType): void {
+  private updateName(
+      name: Platform.DevToolsPath.RawPathString, url: Platform.DevToolsPath.UrlString,
+      contentType?: Common.ResourceType.ResourceType): void {
     const oldURL = this.urlInternal;
     this.nameInternal = name;
     if (url) {
       this.urlInternal = url;
     } else {
-      this.urlInternal = Common.ParsedURL.ParsedURL.relativePathToUrlString(
-          name as Platform.DevToolsPath.RawPathString, oldURL as Platform.DevToolsPath.UrlString);
+      this.urlInternal = Common.ParsedURL.ParsedURL.relativePathToUrlString(name, oldURL);
     }
     if (contentType) {
       this.contentTypeInternal = contentType;
@@ -235,6 +239,13 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
     return this.contentInternal as TextUtils.ContentProvider.DeferredContent;
   }
 
+  #decodeContent(content: TextUtils.ContentProvider.DeferredContent|null): string|null {
+    if (!content) {
+      return null;
+    }
+    return content.isEncoded && content.content ? window.atob(content.content) : content.content;
+  }
+
   async checkContentUpdated(): Promise<void> {
     if (!this.contentLoadedInternal && !this.forceLoadOnCheckContentInternal) {
       return;
@@ -260,7 +271,7 @@ export class UISourceCode extends Common.ObjectWrapper.ObjectWrapper<EventTypes>
       return;
     }
 
-    if (this.contentInternal?.content === updatedContent.content) {
+    if (this.#decodeContent(this.contentInternal) === this.#decodeContent(updatedContent)) {
       this.lastAcceptedContent = null;
       return;
     }

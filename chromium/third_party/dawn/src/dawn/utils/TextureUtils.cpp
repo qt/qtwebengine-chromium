@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "TextureUtils.h"
+#include "dawn/utils/TextureUtils.h"
 
 namespace utils {
     bool TextureFormatSupportsStorageTexture(wgpu::TextureFormat format) {
@@ -146,11 +146,77 @@ namespace utils {
             case wgpu::TextureFormat::RGBA32Sint:
             case wgpu::TextureFormat::RGBA32Float:
             case wgpu::TextureFormat::RGB9E5Ufloat:
+            case wgpu::TextureFormat::R8Snorm:
+            case wgpu::TextureFormat::RG8Snorm:
+            case wgpu::TextureFormat::RGBA8Snorm:
+            case wgpu::TextureFormat::RG11B10Ufloat:
                 return false;
 
             default:
                 return true;
         }
+    }
+
+    bool TextureFormatSupportsRendering(wgpu::TextureFormat textureFormat) {
+        switch (textureFormat) {
+            case wgpu::TextureFormat::R8Unorm:
+            case wgpu::TextureFormat::R8Uint:
+            case wgpu::TextureFormat::R8Sint:
+            case wgpu::TextureFormat::RG8Unorm:
+            case wgpu::TextureFormat::RG8Uint:
+            case wgpu::TextureFormat::RG8Sint:
+            case wgpu::TextureFormat::RGBA8Unorm:
+            case wgpu::TextureFormat::RGBA8Uint:
+            case wgpu::TextureFormat::RGBA8Sint:
+            case wgpu::TextureFormat::BGRA8Unorm:
+            case wgpu::TextureFormat::BGRA8UnormSrgb:
+            case wgpu::TextureFormat::R16Uint:
+            case wgpu::TextureFormat::R16Sint:
+            case wgpu::TextureFormat::R16Float:
+            case wgpu::TextureFormat::RG16Uint:
+            case wgpu::TextureFormat::RG16Sint:
+            case wgpu::TextureFormat::RG16Float:
+            case wgpu::TextureFormat::RGBA16Uint:
+            case wgpu::TextureFormat::RGBA16Sint:
+            case wgpu::TextureFormat::RGBA16Float:
+            case wgpu::TextureFormat::R32Uint:
+            case wgpu::TextureFormat::R32Sint:
+            case wgpu::TextureFormat::R32Float:
+            case wgpu::TextureFormat::RG32Uint:
+            case wgpu::TextureFormat::RG32Sint:
+            case wgpu::TextureFormat::RG32Float:
+            case wgpu::TextureFormat::RGBA32Uint:
+            case wgpu::TextureFormat::RGBA32Sint:
+            case wgpu::TextureFormat::RGBA32Float:
+            case wgpu::TextureFormat::RGB10A2Unorm:
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    bool TextureFormatSupportsResolveTarget(wgpu::TextureFormat textureFormat) {
+        switch (textureFormat) {
+            case wgpu::TextureFormat::R8Unorm:
+            case wgpu::TextureFormat::RG8Unorm:
+            case wgpu::TextureFormat::RGBA8Unorm:
+            case wgpu::TextureFormat::RGBA8UnormSrgb:
+            case wgpu::TextureFormat::BGRA8Unorm:
+            case wgpu::TextureFormat::BGRA8UnormSrgb:
+            case wgpu::TextureFormat::R16Float:
+            case wgpu::TextureFormat::RG16Float:
+            case wgpu::TextureFormat::RGBA16Float:
+            case wgpu::TextureFormat::RGB10A2Unorm:
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    bool IsStencilOnlyFormat(wgpu::TextureFormat textureFormat) {
+        return textureFormat == wgpu::TextureFormat::Stencil8;
     }
 
     uint32_t GetTexelBlockSizeInBytes(wgpu::TextureFormat textureFormat) {
@@ -159,6 +225,7 @@ namespace utils {
             case wgpu::TextureFormat::R8Snorm:
             case wgpu::TextureFormat::R8Uint:
             case wgpu::TextureFormat::R8Sint:
+            case wgpu::TextureFormat::Stencil8:
                 return 1u;
 
             case wgpu::TextureFormat::R16Uint:
@@ -277,8 +344,6 @@ namespace utils {
             // Block size of a multi-planar format depends on aspect.
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
 
-            // TODO(dawn:666): implement stencil8
-            case wgpu::TextureFormat::Stencil8:
             case wgpu::TextureFormat::Undefined:
                 break;
         }
@@ -329,6 +394,7 @@ namespace utils {
             case wgpu::TextureFormat::Depth16Unorm:
             case wgpu::TextureFormat::Depth24UnormStencil8:
             case wgpu::TextureFormat::Depth32FloatStencil8:
+            case wgpu::TextureFormat::Stencil8:
                 return 1u;
 
             case wgpu::TextureFormat::BC1RGBAUnorm:
@@ -395,8 +461,6 @@ namespace utils {
             // Block size of a multi-planar format depends on aspect.
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
 
-            // TODO(dawn:666): implement stencil8
-            case wgpu::TextureFormat::Stencil8:
             case wgpu::TextureFormat::Undefined:
                 break;
         }
@@ -447,6 +511,7 @@ namespace utils {
             case wgpu::TextureFormat::Depth16Unorm:
             case wgpu::TextureFormat::Depth24UnormStencil8:
             case wgpu::TextureFormat::Depth32FloatStencil8:
+            case wgpu::TextureFormat::Stencil8:
                 return 1u;
 
             case wgpu::TextureFormat::BC1RGBAUnorm:
@@ -513,8 +578,6 @@ namespace utils {
             // Block size of a multi-planar format depends on aspect.
             case wgpu::TextureFormat::R8BG8Biplanar420Unorm:
 
-            // TODO(dawn:666): implement stencil8
-            case wgpu::TextureFormat::Stencil8:
             case wgpu::TextureFormat::Undefined:
                 break;
         }

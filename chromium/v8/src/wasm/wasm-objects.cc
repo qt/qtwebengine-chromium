@@ -380,7 +380,6 @@ void WasmTableObject::Set(Isolate* isolate, Handle<WasmTableObject> table,
   int entry_index = static_cast<int>(index);
 
   switch (table->type().heap_representation()) {
-    case wasm::HeapType::kExtern:
     case wasm::HeapType::kAny:
       entries->set(entry_index, *entry);
       return;
@@ -423,7 +422,7 @@ Handle<Object> WasmTableObject::Get(Isolate* isolate,
   }
 
   switch (table->type().heap_representation()) {
-    case wasm::HeapType::kExtern:
+    case wasm::HeapType::kAny:
       return entry;
     case wasm::HeapType::kFunc:
       if (entry->IsWasmInternalFunction()) return entry;
@@ -432,7 +431,6 @@ Handle<Object> WasmTableObject::Get(Isolate* isolate,
     case wasm::HeapType::kI31:
     case wasm::HeapType::kData:
     case wasm::HeapType::kArray:
-    case wasm::HeapType::kAny:
       // TODO(7748): Implement once we have a story for struct/arrays/i31ref in
       // JS.
       UNIMPLEMENTED();
@@ -997,8 +995,14 @@ int32_t WasmMemoryObject::Grow(Isolate* isolate,
   size_t new_pages = old_pages + pages;
   DCHECK_LT(old_pages, new_pages);
   // Try allocating a new backing store and copying.
+  // To avoid overall quadratic complexity of many small grow operations, we
+  // grow by at least 0.5 MB + 12.5% of the existing memory size.
+  // These numbers are kept small because we must be careful about address
+  // space consumption on 32-bit platforms.
+  size_t min_growth = old_pages + 8 + (old_pages >> 3);
+  size_t new_capacity = std::max(new_pages, min_growth);
   std::unique_ptr<BackingStore> new_backing_store =
-      backing_store->CopyWasmMemory(isolate, new_pages);
+      backing_store->CopyWasmMemory(isolate, new_pages, new_capacity);
   if (!new_backing_store) {
     // Crash on out-of-memory if the correctness fuzzer is running.
     if (FLAG_correctness_fuzzer_suppressions) {
@@ -1050,7 +1054,7 @@ MaybeHandle<WasmGlobalObject> WasmGlobalObject::New(
     global_obj->set_tagged_buffer(*tagged_buffer);
   } else {
     DCHECK(maybe_tagged_buffer.is_null());
-    uint32_t type_size = type.element_size_bytes();
+    uint32_t type_size = type.value_kind_size();
 
     Handle<JSArrayBuffer> untagged_buffer;
     if (!maybe_untagged_buffer.ToHandle(&untagged_buffer)) {
@@ -1590,7 +1594,7 @@ wasm::WasmValue WasmStruct::GetFieldValue(uint32_t index) {
 wasm::WasmValue WasmArray::GetElement(uint32_t index) {
   wasm::ValueType element_type = type()->element_type();
   int element_offset =
-      WasmArray::kHeaderSize + index * element_type.element_size_bytes();
+      WasmArray::kHeaderSize + index * element_type.value_kind_size();
   Address element_address = GetFieldAddress(element_offset);
   using wasm::Simd128;
   switch (element_type.kind()) {
@@ -1806,6 +1810,17 @@ Handle<WasmSuspenderObject> WasmSuspenderObject::New(Isolate* isolate) {
   suspender->set_continuation(ReadOnlyRoots(isolate).undefined_value());
   suspender->set_parent(ReadOnlyRoots(isolate).undefined_value());
   suspender->set_state(Inactive);
+  // Instantiate the callable object which resumes this Suspender. This will be
+  // used implicitly as the onFulfilled callback of the returned JS promise.
+  Handle<WasmOnFulfilledData> function_data =
+      isolate->factory()->NewWasmOnFulfilledData(suspender);
+  Handle<SharedFunctionInfo> shared =
+      isolate->factory()->NewSharedFunctionInfoForWasmOnFulfilled(
+          function_data);
+  Handle<Context> context(isolate->native_context());
+  Handle<JSObject> resume =
+      Factory::JSFunctionBuilder{isolate, shared, context}.Build();
+  suspender->set_resume(*resume);
   return suspender;
 }
 
@@ -1816,7 +1831,7 @@ namespace {
 constexpr uint32_t kBytesPerExceptionValuesArrayElement = 2;
 
 size_t ComputeEncodedElementSize(wasm::ValueType type) {
-  size_t byte_size = type.element_size_bytes();
+  size_t byte_size = type.value_kind_size();
   DCHECK_EQ(byte_size % kBytesPerExceptionValuesArrayElement, 0);
   DCHECK_LE(1, byte_size / kBytesPerExceptionValuesArrayElement);
   return byte_size / kBytesPerExceptionValuesArrayElement;
@@ -2164,7 +2179,7 @@ bool WasmJSFunction::MatchesSignatureForSuspend(const wasm::FunctionSig* sig) {
   // This function is only called for functions wrapped by a
   // WebAssembly.Suspender object, so the return type has to be externref.
   CHECK_EQ(function_data.serialized_return_count(), 1);
-  CHECK_EQ(function_data.serialized_signature().get(0), wasm::kWasmExternRef);
+  CHECK_EQ(function_data.serialized_signature().get(0), wasm::kWasmAnyRef);
   const wasm::ValueType* expected = sig->all().begin();
   return function_data.serialized_signature().matches(
       1, expected + return_count, parameter_count);
@@ -2199,9 +2214,6 @@ bool WasmExternalFunction::IsWasmExternalFunction(Object object) {
 // static
 MaybeHandle<WasmInternalFunction> WasmInternalFunction::FromExternal(
     Handle<Object> external, Isolate* isolate) {
-  if (external->IsNull(isolate)) {
-    return MaybeHandle<WasmInternalFunction>();
-  }
   if (WasmExportedFunction::IsWasmExportedFunction(*external) ||
       WasmJSFunction::IsWasmJSFunction(*external) ||
       WasmCapiFunction::IsWasmCapiFunction(*external)) {
@@ -2210,7 +2222,6 @@ MaybeHandle<WasmInternalFunction> WasmInternalFunction::FromExternal(
             kAcquireLoad));
     return handle(data.internal(), isolate);
   }
-  // {external} is not null or a wasm external function.
   return MaybeHandle<WasmInternalFunction>();
 }
 
@@ -2265,7 +2276,6 @@ bool TypecheckJSObject(Isolate* isolate, const WasmModule* module,
           }
           return true;
         }
-        case HeapType::kExtern:
         case HeapType::kAny:
           return true;
         case HeapType::kData:

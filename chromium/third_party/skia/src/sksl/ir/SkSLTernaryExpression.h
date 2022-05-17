@@ -19,9 +19,9 @@ class TernaryExpression final : public Expression {
 public:
     inline static constexpr Kind kExpressionKind = Kind::kTernary;
 
-    TernaryExpression(int line, std::unique_ptr<Expression> test,
-                      std::unique_ptr<Expression> ifTrue, std::unique_ptr<Expression> ifFalse)
-        : INHERITED(line, kExpressionKind, &ifTrue->type())
+    TernaryExpression(Position pos, std::unique_ptr<Expression> test,
+            std::unique_ptr<Expression> ifTrue, std::unique_ptr<Expression> ifFalse)
+        : INHERITED(pos, kExpressionKind, &ifTrue->type())
         , fTest(std::move(test))
         , fIfTrue(std::move(ifTrue))
         , fIfFalse(std::move(ifFalse)) {
@@ -31,12 +31,14 @@ public:
     // Creates a potentially-simplified form of the ternary. Typechecks and coerces input
     // expressions; reports errors via ErrorReporter.
     static std::unique_ptr<Expression> Convert(const Context& context,
-                                            std::unique_ptr<Expression> test,
-                                            std::unique_ptr<Expression> ifTrue,
-                                            std::unique_ptr<Expression> ifFalse);
+                                               Position pos,
+                                               std::unique_ptr<Expression> test,
+                                               std::unique_ptr<Expression> ifTrue,
+                                               std::unique_ptr<Expression> ifFalse);
 
     // Creates a potentially-simplified form of the ternary; reports errors via ASSERT.
     static std::unique_ptr<Expression> Make(const Context& context,
+                                            Position pos,
                                             std::unique_ptr<Expression> test,
                                             std::unique_ptr<Expression> ifTrue,
                                             std::unique_ptr<Expression> ifFalse);
@@ -76,7 +78,7 @@ public:
     }
 
     std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<TernaryExpression>(fLine, this->test()->clone(),
+        return std::make_unique<TernaryExpression>(fPosition, this->test()->clone(),
                                                    this->ifTrue()->clone(),
                                                    this->ifFalse()->clone());
     }

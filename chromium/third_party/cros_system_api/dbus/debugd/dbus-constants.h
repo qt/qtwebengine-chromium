@@ -20,6 +20,7 @@ const char kGetInterfaces[] = "GetInterfaces";
 const char kGetNetworkStatus[] = "GetNetworkStatus";
 const char kGetPerfOutput[] = "GetPerfOutput";
 const char kGetPerfOutputFd[] = "GetPerfOutputFd";
+const char kGetPerfOutputV2[] = "GetPerfOutputV2";
 const char kStopPerf[] = "StopPerf";
 const char kGetIpAddrs[] = "GetIpAddrs";
 const char kGetRoutes[] = "GetRoutes";
