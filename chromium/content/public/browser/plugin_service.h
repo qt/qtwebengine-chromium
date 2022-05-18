@@ -72,6 +72,7 @@ class CONTENT_EXPORT PluginService {
   // via |is_stale| and returns whether or not the plugin can be found.
   // This must be called from the UI thread.
   virtual bool GetPluginInfo(int render_process_id,
+                             int render_frame_id,
                              const GURL& url,
                              const std::string& mime_type,
                              bool allow_wildcard,

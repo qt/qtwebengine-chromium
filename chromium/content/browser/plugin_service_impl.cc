@@ -234,6 +234,7 @@ bool PluginServiceImpl::GetPluginInfoArray(
 }
 
 bool PluginServiceImpl::GetPluginInfo(int render_process_id,
+                                      int render_frame_id,
                                       const GURL& url,
                                       const std::string& mime_type,
                                       bool allow_wildcard,
@@ -249,7 +250,7 @@ bool PluginServiceImpl::GetPluginInfo(int render_process_id,
     *is_stale = stale;
 
   for (size_t i = 0; i < plugins.size(); ++i) {
-    if (!filter_ || filter_->IsPluginAvailable(render_process_id, plugins[i])) {
+    if (!filter_ || filter_->IsPluginAvailable(render_process_id, render_frame_id, plugins[i])) {
       *info = plugins[i];
       if (actual_mime_type)
         *actual_mime_type = mime_types[i];
