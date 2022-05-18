@@ -13936,7 +13936,7 @@ void RenderFrameHostImpl::GetPluginInfo(const GURL& url,
   WebPluginInfo info;
   std::string actual_mime_type;
   bool found = PluginServiceImpl::GetInstance()->GetPluginInfo(
-      GetBrowserContext(), url, mime_type, allow_wildcard, nullptr, &info,
+      GetProcess()->GetID(), routing_id_, GetBrowserContext(), url, mime_type, allow_wildcard, nullptr, &info,
       &actual_mime_type);
   std::move(callback).Run(found, info, actual_mime_type);
 }
