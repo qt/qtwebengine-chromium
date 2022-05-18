@@ -67,9 +67,10 @@ void PluginRegistryImpl::GetPluginsComplete(
       GetContentClient()->browser()->GetPluginMimeTypesWithExternalHandlers(
           rph->GetBrowserContext());
 
+  const int routing_id = MSG_ROUTING_NONE;
   for (const auto& plugin : all_plugins) {
     if (!filter ||
-        filter->IsPluginAvailable(rph->GetBrowserContext(), plugin)) {
+        filter->IsPluginAvailable(render_process_id_, routing_id, rph->GetBrowserContext(), plugin)) {
       auto plugin_blink = blink::mojom::PluginInfo::New();
       plugin_blink->name = plugin.name;
       plugin_blink->description = plugin.desc;
