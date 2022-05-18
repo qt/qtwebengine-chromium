@@ -22,7 +22,9 @@ class PluginServiceFilter {
 
   // Whether `plugin` is available. The client can return false to hide the
   // plugin. The result may be cached, and should be consistent between calls.
-  virtual bool IsPluginAvailable(content::BrowserContext* browser_context,
+  virtual bool IsPluginAvailable(int render_process_id,
+                                 int render_frame_id,
+                                 content::BrowserContext* browser_context,
                                  const WebPluginInfo& plugin) = 0;
 
   // Whether the renderer has permission to load available `plugin`.
