@@ -56,7 +56,9 @@ class CONTENT_EXPORT PluginService {
 
   // Filters the plugins list using `browser_context` and returns if there
   // exists a plugin that matches the given URL and mime type.
-  virtual bool HasPlugin(content::BrowserContext* browser_context,
+  virtual bool HasPlugin(int render_process_id,
+                         int render_frame_id,
+                         content::BrowserContext* browser_context,
                          const GURL& url,
                          const std::string& mime_type) = 0;
 

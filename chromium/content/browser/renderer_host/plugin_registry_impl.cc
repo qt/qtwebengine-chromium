@@ -40,7 +40,7 @@ void PluginRegistryImpl::GetPlugins(GetPluginsCallback callback) {
 
   for (const auto& plugin : plugin_service->GetPlugins()) {
     if (!filter ||
-        filter->IsPluginAvailable(rph->GetBrowserContext(), plugin)) {
+        filter->IsPluginAvailable(render_process_id_, 0, rph->GetBrowserContext(), plugin)) {
       auto plugin_blink = blink::mojom::PluginInfo::New();
       plugin_blink->name = plugin.name;
       plugin_blink->description = plugin.desc;
