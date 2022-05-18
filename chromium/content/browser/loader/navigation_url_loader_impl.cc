@@ -1523,9 +1523,15 @@ void NavigationURLLoaderImpl::OnReceiveResponse(
 void NavigationURLLoaderImpl::CheckPluginAndCallOnReceiveResponse(
     network::mojom::URLResponseHeadPtr head,
     network::mojom::URLLoaderClientEndpointsPtr url_loader_client_endpoints) {
+  FrameTreeNode* frame_tree_node =
+      FrameTreeNode::GloballyFindByID(frame_tree_node_id_);
+  int render_process_id =
+      frame_tree_node->current_frame_host()->GetProcess()->GetDeprecatedID();
+  int routing_id = frame_tree_node->current_frame_host()->GetRoutingID();
   // Refresh the plugins.
   PluginService::GetInstance()->GetPlugins();
   bool has_plugin = PluginService::GetInstance()->HasPlugin(
+      render_process_id, routing_id,
       browser_context_, resource_request_->url, head->mime_type);
 
   bool is_download = !has_plugin;

@@ -40,7 +40,9 @@ class CONTENT_EXPORT PluginServiceImpl : public PluginService {
                           const std::string& mime_type,
                           std::vector<WebPluginInfo>* info,
                           std::vector<std::string>* actual_mime_types) override;
-  bool HasPlugin(content::BrowserContext* browser_context,
+  bool HasPlugin(int render_process_id,
+                 int render_frame_id,
+                 content::BrowserContext* browser_context,
                  const GURL& url,
                  const std::string& mime_type) override;
   std::optional<WebPluginInfo> GetPluginInfoByPathForTesting(

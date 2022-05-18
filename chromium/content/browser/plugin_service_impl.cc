@@ -59,7 +59,9 @@ void PluginServiceImpl::GetPluginInfoArray(
                                               actual_mime_types);
 }
 
-bool PluginServiceImpl::HasPlugin(content::BrowserContext* browser_context,
+bool PluginServiceImpl::HasPlugin(int render_process_id,
+                                  int render_frame_id,
+                                  content::BrowserContext* browser_context,
                                   const GURL& url,
                                   const std::string& mime_type) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -67,7 +69,7 @@ bool PluginServiceImpl::HasPlugin(content::BrowserContext* browser_context,
   GetPluginInfoArray(url, mime_type, &plugins, /*actual_mime_types=*/nullptr);
 
   for (const auto& plugin : plugins) {
-    if (!filter_ || filter_->IsPluginAvailable(browser_context, plugin)) {
+    if (!filter_ || filter_->IsPluginAvailable(render_process_id, render_frame_id, browser_context, plugin)) {
       return true;
     }
   }
