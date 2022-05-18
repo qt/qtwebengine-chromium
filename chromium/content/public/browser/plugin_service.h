@@ -64,7 +64,9 @@ class CONTENT_EXPORT PluginService {
   // Gets plugin info for an individual plugin and filters the plugins using
   // the |browser_context|. This will report whether the data is stale via
   // |is_stale| and returns whether or not the plugin can be found.
-  virtual bool GetPluginInfo(content::BrowserContext* browser_context,
+  virtual bool GetPluginInfo(int render_process_id,
+                             int render_frame_id,
+                             content::BrowserContext* browser_context,
                              const GURL& url,
                              const std::string& mime_type,
                              bool allow_wildcard,
