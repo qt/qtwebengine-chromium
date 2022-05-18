@@ -48,7 +48,9 @@ class CONTENT_EXPORT PluginServiceImpl : public PluginService {
                           bool allow_wildcard,
                           std::vector<WebPluginInfo>* info,
                           std::vector<std::string>* actual_mime_types) override;
-  bool GetPluginInfo(content::BrowserContext* browser_context,
+  bool GetPluginInfo(int render_process_id,
+                     int render_frame_id,
+                     content::BrowserContext* browser_context,
                      const GURL& url,
                      const std::string& mime_type,
                      bool allow_wildcard,
