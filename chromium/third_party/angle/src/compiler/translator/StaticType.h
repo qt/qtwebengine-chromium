@@ -70,8 +70,14 @@ constexpr StaticArrayMangledName BuildStaticArrayMangledName(TBasicType basicTyp
                                                              const unsigned int *arraySizes,
                                                              size_t numArraySizes)
 {
-    StaticMangledName nonArrayName =
-        BuildStaticMangledName(basicType, precision, qualifier, primarySize, secondarySize);
+    StaticMangledName nonArrayName = {};
+    nonArrayName.name[0]           = TType::GetSizeMangledName(primarySize, secondarySize);
+    TBasicMangledName typeName(basicType);
+    char *mangledName = typeName.getName();
+    static_assert(TBasicMangledName::mangledNameSize == 2, "Mangled name size is not 2");
+    nonArrayName.name[1] = mangledName[0];
+    nonArrayName.name[2] = mangledName[1];
+    nonArrayName.name[3] = '\0';
 
     StaticArrayMangledName arrayName = {};
     static_assert(kStaticMangledNameLength == 3, "Static mangled name size is not 3");
