@@ -39,6 +39,9 @@ declare_args() {
   use_gio = is_linux && !is_castos && target_os != "android"
 
   use_blink = !is_ios
+
+  # enables compilation of crc32 for zlib with CRC extension
+  use_arm_crc32 = true
 }
 #
 # =============================================
