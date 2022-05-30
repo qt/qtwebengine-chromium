@@ -15,6 +15,7 @@ if (use_system_freetype) {
   import("//build/config/linux/pkg_config.gni")
   pkg_config("freetype_from_pkgconfig") {
     visibility = [
+      "//build/config/freetype:freetype",
       "//third_party:freetype_harfbuzz",
       "//third_party/harfbuzz-ng:harfbuzz_source",
     ]
