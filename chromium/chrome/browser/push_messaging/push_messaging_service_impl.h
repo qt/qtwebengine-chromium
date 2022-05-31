@@ -22,7 +22,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/permissions/permission_revocation_request.h"
+#endif
 #include "chrome/browser/push_messaging/push_messaging_notification_manager.h"
 #include "chrome/browser/push_messaging/push_messaging_refresher.h"
 #include "chrome/common/buildflags.h"
@@ -247,14 +249,20 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
                         const std::string& push_message_id,
                         bool did_show_generic_notification);
 
+#ifndef TOOLKIT_QT
   void OnCheckedOrigin(PendingMessage message,
                        PermissionRevocationRequest::Outcome outcome);
+#endif
 
   void DeliverNextQueuedMessageForServiceWorkerRegistration(
       const GURL& origin,
       int64_t service_worker_registration_id);
 
+#ifndef TOOLKIT_QT
   void CheckOriginAndDispatchNextMessage();
+#else
+  void DispatchNextMessage();
+#endif
 
   // Subscribe methods ---------------------------------------------------------
 
@@ -440,7 +448,9 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   void OnAppTerminating();
 
   raw_ptr<Profile> profile_;
+#ifndef TOOLKIT_QT
   std::unique_ptr<PermissionRevocationRequest> origin_revocation_request_;
+#endif
   std::queue<PendingMessage> messages_pending_permission_check_;
 
   // {Origin, ServiceWokerRegistratonId} key for message delivery queue. This

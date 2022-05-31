@@ -4,8 +4,10 @@
 
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 
+#ifndef TOOLKIT_QT
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -21,6 +23,7 @@ ChromeSigninClientFactory::ChromeSigninClientFactory()
               // Guest mode.
               .WithGuest(ProfileSelection::kOriginalOnly)
               .Build()) {
+#ifndef TOOLKIT_QT
   DependsOn(ProfileNetworkContextServiceFactory::GetInstance());
   // Used to keep track of bookmark metrics on Signin/Sync.
   DependsOn(BookmarkModelFactory::GetInstance());
