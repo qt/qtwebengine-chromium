@@ -243,14 +243,20 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
                         const std::string& push_message_id,
                         bool did_show_generic_notification);
 
+#ifndef TOOLKIT_QT
   void OnCheckedOrigin(PendingMessage message,
                        PermissionRevocationRequest::Outcome outcome);
+#endif
 
   void DeliverNextQueuedMessageForServiceWorkerRegistration(
       const GURL& origin,
       int64_t service_worker_registration_id);
 
+#ifndef TOOLKIT_QT
   void CheckOriginAndDispatchNextMessage();
+#else
+  void DispatchNextMessage();
+#endif
 
 #if BUILDFLAG(IS_ANDROID)
   //  Verifies if Chrome has Android app-level Notifications permission. If
@@ -448,7 +454,9 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   void OnAppTerminating();
 
   raw_ptr<Profile> profile_;
+#ifndef TOOLKIT_QT
   std::unique_ptr<PermissionRevocationRequest> origin_revocation_request_;
+#endif
   std::queue<PendingMessage> messages_pending_permission_check_;
 
   // {Origin, ServiceWokerRegistratonId} key for message delivery queue. This

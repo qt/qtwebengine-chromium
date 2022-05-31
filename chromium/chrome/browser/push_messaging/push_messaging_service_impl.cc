@@ -21,21 +21,27 @@
 #include "base/threading/thread_task_runner_handle.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
+#endif
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/gcm/instance_id/instance_id_profile_service_factory.h"
 #include "chrome/browser/lifetime/termination_notification.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/permissions/permission_revocation_request.h"
 #include "chrome/browser/profiles/keep_alive/profile_keep_alive_types.h"
 #include "chrome/browser/profiles/keep_alive/scoped_profile_keep_alive.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/push_messaging/push_messaging_app_identifier.h"
 #include "chrome/browser/push_messaging/push_messaging_constants.h"
 #include "chrome/browser/push_messaging/push_messaging_features.h"
 #include "chrome/browser/push_messaging/push_messaging_service_factory.h"
 #include "chrome/browser/push_messaging/push_messaging_utils.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/ui/chrome_pages.h"
+#endif
 #include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/chrome_switches.h"
@@ -87,6 +93,14 @@
 using instance_id::InstanceID;
 
 namespace {
+
+#ifdef TOOLKIT_QT
+GURL CreateCustomEndpoint(Profile *profile, const std::string& subscription_id) {
+  const GURL endpoint(profile->GetPushMessagingEndpoint() + subscription_id);
+  DCHECK(endpoint.is_valid());
+  return endpoint;
+}
+#endif
 
 // Scope passed to getToken to obtain GCM registration tokens.
 // Must match Java GoogleCloudMessaging.INSTANCE_ID_SCOPE.
@@ -271,7 +285,9 @@ PushMessagingServiceImpl::PushMessagingServiceImpl(Profile* profile)
       pending_push_subscription_count_(0),
       notification_manager_(profile) {
   DCHECK(profile);
+#ifndef TOOLKIT_QT
   HostContentSettingsMapFactory::GetForProfile(profile_)->AddObserver(this);
+#endif
 
   on_app_terminating_subscription_ =
       browser_shutdown::AddAppTerminatingCallback(base::BindOnce(
@@ -338,11 +354,13 @@ void PushMessagingServiceImpl::OnStoreReset() {
 
 void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
                                          const gcm::IncomingMessage& message) {
+#ifndef TOOLKIT_QT
   // We won't have time to process and act on the message.
   // TODO(peter) This should be checked at the level of the GCMDriver, so that
   // the message is not consumed. See https://crbug.com/612815
   if (g_browser_process->IsShuttingDown() || shutdown_started_)
     return;
+#endif // !TOOLKIT_QT
 
 #if BUILDFLAG(ENABLE_BACKGROUND_MODE)
   if (g_browser_process->background_mode_manager()) {
@@ -395,10 +413,14 @@ void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
 
   if (IsPermissionSet(app_identifier.origin())) {
     messages_pending_permission_check_.emplace(app_id, message);
+#ifndef TOOLKIT_QT
     // Start abusive and disruptive origin verifications only if no other
     // respective verification is in progress.
     if (!origin_revocation_request_)
       CheckOriginAndDispatchNextMessage();
+#else
+    DispatchNextMessage();
+#endif
   } else {
     // Drop message and unregister if origin has lost push permission.
     DeliverMessageCallback(app_id, app_identifier.origin(),
@@ -408,6 +430,7 @@ void PushMessagingServiceImpl::OnMessage(const std::string& app_id,
   }
 }
 
+#ifndef TOOLKIT_QT
 void PushMessagingServiceImpl::CheckOriginAndDispatchNextMessage() {
   if (messages_pending_permission_check_.empty())
     return;
@@ -561,6 +584,43 @@ void PushMessagingServiceImpl::OnCheckedOrigin(
   // Verify the next message in the queue.
   CheckOriginAndDispatchNextMessage();
 }
+#else
+void PushMessagingServiceImpl::DispatchNextMessage()
+{
+  if (messages_pending_permission_check_.empty())
+    return;
+
+  PendingMessage message =
+      std::move(messages_pending_permission_check_.front());
+  messages_pending_permission_check_.pop();
+
+  PushMessagingAppIdentifier app_identifier =
+      PushMessagingAppIdentifier::FindByAppId(profile_, message.app_id);
+
+  if (app_identifier.is_null()) {
+    DispatchNextMessage();
+    return;
+  }
+
+  const GURL& origin = app_identifier.origin();
+  int64_t service_worker_registration_id =
+      app_identifier.service_worker_registration_id();
+
+  std::queue<PendingMessage>& delivery_queue =
+        message_delivery_queue_[{origin, service_worker_registration_id}];
+  delivery_queue.push(std::move(message));
+
+  // Start delivering push messages to this service worker if this was the
+  // first message. Otherwise just enqueue the message to be delivered once
+  // all previous messages have been handled.
+  if (delivery_queue.size() == 1) {
+    DeliverNextQueuedMessageForServiceWorkerRegistration(
+        origin, service_worker_registration_id);
+  }
+
+  DispatchNextMessage();
+}
+#endif // !TOOLKIT_QT
 
 void PushMessagingServiceImpl::
     DeliverNextQueuedMessageForServiceWorkerRegistration(
@@ -900,12 +960,26 @@ void PushMessagingServiceImpl::SubscribeFromDocument(
   // It is OK to ignore `requesting_origin` because it will be calculated from
   // `render_frame_host` and we always use `requesting_origin` for
   // NOTIFICATIONS.
+#ifndef TOOLKIT_QT
   profile_->GetPermissionController()->RequestPermissionFromCurrentDocument(
       blink::PermissionType::NOTIFICATIONS, render_frame_host, user_gesture,
       base::BindOnce(&PushMessagingServiceImpl::DoSubscribe,
                      weak_factory_.GetWeakPtr(), std::move(app_identifier),
                      std::move(options), std::move(callback), render_process_id,
                      render_frame_id));
+#else
+  if (!IsPermissionSet(requesting_origin)) {
+    profile_->GetPermissionControllerDelegate()->RequestPermissionFromCurrentDocument(
+      content::PermissionType::NOTIFICATIONS, render_frame_host, user_gesture,
+      base::BindOnce(&PushMessagingServiceImpl::DoSubscribe,
+                     weak_factory_.GetWeakPtr(), std::move(app_identifier),
+                     std::move(options), std::move(callback), render_process_id,
+                     render_frame_id));
+  } else {
+    DoSubscribe(std::move(app_identifier), std::move(options), std::move(callback),
+        render_process_id, render_frame_id, blink::mojom::PermissionStatus::GRANTED);
+  }
+#endif
 }
 
 void PushMessagingServiceImpl::SubscribeFromWorker(
@@ -952,6 +1026,7 @@ blink::mojom::PermissionStatus PushMessagingServiceImpl::GetPermissionStatus(
   if (!user_visible)
     return blink::mojom::PermissionStatus::DENIED;
 
+#ifndef TOOLKIT_QT
   // Because the Push API is tied to Service Workers, many usages of the API
   // won't have an embedding origin at all. Only consider the requesting
   // |origin| when checking whether permission to use the API has been granted.
@@ -966,6 +1041,12 @@ blink::mojom::PermissionStatus PushMessagingServiceImpl::GetPermissionStatus(
             blink::PermissionType::NOTIFICATIONS, url::Origin::Create(origin))
         .status;
   }
+#else
+  return profile_->GetPermissionController()
+      ->GetPermissionResultForOriginWithoutContext(
+          blink::PermissionType::NOTIFICATIONS, url::Origin::Create(origin))
+      .status;
+#endif
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1081,7 +1162,11 @@ void PushMessagingServiceImpl::DidSubscribe(
 
   switch (result) {
     case InstanceID::SUCCESS: {
+#ifndef TOOLKIT_QT
       const GURL endpoint = push_messaging::CreateEndpoint(subscription_id);
+#else
+      const GURL endpoint = CreateCustomEndpoint(profile_, subscription_id);
+#endif
 
       // Make sure that this subscription has associated encryption keys prior
       // to returning it to the developer - they'll need this information in
@@ -1156,7 +1241,12 @@ void PushMessagingServiceImpl::GetSubscriptionInfo(
     return;
   }
 
+#ifndef TOOLKIT_QT
   const GURL endpoint = push_messaging::CreateEndpoint(subscription_id);
+#else
+  const GURL endpoint = CreateCustomEndpoint(profile_, subscription_id);
+#endif
+
   const std::string& app_id = app_identifier.app_id();
   absl::optional<base::Time> expiration_time = app_identifier.expiration_time();
 
@@ -1589,7 +1679,9 @@ void PushMessagingServiceImpl::SetContentSettingChangedCallbackForTesting(
 
 void PushMessagingServiceImpl::Shutdown() {
   GetGCMDriver()->RemoveAppHandler(kPushMessagingAppIdentifierPrefix);
+#ifndef TOOLKIT_QT
   HostContentSettingsMapFactory::GetForProfile(profile_)->RemoveObserver(this);
+#endif
 }
 
 void PushMessagingServiceImpl::OnAppTerminating() {

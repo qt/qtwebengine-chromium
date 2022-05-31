@@ -19,8 +19,8 @@
 #include "components/prefs/pref_service.h"
 #include "components/prefs/scoped_user_pref_update.h"
 
-constexpr char kPushMessagingAppIdentifierPrefix[] = "wp:";
-constexpr char kInstanceIDGuidSuffix[] = "-V2";
+const char kPushMessagingAppIdentifierPrefix[] = "wp:";
+const char kInstanceIDGuidSuffix[] = "-V2";
 
 namespace {
 

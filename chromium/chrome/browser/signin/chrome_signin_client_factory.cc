@@ -4,12 +4,18 @@
 
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
 
+#ifndef TOOLKIT_QT
 #include "chrome/browser/net/profile_network_context_service_factory.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 
 ChromeSigninClientFactory::ChromeSigninClientFactory()
+#ifndef TOOLKIT_QT
     : ProfileKeyedServiceFactory("ChromeSigninClient") {
   DependsOn(ProfileNetworkContextServiceFactory::GetInstance());
+#else
+{
+#endif
 }
 
 ChromeSigninClientFactory::~ChromeSigninClientFactory() {}

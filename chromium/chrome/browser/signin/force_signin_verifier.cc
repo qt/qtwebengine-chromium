@@ -10,14 +10,18 @@
 #include "base/callback_helpers.h"
 #include "base/files/file_path.h"
 #include "base/metrics/histogram_macros.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/profile_picker.h"
 #include "chrome/browser/ui/ui_features.h"
+#endif
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -145,6 +149,7 @@ bool ForceSigninVerifier::ShouldSendRequest() {
 }
 
 void ForceSigninVerifier::CloseAllBrowserWindows() {
+#ifndef TOOLKIT_QT
   if (base::FeatureList::IsEnabled(features::kForceSignInReauth)) {
     // Do not sign the user out to allow them to reauthenticate from the profile
     // picker.
@@ -165,10 +170,12 @@ void ForceSigninVerifier::CloseAllBrowserWindows() {
         signin_metrics::AUTHENTICATION_FAILED_WITH_FORCE_SIGNIN,
         signin_metrics::SignoutDelete::kIgnoreMetric);
   }
+#endif
 }
 
 void ForceSigninVerifier::OnCloseBrowsersSuccess(
     const base::FilePath& profile_path) {
+#ifndef TOOLKIT_QT
   Cancel();
 
   ProfileAttributesEntry* entry =
@@ -180,6 +187,7 @@ void ForceSigninVerifier::OnCloseBrowsersSuccess(
   entry->LockForceSigninProfile(true);
   ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
       ProfilePicker::EntryPoint::kProfileLocked));
+#endif
 }
 
 signin::PrimaryAccountAccessTokenFetcher*
