@@ -17,12 +17,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
+#else
+#include "content/public/browser/platform_notification_service.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/push_messaging/push_messaging_constants.h"
 #include "chrome/grit/generated_resources.h"
+#ifndef TOOLKIT_QT
 #include "components/site_engagement/content/site_engagement_service.h"
+#endif
 #include "components/url_formatter/elide_url.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -42,6 +48,7 @@
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 
+#ifndef TOOLKIT_QT
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
@@ -50,11 +57,16 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #endif
+#endif // !TOOLKIT_QT
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
 #include "chrome/browser/ash/android_sms/android_sms_service_factory.h"
 #include "chrome/browser/ash/android_sms/android_sms_urls.h"
 #include "chrome/browser/ash/multidevice_setup/multidevice_setup_client_factory.h"
+#endif
+
+#ifdef TOOLKIT_QT
+#include "content/public/common/content_client.h"
 #endif
 
 using content::BrowserThread;
@@ -104,7 +116,11 @@ NotificationDatabaseData CreateDatabaseData(
 
 PushMessagingNotificationManager::PushMessagingNotificationManager(
     Profile* profile)
+#ifndef TOOLKIT_QT
     : profile_(profile), budget_database_(profile) {}
+#else
+    : profile_(profile) {}
+#endif
 
 PushMessagingNotificationManager::~PushMessagingNotificationManager() = default;
 
@@ -154,6 +170,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   base::UmaHistogramCounts100("PushMessaging.VisibleNotificationCount",
                               notification_count);
 
+#ifndef TOOLKIT_QT
   // Sites with a currently visible tab don't need to show notifications.
 #if BUILDFLAG(IS_ANDROID)
   for (const TabModel* model : TabModelList::models()) {
@@ -170,6 +187,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
       break;
     }
   }
+#endif // !TOOLKIT_QT
 
   // If more than one notification is showing for this Service Worker, close
   // the default notification if it happens to be part of this group.
@@ -184,12 +202,18 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   if (notification_needed && !notification_shown) {
     // If the worker needed to show a notification and didn't, see if a silent
     // push was allowed.
+#ifndef TOOLKIT_QT
     budget_database_.SpendBudget(
         url::Origin::Create(origin),
         base::BindOnce(&PushMessagingNotificationManager::ProcessSilentPush,
                        weak_factory_.GetWeakPtr(), origin,
                        service_worker_registration_id,
                        std::move(message_handled_callback)));
+#else
+    PushMessagingNotificationManager::ProcessSilentPush(origin,
+                      service_worker_registration_id,
+                      std::move(message_handled_callback), true /* silent_push_allowed */);
+#endif // !TOOLKIT_QT
     return;
   }
 
@@ -268,8 +292,13 @@ void PushMessagingNotificationManager::ProcessSilentPush(
   scoped_refptr<PlatformNotificationContext> notification_context =
       GetStoragePartition(profile_, origin)->GetPlatformNotificationContext();
   int64_t next_persistent_notification_id =
+#ifndef TOOLKIT_QT
       PlatformNotificationServiceFactory::GetForProfile(profile_)
           ->ReadNextPersistentNotificationId();
+#else
+      profile_->GetPlatformNotificationService()
+          ->ReadNextPersistentNotificationId();
+#endif
 
   notification_context->WriteNotificationData(
       next_persistent_notification_id, service_worker_registration_id, origin,

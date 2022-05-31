@@ -15,6 +15,7 @@
 #include "build/build_config.h"
 #include "build/buildflag.h"
 #include "build/chromeos_buildflags.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
@@ -23,6 +24,9 @@
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/profile_metrics.h"
+#else
+#include "chrome/browser/profiles/profile.h"
+#endif
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/chrome_device_id_helper.h"
 #include "chrome/browser/signin/force_signin_verifier.h"
@@ -34,7 +38,9 @@
 #include "chrome/common/pref_names.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/metrics/metrics_service.h"
+#ifndef TOOLKIT_QT
 #include "components/policy/core/browser/browser_policy_connector.h"
+#endif
 #include "components/prefs/pref_service.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
 #include "components/signin/public/base/signin_buildflags.h"
@@ -67,6 +73,7 @@
 #include "third_party/abseil-cpp/absl/types/optional.h"
 #endif
 
+#ifndef TOOLKIT_QT
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/profiles/profile_window.h"
 #endif
@@ -75,6 +82,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/profile_picker.h"
 #endif
+#endif // !TOOLKIT_QT
 
 namespace {
 
@@ -137,9 +145,13 @@ void ChromeSigninClient::DoFinalInit() {
 
 // static
 bool ChromeSigninClient::ProfileAllowsSigninCookies(Profile* profile) {
+#ifndef TOOLKIT_QT
   content_settings::CookieSettings* cookie_settings =
       CookieSettingsFactory::GetForProfile(profile).get();
   return signin::SettingsAllowSigninCookies(cookie_settings);
+#else
+  return true;
+#endif
 }
 
 PrefService* ChromeSigninClient::GetPrefs() { return profile_->GetPrefs(); }
@@ -163,21 +175,29 @@ bool ChromeSigninClient::AreSigninCookiesAllowed() {
 }
 
 bool ChromeSigninClient::AreSigninCookiesDeletedOnExit() {
+#ifndef TOOLKIT_QT
   content_settings::CookieSettings* cookie_settings =
       CookieSettingsFactory::GetForProfile(profile_).get();
   return signin::SettingsDeleteSigninCookiesOnExit(cookie_settings);
+#else
+  return false;
+#endif
 }
 
 void ChromeSigninClient::AddContentSettingsObserver(
     content_settings::Observer* observer) {
+#ifndef TOOLKIT_QT
   HostContentSettingsMapFactory::GetForProfile(profile_)
       ->AddObserver(observer);
+#endif
 }
 
 void ChromeSigninClient::RemoveContentSettingsObserver(
     content_settings::Observer* observer) {
+#ifndef TOOLKIT_QT
   HostContentSettingsMapFactory::GetForProfile(profile_)
       ->RemoveObserver(observer);
+#endif
 }
 
 void ChromeSigninClient::PreSignOut(
@@ -187,7 +207,7 @@ void ChromeSigninClient::PreSignOut(
   DCHECK(!on_signout_decision_reached_) << "SignOut already in-progress!";
   on_signout_decision_reached_ = std::move(on_signout_decision_reached);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
   // `signout_source_metric` is `signin_metrics::ABORT_SIGNIN` if the user
   // declines sync in the signin process. In case the user accepts the managed
   // account but declines sync, we should keep the window open.
@@ -290,7 +310,11 @@ void ChromeSigninClient::VerifySyncToken() {
 }
 
 bool ChromeSigninClient::IsNonEnterpriseUser(const std::string& username) {
+#ifndef TOOLKIT_QT
   return policy::BrowserPolicyConnector::IsNonEnterpriseUser(username);
+#else
+  return true;
+#endif
 }
 
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -386,6 +410,7 @@ void ChromeSigninClient::OnCloseBrowsersAborted(
 
 void ChromeSigninClient::LockForceSigninProfile(
     const base::FilePath& profile_path) {
+#ifndef TOOLKIT_QT
   ProfileAttributesEntry* entry =
       g_browser_process->profile_manager()
           ->GetProfileAttributesStorage()
@@ -393,10 +418,11 @@ void ChromeSigninClient::LockForceSigninProfile(
   if (!entry)
     return;
   entry->LockForceSigninProfile(true);
+#endif
 }
 
 void ChromeSigninClient::ShowUserManager(const base::FilePath& profile_path) {
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
   ProfilePicker::Show(ProfilePicker::Params::FromEntryPoint(
       ProfilePicker::EntryPoint::kProfileLocked));
 #endif
