@@ -17,12 +17,16 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "build/chromeos_buildflags.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/profile_management/profile_management_features.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_internal.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/profiles/profiles_state.h"
+#endif
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
@@ -130,7 +134,11 @@ void CookiesMover::OnCookiesMoved() {
 
 bool IsForceSigninEnabled() {
   if (g_is_force_signin_enabled_cache == NOT_CACHED) {
+#ifndef TOOLKIT_QT
     PrefService* prefs = g_browser_process->local_state();
+#else
+    PrefService* prefs = nullptr;
+#endif
     if (prefs)
       SetForceSigninPolicy(prefs->GetBoolean(prefs::kForceBrowserSignin));
     else
@@ -157,7 +165,7 @@ bool IsProfileDeletionAllowed(Profile* profile) {
 #endif  // BUILDFLAG(IS_CHROMEOS_LACROS)
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !defined(TOOLKIT_QT)
 #if !BUILDFLAG(IS_CHROMEOS)
 // Returns true if managed accounts signin are required to create a new profile
 // by policies set in `profile`.
