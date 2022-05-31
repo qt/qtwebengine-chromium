@@ -11,8 +11,10 @@
 #include "base/observer_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/image_fetcher/image_decoder_impl.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
@@ -23,16 +25,18 @@
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_manager_builder.h"
 #include "components/signin/public/webdata/token_web_data.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/features.h"
+#endif
 #include "content/public/browser/network_service_instance.h"
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if (BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
 #endif
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/webdata_services/web_data_service_factory.h"
 #include "components/keyed_service/core/service_access_type.h"
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
@@ -53,7 +57,7 @@
 #include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "base/functional/bind.h"
 #include "chrome/browser/signin/signin_util_win.h"
 #endif
@@ -75,7 +79,7 @@ IdentityManagerFactory::IdentityManagerFactory()
               // Ash Internals.
               .WithAshInternals(ProfileSelection::kOriginalOnly)
               .Build()) {
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
   DependsOn(WebDataServiceFactory::GetInstance());
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   DependsOn(UnexportableKeyServiceFactory::GetInstance());
@@ -136,25 +140,33 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
   Profile* profile = Profile::FromBrowserContext(context);
 
   signin::IdentityManagerBuildParams params;
+#if !BUILDFLAG(IS_QTWEBENGINE)
   params.account_consistency =
       AccountConsistencyModeManager::GetMethodForProfile(profile),
   params.image_decoder = std::make_unique<ImageDecoderImpl>();
   params.local_state = g_browser_process->local_state();
+#else
+  params.account_consistency = signin::AccountConsistencyMethod::kDisabled;
+#endif
   params.network_connection_tracker = content::GetNetworkConnectionTracker();
   params.pref_service = profile->GetPrefs();
   params.profile_path = profile->GetPath();
   params.signin_client = ChromeSigninClientFactory::GetForProfile(profile);
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if !BUILDFLAG(IS_QTWEBENGINE)
   {
     scoped_refptr<content_settings::CookieSettings> cookie_settings =
         CookieSettingsFactory::GetForProfile(profile);
     params.delete_signin_cookies_on_exit =
         signin::SettingsDeleteSigninCookiesOnExit(cookie_settings.get());
   }
+#else
+  params.delete_signin_cookies_on_exit = true;
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
   params.token_web_data = WebDataServiceFactory::GetTokenWebDataForProfile(
       profile, ServiceAccessType::EXPLICIT_ACCESS);
 #if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
@@ -185,14 +197,18 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
   params.is_regular_profile = is_regular_profile;
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !BUILDFLAG(IS_QTWEBENGINE)
   params.reauth_callback =
       base::BindRepeating(&signin_util::ReauthWithCredentialProviderIfPossible,
                           base::Unretained(profile));
 #endif
 
   params.require_sync_consent_for_scope_verification =
+#if BUILDFLAG(IS_QTWEBENGINE)
+      true;
+#else
       !base::FeatureList::IsEnabled(syncer::kReplaceSyncPromosWithSignInPromos);
+#endif
 
   std::unique_ptr<signin::IdentityManager> identity_manager =
       signin::BuildIdentityManager(&params);

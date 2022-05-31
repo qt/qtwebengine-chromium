@@ -47,8 +47,6 @@ bool Profile::IsSystemProfile() const {
          profile_metrics::BrowserProfileType::kSystem;
 }
 
-#ifdef TOOLKIT_QT
-std::string Profile::GetPushMessagingEndpoint() const {
-  return "";
+base::WeakPtr<Profile> Profile::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
 }
-#endif

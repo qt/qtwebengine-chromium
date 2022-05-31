@@ -8,6 +8,7 @@
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_H_
 
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/browser_context.h"
 
 class PrefService;
@@ -50,9 +51,11 @@ class Profile : public content::BrowserContext {
   // off-the-record profiles of a Guest session.
   virtual bool IsGuestSession() const;
 
-#ifdef TOOLKIT_QT
-  virtual std::string GetPushMessagingEndpoint() const;
-#endif
+  base::WeakPtr<Profile> GetWeakPtr();
+
+ private:
+  base::WeakPtrFactory<Profile> weak_ptr_factory_{this};
+
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_H_

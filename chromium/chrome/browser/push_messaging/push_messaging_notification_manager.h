@@ -117,7 +117,9 @@ class PushMessagingNotificationManager {
   // Weak. This manager is owned by a keyed service on this profile.
   raw_ptr<Profile> profile_;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   BudgetDatabase budget_database_;
+#endif
 
   base::WeakPtrFactory<PushMessagingNotificationManager> weak_factory_{this};
 };
