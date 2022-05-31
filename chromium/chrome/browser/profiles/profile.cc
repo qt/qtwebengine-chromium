@@ -47,3 +47,6 @@ bool Profile::IsSystemProfile() const {
          profile_metrics::BrowserProfileType::kSystem;
 }
 
+base::WeakPtr<Profile> Profile::GetWeakPtr() {
+  return weak_ptr_factory_.GetWeakPtr();
+}

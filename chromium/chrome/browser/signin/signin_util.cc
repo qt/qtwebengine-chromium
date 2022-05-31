@@ -18,15 +18,19 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/supports_user_data.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/profile_management/profile_management_features.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profiles_state.h"
 #include "chrome/browser/signin/account_reconcilor_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/browser/ui/webui/signin/signin_utils_desktop.h"
+#endif
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
@@ -39,9 +43,11 @@
 #include "components/signin/public/identity_manager/account_managed_status_finder.h"
 #include "components/signin/public/identity_manager/accounts_mutator.h"
 #include "components/signin/public/identity_manager/tribool.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/sync/base/user_selectable_type.h"
 #include "components/sync/service/sync_service.h"
 #include "components/sync/service/sync_user_settings.h"
+#endif
 #include "content/public/browser/storage_partition.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/gaia_constants.h"
@@ -90,7 +96,7 @@ CookiesMover::CookiesMover(base::WeakPtr<Profile> source_profile,
 CookiesMover::~CookiesMover() = default;
 
 void CookiesMover::StartMovingCookies() {
-#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+#if (BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)) && !BUILDFLAG(IS_QTWEBENGINE)
   bool allow_cookies_to_be_moved = base::FeatureList::IsEnabled(
       profile_management::features::kThirdPartyProfileManagement);
 #else
@@ -146,7 +152,11 @@ void CookiesMover::OnCookiesMoved() {
 
 bool IsForceSigninEnabled() {
   if (g_is_force_signin_enabled_cache == NOT_CACHED) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
     PrefService* prefs = g_browser_process->local_state();
+#else
+    PrefService* prefs = nullptr;
+#endif
     if (prefs)
       SetForceSigninPolicy(prefs->GetBoolean(prefs::kForceBrowserSignin));
     else
@@ -171,7 +181,7 @@ bool IsProfileDeletionAllowed(Profile* profile) {
 #endif
 }
 
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 #if !BUILDFLAG(IS_CHROMEOS)
 // Returns true if managed accounts signin are required to create a new profile
 // by policies set in `profile`.
@@ -270,7 +280,7 @@ void RecordEnterpriseProfileCreationUserChoice(bool enforced_by_policy,
       created);
 }
 
-#endif  // !BUILDFLAG(IS_ANDROID)
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_QTWEBENGINE)
 
 PrimaryAccountError SetPrimaryAccountWithInvalidToken(
     Profile* profile,
@@ -279,6 +289,7 @@ PrimaryAccountError SetPrimaryAccountWithInvalidToken(
     bool is_under_advanced_protection,
     signin_metrics::AccessPoint access_point,
     signin_metrics::SourceForRefreshTokenOperation source) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
 
   CHECK(identity_manager->FindExtendedAccountInfoByEmailAddress(user_email)
@@ -309,6 +320,9 @@ PrimaryAccountError SetPrimaryAccountWithInvalidToken(
            << static_cast<int>(set_primary_account_result);
 
   return set_primary_account_result;
+#else
+  return {};
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 }
 
 bool IsSigninPending(signin::IdentityManager* identity_manager) {
@@ -369,7 +383,7 @@ std::string SignedInStateToString(SignedInState state) {
   }
 }
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
+#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)) && !BUILDFLAG(IS_QTWEBENGINE)
 bool ShouldShowHistorySyncOptinScreen(Profile& profile) {
   if (GetSignedInState(IdentityManagerFactory::GetForProfile(&profile)) !=
       signin_util::SignedInState::kSignedIn) {
