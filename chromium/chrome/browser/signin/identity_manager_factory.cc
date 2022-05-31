@@ -11,8 +11,10 @@
 #include "base/observer_list.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/image_fetcher/image_decoder_impl.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #include "chrome/browser/signin/chrome_signin_client_factory.h"
@@ -25,13 +27,13 @@
 #include "components/signin/public/webdata/token_web_data.h"
 #include "content/public/browser/network_service_instance.h"
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if (BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !defined(TOOLKIT_QT)
 #include "chrome/browser/content_settings/cookie_settings_factory.h"
 #include "components/content_settings/core/browser/cookie_settings.h"
 #include "components/signin/core/browser/cookie_settings_util.h"
 #endif
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
 #include "chrome/browser/web_data_service_factory.h"
 #include "components/keyed_service/core/service_access_type.h"
 #endif
@@ -48,7 +50,7 @@
 #include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
 #include "base/functional/bind.h"
 #include "chrome/browser/signin/signin_util_win.h"
 #endif
@@ -60,7 +62,7 @@ void IdentityManagerFactory::RegisterProfilePrefs(
 
 IdentityManagerFactory::IdentityManagerFactory()
     : ProfileKeyedServiceFactory("IdentityManager") {
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
   DependsOn(WebDataServiceFactory::GetInstance());
 #endif
 #if BUILDFLAG(IS_CHROMEOS_LACROS)
@@ -118,25 +120,33 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
   Profile* profile = Profile::FromBrowserContext(context);
 
   signin::IdentityManagerBuildParams params;
+#ifndef TOOLKIT_QT
   params.account_consistency =
       AccountConsistencyModeManager::GetMethodForProfile(profile),
   params.image_decoder = std::make_unique<ImageDecoderImpl>();
   params.local_state = g_browser_process->local_state();
+#else
+  params.account_consistency = signin::AccountConsistencyMethod::kDisabled;
+#endif
   params.network_connection_tracker = content::GetNetworkConnectionTracker();
   params.pref_service = profile->GetPrefs();
   params.profile_path = profile->GetPath();
   params.signin_client = ChromeSigninClientFactory::GetForProfile(profile);
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if !defined(TOOLKIT_QT)
   params.delete_signin_cookies_on_exit =
       signin::SettingsDeleteSigninCookiesOnExit(
           CookieSettingsFactory::GetForProfile(profile).get());
+#else
+  params.delete_signin_cookies_on_exit = true;
+#endif
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
   params.token_web_data = WebDataServiceFactory::GetTokenWebDataForProfile(
       profile, ServiceAccessType::EXPLICIT_ACCESS);
-#endif  // #if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   params.account_manager_facade =
@@ -160,7 +170,7 @@ KeyedService* IdentityManagerFactory::BuildServiceInstanceFor(
   params.is_regular_profile = is_regular_profile;
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && !defined(TOOLKIT_QT)
   params.reauth_callback =
       base::BindRepeating(&signin_util::ReauthWithCredentialProviderIfPossible,
                           base::Unretained(profile));

@@ -11,7 +11,9 @@
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "chrome/browser/profiles/profile.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/profiles/profile_key.h"
+#endif
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/gcm_driver/gcm_profile_service.h"
 #include "components/offline_pages/buildflags/buildflags.h"
@@ -144,7 +146,11 @@ KeyedService* GCMProfileServiceFactory::BuildServiceInstanceFor(
                           profile->GetWeakPtr()),
       profile->GetDefaultStoragePartition()
           ->GetURLLoaderFactoryForBrowserProcess(),
+#ifndef TOOLKIT_QT
       content::GetNetworkConnectionTracker(), chrome::GetChannel(),
+#else
+      content::GetNetworkConnectionTracker(), version_info::Channel::STABLE,
+#endif
       gcm::GetProductCategoryForSubtypes(profile->GetPrefs()),
       IdentityManagerFactory::GetForProfile(profile),
       std::make_unique<GCMClientFactory>(), content::GetUIThreadTaskRunner({}),

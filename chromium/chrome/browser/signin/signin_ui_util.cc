@@ -56,7 +56,7 @@
 #include "components/user_manager/user.h"
 #endif  // BUILDFLAG(IS_CHROMEOS_ASH)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !defined(TOOLKIT_QT)
 #include "chrome/browser/signin/signin_ui_delegate_impl_dice.h"
 #endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
 
