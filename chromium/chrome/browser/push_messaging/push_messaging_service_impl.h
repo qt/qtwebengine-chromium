@@ -19,7 +19,9 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "base/time/time.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/permissions/abusive_origin_permission_revocation_request.h"
+#endif
 #include "chrome/browser/push_messaging/push_messaging_notification_manager.h"
 #include "chrome/browser/push_messaging/push_messaging_refresher.h"
 #include "chrome/common/buildflags.h"
@@ -226,15 +228,21 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
                         const std::string& push_message_id,
                         bool did_show_generic_notification);
 
+#ifndef TOOLKIT_QT
   void OnCheckedOriginForAbuse(
       PendingMessage message,
       AbusiveOriginPermissionRevocationRequest::Outcome outcome);
+#endif
 
   void DeliverNextQueuedMessageForServiceWorkerRegistration(
       const GURL& origin,
       int64_t service_worker_registration_id);
 
+#ifndef TOOLKIT_QT
   void CheckOriginForAbuseAndDispatchNextMessage();
+#else
+  void DispatchNextMessage();
+#endif
 
   // Subscribe methods ---------------------------------------------------------
 
@@ -243,7 +251,11 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
                    RegisterCallback callback,
                    int render_process_id,
                    int render_frame_id,
+#ifndef TOOLKIT_QT
                    ContentSetting permission_status);
+#else
+                   blink::mojom::PermissionStatus permission_status);
+#endif
 
   void SubscribeEnd(RegisterCallback callback,
                     const std::string& subscription_id,
@@ -419,8 +431,10 @@ class PushMessagingServiceImpl : public content::PushMessagingService,
   }
 
   raw_ptr<Profile> profile_;
+#ifndef TOOLKIT_QT
   std::unique_ptr<AbusiveOriginPermissionRevocationRequest>
       abusive_origin_revocation_request_;
+#endif
   std::queue<PendingMessage> messages_pending_permission_check_;
 
   // {Origin, ServiceWokerRegistratonId} key for message delivery queue. This

@@ -31,6 +31,24 @@ class Profile : public content::BrowserContext {
 
   Profile *GetOriginalProfile();
   const Profile *GetOriginalProfile() const;
+
+  // Returns whether the profile is new.  A profile is new if the browser has
+  // not been shut down since the profile was created.
+  virtual bool IsNewProfile() const = 0;
+
+  // Returns whether it's a regular profile.
+  bool IsRegularProfile() const;
+
+  // Returns whether it is a system profile.
+  bool IsSystemProfile() const;
+
+  // Returns whether it is a Guest session. This covers both regular and
+  // off-the-record profiles of a Guest session.
+  virtual bool IsGuestSession() const;
+
+#ifdef TOOLKIT_QT
+  virtual std::string GetPushMessagingEndpoint() const;
+#endif
 };
 
 #endif  // CHROME_BROWSER_PROFILES_PROFILE_H_

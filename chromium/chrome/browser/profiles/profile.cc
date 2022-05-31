@@ -4,6 +4,7 @@
 
 #include "chrome/browser/profiles/profile.h"
 
+#include "components/profile_metrics/browser_profile_type.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
 
@@ -25,3 +26,24 @@ Profile* Profile::GetOriginalProfile() {
 const Profile* Profile::GetOriginalProfile() const {
   return this;
 }
+
+bool Profile::IsRegularProfile() const {
+  return profile_metrics::GetBrowserProfileType(this) ==
+         profile_metrics::BrowserProfileType::kRegular;
+}
+
+bool Profile::IsGuestSession() const {
+  return profile_metrics::GetBrowserProfileType(this) ==
+         profile_metrics::BrowserProfileType::kGuest;
+}
+
+bool Profile::IsSystemProfile() const {
+  return profile_metrics::GetBrowserProfileType(this) ==
+         profile_metrics::BrowserProfileType::kSystem;
+}
+
+#ifdef TOOLKIT_QT
+std::string Profile::GetPushMessagingEndpoint() const {
+  return "";
+}
+#endif

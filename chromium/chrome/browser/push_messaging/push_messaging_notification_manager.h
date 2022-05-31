@@ -106,7 +106,9 @@ class PushMessagingNotificationManager {
   // Weak. This manager is owned by a keyed service on this profile.
   raw_ptr<Profile> profile_;
 
+#ifndef TOOLKIT_QT
   BudgetDatabase budget_database_;
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
   chromeos::multidevice_setup::MultiDeviceSetupClient*

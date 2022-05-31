@@ -17,15 +17,21 @@
 #include "base/task/post_task.h"
 #include "base/threading/thread_task_runner_handle.h"
 #include "build/chromeos_buildflags.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/policy/cloud/user_policy_signin_service_internal.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/profiles/profiles_state.h"
+#endif
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/signin_features.h"
+#ifndef TOOLKIT_QT
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/browser/ui/startup/startup_types.h"
 #include "chrome/browser/ui/webui/profile_helper.h"
+#endif
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/grit/generated_resources.h"
@@ -39,6 +45,7 @@
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "ui/base/l10n/l10n_util.h"
 
+#ifndef TOOLKIT_QT
 #if defined(OS_WIN) || defined(OS_LINUX) || defined(OS_CHROMEOS) || \
     defined(OS_MAC)
 #include "chrome/browser/ui/browser_finder.h"
@@ -47,6 +54,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #define CAN_DELETE_PROFILE
 #endif
+#endif // !TOOLKIT_QT
 
 namespace signin_util {
 namespace {
@@ -254,7 +262,11 @@ ScopedForceSigninSetterForTesting::~ScopedForceSigninSetterForTesting() {
 
 bool IsForceSigninEnabled() {
   if (g_is_force_signin_enabled_cache == NOT_CACHED) {
+#ifndef TOOLKIT_QT
     PrefService* prefs = g_browser_process->local_state();
+#else
+    PrefService* prefs = nullptr;
+#endif
     if (prefs)
       SetForceSigninPolicy(prefs->GetBoolean(prefs::kForceBrowserSignin));
     else
@@ -293,7 +305,7 @@ void SetUserSignoutAllowedForProfile(Profile* profile, bool is_allowed) {
 void EnsurePrimaryAccountAllowedForProfile(Profile* profile) {
 // All primary accounts are allowed on ChromeOS, so this method is a no-op on
 // ChromeOS.
-#if !BUILDFLAG(IS_CHROMEOS_ASH)
+#if !BUILDFLAG(IS_CHROMEOS_ASH) && !defined(TOOLKIT_QT)
   auto* identity_manager = IdentityManagerFactory::GetForProfile(profile);
   if (!identity_manager->HasPrimaryAccount(signin::ConsentLevel::kSync))
     return;
@@ -342,7 +354,7 @@ void EnsurePrimaryAccountAllowedForProfile(Profile* profile) {
 #endif  // !BUILDFLAG(IS_CHROMEOS_ASH)
 }
 
-#if !defined(OS_ANDROID)
+#if !defined(OS_ANDROID) && !defined(TOOLKIT_QT)
 bool ProfileSeparationEnforcedByPolicy(
     Profile* profile,
     const std::string& intercepted_account_level_policy_value) {
