@@ -13,9 +13,13 @@
 #include "base/task/single_thread_task_runner_thread_mode.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile_key.h"
+#endif
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/gcm_driver/gcm_profile_service.h"
 #include "components/offline_pages/buildflags/buildflags.h"
@@ -177,12 +181,20 @@ GCMProfileServiceFactory::BuildServiceInstanceForBrowserContext(
                           profile->GetWeakPtr()),
       profile->GetDefaultStoragePartition()
           ->GetURLLoaderFactoryForBrowserProcess(),
+#if !BUILDFLAG(IS_QTWEBENGINE)
       content::GetNetworkConnectionTracker(), chrome::GetChannel(),
+#else
+      content::GetNetworkConnectionTracker(), version_info::Channel::STABLE,
+#endif
       gcm::GetProductCategoryForSubtypes(profile->GetPrefs()),
       IdentityManagerFactory::GetForProfile(profile),
       std::make_unique<GCMClientFactory>(), content::GetUIThreadTaskRunner({}),
       GetNetworkThreadTaskRunner(), blocking_task_runner,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       g_browser_process->os_crypt_async());
+#else
+      nullptr);
+#endif
 #endif
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
   // TODO(crbug.com/40260641): Removing image fetcher references here breaks

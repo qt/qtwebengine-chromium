@@ -17,12 +17,18 @@
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/notifications/platform_notification_service_factory.h"
 #include "chrome/browser/notifications/platform_notification_service_impl.h"
+#else
+#include "content/public/browser/platform_notification_service.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/push_messaging/push_messaging_constants.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/site_engagement/content/site_engagement_service.h"
+#endif
 #include "components/url_formatter/elide_url.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -50,6 +56,7 @@
 #include "extensions/common/manifest_handlers/background_info.h"
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #if BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
@@ -59,7 +66,10 @@
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"  // nogncheck crbug.com/40147906
 #include "chrome/browser/ui/browser_window/public/browser_window_interface_iterator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#endif
+#endif  // BUILDFLAG(IS_ANDROID)
+#else
+#include "content/public/common/content_client.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 using content::BrowserThread;
 using content::NotificationDatabaseData;
@@ -105,7 +115,11 @@ NotificationDatabaseData CreateDatabaseData(
 
 PushMessagingNotificationManager::PushMessagingNotificationManager(
     Profile* profile)
+#if !BUILDFLAG(IS_QTWEBENGINE)
     : profile_(profile), budget_database_(profile) {}
+#else
+    : profile_(profile) {}
+#endif
 
 PushMessagingNotificationManager::~PushMessagingNotificationManager() = default;
 
@@ -153,6 +167,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   bool notification_shown = notification_count > 0;
   bool notification_needed = true;
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   // Sites with a currently visible tab don't need to show notifications.
 #if BUILDFLAG(IS_ANDROID)
   for (const TabModel* model : TabModelList::models()) {
@@ -174,6 +189,7 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
         return notification_needed;
       });
 #endif
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
   // If more than one notification is showing for this Service Worker, close
   // the default notification if it happens to be part of this group.
@@ -188,12 +204,18 @@ void PushMessagingNotificationManager::DidCountVisibleNotifications(
   if (notification_needed && !notification_shown) {
     // If the worker needed to show a notification and didn't, see if a silent
     // push was allowed.
+#if !BUILDFLAG(IS_QTWEBENGINE)
     budget_database_.SpendBudget(
         url::Origin::Create(origin),
         base::BindOnce(&PushMessagingNotificationManager::ProcessSilentPush,
                        weak_factory_.GetWeakPtr(), origin,
                        service_worker_registration_id,
                        std::move(message_handled_callback)));
+#else
+    PushMessagingNotificationManager::ProcessSilentPush(origin,
+                      service_worker_registration_id,
+                      std::move(message_handled_callback), true /* silent_push_allowed */);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
     return;
   }
 
@@ -258,8 +280,13 @@ void PushMessagingNotificationManager::ProcessSilentPush(
   scoped_refptr<PlatformNotificationContext> notification_context =
       GetStoragePartition(profile_, origin)->GetPlatformNotificationContext();
   int64_t next_persistent_notification_id =
+#if !BUILDFLAG(IS_QTWEBENGINE)
       PlatformNotificationServiceFactory::GetForProfile(profile_)
           ->ReadNextPersistentNotificationId();
+#else
+      profile_->GetPlatformNotificationService()
+          ->ReadNextPersistentNotificationId();
+#endif
 
   notification_context->WriteNotificationData(
       next_persistent_notification_id, service_worker_registration_id, origin,

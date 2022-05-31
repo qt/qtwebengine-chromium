@@ -65,10 +65,10 @@
 #include "components/user_manager/user.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT)
+#if BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/signin/dice_tab_helper.h"
 #include "chrome/browser/signin/signin_ui_delegate_impl_dice.h"
-#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT)
+#endif  // BUILDFLAG(ENABLE_DICE_SUPPORT) && !BUILDFLAG(IS_QTWEBENGINE)
 
 namespace signin_ui_util {
 namespace {

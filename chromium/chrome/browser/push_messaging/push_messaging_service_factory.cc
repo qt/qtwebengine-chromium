@@ -9,12 +9,16 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "build/chromeos_buildflags.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/content_settings/host_content_settings_map_factory.h"
 #include "chrome/browser/engagement/site_engagement_service_factory.h"
+#endif
 #include "chrome/browser/gcm/gcm_profile_service_factory.h"
 #include "chrome/browser/gcm/instance_id/instance_id_profile_service_factory.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/permissions/permission_manager_factory.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/push_messaging/push_messaging_service_impl.h"
 #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
@@ -57,9 +61,11 @@ PushMessagingServiceFactory::PushMessagingServiceFactory()
               .Build()) {
   DependsOn(gcm::GCMProfileServiceFactory::GetInstance());
   DependsOn(instance_id::InstanceIDProfileServiceFactory::GetInstance());
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DependsOn(HostContentSettingsMapFactory::GetInstance());
   DependsOn(PermissionManagerFactory::GetInstance());
   DependsOn(site_engagement::SiteEngagementServiceFactory::GetInstance());
+#endif
 }
 
 PushMessagingServiceFactory::~PushMessagingServiceFactory() = default;
@@ -82,15 +88,17 @@ PushMessagingServiceFactory::BuildServiceInstanceForBrowserContext(
   // performed before anything about the service worker is sent off device to
   // Safe Browsing. If at the time of the second check the user is found to no
   // longer be an ESB user, no Safe Browsing report will be sent.
+#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   scoped_refptr<safe_browsing::SafeBrowsingDatabaseManager> db_manager;
 
-#if BUILDFLAG(SAFE_BROWSING_AVAILABLE)
   if (g_browser_process && g_browser_process->safe_browsing_service() &&
       safe_browsing::IsEnhancedProtectionEnabled(*profile->GetPrefs())) {
     db_manager = g_browser_process->safe_browsing_service()->database_manager();
   }
-#endif  // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 
   return std::make_unique<PushMessagingServiceImpl>(profile,
                                                     std::move(db_manager));
+#else
+  return std::make_unique<PushMessagingServiceImpl>(profile);
+#endif  // BUILDFLAG(SAFE_BROWSING_AVAILABLE)
 }

@@ -8,6 +8,7 @@
 #ifndef CHROME_BROWSER_PROFILES_PROFILE_H_
 #define CHROME_BROWSER_PROFILES_PROFILE_H_
 
+#include "base/memory/weak_ptr.h"
 #include "content/public/browser/browser_context.h"
 
 class PrefService;
@@ -49,6 +50,11 @@ class Profile : public content::BrowserContext {
   // Returns whether it is a Guest session. This covers both regular and
   // off-the-record profiles of a Guest session.
   virtual bool IsGuestSession() const;
+
+  base::WeakPtr<Profile> GetWeakPtr();
+
+  private:
+  base::WeakPtrFactory<Profile> weak_ptr_factory_{this};
 
 };
 

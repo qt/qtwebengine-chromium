@@ -12,6 +12,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "build/build_config.h"
+#include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_client.h"
 #include "extensions/buildflags/buildflags.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -77,10 +78,12 @@ class ChromeSigninClient : public SigninClient {
   void OnPrimaryAccountChanged(
       signin::PrimaryAccountChangeEvent event_details) override;
 
+#if BUILDFLAG(ENABLE_BOUND_SESSION_CREDENTIALS)
   std::unique_ptr<signin::BoundSessionOAuthMultiLoginDelegate>
   CreateBoundSessionOAuthMultiloginDelegate() const override;
   signin::OAuthConsumer GetOAuthConsumerFromId(
       signin::OAuthConsumerId oauth_consumer_id) const override;
+#endif
 
   // Adds the users to a synthetic field trial for user that were shown the
   // Bookmarks Bubble sign in/sync promo. Only adds user that are part of the
@@ -113,7 +116,7 @@ class ChromeSigninClient : public SigninClient {
       const base::FilePath& profile_path);
   void OnCloseBrowsersAborted(const base::FilePath& profile_path);
 
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
   // Used as the `on_token_fetch_complete` callback in the
   // `ForceSigninVerifier`.
   void OnTokenFetchComplete(bool token_is_valid);
@@ -145,7 +148,7 @@ class ChromeSigninClient : public SigninClient {
   base::OnceCallback<void(SignoutDecision)> on_signout_decision_reached_;
 
   bool should_display_user_manager_ = true;
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS)
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(IS_QTWEBENGINE)
   std::unique_ptr<ForceSigninVerifier> force_signin_verifier_;
 #endif
 
