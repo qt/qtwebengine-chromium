@@ -13,9 +13,16 @@
 #include "base/task/single_thread_task_runner_thread_mode.h"
 #include "base/task/thread_pool.h"
 #include "build/build_config.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile_key.h"
+#else
+#include "components/os_crypt/async/browser/os_crypt_async.h"
+#include "components/os_crypt/async/browser/key_provider.h"
+#endif
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "components/gcm_driver/gcm_profile_service.h"
 #include "components/offline_pages/buildflags/buildflags.h"
@@ -167,6 +174,10 @@ GCMProfileServiceFactory::BuildServiceInstanceForBrowserContext(
           {base::MayBlock(), base::TaskPriority::BEST_EFFORT,
            base::TaskShutdownBehavior::SKIP_ON_SHUTDOWN}));
   std::unique_ptr<GCMProfileService> service;
+#if BUILDFLAG(IS_QTWEBENGINE)
+  static auto os_crypt_async = std::make_unique<os_crypt_async::OSCryptAsync>(
+    std::vector<std::pair<size_t, std::unique_ptr<os_crypt_async::KeyProvider>>>{});
+#endif
 #if BUILDFLAG(IS_ANDROID)
   service = std::make_unique<GCMProfileService>(profile->GetPath(),
                                                 blocking_task_runner);
@@ -177,12 +188,20 @@ GCMProfileServiceFactory::BuildServiceInstanceForBrowserContext(
                           profile->GetWeakPtr()),
       profile->GetDefaultStoragePartition()
           ->GetURLLoaderFactoryForBrowserProcess(),
+#if !BUILDFLAG(IS_QTWEBENGINE)
       content::GetNetworkConnectionTracker(), chrome::GetChannel(),
+#else
+      content::GetNetworkConnectionTracker(), version_info::Channel::STABLE,
+#endif
       gcm::GetProductCategoryForSubtypes(profile->GetPrefs()),
       IdentityManagerFactory::GetForProfile(profile),
       std::make_unique<GCMClientFactory>(), content::GetUIThreadTaskRunner({}),
       GetNetworkThreadTaskRunner(), blocking_task_runner,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       g_browser_process->os_crypt_async());
+#else
+      os_crypt_async.get());
+#endif
 #endif
 #if BUILDFLAG(ENABLE_OFFLINE_PAGES)
   // TODO(crbug.com/40260641): Removing image fetcher references here breaks

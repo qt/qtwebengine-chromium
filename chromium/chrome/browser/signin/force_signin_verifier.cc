@@ -10,14 +10,18 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/time/time.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/enterprise/util/managed_browser_utils.h"
+#endif
 #include "chrome/browser/profiles/profile.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile_attributes_entry.h"
 #include "chrome/browser/profiles/profile_attributes_storage.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/profiles/profile_picker.h"
 #include "chrome/browser/ui/ui_features.h"
+#endif
 #include "components/signin/public/base/consent_level.h"
 #include "components/signin/public/base/signin_metrics.h"
 #include "components/signin/public/identity_manager/access_token_info.h"
@@ -41,6 +45,7 @@ const net::BackoffEntry::Policy kForceSigninVerifierBackoffPolicy = {
 };
 
 signin::ConsentLevel GetProfileConsentLevelToVerify(Profile* profile) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   if (syncer::IsReplaceSyncPromosWithSignInPromosEnabled()) {
     return signin::ConsentLevel::kSignin;
   }
@@ -48,6 +53,9 @@ signin::ConsentLevel GetProfileConsentLevelToVerify(Profile* profile) {
   return enterprise_util::UserAcceptedAccountManagement(profile)
              ? signin::ConsentLevel::kSignin
              : signin::ConsentLevel::kSync;
+#else
+  return signin::ConsentLevel::kSignin;
+#endif
 }
 
 }  // namespace
