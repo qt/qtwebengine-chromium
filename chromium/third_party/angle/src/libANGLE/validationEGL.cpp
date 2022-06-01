@@ -3679,7 +3679,7 @@ Error ValidateBindTexImage(const Display *display,
         return EglBadMatch();
     }
 
-    if (context)
+    if (context && !context->isContextLost())
     {
         gl::TextureType type = egl_gl::EGLTextureTargetToTextureType(surface->getTextureTarget());
         *textureObject       = context->getTextureByType(type);

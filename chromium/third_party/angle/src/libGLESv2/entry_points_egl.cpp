@@ -626,7 +626,7 @@ EGLBoolean EGLAPIENTRY EGL_BindTexImage(EGLDisplay dpy, EGLSurface surface, EGLi
         thread, ValidateBindTexImage(display, eglSurface, surface, buffer, context, &textureObject),
         "eglBindTexImage", GetSurfaceIfValid(display, eglSurface), EGL_FALSE);
 
-    if (context)
+    if (context && !context->isContextLost())
     {
         ANGLE_EGL_TRY_RETURN(thread, eglSurface->bindTexImage(context, textureObject, buffer),
                              "eglBindTexImage", GetSurfaceIfValid(display, eglSurface), EGL_FALSE);
@@ -673,16 +673,18 @@ EGLBoolean EGLAPIENTRY EGL_ReleaseTexImage(EGLDisplay dpy, EGLSurface surface, E
 
     ANGLE_EGL_TRY_RETURN(thread, ValidateReleaseTexImage(display, eglSurface, surface, buffer),
                          "eglReleaseTexImage", GetSurfaceIfValid(display, eglSurface), EGL_FALSE);
-
-    gl::Texture *texture = eglSurface->getBoundTexture();
-
-    if (texture)
+    gl::Context *context = thread->getContext();
+    if (context && !context->isContextLost())
     {
-        ANGLE_EGL_TRY_RETURN(thread, eglSurface->releaseTexImage(thread->getContext(), buffer),
-                             "eglReleaseTexImage", GetSurfaceIfValid(display, eglSurface),
-                             EGL_FALSE);
-    }
+        gl::Texture *texture = eglSurface->getBoundTexture();
 
+        if (texture)
+        {
+            ANGLE_EGL_TRY_RETURN(thread, eglSurface->releaseTexImage(thread->getContext(), buffer),
+                                 "eglReleaseTexImage", GetSurfaceIfValid(display, eglSurface),
+                                 EGL_FALSE);
+        }
+    }
     thread->setSuccess();
     return EGL_TRUE;
 }
