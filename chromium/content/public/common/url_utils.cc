@@ -17,6 +17,7 @@
 #include "content/public/common/url_constants.h"
 #include "url/gurl.h"
 #include "url/url_util.h"
+#include "url/url_util_qt.h"
 
 namespace content {
 
@@ -121,6 +122,20 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
             url::kContentScheme,
 #endif
       }));
+  if (from_url.is_empty())
+    return false;
+  static const auto& sLocalSchemesList = url::GetLocalSchemes();
+  static const base::NoDestructor<base::flat_set<base::StringPiece>>
+      sLocalSchemes(base::flat_set<base::StringPiece>(sLocalSchemesList.begin(), sLocalSchemesList.end()));
+  if (sLocalSchemes->contains(to_url.scheme_piece())) {
+#if defined(TOOLKIT_QT)
+    if (auto *cs = url::CustomScheme::FindScheme(from_url.scheme_piece())) {
+      if (cs->flags & (url::CustomScheme::Local | url::CustomScheme::LocalAccessAllowed))
+        return true;
+    }
+#endif
+    return sLocalSchemes->contains(from_url.scheme_piece());
+  }
 #if defined(TOOLKIT_QT)
   if (from_url.IsCustom())
     return true;
@@ -129,11 +144,6 @@ bool IsSafeRedirectTarget(const GURL& from_url, const GURL& to_url) {
     return false;
   if (kUnsafeSchemes->contains(to_url.scheme_piece()))
     return false;
-  for (const auto& local_scheme : url::GetLocalSchemes()) {
-    if (to_url.SchemeIs(local_scheme)) {
-      return from_url.SchemeIs(local_scheme);
-    }
-  }
   if (to_url.SchemeIsFileSystem())
     return from_url.SchemeIsFileSystem();
   return true;
