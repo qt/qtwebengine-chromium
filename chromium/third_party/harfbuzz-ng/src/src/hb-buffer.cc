@@ -324,6 +324,7 @@ hb_buffer_t::swap_buffers ()
 
 reset:
   have_output = false;
+  out_info = info;
   out_len = 0;
   idx = 0;
 }
