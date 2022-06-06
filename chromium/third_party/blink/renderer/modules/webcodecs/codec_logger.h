@@ -74,6 +74,9 @@ class MODULES_EXPORT CodecLogger final {
   // can be safely accessed, and whose raw pointer can be given callbacks.
   std::unique_ptr<media::MediaLog> media_log_;
 
+  // Keep task runner around for posting the media log to upon destruction.
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+
   SEQUENCE_CHECKER(sequence_checker_);
 };
 

@@ -37,6 +37,8 @@ CodecLogger::CodecLogger(
   // This allows us to destroy |parent_media_log_| and stop logging,
   // without causing problems to |media_log_| users.
   media_log_ = parent_media_log_->Clone();
+
+  task_runner_ = task_runner;
 }
 
 DOMException* CodecLogger::MakeException(std::string error_msg,
@@ -65,6 +67,10 @@ DOMException* CodecLogger::MakeException(std::string error_msg,
 
 CodecLogger::~CodecLogger() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+  // media logs must be posted for destruction, since they can cause the
+  // garbage collector to trigger an immediate cleanup and delete the owning
+  // instance of |CodecLogger|.
+  task_runner_->DeleteSoon(FROM_HERE, std::move(parent_media_log_));
 }
 
 void CodecLogger::Neuter() {
