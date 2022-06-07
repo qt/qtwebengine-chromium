@@ -42,6 +42,8 @@ class CONTENT_EXPORT BatchingMediaLog : public media::MediaLog {
                    std::vector<std::unique_ptr<EventHandler>> impl);
   ~BatchingMediaLog() override;
 
+  void Stop() override;
+
   // Will reset |last_ipc_send_time_| with the value of NowTicks().
   void SetTickClockForTesting(const base::TickClock* tick_clock);
 
