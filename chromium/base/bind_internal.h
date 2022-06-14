@@ -801,8 +801,8 @@ bool QueryCancellationTraits(const BindStateBase* base,
 template <typename Functor, typename Receiver, typename... Unused>
 std::enable_if_t<
     !(MakeFunctorTraits<Functor>::is_method &&
-      std::is_pointer<std::decay_t<Receiver>>::value &&
-      IsRefCountedType<std::remove_pointer_t<std::decay_t<Receiver>>>::value)>
+      IsPointerV<std::decay_t<Receiver>> &&
+      IsRefCountedType<RemovePointerT<std::decay_t<Receiver>>>::value)>
 BanUnconstructedRefCountedReceiver(const Receiver& receiver, Unused&&...) {}
 
 template <typename Functor>
@@ -812,8 +812,8 @@ void BanUnconstructedRefCountedReceiver() {}
 template <typename Functor, typename Receiver, typename... Unused>
 std::enable_if_t<
     MakeFunctorTraits<Functor>::is_method &&
-    std::is_pointer<std::decay_t<Receiver>>::value &&
-    IsRefCountedType<std::remove_pointer_t<std::decay_t<Receiver>>>::value>
+    IsPointerV<std::decay_t<Receiver>> &&
+    IsRefCountedType<RemovePointerT<std::decay_t<Receiver>>>::value>
 BanUnconstructedRefCountedReceiver(const Receiver& receiver, Unused&&...) {
   DCHECK(receiver);
 
@@ -946,8 +946,8 @@ struct MakeBindStateTypeImpl<true, Functor, Receiver, BoundArgs...> {
   static_assert(!std::is_array<std::remove_reference_t<Receiver>>::value,
                 "First bound argument to a method cannot be an array.");
   static_assert(
-      !std::is_pointer<DecayedReceiver>::value ||
-          IsRefCountedType<std::remove_pointer_t<DecayedReceiver>>::value,
+      !IsPointerV<DecayedReceiver> ||
+          IsRefCountedType<RemovePointerT<DecayedReceiver>>::value,
       "Receivers may not be raw pointers. If using a raw pointer here is safe"
       " and has no lifetime concerns, use base::Unretained() and document why"
       " it's safe.");
@@ -957,8 +957,8 @@ struct MakeBindStateTypeImpl<true, Functor, Receiver, BoundArgs...> {
  public:
   using Type = BindState<
       std::decay_t<Functor>,
-      std::conditional_t<std::is_pointer<DecayedReceiver>::value,
-                         scoped_refptr<std::remove_pointer_t<DecayedReceiver>>,
+      std::conditional_t<IsPointerV<DecayedReceiver>,
+                         scoped_refptr<RemovePointerT<DecayedReceiver>>,
                          DecayedReceiver>,
       std::decay_t<BoundArgs>...>;
 };

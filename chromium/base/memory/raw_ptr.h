@@ -579,6 +579,38 @@ class raw_ptr {
   friend class raw_ptr;
 };
 
+
+// Template helpers for working with T* or raw_ptr<T>.
+template <typename T>
+struct IsPointer : std::false_type {};
+
+template <typename T>
+struct IsPointer<T*> : std::true_type {};
+
+template <typename T, typename I>
+struct IsPointer<raw_ptr<T, I>> : std::true_type {};
+
+template <typename T>
+inline constexpr bool IsPointerV = IsPointer<T>::value;
+
+template <typename T>
+struct RemovePointer {
+  using type = T;
+};
+
+template <typename T>
+struct RemovePointer<T*> {
+  using type = T;
+};
+
+template <typename T, typename I>
+struct RemovePointer<raw_ptr<T, I>> {
+  using type = T;
+};
+
+template <typename T>
+using RemovePointerT = typename RemovePointer<T>::type;
+
 }  // namespace base
 
 using base::raw_ptr;
