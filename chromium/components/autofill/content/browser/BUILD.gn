@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
 import("//third_party/protobuf/proto_library.gni")
 
@@ -64,6 +65,13 @@ jumbo_static_library("browser") {
 
   if (!is_android) {
     deps += [ "//components/webauthn/content/browser" ]
+  }
+
+  if (use_qt) {
+    sources -= [
+      "autofill_log_router_factory.cc",
+      "autofill_log_router_factory.h",
+    ]
   }
 }
 

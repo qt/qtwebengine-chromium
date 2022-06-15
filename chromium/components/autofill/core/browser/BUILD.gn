@@ -556,6 +556,7 @@ jumbo_static_library("browser") {
       "//build:chromeos_buildflags",
       "//components/pref_registry",
       "//components/prefs",
+      "//ui/accessibility:accessibility",
     ]
   }
 }
