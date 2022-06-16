@@ -570,6 +570,9 @@ def WriteGNNinja(path, platform, host, options, args_list):
     else:
         ldflags.extend(['/MACHINE:x86'])
 
+    if not options.ld.endswith('lld-link.exe'):
+        ldflags.extend(['/link'])
+
   static_libraries = {
       'base': {'sources': [
         'src/base/command_line.cc',
