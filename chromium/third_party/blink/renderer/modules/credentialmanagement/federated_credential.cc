@@ -31,7 +31,7 @@ using mojom::blink::LogoutStatus;
 using mojom::blink::RequestIdTokenStatus;
 using mojom::blink::RevokeStatus;
 
-constexpr char kFederatedCredentialType[] = "federated";
+constexpr char kFederatedCredentialTypeFC[] = "federated";
 
 bool MaybeRejectDueToCSP(ContentSecurityPolicy* policy,
                          ScriptPromiseResolver* resolver,
@@ -188,7 +188,7 @@ FederatedCredential::FederatedCredential(
     scoped_refptr<const SecurityOrigin> provider_origin,
     const String& name,
     const KURL& icon_url)
-    : Credential(id, kFederatedCredentialType),
+    : Credential(id, kFederatedCredentialTypeFC),
       provider_origin_(provider_origin),
       name_(name),
       icon_url_(icon_url) {
@@ -200,7 +200,7 @@ FederatedCredential::FederatedCredential(
     const String& client_id,
     const String& hint,
     const CredentialRequestOptions* options)
-    : Credential(/* id = */ hint, kFederatedCredentialType),
+    : Credential(/* id = */ hint, kFederatedCredentialTypeFC),
       provider_origin_(SecurityOrigin::Create(provider_url)),
       provider_url_(provider_url),
       client_id_(client_id),

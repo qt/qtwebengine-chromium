@@ -195,7 +195,7 @@ void BluetoothDevice::AbortWatchAdvertisements() {
 ScriptPromise BluetoothDevice::forget(ScriptState* script_state,
                                       ExceptionState& exception_state) {
   if (!GetExecutionContext()) {
-    exception_state.ThrowTypeError(kInactiveDocumentError);
+    exception_state.ThrowTypeError(kInactiveDocumentError2);
     return ScriptPromise();
   }
 
