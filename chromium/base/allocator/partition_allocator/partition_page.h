@@ -87,13 +87,6 @@ ALWAYS_INLINE uintptr_t SuperPagesEndFromExtent(
 using AllocationStateMap =
     StateBitmap<kSuperPageSize, kSuperPageAlignment, kAlignment>;
 
-#ifdef _MSC_VER
-#pragma pack(push, 1)
-#define ATTR_PACK
-#else
-#define ATTR_PACK __attribute__((packed))
-#endif
-
 // Metadata of the slot span.
 //
 // Some notes on slot span states. It can be in one of four major states:
@@ -125,7 +118,7 @@ using AllocationStateMap =
 //   found, an empty or decommitted slot spans (if one exists) will be pulled
 //   from the empty/decommitted list on to the active list.
 template <bool thread_safe>
-struct ATTR_PACK SlotSpanMetadata {
+struct __attribute__((packed)) SlotSpanMetadata {
  private:
   PartitionFreelistEntry* freelist_head = nullptr;
 
@@ -332,10 +325,10 @@ struct SubsequentPageMetadata {
 // more than 1 page, the page metadata may contain rudimentary additional
 // information.
 template <bool thread_safe>
-struct ATTR_PACK PartitionPage {
+struct __attribute__((packed)) PartitionPage {
   // "Pack" the union so that common page metadata still fits within
   // kPageMetadataSize. (SlotSpanMetadata is also "packed".)
-  union ATTR_PACK {
+  union __attribute__((packed)) {
     SlotSpanMetadata<thread_safe> slot_span_metadata;
 
     SubsequentPageMetadata subsequent_page_metadata;
@@ -373,11 +366,6 @@ struct ATTR_PACK PartitionPage {
 
   ALWAYS_INLINE static PartitionPage* FromAddr(uintptr_t address);
 };
-
-#ifdef _MSC_VER
-#pragma pack(pop)
-#endif
-#undef ATTR_PACK
 
 static_assert(sizeof(PartitionPage<ThreadSafe>) == kPageMetadataSize,
               "PartitionPage must be able to fit in a metadata slot");

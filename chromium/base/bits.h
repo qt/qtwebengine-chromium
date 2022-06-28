@@ -81,48 +81,25 @@ inline T* AlignUp(T* ptr, size_t alignment) {
 // constexpr.
 #if defined(COMPILER_MSVC) && !defined(__clang__)
 
-constexpr inline unsigned qConstexprPopulationCount(uint64_t v) noexcept
-{
-    // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
-    return
-        (((v      ) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
-        (((v >> 12) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
-        (((v >> 24) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
-        (((v >> 36) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
-        (((v >> 48) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
-        (((v >> 60) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f;
-}
-
-constexpr inline unsigned qConstexprCountLeadingZeroBits(uint64_t v) noexcept
-{
-    v = v | (v >> 1);
-    v = v | (v >> 2);
-    v = v | (v >> 4);
-    v = v | (v >> 8);
-    v = v | (v >> 16);
-    v = v | (v >> 32);
-    return qConstexprPopulationCount(~v);
-}
-
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE constexpr
+ALWAYS_INLINE
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
                             unsigned>::type
     CountLeadingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index = 0;
+  unsigned long index;
   return LIKELY(_BitScanReverse(&index, static_cast<uint32_t>(x)))
              ? (31 - index - (32 - bits))
              : bits;
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE constexpr
+ALWAYS_INLINE
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
                             unsigned>::type
     CountLeadingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index = 0;
+  unsigned long index;
 // MSVC only supplies _BitScanReverse64 when building for a 64-bit target.
 #if defined(ARCH_CPU_64_BITS)
   return LIKELY(_BitScanReverse64(&index, static_cast<uint64_t>(x)))
@@ -142,23 +119,23 @@ ALWAYS_INLINE constexpr
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE constexpr
+ALWAYS_INLINE
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
                             unsigned>::type
     CountTrailingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index = 0;
+  unsigned long index;
   return LIKELY(_BitScanForward(&index, static_cast<uint32_t>(x))) ? index
                                                                    : bits;
 }
 
 template <typename T, unsigned bits = sizeof(T) * 8>
-ALWAYS_INLINE constexpr
+ALWAYS_INLINE
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) == 8,
                             unsigned>::type
     CountTrailingZeroBits(T x) {
   static_assert(bits > 0, "invalid instantiation");
-  unsigned long index = 0;
+  unsigned long index;
 // MSVC only supplies _BitScanForward64 when building for a 64-bit target.
 #if defined(ARCH_CPU_64_BITS)
   return LIKELY(_BitScanForward64(&index, static_cast<uint64_t>(x))) ? index
