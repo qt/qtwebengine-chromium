@@ -13,7 +13,7 @@ namespace media {
 template <>
 int VPXRateControl<libvpx::VP9RateControlRtcConfig,
                    libvpx::VP9RateControlRTC,
-                   libvpx::VP9RateControlRtcConfig>::GetLoopfilterLevel()
+                   libvpx::VP9FrameParamsQpRTC>::GetLoopfilterLevel()
     const {
   return impl_->GetLoopfilterLevel();
 }

@@ -151,7 +151,7 @@ target(partition_alloc_target_type, "partition_alloc") {
   } else if (is_fuchsia) {
     sources += [ "page_allocator_internals_fuchsia.h" ]
   }
-  if (current_cpu == "x64") {
+  if (current_cpu == "x64" && (!is_win || is_clang)) {
     defines += [ "PA_PCSCAN_STACK_SUPPORTED" ]
     sources += [ "starscan/stack/asm/x64/push_registers_asm.cc" ]
   } else if (current_cpu == "x86") {

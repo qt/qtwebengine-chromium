@@ -100,15 +100,23 @@ class RtcEventBweUpdateDelayBased final : public RtcEvent {
   BandwidthUsage detector_state() const { return detector_state_; }
 
   static std::string Encode(rtc::ArrayView<const RtcEvent*> batch) {
+#if !defined(WEBRTC_WIN)
     return RtcEventBweUpdateDelayBased::definition_.EncodeBatch(batch);
+#else
+    return "";
+#endif
   }
 
   static RtcEventLogParseStatus Parse(
       absl::string_view encoded_bytes,
       bool batched,
       std::vector<LoggedBweDelayBasedUpdate>& output) {
+#if !defined(WEBRTC_WIN)
     return RtcEventBweUpdateDelayBased::definition_.ParseBatch(encoded_bytes,
                                                                batched, output);
+#else
+    return RtcEventLogParseStatus::Success();
+#endif
   }
 
  private:
@@ -117,6 +125,7 @@ class RtcEventBweUpdateDelayBased final : public RtcEvent {
   const int32_t bitrate_bps_;
   const BandwidthUsage detector_state_;
 
+#if !defined(WEBRTC_WIN)
   static constexpr RtcEventDefinition<RtcEventBweUpdateDelayBased,
                                       LoggedBweDelayBasedUpdate,
                                       int32_t,
@@ -129,6 +138,7 @@ class RtcEventBweUpdateDelayBased final : public RtcEvent {
           {&RtcEventBweUpdateDelayBased::detector_state_,
            &LoggedBweDelayBasedUpdate::detector_state,
            {"detector_state", /*id=*/2, FieldType::kVarInt, /*width=*/64}}};
+#endif
 };
 
 }  // namespace webrtc

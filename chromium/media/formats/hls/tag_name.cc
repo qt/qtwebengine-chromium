@@ -96,7 +96,7 @@ TagKind GetTagKind(TagName name) {
 
 absl::optional<TagName> ParseTagName(base::StringPiece name) {
   // Search for the tag name
-  const auto* match = kTagNames.find(name);
+  const auto match = kTagNames.find(name);
   if (match == kTagNames.end()) {
     return absl::nullopt;
   }

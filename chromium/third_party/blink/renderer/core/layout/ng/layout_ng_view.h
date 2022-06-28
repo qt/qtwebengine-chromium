@@ -11,10 +11,6 @@
 
 namespace blink {
 
-extern template class CORE_EXTERN_TEMPLATE_EXPORT
-    LayoutNGBlockFlowMixin<LayoutView>;
-extern template class CORE_EXTERN_TEMPLATE_EXPORT LayoutNGMixin<LayoutView>;
-
 class CORE_EXPORT LayoutNGView : public LayoutNGBlockFlowMixin<LayoutView> {
  public:
   explicit LayoutNGView(ContainerNode*);

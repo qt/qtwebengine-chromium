@@ -80,6 +80,48 @@ inline T* AlignUp(T* ptr, size_t alignment) {
 // constexpr.
 #if defined(COMPILER_MSVC) && !defined(__clang__)
 
+constexpr inline unsigned qConstexprPopulationCount64(uint64_t v) noexcept
+{
+    // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+    return
+        (((v      ) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 36) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 48) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 60) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f;
+}
+
+constexpr inline unsigned qConstexprCountLeadingZeroBits64(uint64_t v) noexcept
+{
+    v = v | (v >> 1);
+    v = v | (v >> 2);
+    v = v | (v >> 4);
+    v = v | (v >> 8);
+    v = v | (v >> 16);
+    v = v | (v >> 32);
+    return qConstexprPopulationCount64(~v);
+}
+
+constexpr inline unsigned qConstexprPopulationCount32(uint32_t v) noexcept
+{
+    // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+    return
+        (((v      ) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * uint64_t(0x1001001001001) & uint64_t(0x84210842108421)) % 0x1f;
+}
+
+constexpr inline unsigned qConstexprCountLeadingZeroBits32(uint32_t v) noexcept
+{
+    v = v | (v >> 1);
+    v = v | (v >> 2);
+    v = v | (v >> 4);
+    v = v | (v >> 8);
+    v = v | (v >> 16);
+    return qConstexprPopulationCount32(~v);
+}
+
 template <typename T, unsigned bits = sizeof(T) * 8>
 ALWAYS_INLINE
     typename std::enable_if<std::is_unsigned<T>::value && sizeof(T) <= 4,
@@ -160,6 +202,8 @@ ALWAYS_INLINE uint64_t CountLeadingZeroBits64(uint64_t x) {
   return CountLeadingZeroBits(x);
 }
 
+#define PA_BITOPS_CONSTEXPR
+
 #elif defined(COMPILER_GCC) || defined(__clang__)
 
 // __builtin_clz has undefined behaviour for an input of 0, even though there's
@@ -198,15 +242,19 @@ ALWAYS_INLINE constexpr uint64_t CountLeadingZeroBits64(uint64_t x) {
   return CountLeadingZeroBits(x);
 }
 
+#define PA_BITOPS_CONSTEXPR constexpr
+
 #endif
 
-ALWAYS_INLINE constexpr size_t CountLeadingZeroBitsSizeT(size_t x) {
+ALWAYS_INLINE PA_BITOPS_CONSTEXPR size_t CountLeadingZeroBitsSizeT(size_t x) {
   return CountLeadingZeroBits(x);
 }
 
-ALWAYS_INLINE constexpr size_t CountTrailingZeroBitsSizeT(size_t x) {
+ALWAYS_INLINE PA_BITOPS_CONSTEXPR size_t CountTrailingZeroBitsSizeT(size_t x) {
   return CountTrailingZeroBits(x);
 }
+
+#undef PA_BITOPS_CONSTEXPR
 
 // Returns the integer i such as 2^i <= n < 2^(i+1).
 //
@@ -214,7 +262,11 @@ ALWAYS_INLINE constexpr size_t CountTrailingZeroBitsSizeT(size_t x) {
 // required to represent a value. Rather than implement that function,
 // use `Log2Floor` and add 1 to the result.
 constexpr int Log2Floor(uint32_t n) {
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  return 31 - qConstexprCountLeadingZeroBits32(n);
+#else
   return 31 - CountLeadingZeroBits(n);
+#endif
 }
 
 // Returns the integer i such as 2^(i-1) < n <= 2^i.
@@ -222,7 +274,11 @@ constexpr int Log2Ceiling(uint32_t n) {
   // When n == 0, we want the function to return -1.
   // When n == 0, (n - 1) will underflow to 0xFFFFFFFF, which is
   // why the statement below starts with (n ? 32 : -1).
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  return (n ? 32 : -1) - qConstexprCountLeadingZeroBits32(n - 1);
+#else
   return (n ? 32 : -1) - CountLeadingZeroBits(n - 1);
+#endif
 }
 
 // Returns a value of type T with a single bit set in the left-most position.

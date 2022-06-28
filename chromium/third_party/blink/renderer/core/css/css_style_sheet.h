@@ -49,6 +49,7 @@ class MediaQuerySet;
 class ScriptPromise;
 class ScriptState;
 class StyleSheetContents;
+class TreeScope;
 
 enum class CSSImportRules {
   kAllow,

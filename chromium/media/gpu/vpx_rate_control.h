@@ -14,7 +14,7 @@ namespace media {
 // parameter and loop filter level for vp8 and vp9.
 // T is a libvpx::VP(8|9)RateControlRtcConfig
 // S is a libvpx::VP(8|9)RateControlRTC
-// U is a libvpx::VP(8|9)RateControlRtcConfig
+// U is a libvpx::VP(8|9)FrameParamsQpRTC
 template <typename T, typename S, typename U>
 class VPXRateControl {
  public:

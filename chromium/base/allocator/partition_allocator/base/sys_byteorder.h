@@ -39,6 +39,16 @@ inline uint32_t ByteSwap(uint32_t x) {
 #endif
 }
 
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+// https://developercommunity.visualstudio.com/t/constexpr-byte-swapping-optimization/983963
+template<class T, std::size_t... N>constexpr T bswap_impl(T i, std::index_sequence<N...>){
+  return((((i >>(N * CHAR_BIT))&(T)(unsigned char)(-1))<<((sizeof(T)-1- N)* CHAR_BIT))|...);
+};
+template<class T,class U =typename std::make_unsigned<T>::type>constexpr U bswap(T i) {
+  return bswap_impl<U>(i, std::make_index_sequence<sizeof(T)>{});
+}
+#endif
+
 inline constexpr uint64_t ByteSwap(uint64_t x) {
   // Per build/build_config.h, clang masquerades as MSVC on Windows. If we are
   // actually using clang, we can rely on the builtin.
@@ -48,7 +58,7 @@ inline constexpr uint64_t ByteSwap(uint64_t x) {
   // as of 2021, but clang as we use it in Chromium doesn't, keeping a function
   // call for a single instruction.
 #if defined(COMPILER_MSVC) && !defined(__clang__)
-  return _byteswap_uint64(x);
+  return bswap(x);
 #else
   return __builtin_bswap64(x);
 #endif

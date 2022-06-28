@@ -838,33 +838,35 @@ size_t Value::List::size() const {
 }
 
 Value::List::iterator Value::List::begin() {
-  return iterator(to_address(storage_.begin()), to_address(storage_.end()));
+  return iterator(storage_.data(), storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::begin() const {
-  return const_iterator(to_address(storage_.begin()),
-                        to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::cbegin() const {
-  return const_iterator(to_address(storage_.cbegin()),
-                        to_address(storage_.cend()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::iterator Value::List::end() {
-  return iterator(to_address(storage_.begin()), to_address(storage_.end()),
-                  to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + storage_.size(),
+                  storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::end() const {
-  return const_iterator(to_address(storage_.begin()),
-                        to_address(storage_.end()), to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size(),
+                        storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::cend() const {
-  return const_iterator(to_address(storage_.cbegin()),
-                        to_address(storage_.cend()),
-                        to_address(storage_.cend()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + storage_.size(),
+                        storage_.data() + storage_.size());
 }
 
 const Value& Value::List::front() const {
@@ -907,14 +909,16 @@ void Value::List::clear() {
 
 Value::List::iterator Value::List::erase(iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
-  return iterator(to_address(storage_.begin()), to_address(next_it),
-                  to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + (next_it - storage_.begin()),
+                  storage_.data() + storage_.size());
 }
 
 Value::List::const_iterator Value::List::erase(const_iterator pos) {
   auto next_it = storage_.erase(storage_.begin() + (pos - begin()));
-  return const_iterator(to_address(storage_.begin()), to_address(next_it),
-                        to_address(storage_.end()));
+  return const_iterator(storage_.data(),
+                        storage_.data() + (next_it - storage_.begin()),
+                        storage_.data() + storage_.size());
 }
 
 Value::List Value::List::Clone() const {
@@ -972,8 +976,9 @@ void Value::List::Append(List&& value) {
 Value::List::iterator Value::List::Insert(const_iterator pos, Value&& value) {
   auto inserted_it =
       storage_.insert(storage_.begin() + (pos - begin()), std::move(value));
-  return iterator(to_address(storage_.begin()), to_address(inserted_it),
-                  to_address(storage_.end()));
+  return iterator(storage_.data(),
+                  storage_.data() + (inserted_it - storage_.begin()),
+                  storage_.data() + storage_.size());
 }
 
 size_t Value::List::EraseValue(const Value& value) {
