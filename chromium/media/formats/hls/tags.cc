@@ -165,7 +165,7 @@ ParseStatus::Or<XVersionTag> XVersionTag::Parse(TagItem tag) {
     return ParseStatusCode::kInvalidPlaylistVersion;
   }
 
-  return XVersionTag{.version = value};
+  return XVersionTag{/*.version =*/ value};
 }
 
 ParseStatus::Or<InfTag> InfTag::Parse(TagItem tag) {
@@ -195,7 +195,7 @@ ParseStatus::Or<InfTag> InfTag::Parse(TagItem tag) {
         .AddCause(std::move(duration).error());
   }
 
-  return InfTag{.duration = std::move(duration).value(), .title = title_str};
+  return InfTag{/*.duration =*/ std::move(duration).value(), /*.title =*/ title_str};
 }
 
 ParseStatus::Or<XIndependentSegmentsTag> XIndependentSegmentsTag::Parse(
@@ -221,11 +221,11 @@ ParseStatus::Or<XGapTag> XGapTag::Parse(TagItem tag) {
 
 XDefineTag XDefineTag::CreateDefinition(types::VariableName name,
                                         base::StringPiece value) {
-  return XDefineTag{.name = name, .value = value};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ value};
 }
 
 XDefineTag XDefineTag::CreateImport(types::VariableName name) {
-  return XDefineTag{.name = name, .value = absl::nullopt};
+  return XDefineTag{/*.name =*/ name, /*.value =*/ absl::nullopt};
 }
 
 ParseStatus::Or<XDefineTag> XDefineTag::Parse(TagItem tag) {
@@ -306,10 +306,10 @@ ParseStatus::Or<XPlaylistTypeTag> XPlaylistTypeTag::Parse(TagItem tag) {
   }
 
   if (tag.GetContent()->Str() == "EVENT") {
-    return XPlaylistTypeTag{.type = PlaylistType::kEvent};
+    return XPlaylistTypeTag{/*.type =*/ PlaylistType::kEvent};
   }
   if (tag.GetContent()->Str() == "VOD") {
-    return XPlaylistTypeTag{.type = PlaylistType::kVOD};
+    return XPlaylistTypeTag{/*.type =*/ PlaylistType::kVOD};
   }
 
   return ParseStatusCode::kUnknownPlaylistType;

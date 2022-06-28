@@ -40,62 +40,73 @@
 // preserve existing behavior (see https://crbug.com/1313604).
 #define POPULATE_TEX_IMAGE_2D_PARAMS(params) \
   params = {                                 \
-      .function_id = kTexImage2D,            \
-      .target = target,                      \
-      .level = level,                        \
-      .internalformat = internalformat,      \
-      .width = width,                        \
-      .height = height,                      \
-      .depth = 1,                            \
-      .border = border,                      \
-      .format = format,                      \
-      .type = type,                          \
+      /*.function_id =*/ kTexImage2D,        \
+      /*.target =*/ target,                  \
+      /*.level =*/ level,                    \
+      /*.internalformat =*/ internalformat,  \
+      /*.xoffset =*/ 0,                      \
+      /*.yoffset =*/ 0,                      \
+      /*.zoffset =*/ 0,                      \
+      /*.width =*/ width,                    \
+      /*.height =*/ height,                  \
+      /*.depth =*/ 1,                        \
+      /*.border =*/ border,                  \
+      /*.format =*/ format,                  \
+      /*.type =*/ type,                      \
   };                                         \
   GetCurrentUnpackState(params)
 
 #define POPULATE_TEX_SUB_IMAGE_2D_PARAMS(params) \
   params = {                                     \
-      .function_id = kTexSubImage2D,             \
-      .target = target,                          \
-      .level = level,                            \
-      .xoffset = xoffset,                        \
-      .yoffset = yoffset,                        \
-      .width = width,                            \
-      .height = height,                          \
-      .depth = 1,                                \
-      .format = format,                          \
-      .type = type,                              \
+      /*.function_id =*/ kTexSubImage2D,         \
+      /*.target =*/ target,                      \
+      /*.level =*/ level,                        \
+      /*.internalformat =*/ 0,                   \
+      /*.xoffset =*/ xoffset,                    \
+      /*.yoffset =*/ yoffset,                    \
+      /*.zoffset =*/ 0,                          \
+      /*.width =*/ width,                        \
+      /*.height =*/ height,                      \
+      /*.depth =*/ 1,                            \
+      /*.border =*/ 0,                           \
+      /*.format =*/ format,                      \
+      /*.type =*/ type,                          \
   };                                             \
   GetCurrentUnpackState(params)
 
 #define POPULATE_TEX_IMAGE_3D_PARAMS(params) \
   params = {                                 \
-      .function_id = kTexImage3D,            \
-      .target = target,                      \
-      .level = level,                        \
-      .internalformat = internalformat,      \
-      .width = width,                        \
-      .height = height,                      \
-      .depth = depth,                        \
-      .border = border,                      \
-      .format = format,                      \
-      .type = type,                          \
+      /*.function_id =*/ kTexImage3D,        \
+      /*.target =*/ target,                  \
+      /*.level =*/ level,                    \
+      /*.internalformat =*/ internalformat,  \
+      /*.xoffset =*/ 0,                      \
+      /*.yoffset =*/ 0,                      \
+      /*.zoffset =*/ 0,                      \
+      /*.width =*/ width,                    \
+      /*.height =*/ height,                  \
+      /*.depth =*/ depth,                    \
+      /*.border =*/ border,                  \
+      /*.format =*/ format,                  \
+      /*.type =*/ type,                      \
   };                                         \
   GetCurrentUnpackState(params)
 
 #define POPULATE_TEX_SUB_IMAGE_3D_PARAMS(params) \
   params = {                                     \
-      .function_id = kTexSubImage3D,             \
-      .target = target,                          \
-      .level = level,                            \
-      .xoffset = xoffset,                        \
-      .yoffset = yoffset,                        \
-      .zoffset = zoffset,                        \
-      .width = width,                            \
-      .height = height,                          \
-      .depth = depth,                            \
-      .format = format,                          \
-      .type = type,                              \
+      /*.function_id =*/ kTexSubImage3D,         \
+      /*.target =*/ target,                      \
+      /*.level =*/ level,                        \
+      /*.internalformat =*/ 0,                   \
+      /*.xoffset =*/ xoffset,                    \
+      /*.yoffset =*/ yoffset,                    \
+      /*.zoffset =*/ zoffset,                    \
+      /*.width =*/ width,                        \
+      /*.height =*/ height,                      \
+      /*.depth =*/ depth,                        \
+      /*.border =*/ 0,                           \
+      /*.format =*/ format,                      \
+      /*.type =*/ type,                          \
   };                                             \
   GetCurrentUnpackState(params)
 

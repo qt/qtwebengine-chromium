@@ -153,15 +153,15 @@ bool ParsedRouteTo::operator!=(const ParsedRouteTo& other) const {
 absl::optional<ParsedRouteTo> RouteToFromString(const std::string& route_to) {
   using RouteTo = Manifest::LaunchHandler::RouteTo;
   if (base::LowerCaseEqualsASCII(route_to, "auto"))
-    return ParsedRouteTo{.route_to = RouteTo::kAuto};
+    return ParsedRouteTo{/*.route_to =*/ RouteTo::kAuto};
   if (base::LowerCaseEqualsASCII(route_to, "new-client"))
-    return ParsedRouteTo{.route_to = RouteTo::kNewClient};
+    return ParsedRouteTo{/*.route_to =*/ RouteTo::kNewClient};
   if (base::LowerCaseEqualsASCII(route_to, "existing-client"))
-    return ParsedRouteTo{.legacy_existing_client_value = true};
+    return ParsedRouteTo{/*.route_to =*/ RouteTo::kAuto, /*.legacy_existing_client_value =*/ true};
   if (base::LowerCaseEqualsASCII(route_to, "existing-client-navigate"))
-    return ParsedRouteTo{.route_to = RouteTo::kExistingClientNavigate};
+    return ParsedRouteTo{/*.route_to =*/ RouteTo::kExistingClientNavigate};
   if (base::LowerCaseEqualsASCII(route_to, "existing-client-retain"))
-    return ParsedRouteTo{.route_to = RouteTo::kExistingClientRetain};
+    return ParsedRouteTo{/*.route_to =*/ RouteTo::kExistingClientRetain};
   return absl::nullopt;
 }
 

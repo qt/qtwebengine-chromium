@@ -31,7 +31,7 @@ RtpFrameReferenceFinder::ReturnVector RtpVp8RefFinder::ManageFrame(
         stashed_frames_.pop_back();
       }
       stashed_frames_.push_front(
-          {.unwrapped_tl0 = unwrapped_tl0, .frame = std::move(frame)});
+          {/*.unwrapped_tl0 =*/ unwrapped_tl0, /*.frame =*/ std::move(frame)});
       return res;
     case kHandOff:
       res.push_back(std::move(frame));

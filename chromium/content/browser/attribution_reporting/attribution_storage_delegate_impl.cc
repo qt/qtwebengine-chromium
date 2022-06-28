@@ -109,10 +109,10 @@ AttributionStorageDelegate::RateLimitConfig
 AttributionStorageDelegateImpl::GetRateLimits() const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return RateLimitConfig{
-      .time_window = base::Days(30),
-      .max_source_registration_reporting_origins = 100,
-      .max_attribution_reporting_origins = 10,
-      .max_attributions = 100,
+      /*.time_window =*/ base::Days(30),
+      /*.max_source_registration_reporting_origins =*/ 100,
+      /*.max_attribution_reporting_origins =*/ 10,
+      /*.max_attributions =*/ 100,
   };
 }
 
@@ -171,8 +171,8 @@ AttributionStorageDelegateImpl::GetOfflineReportDelayConfig() const {
     // sent at reasonable times, and not delayed for many browser sessions due
     // to short session up-times.
     return OfflineReportDelayConfig{
-        .min = base::Minutes(0),
-        .max = base::Minutes(1),
+        /*.min =*/ base::Minutes(0),
+        /*.max =*/ base::Minutes(1),
     };
   }
 
@@ -277,8 +277,8 @@ AttributionStorageDelegateImpl::GetFakeReportsForSequenceIndex(
     DCHECK_LT(trigger_data, trigger_data_cardinality);
 
     fake_reports.push_back({
-        .trigger_data = static_cast<uint64_t>(trigger_data),
-        .report_time = ReportTimeAtWindow(source, /*window_index=*/result.quot),
+        /*.trigger_data =*/ static_cast<uint64_t>(trigger_data),
+        /*.report_time =*/ ReportTimeAtWindow(source, /*window_index=*/result.quot),
     });
   }
   return fake_reports;

@@ -148,12 +148,11 @@ void FontAccess::DidGetEnumerationResponse(
             selection_utf8.end())
       continue;
 
-    auto entry = FontEnumerationEntry{
-        .postscript_name = String::FromUTF8(element.postscript_name().c_str()),
-        .full_name = String::FromUTF8(element.full_name().c_str()),
-        .family = String::FromUTF8(element.family().c_str()),
-        .style = String::FromUTF8(element.style().c_str()),
-    };
+    FontEnumerationEntry entry = {};
+    entry.postscript_name = String::FromUTF8(element.postscript_name().c_str());
+    entry.full_name = String::FromUTF8(element.full_name().c_str());
+    entry.family = String::FromUTF8(element.family().c_str());
+    entry.style = String::FromUTF8(element.style().c_str());
     entries.push_back(FontMetadata::Create(std::move(entry)));
   }
 

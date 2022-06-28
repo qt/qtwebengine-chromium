@@ -17,8 +17,8 @@ WgiGamepadDevice::~WgiGamepadDevice() = default;
 void WgiGamepadDevice::SetVibration(double strong_magnitude,
                                     double weak_magnitude) {
   ABI::Windows::Gaming::Input::GamepadVibration vibration = {
-      .LeftMotor = strong_magnitude,
-      .RightMotor = weak_magnitude,
+      /*.LeftMotor =*/ strong_magnitude,
+      /*.RightMotor =*/ weak_magnitude,
   };
   HRESULT hr = gamepad_->put_Vibration(vibration);
   DCHECK(SUCCEEDED(hr));

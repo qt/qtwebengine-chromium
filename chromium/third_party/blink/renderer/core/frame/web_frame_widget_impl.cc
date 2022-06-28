@@ -2909,8 +2909,8 @@ class ReportTimeSwapPromise : public cc::SwapPromise {
 
     DidNotSwapAction action = DidNotSwapAction::BREAK_PROMISE;
     WebFrameWidgetImpl::PromiseCallbacks promise_callbacks_on_failure = {
-        .swap_time_callback = std::move(promise_callbacks_.swap_time_callback),
-        .presentation_time_callback =
+        /*.swap_time_callback =*/ std::move(promise_callbacks_.swap_time_callback),
+        /*.presentation_time_callback =*/
             std::move(promise_callbacks_.presentation_time_callback)};
 
 #if BUILDFLAG(IS_MAC)
@@ -3034,14 +3034,16 @@ void WebFrameWidgetImpl::NotifySwapAndPresentationTimeForTesting(
 
 void WebFrameWidgetImpl::NotifyPresentationTimeInBlink(
     base::OnceCallback<void(base::TimeTicks)> presentation_callback) {
-  NotifySwapAndPresentationTime(
-      {.presentation_time_callback = std::move(presentation_callback)});
+  NotifySwapAndPresentationTime({
+      /*.swap_time_callback =*/ base::OnceCallback<void(base::TimeTicks)>(),
+      /*.presentation_time_callback =*/ std::move(presentation_callback)});
 }
 
 void WebFrameWidgetImpl::NotifyPresentationTime(
     base::OnceCallback<void(base::TimeTicks)> presentation_callback) {
-  NotifySwapAndPresentationTime(
-      {.presentation_time_callback = std::move(presentation_callback)});
+  NotifySwapAndPresentationTime({
+      /*.swap_time_callback =*/ base::OnceCallback<void(base::TimeTicks)>(),
+      /*.presentation_time_callback =*/ std::move(presentation_callback)});
 }
 
 #if BUILDFLAG(IS_MAC)

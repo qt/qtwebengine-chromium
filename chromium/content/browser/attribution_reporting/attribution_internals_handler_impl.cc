@@ -158,7 +158,7 @@ attribution_internals::mojom::WebUIReportPtr WebUIReport(
   const AttributionInfo& attribution_info = report.attribution_info();
 
   attribution_internals::mojom::WebUIReportDataPtr data = absl::visit(
-      Visitor{.attribution_logic = attribution_info.source.attribution_logic()},
+      Visitor{/*.attribution_logic =*/ attribution_info.source.attribution_logic()},
       report.data());
   return attribution_internals::mojom::WebUIReport::New(
       report.ReportId(), report.ReportURL(is_debug_report),

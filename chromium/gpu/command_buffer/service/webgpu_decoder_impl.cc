@@ -590,22 +590,21 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
       // It should be internally copyable so Chrome can internally perform
       // copies with it, but Javascript cannot (unless |usage| contains copy
       // src/dst).
-      WGPUDawnTextureInternalUsageDescriptor internal_usage_desc = {
-          .chain = {.sType = WGPUSType_DawnTextureInternalUsageDescriptor},
-          .internalUsage =
+      WGPUDawnTextureInternalUsageDescriptor internal_usage_desc = {};
+      internal_usage_desc.chain.sType = WGPUSType_DawnTextureInternalUsageDescriptor;
+      internal_usage_desc.internalUsage =
               static_cast<WGPUTextureUsageFlags>(WGPUTextureUsage_CopyDst) |
-              static_cast<WGPUTextureUsageFlags>(WGPUTextureUsage_CopySrc),
-      };
-      WGPUTextureDescriptor texture_desc = {
-          .nextInChain = &internal_usage_desc.chain,
-          .usage = static_cast<WGPUTextureUsageFlags>(usage),
-          .dimension = WGPUTextureDimension_2D,
-          .size = {static_cast<uint32_t>(representation_->size().width()),
-                   static_cast<uint32_t>(representation_->size().height()), 1},
-          .format = viz::ToWGPUFormat(representation_->format()),
-          .mipLevelCount = 1,
-          .sampleCount = 1,
-      };
+              static_cast<WGPUTextureUsageFlags>(WGPUTextureUsage_CopySrc);
+      WGPUTextureDescriptor texture_desc = {};
+      texture_desc.nextInChain = &internal_usage_desc.chain;
+      texture_desc.usage = static_cast<WGPUTextureUsageFlags>(usage);
+      texture_desc.dimension = WGPUTextureDimension_2D;
+      texture_desc.size = {static_cast<uint32_t>(representation_->size().width()),
+                           static_cast<uint32_t>(representation_->size().height()),
+                           1};
+      texture_desc.format = viz::ToWGPUFormat(representation_->format());
+      texture_desc.mipLevelCount = 1;
+      texture_desc.sampleCount = 1;
 
       procs_.deviceReference(device_);
       texture_ = procs_.deviceCreateTexture(device, &texture_desc);
@@ -674,11 +673,10 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
 
       // Create a staging buffer to hold pixel data which will be uploaded into
       // a texture.
-      WGPUBufferDescriptor buffer_desc = {
-          .usage = WGPUBufferUsage_CopySrc,
-          .size = buffer_size,
-          .mappedAtCreation = true,
-      };
+      WGPUBufferDescriptor buffer_desc = {};
+      buffer_desc.usage = WGPUBufferUsage_CopySrc;
+      buffer_desc.size = buffer_size;
+      buffer_desc.mappedAtCreation = true;
       WGPUBuffer buffer = procs_.deviceCreateBuffer(device_, &buffer_desc);
 
       // Read back the Skia image contents into the staging buffer.
@@ -709,26 +707,23 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
       SignalSemaphores(std::move(end_semaphores));
 
       // Copy from the staging WGPUBuffer into the WGPUTexture.
-      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
-          .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
-          .useInternalUsages = true,
-      };
+      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {};
+      internal_usage_desc.chain.sType = WGPUSType_DawnEncoderInternalUsageDescriptor;
+      internal_usage_desc.useInternalUsages = true;
       WGPUCommandEncoderDescriptor command_encoder_desc = {
-          .nextInChain = &internal_usage_desc.chain,
+          /*.nextInChain =*/ &internal_usage_desc.chain,
       };
       WGPUCommandEncoder encoder =
           procs_.deviceCreateCommandEncoder(device_, &command_encoder_desc);
-      WGPUImageCopyBuffer buffer_copy = {
-          .layout =
-              {
-                  .bytesPerRow = bytes_per_row,
-                  .rowsPerImage = WGPU_COPY_STRIDE_UNDEFINED,
-              },
-          .buffer = buffer,
-      };
-      WGPUImageCopyTexture texture_copy = {
-          .texture = texture_,
-      };
+
+      WGPUImageCopyBuffer buffer_copy = {};
+      buffer_copy.layout.bytesPerRow = bytes_per_row;
+      buffer_copy.layout.rowsPerImage = WGPU_COPY_STRIDE_UNDEFINED;
+      buffer_copy.buffer = buffer;
+
+      WGPUImageCopyTexture texture_copy = {};
+      texture_copy.texture = texture_;
+
       WGPUExtent3D extent = {
           static_cast<uint32_t>(representation_->size().width()),
           static_cast<uint32_t>(representation_->size().height()), 1};
@@ -769,34 +764,31 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
       }
 
       // Create a staging buffer to read back from the texture.
-      WGPUBufferDescriptor buffer_desc = {
-          .usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead,
-          .size = buffer_size,
-      };
+      WGPUBufferDescriptor buffer_desc = {};
+      buffer_desc.usage = WGPUBufferUsage_CopyDst | WGPUBufferUsage_MapRead;
+      buffer_desc.size = buffer_size;
+
       WGPUBuffer buffer = procs_.deviceCreateBuffer(device_, &buffer_desc);
 
-      WGPUImageCopyTexture texture_copy = {
-          .texture = texture_,
-      };
-      WGPUImageCopyBuffer buffer_copy = {
-          .layout =
-              {
-                  .bytesPerRow = bytes_per_row,
-                  .rowsPerImage = WGPU_COPY_STRIDE_UNDEFINED,
-              },
-          .buffer = buffer,
-      };
+      WGPUImageCopyTexture texture_copy = {};
+      texture_copy.texture = texture_;
+
+      WGPUImageCopyBuffer buffer_copy = {};
+      buffer_copy.layout.bytesPerRow = bytes_per_row;
+      buffer_copy.layout.rowsPerImage = WGPU_COPY_STRIDE_UNDEFINED;
+      buffer_copy.buffer = buffer;
+
       WGPUExtent3D extent = {
           static_cast<uint32_t>(representation_->size().width()),
           static_cast<uint32_t>(representation_->size().height()), 1};
 
       // Copy from the texture into the staging buffer.
-      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
-          .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
-          .useInternalUsages = true,
-      };
+      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {};
+      internal_usage_desc.chain.sType = WGPUSType_DawnEncoderInternalUsageDescriptor;
+      internal_usage_desc.useInternalUsages = true;
+
       WGPUCommandEncoderDescriptor command_encoder_desc = {
-          .nextInChain = &internal_usage_desc.chain,
+          /*.nextInChain =*/ &internal_usage_desc.chain,
       };
       WGPUCommandEncoder encoder =
           procs_.deviceCreateCommandEncoder(device_, &command_encoder_desc);
@@ -876,8 +868,8 @@ class WebGPUDecoderImpl final : public WebGPUDecoder {
         return;
 
       GrFlushInfo flush_info = {
-          .fNumSemaphores = semaphores.size(),
-          .fSignalSemaphores = semaphores.data(),
+          /*.fNumSemaphores =*/ semaphores.size(),
+          /*.fSignalSemaphores =*/ semaphores.data(),
       };
       // Note: this is a no-op if vk_context_provider is null.
       AddVulkanCleanupTaskForSkiaFlush(
@@ -980,16 +972,13 @@ WebGPUDecoderImpl::WebGPUDecoderImpl(
   }
   const char* dawn_search_path_c_str = dawn_search_path.c_str();
 
-  WGPUDawnInstanceDescriptor dawn_instance_desc = {
-      .chain =
-          {
-              .sType = WGPUSType_DawnInstanceDescriptor,
-          },
-      .additionalRuntimeSearchPathsCount = dawn_search_path.empty() ? 0u : 1u,
-      .additionalRuntimeSearchPaths = &dawn_search_path_c_str,
-  };
+  WGPUDawnInstanceDescriptor dawn_instance_desc = {};
+  dawn_instance_desc.chain.sType = WGPUSType_DawnInstanceDescriptor;
+  dawn_instance_desc.additionalRuntimeSearchPathsCount = dawn_search_path.empty() ? 0u : 1u;
+  dawn_instance_desc.additionalRuntimeSearchPaths = &dawn_search_path_c_str;
+
   WGPUInstanceDescriptor instance_desc = {
-      .nextInChain = &dawn_instance_desc.chain,
+      /*.nextInChain =*/ &dawn_instance_desc.chain,
   };
   dawn_instance_ = std::make_unique<dawn::native::Instance>(&instance_desc);
 
@@ -1861,12 +1850,12 @@ error::Error WebGPUDecoderImpl::HandleDissociateMailboxForPresent(
     render_pass_descriptor.colorAttachmentCount = 1;
     render_pass_descriptor.colorAttachments = &color_attachment;
 
-    WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
-        .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
-        .useInternalUsages = true,
-    };
+    WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {};
+    internal_usage_desc.chain.sType = WGPUSType_DawnEncoderInternalUsageDescriptor;
+    internal_usage_desc.useInternalUsages = true;
+
     WGPUCommandEncoderDescriptor command_encoder_desc = {
-        .nextInChain = &internal_usage_desc.chain,
+        /*.nextInChain =*/ &internal_usage_desc.chain,
     };
     WGPUCommandEncoder encoder =
         procs.deviceCreateCommandEncoder(device, &command_encoder_desc);

@@ -439,14 +439,14 @@ void MobileFriendlinessChecker::DidFinishLifecycleUpdate(
 
   frame_view_->UnregisterFromLifecycleNotifications(this);
   frame_view_->DidChangeMobileFriendliness(MobileFriendliness{
-      .viewport_device_width = viewport_device_width_,
-      .viewport_initial_scale_x10 = viewport_initial_scale_x10_,
-      .viewport_hardcoded_width = viewport_hardcoded_width_,
-      .allow_user_zoom = allow_user_zoom_,
-      .small_text_ratio = text_area_sizes_.SmallTextRatio(),
-      .text_content_outside_viewport_percentage =
+      /*.viewport_device_width =*/ viewport_device_width_,
+      /*.viewport_initial_scale_x10 =*/ viewport_initial_scale_x10_,
+      /*.viewport_hardcoded_width =*/ viewport_hardcoded_width_,
+      /*.allow_user_zoom =*/ allow_user_zoom_,
+      /*.small_text_ratio =*/ text_area_sizes_.SmallTextRatio(),
+      /*.text_content_outside_viewport_percentage =*/
           ComputeContentOutsideViewport(),
-      .bad_tap_targets_ratio = ComputeBadTapTargetsRatio()});
+      /*.bad_tap_targets_ratio = */ComputeBadTapTargetsRatio()});
   last_evaluated_ = base::TimeTicks::Now();
 }
 

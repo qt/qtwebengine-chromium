@@ -97,11 +97,11 @@ GPUExternalTexture* GPUExternalTexture::Create(
             WGPUTextureUsage::WGPUTextureUsage_TextureBinding,
             media_video_frame);
 
-    WGPUTextureViewDescriptor view_desc = {
-        .format = WGPUTextureFormat_R8Unorm,
-        .mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED,
-        .arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED,
-        .aspect = WGPUTextureAspect_Plane0Only};
+    WGPUTextureViewDescriptor view_desc = {};
+    view_desc.format = WGPUTextureFormat_R8Unorm;
+    view_desc.mipLevelCount = WGPU_MIP_LEVEL_COUNT_UNDEFINED;
+    view_desc.arrayLayerCount = WGPU_ARRAY_LAYER_COUNT_UNDEFINED;
+    view_desc.aspect = WGPUTextureAspect_Plane0Only;
     WGPUTextureView plane0 = device->GetProcs().textureCreateView(
         mailbox_texture->GetTexture(), &view_desc);
     view_desc.format = WGPUTextureFormat_RG8Unorm;

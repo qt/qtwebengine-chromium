@@ -45,9 +45,9 @@ GPUSwapChain::GPUSwapChain(
     case V8GPUCanvasCompositingAlphaMode::Enum::kOpaque: {
       CcLayer()->SetContentsOpaque(true);
 
-      WGPUShaderModuleWGSLDescriptor wgsl_desc = {
-          .chain = {.sType = WGPUSType_ShaderModuleWGSLDescriptor},
-          .source = R"(
+      WGPUShaderModuleWGSLDescriptor wgsl_desc = {};
+      wgsl_desc.chain.sType = WGPUSType_ShaderModuleWGSLDescriptor;
+      wgsl_desc.source = R"(
           @stage(vertex) fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
             var pos = array<vec2<f32>, 3>(
                 vec2<f32>(-1.0, -1.0),
@@ -59,33 +59,28 @@ GPUSwapChain::GPUSwapChain(
           @stage(fragment) fn frag_main() -> @location(0) vec4<f32> {
             return vec4<f32>(1.0);
           }
-        )",
-      };
-      WGPUShaderModuleDescriptor shader_module_desc = {.nextInChain =
-                                                           &wgsl_desc.chain};
+        )";
+      WGPUShaderModuleDescriptor shader_module_desc = {};
+      shader_module_desc.nextInChain = &wgsl_desc.chain;
       WGPUShaderModule shader_module = GetProcs().deviceCreateShaderModule(
           device_->GetHandle(), &shader_module_desc);
 
-      WGPUColorTargetState color_target = {
-          .format = format_,
-          .writeMask = WGPUColorWriteMask_Alpha,
-      };
-      WGPUFragmentState fragment = {
-          .module = shader_module,
-          .entryPoint = "frag_main",
-          .targetCount = 1,
-          .targets = &color_target,
-      };
-      WGPURenderPipelineDescriptor pipeline_desc = {
-          .vertex =
-              {
-                  .module = shader_module,
-                  .entryPoint = "vert_main",
-              },
-          .primitive = {.topology = WGPUPrimitiveTopology_TriangleList},
-          .multisample = {.count = 1, .mask = 0xFFFFFFFF},
-          .fragment = &fragment,
-      };
+      WGPUColorTargetState color_target = {};
+      color_target.format = format_;
+      color_target.writeMask = WGPUColorWriteMask_Alpha;
+      WGPUFragmentState fragment = {};
+      fragment.module = shader_module;
+      fragment.entryPoint = "frag_main";
+      fragment.targetCount = 1;
+      fragment.targets = &color_target;
+
+      WGPURenderPipelineDescriptor pipeline_desc = {};
+      pipeline_desc.vertex.module = shader_module;
+      pipeline_desc.vertex.entryPoint = "vert_main";
+      pipeline_desc.primitive.topology = WGPUPrimitiveTopology_TriangleList;
+      pipeline_desc.multisample.count =1;
+      pipeline_desc.multisample.mask = 0xFFFFFFFF;
+      pipeline_desc.fragment = &fragment;
       alpha_to_one_pipeline_ = GetProcs().deviceCreateRenderPipeline(
           device_->GetHandle(), &pipeline_desc);
       GetProcs().shaderModuleRelease(shader_module);
@@ -382,26 +377,22 @@ void GPUSwapChain::OnTextureTransferred() {
       WGPUTextureView attachment_view =
           GetProcs().textureCreateView(texture_->GetHandle(), nullptr);
 
-      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {
-          .chain = {.sType = WGPUSType_DawnEncoderInternalUsageDescriptor},
-          .useInternalUsages = true,
-      };
-      WGPUCommandEncoderDescriptor command_encoder_desc = {
-          .nextInChain = &internal_usage_desc.chain,
-      };
+      WGPUDawnEncoderInternalUsageDescriptor internal_usage_desc = {};
+      internal_usage_desc.chain.sType = WGPUSType_DawnEncoderInternalUsageDescriptor;
+      internal_usage_desc.useInternalUsages = true;
+      WGPUCommandEncoderDescriptor command_encoder_desc = {};
+      command_encoder_desc.nextInChain = &internal_usage_desc.chain;
       WGPUCommandEncoder command_encoder =
           GetProcs().deviceCreateCommandEncoder(device_->GetHandle(),
                                                 &command_encoder_desc);
 
-      WGPURenderPassColorAttachment color_attachment = {
-          .view = attachment_view,
-          .loadOp = WGPULoadOp_Load,
-          .storeOp = WGPUStoreOp_Store,
-      };
-      WGPURenderPassDescriptor render_pass_desc = {
-          .colorAttachmentCount = 1,
-          .colorAttachments = &color_attachment,
-      };
+      WGPURenderPassColorAttachment color_attachment = {};
+      color_attachment.view = attachment_view;
+      color_attachment.loadOp = WGPULoadOp_Load;
+      color_attachment.storeOp = WGPUStoreOp_Store;
+      WGPURenderPassDescriptor render_pass_desc = {};
+      render_pass_desc.colorAttachmentCount = 1;
+      render_pass_desc.colorAttachments = &color_attachment;
       WGPURenderPassEncoder pass = GetProcs().commandEncoderBeginRenderPass(
           command_encoder, &render_pass_desc);
       DCHECK(alpha_to_one_pipeline_);

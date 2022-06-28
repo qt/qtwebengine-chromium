@@ -77,7 +77,7 @@ ParseStatus::Or<GetNextLineItemResult> GetNextLineItem(
     // If not empty, tag, or comment, it must be a URI.
     // This line may contain leading, trailing, or interior whitespace,
     // but that's the URI parser's responsibility.
-    return GetNextLineItemResult{UriItem{.content = line}};
+    return GetNextLineItemResult{UriItem{/*.content =*/ line}};
   }
 }
 

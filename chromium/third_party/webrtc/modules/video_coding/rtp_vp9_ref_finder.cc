@@ -46,7 +46,7 @@ RtpFrameReferenceFinder::ReturnVector RtpVp9RefFinder::ManageFrame(
         }
 
         stashed_frames_.push_front(
-            {.unwrapped_tl0 = unwrapped_tl0, .frame = std::move(frame)});
+            {/*.unwrapped_tl0 =*/ unwrapped_tl0, /*.frame =*/ std::move(frame)});
       }
     }
   }

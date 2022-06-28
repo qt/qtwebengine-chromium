@@ -201,8 +201,8 @@ class FrameBuffer3Proxy : public FrameBufferProxy {
         timeout_tracker_(clock_,
                          worker_queue_,
                          VideoReceiveStreamTimeoutTracker::Timeouts{
-                             .max_wait_for_keyframe = max_wait_for_keyframe,
-                             .max_wait_for_frame = max_wait_for_frame},
+                             /*.max_wait_for_keyframe =*/ max_wait_for_keyframe,
+                             /*.max_wait_for_frame =*/ max_wait_for_frame},
                          absl::bind_front(&FrameBuffer3Proxy::OnTimeout, this)),
         zero_playout_delay_max_decode_queue_size_(
             "max_decode_queue_size",

@@ -1879,14 +1879,14 @@ void LibvpxVp9Encoder::UpdatePerformanceFlags() {
       VideoCodecComplexity::kComplexityLow) {
     // For low tier devices, always use speed 9. Only disable upper
     // layer deblocking below QCIF.
-    params_by_resolution[0] = {.base_layer_speed = 9,
-                               .high_layer_speed = 9,
-                               .deblock_mode = 1,
-                               .allow_denoising = true};
-    params_by_resolution[352 * 288] = {.base_layer_speed = 9,
-                                       .high_layer_speed = 9,
-                                       .deblock_mode = 0,
-                                       .allow_denoising = true};
+    params_by_resolution[0] = {/*.base_layer_speed =*/ 9,
+                               /*.high_layer_speed =*/ 9,
+                               /*.deblock_mode =*/ 1,
+                               /*.allow_denoising =*/ true};
+    params_by_resolution[352 * 288] = {/*.base_layer_speed =*/ 9,
+                                       /*.high_layer_speed =*/ 9,
+                                       /*.deblock_mode =*/ 0,
+                                       /*.allow_denoising =*/ true};
   } else {
     params_by_resolution = performance_flags_.settings_by_resolution;
   }
@@ -1978,27 +1978,27 @@ LibvpxVp9Encoder::GetDefaultPerformanceFlags() {
   // layer (get some coding gain at the cost of increased encoding complexity).
   // Set encoder Speed 5 for TL0, encoder Speed 8 for upper temporal layers, and
   // disable deblocking for upper-most temporal layers.
-  flags.settings_by_resolution[0] = {.base_layer_speed = 5,
-                                     .high_layer_speed = 8,
-                                     .deblock_mode = 1,
-                                     .allow_denoising = true};
+  flags.settings_by_resolution[0] = {/*.base_layer_speed =*/ 5,
+                                     /*.high_layer_speed =*/ 8,
+                                     /*.deblock_mode =*/ 1,
+                                     /*.allow_denoising =*/ true};
 
   // Use speed 7 for QCIF and above.
   // Set encoder Speed 7 for TL0, encoder Speed 8 for upper temporal layers, and
   // enable deblocking for all temporal layers.
-  flags.settings_by_resolution[352 * 288] = {.base_layer_speed = 7,
-                                             .high_layer_speed = 8,
-                                             .deblock_mode = 0,
-                                             .allow_denoising = true};
+  flags.settings_by_resolution[352 * 288] = {/*.base_layer_speed =*/ 7,
+                                             /*.high_layer_speed =*/ 8,
+                                             /*.deblock_mode =*/ 0,
+                                             /*.allow_denoising =*/ true};
 
   // For very high resolution (1080p and up), turn the speed all the way up
   // since this is very CPU intensive. Also disable denoising to save CPU, at
   // these resolutions denoising appear less effective and hopefully you also
   // have a less noisy video source at this point.
-  flags.settings_by_resolution[1920 * 1080] = {.base_layer_speed = 9,
-                                               .high_layer_speed = 9,
-                                               .deblock_mode = 0,
-                                               .allow_denoising = false};
+  flags.settings_by_resolution[1920 * 1080] = {/*.base_layer_speed =*/ 9,
+                                               /*.high_layer_speed =*/ 9,
+                                               /*.deblock_mode =*/ 0,
+                                               /*.allow_denoising =*/ false};
 
 #endif
   return flags;

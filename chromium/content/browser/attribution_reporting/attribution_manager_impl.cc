@@ -495,7 +495,7 @@ void AttributionManagerImpl::ProcessNextEvent(bool is_debug_cookie_set) {
   pending_events_.pop_front();
 
   absl::visit(
-      EventStorer{.manager = this, .is_debug_cookie_set = is_debug_cookie_set},
+      EventStorer{/*.manager =*/ this, /*.is_debug_cookie_set =*/ is_debug_cookie_set},
       std::move(event));
 }
 
@@ -808,8 +808,8 @@ void AttributionManagerImpl::AssembleAggregatableReport(
       aggregate_data->contributions, std::back_inserter(contributions),
       [](const auto& contribution) {
         return AggregationServicePayloadContents::HistogramContribution{
-            .bucket = contribution.key(),
-            .value = static_cast<int>(contribution.value())};
+            /*.bucket =*/ contribution.key(),
+            /*.value =*/ static_cast<int>(contribution.value())};
       });
 
   absl::optional<AggregatableReportRequest> request =

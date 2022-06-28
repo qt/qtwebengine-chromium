@@ -9,8 +9,8 @@ namespace content {
 // static
 const AttributionRandomizedResponseRates
     AttributionRandomizedResponseRates::kDefault = {
-        .navigation = .0024,
-        .event = .0000025,
+        /*.navigation =*/ .0024,
+        /*.event =*/ .0000025,
 };
 
 }  // namespace content

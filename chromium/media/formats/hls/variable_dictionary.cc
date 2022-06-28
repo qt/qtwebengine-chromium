@@ -52,10 +52,10 @@ GetNextVariableResult GetNextVariable(const SourceString input) {
     auto var_name = std::move(var_name_result).value();
 
     return GetNextVariableResult{
-        .head = head, .tail = std::make_pair(var_name, remaining_input)};
+        /*.head =*/ head, /*.tail =*/ std::make_pair(var_name, remaining_input)};
   }
 
-  return GetNextVariableResult{.head = input, .tail = absl::nullopt};
+  return GetNextVariableResult{/*.head =*/ input, /*.tail =*/ absl::nullopt};
 }
 
 }  // namespace

@@ -1502,7 +1502,7 @@ bool AttributionStorageSql::UpdateReportForSendFailure(
   };
 
   return absl::visit(
-      Visitor{.storage = this, .new_report_time = new_report_time}, report_id);
+      Visitor{/*.storage =*/ this, /*.new_report_time =*/ new_report_time}, report_id);
 }
 
 bool AttributionStorageSql::UpdateReportForSendFailure(

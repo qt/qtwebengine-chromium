@@ -316,8 +316,8 @@ void OriginTrialContext::AddTokenFromExternalScript(
     const Vector<scoped_refptr<SecurityOrigin>>& external_origins) {
   Vector<OriginInfo> script_origins;
   for (const scoped_refptr<SecurityOrigin>& origin : external_origins) {
-    OriginInfo origin_info = {.origin = origin,
-                              .is_secure = origin->IsPotentiallyTrustworthy()};
+    OriginInfo origin_info = {/*.origin =*/ origin,
+                              /*.is_secure =*/ origin->IsPotentiallyTrustworthy()};
     DVLOG(1) << "AddTokenFromExternalScript: " << origin->ToString()
              << ", secure = " << origin_info.is_secure;
     script_origins.push_back(origin_info);
@@ -759,7 +759,7 @@ bool OriginTrialContext::IsSecureContext() {
 }
 
 OriginTrialContext::OriginInfo OriginTrialContext::GetCurrentOriginInfo() {
-  return {.origin = GetSecurityOrigin(), .is_secure = IsSecureContext()};
+  return {/*.origin =*/ GetSecurityOrigin(), /*.is_secure =*/ IsSecureContext()};
 }
 
 }  // namespace blink

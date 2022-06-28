@@ -40,8 +40,8 @@ AttributionAggregatableTriggerData::FromMojo(
   if (!not_filters.has_value())
     return absl::nullopt;
 
-  AttributionAggregatableKey key{.high_bits = mojo->key->high_bits,
-                                 .low_bits = mojo->key->low_bits};
+  AttributionAggregatableKey key{/*.high_bits =*/ mojo->key->high_bits,
+                                 /*.low_bits =*/ mojo->key->low_bits};
   return AttributionAggregatableTriggerData(
       std::move(key),
       base::flat_set<std::string>(

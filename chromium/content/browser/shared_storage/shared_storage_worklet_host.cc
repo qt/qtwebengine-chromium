@@ -45,10 +45,10 @@ SharedStorageURNMappingResult CalculateSharedStorageURNMappingResult(
           : 0.0;
 
   return SharedStorageURNMappingResult{
-      .mapped_url = mapped_url,
-      .metadata =
-          SharedStorageBudgetMetadata{.origin = shared_storage_origin,
-                                      .budget_to_charge = budget_to_charge}};
+      /*.mapped_url =*/ mapped_url,
+      /*.metadata =*/
+          SharedStorageBudgetMetadata{/*.origin =*/ shared_storage_origin,
+                                      /*.budget_to_charge =*/ budget_to_charge}};
 }
 
 }  // namespace

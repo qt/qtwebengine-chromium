@@ -135,24 +135,37 @@
 // depth (which are not present for all texImage2D functions).
 #define POPULATE_TEX_IMAGE_2D_PARAMS(params) \
   params = {                                 \
-      .function_id = kTexImage2D,            \
-      .target = target,                      \
-      .level = level,                        \
-      .internalformat = internalformat,      \
-      .format = format,                      \
-      .type = type,                          \
+      /*.function_id =*/ kTexImage2D,        \
+      /*.target =*/ target,                  \
+      /*.level =*/ level,                    \
+      /*.internalformat =*/ internalformat,  \
+      /*.xoffset =*/ 0,                      \
+      /*.yoffset =*/ 0,                      \
+      /*.zoffset =*/ 0,                      \
+      /*.width =*/ absl::nullopt,            \
+      /*.height =*/ absl::nullopt,           \
+      /*.depth =*/ absl::nullopt,            \
+      /*.border =*/ 0,                       \
+      /*.format =*/ format,                  \
+      /*.type =*/ type,                      \
   };                                         \
   GetCurrentUnpackState(params)
 
 #define POPULATE_TEX_SUB_IMAGE_2D_PARAMS(params) \
   params = {                                     \
-      .function_id = kTexSubImage2D,             \
-      .target = target,                          \
-      .level = level,                            \
-      .xoffset = xoffset,                        \
-      .yoffset = yoffset,                        \
-      .format = format,                          \
-      .type = type,                              \
+      /*.function_id =*/ kTexSubImage2D,         \
+      /*.target =*/ target,                      \
+      /*.level =*/ level,                        \
+      /*.internalformat =*/ 0,                   \
+      /*.xoffset =*/ xoffset,                    \
+      /*.yoffset =*/ yoffset,                    \
+      /*.zoffset =*/ 0,                          \
+      /*.width =*/ absl::nullopt,                \
+      /*.height =*/ absl::nullopt,               \
+      /*.depth =*/ absl::nullopt,                \
+      /*.border =*/ 0,                           \
+      /*.format =*/ format,                      \
+      /*.type =*/ type,                          \
   };                                             \
   GetCurrentUnpackState(params)
 

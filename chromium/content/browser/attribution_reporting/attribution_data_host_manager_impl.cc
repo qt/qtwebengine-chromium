@@ -172,9 +172,11 @@ void AttributionDataHostManagerImpl::RegisterDataHost(
     return;
 
   receivers_.Add(this, std::move(data_host),
-                 FrozenContext{.context_origin = std::move(context_origin),
-                               .source_type = AttributionSourceType::kEvent,
-                               .register_time = base::TimeTicks::Now()});
+                 FrozenContext{/*.context_origin =*/ std::move(context_origin),
+                               /*.source_type =*/ AttributionSourceType::kEvent,
+                               /*.destination =*/ absl::nullopt,
+                               /*.num_data_registered =*/ 0,
+                               /*.register_time =*/ base::TimeTicks::Now()});
   data_hosts_in_source_mode_++;
 }
 
@@ -183,8 +185,8 @@ void AttributionDataHostManagerImpl::RegisterNavigationDataHost(
     const blink::AttributionSrcToken& attribution_src_token) {
   navigation_data_host_map_.emplace(
       attribution_src_token,
-      NavigationDataHost{.data_host = std::move(data_host),
-                         .register_time = base::TimeTicks::Now()});
+      NavigationDataHost{/*.data_host =*/ std::move(data_host),
+                         /*.register_time =*/ base::TimeTicks::Now()});
   data_hosts_in_source_mode_++;
 
   RecordNavigationDataHostStatus(NavigationDataHostStatus::kRegistered);
@@ -209,10 +211,11 @@ void AttributionDataHostManagerImpl::NotifyNavigationForDataHost(
 
   receivers_.Add(
       this, std::move(it->second.data_host),
-      FrozenContext{.context_origin = source_origin,
-                    .source_type = AttributionSourceType::kNavigation,
-                    .destination = destination_origin,
-                    .register_time = it->second.register_time});
+      FrozenContext{/*.context_origin =*/ source_origin,
+                    /*.source_type =*/ AttributionSourceType::kNavigation,
+                    /*.destination =*/ destination_origin,
+                    /*.num_data_registered=*/ 0,
+                    /*.register_time =*/ it->second.register_time});
 
   navigation_data_host_map_.erase(it);
 
@@ -414,8 +417,8 @@ void AttributionDataHostManagerImpl::TriggerDataAvailable(
   const base::TimeDelta delay = kTriggerDelay.Get();
 
   delayed_triggers_.emplace_back(DelayedTrigger{
-      .delay_until = base::TimeTicks::Now() + delay,
-      .trigger = std::move(trigger),
+      /*.delay_until =*/ base::TimeTicks::Now() + delay,
+      /*.trigger =*/ std::move(trigger),
   });
   RecordTriggerQueueEvent(TriggerQueueEvent::kEnqueued);
 

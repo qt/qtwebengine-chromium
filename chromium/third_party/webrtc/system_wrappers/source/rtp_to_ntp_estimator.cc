@@ -69,7 +69,7 @@ void RtpToNtpEstimator::UpdateParameters() {
 
   double k = covariance_xy / variance_x;
   double b = avg_y - k * avg_x;
-  params_ = {{.slope = k, .offset = b}};
+  params_ = {{/*.slope =*/ k, /*.offset =*/ b}};
 }
 
 RtpToNtpEstimator::UpdateResult RtpToNtpEstimator::UpdateMeasurements(
@@ -78,7 +78,7 @@ RtpToNtpEstimator::UpdateResult RtpToNtpEstimator::UpdateMeasurements(
   int64_t unwrapped_rtp_timestamp = unwrapper_.Unwrap(rtp_timestamp);
 
   RtcpMeasurement new_measurement = {
-      .ntp_time = ntp, .unwrapped_rtp_timestamp = unwrapped_rtp_timestamp};
+      /*.ntp_time =*/ ntp, /*.unwrapped_rtp_timestamp =*/ unwrapped_rtp_timestamp};
 
   for (const RtcpMeasurement& measurement : measurements_) {
     // Use || since two equal timestamps will result in zero frequency.
