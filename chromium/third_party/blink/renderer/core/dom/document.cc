@@ -4200,6 +4200,14 @@ void Document::UpdateBaseURL() {
 }
 
 KURL Document::FallbackBaseURL() const {
+  const bool is_parent_cross_origin =
+      GetFrame() && GetFrame()->IsInFencedFrameTree() && GetFrame()->IsCrossOriginToParentFrame();
+  // TODO(https://crbug.com/751329, https://crbug.com/1336904): Referring to
+  // ParentDocument() is not correct.
+  // We avoid using it when it is cross-origin, to avoid leaking cross-origin.
+  const Document* same_origin_parent =
+      is_parent_cross_origin ? nullptr : ParentDocument();
+
   if (IsSrcdocDocument()) {
     // TODO(tkent): Referring to ParentDocument() is not correct.  See
     // crbug.com/751329.
@@ -4210,8 +4218,8 @@ KURL Document::FallbackBaseURL() const {
       return execution_context_->BaseURL();
     // TODO(tkent): Referring to ParentDocument() is not correct.  See
     // crbug.com/751329.
-    if (Document* parent = ParentDocument())
-      return parent->BaseURL();
+    if (same_origin_parent)
+      return same_origin_parent->BaseURL();
   }
   return urlForBinding();
 }
