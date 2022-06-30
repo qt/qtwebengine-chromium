@@ -241,7 +241,7 @@ ResultCode TargetProcess::TransferVariable(const char* name,
 
   SIZE_T written;
   if (!::WriteProcessMemory(sandbox_process_info_.process_handle(), child_var,
-                            address, size, &written))
+                            address, size, &written)) {
     return SBOX_ERROR_CANNOT_WRITE_VARIABLE_VALUE;
   }
   if (written != size)
