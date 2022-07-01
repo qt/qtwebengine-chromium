@@ -125,8 +125,7 @@ std::unique_ptr<UserScript> CreateUserScript(
     if (match_origin_as_fallback == MatchOriginAsFallbackBehavior::kAlways) {
       for (const auto& pattern : result->url_patterns()) {
         if (pattern.path() != "/*") {
-          *error =
-              base::ASCIIToUTF16(errors::kMatchOriginAsFallbackCantHavePaths);
+          *error = errors::kMatchOriginAsFallbackCantHavePaths;
           return nullptr;
         }
       }

@@ -437,7 +437,7 @@ extern const char kManifestParseError[];
 extern const char kManifestUnreadable[];
 extern const char kManifestV2IsDeprecatedWarning[];
 extern const char kManifestVersionTooHighWarning[];
-extern const char kMatchOriginAsFallbackCantHavePaths[];
+extern const char16_t kMatchOriginAsFallbackCantHavePaths[];
 extern const char kMatchOriginAsFallbackRestrictedToMV3[];
 extern const char kMissingFile[];
 extern const char16_t kMultipleOverrides[];
