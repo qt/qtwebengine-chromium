@@ -96,10 +96,12 @@ class ExtensionRegistrar : public ProcessManagerObserver {
 
   ~ExtensionRegistrar() override;
 
+#if !defined(TOOLKIT_QT)
   // Adds the extension to the ExtensionRegistry. The extension will be added to
   // the enabled, disabled, blocklisted or blocked set. If the extension is
   // added as enabled, it will be activated.
   void AddExtension(scoped_refptr<const Extension> extension);
+#endif
 
   // Removes |extension| from the extension system by deactivating it if it is
   // enabled and removing references to it from the ExtensionRegistry's
@@ -149,10 +151,12 @@ class ExtensionRegistrar : public ProcessManagerObserver {
   void OnUnpackedExtensionReloadFailed(const base::FilePath& path);
 
  private:
+#if !defined(TOOLKIT_QT)
   // Adds the extension to the appropriate registry set, based on ExtensionPrefs
   // and our |delegate_|. Activates the extension if it's added to the enabled
   // set.
   void AddNewExtension(scoped_refptr<const Extension> extension);
+#endif
 
   // Activates |extension| by marking it enabled and notifying other components
   // about it.

@@ -65,6 +65,7 @@ ExtensionWebContentsObserver::CreateExtensionFrameHost(
 
 void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
     sessions::SessionTabHelper* helper) {
+#if !defined(TOOLKIT_QT)
   if (!window_id_subscription_) {
     // We use an unretained receiver here: the callback is inside the
     // subscription, which is a member of |this|, so it can't be run after the
@@ -73,6 +74,7 @@ void ExtensionWebContentsObserver::ListenToWindowIdChangesFrom(
         base::BindRepeating(&ExtensionWebContentsObserver::OnWindowIdChanged,
                             base::Unretained(this)));
   }
+#endif //  !defined(TOOLKIT_QT)
 }
 
 void ExtensionWebContentsObserver::Initialize() {
@@ -93,12 +95,14 @@ void ExtensionWebContentsObserver::Initialize() {
       },
       this));
 
+#if !defined(TOOLKIT_QT)
   // It would be ideal if SessionTabHelper was created before this object,
   // because then we could start observing it here instead of needing to be
   // externally notified when it is created, but it isn't. If that ordering ever
   // changes, this code can be restructured and ListenToWindowIdChangesFrom()
   // can become private.
   DCHECK(!sessions::SessionTabHelper::FromWebContents(web_contents()));
+#endif //  !defined(TOOLKIT_QT)
 }
 
 ExtensionWebContentsObserver::ExtensionWebContentsObserver(

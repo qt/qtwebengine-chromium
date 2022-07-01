@@ -1561,6 +1561,7 @@ ExtensionPrefs::GetInstalledExtensionsInfo(
   return extensions_info;
 }
 
+#if !defined(TOOLKIT_QT)
 void ExtensionPrefs::SetDelayedInstallInfo(
     const Extension* extension,
     Extension::State initial_state,
@@ -1636,6 +1637,7 @@ bool ExtensionPrefs::FinishDelayedInstallInfo(
                            suggested_page_ordinal, extension_dict.get());
   return true;
 }
+#endif  // !defined(TOOLKIT_QT)
 
 std::unique_ptr<ExtensionInfo> ExtensionPrefs::GetDelayedInstallInfo(
     const std::string& extension_id) const {

@@ -556,6 +556,7 @@ class ExtensionPrefs : public KeyedService {
       const std::string& extension_id,
       bool include_component_extensions = false) const;
 
+#if !defined(TOOLKIT_QT)
   // We've downloaded an updated .crx file for the extension, but are waiting
   // to install it.
   //
@@ -575,6 +576,7 @@ class ExtensionPrefs : public KeyedService {
 
   // Update the prefs to finish the update for an extension.
   bool FinishDelayedInstallInfo(const std::string& extension_id);
+#endif  // !defined(TOOLKIT_QT)
 
   // Returns the ExtensionInfo from the prefs for delayed install information
   // for |extension_id|, if we have any. Otherwise returns NULL.

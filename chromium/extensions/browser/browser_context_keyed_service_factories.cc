@@ -13,8 +13,8 @@
 #include "extensions/browser/api/bluetooth/bluetooth_api.h"
 #include "extensions/browser/api/bluetooth/bluetooth_private_api.h"
 #include "extensions/browser/api/bluetooth_socket/bluetooth_socket_event_dispatcher.h"
-#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/content_settings/content_settings_service.h"
+#endif // !defined(TOOLKIT_QT)
 #include "extensions/browser/api/declarative_net_request/rules_monitor_service.h"
 #if !defined(TOOLKIT_QT)
 #include "extensions/browser/api/feedback_private/feedback_private_api.h"
@@ -82,7 +82,9 @@ void EnsureBrowserContextKeyedServiceFactoriesBuilt() {
   api::TCPServerSocketEventDispatcher::GetFactoryInstance();
   api::TCPSocketEventDispatcher::GetFactoryInstance();
   api::UDPSocketEventDispatcher::GetFactoryInstance();
+#if !defined(TOOLKIT_QT)
   ContentSettingsService::GetFactoryInstance();
+#endif // !defined(TOOLKIT_QT)
   declarative_net_request::RulesMonitorService::GetFactoryInstance();
   EnsureExtensionURLLoaderFactoryShutdownNotifierFactoryBuilt();
   EventRouterFactory::GetInstance();

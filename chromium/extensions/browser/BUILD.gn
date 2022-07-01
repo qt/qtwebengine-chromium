@@ -665,8 +665,16 @@ jumbo_source_set("browser_sources") {
 
   if (use_qt) {
     sources -= [
+      "api/content_settings/content_settings_custom_extension_provider.cc",
+      "api/content_settings/content_settings_custom_extension_provider.h",
       "api/content_settings/content_settings_helpers.cc",
       "api/content_settings/content_settings_helpers.h",
+      "api/content_settings/content_settings_service.cc",
+      "api/content_settings/content_settings_service.h",
+      "api/content_settings/content_settings_store.cc",
+      "api/content_settings/content_settings_store.h",
+      "null_app_sorting.cc",
+      "null_app_sorting.h",
       "sandboxed_unpacker.cc",
       "sandboxed_unpacker.h",
       "uninstall_reason.h",
