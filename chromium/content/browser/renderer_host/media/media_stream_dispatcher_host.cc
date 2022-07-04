@@ -144,6 +144,9 @@ WrapApplySubCaptureTarget(
 bool AllowedStreamTypeCombination(
     blink::mojom::MediaStreamType audio_stream_type,
     blink::mojom::MediaStreamType video_stream_type) {
+#ifdef TOOLKIT_QT
+  return true; // the request is allowed, we will reject it normally later.
+#else
   switch (audio_stream_type) {
     // TODO(crbug.com/40211480): Disallow video_stream_type == NO_SERVICE when
     // {video=false} is no longer allowed.
@@ -176,6 +179,7 @@ bool AllowedStreamTypeCombination(
       return false;
   }
   return false;
+#endif
 }
 
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
