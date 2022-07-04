@@ -6,8 +6,6 @@ import("//build/config/chromeos/ui_mode.gni")
 import("//chrome/browser/buildflags.gni")
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions)
-
 group("web_app_group") {
   public_configs = [ "//build/config/compiler:wexit_time_destructors" ]
 }
@@ -562,7 +560,6 @@ source_set("web_applications_unit_tests") {
     "//chrome/app/theme:theme_resources",
     "//chrome/browser",
     "//chrome/browser:browser_process",
-    "//chrome/browser/extensions:test_support",
     "//chrome/browser/profiles:profile",
     "//chrome/common",
     "//chrome/test:test_support",
@@ -595,6 +592,7 @@ source_set("web_applications_unit_tests") {
 
   if (enable_extensions) {
     deps += [
+      "//chrome/browser/extensions:test_support",
       "//chrome/browser/web_applications/extensions:extensions",
     ]
   }
