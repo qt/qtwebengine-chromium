@@ -665,8 +665,8 @@ void URLRequestHttpJob::AddCookieHeaderAndStart() {
       "Cookie.FirstPartySetsContextType.HTTP.Read",
       first_party_set_metadata_.first_party_sets_context_type());
 
-  cookie_store->GetCookieListWithOptionsAsync(
-      request_->url(), options,
+  static_cast<CookieMonster*>(cookie_store)->GetCookieListWithOptionsAsyncAndFiltered(
+      request_->url(), request_->site_for_cookies(), options,
       CookiePartitionKeyCollection::FromOptional(cookie_partition_key_.value()),
       base::BindOnce(&URLRequestHttpJob::SetCookieHeaderAndStart,
                      weak_factory_.GetWeakPtr(), options));

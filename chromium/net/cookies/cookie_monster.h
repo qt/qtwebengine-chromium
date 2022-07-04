@@ -215,7 +215,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const SiteForCookies& site_for_cookies,
       std::unique_ptr<CanonicalCookie> cookie,
       const CookieOptions& options,
-      SetCookiesCallback callback);
+      SetCookiesCallback callback,
+      absl::optional<CookieAccessResult> cookie_access_result);
   void GetCookieListWithOptionsAsyncAndFiltered(
       const GURL& url,
       const SiteForCookies& site_for_cookies,
@@ -725,6 +726,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
       const GURL& url,
       const CookieOptions& options,
       SetCookiesCallback callback,
+      absl::optional<CookieAccessResult> cookie_access_result,
       bool allowed);
 
   void GetCookieListWithOptionsAsyncAndFiltered_helper(

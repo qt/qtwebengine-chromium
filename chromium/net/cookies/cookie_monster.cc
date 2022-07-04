@@ -420,14 +420,17 @@ void CookieMonster::SetCanonicalCookieAsyncAndFiltered(
     const SiteForCookies& site_for_cookies,
     std::unique_ptr<CanonicalCookie> cookie,
     const CookieOptions& options,
-    SetCookiesCallback callback) {
+    SetCookiesCallback callback,
+    absl::optional<CookieAccessResult> cookie_access_result) {
   if (cookie_access_delegate())
     return cookie_access_delegate()->AllowedByFilter(url, site_for_cookies,
         base::BindOnce(&CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper,
                        base::Unretained(this), std::move(cookie), url,
-                       options, std::move(callback)));
+                       options, std::move(callback), std::move(cookie_access_result)));
   else
-    SetCanonicalCookieAsync(std::move(cookie), url, options, std::move(callback));
+    SetCanonicalCookieAsync(std::move(cookie), url, options,
+                            std::move(callback),
+                            std::move(cookie_access_result));
 }
 
 void CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper(
@@ -435,9 +438,12 @@ void CookieMonster::SetCanonicalCookieAsyncAndFiltered_helper(
     const GURL& url,
     const CookieOptions& options,
     SetCookiesCallback callback,
+    absl::optional<CookieAccessResult> cookie_access_result,
     bool allowed) {
   if (allowed)
-    return SetCanonicalCookieAsync(std::move(cookie), url, options, std::move(callback));
+    return SetCanonicalCookieAsync(std::move(cookie), url, options,
+                                   std::move(callback),
+                                   std::move(cookie_access_result));
   else
     std::move(callback).Run(
         CookieAccessResult(
