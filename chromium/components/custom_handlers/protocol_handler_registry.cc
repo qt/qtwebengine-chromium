@@ -179,7 +179,6 @@ void ProtocolHandlerRegistry::InstallDefaultsForChromeOS() {
 }
 
 void ProtocolHandlerRegistry::InitProtocolSettings() {
-#if !defined(TOOLKIT_QT)
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Any further default additions to the table will get rejected from now on.
@@ -191,6 +190,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
     return;
   }
 
+#if !defined(TOOLKIT_QT)
   if (prefs_->HasPrefPath(prefs::kCustomHandlersEnabled)) {
     if (prefs_->GetBoolean(prefs::kCustomHandlersEnabled)) {
       Enable();
@@ -540,10 +540,10 @@ void ProtocolHandlerRegistry::SetDefault(const ProtocolHandler& handler) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   const std::string& protocol = handler.protocol();
+#if !defined(TOOLKIT_QT)
   ProtocolHandlerMap::const_iterator p = default_handlers_.find(protocol);
   // If we're not loading, and we are setting a default for a new protocol,
   // register with the OS.
-#if !defined(TOOLKIT_QT)
   if (!is_loading_ && p == default_handlers_.end())
     delegate_->RegisterWithOSAsDefaultClient(
         protocol, GetDefaultWebClientCallback(protocol));
