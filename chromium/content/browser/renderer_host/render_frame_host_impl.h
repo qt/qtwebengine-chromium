@@ -3342,7 +3342,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
 
   TraceProto::LifecycleState LifecycleStateToProto() const;
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && !defined(TOOLKIT_QT)
   void RunScreenAIAnnotator();
 #endif
 
@@ -4194,7 +4194,7 @@ class CONTENT_EXPORT RenderFrameHostImpl
   BackForwardCacheDisablingFeaturesCallback
       back_forward_cache_disabling_features_callback_for_testing_;
 
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && !defined(TOOLKIT_QT)
   // Manages the snapshot processing by Screen AI, if enabled.
   std::unique_ptr<AXScreenAIAnnotator> ax_screen_ai_annotator_;
 #endif
