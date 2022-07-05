@@ -175,8 +175,6 @@ generate_grd("build_grd") {
   if (optimize_webui) {
     deps += [ ":build_internal_plugin" ]
     manifest_files += [ "$target_gen_dir/$build_internal_plugin_manifest" ]
-  } else {
-    deps += [ ":preprocess_internal_plugin" ]
   }
 
   grd_prefix = "pdf"
