@@ -599,7 +599,7 @@ class CORE_EXPORT NGFragmentItem final {
   mutable wtf_size_t delta_to_next_for_same_layout_object_ = 0;
 
   // Note: We should not add |bidi_level_| because it is used only for layout.
-  const unsigned const_traced_type_ : 2;  // TracedType
+  unsigned const_traced_type_ : 2;  // TracedType
   unsigned type_ : 3;                     // ItemType
   unsigned sub_type_ : 3;                 // NGTextType or NGLineBoxType
   unsigned style_variant_ : 2;            // NGStyleVariant
