@@ -205,12 +205,12 @@ ResultCode TargetProcess::Create(
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_CANNOT_FIND_BASE_ADDRESS;
   }
-
+#if !defined(SANDBOX_EXPORTS)
   if (base_address_ != CURRENT_MODULE()) {
     ::TerminateProcess(process_info.process_handle(), 0);
     return SBOX_ERROR_INVALID_TARGET_BASE_ADDRESS;
   }
-
+#endif
   sandbox_process_info_.Set(process_info.Take());
   return SBOX_ALL_OK;
 }
@@ -257,7 +257,10 @@ ResultCode TargetProcess::Init(Dispatcher* ipc_dispatcher,
                                uint32_t shared_IPC_size,
                                uint32_t shared_policy_size,
                                DWORD* win_error) {
-  ResultCode ret = VerifySentinels();
+  ResultCode ret = SBOX_ALL_OK;
+#if !defined(SANDBOX_EXPORTS)
+  ret = VerifySentinels();
+#endif
   if (ret != SBOX_ALL_OK)
     return ret;
 
