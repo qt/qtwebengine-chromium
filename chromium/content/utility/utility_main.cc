@@ -165,7 +165,9 @@ int UtilityMain(MainFunctionParams parameters) {
 #endif
       break;
     case sandbox::mojom::Sandbox::kScreenAI:
+#if !defined(TOOLKIT_QT)
       pre_sandbox_hook = base::BindOnce(&screen_ai::ScreenAIPreSandboxHook);
+#endif
       break;
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS_ASH)
     case sandbox::mojom::Sandbox::kHardwareVideoDecoding:
