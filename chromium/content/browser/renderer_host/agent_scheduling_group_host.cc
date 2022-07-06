@@ -31,14 +31,6 @@ namespace {
 using ::IPC::ChannelMojo;
 using ::IPC::ChannelProxy;
 using ::IPC::Listener;
-using ::mojo::AssociatedReceiver;
-using ::mojo::AssociatedRemote;
-using ::mojo::PendingAssociatedReceiver;
-using ::mojo::PendingAssociatedRemote;
-using ::mojo::PendingReceiver;
-using ::mojo::PendingRemote;
-using ::mojo::Receiver;
-using ::mojo::Remote;
 
 static constexpr char kAgentSchedulingGroupHostDataKey[] =
     "AgentSchedulingGroupHostUserDataKey";
@@ -467,7 +459,7 @@ void AgentSchedulingGroupHost::SetUpIPC() {
     auto io_task_runner = GetIOThreadTaskRunner({});
 
     // Empty interface endpoint to pass pipes more easily.
-    PendingRemote<IPC::mojom::ChannelBootstrap> bootstrap;
+    mojo::PendingRemote<IPC::mojom::ChannelBootstrap> bootstrap;
 
     process_.GetRendererInterface()->CreateAgentSchedulingGroup(
         bootstrap.InitWithNewPipeAndPassReceiver(),

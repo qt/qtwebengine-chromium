@@ -809,7 +809,7 @@ EmbeddedWorkerInstance::CreateFactoryBundle(
   ContentBrowserClient::NonNetworkURLLoaderFactoryMap non_network_factories;
   non_network_factories[url::kDataScheme] = DataURLLoaderFactory::Create();
   if (base::FeatureList::IsEnabled(
-          features::kEnableServiceWorkersForChromeUntrusted)) {
+          ::features::kEnableServiceWorkersForChromeUntrusted)) {
     if (origin.scheme() == content::kChromeUIUntrustedScheme) {
       non_network_factories.emplace(
           content::kChromeUIUntrustedScheme,
