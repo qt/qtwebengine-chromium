@@ -1286,6 +1286,10 @@ bool RenderWidgetHostViewMac::IsUnadjustedMouseMovementSupported() {
   return false;
 }
 
+bool RenderWidgetHostViewMac::CanBeMouseLocked() {
+  return HasFocus() && is_window_key_;
+}
+
 bool RenderWidgetHostViewMac::LockKeyboard(
     absl::optional<base::flat_set<ui::DomCode>> dom_codes) {
   absl::optional<std::vector<uint32_t>> uint_dom_codes;
