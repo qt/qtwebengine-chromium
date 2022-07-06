@@ -17,7 +17,7 @@ class GL_EXPORT GLSurfaceWGL : public GLSurface {
   GLSurfaceWGL();
 
   // Implement GLSurface.
-  void* GetDisplay() override;
+  GLDisplay* GetGLDisplay() override;
 
   static bool InitializeOneOff();
   static bool InitializeExtensionSettingsOneOff();
