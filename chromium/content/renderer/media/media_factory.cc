@@ -116,7 +116,7 @@
 #include "media/remoting/remoting_renderer_factory.h"  // nogncheck
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_WEB_SPEECH)
 #include "content/renderer/media/win/dcomp_texture_wrapper_impl.h"
 #include "media/base/win/mf_feature_checks.h"
 #include "media/cdm/win/media_foundation_cdm.h"
@@ -668,7 +668,7 @@ MediaFactory::CreateRendererFactorySelector(
       RendererType::kCourier, std::move(courier_factory), is_remoting_cb);
 #endif
 
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_WEB_SPEECH)
   bool use_mf_for_clear = media::SupportMediaFoundationClearPlayback();
   // Only use MediaFoundationRenderer when MediaFoundationCdm is available or
   // MediaFoundation for Clear is supported.
