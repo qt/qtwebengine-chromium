@@ -88,8 +88,8 @@ if (is_reven) {
 
 # Prefer using this (and excluding specific platforms) when a resource applies
 # to (most) desktop platforms.
-assert(toolkit_views == (is_chromeos_ash || is_chromeos_lacros || is_fuchsia ||
-                         is_linux || is_mac || is_win))
+#assert(toolkit_views == (is_chromeos_ash || is_chromeos_lacros || is_fuchsia ||
+#                         is_linux || is_mac || is_win))
 if (toolkit_views) {
   grit_defines += [
     "-D",
