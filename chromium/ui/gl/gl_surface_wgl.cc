@@ -57,7 +57,7 @@ LRESULT CALLBACK IntermediateWindowProc(HWND window,
   }
 }
 
-class DisplayWGL {
+class DisplayWGL : public GLDisplay {
  public:
   DisplayWGL()
       : module_handle_(0),
@@ -156,6 +156,7 @@ class DisplayWGL {
   ATOM window_class() const { return window_class_; }
   HDC device_context() const { return device_context_; }
   int pixel_format() const { return pixel_format_; }
+  void* GetDisplay() override { return device_context(); }
 
  private:
   HINSTANCE module_handle_;
@@ -164,7 +165,7 @@ class DisplayWGL {
   HDC device_context_;
   int pixel_format_;
 };
-DisplayWGL* g_wgl_display;
+DisplayWGL* g_wgl_display = NULL;
 }  // namespace
 
 // static
@@ -176,8 +177,8 @@ GLSurfaceWGL::GLSurfaceWGL() {
 GLSurfaceWGL::~GLSurfaceWGL() {
 }
 
-void* GLSurfaceWGL::GetDisplay() {
-  return GetDisplayDC();
+GLDisplay* GLSurfaceWGL::GetGLDisplay() {
+  return g_wgl_display;
 }
 
 // static
