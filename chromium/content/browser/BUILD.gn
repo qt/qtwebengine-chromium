@@ -2619,8 +2619,6 @@ jumbo_source_set("browser") {
         "media/capture/io_surface_capture_device_base_mac.cc",
         "media/capture/io_surface_capture_device_base_mac.h",
         "media/capture/mouse_cursor_overlay_controller_mac.mm",
-        "media/capture/screen_capture_kit_device_mac.h",
-        "media/capture/screen_capture_kit_device_mac.mm",
         "media/capture/views_widget_video_capture_device_mac.cc",
         "media/capture/views_widget_video_capture_device_mac.h",
       ]
@@ -2628,8 +2626,14 @@ jumbo_source_set("browser") {
         "//sandbox/mac:seatbelt",
         "//sandbox/mac:seatbelt_extension",
       ]
-      frameworks += [ "CoreMedia.framework" ]
-      weak_frameworks = [ "ScreenCaptureKit.framework" ]
+      if (!use_qt)  { # Actually should check if macOS sdk 12.3 is available
+        sources += [
+          "media/capture/screen_capture_kit_device_mac.h",
+          "media/capture/screen_capture_kit_device_mac.mm",
+        ]
+        frameworks += [ "CoreMedia.framework" ]
+        weak_frameworks = [ "ScreenCaptureKit.framework" ]
+      }
     }
     if (is_chromeos_lacros) {
       sources += [
