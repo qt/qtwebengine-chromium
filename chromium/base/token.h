@@ -41,17 +41,17 @@ class BASE_EXPORT Token {
   static Token CreateRandom();
 
   // The high and low 64 bits of this Token.
-  constexpr uint64_t high() const { return words_[0]; }
-  constexpr uint64_t low() const { return words_[1]; }
+  constexpr uint64_t high() const { return words_.w0; }
+  constexpr uint64_t low() const { return words_.w1; }
 
-  constexpr bool is_zero() const { return words_[0] == 0 && words_[1] == 0; }
+  constexpr bool is_zero() const { return words_.w0 == 0 && words_.w1 == 0; }
 
   span<const uint8_t, 16> AsBytes() const {
-    return as_bytes(make_span(words_));
+    return as_bytes(make_span(words_.arr));
   }
 
   constexpr bool operator==(const Token& other) const {
-    return words_[0] == other.words_[0] && words_[1] == other.words_[1];
+    return words_.w0 == other.words_.w0 && words_.w1 == other.words_.w1;
   }
 
   constexpr bool operator!=(const Token& other) const {
@@ -59,8 +59,8 @@ class BASE_EXPORT Token {
   }
 
   constexpr bool operator<(const Token& other) const {
-    return std::tie(words_[0], words_[1]) <
-           std::tie(other.words_[0], other.words_[1]);
+    return std::tie(words_.w0, words_.w1) <
+           std::tie(other.words_.w0, other.words_.w1);
   }
 
   // Generates a string representation of this Token useful for e.g. logging.
@@ -70,8 +70,13 @@ class BASE_EXPORT Token {
   // Note: Two uint64_t are used instead of uint8_t[16] in order to have a
   // simpler implementation, paricularly for |ToString()|, |is_zero()|, and
   // constexpr value construction.
-
-  uint64_t words_[2] = {0, 0};
+  union {
+   uint64_t arr[2];
+   struct {
+     uint64_t w0;
+     uint64_t w1;
+   };
+  } words_ = {{0,0}};
 };
 
 // For use in std::unordered_map.
