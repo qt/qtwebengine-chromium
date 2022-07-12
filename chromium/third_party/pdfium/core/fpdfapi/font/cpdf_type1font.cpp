@@ -209,7 +209,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
             GetAdobeCharName(m_BaseEncoding, m_CharNames, charcode);
         if (name) {
           m_Encoding.SetUnicode(charcode, UnicodeFromAdobeName(name));
-          m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), name);
+          m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), (FT_String*)name);
           SetExtGID(name, charcode);
         } else {
           m_GlyphIndex[charcode] =
@@ -237,10 +237,10 @@ void CPDF_Type1Font::LoadGlyphMap() {
 
       m_Encoding.SetUnicode(charcode, UnicodeFromAdobeName(name));
       const char* pStrUnicode = GlyphNameRemap(name);
-      if (pStrUnicode && FT_Get_Name_Index(m_Font.GetFaceRec(), name) == 0) {
+      if (pStrUnicode && FT_Get_Name_Index(m_Font.GetFaceRec(), (FT_String*)name) == 0) {
         name = pStrUnicode;
       }
-      m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), name);
+      m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), (FT_String*)name);
       SetExtGID(name, charcode);
       if (m_GlyphIndex[charcode] != 0)
         continue;
@@ -266,7 +266,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
                                           static_cast<uint32_t>(charcode));
       if (name) {
         m_Encoding.SetUnicode(charcode, UnicodeFromAdobeName(name));
-        m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), name);
+        m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), (FT_String*)name);
       } else {
         m_GlyphIndex[charcode] = FT_Get_Char_Index(
             m_Font.GetFaceRec(), static_cast<uint32_t>(charcode));
@@ -297,7 +297,7 @@ void CPDF_Type1Font::LoadGlyphMap() {
       continue;
 
     m_Encoding.SetUnicode(charcode, UnicodeFromAdobeName(name));
-    m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), name);
+    m_GlyphIndex[charcode] = FT_Get_Name_Index(m_Font.GetFaceRec(), (FT_String*)name);
     if (m_GlyphIndex[charcode] != 0)
       continue;
 
