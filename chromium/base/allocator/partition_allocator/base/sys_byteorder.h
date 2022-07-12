@@ -31,14 +31,6 @@ inline uint16_t ByteSwap(uint16_t x) {
 #endif
 }
 
-inline uint32_t ByteSwap(uint32_t x) {
-#if defined(COMPILER_MSVC) && !defined(__clang__)
-  return _byteswap_ulong(x);
-#else
-  return __builtin_bswap32(x);
-#endif
-}
-
 #if defined(COMPILER_MSVC) && !defined(__clang__)
 // https://developercommunity.visualstudio.com/t/constexpr-byte-swapping-optimization/983963
 template<class T, std::size_t... N>constexpr T bswap_impl(T i, std::index_sequence<N...>){
@@ -48,6 +40,14 @@ template<class T,class U =typename std::make_unsigned<T>::type>constexpr U bswap
   return bswap_impl<U>(i, std::make_index_sequence<sizeof(T)>{});
 }
 #endif
+
+inline constexpr uint32_t ByteSwap(uint32_t x) {
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+  return bswap(x);
+#else
+  return __builtin_bswap32(x);
+#endif
+}
 
 inline constexpr uint64_t ByteSwap(uint64_t x) {
   // Per build/build_config.h, clang masquerades as MSVC on Windows. If we are
