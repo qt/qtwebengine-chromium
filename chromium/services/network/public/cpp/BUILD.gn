@@ -333,7 +333,6 @@ jumbo_component("cpp_base") {
   ]
   jumbo_excluded_sources = [
     "network_ipc_param_traits.cc",
-    "p2p_param_traits.cc",
     "url_request_mojom_traits.cc"
   ]
 
@@ -369,6 +368,7 @@ jumbo_component("cpp_base") {
       "p2p_param_traits.h",
       "p2p_socket_type.h",
     ]
+    jumbo_excluded_sources += [ "p2p_param_traits.cc" ]
 
     public_deps += [ "//third_party/webrtc_overrides:webrtc_component" ]
   }

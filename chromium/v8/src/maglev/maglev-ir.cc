@@ -973,6 +973,8 @@ void BranchIfToBooleanTrue::GenerateCode(MaglevCodeGenState* code_gen_state,
   }
 }
 
+#undef __
+
 }  // namespace maglev
 }  // namespace internal
 }  // namespace v8
