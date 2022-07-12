@@ -1127,7 +1127,8 @@ int CFX_Face::GetCharIndex(uint32_t code) {
 }
 
 int CFX_Face::GetNameIndex(const char* name) {
-  int ft_result = FT_Get_Name_Index(GetRec(), name);
+  //TODO remove cast when free type 2.9 support droppped
+  int ft_result = FT_Get_Name_Index(GetRec(), const_cast<char*>(name));
 
 #if defined(PDF_ENABLE_SKIA_TYPEFACE_CHECKS)
 #if defined(PDF_ENABLE_FONTATIONS)
