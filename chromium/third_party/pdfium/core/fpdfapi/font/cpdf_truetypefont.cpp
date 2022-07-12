@@ -90,7 +90,7 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
               FT_ENCODING_APPLE_ROMAN,
               m_Encoding.UnicodeFromCharCode(charcode));
           if (!maccode) {
-            m_GlyphIndex[charcode] = FT_Get_Name_Index(face, name);
+            m_GlyphIndex[charcode] = FT_Get_Name_Index(face, (FT_String*)name);
           } else {
             m_GlyphIndex[charcode] = FT_Get_Char_Index(face, maccode);
           }
@@ -104,7 +104,7 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
         m_GlyphIndex[charcode] = FT_Get_Char_Index(face, 32);
         continue;
       }
-      m_GlyphIndex[charcode] = FT_Get_Name_Index(face, name);
+      m_GlyphIndex[charcode] = FT_Get_Name_Index(face, (FT_String*)name);
       if (m_GlyphIndex[charcode] != 0 || !bToUnicode)
         continue;
 
