@@ -96,7 +96,7 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
               fxge::FontEncoding::kAppleRoman,
               m_Encoding.UnicodeFromCharCode(charcode));
           if (!maccode) {
-            m_GlyphIndex[charcode] = face->GetNameIndex(name);
+            m_GlyphIndex[charcode] = face->GetNameIndex((FT_String*)name);
           } else {
             m_GlyphIndex[charcode] = face->GetCharIndex(maccode);
           }
@@ -110,7 +110,7 @@ void CPDF_TrueTypeFont::LoadGlyphMap() {
         m_GlyphIndex[charcode] = face->GetCharIndex(32);
         continue;
       }
-      m_GlyphIndex[charcode] = face->GetNameIndex(name);
+      m_GlyphIndex[charcode] = face->GetNameIndex((FT_String*)name);
       if (m_GlyphIndex[charcode] != 0 || !bToUnicode)
         continue;
 

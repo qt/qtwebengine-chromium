@@ -664,7 +664,8 @@ int CFX_Face::GetCharIndex(uint32_t code) {
 }
 
 int CFX_Face::GetNameIndex(const char* name) {
-  return FT_Get_Name_Index(GetRec(), name);
+  //TODO remove cast when free type 2.9 support droppped
+  return FT_Get_Name_Index(GetRec(), const_cast<char*>(name));
 }
 
 FX_RECT CFX_Face::GetCharBBox(uint32_t code, int glyph_index) {
