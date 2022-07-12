@@ -101,7 +101,7 @@ OverlayProcessorInterface::CreateOverlayProcessor(
   if (surface_handle == gpu::kNullSurfaceHandle)
     return std::make_unique<OverlayProcessorStub>();
 
-#if BUILDFLAG(IS_APPLE) /* FIXME: only dcheck? && !defined(TOOLKIT_QT)*/
+#if BUILDFLAG(IS_APPLE) && !defined(TOOLKIT_QT) /* FIXME: only dcheck? */
   DCHECK(capabilities.supports_surfaceless);
   return std::make_unique<OverlayProcessorMac>();
 #elif BUILDFLAG(IS_WIN)
