@@ -15,6 +15,8 @@
 #ifndef SRC_DAWN_NATIVE_D3D12_DEVICED3D12_H_
 #define SRC_DAWN_NATIVE_D3D12_DEVICED3D12_H_
 
+#include <vector>
+
 #include "dawn/common/SerialQueue.h"
 #include "dawn/native/Device.h"
 #include "dawn/native/d3d12/CommandRecordingContext.h"
@@ -25,6 +27,8 @@
 namespace dawn::native::d3d12 {
 
     class CommandAllocatorManager;
+    struct ExternalImageDescriptorDXGISharedHandle;
+    class ExternalImageDXGIImpl;
     class PlatformFunctions;
     class ResidencyManager;
     class ResourceAllocatorManager;
@@ -127,6 +131,9 @@ namespace dawn::native::d3d12 {
         StagingDescriptorAllocator* GetRenderTargetViewAllocator() const;
 
         StagingDescriptorAllocator* GetDepthStencilViewAllocator() const;
+
+        std::unique_ptr<ExternalImageDXGIImpl> CreateExternalImageDXGIImpl(
+            const ExternalImageDescriptorDXGISharedHandle* descriptor);
 
         Ref<TextureBase> CreateD3D12ExternalTexture(
             const TextureDescriptor* descriptor,
@@ -263,6 +270,8 @@ namespace dawn::native::d3d12 {
         float mTimestampPeriod = 1.0f;
     };
 
+    // List of external image resources opened using this device.
+    LinkedList<ExternalImageDXGIImpl> mExternalImageList;
 }  // namespace dawn::native::d3d12
 
 #endif  // SRC_DAWN_NATIVE_D3D12_DEVICED3D12_H_
