@@ -1038,6 +1038,11 @@ mojom("mojom_platform") {
 
   # Don't scramble message IDs so they are redistributable to external tests.
   scramble_message_ids = false
+
+  removed_cpp_configs = [ "//build/config/compiler:default_symbols" ]
+  cpp_configs = blink_symbols_config
+  blink_removed_cpp_configs = [ "//build/config/compiler:default_symbols" ]
+  blink_cpp_configs = blink_symbols_config
 }
 
 # Kept separate from "mojom_platform" because the Java bindings are
@@ -1491,6 +1496,11 @@ mojom("mojom_core") {
     "//third_party/blink/renderer/bindings:generate_bindings_all",
     "//third_party/blink/renderer/platform",
   ]
+
+  removed_cpp_configs = [ "//build/config/compiler:default_symbols" ]
+  cpp_configs = blink_symbols_config
+  blink_removed_cpp_configs = [ "//build/config/compiler:default_symbols" ]
+  blink_cpp_configs = blink_symbols_config
 
   export_class_attribute = "BLINK_COMMON_EXPORT"
   export_define = "BLINK_COMMON_IMPLEMENTATION=1"
