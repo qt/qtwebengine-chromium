@@ -1093,6 +1093,7 @@ template("mojom") {
     force_source_set = false
     proxy_target = ""
     extra_configs = []
+    minus_configs = []
     output_visibility = []
     output_visibility = [ "*" ]
     cpp_source_deps = []
@@ -1108,6 +1109,9 @@ template("mojom") {
       }
       if (defined(invoker.blink_cpp_configs)) {
         extra_configs += invoker.blink_cpp_configs
+      }
+      if (defined(invoker.blink_removed_cpp_configs)) {
+        minus_configs += invoker.blink_removed_cpp_configs
       }
       if (defined(invoker.blink_cpp_proxy_target)) {
         proxy_target = invoker.blink_cpp_proxy_target
@@ -1130,6 +1134,9 @@ template("mojom") {
       }
       if (defined(invoker.cpp_configs)) {
         extra_configs += invoker.cpp_configs
+      }
+      if (defined(invoker.removed_cpp_configs)) {
+        minus_configs += invoker.removed_cpp_configs
       }
       if (defined(invoker.cpp_proxy_target)) {
         proxy_target = invoker.cpp_proxy_target
@@ -1496,6 +1503,7 @@ template("mojom") {
         testonly = invoker.testonly
       }
       defines = export_defines
+      configs -= minus_configs
       configs += extra_configs
       if (output_file_base_paths != []) {
         sources = []
