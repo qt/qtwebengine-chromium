@@ -530,4 +530,8 @@ ui::AXNode* AutomationAXTreeWrapper::GetParentNodeFromParentTreeAsAXNode()
   return owner_->GetParent(tree_.root(), &wrapper);
 }
 
+std::string AutomationAXTreeWrapper::ToString() const {
+  return "<AutomationAXTreeWrapper>";
+}
+
 }  // namespace extensions
