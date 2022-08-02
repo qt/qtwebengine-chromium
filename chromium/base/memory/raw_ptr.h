@@ -591,7 +591,7 @@ template <typename T, typename I>
 struct IsPointer<raw_ptr<T, I>> : std::true_type {};
 
 template <typename T>
-inline constexpr bool IsPointerV = IsPointer<T>::value;
+constexpr bool IsPointerV = IsPointer<T>::value;
 
 template <typename T>
 struct RemovePointer {
