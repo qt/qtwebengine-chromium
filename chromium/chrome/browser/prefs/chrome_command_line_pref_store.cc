@@ -51,8 +51,8 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
 #if BUILDFLAG(ENABLE_SPELLCHECK)
         {switches::kLang, language::prefs::kApplicationLocale},
-#endif
         {switches::kAcceptLang, language::prefs::kSelectedLanguages},
+#endif
         // `switches::kAuthServerAllowlistDeprecated` must be before
         // `switches::kAuthServerAllowlist` so that the deprecated value is
         // overridden in `ChromeCommandLinePrefStore::ApplyStringSwitches`.
