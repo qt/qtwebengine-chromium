@@ -52,8 +52,8 @@ const CommandLinePrefStore::SwitchToPreferenceMapEntry
     ChromeCommandLinePrefStore::string_switch_map_[] = {
 #if BUILDFLAG(ENABLE_SPELLCHECK)
         {switches::kLang, language::prefs::kApplicationLocale},
-#endif
         {switches::kAcceptLang, language::prefs::kSelectedLanguages},
+#endif
         {switches::kAuthServerAllowlist, prefs::kAuthServerAllowlist},
         {switches::kSSLVersionMin, prefs::kSSLVersionMin},
         {switches::kSSLVersionMax, prefs::kSSLVersionMax},
