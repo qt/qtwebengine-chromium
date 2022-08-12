@@ -513,6 +513,10 @@ bool SpellcheckService::IsSpellcheckEnabled() const {
   }
 #endif  // BUILDFLAG(IS_WIN)
 
+#if defined(TOOLKIT_QT) && BUILDFLAG(IS_MAC) && BUILDFLAG(USE_BROWSER_SPELLCHECKER)
+  enable_if_uninitialized = true;
+#endif
+
   return prefs->GetBoolean(spellcheck::prefs::kSpellCheckEnable) &&
          (!hunspell_dictionaries_.empty() || enable_if_uninitialized);
 }
