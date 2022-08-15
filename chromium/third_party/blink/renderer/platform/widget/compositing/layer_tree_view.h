@@ -184,6 +184,7 @@ class PLATFORM_EXPORT LayerTreeView
     kInitialized
   };
   FrameSinkState frame_sink_state_ = FrameSinkState::kNoFrameSink;
+  int layer_tree_frame_sink_init_failures = 0;
 
   base::circular_deque<
       std::pair<uint32_t,
