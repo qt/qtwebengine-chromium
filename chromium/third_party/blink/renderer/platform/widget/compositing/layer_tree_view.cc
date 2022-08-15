@@ -272,9 +272,9 @@ void LayerTreeView::DidFailToInitializeLayerTreeFrameSink() {
     return;
   }
   layer_tree_frame_sink_request_failed_while_invisible_ = false;
-  layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner()->PostTask(
+  layer_tree_host_->GetTaskRunnerProvider()->MainThreadTaskRunner()->PostDelayedTask(
       FROM_HERE, base::BindOnce(&LayerTreeView::RequestNewLayerTreeFrameSink,
-                                weak_factory_.GetWeakPtr()));
+      weak_factory_.GetWeakPtr()), base::TimeDelta::FromMilliseconds(10));
 }
 
 void LayerTreeView::WillCommit() {
