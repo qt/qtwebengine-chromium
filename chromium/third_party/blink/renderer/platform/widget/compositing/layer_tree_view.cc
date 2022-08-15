@@ -235,6 +235,7 @@ void LayerTreeView::SetLayerTreeFrameSink(
     layer_tree_host_->SetRenderFrameObserver(
         std::move(render_frame_metadata_observer));
   }
+  layer_tree_frame_sink_init_failures = 0;
   layer_tree_host_->SetLayerTreeFrameSink(std::move(layer_tree_frame_sink));
 }
 
@@ -381,6 +382,17 @@ void LayerTreeView::DidFailToInitializeLayerTreeFrameSink() {
   }
 
   frame_sink_state_ = FrameSinkState::kNoFrameSink;
+
+  // Guard against infinite loop of trying to request a new sink, and constantly
+  // failing, and trying again, when the child's main process was killed /
+  // crashed. This allows the orhpan render processes to quit gracefully,
+  // isntead of spinning the CPU forever.
+  ++layer_tree_frame_sink_init_failures;
+  if (layer_tree_frame_sink_init_failures > 10) {
+    // should not really happen, better to crash then stay forver.
+    DCHECK(false);
+    return;
+  }
   // The GPU channel cannot be established when gpu_remote is disconnected. Stop
   // calling RequestNewLayerTreeFrameSink because it's going to fail again and
   // it will be stuck in a forever loop of retries. This makes the processes
