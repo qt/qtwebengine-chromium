@@ -1168,6 +1168,23 @@
       ]
     },
     {
+      "id": 158,
+      "description": "Canvas rendering issues with Intel drivers on Windows since 94-based: https://bugreports.qt.io/browse/QTBUG-104065",
+      "cr_bugs": [1316442],
+      "os": {
+        "type": "win"
+      },
+      "exceptions": [
+        {
+          "gl_renderer": "ANGLE.*"
+        }
+      ],
+      "vendor_id": "0x8086",
+      "features": [
+        "accelerated_2d_canvas"
+      ]
+    },
+    {
       "id": 161,
       "cr_bugs": [890688],
       "description": "Newer Mesa drivers experience visual corruption on very old hardware",
