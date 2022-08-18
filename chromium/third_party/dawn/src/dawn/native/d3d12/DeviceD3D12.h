@@ -268,10 +268,10 @@ namespace dawn::native::d3d12 {
 
         // The number of nanoseconds required for a timestamp query to be incremented by 1
         float mTimestampPeriod = 1.0f;
-    };
 
-    // List of external image resources opened using this device.
-    LinkedList<ExternalImageDXGIImpl> mExternalImageList;
+        // List of external image resources opened using this device.
+        LinkedList<ExternalImageDXGIImpl> mExternalImageList;
+    };
 }  // namespace dawn::native::d3d12
 
 #endif  // SRC_DAWN_NATIVE_D3D12_DEVICED3D12_H_

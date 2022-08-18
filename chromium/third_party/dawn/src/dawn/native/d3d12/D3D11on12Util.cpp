@@ -131,7 +131,7 @@ namespace dawn::native::d3d12 {
     D3D11on12ResourceCache::~D3D11on12ResourceCache() = default;
 
     Ref<D3D11on12ResourceCacheEntry> D3D11on12ResourceCache::GetOrCreateD3D11on12Resource(
-        Device *backendDevice,
+        Device* backendDevice,
         ID3D12Resource* d3d12Resource) {
         // The Dawn and 11on12 device share the same D3D12 command queue whereas this external image
         // could be accessed/produced with multiple Dawn devices. To avoid cross-queue sharing

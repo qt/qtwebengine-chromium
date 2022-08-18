@@ -537,14 +537,8 @@ namespace dawn::native::d3d12 {
 
     std::unique_ptr<ExternalImageDXGIImpl> Device::CreateExternalImageDXGIImpl(
         const ExternalImageDescriptorDXGISharedHandle* descriptor) {
-        // Use sharedHandle as a fallback until Chromium code is changed to set textureSharedHandle.
-        HANDLE textureSharedHandle = descriptor->textureSharedHandle;
-        if (!textureSharedHandle) {
-            textureSharedHandle = descriptor->sharedHandle;
-        }
-
         Microsoft::WRL::ComPtr<ID3D12Resource> d3d12Resource;
-        if (FAILED(GetD3D12Device()->OpenSharedHandle(textureSharedHandle,
+        if (FAILED(GetD3D12Device()->OpenSharedHandle(descriptor->sharedHandle,
                                                       IID_PPV_ARGS(&d3d12Resource)))) {
             return nullptr;
         }
@@ -575,8 +569,8 @@ namespace dawn::native::d3d12 {
             }
         }
 
-        auto impl = std::make_unique<ExternalImageDXGIImpl>(
-            this, std::move(d3d12Resource), descriptor->cTextureDescriptor);
+        auto impl = std::make_unique<ExternalImageDXGIImpl>(this, std::move(d3d12Resource),
+                                                            descriptor->cTextureDescriptor);
         mExternalImageList.Append(impl.get());
         return impl;
     }

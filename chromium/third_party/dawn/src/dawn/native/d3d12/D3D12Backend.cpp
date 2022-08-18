@@ -56,7 +56,7 @@ namespace dawn::native::d3d12 {
     ExternalImageDXGI::ExternalImageDXGI(std::unique_ptr<ExternalImageDXGIImpl> impl)
         : mImpl(std::move(impl)) {
         ASSERT(mImpl != nullptr);
-        }
+    }
 
     ExternalImageDXGI::~ExternalImageDXGI() = default;
 
@@ -71,9 +71,8 @@ namespace dawn::native::d3d12 {
     }
 
     WGPUTexture ExternalImageDXGI::ProduceTexture(
-        const ExternalImageAccessDescriptorDXGISharedHandle* descriptor) {
+        const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor) {
         if (!IsValid()) {
-            dawn::ErrorLog() << "Cannot produce texture from external image after device destruction";
             return nullptr;
         }
         return mImpl->ProduceTexture(descriptor);
@@ -84,11 +83,13 @@ namespace dawn::native::d3d12 {
         WGPUDevice device,
         const ExternalImageDescriptorDXGISharedHandle* descriptor) {
         Device* backendDevice = ToBackend(FromAPI(device));
+
         std::unique_ptr<ExternalImageDXGIImpl> impl =
-           backendDevice->CreateExternalImageDXGIImpl(descriptor);
+        return mImpl->ProduceTexture(descriptor);
+            backendDevice->CreateExternalImageDXGIImpl(descriptor);
         if (!impl) {
-            dawn::ErrorLog() << "Failed to create DXGI external image";
-            return nullptr;
+            dawn::ErrorLog() << "Failed to create DXGI external image"; 
+           return nullptr;
         }
         return std::unique_ptr<ExternalImageDXGI>(new ExternalImageDXGI(std::move(impl)));
     }

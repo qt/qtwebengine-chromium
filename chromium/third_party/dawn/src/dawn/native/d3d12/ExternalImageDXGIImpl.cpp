@@ -67,7 +67,7 @@ void ExternalImageDXGIImpl::Destroy() {
 }
 
 WGPUTexture ExternalImageDXGIImpl::ProduceTexture(
-    const ExternalImageAccessDescriptorDXGISharedHandle* descriptor) {
+    const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor) {
     ASSERT(mBackendDevice != nullptr);
     // Ensure the texture usage is allowed
     if (!IsSubset(descriptor->usage, mUsage)) {
@@ -99,8 +99,7 @@ WGPUTexture ExternalImageDXGIImpl::ProduceTexture(
 
     Ref<TextureBase> texture = mBackendDevice->CreateD3D12ExternalTexture(
         &textureDescriptor, mD3D12Resource, std::move(d3d11on12Resource),
-        descriptor->isSwapChainTexture,
-        descriptor->isInitialized);
+        descriptor->isSwapChainTexture, descriptor->isInitialized);
     return ToAPI(texture.Detach());
 }
 

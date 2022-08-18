@@ -30,7 +30,7 @@ namespace dawn::native::d3d12 {
 
 class D3D11on12ResourceCache;
 class Device;
-struct ExternalImageAccessDescriptorDXGISharedHandle;
+struct ExternalImageAccessDescriptorDXGIKeyedMutex;
 struct ExternalImageDescriptorDXGISharedHandle;
 
 class ExternalImageDXGIImpl : public LinkNode<ExternalImageDXGIImpl> {
@@ -47,7 +47,7 @@ class ExternalImageDXGIImpl : public LinkNode<ExternalImageDXGIImpl> {
 
     bool IsValid() const;
 
-    WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGISharedHandle* descriptor);
+    WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor);
 
   private:
     Device* mBackendDevice;

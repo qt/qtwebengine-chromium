@@ -81,10 +81,12 @@ namespace dawn::native::d3d12 {
         // Returns true if the external image resources are still valid, otherwise ProduceTexture() is
         // guaranteed to fail e.g. after device destruction.
         bool IsValid() const;
+
         // TODO(sunnyps): |device| is ignored - remove after Chromium migrates to single parameter call.
         WGPUTexture ProduceTexture(WGPUDevice device,
                                    const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor);
-        WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGISharedHandle* descriptor);
+
+        WGPUTexture ProduceTexture(const ExternalImageAccessDescriptorDXGIKeyedMutex* descriptor);
 
       private:
         explicit ExternalImageDXGI(std::unique_ptr<ExternalImageDXGIImpl> impl);
