@@ -17,7 +17,7 @@ namespace blink {
 // callback-based interface.
 class AsyncFindBuffer final : public FindBufferRunner {
  public:
-  explicit AsyncFindBuffer() = default;
+  explicit AsyncFindBuffer(){};
   ~AsyncFindBuffer() = default;
 
   void FindMatchInRange(RangeInFlatTree* search_range,
