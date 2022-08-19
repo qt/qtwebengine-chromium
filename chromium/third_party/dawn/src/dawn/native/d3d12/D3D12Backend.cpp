@@ -85,7 +85,6 @@ namespace dawn::native::d3d12 {
         Device* backendDevice = ToBackend(FromAPI(device));
 
         std::unique_ptr<ExternalImageDXGIImpl> impl =
-        return mImpl->ProduceTexture(descriptor);
             backendDevice->CreateExternalImageDXGIImpl(descriptor);
         if (!impl) {
             dawn::ErrorLog() << "Failed to create DXGI external image"; 
