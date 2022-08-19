@@ -616,8 +616,10 @@ rtc_library("desktop_capture") {
       "linux/wayland/xdg_session_details.h",
     ]
 
-    configs += [
+    public_configs += [
       ":gio",
+    ]
+    configs += [
       ":pipewire",
       ":gbm",
       ":egl",
