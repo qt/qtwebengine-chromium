@@ -37,6 +37,11 @@ namespace {
 // be visible. As such this can be adjusted as needed.
 constexpr int kMaxDescriptionLength = 64;
 
+// The maximum number of unicode code points the extension of a file is
+// allowed to be. Any longer extensions will be stripped. This value should be
+// kept in sync with the extension length checks in the renderer.
+constexpr int kMaxExtensionLength = 16;
+
 std::string TypeToString(ui::SelectFileDialog::Type type) {
   switch (type) {
     case ui::SelectFileDialog::SELECT_OPEN_FILE:
@@ -209,6 +214,12 @@ base::FilePath FileSystemChooser::Options::ResolveSuggestedNameExtension(
     return base::FilePath();
 
   auto suggested_extension = suggested_name.Extension();
+
+  if (suggested_extension.size() > kMaxExtensionLength) {
+    // Sanitize extensions longer than 16 characters.
+    file_types.include_all_files = true;
+    return suggested_name.RemoveExtension();
+  }
 
   if (file_types.extensions.empty() || suggested_extension.empty()) {
     file_types.include_all_files = true;
