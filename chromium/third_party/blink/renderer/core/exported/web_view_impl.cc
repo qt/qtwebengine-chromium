@@ -252,6 +252,7 @@ namespace {
 
 class EmptyEventListener final : public NativeEventListener {
  public:
+  EmptyEventListener() {}
   void Invoke(ExecutionContext* execution_context, Event*) override {}
 };
 
