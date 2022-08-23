@@ -14,6 +14,7 @@
 
 import("../../../scripts/dawn_overrides_with_defaults.gni")
 
+import("//build/config/features.gni")
 import("//build_overrides/build.gni")
 import("${dawn_root}/generator/dawn_generator.gni")
 import("${dawn_root}/scripts/dawn_features.gni")
@@ -179,23 +180,25 @@ config("internal_config") {
 # Common dawn library
 ###############################################################################
 
-dawn_generator("dawn_version_gen") {
-  script = "${dawn_root}/generator/dawn_version_generator.py"
-  args = [
-    "--dawn-dir",
-    rebase_path("${dawn_root}", root_build_dir),
-  ]
-
-  # We can use the explicit version file if it is generated instead of relying
-  # on the existence of git.
-  if (dawn_version_file != "") {
-    args += [
-      "--version-file",
-      rebase_path(dawn_version_file, root_build_dir),
+if (!use_qt) {
+  dawn_generator("dawn_version_gen") {
+    script = "${dawn_root}/generator/dawn_version_generator.py"
+    args = [
+      "--dawn-dir",
+      rebase_path("${dawn_root}", root_build_dir),
     ]
-  }
 
-  outputs = [ "src/dawn/common/Version_autogen.h" ]
+    # We can use the explicit version file if it is generated instead of relying
+    # on the existence of git.
+    if (dawn_version_file != "") {
+      args += [
+        "--version-file",
+        rebase_path(dawn_version_file, root_build_dir),
+      ]
+    }
+
+    outputs = [ "src/dawn/common/Version_autogen.h" ]
+  }
 }
 
 dawn_generator("dawn_gpu_info_gen") {
@@ -268,10 +271,14 @@ if (is_win || is_linux || is_chromeos || is_mac || is_fuchsia || is_android) {
     ]
     sources += get_target_outputs(":dawn_gpu_info_gen")
 
-    public_deps = [
-      ":dawn_gpu_info_gen",
-      ":dawn_version_gen",
-    ]
+    if (!use_qt) {
+      public_deps = [
+        ":dawn_gpu_info_gen",
+        ":dawn_version_gen",
+      ]
+    } else {
+      public_deps = [ ":dawn_gpu_info_gen" ]
+    }
 
     if (is_mac) {
       sources += [ "SystemUtils_mac.mm" ]
