@@ -48,7 +48,10 @@
 #include <string>
 #include <utility>
 
+#include "pdf/buildflags.h"
+#if BUILDFLAG(ENABLE_PDF)
 #include "qtwebengine/browser/pdf/pdf_extension_util.h"
+#endif
 #include "qtwebengine/common/extensions/api/resources_private.h"
 
 namespace extensions {
@@ -70,12 +73,14 @@ ExtensionFunction::ResponseAction ResourcesPrivateGetStringsFunction::Run() {
   switch (component) {
     case api::resources_private::COMPONENT_IDENTITY:
       break;
+    case api::resources_private::COMPONENT_PDF:
 #if BUILDFLAG(ENABLE_PDF)
-    case api::resources_private::COMPONENT_PDF: {
       pdf_extension_util::AddStrings(pdf_extension_util::PdfViewerContext::kPdfViewer, dict.get());
       pdf_extension_util::AddAdditionalData(dict.get());
-    } break;
+#else
+      NOTREACHED();
 #endif  // BUILDFLAG(ENABLE_PDF)
+      break;
     case api::resources_private::COMPONENT_NONE:
       NOTREACHED();
   }
