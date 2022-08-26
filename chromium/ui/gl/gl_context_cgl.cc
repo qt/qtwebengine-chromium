@@ -89,7 +89,7 @@ bool GLContextCGL::Initialize(GLSurface* compatible_surface,
   GpuPreference gpu_preference =
       GLSurface::AdjustGpuPreference(attribs.gpu_preference);
 
-  CGLPixelFormatObj format = GetPixelFormat();
+  CGLPixelFormatObj format = GetPixelFormat(core_profile_number_);
   if (!format)
     return false;
 
