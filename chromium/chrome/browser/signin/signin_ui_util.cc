@@ -60,7 +60,7 @@
 #include "components/signin/core/browser/account_reconcilor.h"
 #endif
 
-#if BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)
+#if (BUILDFLAG(ENABLE_DICE_SUPPORT) || BUILDFLAG(IS_CHROMEOS_LACROS)) && !defined(TOOLKIT_QT)
 #include "chrome/browser/signin/account_consistency_mode_manager.h"
 #endif
 
