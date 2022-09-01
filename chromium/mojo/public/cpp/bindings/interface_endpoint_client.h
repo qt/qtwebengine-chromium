@@ -175,16 +175,28 @@ class COMPONENT_EXPORT(MOJO_CPP_BINDINGS) InterfaceEndpointClient
 #endif
 
  private:
-  // Maps from the id of a response to the MessageReceiver that handles the
-  // response.
-  using AsyncResponderMap =
-      std::map<uint64_t, std::unique_ptr<MessageReceiver>>;
+  struct PendingAsyncResponse {
+   public:
+    PendingAsyncResponse(uint32_t request_message_name,
+                         std::unique_ptr<MessageReceiver> responder);
+    PendingAsyncResponse(PendingAsyncResponse&&);
+    PendingAsyncResponse(const PendingAsyncResponse&) = delete;
+    PendingAsyncResponse& operator=(PendingAsyncResponse&&);
+    PendingAsyncResponse& operator=(const PendingAsyncResponse&) = delete;
+    ~PendingAsyncResponse();
+
+    uint32_t request_message_name;
+    std::unique_ptr<MessageReceiver> responder;
+  };
+
+  using AsyncResponderMap = std::map<uint64_t, PendingAsyncResponse>;
 
   struct SyncResponseInfo {
    public:
-    explicit SyncResponseInfo(bool* in_response_received);
+    SyncResponseInfo(uint32_t request_message_name, bool* in_response_received);
     ~SyncResponseInfo();
 
+    uint32_t request_message_name;
     Message response;
 
     // Points to a stack-allocated variable.

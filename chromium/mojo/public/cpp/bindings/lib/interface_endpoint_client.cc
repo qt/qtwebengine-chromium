@@ -11,6 +11,7 @@
 #include "base/logging.h"
 #include "base/macros.h"
 #include "base/memory/ptr_util.h"
+#include "base/optional.h"
 #include "base/sequenced_task_runner.h"
 #include "base/stl_util.h"
 #include "mojo/public/cpp/bindings/associated_group.h"
@@ -120,9 +121,27 @@ class ResponderThunk : public MessageReceiverWithStatus {
 
 // ----------------------------------------------------------------------------
 
+InterfaceEndpointClient::PendingAsyncResponse::PendingAsyncResponse(
+    uint32_t request_message_name,
+    std::unique_ptr<MessageReceiver> responder)
+    : request_message_name(request_message_name),
+      responder(std::move(responder)) {}
+
+InterfaceEndpointClient::PendingAsyncResponse::PendingAsyncResponse(
+    PendingAsyncResponse&&) = default;
+
+InterfaceEndpointClient::PendingAsyncResponse&
+InterfaceEndpointClient::PendingAsyncResponse::operator=(
+    PendingAsyncResponse&&) = default;
+
+InterfaceEndpointClient::PendingAsyncResponse::~PendingAsyncResponse() =
+    default;
+
 InterfaceEndpointClient::SyncResponseInfo::SyncResponseInfo(
+    uint32_t request_message_name,
     bool* in_response_received)
-    : response_received(in_response_received) {}
+    : request_message_name(request_message_name),
+      response_received(in_response_received) {}
 
 InterfaceEndpointClient::SyncResponseInfo::~SyncResponseInfo() {}
 
@@ -312,6 +331,7 @@ bool InterfaceEndpointClient::SendMessageWithResponder(
   // message before calling |SendMessage()| below.
 #endif
 
+  const uint32_t message_name = message->name();
   bool is_sync = message->has_flag(Message::kFlagIsSync);
   if (!controller_->SendMessage(message))
     return false;
@@ -320,7 +340,8 @@ bool InterfaceEndpointClient::SendMessageWithResponder(
     ++num_unacked_messages_;
 
   if (!is_sync || force_outgoing_messages_async_) {
-    async_responders_[request_id] = std::move(responder);
+    async_responders_.emplace(
+        request_id, PendingAsyncResponse{message_name, std::move(responder)});
     return true;
   }
 
@@ -328,7 +349,8 @@ bool InterfaceEndpointClient::SendMessageWithResponder(
 
   bool response_received = false;
   sync_responses_.insert(std::make_pair(
-      request_id, std::make_unique<SyncResponseInfo>(&response_received)));
+      request_id,
+      std::make_unique<SyncResponseInfo>(message_name, &response_received)));
 
   base::WeakPtr<InterfaceEndpointClient> weak_self =
       weak_ptr_factory_.GetWeakPtr();
@@ -536,17 +558,27 @@ bool InterfaceEndpointClient::HandleValidatedMessage(Message* message) {
       auto it = sync_responses_.find(request_id);
       if (it == sync_responses_.end())
         return false;
+
+      if (message->name() != it->second->request_message_name) {
+        return false;
+      }
+
       it->second->response = std::move(*message);
       *it->second->response_received = true;
       return true;
     }
 
+    base::Optional<PendingAsyncResponse> pending_response;
     auto it = async_responders_.find(request_id);
     if (it == async_responders_.end())
       return false;
-    std::unique_ptr<MessageReceiver> responder = std::move(it->second);
+    pending_response = std::move(it->second);
     async_responders_.erase(it);
-    return responder->Accept(message);
+    if (message->name() != pending_response->request_message_name) {
+      return false;
+    }
+
+    return pending_response->responder->Accept(message);
   } else {
     if (mojo::internal::ControlMessageHandler::IsControlMessage(message))
       return control_message_handler_.Accept(message);
