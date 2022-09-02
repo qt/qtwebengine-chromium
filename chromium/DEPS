@@ -253,11 +253,11 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling Skia
   # and whatever else without interference from each other.
-  'skia_revision': '3338e90707323d2cd3a150276acb9f39933deee2',
+  'skia_revision': 'd4442274e967ec96d89345d2afd2d81f09e416ed',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling V8
   # and whatever else without interference from each other.
-  'v8_revision': 'd0882b3dff76a9fc86bbf93381df1585d58f4f57',
+  'v8_revision': 'ede1022bcf27ba7a8180e7d4beadb67b0cbfb82e',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling ANGLE
   # and whatever else without interference from each other.
@@ -269,7 +269,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling PDFium
   # and whatever else without interference from each other.
-  'pdfium_revision': '62ad9af8a9f9494645b659674b64bb51775cde05',
+  'pdfium_revision': '3466cc056b052eb5e8e9d7d5f8f2aa3ab33e3bd6',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling BoringSSL
   # and whatever else without interference from each other.
@@ -364,7 +364,7 @@ vars = {
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
-  'dawn_revision': 'fa8cc68ff7c055512e83a538e5517400f5f053bc',
+  'dawn_revision': '9e92b76b20bd24876ad55df6e0d3659f3c012576',
   # Three lines of non-changing comments so that
   # the commit queue can handle CLs rolling feed
   # and whatever else without interference from each other.
@@ -1261,7 +1261,7 @@ deps = {
     Var('chromium_git') + '/chromium/deps/hunspell_dictionaries.git' + '@' + '41cdffd71c9948f63c7ad36e1fb0ff519aa7a37e',
 
   'src/third_party/icu':
-    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'e1f2f4f42368555835a7a0894188716556c32871',
+    Var('chromium_git') + '/chromium/deps/icu.git' + '@' + 'f600eded18fa83fd64466871748c0ea3a38b91e0',
 
   'src/third_party/icu4j': {
       'packages': [
@@ -1643,7 +1643,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/google/snappy.git' + '@' + '65dc7b383985eb4f63cd3e752136db8d9b4be8c0',
 
   'src/third_party/sqlite/src':
-    Var('chromium_git') + '/chromium/deps/sqlite.git' + '@' + 'a54d5d154f4b349705a67107ed190d1943f94646',
+    Var('chromium_git') + '/chromium/deps/sqlite.git' + '@' + '9328fbe3d1e09dd7290d55e993aa85256e055d9c',
 
   'src/third_party/sqlite4java': {
       'packages': [
@@ -1731,7 +1731,7 @@ deps = {
     Var('chromium_git') + '/external/github.com/gpuweb/cts.git' + '@' + '958d732db02c2a70bcf4a2b0986f09318db4adfb',
 
   'src/third_party/webrtc':
-    Var('webrtc_git') + '/src.git' + '@' + 'd4f4b84f50e4cf82a89580f8a01846a25dda6ba2',
+    Var('webrtc_git') + '/src.git' + '@' + 'edbd42cda0308d42a3e16e6efdfa95a6fc3fe7b3',
 
   'src/third_party/libgifcodec':
      Var('skia_git') + '/libgifcodec' + '@'+  Var('libgifcodec_revision'),
@@ -1801,7 +1801,7 @@ deps = {
     Var('chromium_git') + '/v8/v8.git' + '@' +  Var('v8_revision'),
 
   'src-internal': {
-    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@6d651b2438a579c5982225a3ba1fd7a3c2fc27dd',
+    'url': 'https://chrome-internal.googlesource.com/chrome/src-internal.git@9629343751d1aae642f1f568199de026c45e27a1',
     'condition': 'checkout_src_internal',
   },
 
