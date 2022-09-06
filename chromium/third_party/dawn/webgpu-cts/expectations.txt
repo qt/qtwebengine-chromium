@@ -29,7 +29,7 @@
 #         arm
 #         google google-0xffff
 #         intel intel-0xa2e intel-0xd26 intel-0xa011 intel-0x3e92 intel-0x3e9b
-#               intel-0x5912
+#               intel-0x5912 intel-0x9bc5
 #         nvidia nvidia-0xfe9 nvidia-0x1cb3 nvidia-0x2184
 #         qualcomm ]
 # Decoder
@@ -486,6 +486,7 @@ crbug.com/dawn/0000 [ linux ] webgpu:shader,execution,expression,call,builtin,fi
 crbug.com/dawn/0000 [ win ] webgpu:shader,execution,expression,call,builtin,insertBits:* [ Failure ]
 crbug.com/dawn/0000 [ win ] webgpu:shader,execution,expression,call,builtin,ldexp:* [ Failure ]
 crbug.com/tint/1500 [ nvidia release win ] webgpu:shader,execution,shader_io,compute_builtins:inputs:* [ Failure ]
+crbug.com/1342945 [ linux intel-0x9bc5 ] webgpu:shader,execution,expression,call,builtin,float_built_functions:float_builtin_functions* [ Failure ]
 
 ################################################################################
 # vertex_state failures
@@ -505,6 +506,13 @@ crbug.com/dawn/0000 [ win ] webgpu:api,operation,command_buffer,copyTextureToTex
 # KEEP
 ################################################################################
 crbug.com/dawn/1364 webgpu:api,validation,createTexture:texture_usage:* [ Failure ]
+
+################################################################################
+# Failures from upgrading Intel Mac Minis to 12.4
+# KEEP
+################################################################################
+crbug.com/dawn/1461 [ monterey intel ] webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth24plus" [ Failure ]
+crbug.com/dawn/1461 [ monterey intel ] webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth24plus-stencil8" [ Failure ]
 
 ################################################################################
 # untriaged failures

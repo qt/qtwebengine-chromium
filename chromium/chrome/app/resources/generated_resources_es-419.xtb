@@ -205,7 +205,7 @@
 <translation id="1193927020065025187">Es posible que este sitio esté intentando engañarte para que permitas notificaciones intrusivas</translation>
 <translation id="1195210374336998651">Ir a la configuración de la app</translation>
 <translation id="1195447618553298278">Error desconocido.</translation>
-<translation id="1195558154361252544">Se bloquearon automáticamente las notificaciones para todos los sitios, excepto en los sitios en que las permites</translation>
+<translation id="1195558154361252544">Las notificaciones se bloquean automáticamente en todos los sitios, excepto en los que las permites</translation>
 <translation id="1197088940767939838">Naranja</translation>
 <translation id="1197199342062592414">Comencemos</translation>
 <translation id="1197935538609051549">Desactivar</translation>
@@ -322,7 +322,7 @@
 <translation id="1317637799698924700">La estación de conectores funcionará en modo compatible con USB tipo C.</translation>
 <translation id="1319983966058170660">Botón para volver de la subpágina <ph name="SUBPAGE_TITLE" /></translation>
 <translation id="1322046419516468189">Consulta y administra las contraseñas guardadas en tu <ph name="SAVED_PASSWORDS_STORE" /></translation>
-<translation id="1324106254079708331">Protege las cuentas personales de Google de los usuarios que estén en riesgo de sufrir ataques dirigidos</translation>
+<translation id="1324106254079708331">Protege las cuentas personales de Google de los usuarios que estén en riesgo de sufrir ataques dirigidos.</translation>
 <translation id="1326317727527857210">Accede a Chrome para obtener las pestañas de tus otros dispositivos.</translation>
 <translation id="1327272175893960498">Tickets de Kerberos</translation>
 <translation id="1327495825214193325">Para habilitar la depuración de adb, es necesario restablecer este dispositivo <ph name="DEVICE_TYPE" />. Si quieres inhabilitarla, deberás restablecer la configuración de fábrica.</translation>
@@ -1959,7 +1959,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="2836635946302913370">El administrador ha inhabilitado el inicio de sesión para este nombre de usuario.</translation>
 <translation id="283669119850230892">Para utilizar la red <ph name="NETWORK_ID" />, primero debes establecer la conexión a Internet que se especifica a continuación.</translation>
 <translation id="2838379631617906747">Instalando</translation>
-<translation id="2839032553903800133">Se bloquearon las notificaciones</translation>
+<translation id="2839032553903800133">Notificaciones bloqueadas</translation>
 <translation id="2841013758207633010">Hora</translation>
 <translation id="2841837950101800123">Proveedor</translation>
 <translation id="2843560154284403323">Para finalizar la configuración de Linux, actualiza Chrome OS y vuelve a intentarlo.</translation>
@@ -2101,7 +2101,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="2966937470348689686">Administrar las preferencias de Android</translation>
 <translation id="2967926928600500959">Se forzará la apertura de las URLs que coincidan con estas reglas en un navegador específico.</translation>
 <translation id="2972581237482394796">&amp;Rehacer</translation>
-<translation id="2973324205039581528">Silenciar el sitio</translation>
+<translation id="2973324205039581528">Silenciar sitio</translation>
 <translation id="2973537811036309675">Panel lateral</translation>
 <translation id="2976557544729462544">En algunos dispositivos, debes inhabilitar la protección de acceso a los datos para que funcionen correctamente o con el máximo rendimiento.</translation>
 <translation id="2977480621796371840">Quitar del grupo</translation>
@@ -2613,7 +2613,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="3503995387997205657">Puedes restablecer tus apps anteriores.</translation>
 <translation id="3505030558724226696">Revocar el acceso al dispositivo</translation>
 <translation id="3505100368357440862">Sugerencias de compra</translation>
-<translation id="3507132249039706973">Se activó la protección estándar</translation>
+<translation id="3507132249039706973">Se activó la protección estándar.</translation>
 <translation id="3507421388498836150">Permisos actuales para "<ph name="EXTENSION_NAME" />"</translation>
 <translation id="3507888235492474624">Vuelve a buscar dispositivos Bluetooth</translation>
 <translation id="3508492320654304609">No se pudieron borrar tus datos de acceso</translation>
@@ -3437,7 +3437,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="4312701113286993760">{COUNT,plural, =1{1 Cuenta de Google}other{<ph name="EXTRA_ACCOUNTS" /> Cuentas de Google}}</translation>
 <translation id="4312866146174492540">Bloquear (predeterminado)</translation>
 <translation id="4314497418046265427">Conecta tu teléfono a <ph name="DEVICE_TYPE" /> para mejorar tu productividad</translation>
-<translation id="4314815835985389558">Administrar la sincronización</translation>
+<translation id="4314815835985389558">Administrar sincronización</translation>
 <translation id="4315933848520197627">Desvincular cuenta</translation>
 <translation id="4316850752623536204">Sitio web del programador</translation>
 <translation id="4317820549299924617">No se completó la verificación</translation>
@@ -3862,7 +3862,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="4742334355511750246">No puede mostrar imágenes</translation>
 <translation id="4742970037960872810">Dejar de destacar</translation>
 <translation id="4743260470722568160"><ph name="BEGIN_LINK" />Obtener información sobre cómo actualizar las aplicaciones<ph name="END_LINK" /></translation>
-<translation id="4744981231093950366">{NUM_TABS,plural, =1{Activar el sonido del sitio}other{Activar el sonido de los sitios}}</translation>
+<translation id="4744981231093950366">{NUM_TABS,plural, =1{Activar sonido del sitio}other{Activar sonido de los sitios}}</translation>
 <translation id="474609389162964566">Accede a tu Asistente con "Hey Google"</translation>
 <translation id="4746351372139058112">Mensajes</translation>
 <translation id="4748783296226936791">Por lo general, los sitios se conectan a dispositivos HID para usarlos en funciones que utilizan teclados poco habituales, controles de juegos y otros dispositivos.</translation>
@@ -4086,7 +4086,7 @@ y Ctrl + Alt + Disminuir brillo para alejar.</translation>
 <translation id="4972129977812092092">Editar impresora</translation>
 <translation id="4972164225939028131">Contraseña incorrecta</translation>
 <translation id="4972737347717125191">Permitir que los sitios soliciten permiso para usar datos y dispositivos de realidad virtual</translation>
-<translation id="4973325300212422370">{NUM_TABS,plural, =1{Silenciar el sitio}other{Silenciar los sitios}}</translation>
+<translation id="4973325300212422370">{NUM_TABS,plural, =1{Silenciar sitio}other{Silenciar sitios}}</translation>
 <translation id="497403230787583386">Se completaron los controles de seguridad. Se imprimirá el documento.</translation>
 <translation id="4977882548591990850"><ph name="CHARACTER_COUNT" />/<ph name="CHARACTER_LIMIT" /></translation>
 <translation id="4977942889532008999">Confirmar acceso</translation>
@@ -4657,7 +4657,7 @@ Puedes asignar varios interruptores a esta acción.</translation>
 <translation id="5554720593229208774">Entidad de certificación de correo electrónico</translation>
 <translation id="5555363196923735206">Girar cámara</translation>
 <translation id="5555525474779371165">Elige tu protección de Navegación segura</translation>
-<translation id="5556459405103347317">Cargar de nuevo</translation>
+<translation id="5556459405103347317">Volver a cargar</translation>
 <translation id="5558125320634132440">Se bloqueó este sitio porque puede incluir contenido para mayores de edad</translation>
 <translation id="5558129378926964177">Acercar</translation>
 <translation id="55601339223879446">Ajustar los límites de tu escritorio en la pantalla</translation>
@@ -5171,7 +5171,7 @@ Puedes asignar varios interruptores a esta acción.</translation>
 <translation id="6077189836672154517">Sugerencias y actualizaciones para <ph name="DEVICE_TYPE" /></translation>
 <translation id="6077476112742402730">Hablar para escribir</translation>
 <translation id="6078121669093215958">{0,plural, =1{Invitado}other{# ventanas de invitado abiertas}}</translation>
-<translation id="6078323886959318429">Agregar un acceso directo</translation>
+<translation id="6078323886959318429">Agregar acceso directo</translation>
 <translation id="6078752646384677957">Comprueba el micrófono y los niveles de audio.</translation>
 <translation id="6078769373519310690">"<ph name="CHROME_EXTENSION_NAME" />" quiere conectarse a un dispositivo HID</translation>
 <translation id="608029822688206592">No se encontraron redes. Inserta tu tarjeta SIM y vuelve a intentarlo.</translation>
@@ -5361,7 +5361,7 @@ Puedes asignar varios interruptores a esta acción.</translation>
 <translation id="6266532094411434237">Conectando a <ph name="DEVICE" /></translation>
 <translation id="6267166720438879315">Seleccionar un certificado para autenticarte como <ph name="HOST_NAME" /></translation>
 <translation id="6268252012308737255">Abrir con <ph name="APP" /></translation>
-<translation id="6270391203985052864">Los sitios podrán preguntarte si quieres recibir notificaciones</translation>
+<translation id="6270391203985052864">Los sitios pueden preguntarte si quieres recibir notificaciones</translation>
 <translation id="6270770586500173387">Enviar <ph name="BEGIN_LINK2" />métricas<ph name="END_LINK2" /> e <ph name="BEGIN_LINK1" />información de apps y el sistema<ph name="END_LINK1" /></translation>
 <translation id="6271348838875430303">se deshizo la corrección</translation>
 <translation id="6271780480930459892">Para obtener la nueva versión, comunícate con el administrador.</translation>
@@ -6055,7 +6055,7 @@ Puedes asignar varios interruptores a esta acción.</translation>
 <translation id="6950627417367801484">Restablecer apps</translation>
 <translation id="6952242901357037157">También puedes mostrar las contraseñas de tu <ph name="BEGIN_LINK" />Cuenta de Google<ph name="END_LINK" /> aquí</translation>
 <translation id="6955446738988643816">Inspeccionar ventana emergente</translation>
-<translation id="6955535239952325894">Esta configuración está inhabilitada en navegadores administrados</translation>
+<translation id="6955535239952325894">Esta configuración está inhabilitada en navegadores administrados.</translation>
 <translation id="6955698182324067397">Estás habilitando las funciones de depuración del Chrome OS que configurarán el daemon sshd y habilitarán el inicio desde unidades USB.</translation>
 <translation id="6955893174999506273">Asignar 1 interruptor más</translation>
 <translation id="6957044667612803194">Esta llave de seguridad no es compatible con los PIN</translation>
@@ -6067,7 +6067,7 @@ Puedes asignar varios interruptores a esta acción.</translation>
 <translation id="6965382102122355670">Aceptar</translation>
 <translation id="6965648386495488594">Puerto</translation>
 <translation id="6965978654500191972">Dispositivo</translation>
-<translation id="6966370001499648704">Controla qué teléfonos usas como llaves de seguridad</translation>
+<translation id="6966370001499648704">Controla qué teléfonos usas como llaves de seguridad.</translation>
 <translation id="6967430741871315905">No se pudo comprobar si el dispositivo está habilitado</translation>
 <translation id="696780070563539690">Los sitios no pueden usar tus cookies para ver la actividad de navegación en diferentes sitios, por ejemplo, con el fin de personalizar anuncios</translation>
 <translation id="6968288415730398122">Ingresa tu contraseña para configurar el bloqueo de pantalla</translation>
@@ -8321,7 +8321,7 @@ Mantén el archivo de clave en un lugar seguro. Debes crear las nuevas versiones
 <translation id="9199503643457729322">Haz clic para salir de la Guía de privacidad.</translation>
 <translation id="9200339982498053969"><ph name="ORIGIN" /> podrá editar los archivos de la carpeta <ph name="FOLDERNAME" /></translation>
 <translation id="920045321358709304">Buscar en <ph name="SEARCH_ENGINE" /></translation>
-<translation id="9201023452444595544">Se borrarán los datos sin conexión</translation>
+<translation id="9201023452444595544">Se borrarán los datos sin conexión.</translation>
 <translation id="9201117361710210082">Visto anteriormente</translation>
 <translation id="9201220332032049474">Opciones de bloqueo de pantalla</translation>
 <translation id="9201842707396338580">Se produjo un error. Comunícate con el administrador o el propietario de tu dispositivo. Código de error: <ph name="ERROR_CODE" />.</translation>
