@@ -192,6 +192,7 @@ if (libyuv_use_neon) {
     deps = [ ":libyuv_internal" ]
 
     public_configs = [ ":libyuv_config" ]
+    cflags = []
 
     # Always enable optimization for Release and NaCl builds (to workaround
     # crbug.com/538243).
@@ -201,11 +202,16 @@ if (libyuv_use_neon) {
       # Enable optimize for speed (-O2) over size (-Os).
       # TODO(fbarchard): Consider optimize_speed which is O3.
       configs += [ "//build/config/compiler:optimize_max" ]
+    } else if(current_cpu != "arm64") {
+      # Remove default stack frames config and use -fomit-frame-pointer
+      # otherwise we run out of registry and will not compile for debug and neon
+      configs -= [ "//build/config/compiler:default_stack_frames" ]
+      cflags += [ "-fomit-frame-pointer" ]
     }
 
     if (current_cpu != "arm64") {
       configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-      cflags = [ "-mfpu=neon" ]
+      cflags += [ "-mfpu=neon" ]
     }
   }
 }
