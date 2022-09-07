@@ -5,14 +5,13 @@ Execution Tests for the bitwise binary expression operations
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../gpu_test.js';
 import { i32, scalarType, u32 } from '../../../../util/conversion.js';
-import { run } from '../expression.js';
+import { allInputSources, run } from '../expression.js';
 
 import { binary } from './binary.js';
 
 export const g = makeTestGroup(GPUTest);
 
 g.test('bitwise_or')
-  .uniqueId('xxxxxxxxx')
   .specURL('https://www.w3.org/TR/WGSL/#bit-expr')
   .desc(
     `
@@ -25,7 +24,7 @@ Bitwise-or. Component-wise when T is a vector.
   .params(u =>
     u
       .combine('type', ['i32', 'u32'] as const)
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
+      .combine('inputSource', allInputSources)
       .combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
@@ -77,7 +76,6 @@ Bitwise-or. Component-wise when T is a vector.
   });
 
 g.test('bitwise_and')
-  .uniqueId('xxxxxxxxx')
   .specURL('https://www.w3.org/TR/WGSL/#bit-expr')
   .desc(
     `
@@ -90,7 +88,7 @@ Bitwise-and. Component-wise when T is a vector.
   .params(u =>
     u
       .combine('type', ['i32', 'u32'] as const)
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
+      .combine('inputSource', allInputSources)
       .combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
@@ -150,7 +148,6 @@ Bitwise-and. Component-wise when T is a vector.
   });
 
 g.test('bitwise_exclusive_or')
-  .uniqueId('xxxxxxxxx')
   .specURL('https://www.w3.org/TR/WGSL/#bit-expr')
   .desc(
     `
@@ -163,7 +160,7 @@ Bitwise-exclusive-or. Component-wise when T is a vector.
   .params(u =>
     u
       .combine('type', ['i32', 'u32'] as const)
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
+      .combine('inputSource', allInputSources)
       .combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {

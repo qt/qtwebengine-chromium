@@ -137,7 +137,7 @@ StringShape::StringShape(InstanceType t) : type_(static_cast<uint32_t>(t)) {
 
 bool StringShape::IsInternalized() const {
   DCHECK(valid());
-  STATIC_ASSERT(kNotInternalizedTag != 0);
+  static_assert(kNotInternalizedTag != 0);
   return (type_ & (kIsNotStringMask | kIsNotInternalizedMask)) ==
          (kStringTag | kInternalizedTag);
 }
@@ -179,27 +179,6 @@ bool StringShape::IsShared() const {
          (FLAG_shared_string_table && IsInternalized());
 }
 
-bool StringShape::CanMigrateInParallel() const {
-  switch (representation_encoding_and_shared_tag()) {
-    case kSeqOneByteStringTag | kSharedStringTag:
-    case kSeqTwoByteStringTag | kSharedStringTag:
-      // Shared SeqStrings can migrate to ThinStrings.
-      return true;
-    case kThinStringTag | kOneByteStringTag | kSharedStringTag:
-    case kThinStringTag | kTwoByteStringTag | kSharedStringTag:
-      // Shared ThinStrings do not migrate.
-      return false;
-    default:
-      // TODO(v8:12007): Set is_shared to true on internalized string when
-      // FLAG_shared_string_table is removed.
-      //
-      // If you crashed here, you probably added a new shared string
-      // type. Explicitly handle all shared string cases above.
-      DCHECK((FLAG_shared_string_table && IsInternalized()) || !IsShared());
-      return false;
-  }
-}
-
 StringRepresentationTag StringShape::representation_tag() const {
   uint32_t tag = (type_ & kStringRepresentationMask);
   return static_cast<StringRepresentationTag>(tag);
@@ -217,10 +196,10 @@ uint32_t StringShape::representation_encoding_and_shared_tag() const {
   return (type_ & (kStringRepresentationEncodingAndSharedMask));
 }
 
-STATIC_ASSERT((kStringRepresentationAndEncodingMask) ==
+static_assert((kStringRepresentationAndEncodingMask) ==
               Internals::kStringRepresentationAndEncodingMask);
 
-STATIC_ASSERT(static_cast<uint32_t>(kStringEncodingMask) ==
+static_assert(static_cast<uint32_t>(kStringEncodingMask) ==
               Internals::kStringEncodingMask);
 
 bool StringShape::IsSequentialOneByte() const {
@@ -235,19 +214,19 @@ bool StringShape::IsExternalOneByte() const {
   return representation_and_encoding_tag() == kExternalOneByteStringTag;
 }
 
-STATIC_ASSERT(kExternalOneByteStringTag ==
+static_assert(kExternalOneByteStringTag ==
               Internals::kExternalOneByteRepresentationTag);
 
-STATIC_ASSERT(v8::String::ONE_BYTE_ENCODING == kOneByteStringTag);
+static_assert(v8::String::ONE_BYTE_ENCODING == kOneByteStringTag);
 
 bool StringShape::IsExternalTwoByte() const {
   return representation_and_encoding_tag() == kExternalTwoByteStringTag;
 }
 
-STATIC_ASSERT(kExternalTwoByteStringTag ==
+static_assert(kExternalTwoByteStringTag ==
               Internals::kExternalTwoByteRepresentationTag);
 
-STATIC_ASSERT(v8::String::TWO_BYTE_ENCODING == kTwoByteStringTag);
+static_assert(v8::String::TWO_BYTE_ENCODING == kTwoByteStringTag);
 
 template <typename TDispatcher, typename TResult, typename... TArgs>
 inline TResult StringShape::DispatchToSpecificTypeWithoutCast(TArgs&&... args) {
@@ -322,8 +301,8 @@ DEF_GETTER(String, IsTwoByteRepresentation, bool) {
 bool String::IsOneByteRepresentationUnderneath(String string) {
   while (true) {
     uint32_t type = string.map().instance_type();
-    STATIC_ASSERT(kIsIndirectStringTag != 0);
-    STATIC_ASSERT((kIsIndirectStringMask & kStringEncodingMask) == 0);
+    static_assert(kIsIndirectStringTag != 0);
+    static_assert((kIsIndirectStringMask & kStringEncodingMask) == 0);
     DCHECK(string.IsFlat());
     switch (type & (kIsIndirectStringMask | kStringEncodingMask)) {
       case kOneByteStringTag:
@@ -879,9 +858,9 @@ String String::GetUnderlying() const {
   // wrapping string is already flattened.
   DCHECK(IsFlat());
   DCHECK(StringShape(*this).IsIndirect());
-  STATIC_ASSERT(static_cast<int>(ConsString::kFirstOffset) ==
+  static_assert(static_cast<int>(ConsString::kFirstOffset) ==
                 static_cast<int>(SlicedString::kParentOffset));
-  STATIC_ASSERT(static_cast<int>(ConsString::kFirstOffset) ==
+  static_assert(static_cast<int>(ConsString::kFirstOffset) ==
                 static_cast<int>(ThinString::kActualOffset));
   const int kUnderlyingOffset = SlicedString::kParentOffset;
   return TaggedField<String, kUnderlyingOffset>::load(*this);

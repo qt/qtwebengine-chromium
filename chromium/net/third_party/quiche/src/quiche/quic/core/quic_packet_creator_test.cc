@@ -1549,11 +1549,13 @@ TEST_P(QuicPacketCreatorTest, AddUnencryptedStreamDataClosesConnection) {
   }
 
   creator_.set_encryption_level(ENCRYPTION_INITIAL);
-  EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
   QuicStreamFrame stream_frame(GetNthClientInitiatedStreamId(0),
                                /*fin=*/false, 0u, absl::string_view());
   EXPECT_QUIC_BUG(
-      creator_.AddFrame(QuicFrame(stream_frame), NOT_RETRANSMISSION),
+      {
+        EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
+        creator_.AddFrame(QuicFrame(stream_frame), NOT_RETRANSMISSION);
+      },
       "Cannot send stream data with level: ENCRYPTION_INITIAL");
 }
 
@@ -1564,11 +1566,13 @@ TEST_P(QuicPacketCreatorTest, SendStreamDataWithEncryptionHandshake) {
   }
 
   creator_.set_encryption_level(ENCRYPTION_HANDSHAKE);
-  EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
   QuicStreamFrame stream_frame(GetNthClientInitiatedStreamId(0),
                                /*fin=*/false, 0u, absl::string_view());
   EXPECT_QUIC_BUG(
-      creator_.AddFrame(QuicFrame(stream_frame), NOT_RETRANSMISSION),
+      {
+        EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
+        creator_.AddFrame(QuicFrame(stream_frame), NOT_RETRANSMISSION);
+      },
       "Cannot send stream data with level: ENCRYPTION_HANDSHAKE");
 }
 
@@ -1932,16 +1936,16 @@ TEST_P(QuicPacketCreatorTest, PacketTransmissionType) {
   EXPECT_TRUE(creator_.AddFrame(ack_frame, LOSS_RETRANSMISSION));
   ASSERT_EQ(serialized_packet_, nullptr);
 
-  EXPECT_TRUE(creator_.AddFrame(stream_frame, RTO_RETRANSMISSION));
+  EXPECT_TRUE(creator_.AddFrame(stream_frame, PTO_RETRANSMISSION));
   ASSERT_EQ(serialized_packet_, nullptr);
 
-  EXPECT_TRUE(creator_.AddFrame(padding_frame, TLP_RETRANSMISSION));
+  EXPECT_TRUE(creator_.AddFrame(padding_frame, LOSS_RETRANSMISSION));
   creator_.FlushCurrentPacket();
   ASSERT_TRUE(serialized_packet_->encrypted_buffer);
 
   // The last retransmittable frame on packet is a stream frame, the packet's
   // transmission type should be the same as the stream frame's.
-  EXPECT_EQ(serialized_packet_->transmission_type, RTO_RETRANSMISSION);
+  EXPECT_EQ(serialized_packet_->transmission_type, PTO_RETRANSMISSION);
   DeleteSerializedPacket();
 }
 
@@ -2563,12 +2567,15 @@ TEST_F(QuicPacketCreatorMultiplePacketsTest,
   delegate_.SetCanWriteAnything();
   const std::string data(10000, '?');
   EXPECT_CALL(delegate_, OnSerializedPacket(_)).Times(0);
-  EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
-  EXPECT_QUIC_BUG(creator_.ConsumeDataFastPath(
-                      QuicUtils::GetFirstBidirectionalStreamId(
-                          framer_.transport_version(), Perspective::IS_CLIENT),
-                      data),
-                  "");
+  EXPECT_QUIC_BUG(
+      {
+        EXPECT_CALL(delegate_, OnUnrecoverableError(_, _));
+        creator_.ConsumeDataFastPath(
+            QuicUtils::GetFirstBidirectionalStreamId(
+                framer_.transport_version(), Perspective::IS_CLIENT),
+            data);
+      },
+      "");
 }
 
 TEST_F(QuicPacketCreatorMultiplePacketsTest, AddControlFrame_OnlyAckWritable) {

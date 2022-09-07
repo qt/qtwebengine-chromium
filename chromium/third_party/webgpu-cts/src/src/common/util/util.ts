@@ -118,6 +118,17 @@ export function raceWithRejectOnTimeout<T>(p: Promise<T>, ms: number, msg: strin
 }
 
 /**
+ * Returns a `Promise.reject()`, but also registers a dummy `.catch()` handler so it doesn't count
+ * as an uncaught promise rejection in the runtime.
+ */
+export function rejectWithoutUncaught<T>(err: unknown): Promise<T> {
+  const p = Promise.reject(err);
+  // Suppress uncaught promise rejection.
+  p.catch(() => {});
+  return p;
+}
+
+/**
  * Makes a copy of a JS `object`, with the keys reordered into sorted order.
  */
 export function sortObjectByKey(v: { [k: string]: unknown }): { [k: string]: unknown } {
@@ -163,6 +174,17 @@ export function* iterRange<T>(n: number, fn: (i: number) => T): Iterable<T> {
   for (let i = 0; i < n; ++i) {
     yield fn(i);
   }
+}
+
+/** Creates a (reusable) iterable object that maps `f` over `xs`, lazily. */
+export function mapLazy<T, R>(xs: Iterable<T>, f: (x: T) => R): Iterable<R> {
+  return {
+    *[Symbol.iterator]() {
+      for (const x of xs) {
+        yield f(x);
+      }
+    },
+  };
 }
 
 const TypedArrayBufferViewInstances = [

@@ -7,13 +7,12 @@
 #include <netinet/ip6.h>
 
 #include "absl/container/node_hash_map.h"
-#include "quiche/quic/platform/api/quic_containers.h"
 #include "quiche/quic/platform/api/quic_epoll.h"
 #include "quiche/quic/platform/api/quic_ip_address.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/qbone/platform/mock_kernel.h"
 
-namespace quic {
+namespace quic::test {
 namespace {
 
 using ::testing::_;
@@ -264,4 +263,4 @@ TEST_F(IcmpReachableTest, HandlesReadErrors) {
 }
 
 }  // namespace
-}  // namespace quic
+}  // namespace quic::test

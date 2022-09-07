@@ -46,6 +46,7 @@
 #include "pc/sdp_utils.h"
 #include "pc/session_description.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/internal/default_socket_server.h"
 #include "rtc_base/ip_address.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/net_helper.h"
@@ -158,8 +159,9 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
 
   WrapperPtr CreatePeerConnection(const RTCConfiguration& config) {
     auto* fake_network = NewFakeNetwork();
-    auto port_allocator =
-        std::make_unique<cricket::BasicPortAllocator>(fake_network);
+    auto port_allocator = std::make_unique<cricket::BasicPortAllocator>(
+        fake_network,
+        std::make_unique<rtc::BasicPacketSocketFactory>(vss_.get()));
     port_allocator->set_flags(cricket::PORTALLOCATOR_DISABLE_TCP |
                               cricket::PORTALLOCATOR_DISABLE_RELAY);
     port_allocator->set_step_delay(cricket::kMinimumStepDelay);
@@ -175,7 +177,7 @@ class PeerConnectionIceBaseTest : public ::testing::Test {
       return nullptr;
     }
 
-    observer->SetPeerConnectionInterface(result.value());
+    observer->SetPeerConnectionInterface(result.value().get());
     auto wrapper = std::make_unique<PeerConnectionWrapperForIceTest>(
         pc_factory_, result.MoveValue(), std::move(observer));
     wrapper->set_network(fake_network);
@@ -809,7 +811,7 @@ TEST_P(PeerConnectionIceTest,
   // Chain an operation that will block AddIceCandidate() from executing.
   auto answer_observer =
       rtc::make_ref_counted<MockCreateSessionDescriptionObserver>();
-  callee->pc()->CreateAnswer(answer_observer, RTCOfferAnswerOptions());
+  callee->pc()->CreateAnswer(answer_observer.get(), RTCOfferAnswerOptions());
 
   auto jsep_candidate =
       callee->CreateJsepCandidateForFirstTransport(&candidate);
@@ -857,7 +859,7 @@ TEST_P(PeerConnectionIceTest,
   // Chain an operation that will block AddIceCandidate() from executing.
   auto answer_observer =
       rtc::make_ref_counted<MockCreateSessionDescriptionObserver>();
-  callee->pc()->CreateAnswer(answer_observer, RTCOfferAnswerOptions());
+  callee->pc()->CreateAnswer(answer_observer.get(), RTCOfferAnswerOptions());
 
   auto jsep_candidate =
       callee->CreateJsepCandidateForFirstTransport(&candidate);
@@ -1425,6 +1427,7 @@ class PeerConnectionIceConfigTest : public ::testing::Test {
     pc_ = result.MoveValue();
   }
 
+  rtc::AutoThread main_thread_;
   rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory_ = nullptr;
   rtc::scoped_refptr<PeerConnectionInterface> pc_ = nullptr;
   cricket::FakePortAllocator* port_allocator_ = nullptr;

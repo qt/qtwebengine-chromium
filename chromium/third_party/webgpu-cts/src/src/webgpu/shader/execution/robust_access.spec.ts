@@ -53,7 +53,7 @@ function runShaderTest(
 
     ${testSource}
 
-    @stage(compute) @workgroup_size(1)
+    @compute @workgroup_size(1)
     fn main() {
       _ = constants.zero; // Ensure constants buffer is statically-accessed
       result.value = runTest();
@@ -84,7 +84,7 @@ function runShaderTest(
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, testGroup, dynamicOffsets);
   pass.setBindGroup(1, group);
-  pass.dispatch(1);
+  pass.dispatchWorkgroups(1);
   pass.end();
 
   t.queue.submit([encoder.finish()]);

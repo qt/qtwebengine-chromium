@@ -9,11 +9,16 @@
 #define SKSL_PREFIXEXPRESSION
 
 #include "include/sksl/SkSLOperator.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
 
 /**
  * An expression modified by a unary operator appearing before it, such as '!flag'.
@@ -57,9 +62,9 @@ public:
         return this->operand()->hasProperty(property);
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<PrefixExpression>(fPosition, this->getOperator(),
-                this->operand()->clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<PrefixExpression>(pos, this->getOperator(),
+                                                  this->operand()->clone());
     }
 
     std::string description() const override {

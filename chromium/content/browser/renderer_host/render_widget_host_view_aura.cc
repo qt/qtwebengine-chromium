@@ -550,20 +550,7 @@ void RenderWidgetHostViewAura::NotifyHostAndDelegateOnWasShown(
   DCHECK(host_->is_hidden());
   DCHECK_NE(visibility_, Visibility::VISIBLE);
 
-  const Visibility old_visibility = visibility_;
   visibility_ = Visibility::VISIBLE;
-
-  if (old_visibility == Visibility::OCCLUDED) {
-    // Add an unocclusion timing request. If `tab_switch_start_state` is null,
-    // this will return the new request unchanged.
-    tab_switch_start_state = VisibleTimeRequestTrigger::ConsumeAndMergeRequests(
-        std::move(tab_switch_start_state),
-        blink::mojom::RecordContentToVisibleTimeRequest::New(
-            base::TimeTicks::Now(), false /* destination_is_loaded */,
-            false /* show_reason_tab_switching */,
-            true /* show_reason_unoccluded */,
-            false /* show_reason_bfcache_restore */));
-  }
 
   bool has_saved_frame = delegated_frame_host_->HasSavedFrame();
 
@@ -1569,11 +1556,7 @@ void RenderWidgetHostViewAura::EnsureCaretNotInRect(
   if (hidden_window_bounds_in_screen.IsEmpty())
     return;
 
-  gfx::Rect visible_area_in_local_space = gfx::SubtractRects(
-      window_->GetBoundsInScreen(), hidden_window_bounds_in_screen);
-  visible_area_in_local_space =
-      ConvertRectFromScreen(visible_area_in_local_space);
-  ScrollFocusedEditableNodeIntoRect(visible_area_in_local_space);
+  ScrollFocusedEditableNodeIntoView();
 }
 
 bool RenderWidgetHostViewAura::IsTextEditCommandEnabled(
@@ -1611,7 +1594,7 @@ bool RenderWidgetHostViewAura::SetCompositionFromExistingText(
 
 #endif
 
-#if BUILDFLAG(IS_CHROMEOS_ASH)
+#if BUILDFLAG(IS_CHROMEOS)
 gfx::Range RenderWidgetHostViewAura::GetAutocorrectRange() const {
   if (!text_input_manager_ || !text_input_manager_->GetActiveWidget())
     return gfx::Range();
@@ -1685,10 +1668,15 @@ bool RenderWidgetHostViewAura::SetAutocorrectRange(
 }
 
 absl::optional<ui::GrammarFragment>
-RenderWidgetHostViewAura::GetGrammarFragment(const gfx::Range& range) {
+RenderWidgetHostViewAura::GetGrammarFragmentAtCursor() const {
   if (!text_input_manager_ || !text_input_manager_->GetActiveWidget())
     return absl::nullopt;
-  return text_input_manager_->GetGrammarFragment(range);
+  gfx::Range selection_range;
+  if (GetEditableSelectionRange(&selection_range)) {
+    return text_input_manager_->GetGrammarFragment(selection_range);
+  } else {
+    return absl::nullopt;
+  }
 }
 
 bool RenderWidgetHostViewAura::ClearGrammarFragments(const gfx::Range& range) {
@@ -2150,7 +2138,7 @@ void RenderWidgetHostViewAura::OnRenderFrameMetadataChangedAfterActivation(
       metadata.local_surface_id.value().is_valid() &&
       metadata.local_surface_id.value().IsSameOrNewerThan(inset_surface_id_)) {
     inset_surface_id_ = viz::LocalSurfaceId();
-    ScrollFocusedEditableNodeIntoRect(gfx::Rect());
+    ScrollFocusedEditableNodeIntoView();
   }
 
   if (metadata.selection.start != selection_start_ ||
@@ -2381,7 +2369,8 @@ void RenderWidgetHostViewAura::NotifyVirtualKeyboardOverlayRect(
     keyboard_root_relative_rect.Offset(-root_widget_origin.x(),
                                        -root_widget_origin.y());
   }
-  frame->NotifyVirtualKeyboardOverlayRect(keyboard_root_relative_rect);
+  frame->GetPage().NotifyVirtualKeyboardOverlayRect(
+      keyboard_root_relative_rect);
 }
 
 bool RenderWidgetHostViewAura::IsHTMLFormPopup() const {
@@ -2769,12 +2758,11 @@ void RenderWidgetHostViewAura::SetPopupChild(
       popup_child_host_view ? popup_child_host_view->event_handler() : nullptr);
 }
 
-void RenderWidgetHostViewAura::ScrollFocusedEditableNodeIntoRect(
-    const gfx::Rect& node_rect) {
+void RenderWidgetHostViewAura::ScrollFocusedEditableNodeIntoView() {
   auto* input_handler = GetFrameWidgetInputHandlerForFocusedWidget();
   if (!input_handler)
     return;
-  input_handler->ScrollFocusedEditableNodeIntoRect(node_rect);
+  input_handler->ScrollFocusedEditableNodeIntoView();
 }
 
 void RenderWidgetHostViewAura::OnSynchronizedDisplayPropertiesChanged(

@@ -120,6 +120,7 @@ class ChromeLauncher {
     }
     defaultArgs(options = {}) {
         const chromeArguments = [
+            '--allow-pre-commit-input',
             '--disable-background-networking',
             '--enable-features=NetworkService,NetworkServiceInProcess',
             '--disable-background-timer-throttling',
@@ -130,7 +131,9 @@ class ChromeLauncher {
             '--disable-default-apps',
             '--disable-dev-shm-usage',
             '--disable-extensions',
-            '--disable-features=Translate',
+            // TODO: remove AvoidUnnecessaryBeforeUnloadCheckSync below
+            // once crbug.com/1324138 is fixed and released.
+            '--disable-features=Translate,BackForwardCache,AvoidUnnecessaryBeforeUnloadCheckSync',
             '--disable-hang-monitor',
             '--disable-ipc-flooding-protection',
             '--disable-popup-blocking',
@@ -154,7 +157,7 @@ class ChromeLauncher {
         if (devtools)
             chromeArguments.push('--auto-open-devtools-for-tabs');
         if (headless) {
-            chromeArguments.push('--headless', '--hide-scrollbars', '--mute-audio');
+            chromeArguments.push(headless === 'chrome' ? '--headless=chrome' : '--headless', '--hide-scrollbars', '--mute-audio');
         }
         if (args.every((arg) => arg.startsWith('-')))
             chromeArguments.push('about:blank');

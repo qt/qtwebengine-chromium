@@ -14,6 +14,9 @@
 #include "libANGLE/EGLSync.h"
 #include "libANGLE/Surface.h"
 #include "libANGLE/Thread.h"
+#include "libANGLE/capture/capture_egl.h"
+#include "libANGLE/capture/frame_capture_utils_autogen.h"
+#include "libANGLE/capture/gl_enum_utils_autogen.h"
 #include "libANGLE/queryutils.h"
 #include "libANGLE/validationEGL.h"
 #include "libGLESv2/global_state.h"
@@ -154,6 +157,8 @@ EGLImage CreateImage(Thread *thread,
         return EGL_NO_IMAGE;
     }
 
+    ANGLE_CAPTURE_EGL(EGLCreateImage, thread, target, buffer, attributes, image);
+
     thread->setSuccess();
     return static_cast<EGLImage>(image);
 }
@@ -293,6 +298,8 @@ EGLBoolean DestroyImage(Thread *thread, Display *display, Image *img)
                          GetDisplayIfValid(display), EGL_FALSE);
     display->destroyImage(img);
 
+    ANGLE_CAPTURE_EGL(EGLDestroyImage, thread, display, img);
+
     thread->setSuccess();
     return EGL_TRUE;
 }
@@ -381,7 +388,8 @@ EGLSurface GetCurrentSurface(Thread *thread, EGLint readdraw)
 
 EGLDisplay GetDisplay(Thread *thread, EGLNativeDisplayType display_id)
 {
-    return Display::GetDisplayFromNativeDisplay(display_id, AttributeMap());
+    return Display::GetDisplayFromNativeDisplay(EGL_PLATFORM_ANGLE_ANGLE, display_id,
+                                                AttributeMap());
 }
 
 EGLint GetError(Thread *thread)
@@ -396,20 +404,24 @@ EGLDisplay GetPlatformDisplay(Thread *thread,
                               void *native_display,
                               const AttributeMap &attribMap)
 {
-    if (platform == EGL_PLATFORM_ANGLE_ANGLE)
+    switch (platform)
     {
-        return Display::GetDisplayFromNativeDisplay(
-            gl::bitCast<EGLNativeDisplayType>(native_display), attribMap);
-    }
-    else if (platform == EGL_PLATFORM_DEVICE_EXT)
-    {
-        Device *eglDevice = static_cast<Device *>(native_display);
-        return Display::GetDisplayFromDevice(eglDevice, attribMap);
-    }
-    else
-    {
-        UNREACHABLE();
-        return EGL_NO_DISPLAY;
+        case EGL_PLATFORM_ANGLE_ANGLE:
+        case EGL_PLATFORM_GBM_KHR:
+        {
+            return Display::GetDisplayFromNativeDisplay(
+                platform, gl::bitCast<EGLNativeDisplayType>(native_display), attribMap);
+        }
+        case EGL_PLATFORM_DEVICE_EXT:
+        {
+            Device *eglDevice = static_cast<Device *>(native_display);
+            return Display::GetDisplayFromDevice(eglDevice, attribMap);
+        }
+        default:
+        {
+            UNREACHABLE();
+            return EGL_NO_DISPLAY;
+        }
     }
 }
 
@@ -655,7 +667,7 @@ EGLBoolean SwapInterval(Thread *thread, Display *display, EGLint interval)
     Surface *drawSurface        = static_cast<Surface *>(thread->getCurrentDrawSurface());
     const Config *surfaceConfig = drawSurface->getConfig();
     EGLint clampedInterval      = std::min(std::max(interval, surfaceConfig->minSwapInterval),
-                                      surfaceConfig->maxSwapInterval);
+                                           surfaceConfig->maxSwapInterval);
 
     drawSurface->setSwapInterval(clampedInterval);
 

@@ -19,9 +19,7 @@
 #include "include/sksl/DSLType.h"
 #include "include/sksl/DSLVar.h"
 #include "include/sksl/SkSLPosition.h"
-#include "src/sksl/SkSLMangler.h"
 #include "src/sksl/SkSLModifiersPool.h"
-#include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLExpression.h"
@@ -30,28 +28,12 @@
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 
-#include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace SkSL {
 
 namespace dsl {
-
-bool DSLWriter::ManglingEnabled() {
-    return ThreadContext::Instance().fSettings.fDSLMangling;
-}
-
-std::string_view DSLWriter::Name(std::string_view name) {
-    if (ManglingEnabled()) {
-        const std::string* s = ThreadContext::SymbolTable()->takeOwnershipOfString(
-                ThreadContext::Instance().fMangler.uniqueName(name,
-                    ThreadContext::SymbolTable().get()));
-        return s->c_str();
-    }
-    return name;
-}
 
 const SkSL::Variable* DSLWriter::Var(DSLVarBase& var) {
     // fInitialized is true if we have attempted to create a var, whether or not we actually
@@ -69,8 +51,8 @@ const SkSL::Variable* DSLWriter::Var(DSLVarBase& var) {
         }
         std::unique_ptr<SkSL::Variable> skslvar = SkSL::Variable::Convert(ThreadContext::Context(),
                 var.fPosition, var.fModifiers.fPosition, var.fModifiers.fModifiers,
-                &var.fType.skslType(), var.fName, /*isArray=*/false, /*arraySize=*/nullptr,
-                var.storage());
+                &var.fType.skslType(), var.fNamePosition, var.fName, /*isArray=*/false,
+                /*arraySize=*/nullptr, var.storage());
         SkSL::Variable* varPtr = skslvar.get();
         if (var.storage() != SkSL::VariableStorage::kParameter) {
             var.fDeclaration = VarDeclaration::Convert(ThreadContext::Context(), std::move(skslvar),
@@ -80,7 +62,6 @@ const SkSL::Variable* DSLWriter::Var(DSLVarBase& var) {
                 var.fInitialized = true;
             }
         }
-        ThreadContext::ReportErrors(var.fPosition);
     }
     return var.fVar;
 }
@@ -90,8 +71,8 @@ std::unique_ptr<SkSL::Variable> DSLWriter::CreateParameterVar(DSLParameter& var)
     // ahead regardless so we don't have to worry about null pointers potentially sneaking in and
     // breaking things. DSLFunction is responsible for reporting errors for invalid parameters.
     return SkSL::Variable::Convert(ThreadContext::Context(), var.fPosition,
-            var.fModifiers.fPosition, var.fModifiers.fModifiers, &var.fType.skslType(), var.fName,
-            /*isArray=*/false, /*arraySize=*/nullptr, var.storage());
+            var.fModifiers.fPosition, var.fModifiers.fModifiers, &var.fType.skslType(),
+            var.fNamePosition, var.fName, /*isArray=*/false, /*arraySize=*/nullptr, var.storage());
 }
 
 std::unique_ptr<SkSL::Statement> DSLWriter::Declaration(DSLVarBase& var) {
@@ -103,15 +84,6 @@ std::unique_ptr<SkSL::Statement> DSLWriter::Declaration(DSLVarBase& var) {
         return SkSL::Nop::Make();
     }
     return std::move(var.fDeclaration);
-}
-
-void DSLWriter::MarkDeclared(DSLVarBase& var) {
-    SkASSERT(!var.fDeclared);
-    var.fDeclared = true;
-}
-
-bool DSLWriter::MarkVarsDeclared() {
-    return ThreadContext::Instance().fSettings.fDSLMarkVarsDeclared;
 }
 
 void DSLWriter::AddVarDeclaration(DSLStatement& existing, DSLVar& additional) {
@@ -132,12 +104,6 @@ void DSLWriter::AddVarDeclaration(DSLStatement& existing, DSLVar& additional) {
         existing.fStatement = Declare(additional).release();
     }
 }
-
-#if !defined(SKSL_STANDALONE) && SK_SUPPORT_GPU
-GrGLSLUniformHandler::UniformHandle DSLWriter::VarUniformHandle(const DSLGlobalVar& var) {
-    return GrGLSLUniformHandler::UniformHandle(var.fUniformHandle);
-}
-#endif
 
 void DSLWriter::Reset() {
     dsl::PopSymbolTable();

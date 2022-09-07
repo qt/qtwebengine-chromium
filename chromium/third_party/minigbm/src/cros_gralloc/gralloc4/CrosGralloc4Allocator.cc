@@ -10,8 +10,11 @@
 #include <gralloctypes/Gralloc4.h>
 
 #include "cros_gralloc/cros_gralloc_helpers.h"
+#include "cros_gralloc/gralloc4/CrosGralloc4Metadata.h"
 #include "cros_gralloc/gralloc4/CrosGralloc4Utils.h"
 
+using aidl::android::hardware::graphics::common::BlendMode;
+using aidl::android::hardware::graphics::common::Dataspace;
 using android::hardware::hidl_handle;
 using android::hardware::hidl_vec;
 using android::hardware::Return;
@@ -26,6 +29,37 @@ using BufferDescriptorInfo =
 Error CrosGralloc4Allocator::init() {
     mDriver = cros_gralloc_driver::get_instance();
     return mDriver ? Error::NONE : Error::NO_RESOURCES;
+}
+
+Error CrosGralloc4Allocator::initializeMetadata(
+        cros_gralloc_handle_t crosHandle,
+        const struct cros_gralloc_buffer_descriptor& crosDescriptor) {
+    if (!mDriver) {
+        drv_log("Failed to initializeMetadata. Driver is uninitialized.\n");
+        return Error::NO_RESOURCES;
+    }
+
+    if (!crosHandle) {
+        drv_log("Failed to initializeMetadata. Invalid handle.\n");
+        return Error::BAD_BUFFER;
+    }
+
+    void* addr;
+    uint64_t size;
+    int ret = mDriver->get_reserved_region(crosHandle, &addr, &size);
+    if (ret) {
+        drv_log("Failed to getReservedRegion.\n");
+        return Error::NO_RESOURCES;
+    }
+
+    CrosGralloc4Metadata* crosMetadata = reinterpret_cast<CrosGralloc4Metadata*>(addr);
+
+    snprintf(crosMetadata->name, CROS_GRALLOC4_METADATA_MAX_NAME_SIZE, "%s",
+             crosDescriptor.name.c_str());
+    crosMetadata->dataspace = Dataspace::UNKNOWN;
+    crosMetadata->blendMode = BlendMode::INVALID;
+
+    return Error::NONE;
 }
 
 Error CrosGralloc4Allocator::allocate(const BufferDescriptorInfo& descriptor, uint32_t* outStride,
@@ -44,13 +78,9 @@ Error CrosGralloc4Allocator::allocate(const BufferDescriptorInfo& descriptor, ui
         return Error::UNSUPPORTED;
     }
 
-    bool supported = mDriver->is_supported(&crosDescriptor);
-    if (!supported && (descriptor.usage & BufferUsage::COMPOSER_OVERLAY)) {
-        crosDescriptor.use_flags &= ~BO_USE_SCANOUT;
-        supported = mDriver->is_supported(&crosDescriptor);
-    }
+    crosDescriptor.reserved_region_size += sizeof(CrosGralloc4Metadata);
 
-    if (!supported) {
+    if (!mDriver->is_supported(&crosDescriptor)) {
         std::string drmFormatString = get_drm_format_string(crosDescriptor.drm_format);
         std::string pixelFormatString = getPixelFormatString(descriptor.format);
         std::string usageString = getUsageString(descriptor.usage);
@@ -59,18 +89,23 @@ Error CrosGralloc4Allocator::allocate(const BufferDescriptorInfo& descriptor, ui
         return Error::UNSUPPORTED;
     }
 
-    buffer_handle_t handle;
+    native_handle_t* handle;
     int ret = mDriver->allocate(&crosDescriptor, &handle);
     if (ret) {
         return Error::NO_RESOURCES;
     }
 
     cros_gralloc_handle_t crosHandle = cros_gralloc_convert_handle(handle);
-    if (!crosHandle) {
-        return Error::NO_RESOURCES;
+
+    Error error = initializeMetadata(crosHandle, crosDescriptor);
+    if (error != Error::NONE) {
+        mDriver->release(handle);
+        native_handle_close(handle);
+        native_handle_delete(handle);
+        return error;
     }
 
-    *outHandle = handle;
+    outHandle->setTo(handle, /*shouldOwn=*/true);
     *outStride = crosHandle->pixel_stride;
 
     return Error::NONE;

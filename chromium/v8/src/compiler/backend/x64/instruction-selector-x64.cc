@@ -49,7 +49,7 @@ class X64OperandGenerator final : public OperandGenerator {
       }
       case IrOpcode::kNumberConstant: {
         const double value = OpParameter<double>(node->op());
-        return bit_cast<int64_t>(value) == 0;
+        return base::bit_cast<int64_t>(value) == 0;
       }
       default:
         return false;
@@ -303,7 +303,8 @@ ArchOpcode GetLoadOpcode(LoadRepresentation load_rep) {
     case MachineRepresentation::kSimd128:
       opcode = kX64Movdqu;
       break;
-    case MachineRepresentation::kNone:  // Fall through.
+    case MachineRepresentation::kSimd256:  // Fall through.
+    case MachineRepresentation::kNone:     // Fall through.
     case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
@@ -340,7 +341,8 @@ ArchOpcode GetStoreOpcode(StoreRepresentation store_rep) {
       return kX64MovqEncodeSandboxedPointer;
     case MachineRepresentation::kSimd128:
       return kX64Movdqu;
-    case MachineRepresentation::kNone:  // Fall through.
+    case MachineRepresentation::kSimd256:  // Fall through.
+    case MachineRepresentation::kNone:     // Fall through.
     case MachineRepresentation::kMapWord:
       UNREACHABLE();
   }
@@ -1937,6 +1939,11 @@ void InstructionSelector::VisitFloat64Ieee754Unop(Node* node,
       ->MarkAsCall();
 }
 
+void InstructionSelector::EmitMoveParamToFPR(Node* node, int index) {}
+
+void InstructionSelector::EmitMoveFPRToParam(InstructionOperand* op,
+                                             LinkageLocation location) {}
+
 void InstructionSelector::EmitPrepareArguments(
     ZoneVector<PushParameter>* arguments, const CallDescriptor* call_descriptor,
     Node* node) {
@@ -2838,7 +2845,7 @@ void InstructionSelector::VisitFloat64InsertLowWord32(Node* node) {
   Node* right = node->InputAt(1);
   Float64Matcher mleft(left);
   if (mleft.HasResolvedValue() &&
-      (bit_cast<uint64_t>(mleft.ResolvedValue()) >> 32) == 0u) {
+      (base::bit_cast<uint64_t>(mleft.ResolvedValue()) >> 32) == 0u) {
     Emit(kSSEFloat64LoadLowWord32, g.DefineAsRegister(node), g.Use(right));
     return;
   }
@@ -3146,8 +3153,6 @@ VISIT_ATOMIC_BINOP(Xor)
   V(F32x4Abs)               \
   V(F32x4Neg)               \
   V(F32x4Sqrt)              \
-  V(F32x4RecipApprox)       \
-  V(F32x4RecipSqrtApprox)   \
   V(F32x4DemoteF64x2Zero)   \
   V(I64x2BitMask)           \
   V(I64x2SConvertI32x4Low)  \
@@ -3613,6 +3618,34 @@ bool TryMatchShufps(const uint8_t* shuffle32x4) {
          shuffle32x4[3] > 3;
 }
 
+static bool IsV128ZeroConst(Node* node) {
+  if (node->opcode() == IrOpcode::kS128Zero) {
+    return true;
+  }
+  // If the node is a V128 const, check all the elements
+  auto m = V128ConstMatcher(node);
+  if (m.HasResolvedValue()) {
+    auto imms = m.ResolvedValue().immediate();
+    return std::all_of(imms.begin(), imms.end(), [](auto i) { return i == 0; });
+  }
+  return false;
+}
+
+static bool TryMatchOneInputIsZeros(Node* node, uint8_t* shuffle,
+                                    bool* needs_swap) {
+  *needs_swap = false;
+  bool input0_is_zero = IsV128ZeroConst(node->InputAt(0));
+  bool input1_is_zero = IsV128ZeroConst(node->InputAt(1));
+  if (!input0_is_zero && !input1_is_zero) {
+    return false;
+  }
+
+  if (input0_is_zero) {
+    *needs_swap = true;
+  }
+  return true;
+}
+
 }  // namespace
 
 void InstructionSelector::VisitI8x16Shuffle(Node* node) {
@@ -3643,6 +3676,7 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
   uint8_t shuffle16x8[8];
   int index;
   const ShuffleEntry* arch_shuffle;
+  bool needs_swap;
   if (wasm::SimdShuffle::TryMatchConcat(shuffle, &offset)) {
     if (wasm::SimdShuffle::TryMatch32x4Rotate(shuffle, shuffle32x4,
                                               is_swizzle)) {
@@ -3741,6 +3775,31 @@ void InstructionSelector::VisitI8x16Shuffle(Node* node) {
     no_same_as_first = false;
     src0_needs_reg = true;
     imms[imm_count++] = index;
+  } else if (TryMatchOneInputIsZeros(node, shuffle, &needs_swap)) {
+    is_swizzle = true;
+    // Swap zeros to input1
+    if (needs_swap) {
+      SwapShuffleInputs(node);
+      for (int i = 0; i < kSimd128Size; ++i) {
+        shuffle[i] ^= kSimd128Size;
+      }
+    }
+    if (wasm::SimdShuffle::TryMatchByteToDwordZeroExtend(shuffle)) {
+      opcode = kX64I32X4ShiftZeroExtendI8x16;
+      no_same_as_first = true;
+      src0_needs_reg = true;
+      imms[imm_count++] = shuffle[0];
+    } else {
+      // If the most significant bit (bit 7) of each byte of the shuffle control
+      // mask is set, then constant zero is written in the result byte. Input1
+      // is zeros now, we can avoid using input1 by setting bit 7 of shuffle[i]
+      // to 1.
+      for (int i = 0; i < kSimd128Size; ++i) {
+        if (shuffle[i] >= kSimd128Size) {
+          shuffle[i] = 0x80;
+        }
+      }
+    }
   }
   if (opcode == kX64I8x16Shuffle) {
     // Use same-as-first for general swizzle, but not shuffle.

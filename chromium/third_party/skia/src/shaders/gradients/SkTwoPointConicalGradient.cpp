@@ -16,6 +16,7 @@
 
 #ifdef SK_ENABLE_SKSL
 #include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 // Please see https://skia.org/dev/design/conical for how our shader works.
@@ -285,13 +286,16 @@ void SkTwoPointConicalGradient::addToKey(const SkKeyContext& keyContext,
                                          SkPaintParamsKeyBuilder* builder,
                                          SkPipelineDataGatherer* gatherer) const {
     GradientShaderBlocks::GradientData data(kConical_GradientType,
+                                            SkM44(this->getLocalMatrix()),
                                             fCenter1, fCenter2,
                                             fRadius1, fRadius2,
+                                            0.0f, 0.0f,
                                             fTileMode,
                                             fColorCount,
                                             fOrigColors4f,
                                             fOrigPos);
 
-    GradientShaderBlocks::AddToKey(keyContext, builder, gatherer, data);
+    GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, data);
+    builder->endBlock();
 }
 #endif

@@ -1,9 +1,18 @@
-export const description = `WGSL execution test. Section: Logical built-in functions Function: select`;
+export const description = `
+Execution tests for the 'select' builtin function
+
+T is scalar, abstract numeric type, or vector
+@const fn select(f: T, t: T, cond: bool) -> T
+Returns t when cond is true, and f otherwise.
+
+T is scalar or abstract numeric type
+@const fn select(f: vecN<T>, t: vecN<T>, cond: vecN<bool>) -> vecN<T>
+Component-wise selection. Result component i is evaluated as select(f[i],t[i],cond[i]).
+`;
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
 import {
-  Scalar,
   VectorType,
   TypeVec,
   TypeBool,
@@ -20,7 +29,7 @@ import {
   vec3,
   vec4,
 } from '../../../../../util/conversion.js';
-import { run, CaseList } from '../../expression.js';
+import { run, CaseList, allInputSources } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
@@ -51,21 +60,12 @@ const dataType = {
   },
 };
 
-g.test('bool')
-  .uniqueId('50b1f627c11098a1')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#logical-builtin-functions')
-  .desc(
-    `
-scalar select:
-T is a scalar or a vector select(f:T,t:T,cond: bool): T Returns t when cond is true, and f otherwise. (OpSelect)
-
-Please read the following guidelines before contributing:
-https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
-`
-  )
+g.test('scalar')
+  .specURL('https://www.w3.org/TR/WGSL/#logical-builtin-functions')
+  .desc(`scalar tests`)
   .params(u =>
     u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
+      .combine('inputSource', allInputSources)
       .combine('component', ['b', 'f', 'i', 'u'] as const)
       .combine('overload', ['scalar', 'vec2', 'vec3', 'vec4'] as const)
   )
@@ -79,7 +79,7 @@ https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
     // Each boolean will select between c[k] and c[k+4].  Those values must
     // always compare as different.  The tricky case is boolean, where the parity
     // has to be different, i.e. c[k]-c[k+4] must be odd.
-    const c = [0, 1, 2, 3, 5, 6, 7, 8].map(i => cons(i)) as Scalar[];
+    const c = [0, 1, 2, 3, 5, 6, 7, 8].map(i => cons(i));
     // Now form vectors that will have different components from each other.
     const v2a = vec2(c[0], c[1]);
     const v2b = vec2(c[4], c[5]);
@@ -131,20 +131,11 @@ https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
   });
 
 g.test('vector')
-  .uniqueId('8b7bb7f58ee1e479')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#logical-builtin-functions')
-  .desc(
-    `
-vector select:
-T is a scalar select(f: vecN<T>,t: vecN<T>,cond: vecN<bool>) Component-wise selection. Result component i is evaluated as select(f[i],t[i],cond[i]). (OpSelect)
-
-Please read the following guidelines before contributing:
-https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
-`
-  )
+  .specURL('https://www.w3.org/TR/WGSL/#logical-builtin-functions')
+  .desc(`vector tests`)
   .params(u =>
     u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
+      .combine('inputSource', allInputSources)
       .combine('component', ['b', 'f', 'i', 'u'] as const)
       .combine('overload', ['vec2', 'vec3', 'vec4'] as const)
   )
@@ -157,7 +148,7 @@ https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
     // Each boolean will select between c[k] and c[k+4].  Those values must
     // always compare as different.  The tricky case is boolean, where the parity
     // has to be different, i.e. c[k]-c[k+4] must be odd.
-    const c = [0, 1, 2, 3, 5, 6, 7, 8].map(i => cons(i)) as Scalar[];
+    const c = [0, 1, 2, 3, 5, 6, 7, 8].map(i => cons(i));
     const T = True;
     const F = False;
 

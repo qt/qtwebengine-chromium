@@ -12,12 +12,12 @@
 #include "include/private/SkSLDefines.h"
 #include "include/private/SkSLLayout.h"
 #include "include/private/SkSLModifiers.h"
-#include "include/private/SkSLSymbol.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 
 #include <memory>
 #include <string_view>
+#include <string>
 #include <vector>
 
 namespace SkSL {
@@ -28,6 +28,7 @@ class Expression;
 class ModifiersPool;
 class ProgramElement;
 class Statement;
+class Symbol;
 class Type;
 struct Program;
 
@@ -38,7 +39,7 @@ struct Program;
  */
 class Rehydrator {
 public:
-    static constexpr uint16_t kVersion = 10;
+    static constexpr uint16_t kVersion = 11;
 
     // see binary_format.md for a description of the command data
     enum Command {
@@ -76,7 +77,7 @@ public:
         kGlobalVar_Command,
         kIf_Command,
         kIndex_Command,
-        kInlineMarker_Command,
+        kUnused_Command,  // was kInlineMarker_Command
         kInterfaceBlock_Command,
         kIntLiteral_Command,
         kLayout_Command,
@@ -174,8 +175,9 @@ private:
     }
 
     template<typename T>
-    T* symbolRef(Symbol::Kind kind) {
+    T* symbolRef() {
         uint16_t result = this->readU16();
+        SkASSERTF(result != kBuiltin_Symbol, "use possiblyBuiltinSymbolRef() instead");
         SkASSERT(fSymbols.size() > result);
         return (T*) fSymbols[result];
     }

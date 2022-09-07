@@ -18,6 +18,7 @@ const char kTransitionPreviousStateMethod[] = "TransitionPreviousState";
 const char kAbortRmaMethod[] = "AbortRma";
 const char kGetLogMethod[] = "GetLog";
 const char kSaveLogMethod[] = "SaveLog";
+const char kRecordBrowserActionMetricMethod[] = "RecordBrowserActionMetric";
 
 // Signals.
 const char kErrorSignal[] = "Error";

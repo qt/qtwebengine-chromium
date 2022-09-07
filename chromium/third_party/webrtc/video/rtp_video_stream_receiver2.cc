@@ -105,7 +105,7 @@ std::unique_ptr<ModuleRtpRtcpImpl2> CreateRtpRtcpModule(
 std::unique_ptr<NackRequester> MaybeConstructNackModule(
     TaskQueueBase* current_queue,
     NackPeriodicProcessor* nack_periodic_processor,
-    const VideoReceiveStream::Config& config,
+    const VideoReceiveStreamInterface::Config& config,
     Clock* clock,
     NackSender* nack_sender,
     KeyFrameRequestSender* keyframe_request_sender,
@@ -208,7 +208,7 @@ RtpVideoStreamReceiver2::RtpVideoStreamReceiver2(
     Transport* transport,
     RtcpRttStats* rtt_stats,
     PacketRouter* packet_router,
-    const VideoReceiveStream::Config* config,
+    const VideoReceiveStreamInterface::Config* config,
     ReceiveStatistics* rtp_receive_statistics,
     RtcpPacketTypeCounterObserver* rtcp_packet_type_counter_observer,
     RtcpCnameCallback* rtcp_cname_callback,
@@ -912,10 +912,20 @@ void RtpVideoStreamReceiver2::SetRtpExtensions(
   rtp_header_extensions_.Reset(extensions);
 }
 
+const RtpHeaderExtensionMap& RtpVideoStreamReceiver2::GetRtpExtensions() const {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  return rtp_header_extensions_;
+}
+
 void RtpVideoStreamReceiver2::UpdateRtt(int64_t max_rtt_ms) {
   RTC_DCHECK_RUN_ON(&worker_task_checker_);
   if (nack_module_)
     nack_module_->UpdateRtt(max_rtt_ms);
+}
+
+void RtpVideoStreamReceiver2::OnLocalSsrcChange(uint32_t local_ssrc) {
+  RTC_DCHECK_RUN_ON(&packet_sequence_checker_);
+  rtp_rtcp_->SetLocalSsrc(local_ssrc);
 }
 
 absl::optional<int64_t> RtpVideoStreamReceiver2::LastReceivedPacketMs() const {
@@ -1042,12 +1052,13 @@ bool RtpVideoStreamReceiver2::DeliverRtcp(const uint8_t* rtcp_packet,
       clock_->CurrentNtpInMilliseconds() - received_ntp.ToMs();
   // Don't use old SRs to estimate time.
   if (time_since_received <= 1) {
-    ntp_estimator_.UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
-    absl::optional<int64_t> remote_to_local_clock_offset_ms =
-        ntp_estimator_.EstimateRemoteToLocalClockOffsetMs();
-    if (remote_to_local_clock_offset_ms.has_value()) {
+    ntp_estimator_.UpdateRtcpTimestamp(
+        TimeDelta::Millis(rtt), NtpTime(ntp_secs, ntp_frac), rtp_timestamp);
+    absl::optional<int64_t> remote_to_local_clock_offset =
+        ntp_estimator_.EstimateRemoteToLocalClockOffset();
+    if (remote_to_local_clock_offset.has_value()) {
       capture_clock_offset_updater_.SetRemoteToLocalClockOffset(
-          Int64MsToQ32x32(*remote_to_local_clock_offset_ms));
+          *remote_to_local_clock_offset);
     }
   }
 

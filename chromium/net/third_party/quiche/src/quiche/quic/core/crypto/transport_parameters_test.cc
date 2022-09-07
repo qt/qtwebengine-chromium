@@ -323,7 +323,7 @@ TEST_P(TransportParametersTest, RoundTripClient) {
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
 
   std::vector<uint8_t> serialized;
-  ASSERT_TRUE(SerializeTransportParameters(version_, orig_params, &serialized));
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
 
   TransportParameters new_params;
   std::string error_details;
@@ -369,7 +369,7 @@ TEST_P(TransportParametersTest, RoundTripServer) {
   orig_params.google_connection_options = CreateFakeGoogleConnectionOptions();
 
   std::vector<uint8_t> serialized;
-  ASSERT_TRUE(SerializeTransportParameters(version_, orig_params, &serialized));
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
 
   TransportParameters new_params;
   std::string error_details;
@@ -484,12 +484,10 @@ TEST_P(TransportParametersTest, NoClientParamsWithStatelessResetToken) {
   orig_params.max_udp_payload_size.set_value(kMaxPacketSizeForTest);
 
   std::vector<uint8_t> out;
-  bool ok = true;
   EXPECT_QUIC_BUG(
-      ok = SerializeTransportParameters(version_, orig_params, &out),
+      EXPECT_FALSE(SerializeTransportParameters(orig_params, &out)),
       "Not serializing invalid transport parameters: Client cannot send "
       "stateless reset token");
-  EXPECT_FALSE(ok);
 }
 
 TEST_P(TransportParametersTest, ParseClientParams) {
@@ -970,7 +968,7 @@ TEST_P(TransportParametersTest, VeryLongCustomParameter) {
   orig_params.custom_parameters[kCustomParameter1] = custom_value;
 
   std::vector<uint8_t> serialized;
-  ASSERT_TRUE(SerializeTransportParameters(version_, orig_params, &serialized));
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
 
   TransportParameters new_params;
   std::string error_details;
@@ -1013,15 +1011,13 @@ TEST_P(TransportParametersTest, SerializationOrderIsRandom) {
   orig_params.custom_parameters[kCustomParameter2] = kCustomParameter2Value;
 
   std::vector<uint8_t> first_serialized;
-  ASSERT_TRUE(
-      SerializeTransportParameters(version_, orig_params, &first_serialized));
+  ASSERT_TRUE(SerializeTransportParameters(orig_params, &first_serialized));
   // Test that a subsequent serialization is different from the first.
   // Run in a loop to avoid a failure in the unlikely event that randomization
   // produces the same result multiple times.
   for (int i = 0; i < 1000; i++) {
     std::vector<uint8_t> serialized;
-    ASSERT_TRUE(
-        SerializeTransportParameters(version_, orig_params, &serialized));
+    ASSERT_TRUE(SerializeTransportParameters(orig_params, &serialized));
     if (serialized != first_serialized) {
       return;
     }

@@ -43,7 +43,7 @@ uint32_t GetArgcForReplaceCallable(uint32_t num_captures,
   uint32_t argc = has_named_captures
                       ? num_captures + kAdditionalArgsWithNamedCaptures
                       : num_captures + kAdditionalArgsWithoutNamedCaptures;
-  STATIC_ASSERT(Code::kMaxArguments < std::numeric_limits<uint32_t>::max() -
+  static_assert(Code::kMaxArguments < std::numeric_limits<uint32_t>::max() -
                                           kAdditionalArgsWithNamedCaptures);
   return (argc > Code::kMaxArguments) ? -1 : argc;
 }
@@ -567,7 +567,7 @@ V8_WARN_UNUSED_RESULT static Object StringReplaceGlobalAtomRegExpWithString(
                           static_cast<int64_t>(subject_len);
   int result_len;
   if (result_len_64 > static_cast<int64_t>(String::kMaxLength)) {
-    STATIC_ASSERT(String::kMaxLength < kMaxInt);
+    static_assert(String::kMaxLength < kMaxInt);
     result_len = kMaxInt;  // Provoke exception.
   } else {
     result_len = static_cast<int>(result_len_64);
@@ -664,6 +664,8 @@ V8_WARN_UNUSED_RESULT static Object StringReplaceGlobalRegExpWithString(
   // from. Global regexps can match any number of times, so we guess
   // conservatively.
   int expected_parts = (compiled_replacement.parts() + 1) * 4 + 1;
+  // TODO(v8:12843): improve the situation where the expected_parts exceeds
+  // the maximum size of the backing store.
   ReplacementStringBuilder builder(isolate->heap(), subject, expected_parts);
 
   int prev = 0;
@@ -792,7 +794,7 @@ V8_WARN_UNUSED_RESULT static Object StringReplaceGlobalRegExpWithEmptyString(
   // TODO(hpayer): We should shrink the large object page if the size
   // of the object changed significantly.
   if (!heap->IsLargeObject(*answer)) {
-    heap->CreateFillerObjectAt(end_of_string, delta, ClearRecordedSlots::kNo);
+    heap->CreateFillerObjectAt(end_of_string, delta);
   }
   return *answer;
 }

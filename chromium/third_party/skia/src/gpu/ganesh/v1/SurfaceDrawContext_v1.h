@@ -14,7 +14,6 @@
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceProps.h"
 #include "include/private/gpu/ganesh/GrTypesPriv.h"
-#include "src/core/SkGlyphRunPainter.h"
 #include "src/gpu/ganesh/GrPaint.h"
 #include "src/gpu/ganesh/GrRenderTargetProxy.h"
 #include "src/gpu/ganesh/GrSurfaceProxyView.h"
@@ -66,8 +65,7 @@ public:
                                                     sk_sp<GrSurfaceProxy>,
                                                     sk_sp<SkColorSpace>,
                                                     GrSurfaceOrigin,
-                                                    const SkSurfaceProps&,
-                                                    bool flushTimeOpsTask = false);
+                                                    const SkSurfaceProps&);
 
     /* Uses the default texture format for the color type */
     static std::unique_ptr<SurfaceDrawContext> Make(GrRecordingContext*,
@@ -133,8 +131,7 @@ public:
                        GrSurfaceProxyView writeView,
                        GrColorType,
                        sk_sp<SkColorSpace>,
-                       const SkSurfaceProps&,
-                       bool flushTimeOpsTask = false);
+                       const SkSurfaceProps&);
 
     ~SurfaceDrawContext() override;
 
@@ -376,18 +373,16 @@ public:
                       bool skipColorXform = false);
 
     /**
-     * Draws vertices with a paint.
+     * Draws a custom mesh with a paint.
      *
      * @param   paint            describes how to color pixels.
-     * @param   viewMatrix       transformation matrix
-     * @param   vertices         specifies the mesh to draw.
-     * @param   overridePrimType primitive type to draw. If NULL, derive prim type from vertices.
-     * @param   effect           runtime effect that will handle custom vertex attributes.
+     * @param   matrixProvider   provides the transformation matrix
+     * @param   mesh             the mesh to draw.
      */
-    void drawCustomMesh(const GrClip*,
-                        GrPaint&& paint,
-                        const SkMatrixProvider& matrixProvider,
-                        SkCustomMesh);
+    void drawMesh(const GrClip*,
+                  GrPaint&& paint,
+                  const SkMatrixProvider& matrixProvider,
+                  const SkMesh& mesh);
 
     /**
      * Draws textured sprites from an atlas with a paint. This currently does not support AA for the
@@ -490,34 +485,8 @@ public:
                           const GrClip*,
                           const SkMatrixProvider& viewMatrix,
                           const SkGlyphRunList& glyphRunList,
+                          SkStrikeDeviceInfo strikeDeviceInfo,
                           const SkPaint& paint);
-
-    /**
-     * Draw the text specified by the SkGlyphRunList.
-     *
-     * @param viewMatrix      transformationMatrix
-     * @param glyphRunList    text, text positions, and paint.
-     */
-    void drawGlyphRunListNoCache(SkCanvas*,
-                                 const GrClip*,
-                                 const SkMatrixProvider& viewMatrix,
-                                 const SkGlyphRunList& glyphRunList,
-                                 const SkPaint& paint);
-
-    /**
-     * Convert the glyph-run list to a slug.
-     */
-    sk_sp<GrSlug> convertGlyphRunListToSlug(const SkMatrixProvider& viewMatrix,
-                                            const SkGlyphRunList& glyphRunList,
-                                            const SkPaint& paint);
-
-    /**
-     * Draw a slug.
-     */
-    void drawSlug(SkCanvas*,
-                  const GrClip* clip,
-                  const SkMatrixProvider& viewMatrix,
-                  const GrSlug* slugPtr);
 
     /**
      * Adds the necessary signal and wait semaphores and adds the passed in SkDrawable to the
@@ -582,8 +551,6 @@ public:
     SkBudgeted isBudgeted() const;
 
     int maxWindowRectangles() const;
-
-    SkGlyphRunListPainter* glyphRunPainter() { return &fGlyphPainter; }
 
     /*
      * This unique ID will not change for a given SurfaceDrawContext. However, it is _NOT_
@@ -713,8 +680,6 @@ private:
 
     OpsTask* replaceOpsTaskIfModifiesColor();
 
-    SkGlyphRunListPainter* glyphPainter() { return &fGlyphPainter; }
-
     const SkSurfaceProps fSurfaceProps;
     const bool fCanUseDynamicMSAA;
 
@@ -723,7 +688,6 @@ private:
 #if GR_TEST_UTILS
     bool fPreserveOpsOnFullClear_TestingOnly = false;
 #endif
-    SkGlyphRunListPainter fGlyphPainter;
 };
 
 } // namespace skgpu::v1

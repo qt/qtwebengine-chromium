@@ -17,7 +17,9 @@ limitations under the License.
 #define TENSORFLOW_COMPILER_MLIR_QUANTIZATION_TENSORFLOW_PASSES_PASSES_H_
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"  // from @llvm-project
+#include "mlir/IR/BuiltinOps.h"  // from @llvm-project
 #include "mlir/Pass/Pass.h"  // from @llvm-project
+#include "tensorflow/compiler/mlir/lite/quantization/quantization_config.h"
 #include "tensorflow/compiler/mlir/quantization/tensorflow/passes/util.h"
 
 namespace mlir {
@@ -36,6 +38,14 @@ std::unique_ptr<OperationPass<func::FuncOp>> CreateConvertFakeQuantToQdqPass();
 std::unique_ptr<OperationPass<ModuleOp>>
 CreateLiftQuantizableSpotsAsFunctionsPass();
 
+// Apply graph optimizations such as fusing and constant folding to prepare
+// lifting.
+std::unique_ptr<OperationPass<func::FuncOp>> CreatePrepareLiftingPass();
+
+// Lifts the dynamic range quantizable spots as composite functions.
+std::unique_ptr<OperationPass<ModuleOp>>
+CreateLiftQuantizableSpotsAsFunctionsDRQPass();
+
 // Replaces tf.CustomAggregator ops with quant.Stats ops for finalizing the
 // calibration procedure.
 std::unique_ptr<OperationPass<func::FuncOp>>
@@ -46,7 +56,8 @@ std::unique_ptr<OperationPass<ModuleOp>>
 CreateIssueIDsOfCustomAggregationOpsPass();
 
 // Inserts quantized function library.
-std::unique_ptr<OperationPass<ModuleOp>> CreateInsertQuantizedFunctionsPass();
+std::unique_ptr<OperationPass<ModuleOp>> CreateInsertQuantizedFunctionsPass(
+    QuantizationMethod quantization_method);
 
 // Inserts custom aggregation operators for the calibration procedure.
 std::unique_ptr<OperationPass<func::FuncOp>>
@@ -65,10 +76,18 @@ std::unique_ptr<OperationPass<ModuleOp>> CreateQuantizeCompositeFunctionsPass(
 // input and output types by unwrapping quantization parameters.
 std::unique_ptr<OperationPass<func::FuncOp>> CreateQuantizePass();
 
+// Overloading of CreateQuantizePass which takes QuantizationSpecs.
+std::unique_ptr<OperationPass<func::FuncOp>> CreateQuantizePass(
+    QuantizationSpecs quant_specs);
+
 // Creates an instance of the PrepareQuantize pass, which will perfrom similar
 // transformations as TFL::PrepareQuantizePass.
 std::unique_ptr<OperationPass<func::FuncOp>> CreatePrepareQuantizePass(
     QuantizationMethod quantization_method);
+
+// Creates an instance of the PrepareQuantizeDRQ pass, which will
+// perfrom similar transformations as TFL::PrepareQuantizeDynamicRangePass.
+std::unique_ptr<OperationPass<func::FuncOp>> CreatePrepareQuantizeDRQPass();
 
 // Creates an instance of the PostQuantize pass, which will remove unnecessary
 // ops from the final quantized graph.

@@ -1436,22 +1436,14 @@
                     "type": "string",
                     "enum": [
                         "PermissionPolicyDisabled",
-                        "InvalidAttributionSourceEventId",
-                        "InvalidAttributionData",
                         "AttributionSourceUntrustworthyOrigin",
                         "AttributionUntrustworthyOrigin",
-                        "AttributionTriggerDataTooLarge",
-                        "AttributionEventSourceTriggerDataTooLarge",
-                        "InvalidAttributionSourceExpiry",
-                        "InvalidAttributionSourcePriority",
-                        "InvalidEventSourceTriggerData",
-                        "InvalidTriggerPriority",
-                        "InvalidTriggerDedupKey"
+                        "InvalidHeader"
                     ]
                 },
                 {
                     "id": "AttributionReportingIssueDetails",
-                    "description": "Details for issues around \"Attribution Reporting API\" usage.\nExplainer: https://github.com/WICG/conversion-measurement-api",
+                    "description": "Details for issues around \"Attribution Reporting API\" usage.\nExplainer: https://github.com/WICG/attribution-reporting-api",
                     "type": "object",
                     "properties": [
                         {
@@ -1551,13 +1543,60 @@
                     "id": "DeprecationIssueType",
                     "type": "string",
                     "enum": [
+                        "AuthorizationCoveredByWildcard",
+                        "CanRequestURLHTTPContainingNewline",
+                        "ChromeLoadTimesConnectionInfo",
+                        "ChromeLoadTimesFirstPaintAfterLoadTime",
+                        "ChromeLoadTimesWasAlternateProtocolAvailable",
+                        "CookieWithTruncatingChar",
+                        "CrossOriginAccessBasedOnDocumentDomain",
+                        "CrossOriginWindowAlert",
+                        "CrossOriginWindowConfirm",
+                        "CSSSelectorInternalMediaControlsOverlayCastButton",
                         "DeprecationExample",
-                        "Untranslated"
+                        "DocumentDomainSettingWithoutOriginAgentClusterHeader",
+                        "EventPath",
+                        "GeolocationInsecureOrigin",
+                        "GeolocationInsecureOriginDeprecatedNotRemoved",
+                        "GetUserMediaInsecureOrigin",
+                        "HostCandidateAttributeGetter",
+                        "InsecurePrivateNetworkSubresourceRequest",
+                        "LegacyConstraintGoogIPv6",
+                        "LocalCSSFileExtensionRejected",
+                        "MediaSourceAbortRemove",
+                        "MediaSourceDurationTruncatingBuffered",
+                        "NoSysexWebMIDIWithoutPermission",
+                        "NotificationInsecureOrigin",
+                        "NotificationPermissionRequestedIframe",
+                        "ObsoleteWebRtcCipherSuite",
+                        "PictureSourceSrc",
+                        "PrefixedCancelAnimationFrame",
+                        "PrefixedRequestAnimationFrame",
+                        "PrefixedStorageInfo",
+                        "PrefixedVideoDisplayingFullscreen",
+                        "PrefixedVideoEnterFullscreen",
+                        "PrefixedVideoEnterFullScreen",
+                        "PrefixedVideoExitFullscreen",
+                        "PrefixedVideoExitFullScreen",
+                        "PrefixedVideoSupportsFullscreen",
+                        "RangeExpand",
+                        "RequestedSubresourceWithEmbeddedCredentials",
+                        "RTCConstraintEnableDtlsSrtpFalse",
+                        "RTCConstraintEnableDtlsSrtpTrue",
+                        "RTCPeerConnectionComplexPlanBSdpUsingDefaultSdpSemantics",
+                        "RTCPeerConnectionSdpSemanticsPlanB",
+                        "RtcpMuxPolicyNegotiate",
+                        "SharedArrayBufferConstructedWithoutIsolation",
+                        "TextToSpeech_DisallowedByAutoplay",
+                        "V8SharedArrayBufferConstructedInExtensionWithoutIsolation",
+                        "XHRJSONEncodingDetection",
+                        "XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload",
+                        "XRSupportsSession"
                     ]
                 },
                 {
                     "id": "DeprecationIssueDetails",
-                    "description": "This issue tracks information needed to print a deprecation message.\nThe formatting is inherited from the old console.log version, see more at:\nhttps://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/deprecation.cc\nTODO(crbug.com/1264960): Re-work format to add i18n support per:\nhttps://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/public/devtools_protocol/README.md",
+                    "description": "This issue tracks information needed to print a deprecation message.\nhttps://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/frame/third_party/blink/renderer/core/frame/deprecation/README.md",
                     "type": "object",
                     "properties": [
                         {
@@ -1568,20 +1607,6 @@
                         {
                             "name": "sourceCodeLocation",
                             "$ref": "SourceCodeLocation"
-                        },
-                        {
-                            "name": "message",
-                            "description": "The content of an untranslated deprecation issue,\ne.g. \"window.inefficientLegacyStorageMethod will be removed in M97,\naround January 2022. Please use Web Storage or Indexed Database\ninstead. This standard was abandoned in January, 1970. See\nhttps://www.chromestatus.com/feature/5684870116278272 for more details.\"",
-                            "deprecated": true,
-                            "optional": true,
-                            "type": "string"
-                        },
-                        {
-                            "name": "deprecationType",
-                            "description": "The id of an untranslated deprecation issue e.g. PrefixedStorageInfo.",
-                            "deprecated": true,
-                            "optional": true,
-                            "type": "string"
                         },
                         {
                             "name": "type",
@@ -1614,6 +1639,11 @@
                     "enum": [
                         "ApprovalDeclined",
                         "TooManyRequests",
+                        "ManifestListHttpNotFound",
+                        "ManifestListNoResponse",
+                        "ManifestListInvalidResponse",
+                        "ManifestNotInManifestList",
+                        "ManifestListTooBig",
                         "ManifestHttpNotFound",
                         "ManifestNoResponse",
                         "ManifestInvalidResponse",
@@ -3407,6 +3437,11 @@
                             "type": "string"
                         },
                         {
+                            "name": "fontDisplay",
+                            "description": "The font-display.",
+                            "type": "string"
+                        },
+                        {
                             "name": "unicodeRange",
                             "description": "The unicode-range.",
                             "type": "string"
@@ -4765,6 +4800,11 @@
                             "name": "compatibilityMode",
                             "optional": true,
                             "$ref": "CompatibilityMode"
+                        },
+                        {
+                            "name": "assignedSlot",
+                            "optional": true,
+                            "$ref": "BackendNode"
                         }
                     ]
                 },
@@ -7329,6 +7369,10 @@
             "experimental": true,
             "types": [
                 {
+                    "id": "SerializedStorageKey",
+                    "type": "string"
+                },
+                {
                     "id": "StorageId",
                     "description": "DOM Storage identifier.",
                     "type": "object",
@@ -7336,7 +7380,14 @@
                         {
                             "name": "securityOrigin",
                             "description": "Security origin for the storage.",
+                            "optional": true,
                             "type": "string"
+                        },
+                        {
+                            "name": "storageKey",
+                            "description": "Represents a key by which DOM Storage keys its CachedStorageAreas",
+                            "optional": true,
+                            "$ref": "SerializedStorageKey"
                         },
                         {
                             "name": "isLocalStorage",
@@ -7789,6 +7840,16 @@
                         },
                         {
                             "name": "mobile",
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "bitness",
+                            "optional": true,
+                            "type": "string"
+                        },
+                        {
+                            "name": "wow64",
+                            "optional": true,
                             "type": "boolean"
                         }
                     ]
@@ -8244,6 +8305,17 @@
                     ]
                 },
                 {
+                    "name": "setHardwareConcurrencyOverride",
+                    "experimental": true,
+                    "parameters": [
+                        {
+                            "name": "hardwareConcurrency",
+                            "description": "Hardware concurrency to report",
+                            "type": "integer"
+                        }
+                    ]
+                },
+                {
                     "name": "setUserAgentOverride",
                     "description": "Allows overriding user agent with the given string.",
                     "parameters": [
@@ -8330,7 +8402,7 @@
             "commands": [
                 {
                     "name": "beginFrame",
-                    "description": "Sends a BeginFrame to the target and returns when the frame was completed. Optionally captures a\nscreenshot from the resulting frame. Requires that the target was created with enabled\nBeginFrameControl. Designed for use with --run-all-compositor-stages-before-draw, see also\nhttps://goo.gl/3zHXhB for more background.",
+                    "description": "Sends a BeginFrame to the target and returns when the frame was completed. Optionally captures a\nscreenshot from the resulting frame. Requires that the target was created with enabled\nBeginFrameControl. Designed for use with --run-all-compositor-stages-before-draw, see also\nhttps://goo.gle/chrome-headless-rendering for more background.",
                     "parameters": [
                         {
                             "name": "frameTimeTicks",
@@ -11995,9 +12067,10 @@
                     "enum": [
                         "SameOrigin",
                         "SameOriginAllowPopups",
+                        "RestrictProperties",
                         "UnsafeNone",
                         "SameOriginPlusCoep",
-                        "SameOriginAllowPopupsPlusCoep"
+                        "RestrictPropertiesPlusCoep"
                     ]
                 },
                 {
@@ -14890,6 +14963,24 @@
                     ]
                 },
                 {
+                    "id": "AdScriptId",
+                    "description": "Identifies the bottom-most script which caused the frame to be labelled\nas an ad.",
+                    "experimental": true,
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "scriptId",
+                            "description": "Script Id of the bottom-most script which caused the frame to be labelled\nas an ad.",
+                            "$ref": "Runtime.ScriptId"
+                        },
+                        {
+                            "name": "debuggerId",
+                            "description": "Id of adScriptId's debugger.",
+                            "$ref": "Runtime.UniqueDebuggerId"
+                        }
+                    ]
+                },
+                {
                     "id": "SecureContextType",
                     "description": "Indicates whether the frame is a secure context and why it is the case.",
                     "experimental": true,
@@ -14933,6 +15024,7 @@
                         "ambient-light-sensor",
                         "attribution-reporting",
                         "autoplay",
+                        "bluetooth",
                         "browsing-topics",
                         "camera",
                         "ch-dpr",
@@ -14941,6 +15033,7 @@
                         "ch-ect",
                         "ch-prefers-color-scheme",
                         "ch-rtt",
+                        "ch-save-data",
                         "ch-ua",
                         "ch-ua-arch",
                         "ch-ua-bitness",
@@ -14956,7 +15049,6 @@
                         "ch-viewport-height",
                         "ch-viewport-width",
                         "ch-width",
-                        "ch-partitioned-cookies",
                         "clipboard-read",
                         "clipboard-write",
                         "cross-origin-isolated",
@@ -14977,6 +15069,7 @@
                         "interest-cohort",
                         "join-ad-interest-group",
                         "keyboard-map",
+                        "local-fonts",
                         "magnetometer",
                         "microphone",
                         "midi",
@@ -15649,6 +15742,12 @@
                             "description": "The fantasy font-family.",
                             "optional": true,
                             "type": "string"
+                        },
+                        {
+                            "name": "math",
+                            "description": "The math font-family.",
+                            "optional": true,
+                            "type": "string"
                         }
                     ]
                 },
@@ -15821,7 +15920,6 @@
                         "JavaScriptExecution",
                         "RendererProcessKilled",
                         "RendererProcessCrashed",
-                        "GrantedMediaStreamAccess",
                         "SchedulerTrackedFeatureUsed",
                         "ConflictingBrowsingInstance",
                         "CacheFlushed",
@@ -15848,7 +15946,6 @@
                         "ForegroundCacheLimit",
                         "BrowsingInstanceNotSwapped",
                         "BackForwardCacheDisabledForDelegate",
-                        "OptInUnloadHeaderNotPresent",
                         "UnloadHandlerExistsInMainFrame",
                         "UnloadHandlerExistsInSubFrame",
                         "ServiceWorkerUnregistration",
@@ -15912,7 +16009,6 @@
                         "ContentMediaDevicesDispatcherHost",
                         "ContentWebBluetooth",
                         "ContentWebUSB",
-                        "ContentMediaSession",
                         "ContentMediaSessionService",
                         "ContentScreenReader",
                         "EmbedderPopupBlockerTabHelper",
@@ -15999,7 +16095,39 @@
                     "description": "List of FinalStatus reasons for Prerender2.",
                     "type": "string",
                     "enum": [
-                        "Activated"
+                        "Activated",
+                        "Destroyed",
+                        "LowEndDevice",
+                        "CrossOriginRedirect",
+                        "CrossOriginNavigation",
+                        "InvalidSchemeRedirect",
+                        "InvalidSchemeNavigation",
+                        "InProgressNavigation",
+                        "NavigationRequestBlockedByCsp",
+                        "MainFrameNavigation",
+                        "MojoBinderPolicy",
+                        "RendererProcessCrashed",
+                        "RendererProcessKilled",
+                        "Download",
+                        "TriggerDestroyed",
+                        "NavigationNotCommitted",
+                        "NavigationBadHttpStatus",
+                        "ClientCertRequested",
+                        "NavigationRequestNetworkError",
+                        "MaxNumOfRunningPrerendersExceeded",
+                        "CancelAllHostsForTesting",
+                        "DidFailLoad",
+                        "Stop",
+                        "SslCertificateError",
+                        "LoginAuthRequested",
+                        "UaChangeRequiresReload",
+                        "BlockedByClient",
+                        "AudioOutputDeviceRequested",
+                        "MixedContent",
+                        "TriggerBackgrounded",
+                        "EmbedderTriggeredAndSameOriginRedirected",
+                        "EmbedderTriggeredAndCrossOriginRedirected",
+                        "EmbedderTriggeredAndDestroyed"
                     ]
                 }
             ],
@@ -16315,19 +16443,19 @@
                     "returns": [
                         {
                             "name": "layoutViewport",
-                            "description": "Deprecated metrics relating to the layout viewport. Can be in DP or in CSS pixels depending on the `enable-use-zoom-for-dsf` flag. Use `cssLayoutViewport` instead.",
+                            "description": "Deprecated metrics relating to the layout viewport. Is in device pixels. Use `cssLayoutViewport` instead.",
                             "deprecated": true,
                             "$ref": "LayoutViewport"
                         },
                         {
                             "name": "visualViewport",
-                            "description": "Deprecated metrics relating to the visual viewport. Can be in DP or in CSS pixels depending on the `enable-use-zoom-for-dsf` flag. Use `cssVisualViewport` instead.",
+                            "description": "Deprecated metrics relating to the visual viewport. Is in device pixels. Use `cssVisualViewport` instead.",
                             "deprecated": true,
                             "$ref": "VisualViewport"
                         },
                         {
                             "name": "contentSize",
-                            "description": "Deprecated size of scrollable area. Can be in DP or in CSS pixels depending on the `enable-use-zoom-for-dsf` flag. Use `cssContentSize` instead.",
+                            "description": "Deprecated size of scrollable area. Is in DP. Use `cssContentSize` instead.",
                             "deprecated": true,
                             "$ref": "DOM.Rect"
                         },
@@ -16472,7 +16600,7 @@
                         },
                         {
                             "name": "loaderId",
-                            "description": "Loader identifier.",
+                            "description": "Loader identifier. This is omitted in case of same-document navigation,\nas the previously committed loaderId would not change.",
                             "optional": true,
                             "$ref": "Network.LoaderId"
                         },
@@ -16561,15 +16689,9 @@
                         },
                         {
                             "name": "pageRanges",
-                            "description": "Paper ranges to print, e.g., '1-5, 8, 11-13'. Defaults to the empty string, which means\nprint all pages.",
+                            "description": "Paper ranges to print, one based, e.g., '1-5, 8, 11-13'. Pages are\nprinted in the document order, not in the order specified, and no\nmore than once.\nDefaults to empty string, which implies the entire document is printed.\nThe page numbers are quietly capped to actual page count of the\ndocument, and ranges beyond the end of the document are ignored.\nIf this results in no pages to print, an error is reported.\nIt is an error to specify a range with start greater than end.",
                             "optional": true,
                             "type": "string"
-                        },
-                        {
-                            "name": "ignoreInvalidPageRanges",
-                            "description": "Whether to silently ignore invalid but successfully parsed page ranges, such as '3-2'.\nDefaults to false.",
-                            "optional": true,
-                            "type": "boolean"
                         },
                         {
                             "name": "headerTemplate",
@@ -17230,6 +17352,13 @@
                             "description": "JavaScript stack trace of when frame was attached, only set if frame initiated from script.",
                             "optional": true,
                             "$ref": "Runtime.StackTrace"
+                        },
+                        {
+                            "name": "adScriptId",
+                            "description": "Identifies the bottom-most script which caused the frame to be labelled\nas an ad. Only sent if frame is labelled as an ad and id is available.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "AdScriptId"
                         }
                     ]
                 },
@@ -18669,6 +18798,10 @@
             ],
             "types": [
                 {
+                    "id": "SerializedStorageKey",
+                    "type": "string"
+                },
+                {
                     "id": "StorageType",
                     "description": "Enum of possible storage types.",
                     "type": "string",
@@ -18819,6 +18952,22 @@
                 }
             ],
             "commands": [
+                {
+                    "name": "getStorageKeyForFrame",
+                    "description": "Returns a storage key given a frame id.",
+                    "parameters": [
+                        {
+                            "name": "frameId",
+                            "$ref": "Page.FrameId"
+                        }
+                    ],
+                    "returns": [
+                        {
+                            "name": "storageKey",
+                            "$ref": "SerializedStorageKey"
+                        }
+                    ]
+                },
                 {
                     "name": "clearDataForOrigin",
                     "description": "Clears storage for origin.",
@@ -21381,7 +21530,15 @@
             "commands": [
                 {
                     "name": "enable",
-                    "description": "Enable the WebAuthn domain and start intercepting credential storage and\nretrieval with a virtual authenticator."
+                    "description": "Enable the WebAuthn domain and start intercepting credential storage and\nretrieval with a virtual authenticator.",
+                    "parameters": [
+                        {
+                            "name": "enableUI",
+                            "description": "Whether to enable the WebAuthn user interface. Enabling the UI is\nrecommended for debugging and demo purposes, as it is closer to the real\nexperience. Disabling the UI is recommended for automated testing.\nSupported at the embedder's discretion if UI is available.\nDefaults to false.",
+                            "optional": true,
+                            "type": "boolean"
+                        }
+                    ]
                 },
                 {
                     "name": "disable",
@@ -21956,6 +22113,13 @@
                             "description": "The value being returned, if the function is at return point.",
                             "optional": true,
                             "$ref": "Runtime.RemoteObject"
+                        },
+                        {
+                            "name": "canBeRestarted",
+                            "description": "Valid only while the VM is paused and indicates whether this frame\ncan be restarted or not. Note that a `true` value here does not\nguarantee that Debugger#restartFrame with this CallFrameId will be\nsuccessful, but it is very likely.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "boolean"
                         }
                     ]
                 },
@@ -22328,19 +22492,29 @@
                 },
                 {
                     "name": "restartFrame",
-                    "description": "Restarts particular call frame from the beginning.",
-                    "deprecated": true,
+                    "description": "Restarts particular call frame from the beginning. The old, deprecated\nbehavior of `restartFrame` is to stay paused and allow further CDP commands\nafter a restart was scheduled. This can cause problems with restarting, so\nwe now continue execution immediatly after it has been scheduled until we\nreach the beginning of the restarted frame.\n\nTo stay back-wards compatible, `restartFrame` now expects a `mode`\nparameter to be present. If the `mode` parameter is missing, `restartFrame`\nerrors out.\n\nThe various return values are deprecated and `callFrames` is always empty.\nUse the call frames from the `Debugger#paused` events instead, that fires\nonce V8 pauses at the beginning of the restarted function.",
                     "parameters": [
                         {
                             "name": "callFrameId",
                             "description": "Call frame identifier to evaluate on.",
                             "$ref": "CallFrameId"
+                        },
+                        {
+                            "name": "mode",
+                            "description": "The `mode` parameter must be present and set to 'StepInto', otherwise\n`restartFrame` will error out.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "string",
+                            "enum": [
+                                "StepInto"
+                            ]
                         }
                     ],
                     "returns": [
                         {
                             "name": "callFrames",
                             "description": "New stack trace.",
+                            "deprecated": true,
                             "type": "array",
                             "items": {
                                 "$ref": "CallFrame"
@@ -22349,13 +22523,14 @@
                         {
                             "name": "asyncStackTrace",
                             "description": "Async stack trace, if any.",
+                            "deprecated": true,
                             "optional": true,
                             "$ref": "Runtime.StackTrace"
                         },
                         {
                             "name": "asyncStackTraceId",
                             "description": "Async stack trace, if any.",
-                            "experimental": true,
+                            "deprecated": true,
                             "optional": true,
                             "$ref": "Runtime.StackTraceId"
                         }
@@ -22897,7 +23072,7 @@
                         },
                         {
                             "name": "hash",
-                            "description": "Content hash of the script.",
+                            "description": "Content hash of the script, SHA-256.",
                             "type": "string"
                         },
                         {
@@ -23001,7 +23176,7 @@
                         },
                         {
                             "name": "hash",
-                            "description": "Content hash of the script.",
+                            "description": "Content hash of the script, SHA-256.",
                             "type": "string"
                         },
                         {
@@ -23275,12 +23450,21 @@
                         },
                         {
                             "name": "treatGlobalObjectsAsRoots",
+                            "description": "Deprecated in favor of `exposeInternals`.",
+                            "deprecated": true,
                             "optional": true,
                             "type": "boolean"
                         },
                         {
                             "name": "captureNumericValue",
                             "description": "If true, numerical values are included in the snapshot",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "exposeInternals",
+                            "description": "If true, exposes internals of the snapshot.",
+                            "experimental": true,
                             "optional": true,
                             "type": "boolean"
                         }
@@ -23297,13 +23481,21 @@
                         },
                         {
                             "name": "treatGlobalObjectsAsRoots",
-                            "description": "If true, a raw snapshot without artificial roots will be generated",
+                            "description": "If true, a raw snapshot without artificial roots will be generated.\nDeprecated in favor of `exposeInternals`.",
+                            "deprecated": true,
                             "optional": true,
                             "type": "boolean"
                         },
                         {
                             "name": "captureNumericValue",
                             "description": "If true, numerical values are included in the snapshot",
+                            "optional": true,
+                            "type": "boolean"
+                        },
+                        {
+                            "name": "exposeInternals",
+                            "description": "If true, exposes internals of the snapshot.",
+                            "experimental": true,
                             "optional": true,
                             "type": "boolean"
                         }
@@ -23826,6 +24018,52 @@
                     "type": "string"
                 },
                 {
+                    "id": "WebDriverValue",
+                    "description": "Represents the value serialiazed by the WebDriver BiDi specification\nhttps://w3c.github.io/webdriver-bidi.",
+                    "type": "object",
+                    "properties": [
+                        {
+                            "name": "type",
+                            "type": "string",
+                            "enum": [
+                                "undefined",
+                                "null",
+                                "string",
+                                "number",
+                                "boolean",
+                                "bigint",
+                                "regexp",
+                                "date",
+                                "symbol",
+                                "array",
+                                "object",
+                                "function",
+                                "map",
+                                "set",
+                                "weakmap",
+                                "weakset",
+                                "error",
+                                "proxy",
+                                "promise",
+                                "typedarray",
+                                "arraybuffer",
+                                "node",
+                                "window"
+                            ]
+                        },
+                        {
+                            "name": "value",
+                            "optional": true,
+                            "type": "any"
+                        },
+                        {
+                            "name": "objectId",
+                            "optional": true,
+                            "type": "string"
+                        }
+                    ]
+                },
+                {
                     "id": "RemoteObjectId",
                     "description": "Unique object identifier.",
                     "type": "string"
@@ -23905,6 +24143,13 @@
                             "description": "String representation of the object.",
                             "optional": true,
                             "type": "string"
+                        },
+                        {
+                            "name": "webDriverValue",
+                            "description": "WebDriver BiDi representation of the value.",
+                            "experimental": true,
+                            "optional": true,
+                            "$ref": "WebDriverValue"
                         },
                         {
                             "name": "objectId",
@@ -24559,6 +24804,13 @@
                             "experimental": true,
                             "optional": true,
                             "type": "boolean"
+                        },
+                        {
+                            "name": "generateWebDriverValue",
+                            "description": "Whether the result should contain `webDriverValue`, serialized according to\nhttps://w3c.github.io/webdriver-bidi. This is mutually exclusive with `returnByValue`, but\nresulting `objectId` is still provided.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "boolean"
                         }
                     ],
                     "returns": [
@@ -24727,6 +24979,13 @@
                             "experimental": true,
                             "optional": true,
                             "type": "string"
+                        },
+                        {
+                            "name": "generateWebDriverValue",
+                            "description": "Whether the result should be serialized according to https://w3c.github.io/webdriver-bidi.",
+                            "experimental": true,
+                            "optional": true,
+                            "type": "boolean"
                         }
                     ],
                     "returns": [

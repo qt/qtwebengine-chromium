@@ -554,6 +554,8 @@ void TCompiler::setASTMetadata(const TParseContext &parseContext)
 
     mEarlyFragmentTestsSpecified = parseContext.isEarlyFragmentTestsSpecified();
 
+    mEnablesPerSampleShading = parseContext.isSampleQualifierSpecified();
+
     mComputeShaderLocalSizeDeclared = parseContext.isComputeShaderLocalSizeDeclared();
     mComputeShaderLocalSize         = parseContext.getComputeShaderLocalSize();
 
@@ -1103,16 +1105,6 @@ bool TCompiler::checkAndSimplifyAST(TIntermBlock *root,
         if (!sh::RemoveDynamicIndexingOfSwizzledVector(this, root, &getSymbolTable(), nullptr))
         {
             return false;
-        }
-    }
-
-    mEarlyFragmentTestsOptimized = false;
-    if ((compileOptions & SH_EARLY_FRAGMENT_TESTS_OPTIMIZATION) != 0)
-    {
-        if (mShaderVersion <= 300 && mShaderType == GL_FRAGMENT_SHADER &&
-            !isEarlyFragmentTestsSpecified())
-        {
-            mEarlyFragmentTestsOptimized = CheckEarlyFragmentTestsFeasible(this, root);
         }
     }
 

@@ -61,6 +61,7 @@ class MockEndpointChannel : public EndpointChannel {
   MOCK_METHOD(int, GetFrequency, (), (const override));
   MOCK_METHOD(int, GetTryCount, (), (const override));
   MOCK_METHOD(std::string, GetType, (), (const override));
+  MOCK_METHOD(std::string, GetServiceId, (), (const override));
   MOCK_METHOD(std::string, GetName, (), (const override));
   MOCK_METHOD(Medium, GetMedium, (), (const override));
   MOCK_METHOD(int, GetMaxTransmitPacketSize, (), (const override));
@@ -98,8 +99,8 @@ class MockFrameProcessor : public EndpointManager::FrameProcessor {
               (override));
 
   MOCK_METHOD(void, OnEndpointDisconnect,
-              (ClientProxy * client, const std::string& endpoint_id,
-               CountDownLatch barrier),
+              (ClientProxy * client, const std::string& service_id,
+               const std::string& endpoint_id, CountDownLatch barrier),
               (override));
 };
 
@@ -194,9 +195,10 @@ TEST_F(EndpointManagerTest, RegisterFrameProcessorWorks) {
   auto endpoint_channel = std::make_unique<MockEndpointChannel>();
   auto connect_request = std::make_unique<MockFrameProcessor>();
   ByteArray endpoint_info{"endpoint_name"};
-  auto read_data =
-      parser::ForConnectionRequest("endpoint_id", endpoint_info, 1234, false,
-                                   "", std::vector{Medium::BLE}, 0, 0);
+  auto read_data = parser::ForConnectionRequest(
+      "endpoint_id", endpoint_info, 1234, false, "", 2412, "8xqT",
+      std::vector<Medium>{Medium::BLE}, 0,
+      0);
   EXPECT_CALL(*connect_request, OnIncomingFrame);
   EXPECT_CALL(*connect_request, OnEndpointDisconnect);
   EXPECT_CALL(*endpoint_channel, Read())

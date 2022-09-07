@@ -314,8 +314,12 @@ class V8_EXPORT_PRIVATE TurboAssembler
 
   void Move(XMMRegister dst, uint32_t src);
   void Move(XMMRegister dst, uint64_t src);
-  void Move(XMMRegister dst, float src) { Move(dst, bit_cast<uint32_t>(src)); }
-  void Move(XMMRegister dst, double src) { Move(dst, bit_cast<uint64_t>(src)); }
+  void Move(XMMRegister dst, float src) {
+    Move(dst, base::bit_cast<uint32_t>(src));
+  }
+  void Move(XMMRegister dst, double src) {
+    Move(dst, base::bit_cast<uint64_t>(src));
+  }
   void Move(XMMRegister dst, uint64_t high, uint64_t low);
 
   // Move if the registers are not identical.
@@ -412,8 +416,8 @@ class V8_EXPORT_PRIVATE TurboAssembler
   void Jump(Address destination, RelocInfo::Mode rmode);
   void Jump(const ExternalReference& reference);
   void Jump(Operand op);
-  void Jump(Handle<CodeT> code_object, RelocInfo::Mode rmode,
-            Condition cc = always);
+  void Jump(Handle<CodeT> code_object, RelocInfo::Mode rmode);
+  void Jump(Handle<CodeT> code_object, RelocInfo::Mode rmode, Condition cc);
 
   void BailoutIfDeoptimized(Register scratch);
   void CallForDeoptimization(Builtin target, int deopt_id, Label* exit,
@@ -506,12 +510,10 @@ class V8_EXPORT_PRIVATE TurboAssembler
                                SaveFPRegsMode fp_mode);
 
   void CallRecordWriteStubSaveRegisters(
-      Register object, Register slot_address,
-      RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
+      Register object, Register slot_address, SaveFPRegsMode fp_mode,
       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
   void CallRecordWriteStub(
-      Register object, Register slot_address,
-      RememberedSetAction remembered_set_action, SaveFPRegsMode fp_mode,
+      Register object, Register slot_address, SaveFPRegsMode fp_mode,
       StubCallMode mode = StubCallMode::kCallBuiltinPointer);
 
 #ifdef V8_IS_TSAN
@@ -691,22 +693,18 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
   // stored.  value and scratch registers are clobbered by the operation.
   // The offset is the offset from the start of the object, not the offset from
   // the tagged HeapObject pointer.  For use with FieldOperand(reg, off).
-  void RecordWriteField(
-      Register object, int offset, Register value, Register slot_address,
-      SaveFPRegsMode save_fp,
-      RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
-      SmiCheck smi_check = SmiCheck::kInline);
+  void RecordWriteField(Register object, int offset, Register value,
+                        Register slot_address, SaveFPRegsMode save_fp,
+                        SmiCheck smi_check = SmiCheck::kInline);
 
   // For page containing |object| mark region covering |address|
   // dirty. |object| is the object being stored into, |value| is the
   // object being stored. The address and value registers are clobbered by the
   // operation.  RecordWrite filters out smis so it does not update
   // the write barrier if the value is a smi.
-  void RecordWrite(
-      Register object, Register slot_address, Register value,
-      SaveFPRegsMode save_fp,
-      RememberedSetAction remembered_set_action = RememberedSetAction::kEmit,
-      SmiCheck smi_check = SmiCheck::kInline);
+  void RecordWrite(Register object, Register slot_address, Register value,
+                   SaveFPRegsMode save_fp,
+                   SmiCheck smi_check = SmiCheck::kInline);
 
   // Enter specific kind of exit frame; either in normal or
   // debug mode. Expects the number of arguments in register rax and
@@ -811,6 +809,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
     }
     andq(reg, Immediate(mask));
   }
+
+  void TestCodeTIsMarkedForDeoptimization(Register codet, Register scratch);
+  Immediate ClearedValue() const;
 
   // Abort execution if argument is not a CodeT, enabled via --debug-code.
   void AssertCodeT(Register object);
@@ -953,6 +954,12 @@ inline Operand StackSpaceOperand(int index) {
 inline Operand StackOperandForReturnAddress(int32_t disp) {
   return Operand(rsp, disp);
 }
+
+struct MoveCycleState {
+  // Whether a move in the cycle needs the scratch or double scratch register.
+  bool pending_scratch_register_use = false;
+  bool pending_double_scratch_register_use = false;
+};
 
 #define ACCESS_MASM(masm) masm->
 

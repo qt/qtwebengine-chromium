@@ -12,7 +12,7 @@
 #include "quiche/spdy/core/hpack/hpack_constants.h"
 #include "quiche/spdy/core/hpack/hpack_decoder_adapter.h"
 #include "quiche/spdy/core/hpack/hpack_encoder.h"
-#include "quiche/spdy/core/spdy_test_utils.h"
+#include "quiche/spdy/test_tools/spdy_test_utils.h"
 
 namespace spdy {
 namespace test {
@@ -22,7 +22,8 @@ namespace {
 // Supports testing with the input split at every byte boundary.
 enum InputSizeParam { ALL_INPUT, ONE_BYTE, ZERO_THEN_ONE_BYTE };
 
-class HpackRoundTripTest : public QuicheTestWithParam<InputSizeParam> {
+class HpackRoundTripTest
+    : public quiche::test::QuicheTestWithParam<InputSizeParam> {
  protected:
   void SetUp() override {
     // Use a small table size to tickle eviction handling.

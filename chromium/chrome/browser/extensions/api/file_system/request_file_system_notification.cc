@@ -7,12 +7,12 @@
 #include <string>
 #include <utility>
 
+#include "ash/constants/notifier_catalogs.h"
 #include "base/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
-#include "build/chromeos_buildflags.h"
 #include "chrome/browser/ash/file_manager/volume_manager.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/extensions/chrome_app_icon_loader.h"
@@ -94,6 +94,11 @@ void ShowNotificationForAutoGrantedRequestFileSystem(
     const base::WeakPtr<Volume>& volume,
     bool writable) {
   DCHECK(profile);
+
+  // If the volume is gone, then do not show the notification.
+  if (!volume.get())
+    return;
+
   static int sequence = 0;
   // Create globally unique |notification_id| so that notifications are not
   // suppressed, thus allowing each AppNotificationLauncher instance to
@@ -102,10 +107,6 @@ void ShowNotificationForAutoGrantedRequestFileSystem(
       base::StringPrintf("%s-%s-%d", extension.id().c_str(),
                          volume->volume_id().c_str(), sequence);
   ++sequence;
-
-  // If the volume is gone, then do not show the notification.
-  if (!volume.get())
-    return;
 
   message_center::RichNotificationData data;
 
@@ -129,8 +130,9 @@ void ShowNotificationForAutoGrantedRequestFileSystem(
       ui::ImageModel(),  // Updated asynchronously later.
       std::u16string(),  // display_source
       GURL(),
-      message_center::NotifierId(message_center::NotifierType::SYSTEM_COMPONENT,
-                                 notification_id),
+      message_center::NotifierId(
+          message_center::NotifierType::SYSTEM_COMPONENT, notification_id,
+          ash::NotificationCatalogName::kRequestFileSystem),
       data, app_notification_launcher));
 
   app_notification_launcher->InitAndShow(profile, extension,

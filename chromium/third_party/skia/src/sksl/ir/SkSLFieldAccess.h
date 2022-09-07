@@ -8,10 +8,21 @@
 #ifndef SKSL_FIELDACCESS
 #define SKSL_FIELDACCESS
 
-#include "src/sksl/SkSLUtil.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLType.h"
+
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 namespace SkSL {
+
+class Context;
+class SymbolTable;
 
 enum class FieldAccessOwnerKind : int8_t {
     kDefault,
@@ -70,11 +81,11 @@ public:
         return this->base()->hasProperty(property);
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new FieldAccess(fPosition,
-                                                           this->base()->clone(),
-                                                           this->fieldIndex(),
-                                                           this->ownerKind()));
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<FieldAccess>(pos,
+                                             this->base()->clone(),
+                                             this->fieldIndex(),
+                                             this->ownerKind());
     }
 
     std::string description() const override {

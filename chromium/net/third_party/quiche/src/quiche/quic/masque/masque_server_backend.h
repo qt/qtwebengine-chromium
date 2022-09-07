@@ -21,9 +21,7 @@ class QUIC_NO_EXPORT MasqueServerBackend : public QuicMemoryCacheBackend {
   class QUIC_NO_EXPORT BackendClient {
    public:
     virtual std::unique_ptr<QuicBackendResponse> HandleMasqueRequest(
-        const std::string& masque_path,
         const spdy::Http2HeaderBlock& request_headers,
-        const std::string& request_body,
         QuicSimpleServerBackend::RequestHandler* request_handler) = 0;
     virtual ~BackendClient() = default;
   };
@@ -41,6 +39,8 @@ class QUIC_NO_EXPORT MasqueServerBackend : public QuicMemoryCacheBackend {
       const spdy::Http2HeaderBlock& request_headers,
       const std::string& request_body,
       QuicSimpleServerBackend::RequestHandler* request_handler) override;
+  void HandleConnectHeaders(const spdy::Http2HeaderBlock& request_headers,
+                            RequestHandler* request_handler) override;
 
   void CloseBackendResponseStream(
       QuicSimpleServerBackend::RequestHandler* request_handler) override;
@@ -56,7 +56,6 @@ class QUIC_NO_EXPORT MasqueServerBackend : public QuicMemoryCacheBackend {
   // Handle MASQUE request.
   bool MaybeHandleMasqueRequest(
       const spdy::Http2HeaderBlock& request_headers,
-      const std::string& request_body,
       QuicSimpleServerBackend::RequestHandler* request_handler);
 
   MasqueMode masque_mode_;

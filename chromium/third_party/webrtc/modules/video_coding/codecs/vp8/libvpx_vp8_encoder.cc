@@ -29,7 +29,9 @@
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp8/vp8_scalability.h"
 #include "modules/video_coding/include/video_error_codes.h"
+#include "modules/video_coding/svc/scalability_mode_util.h"
 #include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "modules/video_coding/utility/simulcast_utility.h"
 #include "rtc_base/checks.h"
@@ -48,8 +50,6 @@ constexpr char kVP8IosMaxNumberOfThreadFieldTrial[] =
     "WebRTC-VP8IosMaxNumberOfThread";
 constexpr char kVP8IosMaxNumberOfThreadFieldTrialParameter[] = "max_thread";
 #endif
-
-constexpr absl::string_view kSupportedScalabilityModes[] = {"L1T2", "L1T3"};
 
 constexpr char kVp8ForcePartitionResilience[] =
     "WebRTC-VP8-ForcePartitionResilience";
@@ -220,25 +220,6 @@ std::unique_ptr<VideoEncoder> VP8Encoder::Create(
     VP8Encoder::Settings settings) {
   return std::make_unique<LibvpxVp8Encoder>(LibvpxInterface::Create(),
                                             std::move(settings));
-}
-
-std::unique_ptr<VideoEncoder> VP8Encoder::Create(
-    std::unique_ptr<Vp8FrameBufferControllerFactory>
-        frame_buffer_controller_factory) {
-  VP8Encoder::Settings settings;
-  settings.frame_buffer_controller_factory =
-      std::move(frame_buffer_controller_factory);
-  return std::make_unique<LibvpxVp8Encoder>(LibvpxInterface::Create(),
-                                            std::move(settings));
-}
-
-bool VP8Encoder::SupportsScalabilityMode(absl::string_view scalability_mode) {
-  for (const auto& entry : kSupportedScalabilityModes) {
-    if (entry == scalability_mode) {
-      return true;
-    }
-  }
-  return false;
 }
 
 vpx_enc_frame_flags_t LibvpxVp8Encoder::EncodeFlags(
@@ -452,6 +433,13 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
   if (settings.number_of_cores < 1) {
+    return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
+  }
+
+  if (absl::optional<ScalabilityMode> scalability_mode =
+          inst->GetScalabilityMode();
+      scalability_mode.has_value() &&
+      !VP8SupportsScalabilityMode(*scalability_mode)) {
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
 
@@ -856,7 +844,7 @@ uint32_t LibvpxVp8Encoder::MaxIntraTarget(uint32_t optimalBuffersize) {
 }
 
 uint32_t LibvpxVp8Encoder::FrameDropThreshold(size_t spatial_idx) const {
-  if (!codec_.VP8().frameDroppingOn) {
+  if (!codec_.GetFrameDropEnabled()) {
     return 0;
   }
 
@@ -1367,7 +1355,7 @@ LibvpxVp8Encoder::PrepareBuffers(rtc::scoped_refptr<VideoFrameBuffer> buffer) {
   // Prepare `raw_images_` from `mapped_buffer` and, if simulcast, scaled
   // versions of `buffer`.
   std::vector<rtc::scoped_refptr<VideoFrameBuffer>> prepared_buffers;
-  SetRawImagePlanes(&raw_images_[0], mapped_buffer);
+  SetRawImagePlanes(&raw_images_[0], mapped_buffer.get());
   prepared_buffers.push_back(mapped_buffer);
   for (size_t i = 1; i < encoders_.size(); ++i) {
     // Native buffers should implement optimized scaling and is the preferred
@@ -1410,7 +1398,7 @@ LibvpxVp8Encoder::PrepareBuffers(rtc::scoped_refptr<VideoFrameBuffer> buffer) {
           << VideoFrameBufferTypeToString(mapped_buffer->type());
       return {};
     }
-    SetRawImagePlanes(&raw_images_[i], scaled_buffer);
+    SetRawImagePlanes(&raw_images_[i], scaled_buffer.get());
     prepared_buffers.push_back(scaled_buffer);
   }
   return prepared_buffers;

@@ -1892,13 +1892,13 @@ FT_BEGIN_HEADER
    *     The advance width of the unhinted glyph.  Its value is expressed in
    *     16.16 fractional pixels, unless @FT_LOAD_LINEAR_DESIGN is set when
    *     loading the glyph.  This field can be important to perform correct
-   *     WYSIWYG layout.  Only relevant for outline glyphs.
+   *     WYSIWYG layout.  Only relevant for scalable glyphs.
    *
    *   linearVertAdvance ::
    *     The advance height of the unhinted glyph.  Its value is expressed in
    *     16.16 fractional pixels, unless @FT_LOAD_LINEAR_DESIGN is set when
    *     loading the glyph.  This field can be important to perform correct
-   *     WYSIWYG layout.  Only relevant for outline glyphs.
+   *     WYSIWYG layout.  Only relevant for scalable glyphs.
    *
    *   advance ::
    *     This shorthand is, depending on @FT_LOAD_IGNORE_TRANSFORM, the
@@ -4942,7 +4942,7 @@ FT_BEGIN_HEADER
    */
 #define FREETYPE_MAJOR  2
 #define FREETYPE_MINOR  12
-#define FREETYPE_PATCH  0
+#define FREETYPE_PATCH  1
 
 
   /**************************************************************************

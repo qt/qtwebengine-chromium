@@ -22,7 +22,6 @@
 #include "fpdfsdk/cpdfsdk_widget.h"
 #include "fpdfsdk/formfiller/cffl_formfield.h"
 #include "fpdfsdk/formfiller/cffl_interactiveformfiller.h"
-#include "fpdfsdk/formfiller/cffl_perwindowdata.h"
 #include "fxjs/ijs_event_context.h"
 #include "fxjs/ijs_runtime.h"
 #include "third_party/base/check.h"
@@ -35,22 +34,22 @@
 #endif
 
 static_assert(FXCT_ARROW ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kArrow),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kArrow),
               "kArrow value mismatch");
 static_assert(FXCT_NESW ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kNESW),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kNESW),
               "kNEWS value mismatch");
 static_assert(FXCT_NWSE ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kNWSE),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kNWSE),
               "kNWSE value mismatch");
 static_assert(FXCT_VBEAM ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kVBeam),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kVBeam),
               "kVBeam value mismatch");
 static_assert(FXCT_HBEAM ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kHBeam),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kHBeam),
               "HBeam value mismatch");
 static_assert(FXCT_HAND ==
-                  static_cast<int>(IPWL_SystemHandler::CursorStyle::kHand),
+                  static_cast<int>(IPWL_FillerNotify::CursorStyle::kHand),
               "kHand value mismatch");
 
 FPDF_WIDESTRING AsFPDFWideString(ByteString* bsUTF16LE) {
@@ -88,13 +87,8 @@ CPDFSDK_FormFillEnvironment::~CPDFSDK_FormFillEnvironment() {
     m_pInfo->Release(m_pInfo);
 }
 
-void CPDFSDK_FormFillEnvironment::InvalidateRect(PerWindowData* pWidgetData,
+void CPDFSDK_FormFillEnvironment::InvalidateRect(CPDFSDK_Widget* widget,
                                                  const CFX_FloatRect& rect) {
-  auto* pPrivateData = static_cast<CFFL_PerWindowData*>(pWidgetData);
-  CPDFSDK_Widget* widget = pPrivateData->GetWidget();
-  if (!widget)
-    return;
-
   IPDF_Page* pPage = widget->GetPage();
   if (!pPage)
     return;
@@ -111,17 +105,9 @@ void CPDFSDK_FormFillEnvironment::InvalidateRect(PerWindowData* pWidgetData,
 }
 
 void CPDFSDK_FormFillEnvironment::OutputSelectedRect(
-    PerWindowData* pWidgetData,
+    CFFL_FormField* pFormField,
     const CFX_FloatRect& rect) {
   if (!m_pInfo || !m_pInfo->FFI_OutputSelectedRect)
-    return;
-
-  auto* pPrivateData = static_cast<CFFL_PerWindowData*>(pWidgetData);
-  if (!pPrivateData)
-    return;
-
-  CFFL_FormField* pFormField = pPrivateData->GetFormField();
-  if (!pFormField)
     return;
 
   auto* pPage = FPDFPageFromIPDFPage(pFormField->GetSDKWidget()->GetPage());
@@ -255,6 +241,8 @@ WideString CPDFSDK_FormFillEnvironment::JS_fieldBrowse() {
 
   // Don't include trailing NUL.
   pBuff.resize(nActualLen - 1);
+
+  // Use FromDefANSI() per "local encoding" comment in fpdf_formfill.h.
   return WideString::FromDefANSI(ByteStringView(pBuff));
 }
 
@@ -328,6 +316,8 @@ WideString CPDFSDK_FormFillEnvironment::GetFilePath() const {
 
   // Don't include trailing NUL.
   pBuff.resize(nActualLen - 1);
+
+  // Use FromDefANSI() per "local encoding" comment in fpdf_formfill.h.
   return WideString::FromDefANSI(ByteStringView(pBuff));
 }
 
@@ -357,7 +347,8 @@ void CPDFSDK_FormFillEnvironment::Invalidate(IPDF_Page* page,
   }
 }
 
-void CPDFSDK_FormFillEnvironment::SetCursor(CursorStyle nCursorType) {
+void CPDFSDK_FormFillEnvironment::SetCursor(
+    IPWL_FillerNotify::CursorStyle nCursorType) {
   if (m_pInfo && m_pInfo->FFI_SetCursor)
     m_pInfo->FFI_SetCursor(m_pInfo, static_cast<int>(nCursorType));
 }
@@ -576,7 +567,7 @@ WideString CPDFSDK_FormFillEnvironment::PostRequestURL(
 
   WideString wsRet =
       WideString::FromUTF16LE(reinterpret_cast<FPDF_WIDESTRING>(response.str),
-                              response.len / sizeof(FPDF_WIDESTRING));
+                              response.len / sizeof(FPDF_WCHAR));
 
   FPDF_BStr_Clear(&response);
   return wsRet;
@@ -634,10 +625,6 @@ CPDFSDK_PageView* CPDFSDK_FormFillEnvironment::GetPageView(
 }
 
 CFX_Timer::HandlerIface* CPDFSDK_FormFillEnvironment::GetTimerHandler() {
-  return this;
-}
-
-IPWL_SystemHandler* CPDFSDK_FormFillEnvironment::GetSysHandler() {
   return this;
 }
 

@@ -19,14 +19,14 @@
 #include "include/utils/SkShadowUtils.h"
 #include "src/core/SkAutoPixmapStorage.h"
 #include "src/core/SkConvertPixels.h"
-#include "src/core/SkCustomMeshPriv.h"
 #include "src/core/SkDrawProcs.h"
 #include "src/core/SkDrawShadowInfo.h"
-#include "src/core/SkGlyphRunPainter.h"
 #include "src/core/SkLatticeIter.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkMatrixProvider.h"
+#include "src/core/SkMeshPriv.h"
 #include "src/core/SkRRectPriv.h"
+#include "src/core/SkStrikeCache.h"
 #include "src/gpu/ganesh/GrAppliedClip.h"
 #include "src/gpu/ganesh/GrAttachment.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -58,7 +58,7 @@
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/ops/ClearOp.h"
 #include "src/gpu/ganesh/ops/DrawAtlasOp.h"
-#include "src/gpu/ganesh/ops/DrawCustomMeshOp.h"
+#include "src/gpu/ganesh/ops/DrawMeshOp.h"
 #include "src/gpu/ganesh/ops/DrawableOp.h"
 #include "src/gpu/ganesh/ops/FillRRectOp.h"
 #include "src/gpu/ganesh/ops/FillRectOp.h"
@@ -70,9 +70,9 @@
 #include "src/gpu/ganesh/ops/ShadowRRectOp.h"
 #include "src/gpu/ganesh/ops/StrokeRectOp.h"
 #include "src/gpu/ganesh/ops/TextureOp.h"
-#include "src/gpu/ganesh/text/GrSDFTControl.h"
-#include "src/gpu/ganesh/text/GrTextBlobRedrawCoordinator.h"
 #include "src/gpu/ganesh/v1/PathRenderer.h"
+#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 #define ASSERT_OWNED_RESOURCE(R) SkASSERT(!(R) || (R)->getContext() == this->drawingManager()->getContext())
 #define ASSERT_SINGLE_OWNER        SKGPU_ASSERT_SINGLE_OWNER(this->singleOwner())
@@ -131,8 +131,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(GrRecordingContext*
                                                              sk_sp<GrSurfaceProxy> proxy,
                                                              sk_sp<SkColorSpace> colorSpace,
                                                              GrSurfaceOrigin origin,
-                                                             const SkSurfaceProps& surfaceProps,
-                                                             bool flushTimeOpsTask) {
+                                                             const SkSurfaceProps& surfaceProps) {
     if (!rContext || !proxy || colorType == GrColorType::kUnknown) {
         return nullptr;
     }
@@ -149,8 +148,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(GrRecordingContext*
                                                 std::move(writeView),
                                                 colorType,
                                                 std::move(colorSpace),
-                                                surfaceProps,
-                                                flushTimeOpsTask);
+                                                surfaceProps);
 }
 
 std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
@@ -160,7 +158,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
         SkISize dimensions,
         const GrBackendFormat& format,
         int sampleCnt,
-        GrMipmapped mipMapped,
+        GrMipmapped mipmapped,
         GrProtected isProtected,
         skgpu::Swizzle readSwizzle,
         skgpu::Swizzle writeSwizzle,
@@ -180,10 +178,11 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
             dimensions,
             GrRenderable::kYes,
             sampleCnt,
-            mipMapped,
+            mipmapped,
             fit,
             budgeted,
-            isProtected);
+            isProtected,
+            /*label=*/{});
     if (!proxy) {
         return nullptr;
     }
@@ -209,7 +208,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
         SkISize dimensions,
         const SkSurfaceProps& surfaceProps,
         int sampleCnt,
-        GrMipmapped mipMapped,
+        GrMipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         SkBudgeted budgeted) {
@@ -225,10 +224,11 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::Make(
                                                                                 dimensions,
                                                                                 GrRenderable::kYes,
                                                                                 sampleCnt,
-                                                                                mipMapped,
+                                                                                mipmapped,
                                                                                 fit,
                                                                                 budgeted,
-                                                                                isProtected);
+                                                                                isProtected,
+                                                                                /*label=*/{});
     if (!proxy) {
         return nullptr;
     }
@@ -249,7 +249,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeWithFallback(
         SkISize dimensions,
         const SkSurfaceProps& surfaceProps,
         int sampleCnt,
-        GrMipmapped mipMapped,
+        GrMipmapped mipmapped,
         GrProtected isProtected,
         GrSurfaceOrigin origin,
         SkBudgeted budgeted) {
@@ -259,7 +259,7 @@ std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeWithFallback(
         return nullptr;
     }
     return SurfaceDrawContext::Make(rContext, ct, colorSpace, fit, dimensions, surfaceProps,
-                                    sampleCnt, mipMapped, isProtected, origin, budgeted);
+                                    sampleCnt, mipmapped, isProtected, origin, budgeted);
 }
 
 std::unique_ptr<SurfaceDrawContext> SurfaceDrawContext::MakeFromBackendTexture(
@@ -292,18 +292,15 @@ SurfaceDrawContext::SurfaceDrawContext(GrRecordingContext* rContext,
                                        GrSurfaceProxyView writeView,
                                        GrColorType colorType,
                                        sk_sp<SkColorSpace> colorSpace,
-                                       const SkSurfaceProps& surfaceProps,
-                                       bool flushTimeOpsTask)
+                                       const SkSurfaceProps& surfaceProps)
         : SurfaceFillContext(rContext,
                              std::move(readView),
                              std::move(writeView),
-                             {colorType, kPremul_SkAlphaType, std::move(colorSpace)},
-                             flushTimeOpsTask)
+                             {colorType, kPremul_SkAlphaType, std::move(colorSpace)})
         , fSurfaceProps(surfaceProps)
         , fCanUseDynamicMSAA(
                 (fSurfaceProps.flags() & SkSurfaceProps::kDynamicMSAA_Flag) &&
-                rContext->priv().caps()->supportsDynamicMSAA(this->asRenderTargetProxy()))
-        , fGlyphPainter(*this) {
+                rContext->priv().caps()->supportsDynamicMSAA(this->asRenderTargetProxy())) {
     SkDEBUGCODE(this->validate();)
 }
 
@@ -327,35 +324,11 @@ void SurfaceDrawContext::willReplaceOpsTask(OpsTask* prevTask, OpsTask* nextTask
 #endif
 }
 
-void SurfaceDrawContext::drawGlyphRunListNoCache(SkCanvas* canvas,
-                                                 const GrClip* clip,
-                                                 const SkMatrixProvider& viewMatrix,
-                                                 const SkGlyphRunList& glyphRunList,
-                                                 const SkPaint& paint) {
-    GrSDFTControl control =
-            fContext->priv().getSDFTControl(fSurfaceProps.isUseDeviceIndependentFonts());
-    const SkPoint drawOrigin = glyphRunList.origin();
-    SkMatrix drawMatrix = viewMatrix.localToDevice();
-    drawMatrix.preTranslate(drawOrigin.x(), drawOrigin.y());
-    GrSubRunAllocator* const alloc = this->subRunAlloc();
-
-    GrSubRunNoCachePainter painter{canvas, this, alloc, clip, viewMatrix, glyphRunList, paint};
-    for (auto& glyphRun : glyphRunList) {
-        // Make and add the text ops.
-        fGlyphPainter.processGlyphRun(&painter,
-                                      glyphRun,
-                                      drawMatrix,
-                                      paint,
-                                      control);
-    }
-}
-
-// choose to use the GrTextBlob cache or not.
-bool gGrDrawTextNoCache = false;
 void SurfaceDrawContext::drawGlyphRunList(SkCanvas* canvas,
                                           const GrClip* clip,
                                           const SkMatrixProvider& viewMatrix,
                                           const SkGlyphRunList& glyphRunList,
+                                          SkStrikeDeviceInfo strikeDeviceInfo,
                                           const SkPaint& paint) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
@@ -369,15 +342,9 @@ void SurfaceDrawContext::drawGlyphRunList(SkCanvas* canvas,
         return;
     }
 
-    if (gGrDrawTextNoCache || glyphRunList.blob() == nullptr) {
-        // If the glyphRunList does not have an associated text blob, then it was created by one of
-        // the direct draw APIs (drawGlyphs, etc.). There is no need to create a GrTextBlob just
-        // build the sub run directly and place it in the op.
-        this->drawGlyphRunListNoCache(canvas, clip, viewMatrix, glyphRunList, paint);
-    } else {
-        GrTextBlobRedrawCoordinator* textBlobCache = fContext->priv().getTextBlobCache();
-        textBlobCache->drawGlyphRunList(canvas, clip, viewMatrix, glyphRunList, paint, this);
-    }
+    sktext::gpu::TextBlobRedrawCoordinator* textBlobCache = fContext->priv().getTextBlobCache();
+    textBlobCache->drawGlyphRunList(
+            canvas, clip, viewMatrix, glyphRunList, paint, strikeDeviceInfo, this);
 }
 
 void SurfaceDrawContext::drawPaint(const GrClip* clip,
@@ -942,40 +909,40 @@ void SurfaceDrawContext::drawVertices(const GrClip* clip,
     SkASSERT(vertices);
     auto xform = skipColorXform ? nullptr : this->colorInfo().refColorSpaceXformFromSRGB();
     GrAAType aaType = fCanUseDynamicMSAA ? GrAAType::kMSAA : this->chooseAAType(GrAA::kNo);
-    GrOp::Owner op = DrawCustomMeshOp::Make(fContext,
-                                            std::move(paint),
-                                            std::move(vertices),
-                                            overridePrimType,
-                                            matrixProvider,
-                                            aaType,
-                                            std::move(xform));
+    GrOp::Owner op = DrawMeshOp::Make(fContext,
+                                      std::move(paint),
+                                      std::move(vertices),
+                                      overridePrimType,
+                                      matrixProvider,
+                                      aaType,
+                                      std::move(xform));
     this->addDrawOp(clip, std::move(op));
 }
 
-void SurfaceDrawContext::drawCustomMesh(const GrClip* clip,
-                                        GrPaint&& paint,
-                                        const SkMatrixProvider& matrixProvider,
-                                        SkCustomMesh cm) {
+void SurfaceDrawContext::drawMesh(const GrClip* clip,
+                                  GrPaint&& paint,
+                                  const SkMatrixProvider& matrixProvider,
+                                  const SkMesh& mesh) {
     ASSERT_SINGLE_OWNER
     RETURN_IF_ABANDONED
     SkDEBUGCODE(this->validate();)
-    GR_CREATE_TRACE_MARKER_CONTEXT("SurfaceDrawContext", "drawCustomMesh", fContext);
+    GR_CREATE_TRACE_MARKER_CONTEXT("SurfaceDrawContext", "drawMesh", fContext);
 
     AutoCheckFlush acf(this->drawingManager());
 
-    SkASSERT(SkValidateCustomMesh(cm));
+    SkASSERT(mesh.isValid());
 
-    auto xform = GrColorSpaceXform::Make(SkCustomMeshSpecificationPriv::ColorSpace(*cm.spec),
-                                         SkCustomMeshSpecificationPriv::AlphaType(*cm.spec),
+    auto xform = GrColorSpaceXform::Make(SkMeshSpecificationPriv::ColorSpace(*mesh.spec()),
+                                         SkMeshSpecificationPriv::AlphaType(*mesh.spec()),
                                          this->colorInfo().colorSpace(),
                                          this->colorInfo().alphaType());
     GrAAType aaType = fCanUseDynamicMSAA ? GrAAType::kMSAA : this->chooseAAType(GrAA::kNo);
-    GrOp::Owner op = DrawCustomMeshOp::Make(fContext,
-                                            std::move(paint),
-                                            std::move(cm),
-                                            matrixProvider,
-                                            aaType,
-                                            std::move(xform));
+    GrOp::Owner op = DrawMeshOp::Make(fContext,
+                                      std::move(paint),
+                                      mesh,
+                                      matrixProvider,
+                                      aaType,
+                                      std::move(xform));
     this->addDrawOp(clip, std::move(op));
 }
 

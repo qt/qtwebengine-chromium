@@ -8,16 +8,19 @@
 #ifndef SKSL_BINARYEXPRESSION
 #define SKSL_BINARYEXPRESSION
 
+#include "include/core/SkTypes.h"
 #include "include/sksl/SkSLOperator.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
-#include "src/sksl/ir/SkSLFieldAccess.h"
-#include "src/sksl/ir/SkSLIndexExpression.h"
-#include "src/sksl/ir/SkSLSwizzle.h"
-#include "src/sksl/ir/SkSLTernaryExpression.h"
 
 #include <memory>
+#include <string>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class Type;
 
 /**
  * A binary operation.
@@ -81,10 +84,6 @@ public:
         return fOperator;
     }
 
-    bool isConstantOrUniform() const override {
-        return this->left()->isConstantOrUniform() && this->right()->isConstantOrUniform();
-    }
-
     bool hasProperty(Property property) const override {
         if (property == Property::kSideEffects && this->getOperator().isAssignment()) {
             return true;
@@ -92,7 +91,7 @@ public:
         return this->left()->hasProperty(property) || this->right()->hasProperty(property);
     }
 
-    std::unique_ptr<Expression> clone() const override;
+    std::unique_ptr<Expression> clone(Position pos) const override;
 
     std::string description() const override;
 

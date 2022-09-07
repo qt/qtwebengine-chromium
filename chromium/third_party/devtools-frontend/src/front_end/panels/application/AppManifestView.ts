@@ -433,7 +433,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
         .addChangeListener(this.updateManifest.bind(this, true));
 
     this.emptyView = new UI.EmptyWidget.EmptyWidget(i18nString(UIStrings.noManifestDetected));
-    this.emptyView.appendLink('https://web.dev/add-manifest/');
+    this.emptyView.appendLink('https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString);
 
     this.emptyView.show(this.contentElement);
     this.emptyView.hideWidget();
@@ -663,7 +663,8 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     }
 
     const userPreferences = parsedManifest['user_preferences'] || {};
-    const colorSchemeDark = userPreferences['color_scheme_dark'] || {};
+    const colorScheme = userPreferences['color_scheme'] || {};
+    const colorSchemeDark = colorScheme['dark'] || {};
     const darkThemeColorString = colorSchemeDark['theme_color'];
     const hasDarkThemeColor = typeof darkThemeColorString === 'string';
     this.darkThemeColorField.parentElement?.classList.toggle('hidden', !hasDarkThemeColor);
@@ -693,7 +694,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
     this.newNoteUrlField.parentElement?.classList.toggle('hidden', !hasNewNoteUrl);
     this.newNoteUrlField.removeChildren();
     if (hasNewNoteUrl) {
-      const completeURL = (Common.ParsedURL.ParsedURL.completeURL(url, newNoteUrl) as string);
+      const completeURL = (Common.ParsedURL.ParsedURL.completeURL(url, newNoteUrl) as Platform.DevToolsPath.UrlString);
       const link = Components.Linkifier.Linkifier.linkifyURL(
           completeURL, ({text: newNoteUrl} as Components.Linkifier.LinkifyURLOptions));
       link.tabIndex = 0;
@@ -763,7 +764,7 @@ export class AppManifestView extends UI.Widget.VBox implements SDK.TargetManager
         shortcutSection.appendFlexedField('Description', shortcut.description);
       }
       const urlField = shortcutSection.appendFlexedField('URL');
-      const shortcutUrl = (Common.ParsedURL.ParsedURL.completeURL(url, shortcut.url) as string);
+      const shortcutUrl = Common.ParsedURL.ParsedURL.completeURL(url, shortcut.url) as Platform.DevToolsPath.UrlString;
       const link = Components.Linkifier.Linkifier.linkifyURL(
           shortcutUrl, ({text: shortcut.url} as Components.Linkifier.LinkifyURLOptions));
       link.tabIndex = 0;

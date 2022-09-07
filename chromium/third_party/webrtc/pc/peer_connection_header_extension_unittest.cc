@@ -106,11 +106,12 @@ class PeerConnectionHeaderExtensionTest
     auto result = pc_factory->CreatePeerConnectionOrError(
         config, std::move(pc_dependencies));
     EXPECT_TRUE(result.ok());
-    observer->SetPeerConnectionInterface(result.value());
+    observer->SetPeerConnectionInterface(result.value().get());
     return std::make_unique<PeerConnectionWrapper>(
         pc_factory, result.MoveValue(), std::move(observer));
   }
 
+  rtc::AutoThread main_thread_;
   std::vector<RtpHeaderExtensionCapability> extensions_;
 };
 

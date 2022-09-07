@@ -8,9 +8,18 @@
 #ifndef SKSL_CONSTRUCTOR_ARRAY
 #define SKSL_CONSTRUCTOR_ARRAY
 
+#include "include/private/SkSLDefines.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLConstructor.h"
+#include "src/sksl/ir/SkSLExpression.h"
+
+#include <memory>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class Type;
 
 /**
  * Represents the construction of an array type, such as "float[5](x, y, z, w, 1)".
@@ -35,9 +44,8 @@ public:
                                             const Type& type,
                                             ExpressionArray args);
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorArray>(fPosition, this->type(),
-                this->arguments().clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorArray>(pos, this->type(), this->arguments().clone());
     }
 
 private:

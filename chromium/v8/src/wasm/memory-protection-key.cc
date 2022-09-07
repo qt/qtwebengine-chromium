@@ -128,7 +128,7 @@ int AllocateMemoryProtectionKey() {
   // errno, e.g., EINVAL vs ENOSPC vs ENOSYS. See manpages and glibc manual
   // (the latter is the authorative source):
   // https://www.gnu.org/software/libc/manual/html_mono/libc.html#Memory-Protection-Keys
-  STATIC_ASSERT(kNoMemoryProtectionKey == -1);
+  static_assert(kNoMemoryProtectionKey == -1);
   return pkey_alloc(/* flags, unused */ 0, kDisableAccess);
 }
 
@@ -146,10 +146,13 @@ void FreeMemoryProtectionKey(int key) {
 
 int GetProtectionFromMemoryPermission(PageAllocator::Permission permission) {
 #if defined(V8_OS_LINUX) && defined(V8_HOST_ARCH_X64)
-  // Mappings for PKU are either RWX (on this level) or no access.
+  // Mappings for PKU are either RWX (for code), no access (for uncommitted
+  // memory), or RW (for assembler buffers).
   switch (permission) {
     case PageAllocator::kNoAccess:
       return PROT_NONE;
+    case PageAllocator::kReadWrite:
+      return PROT_READ | PROT_WRITE;
     case PageAllocator::kReadWriteExecute:
       return PROT_READ | PROT_WRITE | PROT_EXEC;
     default:

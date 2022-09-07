@@ -124,7 +124,7 @@ class TCPPort : public Port {
   friend class TCPConnection;
 };
 
-class TCPConnection : public Connection {
+class TCPConnection : public Connection, public sigslot::has_slots<> {
  public:
   // Connection is outgoing unless socket is specified
   TCPConnection(rtc::WeakPtr<Port> tcp_port,
@@ -148,7 +148,7 @@ class TCPConnection : public Connection {
  protected:
   // Set waiting_for_stun_binding_complete_ to false to allow data packets in
   // addition to what Port::OnConnectionRequestResponse does.
-  void OnConnectionRequestResponse(ConnectionRequest* req,
+  void OnConnectionRequestResponse(StunRequest* req,
                                    StunMessage* response) override;
 
  private:

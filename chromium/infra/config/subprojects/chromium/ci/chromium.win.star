@@ -34,6 +34,9 @@ consoles.console_view(
     },
 )
 
+# TODO(gbeaty) Investigate if the testers need to run on windows, if not, switch
+# them to ci.thin_tester
+
 ci.builder(
     name = "WebKit Win10",
     builder_spec = builder_config.builder_spec(
@@ -90,6 +93,20 @@ ci.builder(
 
 ci.builder(
     name = "Win x64 Builder (dbg)",
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.DEBUG,
+            target_bits = 64,
+        ),
+        build_gs_bucket = "chromium-win-archive",
+    ),
     builderless = True,
     console_view_entry = consoles.console_view_entry(
         category = "debug|builder",
@@ -104,6 +121,21 @@ ci.builder(
 
 ci.builder(
     name = "Win10 Tests x64 (dbg)",
+    builder_spec = builder_config.builder_spec(
+        execution_mode = builder_config.execution_mode.TEST,
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.DEBUG,
+            target_bits = 64,
+        ),
+        build_gs_bucket = "chromium-win-archive",
+    ),
     console_view_entry = consoles.console_view_entry(
         category = "debug|tester",
         short_name = "10",
@@ -286,6 +318,37 @@ ci.builder(
     ),
     cq_mirrors_console_view = "mirrors",
     triggered_by = ["ci/Win x64 Builder"],
+)
+
+ci.thin_tester(
+    name = "Win11 Tests x64",
+    builder_spec = builder_config.builder_spec(
+        execution_mode = builder_config.execution_mode.TEST,
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "use_clang_coverage",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "chromium",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.WIN,
+        ),
+        build_gs_bucket = "chromium-win-archive",
+    ),
+    console_view_entry = consoles.console_view_entry(
+        category = "release|tester",
+        short_name = "w11",
+    ),
+    triggered_by = ["ci/Win x64 Builder"],
+    # TODO(kuanhuang): Add back to sheriff rotation after verified green.
+    sheriff_rotations = args.ignore_default(None),
+    tree_closing = False,
 )
 
 ci.builder(

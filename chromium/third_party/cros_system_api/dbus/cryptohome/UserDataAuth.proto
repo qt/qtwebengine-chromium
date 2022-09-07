@@ -88,6 +88,7 @@ enum CryptohomeErrorCode {
   CRYPTOHOME_ADD_CREDENTIALS_FAILED = 50;
   CRYPTOHOME_ERROR_UNAUTHENTICATED_AUTH_SESSION = 51;
   CRYPTOHOME_ERROR_UNKNOWN_LEGACY = 52;
+  CRYPTOHOME_ERROR_UNUSABLE_VAULT = 53;
   // Note: After adding new fields to this enum, the new enum should be added
   // to ash/components/login/auth/auth_session_authenticator.cc's
   // AuthSessionAuthenticator::ProcessCryptohomeError() so that Chromium
@@ -200,6 +201,18 @@ enum PossibleAction {
 
 // CryptohomeErrorInfo contains the information regarding an error or a
 // condition that occurred.
+// Note on the migration: During the migration process, both the legacy
+// CryptohomeErrorCode and the new CryptohomeErrorInfo field will be available.
+// Before the Phase 1 of the migration is completed (b/229804686), callers of
+// Cryptohome API should rely on the legacy CryptohomeErrorCode. After Phase 1
+// is completed, which will be indicated in the issue tracker entry, callers
+// can assume that both the legacy CryptohomeErrorCode field and
+// CryptohomeErrorInfo field contains valid information and the callers can
+// proceed to refactor to use the new fields, this is Phase 2 (b/229805195).
+// The legacy CryptohomeErrorCode field that coexists with CryptohomeErrorInfo
+// will be removed in Phase 3 (b/229807416).
+// We are currently in the process of completing Phase 1, and thus caller
+// should still rely on the legacy CryptohomeErrorCode field.
 message CryptohomeErrorInfo {
   // error_id is a unique identifier that identifies the location that the
   // error occurred within cryptohome. More effectively, it's a "smart
@@ -314,7 +327,7 @@ message MountRequest {
 // Output parameters for Mount()
 message MountReply {
   // Indicate an error when |error| is not empty.
-  // This will be replaced by |error_info| soon.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // |recreated| is set when the cryptohome had to be wiped
   // because the key or data was an unrecoverable.  It does not imply
@@ -325,8 +338,10 @@ message MountReply {
   string sanitized_username = 3;
 
   // Indicate an error if this field exists.
-  // This field is replacing the |error| field above.
-  CryptohomeErrorInfo error_info = 10;
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 4;
 }
 
 // Input parameters to Remove()
@@ -568,6 +583,12 @@ message StartMigrateToDircryptoRequest {
   // If true, only a few paths (specified in cryptohomed) that are necessary for
   // a working profile will be migrated. Most user data will be wiped.
   bool minimal_migration = 2;
+
+  // Auth Session id will let migrate derive credentials from AuthSessions.
+  // AuthSession needs to be authenticated for this to be successful. If both
+  // account_id and auth_session_id is mentioned, auth_session_id would be
+  // superseed and identity would be derived from that.
+  bytes auth_session_id = 3;
 }
 
 // Output parameters for StartMigrateToDircrypto().
@@ -680,6 +701,7 @@ message StartAuthSessionRequest {
 
 message StartAuthSessionReply {
   // Error if any to start the Auth Session
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // Token that would be used to conduct any auth-related operation.
   bytes auth_session_id = 2;
@@ -691,6 +713,12 @@ message StartAuthSessionReply {
   // List of AuthFactors to return all the AuthFactors available for user
   // authentication. This will be empty if user_exists is set to false.
   repeated AuthFactor auth_factors = 5;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 6;
 }
 
 message AddCredentialsRequest {
@@ -707,6 +735,12 @@ message AddCredentialsRequest {
 message AddCredentialsReply {
   // Error if any to add new credentials with the Auth Session.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 message AuthenticateAuthSessionRequest {
@@ -719,9 +753,16 @@ message AuthenticateAuthSessionRequest {
 
 message AuthenticateAuthSessionReply {
   // Error if any to authenticate the Auth Session.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // Returns if the Auth Session is authenticated.
   bool authenticated = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 message InvalidateAuthSessionRequest {
@@ -732,7 +773,14 @@ message InvalidateAuthSessionRequest {
 
 message InvalidateAuthSessionReply {
   // Error if any to invalidate the Auth Session.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 message ExtendAuthSessionRequest {
@@ -746,7 +794,14 @@ message ExtendAuthSessionRequest {
 
 message ExtendAuthSessionReply {
   // Error if any to extend the Auth Session.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 message UpdateCredentialRequest {
@@ -765,6 +820,12 @@ message UpdateCredentialRequest {
 message UpdateCredentialReply {
   // Error if any to update credential.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 message CreatePersistentUserRequest {
@@ -774,20 +835,34 @@ message CreatePersistentUserRequest {
 
 message CreatePersistentUserReply {
   // The status of the operation.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 message PrepareGuestVaultRequest {}
 
 message PrepareGuestVaultReply {
   // The status of the operation.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 message PrepareEphemeralVaultRequest {
@@ -798,10 +873,40 @@ message PrepareEphemeralVaultRequest {
 
 message PrepareEphemeralVaultReply {
   // The status of the operation.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
+}
+
+message GetAuthSessionStatusRequest {
+  // Id of the auth session associated with the user we aim to prepare vault
+  // for.
+  bytes auth_session_id = 1;
+}
+
+enum AuthSessionStatus {
+  AUTH_SESSION_STATUS_NOT_SET = 0;
+  AUTH_SESSION_STATUS_FURTHER_FACTOR_REQUIRED = 1;
+  AUTH_SESSION_STATUS_AUTHENTICATED = 2;
+  AUTH_SESSION_STATUS_INVALID_AUTH_SESSION = 3;
+}
+
+message GetAuthSessionStatusReply {
+  // Error if any to start the Auth Session
+  CryptohomeErrorCode error = 1;
+  // Status for the valid AuthSession.
+  AuthSessionStatus status = 2;
+  // The time left (in sec) in the current AuthSession. This is only set if
+  // AuthSession is authenticated.
+  uint32 time_left = 3;
 }
 
 enum VaultEncryptionType {
@@ -829,10 +934,17 @@ message PreparePersistentVaultRequest {
 
 message PreparePersistentVaultReply {
   // The status of the operation.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 message PrepareVaultForMigrationRequest {
@@ -843,10 +955,17 @@ message PrepareVaultForMigrationRequest {
 
 message PrepareVaultForMigrationReply {
   // The status of the operation.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
   // The sanitized username, this is basically a hashed representation
   // of the username used in the paths of user's home directory.
   string sanitized_username = 2;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 3;
 }
 
 // ------------------------- ArcQuota Interface -------------------------
@@ -906,7 +1025,7 @@ message GetCurrentSpaceForArcProjectIdReply {
 
 // Type of paths that are allowed for SetProjectId.
 enum SetProjectIdAllowedPathType {
-  // /home/user/<obfuscated_username>/Downloads/
+  // /home/user/<obfuscated_username>/MyFiles/Downloads/
   PATH_DOWNLOADS = 0;
   // /home/root/<obfuscated_username>/android-data/
   PATH_ANDROID_DATA = 1;
@@ -918,8 +1037,9 @@ message SetProjectIdRequest {
   uint32 project_id = 1;
 
   // |parent_path|, |child_path| and |account_id| are used for constructing the
-  // target path. (e.g. /home/user/<obfuscated_username>/Downloads/<child_path>
-  // for parent_path=PATH_DOWNLOADS)
+  // target path. (e.g.
+  // /home/user/<obfuscated_username>/MyFiles/Downloads/<child_path> for
+  // parent_path=PATH_DOWNLOADS)
   SetProjectIdAllowedPathType parent_path = 2;
   string child_path = 3;
   cryptohome.AccountIdentifier account_id = 4;
@@ -940,6 +1060,22 @@ message SetMediaRWDataFileProjectIdRequest {
 // Output parameters for SetMediaRWDataFileProjectId().
 message SetMediaRWDataFileProjectIdReply {
   // Set to true if ioctl syscall for setting the project ID succeeds.
+  bool success = 1;
+
+  // Errno if success == false.
+  int32 error = 2;
+}
+
+// Input parameters to SetMediaRWDataFileProjectInheritanceFlag().
+message SetMediaRWDataFileProjectInheritanceFlagRequest {
+  // Set to true if we are setting the project inheritance flag.
+  bool enable = 1;
+}
+
+// Output parameters for SetMediaRWDataFileProjectInheritanceFlag().
+message SetMediaRWDataFileProjectInheritanceFlagReply {
+  // Set to true if ioctl syscall for setting the project inheritance flag
+  // succeeds.
   bool success = 1;
 
   // Errno if success == false.
@@ -1302,6 +1438,12 @@ message AddAuthFactorRequest {
 message AddAuthFactorReply {
   // Return the status of the request.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
 }
 
 // AuthenticateAuthFactorRequest is built when a user is trying to
@@ -1323,7 +1465,16 @@ message AuthenticateAuthFactorRequest {
 
 message AuthenticateAuthFactorReply {
   // Return the status of the request.
+  // TODO(b/229807416): Remove once CryptohomeError refactor is complete.
   CryptohomeErrorCode error = 1;
+
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+  // Returns if the Auth Session is authenticated.
+  bool authenticated = 3;
 }
 
 // UpdateAuthFactorRequest is built when a user is trying to
@@ -1373,4 +1524,46 @@ message RemoveAuthFactorRequest {
 message RemoveAuthFactorReply {
   // Return the status of the request.
   CryptohomeErrorCode error = 1;
+}
+
+// GetRecoveryRequestRequest is built when a user is trying to get the
+// recovery payload for CryptohomeRecoveryAuthFactor for a user. When the call
+// is made, AuthSession is in an unauthenticated state. After the operation the
+// AuthSession would still be in an unauthenticated state.
+message GetRecoveryRequestRequest {
+  enum UserType {
+    UNKNOWN = 0;
+    GAIA_ID = 1;
+  }
+
+  // This id would be used to associate the AuthFactor to an AuthSession.
+  bytes auth_session_id = 1;
+  // Label to identify the existing cryptohome recovery AuthFactor.
+  string auth_factor_label = 2;
+
+  UserType requestor_user_id_type = 3;
+  // Format of `requestor_user_id` is determined by `requestor_user_id_type`
+  // enum. For GAIA_ID it's number string obfuscated Gaia id.
+  string requestor_user_id = 4;
+  // Access token with reauth scope.
+  string gaia_access_token = 5;
+  // A short-lived token, it's validity will be verified by the Recovery
+  // Service.
+  string gaia_reauth_proof_token = 6;
+  // Serialized cryptohome.cryptorecovery.CryptoRecoveryEpochResponse.
+  // An epoch response received from Recovery Mediator service containing epoch
+  // beacon value for Cryptohome recovery flow.
+  bytes epoch_response = 7;
+}
+
+message GetRecoveryRequestReply {
+  CryptohomeErrorCode error = 1;
+  // Indicate an error if this field exists.
+  // This field is replacing the |error| field above, for more information on
+  // which field to use and the process on the migration, see comment in
+  // CryptohomeErrorInfo.
+  CryptohomeErrorInfo error_info = 2;
+  // Serialized cryptohome.cryptorecovery.CryptoRecoveryRpcRequest, to be sent
+  // to the recovery server.
+  bytes recovery_request = 3;
 }

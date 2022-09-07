@@ -7,24 +7,40 @@
 
 #include "src/core/SkOpts.h"
 #include "src/core/SkPipelineData.h"
+#include "src/core/SkShaderCodeDictionary.h"
+
+#ifdef SK_GRAPHITE_ENABLED
+SkPipelineDataGatherer::SkPipelineDataGatherer(skgpu::graphite::Layout layout)
+        : fUniformManager(layout)
+        , fSnippetRequirementFlags(SnippetRequirementFlags::kNone) {
+}
+#endif
 
 void SkPipelineDataGatherer::reset() {
 #ifdef SK_GRAPHITE_ENABLED
     fTextureDataBlock.reset();
-    fBlendInfo = BlendInfo();
     fUniformManager.reset();
 #endif
+    fSnippetRequirementFlags = SnippetRequirementFlags::kNone;
 }
 
 #ifdef SK_DEBUG
 void SkPipelineDataGatherer::checkReset() {
 #ifdef SK_GRAPHITE_ENABLED
     SkASSERT(fTextureDataBlock.empty());
-    SkASSERT(fBlendInfo == BlendInfo());
     SkDEBUGCODE(fUniformManager.checkReset());
 #endif
+    SkASSERT(fSnippetRequirementFlags == SnippetRequirementFlags::kNone);
 }
 #endif // SK_DEBUG
+
+void SkPipelineDataGatherer::addFlags(SnippetRequirementFlags flags) {
+    fSnippetRequirementFlags |= flags;
+}
+
+bool SkPipelineDataGatherer::needsLocalCoords() const {
+    return fSnippetRequirementFlags & SnippetRequirementFlags::kLocalCoords;
+}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 SkUniformDataBlock* SkUniformDataBlock::Make(const SkUniformDataBlock& other,

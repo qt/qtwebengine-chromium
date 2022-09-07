@@ -15,8 +15,9 @@
 #include "libyuv/planar_functions.h"
 #include "libyuv/rotate.h"
 #include "libyuv/row.h"
-#include "libyuv/scale.h"     // For ScalePlane()
-#include "libyuv/scale_uv.h"  // For UVScale()
+#include "libyuv/scale.h"      // For ScalePlane()
+#include "libyuv/scale_row.h"  // For FixedDiv
+#include "libyuv/scale_uv.h"   // For UVScale()
 
 #ifdef __cplusplus
 namespace libyuv {
@@ -83,7 +84,8 @@ int I420Copy(const uint8_t* src_y,
              int height) {
   int halfwidth = (width + 1) >> 1;
   int halfheight = (height + 1) >> 1;
-  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 || height == 0) {
+  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 ||
+      height == 0) {
     return -1;
   }
   // Negative height means invert the image.
@@ -125,7 +127,8 @@ int I010Copy(const uint16_t* src_y,
              int height) {
   int halfwidth = (width + 1) >> 1;
   int halfheight = (height + 1) >> 1;
-  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 || height == 0) {
+  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 ||
+      height == 0) {
     return -1;
   }
   // Negative height means invert the image.
@@ -169,7 +172,8 @@ static int Planar16bitTo8bit(const uint16_t* src_y,
   int uv_width = SUBSAMPLE(width, subsample_x, subsample_x);
   int uv_height = SUBSAMPLE(height, subsample_y, subsample_y);
   int scale = 1 << (24 - depth);
-  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 || height == 0) {
+  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 ||
+      height == 0) {
     return -1;
   }
   // Negative height means invert the image.
@@ -215,6 +219,55 @@ int I010ToI420(const uint16_t* src_y,
                            src_stride_v, dst_y, dst_stride_y, dst_u,
                            dst_stride_u, dst_v, dst_stride_v, width, height, 1,
                            1, 10);
+}
+
+LIBYUV_API
+int I210ToI420(const uint16_t* src_y,
+               int src_stride_y,
+               const uint16_t* src_u,
+               int src_stride_u,
+               const uint16_t* src_v,
+               int src_stride_v,
+               uint8_t* dst_y,
+               int dst_stride_y,
+               uint8_t* dst_u,
+               int dst_stride_u,
+               uint8_t* dst_v,
+               int dst_stride_v,
+               int width,
+               int height) {
+  const int depth = 10;
+  const int scale = 1 << (24 - depth);
+
+  if (width <= 0 || height == 0) {
+    return -1;
+  }
+  // Negative height means invert the image.
+  if (height < 0) {
+    height = -height;
+    src_y = src_y + (height - 1) * src_stride_y;
+    src_u = src_u + (height - 1) * src_stride_u;
+    src_v = src_v + (height - 1) * src_stride_v;
+    src_stride_y = -src_stride_y;
+    src_stride_u = -src_stride_u;
+    src_stride_v = -src_stride_v;
+  }
+
+  {
+    const int uv_width = SUBSAMPLE(width, 1, 1);
+    const int uv_height = SUBSAMPLE(height, 1, 1);
+    const int dy = FixedDiv(height, uv_height);
+
+    Convert16To8Plane(src_y, src_stride_y, dst_y, dst_stride_y, scale, width,
+                      height);
+    ScalePlaneVertical_16To8(height, uv_width, uv_height, src_stride_u,
+                             dst_stride_u, src_u, dst_u, 0, 32768, dy,
+                             /*bpp=*/1, scale, kFilterBilinear);
+    ScalePlaneVertical_16To8(height, uv_width, uv_height, src_stride_v,
+                             dst_stride_v, src_v, dst_v, 0, 32768, dy,
+                             /*bpp=*/1, scale, kFilterBilinear);
+  }
+  return 0;
 }
 
 LIBYUV_API
@@ -539,7 +592,8 @@ int I422ToI210(const uint8_t* src_y,
                int width,
                int height) {
   int halfwidth = (width + 1) >> 1;
-  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 || height == 0) {
+  if ((!src_y && dst_y) || !src_u || !src_v || !dst_u || !dst_v || width <= 0 ||
+      height == 0) {
     return -1;
   }
   // Negative height means invert the image.

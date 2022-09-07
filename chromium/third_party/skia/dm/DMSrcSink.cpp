@@ -10,6 +10,7 @@
 #include "include/codec/SkAndroidCodec.h"
 #include "include/codec/SkCodec.h"
 #include "include/core/SkColorSpace.h"
+#include "include/core/SkCombinationBuilder.h"
 #include "include/core/SkData.h"
 #include "include/core/SkDeferredDisplayListRecorder.h"
 #include "include/core/SkDocument.h"
@@ -17,6 +18,7 @@
 #include "include/core/SkImageGenerator.h"
 #include "include/core/SkMallocPixelRef.h"
 #include "include/core/SkPictureRecorder.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/core/SkStream.h"
 #include "include/core/SkSurface.h"
 #include "include/core/SkSurfaceCharacterization.h"
@@ -1093,12 +1095,48 @@ static DEFINE_int(skpViewportSize, 1000,
 
 SKPSrc::SKPSrc(Path path) : fPath(path) { }
 
-Result SKPSrc::draw(GrDirectContext*, SkCanvas* canvas) const {
+Result SKPSrc::draw(GrDirectContext* dContext, SkCanvas* canvas) const {
+
+    struct DeserializationContext {
+        GrDirectContext*           fDirectContext = nullptr;
+#ifdef SK_GRAPHITE_ENABLED
+        skgpu::graphite::Recorder* fRecorder = nullptr;
+#endif
+    } ctx {
+        dContext,
+#ifdef SK_GRAPHITE_ENABLED
+        canvas->recorder()
+#endif
+    };
+
+    SkDeserialProcs procs;
+    procs.fImageProc = [](const void* data, size_t size, void* ctx) -> sk_sp<SkImage> {
+        sk_sp<SkData> tmpData = SkData::MakeWithoutCopy(data, size);
+        sk_sp<SkImage> image = SkImage::MakeFromEncoded(std::move(tmpData));
+        image = image->makeRasterImage(); // force decoding
+
+        if (image) {
+            DeserializationContext* context = reinterpret_cast<DeserializationContext*>(ctx);
+
+            if (context->fDirectContext) {
+                image = image->makeTextureImage(context->fDirectContext);
+            }
+#ifdef SK_GRAPHITE_ENABLED
+            else if (context->fRecorder) {
+                image = image->makeTextureImage(context->fRecorder);
+            }
+#endif
+        }
+
+        return image;
+    };
+    procs.fImageCtx = &ctx;
+
     std::unique_ptr<SkStream> stream = SkStream::MakeFromFile(fPath.c_str());
     if (!stream) {
         return Result::Fatal("Couldn't read %s.", fPath.c_str());
     }
-    sk_sp<SkPicture> pic(SkPicture::MakeFromStream(stream.get()));
+    sk_sp<SkPicture> pic(SkPicture::MakeFromStream(stream.get(), &procs));
     if (!pic) {
         return Result::Fatal("Couldn't parse file %s.", fPath.c_str());
     }
@@ -2094,32 +2132,10 @@ Result RasterSink::draw(const Src& src, SkBitmap* dst, SkWStream*, SkString*) co
 
 #ifdef SK_GRAPHITE_ENABLED
 
-namespace {
-
-// For the sprint Graphite only handles:
-//    solid colors with src or srcOver
-//    repeated or clamped linear gradients with src or srcOver
-void precompile(skgpu::graphite::Context* context) {
-    using ShaderType = skgpu::graphite::ShaderCombo::ShaderType;
-
-    skgpu::graphite::PaintCombo c1 { { skgpu::graphite::ShaderCombo({ ShaderType::kSolidColor },
-                                                                    { SkTileMode::kRepeat }) },
-                                     { SkBlendMode::kSrcOver, SkBlendMode::kSrc } };
-    context->preCompile(c1);
-
-    skgpu::graphite::PaintCombo c2 { { skgpu::graphite::ShaderCombo({ ShaderType::kLinearGradient },
-                                                     { SkTileMode::kRepeat, SkTileMode::kClamp }) },
-                                     { SkBlendMode::kSrcOver, SkBlendMode::kSrc } };
-    context->preCompile(c2);
-}
-
-} // anonymous namespace
-
 GraphiteSink::GraphiteSink(const SkCommandLineConfigGraphite* config)
         : fContextType(config->getContextType())
         , fColorType(config->getColorType())
-        , fAlphaType(config->getAlphaType())
-        , fTestPrecompile(config->getTestPrecompile()) {
+        , fAlphaType(config->getAlphaType()) {
 }
 
 Result GraphiteSink::draw(const Src& src,
@@ -2132,10 +2148,6 @@ Result GraphiteSink::draw(const Src& src,
     auto [_, context] = factory.getContextInfo(fContextType);
     if (!context) {
         return Result::Fatal("Could not create a context.");
-    }
-
-    if (fTestPrecompile) {
-        precompile(context);
     }
 
     std::unique_ptr<skgpu::graphite::Recorder> recorder = context->makeRecorder();

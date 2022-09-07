@@ -8,13 +8,18 @@
 #ifndef SKSL_CONSTRUCTOR_COMPOUND
 #define SKSL_CONSTRUCTOR_COMPOUND
 
-#include "src/sksl/SkSLContext.h"
+#include "include/private/SkSLDefines.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
 #include <memory>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
+class Type;
 
 /**
  * Represents a vector or matrix that is composed from other expressions, such as
@@ -36,9 +41,8 @@ public:
                                             const Type& type,
                                             ExpressionArray args);
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<ConstructorCompound>(fPosition, this->type(),
-                                                     this->arguments().clone());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<ConstructorCompound>(pos, this->type(), this->arguments().clone());
     }
 
 private:

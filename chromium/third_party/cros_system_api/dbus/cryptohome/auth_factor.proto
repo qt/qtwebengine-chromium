@@ -19,6 +19,7 @@ enum AuthFactorType {
   AUTH_FACTOR_TYPE_UNSPECIFIED = 0;
   AUTH_FACTOR_TYPE_PASSWORD = 1;
   AUTH_FACTOR_TYPE_PIN = 2;
+  AUTH_FACTOR_TYPE_CRYPTOHOME_RECOVERY = 3;
 }
 
 // AuthFactorIdentifier provides some identificaiton information for a given
@@ -38,6 +39,22 @@ message PinAuthInput {
   bytes secret = 1;
 }
 
+message CryptohomeRecoveryAuthInput {
+  // These fields are used for `AddAuthFactor`:
+  // Public key of the mediator for Cryptohome recovery flow.
+  bytes mediator_pub_key = 1;
+
+  // These fields are used for `AuthenticateAuthFactor`:
+  // Serialized cryptorecovery::CryptoRecoveryEpochResponse.
+  // An epoch response received from Recovery Mediator service containing epoch
+  // beacon value for Cryptohome recovery flow.
+  bytes epoch_response = 2;
+  // Serialized cryptohome.cryptorecovery.CryptoRecoveryRpcResponse.
+  // A response received from Recovery Mediator service and used by Cryptohome
+  // recovery flow to derive the wrapping keys.
+  bytes recovery_response = 3;
+}
+
 // AuthInput is a wrapper around any secret or input data that is required to
 // authenticate or create an AuthFactor on disk.
 message AuthInput {
@@ -47,6 +64,7 @@ message AuthInput {
   oneof input {
     PasswordAuthInput password_input = 1;
     PinAuthInput pin_input = 2;
+    CryptohomeRecoveryAuthInput cryptohome_recovery_input = 3;
   }
 }
 
@@ -63,6 +81,8 @@ message PinMetadata {
   // This field is ignored when registering a new key.
   bool auth_locked = 1;
 }
+
+message CryptohomeRecoveryMetadata {}
 
 // AuthFactor is a backing store for any secret stored on Chrome OS in the USS
 // World. This proto definition is used to communicate with the client side.
@@ -81,11 +101,15 @@ message AuthFactor {
   // only consisting of characters from the set {a-z, A-Z, 0-9, _, -}, and whose
   // length doesn't exceed 1000.
   string label = 2;
+  // is_active indicates if the AuthFactor can be used for Authenticating
+  // AuthFactor.
+  bool is_active_for_login = 3;
   // An AuthFactor could also carry with itself some metadata. Since an
   // AuthFactor could only be one type, oneof is used to define the usage of
   // metadata.
   oneof metadata {
-    PasswordMetadata password_metadata = 3;
-    PinMetadata pin_metadata = 4;
+    PasswordMetadata password_metadata = 4;
+    PinMetadata pin_metadata = 5;
+    CryptohomeRecoveryMetadata cryptohome_recovery_metadata = 6;
   }
 }

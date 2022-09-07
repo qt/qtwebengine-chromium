@@ -568,6 +568,12 @@ void UniformManager::write(SkSLType type, unsigned int count, const void* src) {
     fOffset += bytesWritten;
 }
 
+void UniformManager::write(const SkM44& mat) {
+    static const SkSLType kType = SkSLType::kFloat4x4;
+    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    this->write(kType, 1, &mat);
+}
+
 void UniformManager::write(const SkColor4f* colors, int count) {
     static const SkSLType kType = SkSLType::kFloat4;
     SkDEBUGCODE(this->checkExpected(kType, count);)
@@ -604,8 +610,14 @@ void UniformManager::write(int i) {
     this->write(kType, 1, &i);
 }
 
-void UniformManager::write(float2 v) {
+void UniformManager::write(skvx::float2 v) {
     static const SkSLType kType = SkSLType::kFloat2;
+    SkDEBUGCODE(this->checkExpected(kType, 1);)
+    this->write(kType, 1, &v);
+}
+
+void UniformManager::write(skvx::float4 v) {
+    static const SkSLType kType = SkSLType::kFloat4;
     SkDEBUGCODE(this->checkExpected(kType, 1);)
     this->write(kType, 1, &v);
 }

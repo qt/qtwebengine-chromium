@@ -2,7 +2,7 @@
 This file specifies a clang toolchain that can run on a Linux host which doesn't depend on any
 installed packages from the host machine.
 
-See build_toolchain.bzl for more details on the creation of the toolchain.
+See download_linux_amd64_toolchain.bzl for more details on the creation of the toolchain.
 
 It uses the usr subfolder of the built toolchain as a sysroot
 
@@ -15,12 +15,13 @@ load(
     "@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl",
     "action_config",
     "feature",
-    "feature_set",
     "flag_group",
     "flag_set",
     "tool",
     "variable_with_value",
 )
+
+# https://github.com/bazelbuild/bazel/blob/master/tools/build_defs/cc/action_names.bzl
 load("@bazel_tools//tools/build_defs/cc:action_names.bzl", "ACTION_NAMES")
 
 # The location of the created clang toolchain.
@@ -80,9 +81,9 @@ def _make_action_configs():
     """
 
     # https://cs.opensource.google/bazel/bazel/+/master:tools/cpp/cc_toolchain_config_lib.bzl;l=435;drc=3b9e6f201a9a3465720aad8712ab7bcdeaf2e5da
-    clang_tool = tool(path = "clang_trampoline.sh")
-    lld_tool = tool(path = "lld_trampoline.sh")
-    ar_tool = tool(path = "ar_trampoline.sh")
+    clang_tool = tool(path = "linux_trampolines/clang_trampoline_linux.sh")
+    lld_tool = tool(path = "linux_trampolines/lld_trampoline_linux.sh")
+    ar_tool = tool(path = "linux_trampolines/ar_trampoline_linux.sh")
 
     # https://cs.opensource.google/bazel/bazel/+/master:tools/cpp/cc_toolchain_config_lib.bzl;l=488;drc=3b9e6f201a9a3465720aad8712ab7bcdeaf2e5da
     assemble_action = action_config(
@@ -345,10 +346,13 @@ def _make_iwyu_flags():
             flag_group(
                 flags = [
                     # This define does not impact compilation, but it acts as a signal to the
-                    # clang_trampoline.sh whether check the file with include-what-you-use
+                    # clang_trampoline.sh whether to maybe check the file with include-what-you-use
                     # A define was chosen because it is ignored by clang and IWYU, but can be
                     # easily found with bash.
-                    "-DSKIA_ENFORCE_IWYU_FOR_THIS_FILE",
+                    # The clang_trampoline.sh file has a list of allowed subdirectories for which
+                    # IWYU should be enforced, allowing us to slowly opt more and more directories
+                    # in over time.
+                    "-DSKIA_ENFORCE_IWYU",
                 ],
             ),
         ],
@@ -356,24 +360,10 @@ def _make_iwyu_flags():
 
     return [
         feature(
-            # The IWYU checks can add some overhead to the build (1-5 seconds per file), so we only
-            # want to run them sometimes. By adding --feature skia_enforce_iwyu to the Bazel
-            # command, this will turn on the checking (for all files that have not been opted-out).
             "skia_enforce_iwyu",
-            enabled = False,
-        ),
-        feature(
-            "skia_opt_file_into_iwyu",
             enabled = False,
             flag_sets = [
                 opt_file_into_iwyu,
-            ],
-            # If the skia_enforce_iwyu features is not enabled (e.g. globally via a CLI flag), we
-            # will not run the IWYU analysis on any files.
-            requires = [
-                feature_set(features = [
-                    "skia_enforce_iwyu",
-                ]),
             ],
         ),
     ]

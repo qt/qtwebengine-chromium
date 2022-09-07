@@ -27,15 +27,17 @@
 #include "src/gpu/graphite/geom/Shape.h"
 #include "src/gpu/graphite/geom/Transform_graphite.h"
 
+#include "include/core/SkColorSpace.h"
 #include "include/core/SkPath.h"
 #include "include/core/SkPathEffect.h"
 #include "include/core/SkStrokeRec.h"
+#include "include/private/SkImageInfoPriv.h"
 
 #include "src/core/SkConvertPixels.h"
 #include "src/core/SkMatrixPriv.h"
 #include "src/core/SkPaintPriv.h"
 #include "src/core/SkSpecialImage.h"
-#include "src/core/SkStroke.h"
+#include "src/shaders/SkImageShader.h"
 
 #include <unordered_map>
 #include <vector>
@@ -68,6 +70,28 @@ bool paint_depends_on_dst(const PaintParams& paintParams) {
 
 SkIRect rect_to_pixelbounds(const Rect& r) {
     return r.makeRoundOut().asSkIRect();
+}
+
+// TODO: this doesn't support the SrcRectConstraint option.
+sk_sp<SkShader> make_img_shader_for_paint(const SkPaint& paint,
+                                          sk_sp<SkImage> image,
+                                          const SkRect& subset,
+                                          SkTileMode tmx, SkTileMode tmy,
+                                          const SkSamplingOptions& sampling,
+                                          const SkMatrix* localMatrix) {
+    bool imageIsAlphaOnly = SkColorTypeIsAlphaOnly(image->colorType());
+
+    auto s = SkImageShader::MakeSubset(std::move(image), subset, tmx, tmy, sampling, localMatrix);
+    if (!s) {
+        return nullptr;
+    }
+    if (imageIsAlphaOnly && paint.getShader()) {
+        // Compose the image shader with the paint's shader. Alpha images+shaders should output the
+        // texture's alpha multiplied by the shader's color. DstIn (d*sa) will achieve this with
+        // the source image and dst shader (MakeBlend takes dst first, src second).
+        s = SkShaders::Blend(SkBlendMode::kDstIn, paint.refShader(), std::move(s));
+    }
+    return s;
 }
 
 } // anonymous namespace
@@ -122,7 +146,7 @@ private:
     SkSTArenaAllocWithReset<4 * sizeof(IntersectionTree)> fTreeStore;
 };
 
-sk_sp<Device> Device::Make(Recorder* recorder, const SkImageInfo& ii) {
+sk_sp<Device> Device::Make(Recorder* recorder, const SkImageInfo& ii, SkBudgeted budgeted) {
     if (!recorder) {
         return nullptr;
     }
@@ -130,7 +154,7 @@ sk_sp<Device> Device::Make(Recorder* recorder, const SkImageInfo& ii) {
                                                                              /*levelCount=*/1,
                                                                              Protected::kNo,
                                                                              Renderable::kYes);
-    sk_sp<TextureProxy> target(new TextureProxy(ii.dimensions(), textureInfo));
+    sk_sp<TextureProxy> target(new TextureProxy(ii.dimensions(), textureInfo, budgeted));
     return Make(recorder,
                 std::move(target),
                 ii.refColorSpace(),
@@ -194,7 +218,7 @@ SkBaseDevice* Device::onCreateDevice(const CreateInfo& info, const SkPaint*) {
     // TODO: Inspect the paint and create info to determine if there's anything that has to be
     // modified to support inline subpasses.
     // TODO: onCreateDevice really should return sk_sp<SkBaseDevice>...
-    return Make(fRecorder, info.fInfo).release();
+    return Make(fRecorder, info.fInfo, SkBudgeted::kYes).release();
 }
 
 sk_sp<SkSurface> Device::makeSurface(const SkImageInfo& ii, const SkSurfaceProps& /* props */) {
@@ -443,10 +467,58 @@ void Device::drawPoints(SkCanvas::PointMode mode, size_t count,
     }
 }
 
+void Device::drawImageRect(const SkImage* image, const SkRect* src, const SkRect& dst,
+                           const SkSamplingOptions& sampling, const SkPaint& paint,
+                           SkCanvas::SrcRectConstraint constraint) {
+    SkASSERT(dst.isFinite());
+    SkASSERT(dst.isSorted());
+
+    // TODO: All of this logic should be handled in SkCanvas, since it's the same for every backend
+    SkRect tmpSrc, tmpDst = dst;
+    SkRect imgBounds = SkRect::Make(image->bounds());
+
+    if (src) {
+        tmpSrc = *src;
+    } else {
+        tmpSrc = SkRect::Make(image->bounds());
+    }
+    SkMatrix matrix = SkMatrix::RectToRect(tmpSrc, dst);
+
+    // clip the tmpSrc to the bounds of the image, and recompute the dest rect if
+    // needed (i.e., if the src was clipped). No check needed if src==null.
+    if (src) {
+        if (!imgBounds.contains(tmpSrc)) {
+            if (!tmpSrc.intersect(imgBounds)) {
+                return; // nothing to draw
+            }
+            // recompute dst, based on the smaller tmpSrc
+            matrix.mapRect(&tmpDst, tmpSrc);
+            if (!tmpDst.isFinite()) {
+                return;
+            }
+        }
+    }
+
+    // construct a shader, so we can call drawRect with the dst
+    auto s = make_img_shader_for_paint(paint, sk_ref_sp(image), tmpSrc,
+                                       SkTileMode::kClamp, SkTileMode::kClamp,
+                                       sampling, &matrix);
+    if (!s) {
+        return;
+    }
+
+    SkPaint paintWithShader(paint);
+    paintWithShader.setStyle(SkPaint::kFill_Style);
+    paintWithShader.setShader(std::move(s));
+    paintWithShader.setPathEffect(nullptr);  // drawImageRect doesn't support path effects
+
+    this->drawRect(tmpDst, paintWithShader);
+}
+
 void Device::drawShape(const Shape& shape,
                        const SkPaint& paint,
                        const SkStrokeRec& style,
-                       Mask<DrawFlags> flags) {
+                       SkEnumBitMask<DrawFlags> flags) {
     const Transform& localToDevice = this->localToDeviceTransform();
     if (!localToDevice.valid()) {
         // If the transform is not invertible or not finite then drawing isn't well defined.
@@ -556,40 +628,6 @@ void Device::recordDraw(const Transform& localToDevice,
     // TODO: remove after CPU-transform fallbacks are no longer needed
     static const Transform kIdentity{SkM44()};
 
-    // TODO: For now stroked paths are converted to fills on the CPU since the fixed count
-    // stroke path renderer hasn't been ported to Graphite yet.
-    if (stroke) {
-        SkPath strokeAsPath = shape.asPath();
-        SkStroke stroker;
-        stroker.setCap(stroke->cap());
-        stroker.setJoin(stroke->join());
-        stroker.setMiterLimit(stroke->miterLimit());
-        stroker.setDoFill(false);
-        const Transform* transform;
-        if (stroke->halfWidth() == 0.f) {
-            // Manually transform to device space and then generate a 1px stroke filled path, which
-            // would require applying a local matrix to the paint but we skip that for now since all
-            // of this is temporary anyways and most hairlines aren't spatially-varying.
-            strokeAsPath.transform(localToDevice.matrix().asM33());
-            stroker.setWidth(1.f);
-            stroker.strokePath(strokeAsPath, &strokeAsPath);
-            transform = &kIdentity;
-        } else {
-            stroker.setResScale(localToDevice.maxScaleFactor());
-            stroker.setWidth(stroke->width());
-            stroker.strokePath(strokeAsPath, &strokeAsPath);
-            transform = &localToDevice;
-        }
-        // Strokes as fills shouldn't be inverse filled
-        if (strokeAsPath.isInverseFillType()) {
-            strokeAsPath.toggleInverseFillType();
-        }
-        // Stroked paths with just moveTos may produce an empty path, which shouldn't be sent on
-        if (!strokeAsPath.isEmpty()) {
-            this->recordDraw(*transform, Shape(strokeAsPath), clip, ordering, paint, nullptr);
-        }
-        return;
-    }
     // TODO: The tessellating path renderers haven't implemented perspective yet, so transform to
     // device space so we draw something approximately correct (barring local coord issues).
     if (localToDevice.type() == Transform::Type::kProjection) {
@@ -605,7 +643,16 @@ void Device::recordDraw(const Transform& localToDevice,
     // are large enough to exceed the fixed count tessellation limits.
     const Renderer* renderer = nullptr;
 
-    if (shape.convex() && !shape.inverted()) {
+    if (stroke) {
+        // TODO: We treat inverse-filled strokes as regular strokes. We could handle them by
+        // stenciling first with the HW stroke tessellator and then covering their bounds, but
+        // inverse-filled strokes are not well-specified in our public canvas behavior so we may be
+        // able to remove it.
+        // Unlike in Ganesh, the HW stroke tessellator can work with arbitrary paints since the
+        // depth test prevents double-blending when there is transparency, thus we can HW stroke
+        // any path regardless of its paint.
+        renderer = &Renderer::TessellatedStrokes();
+    } else if (shape.convex() && !shape.inverted()) {
         // TODO: Ganesh doesn't have a curve+middle-out triangles option for convex paths, but it
         // would be pretty trivial to spin up.
         renderer = &Renderer::ConvexTessellatedWedges();
@@ -682,5 +729,12 @@ sk_sp<SkSpecialImage> Device::snapSpecial(const SkIRect& subset, bool forceCopy)
     this->flushPendingWorkToRecorder();
     return nullptr;
 }
+
+#if GRAPHITE_TEST_UTILS
+TextureProxy* Device::proxy() {
+    return fDC->target();
+}
+
+#endif
 
 } // namespace skgpu

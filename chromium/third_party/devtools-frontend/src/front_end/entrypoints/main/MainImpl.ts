@@ -292,8 +292,7 @@ export class MainImpl {
         'recordCoverageWithPerformanceTracing', 'Record coverage while performance tracing');
     Root.Runtime.experiments.register('samplingHeapProfilerTimeline', 'Sampling heap profiler timeline', true);
     Root.Runtime.experiments.register(
-        'showOptionToNotTreatGlobalObjectsAsRoots',
-        'Show option to take heap snapshot where globals are not treated as root');
+        'showOptionToExposeInternalsInHeapSnapshot', 'Show option to expose internals in heap snapshots');
     Root.Runtime.experiments.register(
         'sourceOrderViewer', 'Source order viewer', undefined,
         'https://developer.chrome.com/blog/new-in-devtools-92/#source-order');
@@ -322,6 +321,7 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         'evaluateExpressionsWithSourceMaps', 'Console: Resolve variable names in expressions using source maps',
         undefined);
+    Root.Runtime.experiments.register('instrumentationBreakpoints', 'Enable instrumentation breakpoints', true);
 
     // Dual-screen
     Root.Runtime.experiments.register(
@@ -371,7 +371,7 @@ export class MainImpl {
     // CSS <length> authoring tool.
     Root.Runtime.experiments.register(
         'cssTypeComponentLength',
-        'Enable CSS <length> authoring tool in the Styles pane (https://goo.gle/length-feedback)', undefined,
+        'Enable CSS <length> authoring tool in the Styles pane (https://g.co/devtools/length-feedback)', undefined,
         'https://developer.chrome.com/blog/new-in-devtools-96/#length');
 
     // Display precise changes in the Changes tab.
@@ -386,6 +386,11 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.HEADER_OVERRIDES, 'Local overrides for response headers');
 
+    // Enable CSS Authoring hints for inactive rules, deprecated properties, etc.
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.CSS_AUTHORING_HINTS,
+        'Enable CSS Authoring hints for inactive rules, deprecated properties, etc.');
+
     // New Lighthouse panel with timespan and snapshot mode
     Root.Runtime.experiments.register('lighthousePanelFR', 'Use Lighthouse panel with timespan and snapshot modes');
 
@@ -397,6 +402,10 @@ export class MainImpl {
     Root.Runtime.experiments.register(
         Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER, 'Enable color picking outside the browser window');
 
+    // Change grouping of sources panel to use Authored/Deployed trees
+    Root.Runtime.experiments.register(
+        Root.Runtime.ExperimentName.AUTHORED_DEPLOYED_GROUPING, 'Group sources into Authored and Deployed trees');
+
     Root.Runtime.experiments.enableExperimentsByDefault([
       'sourceOrderViewer',
       'hideIssuesFeature',
@@ -405,6 +414,8 @@ export class MainImpl {
       'reportingApiDebugging',
       Root.Runtime.ExperimentName.SYNC_SETTINGS,
       Root.Runtime.ExperimentName.CSS_LAYERS,
+      Root.Runtime.ExperimentName.EYEDROPPER_COLOR_PICKER,
+      'lighthousePanelFR',
     ]);
 
     Root.Runtime.experiments.cleanUpStaleExperiments();
@@ -417,6 +428,7 @@ export class MainImpl {
       'backgroundServicesNotifications',
       'backgroundServicesPushMessaging',
       'backgroundServicesPaymentHandler',
+      'bfcacheDisplayTree',
       'webauthnPane',
       'developerResourcesView',
     ]);
@@ -554,6 +566,8 @@ export class MainImpl {
     self.Persistence.networkPersistenceManager =
         Persistence.NetworkPersistenceManager.NetworkPersistenceManager.instance(
             {forceNew: true, workspace: Workspace.Workspace.WorkspaceImpl.instance()});
+    // @ts-ignore layout test global
+    self.Host.Platform = Host.Platform;
 
     new ExecutionContextSelector(SDK.TargetManager.TargetManager.instance(), UI.Context.Context.instance());
     // @ts-ignore layout test global
@@ -711,7 +725,7 @@ export class MainImpl {
     // @ts-ignore Used in ElementsTreeOutline
     eventCopy['original'] = event;
     const document = event.target && (event.target as HTMLElement).ownerDocument;
-    const target = document ? document.deepActiveElement() : null;
+    const target = document ? Platform.DOMUtilities.deepActiveElement(document) : null;
     if (target) {
       target.dispatchEvent(eventCopy);
     }
@@ -797,7 +811,9 @@ export class SearchActionDelegate implements UI.ActionRegistration.ActionDelegat
   }
 
   handleAction(context: UI.Context.Context, actionId: string): boolean {
-    let searchableView = UI.SearchableView.SearchableView.fromElement(document.deepActiveElement());
+    let searchableView = UI.SearchableView.SearchableView.fromElement(
+        Platform.DOMUtilities.deepActiveElement(document),
+    );
     if (!searchableView) {
       const currentPanel = (UI.InspectorView.InspectorView.instance().currentPanelDeprecated() as UI.Panel.Panel);
       if (currentPanel && currentPanel.searchableView) {

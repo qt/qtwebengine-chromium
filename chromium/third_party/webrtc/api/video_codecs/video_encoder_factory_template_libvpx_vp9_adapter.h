@@ -24,11 +24,10 @@ struct LibvpxVp9EncoderTemplateAdapter {
 
   static std::unique_ptr<VideoEncoder> CreateEncoder(
       const SdpVideoFormat& format) {
-    return VP9Encoder::Create();
+    return VP9Encoder::Create(cricket::VideoCodec(format));
   }
 
-  static bool IsScalabilityModeSupported(
-      const absl::string_view scalability_mode) {
+  static bool IsScalabilityModeSupported(ScalabilityMode scalability_mode) {
     return VP9Encoder::SupportsScalabilityMode(scalability_mode);
   }
 };

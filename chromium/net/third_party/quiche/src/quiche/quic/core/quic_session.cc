@@ -543,7 +543,7 @@ void QuicSession::OnBlockedFrame(const QuicBlockedFrame& frame) {
   //                streams: if we have a large window then maybe something
   //                had gone wrong with the flow control accounting.
   QUIC_DLOG(INFO) << ENDPOINT << "Received BLOCKED frame with stream id: "
-                  << frame.stream_id;
+                  << frame.stream_id << ", offset: " << frame.offset;
 }
 
 bool QuicSession::CheckStreamNotBusyLooping(QuicStream* stream,
@@ -690,14 +690,6 @@ void QuicSession::OnCanWrite() {
     }
     currently_writing_stream_id_ = 0;
   }
-}
-
-bool QuicSession::SendProbingData() {
-  if (connection()->sent_packet_manager().MaybeRetransmitOldestPacket(
-          PROBING_RETRANSMISSION)) {
-    return true;
-  }
-  return false;
 }
 
 bool QuicSession::WillingAndAbleToWrite() const {
@@ -939,8 +931,8 @@ void QuicSession::SendGoAway(QuicErrorCode error_code,
       reason);
 }
 
-void QuicSession::SendBlocked(QuicStreamId id) {
-  control_frame_manager_.WriteOrBufferBlocked(id);
+void QuicSession::SendBlocked(QuicStreamId id, QuicStreamOffset byte_offset) {
+  control_frame_manager_.WriteOrBufferBlocked(id, byte_offset);
 }
 
 void QuicSession::SendWindowUpdate(QuicStreamId id,
@@ -1002,11 +994,7 @@ void QuicSession::OnStreamClosed(QuicStreamId stream_id) {
       closed_streams_clean_up_alarm_->Set(
           connection_->clock()->ApproximateNow());
     }
-    QUIC_BUG_IF(
-        364846171_1,
-        connection_->packet_creator().HasPendingStreamFramesOfStream(stream_id))
-        << "Stream " << stream_id
-        << " gets closed while there are pending frames.";
+    connection_->QuicBugIfHasPendingFrames(stream_id);
   }
 
   if (!stream->HasReceivedFinalOffset()) {
@@ -1562,7 +1550,7 @@ bool QuicSession::OnNewDecryptionKeyAvailable(
     bool set_alternative_decrypter, bool latch_once_used) {
   if (connection_->version().handshake_protocol == PROTOCOL_TLS1_3 &&
       !connection()->framer().HasEncrypterOfEncryptionLevel(
-          QuicUtils::GetEncryptionLevel(
+          QuicUtils::GetEncryptionLevelToSendAckofSpace(
               QuicUtils::GetPacketNumberSpace(level)))) {
     // This should never happen because connection should never decrypt a packet
     // while an ACK for it cannot be encrypted.
@@ -2177,9 +2165,7 @@ void QuicSession::MaybeCloseZombieStream(QuicStreamId id) {
   }
   // Do not retransmit data of a closed stream.
   streams_with_pending_retransmission_.erase(id);
-  QUIC_BUG_IF(364846171_2,
-              connection_->packet_creator().HasPendingStreamFramesOfStream(id))
-      << "Stream " << id << " gets closed while there are pending frames.";
+  connection_->QuicBugIfHasPendingFrames(id);
 }
 
 QuicStream* QuicSession::GetStream(QuicStreamId id) const {
@@ -2285,10 +2271,7 @@ bool QuicSession::RetransmitFrames(const QuicFrames& frames,
       continue;
     }
     if (frame.type == CRYPTO_FRAME) {
-      const bool data_retransmitted =
-          GetMutableCryptoStream()->RetransmitData(frame.crypto_frame, type);
-      if (GetQuicRestartFlag(quic_set_packet_state_if_all_data_retransmitted) &&
-          !data_retransmitted) {
+      if (!GetMutableCryptoStream()->RetransmitData(frame.crypto_frame, type)) {
         return false;
       }
       continue;

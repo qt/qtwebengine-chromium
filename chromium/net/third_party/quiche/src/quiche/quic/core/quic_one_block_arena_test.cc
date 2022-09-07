@@ -6,12 +6,11 @@
 
 #include <cstdint>
 
-#include "quiche/quic/platform/api/quic_containers.h"
 #include "quiche/quic/platform/api/quic_expect_bug.h"
 #include "quiche/quic/platform/api/quic_test.h"
 #include "quiche/quic/test_tools/quic_test_utils.h"
 
-namespace quic {
+namespace quic::test {
 namespace {
 
 static const uint32_t kMaxAlign = 8;
@@ -57,4 +56,4 @@ TEST_F(QuicOneBlockArenaTest, NoOverlaps) {
 }
 
 }  // namespace
-}  // namespace quic
+}  // namespace quic::test

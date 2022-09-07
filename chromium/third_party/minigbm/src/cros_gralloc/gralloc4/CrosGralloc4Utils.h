@@ -11,7 +11,7 @@
 #include <android/hardware/graphics/common/1.2/types.h>
 #include <android/hardware/graphics/mapper/4.0/IMapper.h>
 
-#include "cros_gralloc/cros_gralloc_types.h"
+struct cros_gralloc_buffer_descriptor;
 
 std::string getPixelFormatString(android::hardware::graphics::common::V1_2::PixelFormat format);
 

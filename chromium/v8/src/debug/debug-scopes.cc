@@ -254,6 +254,7 @@ void ScopeIterator::TryParseAndRetrieveScopes(ReparseStrategy strategy) {
           ? UnoptimizedCompileFlags::ForFunctionCompile(isolate_, *shared_info)
           : UnoptimizedCompileFlags::ForScriptCompile(isolate_, *script)
                 .set_is_eager(true);
+  flags.set_is_reparse(true);
 
   MaybeHandle<ScopeInfo> maybe_outer_scope;
   if (scope_info->scope_type() == EVAL_SCOPE || script->is_wrapped()) {
@@ -956,8 +957,8 @@ void ScopeIterator::VisitLocalScope(const Visitor& visitor, Mode mode,
     if (context_->extension_object().is_null()) return;
     Handle<JSObject> extension(context_->extension_object(), isolate_);
     Handle<FixedArray> keys =
-        KeyAccumulator::GetKeys(extension, KeyCollectionMode::kOwnOnly,
-                                ENUMERABLE_STRINGS)
+        KeyAccumulator::GetKeys(isolate_, extension,
+                                KeyCollectionMode::kOwnOnly, ENUMERABLE_STRINGS)
             .ToHandleChecked();
 
     for (int i = 0; i < keys->length(); i++) {
@@ -1001,7 +1002,7 @@ bool ScopeIterator::SetLocalVariableValue(Handle<String> variable_name,
             parameters_and_registers->set(index, *new_value);
           } else {
             JavaScriptFrame* frame = GetFrame();
-            if (frame->is_optimized()) return false;
+            if (!frame->is_unoptimized()) return false;
 
             frame->SetParameterValue(index, *new_value);
           }
@@ -1022,7 +1023,7 @@ bool ScopeIterator::SetLocalVariableValue(Handle<String> variable_name,
           } else {
             // Set the variable on the stack.
             JavaScriptFrame* frame = GetFrame();
-            if (frame->is_optimized()) return false;
+            if (!frame->is_unoptimized()) return false;
 
             frame->SetExpression(index, *new_value);
           }

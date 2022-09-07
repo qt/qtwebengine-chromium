@@ -29,6 +29,7 @@
 - [Layer Version Negotiation](#layer-version-negotiation)
 - [Layer Call Chains and Distributed Dispatch](#layer-call-chains-and-distributed-dispatch)
 - [Layer Unknown Physical Device Extensions](#layer-unknown-physical-device-extensions)
+  - [Reason for adding `vk_layerGetPhysicalDeviceProcAddr`](#reason-for-adding-vk_layergetphysicaldeviceprocaddr)
 - [Layer Intercept Requirements](#layer-intercept-requirements)
 - [Distributed Dispatching Requirements](#distributed-dispatching-requirements)
 - [Layer Conventions and Rules](#layer-conventions-and-rules)
@@ -586,32 +587,12 @@ functions to the first entity in the call chain.
 
 ## Layer Unknown Physical Device Extensions
 
-Originally, if `vkGetInstanceProcAddr` was called in the loader, it would
-result in the following behavior:
- 1. The loader would check if core function:
-    - If it was, it would return the function pointer
- 2. The loader would check if known extension function:
-    - If it was, it would return the function pointer
- 3. If the loader knew nothing about it, it would call down using
-`GetInstanceProcAddr`
-    - If it returned non-NULL, treat it as an unknown logical device command.
-    - This meant setting up a generic trampoline function that takes in a
-VkDevice as the first parameter and adjusting the dispatch table to call the
-Driver/Layer's function after getting the dispatch table from the `VkDevice`.
- 4. If all the above failed, the loader would return NULL to the application.
-
-This caused problems when a layer attempted to expose new physical device
-extensions the loader knew nothing about, but an application did.
-Because the loader knew nothing about it, the loader would get to step 3 in the
-above process and would treat the function as an unknown logical device
-command.
-The problem is, this would create a generic VkDevice trampoline function which,
-on the first call, would attempt to dereference the VkPhysicalDevice as a
-VkDevice.
-This would lead to a crash or corruption.
-
-In order to identify the extension entry-points specific to physical device
-extensions, the following function can be added to a layer:
+Layers that intercept entrypoints which take a `VkPhysicalDevice` as the first
+parameter *should* support `vk_layerGetPhysicalDeviceProcAddr`. This function
+is added to the Layer Interface Version 2 and allows the loader to distinguish
+between entrypoints which take `VkDevice` and `VkPhysicalDevice` as the first
+parameter. This allows the loader to properly support entrypoints that are
+unknown to it gracefully.
 
 ```cpp
 PFN_vkVoidFunction
@@ -626,7 +607,7 @@ extension entry-points.
 In this way, it compares "pName" to every physical device function supported
 in the layer.
 
-The following rules apply:
+Implementations of the function should have the following behavior:
   * If it is the name of a physical device function supported by the layer,
 the pointer to the layer's corresponding function should be returned.
   * If it is the name of a valid function which is **not** a physical device
@@ -648,17 +629,24 @@ chain_info->u.pLayerInfo->pfnNextGetPhysicalDeviceProcAddr
       * Using the next layer’s `GetInstanceProcAddr` function to query for
 `vk_layerGetPhysicalDeviceProcAddr`.
 
-This support is optional and should not be considered a requirement.
-This is only required if a layer intends to support some functionality not
-directly supported by loaders released in the public.
-If a layer does implement this support, it should return the address of its
-`vk_layerGetPhysicalDeviceProcAddr` function in the
+If a layer intends to support functions that take VkPhysicalDevice as the
+dispatchable parameter, then layer should support `vk_layerGetPhysicalDeviceProcAddr`.
+This is because if these functions aren't known to the loader, such as those
+from unreleased extensions or because the loader is an older build thus doesn't
+know about them _yet_, the loader won't be able to distinguish whether this is
+a device or physical device function.
+
+If a layer does implement `vk_layerGetPhysicalDeviceProcAddr`, it should return
+the address of its `vk_layerGetPhysicalDeviceProcAddr` function in the
 "pfnGetPhysicalDeviceProcAddr" member of the `VkNegotiateLayerInterface`
 structure during [Layer Version Negotiation](#layer-version-negotiation).
 Additionally, the layer should also make sure `vkGetInstanceProcAddr` returns a
 valid function pointer to a query of `vk_layerGetPhysicalDeviceProcAddr`.
 
-The new behavior of the loader's `vkGetInstanceProcAddr` with support for the
+Note: If a layer wraps the VkInstance handle, support for
+`vk_layerGetPhysicalDeviceProcAddr` is *NOT* optional and must be implemented.
+
+The behavior of the loader's `vkGetInstanceProcAddr` with support for the
 `vk_layerGetPhysicalDeviceProcAddr` function is as follows:
  1. Check if core function:
     - If it is, return the function pointer
@@ -683,6 +671,32 @@ longer get to step 3, because step 2 will return a valid function pointer.
 However, the layer should continue to support the command query via
 `vk_layerGetPhysicalDeviceProcAddr`, until at least a Vulkan version bump,
 because an older loader may still be attempting to use the commands.
+
+### Reason for adding `vk_layerGetPhysicalDeviceProcAddr`
+
+Originally, if `vkGetInstanceProcAddr` was called in the loader, it would
+result in the following behavior:
+ 1. The loader would check if core function:
+    - If it was, it would return the function pointer
+ 2. The loader would check if known extension function:
+    - If it was, it would return the function pointer
+ 3. If the loader knew nothing about it, it would call down using
+`GetInstanceProcAddr`
+    - If it returned non-NULL, treat it as an unknown logical device command.
+    - This meant setting up a generic trampoline function that takes in a
+VkDevice as the first parameter and adjusting the dispatch table to call the
+Driver/Layer's function after getting the dispatch table from the `VkDevice`.
+ 4. If all the above failed, the loader would return NULL to the application.
+
+This caused problems when a layer attempted to expose new physical device
+extensions the loader knew nothing about, but an application did.
+Because the loader knew nothing about it, the loader would get to step 3 in the
+above process and would treat the function as an unknown logical device
+command.
+The problem is, this would create a generic VkDevice trampoline function which,
+on the first call, would attempt to dereference the VkPhysicalDevice as a
+VkDevice.
+This would lead to a crash or corruption.
 
 
 ## Layer Intercept Requirements
@@ -1219,7 +1233,8 @@ along the saved handle to the layer below it.
 This means that the layer **must intercept every Vulkan function which uses**
 **the object in question**, and wrap or unwrap the object, as appropriate.
 This includes adding support for all extensions with functions using any
-object the layer wraps.
+object the layer wraps as well as any loader-layer interface functions such as
+`vk_layerGetPhysicalDeviceProcAddr`.
 
 Layers above the object wrapping layer will see the wrapped object.
 Layers which wrap dispatchable objects must ensure that the first field in the
@@ -1402,6 +1417,8 @@ for explicit layers.
 For example, when both the meta layer override paths and `VK_LAYER_PATH` are
 present, none of the layers in `VK_LAYER_PATH` are discoverable, and the
 loader will not find them.
+
+
 ## Layer Manifest File Format
 
 The Khronos loader uses manifest files to discover available layer libraries
@@ -1502,19 +1519,165 @@ Here's an example of a meta-layer manifest file:
   <tr>
     <th>JSON Node</th>
     <th>Description and Notes</th>
+    <th>Restrictions</th>
+    <th>Parent</th>
     <th>Introspection Query</th>
+  </tr>
+  <tr>
+    <td>"api_version"</td>
+    <td>The major.minor.patch version number of the Vulkan API that the layer
+        supports.
+        It does not require the application to make use of that API version.
+        It simply is an indication that the layer can support Vulkan API
+        instance and device functions up to and including that API version. </br>
+        For example: 1.0.33.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerateInstanceLayerProperties</small></td>
+  </tr>
+  <tr>
+    <td>"app_keys"</td>
+    <td>List of paths to executables that the meta-layer applies to.
+    </td>
+    <td><b>Meta-layers Only</b></td>
+    <td>"layer"/"layers"</td>
+    <td><small>N/A</small></td>
+  </tr>
+  <tr>
+    <td>"blacklisted_layers"</td>
+    <td>List of explicit layer names that should not be loaded even if
+        requested by the application.
+    </td>
+    <td><b>Meta-layers Only</b></td>
+    <td>"layer"/"layers"</td>
+    <td><small>N/A</small></td>
+  </tr>
+  <tr>
+    <td>"component_layers"</td>
+    <td>Indicates the component layer names that are
+        part of a meta-layer.
+        The names listed must be the "name" identified in each of the component
+        layer's Mainfest file "name" tag (this is the same as the name of the
+        layer that is passed to the `vkCreateInstance` command).
+        All component layers must be present on the system and found by the
+        loader in order for this meta-layer to be available and activated. <br/>
+        <b>This field must not be present if "library_path" is defined</b>.
+    </td>
+    <td><b>Meta-layers Only</b></td>
+    <td>"layer"/"layers"</td>
+    <td><small>N/A</small></td>
+  </tr>
+  <tr>
+    <td>"description"</td>
+    <td>A high-level description of the layer and its intended use.</td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerateInstanceLayerProperties</small></td>
+  </tr>
+  <tr>
+    <td>"device_extensions"</td>
+    <td><b>OPTIONAL:</b> Contains the list of device extension names supported
+        by this layer. One "device\_extensions" node with an array of one or
+        more elements is required if any device extensions are supported by a
+        layer; otherwise the node is optional.
+        Each element of the array must have the nodes "name" and "spec_version"
+        which correspond to `VkExtensionProperties` "extensionName" and
+        "specVersion" respectively.
+        Additionally, each element of the array of device extensions must have
+        the node "entrypoints" if the device extension adds Vulkan API
+        functions; otherwise this node is not required.
+        The "entrypoint" node is an array of the names of all entry-points added
+        by the supported extension.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerateDeviceExtensionProperties</small></td>
+  </tr>
+  <tr>
+    <td>"disable_environment"</td>
+    <td><b>REQUIRED:</b> Indicates an environment variable used to disable the
+        Implicit Layer (when defined to any non-empty string value).<br/>
+        In rare cases of an application not working with an implicit layer, the
+        application can set this environment variable (before calling Vulkan
+        functions) in order to "blacklist" the layer.
+        This environment variable (which may vary with each variation of the
+        layer) must be set (not particularly to any value).
+        If both the "enable_environment" and "disable_environment" variables are
+        set, the implicit layer is disabled.
+    </td>
+    <td><b>Implicit Layers Only</b></td>
+    <td>"layer"/"layers"</td>
+    <td><small>N/A</small></td>
+  </tr>
+  <tr>
+    <td>"enable_environment"</td>
+    <td><b>OPTIONAL:</b> Indicates an environment variable used to enable the
+        Implicit Layer (when defined to any non-empty string value).<br/>
+        This environment variable (which may vary with each variation of the
+        layer) must be set to the given value or else the implicit layer is not
+        loaded.
+        This is for application environments (e.g. Steam) which want to enable a
+        layer(s) only for applications that they launch, and allows for
+        applications run outside of an application environment to not get that
+        implicit layer(s).
+    </td>
+    <td><b>Implicit Layers Only</b></td>
+    <td>"layer"/"layers"</td>
+    <td><small>N/A</small></td>
   </tr>
   <tr>
     <td>"file_format_version"</td>
     <td>Manifest format major.minor.patch version number.<br/>
-        Supported versions are: 1.0.0, 1.0.1, 1.1.0, 1.1.1, and 1.1.2.
+        Supported versions are: 1.0.0, 1.0.1, 1.1.0, 1.1.1, 1.1.2 and 1.2.0.
     </td>
+    <td>None</td>
+    <td>None</td>
     <td><small>N/A</small></td>
+  </tr>
+  <tr>
+    <td>"functions"</td>
+    <td><b>OPTIONAL:</b> This section can be used to identify a different
+        function name for the loader to use in place of standard layer interface
+        functions.
+        The "functions" node is required if the layer is using an alternative
+        name for `vkNegotiateLoaderLayerInterfaceVersion`.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkGet*ProcAddr</small></td>
+  </tr>
+  <tr>
+    <td>"implementation_version"</td>
+    <td>The version of the layer implemented.
+        If the layer itself has any major changes, this number should change so
+        the loader and/or application can identify it properly.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerateInstanceLayerProperties</small></td>
+  </tr>
+  <tr>
+    <td>"instance_extensions"</td>
+    <td><b>OPTIONAL:</b> Contains the list of instance extension names
+        supported by this layer.
+        One "instance_extensions" node with an array of one or more elements is
+        required if any instance extensions are supported by a layer; otherwise
+        the node is optional.
+        Each element of the array must have the nodes "name" and "spec_version"
+        which correspond to `VkExtensionProperties` "extensionName" and
+        "specVersion" respectively.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerateInstanceExtensionProperties</small></td>
   </tr>
   <tr>
     <td>"layer"</td>
     <td>The identifier used to group a single layer's information together.
     </td>
+    <td>None</td>
+    <td>None</td>
     <td><small>vkEnumerateInstanceLayerProperties</small></td>
   </tr>
   <tr>
@@ -1522,26 +1685,9 @@ Here's an example of a meta-layer manifest file:
     <td>The identifier used to group multiple layers' information together.
         This requires a minimum Manifest file format version of 1.0.1.
     </td>
+    <td>None</td>
+    <td>None</td>
     <td><small>vkEnumerateInstanceLayerProperties</small></td>
-  </tr>
-  <tr>
-    <td>"name"</td>
-    <td>The string used to uniquely identify this layer to applications.</td>
-    <td><small>vkEnumerateInstanceLayerProperties</small></td>
-  </tr>
-  <tr>
-    <td>"type"</td>
-    <td>This field indicates the type of layer.  The values can be: GLOBAL, or
-        INSTANCE.<br/>
-        <b> NOTE: </b> Prior to deprecation, the "type" node was used to
-        indicate which layer chain(s) to activate the layer upon: instance,
-        device, or both.
-        Distinct instance and device layers are deprecated; there are now just
-        instance layers.
-        Originally, allowable values were "INSTANCE", "GLOBAL" and, "DEVICE."
-        But now "DEVICE" layers are skipped over by the loader as if they were
-        not found.</td>
-    <td><small>vkEnumerate*LayerProperties</small></td>
   </tr>
   <tr>
     <td>"library_path"</td>
@@ -1558,125 +1704,60 @@ Here's an example of a meta-layer manifest file:
         ".so" on Linux, and ".dylib" on macOS).<br/>
         <b>This field must not be present if "component_layers" is defined</b>.
     </td>
+    <td><b>Not Valid For Meta-layers</b></td>
+    <td>"layer"/"layers"</td>
     <td><small>N/A</small></td>
   </tr>
   <tr>
-    <td>"api_version"</td>
-    <td>The major.minor.patch version number of the Vulkan API that the shared
-        library file for the library was built against. </br>
-        For example: 1.0.33.
-    </td>
+    <td>"name"</td>
+    <td>The string used to uniquely identify this layer to applications.</td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
     <td><small>vkEnumerateInstanceLayerProperties</small></td>
   </tr>
   <tr>
-    <td>"implementation_version"</td>
-    <td>The version of the layer implemented.
-        If the layer itself has any major changes, this number should change so
-        the loader and/or application can identify it properly.
+    <td>"override_paths"</td>
+    <td>List of paths which will be used as the search location for component
+        layers.
     </td>
-    <td><small>vkEnumerateInstanceLayerProperties</small></td>
-  </tr>
-  <tr>
-    <td>"description"</td>
-    <td>A high-level description of the layer and its intended use.</td>
-    <td><small>vkEnumerateInstanceLayerProperties</small></td>
-  </tr>
-  <tr>
-    <td>"functions"</td>
-    <td><b>OPTIONAL:</b> This section can be used to identify a different
-        function name for the loader to use in place of standard layer interface
-        functions.
-        The "functions" node is required if the layer is using an alternative
-        name for `vkNegotiateLoaderLayerInterfaceVersion`.
-    </td>
-    <td><small>vkGet*ProcAddr</small></td>
-  </tr>
-  <tr>
-    <td>"instance_extensions"</td>
-    <td><b>OPTIONAL:</b> Contains the list of instance extension names
-        supported by this layer.
-        One "instance_extensions" node with an array of one or more elements is
-        required if any instance extensions are supported by a layer; otherwise
-        the node is optional.
-        Each element of the array must have the nodes "name" and "spec_version"
-        which correspond to `VkExtensionProperties` "extensionName" and
-        "specVersion" respectively.
-    </td>
-    <td><small>vkEnumerateInstanceExtensionProperties</small></td>
-  </tr>
-  <tr>
-    <td>"device_extensions"</td>
-    <td><b>OPTIONAL:</b> Contains the list of device extension names supported
-        by this layer. One "device\_extensions" node with an array of one or
-        more elements is required if any device extensions are supported by a
-        layer; otherwise the node is optional.
-        Each element of the array must have the nodes "name" and "spec_version"
-        which correspond to `VkExtensionProperties` "extensionName" and
-        "specVersion" respectively.
-        Additionally, each element of the array of device extensions must have
-        the node "entrypoints" if the device extension adds Vulkan API
-        functions; otherwise this node is not required.
-        The "entrypoint" node is an array of the names of all entry-points added
-        by the supported extension.</td>
-    <td><small>vkEnumerateDeviceExtensionProperties</small></td>
-  </tr>
-  <tr>
-    <td>"enable_environment"</td>
-    <td><b>Implicit Layers Only</b> - <b>OPTIONAL:</b> Indicates an environment
-        variable used to enable the Implicit Layer (when defined to any
-         non-empty string value).<br/>
-        This environment variable (which may vary with each variation of the
-        layer) must be set to the given value or else the implicit layer is not
-        loaded.
-        This is for application environments (e.g. Steam) which want to enable a
-        layer(s) only for applications that they launch, and allows for
-        applications run outside of an application environment to not get that
-        implicit layer(s).</td>
-    <td><small>N/A</small></td>
-  </tr>
-  <tr>
-    <td>"disable_environment"</td>
-    <td><b>Implicit Layers Only</b> - <b>REQUIRED:</b> Indicates an environment
-        variable used to disable the Implicit Layer (when defined to any
-        non-empty string value).<br/>
-        In rare cases of an application not working with an implicit layer, the
-        application can set this environment variable (before calling Vulkan
-        functions) in order to "blacklist" the layer.
-        This environment variable (which may vary with each variation of the
-        layer) must be set (not particularly to any value).
-        If both the "enable_environment" and "disable_environment" variables are
-        set, the implicit layer is disabled.</td>
-    <td><small>N/A</small></td>
-  </tr>
-  <tr>
-    <td>"component_layers"</td>
-    <td><b>Meta-layers Only</b> - Indicates the component layer names that are
-        part of a meta-layer.
-        The names listed must be the "name" identified in each of the component
-        layer's Mainfest file "name" tag (this is the same as the name of the
-        layer that is passed to the `vkCreateInstance` command).
-        All component layers must be present on the system and found by the
-        loader in order for this meta-layer to be available and activated. <br/>
-        <b>This field must not be present if "library_path" is defined</b>.
-    </td>
+    <td><b>Meta-layers Only</b></td>
+    <td>"layer"/"layers"</td>
     <td><small>N/A</small></td>
   </tr>
   <tr>
     <td>"pre_instance_functions"</td>
-    <td><b>Implicit Layers Only</b> - <b>OPTIONAL:</b> Indicates which
-        functions the layer wishes to intercept, that do not require that an
-        instance has been created.
+    <td><b>OPTIONAL:</b> Indicates which functions the layer wishes to
+        intercept, that do not require that an instance has been created.
         This should be an object where each function to be intercepted is
         defined as a string entry where the key is the Vulkan function name and
         the value is the name of the intercept function in the layer's dynamic
         library.
         Available in layer manifest versions 1.1.2 and up. <br/>
         See <a href="#pre-instance-functions">Pre-Instance Functions</a> for
-        more information.</td>
+        more information.
+    </td>
+    <td><b>Implicit Layers Only</b></td>
+    <td>"layer"/"layers"</td>
     <td><small>vkEnumerateInstance*Properties</small></td>
   </tr>
+  <tr>
+    <td>"type"</td>
+    <td>This field indicates the type of layer.  The values can be: GLOBAL, or
+        INSTANCE.<br/>
+        <b> NOTE: </b> Prior to deprecation, the "type" node was used to
+        indicate which layer chain(s) to activate the layer upon: instance,
+        device, or both.
+        Distinct instance and device layers are deprecated; there are now just
+        instance layers.
+        Originally, allowable values were "INSTANCE", "GLOBAL" and, "DEVICE."
+        But now "DEVICE" layers are skipped over by the loader as if they were
+        not found.
+    </td>
+    <td>None</td>
+    <td>"layer"/"layers"</td>
+    <td><small>vkEnumerate*LayerProperties</small></td>
+  </tr>
 </table>
-
 
 ### Layer Manifest File Version History
 
@@ -1778,6 +1859,9 @@ Additionally, it introduced the concept of
 [Layer Unknown Physical Device Extensions](#layer-unknown-physical-device-extensions)
 and the associated `vk_layerGetPhysicalDeviceProcAddr` function.
 Finally, it changed the manifest file definition to 1.1.0.
+
+Note: If a layer wraps the VkInstance handle, support for
+`vk_layerGetPhysicalDeviceProcAddr` is *NOT* optional and must be implemented.
 
 ### Layer Interface Version 1
 

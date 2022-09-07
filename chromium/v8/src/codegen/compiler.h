@@ -236,6 +236,14 @@ class V8_EXPORT_PRIVATE Compiler : public AllStatic {
   static Handle<SharedFunctionInfo> GetSharedFunctionInfo(FunctionLiteral* node,
                                                           Handle<Script> script,
                                                           IsolateT* isolate);
+
+  static void LogFunctionCompilation(Isolate* isolate,
+                                     LogEventListener::LogEventsAndTags tag,
+                                     Handle<Script> script,
+                                     Handle<SharedFunctionInfo> shared,
+                                     Handle<FeedbackVector> vector,
+                                     Handle<AbstractCode> abstract_code,
+                                     CodeKind kind, double time_taken_ms);
 };
 
 // A base class for compilation jobs intended to run concurrent to the main
@@ -314,7 +322,7 @@ class UnoptimizedCompilationJob : public CompilationJob {
   FinalizeJob(Handle<SharedFunctionInfo> shared_info, LocalIsolate* isolate);
 
   void RecordCompilationStats(Isolate* isolate) const;
-  void RecordFunctionCompilation(CodeEventListener::LogEventsAndTags tag,
+  void RecordFunctionCompilation(LogEventListener::LogEventsAndTags tag,
                                  Handle<SharedFunctionInfo> shared,
                                  Isolate* isolate) const;
 
@@ -415,7 +423,7 @@ class TurbofanCompilationJob : public OptimizedCompilationJob {
   Status AbortOptimization(BailoutReason reason);
 
   void RecordCompilationStats(ConcurrencyMode mode, Isolate* isolate) const;
-  void RecordFunctionCompilation(CodeEventListener::LogEventsAndTags tag,
+  void RecordFunctionCompilation(LogEventListener::LogEventsAndTags tag,
                                  Isolate* isolate) const;
 
  private:
@@ -509,7 +517,8 @@ class V8_EXPORT_PRIVATE BackgroundCompileTask {
   // script associated with |data| and can be finalized with FinalizeScript.
   // Note: does not take ownership of |data|.
   BackgroundCompileTask(ScriptStreamingData* data, Isolate* isolate,
-                        v8::ScriptType type);
+                        v8::ScriptType type,
+                        ScriptCompiler::CompileOptions options);
   BackgroundCompileTask(const BackgroundCompileTask&) = delete;
   BackgroundCompileTask& operator=(const BackgroundCompileTask&) = delete;
   ~BackgroundCompileTask();

@@ -1505,15 +1505,16 @@ typedef struct {
   /**@}*/
 } AV1EncRowMultiThreadInfo;
 
+/*!
+ * \brief Max number of recodes used to track the frame probabilities.
+ */
+#define NUM_RECODES_PER_FRAME 10
+
 #if CONFIG_FRAME_PARALLEL_ENCODE
 /*!
  * \brief Max number of frames that can be encoded in a parallel encode set.
  */
 #define MAX_PARALLEL_FRAMES 4
-/*!
- * \brief Max number of recodes used to track the frame probabilities.
- */
-#define NUM_RECODES_PER_FRAME 10
 
 /*!
  * \brief Buffers to be backed up during parallel encode set to be restored
@@ -2408,6 +2409,15 @@ typedef struct AV1_PRIMARY {
    */
   int temp_valid_gm_model_found[FRAME_UPDATE_TYPES];
 #endif
+#if CONFIG_FRAME_PARALLEL_ENCODE_2
+  /*!
+   * Copy of cm->ref_frame_map maintained to facilitate sequential update of
+   * ref_frame_map by lower layer depth frames encoded ahead of time in a
+   * parallel encode set.
+   */
+  RefCntBuffer *ref_frame_map_copy[REF_FRAMES];
+#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
+#endif  // CONFIG_FRAME_PARALLEL_ENCODE
 
   /*!
    * Start time stamp of the last encoded show frame
@@ -2418,15 +2428,7 @@ typedef struct AV1_PRIMARY {
    * End time stamp of the last encoded show frame
    */
   int64_t ts_end_last_show_frame;
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
-  /*!
-   * Copy of cm->ref_frame_map maintained to facilitate sequential update of
-   * ref_frame_map by lower layer depth frames encoded ahead of time in a
-   * parallel encode set.
-   */
-  RefCntBuffer *ref_frame_map_copy[REF_FRAMES];
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
+
   /*!
    * Number of frame level contexts(cpis)
    */
@@ -2985,7 +2987,6 @@ typedef struct AV1_COMP {
    */
   VarBasedPartitionInfo vbp_info;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Number of recodes in the frame.
    */
@@ -3016,7 +3017,7 @@ typedef struct AV1_COMP {
    */
   int do_update_frame_probs_interpfilter[NUM_RECODES_PER_FRAME];
 
-#if CONFIG_FPMT_TEST
+#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FPMT_TEST
   /*!
    * Temporary variable for simulation.
    * Previous frame's framerate.
@@ -3029,7 +3030,6 @@ typedef struct AV1_COMP {
    * post encode updates for parallel frames.
    */
   double new_framerate;
-#endif
 
   /*!
    * Retain condition for fast_extra_bits calculation.
@@ -3230,13 +3230,12 @@ typedef struct AV1_COMP {
    */
   ExtPartController ext_part_controller;
 
-#if CONFIG_FRAME_PARALLEL_ENCODE
   /*!
    * Motion vector stats of the current encoded frame, used to update the
    * ppi->mv_stats during postencode.
    */
   MV_STATS mv_stats;
-#if CONFIG_FRAME_PARALLEL_ENCODE_2
+#if CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FRAME_PARALLEL_ENCODE_2
   /*!
    * Stores the reference refresh index for the current frame.
    */
@@ -3263,8 +3262,7 @@ typedef struct AV1_COMP {
 
   int wanted_fb;
 #endif
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE_2
-#endif  // CONFIG_FRAME_PARALLEL_ENCODE
+#endif  // CONFIG_FRAME_PARALLEL_ENCODE && CONFIG_FRAME_PARALLEL_ENCODE_2
 
   /*!
    * A flag to indicate frames that will update their data to the primary
@@ -3412,16 +3410,17 @@ typedef struct {
   size_t size;  // Size of resulting bitstream
 } EncodeFrameResults;
 
-void av1_initialize_enc(void);
+void av1_initialize_enc(unsigned int usage, enum aom_rc_mode end_usage);
 
-struct AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi, AV1EncoderConfig *oxcf,
+struct AV1_COMP *av1_create_compressor(AV1_PRIMARY *ppi,
+                                       const AV1EncoderConfig *oxcf,
                                        BufferPool *const pool,
                                        COMPRESSOR_STAGE stage,
                                        int lap_lag_in_frames);
 
 struct AV1_PRIMARY *av1_create_primary_compressor(
     struct aom_codec_pkt_list *pkt_list_head, int num_lap_buffers,
-    AV1EncoderConfig *oxcf);
+    const AV1EncoderConfig *oxcf);
 
 void av1_remove_compressor(AV1_COMP *cpi);
 
@@ -3992,6 +3991,12 @@ static INLINE int is_frame_resize_pending(AV1_COMP *const cpi) {
 static INLINE int is_restoration_used(const AV1_COMMON *const cm) {
   return cm->seq_params->enable_restoration && !cm->features.all_lossless &&
          !cm->tiles.large_scale;
+}
+
+static INLINE int is_inter_tx_size_search_level_one(
+    const TX_SPEED_FEATURES *tx_sf) {
+  return (tx_sf->inter_tx_size_search_init_depth_rect >= 1 &&
+          tx_sf->inter_tx_size_search_init_depth_sqr >= 1);
 }
 
 #if CONFIG_AV1_TEMPORAL_DENOISING

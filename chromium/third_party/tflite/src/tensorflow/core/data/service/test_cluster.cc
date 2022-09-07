@@ -23,6 +23,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "tensorflow/core/data/service/export.pb.h"
 #include "tensorflow/core/data/service/server_lib.h"
 #include "tensorflow/core/platform/errors.h"
 #include "tensorflow/core/platform/status.h"
@@ -73,6 +74,7 @@ Status TestCluster::AddWorker() {
   config.set_protocol(kProtocol);
   config.set_dispatcher_address(dispatcher_address_);
   config.set_worker_address("localhost:%port%");
+  config.set_heartbeat_interval_ms(config_.worker_heartbeat_interval_ms);
   TF_RETURN_IF_ERROR(NewWorkerServer(config, worker));
   TF_RETURN_IF_ERROR(worker->Start());
   worker_addresses_.push_back(absl::StrCat("localhost:", worker->BoundPort()));
@@ -100,6 +102,14 @@ void TestCluster::StopWorkers() {
   for (std::unique_ptr<WorkerGrpcDataServer>& worker : workers_) {
     worker->Stop();
   }
+}
+
+ServerStateExport TestCluster::ExportDispatcherState() const {
+  return dispatcher_->ExportState();
+}
+
+ServerStateExport TestCluster::ExportWorkerState(size_t index) const {
+  return workers_[index]->ExportState();
 }
 
 }  // namespace data

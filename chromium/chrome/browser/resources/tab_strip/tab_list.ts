@@ -16,6 +16,7 @@ import {isRTL} from 'chrome://resources/js/util.m.js';
 import {DragManager, DragManagerDelegate} from './drag_manager.js';
 import {isTabElement, TabElement} from './tab.js';
 import {isDragHandle, isTabGroupElement, TabGroupElement} from './tab_group.js';
+import {getTemplate} from './tab_list.html.js';
 import {Tab, TabGroupVisualData} from './tab_strip.mojom-webui.js';
 import {TabsApiProxy, TabsApiProxyImpl} from './tabs_api_proxy.js';
 
@@ -148,7 +149,7 @@ export class TabListElement extends CustomElement implements
   private scrollListener_: (e: Event) => void;
 
   static override get template() {
-    return `{__html_template__}`;
+    return getTemplate();
   }
 
   constructor() {
@@ -775,7 +776,11 @@ export class TabListElement extends CustomElement implements
   }
 
   shouldPreventDrag(): boolean {
-    return this.$all('tabstrip-tab').length === 1;
+    // Do not allow dragging if there's only 1 tab with no tab group, or only 1
+    // tab group with no other tabs outside of the tab group.
+    return (this.pinnedTabsElement_.childElementCount +
+        this.unpinnedTabsElement_.childElementCount) ===
+        1;
   }
 
   private tabThumbnailUpdated_(tabId: number, imgData: string) {

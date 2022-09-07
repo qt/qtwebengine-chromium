@@ -13,8 +13,8 @@
 #include <vc4_drm.h>
 #include <xf86drm.h>
 
+#include "drv_helpers.h"
 #include "drv_priv.h"
-#include "helpers.h"
 #include "util.h"
 
 static const uint32_t render_target_formats[] = { DRM_FORMAT_ARGB8888, DRM_FORMAT_RGB565,
@@ -131,6 +131,7 @@ const struct backend backend_vc4 = {
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = vc4_bo_map,
 	.bo_unmap = drv_bo_munmap,
+	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
 };
 
 #endif

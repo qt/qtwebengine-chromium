@@ -44,6 +44,10 @@
 #include "src/strings/unicode.h"
 #include "src/utils/allocation.h"
 
+#ifdef DEBUG
+#include "src/runtime/runtime-utils.h"
+#endif
+
 #ifdef V8_INTL_SUPPORT
 #include "unicode/uversion.h"  // Define U_ICU_NAMESPACE.
 namespace U_ICU_NAMESPACE {
@@ -83,6 +87,11 @@ class AsyncEventDelegate;
 
 namespace internal {
 
+void DefaultWasmAsyncResolvePromiseCallback(
+    v8::Isolate* isolate, v8::Local<v8::Context> context,
+    v8::Local<v8::Promise::Resolver> resolver,
+    v8::Local<v8::Value> compilation_result, WasmAsyncSuccess success);
+
 namespace heap {
 class HeapTester;
 }  // namespace heap
@@ -96,7 +105,7 @@ class AstStringConstants;
 class Bootstrapper;
 class BuiltinsConstantsTableBuilder;
 class CancelableTaskManager;
-class CodeEventDispatcher;
+class Logger;
 class CodeTracer;
 class CommonFrame;
 class CompilationCache;
@@ -115,7 +124,7 @@ class HeapProfiler;
 class InnerPointerToCodeCache;
 class LazyCompileDispatcher;
 class LocalIsolate;
-class Logger;
+class V8FileLogger;
 class MaterializedObjectStore;
 class Microtask;
 class MicrotaskQueue;
@@ -128,6 +137,7 @@ class RootVisitor;
 class SetupIsolateDelegate;
 class Simulator;
 class SnapshotData;
+class StringForwardingTable;
 class StringTable;
 class StubCache;
 class ThreadManager;
@@ -175,6 +185,16 @@ class StackMemory;
     }                                                  \
   } while (false)
 
+#define RETURN_FAILURE_IF_SCHEDULED_EXCEPTION_DETECTOR(isolate, detector) \
+  do {                                                                    \
+    Isolate* __isolate__ = (isolate);                                     \
+    DCHECK(!__isolate__->has_pending_exception());                        \
+    if (__isolate__->has_scheduled_exception()) {                         \
+      detector.AcceptSideEffects();                                       \
+      return __isolate__->PromoteScheduledException();                    \
+    }                                                                     \
+  } while (false)
+
 // Macros for MaybeHandle.
 
 #define RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, value) \
@@ -186,6 +206,10 @@ class StackMemory;
       return value;                                         \
     }                                                       \
   } while (false)
+
+#define RETURN_VALUE_IF_SCHEDULED_EXCEPTION_DETECTOR(isolate, detector, value) \
+  RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate,                                 \
+                                      (detector.AcceptSideEffects(), value))
 
 #define RETURN_EXCEPTION_IF_SCHEDULED_EXCEPTION(isolate, T) \
   RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, MaybeHandle<T>())
@@ -457,9 +481,16 @@ V8_EXPORT_PRIVATE void FreeCurrentEmbeddedBlob();
 
 using DebugObjectCache = std::vector<Handle<HeapObject>>;
 
+// Redefine LegacyOOMErrorCallback here for internal usage. We still need to
+// support it but it is deprecated so would trigger warnings.
+// TODO(chromium:1323177): Remove this.
+using DeprecatedLegacyOOMErrorCallback = void (*)(const char* location,
+                                                  bool is_heap_oom);
+
 #define ISOLATE_INIT_LIST(V)                                                  \
   /* Assembler state. */                                                      \
   V(FatalErrorCallback, exception_behavior, nullptr)                          \
+  V(DeprecatedLegacyOOMErrorCallback, legacy_oom_behavior, nullptr)           \
   V(OOMErrorCallback, oom_behavior, nullptr)                                  \
   V(LogEventCallback, event_logger, nullptr)                                  \
   V(AllowCodeGenerationFromStringsCallback, allow_code_gen_callback, nullptr) \
@@ -473,11 +504,11 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(SharedArrayBufferConstructorEnabledCallback,                              \
     sharedarraybuffer_constructor_enabled_callback, nullptr)                  \
   V(WasmStreamingCallback, wasm_streaming_callback, nullptr)                  \
+  V(WasmAsyncResolvePromiseCallback, wasm_async_resolve_promise_callback,     \
+    DefaultWasmAsyncResolvePromiseCallback)                                   \
   V(WasmLoadSourceMapCallback, wasm_load_source_map_callback, nullptr)        \
   V(WasmSimdEnabledCallback, wasm_simd_enabled_callback, nullptr)             \
   V(WasmExceptionsEnabledCallback, wasm_exceptions_enabled_callback, nullptr) \
-  V(WasmDynamicTieringEnabledCallback, wasm_dynamic_tiering_enabled_callback, \
-    nullptr)                                                                  \
   /* State for Relocatable. */                                                \
   V(Relocatable*, relocatable_top, nullptr)                                   \
   V(DebugObjectCache*, string_stream_debug_object_cache, nullptr)             \
@@ -486,7 +517,6 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(AddressToIndexHashMap*, external_reference_map, nullptr)                  \
   V(HeapObjectToIndexHashMap*, root_index_map, nullptr)                       \
   V(MicrotaskQueue*, default_microtask_queue, nullptr)                        \
-  V(CompilationStatistics*, turbo_statistics, nullptr)                        \
   V(CodeTracer*, code_tracer, nullptr)                                        \
   V(PromiseRejectCallback, promise_reject_callback, nullptr)                  \
   V(const v8::StartupData*, snapshot_blob, nullptr)                           \
@@ -513,6 +543,7 @@ using DebugObjectCache = std::vector<Handle<HeapObject>>;
   V(bool, javascript_execution_assert, true)                                  \
   V(bool, javascript_execution_throws, true)                                  \
   V(bool, javascript_execution_dump, true)                                    \
+  V(uint32_t, javascript_execution_counter, 0)                                \
   V(bool, deoptimization_assert, true)                                        \
   V(bool, compilation_assert, true)                                           \
   V(bool, no_exception_assert, true)
@@ -729,6 +760,9 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   // The isolate's string table.
   StringTable* string_table() const { return string_table_.get(); }
+  StringForwardingTable* string_forwarding_table() const {
+    return string_forwarding_table_.get();
+  }
 
   Address get_address_from_id(IsolateAddressId id);
 
@@ -751,7 +785,6 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   bool IsWasmSimdEnabled(Handle<Context> context);
   bool AreWasmExceptionsEnabled(Handle<Context> context);
-  bool IsWasmDynamicTieringEnabled();
 
   THREAD_LOCAL_TOP_ADDRESS(Context, pending_handler_context)
   THREAD_LOCAL_TOP_ADDRESS(Address, pending_handler_entrypoint)
@@ -787,6 +820,11 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   inline void clear_scheduled_exception();
   inline void set_scheduled_exception(Object exception);
 
+#ifdef DEBUG
+  inline Object VerifyBuiltinsResult(Object result);
+  inline ObjectPair VerifyBuiltinsResult(ObjectPair pair);
+#endif
+
   enum class ExceptionHandlerType {
     kJavaScriptHandler,
     kExternalTryCatch,
@@ -797,6 +835,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   inline bool is_catchable_by_javascript(Object exception);
   inline bool is_catchable_by_wasm(Object exception);
+  inline bool is_execution_terminating();
+  inline bool is_execution_termination_pending();
 
   // JS execution stack (see frames.h).
   static Address c_entry_fp(ThreadLocalTop* thread) {
@@ -1111,17 +1151,17 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   }
   TieringManager* tiering_manager() { return tiering_manager_; }
   CompilationCache* compilation_cache() { return compilation_cache_; }
-  Logger* logger() {
+  V8FileLogger* v8_file_logger() {
     // Call InitializeLoggingAndCounters() if logging is needed before
     // the isolate is fully initialized.
-    DCHECK_NOT_NULL(logger_);
-    return logger_;
+    DCHECK_NOT_NULL(v8_file_logger_);
+    return v8_file_logger_;
   }
   StackGuard* stack_guard() { return isolate_data()->stack_guard(); }
   Heap* heap() { return &heap_; }
   const Heap* heap() const { return &heap_; }
   ReadOnlyHeap* read_only_heap() const { return read_only_heap_; }
-  static Isolate* FromHeap(Heap* heap) {
+  static Isolate* FromHeap(const Heap* heap) {
     return reinterpret_cast<Isolate*>(reinterpret_cast<Address>(heap) -
                                       OFFSET_OF(Isolate, heap_));
   }
@@ -1315,9 +1355,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     is_profiling_.store(enabled, std::memory_order_relaxed);
   }
 
-  CodeEventDispatcher* code_event_dispatcher() const {
-    return code_event_dispatcher_.get();
-  }
+  Logger* logger() const { return logger_; }
   HeapProfiler* heap_profiler() const { return heap_profiler_; }
 
 #ifdef DEBUG
@@ -1512,7 +1550,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
     was_locker_ever_used_.store(true, std::memory_order_relaxed);
   }
 
-  CompilationStatistics* GetTurboStatistics();
+  std::shared_ptr<CompilationStatistics> GetTurboStatistics();
   CodeTracer* GetCodeTracer();
 
   void DumpAndResetStats();
@@ -1522,6 +1560,8 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void set_force_slow_path(bool v) { force_slow_path_ = v; }
   bool force_slow_path() const { return force_slow_path_; }
   bool* force_slow_path_address() { return &force_slow_path_; }
+
+  bool jitless() const { return jitless_; }
 
   DebugInfo::ExecutionMode* debug_execution_mode_address() {
     return &debug_execution_mode_;
@@ -1536,7 +1576,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   int GenerateIdentityHash(uint32_t mask);
 
   // Given an address occupied by a live code object, return that object.
-  Code FindCodeObject(Address a);
+  CodeLookupResult FindCodeObject(Address a);
 
   int NextOptimizationId() {
     int id = next_optimization_id_++;
@@ -1636,6 +1676,10 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   Address javascript_execution_assert_address() {
     return reinterpret_cast<Address>(&javascript_execution_assert_);
+  }
+
+  void IncrementJavascriptExecutionCounter() {
+    javascript_execution_counter_++;
   }
 
   Address handle_scope_implementer_address() {
@@ -1762,7 +1806,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   void SetHostImportModuleDynamicallyCallback(
       HostImportModuleDynamicallyCallback callback);
   MaybeHandle<JSPromise> RunHostImportModuleDynamicallyCallback(
-      Handle<Script> referrer, Handle<Object> specifier,
+      MaybeHandle<Script> maybe_referrer, Handle<Object> specifier,
       MaybeHandle<Object> maybe_import_assertions_argument);
 
   void SetHostInitializeImportMetaObjectCallback(
@@ -1911,6 +1955,12 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   Address external_pointer_table_address() {
     return reinterpret_cast<Address>(&isolate_data_.external_pointer_table_);
   }
+
+  Maybe<ExternalPointer_t> GetWaiterQueueNodeExternalPointer() const {
+    return waiter_queue_node_external_pointer_;
+  }
+
+  ExternalPointer_t EncodeWaiterQueueNodeAsExternalPointer(Address node);
 #endif
 
   struct PromiseHookFields {
@@ -1935,7 +1985,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   GlobalSafepoint* global_safepoint() const { return global_safepoint_.get(); }
 
-  bool OwnsStringTable() { return !FLAG_shared_string_table || is_shared(); }
+  bool OwnsStringTables() { return !FLAG_shared_string_table || is_shared(); }
 
 #if USE_SIMULATOR
   SimulatorData* simulator_data() { return simulator_data_; }
@@ -2080,6 +2130,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   ReadOnlyHeap* read_only_heap_ = nullptr;
   std::shared_ptr<ReadOnlyArtifacts> artifacts_;
   std::shared_ptr<StringTable> string_table_;
+  std::shared_ptr<StringForwardingTable> string_forwarding_table_;
 
   const int id_;
   EntryStackItem* entry_stack_ = nullptr;
@@ -2098,7 +2149,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   base::SharedMutex shared_function_info_access_;
   base::SharedMutex map_updater_access_;
   base::SharedMutex boilerplate_migration_access_;
-  Logger* logger_ = nullptr;
+  V8FileLogger* v8_file_logger_ = nullptr;
   StubCache* load_stub_cache_ = nullptr;
   StubCache* store_stub_cache_ = nullptr;
   Deoptimizer* current_deoptimizer_ = nullptr;
@@ -2221,7 +2272,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   Debug* debug_ = nullptr;
   HeapProfiler* heap_profiler_ = nullptr;
-  std::unique_ptr<CodeEventDispatcher> code_event_dispatcher_;
+  Logger* logger_ = nullptr;
 
   const AstStringConstants* ast_string_constants_ = nullptr;
 
@@ -2290,6 +2341,7 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
 
   v8::Isolate::UseCounterCallback use_counter_callback_ = nullptr;
 
+  std::shared_ptr<CompilationStatistics> turbo_statistics_;
   std::shared_ptr<metrics::Recorder> metrics_recorder_;
   uintptr_t last_recorder_context_id_ = 0;
   std::unordered_map<
@@ -2371,6 +2423,13 @@ class V8_EXPORT_PRIVATE Isolate final : private HiddenFactory {
   // Stores the shared isolate for this client isolate. nullptr for shared
   // isolates or when no shared isolate is used.
   Isolate* shared_isolate_ = nullptr;
+
+#ifdef V8_SANDBOXED_EXTERNAL_POINTERS
+  // A pointer to Isolate's main thread's WaiterQueueNode. It is used to wait
+  // for JS-exposed mutex or condition variable.
+  Maybe<ExternalPointer_t> waiter_queue_node_external_pointer_ =
+      Nothing<ExternalPointer_t>();
+#endif
 
 #if DEBUG
   // Set to true once during isolate initialization right when attaching to the

@@ -12,6 +12,7 @@
 #include "quiche/quic/core/quic_crypto_handshaker.h"
 #include "quiche/quic/core/quic_crypto_server_stream_base.h"
 #include "quiche/quic/core/quic_session.h"
+#include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/platform/api/quic_export.h"
 
 namespace quic {
@@ -72,6 +73,10 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
       override;
   std::unique_ptr<QuicEncrypter> CreateCurrentOneRttEncrypter() override;
   SSL* GetSsl() const override;
+  bool IsCryptoFrameExpectedForEncryptionLevel(
+      EncryptionLevel level) const override;
+  EncryptionLevel GetEncryptionLevelToSendCryptoDataOfSpace(
+      PacketNumberSpace space) const override;
 
   // From QuicCryptoHandshaker
   void OnHandshakeMessage(const CryptoHandshakeMessage& message) override;
@@ -96,7 +101,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
           ValidateClientHelloResultCallback::Result>
           result,
       std::unique_ptr<ProofSource::Details> proof_source_details,
-      std::unique_ptr<ProcessClientHelloResultCallback> done_cb);
+      std::shared_ptr<ProcessClientHelloResultCallback> done_cb);
 
   // Hook that allows the server to set QuicConfig defaults just
   // before going through the parameter negotiation step.
@@ -249,7 +254,7 @@ class QUIC_EXPORT_PRIVATE QuicCryptoServerStream
   // ProcessClientHello and forward it to
   // FinishProcessingHandshakeMessageAfterProcessClientHello.  Note that this
   // field is mutually exclusive with validate_client_hello_cb_.
-  ProcessClientHelloCallback* process_client_hello_cb_;
+  std::weak_ptr<ProcessClientHelloCallback> process_client_hello_cb_;
 
   // The ProofSource::Details from this connection.
   std::unique_ptr<ProofSource::Details> proof_source_details_;

@@ -5,8 +5,14 @@
  * found in the LICENSE file.
  */
 
-#include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLChildCall.h"
+
+#include "include/core/SkTypes.h"
+#include "include/private/SkTArray.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
+#include "src/sksl/SkSLContext.h"
+#include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVariable.h"
 
 namespace SkSL {
 
@@ -19,8 +25,8 @@ bool ChildCall::hasProperty(Property property) const {
     return false;
 }
 
-std::unique_ptr<Expression> ChildCall::clone() const {
-    return std::make_unique<ChildCall>(fPosition, &this->type(), &this->child(),
+std::unique_ptr<Expression> ChildCall::clone(Position pos) const {
+    return std::make_unique<ChildCall>(pos, &this->type(), &this->child(),
                                        this->arguments().clone());
 }
 

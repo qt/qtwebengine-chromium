@@ -59,6 +59,7 @@ export interface TestSubtree<T extends TestQuery = TestQuery> extends TestTreeNo
 
 export interface TestTreeLeaf extends TestTreeNodeBase<TestQuerySingleCase> {
   readonly run: RunFn;
+  readonly isUnimplemented?: boolean;
   subtreeCounts?: undefined;
 }
 
@@ -526,13 +527,16 @@ function getOrInsertSubtree<T extends TestQuery>(
 }
 
 function insertLeaf(parent: TestSubtree, query: TestQuerySingleCase, t: RunCase) {
-  const key = '';
   const leaf: TestTreeLeaf = {
     readableRelativeName: readableNameForCase(query),
     query,
     run: (rec, expectations) => t.run(rec, query, expectations || []),
+    isUnimplemented: t.isUnimplemented,
   };
-  assert(!parent.children.has(key));
+
+  // This is a leaf (e.g. s:f:t:x=1;* -> s:f:t:x=1). The key is always ''.
+  const key = '';
+  assert(!parent.children.has(key), `Duplicate testcase: ${query}`);
   parent.children.set(key, leaf);
 }
 

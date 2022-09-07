@@ -5,6 +5,7 @@
 syntax = "proto3";
 
 option optimize_for = LITE_RUNTIME;
+option go_package = "chromiumos/system_api/update_engine_proto";
 
 package update_engine;
 

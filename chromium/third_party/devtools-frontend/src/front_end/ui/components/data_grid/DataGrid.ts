@@ -16,7 +16,15 @@ const coordinator = Coordinator.RenderCoordinator.RenderCoordinator.instance();
 
 import {addColumnVisibilityCheckboxes, addSortableColumnItems} from './DataGridContextMenuUtils.js';
 import type {CellPosition, Column, Row, SortState} from './DataGridUtils.js';
-import {calculateColumnWidthPercentageFromWeighting, calculateFirstFocusableCell, getCellTitleFromCellContent, getRowEntryForColumnId, handleArrowKeyNavigation, renderCellValue, SortDirection} from './DataGridUtils.js';
+import {
+  calculateColumnWidthPercentageFromWeighting,
+  calculateFirstFocusableCell,
+  getCellTitleFromCellContent,
+  getRowEntryForColumnId,
+  handleArrowKeyNavigation,
+  renderCellValue,
+  SortDirection,
+} from './DataGridUtils.js';
 
 import * as i18n from '../../../core/i18n/i18n.js';
 const UIStrings = {
@@ -45,6 +53,7 @@ export interface DataGridData {
   rows: Row[];
   activeSort: SortState|null;
   contextMenus?: DataGridContextMenusConfiguration;
+  label?: string;
 }
 
 const enum UserScrollState {
@@ -68,6 +77,7 @@ export class DataGrid extends HTMLElement {
   #isRendering = false;
   #userScrollState: UserScrollState = UserScrollState.NOT_SCROLLED;
   #contextMenus?: DataGridContextMenusConfiguration = undefined;
+  #label?: string = undefined;
   #currentResize: {
     rightCellCol: HTMLTableColElement,
     leftCellCol: HTMLTableColElement,
@@ -124,6 +134,7 @@ export class DataGrid extends HTMLElement {
       rows: this.#rows as Row[],
       activeSort: this.#sortState,
       contextMenus: this.#contextMenus,
+      label: this.#label,
     };
   }
 
@@ -135,6 +146,7 @@ export class DataGrid extends HTMLElement {
     });
     this.#sortState = data.activeSort;
     this.#contextMenus = data.contextMenus;
+    this.#label = data.label;
 
     /**
      * On first render, now we have data, we can figure out which cell is the
@@ -470,7 +482,7 @@ export class DataGrid extends HTMLElement {
     this.#cleanUpAfterResizeColumnComplete();
   }
 
-  #renderResizeForCell(column: Column, position: CellPosition): LitHtml.TemplateResult|typeof LitHtml.nothing {
+  #renderResizeForCell(column: Column, position: CellPosition): LitHtml.LitTemplate {
     /**
      * A resizer for a column is placed at the far right of the _previous column
      * cell_. So when we get called with [1, 0] that means this dragger is
@@ -703,6 +715,7 @@ export class DataGrid extends HTMLElement {
       })}
       <div class="wrapping-container" @scroll=${this.#onScroll} @focusout=${this.#onFocusOut}>
         <table
+          aria-label=${LitHtml.Directives.ifDefined(this.#label)}
           aria-rowcount=${this.#rows.length}
           aria-colcount=${this.#columns.length}
           @keydown=${this.#onTableKeyDown}

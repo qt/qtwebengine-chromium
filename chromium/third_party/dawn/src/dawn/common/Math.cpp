@@ -14,20 +14,21 @@
 
 #include "dawn/common/Math.h"
 
-#include "dawn/common/Assert.h"
-#include "dawn/common/Platform.h"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
 
-#if defined(DAWN_COMPILER_MSVC)
-#    include <intrin.h>
+#include "dawn/common/Assert.h"
+#include "dawn/common/Platform.h"
+
+#if DAWN_COMPILER_IS(MSVC)
+#include <intrin.h>
 #endif
 
 uint32_t ScanForward(uint32_t bits) {
     ASSERT(bits != 0);
-#if defined(DAWN_COMPILER_MSVC)
+#if DAWN_COMPILER_IS(MSVC)
+    // NOLINTNEXTLINE(runtime/int)
     unsigned long firstBitIndex = 0ul;
     unsigned char ret = _BitScanForward(&firstBitIndex, bits);
     ASSERT(ret != 0);
@@ -39,7 +40,8 @@ uint32_t ScanForward(uint32_t bits) {
 
 uint32_t Log2(uint32_t value) {
     ASSERT(value != 0);
-#if defined(DAWN_COMPILER_MSVC)
+#if DAWN_COMPILER_IS(MSVC)
+    // NOLINTNEXTLINE(runtime/int)
     unsigned long firstBitIndex = 0ul;
     unsigned char ret = _BitScanReverse(&firstBitIndex, value);
     ASSERT(ret != 0);
@@ -51,13 +53,15 @@ uint32_t Log2(uint32_t value) {
 
 uint32_t Log2(uint64_t value) {
     ASSERT(value != 0);
-#if defined(DAWN_COMPILER_MSVC)
-#    if defined(DAWN_PLATFORM_64_BIT)
+#if DAWN_COMPILER_IS(MSVC)
+#if DAWN_PLATFORM_IS(64_BIT)
+    // NOLINTNEXTLINE(runtime/int)
     unsigned long firstBitIndex = 0ul;
     unsigned char ret = _BitScanReverse64(&firstBitIndex, value);
     ASSERT(ret != 0);
     return firstBitIndex;
-#    else   // defined(DAWN_PLATFORM_64_BIT)
+#else   // DAWN_PLATFORM_IS(64_BIT)
+    // NOLINTNEXTLINE(runtime/int)
     unsigned long firstBitIndex = 0ul;
     if (_BitScanReverse(&firstBitIndex, value >> 32)) {
         return firstBitIndex + 32;
@@ -65,10 +69,10 @@ uint32_t Log2(uint64_t value) {
     unsigned char ret = _BitScanReverse(&firstBitIndex, value & 0xFFFFFFFF);
     ASSERT(ret != 0);
     return firstBitIndex;
-#    endif  // defined(DAWN_PLATFORM_64_BIT)
-#else       // defined(DAWN_COMPILER_MSVC)
+#endif  // DAWN_PLATFORM_IS(64_BIT)
+#else   // DAWN_COMPILER_IS(MSVC)
     return 63 - static_cast<uint32_t>(__builtin_clzll(value));
-#endif      // defined(DAWN_COMPILER_MSVC)
+#endif  // DAWN_COMPILER_IS(MSVC)
 }
 
 uint64_t NextPowerOfTwo(uint64_t n) {

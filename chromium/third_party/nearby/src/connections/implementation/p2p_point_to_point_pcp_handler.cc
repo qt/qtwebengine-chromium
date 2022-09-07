@@ -28,6 +28,10 @@ P2pPointToPointPcpHandler::P2pPointToPointPcpHandler(
 std::vector<proto::connections::Medium>
 P2pPointToPointPcpHandler::GetConnectionMediumsByPriority() {
   std::vector<proto::connections::Medium> mediums;
+  if (mediums_->GetWifi().IsAvailable() &&
+      mediums_->GetWifiHotspot().IsClientAvailable()) {
+    mediums.push_back(proto::connections::WIFI_HOTSPOT);
+  }
   if (mediums_->GetWifiLan().IsAvailable()) {
     mediums.push_back(proto::connections::WIFI_LAN);
   }

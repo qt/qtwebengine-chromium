@@ -86,8 +86,8 @@ extern "C" {
 #define HAS_SCALEROWUP2BILINEAR_16_SSE2
 #define HAS_SCALEUVROWUP2LINEAR_SSSE3
 #define HAS_SCALEUVROWUP2BILINEAR_SSSE3
-#define HAS_SCALEUVROWUP2LINEAR_16_SSE2
-#define HAS_SCALEUVROWUP2BILINEAR_16_SSE2
+#define HAS_SCALEUVROWUP2LINEAR_16_SSE41
+#define HAS_SCALEUVROWUP2BILINEAR_16_SSE41
 #endif
 
 // The following are available for gcc/clang x86 platforms, but
@@ -199,6 +199,20 @@ void ScalePlaneVertical_16(int src_height,
                            int dy,
                            int wpp,
                            enum FilterMode filtering);
+
+void ScalePlaneVertical_16To8(int src_height,
+                              int dst_width,
+                              int dst_height,
+                              int src_stride,
+                              int dst_stride,
+                              const uint16_t* src_argb,
+                              uint8_t* dst_argb,
+                              int x,
+                              int y,
+                              int dy,
+                              int wpp,
+                              int scale,
+                              enum FilterMode filtering);
 
 // Simplify the filtering based on scale factors.
 enum FilterMode ScaleFilterReduce(int src_width,
@@ -1235,22 +1249,22 @@ void ScaleUVRowUp2_Bilinear_Any_NEON(const uint8_t* src_ptr,
                                      uint8_t* dst_ptr,
                                      ptrdiff_t dst_stride,
                                      int dst_width);
-void ScaleUVRowUp2_Linear_16_SSE2(const uint16_t* src_ptr,
-                                  uint16_t* dst_ptr,
-                                  int dst_width);
-void ScaleUVRowUp2_Bilinear_16_SSE2(const uint16_t* src_ptr,
-                                    ptrdiff_t src_stride,
-                                    uint16_t* dst_ptr,
-                                    ptrdiff_t dst_stride,
-                                    int dst_width);
-void ScaleUVRowUp2_Linear_16_Any_SSE2(const uint16_t* src_ptr,
-                                      uint16_t* dst_ptr,
-                                      int dst_width);
-void ScaleUVRowUp2_Bilinear_16_Any_SSE2(const uint16_t* src_ptr,
-                                        ptrdiff_t src_stride,
-                                        uint16_t* dst_ptr,
-                                        ptrdiff_t dst_stride,
-                                        int dst_width);
+void ScaleUVRowUp2_Linear_16_SSE41(const uint16_t* src_ptr,
+                                   uint16_t* dst_ptr,
+                                   int dst_width);
+void ScaleUVRowUp2_Bilinear_16_SSE41(const uint16_t* src_ptr,
+                                     ptrdiff_t src_stride,
+                                     uint16_t* dst_ptr,
+                                     ptrdiff_t dst_stride,
+                                     int dst_width);
+void ScaleUVRowUp2_Linear_16_Any_SSE41(const uint16_t* src_ptr,
+                                       uint16_t* dst_ptr,
+                                       int dst_width);
+void ScaleUVRowUp2_Bilinear_16_Any_SSE41(const uint16_t* src_ptr,
+                                         ptrdiff_t src_stride,
+                                         uint16_t* dst_ptr,
+                                         ptrdiff_t dst_stride,
+                                         int dst_width);
 void ScaleUVRowUp2_Linear_16_AVX2(const uint16_t* src_ptr,
                                   uint16_t* dst_ptr,
                                   int dst_width);

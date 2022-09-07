@@ -15,7 +15,18 @@ import type {ToolbarItem} from './Toolbar.js';
 import {Toolbar, ToolbarMenuButton} from './Toolbar.js';
 import {createTextChild} from './UIUtils.js';
 import type {TabbedViewLocation, View, ViewLocation, ViewLocationResolver} from './View.js';
-import {getRegisteredLocationResolvers, getRegisteredViewExtensions, maybeRemoveViewExtension, registerLocationResolver, registerViewExtension, ViewLocationCategoryValues, ViewLocationValues, ViewPersistence, type ViewRegistration, resetViewRegistration} from './ViewRegistration.js';
+import {
+  getRegisteredLocationResolvers,
+  getRegisteredViewExtensions,
+  maybeRemoveViewExtension,
+  registerLocationResolver,
+  registerViewExtension,
+  ViewLocationCategoryValues,
+  ViewLocationValues,
+  ViewPersistence,
+  type ViewRegistration,
+  resetViewRegistration,
+} from './ViewRegistration.js';
 import type {Widget, WidgetElement} from './Widget.js';
 import {VBox} from './Widget.js';
 import viewContainersStyles from './viewContainers.css.legacy.js';
@@ -423,7 +434,7 @@ export class _ExpandableContainerWidget extends VBox {
 
     this.titleElement = document.createElement('div');
     this.titleElement.classList.add('expandable-view-title');
-    ARIAUtils.markAsTab(this.titleElement);
+    ARIAUtils.markAsTreeitem(this.titleElement);
     this.titleExpandIcon = Icon.create('smallicon-triangle-right', 'title-expand-icon');
     this.titleElement.appendChild(this.titleExpandIcon);
     const titleText = view.title();
@@ -847,7 +858,7 @@ class _StackLocation extends Location implements ViewLocation {
     const vbox = new VBox();
     super(manager, vbox, revealCallback);
     this.vbox = vbox;
-    ARIAUtils.markAsTablist(vbox.element);
+    ARIAUtils.markAsTree(vbox.element);
 
     this.expandableContainers = new Map();
 

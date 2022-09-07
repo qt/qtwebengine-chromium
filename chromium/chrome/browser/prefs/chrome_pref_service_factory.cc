@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/metrics/field_trial.h"
@@ -215,13 +216,13 @@ SettingsEnforcementGroup GetSettingsEnforcementGroup() {
 #if BUILDFLAG(IS_WIN)
   if (!g_disable_domain_check_for_testing) {
     static bool first_call = true;
-    static const bool is_managed = base::IsMachineExternallyManaged();
+    static const bool is_domain_joined = base::IsEnterpriseDevice();
     if (first_call) {
       UMA_HISTOGRAM_BOOLEAN("Settings.TrackedPreferencesNoEnforcementOnDomain",
-                            is_managed);
+                            is_domain_joined);
       first_call = false;
     }
-    if (is_managed)
+    if (is_domain_joined)
       return GROUP_NO_ENFORCEMENT;
   }
 #endif
@@ -276,12 +277,9 @@ std::unique_ptr<ProfilePrefStoreManager> CreateProfilePrefStoreManager(
     const base::FilePath& profile_path) {
   std::string legacy_device_id;
 #if BUILDFLAG(IS_WIN) && BUILDFLAG(ENABLE_RLZ)
-  // This is used by
-  // chrome/browser/apps/platform_apps/api/music_manager_private/device_id_win.cc
-  // but that API is private (http://crbug.com/276485) and other platforms are
-  // not available synchronously.
-  // As part of improving pref metrics on other platforms we may want to find
-  // ways to defer preference loading until the device ID can be used.
+  // This was used by the musicManagerPrivate API, and remains here for backward
+  // compatibility so ProfilePrefStoreManager can continue to calculate the same
+  // hashes as before.
   rlz_lib::GetMachineId(&legacy_device_id);
 #endif
   std::string seed;

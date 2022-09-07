@@ -7,7 +7,7 @@
 
 #include "src/sksl/codegen/SkSLPipelineStageCodeGenerator.h"
 
-#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || SK_GRAPHITE_ENABLED
+#if defined(SKSL_STANDALONE) || SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
 
 #include "include/core/SkSpan.h"
 #include "include/core/SkTypes.h"
@@ -21,6 +21,7 @@
 #include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
 #include "include/sksl/SkSLOperator.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLStringStream.h"
@@ -51,8 +52,10 @@
 #include "src/sksl/ir/SkSLVarDeclarations.h"
 #include "src/sksl/ir/SkSLVariable.h"
 #include "src/sksl/ir/SkSLVariableReference.h"
+
 #include <memory>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -364,8 +367,8 @@ void PipelineStageCodeGenerator::writeFunction(const FunctionDefinition& f) {
     // obscure bug.
     const FunctionDeclaration& decl = f.declaration();
     if (decl.isMain() &&
-        fProgram.fConfig->fKind != SkSL::ProgramKind::kCustomMeshVertex &&
-        fProgram.fConfig->fKind != SkSL::ProgramKind::kCustomMeshFragment) {
+        fProgram.fConfig->fKind != SkSL::ProgramKind::kMeshVertex &&
+        fProgram.fConfig->fKind != SkSL::ProgramKind::kMeshFragment) {
         fCastReturnsToHalf = true;
     }
 
@@ -719,7 +722,6 @@ void PipelineStageCodeGenerator::writeStatement(const Statement& s) {
         case Statement::Kind::kDiscard:
             SkDEBUGFAIL("Unsupported control flow");
             break;
-        case Statement::Kind::kInlineMarker:
         case Statement::Kind::kNop:
             this->write(";");
             break;

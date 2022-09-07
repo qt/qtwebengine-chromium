@@ -42,7 +42,6 @@
 #include "src/sksl/ir/SkSLFunctionPrototype.h"
 #include "src/sksl/ir/SkSLIfStatement.h"
 #include "src/sksl/ir/SkSLIndexExpression.h"
-#include "src/sksl/ir/SkSLInlineMarker.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLPostfixExpression.h"
@@ -299,10 +298,6 @@ void Dehydrator::write(const Expression* e) {
                 SkDEBUGFAIL("unimplemented--not expected to be used from within an include file");
                 break;
 
-            case Expression::Kind::kCodeString:
-                SkDEBUGFAIL("shouldn't be able to receive kCodeString here");
-                break;
-
             case Expression::Kind::kConstructorArray:
                 this->writeCommand(Rehydrator::kConstructorArray_Command);
                 this->write(e->type());
@@ -524,12 +519,6 @@ void Dehydrator::write(const Statement* s) {
                 this->write(i.ifFalse().get());
                 break;
             }
-            case Statement::Kind::kInlineMarker: {
-                const InlineMarker& i = s->as<InlineMarker>();
-                this->writeCommand(Rehydrator::kInlineMarker_Command);
-                this->writeId(&i.function());
-                break;
-            }
             case Statement::Kind::kNop:
                 this->writeCommand(Rehydrator::kNop_Command);
                 break;
@@ -634,6 +623,7 @@ void Dehydrator::write(const std::vector<std::unique_ptr<ProgramElement>>& eleme
 void Dehydrator::write(const Program& program) {
     this->writeCommand(Rehydrator::kProgram_Command);
     this->writeU8((int)program.fConfig->fKind);
+    this->writeU8((int)program.fConfig->fRequiredSkSLVersion);
     this->write(*program.fSymbols);
 
     // Write the elements

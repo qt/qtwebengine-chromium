@@ -18,7 +18,7 @@ DawnJSONGenerator(
     RESULT_VARIABLE "DAWN_NATIVE_UTILS_GEN_SOURCES"
 )
 
-add_library(dawn_native ${DAWN_DUMMY_FILE})
+add_library(dawn_native ${DAWN_PLACEHOLDER_FILE})
 common_compile_options(dawn_native)
 
 target_compile_definitions(dawn_native PRIVATE "DAWN_NATIVE_IMPLEMENTATION")
@@ -45,6 +45,10 @@ target_sources(dawn_native PRIVATE
     "BindGroupTracker.h"
     "BindingInfo.cpp"
     "BindingInfo.h"
+    "Blob.cpp"
+    "Blob.h"
+    "BlobCache.cpp"
+    "BlobCache.h"
     "BuddyAllocator.cpp"
     "BuddyAllocator.h"
     "BuddyMemoryAllocator.cpp"
@@ -117,15 +121,16 @@ target_sources(dawn_native PRIVATE
     "Limits.h"
     "ObjectBase.cpp"
     "ObjectBase.h"
+    "PassResourceUsage.cpp"
     "PassResourceUsage.h"
     "PassResourceUsageTracker.cpp"
     "PassResourceUsageTracker.h"
-    "PersistentCache.cpp"
-    "PersistentCache.h"
     "PerStage.cpp"
     "PerStage.h"
     "Pipeline.cpp"
     "Pipeline.h"
+    "PipelineCache.cpp"
+    "PipelineCache.h"
     "PipelineLayout.cpp"
     "PipelineLayout.h"
     "PooledResourceMemoryAllocator.cpp"
@@ -138,6 +143,8 @@ target_sources(dawn_native PRIVATE
     "QuerySet.h"
     "Queue.cpp"
     "Queue.h"
+    "RefCountedWithExternalCount.cpp"
+    "RefCountedWithExternalCount.h"
     "RenderBundle.cpp"
     "RenderBundle.h"
     "RenderBundleEncoder.cpp"
@@ -236,12 +243,15 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/BindGroupD3D12.h"
         "d3d12/BindGroupLayoutD3D12.cpp"
         "d3d12/BindGroupLayoutD3D12.h"
+        "d3d12/BlobD3D12.cpp"
+        "d3d12/BlobD3D12.h"
         "d3d12/BufferD3D12.cpp"
         "d3d12/BufferD3D12.h"
         "d3d12/CPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/CPUDescriptorHeapAllocationD3D12.h"
         "d3d12/CommandAllocatorManager.cpp"
         "d3d12/CommandAllocatorManager.h"
+        "d3d12/CacheKeyD3D12.cpp"
         "d3d12/CommandBufferD3D12.cpp"
         "d3d12/CommandBufferD3D12.h"
         "d3d12/CommandRecordingContext.cpp"
@@ -256,6 +266,8 @@ if (DAWN_ENABLE_D3D12)
         "d3d12/D3D12Info.h"
         "d3d12/DeviceD3D12.cpp"
         "d3d12/DeviceD3D12.h"
+        "d3d12/ExternalImageDXGIImpl.cpp"
+        "d3d12/ExternalImageDXGIImpl.h"
         "d3d12/Forward.h"
         "d3d12/GPUDescriptorHeapAllocationD3D12.cpp"
         "d3d12/GPUDescriptorHeapAllocationD3D12.h"
@@ -391,6 +403,8 @@ if (DAWN_ENABLE_OPENGL)
     target_sources(dawn_native PRIVATE
         "${DAWN_INCLUDE_DIR}/dawn/native/OpenGLBackend.h"
         ${DAWN_NATIVE_OPENGL_AUTOGEN_SOURCES}
+        "opengl/AdapterGL.cpp"
+        "opengl/AdapterGL.h"
         "opengl/BackendGL.cpp"
         "opengl/BackendGL.h"
         "opengl/BindGroupGL.cpp"
@@ -477,6 +491,8 @@ if (DAWN_ENABLE_VULKAN)
         "vulkan/Forward.h"
         "vulkan/NativeSwapChainImplVk.cpp"
         "vulkan/NativeSwapChainImplVk.h"
+        "vulkan/PipelineCacheVk.cpp"
+        "vulkan/PipelineCacheVk.h"
         "vulkan/PipelineLayoutVk.cpp"
         "vulkan/PipelineLayoutVk.h"
         "vulkan/QuerySetVk.cpp"
@@ -555,7 +571,7 @@ DawnJSONGenerator(
     RESULT_VARIABLE "WEBGPU_DAWN_NATIVE_PROC_GEN"
 )
 
-add_library(webgpu_dawn ${DAWN_DUMMY_FILE})
+add_library(webgpu_dawn ${DAWN_PLACEHOLDER_FILE})
 common_compile_options(webgpu_dawn)
 target_link_libraries(webgpu_dawn PRIVATE dawn_native)
 target_compile_definitions(webgpu_dawn PRIVATE "WGPU_IMPLEMENTATION")

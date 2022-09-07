@@ -127,7 +127,7 @@ AllocationResult Heap::AllocateMap(InstanceType instance_type,
                                    int instance_size,
                                    ElementsKind elements_kind,
                                    int inobject_properties) {
-  STATIC_ASSERT(LAST_JS_OBJECT_TYPE == LAST_TYPE);
+  static_assert(LAST_JS_OBJECT_TYPE == LAST_TYPE);
   bool is_js_object = InstanceTypeChecker::IsJSObject(instance_type);
   bool is_wasm_object = false;
 #if V8_ENABLE_WEBASSEMBLY
@@ -406,9 +406,6 @@ bool Heap::CreateInitialMaps() {
       if (StringShape(entry.type).IsCons()) map.mark_unstable();
       roots_table()[entry.index] = map.ptr();
     }
-    ALLOCATE_VARSIZE_MAP(SHARED_STRING_TYPE, seq_string_migration_sentinel);
-    ALLOCATE_VARSIZE_MAP(SHARED_ONE_BYTE_STRING_TYPE,
-                         one_byte_seq_string_migration_sentinel);
 
     ALLOCATE_VARSIZE_MAP(FIXED_DOUBLE_ARRAY_TYPE, fixed_double_array)
     roots.fixed_double_array_map().set_elements_kind(HOLEY_DOUBLE_ELEMENTS);
@@ -1066,6 +1063,24 @@ void Heap::CreateInitialObjects() {
     Handle<SharedFunctionInfo> info =
         CreateSharedFunctionInfo(isolate_, Builtin::kProxyRevoke, 0);
     set_proxy_revoke_shared_fun(*info);
+  }
+
+  // ShadowRealm:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kShadowRealmImportValueFulfilled, 0);
+    set_shadow_realm_import_value_fulfilled_sfi(*info);
+  }
+
+  // SourceTextModule:
+  {
+    Handle<SharedFunctionInfo> info = CreateSharedFunctionInfo(
+        isolate_, Builtin::kCallAsyncModuleFulfilled, 0);
+    set_source_text_module_execute_async_module_fulfilled_sfi(*info);
+
+    info = CreateSharedFunctionInfo(isolate_, Builtin::kCallAsyncModuleRejected,
+                                    0);
+    set_source_text_module_execute_async_module_rejected_sfi(*info);
   }
 }
 

@@ -491,10 +491,6 @@ class RTC_EXPORT PeerConnectionInterface : public rtc::RefCountInterface {
     // The minimum delay in milliseconds for the audio jitter buffer.
     int audio_jitter_buffer_min_delay_ms = 0;
 
-    // Whether the audio jitter buffer adapts the delay to retransmitted
-    // packets.
-    bool audio_jitter_buffer_enable_rtx_handling = false;
-
     // Timeout in milliseconds before an ICE candidate pair is considered to be
     // "not receiving", after which a lower priority candidate pair may be
     // selected.
@@ -1398,6 +1394,9 @@ struct RTC_EXPORT PeerConnectionDependencies final {
   std::unique_ptr<rtc::SSLCertificateVerifier> tls_cert_verifier;
   std::unique_ptr<webrtc::VideoBitrateAllocatorFactory>
       video_bitrate_allocator_factory;
+  // Optional field trials to use.
+  // Overrides those from PeerConnectionFactoryDependencies.
+  std::unique_ptr<FieldTrialsView> trials;
 };
 
 // PeerConnectionFactoryDependencies holds all of the PeerConnectionFactory

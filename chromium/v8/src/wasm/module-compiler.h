@@ -78,8 +78,15 @@ WasmCode* CompileImportWrapper(
 // also lazy.
 bool CompileLazy(Isolate*, Handle<WasmInstanceObject>, int func_index);
 
-V8_EXPORT_PRIVATE void TriggerTierUp(Isolate*, NativeModule*, int func_index,
-                                     Handle<WasmInstanceObject> instance);
+// Throws the compilation error after failed lazy compilation.
+void ThrowLazyCompilationError(Isolate* isolate,
+                               const NativeModule* native_module,
+                               int func_index);
+
+// Trigger tier-up of a particular function to TurboFan. If tier-up was already
+// triggered, we instead increase the priority with exponential back-off.
+V8_EXPORT_PRIVATE void TriggerTierUp(WasmInstanceObject instance,
+                                     int func_index);
 
 template <typename Key, typename Hash>
 class WrapperQueue {

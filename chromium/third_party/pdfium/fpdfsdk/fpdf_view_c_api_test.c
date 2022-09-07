@@ -133,6 +133,7 @@ int CheckPDFiumCApi() {
     CHK(FPDFAction_GetURIPath);
     CHK(FPDFBookmark_Find);
     CHK(FPDFBookmark_GetAction);
+    CHK(FPDFBookmark_GetCount);
     CHK(FPDFBookmark_GetDest);
     CHK(FPDFBookmark_GetFirstChild);
     CHK(FPDFBookmark_GetNextSibling);
@@ -159,9 +160,11 @@ int CheckPDFiumCApi() {
     CHK(FPDFFont_GetAscent);
     CHK(FPDFFont_GetDescent);
     CHK(FPDFFont_GetFlags);
+    CHK(FPDFFont_GetFontData);
     CHK(FPDFFont_GetFontName);
     CHK(FPDFFont_GetGlyphPath);
     CHK(FPDFFont_GetGlyphWidth);
+    CHK(FPDFFont_GetIsEmbedded);
     CHK(FPDFFont_GetItalicAngle);
     CHK(FPDFFont_GetWeight);
     CHK(FPDFFormObj_CountObjects);

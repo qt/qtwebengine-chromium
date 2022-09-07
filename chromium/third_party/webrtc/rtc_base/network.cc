@@ -27,6 +27,7 @@
 #include <memory>
 
 #include "absl/algorithm/container.h"
+#include "absl/memory/memory.h"
 #include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "api/transport/field_trial_based_config.h"
@@ -57,19 +58,10 @@ const int kNetworksUpdateIntervalMs = 2000;
 
 const int kHighestNetworkPreference = 127;
 
-typedef struct {
-  Network* net;
+struct AddressList {
+  std::unique_ptr<Network> net;
   std::vector<InterfaceAddress> ips;
-} AddressList;
-
-bool CompareNetworks(const Network* a, const Network* b) {
-  if (a->prefix_length() == b->prefix_length()) {
-    if (a->name() == b->name()) {
-      return a->prefix() < b->prefix();
-    }
-  }
-  return a->name() < b->name();
-}
+};
 
 bool SortNetworks(const Network* a, const Network* b) {
   // Network types will be preferred above everything else while sorting
@@ -193,6 +185,19 @@ const char kPublicIPv4Host[] = "8.8.8.8";
 const char kPublicIPv6Host[] = "2001:4860:4860::8888";
 const int kPublicPort = 53;  // DNS port.
 
+namespace webrtc_network_internal {
+bool CompareNetworks(const std::unique_ptr<Network>& a,
+                     const std::unique_ptr<Network>& b) {
+  if (a->prefix_length() != b->prefix_length()) {
+    return a->prefix_length() < b->prefix_length();
+  }
+  if (a->name() != b->name()) {
+    return a->name() < b->name();
+  }
+  return a->prefix() < b->prefix();
+}
+}  // namespace webrtc_network_internal
+
 std::string MakeNetworkKey(absl::string_view name,
                            const IPAddress& prefix,
                            int prefix_length) {
@@ -216,7 +221,7 @@ bool MatchTypeNameWithIndexPattern(absl::string_view network_name,
 // result of the downstream network filtering, see e.g.
 // BasicPortAllocatorSession::GetNetworks when
 // PORTALLOCATOR_DISABLE_COSTLY_NETWORKS is turned on.
-AdapterType GetAdapterTypeFromName(const char* network_name) {
+AdapterType GetAdapterTypeFromName(absl::string_view network_name) {
   if (MatchTypeNameWithIndexPattern(network_name, "lo")) {
     // Note that we have a more robust way to determine if a network interface
     // is a loopback interface by checking the flag IFF_LOOPBACK in ifa_flags of
@@ -264,10 +269,6 @@ AdapterType GetAdapterTypeFromName(const char* network_name) {
   return ADAPTER_TYPE_UNKNOWN;
 }
 
-NetworkManager::NetworkManager() {}
-
-NetworkManager::~NetworkManager() {}
-
 NetworkManager::EnumerationPermission NetworkManager::enumeration_permission()
     const {
   return ENUMERATION_ALLOWED;
@@ -288,12 +289,6 @@ NetworkManagerBase::NetworkManagerBase(
           field_trials
               ? field_trials->IsEnabled("WebRTC-SignalNetworkPreferenceChange")
               : false) {}
-
-NetworkManagerBase::~NetworkManagerBase() {
-  for (const auto& kv : networks_map_) {
-    delete kv.second;
-  }
-}
 
 NetworkManager::EnumerationPermission
 NetworkManagerBase::enumeration_permission() const {
@@ -330,41 +325,40 @@ std::vector<const Network*> NetworkManagerBase::GetNetworks() const {
   return result;
 }
 
-void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
-                                          bool* changed) {
+void NetworkManagerBase::MergeNetworkList(
+    std::vector<std::unique_ptr<Network>> new_networks,
+    bool* changed) {
   NetworkManager::Stats stats;
-  MergeNetworkList(new_networks, changed, &stats);
+  MergeNetworkList(std::move(new_networks), changed, &stats);
 }
 
-void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
-                                          bool* changed,
-                                          NetworkManager::Stats* stats) {
+void NetworkManagerBase::MergeNetworkList(
+    std::vector<std::unique_ptr<Network>> new_networks,
+    bool* changed,
+    NetworkManager::Stats* stats) {
   *changed = false;
   // AddressList in this map will track IP addresses for all Networks
   // with the same key.
   std::map<std::string, AddressList> consolidated_address_list;
-  NetworkList list(new_networks);
-  absl::c_sort(list, CompareNetworks);
+  absl::c_sort(new_networks, rtc::webrtc_network_internal::CompareNetworks);
   // First, build a set of network-keys to the ipaddresses.
-  for (Network* network : list) {
+  for (auto& network : new_networks) {
     bool might_add_to_merged_list = false;
     std::string key = MakeNetworkKey(network->name(), network->prefix(),
                                      network->prefix_length());
+    const std::vector<InterfaceAddress>& addresses = network->GetIPs();
     if (consolidated_address_list.find(key) ==
         consolidated_address_list.end()) {
       AddressList addrlist;
-      addrlist.net = network;
-      consolidated_address_list[key] = addrlist;
+      addrlist.net = std::move(network);
+      consolidated_address_list[key] = std::move(addrlist);
       might_add_to_merged_list = true;
     }
-    const std::vector<InterfaceAddress>& addresses = network->GetIPs();
     AddressList& current_list = consolidated_address_list[key];
     for (const InterfaceAddress& address : addresses) {
       current_list.ips.push_back(address);
     }
-    if (!might_add_to_merged_list) {
-      delete network;
-    } else {
+    if (might_add_to_merged_list) {
       if (current_list.ips[0].family() == AF_INET) {
         stats->ipv4_network_count++;
       } else {
@@ -376,23 +370,24 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
 
   // Next, look for existing network objects to re-use.
   // Result of Network merge. Element in this list should have unique key.
-  NetworkList merged_list;
-  for (const auto& kv : consolidated_address_list) {
+  std::vector<Network*> merged_list;
+  for (auto& kv : consolidated_address_list) {
     const std::string& key = kv.first;
-    Network* net = kv.second.net;
+    std::unique_ptr<Network> net = std::move(kv.second.net);
     auto existing = networks_map_.find(key);
     if (existing == networks_map_.end()) {
-      // This network is new. Place it in the network map.
-      merged_list.push_back(net);
-      networks_map_[key] = net;
+      // This network is new.
       net->set_id(next_available_network_id_++);
-      // Also, we might have accumulated IPAddresses from the first
+      // We might have accumulated IPAddresses from the first
       // step, set it here.
       net->SetIPs(kv.second.ips, true);
+      // Place it in the network map.
+      merged_list.push_back(net.get());
+      networks_map_[key] = std::move(net);
       *changed = true;
     } else {
       // This network exists in the map already. Reset its IP addresses.
-      Network* existing_net = existing->second;
+      Network* existing_net = existing->second.get();
       *changed = existing_net->SetIPs(kv.second.ips, *changed);
       merged_list.push_back(existing_net);
       if (net->type() != ADAPTER_TYPE_UNKNOWN &&
@@ -414,9 +409,6 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
         }
       }
       RTC_DCHECK(net->active());
-      if (existing_net != net) {
-        delete net;
-      }
     }
     networks_map_[key]->set_mdns_responder_provider(this);
   }
@@ -432,9 +424,9 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
     networks_ = merged_list;
     // Reset the active states of all networks.
     for (const auto& kv : networks_map_) {
-      Network* network = kv.second;
+      const std::unique_ptr<Network>& network = kv.second;
       // If `network` is in the newly generated `networks_`, it is active.
-      bool found = absl::c_linear_search(networks_, network);
+      bool found = absl::c_linear_search(networks_, network.get());
       network->set_active(found);
     }
     absl::c_sort(networks_, SortNetworks);
@@ -541,19 +533,40 @@ void BasicNetworkManager::OnNetworksChanged() {
 
 #if defined(__native_client__)
 
-bool BasicNetworkManager::CreateNetworks(bool include_ignored,
-                                         NetworkList* networks) const {
+bool BasicNetworkManager::CreateNetworks(
+    bool include_ignored,
+    std::vector<std::unique_ptr<Network>>* networks) const {
   RTC_DCHECK_NOTREACHED();
   RTC_LOG(LS_WARNING) << "BasicNetworkManager doesn't work on NaCl yet";
   return false;
 }
 
 #elif defined(WEBRTC_POSIX)
-void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
-                                         IfAddrsConverter* ifaddrs_converter,
-                                         bool include_ignored,
-                                         NetworkList* networks) const {
-  NetworkMap current_networks;
+NetworkMonitorInterface::InterfaceInfo BasicNetworkManager::GetInterfaceInfo(
+    struct ifaddrs* cursor) const {
+  if (cursor->ifa_flags & IFF_LOOPBACK) {
+    return {
+        .adapter_type = ADAPTER_TYPE_LOOPBACK,
+        .underlying_type_for_vpn = ADAPTER_TYPE_UNKNOWN,
+        .network_preference = NetworkPreference::NEUTRAL,
+        .available = true,
+    };
+  } else if (network_monitor_) {
+    return network_monitor_->GetInterfaceInfo(cursor->ifa_name);
+  } else {
+    return {.adapter_type = GetAdapterTypeFromName(cursor->ifa_name),
+            .underlying_type_for_vpn = ADAPTER_TYPE_UNKNOWN,
+            .network_preference = NetworkPreference::NEUTRAL,
+            .available = true};
+  }
+}
+
+void BasicNetworkManager::ConvertIfAddrs(
+    struct ifaddrs* interfaces,
+    IfAddrsConverter* ifaddrs_converter,
+    bool include_ignored,
+    std::vector<std::unique_ptr<Network>>* networks) const {
+  std::map<std::string, Network*> current_networks;
 
   for (struct ifaddrs* cursor = interfaces; cursor != nullptr;
        cursor = cursor->ifa_next) {
@@ -590,71 +603,71 @@ void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
           reinterpret_cast<sockaddr_in6*>(cursor->ifa_addr)->sin6_scope_id;
     }
 
-    AdapterType adapter_type = ADAPTER_TYPE_UNKNOWN;
-    AdapterType vpn_underlying_adapter_type = ADAPTER_TYPE_UNKNOWN;
-    NetworkPreference network_preference = NetworkPreference::NEUTRAL;
-    if (cursor->ifa_flags & IFF_LOOPBACK) {
-      adapter_type = ADAPTER_TYPE_LOOPBACK;
-    } else {
-      // If there is a network_monitor, use it to get the adapter type.
-      // Otherwise, get the adapter type based on a few name matching rules.
-      if (network_monitor_) {
-        adapter_type = network_monitor_->GetAdapterType(cursor->ifa_name);
-        network_preference =
-            network_monitor_->GetNetworkPreference(cursor->ifa_name);
-      }
-      if (adapter_type == ADAPTER_TYPE_UNKNOWN) {
-        adapter_type = GetAdapterTypeFromName(cursor->ifa_name);
-      }
-    }
-
-    if (adapter_type == ADAPTER_TYPE_VPN && network_monitor_) {
-      vpn_underlying_adapter_type =
-          network_monitor_->GetVpnUnderlyingAdapterType(cursor->ifa_name);
-    }
-
     int prefix_length = CountIPMaskBits(mask);
     prefix = TruncateIP(ip, prefix_length);
-
-    if (adapter_type != ADAPTER_TYPE_VPN &&
-        IsConfiguredVpn(prefix, prefix_length)) {
-      vpn_underlying_adapter_type = adapter_type;
-      adapter_type = ADAPTER_TYPE_VPN;
-    }
-
     std::string key =
         MakeNetworkKey(std::string(cursor->ifa_name), prefix, prefix_length);
+
     auto iter = current_networks.find(key);
-    if (iter == current_networks.end()) {
-      // TODO(phoglund): Need to recognize other types as well.
-      std::unique_ptr<Network> network(
-          new Network(cursor->ifa_name, cursor->ifa_name, prefix, prefix_length,
-                      adapter_type));
-      network->set_default_local_address_provider(this);
-      network->set_scope_id(scope_id);
-      network->AddIP(ip);
-      network->set_ignored(IsIgnoredNetwork(*network));
-      network->set_underlying_type_for_vpn(vpn_underlying_adapter_type);
-      network->set_network_preference(network_preference);
-      if (include_ignored || !network->ignored()) {
-        current_networks[key] = network.get();
-        networks->push_back(network.release());
+    if (iter != current_networks.end()) {
+      // We have already added this network, simply add extra IP.
+      iter->second->AddIP(ip);
+#if RTC_DCHECK_IS_ON
+      // Validate that different IP of same network has same properties
+      auto existing_network = iter->second;
+
+      NetworkMonitorInterface::InterfaceInfo if_info = GetInterfaceInfo(cursor);
+      if (if_info.adapter_type != ADAPTER_TYPE_VPN &&
+          IsConfiguredVpn(prefix, prefix_length)) {
+        if_info.underlying_type_for_vpn = if_info.adapter_type;
+        if_info.adapter_type = ADAPTER_TYPE_VPN;
       }
+
+      RTC_DCHECK(existing_network->type() == if_info.adapter_type);
+      RTC_DCHECK(existing_network->underlying_type_for_vpn() ==
+                 if_info.underlying_type_for_vpn);
+      RTC_DCHECK(existing_network->network_preference() ==
+                 if_info.network_preference);
+      if (!if_info.available) {
+        RTC_DCHECK(existing_network->ignored());
+      }
+#endif  // RTC_DCHECK_IS_ON
+      continue;
+    }
+
+    // Create a new network.
+    NetworkMonitorInterface::InterfaceInfo if_info = GetInterfaceInfo(cursor);
+
+    // Check manually configured VPN override.
+    if (if_info.adapter_type != ADAPTER_TYPE_VPN &&
+        IsConfiguredVpn(prefix, prefix_length)) {
+      if_info.underlying_type_for_vpn = if_info.adapter_type;
+      if_info.adapter_type = ADAPTER_TYPE_VPN;
+    }
+
+    auto network =
+        std::make_unique<Network>(cursor->ifa_name, cursor->ifa_name, prefix,
+                                  prefix_length, if_info.adapter_type);
+    network->set_default_local_address_provider(this);
+    network->set_scope_id(scope_id);
+    network->AddIP(ip);
+    if (!if_info.available) {
+      network->set_ignored(true);
     } else {
-      Network* existing_network = iter->second;
-      existing_network->AddIP(ip);
-      if (adapter_type != ADAPTER_TYPE_UNKNOWN) {
-        existing_network->set_type(adapter_type);
-        existing_network->set_underlying_type_for_vpn(
-            vpn_underlying_adapter_type);
-      }
-      existing_network->set_network_preference(network_preference);
+      network->set_ignored(IsIgnoredNetwork(*network));
+    }
+    network->set_underlying_type_for_vpn(if_info.underlying_type_for_vpn);
+    network->set_network_preference(if_info.network_preference);
+    if (include_ignored || !network->ignored()) {
+      current_networks[key] = network.get();
+      networks->push_back(std::move(network));
     }
   }
 }
 
-bool BasicNetworkManager::CreateNetworks(bool include_ignored,
-                                         NetworkList* networks) const {
+bool BasicNetworkManager::CreateNetworks(
+    bool include_ignored,
+    std::vector<std::unique_ptr<Network>>* networks) const {
   struct ifaddrs* interfaces;
   int error = getifaddrs(&interfaces);
   if (error != 0) {
@@ -715,9 +728,10 @@ unsigned int GetPrefix(PIP_ADAPTER_PREFIX prefixlist,
   return best_length;
 }
 
-bool BasicNetworkManager::CreateNetworks(bool include_ignored,
-                                         NetworkList* networks) const {
-  NetworkMap current_networks;
+bool BasicNetworkManager::CreateNetworks(
+    bool include_ignored,
+    std::vector<std::unique_ptr<Network>>* networks) const {
+  std::map<std::string, Network*> current_networks;
   // MSDN recommends a 15KB buffer for the first try at GetAdaptersAddresses.
   size_t buffer_size = 16384;
   std::unique_ptr<char[]> adapter_info(new char[buffer_size]);
@@ -807,10 +821,10 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
               adapter_type = ADAPTER_TYPE_UNKNOWN;
               break;
           }
-          auto vpn_underlying_adapter_type = ADAPTER_TYPE_UNKNOWN;
+          auto underlying_type_for_vpn = ADAPTER_TYPE_UNKNOWN;
           if (adapter_type != ADAPTER_TYPE_VPN &&
               IsConfiguredVpn(prefix, prefix_length)) {
-            vpn_underlying_adapter_type = adapter_type;
+            underlying_type_for_vpn = adapter_type;
             adapter_type = ADAPTER_TYPE_VPN;
           }
           if (adapter_type != ADAPTER_TYPE_VPN &&
@@ -818,13 +832,13 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
                   reinterpret_cast<const uint8_t*>(
                       adapter_addrs->PhysicalAddress),
                   adapter_addrs->PhysicalAddressLength))) {
-            vpn_underlying_adapter_type = adapter_type;
+            underlying_type_for_vpn = adapter_type;
             adapter_type = ADAPTER_TYPE_VPN;
           }
 
-          std::unique_ptr<Network> network(new Network(
-              name, description, prefix, prefix_length, adapter_type));
-          network->set_underlying_type_for_vpn(vpn_underlying_adapter_type);
+          auto network = std::make_unique<Network>(name, description, prefix,
+                                                   prefix_length, adapter_type);
+          network->set_underlying_type_for_vpn(underlying_type_for_vpn);
           network->set_default_local_address_provider(this);
           network->set_mdns_responder_provider(this);
           network->set_scope_id(scope_id);
@@ -833,7 +847,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
           network->set_ignored(ignored);
           if (include_ignored || !network->ignored()) {
             current_networks[key] = network.get();
-            networks->push_back(network.release());
+            networks->push_back(std::move(network));
           }
         } else {
           (*existing_network).second->AddIP(ip);
@@ -874,11 +888,6 @@ bool BasicNetworkManager::IsIgnoredNetwork(const Network& network) const {
     return true;
   }
 #endif
-
-  if (network_monitor_ &&
-      !network_monitor_->IsAdapterAvailable(network.name())) {
-    return true;
-  }
 
   // Ignore any networks with a 0.x.y.z IP
   if (network.prefix().family() == AF_INET) {
@@ -1002,13 +1011,13 @@ void BasicNetworkManager::UpdateNetworksOnce() {
   if (!start_count_)
     return;
 
-  NetworkList list;
+  std::vector<std::unique_ptr<Network>> list;
   if (!CreateNetworks(false, &list)) {
     SignalError();
   } else {
     bool changed;
     NetworkManager::Stats stats;
-    MergeNetworkList(list, &changed, &stats);
+    MergeNetworkList(std::move(list), &changed, &stats);
     set_default_local_addresses(QueryDefaultLocalAddress(AF_INET),
                                 QueryDefaultLocalAddress(AF_INET6));
     if (changed || !sent_first_update_) {

@@ -868,8 +868,9 @@ const char *help_message_body =
     "                    \"vulkaninfo.html\" in the directory in which the command\n"
     "                    is run.\n"
     "[-j, --json]        Produce a json version of vulkaninfo output conforming to the Vulkan\n"
-    "                    Profiles schema, saved as \"vulkaninfo.json\", of the first gpu in the\n"
-    "                    system.\n"
+    "                    Profiles schema, saved as \n"
+    "                     \"VP_VULKANINFO_[DEVICE_NAME]_[DRIVER_VERSION].json\"\n"
+    "                     of the first gpu in the system.\n"
     "[-j=<gpu-number>, --json=<gpu-number>]\n"
     "                    For a multi-gpu system, a single gpu can be targetted by\n"
     "                    specifying the gpu-number associated with the gpu of \n"
@@ -1063,7 +1064,7 @@ int main(int argc, char **argv) {
     if (!parsing_return) return 1;
     ParsedResults parse_data = parsing_return.value();
 
-#ifdef _WIN32
+#if defined(_WIN32) && !defined(__MINGW32__) // _set_abort_behavior may not be available
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
     SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX);
     _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);

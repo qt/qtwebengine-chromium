@@ -15,16 +15,18 @@
 #include "include/core/SkSpan.h"
 #include "include/core/SkTileMode.h"
 #include "include/private/SkColorData.h"
+#include "src/core/SkEnumBitMask.h"
 
 #ifdef SK_GRAPHITE_ENABLED
-#include "src/gpu/Blend.h"
+#include "include/private/SkVx.h"
 #include "src/gpu/graphite/TextureProxy.h"
 #include "src/gpu/graphite/UniformManager.h"
-#include "src/gpu/graphite/geom/VectorTypes.h"
 #endif
 
 class SkArenaAlloc;
 class SkUniform;
+
+enum class SnippetRequirementFlags : uint32_t;
 
 class SkUniformDataBlock {
 public:
@@ -106,8 +108,6 @@ private:
 // The PipelineDataGatherer is just used to collect information for a given PaintParams object.
 //   The UniformData is added to a cache and uniquified. Only that unique ID is passed around.
 //   The TextureData is also added to a cache and uniquified. Only that ID is passed around.
-//   The BlendInfo is ultimately stored in the SkShaderCodeDictionary next to its associated
-//       PaintParamsKey
 
 // TODO: The current plan for fixing uniform padding is for the SkPipelineDataGatherer to hold a
 // persistent uniformManager. A stretch goal for this system would be for this combination
@@ -116,25 +116,7 @@ private:
 class SkPipelineDataGatherer {
 public:
 #ifdef SK_GRAPHITE_ENABLED
-    struct BlendInfo {
-        bool operator==(const BlendInfo& other) const {
-            return fEquation == other.fEquation &&
-                   fSrcBlend == other.fSrcBlend &&
-                   fDstBlend == other.fDstBlend &&
-                   fBlendConstant == other.fBlendConstant &&
-                   fWritesColor == other.fWritesColor;
-        }
-
-        skgpu::BlendEquation fEquation = skgpu::BlendEquation::kAdd;
-        skgpu::BlendCoeff    fSrcBlend = skgpu::BlendCoeff::kOne;
-        skgpu::BlendCoeff    fDstBlend = skgpu::BlendCoeff::kZero;
-        SkPMColor4f          fBlendConstant = SK_PMColor4fTRANSPARENT;
-        bool                 fWritesColor = true;
-    };
-#endif
-
-#ifdef SK_GRAPHITE_ENABLED
-    SkPipelineDataGatherer(skgpu::graphite::Layout layout) : fUniformManager(layout) {}
+    SkPipelineDataGatherer(skgpu::graphite::Layout layout);
 #endif
 
     void reset();
@@ -142,20 +124,21 @@ public:
     SkDEBUGCODE(void checkReset();)
 
 #ifdef SK_GRAPHITE_ENABLED
-    void setBlendInfo(const SkPipelineDataGatherer::BlendInfo& blendInfo) {
-        fBlendInfo = blendInfo;
-    }
-    const BlendInfo& blendInfo() const { return fBlendInfo; }
-
     void add(const SkSamplingOptions& sampling,
              const SkTileMode tileModes[2],
              sk_sp<skgpu::graphite::TextureProxy> proxy) {
         fTextureDataBlock.add(sampling, tileModes, std::move(proxy));
     }
     bool hasTextures() const { return !fTextureDataBlock.empty(); }
+#endif // SK_GRAPHITE_ENABLED
 
+    void addFlags(SnippetRequirementFlags flags);
+    bool needsLocalCoords() const;
+
+#ifdef SK_GRAPHITE_ENABLED
     const SkTextureDataBlock& textureDataBlock() { return fTextureDataBlock; }
 
+    void write(const SkM44& mat) { fUniformManager.write(mat); }
     void write(const SkColor4f* colors, int numColors) { fUniformManager.write(colors, numColors); }
     void write(const SkPMColor4f& premulColor) { fUniformManager.write(&premulColor, 1); }
     void write(const SkRect& rect) { fUniformManager.write(rect); }
@@ -163,7 +146,8 @@ public:
     void write(const float* floats, int count) { fUniformManager.write(floats, count); }
     void write(float f) { fUniformManager.write(&f, 1); }
     void write(int i) { fUniformManager.write(i); }
-    void write(skgpu::graphite::float2 v) { fUniformManager.write(v); }
+    void write(skvx::float2 v) { fUniformManager.write(v); }
+    void write(skvx::float4 v) { fUniformManager.write(v); }
 
     bool hasUniforms() const { return fUniformManager.size(); }
 
@@ -179,10 +163,10 @@ private:
     void doneWithExpectedUniforms() { fUniformManager.doneWithExpectedUniforms(); }
 #endif // SK_DEBUG
 
-    SkTextureDataBlock              fTextureDataBlock;
-    BlendInfo                       fBlendInfo;
-    skgpu::graphite::UniformManager fUniformManager;
+    SkTextureDataBlock                     fTextureDataBlock;
+    skgpu::graphite::UniformManager        fUniformManager;
 #endif // SK_GRAPHITE_ENABLED
+    SkEnumBitMask<SnippetRequirementFlags> fSnippetRequirementFlags;
 };
 
 #if defined(SK_DEBUG) && defined(SK_GRAPHITE_ENABLED)

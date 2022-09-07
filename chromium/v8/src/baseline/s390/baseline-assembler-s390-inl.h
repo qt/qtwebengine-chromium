@@ -70,7 +70,7 @@ enum class Condition : uint32_t {
 };
 
 inline internal::Condition AsMasmCondition(Condition cond) {
-  STATIC_ASSERT(sizeof(internal::Condition) == sizeof(Condition));
+  static_assert(sizeof(internal::Condition) == sizeof(Condition));
   switch (cond) {
     case Condition::kEqual:
       return eq;
@@ -528,6 +528,32 @@ void BaselineAssembler::StoreTaggedFieldNoWriteBarrier(Register target,
                                                        int offset,
                                                        Register value) {
   __ StoreTaggedField(value, FieldMemOperand(target, offset), r0);
+}
+
+void BaselineAssembler::TryLoadOptimizedOsrCode(Register scratch_and_result,
+                                                Register feedback_vector,
+                                                FeedbackSlot slot,
+                                                Label* on_result,
+                                                Label::Distance) {
+  Label fallthrough;
+  LoadTaggedPointerField(scratch_and_result, feedback_vector,
+                         FeedbackVector::OffsetOfElementAt(slot.ToInt()));
+  __ LoadWeakValue(scratch_and_result, scratch_and_result, &fallthrough);
+
+  // Is it marked_for_deoptimization? If yes, clear the slot.
+  {
+    ScratchRegisterScope temps(this);
+    Register scratch = temps.AcquireScratch();
+    __ TestCodeTIsMarkedForDeoptimization(scratch_and_result, scratch);
+    __ beq(on_result);
+    __ mov(scratch, __ ClearedValue());
+    StoreTaggedFieldNoWriteBarrier(
+        feedback_vector, FeedbackVector::OffsetOfElementAt(slot.ToInt()),
+        scratch);
+  }
+
+  __ bind(&fallthrough);
+  Move(scratch_and_result, 0);
 }
 
 void BaselineAssembler::AddToInterruptBudgetAndJumpIfNotExceeded(

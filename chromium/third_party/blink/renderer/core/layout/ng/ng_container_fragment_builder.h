@@ -330,6 +330,12 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
     should_force_same_fragmentation_flow_ = true;
   }
 
+  // Specify that all child break tokens be added manually, instead of being
+  // added automatically as part of adding child fragments.
+  void SetShouldAddBreakTokensManually() {
+    should_add_break_tokens_manually_ = true;
+  }
+
   // See NGLayoutResult::AnnotationOverflow().
   void SetAnnotationOverflow(LayoutUnit overflow) {
     annotation_overflow_ = overflow;
@@ -345,7 +351,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
     has_descendant_that_depends_on_percentage_block_size_ = b;
   }
 
-  const NGConstraintSpace* ConstraintSpace() const { return space_; }
+  const NGConstraintSpace& ConstraintSpace() const { return space_; }
 
   const NGLayoutResult* Abort(NGLayoutResult::EStatus);
 
@@ -360,7 +366,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
 
   NGContainerFragmentBuilder(NGLayoutInputNode node,
                              scoped_refptr<const ComputedStyle> style,
-                             const NGConstraintSpace* space,
+                             const NGConstraintSpace& space,
                              WritingDirectionMode writing_direction)
       : NGFragmentBuilder(std::move(style), writing_direction),
         node_(node),
@@ -388,7 +394,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
           nullptr) const;
 
   NGLayoutInputNode node_;
-  const NGConstraintSpace* space_;
+  const NGConstraintSpace& space_;
 
   LayoutUnit bfc_line_offset_;
   absl::optional<LayoutUnit> bfc_block_offset_;
@@ -442,6 +448,7 @@ class CORE_EXPORT NGContainerFragmentBuilder : public NGFragmentBuilder {
   bool has_column_spanner_ = false;
   bool is_empty_spanner_parent_ = false;
   bool should_force_same_fragmentation_flow_ = false;
+  bool should_add_break_tokens_manually_ = false;
 
   bool has_oof_candidate_that_needs_block_offset_adjustment_ = false;
   bool has_out_of_flow_fragment_child_ = false;

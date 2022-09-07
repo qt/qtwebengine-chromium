@@ -9,7 +9,6 @@
 #include "src/objects/fixed-array.h"
 #include "src/objects/function-kind.h"
 #include "src/objects/ordered-hash-table.h"
-#include "src/objects/osr-optimized-code-cache.h"
 // Has to be the last include (doesn't have include guards):
 #include "src/objects/object-macros.h"
 
@@ -105,8 +104,6 @@ enum ContextLookupFlags {
   V(CALL_AS_CONSTRUCTOR_DELEGATE_INDEX, JSFunction,                            \
     call_as_constructor_delegate)                                              \
   V(CALL_AS_FUNCTION_DELEGATE_INDEX, JSFunction, call_as_function_delegate)    \
-  V(CALL_ASYNC_MODULE_FULFILLED, JSFunction, call_async_module_fulfilled)      \
-  V(CALL_ASYNC_MODULE_REJECTED, JSFunction, call_async_module_rejected)        \
   V(CALLSITE_FUNCTION_INDEX, JSFunction, callsite_function)                    \
   V(CONTEXT_EXTENSION_FUNCTION_INDEX, JSFunction, context_extension_function)  \
   V(DATA_PROPERTY_DESCRIPTOR_MAP_INDEX, Map, data_property_descriptor_map)     \
@@ -179,6 +176,7 @@ enum ContextLookupFlags {
     js_array_packed_double_elements_map)                                       \
   V(JS_ARRAY_HOLEY_DOUBLE_ELEMENTS_MAP_INDEX, Map,                             \
     js_array_holey_double_elements_map)                                        \
+  V(JS_ATOMICS_MUTEX_MAP, Map, js_atomics_mutex_map)                           \
   V(JS_MAP_FUN_INDEX, JSFunction, js_map_fun)                                  \
   V(JS_MAP_MAP_INDEX, Map, js_map_map)                                         \
   V(JS_MODULE_NAMESPACE_MAP, Map, js_module_namespace_map)                     \
@@ -353,6 +351,8 @@ enum ContextLookupFlags {
   V(SET_ADD_INDEX, JSFunction, set_add)                                        \
   V(SET_DELETE_INDEX, JSFunction, set_delete)                                  \
   V(SET_HAS_INDEX, JSFunction, set_has)                                        \
+  V(SHADOW_REALM_IMPORT_VALUE_REJECTED_INDEX, JSFunction,                      \
+    shadow_realm_import_value_rejected)                                        \
   V(SYNTAX_ERROR_FUNCTION_INDEX, JSFunction, syntax_error_function)            \
   V(TYPE_ERROR_FUNCTION_INDEX, JSFunction, type_error_function)                \
   V(URI_ERROR_FUNCTION_INDEX, JSFunction, uri_error_function)                  \
@@ -368,8 +368,7 @@ enum ContextLookupFlags {
   V(WEAKMAP_DELETE_INDEX, JSFunction, weakmap_delete)                          \
   V(WEAKSET_ADD_INDEX, JSFunction, weakset_add)                                \
   V(WRAPPED_FUNCTION_MAP_INDEX, Map, wrapped_function_map)                     \
-  V(RETAINED_MAPS, Object, retained_maps)                                      \
-  V(OSR_CODE_CACHE_INDEX, OSROptimizedCodeCache, osr_code_cache)
+  V(RETAINED_MAPS, Object, retained_maps)
 
 #include "torque-generated/src/objects/contexts-tq.inc"
 
@@ -678,7 +677,7 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
 
   static int ArrayMapIndex(ElementsKind elements_kind) {
     DCHECK(IsFastElementsKind(elements_kind));
-    return elements_kind + FIRST_JS_ARRAY_MAP_SLOT;
+    return int{elements_kind} + FIRST_JS_ARRAY_MAP_SLOT;
   }
 
   inline Map GetInitialJSArrayMap(ElementsKind kind) const;
@@ -785,7 +784,7 @@ class NativeContext : public Context {
                       Handle<Object> parent);
 
  private:
-  STATIC_ASSERT(OffsetOfElementAt(EMBEDDER_DATA_INDEX) ==
+  static_assert(OffsetOfElementAt(EMBEDDER_DATA_INDEX) ==
                 Internals::kNativeContextEmbedderDataOffset);
 
   OBJECT_CONSTRUCTORS(NativeContext, Context);

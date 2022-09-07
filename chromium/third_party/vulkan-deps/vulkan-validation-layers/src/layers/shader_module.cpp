@@ -268,16 +268,6 @@ layer_data::unordered_set<uint32_t> SHADER_MODULE_STATE::MarkAccessibleIds(spirv
     return ids;
 }
 
-layer_data::unordered_set<uint32_t> SHADER_MODULE_STATE::MarkVariableIds() const {
-    layer_data::unordered_set<uint32_t> variable_ids;
-    for (const auto insn : *this) {
-        if (insn.opcode() == spv::OpVariable) {
-            variable_ids.insert(insn.word(2));
-        }
-    }
-    return variable_ids;
-}
-
 layer_data::optional<VkPrimitiveTopology> SHADER_MODULE_STATE::GetTopology(const spirv_inst_iter &entrypoint) const {
     layer_data::optional<VkPrimitiveTopology> result;
 
@@ -373,11 +363,27 @@ SHADER_MODULE_STATE::SpirvStaticData::SpirvStaticData(const SHADER_MODULE_STATE 
                 }
             } break;
 
+            case spv::OpCapability:
+                capability_list.push_back(static_cast<spv::Capability>(insn.word(1)));
+                break;
+
+            case spv::OpVariable:
+                variable_inst.push_back(insn);
+                break;
+
             // Execution Mode
             case spv::OpExecutionMode:
             case spv::OpExecutionModeId: {
                 execution_mode_inst[insn.word(1)].push_back(insn);
             } break;
+            // Once https://github.com/KhronosGroup/SPIRV-Headers/issues/276 is added this should be derived from SPIR-V grammar
+            // json
+            case spv::OpTraceRayKHR:
+            case spv::OpTraceRayMotionNV:
+            case spv::OpReportIntersectionKHR:
+            case spv::OpExecuteCallableKHR:
+                has_invocation_repack_instruction = true;
+                break;
 
             default:
                 if (AtomicOperation(insn.opcode()) == true) {
@@ -1533,11 +1539,11 @@ void SHADER_MODULE_STATE::IsSpecificDescriptorType(const spirv_inst_iter &id_it,
 }
 
 std::vector<std::pair<DescriptorSlot, interface_var>> SHADER_MODULE_STATE::CollectInterfaceByDescriptorSlot(
-    layer_data::unordered_set<uint32_t> const &ids) const {
+    layer_data::unordered_set<uint32_t> const &accessible_ids) const {
     std::vector<std::pair<DescriptorSlot, interface_var>> out;
     shader_module_used_operators operators;
 
-    for (auto id : ids) {
+    for (auto id : accessible_ids) {
         auto insn = get_def(id);
         assert(insn != end());
 
@@ -1892,21 +1898,6 @@ uint32_t SHADER_MODULE_STATE::GetBaseType(const spirv_inst_iter &iter) const {
 uint32_t SHADER_MODULE_STATE::GetTypeId(uint32_t id) const {
     const auto type = get_def(id);
     return OpcodeHasType(type.opcode()) ? type.word(1) : 0;
-}
-
-uint32_t SHADER_MODULE_STATE::CalcComputeSharedMemory(VkShaderStageFlagBits stage,
-                                                      const spirv_inst_iter &insn) const {
-    if (stage == VK_SHADER_STAGE_COMPUTE_BIT && insn.opcode() == spv::OpVariable) {
-        uint32_t storage_class = insn.word(3);
-        if (storage_class == spv::StorageClassWorkgroup) {  // StorageClass Workgroup is shared memory
-            uint32_t result_type_id = insn.word(1);
-            auto result_type = get_def(result_type_id);
-            auto type = get_def(result_type.word(3));
-            return GetTypeBytesSize(type);
-        }
-    }
-
-    return 0;
 }
 
 // Assumes itr points to an OpConstant instruction

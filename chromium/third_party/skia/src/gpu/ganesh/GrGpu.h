@@ -140,7 +140,8 @@ public:
                                    GrColorType textureColorType,
                                    GrColorType srcColorType,
                                    const GrMipLevel texels[],
-                                   int texelLevelCount);
+                                   int texelLevelCount,
+                                   std::string_view label);
 
     /**
      * Simplified createTexture() interface for when there is no initial texel data to upload.
@@ -150,16 +151,18 @@ public:
                                    GrTextureType textureType,
                                    GrRenderable renderable,
                                    int renderTargetSampleCnt,
-                                   GrMipmapped mipMapped,
+                                   GrMipmapped mipmapped,
                                    SkBudgeted budgeted,
-                                   GrProtected isProtected);
+                                   GrProtected isProtected,
+                                   std::string_view label);
 
     sk_sp<GrTexture> createCompressedTexture(SkISize dimensions,
                                              const GrBackendFormat& format,
                                              SkBudgeted budgeted,
-                                             GrMipmapped mipMapped,
+                                             GrMipmapped mipmapped,
                                              GrProtected isProtected,
-                                             const void* data, size_t dataSize);
+                                             const void* data,
+                                             size_t dataSize);
 
     /**
      * Implements GrResourceProvider::wrapBackendTexture
@@ -198,12 +201,12 @@ public:
      * @param size            size of buffer to create.
      * @param intendedType    hint to the graphics subsystem about what the buffer will be used for.
      * @param accessPattern   hint to the graphics subsystem about how the data will be accessed.
-     * @param data            optional data with which to initialize the buffer.
      *
      * @return the buffer if successful, otherwise nullptr.
      */
-    sk_sp<GrGpuBuffer> createBuffer(size_t size, GrGpuBufferType intendedType,
-                                    GrAccessPattern accessPattern, const void* data = nullptr);
+    sk_sp<GrGpuBuffer> createBuffer(size_t size,
+                                    GrGpuBufferType intendedType,
+                                    GrAccessPattern accessPattern);
 
     /**
      * Resolves MSAA. The resolveRect must already be in the native destination space.
@@ -382,7 +385,7 @@ public:
 
     virtual GrFence SK_WARN_UNUSED_RESULT insertFence() = 0;
     virtual bool waitFence(GrFence) = 0;
-    virtual void deleteFence(GrFence) const = 0;
+    virtual void deleteFence(GrFence) = 0;
 
     virtual std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(
             bool isOwned = true) = 0;
@@ -641,12 +644,6 @@ public:
 
     virtual void storeVkPipelineCacheData() {}
 
-    // http://skbug.com/9739
-    virtual void insertManualFramebufferBarrier() {
-        SkASSERT(!this->caps()->requiresManualFBBarrierAfterTessellatedStencilDraw());
-        SK_ABORT("Manual framebuffer barrier not supported.");
-    }
-
     // Called before certain draws in order to guarantee coherent results from dst reads.
     virtual void xferBarrier(GrRenderTarget*, GrXferBarrierType) = 0;
 
@@ -705,7 +702,8 @@ private:
                                              SkBudgeted,
                                              GrProtected,
                                              int mipLevelCoont,
-                                             uint32_t levelClearMask) = 0;
+                                             uint32_t levelClearMask,
+                                             std::string_view label) = 0;
     virtual sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                        const GrBackendFormat&,
                                                        SkBudgeted,
@@ -729,8 +727,9 @@ private:
     virtual sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                         const GrVkDrawableInfo&);
 
-    virtual sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType intendedType,
-                                              GrAccessPattern, const void* data) = 0;
+    virtual sk_sp<GrGpuBuffer> onCreateBuffer(size_t size,
+                                              GrGpuBufferType intendedType,
+                                              GrAccessPattern) = 0;
 
     // overridden by backend-specific derived class to perform the surface read
     virtual bool onReadPixels(GrSurface*,
@@ -809,7 +808,8 @@ private:
                                          SkBudgeted,
                                          GrProtected,
                                          int mipLevelCnt,
-                                         uint32_t levelClearMask);
+                                         uint32_t levelClearMask,
+                                         std::string_view label);
 
     void resetContext() {
         this->onResetContext(fResetBits);

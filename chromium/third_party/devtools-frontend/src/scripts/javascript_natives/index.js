@@ -4,7 +4,6 @@
 
 import * as fs from 'fs';
 import glob from 'glob';
-import * as path from 'path';
 import ts from 'typescript';
 import * as WebIDL2 from 'webidl2';
 
@@ -15,9 +14,11 @@ if (process.argv.length !== 4) {
 }
 
 const chromiumSource = process.argv[2];
-const typescriptSource = process.argv[3] + 'node_modules/typescript/lib/lib.esnext.d.ts';
+const REL_TS_LIB_PATH = '/node_modules/typescript/lib/';
+const typescriptSources =
+    fs.readdirSync(process.argv[3] + REL_TS_LIB_PATH).map(name => process.argv[3] + REL_TS_LIB_PATH + name);
 
-const program = ts.createProgram([typescriptSource], {noLib: false, types: []});
+const program = ts.createProgram({rootNames: typescriptSources, options: {noResolve: true, types: []}});
 
 for (const file of program.getSourceFiles()) {
   ts.forEachChild(file, node => {
@@ -31,7 +32,6 @@ for (const file of program.getSourceFiles()) {
     if (node.kind === ts.SyntaxKind.FunctionDeclaration) {
       parseTSFunction(node, {name: {text: 'Window'}});
     }
-
   });
 }
 
@@ -45,7 +45,7 @@ for (const file of files) {
   if (file.includes('testing')) {
     continue;
   }
-  const data = fs.readFileSync(path.join(process.env.PWD, file), 'utf8');
+  const data = fs.readFileSync(file, 'utf8');
   const lines = data.split('\n');
   const newLines = [];
   for (const line of lines) {

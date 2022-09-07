@@ -308,7 +308,7 @@ std::string DynamicHLSL::generateVertexShaderForInputLayout(
         angle::ReplaceSubstring(&vertexHLSL, VERTEX_ATTRIBUTE_STUB_STRING, structStream.str());
     ASSERT(success);
 
-    success = ReplaceShaderStorageDeclaration(shaderStorageBlocks, &vertexHLSL, inputLayout.size(),
+    success = ReplaceShaderStorageDeclaration(shaderStorageBlocks, &vertexHLSL, baseUAVRegister,
                                               gl::ShaderType::Vertex);
     ASSERT(success);
 
@@ -320,7 +320,8 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
     const std::vector<PixelShaderOutputVariable> &outputVariables,
     bool usesFragDepth,
     const std::vector<GLenum> &outputLayout,
-    const std::vector<ShaderStorageBlock> &shaderStorageBlocks) const
+    const std::vector<ShaderStorageBlock> &shaderStorageBlocks,
+    size_t baseUAVRegister) const
 {
     const int shaderModel      = mRenderer->getMajorShaderModel();
     std::string targetSemantic = (shaderModel >= 4) ? "SV_TARGET" : "COLOR";
@@ -394,7 +395,7 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
         angle::ReplaceSubstring(&pixelHLSL, PIXEL_OUTPUT_STUB_STRING, declarationStream.str());
     ASSERT(success);
 
-    success = ReplaceShaderStorageDeclaration(shaderStorageBlocks, &pixelHLSL, numOutputs,
+    success = ReplaceShaderStorageDeclaration(shaderStorageBlocks, &pixelHLSL, baseUAVRegister,
                                               gl::ShaderType::Fragment);
     ASSERT(success);
 
@@ -402,22 +403,22 @@ std::string DynamicHLSL::generatePixelShaderForOutputSignature(
 }
 
 std::string DynamicHLSL::generateShaderForImage2DBindSignature(
-    const d3d::Context *context,
     ProgramD3D &programD3D,
     const gl::ProgramState &programData,
     gl::ShaderType shaderType,
+    const std::string &shaderHLSL,
     std::vector<sh::ShaderVariable> &image2DUniforms,
-    const gl::ImageUnitTextureTypeMap &image2DBindLayout) const
+    const gl::ImageUnitTextureTypeMap &image2DBindLayout,
+    unsigned int baseUAVRegister) const
 {
-    std::string shaderHLSL(programData.getAttachedShader(shaderType)->getTranslatedSource());
-
     if (image2DUniforms.empty())
     {
         return shaderHLSL;
     }
 
-    return GenerateShaderForImage2DBindSignature(context, programD3D, programData, shaderType,
-                                                 image2DUniforms, image2DBindLayout);
+    return GenerateShaderForImage2DBindSignature(programD3D, programData, shaderType, shaderHLSL,
+                                                 image2DUniforms, image2DBindLayout,
+                                                 baseUAVRegister);
 }
 
 void DynamicHLSL::generateVaryingLinkHLSL(const VaryingPacking &varyingPacking,

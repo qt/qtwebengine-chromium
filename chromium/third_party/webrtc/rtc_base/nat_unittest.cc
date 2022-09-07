@@ -221,6 +221,7 @@ bool TestConnectivity(const SocketAddress& src, const IPAddress& dst) {
 
 void TestPhysicalInternal(const SocketAddress& int_addr) {
   webrtc::test::ScopedKeyValueConfig field_trials;
+  rtc::AutoThread main_thread;
   PhysicalSocketServer socket_server;
   BasicNetworkManager network_manager(nullptr, &socket_server, &field_trials);
   network_manager.StartUpdating();
@@ -243,8 +244,8 @@ void TestPhysicalInternal(const SocketAddress& int_addr) {
   SocketAddress ext_addr2;
   // Find an available IP with matching family. The test breaks if int_addr
   // can't talk to ip, so check for connectivity as well.
-  for (auto it = networks.begin(); it != networks.end(); ++it) {
-    const IPAddress& ip = (*it)->GetBestIP();
+  for (const Network* const network : networks) {
+    const IPAddress& ip = network->GetBestIP();
     if (ip.family() == int_addr.family() && TestConnectivity(int_addr, ip)) {
       ext_addr2.SetIP(ip);
       break;
@@ -292,6 +293,7 @@ class TestVirtualSocketServer : public VirtualSocketServer {
 }  // namespace
 
 void TestVirtualInternal(int family) {
+  rtc::AutoThread main_thread;
   std::unique_ptr<TestVirtualSocketServer> int_vss(
       new TestVirtualSocketServer());
   std::unique_ptr<TestVirtualSocketServer> ext_vss(

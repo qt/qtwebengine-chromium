@@ -8,11 +8,18 @@
 #ifndef SKSL_INDEX
 #define SKSL_INDEX
 
-#include "src/sksl/SkSLContext.h"
-#include "src/sksl/SkSLUtil.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
 
+#include <memory>
+#include <string>
+#include <utility>
+
 namespace SkSL {
+
+class Context;
+class SymbolTable;
+class Type;
 
 /**
  * An expression which extracts a value from an array or matrix, as in 'm[2]'.
@@ -64,8 +71,8 @@ struct IndexExpression final : public Expression {
         return this->base()->hasProperty(property) || this->index()->hasProperty(property);
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new IndexExpression(this->base()->clone(),
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::unique_ptr<Expression>(new IndexExpression(pos, this->base()->clone(),
                                                                this->index()->clone(),
                                                                &this->type()));
     }
@@ -77,9 +84,9 @@ struct IndexExpression final : public Expression {
     using INHERITED = Expression;
 
 private:
-    IndexExpression(std::unique_ptr<Expression> base, std::unique_ptr<Expression> index,
-                    const Type* type)
-        : INHERITED(base->fPosition, Kind::kIndex, type)
+    IndexExpression(Position pos, std::unique_ptr<Expression> base,
+                    std::unique_ptr<Expression> index, const Type* type)
+        : INHERITED(pos, Kind::kIndex, type)
         , fBase(std::move(base))
         , fIndex(std::move(index)) {}
 

@@ -212,7 +212,6 @@ void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
       &not_create_implicit_receiver, Label::kNear);
 
   // If not derived class constructor: Allocate the new receiver object.
-  __ IncrementCounter(masm->isolate()->counters()->constructed_objects(), 1);
   __ Call(BUILTIN_CODE(masm->isolate(), FastNewObject), RelocInfo::CODE_TARGET);
   __ jmp(&post_instantiation_deopt_entry, Label::kNear);
 
@@ -320,7 +319,7 @@ void Builtins::Generate_JSConstructStubGeneric(MacroAssembler* masm) {
 
   // If the type of the result (stored in its map) is less than
   // FIRST_JS_RECEIVER_TYPE, it is not an object in the ECMA sense.
-  STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+  static_assert(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
   __ CmpObjectType(rax, FIRST_JS_RECEIVER_TYPE, rcx);
   __ j(above_equal, &leave_and_return, Label::kNear);
   __ jmp(&use_receiver);
@@ -400,8 +399,8 @@ void Generate_JSEntryVariant(MacroAssembler* masm, StackFrame::Type type,
     __ movdqu(Operand(rsp, EntryFrameConstants::kXMMRegisterSize * 7), xmm13);
     __ movdqu(Operand(rsp, EntryFrameConstants::kXMMRegisterSize * 8), xmm14);
     __ movdqu(Operand(rsp, EntryFrameConstants::kXMMRegisterSize * 9), xmm15);
-    STATIC_ASSERT(EntryFrameConstants::kCalleeSaveXMMRegisters == 10);
-    STATIC_ASSERT(EntryFrameConstants::kXMMRegistersBlockSize ==
+    static_assert(EntryFrameConstants::kCalleeSaveXMMRegisters == 10);
+    static_assert(EntryFrameConstants::kXMMRegistersBlockSize ==
                   EntryFrameConstants::kXMMRegisterSize *
                       EntryFrameConstants::kCalleeSaveXMMRegisters);
 #endif
@@ -890,8 +889,7 @@ static void ReplaceClosureCodeWithOptimizedCode(MacroAssembler* masm,
   __ movq(value, optimized_code);
 
   __ RecordWriteField(closure, JSFunction::kCodeOffset, value, slot_address,
-                      SaveFPRegsMode::kIgnore, RememberedSetAction::kOmit,
-                      SmiCheck::kOmit);
+                      SaveFPRegsMode::kIgnore, SmiCheck::kOmit);
 }
 
 static void LeaveInterpreterFrame(MacroAssembler* masm, Register scratch1,
@@ -992,18 +990,7 @@ static void TailCallOptimizedCodeSlot(MacroAssembler* masm,
   // Check if the optimized code is marked for deopt. If it is, call the
   // runtime to clear it.
   __ AssertCodeT(optimized_code_entry);
-  if (V8_EXTERNAL_CODE_SPACE_BOOL) {
-    __ testl(FieldOperand(optimized_code_entry,
-                          CodeDataContainer::kKindSpecificFlagsOffset),
-             Immediate(1 << Code::kMarkedForDeoptimizationBit));
-  } else {
-    __ LoadTaggedPointerField(
-        scratch1,
-        FieldOperand(optimized_code_entry, Code::kCodeDataContainerOffset));
-    __ testl(
-        FieldOperand(scratch1, CodeDataContainer::kKindSpecificFlagsOffset),
-        Immediate(1 << Code::kMarkedForDeoptimizationBit));
-  }
+  __ TestCodeTIsMarkedForDeoptimization(optimized_code_entry, scratch1);
   __ j(not_zero, &heal_optimized_code_slot);
 
   // Optimized code is good, get it into the closure and link the closure into
@@ -1050,10 +1037,10 @@ static void AdvanceBytecodeOffsetOrReturn(MacroAssembler* masm,
 
   // Check if the bytecode is a Wide or ExtraWide prefix bytecode.
   Label process_bytecode, extra_wide;
-  STATIC_ASSERT(0 == static_cast<int>(interpreter::Bytecode::kWide));
-  STATIC_ASSERT(1 == static_cast<int>(interpreter::Bytecode::kExtraWide));
-  STATIC_ASSERT(2 == static_cast<int>(interpreter::Bytecode::kDebugBreakWide));
-  STATIC_ASSERT(3 ==
+  static_assert(0 == static_cast<int>(interpreter::Bytecode::kWide));
+  static_assert(1 == static_cast<int>(interpreter::Bytecode::kExtraWide));
+  static_assert(2 == static_cast<int>(interpreter::Bytecode::kDebugBreakWide));
+  static_assert(3 ==
                 static_cast<int>(interpreter::Bytecode::kDebugBreakExtraWide));
   __ cmpb(bytecode, Immediate(0x3));
   __ j(above, &process_bytecode, Label::kNear);
@@ -1111,9 +1098,9 @@ static void LoadTieringStateAndJumpIfNeedsProcessing(
     MacroAssembler* masm, Register optimization_state, Register feedback_vector,
     Label* has_optimized_code_or_state) {
   ASM_CODE_COMMENT(masm);
-  __ movl(optimization_state,
-          FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
-  __ testl(
+  __ movzxwl(optimization_state,
+             FieldOperand(feedback_vector, FeedbackVector::kFlagsOffset));
+  __ testw(
       optimization_state,
       Immediate(
           FeedbackVector::kHasOptimizedCodeOrTieringStateIsAnyRequestMask));
@@ -1146,14 +1133,20 @@ static void MaybeOptimizeCodeOrTailCallOptimizedCodeSlot(
 
 namespace {
 
-void ResetBytecodeAgeAndOsrState(MacroAssembler* masm,
-                                 Register bytecode_array) {
-  // Reset the bytecode age and OSR state (optimized to a single write).
-  static_assert(BytecodeArray::kOsrStateAndBytecodeAgeAreContiguous32Bits);
-  STATIC_ASSERT(BytecodeArray::kNoAgeBytecodeAge == 0);
-  __ movl(FieldOperand(bytecode_array,
-                       BytecodeArray::kOsrUrgencyAndInstallTargetOffset),
+void ResetBytecodeAge(MacroAssembler* masm, Register bytecode_array) {
+  static_assert(BytecodeArray::kNoAgeBytecodeAge == 0);
+  __ movw(FieldOperand(bytecode_array, BytecodeArray::kBytecodeAgeOffset),
           Immediate(0));
+}
+
+void ResetFeedbackVectorOsrUrgency(MacroAssembler* masm,
+                                   Register feedback_vector, Register scratch) {
+  __ movb(scratch,
+          FieldOperand(feedback_vector, FeedbackVector::kOsrStateOffset));
+  __ andb(scratch,
+          Immediate(FeedbackVector::MaybeHasOptimizedOsrCodeBit::kMask));
+  __ movb(FieldOperand(feedback_vector, FeedbackVector::kOsrStateOffset),
+          scratch);
 }
 
 }  // namespace
@@ -1215,8 +1208,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   LoadTieringStateAndJumpIfNeedsProcessing(
       masm, optimization_state, feedback_vector, &has_optimized_code_or_state);
 
-  Label not_optimized;
-  __ bind(&not_optimized);
+  ResetFeedbackVectorOsrUrgency(masm, feedback_vector, kScratchRegister);
 
   // Increment invocation count for the function.
   __ incl(
@@ -1233,7 +1225,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
   __ Push(kJavaScriptCallTargetRegister);    // Callee's JS function.
   __ Push(kJavaScriptCallArgCountRegister);  // Actual argument count.
 
-  ResetBytecodeAgeAndOsrState(masm, kInterpreterBytecodeArrayRegister);
+  ResetBytecodeAge(masm, kInterpreterBytecodeArrayRegister);
 
   // Load initial bytecode offset.
   __ Move(kInterpreterBytecodeOffsetRegister,
@@ -1261,7 +1253,7 @@ void Builtins::Generate_InterpreterEntryTrampoline(MacroAssembler* masm) {
     Label loop_header;
     Label loop_check;
     __ LoadRoot(kInterpreterAccumulatorRegister, RootIndex::kUndefinedValue);
-    __ j(always, &loop_check, Label::kNear);
+    __ jmp(&loop_check, Label::kNear);
     __ bind(&loop_header);
     // TODO(rmcilroy): Consider doing more than one push per loop iteration.
     __ Push(kInterpreterAccumulatorRegister);
@@ -1710,6 +1702,8 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
   LoadTieringStateAndJumpIfNeedsProcessing(
       masm, optimization_state, feedback_vector, &has_optimized_code_or_state);
 
+  ResetFeedbackVectorOsrUrgency(masm, feedback_vector, kScratchRegister);
+
   // Increment invocation count for the function.
   __ incl(
       FieldOperand(feedback_vector, FeedbackVector::kInvocationCountOffset));
@@ -1739,7 +1733,7 @@ void Builtins::Generate_BaselineOutOfLinePrologue(MacroAssembler* masm) {
       // onto the frame, so load it into a register.
       Register bytecode_array = descriptor.GetRegisterParameter(
           BaselineOutOfLinePrologueDescriptor::kInterpreterBytecodeArray);
-      ResetBytecodeAgeAndOsrState(masm, bytecode_array);
+      ResetBytecodeAge(masm, bytecode_array);
       __ Push(bytecode_array);
 
       // Baseline code frames store the feedback vector where interpreter would
@@ -2363,7 +2357,7 @@ void Builtins::Generate_CallFunction(MacroAssembler* masm,
       Label convert_to_object, convert_receiver;
       __ movq(rcx, args.GetReceiverOperand());
       __ JumpIfSmi(rcx, &convert_to_object, Label::kNear);
-      STATIC_ASSERT(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
+      static_assert(LAST_JS_RECEIVER_TYPE == LAST_TYPE);
       __ CmpObjectType(rcx, FIRST_JS_RECEIVER_TYPE, rbx);
       __ j(above_equal, &done_convert);
       if (mode != ConvertReceiverMode::kNotNullOrUndefined) {
@@ -2729,19 +2723,48 @@ enum class OsrSourceTier {
   kBaseline,
 };
 
-void OnStackReplacement(MacroAssembler* masm, OsrSourceTier source) {
+void OnStackReplacement(MacroAssembler* masm, OsrSourceTier source,
+                        Register maybe_target_code) {
+  Label jump_to_optimized_code;
+  {
+    // If maybe_target_code is not null, no need to call into runtime. A
+    // precondition here is: if maybe_target_code is a Code object, it must NOT
+    // be marked_for_deoptimization (callers must ensure this).
+    __ testq(maybe_target_code, maybe_target_code);
+    __ j(not_equal, &jump_to_optimized_code, Label::kNear);
+  }
+
   {
     FrameScope scope(masm, StackFrame::INTERNAL);
     __ CallRuntime(Runtime::kCompileOptimizedOSR);
   }
 
-  Label jump_to_returned_code;
   // If the code object is null, just return to the caller.
   __ testq(rax, rax);
-  __ j(not_equal, &jump_to_returned_code, Label::kNear);
+  __ j(not_equal, &jump_to_optimized_code, Label::kNear);
   __ ret(0);
 
-  __ bind(&jump_to_returned_code);
+  __ bind(&jump_to_optimized_code);
+  DCHECK_EQ(maybe_target_code, rax);  // Already in the right spot.
+
+  // OSR entry tracing.
+  {
+    Label next;
+    __ cmpb(
+        __ ExternalReferenceAsOperand(
+            ExternalReference::address_of_FLAG_trace_osr(), kScratchRegister),
+        Immediate(0));
+    __ j(equal, &next, Label::kNear);
+
+    {
+      FrameScope scope(masm, StackFrame::INTERNAL);
+      __ Push(rax);  // Preserve the code object.
+      __ CallRuntime(Runtime::kTraceOptimizedOSREntry, 0);
+      __ Pop(rax);
+    }
+
+    __ bind(&next);
+  }
 
   if (source == OsrSourceTier::kInterpreter) {
     // Drop the handler frame that is be sitting on top of the actual
@@ -2771,13 +2794,19 @@ void OnStackReplacement(MacroAssembler* masm, OsrSourceTier source) {
 }  // namespace
 
 void Builtins::Generate_InterpreterOnStackReplacement(MacroAssembler* masm) {
-  OnStackReplacement(masm, OsrSourceTier::kInterpreter);
+  using D = InterpreterOnStackReplacementDescriptor;
+  static_assert(D::kParameterCount == 1);
+  OnStackReplacement(masm, OsrSourceTier::kInterpreter,
+                     D::MaybeTargetCodeRegister());
 }
 
 void Builtins::Generate_BaselineOnStackReplacement(MacroAssembler* masm) {
+  using D = BaselineOnStackReplacementDescriptor;
+  static_assert(D::kParameterCount == 1);
   __ movq(kContextRegister,
           MemOperand(rbp, BaselineFrameConstants::kContextOffset));
-  OnStackReplacement(masm, OsrSourceTier::kBaseline);
+  OnStackReplacement(masm, OsrSourceTier::kBaseline,
+                     D::MaybeTargetCodeRegister());
 }
 
 #if V8_ENABLE_WEBASSEMBLY
@@ -2983,7 +3012,7 @@ void AllocateContinuation(MacroAssembler* masm, Register function_data,
   __ CallRuntime(Runtime::kWasmAllocateContinuation);
   __ Pop(function_data);
   __ Pop(wasm_instance);
-  STATIC_ASSERT(kReturnRegister0 == rax);
+  static_assert(kReturnRegister0 == rax);
   suspender = no_reg;
 }
 
@@ -3370,7 +3399,7 @@ void GenericJSToWasmWrapperHelper(MacroAssembler* masm, bool stack_switch) {
   // We have to check the types of the params. The ValueType array contains
   // first the return then the param types.
   constexpr int kValueTypeSize = sizeof(wasm::ValueType);
-  STATIC_ASSERT(kValueTypeSize == 4);
+  static_assert(kValueTypeSize == 4);
   const int32_t kValueTypeSizeLog2 = log2(kValueTypeSize);
   // Set the ValueType array pointer to point to the first parameter.
   Register returns_size = return_count;
@@ -4642,13 +4671,13 @@ void Builtins::Generate_CallApiCallback(MacroAssembler* masm) {
 
   using FCA = FunctionCallbackArguments;
 
-  STATIC_ASSERT(FCA::kArgsLength == 6);
-  STATIC_ASSERT(FCA::kNewTargetIndex == 5);
-  STATIC_ASSERT(FCA::kDataIndex == 4);
-  STATIC_ASSERT(FCA::kReturnValueOffset == 3);
-  STATIC_ASSERT(FCA::kReturnValueDefaultValueIndex == 2);
-  STATIC_ASSERT(FCA::kIsolateIndex == 1);
-  STATIC_ASSERT(FCA::kHolderIndex == 0);
+  static_assert(FCA::kArgsLength == 6);
+  static_assert(FCA::kNewTargetIndex == 5);
+  static_assert(FCA::kDataIndex == 4);
+  static_assert(FCA::kReturnValueOffset == 3);
+  static_assert(FCA::kReturnValueDefaultValueIndex == 2);
+  static_assert(FCA::kIsolateIndex == 1);
+  static_assert(FCA::kHolderIndex == 0);
 
   // Set up FunctionCallbackInfo's implicit_args on the stack as follows:
   //
@@ -4744,14 +4773,14 @@ void Builtins::Generate_CallApiGetter(MacroAssembler* masm) {
 
   // Build v8::PropertyCallbackInfo::args_ array on the stack and push property
   // name below the exit frame to make GC aware of them.
-  STATIC_ASSERT(PropertyCallbackArguments::kShouldThrowOnErrorIndex == 0);
-  STATIC_ASSERT(PropertyCallbackArguments::kHolderIndex == 1);
-  STATIC_ASSERT(PropertyCallbackArguments::kIsolateIndex == 2);
-  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueDefaultValueIndex == 3);
-  STATIC_ASSERT(PropertyCallbackArguments::kReturnValueOffset == 4);
-  STATIC_ASSERT(PropertyCallbackArguments::kDataIndex == 5);
-  STATIC_ASSERT(PropertyCallbackArguments::kThisIndex == 6);
-  STATIC_ASSERT(PropertyCallbackArguments::kArgsLength == 7);
+  static_assert(PropertyCallbackArguments::kShouldThrowOnErrorIndex == 0);
+  static_assert(PropertyCallbackArguments::kHolderIndex == 1);
+  static_assert(PropertyCallbackArguments::kIsolateIndex == 2);
+  static_assert(PropertyCallbackArguments::kReturnValueDefaultValueIndex == 3);
+  static_assert(PropertyCallbackArguments::kReturnValueOffset == 4);
+  static_assert(PropertyCallbackArguments::kDataIndex == 5);
+  static_assert(PropertyCallbackArguments::kThisIndex == 6);
+  static_assert(PropertyCallbackArguments::kArgsLength == 7);
 
   // Insert additional parameters into the stack frame above return address.
   __ PopReturnAddressTo(scratch);
@@ -5140,8 +5169,7 @@ void Generate_BaselineOrInterpreterEntry(MacroAssembler* masm,
   __ popq(kInterpreterAccumulatorRegister);
 
   if (is_osr) {
-    // TODO(pthier): Separate Sparkplug and Turbofan OSR states.
-    ResetBytecodeAgeAndOsrState(masm, kInterpreterBytecodeArrayRegister);
+    ResetBytecodeAge(masm, kInterpreterBytecodeArrayRegister);
     Generate_OSREntry(masm, code_obj);
   } else {
     __ jmp(code_obj);
@@ -5187,6 +5215,23 @@ void Builtins::Generate_BaselineOrInterpreterEnterAtNextBytecode(
 void Builtins::Generate_InterpreterOnStackReplacement_ToBaseline(
     MacroAssembler* masm) {
   Generate_BaselineOrInterpreterEntry(masm, false, true);
+}
+
+void Builtins::Generate_RestartFrameTrampoline(MacroAssembler* masm) {
+  // Restart the current frame:
+  // - Look up current function on the frame.
+  // - Leave the frame.
+  // - Restart the frame by calling the function.
+
+  __ movq(rdi, Operand(rbp, StandardFrameConstants::kFunctionOffset));
+  __ movq(rax, Operand(rbp, StandardFrameConstants::kArgCOffset));
+
+  __ LeaveFrame(StackFrame::INTERPRETED);
+
+  // The arguments are already in the stack (including any necessary padding),
+  // we should not try to massage the arguments again.
+  __ movq(rbx, Immediate(kDontAdaptArgumentsSentinel));
+  __ InvokeFunction(rdi, no_reg, rbx, rax, InvokeType::kJump);
 }
 
 #undef __

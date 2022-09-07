@@ -389,10 +389,20 @@ std::unique_ptr<GrFragmentProcessor> SkImage_Base::MakeFragmentProcessorFromView
                                      GrBicubicEffect::Direction::kXY,
                                      *rContext->priv().caps());
     }
-    if (view.proxy()->asTextureProxy()->mipmapped() == GrMipmapped::kNo) {
+    if (sampling.isAniso()) {
+        if (!rContext->priv().caps()->anisoSupport()) {
+            // Fallback to linear
+            sampling = SkSamplingPriv::AnisoFallback(view.mipmapped() == GrMipmapped::kYes);
+        }
+    } else if (view.mipmapped() == GrMipmapped::kNo) {
         sampling = SkSamplingOptions(sampling.filter);
     }
-    GrSamplerState sampler(wmx, wmy, sampling.filter, sampling.mipmap);
+    GrSamplerState sampler;
+    if (sampling.isAniso()) {
+        sampler = GrSamplerState::Aniso(wmx, wmy, sampling.maxAniso, view.mipmapped());
+    } else {
+        sampler = GrSamplerState(wmx, wmy, sampling.filter, sampling.mipmap);
+    }
     if (subset) {
         if (domain) {
             return GrTextureEffect::MakeSubset(std::move(view),
@@ -458,15 +468,14 @@ GrBackendTexture SkImage_Base::onGetBackendTexture(bool flushPendingGrContextIO,
 
 #ifdef SK_GRAPHITE_ENABLED
 std::tuple<skgpu::graphite::TextureProxyView, SkColorType> SkImage_Base::asView(
-        skgpu::graphite::Recorder* recorder, skgpu::graphite::Mipmapped mipmapped,
-        SkBudgeted budgeted) const {
+        skgpu::graphite::Recorder* recorder, skgpu::graphite::Mipmapped mipmapped) const {
     if (!recorder) {
         return {};
     }
     if (this->dimensions().area() <= 1) {
         mipmapped = skgpu::graphite::Mipmapped::kNo;
     }
-    return this->onAsView(recorder, mipmapped, budgeted);
+    return this->onAsView(recorder, mipmapped);
 }
 #endif // SK_GRAPHITE_ENABLED
 
@@ -527,10 +536,11 @@ bool SkImage_Base::onAsLegacyBitmap(GrDirectContext* dContext, SkBitmap* bitmap)
 
 sk_sp<SkImage> SkImage::MakeFromPicture(sk_sp<SkPicture> picture, const SkISize& dimensions,
                                         const SkMatrix* matrix, const SkPaint* paint,
-                                        BitDepth bitDepth, sk_sp<SkColorSpace> colorSpace) {
+                                        BitDepth bitDepth, sk_sp<SkColorSpace> colorSpace,
+                                        SkSurfaceProps props) {
     return MakeFromGenerator(SkImageGenerator::MakeFromPicture(dimensions, std::move(picture),
                                                                matrix, paint, bitDepth,
-                                                               std::move(colorSpace)));
+                                                               std::move(colorSpace), props));
 }
 
 sk_sp<SkImage> SkImage::makeWithFilter(GrRecordingContext* rContext, const SkImageFilter* filter,

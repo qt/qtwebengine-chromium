@@ -42,6 +42,16 @@ PageRange::PageRange(Address start, Address limit)
 #endif  // DEBUG
 }
 
+ConstPageRange::ConstPageRange(Address start, Address limit)
+    : begin_(Page::FromAddress(start)),
+      end_(Page::FromAllocationAreaAddress(limit)->next_page()) {
+#ifdef DEBUG
+  if (begin_->InNewSpace()) {
+    SemiSpace::AssertValidRange(start, limit);
+  }
+#endif  // DEBUG
+}
+
 void Space::IncrementExternalBackingStoreBytes(ExternalBackingStoreType type,
                                                size_t amount) {
   base::CheckedIncrement(&external_backing_store_bytes_[type], amount);
@@ -95,6 +105,8 @@ OldGenerationMemoryChunkIterator::OldGenerationMemoryChunkIterator(Heap* heap)
       code_iterator_(heap->code_space()->begin()),
       map_iterator_(heap->map_space() ? heap->map_space()->begin()
                                       : PageRange::iterator(nullptr)),
+      map_iterator_end_(heap->map_space() ? heap->map_space()->end()
+                                          : PageRange::iterator(nullptr)),
       lo_iterator_(heap->lo_space()->begin()),
       code_lo_iterator_(heap->code_lo_space()->begin()) {}
 
@@ -106,7 +118,7 @@ MemoryChunk* OldGenerationMemoryChunkIterator::next() {
       V8_FALLTHROUGH;
     }
     case kMapState: {
-      if (map_iterator_ != heap_->map_space()->end()) return *(map_iterator_++);
+      if (map_iterator_ != map_iterator_end_) return *(map_iterator_++);
       state_ = kCodeState;
       V8_FALLTHROUGH;
     }
@@ -202,10 +214,6 @@ AllocationResult SpaceWithLinearArea::AllocateFastUnaligned(
 
   MSAN_ALLOCATED_UNINITIALIZED_MEMORY(obj.address(), size_in_bytes);
 
-  if (FLAG_trace_allocations_origins) {
-    UpdateAllocationOrigins(origin);
-  }
-
   return AllocationResult::FromObject(obj);
 }
 
@@ -229,10 +237,6 @@ AllocationResult SpaceWithLinearArea::AllocateFastAligned(
   }
 
   MSAN_ALLOCATED_UNINITIALIZED_MEMORY(obj.address(), size_in_bytes);
-
-  if (FLAG_trace_allocations_origins) {
-    UpdateAllocationOrigins(origin);
-  }
 
   return AllocationResult::FromObject(obj);
 }
@@ -269,6 +273,10 @@ AllocationResult SpaceWithLinearArea::AllocateRawUnaligned(
   AllocationResult result = AllocateFastUnaligned(size_in_bytes, origin);
   DCHECK(!result.IsFailure());
 
+  if (FLAG_trace_allocations_origins) {
+    UpdateAllocationOrigins(origin);
+  }
+
   InvokeAllocationObservers(result.ToAddress(), size_in_bytes, size_in_bytes,
                             size_in_bytes);
 
@@ -292,6 +300,10 @@ AllocationResult SpaceWithLinearArea::AllocateRawAligned(
       size_in_bytes, &aligned_size_in_bytes, alignment, origin);
   DCHECK_GE(max_aligned_size, aligned_size_in_bytes);
   DCHECK(!result.IsFailure());
+
+  if (FLAG_trace_allocations_origins) {
+    UpdateAllocationOrigins(origin);
+  }
 
   InvokeAllocationObservers(result.ToAddress(), size_in_bytes,
                             aligned_size_in_bytes, max_aligned_size);

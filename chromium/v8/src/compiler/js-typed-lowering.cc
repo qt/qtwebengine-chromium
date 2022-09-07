@@ -1527,7 +1527,7 @@ void ReduceBuiltin(JSGraph* jsgraph, Node* node, Builtin builtin, int arity,
   Node* new_target;
   Zone* zone = jsgraph->zone();
   if (node->opcode() == IrOpcode::kJSConstruct) {
-    STATIC_ASSERT(JSCallNode::ReceiverIndex() ==
+    static_assert(JSCallNode::ReceiverIndex() ==
                   JSConstructNode::NewTargetIndex());
     new_target = JSConstructNode{node}.new_target();
     node->ReplaceInput(JSConstructNode::NewTargetIndex(),
@@ -1625,22 +1625,21 @@ Reduction JSTypedLowering::ReduceJSConstruct(Node* node) {
     if (!function.map().is_constructor()) return NoChange();
 
     // Patch {node} to an indirect call via the {function}s construct stub.
-    bool use_builtin_construct_stub = function.shared().construct_as_builtin();
-    CodeTRef code = MakeRef(
-        broker(), use_builtin_construct_stub
-                      ? BUILTIN_CODE(isolate(), JSBuiltinsConstructStub)
-                      : BUILTIN_CODE(isolate(), JSConstructStubGeneric));
-    STATIC_ASSERT(JSConstructNode::TargetIndex() == 0);
-    STATIC_ASSERT(JSConstructNode::NewTargetIndex() == 1);
+    Callable callable = Builtins::CallableFor(
+        isolate(), function.shared().construct_as_builtin()
+                       ? Builtin::kJSBuiltinsConstructStub
+                       : Builtin::kJSConstructStubGeneric);
+    static_assert(JSConstructNode::TargetIndex() == 0);
+    static_assert(JSConstructNode::NewTargetIndex() == 1);
     node->RemoveInput(n.FeedbackVectorIndex());
-    node->InsertInput(graph()->zone(), 0, jsgraph()->Constant(code));
+    node->InsertInput(graph()->zone(), 0,
+                      jsgraph()->HeapConstant(callable.code()));
     node->InsertInput(graph()->zone(), 3,
                       jsgraph()->Constant(JSParameterCount(arity)));
     node->InsertInput(graph()->zone(), 4, jsgraph()->UndefinedConstant());
-    node->InsertInput(graph()->zone(), 5, jsgraph()->UndefinedConstant());
     NodeProperties::ChangeOp(
         node, common()->Call(Linkage::GetStubCallDescriptor(
-                  graph()->zone(), ConstructStubDescriptor{}, 1 + arity,
+                  graph()->zone(), callable.descriptor(), 1 + arity,
                   CallDescriptor::kNeedsFrameState)));
     return Changed(node);
   }
@@ -1983,7 +1982,7 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
       Node* bit_field3 = effect = graph()->NewNode(
           simplified()->LoadField(AccessBuilder::ForMapBitField3()), enumerator,
           effect, control);
-      STATIC_ASSERT(Map::Bits3::EnumLengthBits::kShift == 0);
+      static_assert(Map::Bits3::EnumLengthBits::kShift == 0);
       cache_length = graph()->NewNode(
           simplified()->NumberBitwiseAnd(), bit_field3,
           jsgraph()->Constant(Map::Bits3::EnumLengthBits::kMask));
@@ -2018,7 +2017,7 @@ Reduction JSTypedLowering::ReduceJSForInPrepare(Node* node) {
         Node* bit_field3 = etrue = graph()->NewNode(
             simplified()->LoadField(AccessBuilder::ForMapBitField3()),
             enumerator, etrue, if_true);
-        STATIC_ASSERT(Map::Bits3::EnumLengthBits::kShift == 0);
+        static_assert(Map::Bits3::EnumLengthBits::kShift == 0);
         cache_length_true = graph()->NewNode(
             simplified()->NumberBitwiseAnd(), bit_field3,
             jsgraph()->Constant(Map::Bits3::EnumLengthBits::kMask));

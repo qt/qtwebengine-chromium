@@ -238,6 +238,7 @@ void BookmarkModelTypeProcessor::ModelReadyToSync(
     const base::RepeatingClosure& schedule_save_closure,
     bookmarks::BookmarkModel* model) {
   DCHECK(model);
+  DCHECK(model->loaded());
   DCHECK(!bookmark_model_);
   DCHECK(!bookmark_tracker_);
   DCHECK(!bookmark_model_observer_);
@@ -255,7 +256,6 @@ void BookmarkModelTypeProcessor::ModelReadyToSync(
       model, std::move(model_metadata));
 
   if (bookmark_tracker_) {
-    bookmark_tracker_->CheckAllNodesTracked(bookmark_model_);
     StartTrackingMetadata();
   } else if (!metadata_str.empty()) {
     DLOG(WARNING)
@@ -490,8 +490,9 @@ void BookmarkModelTypeProcessor::GetAllNodesForDebugging(
 
   const bookmarks::BookmarkNode* model_root_node = bookmark_model_->root_node();
   int i = 0;
-  for (const auto& child : model_root_node->children())
+  for (const auto& child : model_root_node->children()) {
     AppendNodeAndChildrenForDebugging(child.get(), i++, all_nodes.get());
+  }
 
   std::move(callback).Run(syncer::BOOKMARKS, std::move(all_nodes));
 }
@@ -538,9 +539,6 @@ void BookmarkModelTypeProcessor::AppendNodeAndChildrenForDebugging(
 
   std::unique_ptr<base::DictionaryValue> data_dictionary =
       data.ToDictionaryValue();
-  // TODO(https://crbug.com/516866): Prepending the ID with an "s" is consistent
-  // with the implementation in ClientTagBasedModelTypeProcessor. Double check
-  // if this is actually needed and update both implementations if makes sense.
   // Set ID value as in legacy directory-based implementation, "s" means server.
   data_dictionary->SetString("ID", "s" + metadata->server_id());
   if (node->is_permanent_node()) {
@@ -562,8 +560,9 @@ void BookmarkModelTypeProcessor::AppendNodeAndChildrenForDebugging(
       base::Value::FromUniquePtrValue(std::move(data_dictionary)));
 
   int i = 0;
-  for (const auto& child : node->children())
+  for (const auto& child : node->children()) {
     AppendNodeAndChildrenForDebugging(child.get(), i++, all_nodes);
+  }
 }
 
 void BookmarkModelTypeProcessor::GetTypeEntitiesCountForDebugging(

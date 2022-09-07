@@ -41,7 +41,6 @@
 class AutoLayerForImageFilter;
 class GrBackendRenderTarget;
 class GrRecordingContext;
-class GrSlug;
 class SkBaseDevice;
 class SkBitmap;
 class SkData;
@@ -59,7 +58,7 @@ class SkPixmap;
 class SkRegion;
 class SkRRect;
 struct SkRSXform;
-struct SkCustomMesh;
+class SkMesh;
 class SkSpecialImage;
 class SkSurface;
 class SkSurface_Base;
@@ -67,7 +66,13 @@ class SkTextBlob;
 class SkVertices;
 
 namespace skgpu::graphite { class Recorder; }
+namespace sktext::gpu { class Slug; }
 namespace SkRecords { class Draw; }
+
+// TODO:
+// This is not ideal but Chrome is depending on a forward decl of GrSlug here.
+// It should be removed once Chrome has migrated to sktext::gpu::Slug.
+using GrSlug = sktext::gpu::Slug;
 
 /** \class SkCanvas
     SkCanvas provides an interface for drawing, and how the drawing is clipped and transformed.
@@ -1444,8 +1449,8 @@ public:
     /** \enum SkCanvas::SrcRectConstraint
         SrcRectConstraint controls the behavior at the edge of source SkRect,
         provided to drawImageRect() when there is any filtering. If kStrict is set,
-        then extra code is used to ensure it nevers samples outside of the src-rect.
-        kStrict_SrcRectConstraint disables the use of mipmaps.
+        then extra code is used to ensure it never samples outside of the src-rect.
+        kStrict_SrcRectConstraint disables the use of mipmaps and anisotropic filtering.
     */
     enum SrcRectConstraint {
         kStrict_SrcRectConstraint, //!< sample only inside bounds; slower
@@ -1960,9 +1965,9 @@ public:
     /**
         Experimental, under active development, and subject to change without notice.
 
-        Draws a mesh using a user-defined specification (see SkCustomMeshSpecification).
+        Draws a mesh using a user-defined specification (see SkMeshSpecification).
 
-        SkBlender is ignored if SkCustomMesh's specification does not output fragment shader color.
+        SkBlender is ignored if SkMesh's specification does not output fragment shader color.
         Otherwise, it combines
             - the SkShader if SkPaint contains SkShader
             - or the opaque SkPaint color if SkPaint does not contain SkShader
@@ -1970,13 +1975,13 @@ public:
 
         SkMaskFilter, SkPathEffect, and antialiasing on SkPaint are ignored.
 
-        @param cm        the custom mesh vertices and compatible specification.
+        @param mesh      the mesh vertices and compatible specification.
         @param blender   combines vertices colors with SkShader if present or SkPaint opaque color
                          if not. Ignored if the custom mesh does not output color. Defaults to
                          SkBlendMode::kModulate if nullptr.
         @param paint     specifies the SkShader, used as SkVertices texture, may be nullptr
     */
-    void drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint);
+    void drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint);
 #endif
 
     /** Draws a Coons patch: the interpolation of four cubics with shared corners,
@@ -2200,7 +2205,7 @@ protected:
 
 #ifndef SK_ENABLE_EXPERIMENTAL_CUSTOM_MESH
     // Define this in protected so we can still access internally for testing.
-    void drawCustomMesh(SkCustomMesh cm, sk_sp<SkBlender> blender, const SkPaint& paint);
+    void drawMesh(const SkMesh& mesh, sk_sp<SkBlender> blender, const SkPaint& paint);
 #endif
 
     // NOTE: If you are adding a new onDraw virtual to SkCanvas, PLEASE add an override to
@@ -2244,7 +2249,7 @@ protected:
     virtual void onDrawVerticesObject(const SkVertices* vertices, SkBlendMode mode,
                                       const SkPaint& paint);
 #ifdef SK_ENABLE_SKSL
-    virtual void onDrawCustomMesh(SkCustomMesh, sk_sp<SkBlender>, const SkPaint&);
+    virtual void onDrawMesh(const SkMesh&, sk_sp<SkBlender>, const SkPaint&);
 #endif
     virtual void onDrawAnnotation(const SkRect& rect, const char key[], SkData* value);
     virtual void onDrawShadowRec(const SkPath&, const SkDrawShadowRec&);
@@ -2270,15 +2275,15 @@ protected:
 
     virtual void onDiscard();
 
-#if SK_SUPPORT_GPU
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
     /** Experimental
      */
-    virtual sk_sp<GrSlug> onConvertGlyphRunListToSlug(
+    virtual sk_sp<sktext::gpu::Slug> onConvertGlyphRunListToSlug(
             const SkGlyphRunList& glyphRunList, const SkPaint& paint);
 
     /** Experimental
      */
-    virtual void onDrawSlug(const GrSlug* slug);
+    virtual void onDrawSlug(const sktext::gpu::Slug* slug);
 #endif
 
 private:
@@ -2413,24 +2418,25 @@ protected:
     SkCanvas(const SkIRect& bounds);
 private:
     SkCanvas(const SkBitmap&, std::unique_ptr<SkRasterHandleAllocator>,
-             SkRasterHandleAllocator::Handle);
+             SkRasterHandleAllocator::Handle, const SkSurfaceProps* props);
 
     SkCanvas(SkCanvas&&) = delete;
     SkCanvas(const SkCanvas&) = delete;
     SkCanvas& operator=(SkCanvas&&) = delete;
     SkCanvas& operator=(const SkCanvas&) = delete;
 
-#if SK_SUPPORT_GPU
-    friend class GrSlug;
+#if (SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED))
+    friend class sktext::gpu::Slug;
     /** Experimental
-     * Convert a SkTextBlob to a GrSlug using the current canvas state.
+     * Convert a SkTextBlob to a sktext::gpu::Slug using the current canvas state.
      */
-    sk_sp<GrSlug> convertBlobToSlug(const SkTextBlob& blob, SkPoint origin, const SkPaint& paint);
+    sk_sp<sktext::gpu::Slug> convertBlobToSlug(const SkTextBlob& blob, SkPoint origin,
+                                               const SkPaint& paint);
 
     /** Experimental
-     * Draw an GrSlug given the current canvas state.
+     * Draw an sktext::gpu::Slug given the current canvas state.
      */
-    void drawSlug(const GrSlug* slug);
+    void drawSlug(const sktext::gpu::Slug* slug);
 #endif
 
     /** Experimental

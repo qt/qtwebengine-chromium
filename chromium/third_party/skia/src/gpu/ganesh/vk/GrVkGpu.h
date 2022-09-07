@@ -152,7 +152,7 @@ public:
 
     GrFence SK_WARN_UNUSED_RESULT insertFence() override;
     bool waitFence(GrFence) override;
-    void deleteFence(GrFence) const override;
+    void deleteFence(GrFence) override;
 
     std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
@@ -244,7 +244,8 @@ private:
                                      SkBudgeted,
                                      GrProtected,
                                      int mipLevelCount,
-                                     uint32_t levelClearMask) override;
+                                     uint32_t levelClearMask,
+                                     std::string_view label) override;
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                SkBudgeted,
@@ -268,8 +269,7 @@ private:
     sk_sp<GrRenderTarget> onWrapVulkanSecondaryCBAsRenderTarget(const SkImageInfo&,
                                                                 const GrVkDrawableInfo&) override;
 
-    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType type, GrAccessPattern,
-                                      const void* data) override;
+    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType type, GrAccessPattern) override;
 
     bool onReadPixels(GrSurface*,
                       SkIRect,
@@ -365,7 +365,7 @@ private:
                               const GrMipLevel texels[],
                               int mipLevelCount);
     bool uploadTexDataCompressed(GrVkImage* tex, SkImage::CompressionType compression,
-                                 VkFormat vkFormat, SkISize dimensions, GrMipmapped mipMapped,
+                                 VkFormat vkFormat, SkISize dimensions, GrMipmapped mipmapped,
                                  const void* data, size_t dataSize);
     void resolveImage(GrSurface* dst, GrVkRenderTarget* src, const SkIRect& srcRect,
                       const SkIPoint& dstPoint);

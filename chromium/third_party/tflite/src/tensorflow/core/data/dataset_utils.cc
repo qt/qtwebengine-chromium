@@ -84,7 +84,6 @@ constexpr char kUseChooseFastestOpt[] = "use_choose_fastest";
 constexpr char kBatchParallelizationOpt[] = "batch_parallelization";
 constexpr char kEnableGradientDescentOpt[] = "enable_gradient_descent";
 constexpr char kInjectPrefetchOpt[] = "inject_prefetch";
-constexpr char kInjectPrefetchEligibleOpt[] = "inject_prefetch_eligible";
 constexpr char kAutotuneOpt[] = "autotune";
 constexpr char kSlackOpt[] = "slack";
 constexpr char kSlackPeriodOpt[] = "slack_period";
@@ -193,6 +192,14 @@ void DefaultOptimizationGraphRewrites(
       optimization_enabled->insert(kShuffleAndRepeatFusionOpt);
     } else {
       optimization_disabled->insert(kShuffleAndRepeatFusionOpt);
+    }
+  }
+  if (optimization_options.optional_inject_prefetch_case() ==
+      OptimizationOptions::kInjectPrefetch) {
+    if (optimization_options.inject_prefetch()) {
+      optimization_enabled->insert(kInjectPrefetchOpt);
+    } else {
+      optimization_disabled->insert(kInjectPrefetchOpt);
     }
   }
 }
@@ -822,8 +829,7 @@ absl::flat_hash_set<tstring> CreateGraphRewriteConfigs(const Options& options) {
       kEnableGradientDescentOpt,
       kFilterParallelizationOpt,
       kMapParallelizationOpt,
-      kInjectPrefetchOpt,
-      kInjectPrefetchEligibleOpt};
+      kInjectPrefetchOpt};
 
   if (autotune_options.optional_enabled_case() == AutotuneOptions::kEnabled &&
       !autotune_options.enabled()) {
@@ -877,10 +883,7 @@ bool ShouldApplyOptimizations(
 }
 
 int64 GetAutotuneDefaultParallelism(IteratorContext* ctx) {
-  if (GetExperiments().contains("initial_parallelism_value")) {
-    return std::min(kAutotuneDefaultParallelism, ctx->runner_threadpool_size());
-  }
-  return ctx->runner_threadpool_size();
+  return std::min(kAutotuneDefaultParallelism, ctx->runner_threadpool_size());
 }
 
 // static
@@ -899,8 +902,7 @@ absl::flat_hash_map<string, int64_t> DatasetExperimentRegistry::Experiments() {
 namespace {
 
 REGISTER_DATASET_EXPERIMENT("allow_small_function_optimizations", 0);
-REGISTER_DATASET_EXPERIMENT(kFilterParallelizationOpt, 0);
-REGISTER_DATASET_EXPERIMENT("initial_parallelism_value", 100);
+REGISTER_DATASET_EXPERIMENT(kFilterParallelizationOpt, 50);
 REGISTER_DATASET_EXPERIMENT("inject_prefetch", 100);
 REGISTER_DATASET_EXPERIMENT("min_outer_interleave_parallelism", 0);
 }  // namespace

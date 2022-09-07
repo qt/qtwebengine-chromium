@@ -100,7 +100,6 @@
 #include "media/base/android/media_codec_util.h"
 #endif
 
-
 namespace blink {
 namespace {
 
@@ -421,7 +420,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
     mojo::PendingRemote<media::mojom::MediaMetricsProvider> metrics_provider,
     CreateSurfaceLayerBridgeCB create_bridge_callback,
     scoped_refptr<viz::RasterContextProvider> raster_context_provider,
-    WebMediaPlayer::SurfaceLayerMode surface_layer_mode,
+    bool use_surface_layer,
     bool is_background_suspend_enabled,
     bool is_background_video_playback_enabled,
     bool is_background_video_track_optimization_supported,
@@ -447,7 +446,7 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
       observer_(std::move(media_observer)),
       enable_instant_source_buffer_gc_(enable_instant_source_buffer_gc),
       embedded_media_experience_enabled_(embedded_media_experience_enabled),
-      surface_layer_mode_(surface_layer_mode),
+      use_surface_layer_(use_surface_layer),
       create_bridge_callback_(std::move(create_bridge_callback)),
       request_routing_token_cb_(std::move(request_routing_token_cb)),
       media_metrics_provider_(std::move(metrics_provider)),
@@ -1056,26 +1055,30 @@ void WebMediaPlayerImpl::DoSeek(base::TimeDelta time, bool time_updated) {
     SetReadyState(WebMediaPlayer::kReadyStateHaveMetadata);
 
   // When paused or ended, we know exactly what the current time is and can
-  // elide seeks to it. However, there are two cases that are not elided:
+  // elide seeks to it. However, there are three cases that are not elided:
   //   1) When the pipeline state is not stable.
-  //      In this case we just let `pipeline_controller_` decide what to do, as
+  //      In this case we just let PipelineController decide what to do, as
   //      it has complete information.
-  //   2) For MSE.
+  //   2) When the ready state was not kReadyStateHaveEnoughData.
+  //      If playback has not started, it's possible to enter a state where
+  //      OnBufferingStateChange() will not be called again to complete the
+  //      seek.
+  //   3) For MSE.
   //      Because the buffers may have changed between seeks, MSE seeks are
   //      never elided.
   if (paused_ && pipeline_controller_->IsStable() &&
       (paused_time_ == time || (ended_ && time == base::Seconds(Duration()))) &&
       !chunk_demuxer_) {
-    // If the ready state was high enough before, we can indicate that the seek
-    // completed just by restoring it. Otherwise we will just wait for the real
-    // ready state change to eventually happen.
     if (old_state == kReadyStateHaveEnoughData) {
+      // This will in turn SetReadyState() to signal the demuxer seek, followed
+      // by timeChanged() to signal the renderer seek.
+      should_notify_time_changed_ = true;
       main_task_runner_->PostTask(
           FROM_HERE, base::BindOnce(&WebMediaPlayerImpl::OnBufferingStateChange,
                                     weak_this_, media::BUFFERING_HAVE_ENOUGH,
                                     media::BUFFERING_CHANGE_REASON_UNKNOWN));
+      return;
     }
-    return;
   }
 
   if (playback_events_recorder_)
@@ -1355,11 +1358,6 @@ WebMediaPlayer::ReadyState WebMediaPlayerImpl::GetReadyState() const {
   return ready_state_;
 }
 
-WebMediaPlayer::SurfaceLayerMode WebMediaPlayerImpl::GetVideoSurfaceLayerMode()
-    const {
-  return surface_layer_mode_;
-}
-
 WebString WebMediaPlayerImpl::GetErrorMessage() const {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   return WebString::FromUTF8(media_log_->GetErrorMessage());
@@ -1462,6 +1460,7 @@ void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
       GetCurrentFrameFromCompositor();
   last_frame_request_time_ = tick_clock_->NowTicks();
   video_frame_readback_count_++;
+  pipeline_controller_->OnExternalVideoFrameRequest();
 
   video_renderer_.Paint(
       video_frame, canvas, gfx::RectF(rect), flags,
@@ -1469,10 +1468,25 @@ void WebMediaPlayerImpl::Paint(cc::PaintCanvas* canvas,
       raster_context_provider_.get());
 }
 
-scoped_refptr<media::VideoFrame> WebMediaPlayerImpl::GetCurrentFrame() {
+scoped_refptr<media::VideoFrame>
+WebMediaPlayerImpl::GetCurrentFrameThenUpdate() {
   last_frame_request_time_ = tick_clock_->NowTicks();
   video_frame_readback_count_++;
+  pipeline_controller_->OnExternalVideoFrameRequest();
   return GetCurrentFrameFromCompositor();
+}
+
+absl::optional<int> WebMediaPlayerImpl::CurrentFrameId() const {
+  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  TRACE_EVENT0("media", "WebMediaPlayerImpl::GetCurrentFrameID");
+
+  // We can't copy from protected frames.
+  if (cdm_context_ref_)
+    return absl::nullopt;
+
+  if (auto frame = compositor_->GetCurrentFrameOnAnyThread())
+    return frame->unique_id();
+  return absl::nullopt;
 }
 
 media::PaintCanvasVideoRenderer*
@@ -1861,6 +1875,10 @@ void WebMediaPlayerImpl::OnMemoryPressure(
                                 memory_pressure_level, force_instant_gc));
 }
 
+void WebMediaPlayerImpl::OnFallback(media::PipelineStatus status) {
+  media_metrics_provider_->OnFallback(std::move(status).AddHere());
+}
+
 void WebMediaPlayerImpl::OnError(media::PipelineStatus status) {
   DVLOG(1) << __func__ << ": status=" << status;
   DCHECK(main_task_runner_->BelongsToCurrentThread());
@@ -2036,7 +2054,7 @@ void WebMediaPlayerImpl::OnMetadata(const media::PipelineMetadata& metadata) {
         DisableOverlay();
     }
 
-    if (surface_layer_mode_ == WebMediaPlayer::SurfaceLayerMode::kAlways) {
+    if (use_surface_layer_) {
       ActivateSurfaceLayerForVideo();
     } else {
       DCHECK(!video_layer_);
@@ -2695,7 +2713,8 @@ void WebMediaPlayerImpl::OnRemotePlayStateChange(
     client_->ResumePlayback();
   } else if (state == media::MediaStatus::State::PAUSED && !Paused()) {
     DVLOG(1) << __func__ << " requesting PAUSE.";
-    client_->PausePlayback();
+    client_->PausePlayback(
+        WebMediaPlayerClient::PauseReason::kRemotePlayStateChange);
   }
 }
 #endif  // BUILDFLAG(IS_ANDROID)
@@ -3420,8 +3439,11 @@ void WebMediaPlayerImpl::ScheduleIdlePauseTimer() {
 #endif
 
   // Idle timeout chosen arbitrarily.
-  background_pause_timer_.Start(FROM_HERE, base::Seconds(5), client_,
-                                &WebMediaPlayerClient::PausePlayback);
+  background_pause_timer_.Start(
+      FROM_HERE, base::Seconds(5),
+      base::BindOnce(
+          &WebMediaPlayerClient::PausePlayback, base::Unretained(client_),
+          WebMediaPlayerClient::PauseReason::kSuspendedPlayerIdleTimeout));
 }
 
 void WebMediaPlayerImpl::CreateWatchTimeReporter() {
@@ -3711,7 +3733,8 @@ void WebMediaPlayerImpl::PauseVideoIfNeeded() {
   // client_->PausePlayback() will get `paused_when_hidden_` set to
   // false and UpdatePlayState() called, so set the flag to true after and then
   // return.
-  client_->PausePlayback();
+  client_->PausePlayback(
+      WebMediaPlayerClient::PauseReason::kBackgroundVideoOptimization);
   paused_when_hidden_ = true;
 }
 

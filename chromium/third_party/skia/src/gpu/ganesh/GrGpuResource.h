@@ -174,7 +174,12 @@ public:
         associated unique key. */
     const skgpu::UniqueKey& getUniqueKey() const { return fUniqueKey; }
 
-    std::string_view getLabel() const { return fLabel; }
+    std::string getLabel() const { return fLabel; }
+
+    void setLabel(std::string_view label) {
+        fLabel = label;
+        this->onSetLabel();
+    }
 
     /**
      * Internal-only helper class used for manipulations of the resource by the cache.
@@ -281,6 +286,8 @@ private:
 
     virtual size_t onGpuMemorySize() const = 0;
 
+    virtual void onSetLabel() = 0;
+
     // See comments in CacheAccess and ResourcePriv.
     void setUniqueKey(const skgpu::UniqueKey&);
     void removeUniqueKey();
@@ -306,14 +313,14 @@ private:
     skgpu::UniqueKey fUniqueKey;
 
     // This is not ref'ed but abandon() or release() will be called before the GrGpu object
-    // is destroyed. Those calls set will this to NULL.
+    // is destroyed. Those calls will set this to NULL.
     GrGpu* fGpu;
     mutable size_t fGpuMemorySize = kInvalidGpuMemorySize;
 
     GrBudgetedType fBudgetedType = GrBudgetedType::kUnbudgetedUncacheable;
     bool fRefsWrappedObjects = false;
     const UniqueID fUniqueID;
-    const std::string fLabel;
+    std::string fLabel;
 
     using INHERITED = GrIORef<GrGpuResource>;
     friend class GrIORef<GrGpuResource>; // to access notifyRefCntWillBeZero and

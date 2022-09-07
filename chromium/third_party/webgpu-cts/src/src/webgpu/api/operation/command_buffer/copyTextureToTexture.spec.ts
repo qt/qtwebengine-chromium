@@ -337,7 +337,7 @@ class F extends GPUTest {
               copyLayer: f32
             };
             @group(0) @binding(0) var<uniform> param: Params;
-            @stage(vertex)
+            @vertex
             fn main(@builtin(vertex_index) VertexIndex : u32)-> @builtin(position) vec4<f32> {
               var depthValue = 0.5 + 0.2 * sin(param.copyLayer);
               var pos : array<vec3<f32>, 6> = array<vec3<f32>, 6>(
@@ -358,7 +358,7 @@ class F extends GPUTest {
       renderPipelineDescriptor.fragment = {
         module: this.device.createShaderModule({
           code: `
-            @stage(fragment)
+            @fragment
             fn main() -> @location(0) vec4<f32> {
               return vec4<f32>(0.0, 1.0, 0.0, 1.0);
             }`,
@@ -778,6 +778,13 @@ g.test('color_textures,compressed,non_array')
       .combine('srcCopyLevel', [0, 2])
       .combine('dstCopyLevel', [0, 2])
   )
+  .beforeAllSubcases(t => {
+    const { srcFormat, dstFormat } = t.params;
+    t.selectDeviceOrSkipTestCase([
+      kTextureFormatInfo[srcFormat].feature,
+      kTextureFormatInfo[dstFormat].feature,
+    ]);
+  })
   .fn(async t => {
     const {
       dimension,
@@ -788,10 +795,6 @@ g.test('color_textures,compressed,non_array')
       srcCopyLevel,
       dstCopyLevel,
     } = t.params;
-    await t.selectDeviceOrSkipTestCase([
-      kTextureFormatInfo[srcFormat].feature,
-      kTextureFormatInfo[dstFormat].feature,
-    ]);
     const srcBlockWidth = kTextureFormatInfo[srcFormat].blockWidth;
     const srcBlockHeight = kTextureFormatInfo[srcFormat].blockHeight;
     const dstBlockWidth = kTextureFormatInfo[dstFormat].blockWidth;
@@ -929,6 +932,14 @@ g.test('color_textures,compressed,array')
       .combine('srcCopyLevel', [0, 2])
       .combine('dstCopyLevel', [0, 2])
   )
+  .beforeAllSubcases(t => {
+    const { srcFormat, dstFormat } = t.params;
+
+    t.selectDeviceOrSkipTestCase([
+      kTextureFormatInfo[srcFormat].feature,
+      kTextureFormatInfo[dstFormat].feature,
+    ]);
+  })
   .fn(async t => {
     const {
       dimension,
@@ -939,10 +950,6 @@ g.test('color_textures,compressed,array')
       srcCopyLevel,
       dstCopyLevel,
     } = t.params;
-    await t.selectDeviceOrSkipTestCase([
-      kTextureFormatInfo[srcFormat].feature,
-      kTextureFormatInfo[dstFormat].feature,
-    ]);
     const srcBlockWidth = kTextureFormatInfo[srcFormat].blockWidth;
     const srcBlockHeight = kTextureFormatInfo[srcFormat].blockHeight;
     const dstBlockWidth = kTextureFormatInfo[dstFormat].blockWidth;
@@ -1109,6 +1116,10 @@ g.test('copy_depth_stencil')
         );
       })
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    t.selectDeviceForTextureFormatOrSkipTestCase(format);
+  })
   .fn(async t => {
     const {
       format,
@@ -1118,7 +1129,6 @@ g.test('copy_depth_stencil')
       srcCopyBaseArrayLayer,
       dstCopyBaseArrayLayer,
     } = t.params;
-    await t.selectDeviceForTextureFormatOrSkipTestCase(format);
 
     const copySize: [number, number, number] = [
       srcTextureSize.width >> srcCopyLevel,
@@ -1227,16 +1237,20 @@ g.test('copy_multisampled_color')
     const destinationTexture = t.device.createTexture({
       format: kColorFormat,
       size: textureSize,
-      usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+      usage:
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT,
       sampleCount: kSampleCount,
     });
 
     // Initialize sourceTexture with a draw call.
     const renderPipelineForInit = t.device.createRenderPipeline({
+      layout: 'auto',
       vertex: {
         module: t.device.createShaderModule({
           code: `
-            @stage(vertex)
+            @vertex
             fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
               var pos = array<vec2<f32>, 3>(
                   vec2<f32>(-1.0,  1.0),
@@ -1251,7 +1265,7 @@ g.test('copy_multisampled_color')
       fragment: {
         module: t.device.createShaderModule({
           code: `
-            @stage(fragment)
+            @fragment
             fn main() -> @location(0) vec4<f32> {
               return vec4<f32>(0.3, 0.5, 0.8, 1.0);
             }`,
@@ -1295,10 +1309,11 @@ g.test('copy_multisampled_color')
     // Verify if all the sub-pixel values at the same location of sourceTexture and
     // destinationTexture are equal.
     const renderPipelineForValidation = t.device.createRenderPipeline({
+      layout: 'auto',
       vertex: {
         module: t.device.createShaderModule({
           code: `
-          @stage(vertex)
+          @vertex
           fn main(@builtin(vertex_index) VertexIndex : u32) -> @builtin(position) vec4<f32> {
             var pos = array<vec2<f32>, 6>(
               vec2<f32>(-1.0,  1.0),
@@ -1317,7 +1332,7 @@ g.test('copy_multisampled_color')
           code: `
           @group(0) @binding(0) var sourceTexture : texture_multisampled_2d<f32>;
           @group(0) @binding(1) var destinationTexture : texture_multisampled_2d<f32>;
-          @stage(fragment)
+          @fragment
           fn main(@builtin(position) coord_in: vec4<f32>) -> @location(0) vec4<f32> {
             var coord_in_vec2 = vec2<i32>(i32(coord_in.x), i32(coord_in.y));
             for (var sampleIndex = 0; sampleIndex < ${kSampleCount};
@@ -1411,7 +1426,7 @@ g.test('copy_multisampled_depth')
     const vertexState: GPUVertexState = {
       module: t.device.createShaderModule({
         code: `
-          @stage(vertex)
+          @vertex
           fn main(@builtin(vertex_index) VertexIndex : u32)-> @builtin(position) vec4<f32> {
             var pos : array<vec3<f32>, 6> = array<vec3<f32>, 6>(
                 vec3<f32>(-1.0,  1.0, 0.5),
@@ -1428,6 +1443,7 @@ g.test('copy_multisampled_depth')
 
     // Initialize the depth aspect of source texture with a draw call
     const renderPipelineForInit = t.device.createRenderPipeline({
+      layout: 'auto',
       vertex: vertexState,
       depthStencil: {
         format: kDepthFormat,
@@ -1471,11 +1487,12 @@ g.test('copy_multisampled_depth')
     // depthCompareFunction == 'equal' and depthWriteEnabled == false in the render pipeline
     const kColorFormat = 'rgba8unorm';
     const renderPipelineForVerify = t.device.createRenderPipeline({
+      layout: 'auto',
       vertex: vertexState,
       fragment: {
         module: t.device.createShaderModule({
           code: `
-          @stage(fragment)
+          @fragment
           fn main() -> @location(0) vec4<f32> {
             return vec4<f32>(0.0, 1.0, 0.0, 1.0);
           }`,

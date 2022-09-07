@@ -1,7 +1,5 @@
 export const description = `
-TODO:
-- 2 views: upon the same subresource, or different subresources of the same texture
-    - texture usages in copies and in render pass
+Texture Usages Validation Tests on All Kinds of WebGPU Subresource Usage Scopes.
 `;
 
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
@@ -250,7 +248,7 @@ g.test('subresources,set_unused_bind_group')
           module: t.device.createShaderModule({
             code: `
               @group(0) @binding(0) var texture0 : texture_2d_array<f32>;
-              @stage(fragment) fn main()
+              @fragment fn main()
                 -> @location(0) vec4<f32> {
                   return textureLoad(texture0, vec2<i32>(), 0, 0);
               }`,
@@ -281,7 +279,7 @@ g.test('subresources,set_unused_bind_group')
           module: t.device.createShaderModule({
             code: `
             @group(0) @binding(0) var texture0 : texture_storage_2d_array<rgba8unorm, write>;
-            @stage(compute) @workgroup_size(1)
+            @compute @workgroup_size(1)
             fn main() {
               textureStore(texture0, vec2<i32>(), 0, vec4<f32>());
             }`,
@@ -293,7 +291,7 @@ g.test('subresources,set_unused_bind_group')
       computePassEncoder.setBindGroup(0, bindGroup0);
       computePassEncoder.setBindGroup(1, bindGroup1);
       computePassEncoder.setPipeline(computePipeline);
-      computePassEncoder.dispatch(1);
+      computePassEncoder.dispatchWorkgroups(1);
       computePassEncoder.end();
     }
 
@@ -312,4 +310,111 @@ g.test('subresources,set_unused_bind_group')
     t.expectValidationError(() => {
       encoder.finish();
     }, !success);
+  });
+
+g.test('subresources,texture_usages_in_copy_and_render_pass')
+  .desc(
+    `
+  Test that using one texture subresource in a render pass encoder and a copy command is always
+  allowed as WebGPU SPEC (chapter 3.4.5) defines that out of any pass encoder, each command always
+  belongs to one usage scope.`
+  )
+  .params(u =>
+    u
+      .combine('usage0', [
+        'copy-src',
+        'copy-dst',
+        'texture',
+        'storage',
+        'color-attachment',
+      ] as const)
+      .combine('usage1', [
+        'copy-src',
+        'copy-dst',
+        'texture',
+        'storage',
+        'color-attachment',
+      ] as const)
+      .filter(
+        ({ usage0, usage1 }) =>
+          usage0 === 'copy-src' ||
+          usage0 === 'copy-dst' ||
+          usage1 === 'copy-src' ||
+          usage1 === 'copy-dst'
+      )
+  )
+  .fn(async t => {
+    const { usage0, usage1 } = t.params;
+
+    const texture = t.device.createTexture({
+      format: 'rgba8unorm',
+      usage:
+        GPUTextureUsage.COPY_SRC |
+        GPUTextureUsage.COPY_DST |
+        GPUTextureUsage.TEXTURE_BINDING |
+        GPUTextureUsage.STORAGE_BINDING |
+        GPUTextureUsage.RENDER_ATTACHMENT,
+      size: [kTextureSize, kTextureSize, 1],
+    });
+
+    const UseTextureOnCommandEncoder = (
+      texture: GPUTexture,
+      usage: 'copy-src' | 'copy-dst' | 'texture' | 'storage' | 'color-attachment',
+      encoder: GPUCommandEncoder
+    ) => {
+      switch (usage) {
+        case 'copy-src': {
+          const buffer = t.createBufferWithState('valid', {
+            size: 4,
+            usage: GPUBufferUsage.COPY_DST,
+          });
+          encoder.copyTextureToBuffer({ texture }, { buffer }, [1, 1, 1]);
+          break;
+        }
+        case 'copy-dst': {
+          const buffer = t.createBufferWithState('valid', {
+            size: 4,
+            usage: GPUBufferUsage.COPY_SRC,
+          });
+          encoder.copyBufferToTexture({ buffer }, { texture }, [1, 1, 1]);
+          break;
+        }
+        case 'color-attachment': {
+          const renderPassEncoder = encoder.beginRenderPass({
+            colorAttachments: [{ view: texture.createView(), loadOp: 'load', storeOp: 'store' }],
+          });
+          renderPassEncoder.end();
+          break;
+        }
+        case 'texture':
+        case 'storage': {
+          const colorTexture = t.device.createTexture({
+            format: 'rgba8unorm',
+            usage: GPUTextureUsage.RENDER_ATTACHMENT,
+            size: [kTextureSize, kTextureSize, 1],
+          });
+          const renderPassEncoder = encoder.beginRenderPass({
+            colorAttachments: [
+              { view: colorTexture.createView(), loadOp: 'load', storeOp: 'store' },
+            ],
+          });
+          const bindGroup = t.createBindGroupForTest(
+            texture.createView({
+              dimension: '2d-array',
+            }),
+            usage,
+            'float'
+          );
+          renderPassEncoder.setBindGroup(0, bindGroup);
+          renderPassEncoder.end();
+          break;
+        }
+      }
+    };
+    const encoder = t.device.createCommandEncoder();
+    UseTextureOnCommandEncoder(texture, usage0, encoder);
+    UseTextureOnCommandEncoder(texture, usage1, encoder);
+    t.expectValidationError(() => {
+      encoder.finish();
+    }, false);
   });

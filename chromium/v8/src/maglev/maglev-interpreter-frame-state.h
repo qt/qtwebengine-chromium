@@ -185,41 +185,29 @@ class CompactInterpreterFrameState {
 
 class MergePointRegisterState {
  public:
-  class Iterator {
-   public:
-    struct Entry {
-      RegisterState& state;
-      Register reg;
-    };
-    explicit Iterator(RegisterState* value_pointer,
-                      RegList::Iterator reg_iterator)
-        : current_value_(value_pointer), reg_iterator_(reg_iterator) {}
-    Entry operator*() { return {*current_value_, *reg_iterator_}; }
-    void operator++() {
-      ++current_value_;
-      ++reg_iterator_;
-    }
-    bool operator!=(const Iterator& other) const {
-      return current_value_ != other.current_value_;
-    }
-
-   private:
-    RegisterState* current_value_;
-    RegList::Iterator reg_iterator_;
-  };
-
   bool is_initialized() const { return values_[0].GetPayload().is_initialized; }
 
-  Iterator begin() {
-    return Iterator(values_, kAllocatableGeneralRegisters.begin());
+  template <typename Function>
+  void ForEachGeneralRegister(Function&& f) {
+    RegisterState* current_value = &values_[0];
+    for (Register reg : kAllocatableGeneralRegisters) {
+      f(reg, *current_value);
+      ++current_value;
+    }
   }
-  Iterator end() {
-    return Iterator(values_ + kAllocatableGeneralRegisterCount,
-                    kAllocatableGeneralRegisters.end());
+
+  template <typename Function>
+  void ForEachDoubleRegister(Function&& f) {
+    RegisterState* current_value = &double_values_[0];
+    for (DoubleRegister reg : kAllocatableDoubleRegisters) {
+      f(reg, *current_value);
+      ++current_value;
+    }
   }
 
  private:
   RegisterState values_[kAllocatableGeneralRegisterCount] = {{}};
+  RegisterState double_values_[kAllocatableDoubleRegisterCount] = {{}};
 };
 
 class MergePointInterpreterFrameState {
@@ -280,9 +268,7 @@ class MergePointInterpreterFrameState {
         });
     DCHECK(!frame_state_.liveness()->AccumulatorIsLive());
 
-#ifdef DEBUG
-    predecessors_[0] = nullptr;
-#endif
+    predecessors_[0] = uninitialized_predecessor();
   }
 
   // Merges an unmerged framestate with a possibly merged framestate into |this|
@@ -307,37 +293,43 @@ class MergePointInterpreterFrameState {
 
   // Merges an unmerged framestate with a possibly merged framestate into |this|
   // framestate.
-  void MergeLoop(const MaglevCompilationUnit& compilation_unit,
+  void MergeLoop(MaglevCompilationUnit& compilation_unit,
                  const InterpreterFrameState& loop_end_state,
                  BasicBlock* loop_end_block, int merge_offset) {
     DCHECK_EQ(predecessors_so_far_, predecessor_count_);
-    DCHECK_NULL(predecessors_[0]);
+    DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
     predecessors_[0] = loop_end_block;
 
     frame_state_.ForEachValue(
         compilation_unit, [&](ValueNode* value, interpreter::Register reg) {
           CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
 
-          MergeLoopValue(compilation_unit.zone(), reg, value,
-                         loop_end_state.get(reg), merge_offset);
+          MergeLoopValue(compilation_unit, reg, value, loop_end_state.get(reg),
+                         merge_offset);
         });
   }
 
   // Merges a dead framestate (e.g. one which has been early terminated with a
   // deopt).
-  void MergeDead() {
+  void MergeDead(const MaglevCompilationUnit& compilation_unit,
+                 int merge_offset) {
     DCHECK_GT(predecessor_count_, 1);
     DCHECK_LT(predecessors_so_far_, predecessor_count_);
-    predecessors_[predecessors_so_far_] = kDeadPredecessor;
-    predecessors_so_far_++;
+    predecessor_count_--;
     DCHECK_LE(predecessors_so_far_, predecessor_count_);
+
+    frame_state_.ForEachValue(
+        compilation_unit, [&](ValueNode* value, interpreter::Register reg) {
+          CheckIsLoopPhiIfNeeded(compilation_unit, merge_offset, reg, value);
+          ReducePhiPredecessorCount(reg, value, merge_offset);
+        });
   }
 
   // Merges a dead loop framestate (e.g. one where the block containing the
   // JumpLoop has been early terminated with a deopt).
   void MergeDeadLoop() {
     DCHECK_EQ(predecessors_so_far_, predecessor_count_);
-    DCHECK_NULL(predecessors_[0]);
+    DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
     predecessors_[0] = kDeadPredecessor;
   }
 
@@ -358,9 +350,17 @@ class MergePointInterpreterFrameState {
   int predecessor_count() const { return predecessor_count_; }
 
   BasicBlock* predecessor_at(int i) const {
-    DCHECK_EQ(predecessors_so_far_, predecessor_count_);
+    // DCHECK_EQ(predecessors_so_far_, predecessor_count_);
     DCHECK_LT(i, predecessor_count_);
     return predecessors_[i];
+  }
+
+  bool is_unreachable_loop() const {
+    DCHECK_EQ(predecessors_so_far_, predecessor_count_);
+    // If there is only one predecessor, and it's not set, then this is a loop
+    // merge with no forward control flow entering it.
+    return predecessor_count_ == 1 &&
+           predecessors_[0] == uninitialized_predecessor();
   }
 
  private:
@@ -368,13 +368,24 @@ class MergePointInterpreterFrameState {
       const MaglevCompilationUnit& info,
       const MergePointInterpreterFrameState& state);
 
-  ValueNode* TagValue(MaglevCompilationUnit& compilation_unit,
-                      ValueNode* value) {
-    DCHECK(value->is_untagged_value());
+  // Create an uninitialized value sentinel for loop merges. This is distinct
+  // from kDeadPredecessor, which is for loops that were reached, but were dead.
+  // TODO(leszeks): Do this in a way that isn't UB.
+  static BasicBlock* uninitialized_predecessor() {
+    return reinterpret_cast<BasicBlock*>(0x100b);
+  }
+
+  ValueNode* FromInt32ToTagged(MaglevCompilationUnit& compilation_unit,
+                               ValueNode* value) {
+    DCHECK_EQ(value->properties().value_representation(),
+              ValueRepresentation::kInt32);
     if (value->Is<CheckedSmiUntag>()) {
       return value->input(0).node();
     }
-    DCHECK(value->Is<Int32AddWithOverflow>() || value->Is<Int32Constant>());
+#define IS_INT32_OP_NODE(Name) || value->Is<Name>()
+    DCHECK(value->Is<Int32Constant>()
+               INT32_OPERATIONS_NODE_LIST(IS_INT32_OP_NODE));
+#undef IS_INT32_OP_NODE
     // Check if the next Node in the block after value is its CheckedSmiTag
     // version and reuse it.
     if (value->NextNode()) {
@@ -388,15 +399,48 @@ class MergePointInterpreterFrameState {
         Node::New<CheckedSmiTag, std::initializer_list<ValueNode*>>(
             compilation_unit.zone(), compilation_unit,
             value->eager_deopt_info()->state, {value});
-    value->AddNodeAfter(tagged);
+    Node::List::AddAfter(value, tagged);
     compilation_unit.RegisterNodeInGraphLabeller(tagged);
     return tagged;
   }
 
+  ValueNode* FromFloat64ToTagged(MaglevCompilationUnit& compilation_unit,
+                                 ValueNode* value) {
+    DCHECK_EQ(value->properties().value_representation(),
+              ValueRepresentation::kFloat64);
+    if (value->Is<CheckedFloat64Unbox>()) {
+      return value->input(0).node();
+    }
+    if (value->Is<ChangeInt32ToFloat64>()) {
+      return FromInt32ToTagged(compilation_unit, value->input(0).node());
+    }
+    // Check if the next Node in the block after value is its Float64Box
+    // version and reuse it.
+    if (value->NextNode()) {
+      Float64Box* tagged = value->NextNode()->TryCast<Float64Box>();
+      if (tagged != nullptr && value == tagged->input().node()) {
+        return tagged;
+      }
+    }
+    // Otherwise create a tagged version.
+    ValueNode* tagged = Node::New<Float64Box>(compilation_unit.zone(), {value});
+    Node::List::AddAfter(value, tagged);
+    compilation_unit.RegisterNodeInGraphLabeller(tagged);
+    return tagged;
+  }
+
+  // TODO(victorgomes): Consider refactor this function to share code with
+  // MaglevGraphBuilder::GetTagged.
   ValueNode* EnsureTagged(MaglevCompilationUnit& compilation_unit,
                           ValueNode* value) {
-    if (value->is_untagged_value()) return TagValue(compilation_unit, value);
-    return value;
+    switch (value->properties().value_representation()) {
+      case ValueRepresentation::kTagged:
+        return value;
+      case ValueRepresentation::kInt32:
+        return FromInt32ToTagged(compilation_unit, value);
+      case ValueRepresentation::kFloat64:
+        return FromFloat64ToTagged(compilation_unit, value);
+    }
   }
 
   ValueNode* MergeValue(MaglevCompilationUnit& compilation_unit,
@@ -405,7 +449,7 @@ class MergePointInterpreterFrameState {
     // If the merged node is null, this is a pre-created loop header merge
     // frame will null values for anything that isn't a loop Phi.
     if (merged == nullptr) {
-      DCHECK_NULL(predecessors_[0]);
+      DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
       DCHECK_EQ(predecessors_so_far_, 1);
       return unmerged;
     }
@@ -449,12 +493,35 @@ class MergePointInterpreterFrameState {
     return result;
   }
 
-  void MergeLoopValue(Zone* zone, interpreter::Register owner,
-                      ValueNode* merged, ValueNode* unmerged,
-                      int merge_offset) {
+  void ReducePhiPredecessorCount(interpreter::Register owner, ValueNode* merged,
+                                 int merge_offset) {
+    // If the merged node is null, this is a pre-created loop header merge
+    // frame with null values for anything that isn't a loop Phi.
+    if (merged == nullptr) {
+      DCHECK_EQ(predecessors_[0], uninitialized_predecessor());
+      DCHECK_EQ(predecessors_so_far_, 1);
+      return;
+    }
+
+    Phi* result = merged->TryCast<Phi>();
+    if (result != nullptr && result->merge_offset() == merge_offset) {
+      // It's possible that merged == unmerged at this point since loop-phis are
+      // not dropped if they are only assigned to themselves in the loop.
+      DCHECK_EQ(result->owner(), owner);
+      result->reduce_input_count();
+    }
+  }
+
+  void MergeLoopValue(MaglevCompilationUnit& compilation_unit,
+                      interpreter::Register owner, ValueNode* merged,
+                      ValueNode* unmerged, int merge_offset) {
     Phi* result = merged->TryCast<Phi>();
     if (result == nullptr || result->merge_offset() != merge_offset) {
-      DCHECK_EQ(merged, unmerged);
+      if (merged != unmerged) {
+        DCHECK(unmerged->Is<CheckedSmiUntag>() ||
+               unmerged->Is<CheckedFloat64Unbox>());
+        DCHECK_EQ(merged, unmerged->input(0).node());
+      }
       return;
     }
     DCHECK_EQ(result->owner(), owner);
@@ -462,6 +529,7 @@ class MergePointInterpreterFrameState {
 #ifdef DEBUG
     DCHECK_NULL(result->input(0).node());
 #endif
+    unmerged = EnsureTagged(compilation_unit, unmerged);
     result->set_input(0, unmerged);
   }
 

@@ -154,6 +154,8 @@ void av1_setup_tpl_buffers(AV1_PRIMARY *const ppi,
   tpl_data->border_in_pixels =
       ALIGN_POWER_OF_TWO(tpl_data->tpl_bsize_1d + 2 * AOM_INTERP_EXTEND, 5);
 
+  const int alloc_y_plane_only =
+      ppi->cpi->sf.tpl_sf.use_y_only_rate_distortion ? 1 : 0;
   for (int frame = 0; frame < MAX_LENGTH_TPL_FRAME_STATS; ++frame) {
     const int mi_cols =
         ALIGN_POWER_OF_TWO(mi_params->mi_cols, MAX_MIB_SIZE_LOG2);
@@ -184,11 +186,11 @@ void av1_setup_tpl_buffers(AV1_PRIMARY *const ppi,
                        tpl_data->tpl_stats_buffer[frame].height,
                    sizeof(*tpl_data->tpl_stats_buffer[frame].tpl_stats_ptr)));
 
-    if (aom_alloc_frame_buffer(&tpl_data->tpl_rec_pool[frame], width, height,
-                               seq_params->subsampling_x,
-                               seq_params->subsampling_y,
-                               seq_params->use_highbitdepth,
-                               tpl_data->border_in_pixels, byte_alignment))
+    if (aom_alloc_frame_buffer(
+            &tpl_data->tpl_rec_pool[frame], width, height,
+            seq_params->subsampling_x, seq_params->subsampling_y,
+            seq_params->use_highbitdepth, tpl_data->border_in_pixels,
+            byte_alignment, alloc_y_plane_only))
       aom_internal_error(&ppi->error, AOM_CODEC_MEM_ERROR,
                          "Failed to allocate frame buffer");
   }
@@ -500,6 +502,16 @@ static AOM_INLINE void mode_estimation(AV1_COMP *cpi,
       is_cur_buf_hbd(xd) ? CONVERT_TO_BYTEPTR(predictor8) : predictor8;
   int64_t recon_error = 1;
   int64_t pred_error = 1;
+
+  if (!(predictor8 && src_diff && coeff && qcoeff && dqcoeff)) {
+    aom_free(predictor8);
+    aom_free(src_diff);
+    aom_free(coeff);
+    aom_free(qcoeff);
+    aom_free(dqcoeff);
+    aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
+                       "Error allocating tpl data");
+  }
 
   memset(tpl_stats, 0, sizeof(*tpl_stats));
   tpl_stats->ref_frame_index[0] = -1;
@@ -1679,6 +1691,8 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
                     cm->features.allow_high_precision_mv, cpi->td.mb.mv_costs);
 
   const int gop_length = get_gop_length(gf_group);
+  const int num_planes =
+      cpi->sf.tpl_sf.use_y_only_rate_distortion ? 1 : av1_num_planes(cm);
   // Backward propagation from tpl_group_frames to 1.
   for (int frame_idx = cpi->gf_frame_index; frame_idx < tpl_gf_group_frames;
        ++frame_idx) {
@@ -1712,7 +1726,7 @@ int av1_tpl_setup_stats(AV1_COMP *cpi, int gop_eval,
 #endif  // CONFIG_RATECTRL_LOG
 
     aom_extend_frame_borders(tpl_data->tpl_frame[frame_idx].rec_picture,
-                             av1_num_planes(cm));
+                             num_planes);
   }
 
   for (int frame_idx = tpl_gf_group_frames - 1;

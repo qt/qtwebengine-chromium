@@ -8,9 +8,18 @@
 #ifndef SKSL_TERNARYEXPRESSION
 #define SKSL_TERNARYEXPRESSION
 
+#include "include/core/SkTypes.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLType.h"
+
+#include <memory>
+#include <string>
+#include <utility>
 
 namespace SkSL {
+
+class Context;
 
 /**
  * A ternary expression (test ? ifTrue : ifFalse).
@@ -72,13 +81,8 @@ public:
                this->ifFalse()->hasProperty(property);
     }
 
-    bool isConstantOrUniform() const override {
-        return this->test()->isConstantOrUniform() && this->ifTrue()->isConstantOrUniform() &&
-               this->ifFalse()->isConstantOrUniform();
-    }
-
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<TernaryExpression>(fPosition, this->test()->clone(),
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<TernaryExpression>(pos, this->test()->clone(),
                                                    this->ifTrue()->clone(),
                                                    this->ifFalse()->clone());
     }

@@ -8,6 +8,7 @@
 #include "src/image/SkSurface_Gpu.h"
 
 #include "include/core/SkCanvas.h"
+#include "include/core/SkCapabilities.h"
 #include "include/core/SkDeferredDisplayList.h"
 #include "include/core/SkSurfaceCharacterization.h"
 #include "include/gpu/GrBackendSurface.h"
@@ -391,6 +392,10 @@ bool SkSurface_Gpu::onDraw(sk_sp<const SkDeferredDisplayList> ddl, SkIPoint offs
     return true;
 }
 
+sk_sp<const SkCapabilities> SkSurface_Gpu::onCapabilities() {
+    return fDevice->recordingContext()->skCapabilities();
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrRecordingContext* rContext,
@@ -462,14 +467,14 @@ sk_sp<SkSurface> SkSurface::MakeRenderTarget(GrRecordingContext* rContext, SkBud
         return nullptr;
     }
     sampleCount = std::max(1, sampleCount);
-    GrMipmapped mipMapped = shouldCreateWithMips ? GrMipmapped::kYes : GrMipmapped::kNo;
+    GrMipmapped mipmapped = shouldCreateWithMips ? GrMipmapped::kYes : GrMipmapped::kNo;
 
     if (!rContext->priv().caps()->mipmapSupport()) {
-        mipMapped = GrMipmapped::kNo;
+        mipmapped = GrMipmapped::kNo;
     }
 
     auto device = rContext->priv().createDevice(budgeted, info, SkBackingFit::kExact,
-                                                sampleCount, mipMapped, GrProtected::kNo, origin,
+                                                sampleCount, mipmapped, GrProtected::kNo, origin,
                                                 SkSurfacePropsCopyOrDefault(props),
                                                 skgpu::BaseDevice::InitContents::kClear);
     if (!device) {

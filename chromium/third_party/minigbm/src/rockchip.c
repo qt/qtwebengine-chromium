@@ -14,8 +14,8 @@
 #include <sys/mman.h>
 #include <xf86drm.h>
 
+#include "drv_helpers.h"
 #include "drv_priv.h"
-#include "helpers.h"
 #include "util.h"
 
 struct rockchip_private_map_data {
@@ -184,6 +184,7 @@ static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 	int ret;
 	struct rockchip_private_map_data *priv;
 	struct drm_rockchip_gem_map_off gem_map = { 0 };
+	void *addr = NULL;
 
 	/* We can only map buffers created with SW access flags, which should
 	 * have no modifiers (ie, not AFBC). */
@@ -197,20 +198,34 @@ static void *rockchip_bo_map(struct bo *bo, struct vma *vma, size_t plane, uint3
 		return MAP_FAILED;
 	}
 
-	void *addr = mmap(0, bo->meta.total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
-			  gem_map.offset);
+	addr = mmap(0, bo->meta.total_size, drv_get_prot(map_flags), MAP_SHARED, bo->drv->fd,
+		    gem_map.offset);
+	if (addr == MAP_FAILED)
+		return MAP_FAILED;
 
 	vma->length = bo->meta.total_size;
 
 	if (bo->meta.use_flags & BO_USE_RENDERSCRIPT) {
 		priv = calloc(1, sizeof(*priv));
+		if (!priv)
+			goto out_unmap_addr;
+
 		priv->cached_addr = calloc(1, bo->meta.total_size);
+		if (!priv->cached_addr)
+			goto out_free_priv;
+
 		priv->gem_addr = addr;
 		vma->priv = priv;
 		addr = priv->cached_addr;
 	}
 
 	return addr;
+
+out_free_priv:
+	free(priv);
+out_unmap_addr:
+	munmap(addr, bo->meta.total_size);
+	return MAP_FAILED;
 }
 
 static int rockchip_bo_unmap(struct bo *bo, struct vma *vma)
@@ -256,7 +271,7 @@ const struct backend backend_rockchip = {
 	.bo_unmap = rockchip_bo_unmap,
 	.bo_invalidate = rockchip_bo_invalidate,
 	.bo_flush = rockchip_bo_flush,
-	.resolve_format = drv_resolve_format_helper,
+	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
 };
 
 #endif

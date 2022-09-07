@@ -34,7 +34,8 @@ public:
             uint32_t mipLevels,
             int sampleCnt,
             GrMipmapStatus mipmapStatus,
-            GrProtected isProtected);
+            GrProtected isProtected,
+            std::string_view label);
 
     static sk_sp<GrVkTextureRenderTarget> MakeWrappedTextureRenderTarget(
             GrVkGpu*,
@@ -80,6 +81,8 @@ private:
                             std::string_view label);
 
     size_t onGpuMemorySize() const override;
+
+    void onSetLabel() override{}
 
     // In Vulkan we call the release proc after we are finished with the underlying
     // GrVkImage::Resource object (which occurs after the GPU has finished all work on it).

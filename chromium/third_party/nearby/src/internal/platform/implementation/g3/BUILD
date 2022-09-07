@@ -55,6 +55,7 @@ cc_library(
         "ble_v2.cc",
         "bluetooth_adapter.cc",
         "bluetooth_classic.cc",
+        "wifi_hotspot.cc",
         "wifi_lan.cc",
     ],
     hdrs = [
@@ -62,6 +63,7 @@ cc_library(
         "ble_v2.h",
         "bluetooth_adapter.h",
         "bluetooth_classic.h",
+        "wifi_hotspot.h",
         "wifi_lan.h",
     ],
     defines = ["NO_WEBRTC"],
@@ -72,6 +74,7 @@ cc_library(
         "//internal/platform:cancellation_flag",
         "//internal/platform:logging",
         "//internal/platform:test_util",
+        "//internal/platform:uuid",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation/shared:count_down_latch",
         "@com_google_absl//absl/base:core_headers",

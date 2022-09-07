@@ -45,6 +45,7 @@ const char kGetAvailableMemoryKBMethod[] = "GetAvailableMemoryKB";
 const char kGetForegroundAvailableMemoryKBMethod[] =
     "GetForegroundAvailableMemoryKB";
 const char kGetMemoryMarginsKBMethod[] = "GetMemoryMarginsKB";
+const char kGetComponentMemoryMarginsKBMethod[] = "GetComponentMemoryMarginsKB";
 const char kGetGameModeMethod[] = "GetGameMode";
 const char kSetGameModeMethod[] = "SetGameMode";
 const char kSetGameModeWithTimeoutMethod[] = "SetGameModeWithTimeout";

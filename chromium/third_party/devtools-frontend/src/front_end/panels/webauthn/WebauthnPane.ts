@@ -84,6 +84,12 @@ const UIStrings = {
   */
   supportsResidentKeys: 'Supports resident keys',
   /**
+  *@description Label for checkbox that toggles large blob support on virtual authenticators. Large blobs are opaque data associated
+  * with a WebAuthn credential that a website can store, like an SSH certificate or a symmetric encryption key.
+  * See https://w3c.github.io/webauthn/#sctn-large-blob-extension
+  */
+  supportsLargeBlob: 'Supports large blob',
+  /**
   *@description Text to add something
   */
   add: 'Add',
@@ -244,10 +250,12 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
   #protocolSelect: HTMLSelectElement|undefined;
   #transportSelect: HTMLSelectElement|undefined;
   #residentKeyCheckboxLabel: UI.UIUtils.CheckboxLabel|undefined;
-  #residentKeyCheckbox: HTMLInputElement|undefined;
+  residentKeyCheckbox: HTMLInputElement|undefined;
   #userVerificationCheckboxLabel: UI.UIUtils.CheckboxLabel|undefined;
   #userVerificationCheckbox: HTMLInputElement|undefined;
-  #addAuthenticatorButton: HTMLButtonElement|undefined;
+  #largeBlobCheckboxLabel: UI.UIUtils.CheckboxLabel|undefined;
+  largeBlobCheckbox: HTMLInputElement|undefined;
+  addAuthenticatorButton: HTMLButtonElement|undefined;
   #isEnabling?: Promise<void>;
 
   constructor() {
@@ -446,6 +454,9 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
 
   #removeAuthenticatorSections(): void {
     this.#authenticatorsView.innerHTML = '';
+    for (const dataGrid of this.#dataGrids.values()) {
+      dataGrid.asWidget().detach();
+    }
     this.#dataGrids.clear();
   }
 
@@ -475,13 +486,18 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
   }
 
   #updateNewAuthenticatorSectionOptions(): void {
-    if (!this.#protocolSelect || !this.#residentKeyCheckbox || !this.#userVerificationCheckbox) {
+    if (!this.#protocolSelect || !this.residentKeyCheckbox || !this.#userVerificationCheckbox ||
+        !this.largeBlobCheckbox) {
       return;
     }
 
     if (this.#protocolSelect.value === Protocol.WebAuthn.AuthenticatorProtocol.Ctap2) {
-      this.#residentKeyCheckbox.disabled = false;
+      this.residentKeyCheckbox.disabled = false;
       this.#userVerificationCheckbox.disabled = false;
+      this.largeBlobCheckbox.disabled = !this.residentKeyCheckbox.checked;
+      if (this.largeBlobCheckbox.disabled) {
+        this.largeBlobCheckbox.checked = false;
+      }
       this.#updateEnabledTransportOptions([
         Protocol.WebAuthn.AuthenticatorTransport.Usb,
         Protocol.WebAuthn.AuthenticatorTransport.Ble,
@@ -491,10 +507,12 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
         Protocol.WebAuthn.AuthenticatorTransport.Internal,
       ]);
     } else {
-      this.#residentKeyCheckbox.checked = false;
-      this.#residentKeyCheckbox.disabled = true;
+      this.residentKeyCheckbox.checked = false;
+      this.residentKeyCheckbox.disabled = true;
       this.#userVerificationCheckbox.checked = false;
       this.#userVerificationCheckbox.disabled = true;
+      this.largeBlobCheckbox.checked = false;
+      this.largeBlobCheckbox.disabled = true;
       this.#updateEnabledTransportOptions([
         Protocol.WebAuthn.AuthenticatorTransport.Usb,
         Protocol.WebAuthn.AuthenticatorTransport.Ble,
@@ -524,6 +542,7 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     const transportGroup = this.#newAuthenticatorForm.createChild('div', 'authenticator-option');
     const residentKeyGroup = this.#newAuthenticatorForm.createChild('div', 'authenticator-option');
     const userVerificationGroup = this.#newAuthenticatorForm.createChild('div', 'authenticator-option');
+    const largeBlobGroup = this.#newAuthenticatorForm.createChild('div', 'authenticator-option');
     const addButtonGroup = this.#newAuthenticatorForm.createChild('div', 'authenticator-option');
 
     const protocolSelectTitle = UI.UIUtils.createLabel(i18nString(UIStrings.protocol), 'authenticator-option-label');
@@ -551,9 +570,9 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     this.#residentKeyCheckboxLabel = UI.UIUtils.CheckboxLabel.create(i18nString(UIStrings.supportsResidentKeys), false);
     this.#residentKeyCheckboxLabel.textElement.classList.add('authenticator-option-label');
     residentKeyGroup.appendChild(this.#residentKeyCheckboxLabel.textElement);
-    this.#residentKeyCheckbox = this.#residentKeyCheckboxLabel.checkboxElement;
-    this.#residentKeyCheckbox.checked = false;
-    this.#residentKeyCheckbox.classList.add('authenticator-option-checkbox');
+    this.residentKeyCheckbox = this.#residentKeyCheckboxLabel.checkboxElement;
+    this.residentKeyCheckbox.checked = false;
+    this.residentKeyCheckbox.classList.add('authenticator-option-checkbox');
     residentKeyGroup.appendChild(this.#residentKeyCheckboxLabel);
 
     this.#userVerificationCheckboxLabel = UI.UIUtils.CheckboxLabel.create('Supports user verification', false);
@@ -564,16 +583,28 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     this.#userVerificationCheckbox.classList.add('authenticator-option-checkbox');
     userVerificationGroup.appendChild(this.#userVerificationCheckboxLabel);
 
-    this.#addAuthenticatorButton =
+    this.#largeBlobCheckboxLabel = UI.UIUtils.CheckboxLabel.create(i18nString(UIStrings.supportsLargeBlob), false);
+    this.#largeBlobCheckboxLabel.textElement.classList.add('authenticator-option-label');
+    largeBlobGroup.appendChild(this.#largeBlobCheckboxLabel.textElement);
+    this.largeBlobCheckbox = this.#largeBlobCheckboxLabel.checkboxElement;
+    this.largeBlobCheckbox.checked = false;
+    this.largeBlobCheckbox.classList.add('authenticator-option-checkbox');
+    this.largeBlobCheckbox.name = 'large-blob-checkbox';
+    largeBlobGroup.appendChild(this.#largeBlobCheckboxLabel);
+
+    this.addAuthenticatorButton =
         UI.UIUtils.createTextButton(i18nString(UIStrings.add), this.#handleAddAuthenticatorButton.bind(this), '');
     addButtonGroup.createChild('div', 'authenticator-option-label');
-    addButtonGroup.appendChild(this.#addAuthenticatorButton);
+    addButtonGroup.appendChild(this.addAuthenticatorButton);
     const addAuthenticatorTitle = UI.UIUtils.createLabel(i18nString(UIStrings.addAuthenticator), '');
-    UI.ARIAUtils.bindLabelToControl(addAuthenticatorTitle, this.#addAuthenticatorButton);
+    UI.ARIAUtils.bindLabelToControl(addAuthenticatorTitle, this.addAuthenticatorButton);
 
     this.#updateNewAuthenticatorSectionOptions();
     if (this.#protocolSelect) {
       this.#protocolSelect.addEventListener('change', this.#updateNewAuthenticatorSectionOptions.bind(this));
+    }
+    if (this.residentKeyCheckbox) {
+      this.residentKeyCheckbox.addEventListener('change', this.#updateNewAuthenticatorSectionOptions.bind(this));
     }
   }
 
@@ -702,6 +733,7 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     const protocolField = sectionFields.createChild('div', 'authenticator-field');
     const transportField = sectionFields.createChild('div', 'authenticator-field');
     const srkField = sectionFields.createChild('div', 'authenticator-field');
+    const slbField = sectionFields.createChild('div', 'authenticator-field');
     const suvField = sectionFields.createChild('div', 'authenticator-field');
 
     uuidField.appendChild(UI.UIUtils.createLabel(i18nString(UIStrings.uuid), 'authenticator-option-label'));
@@ -709,6 +741,7 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     transportField.appendChild(UI.UIUtils.createLabel(i18nString(UIStrings.transport), 'authenticator-option-label'));
     srkField.appendChild(
         UI.UIUtils.createLabel(i18nString(UIStrings.supportsResidentKeys), 'authenticator-option-label'));
+    slbField.appendChild(UI.UIUtils.createLabel(i18nString(UIStrings.supportsLargeBlob), 'authenticator-option-label'));
     suvField.appendChild(
         UI.UIUtils.createLabel(i18nString(UIStrings.supportsUserVerification), 'authenticator-option-label'));
 
@@ -717,6 +750,8 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
     transportField.createChild('div', 'authenticator-field-value').textContent = options.transport;
     srkField.createChild('div', 'authenticator-field-value').textContent =
         options.hasResidentKey ? i18nString(UIStrings.yes) : i18nString(UIStrings.no);
+    slbField.createChild('div', 'authenticator-field-value').textContent =
+        options.hasLargeBlob ? i18nString(UIStrings.yes) : i18nString(UIStrings.no);
     suvField.createChild('div', 'authenticator-field-value').textContent =
         options.hasUserVerification ? i18nString(UIStrings.yes) : i18nString(UIStrings.no);
   }
@@ -756,7 +791,11 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
         child.remove();
       }
     }
-    this.#dataGrids.delete(authenticatorId);
+    const dataGrid = this.#dataGrids.get(authenticatorId);
+    if (dataGrid) {
+      dataGrid.asWidget().detach();
+      this.#dataGrids.delete(authenticatorId);
+    }
 
     if (this.#model) {
       void this.#model.removeAuthenticator(authenticatorId);
@@ -779,18 +818,20 @@ export class WebauthnPaneImpl extends UI.Widget.VBox implements
 
   #createOptionsFromCurrentInputs(): Protocol.WebAuthn.VirtualAuthenticatorOptions {
     // TODO(crbug.com/1034663): Add optionality for isUserVerified param.
-    if (!this.#protocolSelect || !this.#transportSelect || !this.#residentKeyCheckbox ||
-        !this.#userVerificationCheckbox) {
+    if (!this.#protocolSelect || !this.#transportSelect || !this.residentKeyCheckbox ||
+        !this.#userVerificationCheckbox || !this.largeBlobCheckbox) {
       throw new Error('Unable to create options from current inputs');
     }
 
     return {
       protocol: this.#protocolSelect.options[this.#protocolSelect.selectedIndex].value as
           Protocol.WebAuthn.AuthenticatorProtocol,
+      ctap2Version: Protocol.WebAuthn.Ctap2Version.Ctap2_1,
       transport: this.#transportSelect.options[this.#transportSelect.selectedIndex].value as
           Protocol.WebAuthn.AuthenticatorTransport,
-      hasResidentKey: this.#residentKeyCheckbox.checked,
+      hasResidentKey: this.residentKeyCheckbox.checked,
       hasUserVerification: this.#userVerificationCheckbox.checked,
+      hasLargeBlob: this.largeBlobCheckbox.checked,
       automaticPresenceSimulation: true,
       isUserVerified: true,
     };

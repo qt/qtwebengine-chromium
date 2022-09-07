@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
+import * as Host from '../../core/host/host.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import * as Bindings from '../bindings/bindings.js';
 import * as Workspace from '../workspace/workspace.js';
 
 import type {FileSystem} from './FileSystemWorkspaceBinding.js';
@@ -33,7 +35,8 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
   private activeInternal: boolean;
   private enabled: boolean;
   private eventDescriptors: Common.EventTarget.EventDescriptor[];
-  #headerOverridesMap: Map<string, HeaderOverrideWithRegex[]> = new Map();
+  #headerOverridesMap: Map<Platform.DevToolsPath.EncodedPathString, HeaderOverrideWithRegex[]> = new Map();
+  readonly #sourceCodeToBindProcessMutex = new WeakMap<Workspace.UISourceCode.UISourceCode, Common.Mutex.Mutex>();
 
   private constructor(workspace: Workspace.Workspace.WorkspaceImpl) {
     super();
@@ -65,6 +68,8 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     });
 
     PersistenceImpl.instance().addNetworkInterceptor(this.canHandleNetworkUISourceCode.bind(this));
+    Bindings.BreakpointManager.BreakpointManager.instance().addUpdateBindingsCallback(
+        this.networkUISourceCodeAdded.bind(this));
 
     this.eventDescriptors = [];
     void this.enabledChanged();
@@ -188,15 +193,19 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
 
   encodedPathFromUrl(url: Platform.DevToolsPath.UrlString, ignoreInactive?: boolean):
       Platform.DevToolsPath.EncodedPathString {
+    return Common.ParsedURL.ParsedURL.rawPathToEncodedPathString(this.rawPathFromUrl(url, ignoreInactive));
+  }
+
+  rawPathFromUrl(url: Platform.DevToolsPath.UrlString, ignoreInactive?: boolean): Platform.DevToolsPath.RawPathString {
     if ((!this.activeInternal && !ignoreInactive) || !this.projectInternal) {
-      return Platform.DevToolsPath.EmptyEncodedPathString;
+      return Platform.DevToolsPath.EmptyRawPathString;
     }
-    let urlPath =
-        Common.ParsedURL.ParsedURL.urlWithoutHash(url.replace(/^https?:\/\//, '')) as Platform.DevToolsPath.UrlString;
-    if (urlPath.endsWith('/') && urlPath.indexOf('?') === -1) {
-      urlPath = Common.ParsedURL.ParsedURL.concatenate(urlPath, 'index.html');
+    let initialEncodedPath = Common.ParsedURL.ParsedURL.urlWithoutHash(url.replace(/^https?:\/\//, '')) as
+        Platform.DevToolsPath.EncodedPathString;
+    if (initialEncodedPath.endsWith('/') && initialEncodedPath.indexOf('?') === -1) {
+      initialEncodedPath = Common.ParsedURL.ParsedURL.concatenate(initialEncodedPath, 'index.html');
     }
-    let encodedPathParts = encodeUrlPathToLocalPathParts(urlPath);
+    let encodedPathParts = encodeEncodedPathToLocalPathParts(initialEncodedPath);
     const projectPath =
         FileSystemWorkspaceBinding.fileSystemPath(this.projectInternal.id() as Platform.DevToolsPath.UrlString);
     const encodedPath = encodedPathParts.join('/');
@@ -204,7 +213,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       const domain = encodedPathParts[0];
       const encodedFileName = encodedPathParts[encodedPathParts.length - 1];
       const shortFileName = encodedFileName ? encodedFileName.substr(0, 10) + '-' : '';
-      const extension = Common.ParsedURL.ParsedURL.extractExtension(urlPath);
+      const extension = Common.ParsedURL.ParsedURL.extractExtension(initialEncodedPath);
       const extensionPart = extension ? '.' + extension.substr(0, 10) : '';
       encodedPathParts = [
         domain,
@@ -212,41 +221,47 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
         shortFileName + Platform.StringUtilities.hashCode(encodedPath).toString(16) + extensionPart,
       ];
     }
-    return Common.ParsedURL.ParsedURL.join(encodedPathParts as Platform.DevToolsPath.EncodedPathString[], '/');
+    return Common.ParsedURL.ParsedURL.join(encodedPathParts as Platform.DevToolsPath.RawPathString[], '/');
 
-    function encodeUrlPathToLocalPathParts(urlPath: Platform.DevToolsPath.UrlString): string[] {
+    function encodeEncodedPathToLocalPathParts(encodedPath: Platform.DevToolsPath.EncodedPathString): string[] {
       const encodedParts = [];
-      for (const pathPart of fileNamePartsFromUrlPath(urlPath)) {
+      for (const pathPart of fileNamePartsFromEncodedPath(encodedPath)) {
         if (!pathPart) {
           continue;
         }
-        // encodeURI() escapes all the unsafe filename characters except /:?*
-        let encodedName = encodeURI(pathPart).replace(/[\/:\?\*]/g, match => '%' + match[0].charCodeAt(0).toString(16));
-        // Windows does not allow a small set of filenames.
-        if (RESERVED_FILENAMES.has(encodedName.toLowerCase())) {
-          encodedName = encodedName.split('').map(char => '%' + char.charCodeAt(0).toString(16)).join('');
-        }
-        // Windows does not allow the file to end in a space or dot (space should already be encoded).
-        const lastChar = encodedName.charAt(encodedName.length - 1);
-        if (lastChar === '.') {
-          encodedName = encodedName.substr(0, encodedName.length - 1) + '%2e';
+        // encodeURI() escapes all the unsafe filename characters except '/' and '*'
+        let encodedName =
+            encodeURI(pathPart).replace(/[\/\*]/g, match => '%' + match[0].charCodeAt(0).toString(16).toUpperCase());
+        if (Host.Platform.isWin()) {
+          // Windows does not allow ':' and '?' in filenames
+          encodedName = encodedName.replace(/[:\?]/g, match => '%' + match[0].charCodeAt(0).toString(16).toUpperCase());
+          // Windows does not allow a small set of filenames.
+          if (RESERVED_FILENAMES.has(encodedName.toLowerCase())) {
+            encodedName =
+                encodedName.split('').map(char => '%' + char.charCodeAt(0).toString(16).toUpperCase()).join('');
+          }
+          // Windows does not allow the file to end in a space or dot (space should already be encoded).
+          const lastChar = encodedName.charAt(encodedName.length - 1);
+          if (lastChar === '.') {
+            encodedName = encodedName.substr(0, encodedName.length - 1) + '%2E';
+          }
         }
         encodedParts.push(encodedName);
       }
       return encodedParts;
     }
 
-    function fileNamePartsFromUrlPath(urlPath: Platform.DevToolsPath.UrlString): string[] {
-      urlPath = Common.ParsedURL.ParsedURL.urlWithoutHash(urlPath) as Platform.DevToolsPath.UrlString;
-      const queryIndex = urlPath.indexOf('?');
+    function fileNamePartsFromEncodedPath(encodedPath: Platform.DevToolsPath.EncodedPathString): string[] {
+      encodedPath = Common.ParsedURL.ParsedURL.urlWithoutHash(encodedPath) as Platform.DevToolsPath.EncodedPathString;
+      const queryIndex = encodedPath.indexOf('?');
       if (queryIndex === -1) {
-        return urlPath.split('/');
+        return encodedPath.split('/');
       }
       if (queryIndex === 0) {
-        return [urlPath];
+        return [encodedPath];
       }
-      const endSection = urlPath.substr(queryIndex);
-      const parts = urlPath.substr(0, urlPath.length - endSection.length).split('/');
+      const endSection = encodedPath.substr(queryIndex);
+      const parts = encodedPath.substr(0, encodedPath.length - endSection.length).split('/');
       parts[parts.length - 1] += endSection;
       return parts;
     }
@@ -257,8 +272,28 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     if (!this.projectInternal) {
       return Platform.DevToolsPath.EmptyUrlString;
     }
-    return (this.projectInternal as FileSystem).fileSystemPath() + '/' + this.encodedPathFromUrl(url, ignoreInactive) as
-        Platform.DevToolsPath.UrlString;
+    return Common.ParsedURL.ParsedURL.concatenate(
+        (this.projectInternal as FileSystem).fileSystemPath(), '/', this.encodedPathFromUrl(url, ignoreInactive));
+  }
+
+  private getHeadersUISourceCodeFromUrl(url: Platform.DevToolsPath.UrlString): Workspace.UISourceCode.UISourceCode
+      |null {
+    const fileUrlFromRequest = this.fileUrlFromNetworkUrl(url, /* ignoreNoActive */ true);
+    const folderUrlFromRequest =
+        Common.ParsedURL.ParsedURL.substring(fileUrlFromRequest, 0, fileUrlFromRequest.lastIndexOf('/'));
+    const headersFileUrl = Common.ParsedURL.ParsedURL.concatenate(folderUrlFromRequest, '/', HEADERS_FILENAME);
+    return Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(headersFileUrl);
+  }
+
+  async getOrCreateHeadersUISourceCodeFromUrl(url: Platform.DevToolsPath.UrlString):
+      Promise<Workspace.UISourceCode.UISourceCode|null> {
+    let uiSourceCode = this.getHeadersUISourceCodeFromUrl(url);
+    if (!uiSourceCode && this.projectInternal) {
+      const encodedFilePath = this.encodedPathFromUrl(url, /* ignoreNoActive */ true);
+      const encodedPath = Common.ParsedURL.ParsedURL.substring(encodedFilePath, 0, encodedFilePath.lastIndexOf('/'));
+      uiSourceCode = await this.projectInternal.createFile(encodedPath, HEADERS_FILENAME, '');
+    }
+    return uiSourceCode;
   }
 
   private decodeLocalPathToUrlPath(path: string): string {
@@ -270,24 +305,66 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     return path;
   }
 
-  private async unbind(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
+  async #unbind(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
     const binding = this.bindings.get(uiSourceCode);
     if (binding) {
-      this.bindings.delete(binding.network);
-      this.bindings.delete(binding.fileSystem);
-      await PersistenceImpl.instance().removeBinding(binding);
+      const mutex = this.#getOrCreateMutex(binding.network);
+      const release = await mutex.acquire();
+      try {
+        await this.#innerUnbind(binding);
+      } finally {
+        release();
+      }
     }
   }
 
-  private async bind(
+  async #unbindUnguarded(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
+    const binding = this.bindings.get(uiSourceCode);
+    if (binding) {
+      await this.#innerUnbind(binding);
+    }
+  }
+
+  #innerUnbind(binding: PersistenceBinding): Promise<void> {
+    this.bindings.delete(binding.network);
+    this.bindings.delete(binding.fileSystem);
+    return PersistenceImpl.instance().removeBinding(binding);
+  }
+
+  async #bind(
       networkUISourceCode: Workspace.UISourceCode.UISourceCode,
       fileSystemUISourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
-    if (this.bindings.has(networkUISourceCode)) {
-      await this.unbind(networkUISourceCode);
+    const mutex = this.#getOrCreateMutex(networkUISourceCode);
+    const release = await mutex.acquire();
+    try {
+      const existingBinding = this.bindings.get(networkUISourceCode);
+      if (existingBinding) {
+        const {network, fileSystem} = existingBinding;
+        if (networkUISourceCode === network && fileSystemUISourceCode === fileSystem) {
+          return;
+        }
+        await this.#unbindUnguarded(networkUISourceCode);
+        await this.#unbindUnguarded(fileSystemUISourceCode);
+      }
+
+      await this.#innerAddBinding(networkUISourceCode, fileSystemUISourceCode);
+    } finally {
+      release();
     }
-    if (this.bindings.has(fileSystemUISourceCode)) {
-      await this.unbind(fileSystemUISourceCode);
+  }
+
+  #getOrCreateMutex(networkUISourceCode: Workspace.UISourceCode.UISourceCode): Common.Mutex.Mutex {
+    let mutex = this.#sourceCodeToBindProcessMutex.get(networkUISourceCode);
+    if (!mutex) {
+      mutex = new Common.Mutex.Mutex();
+      this.#sourceCodeToBindProcessMutex.set(networkUISourceCode, mutex);
     }
+    return mutex;
+  }
+
+  async #innerAddBinding(
+      networkUISourceCode: Workspace.UISourceCode.UISourceCode,
+      fileSystemUISourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
     const binding = new PersistenceBinding(networkUISourceCode, fileSystemUISourceCode);
     this.bindings.set(networkUISourceCode, binding);
     this.bindings.set(fileSystemUISourceCode, binding);
@@ -317,12 +394,13 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const content = (await uiSourceCode.requestContent()).content || '';
     const encoded = await uiSourceCode.contentEncoded();
     const lastIndexOfSlash = encodedPath.lastIndexOf('/');
-    const encodedFileName = encodedPath.substr(lastIndexOfSlash + 1);
+    const encodedFileName = Common.ParsedURL.ParsedURL.substring(encodedPath, lastIndexOfSlash + 1);
+    const rawFileName = Common.ParsedURL.ParsedURL.encodedPathToRawPathString(encodedFileName);
     encodedPath = Common.ParsedURL.ParsedURL.substr(encodedPath, 0, lastIndexOfSlash);
     if (this.projectInternal) {
-      await this.projectInternal.createFile(encodedPath, encodedFileName, content, encoded);
+      await this.projectInternal.createFile(encodedPath, rawFileName, content, encoded);
     }
-    this.fileCreatedForTest(encodedPath, encodedFileName);
+    this.fileCreatedForTest(encodedPath, rawFileName);
     this.savingForOverrides.delete(uiSourceCode);
   }
 
@@ -337,7 +415,9 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     if (relativePathParts[1] === 'longurls' && relativePathParts.length !== 2) {
       return 'http?://' + relativePathParts[0] + '/*';
     }
-    return 'http?://' + this.decodeLocalPathToUrlPath(relativePathParts.join('/'));
+    // 'relativePath' returns an encoded string of the local file name which itself is already encoded.
+    // We therefore need to decode twice to get the raw path.
+    return 'http?://' + this.decodeLocalPathToUrlPath(this.decodeLocalPathToUrlPath(relativePathParts.join('/')));
   }
 
   private async onUISourceCodeAdded(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
@@ -360,7 +440,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const project = this.projectInternal as FileSystem;
     const fileSystemUISourceCode = project.uiSourceCodeForURL(this.fileUrlFromNetworkUrl(url));
     if (fileSystemUISourceCode) {
-      await this.bind(uiSourceCode, fileSystemUISourceCode);
+      await this.#bind(uiSourceCode, fileSystemUISourceCode);
     }
   }
 
@@ -374,12 +454,15 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     const networkUISourceCode =
         this.networkUISourceCodeForEncodedPath.get(Common.ParsedURL.ParsedURL.join(relativePath, '/'));
     if (networkUISourceCode) {
-      await this.bind(networkUISourceCode, uiSourceCode);
+      await this.#bind(networkUISourceCode, uiSourceCode);
     }
   }
 
-  async generateHeaderPatterns(uiSourceCode: Workspace.UISourceCode.UISourceCode):
-      Promise<{headerPatterns: Set<string>, path: string, overridesWithRegex: HeaderOverrideWithRegex[]}> {
+  async generateHeaderPatterns(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<{
+    headerPatterns: Set<string>,
+    path: Platform.DevToolsPath.EncodedPathString,
+    overridesWithRegex: HeaderOverrideWithRegex[],
+  }> {
     const headerPatterns = new Set<string>();
     const content = (await uiSourceCode.requestContent()).content || '[]';
     let headerOverrides: HeaderOverride[] = [];
@@ -390,10 +473,16 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
       }
     } catch (e) {
       console.error('Failed to parse', uiSourceCode.url(), 'for locally overriding headers.');
-      return {headerPatterns, path: '', overridesWithRegex: []};
+      return {headerPatterns, path: Platform.DevToolsPath.EmptyEncodedPathString, overridesWithRegex: []};
     }
     const relativePath = FileSystemWorkspaceBinding.relativePath(uiSourceCode).join('/');
-    const decodedPath = this.decodeLocalPathToUrlPath(relativePath).slice(0, -HEADERS_FILENAME.length);
+    // 'relativePath' returns an encoded string of the local file name which itself is already encoded.
+    // e.g. relativePath: 'www.example.com%253A443/path/.headers '
+    // singlyDecodedPath: 'www.example.com%3A443/path/'
+    // decodedPath: 'www.example.com:443/path'
+    const singlyDecodedPath = this.decodeLocalPathToUrlPath(relativePath).slice(0, -HEADERS_FILENAME.length) as
+        Platform.DevToolsPath.EncodedPathString;
+    const decodedPath = this.decodeLocalPathToUrlPath(singlyDecodedPath) as Platform.DevToolsPath.RawPathString;
 
     const overridesWithRegex: HeaderOverrideWithRegex[] = [];
     for (const headerOverride of headerOverrides) {
@@ -423,7 +512,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
         });
       }
     }
-    return {headerPatterns, path: decodedPath, overridesWithRegex};
+    return {headerPatterns, path: singlyDecodedPath, overridesWithRegex};
   }
 
   async updateInterceptionPatternsForTests(): Promise<void> {
@@ -478,7 +567,8 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
 
   private async networkUISourceCodeRemoved(uiSourceCode: Workspace.UISourceCode.UISourceCode): Promise<void> {
     if (uiSourceCode.project().type() === Workspace.Workspace.projectTypes.Network) {
-      await this.unbind(uiSourceCode);
+      await this.#unbind(uiSourceCode);
+      this.#sourceCodeToBindProcessMutex.delete(uiSourceCode);
       this.networkUISourceCodeForEncodedPath.delete(this.encodedPathFromUrl(uiSourceCode.url()));
     }
   }
@@ -489,7 +579,7 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
     }
     this.updateInterceptionPatterns();
     this.originalResponseContentPromises.delete(uiSourceCode);
-    await this.unbind(uiSourceCode);
+    await this.#unbind(uiSourceCode);
   }
 
   async setProject(project: Workspace.Workspace.Project|null): Promise<void> {
@@ -565,8 +655,10 @@ export class NetworkPersistenceManager extends Common.ObjectWrapper.ObjectWrappe
 
   handleHeaderInterception(interceptedRequest: SDK.NetworkManager.InterceptedRequest): Protocol.Fetch.HeaderEntry[] {
     let result: Protocol.Fetch.HeaderEntry[] = interceptedRequest.responseHeaders || [];
+    // 'rawPathFromUrl()''s return value is already (singly-)encoded, so we can
+    // treat it as an 'EncodedPathString' here.
     const urlSegments =
-        this.encodedPathFromUrl(interceptedRequest.request.url as Platform.DevToolsPath.UrlString).split('/') as
+        this.rawPathFromUrl(interceptedRequest.request.url as Platform.DevToolsPath.UrlString).split('/') as
         Platform.DevToolsPath.EncodedPathString[];
     // Traverse the hierarchy of overrides from the most general to the most
     // specific. Check with empty string first to match overrides applying to

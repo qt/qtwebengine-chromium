@@ -53,6 +53,7 @@ group("all") {
     ":system_api-tpm_manager-goprotos",
     ":system_api-tpm_manager-protos",
     ":system_api-u2f-protos",
+    ":system_api-update_engine-goprotos",
     ":system_api-update_engine-protos",
     ":system_api-vm_applications-protos",
     ":system_api-vm_cicerone-goprotos",
@@ -436,6 +437,12 @@ proto_library("system_api-update_engine-protos") {
   proto_out_dir = "include/update_engine/proto_bindings"
   sources = [ "${proto_in_dir}/update_engine.proto" ]
   standalone = true
+}
+
+goproto_library("system_api-update_engine-goprotos") {
+  proto_in_dir = "dbus/update_engine"
+  proto_out_dir = "go/src/"
+  sources = [ "${proto_in_dir}/update_engine.proto" ]
 }
 
 proto_library("system_api-vm_plugin_dispatcher-protos") {

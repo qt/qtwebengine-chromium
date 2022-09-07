@@ -422,22 +422,26 @@ NET_EXPORT extern const base::Feature kExtraCookieValidityChecks;
 // Android.
 NET_EXPORT extern const base::Feature kRecordRadioWakeupTrigger;
 
-// When enabled, certain operations in the HTTP cache are brokered to allow
-// the network process to be sandboxed.
-NET_EXPORT extern const base::Feature kSandboxHttpCache;
-
 // When enabled, cookies cannot have an expiry date further than 400 days in the
 // future.
 NET_EXPORT extern const base::Feature kClampCookieExpiryTo400Days;
 
-// Whether ALPS parsing is on for any type of frame.
-NET_EXPORT extern const base::Feature kAlpsParsing;
+// Controls whether static key pinning is enforced.
+NET_EXPORT extern const base::Feature kStaticKeyPinningEnforcement;
 
-// Whether ALPS parsing is on for client hint parsing specifically.
-NET_EXPORT extern const base::Feature kAlpsClientHintParsing;
+// When enabled, cookies with a non-ASCII domain attribute will be rejected.
+NET_EXPORT extern const base::Feature kCookieDomainRejectNonASCII;
 
-// Whether to kill the session on Error::kAcceptChMalformed.
-NET_EXPORT extern const base::Feature kShouldKillSessionOnAcceptChMalformed;
+NET_EXPORT extern const base::Feature kOptimizeNetworkBuffers;
+
+NET_EXPORT
+extern const base::FeatureParam<int> kOptimizeNetworkBuffersBytesReadLimit;
+
+NET_EXPORT extern const base::FeatureParam<int>
+    kOptimizeNetworkBuffersMaxInputStreamBytesToReadWhenAvailableUnknown;
+
+NET_EXPORT extern const base::FeatureParam<int>
+    kOptimizeNetworkBuffersFilterSourceStreamBufferSize;
 
 }  // namespace features
 }  // namespace net

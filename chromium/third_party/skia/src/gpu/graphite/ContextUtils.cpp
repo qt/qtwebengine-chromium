@@ -25,12 +25,13 @@ std::tuple<SkUniquePaintParamsID, UniformDataCache::Index, TextureDataCache::Ind
 ExtractPaintData(Recorder* recorder,
                  SkPipelineDataGatherer* gatherer,
                  SkPaintParamsKeyBuilder* builder,
+                 const SkM44& dev2Local,
                  const PaintParams& p) {
 
     SkDEBUGCODE(gatherer->checkReset());
     SkDEBUGCODE(builder->checkReset());
 
-    SkKeyContext keyContext(recorder);
+    SkKeyContext keyContext(recorder, dev2Local);
 
     p.toKey(keyContext, builder, gatherer);
 
@@ -40,7 +41,7 @@ ExtractPaintData(Recorder* recorder,
     UniformDataCache* uniformDataCache = recorder->priv().uniformDataCache();
     TextureDataCache* textureDataCache = recorder->priv().textureDataCache();
 
-    auto entry = dict->findOrCreate(key, gatherer->blendInfo());
+    auto entry = dict->findOrCreate(key, builder->blendInfo());
     UniformDataCache::Index uniformIndex = uniformDataCache->insert(gatherer->peekUniformData());
     TextureDataCache::Index textureIndex = textureDataCache->insert(gatherer->textureDataBlock());
 

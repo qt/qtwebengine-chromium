@@ -68,6 +68,11 @@ message ApplicationList {
     TERMINA = 0;
     PLUGIN_VM = 1;
     BOREALIS = 2;
+    BRUSCHETTA = 3;
+    // Ideally unknown would be 0, but the list was created without an unknown
+    // so for backcompat don't renumber.
+    UNKNOWN = 4;
+    ARCVM = 5;
   }
 
   repeated App apps = 1;

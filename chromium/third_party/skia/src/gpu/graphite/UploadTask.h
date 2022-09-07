@@ -44,14 +44,16 @@ public:
 
     bool isValid() const { return fBuffer != nullptr; }
 
+    bool prepareResources(ResourceProvider*);
+
     // Adds upload command to the given CommandBuffer
-    void addCommand(ResourceProvider*, CommandBuffer*) const;
+    void addCommand( CommandBuffer*) const;
 
 private:
     UploadInstance() {}
-    UploadInstance(sk_sp<Buffer>, sk_sp<TextureProxy>, std::vector<BufferTextureCopyData>);
+    UploadInstance(const Buffer*, sk_sp<TextureProxy>, std::vector<BufferTextureCopyData>);
 
-    sk_sp<Buffer> fBuffer;
+    const Buffer* fBuffer;
     sk_sp<TextureProxy> fTextureProxy;
     std::vector<BufferTextureCopyData> fCopyData;
 };
@@ -94,6 +96,8 @@ public:
     static sk_sp<UploadTask> Make(const UploadInstance&);
 
     ~UploadTask() override;
+
+    bool prepareResources(ResourceProvider*) override;
 
     bool addCommands(ResourceProvider*, CommandBuffer*) override;
 

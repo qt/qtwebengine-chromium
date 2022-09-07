@@ -38,9 +38,8 @@ void StressConcurrentAllocatorTask::RunInternal() {
         kSmallObjectSize, AllocationType::kOld, AllocationOrigin::kRuntime,
         AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kSmallObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kSmallObjectSize);
     } else {
       local_heap.TryPerformCollection();
     }
@@ -49,9 +48,8 @@ void StressConcurrentAllocatorTask::RunInternal() {
                                     AllocationOrigin::kRuntime,
                                     AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kMediumObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kMediumObjectSize);
     } else {
       local_heap.TryPerformCollection();
     }
@@ -60,9 +58,8 @@ void StressConcurrentAllocatorTask::RunInternal() {
                                     AllocationOrigin::kRuntime,
                                     AllocationAlignment::kTaggedAligned);
     if (!result.IsFailure()) {
-      heap->CreateFillerObjectAtBackground(
-          result.ToAddress(), kLargeObjectSize,
-          ClearFreedMemoryMode::kDontClearFreedMemory);
+      heap->CreateFillerObjectAtBackground(result.ToAddress(),
+                                           kLargeObjectSize);
     } else {
       local_heap.TryPerformCollection();
     }
@@ -105,6 +102,11 @@ void ConcurrentAllocator::MarkLinearAllocationAreaBlack() {
   Address limit = lab_.limit();
 
   if (top != kNullAddress && top != limit) {
+    base::Optional<CodePageHeaderModificationScope> optional_rwx_write_scope;
+    if (space_->identity() == CODE_SPACE) {
+      optional_rwx_write_scope.emplace(
+          "Marking Code objects requires write access to the Code page header");
+    }
     Page::FromAllocationAreaAddress(top)->CreateBlackAreaBackground(top, limit);
   }
 }
@@ -114,6 +116,11 @@ void ConcurrentAllocator::UnmarkLinearAllocationArea() {
   Address limit = lab_.limit();
 
   if (top != kNullAddress && top != limit) {
+    base::Optional<CodePageHeaderModificationScope> optional_rwx_write_scope;
+    if (space_->identity() == CODE_SPACE) {
+      optional_rwx_write_scope.emplace(
+          "Marking Code objects requires write access to the Code page header");
+    }
     Page::FromAllocationAreaAddress(top)->DestroyBlackAreaBackground(top,
                                                                      limit);
   }

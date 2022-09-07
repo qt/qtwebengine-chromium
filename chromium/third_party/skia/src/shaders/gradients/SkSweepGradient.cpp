@@ -14,6 +14,7 @@
 
 #ifdef SK_ENABLE_SKSL
 #include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 SkSweepGradient::SkSweepGradient(const SkPoint& center, SkScalar t0, SkScalar t1,
@@ -115,13 +116,16 @@ void SkSweepGradient::addToKey(const SkKeyContext& keyContext,
                                SkPaintParamsKeyBuilder* builder,
                                SkPipelineDataGatherer* gatherer) const {
     GradientShaderBlocks::GradientData data(kSweep_GradientType,
+                                            SkM44(this->getLocalMatrix()),
                                             fCenter, { 0.0f, 0.0f },
                                             0.0, 0.0f,
+                                            fTBias, fTScale,
                                             fTileMode,
                                             fColorCount,
                                             fOrigColors4f,
                                             fOrigPos);
 
-    GradientShaderBlocks::AddToKey(keyContext, builder, gatherer, data);
+    GradientShaderBlocks::BeginBlock(keyContext, builder, gatherer, data);
+    builder->endBlock();
 }
 #endif

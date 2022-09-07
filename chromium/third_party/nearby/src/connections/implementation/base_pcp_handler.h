@@ -18,9 +18,9 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
-#include "securegcm/d2d_connection_context_v1.h"
 #include "securegcm/ukey2_handshake.h"
 #include "absl/container/btree_map.h"
 #include "absl/container/flat_hash_map.h"
@@ -34,7 +34,6 @@
 #ifdef NO_WEBRTC
 #include "connections/implementation/mediums/webrtc_stub.h"
 #else
-#include "connections/implementation/mediums/webrtc.h"
 #endif
 #include "connections/implementation/pcp.h"
 #include "connections/implementation/pcp_handler.h"
@@ -43,13 +42,11 @@
 #include "internal/platform/byte_array.h"
 #include "internal/platform/prng.h"
 #include "internal/platform/atomic_boolean.h"
-#include "internal/platform/atomic_reference.h"
 #include "internal/platform/cancelable_alarm.h"
 #include "internal/platform/count_down_latch.h"
 #include "internal/platform/future.h"
 #include "internal/platform/scheduled_executor.h"
 #include "internal/platform/single_thread_executor.h"
-#include "internal/platform/system_clock.h"
 
 namespace location {
 namespace nearby {
@@ -138,7 +135,8 @@ class BasePcpHandler : public PcpHandler,
   // Called when an endpoint disconnects while we're waiting for both sides to
   // approve/reject the connection.
   // @EndpointManagerThread
-  void OnEndpointDisconnect(ClientProxy* client, const std::string& endpoint_id,
+  void OnEndpointDisconnect(ClientProxy* client, const std::string& service_id,
+                            const std::string& endpoint_id,
                             CountDownLatch barrier) override;
 
   Pcp GetPcp() const override { return pcp_; }
@@ -199,7 +197,16 @@ class BasePcpHandler : public PcpHandler,
     BleEndpoint(DiscoveredEndpoint endpoint, BlePeripheral peripheral)
         : DiscoveredEndpoint(std::move(endpoint)),
           ble_peripheral(std::move(peripheral)) {}
+
     BlePeripheral ble_peripheral;
+  };
+
+  struct BleV2Endpoint : public BasePcpHandler::DiscoveredEndpoint {
+    BleV2Endpoint(DiscoveredEndpoint endpoint, BleV2Peripheral peripheral)
+        : DiscoveredEndpoint(std::move(endpoint)),
+          ble_peripheral(std::move(peripheral)) {}
+
+    BleV2Peripheral ble_peripheral;
   };
 
   struct WifiLanEndpoint : public DiscoveredEndpoint {
@@ -380,6 +387,8 @@ class BasePcpHandler : public PcpHandler,
   static Exception WriteConnectionRequestFrame(
       EndpointChannel* endpoint_channel, const std::string& local_endpoint_id,
       const ByteArray& local_endpoint_info, std::int32_t nonce,
+      bool supports_5_ghz, const std::string& bssid, std::int32_t ap_frequency,
+      const std::string& ip_address,
       const std::vector<proto::connections::Medium>& supported_mediums,
       std::int32_t keep_alive_interval_millis,
       std::int32_t keep_alive_timeout_millis);
@@ -476,7 +485,7 @@ class BasePcpHandler : public PcpHandler,
       const ConnectionOptions& connection_options) const;
   std::vector<proto::connections::Medium>
   GetSupportedConnectionMediumsByPriority(
-      const ConnectionOptions& local_option);
+      const ConnectionOptions& local_connection_option);
   std::string GetStringValueOfSupportedMediums(
       const ConnectionOptions& connection_options) const;
   std::string GetStringValueOfSupportedMediums(
@@ -517,7 +526,8 @@ class BasePcpHandler : public PcpHandler,
   // after reading the message (in which case, this alarm should be cancelled
   // as it's no longer needed), but this alarm is the fallback in case that
   // doesn't happen.
-  absl::flat_hash_map<std::string, CancelableAlarm> pending_alarms_;
+  absl::flat_hash_map<std::string, std::unique_ptr<CancelableAlarm>>
+      pending_alarms_;
 
   // The active ClientProxy's connection lifecycle listener. Non-null while
   // advertising.

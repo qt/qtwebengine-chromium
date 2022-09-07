@@ -3,115 +3,41 @@ Util math unit tests.
 `;
 
 import { makeTestGroup } from '../common/framework/test_group.js';
+import { objectEquals } from '../common/util/util.js';
 import { kBit, kValue } from '../webgpu/util/constants.js';
 import { f32, f32Bits, float32ToUint32, Scalar } from '../webgpu/util/conversion.js';
 import {
   biasedRange,
   correctlyRounded,
-  diffULP,
+  correctlyRoundedF32,
+  fullF32Range,
+  hexToF32,
+  hexToF64,
   lerp,
   linearRange,
   nextAfter,
+  oneULP,
+  withinULP,
 } from '../webgpu/util/math.js';
 
 import { UnitTest } from './unit_test.js';
 
 export const g = makeTestGroup(UnitTest);
 
-/** Converts a 32-bit hex values to a 32-bit float value */
-function hexToF32(hex: number): number {
-  return new Float32Array(new Uint32Array([hex]).buffer)[0];
-}
-
-/** Converts two 32-bit hex values to a 64-bit float value */
-function hexToFloat64(h32: number, l32: number): number {
-  const u32Arr = new Uint32Array(2);
-  u32Arr[0] = l32;
-  u32Arr[1] = h32;
-  const f64Arr = new Float64Array(u32Arr.buffer);
-  return f64Arr[0];
-}
-
 /**
- * @returns true if arrays are equal, doing element-wise comparison as needed, and considering NaNs to be equal.
+ * @returns true if arrays are equal within 1ULP, doing element-wise comparison as needed, and considering NaNs to be equal.
  *
- * Depends on the correctness of diffULP, which is tested in this file.
+ * Depends on the correctness of withinULP, which is tested in this file.
  **/
 function compareArrayOfNumbers(got: Array<number>, expect: Array<number>): boolean {
   return (
     got.length === expect.length &&
     got.every((value, index) => {
       const expected = expect[index];
-      return 1 >= diffULP(value, expected) || Number.isNaN(value && Number.isNaN(expected));
+      return (Number.isNaN(value) && Number.isNaN(expected)) || withinULP(value, expected);
     })
   );
 }
-
-interface DiffULPCase {
-  a: number;
-  b: number;
-  ulp: number;
-}
-
-g.test('test,math,diffULP')
-  .paramsSimple<DiffULPCase>([
-    { a: 0, b: 0, ulp: 0 },
-    { a: 1, b: 2, ulp: 2 ** 23 }, // Single exponent step
-    { a: 2, b: 1, ulp: 2 ** 23 }, // Single exponent step
-    { a: 2, b: 4, ulp: 2 ** 23 }, // Single exponent step
-    { a: 4, b: 2, ulp: 2 ** 23 }, // Single exponent step
-    { a: -1, b: -2, ulp: 2 ** 23 }, // Single exponent step
-    { a: -2, b: -1, ulp: 2 ** 23 }, // Single exponent step
-    { a: -2, b: -4, ulp: 2 ** 23 }, // Single exponent step
-    { a: -4, b: -2, ulp: 2 ** 23 }, // Single exponent step
-    { a: 1, b: 4, ulp: 2 ** 24 }, // Double exponent step
-    { a: 4, b: 1, ulp: 2 ** 24 }, // Double exponent step
-    { a: -1, b: -4, ulp: 2 ** 24 }, // Double exponent step
-    { a: -4, b: -1, ulp: 2 ** 24 }, // Double exponent step
-    { a: hexToF32(0x00800000), b: hexToF32(0x00800001), ulp: 1 }, // Single mantissa step
-    { a: hexToF32(0x00800001), b: hexToF32(0x00800000), ulp: 1 }, // Single mantissa step
-    { a: hexToF32(0x03800000), b: hexToF32(0x03800001), ulp: 1 }, // Single mantissa step
-    { a: hexToF32(0x03800001), b: hexToF32(0x03800000), ulp: 1 }, // Single mantissa step
-    { a: -hexToF32(0x00800000), b: -hexToF32(0x00800001), ulp: 1 }, // Single mantissa step
-    { a: -hexToF32(0x00800001), b: -hexToF32(0x00800000), ulp: 1 }, // Single mantissa step
-    { a: -hexToF32(0x03800000), b: -hexToF32(0x03800001), ulp: 1 }, // Single mantissa step
-    { a: -hexToF32(0x03800001), b: -hexToF32(0x03800000), ulp: 1 }, // Single mantissa step
-    { a: hexToF32(0x00800000), b: hexToF32(0x00800002), ulp: 2 }, // Double mantissa step
-    { a: hexToF32(0x00800002), b: hexToF32(0x00800000), ulp: 2 }, // Double mantissa step
-    { a: hexToF32(0x03800000), b: hexToF32(0x03800002), ulp: 2 }, // Double mantissa step
-    { a: hexToF32(0x03800002), b: hexToF32(0x03800000), ulp: 2 }, // Double mantissa step
-    { a: -hexToF32(0x00800000), b: -hexToF32(0x00800002), ulp: 2 }, // Double mantissa step
-    { a: -hexToF32(0x00800002), b: -hexToF32(0x00800000), ulp: 2 }, // Double mantissa step
-    { a: -hexToF32(0x03800000), b: -hexToF32(0x03800002), ulp: 2 }, // Double mantissa step
-    { a: -hexToF32(0x03800002), b: -hexToF32(0x03800000), ulp: 2 }, // Double mantissa step
-    { a: hexToF32(0x00800000), b: 0, ulp: 1 }, // Normals near 0
-    { a: 0, b: hexToF32(0x00800000), ulp: 1 }, // Normals near 0
-    { a: -hexToF32(0x00800000), b: 0, ulp: 1 }, // Normals near 0
-    { a: 0, b: -hexToF32(0x00800000), ulp: 1 }, // Normals near 0
-    { a: hexToF32(0x00800000), b: -hexToF32(0x00800000), ulp: 2 }, // Normals around 0
-    { a: -hexToF32(0x00800000), b: hexToF32(0x00800000), ulp: 2 }, // Normals around 0
-    { a: hexToF32(0x00000001), b: 0, ulp: 0 }, // Subnormals near 0
-    { a: 0, b: hexToF32(0x00000001), ulp: 0 }, // Subnormals near 0
-    { a: -hexToF32(0x00000001), b: 0, ulp: 0 }, // Subnormals near 0
-    { a: 0, b: -hexToF32(0x00000001), ulp: 0 }, // Subnormals near 0
-    { a: hexToF32(0x00000001), b: -hexToF32(0x00000001), ulp: 0 }, // Subnormals near 0
-    { a: -hexToF32(0x00000001), b: hexToF32(0x00000001), ulp: 0 }, // Subnormals near 0
-    { a: hexToF32(0x00000001), b: hexToF32(0x00800000), ulp: 1 }, // Normal/Subnormal boundary
-    { a: hexToF32(0x00800000), b: hexToF32(0x00000001), ulp: 1 }, // Normal/Subnormal boundary
-    { a: -hexToF32(0x00000001), b: -hexToF32(0x00800000), ulp: 1 }, // Normal/Subnormal boundary
-    { a: -hexToF32(0x00800000), b: -hexToF32(0x00000001), ulp: 1 }, // Normal/Subnormal boundary
-    { a: hexToF32(0x00800001), b: hexToF32(0x00000000), ulp: 2 }, // Just-above-Normal/Subnormal boundary
-    { a: hexToF32(0x00800001), b: hexToF32(0x00000001), ulp: 2 }, // Just-above-Normal/Subnormal boundary
-    { a: hexToF32(0x00800005), b: hexToF32(0x00000001), ulp: 6 }, // Just-above-Normal/Subnormal boundary
-    { a: hexToF32(0x00800005), b: hexToF32(0x00000111), ulp: 6 }, // Just-above-Normal/Subnormal boundary
-  ])
-  .fn(t => {
-    const a = t.params.a;
-    const b = t.params.b;
-    const got = diffULP(a, b);
-    const expect = t.params.ulp;
-    t.expect(got === expect, `diffULP(${a}, ${b}) returned ${got}. Expected ${expect}`);
-  });
 
 interface nextAfterCase {
   val: number;
@@ -119,7 +45,7 @@ interface nextAfterCase {
   result: Scalar;
 }
 
-g.test('test,math,nextAfterFlushToZero')
+g.test('nextAfterFlushToZero')
   .paramsSubcasesOnly<nextAfterCase>(
     // prettier-ignore
     [
@@ -160,7 +86,17 @@ g.test('test,math,nextAfterFlushToZero')
     { val: hexToF32(0x03800000), dir: false, result: f32Bits(0x037fffff) },
     { val: hexToF32(0x83800000), dir: true, result: f32Bits(0x837fffff) },
     { val: hexToF32(0x83800000), dir: false, result: f32Bits(0x83800001) },
-  ]
+
+    // Not precisely expressible as float32
+    { val: 0.001, dir: true, result: f32Bits(0x3a83126f) }, // positive normal
+    { val: 0.001, dir: false, result: f32Bits(0x3a83126e) }, // positive normal
+    { val: -0.001, dir: true, result: f32Bits(0xba83126e) }, // negative normal
+    { val: -0.001, dir: false, result: f32Bits(0xba83126f) }, // negative normal
+    { val: 2.82E-40, dir: true, result: f32Bits(kBit.f32.positive.min) }, // positive subnormal
+    { val: 2.82E-40, dir: false, result: f32Bits(kBit.f32.negative.max) }, // positive subnormal
+    { val: -2.82E-40, dir: true, result: f32Bits(kBit.f32.positive.min) }, // negative subnormal
+    { val: -2.82E-40, dir: false, result: f32Bits(kBit.f32.negative.max) }, // negative subnormal
+    ]
   )
   .fn(t => {
     const val = t.params.val;
@@ -175,7 +111,7 @@ g.test('test,math,nextAfterFlushToZero')
     );
   });
 
-g.test('test,math,nextAfterNoFlush')
+g.test('nextAfterNoFlush')
   .paramsSubcasesOnly<nextAfterCase>(
     // prettier-ignore
     [
@@ -216,6 +152,16 @@ g.test('test,math,nextAfterNoFlush')
     { val: hexToF32(0x03800000), dir: false, result: f32Bits(0x037fffff) },
     { val: hexToF32(0x83800000), dir: true, result: f32Bits(0x837fffff) },
     { val: hexToF32(0x83800000), dir: false, result: f32Bits(0x83800001) },
+
+    // Not precisely expressible as float32
+    { val: 0.001, dir: true, result: f32Bits(0x3a83126f) }, // positive normal
+    { val: 0.001, dir: false, result: f32Bits(0x3a83126e) }, // positive normal
+    { val: -0.001, dir: true, result: f32Bits(0xba83126e) }, // negative normal
+    { val: -0.001, dir: false, result: f32Bits(0xba83126f) }, // negative normal
+    { val: 2.82E-40, dir: true, result: f32Bits(0x0003121a) }, // positive subnormal
+    { val: 2.82E-40, dir: false, result: f32Bits(0x00031219) }, // positive subnormal
+    { val: -2.82E-40, dir: true, result: f32Bits(0x80031219) }, // negative subnormal
+    { val: -2.82E-40, dir: false, result: f32Bits(0x8003121a) }, // negative subnormal
   ]
   )
   .fn(t => {
@@ -231,13 +177,173 @@ g.test('test,math,nextAfterNoFlush')
     );
   });
 
+interface OneULPCase {
+  target: number;
+  expect: number;
+}
+
+g.test('oneULPFlushToZero')
+  .paramsSimple<OneULPCase>([
+    // Edge Cases
+    { target: Number.NaN, expect: Number.NaN },
+    { target: Number.POSITIVE_INFINITY, expect: hexToF32(0x73800000) },
+    { target: Number.NEGATIVE_INFINITY, expect: hexToF32(0x73800000) },
+
+    // Zeroes
+    { target: +0, expect: hexToF32(0x00800000) },
+    { target: -0, expect: hexToF32(0x00800000) },
+
+    // Subnormals
+    { target: hexToF32(kBit.f32.subnormal.positive.min), expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.positive.max), expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.negative.min), expect: hexToF32(0x00800000) },
+    { target: hexToF32(kBit.f32.subnormal.negative.max), expect: hexToF32(0x00800000) },
+
+    // Normals
+    { target: hexToF32(kBit.f32.positive.max), expect: hexToF32(0x73800000) },
+    { target: hexToF32(kBit.f32.positive.min), expect: hexToF32(0x00000001) },
+    { target: hexToF32(kBit.f32.negative.max), expect: hexToF32(0x00000001) },
+    { target: hexToF32(kBit.f32.negative.min), expect: hexToF32(0x73800000) },
+    { target: 1, expect: hexToF32(0x33800000) },
+    { target: 2, expect: hexToF32(0x34000000) },
+    { target: 4, expect: hexToF32(0x34800000) },
+    { target: 1000000, expect: hexToF32(0x3d800000) },
+    { target: -1, expect: hexToF32(0x33800000) },
+    { target: -2, expect: hexToF32(0x34000000) },
+    { target: -4, expect: hexToF32(0x34800000) },
+    { target: -1000000, expect: hexToF32(0x3d800000) },
+
+    // Not precisely expressible as float32
+    { target: 2.82e-40, expect: hexToF32(0x00800000) }, // positive subnormal
+    { target: -2.82e-40, expect: hexToF32(0x00800000) }, // negative subnormal
+    { target: 0.001, expect: hexToF32(0x2f000000) }, // positive normal
+    { target: -0.001, expect: hexToF32(0x2f000000) }, // negative normal
+    { target: 1e40, expect: hexToF32(0x73800000) }, // positive out of range
+    { target: -1e40, expect: hexToF32(0x73800000) }, // negative out of range
+  ])
+  .fn(t => {
+    const target = t.params.target;
+    const got = oneULP(target, true);
+    const expect = t.params.expect;
+    t.expect(
+      got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
+      `oneULP(${target}, true) returned ${got}. Expected ${expect}`
+    );
+  });
+
+g.test('oneULPNoFlush')
+  .paramsSimple<OneULPCase>([
+    // Edge Cases
+    { target: Number.NaN, expect: Number.NaN },
+    { target: Number.POSITIVE_INFINITY, expect: hexToF32(0x73800000) },
+    { target: Number.NEGATIVE_INFINITY, expect: hexToF32(0x73800000) },
+
+    // Zeroes
+    { target: +0, expect: hexToF32(0x00000001) },
+    { target: -0, expect: hexToF32(0x00000001) },
+
+    // Subnormals
+    { target: hexToF32(kBit.f32.subnormal.positive.min), expect: hexToF32(0x00000001) },
+    { target: hexToF32(kBit.f32.subnormal.positive.max), expect: hexToF32(0x00000001) },
+    { target: hexToF32(kBit.f32.subnormal.negative.min), expect: hexToF32(0x00000001) },
+    { target: hexToF32(kBit.f32.subnormal.negative.max), expect: hexToF32(0x00000001) },
+
+    // Normals
+    { target: 1, expect: hexToF32(0x33800000) },
+    { target: 2, expect: hexToF32(0x34000000) },
+    { target: 4, expect: hexToF32(0x34800000) },
+    { target: 1000000, expect: hexToF32(0x3d800000) },
+    { target: -1, expect: hexToF32(0x33800000) },
+    { target: -2, expect: hexToF32(0x34000000) },
+    { target: -4, expect: hexToF32(0x34800000) },
+    { target: -1000000, expect: hexToF32(0x3d800000) },
+
+    // Non-f32 expressible
+    { target: 2.82e-40, expect: hexToF32(0x00000001) }, // positive subnormal
+    { target: -2.82e-40, expect: hexToF32(0x00000001) }, // negative subnormal
+    { target: 0.001, expect: hexToF32(0x2f000000) }, // positive normal
+    { target: -0.001, expect: hexToF32(0x2f000000) }, // negative normal
+    { target: 1e40, expect: hexToF32(0x73800000) }, // positive out of range
+    { target: -1e40, expect: hexToF32(0x73800000) }, // negative out of range
+  ])
+  .fn(t => {
+    const target = t.params.target;
+    const got = oneULP(target, false);
+    const expect = t.params.expect;
+    t.expect(
+      got === expect || (Number.isNaN(got) && Number.isNaN(expect)),
+      `oneULP(${target}, true) returned ${got}. Expected ${expect}`
+    );
+  });
+
+interface withinULPCase {
+  val: number;
+  target: number;
+  expect: boolean;
+}
+g.test('withinULP')
+  .paramsSubcasesOnly<withinULPCase>(
+    // prettier-ignore
+    [
+    // Edge Cases
+    { val: Number.NaN, target: Number.NaN, expect: false },
+    { val: Number.POSITIVE_INFINITY, target: Number.NaN, expect: false },
+    { val: Number.NEGATIVE_INFINITY, target: Number.NaN, expect: false },
+    { val: 0, target: Number.NaN, expect: false },
+    { val: 10, target: Number.NaN, expect: false },
+    { val: -10, target: Number.NaN, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.NaN, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.NaN, expect: false },
+    { val: hexToF32(kBit.f32.positive.max), target: Number.NaN, expect: false },
+    { val: hexToF32(kBit.f32.negative.min), target: Number.NaN, expect: false },
+
+    { val: Number.NaN, target: Number.POSITIVE_INFINITY, expect: false },
+    { val: Number.POSITIVE_INFINITY, target: Number.POSITIVE_INFINITY, expect: true },
+    { val: Number.NEGATIVE_INFINITY, target: Number.POSITIVE_INFINITY, expect: false },
+    { val: 0, target: Number.POSITIVE_INFINITY, expect: false },
+    { val: 10, target: Number.POSITIVE_INFINITY, expect: false },
+    { val: -10, target: Number.POSITIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.POSITIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.POSITIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.positive.max), target: Number.POSITIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.negative.min), target: Number.POSITIVE_INFINITY, expect: false },
+
+    { val: Number.NaN, target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: Number.POSITIVE_INFINITY, target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: Number.NEGATIVE_INFINITY, target: Number.NEGATIVE_INFINITY, expect: true },
+    { val: 0, target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: 10, target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: -10, target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.positive.max), target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.negative.min), target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.positive.max), target: Number.NEGATIVE_INFINITY, expect: false },
+    { val: hexToF32(kBit.f32.negative.min), target: Number.NEGATIVE_INFINITY, expect: false },
+
+    // Zero
+    { val: 0, target: 0, expect: true },
+    { val: 10, target: 0, expect: false },
+    { val: -10, target: 0, expect: false },
+    { val: hexToF32(kBit.f32.subnormal.positive.max), target: 0, expect: true },
+    { val: hexToF32(kBit.f32.subnormal.negative.min), target: 0, expect: true },
+    { val: hexToF32(kBit.f32.positive.max), target: 0, expect: false },
+    { val: hexToF32(kBit.f32.negative.min), target: 0, expect: false },
+  ]
+  )
+  .fn(t => {
+    const val = t.params.val;
+    const target = t.params.target;
+    const got = withinULP(val, target);
+    const expect = t.params.expect;
+    t.expect(got === expect, `withinULP(${val}, ${target}) returned ${got}. Expected ${expect}`);
+  });
+
 interface correctlyRoundedCase {
   test_val: Scalar;
   target: number;
   is_correct: boolean;
 }
 
-g.test('test,math,correctlyRounded')
+g.test('correctlyRounded')
   .paramsSubcasesOnly<correctlyRoundedCase>(
     // prettier-ignore
     [
@@ -288,50 +394,50 @@ g.test('test,math,correctlyRounded')
     { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: -0, is_correct: true },
 
     // 32-bit subnormals
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.min, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.max, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.max, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.min, is_correct: true },
 
     // 64-bit subnormals
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
 
     // 32-bit normals
     { test_val: f32Bits(kBit.f32.positive.max), target: hexToF32(kBit.f32.positive.max), is_correct: true },
@@ -348,22 +454,22 @@ g.test('test,math,correctlyRounded')
     { test_val: f32Bits(0x83800001), target: hexToF32(0x83800010), is_correct: false },
 
     // 64-bit normals
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00010, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00020, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00030, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00040, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00050, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00060, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00070, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00080, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00010, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00020, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00030, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00040, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00050, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00060, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00070, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00080, 0x00000002), is_correct: false },
   ]
   )
   .fn(t => {
@@ -378,7 +484,7 @@ g.test('test,math,correctlyRounded')
     );
   });
 
-g.test('test,math,correctlyRoundedNoFlushOnly')
+g.test('correctlyRoundedNoFlushOnly')
   .paramsSubcasesOnly<correctlyRoundedCase>(
     // prettier-ignore
     [
@@ -429,50 +535,50 @@ g.test('test,math,correctlyRoundedNoFlushOnly')
     { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: -0, is_correct: false },
 
     // 32-bit subnormals
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: false },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.min, is_correct: false },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: false },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.max, is_correct: false },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: false },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.max, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.max, is_correct: false },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: false },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.min, is_correct: false },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.min, is_correct: true },
 
     // 64-bit subnormals
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
 
     // 32-bit normals
     { test_val: f32Bits(kBit.f32.positive.max), target: hexToF32(kBit.f32.positive.max), is_correct: true },
@@ -489,22 +595,22 @@ g.test('test,math,correctlyRoundedNoFlushOnly')
     { test_val: f32Bits(0x83800001), target: hexToF32(0x83800010), is_correct: false },
 
     // 64-bit normals
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00010, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00020, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00030, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00040, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00050, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00060, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00070, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00080, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00010, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00020, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00030, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00040, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00050, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00060, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00070, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00080, 0x00000002), is_correct: false },
   ]
   )
   .fn(t => {
@@ -519,7 +625,7 @@ g.test('test,math,correctlyRoundedNoFlushOnly')
     );
   });
 
-g.test('test,math,correctlyRoundedFlushToZeroOnly')
+g.test('correctlyRoundedFlushToZeroOnly')
   .paramsSubcasesOnly<correctlyRoundedCase>(
     // prettier-ignore
     [
@@ -570,50 +676,50 @@ g.test('test,math,correctlyRoundedFlushToZeroOnly')
     { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: -0, is_correct: true },
 
     // 32-bit subnormals
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.min).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.min, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.positive.max).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.positive.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.positive.max, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.max).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.max, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.max, is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.positive.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
-    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: f32Bits(kBit.f32.subnormal.negative.min).value as number, is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.max), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: kValue.f32.subnormal.negative.min, is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.min), target: kValue.f32.subnormal.negative.min, is_correct: true },
 
     // 64-bit subnormals
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000001), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.positive.min), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x00000000, 0x00000002), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xffffffff), is_correct: true },
 
-    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
-    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToFloat64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.subnormal.negative.max), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.positive.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
+    { test_val: f32Bits(kBit.f32.negative.zero), target: hexToF64(0x800fffff, 0xfffffffe), is_correct: true },
 
     // 32-bit normals
     { test_val: f32Bits(kBit.f32.positive.max), target: hexToF32(kBit.f32.positive.max), is_correct: true },
@@ -630,22 +736,22 @@ g.test('test,math,correctlyRoundedFlushToZeroOnly')
     { test_val: f32Bits(0x83800001), target: hexToF32(0x83800010), is_correct: false },
 
     // 64-bit normals
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00010, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00020, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800000), target: hexToFloat64(0x3ff00030, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0x3f800001), target: hexToFloat64(0x3ff00040, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00050, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000001), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00060, 0x00000001), is_correct: false },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800000), target: hexToFloat64(0xbff00070, 0x00000002), is_correct: false },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00000, 0x00000002), is_correct: true },
-    { test_val: f32Bits(0xbf800001), target: hexToFloat64(0xbff00080, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00010, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00020, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800000), target: hexToF64(0x3ff00030, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0x3f800001), target: hexToF64(0x3ff00040, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00050, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000001), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00060, 0x00000001), is_correct: false },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800000), target: hexToF64(0xbff00070, 0x00000002), is_correct: false },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00000, 0x00000002), is_correct: true },
+    { test_val: f32Bits(0xbf800001), target: hexToF64(0xbff00080, 0x00000002), is_correct: false },
   ]
   )
   .fn(t => {
@@ -660,6 +766,64 @@ g.test('test,math,correctlyRoundedFlushToZeroOnly')
     );
   });
 
+interface correctlyRoundedF32Case {
+  value: number;
+  expected: Array<number>;
+}
+
+g.test('correctlyRoundedF32')
+  .paramsSubcasesOnly<correctlyRoundedF32Case>(
+    // prettier-ignore
+    [
+      // Edge Cases
+      { value: kValue.f32.infinity.positive, expected: [kValue.f32.positive.max, Number.POSITIVE_INFINITY] },
+      { value: kValue.f32.infinity.negative, expected: [Number.NEGATIVE_INFINITY, kValue.f32.negative.min] },
+      { value: kValue.f32.positive.max, expected: [kValue.f32.positive.max] },
+      { value: kValue.f32.negative.min, expected: [kValue.f32.negative.min] },
+
+      // 32-bit subnormals
+      { value: kValue.f32.subnormal.positive.min, expected: [kValue.f32.subnormal.positive.min] },
+      { value: kValue.f32.subnormal.positive.max, expected: [kValue.f32.subnormal.positive.max] },
+      { value: kValue.f32.subnormal.negative.min, expected: [kValue.f32.subnormal.negative.min] },
+      { value: kValue.f32.subnormal.negative.max, expected: [kValue.f32.subnormal.negative.max] },
+
+      // 64-bit subnormals
+      { value: hexToF64(0x00000000, 0x00000001), expected: [0, kValue.f32.subnormal.positive.min] },
+      { value: hexToF64(0x00000000, 0x00000002), expected: [0, kValue.f32.subnormal.positive.min] },
+      { value: hexToF64(0x800fffff, 0xffffffff), expected: [kValue.f32.subnormal.negative.max, 0] },
+      { value: hexToF64(0x800fffff, 0xfffffffe), expected: [kValue.f32.subnormal.negative.max, 0] },
+
+      // 32-bit normals
+      { value: 0, expected: [0] },
+      { value: kValue.f32.positive.min, expected: [kValue.f32.positive.min] },
+      { value: kValue.f32.negative.max, expected: [kValue.f32.negative.max] },
+      { value: hexToF32(0x03800000), expected: [hexToF32(0x03800000)] },
+      { value: hexToF32(0x03800001), expected: [hexToF32(0x03800001)] },
+      { value: hexToF32(0x83800000), expected: [hexToF32(0x83800000)] },
+      { value: hexToF32(0x83800001), expected: [hexToF32(0x83800001)] },
+
+      // 64-bit normals
+      { value: hexToF64(0x3ff00000, 0x00000001), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
+      { value: hexToF64(0x3ff00000, 0x00000002), expected: [hexToF32(0x3f800000), hexToF32(0x3f800001)] },
+      { value: hexToF64(0x3ff00010, 0x00000010), expected: [hexToF32(0x3f800080), hexToF32(0x3f800081)] },
+      { value: hexToF64(0x3ff00020, 0x00000020), expected: [hexToF32(0x3f800100), hexToF32(0x3f800101)] },
+      { value: hexToF64(0xbff00000, 0x00000001), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
+      { value: hexToF64(0xbff00000, 0x00000002), expected: [hexToF32(0xbf800001), hexToF32(0xbf800000)] },
+      { value: hexToF64(0xbff00010, 0x00000010), expected: [hexToF32(0xbf800081), hexToF32(0xbf800080)] },
+      { value: hexToF64(0xbff00020, 0x00000020), expected: [hexToF32(0xbf800101), hexToF32(0xbf800100)] },
+    ]
+  )
+  .fn(t => {
+    const value = t.params.value;
+    const expected = t.params.expected;
+
+    const got = correctlyRoundedF32(value);
+    t.expect(
+      objectEquals(expected, got),
+      `correctlyRoundedF32(${value}) returned [${got}]. Expected [${expected}]`
+    );
+  });
+
 interface lerpCase {
   a: number;
   b: number;
@@ -667,7 +831,7 @@ interface lerpCase {
   result: number;
 }
 
-g.test('test,math,lerp')
+g.test('lerp')
   .paramsSimple<lerpCase>([
     // Infinite cases
     { a: 0.0, b: Number.POSITIVE_INFINITY, t: 0.5, result: Number.NaN },
@@ -829,7 +993,7 @@ g.test('test,math,lerp')
     const expect = test.params.result;
 
     test.expect(
-      1 >= diffULP(got, expect) || (Number.isNaN(got) && Number.isNaN(expect)),
+      (Number.isNaN(got) && Number.isNaN(expect)) || withinULP(got, expect),
       `lerp(${a}, ${b}, ${t}) returned ${got}. Expected ${expect}`
     );
   });
@@ -841,7 +1005,7 @@ interface rangeCase {
   result: Array<number>;
 }
 
-g.test('test,math,linearRange')
+g.test('linearRange')
   .paramsSimple<rangeCase>(
     // prettier-ignore
     [
@@ -884,7 +1048,7 @@ g.test('test,math,linearRange')
     );
   });
 
-g.test('test,math,biasedRange')
+g.test('biasedRange')
   .paramsSimple<rangeCase>(
     // prettier-ignore
     [
@@ -927,22 +1091,65 @@ g.test('test,math,biasedRange')
     );
   });
 
+interface fullF32RangeCase {
+  neg_norm: number;
+  neg_sub: number;
+  pos_sub: number;
+  pos_norm: number;
+  expect: Array<number>;
+}
+
+g.test('fullF32RangeCase')
+  .paramsSimple<fullF32RangeCase>(
+    // prettier-ignore
+    [
+        { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ 0.0 ] },
+        { neg_norm: 1, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ kValue.f32.negative.max, 0.0] },
+        { neg_norm: 2, neg_sub: 0, pos_sub: 0, pos_norm: 0, expect: [ kValue.f32.negative.max, kValue.f32.negative.min, 0.0 ] },
+        { neg_norm: 0, neg_sub: 1, pos_sub: 0, pos_norm: 0, expect: [ kValue.f32.subnormal.negative.max, 0.0 ] },
+        { neg_norm: 0, neg_sub: 2, pos_sub: 0, pos_norm: 0, expect: [ kValue.f32.subnormal.negative.max, kValue.f32.subnormal.negative.min, 0.0 ] },
+        { neg_norm: 0, neg_sub: 0, pos_sub: 1, pos_norm: 0, expect: [ 0.0, kValue.f32.subnormal.positive.min ] },
+        { neg_norm: 0, neg_sub: 0, pos_sub: 2, pos_norm: 0, expect: [ 0.0, kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max ] },
+        { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 1, expect: [ 0.0, kValue.f32.positive.min ] },
+        { neg_norm: 0, neg_sub: 0, pos_sub: 0, pos_norm: 2, expect: [ 0.0, kValue.f32.positive.min, kValue.f32.positive.max ] },
+        { neg_norm: 1, neg_sub: 1, pos_sub: 1, pos_norm: 1, expect: [ kValue.f32.negative.max, kValue.f32.subnormal.negative.max, 0.0, kValue.f32.subnormal.positive.min, kValue.f32.positive.min ] },
+        { neg_norm: 2, neg_sub: 2, pos_sub: 2, pos_norm: 2, expect: [ kValue.f32.negative.max, kValue.f32.negative.min, kValue.f32.subnormal.negative.max, kValue.f32.subnormal.negative.min, 0.0, kValue.f32.subnormal.positive.min, kValue.f32.subnormal.positive.max, kValue.f32.positive.min, kValue.f32.positive.max ] },
+    ]
+  )
+  .fn(test => {
+    const neg_norm = test.params.neg_norm;
+    const neg_sub = test.params.neg_sub;
+    const pos_sub = test.params.pos_sub;
+    const pos_norm = test.params.pos_norm;
+    const got = fullF32Range({ neg_norm, neg_sub, pos_sub, pos_norm });
+    const expect = test.params.expect;
+
+    test.expect(
+      compareArrayOfNumbers(got, expect),
+      `fullF32Range(${neg_norm}, ${neg_sub}, ${pos_sub}, ${pos_norm}) returned ${got}. Expected ${expect}`
+    );
+  });
+
 interface limitsCase {
   bits: number;
   value: number;
 }
 
 // Test to confirm kBit and kValue constants are equivalent for f32
-g.test('test,math,f32LimitsEquivalency')
+g.test('f32LimitsEquivalency')
   .paramsSimple<limitsCase>([
     { bits: kBit.f32.positive.max, value: kValue.f32.positive.max },
     { bits: kBit.f32.positive.min, value: kValue.f32.positive.min },
+    { bits: kBit.f32.positive.nearest_max, value: kValue.f32.positive.nearest_max },
     { bits: kBit.f32.negative.max, value: kValue.f32.negative.max },
     { bits: kBit.f32.negative.min, value: kValue.f32.negative.min },
+    { bits: kBit.f32.negative.nearest_min, value: kValue.f32.negative.nearest_min },
     { bits: kBit.f32.subnormal.positive.max, value: kValue.f32.subnormal.positive.max },
     { bits: kBit.f32.subnormal.positive.min, value: kValue.f32.subnormal.positive.min },
     { bits: kBit.f32.subnormal.negative.max, value: kValue.f32.subnormal.negative.max },
     { bits: kBit.f32.subnormal.negative.min, value: kValue.f32.subnormal.negative.min },
+    { bits: kBit.f32.infinity.positive, value: kValue.f32.infinity.positive },
+    { bits: kBit.f32.infinity.negative, value: kValue.f32.infinity.negative },
   ])
   .fn(test => {
     const bits = test.params.bits;

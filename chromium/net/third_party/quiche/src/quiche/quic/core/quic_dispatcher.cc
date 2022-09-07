@@ -8,6 +8,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/optimization.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/chlo_extractor.h"
@@ -147,6 +148,7 @@ class PacketCollector : public QuicPacketCreator::DelegateInterface,
 class StatelessConnectionTerminator {
  public:
   StatelessConnectionTerminator(QuicConnectionId server_connection_id,
+                                QuicConnectionId original_server_connection_id,
                                 const ParsedQuicVersion version,
                                 QuicConnectionHelperInterface* helper,
                                 QuicTimeWaitListManager* time_wait_list_manager)
@@ -158,7 +160,8 @@ class StatelessConnectionTerminator {
         creator_(server_connection_id, &framer_, &collector_),
         time_wait_list_manager_(time_wait_list_manager) {
     framer_.set_data_producer(&collector_);
-    framer_.SetInitialObfuscators(server_connection_id);
+    // Always set encrypter with original_server_connection_id.
+    framer_.SetInitialObfuscators(original_server_connection_id);
   }
 
   ~StatelessConnectionTerminator() {
@@ -504,19 +507,21 @@ constexpr bool IsSourceUdpPortBlocked(uint16_t port) {
       111,    // Portmap.
       123,    // NTP, vulnerable to reflection attacks.
       137,    // NETBIOS Name Service,
-      128,    // NETBIOS Datagram Service
+      138,    // NETBIOS Datagram Service
       161,    // SNMP.
       389,    // CLDAP.
       500,    // IKE, can loop with QUIC.
       1900,   // SSDP, vulnerable to reflection attacks.
+      3702,   // WS-Discovery, vulnerable to reflection attacks.
       5353,   // mDNS, vulnerable to reflection attacks.
+      5355,   // LLMNR, vulnerable to reflection attacks.
       11211,  // memcache, vulnerable to reflection attacks.
               // This list MUST be sorted in increasing order.
   };
   constexpr size_t num_blocked_ports = ABSL_ARRAYSIZE(blocked_ports);
   constexpr uint16_t highest_blocked_port =
       blocked_ports[num_blocked_ports - 1];
-  if (QUICHE_PREDICT_TRUE(port > highest_blocked_port)) {
+  if (ABSL_PREDICT_TRUE(port > highest_blocked_port)) {
     // Early-return to skip comparisons for the majority of traffic.
     return false;
   }
@@ -899,8 +904,9 @@ void QuicDispatcher::CleanUpSession(QuicConnectionId server_connection_id,
       // This serializes a connection close termination packet and adds the
       // connection to the time wait list.
       StatelessConnectionTerminator terminator(
-          server_connection_id, connection->version(), helper_.get(),
-          time_wait_list_manager_.get());
+          server_connection_id,
+          connection->GetOriginalDestinationConnectionId(),
+          connection->version(), helper_.get(), time_wait_list_manager_.get());
       terminator.CloseConnection(
           QUIC_HANDSHAKE_FAILED,
           "Connection is closed by server before handshake confirmed",
@@ -1135,9 +1141,9 @@ void QuicDispatcher::StatelesslyTerminateConnection(
         << version << ", error_code:" << error_code
         << ", error_details:" << error_details;
 
-    StatelessConnectionTerminator terminator(server_connection_id, version,
-                                             helper_.get(),
-                                             time_wait_list_manager_.get());
+    StatelessConnectionTerminator terminator(
+        server_connection_id, server_connection_id, version, helper_.get(),
+        time_wait_list_manager_.get());
     // This also adds the connection to time wait list.
     terminator.CloseConnection(
         error_code, error_details, format != GOOGLE_QUIC_PACKET,
@@ -1311,7 +1317,7 @@ void QuicDispatcher::ProcessChlo(ParsedClientHello parsed_chlo,
   std::unique_ptr<QuicSession> session = CreateQuicSession(
       packet_info->destination_connection_id, packet_info->self_address,
       packet_info->peer_address, alpn, packet_info->version, parsed_chlo);
-  if (QUIC_PREDICT_FALSE(session == nullptr)) {
+  if (ABSL_PREDICT_FALSE(session == nullptr)) {
     QUIC_BUG(quic_bug_10287_8)
         << "CreateQuicSession returned nullptr for "
         << packet_info->destination_connection_id << " from "
@@ -1319,7 +1325,9 @@ void QuicDispatcher::ProcessChlo(ParsedClientHello parsed_chlo,
         << " ALPN \"" << alpn << "\" version " << packet_info->version;
     return;
   }
-  if (original_connection_id != packet_info->destination_connection_id) {
+  const bool replaced_connection_id =
+      original_connection_id != packet_info->destination_connection_id;
+  if (replaced_connection_id) {
     session->connection()->SetOriginalDestinationConnectionId(
         original_connection_id);
   }
@@ -1340,8 +1348,11 @@ void QuicDispatcher::ProcessChlo(ParsedClientHello parsed_chlo,
   }
   session_ptr = insertion_result.first->second.get();
   std::list<BufferedPacket> packets =
-      buffered_packets_.DeliverPackets(packet_info->destination_connection_id)
-          .buffered_packets;
+      buffered_packets_.DeliverPackets(original_connection_id).buffered_packets;
+  if (replaced_connection_id && !packets.empty()) {
+    QUIC_CODE_COUNT(
+        quic_delivered_buffered_packets_to_connection_with_replaced_id);
+  }
   // Process CHLO at first.
   session_ptr->ProcessUdpPacket(packet_info->self_address,
                                 packet_info->peer_address, packet_info->packet);
@@ -1390,7 +1401,6 @@ void QuicDispatcher::MaybeResetPacketsWithNoVersion(
   // recently.
   if (recent_stateless_reset_addresses_.contains(packet_info.peer_address)) {
     QUIC_CODE_COUNT(quic_donot_send_reset_repeatedly);
-    QUICHE_DCHECK(use_recent_reset_addresses_);
     return;
   }
   if (packet_info.form != GOOGLE_QUIC_PACKET) {
@@ -1410,24 +1420,21 @@ void QuicDispatcher::MaybeResetPacketsWithNoVersion(
       return;
     }
   }
-  if (use_recent_reset_addresses_) {
-    QUIC_RESTART_FLAG_COUNT(quic_use_recent_reset_addresses);
-    // Do not send a stateless reset if there are too many stateless reset
-    // addresses.
-    if (recent_stateless_reset_addresses_.size() >=
-        GetQuicFlag(FLAGS_quic_max_recent_stateless_reset_addresses)) {
-      QUIC_CODE_COUNT(quic_too_many_recent_reset_addresses);
-      return;
-    }
-    if (recent_stateless_reset_addresses_.empty()) {
-      clear_stateless_reset_addresses_alarm_->Update(
-          helper()->GetClock()->ApproximateNow() +
-              QuicTime::Delta::FromMilliseconds(GetQuicFlag(
-                  FLAGS_quic_recent_stateless_reset_addresses_lifetime_ms)),
-          QuicTime::Delta::Zero());
-    }
-    recent_stateless_reset_addresses_.emplace(packet_info.peer_address);
+  // Do not send a stateless reset if there are too many stateless reset
+  // addresses.
+  if (recent_stateless_reset_addresses_.size() >=
+      GetQuicFlag(FLAGS_quic_max_recent_stateless_reset_addresses)) {
+    QUIC_CODE_COUNT(quic_too_many_recent_reset_addresses);
+    return;
   }
+  if (recent_stateless_reset_addresses_.empty()) {
+    clear_stateless_reset_addresses_alarm_->Update(
+        helper()->GetClock()->ApproximateNow() +
+            QuicTime::Delta::FromMilliseconds(GetQuicFlag(
+                FLAGS_quic_recent_stateless_reset_addresses_lifetime_ms)),
+        QuicTime::Delta::Zero());
+  }
+  recent_stateless_reset_addresses_.emplace(packet_info.peer_address);
 
   time_wait_list_manager()->SendPublicReset(
       packet_info.self_address, packet_info.peer_address,

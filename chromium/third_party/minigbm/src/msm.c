@@ -18,8 +18,8 @@
 #include <sys/mman.h>
 #include <xf86drm.h>
 
+#include "drv_helpers.h"
 #include "drv_priv.h"
-#include "helpers.h"
 #include "util.h"
 
 /* Alignment values are based on SDM845 Gfx IP */
@@ -38,10 +38,12 @@
 
 static const uint32_t render_target_formats[] = { DRM_FORMAT_ABGR8888, DRM_FORMAT_ARGB8888,
 						  DRM_FORMAT_RGB565, DRM_FORMAT_XBGR8888,
-						  DRM_FORMAT_XRGB8888 };
+						  DRM_FORMAT_XRGB8888, DRM_FORMAT_ABGR2101010,
+						  DRM_FORMAT_ABGR16161616F };
 
 static const uint32_t texture_source_formats[] = { DRM_FORMAT_NV12, DRM_FORMAT_R8,
-						   DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID };
+						   DRM_FORMAT_YVU420, DRM_FORMAT_YVU420_ANDROID,
+						   DRM_FORMAT_P010 };
 
 /*
  * Each macrotile consists of m x n (mostly 4 x 4) tiles.
@@ -94,9 +96,14 @@ static void msm_calculate_layout(struct bo *bo)
 	/* NV12 format requires extra padding with platform
 	 * specific alignments for venus driver
 	 */
-	if (bo->meta.format == DRM_FORMAT_NV12) {
+	if (bo->meta.format == DRM_FORMAT_NV12 || bo->meta.format == DRM_FORMAT_P010) {
 		uint32_t y_stride, uv_stride, y_scanline, uv_scanline, y_plane, uv_plane, size,
 		    extra_padding;
+
+		// P010 has the same layout as NV12.  The difference is that each
+		// pixel in P010 takes 2 bytes, while in NV12 each pixel takes 1 byte.
+		if (bo->meta.format == DRM_FORMAT_P010)
+			width *= 2;
 
 		y_stride = ALIGN(width, VENUS_STRIDE_ALIGN);
 		uv_stride = ALIGN(width, VENUS_STRIDE_ALIGN);
@@ -158,7 +165,9 @@ static bool is_ubwc_fmt(uint32_t format)
 	case DRM_FORMAT_ABGR8888:
 	case DRM_FORMAT_XRGB8888:
 	case DRM_FORMAT_ARGB8888:
+#ifndef QCOM_DISABLE_COMPRESSED_NV12
 	case DRM_FORMAT_NV12:
+#endif
 		return 1;
 	default:
 		return 0;
@@ -199,19 +208,18 @@ static bool should_avoid_ubwc(void)
 		return true;
 	}
 
-	/* The video_decode_accelerator_tests needs to read back the frames
-	 * to verify they are correct.  The frame verification relies on
-	 * computing the MD5 of the video frame.  UBWC results in a different
-	 * MD5.  This turns off UBWC for gtest until a proper frame
-	 * comparison can be made
-	 * Rely on the same mechanism that waffle is using, but this time check
-	 * for a dynamic library function that is present in chrome, but missing
-	 * in gtest.  Cups is not loaded for video tests.
+	/* Sommelier relies on implicit modifier, which does not pass host modifier to
+	 * zwp_linux_buffer_params_v1_add. Graphics will be broken if UBWC is enabled.
+	 * Sommelier shall be fixed to mirror what arc wayland_service does, and then
+	 * we can re-enable UBWC here.
 	 *
-	 * See b/171260705
+	 * Inherit the trick from crrev/c/2523246 previously used for gtest. The side
+	 * effect is all VM guests on msm will revert back to use linear modifier.
+	 *
+	 * See b/229147702
 	 */
 	if (!dlsym(RTLD_DEFAULT, "cupsFilePrintf")) {
-		drv_log("WARNING: gtest detected, disabling UBWC\n");
+		drv_log("WARNING: virtualization detected, disabling UBWC\n");
 		return true;
 	}
 #endif
@@ -252,8 +260,20 @@ static int msm_init(struct driver *drv)
 			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE | BO_USE_HW_VIDEO_DECODER |
 				   BO_USE_HW_VIDEO_ENCODER);
 
+	/*
+	 * Android also frequently requests YV12 formats for some camera implementations
+	 * (including the external provider implmenetation).
+	 */
+	drv_modify_combination(drv, DRM_FORMAT_YVU420_ANDROID, &LINEAR_METADATA,
+			       BO_USE_CAMERA_READ | BO_USE_CAMERA_WRITE);
+
 	/* Android CTS tests require this. */
 	drv_add_combination(drv, DRM_FORMAT_BGR888, &LINEAR_METADATA, BO_USE_SW_MASK);
+
+#ifdef SC_7280
+	drv_modify_combination(drv, DRM_FORMAT_P010, &LINEAR_METADATA,
+			       BO_USE_SCANOUT | BO_USE_HW_VIDEO_ENCODER);
+#endif
 
 	drv_modify_linear_combinations(drv);
 
@@ -366,6 +386,6 @@ const struct backend backend_msm = {
 	.bo_import = drv_prime_bo_import,
 	.bo_map = msm_bo_map,
 	.bo_unmap = drv_bo_munmap,
-	.resolve_format = drv_resolve_format_helper,
+	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
 };
 #endif /* DRV_MSM */

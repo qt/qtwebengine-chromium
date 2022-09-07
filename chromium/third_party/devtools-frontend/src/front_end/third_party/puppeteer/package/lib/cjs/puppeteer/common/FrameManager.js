@@ -70,6 +70,9 @@ class FrameManager extends EventEmitter_js_1.EventEmitter {
         session.on('Page.frameDetached', (event) => {
             this._onFrameDetached(event.frameId, event.reason);
         });
+        session.on('Page.frameStartedLoading', (event) => {
+            this._onFrameStartedLoading(event.frameId);
+        });
         session.on('Page.frameStoppedLoading', (event) => {
             this._onFrameStoppedLoading(event.frameId);
         });
@@ -97,6 +100,13 @@ class FrameManager extends EventEmitter_js_1.EventEmitter {
             const result = await Promise.all([
                 client.send('Page.enable'),
                 client.send('Page.getFrameTree'),
+                client !== this._client
+                    ? client.send('Target.setAutoAttach', {
+                        autoAttach: true,
+                        waitForDebuggerOnStart: false,
+                        flatten: true,
+                    })
+                    : Promise.resolve(),
             ]);
             const { frameTree } = result[1];
             this._handleFrameTree(client, frameTree);
@@ -200,6 +210,12 @@ class FrameManager extends EventEmitter_js_1.EventEmitter {
             return;
         frame._onLifecycleEvent(event.loaderId, event.name);
         this.emit(exports.FrameManagerEmittedEvents.LifecycleEvent, frame);
+    }
+    _onFrameStartedLoading(frameId) {
+        const frame = this._frames.get(frameId);
+        if (!frame)
+            return;
+        frame._onLoadingStarted();
     }
     _onFrameStoppedLoading(frameId) {
         const frame = this._frames.get(frameId);
@@ -442,6 +458,10 @@ class Frame {
         /**
          * @internal
          */
+        this._hasStartedLoading = false;
+        /**
+         * @internal
+         */
         this._lifecycleEvents = new Set();
         this._frameManager = frameManager;
         this._parentFrame = parentFrame;
@@ -610,7 +630,7 @@ class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     async $eval(selector, pageFunction, ...args) {
         return this._mainWorld.$eval(selector, pageFunction, ...args);
@@ -632,7 +652,7 @@ class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     async $$eval(selector, pageFunction, ...args) {
         return this._mainWorld.$$eval(selector, pageFunction, ...args);
@@ -1044,6 +1064,12 @@ class Frame {
     _onLoadingStopped() {
         this._lifecycleEvents.add('DOMContentLoaded');
         this._lifecycleEvents.add('load');
+    }
+    /**
+     * @internal
+     */
+    _onLoadingStarted() {
+        this._hasStartedLoading = true;
     }
     /**
      * @internal

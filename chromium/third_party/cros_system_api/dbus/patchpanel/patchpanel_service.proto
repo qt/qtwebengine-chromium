@@ -462,6 +462,9 @@ message SetDnsRedirectionRuleRequest {
     ARC = 2;
     // Rule for traffic associated with user traffic (e.g. chronos, cups).
     USER = 3;
+    // Rules to exclude traffic that is not using the underlying network's
+    // name server. This is only used for user traffic.
+    EXCLUDE_DESTINATION = 4;
   }
 
   RuleType type = 1;

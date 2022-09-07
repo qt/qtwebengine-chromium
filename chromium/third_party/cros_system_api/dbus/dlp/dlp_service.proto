@@ -121,3 +121,31 @@ message GetFilesSourcesResponse {
   // A list of files source urls.
   repeated FileMetadata files_metadata = 2;
 }
+
+message CheckFilesTransferRequest {
+  // Files paths to be transferred.
+  repeated string files_paths = 1;
+  // Destination url where the file will be transferred.
+  optional string destination_url = 2;
+}
+
+message CheckFilesTransferResponse {
+  // Error message, empty if no error occurred.
+  optional string error_message = 1;
+  // Files paths restricted to be transferred.
+  repeated string files_paths = 2;
+}
+
+message IsFilesTransferRestrictedRequest {
+  // Source URLs of files to be transferred.
+  repeated string files_sources = 1;
+  // Destination url where the file will be transferred.
+  optional string destination_url = 2;
+}
+
+message IsFilesTransferRestrictedResponse {
+  // Error message, empty if no error occurred.
+  optional string error_message = 1;
+  // Sources of files restricted to be transferred.
+  repeated string files_sources = 2;
+}

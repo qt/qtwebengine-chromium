@@ -199,8 +199,6 @@ CFX_Color GetFormControlColor(CPDF_FormControl* pFormControl,
                        pFormControl->GetOriginalColorComponent(2, entry),
                        pFormControl->GetOriginalColorComponent(3, entry));
   }
-  NOTREACHED();
-  return CFX_Color();
 }
 
 bool SetWidgetDisplayStatus(CPDFSDK_Widget* pWidget, int value) {
@@ -761,7 +759,7 @@ CJS_Result CJS_Field::set_border_style(CJS_Runtime* pRuntime,
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
 
-  ByteString byte_str = pRuntime->ToWideString(vp).ToDefANSI();
+  ByteString byte_str = pRuntime->ToByteString(vp);
   if (m_bDelay) {
     AddDelay_String(FP_BORDERSTYLE, byte_str);
   } else {
@@ -927,11 +925,6 @@ CJS_Result CJS_Field::get_button_scale_when(CJS_Runtime* pRuntime) {
       return CJS_Result::Success(
           pRuntime->NewNumber(static_cast<int>(scale_method)));
   }
-
-  // Note this is deliberately not the default case for the switch statement
-  // above, so missing cases trigger compile time errors.
-  NOTREACHED();
-  return CJS_Result::Success();
 }
 
 CJS_Result CJS_Field::set_button_scale_when(CJS_Runtime* pRuntime,
@@ -1893,8 +1886,7 @@ CJS_Result CJS_Field::get_style(CJS_Runtime* pRuntime) {
       csBCaption = "check";
       break;
   }
-  return CJS_Result::Success(pRuntime->NewString(
-      WideString::FromDefANSI(csBCaption.AsStringView()).AsStringView()));
+  return CJS_Result::Success(pRuntime->NewString(csBCaption.AsStringView()));
 }
 
 CJS_Result CJS_Field::set_style(CJS_Runtime* pRuntime,
@@ -1990,7 +1982,7 @@ CJS_Result CJS_Field::set_text_font(CJS_Runtime* pRuntime,
 
   if (!m_bCanSet)
     return CJS_Result::Failure(JSMessage::kReadOnlyError);
-  if (pRuntime->ToWideString(vp).ToDefANSI().IsEmpty())
+  if (pRuntime->ToByteString(vp).IsEmpty())
     return CJS_Result::Failure(JSMessage::kValueError);
   return CJS_Result::Success();
 }

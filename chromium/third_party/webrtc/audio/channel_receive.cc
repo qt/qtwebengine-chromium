@@ -40,7 +40,6 @@
 #include "modules/rtp_rtcp/source/rtp_rtcp_config.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/format_macros.h"
 #include "rtc_base/location.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_minmax.h"
@@ -95,7 +94,6 @@ class ChannelReceive : public ChannelReceiveInterface,
       size_t jitter_buffer_max_packets,
       bool jitter_buffer_fast_playout,
       int jitter_buffer_min_delay_ms,
-      bool jitter_buffer_enable_rtx_handling,
       bool enable_non_sender_rtt,
       rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
       absl::optional<AudioCodecPairId> codec_pair_id,
@@ -319,13 +317,13 @@ void ChannelReceive::OnReceivedPayloadData(
     // packet as discarded.
 
     // If we have a source_tracker_, tell it that the frame has been
-    // "delivered". Normally, this happens in AudioReceiveStream when audio
-    // frames are pulled out, but when playout is muted, nothing is pulling
-    // frames. The downside of this approach is that frames delivered this way
-    // won't be delayed for playout, and therefore will be unsynchronized with
-    // (a) audio delay when playing and (b) any audio/video synchronization. But
-    // the alternative is that muting playout also stops the SourceTracker from
-    // updating RtpSource information.
+    // "delivered". Normally, this happens in AudioReceiveStreamInterface when
+    // audio frames are pulled out, but when playout is muted, nothing is
+    // pulling frames. The downside of this approach is that frames delivered
+    // this way won't be delayed for playout, and therefore will be
+    // unsynchronized with (a) audio delay when playing and (b) any audio/video
+    // synchronization. But the alternative is that muting playout also stops
+    // the SourceTracker from updating RtpSource information.
     if (source_tracker_) {
       RtpPacketInfos::vector_type packet_vector = {
           RtpPacketInfo(rtpHeader, clock_->CurrentTime())};
@@ -524,7 +522,6 @@ ChannelReceive::ChannelReceive(
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
-    bool jitter_buffer_enable_rtx_handling,
     bool enable_non_sender_rtt,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
@@ -749,12 +746,13 @@ void ChannelReceive::ReceivedRTCPPacket(const uint8_t* data, size_t length) {
 
   {
     MutexLock lock(&ts_stats_lock_);
-    ntp_estimator_.UpdateRtcpTimestamp(rtt, ntp_secs, ntp_frac, rtp_timestamp);
-    absl::optional<int64_t> remote_to_local_clock_offset_ms =
-        ntp_estimator_.EstimateRemoteToLocalClockOffsetMs();
-    if (remote_to_local_clock_offset_ms.has_value()) {
+    ntp_estimator_.UpdateRtcpTimestamp(
+        TimeDelta::Millis(rtt), NtpTime(ntp_secs, ntp_frac), rtp_timestamp);
+    absl::optional<int64_t> remote_to_local_clock_offset =
+        ntp_estimator_.EstimateRemoteToLocalClockOffset();
+    if (remote_to_local_clock_offset.has_value()) {
       capture_clock_offset_updater_.SetRemoteToLocalClockOffset(
-          Int64MsToQ32x32(*remote_to_local_clock_offset_ms));
+          *remote_to_local_clock_offset);
     }
   }
 }
@@ -1123,7 +1121,6 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
     size_t jitter_buffer_max_packets,
     bool jitter_buffer_fast_playout,
     int jitter_buffer_min_delay_ms,
-    bool jitter_buffer_enable_rtx_handling,
     bool enable_non_sender_rtt,
     rtc::scoped_refptr<AudioDecoderFactory> decoder_factory,
     absl::optional<AudioCodecPairId> codec_pair_id,
@@ -1134,9 +1131,8 @@ std::unique_ptr<ChannelReceiveInterface> CreateChannelReceive(
       clock, neteq_factory, audio_device_module, rtcp_send_transport,
       rtc_event_log, local_ssrc, remote_ssrc, jitter_buffer_max_packets,
       jitter_buffer_fast_playout, jitter_buffer_min_delay_ms,
-      jitter_buffer_enable_rtx_handling, enable_non_sender_rtt, decoder_factory,
-      codec_pair_id, std::move(frame_decryptor), crypto_options,
-      std::move(frame_transformer));
+      enable_non_sender_rtt, decoder_factory, codec_pair_id,
+      std::move(frame_decryptor), crypto_options, std::move(frame_transformer));
 }
 
 }  // namespace voe

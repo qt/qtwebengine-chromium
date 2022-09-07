@@ -24,6 +24,9 @@ void SkPaintParamsKeyBuilder::checkReset() {
     SkASSERT(this->sizeInBytes() == 0);
     SkASSERT(fIsValid);
     SkASSERT(fStack.empty());
+#ifdef SK_GRAPHITE_ENABLED
+    SkASSERT(fBlendInfo == skgpu::BlendInfo());
+#endif
 }
 #endif
 
@@ -36,7 +39,7 @@ void SkPaintParamsKeyBuilder::beginBlock(int codeSnippetID) {
         return;
     }
 
-    if (codeSnippetID < 0 || codeSnippetID > fDict->maxCodeSnippetID()) {
+    if (!fDict->isValidID(codeSnippetID)) {
         // SKGPU_LOG_W("Unknown code snippet ID.");
         this->makeInvalid();
         return;
@@ -46,6 +49,7 @@ void SkPaintParamsKeyBuilder::beginBlock(int codeSnippetID) {
     if (!fStack.empty()) {
         // The children of a block should appear before any of the parent's data
         SkASSERT(fStack.back().fCurDataPayloadEntry == 0);
+        fStack.back().fNumActualChildren++;
     }
 
     static const SkPaintParamsKey::DataPayloadField kHeader[2] = {
@@ -67,6 +71,8 @@ void SkPaintParamsKeyBuilder::beginBlock(int codeSnippetID) {
 #ifdef SK_DEBUG
     fStack.back().fDataPayloadExpectations = fDict->dataPayloadExpectations(codeSnippetID);
     fStack.back().fCurDataPayloadEntry = 0;
+    fStack.back().fNumExpectedChildren = fDict->getEntry(codeSnippetID)->fNumChildren;
+    fStack.back().fNumActualChildren = 0;
 #endif
 }
 
@@ -85,6 +91,7 @@ void SkPaintParamsKeyBuilder::endBlock() {
     // All the expected fields should be filled in at this point
     SkASSERT(fStack.back().fCurDataPayloadEntry ==
              SkTo<int>(fStack.back().fDataPayloadExpectations.size()));
+    SkASSERT(fStack.back().fNumActualChildren == fStack.back().fNumExpectedChildren);
     SkASSERT(!this->isLocked());
 
     int headerOffset = fStack.back().fHeaderOffset;
@@ -111,6 +118,23 @@ void SkPaintParamsKeyBuilder::endBlock() {
 #endif
 }
 
+#ifdef SK_DEBUG
+void SkPaintParamsKeyBuilder::checkExpectations(SkPaintParamsKey::DataPayloadType actualType,
+                                                uint32_t actualCount) {
+    const StackFrame& frame = fStack.back();
+    const auto& expectations = frame.fDataPayloadExpectations;
+
+    // TODO: right now we reject writing 'n' bytes one at a time. We could allow it by tracking
+    // the number of bytes written in the stack frame.
+    SkASSERT(frame.fCurDataPayloadEntry < SkTo<int>(expectations.size()) &&
+             expectations.data() &&
+             expectations[frame.fCurDataPayloadEntry].fType == actualType &&
+             expectations[frame.fCurDataPayloadEntry].fCount == actualCount);
+
+    fStack.back().fCurDataPayloadEntry++;
+}
+#endif // SK_DEBUG
+
 void SkPaintParamsKeyBuilder::addBytes(uint32_t numBytes, const uint8_t* data) {
     if (!this->isValid()) {
         return;
@@ -122,24 +146,27 @@ void SkPaintParamsKeyBuilder::addBytes(uint32_t numBytes, const uint8_t* data) {
         return;
     }
 
-#ifdef SK_DEBUG
-    const StackFrame& frame = fStack.back();
-    const auto& expectations = frame.fDataPayloadExpectations;
-
-    // TODO: right now we reject writing 'n' bytes one at a time. We could allow it by tracking
-    // the number of bytes written in the stack frame.
-    SkASSERT(frame.fCurDataPayloadEntry < SkTo<int>(expectations.size()) &&
-             expectations.data() &&
-             expectations[frame.fCurDataPayloadEntry].fType ==
-                                                        SkPaintParamsKey::DataPayloadType::kByte &&
-             expectations[frame.fCurDataPayloadEntry].fCount == numBytes);
-
-    fStack.back().fCurDataPayloadEntry++;
-#endif
-
+    SkDEBUGCODE(this->checkExpectations(SkPaintParamsKey::DataPayloadType::kByte, numBytes);)
     SkASSERT(!this->isLocked());
 
     fData.append(numBytes, data);
+}
+
+void SkPaintParamsKeyBuilder::add(const SkColor4f& color) {
+    if (!this->isValid()) {
+        return;
+    }
+
+    if (fStack.empty()) {
+        // SKGPU_LOG_W("Missing call to 'beginBlock'.");
+        this->makeInvalid();
+        return;
+    }
+
+    SkDEBUGCODE(this->checkExpectations(SkPaintParamsKey::DataPayloadType::kFloat4, 1);)
+    SkASSERT(!this->isLocked());
+
+    fData.append(16, reinterpret_cast<const uint8_t*>(&color));
 }
 
 SkPaintParamsKey SkPaintParamsKeyBuilder::lockAsKey() {
@@ -221,6 +248,9 @@ void SkPaintParamsKey::AddBlockToShaderInfo(SkShaderCodeDictionary* dict,
                                             SkShaderInfo* result) {
 
     result->add(reader);
+#ifdef SK_GRAPHITE_ENABLED
+    result->addFlags(dict->getSnippetRequirementFlags(reader.codeSnippetId()));
+#endif
 
     // The child blocks appear right after the parent block's header in the key and go
     // right after the parent's SnippetEntry in the shader info

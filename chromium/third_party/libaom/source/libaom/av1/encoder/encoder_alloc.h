@@ -261,10 +261,8 @@ static AOM_INLINE void dealloc_compressor_data(AV1_COMP *cpi) {
 #endif
 
   if (!is_stat_generation_stage(cpi)) {
-    int num_cdef_workers =
-        av1_get_num_mod_workers_for_alloc(&cpi->ppi->p_mt_info, MOD_CDEF);
     av1_free_cdef_buffers(cm, &cpi->ppi->p_mt_info.cdef_worker,
-                          &cpi->mt_info.cdef_sync, num_cdef_workers);
+                          &cpi->mt_info.cdef_sync);
   }
 
   aom_free_frame_buffer(&cpi->trial_frame_rst);
@@ -378,7 +376,7 @@ static AOM_INLINE YV12_BUFFER_CONFIG *realloc_and_scale_source(
           cm->seq_params->subsampling_x, cm->seq_params->subsampling_y,
           cm->seq_params->use_highbitdepth, AOM_BORDER_IN_PIXELS,
           cm->features.byte_alignment, NULL, NULL, NULL,
-          cpi->oxcf.tool_cfg.enable_global_motion))
+          cpi->oxcf.tool_cfg.enable_global_motion, 0))
     aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
                        "Failed to reallocate scaled source buffer");
   assert(cpi->scaled_source.y_crop_width == scaled_width);

@@ -45,17 +45,29 @@ class WebSnapshotSerializerDeserializer {
     TRUE_CONSTANT,
     NULL_CONSTANT,
     UNDEFINED_CONSTANT,
+    // It corresponds to the hole value.
+    NO_ELEMENT_CONSTANT,
     INTEGER,
     DOUBLE,
+    REGEXP,
     STRING_ID,
     ARRAY_ID,
     OBJECT_ID,
     FUNCTION_ID,
     CLASS_ID,
-    REGEXP,
+    SYMBOL_ID,
     EXTERNAL_ID,
+    BUILTIN_OBJECT_ID,
     IN_PLACE_STRING_ID
   };
+
+  enum SymbolType : uint8_t {
+    kNonGlobalNoDesription = 0,
+    kNonGlobal = 1,
+    kGlobal = 2
+  };
+
+  enum ElementsType : uint8_t { kDense = 0, kSparse = 1 };
 
   static constexpr uint8_t kMagicNumber[4] = {'+', '+', '+', ';'};
 
@@ -77,13 +89,18 @@ class WebSnapshotSerializerDeserializer {
       static_cast<uint32_t>(FixedArray::kMaxLength - 1);
   // This ensures indices and lengths can be converted between uint32_t and int
   // without problems:
-  STATIC_ASSERT(kMaxItemCount < std::numeric_limits<int32_t>::max());
+  static_assert(kMaxItemCount < std::numeric_limits<int32_t>::max());
 
  protected:
   explicit WebSnapshotSerializerDeserializer(Isolate* isolate)
       : isolate_(isolate) {}
   // Not virtual, on purpose (because it doesn't need to be).
   void Throw(const char* message);
+
+  void IterateBuiltinObjects(
+      std::function<void(Handle<String>, Handle<HeapObject>)> func);
+
+  static constexpr int kBuiltinObjectCount = 12;
 
   inline Factory* factory() const { return isolate_->factory(); }
 
@@ -131,7 +148,15 @@ class V8_EXPORT WebSnapshotSerializer
     return static_cast<uint32_t>(string_ids_.size());
   }
 
+  uint32_t symbol_count() const {
+    return static_cast<uint32_t>(symbol_ids_.size());
+  }
+
   uint32_t map_count() const { return static_cast<uint32_t>(map_ids_.size()); }
+
+  uint32_t builtin_object_count() const {
+    return static_cast<uint32_t>(builtin_object_ids_.size());
+  }
 
   uint32_t context_count() const {
     return static_cast<uint32_t>(context_ids_.size());
@@ -153,8 +178,8 @@ class V8_EXPORT WebSnapshotSerializer
     return static_cast<uint32_t>(object_ids_.size());
   }
 
-  uint32_t external_objects_count() const {
-    return static_cast<uint32_t>(external_objects_ids_.size());
+  uint32_t external_object_count() const {
+    return static_cast<uint32_t>(external_object_ids_.size());
   }
 
   Handle<FixedArray> GetExternals();
@@ -178,28 +203,45 @@ class V8_EXPORT WebSnapshotSerializer
                           uint32_t& id);
 
   void ShallowDiscoverExternals(FixedArray externals);
+  void ShallowDiscoverBuiltinObjects(v8::Local<v8::Context> context);
   void Discover(Handle<HeapObject> object);
   void DiscoverString(Handle<String> string,
                       AllowInPlace can_be_in_place = AllowInPlace::No);
-  void DiscoverMap(Handle<Map> map);
+  void DiscoverSymbol(Handle<Symbol> symbol);
+  void DiscoverMap(Handle<Map> map, bool allow_property_in_descriptor = false);
+  void DiscoverPropertyKey(Handle<Name> key);
+  void DiscoverMapForFunction(Handle<JSFunction> function);
   void DiscoverFunction(Handle<JSFunction> function);
   void DiscoverClass(Handle<JSFunction> function);
   void DiscoverContextAndPrototype(Handle<JSFunction> function);
   void DiscoverContext(Handle<Context> context);
   void DiscoverArray(Handle<JSArray> array);
+  void DiscoverElements(Handle<JSObject> object);
   void DiscoverObject(Handle<JSObject> object);
+  bool DiscoverIfBuiltinObject(Handle<HeapObject> object);
   void DiscoverSource(Handle<JSFunction> function);
+  template <typename T>
+  void DiscoverObjectPropertiesWithDictionaryMap(T dict);
+  bool ShouldBeSerialized(Handle<Name> key);
   void ConstructSource();
 
-  void SerializeFunctionInfo(ValueSerializer* serializer,
-                             Handle<JSFunction> function);
-
+  void SerializeFunctionInfo(Handle<JSFunction> function,
+                             ValueSerializer& serializer);
+  void SerializeFunctionProperties(Handle<JSFunction> function,
+                                   ValueSerializer& serializer);
   void SerializeString(Handle<String> string, ValueSerializer& serializer);
+  void SerializeSymbol(Handle<Symbol> symbol);
   void SerializeMap(Handle<Map> map);
+  void SerializeBuiltinObject(uint32_t name_id);
+  void SerializeObjectPrototype(Handle<Map> map, ValueSerializer& serializer);
+
+  template <typename T>
+  void SerializeObjectPropertiesWithDictionaryMap(T dict);
   void SerializeFunction(Handle<JSFunction> function);
   void SerializeClass(Handle<JSFunction> function);
-  void SerializeContext(Handle<Context> context);
+  void SerializeContext(Handle<Context> context, uint32_t id);
   void SerializeArray(Handle<JSArray> array);
+  void SerializeElements(Handle<JSObject> object, ValueSerializer& serializer);
   void SerializeObject(Handle<JSObject> object);
 
   void SerializeExport(Handle<Object> object, Handle<String> export_name);
@@ -209,16 +251,22 @@ class V8_EXPORT WebSnapshotSerializer
   void WriteStringId(Handle<String> string, ValueSerializer& serializer);
 
   uint32_t GetStringId(Handle<String> string, bool& in_place);
+  uint32_t GetSymbolId(Symbol symbol);
   uint32_t GetMapId(Map map);
   uint32_t GetFunctionId(JSFunction function);
   uint32_t GetClassId(JSFunction function);
   uint32_t GetContextId(Context context);
   uint32_t GetArrayId(JSArray array);
   uint32_t GetObjectId(JSObject object);
-  uint32_t GetExternalId(HeapObject object);
+  bool GetExternalId(HeapObject object, uint32_t* id = nullptr);
+  // Returns index into builtin_object_name_strings_.
+  bool GetBuiltinObjectNameIndex(HeapObject object, uint32_t& index);
+  bool GetBuiltinObjectId(HeapObject object, uint32_t& id);
 
   ValueSerializer string_serializer_;
+  ValueSerializer symbol_serializer_;
   ValueSerializer map_serializer_;
+  ValueSerializer builtin_object_serializer_;
   ValueSerializer context_serializer_;
   ValueSerializer function_serializer_;
   ValueSerializer class_serializer_;
@@ -227,23 +275,25 @@ class V8_EXPORT WebSnapshotSerializer
   ValueSerializer export_serializer_;
 
   // These are needed for being able to serialize items in order.
+  Handle<ArrayList> strings_;
+  Handle<ArrayList> symbols_;
+  Handle<ArrayList> maps_;
   Handle<ArrayList> contexts_;
   Handle<ArrayList> functions_;
   Handle<ArrayList> classes_;
   Handle<ArrayList> arrays_;
   Handle<ArrayList> objects_;
-  Handle<ArrayList> strings_;
-  Handle<ArrayList> maps_;
 
   // IndexMap to keep track of explicitly blocked external objects and
   // non-serializable/not-supported objects (e.g. API Objects).
-  ObjectCacheIndexMap external_objects_ids_;
+  ObjectCacheIndexMap external_object_ids_;
 
   // ObjectCacheIndexMap implements fast lookup item -> id. Some items (context,
   // function, class, array, object) can point to other items and we serialize
   // them in the reverse order. This ensures that the items this item points to
   // have a lower ID and will be deserialized first.
   ObjectCacheIndexMap string_ids_;
+  ObjectCacheIndexMap symbol_ids_;
   ObjectCacheIndexMap map_ids_;
   ObjectCacheIndexMap context_ids_;
   ObjectCacheIndexMap function_ids_;
@@ -251,6 +301,24 @@ class V8_EXPORT WebSnapshotSerializer
   ObjectCacheIndexMap array_ids_;
   ObjectCacheIndexMap object_ids_;
   uint32_t export_count_ = 0;
+
+  // For handling references to builtin objects:
+  // --------------------------------
+  // String objects for the names of all known builtins.
+  Handle<FixedArray> builtin_object_name_strings_;
+
+  // Map object -> index in builtin_name_strings_ for all known builtins.
+  ObjectCacheIndexMap builtin_object_to_name_;
+
+  // Map object -> index in builtins_. Includes only builtins which will be
+  // incluced in the snapshot.
+  ObjectCacheIndexMap builtin_object_ids_;
+
+  // For creating the Builtin wrappers in the snapshot. Includes only builtins
+  // which will be incluced in the snapshot. Each element is the id of the
+  // builtin name string in the snapshot.
+  std::vector<uint32_t> builtin_objects_;
+  // --------------------------------
 
   std::queue<Handle<HeapObject>> discovery_queue_;
 
@@ -262,6 +330,9 @@ class V8_EXPORT WebSnapshotSerializer
 
   // For constructing the minimal, "compacted", source string to cover all
   // function bodies.
+  // --------------------------------
+  // Script id -> offset of the script source code in full_source_.
+  std::map<int, int> script_offsets_;
   Handle<String> full_source_;
   uint32_t source_id_;
   // Ordered set of (start, end) pairs of all functions we've discovered.
@@ -269,6 +340,7 @@ class V8_EXPORT WebSnapshotSerializer
   // Maps function positions in the real source code into the function positions
   // in the constructed source code (which we'll include in the web snapshot).
   std::unordered_map<int, int> source_offset_to_compacted_source_offset_;
+  // --------------------------------
 };
 
 class V8_EXPORT WebSnapshotDeserializer
@@ -283,7 +355,9 @@ class V8_EXPORT WebSnapshotDeserializer
 
   // For inspecting the state after deserializing a snapshot.
   uint32_t string_count() const { return string_count_; }
+  uint32_t symbol_count() const { return symbol_count_; }
   uint32_t map_count() const { return map_count_; }
+  uint32_t builtin_object_count() const { return builtin_object_count_; }
   uint32_t context_count() const { return context_count_; }
   uint32_t function_count() const { return function_count_; }
   uint32_t class_count() const { return class_count_; }
@@ -301,21 +375,31 @@ class V8_EXPORT WebSnapshotDeserializer
   MaybeHandle<Object> value() const { return return_value_; }
 
  private:
+  enum class InternalizeStrings {
+    kNo,
+    kYes,
+  };
+
   WebSnapshotDeserializer(Isolate* isolate, Handle<Object> script_name,
                           base::Vector<const uint8_t> buffer);
-  base::Vector<const uint8_t> ExtractScriptBuffer(
+  // Return value: {data, length, data_owned}.
+  std::tuple<const uint8_t*, uint32_t, bool> ExtractScriptBuffer(
       Isolate* isolate, Handle<Script> snapshot_as_script);
   bool DeserializeSnapshot(bool skip_exports);
+  void CollectBuiltinObjects();
   bool DeserializeScript();
 
   WebSnapshotDeserializer(const WebSnapshotDeserializer&) = delete;
   WebSnapshotDeserializer& operator=(const WebSnapshotDeserializer&) = delete;
 
   void DeserializeStrings();
+  void DeserializeSymbols();
   void DeserializeMaps();
+  void DeserializeBuiltinObjects();
   void DeserializeContexts();
   Handle<ScopeInfo> CreateScopeInfo(uint32_t variable_count, bool has_parent,
-                                    ContextType context_type);
+                                    ContextType context_type,
+                                    bool has_inlined_local_names);
   Handle<JSFunction> CreateJSFunction(int index, uint32_t start,
                                       uint32_t length, uint32_t parameter_count,
                                       uint32_t flags, uint32_t context_id);
@@ -324,22 +408,56 @@ class V8_EXPORT WebSnapshotDeserializer
   void DeserializeClasses();
   void DeserializeArrays();
   void DeserializeObjects();
+  void DeserializeObjectElements(Handle<JSObject> object,
+                                 bool map_from_snapshot);
   void DeserializeExports(bool skip_exports);
+  void DeserializeObjectPrototype(Handle<Map> map);
+  Handle<Map> DeserializeObjectPrototypeAndCreateEmptyMap();
+  void DeserializeObjectPrototypeForFunction(Handle<JSFunction> function);
+  void SetPrototype(Handle<Map> map, Handle<Object> prototype);
+  void DeserializeFunctionProperties(Handle<JSFunction> function);
 
-  Object ReadValue(
+  bool IsInitialFunctionPrototype(Object prototype);
+
+  template <typename T>
+  void DeserializeObjectPropertiesWithDictionaryMap(
+      T dict, uint32_t property_count, bool has_custom_property_attributes);
+
+  Handle<PropertyArray> DeserializePropertyArray(
+      Handle<DescriptorArray> descriptors, int no_properties);
+
+  // Return value: (object, was_deferred)
+  std::tuple<Object, bool> ReadValue(
       Handle<HeapObject> object_for_deferred_reference = Handle<HeapObject>(),
-      uint32_t index_for_deferred_reference = 0);
+      uint32_t index_for_deferred_reference = 0,
+      InternalizeStrings internalize_strings = InternalizeStrings::kNo);
 
   Object ReadInteger();
   Object ReadNumber();
-  String ReadString(bool internalize = false);
-  String ReadInPlaceString(bool internalize = false);
-  Object ReadArray(Handle<HeapObject> container, uint32_t container_index);
-  Object ReadObject(Handle<HeapObject> container, uint32_t container_index);
-  Object ReadFunction(Handle<HeapObject> container, uint32_t container_index);
-  Object ReadClass(Handle<HeapObject> container, uint32_t container_index);
+  String ReadString(
+      InternalizeStrings internalize_strings = InternalizeStrings::kNo);
+  String ReadInPlaceString(
+      InternalizeStrings internalize_strings = InternalizeStrings::kNo);
+  Object ReadSymbol();
+  std::tuple<Object, bool> ReadArray(Handle<HeapObject> container,
+                                     uint32_t container_index);
+  std::tuple<Object, bool> ReadObject(Handle<HeapObject> container,
+                                      uint32_t container_index);
+  std::tuple<Object, bool> ReadFunction(Handle<HeapObject> container,
+                                        uint32_t container_index);
+  std::tuple<Object, bool> ReadClass(Handle<HeapObject> container,
+                                     uint32_t container_index);
   Object ReadRegexp();
+  Object ReadBuiltinObjectReference();
   Object ReadExternalReference();
+  bool ReadMapType();
+  std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t>
+  DeserializeElements();
+  ElementsType ReadElementsType();
+  std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t> ReadDenseElements(
+      uint32_t length);
+  std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t> ReadSparseElements(
+      uint32_t length);
 
   void ReadFunctionPrototype(Handle<JSFunction> function);
   bool SetFunctionPrototype(JSFunction function, JSReceiver prototype);
@@ -354,8 +472,15 @@ class V8_EXPORT WebSnapshotDeserializer
   Handle<FixedArray> strings_handle_;
   FixedArray strings_;
 
+  Handle<FixedArray> symbols_handle_;
+  FixedArray symbols_;
+
+  Handle<FixedArray> builtin_objects_handle_;
+  FixedArray builtin_objects_;
+
   Handle<FixedArray> maps_handle_;
   FixedArray maps_;
+  std::map<int, Handle<Map>> deserialized_function_maps_;
 
   Handle<FixedArray> contexts_handle_;
   FixedArray contexts_;
@@ -375,6 +500,9 @@ class V8_EXPORT WebSnapshotDeserializer
   Handle<FixedArray> external_references_handle_;
   FixedArray external_references_;
 
+  // Map: String -> builtin object.
+  Handle<ObjectHashTable> builtin_object_name_to_object_;
+
   Handle<ArrayList> deferred_references_;
 
   Handle<WeakFixedArray> shared_function_infos_handle_;
@@ -388,7 +516,9 @@ class V8_EXPORT WebSnapshotDeserializer
   Handle<Object> return_value_;
 
   uint32_t string_count_ = 0;
+  uint32_t symbol_count_ = 0;
   uint32_t map_count_ = 0;
+  uint32_t builtin_object_count_ = 0;
   uint32_t context_count_ = 0;
   uint32_t function_count_ = 0;
   uint32_t current_function_count_ = 0;
@@ -399,7 +529,8 @@ class V8_EXPORT WebSnapshotDeserializer
   uint32_t object_count_ = 0;
   uint32_t current_object_count_ = 0;
 
-  ValueDeserializer deserializer_;
+  std::unique_ptr<ValueDeserializer> deserializer_;
+  std::unique_ptr<const uint8_t[]> owned_data_;
   ReadOnlyRoots roots_;
 
   bool deserialized_ = false;

@@ -32,6 +32,7 @@
 
 #include "src/core/SkKeyContext.h"
 #include "src/core/SkKeyHelpers.h"
+#include "src/core/SkPaintParamsKey.h"
 #endif
 
 SkM44 SkImageShader::CubicResamplerMatrix(float B, float C) {
@@ -220,6 +221,11 @@ SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
         return nullptr;
     }
 
+    SkSamplingOptions sampling = fSampling;
+    if (sampling.isAniso()) {
+        sampling = SkSamplingPriv::AnisoFallback(fImage->hasMipmaps());
+    }
+
     auto supported = [](const SkSamplingOptions& sampling) {
         const std::tuple<SkFilterMode,SkMipmapMode> supported[] = {
             {SkFilterMode::kNearest, SkMipmapMode::kNone},    // legacy None
@@ -233,7 +239,7 @@ SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
         }
         return false;
     };
-    if (fSampling.useCubic || !supported(fSampling)) {
+    if (sampling.useCubic || !supported(sampling)) {
         return nullptr;
     }
 
@@ -262,7 +268,7 @@ SkShaderBase::Context* SkImageShader::onMakeContext(const ContextRec& rec,
         return nullptr;
     }
 
-    return SkBitmapProcLegacyShader::MakeContext(*this, fTileModeX, fTileModeY, fSampling,
+    return SkBitmapProcLegacyShader::MakeContext(*this, fTileModeX, fTileModeY, sampling,
                                                  as_IB(fImage.get()), rec, alloc);
 }
 #endif
@@ -377,7 +383,8 @@ std::unique_ptr<GrFragmentProcessor> SkImageShader::asFragmentProcessor(
 void SkImageShader::addToKey(const SkKeyContext& keyContext,
                              SkPaintParamsKeyBuilder* builder,
                              SkPipelineDataGatherer* gatherer) const {
-    ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset);
+    ImageShaderBlock::ImageData imgData(fSampling, fTileModeX, fTileModeY, fSubset,
+                                        this->getLocalMatrix());
 
 #ifdef SK_GRAPHITE_ENABLED
     if (as_IB(fImage)->isGraphiteBacked()) {
@@ -385,14 +392,13 @@ void SkImageShader::addToKey(const SkKeyContext& keyContext,
 
         auto mipmapped = (fSampling.mipmap != SkMipmapMode::kNone) ?
                 skgpu::graphite::Mipmapped::kYes : skgpu::graphite::Mipmapped::kNo;
-        // TODO: In practice which SkBudgeted value used shouldn't matter because we're not going
-        // to create a new texture here. But should the SkImage know its SkBudgeted state?
-        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped, SkBudgeted::kNo);
+        auto[view, ct] = grImage->asView(keyContext.recorder(), mipmapped);
         imgData.fTextureProxy = view.refProxy();
     }
 #endif
 
-    ImageShaderBlock::AddToKey(keyContext, builder, gatherer, imgData);
+    ImageShaderBlock::BeginBlock(keyContext, builder, gatherer, imgData);
+    builder->endBlock();
 }
 #endif
 
@@ -471,6 +477,9 @@ bool SkImageShader::doStages(const SkStageRec& rec, TransformShader* updater) co
     SkASSERT(!needs_subset(fImage.get(), fSubset)); // TODO(skbug.com/12784)
     // We only support certain sampling options in stages so far
     auto sampling = fSampling;
+    if (sampling.isAniso()) {
+        sampling = SkSamplingPriv::AnisoFallback(fImage->hasMipmaps());
+    }
     if (sampling.mipmap == SkMipmapMode::kLinear) {
         return false;
     }
@@ -777,10 +786,14 @@ skvm::Color SkImageShader::makeProgram(
     baseInv.normalizePerspective();
 
     auto sampling = fSampling;
+    if (sampling.isAniso()) {
+        sampling = SkSamplingPriv::AnisoFallback(fImage->hasMipmaps());
+    }
     auto* access = SkMipmapAccessor::Make(alloc, fImage.get(), baseInv, sampling.mipmap);
     if (!access) {
         return {};
     }
+
     auto [upper, upperInv] = access->level();
     // If we are using a coordShader, then we can't make guesses about the state of the matrix.
     if (!sampling.useCubic && !coordShader) {

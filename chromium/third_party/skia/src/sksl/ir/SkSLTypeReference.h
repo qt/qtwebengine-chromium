@@ -8,8 +8,14 @@
 #ifndef SKSL_TYPEREFERENCE
 #define SKSL_TYPEREFERENCE
 
+#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLType.h"
+
+#include <memory>
+#include <string>
 
 namespace SkSL {
 
@@ -45,9 +51,8 @@ public:
         return std::string(this->value().name());
     }
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::unique_ptr<Expression>(new TypeReference(fPosition, &this->value(),
-                &this->type()));
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::unique_ptr<Expression>(new TypeReference(pos, &this->value(), &this->type()));
     }
 
 private:

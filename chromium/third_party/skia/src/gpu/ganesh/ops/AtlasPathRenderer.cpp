@@ -11,24 +11,21 @@
 #include "src/core/SkIPoint16.h"
 #include "src/gpu/ganesh/GrClip.h"
 #include "src/gpu/ganesh/GrDirectContextPriv.h"
-#include "src/gpu/ganesh/GrVx.h"
 #include "src/gpu/ganesh/effects/GrModulateAtlasCoverageEffect.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/ops/AtlasRenderTask.h"
 #include "src/gpu/ganesh/ops/DrawAtlasPathOp.h"
 #include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
-#include "src/gpu/ganesh/tessellate/shaders/GrTessellationShader.h"
+#include "src/gpu/ganesh/tessellate/GrTessellationShader.h"
 #include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
-
-using grvx::float2;
-using grvx::int2;
 
 namespace {
 
 // Returns the rect [topLeftFloor, botRightCeil], which is the rect [r] rounded out to integer
 // boundaries.
-std::tuple<float2,float2> round_out(const SkRect& r) {
-    return {skvx::floor(float2::Load(&r.fLeft)), skvx::ceil(float2::Load(&r.fRight))};
+std::pair<skvx::float2, skvx::float2> round_out(const SkRect& r) {
+    return {floor(skvx::float2::Load(&r.fLeft)),
+            ceil(skvx::float2::Load(&r.fRight))};
 }
 
 // Returns whether the given proxyOwner uses the atlasProxy.
@@ -46,17 +43,17 @@ template<typename T> bool refs_atlas(const T* proxyOwner, const GrSurfaceProxy* 
 }
 
 bool is_visible(const SkRect& pathDevBounds, const SkIRect& clipBounds) {
-    float2 pathTopLeft = float2::Load(&pathDevBounds.fLeft);
-    float2 pathBotRight = float2::Load(&pathDevBounds.fRight);
+    auto pathTopLeft = skvx::float2::Load(&pathDevBounds.fLeft);
+    auto pathBotRight = skvx::float2::Load(&pathDevBounds.fRight);
     // Empty paths are never visible. Phrase this as a NOT of positive logic so we also return false
     // in the case of NaN.
-    if (!skvx::all(pathTopLeft < pathBotRight)) {
+    if (!all(pathTopLeft < pathBotRight)) {
         return false;
     }
-    float2 clipTopLeft = skvx::cast<float>(int2::Load(&clipBounds.fLeft));
-    float2 clipBotRight = skvx::cast<float>(int2::Load(&clipBounds.fRight));
+    auto clipTopLeft = skvx::cast<float>(skvx::int2::Load(&clipBounds.fLeft));
+    auto clipBotRight = skvx::cast<float>(skvx::int2::Load(&clipBounds.fRight));
     static_assert(sizeof(clipBounds) == sizeof(clipTopLeft) + sizeof(clipBotRight));
-    return skvx::all(pathTopLeft < clipBotRight) && skvx::all(pathBotRight > clipTopLeft);
+    return all(pathTopLeft < clipBotRight) && all(pathBotRight > clipTopLeft);
 }
 
 #ifdef SK_DEBUG
@@ -141,21 +138,20 @@ AtlasPathRenderer::AtlasPathRenderer(GrDirectContext* dContext) {
 bool AtlasPathRenderer::pathFitsInAtlas(const SkRect& pathDevBounds,
                                         GrAAType fallbackAAType) const {
     SkASSERT(fallbackAAType != GrAAType::kNone);  // The atlas doesn't support non-AA.
-    float atlasMaxPathHeight_pow2 = (fallbackAAType == GrAAType::kMSAA)
+    float atlasMaxPathHeight_p2 = (fallbackAAType == GrAAType::kMSAA)
             ? kAtlasMaxPathHeightWithMSAAFallback * kAtlasMaxPathHeightWithMSAAFallback
             : kAtlasMaxPathHeight * kAtlasMaxPathHeight;
     auto [topLeftFloor, botRightCeil] = round_out(pathDevBounds);
-    float2 size = botRightCeil - topLeftFloor;
+    auto size = botRightCeil - topLeftFloor;
     return // Ensure the path's largest dimension fits in the atlas.
-           skvx::all(size <= fAtlasMaxPathWidth) &&
+           all(size <= fAtlasMaxPathWidth) &&
            // Since we will transpose tall skinny paths, limiting to atlasMaxPathHeight^2 pixels
            // guarantees heightInAtlas <= atlasMaxPathHeight, while also allowing paths that are
            // very wide and short.
-           size[0] * size[1] <= atlasMaxPathHeight_pow2;
+           size[0] * size[1] <= atlasMaxPathHeight_p2;
 }
 
 void AtlasPathRenderer::AtlasPathKey::set(const SkMatrix& m, const SkPath& path) {
-    using grvx::float2;
     fPathGenID = path.getGenerationID();
     fAffineMatrix[0] = m.getScaleX();
     fAffineMatrix[1] = m.getSkewX();
@@ -181,8 +177,8 @@ bool AtlasPathRenderer::addPathToAtlas(GrRecordingContext* rContext,
     // is_visible() should have guaranteed the path's bounds were representable as ints, since clip
     // bounds within the max render target size are nowhere near INT_MAX.
     auto [topLeftFloor, botRightCeil] = round_out(pathDevBounds);
-    SkASSERT(skvx::all(skvx::cast<float>(int2::Load(&devIBounds->fLeft)) == topLeftFloor));
-    SkASSERT(skvx::all(skvx::cast<float>(int2::Load(&devIBounds->fRight)) == botRightCeil));
+    SkASSERT(all(skvx::cast<float>(skvx::int2::Load(&devIBounds->fLeft)) == topLeftFloor));
+    SkASSERT(all(skvx::cast<float>(skvx::int2::Load(&devIBounds->fRight)) == botRightCeil));
 #endif
 
     int widthInAtlas = devIBounds->width();
@@ -387,39 +383,51 @@ GrFPResult AtlasPathRenderer::makeAtlasClipEffect(const SurfaceDrawContext* sdc,
                                                                        atlasMatrix, devIBounds));
 }
 
-void AtlasPathRenderer::preFlush(GrOnFlushResourceProvider* onFlushRP,
-                                 SkSpan<const uint32_t> /* taskIDs */) {
+bool AtlasPathRenderer::preFlush(GrOnFlushResourceProvider* onFlushRP) {
     if (fAtlasRenderTasks.empty()) {
         SkASSERT(fAtlasPathCache.count() == 0);
-        return;
+        return true;
     }
 
     // Verify the atlases can all share the same texture.
     SkDEBUGCODE(validate_atlas_dependencies(fAtlasRenderTasks);)
 
-    // Instantiate the first atlas.
-    fAtlasRenderTasks[0]->instantiate(onFlushRP);
+    bool successful;
 
-    // Instantiate the remaining atlases.
-    GrTexture* firstAtlasTexture = fAtlasRenderTasks[0]->atlasProxy()->peekTexture();
-    SkASSERT(firstAtlasTexture);
-    for (int i = 1; i < fAtlasRenderTasks.count(); ++i) {
-        auto atlasTask = fAtlasRenderTasks[i].get();
-        if (atlasTask->atlasProxy()->backingStoreDimensions() == firstAtlasTexture->dimensions()) {
-            atlasTask->instantiate(onFlushRP, sk_ref_sp(firstAtlasTexture));
-        } else {
-            // The atlases are expected to all be full size except possibly the final one.
-            SkASSERT(i == fAtlasRenderTasks.count() - 1);
-            SkASSERT(atlasTask->atlasProxy()->backingStoreDimensions().area() <
-                     firstAtlasTexture->dimensions().area());
-            // TODO: Recycle the larger atlas texture anyway?
-            atlasTask->instantiate(onFlushRP);
+#if GR_TEST_UTILS
+    if (onFlushRP->failFlushTimeCallbacks()) {
+        successful = false;
+    } else
+#endif
+    {
+        // TODO: it seems like this path renderer's backing-texture reuse could be greatly
+        // improved. Please see skbug.com/13298.
+
+        // Instantiate the first atlas.
+        successful = fAtlasRenderTasks[0]->instantiate(onFlushRP);
+
+        // Instantiate the remaining atlases.
+        GrTexture* firstAtlas = fAtlasRenderTasks[0]->atlasProxy()->peekTexture();
+        SkASSERT(firstAtlas);
+        for (int i = 1; successful && i < fAtlasRenderTasks.count(); ++i) {
+            auto atlasTask = fAtlasRenderTasks[i].get();
+            if (atlasTask->atlasProxy()->backingStoreDimensions() == firstAtlas->dimensions()) {
+                successful &= atlasTask->instantiate(onFlushRP, sk_ref_sp(firstAtlas));
+            } else {
+                // The atlases are expected to all be full size except possibly the final one.
+                SkASSERT(i == fAtlasRenderTasks.count() - 1);
+                SkASSERT(atlasTask->atlasProxy()->backingStoreDimensions().area() <
+                         firstAtlas->dimensions().area());
+                // TODO: Recycle the larger atlas texture anyway?
+                successful &= atlasTask->instantiate(onFlushRP);
+            }
         }
     }
 
     // Reset all atlas data.
     fAtlasRenderTasks.reset();
     fAtlasPathCache.reset();
+    return successful;
 }
 
 } // namespace skgpu::v1

@@ -20,7 +20,6 @@
 #include "quiche/quic/core/http/quic_spdy_session.h"
 #include "quiche/quic/core/quic_crypto_server_stream_base.h"
 #include "quiche/quic/core/quic_packets.h"
-#include "quiche/quic/platform/api/quic_containers.h"
 #include "quiche/quic/tools/quic_backend_response.h"
 #include "quiche/quic/tools/quic_simple_server_backend.h"
 #include "quiche/quic/tools/quic_simple_server_stream.h"
@@ -70,10 +69,6 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
 
   void OnCanCreateNewOutgoingStream(bool unidirectional) override;
 
-  bool ShouldNegotiateDatagramContexts() override {
-    return quic_simple_server_backend_->UsesDatagramContexts();
-  }
-
  protected:
   // QuicSession methods:
   QuicSpdyStream* CreateIncomingStream(QuicStreamId id) override;
@@ -102,7 +97,7 @@ class QuicSimpleServerSession : public QuicServerSessionBase {
   }
   HttpDatagramSupport LocalHttpDatagramSupport() override {
     if (ShouldNegotiateWebTransport()) {
-      return HttpDatagramSupport::kDraft00And04;
+      return HttpDatagramSupport::kDraft04;
     }
     return QuicServerSessionBase::LocalHttpDatagramSupport();
   }

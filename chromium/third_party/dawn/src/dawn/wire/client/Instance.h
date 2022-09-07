@@ -15,7 +15,7 @@
 #ifndef SRC_DAWN_WIRE_CLIENT_INSTANCE_H_
 #define SRC_DAWN_WIRE_CLIENT_INSTANCE_H_
 
-#include <dawn/webgpu.h>
+#include "dawn/webgpu.h"
 
 #include "dawn/wire/WireClient.h"
 #include "dawn/wire/WireCmd_autogen.h"
@@ -24,32 +24,32 @@
 
 namespace dawn::wire::client {
 
-    class Instance final : public ObjectBase {
-      public:
-        using ObjectBase::ObjectBase;
+class Instance final : public ObjectBase {
+  public:
+    Instance(Client* client, uint32_t refcount, uint32_t id);
+    ~Instance();
 
-        ~Instance();
-        void CancelCallbacksForDisconnect() override;
+    void CancelCallbacksForDisconnect() override;
 
-        void RequestAdapter(const WGPURequestAdapterOptions* options,
-                            WGPURequestAdapterCallback callback,
-                            void* userdata);
-        bool OnRequestAdapterCallback(uint64_t requestSerial,
-                                      WGPURequestAdapterStatus status,
-                                      const char* message,
-                                      const WGPUAdapterProperties* properties,
-                                      const WGPUSupportedLimits* limits,
-                                      uint32_t featuresCount,
-                                      const WGPUFeatureName* features);
+    void RequestAdapter(const WGPURequestAdapterOptions* options,
+                        WGPURequestAdapterCallback callback,
+                        void* userdata);
+    bool OnRequestAdapterCallback(uint64_t requestSerial,
+                                  WGPURequestAdapterStatus status,
+                                  const char* message,
+                                  const WGPUAdapterProperties* properties,
+                                  const WGPUSupportedLimits* limits,
+                                  uint32_t featuresCount,
+                                  const WGPUFeatureName* features);
 
-      private:
-        struct RequestAdapterData {
-            WGPURequestAdapterCallback callback = nullptr;
-            ObjectId adapterObjectId;
-            void* userdata = nullptr;
-        };
-        RequestTracker<RequestAdapterData> mRequestAdapterRequests;
+  private:
+    struct RequestAdapterData {
+        WGPURequestAdapterCallback callback = nullptr;
+        ObjectId adapterObjectId;
+        void* userdata = nullptr;
     };
+    RequestTracker<RequestAdapterData> mRequestAdapterRequests;
+};
 
 }  // namespace dawn::wire::client
 

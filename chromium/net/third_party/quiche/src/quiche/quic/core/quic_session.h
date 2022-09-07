@@ -138,7 +138,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
                         const QuicSocketAddress& peer_address,
                         bool is_connectivity_probe) override;
   void OnCanWrite() override;
-  bool SendProbingData() override;
   void OnCongestionWindowChange(QuicTime /*now*/) override {}
   void OnConnectionMigration(AddressChangeType /*type*/) override {}
   // Adds a connection level WINDOW_UPDATE frame.
@@ -173,6 +172,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
       const QuicSocketAddress& /*address*/) const override {
     return false;
   }
+  void OnBandwidthUpdateTimeout() override {}
 
   // QuicStreamFrameDataProducer
   WriteStreamDataResult WriteStreamData(QuicStreamId id,
@@ -265,7 +265,7 @@ class QUIC_EXPORT_PRIVATE QuicSession
   virtual void SendGoAway(QuicErrorCode error_code, const std::string& reason);
 
   // Sends a BLOCKED frame.
-  virtual void SendBlocked(QuicStreamId id);
+  virtual void SendBlocked(QuicStreamId id, QuicStreamOffset byte_offset);
 
   // Sends a WINDOW_UPDATE frame.
   virtual void SendWindowUpdate(QuicStreamId id, QuicStreamOffset byte_offset);
@@ -615,9 +615,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
   bool permutes_tls_extensions() const { return permutes_tls_extensions_; }
 
   virtual QuicSSLConfig GetSSLConfig() const { return QuicSSLConfig(); }
-
-  // Latched value of flag --quic_tls_server_support_client_cert.
-  bool support_client_cert() const { return support_client_cert_; }
 
   // Try converting all pending streams to normal streams.
   void ProcessAllPendingStreams();
@@ -1005,9 +1002,6 @@ class QUIC_EXPORT_PRIVATE QuicSession
 
   // Whether BoringSSL randomizes the order of TLS extensions.
   bool permutes_tls_extensions_ = true;
-
-  const bool support_client_cert_ =
-      GetQuicRestartFlag(quic_tls_server_support_client_cert);
 };
 
 }  // namespace quic

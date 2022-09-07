@@ -5,26 +5,41 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLFunctionCall.h"
+
+#include "include/core/SkTypes.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkSLModifiers.h"
+#include "include/private/SkTArray.h"
+#include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "src/core/SkMatrixInvert.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLConstantFolder.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
-#include "src/sksl/dsl/priv/DSLWriter.h"
 #include "src/sksl/ir/SkSLChildCall.h"
+#include "src/sksl/ir/SkSLConstructor.h"
 #include "src/sksl/ir/SkSLConstructorCompound.h"
+#include "src/sksl/ir/SkSLExternalFunction.h"
 #include "src/sksl/ir/SkSLExternalFunctionCall.h"
 #include "src/sksl/ir/SkSLExternalFunctionReference.h"
-#include "src/sksl/ir/SkSLFunctionCall.h"
+#include "src/sksl/ir/SkSLFunctionDeclaration.h"
 #include "src/sksl/ir/SkSLFunctionReference.h"
 #include "src/sksl/ir/SkSLLiteral.h"
 #include "src/sksl/ir/SkSLMethodReference.h"
 #include "src/sksl/ir/SkSLTypeReference.h"
+#include "src/sksl/ir/SkSLVariable.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 
-#include "include/private/SkFloatingPoint.h"
-#include "include/sksl/DSLCore.h"
-#include "src/core/SkMatrixInvert.h"
-
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <optional>
+#include <string_view>
 
 namespace SkSL {
 
@@ -654,9 +669,7 @@ static std::unique_ptr<Expression> optimize_intrinsic_call(const Context& contex
             // Refract uses its arguments out-of-order in such a way that we end up trying to create
             // an invalid Position range, so we rewrite the arguments' positions to avoid that here.
             auto clone = [&](const Expression* expr) {
-                std::unique_ptr<Expression> result = expr->clone();
-                result->fPosition = pos;
-                return DSLExpression(std::move(result));
+                return DSLExpression(expr->clone(pos));
             };
             auto I    = [&] { return clone(arguments[0]); };
             auto N    = [&] { return clone(arguments[1]); };
@@ -793,8 +806,8 @@ bool FunctionCall::hasProperty(Property property) const {
     return false;
 }
 
-std::unique_ptr<Expression> FunctionCall::clone() const {
-    return std::make_unique<FunctionCall>(fPosition, &this->type(), &this->function(),
+std::unique_ptr<Expression> FunctionCall::clone(Position pos) const {
+    return std::make_unique<FunctionCall>(pos, &this->type(), &this->function(),
                                           this->arguments().clone());
 }
 

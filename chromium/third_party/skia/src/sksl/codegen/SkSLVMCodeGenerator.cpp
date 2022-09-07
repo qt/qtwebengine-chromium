@@ -25,6 +25,7 @@
 #include "include/private/SkTPin.h"
 #include "include/sksl/SkSLOperator.h"
 #include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBinaryExpression.h"
@@ -63,7 +64,9 @@
 #include <algorithm>
 #include <cstddef>
 #include <functional>
+#include <iterator>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 
 namespace {
@@ -330,6 +333,8 @@ private:
                                 const std::function <Value(skvm::F32 x, skvm::F32 y)>& float_comp,
                                 const std::function <Value(skvm::I32 x, skvm::I32 y)>& int_comp);
 
+    void determineLineOffsets();
+
     //
     // Global state for the lifetime of the generator:
     //
@@ -338,6 +343,9 @@ private:
     SkVMDebugTrace* fDebugTrace;
     int fTraceHookID = -1;
     SkVMCallbacks* fCallbacks;
+    // contains the position of each newline in the source, plus a zero at the beginning and the
+    // total source length at the end as sentinels
+    std::vector<int> fLineOffsets;
 
     struct Slot {
         skvm::Val  val;
@@ -415,6 +423,7 @@ void SkVMGenerator::writeProgram(SkSpan<skvm::Val> uniforms,
                                  const FunctionDefinition& function,
                                  SkSpan<skvm::Val> arguments,
                                  SkSpan<skvm::Val> outReturn) {
+    this->determineLineOffsets();
     fConditionMask = fLoopMask = fBuilder->splat(0xffff'ffff);
 
     this->setupGlobals(uniforms, device);
@@ -425,6 +434,17 @@ void SkVMGenerator::writeProgram(SkSpan<skvm::Val> uniforms,
     for (size_t i = 0; i < outReturn.size(); ++i) {
         outReturn[i] = fSlots[returnSlot + i].val;
     }
+}
+
+void SkVMGenerator::determineLineOffsets() {
+    SkASSERT(fLineOffsets.empty());
+    fLineOffsets.push_back(0);
+    for (size_t i = 0; i < fProgram.fSource->length(); ++i) {
+        if ((*fProgram.fSource)[i] == '\n') {
+            fLineOffsets.push_back(i);
+        }
+    }
+    fLineOffsets.push_back(fProgram.fSource->length());
 }
 
 void SkVMGenerator::setupGlobals(SkSpan<skvm::Val> uniforms, skvm::Coord device) {
@@ -691,7 +711,12 @@ size_t SkVMGenerator::createSlot(const std::string& name,
 // TODO(skia:13058): remove this and track positions directly
 int SkVMGenerator::getLine(Position pos) {
     if (pos.valid()) {
-        return pos.line(*fProgram.fSource);
+        // Binary search within fLineOffets to find the line.
+        SkASSERT(fLineOffsets.size() >= 2);
+        SkASSERT(fLineOffsets[0] == 0);
+        SkASSERT(fLineOffsets.back() == (int)fProgram.fSource->length());
+        return std::distance(fLineOffsets.begin(), std::upper_bound(fLineOffsets.begin(),
+                fLineOffsets.end(), pos.startOffset()));
     } else {
         return -1;
     }
@@ -2066,7 +2091,6 @@ void SkVMGenerator::writeStatement(const Statement& s) {
         case Statement::Kind::kDo:
             SkDEBUGFAIL("Unsupported control flow");
             break;
-        case Statement::Kind::kInlineMarker:
         case Statement::Kind::kNop:
             break;
         default:

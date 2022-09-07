@@ -40,10 +40,6 @@ struct cros_gralloc_handle : public native_handle_t {
 	uint32_t num_planes;
 	uint64_t reserved_region_size;
 	uint64_t total_size; /* Total allocation size */
-	/*
-	 * Name is a null terminated char array located at handle->base.data[handle->name_offset].
-	 */
-	uint32_t name_offset;
 } __attribute__((packed));
 
 typedef const struct cros_gralloc_handle *cros_gralloc_handle_t;

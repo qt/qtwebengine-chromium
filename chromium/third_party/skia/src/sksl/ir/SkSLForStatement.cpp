@@ -5,12 +5,18 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLForStatement.h"
+
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "include/private/SkTArray.h"
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLAnalysis.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/ir/SkSLBlock.h"
 #include "src/sksl/ir/SkSLExpressionStatement.h"
-#include "src/sksl/ir/SkSLForStatement.h"
 #include "src/sksl/ir/SkSLNop.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLType.h"
@@ -50,6 +56,7 @@ std::unique_ptr<Statement> ForStatement::clone() const {
 
     return std::make_unique<ForStatement>(
             fPosition,
+            fForLoopPositions,
             this->initializer() ? this->initializer()->clone() : nullptr,
             this->test() ? this->test()->clone() : nullptr,
             this->next() ? this->next()->clone() : nullptr,
@@ -77,7 +84,9 @@ std::string ForStatement::description() const {
     return result;
 }
 
-std::unique_ptr<Statement> ForStatement::Convert(const Context& context, Position pos,
+std::unique_ptr<Statement> ForStatement::Convert(const Context& context,
+                                                 Position pos,
+                                                 ForLoopPositions positions,
                                                  std::unique_ptr<Statement> initializer,
                                                  std::unique_ptr<Expression> test,
                                                  std::unique_ptr<Expression> next,
@@ -108,7 +117,7 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, Positio
     std::unique_ptr<LoopUnrollInfo> unrollInfo;
     if (context.fConfig->strictES2Mode()) {
         // In strict-ES2, loops must be unrollable or it's an error.
-        unrollInfo = Analysis::GetLoopUnrollInfo(pos, initializer.get(), test.get(),
+        unrollInfo = Analysis::GetLoopUnrollInfo(pos, positions, initializer.get(), test.get(),
                                                  next.get(), statement.get(), context.fErrors);
         if (!unrollInfo) {
             return nullptr;
@@ -116,7 +125,7 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, Positio
     } else {
         // In ES3, loops don't have to be unrollable, but we can use the unroll information for
         // optimization purposes.
-        unrollInfo = Analysis::GetLoopUnrollInfo(pos, initializer.get(), test.get(),
+        unrollInfo = Analysis::GetLoopUnrollInfo(pos, positions, initializer.get(), test.get(),
                                                  next.get(), statement.get(), /*errors=*/nullptr);
     }
 
@@ -133,14 +142,14 @@ std::unique_ptr<Statement> ForStatement::Convert(const Context& context, Positio
         // unilaterally for all for-statements, because the resulting for loop isn't ES2-compliant.)
         StatementArray scope;
         scope.push_back(std::move(initializer));
-        scope.push_back(ForStatement::Make(context, pos, /*initializer=*/nullptr,
+        scope.push_back(ForStatement::Make(context, pos, positions, /*initializer=*/nullptr,
                                            std::move(test), std::move(next), std::move(statement),
                                            std::move(unrollInfo), /*symbolTable=*/nullptr));
         return Block::Make(pos, std::move(scope), Block::Kind::kBracedScope,
                            std::move(symbolTable));
     }
 
-    return ForStatement::Make(context, pos, std::move(initializer), std::move(test),
+    return ForStatement::Make(context, pos, positions, std::move(initializer), std::move(test),
                               std::move(next), std::move(statement), std::move(unrollInfo),
                               std::move(symbolTable));
 }
@@ -153,11 +162,13 @@ std::unique_ptr<Statement> ForStatement::ConvertWhile(const Context& context, Po
         context.fErrors->error(pos, "while loops are not supported");
         return nullptr;
     }
-    return ForStatement::Convert(context, pos, /*initializer=*/nullptr, std::move(test),
-                                 /*next=*/nullptr, std::move(statement), std::move(symbolTable));
+    return ForStatement::Convert(context, pos, ForLoopPositions(), /*initializer=*/nullptr,
+            std::move(test), /*next=*/nullptr, std::move(statement), std::move(symbolTable));
 }
 
-std::unique_ptr<Statement> ForStatement::Make(const Context& context, Position pos,
+std::unique_ptr<Statement> ForStatement::Make(const Context& context,
+                                              Position pos,
+                                              ForLoopPositions positions,
                                               std::unique_ptr<Statement> initializer,
                                               std::unique_ptr<Expression> test,
                                               std::unique_ptr<Expression> next,
@@ -180,9 +191,8 @@ std::unique_ptr<Statement> ForStatement::Make(const Context& context, Position p
         }
     }
 
-    return std::make_unique<ForStatement>(pos, std::move(initializer), std::move(test),
-                                          std::move(next), std::move(statement),
-                                          std::move(unrollInfo), std::move(symbolTable));
+    return std::make_unique<ForStatement>(pos, positions, std::move(initializer), std::move(test),
+            std::move(next), std::move(statement), std::move(unrollInfo), std::move(symbolTable));
 }
 
 }  // namespace SkSL

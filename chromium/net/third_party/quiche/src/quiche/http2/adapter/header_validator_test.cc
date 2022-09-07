@@ -101,6 +101,19 @@ TEST(HeaderValidatorTest, ValueHasInvalidChar) {
         v.ValidateSingleHeader("name", absl::string_view("val\0ue", 6));
     EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID, status);
   }
+  {
+    // Test that obs-text is disallowed by default.
+    EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
+              v.ValidateSingleHeader("name", "val\xa9ue"));
+    // Test that obs-text is disallowed when configured.
+    v.SetObsTextOption(ObsTextOption::kDisallow);
+    EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
+              v.ValidateSingleHeader("name", "val\xa9ue"));
+    // Test that obs-text is allowed when configured.
+    v.SetObsTextOption(ObsTextOption::kAllow);
+    EXPECT_EQ(HeaderValidator::HEADER_OK,
+              v.ValidateSingleHeader("name", "val\xa9ue"));
+  }
 }
 
 TEST(HeaderValidatorTest, StatusHasInvalidChar) {
@@ -253,6 +266,54 @@ TEST(HeaderValidatorTest, RequestPseudoHeaders) {
   }
 }
 
+TEST(HeaderValidatorTest, ConnectHeaders) {
+  // Too few headers.
+  HeaderValidator v;
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":authority", "athena.dialup.mit.edu:23"));
+  EXPECT_FALSE(v.FinishHeaderBlock(HeaderType::REQUEST));
+
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":method", "CONNECT"));
+  EXPECT_FALSE(v.FinishHeaderBlock(HeaderType::REQUEST));
+
+  // Too many headers.
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":authority", "athena.dialup.mit.edu:23"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":method", "CONNECT"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK, v.ValidateSingleHeader(":path", "/"));
+  EXPECT_FALSE(v.FinishHeaderBlock(HeaderType::REQUEST));
+
+  // Empty :authority
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":authority", ""));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":method", "CONNECT"));
+  EXPECT_FALSE(v.FinishHeaderBlock(HeaderType::REQUEST));
+
+  // Just right.
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":authority", "athena.dialup.mit.edu:23"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":method", "CONNECT"));
+  EXPECT_TRUE(v.FinishHeaderBlock(HeaderType::REQUEST));
+
+  v.SetAllowExtendedConnect();
+  // "Classic" CONNECT headers should still be accepted.
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":authority", "athena.dialup.mit.edu:23"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":method", "CONNECT"));
+  EXPECT_TRUE(v.FinishHeaderBlock(HeaderType::REQUEST));
+}
+
 TEST(HeaderValidatorTest, WebsocketPseudoHeaders) {
   HeaderValidator v;
   v.StartHeaderBlock();
@@ -267,7 +328,7 @@ TEST(HeaderValidatorTest, WebsocketPseudoHeaders) {
 
   // Future header blocks may send the `:protocol` pseudo-header for CONNECT
   // requests.
-  v.AllowConnect();
+  v.SetAllowExtendedConnect();
 
   v.StartHeaderBlock();
   for (Header to_add : kSampleRequestPseudoheaders) {
@@ -413,6 +474,30 @@ TEST(HeaderValidatorTest, Response204) {
   EXPECT_EQ(HeaderValidator::HEADER_OK,
             v.ValidateSingleHeader("x-content", "is not present"));
   EXPECT_TRUE(v.FinishHeaderBlock(HeaderType::RESPONSE));
+}
+
+TEST(HeaderValidatorTest, ResponseWithMultipleIdenticalContentLength) {
+  HeaderValidator v;
+
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":status", "200"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader("content-length", "13"));
+  EXPECT_EQ(HeaderValidator::HEADER_SKIP,
+            v.ValidateSingleHeader("content-length", "13"));
+}
+
+TEST(HeaderValidatorTest, ResponseWithMultipleDifferingContentLength) {
+  HeaderValidator v;
+
+  v.StartHeaderBlock();
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader(":status", "200"));
+  EXPECT_EQ(HeaderValidator::HEADER_OK,
+            v.ValidateSingleHeader("content-length", "13"));
+  EXPECT_EQ(HeaderValidator::HEADER_FIELD_INVALID,
+            v.ValidateSingleHeader("content-length", "17"));
 }
 
 TEST(HeaderValidatorTest, Response204WithContentLengthZero) {

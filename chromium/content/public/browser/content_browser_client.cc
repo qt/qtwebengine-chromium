@@ -4,8 +4,6 @@
 
 #include "content/public/browser/content_browser_client.h"
 
-#include "build/build_config.h"
-
 // content_browser_client.h is a widely included header and its size impacts
 // build time significantly. If you run into this limit, try using forward
 // declarations instead of including more headers. If that is infeasible, adjust
@@ -40,11 +38,13 @@
 #include "content/public/browser/overlay_window.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/browser/quota_permission_context.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/sms_fetcher.h"
 #include "content/public/browser/speculation_host_delegate.h"
 #include "content/public/browser/url_loader_request_interceptor.h"
 #include "content/public/browser/vpn_service_proxy.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_view_delegate.h"
 #include "content/public/common/alternative_error_page_override_info.mojom.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/url_utils.h"
@@ -82,7 +82,7 @@
 namespace content {
 
 std::unique_ptr<BrowserMainParts> ContentBrowserClient::CreateBrowserMainParts(
-    MainFunctionParams parameters) {
+    bool /* is_integration_test */) {
   return nullptr;
 }
 
@@ -99,8 +99,8 @@ bool ContentBrowserClient::IsBrowserStartupComplete() {
 
 void ContentBrowserClient::SetBrowserStartupIsCompleteForTesting() {}
 
-WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
-    WebContents* web_contents) {
+std::unique_ptr<WebContentsViewDelegate>
+ContentBrowserClient::GetWebContentsViewDelegate(WebContents* web_contents) {
   return nullptr;
 }
 
@@ -253,6 +253,13 @@ size_t ContentBrowserClient::GetProcessCountToIgnoreForLimit() {
   return 0;
 }
 
+blink::ParsedPermissionsPolicy
+ContentBrowserClient::GetPermissionsPolicyForIsolatedApp(
+    content::BrowserContext* browser_context,
+    const url::Origin& app_origin) {
+  return blink::ParsedPermissionsPolicy();
+}
+
 bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
     BrowserContext* browser_context,
     const GURL& url) {
@@ -260,8 +267,8 @@ bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
   return false;
 }
 
-bool ContentBrowserClient::ShouldSubframesTryToReuseExistingProcess(
-    RenderFrameHost* main_frame) {
+bool ContentBrowserClient::ShouldEmbeddedFramesTryToReuseExistingProcess(
+    RenderFrameHost* outermost_main_frame) {
   return true;
 }
 
@@ -481,6 +488,15 @@ bool ContentBrowserClient::IsConversionMeasurementOperationAllowed(
   return true;
 }
 
+bool ContentBrowserClient::IsSharedStorageAllowed(
+    content::BrowserContext* browser_context,
+    const url::Origin& top_frame_origin,
+    const url::Origin& accessing_origin) {
+  // TODO(crbug.com/1325103): Change this to false and override in
+  // relevant content_browsertests and web_tests.
+  return true;
+}
+
 bool ContentBrowserClient::CanSendSCTAuditingReport(
     BrowserContext* browser_context) {
   return false;
@@ -502,7 +518,7 @@ void ContentBrowserClient::AllowCertificateError(
     int cert_error,
     const net::SSLInfo& ssl_info,
     const GURL& request_url,
-    bool is_main_frame_request,
+    bool is_primary_main_frame_request,
     bool strict_enforcement,
     base::OnceCallback<void(CertificateRequestResultType)> callback) {
   std::move(callback).Run(CERTIFICATE_REQUEST_RESULT_TYPE_DENY);
@@ -758,13 +774,18 @@ bool ContentBrowserClient::IsUtilityCetCompatible(
 }
 
 std::wstring ContentBrowserClient::GetAppContainerSidForSandboxType(
-    sandbox::mojom::Sandbox sandbox_type) {
+    sandbox::mojom::Sandbox sandbox_type,
+    AppContainerFlags flags) {
   // Embedders should override this method and return different SIDs for each
   // sandbox type. Note: All content level tests will run child processes in the
   // same AppContainer.
   return std::wstring(
       L"S-1-15-2-3251537155-1984446955-2931258699-841473695-1938553385-"
       L"924012148-129201922");
+}
+
+bool ContentBrowserClient::IsRendererAppContainerDisabled() {
+  return false;
 }
 
 std::wstring ContentBrowserClient::GetLPACCapabilityNameForNetworkService() {
@@ -911,8 +932,8 @@ ContentBrowserClient::GetNetworkContextsParentDirectory() {
   return {};
 }
 
-base::DictionaryValue ContentBrowserClient::GetNetLogConstants() {
-  return base::DictionaryValue();
+base::Value::Dict ContentBrowserClient::GetNetLogConstants() {
+  return base::Value::Dict();
 }
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1325,6 +1346,10 @@ bool ContentBrowserClient::IsFirstPartySetsEnabled() {
   return base::FeatureList::IsEnabled(features::kFirstPartySets);
 }
 
+bool ContentBrowserClient::WillProvidePublicFirstPartySets() {
+  return false;
+}
+
 base::Value::Dict ContentBrowserClient::GetFirstPartySetsOverrides() {
   return base::Value::Dict();
 }
@@ -1332,9 +1357,16 @@ base::Value::Dict ContentBrowserClient::GetFirstPartySetsOverrides() {
 mojom::AlternativeErrorPageOverrideInfoPtr
 ContentBrowserClient::GetAlternativeErrorPageOverrideInfo(
     const GURL& url,
-    BrowserContext* browser_context,
+    content::RenderFrameHost* render_frame_host,
+    content::BrowserContext* browser_context,
     int32_t error_code) {
   return nullptr;
+}
+
+bool ContentBrowserClient::OpenExternally(RenderFrameHost* opener,
+                                          const GURL& url,
+                                          WindowOpenDisposition disposition) {
+  return false;
 }
 
 }  // namespace content

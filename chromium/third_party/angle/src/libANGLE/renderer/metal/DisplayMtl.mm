@@ -7,6 +7,7 @@
 // DisplayMtl.mm: Metal implementation of DisplayImpl
 
 #include "libANGLE/renderer/metal/DisplayMtl.h"
+#include <sys/param.h>
 
 #include "common/system_utils.h"
 #include "gpu_info_util/SystemInfo.h"
@@ -707,7 +708,7 @@ void DisplayMtl::ensureCapsInitialized() const
 #endif
 
     mNativeCaps.maxArrayTextureLayers = 2048;
-    mNativeCaps.maxLODBias            = 2.0;  // default GLES3 limit
+    mNativeCaps.maxLODBias            = std::log2(mNativeCaps.max2DTextureSize) + 1;
     mNativeCaps.maxCubeMapTextureSize = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxRenderbufferSize   = mNativeCaps.max2DTextureSize;
     mNativeCaps.minAliasedPointSize   = 1;
@@ -727,12 +728,42 @@ void DisplayMtl::ensureCapsInitialized() const
     mNativeCaps.minAliasedLineWidth = 1.0f;
     mNativeCaps.maxAliasedLineWidth = 1.0f;
 
-    mNativeCaps.maxDrawBuffers       = mtl::kMaxRenderTargets;
+    if (supportsEitherGPUFamily(2, 1) && !mFeatures.limitMaxDrawBuffersForTesting.enabled)
+    {
+        mNativeCaps.maxDrawBuffers      = mtl::kMaxRenderTargets;
+        mNativeCaps.maxColorAttachments = mtl::kMaxRenderTargets;
+    }
+    else
+    {
+        mNativeCaps.maxDrawBuffers      = mtl::kMaxRenderTargetsOlderGPUFamilies;
+        mNativeCaps.maxColorAttachments = mtl::kMaxRenderTargetsOlderGPUFamilies;
+    }
+    ASSERT(static_cast<uint32_t>(mNativeCaps.maxDrawBuffers) <= mtl::kMaxRenderTargets);
+    ASSERT(static_cast<uint32_t>(mNativeCaps.maxColorAttachments) <= mtl::kMaxRenderTargets);
+
     mNativeCaps.maxFramebufferWidth  = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxFramebufferHeight = mNativeCaps.max2DTextureSize;
-    mNativeCaps.maxColorAttachments  = mtl::kMaxRenderTargets;
     mNativeCaps.maxViewportWidth     = mNativeCaps.max2DTextureSize;
     mNativeCaps.maxViewportHeight    = mNativeCaps.max2DTextureSize;
+
+    bool isCatalyst = TARGET_OS_MACCATALYST;
+
+    mMaxColorTargetBits = mtl::kMaxColorTargetBitsApple1To3;
+    if (supportsMacGPUFamily(1) || isCatalyst)
+    {
+        mMaxColorTargetBits = mtl::kMaxColorTargetBitsMacAndCatalyst;
+    }
+    else if (supportsAppleGPUFamily(4))
+    {
+        mMaxColorTargetBits = mtl::kMaxColorTargetBitsApple4Plus;
+    }
+
+    if (mFeatures.limitMaxColorTargetBitsForTesting.enabled)
+    {
+        // Set so we have enough for RGBA8 on every attachment
+        // but not enough for RGBA32UI.
+        mMaxColorTargetBits = mNativeCaps.maxColorAttachments * 32;
+    }
 
     // MSAA
     mNativeCaps.maxSamples             = mFormatTable.getMaxSamples();
@@ -984,8 +1015,7 @@ void DisplayMtl::initializeTextureCaps() const
 {
     mNativeTextureCaps.clear();
 
-    mFormatTable.generateTextureCaps(this, &mNativeTextureCaps,
-                                     &mNativeCaps.compressedTextureFormats);
+    mFormatTable.generateTextureCaps(this, &mNativeTextureCaps);
 
     // Re-verify texture extensions.
     mNativeExtensions.setTextureExtensionSupport(mNativeTextureCaps);
@@ -1062,7 +1092,7 @@ void DisplayMtl::initializeFeatures()
 
     // http://anglebug.com/4919
     // Stencil blit shader is not compiled on Intel & NVIDIA, need investigation.
-    ANGLE_FEATURE_CONDITION((&mFeatures), hasStencilOutput,
+    ANGLE_FEATURE_CONDITION((&mFeatures), hasShaderStencilOutput,
                             isMetal2_1 && !isIntel() && !isNVIDIA());
 
     ANGLE_FEATURE_CONDITION((&mFeatures), hasTextureSwizzle,
@@ -1085,7 +1115,7 @@ void DisplayMtl::initializeFeatures()
     ANGLE_FEATURE_CONDITION((&mFeatures), hasNonUniformDispatch,
                             isOSX || isCatalyst || supportsAppleGPUFamily(4));
 
-    ANGLE_FEATURE_CONDITION((&mFeatures), allowSeparatedDepthStencilBuffers,
+    ANGLE_FEATURE_CONDITION((&mFeatures), allowSeparateDepthStencilBuffers,
                             !isOSX && !isCatalyst && !isSimulator);
     ANGLE_FEATURE_CONDITION((&mFeatures), rewriteRowMajorMatrices, true);
     ANGLE_FEATURE_CONDITION((&mFeatures), emulateTransformFeedback, true);
@@ -1098,6 +1128,7 @@ void DisplayMtl::initializeFeatures()
     ANGLE_FEATURE_CONDITION((&mFeatures), multisampleColorFormatShaderReadWorkaround, isAMD());
     ANGLE_FEATURE_CONDITION((&mFeatures), copyIOSurfaceToNonIOSurfaceForReadOptimization,
                             isIntel());
+    ANGLE_FEATURE_CONDITION((&mFeatures), copyTextureToBufferForReadOptimization, isAMD());
 
     ANGLE_FEATURE_CONDITION((&mFeatures), forceNonCSBaseMipmapGeneration, isIntel());
 
@@ -1107,8 +1138,13 @@ void DisplayMtl::initializeFeatures()
 
     ApplyFeatureOverrides(&mFeatures, getState());
 #ifdef ANGLE_ENABLE_ASSERTS
-    fprintf(stderr, "Shader compiler output: %s\n",
-            mFeatures.directMetalGeneration.enabled ? "Metal" : "SPIR-V");
+    static bool once = true;
+    if (once)
+    {
+        fprintf(stderr, "Shader compiler output: %s\n",
+                mFeatures.directMetalGeneration.enabled ? "Metal" : "SPIR-V");
+        once = false;
+    }
 #endif
 }
 

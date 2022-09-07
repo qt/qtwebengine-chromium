@@ -979,6 +979,32 @@ bool ValidateEGLImageTargetTextureStorageEXT(const Context *context,
 
 // GL_EXT_YUV_target
 
+// GL_EXT_base_instance
+bool ValidateDrawArraysInstancedBaseInstanceEXT(const Context *context,
+                                                angle::EntryPoint entryPoint,
+                                                PrimitiveMode modePacked,
+                                                GLint first,
+                                                GLsizei count,
+                                                GLsizei instancecount,
+                                                GLuint baseinstance);
+bool ValidateDrawElementsInstancedBaseInstanceEXT(const Context *context,
+                                                  angle::EntryPoint entryPoint,
+                                                  GLenum mode,
+                                                  GLsizei count,
+                                                  GLenum type,
+                                                  const void *indices,
+                                                  GLsizei instancecount,
+                                                  GLuint baseinstance);
+bool ValidateDrawElementsInstancedBaseVertexBaseInstanceEXT(const Context *context,
+                                                            angle::EntryPoint entryPoint,
+                                                            PrimitiveMode modePacked,
+                                                            GLsizei count,
+                                                            DrawElementsType typePacked,
+                                                            const void *indices,
+                                                            GLsizei instancecount,
+                                                            GLint basevertex,
+                                                            GLuint baseinstance);
+
 // GL_EXT_blend_func_extended
 bool ValidateBindFragDataLocationEXT(const Context *context,
                                      angle::EntryPoint entryPoint,
@@ -2582,6 +2608,9 @@ bool ValidateFramebufferTextureMultiviewOVR(const Context *context,
                                             GLsizei numViews);
 
 // GL_OVR_multiview2
+
+// GL_QCOM_shading_rate
+bool ValidateShadingRateQCOM(const Context *context, angle::EntryPoint entryPoint, GLenum rate);
 }  // namespace gl
 
 #endif  // LIBANGLE_VALIDATION_ESEXT_AUTOGEN_H_

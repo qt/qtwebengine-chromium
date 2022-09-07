@@ -22,6 +22,10 @@ const char kErrorResultInitManifestFailure[] =
     "org.chromium.Modemfwd.Error.InitManifestFailure";
 const char kErrorResultInitJournalFailure[] =
     "org.chromium.Modemfwd.Error.InitJournalFailure";
+const char kErrorResultFailedToPrepareFirmwareFile[] =
+    "org.chromium.Modemfwd.Error.FailedToPrepareFirmwareFile";
+const char kErrorResultFailureReturnedByHelper[] =
+    "org.chromium.Modemfwd.Error.FailureReturnedByHelper";
 const char kErrorResultFlashFailure[] =
     "org.chromium.Modemfwd.Error.FlashFailure";
 

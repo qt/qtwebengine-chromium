@@ -31,6 +31,7 @@
 #include "include/core/SkRRect.h"
 #include "include/core/SkSamplingOptions.h"
 #include "include/core/SkScalar.h"
+#include "include/core/SkSerialProcs.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkString.h"
 #include "include/core/SkStrokeRec.h"
@@ -680,6 +681,10 @@ void castUniforms(void* data, size_t dataLen, const SkRuntimeEffect& effect) {
 }
 #endif
 
+sk_sp<SkData> alwaysSaveTypefaceBytes(SkTypeface* face, void*) {
+    return face->serialize(SkTypeface::SerializeBehavior::kDoIncludeData);
+}
+
 // These objects have private destructors / delete methods - I don't think
 // we need to do anything other than tell emscripten to do nothing.
 namespace emscripten {
@@ -754,7 +759,7 @@ protected:
     GrSurfaceProxyView onGenerateTexture(GrRecordingContext* ctx,
                                          const SkImageInfo& info,
                                          const SkIPoint& origin,
-                                         GrMipmapped mipMapped,
+                                         GrMipmapped mipmapped,
                                          GrImageTexGenPolicy texGenPolicy) {
         if (ctx->backend() != GrBackendApi::kOpenGL) {
             return {};
@@ -931,6 +936,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
 
     class_<SkCanvas>("Canvas")
         .constructor<>()
+        .constructor<SkScalar,SkScalar>()
         .function("_clear", optional_override([](SkCanvas& self, WASMPointerF32 cPtr) {
             self.clear(ptrToSkColor4f(cPtr));
         }))
@@ -1137,6 +1143,14 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("_drawTextBlob", select_overload<void (const sk_sp<SkTextBlob>&, SkScalar, SkScalar, const SkPaint&)>(&SkCanvas::drawTextBlob))
 #endif
         .function("_drawVertices", select_overload<void (const sk_sp<SkVertices>&, SkBlendMode, const SkPaint&)>(&SkCanvas::drawVertices))
+
+        .function("_getDeviceClipBounds", optional_override([](const SkCanvas& self, WASMPointerI32 iPtr) {
+            SkIRect* outputRect = reinterpret_cast<SkIRect*>(iPtr);
+            if (!outputRect) {
+                return; // output pointer cannot be null
+            }
+            self.getDeviceClipBounds(outputRect);
+        }))
         // 4x4 matrix functions
         // Just like with getTotalMatrix, we allocate the buffer for the 16 floats to go in from
         // interface.js, so it can also free them when its done.
@@ -1664,9 +1678,15 @@ EMSCRIPTEN_BINDINGS(Skia) {
         // that clients should ever rely on.  The format may change at anytime and no promises
         // are made for backwards or forward compatibility.
         .function("serialize", optional_override([](SkPicture& self) -> Uint8Array {
-            // Emscripten doesn't play well with optional arguments, which we don't
-            // want to expose anyway.
-            sk_sp<SkData> data = self.serialize();
+            // We want to make sure we always save the underlying data of the Typeface to the
+            // SkPicture. By default, the data for "system" fonts is not saved, just an identifier
+            // (e.g. the family name and style). We do not want the user to have to supply a
+            // FontMgr with the correct fonts by name when deserializing, so we choose to always
+            // serialize the underlying data. This makes the SKPs a bit bigger, but easier to use.
+            SkSerialProcs sp;
+            sp.fTypefaceProc = &alwaysSaveTypefaceBytes;
+
+            sk_sp<SkData> data = self.serialize(&sp);
             if (!data) {
                 return emscripten::val::null();
             }
@@ -1841,23 +1861,35 @@ EMSCRIPTEN_BINDINGS(Skia) {
         .function("_makeShader", optional_override([](SkRuntimeEffect& self,
                                                       WASMPointerF32 fPtr,
                                                       size_t fLen,
+                                                      bool shouldOwnUniforms,
                                                       WASMPointerF32 mPtr)->sk_sp<SkShader> {
-            void* inputData = reinterpret_cast<void*>(fPtr);
-            castUniforms(inputData, fLen, self);
-            sk_sp<SkData> inputs = SkData::MakeFromMalloc(inputData, fLen);
+            void* uniformData = reinterpret_cast<void*>(fPtr);
+            castUniforms(uniformData, fLen, self);
+            sk_sp<SkData> uniforms;
+            if (shouldOwnUniforms) {
+                uniforms = SkData::MakeFromMalloc(uniformData, fLen);
+            } else {
+                uniforms = SkData::MakeWithoutCopy(uniformData, fLen);
+            }
 
             OptionalMatrix localMatrix(mPtr);
-            return self.makeShader(inputs, nullptr, 0, &localMatrix);
+            return self.makeShader(uniforms, nullptr, 0, &localMatrix);
         }))
         .function("_makeShaderWithChildren", optional_override([](SkRuntimeEffect& self,
                                                                   WASMPointerF32 fPtr,
                                                                   size_t fLen,
+                                                                  bool shouldOwnUniforms,
                                                                   WASMPointerU32 cPtrs,
                                                                   size_t cLen,
                                                                   WASMPointerF32 mPtr)->sk_sp<SkShader> {
-            void* inputData = reinterpret_cast<void*>(fPtr);
-            castUniforms(inputData, fLen, self);
-            sk_sp<SkData> inputs = SkData::MakeFromMalloc(inputData, fLen);
+            void* uniformData = reinterpret_cast<void*>(fPtr);
+            castUniforms(uniformData, fLen, self);
+            sk_sp<SkData> uniforms;
+            if (shouldOwnUniforms) {
+                uniforms = SkData::MakeFromMalloc(uniformData, fLen);
+            } else {
+                uniforms = SkData::MakeWithoutCopy(uniformData, fLen);
+            }
 
             sk_sp<SkShader>* children = new sk_sp<SkShader>[cLen];
             SkShader** childrenPtrs = reinterpret_cast<SkShader**>(cPtrs);
@@ -1867,7 +1899,7 @@ EMSCRIPTEN_BINDINGS(Skia) {
                 children[i] = sk_ref_sp<SkShader>(childrenPtrs[i]);
             }
             OptionalMatrix localMatrix(mPtr);
-            auto s = self.makeShader(inputs, children, cLen, &localMatrix);
+            auto s = self.makeShader(uniforms, children, cLen, &localMatrix);
             delete[] children;
             return s;
         }))

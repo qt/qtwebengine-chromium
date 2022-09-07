@@ -21,7 +21,6 @@
 #include "src/gpu/ganesh/effects/GrTextureEffect.h"
 #include "src/gpu/ganesh/glsl/GrGLSLVarying.h"
 #include "src/sksl/SkSLCompiler.h"
-#include "src/sksl/dsl/priv/DSLFPs.h"
 
 const int GrGLSLProgramBuilder::kVarsPerBlock = 8;
 
@@ -79,14 +78,8 @@ bool GrGLSLProgramBuilder::emitAndInstallPrimProc(SkString* outputColor, SkStrin
     this->nameExpression(outputCoverage, "outputCoverage");
 
     SkASSERT(!fUniformHandles.fRTAdjustmentUni.isValid());
-    GrShaderFlags rtAdjustVisibility;
-    if (geomProc.willUseTessellationShaders()) {
-        rtAdjustVisibility = kTessEvaluation_GrShaderFlag;
-    } else {
-        rtAdjustVisibility = kVertex_GrShaderFlag;
-    }
     fUniformHandles.fRTAdjustmentUni = this->uniformHandler()->addUniform(
-            nullptr, rtAdjustVisibility, SkSLType::kFloat4, SkSL::Compiler::RTADJUST_NAME);
+            nullptr, kVertex_GrShaderFlag, SkSLType::kFloat4, SkSL::Compiler::RTADJUST_NAME);
 
     fFS.codeAppendf("// Stage %d, %s\n", fStageIndex, geomProc.name());
     fVS.codeAppendf("// Primitive Processor %s\n", geomProc.name());
@@ -425,7 +418,7 @@ GrGLSLProgramBuilder::SamplerHandle GrGLSLProgramBuilder::emitInputSampler(
 
 bool GrGLSLProgramBuilder::checkSamplerCounts() {
     const GrShaderCaps& shaderCaps = *this->shaderCaps();
-    if (fNumFragmentSamplers > shaderCaps.maxFragmentSamplers()) {
+    if (fNumFragmentSamplers > shaderCaps.fMaxFragmentSamplers) {
         GrCapsDebugf(this->caps(), "Program would use too many fragment samplers\n");
         return false;
     }

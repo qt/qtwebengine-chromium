@@ -4,8 +4,8 @@
 
 #include "absl/functional/bind_front.h"
 #include "quiche/http2/test_tools/http2_random.h"
+#include "quiche/common/platform/api/quiche_expect_bug.h"
 #include "quiche/common/platform/api/quiche_test.h"
-#include "quiche/common/platform/api/quiche_test_helpers.h"
 
 namespace http2 {
 namespace adapter {
@@ -24,7 +24,7 @@ class WindowManagerPeer {
 
 namespace {
 
-class WindowManagerTest : public ::testing::Test {
+class WindowManagerTest : public quiche::test::QuicheTest {
  protected:
   WindowManagerTest()
       : wm_(kDefaultLimit, absl::bind_front(&WindowManagerTest::OnCall, this)),
@@ -72,7 +72,9 @@ TEST_F(WindowManagerTest, DataBufferedAndFlushed) {
     wm_.MarkDataBuffered(buffered);
     total_buffered += buffered;
     EXPECT_TRUE(call_sequence_.empty());
-    int64_t flushed = random_.Uniform(total_buffered - total_flushed);
+    int64_t flushed = (total_buffered - total_flushed) > 0
+                          ? random_.Uniform(total_buffered - total_flushed)
+                          : 0;
     wm_.MarkDataFlushed(flushed);
     total_flushed += flushed;
   }
@@ -99,8 +101,12 @@ TEST_F(WindowManagerTest, AvoidBufferedUnderflow) {
   wm_.MarkDataBuffered(42);
   EXPECT_EQ(peer_.buffered(), 42u);
   // Don't flush more than has been buffered!
-  EXPECT_QUICHE_BUG(wm_.MarkDataFlushed(43), "buffered underflow");
-  EXPECT_EQ(peer_.buffered(), 0u);
+  EXPECT_QUICHE_BUG(
+      {
+        wm_.MarkDataFlushed(43);
+        EXPECT_EQ(peer_.buffered(), 0u);
+      },
+      "buffered underflow");
 }
 
 // This test verifies that WindowManager notifies its listener when window is

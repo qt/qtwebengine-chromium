@@ -335,11 +335,6 @@ message WriteProtectDisableRsuState {
   string unlock_code = 5;
 }
 
-// Verify if RSU succeeds.
-message VerifyRsuState {
-  bool success = 1;
-}
-
 // Wait for tech to physically disable HWWP.
 message WriteProtectDisablePhysicalState {
   // Provided by daemon.
@@ -352,9 +347,10 @@ message WriteProtectDisablePhysicalState {
 message WriteProtectDisableCompleteState {
   enum Action {
     RMAD_WP_DISABLE_UNKNOWN = 0;
-    RMAD_WP_DISABLE_SKIPPED_ASSEMBLE_DEVICE = 1;
+    RMAD_WP_DISABLE_SKIPPED_ASSEMBLE_DEVICE = 1;  // Deprecated.
     RMAD_WP_DISABLE_COMPLETE_ASSEMBLE_DEVICE = 2;
     RMAD_WP_DISABLE_COMPLETE_KEEP_DEVICE_OPEN = 3;
+    RMAD_WP_DISABLE_COMPLETE_NO_OP = 4;
   }
   // Provided by daemon.
   // Deprecated.
@@ -406,18 +402,24 @@ message UpdateDeviceInfoState {
   int32 region_index = 2;
   // Chosen SKU index of device. See |sku_list| below.
   int32 sku_index = 3;
+  // TODO(genechang): Deprecated due to go/coil, remove it in the future.
   // Chosen whitelabel index of device. See |whitelabel_list| below.
   int32 whitelabel_index = 4;
   // User provided dram part number of device.
   string dram_part_number = 5;
+  // Chosen custom-label index of device. See |custom_label_list| below.
+  int32 custom_label_index = 6;
 
   // Read only data.
   // List of all valid regions for this device.
   repeated string region_list = 102;
   // List of all valid skus for this device.
   repeated uint64 sku_list = 103;
+  // TODO(genechang): Deprecated due to go/coil, remove it in the future.
   // List of all valid whitelabel-tags for this device.
   repeated string whitelabel_list = 104;
+  // List of all valid custom-label-tags for this device.
+  repeated string custom_label_list = 106;
 
   // Serial number of device at beginning of RMA finalization.
   string original_serial_number = 201;
@@ -425,10 +427,13 @@ message UpdateDeviceInfoState {
   int32 original_region_index = 202;
   // SKU index of device at beginning of RMA finalization.
   int32 original_sku_index = 203;
+  // TODO(genechang): Deprecated due to go/coil, remove it in the future.
   // WL index of device at beginning of RMA finalization.
   int32 original_whitelabel_index = 204;
   // DRAM part number of device at beginning of RMA finalization.
   string original_dram_part_number = 205;
+  // Custom-label index of device at beginning of RMA finalization.
+  int32 original_custom_label_index = 206;
 
   // MLB repair mode.
   bool mlb_repair = 301;
@@ -533,7 +538,7 @@ message RmadState {
     DeviceDestinationState device_destination = 3;
     WriteProtectDisableMethodState wp_disable_method = 4;
     WriteProtectDisableRsuState wp_disable_rsu = 5;
-    VerifyRsuState verify_rsu = 6;
+    // Deleted |VerifyRsuState|.
     WriteProtectDisablePhysicalState wp_disable_physical = 7;
     WriteProtectDisableCompleteState wp_disable_complete = 8;
     UpdateRoFirmwareState update_ro_firmware = 9;

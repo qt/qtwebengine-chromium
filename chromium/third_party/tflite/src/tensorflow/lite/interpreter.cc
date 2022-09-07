@@ -30,6 +30,7 @@ limitations under the License.
 #include "tensorflow/lite/core/api/error_reporter.h"
 #include "tensorflow/lite/core/api/profiler.h"
 #include "tensorflow/lite/external_cpu_backend_context.h"
+#include "tensorflow/lite/interpreter_options.h"
 #include "tensorflow/lite/minimal_logging.h"
 #include "tensorflow/lite/stderr_reporter.h"
 #include "tensorflow/lite/util.h"
@@ -441,27 +442,19 @@ TfLiteStatus Interpreter::ApplyOptionsImpl(InterpreterOptions* options) {
   if (options == nullptr) {
     return kTfLiteOk;
   }
+  options_ = std::make_unique<InterpreterOptions>(*options);
 
-  // Handle `experimental_preserve_all_tensors_`.
-  if (options->GetPreserveAllTensors()) {
-    for (auto& subgraph : subgraphs_) {
-      subgraph->PreserveAllTensorsExperimental();
-    }
-  }
-
-  // Handle `experimental_ensure_dynamic_tensors_are_released_`.
-  if (options->GetEnsureDynamicTensorsAreReleased()) {
-    for (auto& subgraph : subgraphs_) {
-      subgraph->EnsureDynamicTensorsAreReleased();
-    }
+  // Set InterpreterOptions object to SubGraph.
+  for (auto& subgraph : subgraphs_) {
+    subgraph->SetOptions(options_.get());
   }
 
   // Handle `experimental_dynamic_allocation_for_large_tensors_`.
   if (options->GetDynamicAllocationForLargeTensors() > 0) {
-    auto& main_subgraph = subgraphs_[0];
-    main_subgraph->UseDynamicAllocationForLargeTensors(
-        options->GetDynamicAllocationForLargeTensors());
-    main_subgraph->EnsureDynamicTensorsAreReleased();
+    for (auto& subgraph : subgraphs_) {
+      subgraph->OptimizeMemoryForLargeTensors(
+          options->GetDynamicAllocationForLargeTensors());
+    }
   }
   return kTfLiteOk;
 }

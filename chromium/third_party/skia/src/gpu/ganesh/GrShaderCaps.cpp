@@ -37,7 +37,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
 
     writer->appendBool("FB Fetch Support", fFBFetchSupport);
     writer->appendBool("Uses precision modifiers", fUsesPrecisionModifiers);
-    writer->appendBool("Can use any() function", fCanUseAnyFunctionInShader);
     writer->appendBool("Can use min() and abs() together", fCanUseMinAndAbsTogether);
     writer->appendBool("Can use fract() for negative values", fCanUseFractForNegativeValues);
     writer->appendBool("Must force negated atan param to float", fMustForceNegatedAtanParamToFloat);
@@ -79,7 +78,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const {
     writer->appendBool("Use node pools", fUseNodePools);
 
     writer->appendS32("Max FS Samplers", fMaxFragmentSamplers);
-    writer->appendS32("Max Tessellation Segments", fMaxTessellationSegments);
     writer->appendString("Advanced blend equation interaction",
                          kAdvBlendEqInteractionStr[fAdvBlendEqInteraction]);
 
@@ -91,7 +89,6 @@ void GrShaderCaps::dumpJSON(SkJSONWriter* writer) const { }
 
 void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
     if (options.fDisableDriverCorrectnessWorkarounds) {
-        SkASSERT(fCanUseAnyFunctionInShader);
         SkASSERT(fCanUseMinAndAbsTogether);
         SkASSERT(fCanUseFractForNegativeValues);
         SkASSERT(!fMustForceNegatedAtanParamToFloat);
@@ -114,9 +111,6 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
         SkASSERT(!fRewriteMatrixVectorMultiply);
         SkASSERT(!fRewriteMatrixComparisons);
     }
-    if (!options.fEnableExperimentalHardwareTessellation) {
-        fMaxTessellationSegments = 0;
-    }
     if (options.fReducedShaderVariations) {
         fReducedShaderMode = true;
     }
@@ -126,10 +120,6 @@ void GrShaderCaps::applyOptionsOverrides(const GrContextOptions& options) {
     }
     if (options.fSuppressFramebufferFetch) {
         fFBFetchSupport = false;
-    }
-    if (options.fMaxTessellationSegmentsOverride > 0) {
-        fMaxTessellationSegments = std::min(options.fMaxTessellationSegmentsOverride,
-                                            fMaxTessellationSegments);
     }
 #endif
 }

@@ -9,6 +9,7 @@
 
 #include "base/test/test_simple_task_runner.h"
 #include "build/branding_buildflags.h"
+#include "build/build_config.h"
 #include "components/os_crypt/keyring_util_linux.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -130,8 +131,7 @@ class GnomeKeyringTest : public testing::Test {
 };
 
 GnomeKeyringTest::GnomeKeyringTest()
-    : task_runner_(new base::TestSimpleTaskRunner()),
-      keyring_(task_runner_, kApplicationName) {
+    : task_runner_(new base::TestSimpleTaskRunner()), keyring_(task_runner_, "chromium") {
   MockGnomeKeyringLoader::ResetForOSCrypt();
 }
 
@@ -139,7 +139,13 @@ GnomeKeyringTest::~GnomeKeyringTest() {
   MockGnomeKeyringLoader::TearDown();
 }
 
-TEST_F(GnomeKeyringTest, KeyringRepeats) {
+// crbug.com/1211311 Disable due to persistently failing.
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && BUILDFLAG(IS_LINUX)
+#define MAYBE_KeyringRepeats DISABLED_KeyringRepeats
+#else
+#define MAYBE_KeyringRepeats KeyringRepeats
+#endif
+TEST_F(GnomeKeyringTest, MAYBE_KeyringRepeats) {
   absl::optional<std::string> password = keyring_.GetKey();
   EXPECT_TRUE(password.has_value());
   EXPECT_FALSE(password.value().empty());
@@ -148,7 +154,13 @@ TEST_F(GnomeKeyringTest, KeyringRepeats) {
   EXPECT_EQ(password.value(), password_repeat.value());
 }
 
-TEST_F(GnomeKeyringTest, KeyringCreatesRandomised) {
+// crbug.com/1211311 Disable due to persistently failing.
+#if BUILDFLAG(GOOGLE_CHROME_BRANDING) && BUILDFLAG(IS_LINUX)
+#define MAYBE_KeyringCreatesRandomised DISABLED_KeyringCreatesRandomised
+#else
+#define MAYBE_KeyringCreatesRandomised KeyringCreatesRandomised
+#endif
+TEST_F(GnomeKeyringTest, MAYBE_KeyringCreatesRandomised) {
   absl::optional<std::string> password = keyring_.GetKey();
   MockGnomeKeyringLoader::ResetForOSCrypt();
   absl::optional<std::string> password_new = keyring_.GetKey();

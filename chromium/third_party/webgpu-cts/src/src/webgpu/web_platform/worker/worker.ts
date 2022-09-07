@@ -9,14 +9,15 @@ async function basicTest() {
   assert(device !== null, 'Failed to get device.');
 
   const kOffset = 1230000;
-  const pipeline = await device.createComputePipeline({
+  const pipeline = device.createComputePipeline({
+    layout: 'auto',
     compute: {
       module: device.createShaderModule({
         code: `
           struct Buffer { data: array<u32>; };
 
           @group(0) @binding(0) var<storage, read_write> buffer: Buffer;
-          @stage(compute) @workgroup_size(1u) fn main(
+          @compute @workgroup_size(1u) fn main(
               @builtin(global_invocation_id) id: vec3<u32>) {
             buffer.data[id.x] = id.x + ${kOffset}u;
           }
@@ -48,7 +49,7 @@ async function basicTest() {
   const pass = encoder.beginComputePass();
   pass.setPipeline(pipeline);
   pass.setBindGroup(0, bindGroup);
-  pass.dispatch(kNumElements);
+  pass.dispatchWorkgroups(kNumElements);
   pass.end();
 
   encoder.copyBufferToBuffer(buffer, 0, resultBuffer, 0, kBufferSize);

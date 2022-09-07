@@ -165,6 +165,7 @@ UseInfo TruncatingUseInfoFromRepresentation(MachineRepresentation rep) {
     case MachineRepresentation::kCompressed:
     case MachineRepresentation::kSandboxedPointer:
     case MachineRepresentation::kSimd128:
+    case MachineRepresentation::kSimd256:
     case MachineRepresentation::kNone:
       break;
   }
@@ -758,6 +759,17 @@ class RepresentationSelector {
       }
     }
 
+    // Print graph.
+    if (info != nullptr && info->trace_turbo_json()) {
+      UnparkedScopeIfNeeded scope(broker_);
+      AllowHandleDereference allow_deref;
+
+      TurboJsonFile json_of(info, std::ios_base::app);
+      JSONGraphWriter writer(json_of, graph(), source_positions_,
+                             node_origins_);
+      writer.PrintPhase("V8.TFSimplifiedLowering [after lower]");
+    }
+
     // Verify all nodes.
     for (Node* node : traversal_nodes_) verifier_->VisitNode(node, op_typer_);
 
@@ -769,7 +781,7 @@ class RepresentationSelector {
       TurboJsonFile json_of(info, std::ios_base::app);
       JSONGraphWriterWithVerifierTypes writer(
           json_of, graph(), source_positions_, node_origins_, verifier_);
-      writer.PrintPhase("V8.TFSimplifiedLoweringVerifier");
+      writer.PrintPhase("V8.TFSimplifiedLowering [after verify]");
     }
 
     // Eliminate all introduced hints.
@@ -785,7 +797,6 @@ class RepresentationSelector {
     RunPropagatePhase();
     RunRetypePhase();
     RunLowerPhase(lowering);
-
     if (verification_enabled()) {
       RunVerifyPhase(lowering->info_);
     }
@@ -2133,7 +2144,7 @@ class RepresentationSelector {
         if (DoubleToSmiInteger(value, &value_as_int)) {
           VisitLeaf<T>(node, MachineRepresentation::kTaggedSigned);
           if (lower<T>()) {
-            intptr_t smi = bit_cast<intptr_t>(Smi::FromInt(value_as_int));
+            intptr_t smi = base::bit_cast<intptr_t>(Smi::FromInt(value_as_int));
             Node* constant = InsertTypeOverrideForVerifier(
                 NodeProperties::GetType(node),
                 lowering->jsgraph()->IntPtrConstant(smi));
@@ -2568,6 +2579,14 @@ class RepresentationSelector {
         // Number x Number => Float64Div
         VisitFloat64Binop<T>(node);
         if (lower<T>()) ChangeToPureOp(node, Float64Op(node));
+        return;
+      }
+      case IrOpcode::kUnsigned32Divide: {
+        CHECK(TypeOf(node->InputAt(0)).Is(Type::Unsigned32()));
+        CHECK(TypeOf(node->InputAt(1)).Is(Type::Unsigned32()));
+        // => unsigned Uint32Div
+        VisitWord32TruncatingBinop<T>(node);
+        if (lower<T>()) DeferReplacement(node, lowering->Uint32Div(node));
         return;
       }
       case IrOpcode::kSpeculativeNumberModulus:

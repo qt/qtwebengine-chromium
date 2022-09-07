@@ -18,8 +18,8 @@
 #include <xf86drm.h>
 
 #include "dri.h"
+#include "drv_helpers.h"
 #include "drv_priv.h"
-#include "helpers.h"
 #include "util.h"
 
 static const struct {
@@ -389,13 +389,20 @@ int dri_bo_import(struct bo *bo, struct drv_import_fd_data *data)
 	return 0;
 }
 
-int dri_bo_destroy(struct bo *bo)
+int dri_bo_release(struct bo *bo)
 {
 	struct dri_driver *dri = bo->drv->priv;
 
 	assert(bo->priv);
-	close_gem_handle(bo->handles[0].u32, bo->drv->fd);
 	dri->image_extension->destroyImage(bo->priv);
+	/* Not clearing bo->priv as we still use it to determine which destroy to call. */
+	return 0;
+}
+
+int dri_bo_destroy(struct bo *bo)
+{
+	assert(bo->priv);
+	close_gem_handle(bo->handles[0].u32, bo->drv->fd);
 	bo->priv = NULL;
 	return 0;
 }
@@ -445,19 +452,29 @@ int dri_bo_unmap(struct bo *bo, struct vma *vma)
 size_t dri_num_planes_from_modifier(struct driver *drv, uint32_t format, uint64_t modifier)
 {
 	struct dri_driver *dri = drv->priv;
-	if (!dri->image_extension->queryDmaBufFormatModifierAttribs) {
-		/* We do not do any modifier checks here. The create will fail
-		 * later if the modifier is not supported. */
-		return drv_num_planes_from_format(format);
-	}
+	uint64_t planes = 0;
 
-	uint64_t planes;
-	GLboolean ret = dri->image_extension->queryDmaBufFormatModifierAttribs(
-	    dri->device, format, modifier, __DRI_IMAGE_ATTRIB_NUM_PLANES, &planes);
-	if (!ret)
-		return 0;
+	/* We do not do any modifier checks here. The create will fail later if the modifier is not
+	 * supported.
+	 */
+	if (dri->image_extension->queryDmaBufFormatModifierAttribs &&
+	    dri->image_extension->queryDmaBufFormatModifierAttribs(
+		dri->device, format, modifier, __DRI_IMAGE_FORMAT_MODIFIER_ATTRIB_PLANE_COUNT,
+		&planes))
+		return planes;
 
-	return planes;
+	return drv_num_planes_from_format(format);
+}
+
+bool dri_query_modifiers(struct driver *drv, uint32_t format, int max, uint64_t *modifiers,
+			 int *count)
+{
+	struct dri_driver *dri = drv->priv;
+	if (!dri->image_extension->queryDmaBufModifiers)
+		return false;
+
+	return dri->image_extension->queryDmaBufModifiers(dri->device, format, max, modifiers, NULL,
+							  count);
 }
 
 #endif

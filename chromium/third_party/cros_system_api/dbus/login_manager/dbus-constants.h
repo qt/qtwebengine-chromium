@@ -116,6 +116,7 @@ const char kVerifyFail[] = INTERFACE ".VerifyFail";
 const char kSystemPropertyUpdateFailed[] =
     INTERFACE ".SystemPropertyUpdateFailed";
 const char kVpdUpdateFailed[] = INTERFACE ".VpdUpdateFailed";
+const char kInvalidArgs[] = INTERFACE ".InvalidArgs";
 
 #undef INTERFACE
 }  // namespace dbus_error

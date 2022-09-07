@@ -62,8 +62,18 @@ class Queue : public QUEUE_STATE {
     VkCommandPool barrier_command_pool_{VK_NULL_HANDLE};
     VkCommandBuffer barrier_command_buffer_{VK_NULL_HANDLE};
 };
+
+class CommandBuffer : public CMD_BUFFER_STATE {
+  public:
+    CommandBuffer(GpuAssistedBase *ga, VkCommandBuffer cb, const VkCommandBufferAllocateInfo *pCreateInfo,
+                  const COMMAND_POOL_STATE *pool);
+
+    virtual bool NeedsProcessing() const = 0;
+    virtual void Process(VkQueue queue) = 0;
+};
 }  // namespace gpu_utils_state
 VALSTATETRACK_DERIVED_STATE_OBJECT(VkQueue, gpu_utils_state::Queue, QUEUE_STATE);
+VALSTATETRACK_DERIVED_STATE_OBJECT(VkCommandBuffer, gpu_utils_state::CommandBuffer, CMD_BUFFER_STATE);
 
 VkResult UtilInitializeVma(VkPhysicalDevice physical_device, VkDevice device, VmaAllocator *pAllocator);
 
@@ -83,6 +93,8 @@ struct GpuAssistedShaderTracker {
 
 class GpuAssistedBase : public ValidationStateTracker {
   public:
+    ReadLockGuard ReadLock() override;
+    WriteLockGuard WriteLock() override;
     void PreCallRecordCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
                                    const VkAllocationCallbacks *pAllocator, VkDevice *pDevice, void *modified_create_info) override;
     void CreateDevice(const VkDeviceCreateInfo *pCreateInfo) override;
@@ -139,13 +151,26 @@ class GpuAssistedBase : public ValidationStateTracker {
     void PreCallRecordDestroyPipeline(VkDevice device, VkPipeline pipeline, const VkAllocationCallbacks *pAllocator) override;
 
     template <typename T>
-    void ReportSetupProblem(T object, const char *const specific_message) const {
-        LogError(object, setup_vuid, "Setup Error. Detail: (%s)", specific_message);
+    void ReportSetupProblem(T object, const char *const specific_message, bool vma_fail = false) const {
+        std::string logit = specific_message; 
+        if (vma_fail) {
+            char *stats_string;
+            vmaBuildStatsString(vmaAllocator, &stats_string, false);
+            logit += " VMA statistics = ";
+            logit += stats_string;
+            vmaFreeStatsString(vmaAllocator, stats_string);
+        }
+        LogError(object, setup_vuid, "Setup Error. Detail: (%s)", logit.c_str());
+    }
+    bool GpuGetOption(const char *option, bool default_value) {
+        std::string option_string = getLayerOption(option);
+        transform(option_string.begin(), option_string.end(), option_string.begin(), ::tolower);
+        return !option_string.empty() ? !option_string.compare("true") : default_value;
     }
 
   protected:
-    virtual bool CommandBufferNeedsProcessing(VkCommandBuffer command_buffer) = 0;
-    virtual void ProcessCommandBuffer(VkQueue queue, VkCommandBuffer command_buffer) = 0;
+    bool CommandBufferNeedsProcessing(VkCommandBuffer command_buffer) const;
+    void ProcessCommandBuffer(VkQueue queue, VkCommandBuffer command_buffer);
 
     void SubmitBarrier(VkQueue queue) {
         auto queue_state = Get<gpu_utils_state::Queue>(queue);
@@ -163,10 +188,10 @@ class GpuAssistedBase : public ValidationStateTracker {
                                         VkPipeline *pPipelines, std::vector<std::shared_ptr<PIPELINE_STATE>> &pipe_state,
                                         std::vector<SafeCreateInfo> *new_pipeline_create_infos,
                                         const VkPipelineBindPoint bind_point);
-    template <typename CreateInfo>
+    template <typename CreateInfo, typename SafeCreateInfo>
     void PostCallRecordPipelineCreations(const uint32_t count, const CreateInfo *pCreateInfos,
                                          const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
-                                         const VkPipelineBindPoint bind_point);
+                                         const VkPipelineBindPoint bind_point, const SafeCreateInfo &modified_create_infos);
 
   public:
     bool aborted = false;
@@ -182,7 +207,7 @@ class GpuAssistedBase : public ValidationStateTracker {
     uint32_t desc_set_bind_index = 0;
     VmaAllocator vmaAllocator = {};
     std::unique_ptr<UtilDescriptorSetManager> desc_set_manager;
-    layer_data::unordered_map<uint32_t, GpuAssistedShaderTracker> shader_map;
+    vl_concurrent_unordered_map<uint32_t, GpuAssistedShaderTracker> shader_map;
     std::vector<VkDescriptorSetLayoutBinding> bindings_;
 };
 

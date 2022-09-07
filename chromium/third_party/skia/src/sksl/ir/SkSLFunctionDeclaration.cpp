@@ -7,9 +7,29 @@
 
 #include "src/sksl/ir/SkSLFunctionDeclaration.h"
 
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
+#include "include/private/SkSLLayout.h"
+#include "include/private/SkSLModifiers.h"
+#include "include/private/SkSLProgramKind.h"
 #include "include/private/SkStringView.h"
+#include "include/private/SkTHash.h"
+#include "include/sksl/SkSLErrorReporter.h"
+#include "include/sksl/SkSLPosition.h"
+#include "src/sksl/SkSLBuiltinTypes.h"
 #include "src/sksl/SkSLCompiler.h"
+#include "src/sksl/SkSLContext.h"
+#include "src/sksl/SkSLModifiersPool.h"
+#include "src/sksl/SkSLProgramSettings.h"
+#include "src/sksl/ir/SkSLExpression.h"
+#include "src/sksl/ir/SkSLSymbolTable.h"
+#include "src/sksl/ir/SkSLType.h"
 #include "src/sksl/ir/SkSLUnresolvedFunction.h"
+#include "src/sksl/ir/SkSLVariable.h"
+
+#include <initializer_list>
+#include <utility>
 
 namespace SkSL {
 
@@ -100,8 +120,8 @@ static bool check_parameters(const Context& context,
 
         if (isMain) {
             if (ProgramConfig::IsRuntimeEffect(context.fConfig->fKind) &&
-                context.fConfig->fKind != ProgramKind::kCustomMeshFragment &&
-                context.fConfig->fKind != ProgramKind::kCustomMeshVertex) {
+                context.fConfig->fKind != ProgramKind::kMeshFragment &&
+                context.fConfig->fKind != ProgramKind::kMeshVertex) {
                 // We verify that the signature is fully correct later. For now, if this is a
                 // runtime effect of any flavor, a float2 param is supposed to be the coords, and a
                 // half4/float parameter is supposed to be the input or destination color:
@@ -113,7 +133,7 @@ static bool check_parameters(const Context& context,
                     m.fLayout.fBuiltin = kBuiltinColorIDs[builtinColorIndex++];
                     modifiersChanged = true;
                 }
-            } else if (context.fConfig->fKind == ProgramKind::kFragment) {
+            } else if (ProgramConfig::IsFragment(context.fConfig->fKind)) {
                 // For testing purposes, we have .sksl inputs that are treated as both runtime
                 // effects and fragment shaders. To make that work, fragment shaders are allowed to
                 // have a coords parameter.
@@ -199,7 +219,8 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             }
             break;
         }
-        case ProgramKind::kRuntimeShader: {
+        case ProgramKind::kRuntimeShader:
+        case ProgramKind::kPrivateRuntimeShader: {
             // (half4|float4) main(float2)  -or-  (half4|float4) main(float2, half4|float4)
             if (!typeIsValidForColor(returnType)) {
                 errors.error(pos, "'main' must return: 'vec4', 'float4', or 'half4'");
@@ -229,7 +250,7 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             }
             break;
         }
-        case ProgramKind::kCustomMeshVertex: {
+        case ProgramKind::kMeshVertex: {
             // float2 main(Attributes, out Varyings)
             if (!returnType.matches(*context.fTypes.fFloat2)) {
                 errors.error(pos, "'main' must return: 'vec2' or 'float2'");
@@ -241,7 +262,7 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             }
             break;
         }
-        case ProgramKind::kCustomMeshFragment: {
+        case ProgramKind::kMeshFragment: {
             // float2 main(Varyings) -or- float2 main(Varyings, out half4|float4]) -or-
             // void main(Varyings) -or- void main(Varyings, out half4|float4])
             if (!returnType.matches(*context.fTypes.fFloat2) &&
@@ -259,7 +280,8 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
         case ProgramKind::kGeneric:
             // No rules apply here
             break;
-        case ProgramKind::kFragment: {
+        case ProgramKind::kFragment:
+        case ProgramKind::kGraphiteFragment: {
             bool validParams = (parameters.size() == 0) ||
                                (parameters.size() == 1 && paramIsCoords(0));
             if (!validParams) {
@@ -269,6 +291,7 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
             break;
         }
         case ProgramKind::kVertex:
+        case ProgramKind::kGraphiteVertex:
             if (parameters.size()) {
                 errors.error(pos, "shader 'main' must have zero parameters");
                 return false;
@@ -283,24 +306,40 @@ static bool check_main_signature(const Context& context, Position pos, const Typ
  * incompatible symbol. Returns true and sets outExistingDecl to point to the existing declaration
  * (or null if none) on success, returns false on error.
  */
+static bool parameters_match(const std::vector<std::unique_ptr<Variable>>& params,
+                             const std::vector<const Variable*>& otherParams) {
+    if (params.size() != otherParams.size()) {
+        return false;
+    }
+    for (size_t i = 0; i < params.size(); i++) {
+        if (!params[i]->type().matches(otherParams[i]->type())) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool find_existing_declaration(const Context& context,
                                       SymbolTable& symbols,
                                       Position pos,
                                       std::string_view name,
                                       std::vector<std::unique_ptr<Variable>>& parameters,
+                                      Position returnTypePos,
                                       const Type* returnType,
                                       const FunctionDeclaration** outExistingDecl) {
     ErrorReporter& errors = *context.fErrors;
     const Symbol* entry = symbols[name];
     *outExistingDecl = nullptr;
     if (entry) {
-        std::vector<const FunctionDeclaration*> functions;
+        SkSpan<const FunctionDeclaration* const> functions;
+        const FunctionDeclaration* declPtr;
         switch (entry->kind()) {
             case Symbol::Kind::kUnresolvedFunction:
-                functions = entry->as<UnresolvedFunction>().functions();
+                functions = SkMakeSpan(entry->as<UnresolvedFunction>().functions());
                 break;
             case Symbol::Kind::kFunctionDeclaration:
-                functions.push_back(&entry->as<FunctionDeclaration>());
+                declPtr = &entry->as<FunctionDeclaration>();
+                functions = SkMakeSpan(&declPtr, 1);
                 break;
             default:
                 errors.error(pos, "symbol '" + std::string(name) + "' was already defined");
@@ -308,17 +347,7 @@ static bool find_existing_declaration(const Context& context,
         }
         for (const FunctionDeclaration* other : functions) {
             SkASSERT(name == other->name());
-            if (parameters.size() != other->parameters().size()) {
-                continue;
-            }
-            bool match = true;
-            for (size_t i = 0; i < parameters.size(); i++) {
-                if (!parameters[i]->type().matches(other->parameters()[i]->type())) {
-                    match = false;
-                    break;
-                }
-            }
-            if (!match) {
+            if (!parameters_match(parameters, other->parameters())) {
                 continue;
             }
             if (!returnType->matches(other->returnType())) {
@@ -333,7 +362,7 @@ static bool find_existing_declaration(const Context& context,
                                                 std::move(paramPtrs),
                                                 returnType,
                                                 context.fConfig->fIsBuiltinCode);
-                errors.error(pos,
+                errors.error(returnTypePos,
                              "functions '" + invalidDecl.description() + "' and '" +
                              other->description() + "' differ only in return type");
                 return false;
@@ -379,15 +408,17 @@ const FunctionDeclaration* FunctionDeclaration::Convert(
         const Modifiers* modifiers,
         std::string_view name,
         std::vector<std::unique_ptr<Variable>> parameters,
+        Position returnTypePos,
         const Type* returnType) {
     bool isMain = (name == "main");
 
     const FunctionDeclaration* decl = nullptr;
     if (!check_modifiers(context, modifiersPosition, *modifiers) ||
-        !check_return_type(context, pos, *returnType) ||
+        !check_return_type(context, returnTypePos, *returnType) ||
         !check_parameters(context, parameters, isMain) ||
         (isMain && !check_main_signature(context, pos, *returnType, parameters)) ||
-        !find_existing_declaration(context, symbols, pos, name, parameters, returnType, &decl)) {
+        !find_existing_declaration(context, symbols, pos, name, parameters, returnTypePos,
+                                   returnType, &decl)) {
         return nullptr;
     }
     std::vector<const Variable*> finalParameters;
@@ -398,8 +429,11 @@ const FunctionDeclaration* FunctionDeclaration::Convert(
     if (decl) {
         return decl;
     }
-    auto result = std::make_unique<FunctionDeclaration>(pos, modifiers, name,
-                                                        std::move(finalParameters), returnType,
+    auto result = std::make_unique<FunctionDeclaration>(pos,
+                                                        modifiers,
+                                                        name,
+                                                        std::move(finalParameters),
+                                                        returnType,
                                                         context.fConfig->fIsBuiltinCode);
     return symbols.add(std::move(result));
 }

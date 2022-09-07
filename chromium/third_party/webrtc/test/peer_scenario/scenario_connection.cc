@@ -13,6 +13,7 @@
 #include "media/base/rtp_utils.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "p2p/client/basic_port_allocator.h"
+#include "pc/channel.h"
 #include "pc/jsep_transport_controller.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
@@ -95,7 +96,8 @@ ScenarioIceConnectionImpl::ScenarioIceConnectionImpl(
           rtc::SSLFingerprint::CreateFromCertificate(*certificate_.get())
               .get()),
       port_allocator_(
-          new cricket::BasicPortAllocator(manager_->network_manager())),
+          new cricket::BasicPortAllocator(manager_->network_manager(),
+                                          manager_->packet_socket_factory())),
       jsep_controller_(
           new JsepTransportController(network_thread_,
                                       port_allocator_.get(),

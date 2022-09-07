@@ -95,12 +95,13 @@ class CallFrequency final {
   }
 
   bool operator==(CallFrequency const& that) const {
-    return bit_cast<uint32_t>(this->value_) == bit_cast<uint32_t>(that.value_);
+    return base::bit_cast<uint32_t>(this->value_) ==
+           base::bit_cast<uint32_t>(that.value_);
   }
   bool operator!=(CallFrequency const& that) const { return !(*this == that); }
 
   friend size_t hash_value(CallFrequency const& f) {
-    return bit_cast<uint32_t>(f.value_);
+    return base::bit_cast<uint32_t>(f.value_);
   }
 
   static constexpr float kNoFeedbackCallFrequency = -1;
@@ -1368,8 +1369,8 @@ class JSCallOrConstructNode : public JSNodeWrapperBase {
   static constexpr int kExtraInputCount = kTargetInputCount +
                                           kReceiverOrNewTargetInputCount +
                                           kFeedbackVectorInputCount;
-  STATIC_ASSERT(kExtraInputCount == CallParameters::kExtraCallInputCount);
-  STATIC_ASSERT(kExtraInputCount ==
+  static_assert(kExtraInputCount == CallParameters::kExtraCallInputCount);
+  static_assert(kExtraInputCount ==
                 ConstructParameters::kExtraConstructInputCount);
 
   // Just for static asserts for spots that rely on node layout.
@@ -1412,7 +1413,7 @@ class JSCallOrConstructNode : public JSNodeWrapperBase {
   virtual int ArgumentCount() const = 0;
 
   static constexpr int FeedbackVectorIndexForArgc(int argc) {
-    STATIC_ASSERT(kFeedbackVectorIsLastInput);
+    static_assert(kFeedbackVectorIsLastInput);
     return ArgumentIndex(argc - 1) + 1;
   }
   int FeedbackVectorIndex() const {
@@ -1466,7 +1467,7 @@ class JSCallNodeBase final : public JSCallOrConstructNode {
 #undef INPUTS
 
   static constexpr int kReceiverInputCount = 1;
-  STATIC_ASSERT(kReceiverInputCount ==
+  static_assert(kReceiverInputCount ==
                 JSCallOrConstructNode::kReceiverOrNewTargetInputCount);
 
   int ArgumentCount() const override {
@@ -1500,7 +1501,7 @@ class JSWasmCallNode final : public JSCallOrConstructNode {
 #undef INPUTS
 
   static constexpr int kReceiverInputCount = 1;
-  STATIC_ASSERT(kReceiverInputCount ==
+  static_assert(kReceiverInputCount ==
                 JSCallOrConstructNode::kReceiverOrNewTargetInputCount);
 
   int ArgumentCount() const override {
@@ -1532,7 +1533,7 @@ class JSConstructNodeBase final : public JSCallOrConstructNode {
 #undef INPUTS
 
   static constexpr int kNewTargetInputCount = 1;
-  STATIC_ASSERT(kNewTargetInputCount ==
+  static_assert(kNewTargetInputCount ==
                 JSCallOrConstructNode::kReceiverOrNewTargetInputCount);
 
   int ArgumentCount() const {

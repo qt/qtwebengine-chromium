@@ -887,7 +887,7 @@ Handle<Object> LookupIterator::FetchValue(
     DCHECK(holder_->IsJSObject(isolate_));
     Handle<JSObject> holder = GetHolder<JSObject>();
     ElementsAccessor* accessor = holder->GetElementsAccessor(isolate_);
-    return accessor->Get(holder, number_);
+    return accessor->Get(isolate_, holder, number_);
   } else if (holder_->IsJSGlobalObject(isolate_)) {
     Handle<JSGlobalObject> holder = GetHolder<JSGlobalObject>();
     result = holder->global_dictionary(isolate_, kAcquireLoad)
@@ -962,14 +962,15 @@ bool LookupIterator::IsConstFieldValueEqualTo(Object value) const {
     bits = HeapNumber::cast(current_value).value_as_bits(kRelaxedLoad);
     // Use bit representation of double to check for hole double, since
     // manipulating the signaling NaN used for the hole in C++, e.g. with
-    // bit_cast or value(), will change its value on ia32 (the x87 stack is
-    // used to return values and stores to the stack silently clear the
+    // base::bit_cast or value(), will change its value on ia32 (the x87
+    // stack is used to return values and stores to the stack silently clear the
     // signalling bit).
     if (bits == kHoleNanInt64) {
       // Uninitialized double field.
       return true;
     }
-    return Object::SameNumberValue(bit_cast<double>(bits), value.Number());
+    return Object::SameNumberValue(base::bit_cast<double>(bits),
+                                   value.Number());
   } else {
     Object current_value = holder->RawFastPropertyAt(isolate_, field_index);
     if (current_value.IsUninitialized(isolate()) || current_value == value) {
@@ -1252,7 +1253,7 @@ bool HasInterceptor(Map map, size_t index) {
 template <bool is_element>
 LookupIterator::State LookupIterator::LookupInSpecialHolder(
     Map const map, JSReceiver const holder) {
-  STATIC_ASSERT(INTERCEPTOR == BEFORE_PROPERTY);
+  static_assert(INTERCEPTOR == BEFORE_PROPERTY);
   switch (state_) {
     case NOT_FOUND:
       if (map.IsJSProxyMap()) {

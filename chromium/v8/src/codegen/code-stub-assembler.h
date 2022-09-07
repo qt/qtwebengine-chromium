@@ -111,6 +111,9 @@ enum class PrimitiveType { kBoolean, kNumber, kString, kSymbol };
   V(ProxyRevokeSharedFun, proxy_revoke_shared_fun, ProxyRevokeSharedFun)       \
   V(RegExpSpeciesProtector, regexp_species_protector, RegExpSpeciesProtector)  \
   V(SetIteratorProtector, set_iterator_protector, SetIteratorProtector)        \
+  V(ShadowRealmImportValueFulfilledSFI,                                        \
+    shadow_realm_import_value_fulfilled_sfi,                                   \
+    ShadowRealmImportValueFulfilledSFI)                                        \
   V(SingleCharacterStringCache, single_character_string_cache,                 \
     SingleCharacterStringCache)                                                \
   V(StringIteratorProtector, string_iterator_protector,                        \
@@ -340,12 +343,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<IntPtrT> ParameterToIntPtr(TNode<UintPtrT> value) {
     return Signed(value);
   }
-
-  enum InitializationMode {
-    kUninitialized,
-    kInitializeToZero,
-    kInitializeToNull
-  };
 
   TNode<Smi> ParameterToTagged(TNode<Smi> value) { return value; }
 
@@ -831,7 +828,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 #error "This code requires updating for big-endian architectures"
 #endif
     // Given the fields layout we can read the Code reference as a full word.
-    STATIC_ASSERT(CodeDataContainer::kCodeCageBaseUpper32BitsOffset ==
+    static_assert(CodeDataContainer::kCodeCageBaseUpper32BitsOffset ==
                   CodeDataContainer::kCodeOffset + kTaggedSize);
     TNode<Object> o = BitcastWordToTagged(Load<RawPtrT>(
         code, IntPtrConstant(CodeDataContainer::kCodeOffset - kHeapObjectTag)));
@@ -869,6 +866,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   }
 
   TNode<RawPtrT> GetCodeEntry(TNode<CodeT> code);
+  TNode<BoolT> IsMarkedForDeoptimization(TNode<CodeT> codet);
 
   // The following Call wrappers call an object according to the semantics that
   // one finds in the EcmaScript spec, operating on an Callable (e.g. a
@@ -1000,7 +998,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <typename U>
   TNode<BoolT> IsInRange(TNode<Word32T> value, U lower_limit, U higher_limit) {
     DCHECK_LE(lower_limit, higher_limit);
-    STATIC_ASSERT(sizeof(U) <= kInt32Size);
+    static_assert(sizeof(U) <= kInt32Size);
     return Uint32LessThanOrEqual(Int32Sub(value, Int32Constant(lower_limit)),
                                  Int32Constant(higher_limit - lower_limit));
   }
@@ -1492,6 +1490,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                        TNode<Object> object);
 
   TNode<MaybeObject> MakeWeak(TNode<HeapObject> value);
+  TNode<MaybeObject> ClearedValue();
 
   void FixedArrayBoundsCheck(TNode<FixedArrayBase> array, TNode<Smi> index,
                              int additional_offset);
@@ -2076,9 +2075,6 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<PropertyArray> AllocatePropertyArray(TNode<IntPtrT> capacity);
 
-  TNode<HeapObject> AllocateWasmArray(TNode<IntPtrT> size_in_bytes,
-                                      int initialization);
-
   // TODO(v8:9722): Return type should be JSIteratorResult
   TNode<JSObject> AllocateJSIteratorResult(TNode<Context> context,
                                            TNode<Object> value,
@@ -2517,6 +2513,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
 
   TNode<HeapObject> GetPendingMessage();
   void SetPendingMessage(TNode<HeapObject> message);
+  TNode<BoolT> IsExecutionTerminating();
 
   // Type checks.
   // Check whether the map is for an object with special properties, such as a
@@ -2582,6 +2579,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSPromise(TNode<HeapObject> object);
   TNode<BoolT> IsJSProxy(TNode<HeapObject> object);
   TNode<BoolT> IsJSStringIterator(TNode<HeapObject> object);
+  TNode<BoolT> IsJSShadowRealm(TNode<HeapObject> object);
   TNode<BoolT> IsJSRegExpStringIterator(TNode<HeapObject> object);
   TNode<BoolT> IsJSReceiverInstanceType(TNode<Int32T> instance_type);
   TNode<BoolT> IsJSReceiverMap(TNode<Map> map);
@@ -2721,6 +2719,10 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   bool IsFastElementsKind(ElementsKind kind) {
     return v8::internal::IsFastElementsKind(kind);
   }
+  TNode<BoolT> IsFastPackedElementsKind(TNode<Int32T> elements_kind);
+  bool IsFastPackedElementsKind(ElementsKind kind) {
+    return v8::internal::IsFastPackedElementsKind(kind);
+  }
   TNode<BoolT> IsFastOrNonExtensibleOrSealedElementsKind(
       TNode<Int32T> elements_kind);
 
@@ -2747,6 +2749,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
                                      ElementsKind higher_reference_kind) {
     return IsInRange(target_kind, lower_reference_kind, higher_reference_kind);
   }
+  TNode<Int32T> GetNonRabGsabElementsKind(TNode<Int32T> elements_kind);
 
   // String helpers.
   // Load a character from a String (might flatten a ConsString).
@@ -2947,7 +2950,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // Returns true if any of the mask's bit are set in the given Smi.
   // Smi-encoding of the mask is performed implicitly!
   TNode<BoolT> IsSetSmi(TNode<Smi> smi, int untagged_mask) {
-    intptr_t mask_word = bit_cast<intptr_t>(Smi::FromInt(untagged_mask));
+    intptr_t mask_word = base::bit_cast<intptr_t>(Smi::FromInt(untagged_mask));
     return WordNotEqual(WordAnd(BitcastTaggedToWordForTagAndSmiBits(smi),
                                 IntPtrConstant(mask_word)),
                         IntPtrConstant(0));
@@ -3086,7 +3089,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void SetNumberOfElements(TNode<Dictionary> dictionary,
                            TNode<Smi> num_elements_smi) {
     // Not supposed to be used for SwissNameDictionary.
-    STATIC_ASSERT(!(std::is_same<Dictionary, SwissNameDictionary>::value));
+    static_assert(!(std::is_same<Dictionary, SwissNameDictionary>::value));
 
     StoreFixedArrayElement(dictionary, Dictionary::kNumberOfElementsIndex,
                            num_elements_smi, SKIP_WRITE_BARRIER);
@@ -3095,7 +3098,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class Dictionary>
   TNode<Smi> GetNumberOfDeletedElements(TNode<Dictionary> dictionary) {
     // Not supposed to be used for SwissNameDictionary.
-    STATIC_ASSERT(!(std::is_same<Dictionary, SwissNameDictionary>::value));
+    static_assert(!(std::is_same<Dictionary, SwissNameDictionary>::value));
 
     return CAST(LoadFixedArrayElement(
         dictionary, Dictionary::kNumberOfDeletedElementsIndex));
@@ -3105,7 +3108,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   void SetNumberOfDeletedElements(TNode<Dictionary> dictionary,
                                   TNode<Smi> num_deleted_smi) {
     // Not supposed to be used for SwissNameDictionary.
-    STATIC_ASSERT(!(std::is_same<Dictionary, SwissNameDictionary>::value));
+    static_assert(!(std::is_same<Dictionary, SwissNameDictionary>::value));
 
     StoreFixedArrayElement(dictionary,
                            Dictionary::kNumberOfDeletedElementsIndex,
@@ -3115,7 +3118,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class Dictionary>
   TNode<Smi> GetCapacity(TNode<Dictionary> dictionary) {
     // Not supposed to be used for SwissNameDictionary.
-    STATIC_ASSERT(!(std::is_same<Dictionary, SwissNameDictionary>::value));
+    static_assert(!(std::is_same<Dictionary, SwissNameDictionary>::value));
 
     return CAST(
         UnsafeLoadFixedArrayElement(dictionary, Dictionary::kCapacityIndex));
@@ -3383,6 +3386,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // The returned object could be undefined if the closure does not have
   // a feedback vector associated with it.
   TNode<HeapObject> LoadFeedbackVector(TNode<JSFunction> closure);
+  TNode<FeedbackVector> LoadFeedbackVector(TNode<JSFunction> closure,
+                                           Label* if_no_feedback_vector);
 
   // Load the ClosureFeedbackCellArray that contains the feedback cells
   // used when creating closures from this function. This array could be
@@ -3686,7 +3691,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   // JSArrayBufferView helpers
   TNode<JSArrayBuffer> LoadJSArrayBufferViewBuffer(
       TNode<JSArrayBufferView> array_buffer_view);
-  TNode<UintPtrT> LoadJSArrayBufferViewByteLength(
+  TNode<UintPtrT> LoadJSArrayBufferViewRawByteLength(
       TNode<JSArrayBufferView> array_buffer_view);
 
   TNode<UintPtrT> LoadJSArrayBufferViewByteOffset(
@@ -3719,8 +3724,8 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   TNode<BoolT> IsJSArrayBufferViewDetachedOrOutOfBoundsBoolean(
       TNode<JSArrayBufferView> array_buffer_view);
 
-  void CheckJSTypedArrayIndex(TNode<UintPtrT> index,
-                              TNode<JSTypedArray> typed_array,
+  void CheckJSTypedArrayIndex(TNode<JSTypedArray> typed_array,
+                              TNode<UintPtrT> index,
                               Label* detached_or_out_of_bounds);
 
   TNode<IntPtrT> RabGsabElementsKindToElementByteSize(
@@ -3824,7 +3829,7 @@ class V8_EXPORT_PRIVATE CodeStubAssembler
   template <class... TArgs>
   TNode<HeapObject> MakeTypeError(MessageTemplate message,
                                   TNode<Context> context, TArgs... args) {
-    STATIC_ASSERT(sizeof...(TArgs) <= 3);
+    static_assert(sizeof...(TArgs) <= 3);
     return CAST(CallRuntime(Runtime::kNewTypeError, context,
                             SmiConstant(message), args...));
   }

@@ -20,10 +20,10 @@
 
 #include "securegcm/d2d_connection_context_v1.h"
 #include "absl/time/clock.h"
+#include "connections/implementation/analytics/analytics_recorder.h"
 #include "internal/platform/byte_array.h"
 #include "internal/platform/exception.h"
 #include "internal/platform/mutex.h"
-#include "internal/analytics/analytics_recorder.h"
 #include "proto/connections_enums.pb.h"
 
 namespace location {
@@ -50,6 +50,9 @@ class EndpointChannel {
   // Returns a one-word type descriptor for the concrete EndpointChannel
   // implementation that can be used in log messages; eg: BLUETOOTH, BLE, WIFI.
   virtual std::string GetType() const = 0;
+
+  // Returns the service that uses this EndpointChannel.
+  virtual std::string GetServiceId() const = 0;
 
   // Returns the name of the EndpointChannel.
   virtual std::string GetName() const = 0;

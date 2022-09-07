@@ -8,13 +8,21 @@
 #ifndef SKSL_SETTING
 #define SKSL_SETTING
 
-#include "src/sksl/SkSLContext.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLExpression.h"
+
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
 
 namespace SkSL {
 
+class Context;
+class Type;
+
 /**
- * Represents a compile-time constant setting, such as sk_Caps.fbFetchSupport. These IRNodes should
+ * Represents a compile-time constant setting, such as sk_Caps.integerSupport. These IRNodes should
  * only exist in a dehydrated module. These nodes are replaced with the value of the setting during
  * rehydration or compilation (i.e., whenever fReplaceSettings is true).
  */
@@ -33,8 +41,8 @@ public:
     static std::unique_ptr<Expression> Convert(const Context& context, Position pos,
                                                const std::string_view& name);
 
-    std::unique_ptr<Expression> clone() const override {
-        return std::make_unique<Setting>(fPosition, this->name(), &this->type());
+    std::unique_ptr<Expression> clone(Position pos) const override {
+        return std::make_unique<Setting>(pos, this->name(), &this->type());
     }
 
     const std::string_view& name() const {

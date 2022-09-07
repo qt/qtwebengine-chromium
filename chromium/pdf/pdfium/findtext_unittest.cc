@@ -18,8 +18,7 @@ namespace {
 
 class FindTextTestClient : public TestClient {
  public:
-  explicit FindTextTestClient(bool expected_case_sensitive)
-      : expected_case_sensitive_(expected_case_sensitive) {}
+  FindTextTestClient() = default;
   FindTextTestClient(const FindTextTestClient&) = delete;
   FindTextTestClient& operator=(const FindTextTestClient&) = delete;
   ~FindTextTestClient() override = default;
@@ -31,7 +30,7 @@ class FindTextTestClient : public TestClient {
   std::vector<SearchStringResult> SearchString(const char16_t* string,
                                                const char16_t* term,
                                                bool case_sensitive) override {
-    EXPECT_EQ(case_sensitive, expected_case_sensitive_);
+    EXPECT_TRUE(case_sensitive);
     std::u16string haystack = std::u16string(string);
     std::u16string needle = std::u16string(term);
 
@@ -51,9 +50,6 @@ class FindTextTestClient : public TestClient {
     }
     return results;
   }
-
- private:
-  const bool expected_case_sensitive_;
 };
 
 }  // namespace
@@ -61,7 +57,7 @@ class FindTextTestClient : public TestClient {
 using FindTextTest = PDFiumTestBase;
 
 TEST_F(FindTextTest, FindText) {
-  FindTextTestClient client(/*expected_case_sensitive=*/true);
+  FindTextTestClient client;
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("hello_world2.pdf"));
   ASSERT_TRUE(engine);
@@ -80,7 +76,7 @@ TEST_F(FindTextTest, FindText) {
 }
 
 TEST_F(FindTextTest, FindHyphenatedText) {
-  FindTextTestClient client(/*expected_case_sensitive=*/true);
+  FindTextTestClient client;
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("spanner.pdf"));
   ASSERT_TRUE(engine);
@@ -99,7 +95,7 @@ TEST_F(FindTextTest, FindHyphenatedText) {
 }
 
 TEST_F(FindTextTest, FindLineBreakText) {
-  FindTextTestClient client(/*expected_case_sensitive=*/true);
+  FindTextTestClient client;
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("spanner.pdf"));
   ASSERT_TRUE(engine);
@@ -116,7 +112,7 @@ TEST_F(FindTextTest, FindLineBreakText) {
 }
 
 TEST_F(FindTextTest, FindSimpleQuotationMarkText) {
-  FindTextTestClient client(/*expected_case_sensitive=*/true);
+  FindTextTestClient client;
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("bug_142627.pdf"));
   ASSERT_TRUE(engine);
@@ -134,7 +130,7 @@ TEST_F(FindTextTest, FindSimpleQuotationMarkText) {
 }
 
 TEST_F(FindTextTest, FindFancyQuotationMarkText) {
-  FindTextTestClient client(/*expected_case_sensitive=*/true);
+  FindTextTestClient client;
   std::unique_ptr<PDFiumEngine> engine =
       InitializeEngine(&client, FILE_PATH_LITERAL("bug_142627.pdf"));
   ASSERT_TRUE(engine);

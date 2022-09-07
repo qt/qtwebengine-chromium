@@ -183,7 +183,7 @@ bool SurfaceContext::readPixels(GrDirectContext* dContext, GrPixmap dst, SkIPoin
             sk_sp<GrSurfaceProxy> copy;
             static constexpr auto kFit = SkBackingFit::kExact;
             static constexpr auto kBudgeted = SkBudgeted::kYes;
-            static constexpr auto kMipMapped = GrMipMapped::kNo;
+            static constexpr auto kMipMapped = GrMipmapped::kNo;
             if (restrictions.fMustCopyWholeSrc) {
                 copy = GrSurfaceProxy::Copy(fContext,
                                             std::move(srcProxy),
@@ -418,14 +418,16 @@ bool SurfaceContext::internalWritePixels(GrDirectContext* dContext,
         // targets we will use top left and otherwise we will make the origins match.
         GrSurfaceOrigin tempOrigin =
                 this->asFillContext() ? kTopLeft_GrSurfaceOrigin : this->origin();
-        auto tempProxy = dContext->priv().proxyProvider()->createProxy(format,
-                                                                       src[0].dimensions(),
-                                                                       GrRenderable::kNo,
-                                                                       1,
-                                                                       GrMipmapped::kNo,
-                                                                       SkBackingFit::kApprox,
-                                                                       SkBudgeted::kYes,
-                                                                       GrProtected::kNo);
+        auto tempProxy = dContext->priv().proxyProvider()->createProxy(
+                format,
+                src[0].dimensions(),
+                GrRenderable::kNo,
+                1,
+                GrMipmapped::kNo,
+                SkBackingFit::kApprox,
+                SkBudgeted::kYes,
+                GrProtected::kNo,
+                /*label=*/"SurfaceContext_InternalWritePixels");
         if (!tempProxy) {
             return false;
         }

@@ -83,11 +83,11 @@ class F extends ValidationTest {
     bindGroups: Array<Array<GPUBindGroupLayoutEntry>>
   ): GPURenderPipeline {
     const shader = `
-      @stage(vertex) fn vs_main() -> @builtin(position) vec4<f32> {
+      @vertex fn vs_main() -> @builtin(position) vec4<f32> {
         return vec4<f32>(1.0, 1.0, 0.0, 1.0);
       }
 
-      @stage(fragment) fn fs_main() -> @location(0) vec4<f32> {
+      @fragment fn fs_main() -> @location(0) vec4<f32> {
         return vec4<f32>(0.0, 1.0, 0.0, 1.0);
       }
     `;
@@ -114,7 +114,7 @@ class F extends ValidationTest {
     bindGroups: Array<Array<GPUBindGroupLayoutEntry>>
   ): GPUComputePipeline {
     const shader = `
-      @stage(compute) @workgroup_size(1)
+      @compute @workgroup_size(1)
         fn main(@builtin(global_invocation_id) GlobalInvocationID : vec3<u32>) {
       }
     `;
@@ -152,10 +152,10 @@ class F extends ValidationTest {
     const x = callWithZero ? 0 : 1;
     switch (call) {
       case 'dispatch':
-        pass.dispatch(x, 1, 1);
+        pass.dispatchWorkgroups(x, 1, 1);
         break;
       case 'dispatchIndirect':
-        pass.dispatchIndirect(this.getIndirectBuffer([x, 1, 1]), 0);
+        pass.dispatchWorkgroupsIndirect(this.getIndirectBuffer([x, 1, 1]), 0);
         break;
       default:
         break;

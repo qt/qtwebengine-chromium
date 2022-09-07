@@ -218,5 +218,11 @@ message PowerSupplyProperties {
   // change over time based on predictions from adaptive battery.
   optional bool adaptive_delaying_charge = 34 [default = false];
 
-  // Next ID to use: 35
+  // Indicates if Adaptive Charging is currently allowed by its heuristic, which
+  // disables Adaptive Charging if the charging behavior of the user won't
+  // benefit from the feature.
+  // Unused unless Adaptive Charging is supported on the system.
+  optional bool adaptive_charging_heuristic_enabled = 35;
+
+  // Next ID to use: 36
 }

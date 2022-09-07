@@ -70,9 +70,16 @@ const UIStrings = {
   script: 'Script',
   /**
   *@description Title of a section in the debugger showing JavaScript variables from the a 'with'
-  *block. Block here means section of code, 'with' refers to a JavaScript programming concept.
+  *block. Block here means section of code, 'with' refers to a JavaScript programming concept and
+  *is a fixed term.
   */
-  withBlock: '`With` Block',
+  withBlock: '`With` block',
+  /**
+  *@description Title of a section in the debugger showing JavaScript variables from the a 'catch'
+  *block. Block here means section of code, 'catch' refers to a JavaScript programming concept and
+  *is a fixed term.
+  */
+  catchBlock: '`Catch` block',
   /**
   *@description Title of a section in the debugger showing JavaScript variables from the global scope.
   */
@@ -139,6 +146,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
                                    }>>)|null;
   #expandCallFramesCallback: ((arg0: Array<CallFrame>) => Promise<Array<CallFrame>>)|null;
   evaluateOnCallFrameCallback: ((arg0: CallFrame, arg1: EvaluationOptions) => Promise<EvaluationResult|null>)|null;
+  #synchronizeBreakpointsCallback: ((script: Script) => Promise<void>)|null;
   // We need to be able to register listeners for individual breakpoints. As such, we dispatch
   // on breakpoint ids, which are not statically known. The event #payload will always be a `Location`.
   readonly #breakpointResolvedEventTarget =
@@ -169,6 +177,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.#computeAutoStepRangesCallback = null;
     this.#expandCallFramesCallback = null;
     this.evaluateOnCallFrameCallback = null;
+    this.#synchronizeBreakpointsCallback = null;
 
     this.#autoStepOver = false;
 
@@ -232,17 +241,20 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     const isRemoteFrontend = Root.Runtime.Runtime.queryParam('remoteFrontend') || Root.Runtime.Runtime.queryParam('ws');
     const maxScriptsCacheSize = isRemoteFrontend ? 10e6 : 100e6;
     const enablePromise = this.agent.invoke_enable({maxScriptsCacheSize});
-    void enablePromise.then(this.registerDebugger.bind(this));
+    let instrumentationPromise: Promise<Protocol.Debugger.SetInstrumentationBreakpointResponse>|undefined;
+    if (Root.Runtime.experiments.isEnabled(Root.Runtime.ExperimentName.INSTRUMENTATION_BREAKPOINTS)) {
+      instrumentationPromise = this.agent.invoke_setInstrumentationBreakpoint({
+        instrumentation: Protocol.Debugger.SetInstrumentationBreakpointRequestInstrumentation.BeforeScriptExecution,
+      });
+    }
     this.pauseOnExceptionStateChanged();
     void this.asyncStackTracesStateChanged();
     if (!Common.Settings.Settings.instance().moduleSetting('breakpointsActive').get()) {
       this.breakpointsActiveChanged();
     }
-    if (_scheduledPauseOnAsyncCall) {
-      void this.pauseOnAsyncCall(_scheduledPauseOnAsyncCall);
-    }
     this.dispatchEventToListeners(Events.DebuggerWasEnabled, this);
-    await enablePromise;
+    const [enableResult] = await Promise.all([enablePromise, instrumentationPromise]);
+    this.registerDebugger(enableResult);
   }
 
   async syncDebuggerId(): Promise<Protocol.Debugger.EnableResponse> {
@@ -412,10 +424,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.#isPausingInternal = true;
     this.skipAllPauses(false);
     void this.agent.invoke_pause();
-  }
-
-  private pauseOnAsyncCall(parentStackTraceId: Protocol.Runtime.StackTraceId): Promise<Object> {
-    return this.agent.invoke_pauseOnAsyncCall({parentStackTraceId: parentStackTraceId});
   }
 
   async setBreakpointByURL(
@@ -644,19 +652,19 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     this.evaluateOnCallFrameCallback = callback;
   }
 
+  setSynchronizeBreakpointsCallback(callback: ((script: Script) => Promise<void>)|null): void {
+    this.#synchronizeBreakpointsCallback = callback;
+  }
+
   async pausedScript(
       callFrames: Protocol.Debugger.CallFrame[], reason: Protocol.Debugger.PausedEventReason, auxData: Object|undefined,
       breakpointIds: string[], asyncStackTrace?: Protocol.Runtime.StackTrace,
-      asyncStackTraceId?: Protocol.Runtime.StackTraceId,
-      asyncCallStackTraceId?: Protocol.Runtime.StackTraceId): Promise<void> {
-    if (asyncCallStackTraceId) {
-      // Note: this is only to support old backends. Newer ones do not send asyncCallStackTraceId.
-      _scheduledPauseOnAsyncCall = asyncCallStackTraceId;
-      const promises = [];
-      for (const model of _debuggerIdToModel.values()) {
-        promises.push(model.pauseOnAsyncCall(asyncCallStackTraceId));
+      asyncStackTraceId?: Protocol.Runtime.StackTraceId): Promise<void> {
+    if (reason === Protocol.Debugger.PausedEventReason.Instrumentation) {
+      const script = this.scriptForId(callFrames[0].location.scriptId);
+      if (this.#synchronizeBreakpointsCallback && script) {
+        await this.#synchronizeBreakpointsCallback(script);
       }
-      await Promise.all(promises);
       this.resume();
       return;
     }
@@ -685,8 +693,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     } else {
       Common.EventTarget.fireEvent('DevTools.DebuggerPaused');
     }
-
-    _scheduledPauseOnAsyncCall = null;
   }
 
   resumedScript(): void {
@@ -968,10 +974,6 @@ export class DebuggerModel extends SDKModel<EventTypes> {
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const _debuggerIdToModel = new Map<string, DebuggerModel>();
 
-// TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-// eslint-disable-next-line @typescript-eslint/naming-convention
-export let _scheduledPauseOnAsyncCall: Protocol.Runtime.StackTraceId|null = null;
-
 /**
  * Keep these in sync with WebCore::V8Debugger
  */
@@ -1016,13 +1018,13 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
     this.#debuggerModel = debuggerModel;
   }
 
-  paused({callFrames, reason, data, hitBreakpoints, asyncStackTrace, asyncStackTraceId, asyncCallStackTraceId}:
-             Protocol.Debugger.PausedEvent): void {
+  paused({callFrames, reason, data, hitBreakpoints, asyncStackTrace, asyncStackTraceId}: Protocol.Debugger.PausedEvent):
+      void {
     if (!this.#debuggerModel.debuggerEnabled()) {
       return;
     }
     void this.#debuggerModel.pausedScript(
-        callFrames, reason, data, hitBreakpoints || [], asyncStackTrace, asyncStackTraceId, asyncCallStackTraceId);
+        callFrames, reason, data, hitBreakpoints || [], asyncStackTrace, asyncStackTraceId);
   }
 
   resumed(): void {
@@ -1240,6 +1242,11 @@ export class BreakLocation extends Location {
   }
 }
 
+export interface MissingDebugInfoDetails {
+  details: string;
+  resources: string[];
+}
+
 export class CallFrame {
   debuggerModel: DebuggerModel;
   readonly #scriptInternal: Script;
@@ -1251,7 +1258,9 @@ export class CallFrame {
   readonly #functionNameInternal: string;
   readonly #functionLocationInternal: Location|undefined;
   #returnValueInternal: RemoteObject|null;
-  readonly warnings: string[] = [];
+  #missingDebugInfoDetails: MissingDebugInfoDetails|null = null;
+
+  readonly canBeRestarted: boolean;
 
   constructor(
       debuggerModel: DebuggerModel, script: Script, payload: Protocol.Debugger.CallFrame, inlineFrameIndex?: number,
@@ -1264,6 +1273,7 @@ export class CallFrame {
     this.#localScopeInternal = null;
     this.#inlineFrameIndexInternal = inlineFrameIndex || 0;
     this.#functionNameInternal = functionName || payload.functionName;
+    this.canBeRestarted = Boolean(payload.canBeRestarted);
     for (let i = 0; i < payload.scopeChain.length; ++i) {
       const scope = new Scope(this, i);
       this.#scopeChainInternal.push(scope);
@@ -1294,8 +1304,12 @@ export class CallFrame {
     return new CallFrame(this.debuggerModel, this.#scriptInternal, this.payload, inlineFrameIndex, name);
   }
 
-  addWarning(warning: string): void {
-    this.warnings.push(warning);
+  setMissingDebugInfoDetails(details: MissingDebugInfoDetails): void {
+    this.#missingDebugInfoDetails = details;
+  }
+
+  get missingDebugInfoDetails(): MissingDebugInfoDetails|null {
+    return this.#missingDebugInfoDetails;
   }
 
   get script(): Script {
@@ -1395,6 +1409,15 @@ export class CallFrame {
     return {object: runtimeModel.createRemoteObject(response.result), exceptionDetails: response.exceptionDetails};
   }
 
+  async restart(): Promise<void> {
+    console.assert(this.canBeRestarted, 'This frame can not be restarted.');
+    // Note that even if `canBeRestarted` is true, the restart frame call can still fail.
+    // The user can evaluate arbitrary code between pausing and restarting the frame that
+    // could mess with the call stack.
+    await this.debuggerModel.agent.invoke_restartFrame(
+        {callFrameId: this.id, mode: Protocol.Debugger.RestartFrameRequestMode.StepInto});
+  }
+
   getPayload(): Protocol.Debugger.CallFrame {
     return this.payload;
   }
@@ -1457,7 +1480,9 @@ export class Scope implements ScopeChainEntry {
       case Protocol.Debugger.ScopeType.Closure:
         return i18nString(UIStrings.closure);
       case Protocol.Debugger.ScopeType.Catch:
-        return i18n.i18n.lockedString('Catch');
+        return i18nString(UIStrings.catchBlock);
+      case Protocol.Debugger.ScopeType.Eval:
+        return i18n.i18n.lockedString('Eval');
       case Protocol.Debugger.ScopeType.Block:
         return i18nString(UIStrings.block);
       case Protocol.Debugger.ScopeType.Script:

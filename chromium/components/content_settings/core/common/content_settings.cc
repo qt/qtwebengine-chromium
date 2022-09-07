@@ -95,7 +95,7 @@ constexpr HistogramValue kHistogramValue[] = {
     // Removed FILE_HANDLING in M98.
     {ContentSettingsType::FILE_SYSTEM_ACCESS_CHOOSER_DATA, 76},
     {ContentSettingsType::FEDERATED_IDENTITY_SHARING, 77},
-    {ContentSettingsType::FEDERATED_IDENTITY_REQUEST, 78},
+    // Removed FEDERATED_IDENTITY_REQUEST in M103.
     {ContentSettingsType::JAVASCRIPT_JIT, 79},
     {ContentSettingsType::HTTP_ALLOWED, 80},
     {ContentSettingsType::FORMFILL_METADATA, 81},
@@ -103,6 +103,7 @@ constexpr HistogramValue kHistogramValue[] = {
     {ContentSettingsType::AUTO_DARK_WEB_CONTENT, 83},
     {ContentSettingsType::REQUEST_DESKTOP_SITE, 84},
     {ContentSettingsType::FEDERATED_IDENTITY_API, 85},
+    {ContentSettingsType::NOTIFICATION_INTERACTIONS, 86},
 };
 
 void FilterRulesForType(ContentSettingsForOneType& settings,

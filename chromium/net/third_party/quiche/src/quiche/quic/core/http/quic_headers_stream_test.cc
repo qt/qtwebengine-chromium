@@ -31,7 +31,7 @@
 #include "quiche/spdy/core/recording_headers_handler.h"
 #include "quiche/spdy/core/spdy_alt_svc_wire_format.h"
 #include "quiche/spdy/core/spdy_protocol.h"
-#include "quiche/spdy/core/spdy_test_utils.h"
+#include "quiche/spdy/test_tools/spdy_test_utils.h"
 
 using spdy::ERROR_CODE_PROTOCOL_ERROR;
 using spdy::RecordingHeadersHandler;
@@ -101,9 +101,9 @@ class MockVisitor : public SpdyFramerVisitorInterface {
               (SpdyStreamId last_accepted_stream_id, SpdyErrorCode error_code),
               (override));
   MOCK_METHOD(void, OnHeaders,
-              (SpdyStreamId stream_id, bool has_priority, int weight,
-               SpdyStreamId parent_stream_id, bool exclusive, bool fin,
-               bool end),
+              (SpdyStreamId stream_id, size_t payload_length, bool has_priority,
+               int weight, SpdyStreamId parent_stream_id, bool exclusive,
+               bool fin, bool end),
               (override));
   MOCK_METHOD(void, OnWindowUpdate,
               (SpdyStreamId stream_id, int delta_window_size), (override));
@@ -111,7 +111,8 @@ class MockVisitor : public SpdyFramerVisitorInterface {
               (SpdyStreamId stream_id, SpdyStreamId promised_stream_id,
                bool end),
               (override));
-  MOCK_METHOD(void, OnContinuation, (SpdyStreamId stream_id, bool end),
+  MOCK_METHOD(void, OnContinuation,
+              (SpdyStreamId stream_id, size_t payload_size, bool end),
               (override));
   MOCK_METHOD(
       void, OnAltSvc,
@@ -281,17 +282,20 @@ class QuicHeadersStreamTest : public QuicTestWithParam<TestParams> {
 
     // Parse the outgoing data and check that it matches was was written.
     if (is_request) {
-      EXPECT_CALL(visitor_,
-                  OnHeaders(stream_id, kHasPriority,
-                            Spdy3PriorityToHttp2Weight(priority),
-                            /*parent_stream_id=*/0,
-                            /*exclusive=*/false, fin, kFrameComplete));
+      EXPECT_CALL(
+          visitor_,
+          OnHeaders(stream_id, saved_data_.length() - spdy::kFrameHeaderSize,
+                    kHasPriority, Spdy3PriorityToHttp2Weight(priority),
+                    /*parent_stream_id=*/0,
+                    /*exclusive=*/false, fin, kFrameComplete));
     } else {
-      EXPECT_CALL(visitor_,
-                  OnHeaders(stream_id, !kHasPriority,
-                            /*weight=*/0,
-                            /*parent_stream_id=*/0,
-                            /*exclusive=*/false, fin, kFrameComplete));
+      EXPECT_CALL(
+          visitor_,
+          OnHeaders(stream_id, saved_data_.length() - spdy::kFrameHeaderSize,
+                    !kHasPriority,
+                    /*weight=*/0,
+                    /*parent_stream_id=*/0,
+                    /*exclusive=*/false, fin, kFrameComplete));
     }
     headers_handler_ = std::make_unique<RecordingHeadersHandler>();
     EXPECT_CALL(visitor_, OnHeaderFrameStart(stream_id))
@@ -629,7 +633,7 @@ TEST_P(QuicHeadersStreamTest, RespectHttp2SettingsFrameSupportedFields) {
                                       ->header_encoder_table_size());
 }
 
-// Regression bug for b/208997000.
+// Regression test for b/208997000.
 TEST_P(QuicHeadersStreamTest, LimitEncoderDynamicTableSize) {
   const uint32_t kVeryLargeTableSizeLimit = 1024 * 1024 * 1024;
   SpdySettingsIR data;
@@ -638,14 +642,8 @@ TEST_P(QuicHeadersStreamTest, LimitEncoderDynamicTableSize) {
   stream_frame_.data_buffer = frame.data();
   stream_frame_.data_length = frame.size();
   headers_stream_->OnStreamFrame(stream_frame_);
-  if (GetQuicReloadableFlag(quic_limit_encoder_dynamic_table_size)) {
-    EXPECT_EQ(16384u, QuicSpdySessionPeer::GetSpdyFramer(&session_)
-                          ->header_encoder_table_size());
-  } else {
-    EXPECT_EQ(kVeryLargeTableSizeLimit,
-              QuicSpdySessionPeer::GetSpdyFramer(&session_)
-                  ->header_encoder_table_size());
-  }
+  EXPECT_EQ(16384u, QuicSpdySessionPeer::GetSpdyFramer(&session_)
+                        ->header_encoder_table_size());
 }
 
 TEST_P(QuicHeadersStreamTest, RespectHttp2SettingsFrameUnsupportedFields) {

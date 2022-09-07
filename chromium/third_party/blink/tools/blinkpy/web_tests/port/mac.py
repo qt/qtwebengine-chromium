@@ -35,8 +35,8 @@ _log = logging.getLogger(__name__)
 
 
 class MacPort(base.Port):
-    SUPPORTED_VERSIONS = ('mac10.12', 'mac10.13', 'mac10.14', 'mac10.15',
-                          'mac11', 'mac11-arm64', 'mac12', 'mac12-arm64')
+    SUPPORTED_VERSIONS = ('mac10.13', 'mac10.14', 'mac10.15', 'mac11',
+                          'mac11-arm64', 'mac12', 'mac12-arm64')
     port_name = 'mac'
 
     FALLBACK_PATHS = {}
@@ -50,7 +50,6 @@ class MacPort(base.Port):
     FALLBACK_PATHS['mac10.15'] = ['mac-mac10.15'] + FALLBACK_PATHS['mac11']
     FALLBACK_PATHS['mac10.14'] = ['mac-mac10.14'] + FALLBACK_PATHS['mac10.15']
     FALLBACK_PATHS['mac10.13'] = ['mac-mac10.13'] + FALLBACK_PATHS['mac10.14']
-    FALLBACK_PATHS['mac10.12'] = ['mac-mac10.12'] + FALLBACK_PATHS['mac10.13']
 
     CONTENT_SHELL_NAME = 'Content Shell'
 
@@ -60,16 +59,10 @@ class MacPort(base.Port):
     def determine_full_port_name(cls, host, options, port_name):
         if port_name.endswith('mac'):
             parts = [port_name]
-            # TODO(crbug.com/1114885): This is to workaround the failure of
-            # blink_python_tests on mac10.10 and 10.11 waterfall bots. Remove this
-            # when we remove the step from the bots.
-            if (host.platform.os_version == 'mac10.10'
-                  or host.platform.os_version == 'mac10.11'):
-                version = 'mac10.12'
             # TODO(crbug.com/1126062): Workaround for Big sur using 10.16 version,
             # use mac11 instead. This must be done before macOS 12 capability
             # for this script.
-            elif host.platform.os_version == 'mac10.16':
+            if host.platform.os_version == 'mac10.16':
                 version = 'mac11'
             else:
                 version = host.platform.os_version
@@ -124,6 +117,16 @@ class MacPort(base.Port):
     def path_to_apache_config_file(self):
         config_file_basename = 'apache2-httpd-%s-php7.conf' % (self._apache_version(),)
         return self._filesystem.join(self.apache_config_directory(), config_file_basename)
+
+    def default_smoke_test_only(self):
+        # only run platform specific tests on older mac versions
+        if self.host.platform.os_version in ['mac10.13', 'mac10.14']:
+            return True
+        return False
+
+    def path_to_smoke_tests_file(self):
+        return self._filesystem.join(self.web_tests_dir(), 'SmokeTests',
+                                     'Mac.txt')
 
     def _path_to_driver(self, target=None):
         return self._build_path_with_target(target,

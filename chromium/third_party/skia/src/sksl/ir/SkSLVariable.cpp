@@ -7,14 +7,21 @@
 
 #include "src/sksl/ir/SkSLVariable.h"
 
+#include "include/private/SkSLLayout.h"
 #include "include/private/SkStringView.h"
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/sksl/SkSLCompiler.h"
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLMangler.h"
+#include "src/sksl/SkSLModifiersPool.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLSymbolTable.h"
 #include "src/sksl/ir/SkSLVarDeclarations.h"
+
+#include <type_traits>
+#include <utility>
 
 namespace SkSL {
 
@@ -30,17 +37,20 @@ const Expression* Variable::initialValue() const {
 }
 
 std::unique_ptr<Variable> Variable::Convert(const Context& context, Position pos,
-        Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
+        Position modifiersPos, const Modifiers& modifiers, const Type* baseType, Position namePos,
         std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
         Variable::Storage storage) {
     if (modifiers.fLayout.fLocation == 0 && modifiers.fLayout.fIndex == 0 &&
         (modifiers.fFlags & Modifiers::kOut_Flag) &&
-        context.fConfig->fKind == ProgramKind::kFragment && name != Compiler::FRAGCOLOR_NAME) {
+        ProgramConfig::IsFragment(context.fConfig->fKind) && name != Compiler::FRAGCOLOR_NAME) {
         context.fErrors->error(modifiersPos,
                 "out location=0, index=0 is reserved for sk_FragColor");
     }
     if (!context.fConfig->fIsBuiltinCode && skstd::starts_with(name, '$')) {
-        context.fErrors->error(pos, "name '" + std::string(name) + "' is reserved");
+        context.fErrors->error(namePos, "name '" + std::string(name) + "' is reserved");
+    }
+    if (baseType->isArray() && baseType->columns() == Type::kUnsizedArray) {
+        context.fErrors->error(pos, "unsized arrays are not permitted here");
     }
 
     return Make(context, pos, modifiersPos, modifiers, baseType, name, isArray,

@@ -69,7 +69,8 @@ sk_sp<GrD3DTexture> GrD3DTexture::MakeNewTexture(GrD3DGpu* gpu, SkBudgeted budge
                                                  SkISize dimensions,
                                                  const D3D12_RESOURCE_DESC& desc,
                                                  GrProtected isProtected,
-                                                 GrMipmapStatus mipmapStatus) {
+                                                 GrMipmapStatus mipmapStatus,
+                                                 std::string_view label) {
     GrD3DTextureResourceInfo info;
     if (!GrD3DTextureResource::InitTextureResourceInfo(gpu, desc,
                                                        D3D12_RESOURCE_STATE_COPY_DEST,
@@ -86,7 +87,7 @@ sk_sp<GrD3DTexture> GrD3DTexture::MakeNewTexture(GrD3DGpu* gpu, SkBudgeted budge
     GrD3DTexture* tex = new GrD3DTexture(gpu, budgeted, dimensions, info, std::move(state),
                                          shaderResourceView,
                                          mipmapStatus,
-                                         /*label=*/{});
+                                         label);
 
     return sk_sp<GrD3DTexture>(tex);
 }
@@ -111,7 +112,7 @@ sk_sp<GrD3DTexture> GrD3DTexture::MakeWrappedTexture(GrD3DGpu* gpu,
     return sk_sp<GrD3DTexture>(new GrD3DTexture(gpu, dimensions, info, std::move(state),
                                                 shaderResourceView, mipmapStatus, cacheable,
                                                 ioType,
-                                                /*label=*/{}));
+                                                /*label=*/"D3DWrappedTexture"));
 }
 
 sk_sp<GrD3DTexture> GrD3DTexture::MakeAliasingTexture(GrD3DGpu* gpu,
@@ -135,7 +136,7 @@ sk_sp<GrD3DTexture> GrD3DTexture::MakeAliasingTexture(GrD3DGpu* gpu,
     GrD3DTexture* tex = new GrD3DTexture(gpu, SkBudgeted::kNo, originalTexture->dimensions(),
                                          info, std::move(state), shaderResourceView,
                                          originalTexture->mipmapStatus(),
-                                         /*label=*/{});
+                                         /*label=*/"AliasingTexture");
     return sk_sp<GrD3DTexture>(tex);
 }
 

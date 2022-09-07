@@ -7,11 +7,10 @@
 
 #include "src/gpu/ganesh/glsl/GrGLSLShaderBuilder.h"
 
-#include "include/sksl/DSL.h"
+#include "src/gpu/Blend.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/ganesh/GrShaderCaps.h"
 #include "src/gpu/ganesh/GrShaderVar.h"
-#include "src/gpu/ganesh/glsl/GrGLSLBlend.h"
 #include "src/gpu/ganesh/glsl/GrGLSLColorSpaceXformHelper.h"
 #include "src/gpu/ganesh/glsl/GrGLSLProgramBuilder.h"
 #include "src/sksl/SkSLThreadContext.h"
@@ -89,15 +88,6 @@ void GrGLSLShaderBuilder::emitFunctionPrototype(const char* declaration) {
     this->functions().appendf("%s;\n", declaration);
 }
 
-void GrGLSLShaderBuilder::codeAppend(std::unique_ptr<SkSL::Statement> stmt) {
-    SkASSERT(SkSL::ThreadContext::CurrentProcessor());
-    SkASSERT(stmt);
-    this->codeAppend(stmt->description().c_str());
-    if (stmt->is<SkSL::VarDeclaration>()) {
-        fDeclarations.push_back(std::move(stmt));
-    }
-}
-
 static inline void append_texture_swizzle(SkString* out, skgpu::Swizzle swizzle) {
     if (swizzle != skgpu::Swizzle::RGBA()) {
         out->appendf(".%s", swizzle.asString().c_str());
@@ -139,7 +129,7 @@ void GrGLSLShaderBuilder::appendTextureLookupAndBlend(
         this->appendColorGamutXform(lookup.c_str(), colorXformHelper);
         this->codeAppendf(" * %s)", dst);
     } else {
-        this->codeAppendf("%s(", GrGLSLBlend::BlendFuncName(mode));
+        this->codeAppendf("%s(", skgpu::BlendFuncName(mode));
         this->appendTextureLookup(&lookup, samplerHandle, coordName);
         this->appendColorGamutXform(lookup.c_str(), colorXformHelper);
         this->codeAppendf(", %s)", dst);
@@ -238,7 +228,7 @@ void GrGLSLShaderBuilder::appendColorGamutXform(SkString* out,
         // Most GPUs work just fine with half float. Strangely, the GPUs that have this bug
         // (Mali G series) only require us to promote the type of a few temporaries here --
         // the helper functions above can always be written to use half.
-        bool useFloat = fProgramBuilder->shaderCaps()->colorSpaceMathNeedsFloat();
+        bool useFloat = fProgramBuilder->shaderCaps()->fColorSpaceMathNeedsFloat;
 
         const GrShaderVar gColorXformArgs[] = {
                 GrShaderVar("color", useFloat ? SkSLType::kFloat4 : SkSLType::kHalf4)};
@@ -294,7 +284,7 @@ void GrGLSLShaderBuilder::appendDecls(const VarArray& vars, SkString* out) const
 }
 
 void GrGLSLShaderBuilder::addLayoutQualifier(const char* param, InterfaceQualifier interface) {
-    SkASSERT(fProgramBuilder->shaderCaps()->generation() >= SkSL::GLSLGeneration::k330 ||
+    SkASSERT(fProgramBuilder->shaderCaps()->fGLSLGeneration >= SkSL::GLSLGeneration::k330 ||
              fProgramBuilder->shaderCaps()->mustEnableAdvBlendEqs());
     fLayoutParams[interface].push_back() = param;
 }

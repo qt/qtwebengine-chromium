@@ -10,6 +10,24 @@ namespace rgbkbd {
 const char kRgbkbdServicePath[] = "/org/chromium/Rgbkbd";
 const char kRgbkbdServiceName[] = "org.chromium.Rgbkbd";
 
+// Methods
+const char kGetRgbKeyboardCapabilities[] = "GetRgbKeyboardCapabilities";
+const char kSetCapsLockState[] = "SetCapsLockState";
+const char kSetStaticBackgroundColor[] = "SetStaticBackgroundColor";
+const char kSetRainbowMode[] = "SetRainbowMode";
+const char kSetTestingMode[] = "SetTestingMode";
+const char kSetAnimationMode[] = "SetAnimationMode";
+
+enum class RgbKeyboardCapabilities {
+  kNone = 0,
+  kIndividualKey = 1,
+  kFiveZone = 2,
+};
+
+enum class RgbAnimationMode {
+  kBasicTestPattern = 0,
+};
+
 }  // namespace rgbkbd
 
 #endif  // SYSTEM_API_DBUS_RGBKBD_DBUS_CONSTANTS_H_

@@ -7,15 +7,23 @@
 
 #include "src/utils/SkPolyUtils.h"
 
-#include <limits>
-
-#include "include/private/SkNx.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkFloatingPoint.h"
+#include "include/private/SkMalloc.h"
 #include "include/private/SkTArray.h"
+#include "include/private/SkTDArray.h"
 #include "include/private/SkTemplates.h"
+#include "include/private/SkVx.h"
 #include "src/core/SkPointPriv.h"
 #include "src/core/SkRectPriv.h"
 #include "src/core/SkTDPQueue.h"
 #include "src/core/SkTInternalLList.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <new>
 
 //////////////////////////////////////////////////////////////////////////////////
 // Helper data structures and functions
@@ -1470,11 +1478,11 @@ struct TriangulationVertex {
 
 static void compute_triangle_bounds(const SkPoint& p0, const SkPoint& p1, const SkPoint& p2,
                                     SkRect* bounds) {
-    Sk4s min, max;
-    min = max = Sk4s(p0.fX, p0.fY, p0.fX, p0.fY);
-    Sk4s xy(p1.fX, p1.fY, p2.fX, p2.fY);
-    min = Sk4s::Min(min, xy);
-    max = Sk4s::Max(max, xy);
+    skvx::float4 min, max;
+    min = max = skvx::float4(p0.fX, p0.fY, p0.fX, p0.fY);
+    skvx::float4 xy(p1.fX, p1.fY, p2.fX, p2.fY);
+    min = skvx::min(min, xy);
+    max = skvx::max(max, xy);
     bounds->setLTRB(std::min(min[0], min[2]), std::min(min[1], min[3]),
                     std::max(max[0], max[2]), std::max(max[1], max[3]));
 }
@@ -1868,4 +1876,3 @@ bool SkIsPolyConvex_experimental(const SkPoint pts[], int count) {
     tracker.finalCross();
     return !tracker.fIsConcave;
 }
-

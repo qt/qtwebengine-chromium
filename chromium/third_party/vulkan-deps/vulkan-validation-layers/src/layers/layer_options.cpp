@@ -92,6 +92,8 @@ void SetValidationEnable(CHECK_ENABLED &enable_data, const ValidationCheckEnable
             enable_data[vendor_specific_amd] = true;
             enable_data[vendor_specific_img] = true;
             break;
+        case VALIDATION_CHECK_ENABLE_SYNCHRONIZATION_VALIDATION_QUEUE_SUBMIT:
+            enable_data[sync_validation_queue_submit] = true;
         default:
             assert(true);
     }
@@ -420,5 +422,5 @@ void ProcessConfigAndEnvSettings(ConfigAndEnvSettings *settings_data) {
     if (config_limit_setting != 0) {
         *settings_data->duplicate_message_limit = config_limit_setting;
     }
-    *settings_data->fine_grained_locking = SetBool(config_fine_grained_locking, env_fine_grained_locking, false);
+    *settings_data->fine_grained_locking = SetBool(config_fine_grained_locking, env_fine_grained_locking, true);
 }

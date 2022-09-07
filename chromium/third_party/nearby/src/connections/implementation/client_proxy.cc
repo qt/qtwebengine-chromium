@@ -26,9 +26,9 @@
 #include "absl/strings/str_cat.h"
 #include "internal/platform/error_code_recorder.h"
 #include "internal/platform/feature_flags.h"
-#include "internal/platform/prng.h"
 #include "internal/platform/logging.h"
 #include "internal/platform/mutex_lock.h"
+#include "internal/platform/prng.h"
 #include "proto/connections_enums.pb.h"
 
 namespace location {
@@ -44,7 +44,7 @@ constexpr char kEndpointIdChars[] = {
     'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
     'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'};
 
-ClientProxy::ClientProxy(analytics::EventLogger* event_logger)
+ClientProxy::ClientProxy(::nearby::analytics::EventLogger* event_logger)
     : client_id_(Prng().NextInt64()) {
   NEARBY_LOGS(INFO) << "ClientProxy ctor event_logger=" << event_logger;
   analytics_recorder_ =
@@ -155,13 +155,6 @@ bool ClientProxy::IsAdvertising() const {
 std::string ClientProxy::GetAdvertisingServiceId() const {
   MutexLock lock(&mutex_);
   return advertising_info_.service_id;
-}
-
-std::string ClientProxy::GetServiceId() const {
-  MutexLock lock(&mutex_);
-  if (IsAdvertising()) return advertising_info_.service_id;
-  if (IsDiscovering()) return discovery_info_.service_id;
-  return "idle_service_id";
 }
 
 void ClientProxy::StartedDiscovery(
@@ -733,7 +726,7 @@ void ClientProxy::ScheduleClearLocalHighVisModeCacheEndpointIdAlarm() {
                     << "; local_high_vis_mode_cache_endpoint_id_="
                     << local_high_vis_mode_cache_endpoint_id_;
   clear_local_high_vis_mode_cache_endpoint_id_alarm_ =
-      CancelableAlarm(
+      std::make_unique<CancelableAlarm>(
           "clear_high_power_endpoint_id_cache",
           [this]() {
             MutexLock lock(&mutex_);
@@ -749,9 +742,10 @@ void ClientProxy::ScheduleClearLocalHighVisModeCacheEndpointIdAlarm() {
 }
 
 void ClientProxy::CancelClearLocalHighVisModeCacheEndpointIdAlarm() {
-  if (clear_local_high_vis_mode_cache_endpoint_id_alarm_.IsValid()) {
-    clear_local_high_vis_mode_cache_endpoint_id_alarm_.Cancel();
-    clear_local_high_vis_mode_cache_endpoint_id_alarm_ = CancelableAlarm();
+  if (clear_local_high_vis_mode_cache_endpoint_id_alarm_ &&
+      clear_local_high_vis_mode_cache_endpoint_id_alarm_->IsValid()) {
+    clear_local_high_vis_mode_cache_endpoint_id_alarm_->Cancel();
+    clear_local_high_vis_mode_cache_endpoint_id_alarm_.reset();
   }
 }
 

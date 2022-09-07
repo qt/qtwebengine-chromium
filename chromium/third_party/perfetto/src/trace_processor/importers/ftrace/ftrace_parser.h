@@ -19,7 +19,9 @@
 
 #include "perfetto/trace_processor/status.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
+#include "src/trace_processor/importers/ftrace/drm_tracker.h"
 #include "src/trace_processor/importers/ftrace/ftrace_descriptors.h"
+#include "src/trace_processor/importers/ftrace/iostat_tracker.h"
 #include "src/trace_processor/importers/ftrace/rss_stat_tracker.h"
 #include "src/trace_processor/importers/ftrace/sched_event_tracker.h"
 #include "src/trace_processor/timestamped_trace_piece.h"
@@ -48,7 +50,6 @@ class FtraceParser {
                              protozero::ConstBytes,
                              PacketSequenceStateGeneration*);
   void ParseSchedSwitch(uint32_t cpu, int64_t timestamp, protozero::ConstBytes);
-  void ParseSchedWakeup(int64_t timestamp, uint32_t pid, protozero::ConstBytes);
   void ParseSchedWaking(int64_t timestamp, uint32_t pid, protozero::ConstBytes);
   void ParseSchedProcessFree(int64_t timestamp, protozero::ConstBytes);
   void ParseCpuFreq(int64_t timestamp, protozero::ConstBytes);
@@ -78,7 +79,6 @@ class FtraceParser {
   void ParseSignalDeliver(int64_t timestamp,
                           uint32_t pid,
                           protozero::ConstBytes);
-  void ParseLowmemoryKill(int64_t timestamp, protozero::ConstBytes);
   void ParseOOMScoreAdjUpdate(int64_t timestamp, protozero::ConstBytes);
   void ParseOOMKill(int64_t timestamp, protozero::ConstBytes);
   void ParseMmEventRecord(int64_t timestamp,
@@ -146,8 +146,7 @@ class FtraceParser {
   void ParseGpuMemTotal(int64_t timestamp, protozero::ConstBytes);
   void ParseThermalTemperature(int64_t timestamp, protozero::ConstBytes);
   void ParseCdevUpdate(int64_t timestamp, protozero::ConstBytes);
-  void ParseSchedBlockedReason(int64_t timestamp,
-                               protozero::ConstBytes,
+  void ParseSchedBlockedReason(protozero::ConstBytes,
                                PacketSequenceStateGeneration*);
   void ParseFastRpcDmaStat(int64_t timestamp,
                            uint32_t pid,
@@ -175,9 +174,12 @@ class FtraceParser {
   void ParseCrosEcSensorhubData(int64_t timestamp, protozero::ConstBytes);
   void ParseWakeSourceActivate(int64_t timestamp, protozero::ConstBytes);
   void ParseWakeSourceDeactivate(int64_t timestamp, protozero::ConstBytes);
+  void ParseSuspendResume(int64_t timestamp, protozero::ConstBytes);
 
   TraceProcessorContext* context_;
   RssStatTracker rss_stat_tracker_;
+  DrmTracker drm_tracker_;
+  IostatTracker iostat_tracker_;
 
   const StringId sched_wakeup_name_id_;
   const StringId sched_waking_name_id_;
@@ -185,6 +187,7 @@ class FtraceParser {
   const StringId cpu_freq_name_id_;
   const StringId gpu_freq_name_id_;
   const StringId cpu_idle_name_id_;
+  const StringId suspend_resume_name_id_;
   const StringId kfree_skb_name_id_;
   const StringId ion_total_id_;
   const StringId ion_change_id_;
@@ -219,7 +222,6 @@ class FtraceParser {
   const StringId gpu_mem_total_unit_id_;
   const StringId gpu_mem_total_global_desc_id_;
   const StringId gpu_mem_total_proc_desc_id_;
-  const StringId sched_blocked_reason_id_;
   const StringId io_wait_id_;
   const StringId function_id_;
   const StringId waker_utid_id_;

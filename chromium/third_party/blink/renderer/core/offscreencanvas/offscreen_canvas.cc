@@ -63,7 +63,7 @@ OffscreenCanvas::OffscreenCanvas(ExecutionContext* context,
       // If this OffscreenCanvas is being created in the context of a
       // cross-origin iframe, it should prefer to use the low-power GPU.
       LocalFrame* frame = window->GetFrame();
-      if (!(frame && frame->IsCrossOriginToMainFrame())) {
+      if (!(frame && frame->IsCrossOriginToOutermostMainFrame())) {
         AllowHighPerformancePowerPreference();
       }
     } else if (context->IsDedicatedWorkerGlobalScope()) {
@@ -177,7 +177,7 @@ void OffscreenCanvas::SetSize(const gfx::Size& size) {
   if (frame_dispatcher_)
     frame_dispatcher_->Reshape(size_);
   if (context_) {
-    if (context_->IsWebGL()) {
+    if (context_->IsWebGL() || IsWebGPU()) {
       context_->Reshape(size_.width(), size_.height());
     } else if (context_->IsRenderingContext2D()) {
       context_->Reset();

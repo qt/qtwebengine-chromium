@@ -273,6 +273,9 @@ PUBLIC int gbm_get_default_device_fd(void)
 			break;
 		}
 	}
+
+	closedir(dir);
+
 	if (dfd >= 0)
 		return dfd;
 

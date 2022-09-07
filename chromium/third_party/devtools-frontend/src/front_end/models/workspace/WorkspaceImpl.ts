@@ -183,7 +183,7 @@ export abstract class ProjectStore implements Project {
     const oldPath = uiSourceCode.url();
     const newPath = uiSourceCode.parentURL() ?
         Common.ParsedURL.ParsedURL.urlFromParentUrlAndName(uiSourceCode.parentURL(), newName) :
-        encodeURIComponent(newName) as Platform.DevToolsPath.UrlString;
+        Common.ParsedURL.ParsedURL.preEncodeSpecialCharactersInPath(newName) as Platform.DevToolsPath.UrlString;
     const value = this.uiSourceCodesMap.get(oldPath) as {
       uiSourceCode: UISourceCode,
       index: number,
@@ -259,17 +259,42 @@ export class WorkspaceImpl extends Common.ObjectWrapper.ObjectWrapper<EventTypes
     return project ? project.uiSourceCodeForURL(url) : null;
   }
 
-  uiSourceCodeForURL(url: Platform.DevToolsPath.UrlString): UISourceCode|null {
+  // This method explicitly awaits the UISourceCode if not yet
+  // available.
+  uiSourceCodeForURLPromise(url: Platform.DevToolsPath.UrlString, type?: projectTypes): Promise<UISourceCode> {
+    const uiSourceCode = this.uiSourceCodeForURL(url, type);
+    if (uiSourceCode) {
+      return Promise.resolve(uiSourceCode);
+    }
+    return new Promise(resolve => {
+      const descriptor = this.addEventListener(Events.UISourceCodeAdded, event => {
+        const uiSourceCode = event.data;
+        if (uiSourceCode.url() === url) {
+          if (!type || type === uiSourceCode.project().type()) {
+            this.removeEventListener(Events.UISourceCodeAdded, descriptor.listener);
+            resolve(uiSourceCode);
+          }
+        }
+      });
+    });
+  }
+
+  uiSourceCodeForURL(url: Platform.DevToolsPath.UrlString, type?: projectTypes): UISourceCode|null {
     for (const project of this.projectsInternal.values()) {
-      const uiSourceCode = project.uiSourceCodeForURL(url);
-      if (uiSourceCode) {
-        return uiSourceCode;
+      // For snippets, we may get two different UISourceCodes for the same url (one belonging to
+      // the file system project, one belonging to the network project). Allow selecting the UISourceCode
+      // for a specific project type.
+      if (!type || project.type() === type) {
+        const uiSourceCode = project.uiSourceCodeForURL(url);
+        if (uiSourceCode) {
+          return uiSourceCode;
+        }
       }
     }
     return null;
   }
 
-  uiSourceCodesForProjectType(type: string): UISourceCode[] {
+  uiSourceCodesForProjectType(type: projectTypes): UISourceCode[] {
     const result: UISourceCode[] = [];
     for (const project of this.projectsInternal.values()) {
       if (project.type() === type) {

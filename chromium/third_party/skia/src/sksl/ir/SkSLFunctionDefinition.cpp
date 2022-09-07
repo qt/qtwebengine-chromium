@@ -5,7 +5,15 @@
  * found in the LICENSE file.
  */
 
+#include "src/sksl/ir/SkSLFunctionDefinition.h"
+
+#include "include/core/SkTypes.h"
+#include "include/private/SkSLDefines.h"
 #include "include/sksl/DSLCore.h"
+#include "include/sksl/DSLExpression.h"
+#include "include/sksl/DSLStatement.h"
+#include "include/sksl/DSLType.h"
+#include "include/sksl/SkSLErrorReporter.h"
 #include "src/core/SkSafeMath.h"
 #include "src/sksl/SkSLAnalysis.h"
 #include "src/sksl/SkSLBuiltinMap.h"
@@ -13,14 +21,24 @@
 #include "src/sksl/SkSLContext.h"
 #include "src/sksl/SkSLProgramSettings.h"
 #include "src/sksl/SkSLThreadContext.h"
+#include "src/sksl/ir/SkSLBlock.h"
+#include "src/sksl/ir/SkSLExpression.h"
 #include "src/sksl/ir/SkSLFieldAccess.h"
 #include "src/sksl/ir/SkSLFunctionCall.h"
-#include "src/sksl/ir/SkSLFunctionDefinition.h"
 #include "src/sksl/ir/SkSLInterfaceBlock.h"
+#include "src/sksl/ir/SkSLProgram.h"
 #include "src/sksl/ir/SkSLReturnStatement.h"
+#include "src/sksl/ir/SkSLType.h"
+#include "src/sksl/ir/SkSLVarDeclarations.h"
+#include "src/sksl/ir/SkSLVariable.h"
+#include "src/sksl/ir/SkSLVariableReference.h"
 #include "src/sksl/transform/SkSLProgramWriter.h"
 
+#include <algorithm>
 #include <forward_list>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace SkSL {
 
@@ -60,10 +78,10 @@ static void append_rtadjust_fixup_to_vertex_main(const Context& context,
         };
 
         auto fixupStmt = DSLStatement(
-            Pos() = Float4(Swizzle(Pos(), X, Y) * Swizzle(Adjust(), X, Z) +
-                           Swizzle(Pos(), W, W) * Swizzle(Adjust(), Y, W),
-                           0,
-                           Pos().w())
+            Pos().assign(Float4(Swizzle(Pos(), X, Y) * Swizzle(Adjust(), X, Z) +
+                                Swizzle(Pos(), W, W) * Swizzle(Adjust(), Y, W),
+                                0,
+                                Pos().w()))
         );
 
         body.children().push_back(fixupStmt.release());
@@ -166,7 +184,7 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
                     // Early returns from a vertex main() function will bypass sk_Position
                     // normalization, so SkASSERT that we aren't doing that. If this becomes an
                     // issue, we can add normalization before each return statement.
-                    if (fContext.fConfig->fKind == ProgramKind::kVertex && fFunction.isMain()) {
+                    if (ProgramConfig::IsVertex(fContext.fConfig->fKind) && fFunction.isMain()) {
                         fContext.fErrors->error(
                                 stmt.fPosition,
                                 "early returns from vertex programs are not supported");
@@ -255,7 +273,7 @@ std::unique_ptr<FunctionDefinition> FunctionDefinition::Convert(const Context& c
 
     FunctionSet referencedBuiltinFunctions;
     Finalizer(context, function, &referencedBuiltinFunctions).visitStatement(*body);
-    if (function.isMain() && context.fConfig->fKind == ProgramKind::kVertex) {
+    if (function.isMain() && ProgramConfig::IsVertex(context.fConfig->fKind)) {
         append_rtadjust_fixup_to_vertex_main(context, function, body->as<Block>());
     }
 

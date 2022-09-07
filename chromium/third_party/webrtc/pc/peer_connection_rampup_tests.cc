@@ -123,14 +123,15 @@ class PeerConnectionWrapperForRampUpTest : public PeerConnectionWrapper {
     video_track_sources_.back()->Start();
     return rtc::scoped_refptr<VideoTrackInterface>(
         pc_factory()->CreateVideoTrack(rtc::CreateRandomUuid(),
-                                       video_track_sources_.back()));
+                                       video_track_sources_.back().get()));
   }
 
   rtc::scoped_refptr<AudioTrackInterface> CreateLocalAudioTrack(
       const cricket::AudioOptions options) {
     rtc::scoped_refptr<AudioSourceInterface> source =
         pc_factory()->CreateAudioSource(options);
-    return pc_factory()->CreateAudioTrack(rtc::CreateRandomUuid(), source);
+    return pc_factory()->CreateAudioTrack(rtc::CreateRandomUuid(),
+                                          source.get());
   }
 
  private:
@@ -183,7 +184,10 @@ class PeerConnectionRampUpTest : public ::testing::Test {
     auto observer = std::make_unique<MockPeerConnectionObserver>();
     webrtc::PeerConnectionDependencies dependencies(observer.get());
     cricket::BasicPortAllocator* port_allocator =
-        new cricket::BasicPortAllocator(fake_network_manager);
+        new cricket::BasicPortAllocator(
+            fake_network_manager,
+            std::make_unique<rtc::BasicPacketSocketFactory>(
+                firewall_socket_server_.get()));
     port_allocator->set_step_delay(cricket::kDefaultStepDelay);
     dependencies.allocator =
         std::unique_ptr<cricket::BasicPortAllocator>(port_allocator);

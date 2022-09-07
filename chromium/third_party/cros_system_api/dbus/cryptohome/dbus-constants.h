@@ -58,6 +58,8 @@ const char kAddAuthFactor[] = "AddAuthFactor";
 const char kAuthenticateAuthFactor[] = "AuthenticateAuthFactor";
 const char kUpdateAuthFactor[] = "UpdateAuthFactor";
 const char kRemoveAuthFactor[] = "RemoveAuthFactor";
+const char kGetAuthSessionStatus[] = "GetAuthSessionStatus";
+const char kGetRecoveryRequest[] = "GetRecoveryRequest";
 
 // Methods of the |kArcQuotaInterface| interface:
 const char kGetArcDiskFeatures[] = "GetArcDiskFeatures";
@@ -156,7 +158,7 @@ enum DircryptoMigrationStatus {
 
 // Type of paths that are allowed for SetProjectId().
 enum SetProjectIdAllowedPathType {
-  // /home/user/<obfuscated_username>/Downloads/
+  // /home/user/<obfuscated_username>/MyFiles/Downloads/
   PATH_DOWNLOADS = 0,
   // /home/root/<obfuscated_username>/android-data/
   PATH_ANDROID_DATA = 1,

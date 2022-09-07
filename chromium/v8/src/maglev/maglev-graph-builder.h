@@ -7,6 +7,7 @@
 
 #include <type_traits>
 
+#include "src/base/logging.h"
 #include "src/base/optional.h"
 #include "src/compiler/bytecode-analysis.h"
 #include "src/compiler/bytecode-liveness-map.h"
@@ -26,21 +27,33 @@ namespace maglev {
 class MaglevGraphBuilder {
  public:
   explicit MaglevGraphBuilder(LocalIsolate* local_isolate,
-                              MaglevCompilationUnit* compilation_unit);
+                              MaglevCompilationUnit* compilation_unit,
+                              Graph* graph,
+                              MaglevGraphBuilder* parent = nullptr);
 
   void Build() {
+    DCHECK(!is_inline());
+
+    StartPrologue();
+    for (int i = 0; i < parameter_count(); i++) {
+      SetArgument(i, AddNewNode<InitialValue>(
+                         {}, interpreter::Register::FromParameterIndex(i)));
+    }
+    BuildRegisterFrameInitialization();
+    EndPrologue();
+    BuildBody();
+  }
+
+  void StartPrologue();
+  void SetArgument(int i, ValueNode* value);
+  void BuildRegisterFrameInitialization();
+  BasicBlock* EndPrologue();
+
+  void BuildBody() {
     for (iterator_.Reset(); !iterator_.done(); iterator_.Advance()) {
       VisitSingleBytecode();
       // TODO(v8:7700): Clean up after all bytecodes are supported.
       if (found_unsupported_bytecode()) break;
-    }
-
-    // During InterpreterFrameState merge points, we might emit CheckedSmiTags
-    // and add them unsafely to the basic blocks. This addition might break a
-    // list invariant (namely `tail_` might not point to the last element).
-    // We revalidate this invariant here in all basic blocks.
-    for (BasicBlock* block : *graph_) {
-      block->nodes().RevalidateTail();
     }
   }
 
@@ -65,6 +78,10 @@ class MaglevGraphBuilder {
     MergePointInterpreterFrameState& merge_state = *merge_states_[offset];
     current_interpreter_frame_.CopyFrom(*compilation_unit_, merge_state);
 
+    // Merges aren't simple fallthroughs, so we should reset the checkpoint
+    // validity.
+    latest_checkpointed_state_.reset();
+
     if (merge_state.predecessor_count() == 1) return;
 
     // Set up edge-split.
@@ -72,8 +89,8 @@ class MaglevGraphBuilder {
     BasicBlockRef* old_jump_targets = jump_targets_[offset].Reset();
     while (old_jump_targets != nullptr) {
       BasicBlock* predecessor = merge_state.predecessor_at(predecessor_index);
-      if (predecessor == nullptr) {
-        // We can have null predecessors if the predecessor is dead.
+      if (predecessor == MergePointInterpreterFrameState::kDeadPredecessor) {
+        // We might have dead predecessors.
         predecessor_index--;
         continue;
       }
@@ -123,37 +140,60 @@ class MaglevGraphBuilder {
     BasicBlock* block = CreateBlock<Deopt>({});
     ResolveJumpsToBlockAtOffset(block, block_offset_);
 
-    // Skip any bytecodes remaining in the block, up to the next merge point.
-    while (!IsOffsetAMergePoint(iterator_.next_offset())) {
-      iterator_.Advance();
-      if (iterator_.done()) break;
-    }
+    // Consider any bytecodes from here onwards dead, up to the next merge point
+    // with non-dead predecessors. Any control flow encountered is also
+    // considered dead and should mark its successors as dead.
+    while (true) {
+      // If the current bytecode is a jump to elsewhere, then this jump is
+      // also dead and we should make sure to merge it as a dead predecessor.
+      interpreter::Bytecode bytecode = iterator_.current_bytecode();
+      if (interpreter::Bytecodes::IsForwardJump(bytecode)) {
+        // Jumps merge into their target, and conditional jumps also merge into
+        // the fallthrough.
+        MergeDeadIntoFrameState(iterator_.GetJumpTargetOffset());
+        if (interpreter::Bytecodes::IsConditionalJump(bytecode)) {
+          MergeDeadIntoFrameState(iterator_.next_offset());
+        }
+      } else if (bytecode == interpreter::Bytecode::kJumpLoop) {
+        // JumpLoop merges into its loop header, which has to be treated
+        // specially by the merge..
+        int target = iterator_.GetJumpTargetOffset();
+        merge_states_[target]->MergeDeadLoop();
+      } else if (interpreter::Bytecodes::IsSwitch(bytecode)) {
+        // Switches merge into their targets, and into the fallthrough.
+        for (auto offset : iterator_.GetJumpTableTargetOffsets()) {
+          MergeDeadIntoFrameState(offset.target_offset);
+        }
+        MergeDeadIntoFrameState(iterator_.next_offset());
+      } else if (!interpreter::Bytecodes::Returns(bytecode) &&
+                 !interpreter::Bytecodes::UnconditionallyThrows(bytecode)) {
+        // Any other bytecode that doesn't return or throw will merge into the
+        // fallthrough.
+        MergeDeadIntoFrameState(iterator_.next_offset());
+      }
 
-    // If there is control flow out of this block, we need to kill the merges
-    // into the control flow targets.
-    interpreter::Bytecode bytecode = iterator_.current_bytecode();
-    if (interpreter::Bytecodes::IsForwardJump(bytecode)) {
-      // Jumps merge into their target, and conditional jumps also merge into
-      // the fallthrough.
-      merge_states_[iterator_.GetJumpTargetOffset()]->MergeDead();
-      if (interpreter::Bytecodes::IsConditionalJump(bytecode)) {
-        merge_states_[iterator_.next_offset()]->MergeDead();
+      // If the next offset is a merge point, that means another live bytecode
+      // created its merge state and it is reachable. We should stop iterating.
+      if (IsOffsetAMergePoint(iterator_.next_offset())) {
+        // The exception is loops that are unreachable aside from their
+        // back-edge. This back-edge will itself not be reachable, thanks to
+        // irreducibility, so in this case the loop header will still be dead.
+        if (!merge_states_[iterator_.next_offset()]->is_unreachable_loop()) {
+          break;
+        }
       }
-    } else if (bytecode == interpreter::Bytecode::kJumpLoop) {
-      // JumpLoop merges into its loop header, which has to be treated specially
-      // by the merge..
-      merge_states_[iterator_.GetJumpTargetOffset()]->MergeDeadLoop();
-    } else if (interpreter::Bytecodes::IsSwitch(bytecode)) {
-      // Switches merge into their targets, and into the fallthrough.
-      for (auto offset : iterator_.GetJumpTableTargetOffsets()) {
-        merge_states_[offset.target_offset]->MergeDead();
+
+      // Otherwise, move on to the next bytecode. Save the offset in case we
+      // want to rewind the Advance, which we need to do if we fall off the end
+      // of the iterator.
+      // TODO(leszeks): Not having to save the offset would be more elegant, but
+      // then we need to play nicer with the BuildBody loop.
+      int saved_offset = iterator_.current_offset();
+      iterator_.Advance();
+      if (iterator_.done()) {
+        iterator_.SetOffset(saved_offset);
+        break;
       }
-      merge_states_[iterator_.next_offset()]->MergeDead();
-    } else if (!interpreter::Bytecodes::Returns(bytecode) &&
-               !interpreter::Bytecodes::UnconditionallyThrows(bytecode)) {
-      // Any other bytecode that doesn't return or throw will merge into the
-      // fallthrough.
-      merge_states_[iterator_.next_offset()]->MergeDead();
     }
   }
 
@@ -236,8 +276,17 @@ class MaglevGraphBuilder {
         interpreter::Register::current_context());
   }
 
+  void SetContext(ValueNode* context) {
+    current_interpreter_frame_.set(interpreter::Register::current_context(),
+                                   context);
+  }
+
   FeedbackSlot GetSlotOperand(int operand_index) const {
     return iterator_.GetSlotOperand(operand_index);
+  }
+
+  uint32_t GetFlagOperand(int operand_index) const {
+    return iterator_.GetFlagOperand(operand_index);
   }
 
   template <class T, typename = std::enable_if_t<
@@ -270,38 +319,102 @@ class MaglevGraphBuilder {
     current_interpreter_frame_.set(dst, current_interpreter_frame_.get(src));
   }
 
-  ValueNode* GetTaggedValue(interpreter::Register reg) {
-    // TODO(victorgomes): Add the representation (Tagged/Untagged) in the
+  template <typename NodeT>
+  ValueNode* AddNewConversionNode(interpreter::Register reg, ValueNode* node) {
+    // TODO(v8:7700): Use a canonical conversion node. Maybe like in Phi nodes
+    // where we always add a the conversion immediately after the ValueNode.
+    ValueNode* result = AddNewNode<NodeT>({node});
+    current_interpreter_frame_.set(reg, result);
+    return result;
+  }
+
+  ValueNode* GetTaggedValueHelper(interpreter::Register reg, ValueNode* value) {
+    // TODO(victorgomes): Consider adding the representation in the
     // InterpreterFrameState, so that we don't need to derefence a node.
-    ValueNode* value = current_interpreter_frame_.get(reg);
-    if (!value->is_untagged_value()) return value;
-    if (value->Is<CheckedSmiUntag>()) {
-      return value->input(0).node();
+    switch (value->properties().value_representation()) {
+      case ValueRepresentation::kTagged:
+        return value;
+      case ValueRepresentation::kInt32: {
+        if (value->Is<CheckedSmiUntag>()) {
+          return value->input(0).node();
+        }
+        return AddNewConversionNode<CheckedSmiTag>(reg, value);
+      }
+      case ValueRepresentation::kFloat64: {
+        if (value->Is<CheckedFloat64Unbox>()) {
+          return value->input(0).node();
+        }
+        if (value->Is<ChangeInt32ToFloat64>()) {
+          ValueNode* int32_value = value->input(0).node();
+          return GetTaggedValueHelper(reg, int32_value);
+        }
+        return AddNewConversionNode<Float64Box>(reg, value);
+      }
     }
-    DCHECK(value->Is<Int32AddWithOverflow>() || value->Is<Int32Constant>());
-    ValueNode* tagged = AddNewNode<CheckedSmiTag>({value});
-    current_interpreter_frame_.set(reg, tagged);
-    return tagged;
+    UNREACHABLE();
   }
 
-  ValueNode* GetSmiUntaggedValue(interpreter::Register reg) {
-    // TODO(victorgomes): Add the representation (Tagged/Untagged) in the
-    // InterpreterFrameState, so that we don't need to derefence a node.
+  ValueNode* GetTaggedValue(interpreter::Register reg) {
     ValueNode* value = current_interpreter_frame_.get(reg);
-    if (value->is_untagged_value()) return value;
-    if (value->Is<CheckedSmiTag>()) return value->input(0).node();
-    // Untag any other value.
-    ValueNode* untagged = AddNewNode<CheckedSmiUntag>({value});
-    current_interpreter_frame_.set(reg, untagged);
-    return untagged;
+    return GetTaggedValueHelper(reg, value);
   }
 
-  ValueNode* GetAccumulatorTaggedValue() {
+  ValueNode* GetInt32(interpreter::Register reg) {
+    ValueNode* value = current_interpreter_frame_.get(reg);
+    switch (value->properties().value_representation()) {
+      case ValueRepresentation::kTagged: {
+        if (value->Is<CheckedSmiTag>()) {
+          return value->input(0).node();
+        } else if (SmiConstant* constant = value->TryCast<SmiConstant>()) {
+          return AddNewNode<Int32Constant>({}, constant->value().value());
+        }
+        return AddNewConversionNode<CheckedSmiUntag>(reg, value);
+      }
+      case ValueRepresentation::kInt32:
+        return value;
+      case ValueRepresentation::kFloat64:
+        // We should not be able to request an Int32 from a Float64 input,
+        // unless it's an unboxing of a tagged value or a conversion from int32.
+        if (value->Is<CheckedFloat64Unbox>()) {
+          // TODO(leszeks): Maybe convert the CheckedFloat64Unbox to
+          // ChangeInt32ToFloat64 with this CheckedSmiUntag as the input.
+          return AddNewConversionNode<CheckedSmiUntag>(reg,
+                                                       value->input(0).node());
+        } else if (value->Is<ChangeInt32ToFloat64>()) {
+          return value->input(0).node();
+        }
+        UNREACHABLE();
+    }
+    UNREACHABLE();
+  }
+
+  ValueNode* GetFloat64(interpreter::Register reg) {
+    ValueNode* value = current_interpreter_frame_.get(reg);
+    switch (value->properties().value_representation()) {
+      case ValueRepresentation::kTagged: {
+        if (value->Is<Float64Box>()) {
+          return value->input(0).node();
+        }
+        return AddNewConversionNode<CheckedFloat64Unbox>(reg, value);
+      }
+      case ValueRepresentation::kInt32:
+        return AddNewConversionNode<ChangeInt32ToFloat64>(reg, value);
+      case ValueRepresentation::kFloat64:
+        return value;
+    }
+    UNREACHABLE();
+  }
+
+  ValueNode* GetAccumulatorTagged() {
     return GetTaggedValue(interpreter::Register::virtual_accumulator());
   }
 
-  ValueNode* GetAccumulatorSmiUntaggedValue() {
-    return GetSmiUntaggedValue(interpreter::Register::virtual_accumulator());
+  ValueNode* GetAccumulatorInt32() {
+    return GetInt32(interpreter::Register::virtual_accumulator());
+  }
+
+  ValueNode* GetAccumulatorFloat64() {
+    return GetFloat64(interpreter::Register::virtual_accumulator());
   }
 
   bool IsRegisterEqualToAccumulator(int operand_index) {
@@ -310,12 +423,16 @@ class MaglevGraphBuilder {
            current_interpreter_frame_.accumulator();
   }
 
-  ValueNode* LoadRegisterTaggedValue(int operand_index) {
+  ValueNode* LoadRegisterTagged(int operand_index) {
     return GetTaggedValue(iterator_.GetRegisterOperand(operand_index));
   }
 
-  ValueNode* LoadRegisterSmiUntaggedValue(int operand_index) {
-    return GetSmiUntaggedValue(iterator_.GetRegisterOperand(operand_index));
+  ValueNode* LoadRegisterInt32(int operand_index) {
+    return GetInt32(iterator_.GetRegisterOperand(operand_index));
+  }
+
+  ValueNode* LoadRegisterFloat64(int operand_index) {
+    return GetFloat64(iterator_.GetRegisterOperand(operand_index));
   }
 
   template <typename NodeT>
@@ -340,7 +457,13 @@ class MaglevGraphBuilder {
       latest_checkpointed_state_.emplace(
           BytecodeOffset(iterator_.current_offset()),
           zone()->New<CompactInterpreterFrameState>(
-              *compilation_unit_, GetInLiveness(), current_interpreter_frame_));
+              *compilation_unit_, GetInLiveness(), current_interpreter_frame_),
+          parent_ == nullptr
+              ? nullptr
+              // TODO(leszeks): Don't always allocate for the parent state,
+              // maybe cache it on the graph builder?
+              : zone()->New<CheckpointedInterpreterState>(
+                    parent_->GetLatestCheckpointedState()));
     }
     return *latest_checkpointed_state_;
   }
@@ -349,7 +472,9 @@ class MaglevGraphBuilder {
     return CheckpointedInterpreterState(
         BytecodeOffset(iterator_.current_offset()),
         zone()->New<CompactInterpreterFrameState>(
-            *compilation_unit_, GetOutLiveness(), current_interpreter_frame_));
+            *compilation_unit_, GetOutLiveness(), current_interpreter_frame_),
+        // TODO(leszeks): Support lazy deopts in inlined functions.
+        nullptr);
   }
 
   template <typename NodeT>
@@ -373,10 +498,16 @@ class MaglevGraphBuilder {
     return iterator_.current_offset() + iterator_.current_bytecode_size();
   }
   const compiler::BytecodeLivenessState* GetInLiveness() const {
-    return bytecode_analysis().GetInLivenessFor(iterator_.current_offset());
+    return GetInLivenessFor(iterator_.current_offset());
+  }
+  const compiler::BytecodeLivenessState* GetInLivenessFor(int offset) const {
+    return bytecode_analysis().GetInLivenessFor(offset);
   }
   const compiler::BytecodeLivenessState* GetOutLiveness() const {
-    return bytecode_analysis().GetOutLivenessFor(iterator_.current_offset());
+    return GetOutLivenessFor(iterator_.current_offset());
+  }
+  const compiler::BytecodeLivenessState* GetOutLivenessFor(int offset) const {
+    return bytecode_analysis().GetOutLivenessFor(offset);
   }
 
   void StartNewBlock(int offset) {
@@ -421,11 +552,6 @@ class MaglevGraphBuilder {
         CreateBlock<ControlNodeT>(control_inputs, std::forward<Args>(args)...);
     ResolveJumpsToBlockAtOffset(block, block_offset_);
 
-    // If the next block has merge states, then it's not a simple fallthrough,
-    // and we should reset the checkpoint validity.
-    if (merge_states_[next_block_offset] != nullptr) {
-      latest_checkpointed_state_.reset();
-    }
     // Start a new block for the fallthrough path, unless it's a merge point, in
     // which case we merge our state into it. That merge-point could also be a
     // loop header, in which case the merge state might not exist yet (if the
@@ -441,11 +567,24 @@ class MaglevGraphBuilder {
     return block;
   }
 
+  void InlineCallFromRegisters(int argc_count,
+                               ConvertReceiverMode receiver_mode,
+                               compiler::JSFunctionRef function);
+
   void BuildCallFromRegisterList(ConvertReceiverMode receiver_mode);
   void BuildCallFromRegisters(int argc_count,
                               ConvertReceiverMode receiver_mode);
 
   void BuildPropertyCellAccess(const compiler::PropertyCellRef& property_cell);
+
+  bool TryBuildMonomorphicLoad(ValueNode* object, const compiler::MapRef& map,
+                               MaybeObjectHandle handler);
+  bool TryBuildMonomorphicLoadFromSmiHandler(ValueNode* object,
+                                             const compiler::MapRef& map,
+                                             int32_t handler);
+  bool TryBuildMonomorphicLoadFromLoadHandler(ValueNode* object,
+                                              const compiler::MapRef& map,
+                                              LoadHandler handler);
 
   template <Operation kOperation>
   void BuildGenericUnaryOperationNode();
@@ -455,13 +594,36 @@ class MaglevGraphBuilder {
   void BuildGenericBinarySmiOperationNode();
 
   template <Operation kOperation>
+  ValueNode* AddNewInt32BinaryOperationNode(
+      std::initializer_list<ValueNode*> inputs);
+  template <Operation kOperation>
+  ValueNode* AddNewFloat64BinaryOperationNode(
+      std::initializer_list<ValueNode*> inputs);
+
+  template <Operation kOperation>
+  void BuildInt32BinaryOperationNode();
+  template <Operation kOperation>
+  void BuildInt32BinarySmiOperationNode();
+  template <Operation kOperation>
+  void BuildFloat64BinaryOperationNode();
+  template <Operation kOperation>
+  void BuildFloat64BinarySmiOperationNode();
+
+  template <Operation kOperation>
   void VisitUnaryOperation();
   template <Operation kOperation>
   void VisitBinaryOperation();
   template <Operation kOperation>
   void VisitBinarySmiOperation();
 
+  bool TryBuildCompareOperationBranch(Operation operation, ValueNode* left,
+                                      ValueNode* right);
+  template <Operation kOperation>
+  void VisitCompareOperation();
+
   void MergeIntoFrameState(BasicBlock* block, int target);
+  void MergeDeadIntoFrameState(int target);
+  void MergeIntoInlinedReturnFrameState(BasicBlock* block);
   void BuildBranchIfTrue(ValueNode* node, int true_target, int false_target);
   void BuildBranchIfToBooleanTrue(ValueNode* node, int true_target,
                                   int false_target);
@@ -488,11 +650,17 @@ class MaglevGraphBuilder {
       } else if (interpreter::Bytecodes::Returns(bytecode) ||
                  interpreter::Bytecodes::UnconditionallyThrows(bytecode)) {
         predecessors_[iterator.next_offset()]--;
+        // Collect inline return jumps in the slot after the last bytecode.
+        if (is_inline() && interpreter::Bytecodes::Returns(bytecode)) {
+          predecessors_[array_length - 1]++;
+        }
       }
       // TODO(leszeks): Also consider handler entries (the bytecode analysis)
       // will do this automatically I guess if we merge this into that.
     }
-    DCHECK_EQ(0, predecessors_[bytecode().length()]);
+    if (!is_inline()) {
+      DCHECK_EQ(0, predecessors_[bytecode().length()]);
+    }
   }
 
   int NumPredecessors(int offset) { return predecessors_[offset]; }
@@ -527,8 +695,20 @@ class MaglevGraphBuilder {
     return compilation_unit_->graph_labeller();
   }
 
+  // True when this graph builder is building the subgraph of an inlined
+  // function.
+  bool is_inline() const { return parent_ != nullptr; }
+
+  // The fake offset used as a target for all exits of an inlined function.
+  int inline_exit_offset() const {
+    DCHECK(is_inline());
+    return bytecode().length();
+  }
+
   LocalIsolate* const local_isolate_;
   MaglevCompilationUnit* const compilation_unit_;
+  MaglevGraphBuilder* const parent_;
+  Graph* const graph_;
   interpreter::BytecodeArrayIterator iterator_;
   uint32_t* predecessors_;
 
@@ -540,7 +720,6 @@ class MaglevGraphBuilder {
   BasicBlockRef* jump_targets_;
   MergePointInterpreterFrameState** merge_states_;
 
-  Graph* const graph_;
   InterpreterFrameState current_interpreter_frame_;
 
   // Allow marking some bytecodes as unsupported during graph building, so that

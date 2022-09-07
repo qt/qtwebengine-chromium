@@ -200,16 +200,6 @@ ResourceUseList::~ResourceUseList()
     ASSERT(mResourceUses.empty());
 }
 
-void ResourceUseList::copy(ResourceUseList &srcResourceUse)
-{
-    size_t size = srcResourceUse.mResourceUses.size();
-    mResourceUses.resize(size);
-    for (size_t i = 0; i < size; i++)
-    {
-        mResourceUses[i].copy(srcResourceUse.mResourceUses[i]);
-    }
-}
-
 ResourceUseList &ResourceUseList::operator=(ResourceUseList &&rhs)
 {
     std::swap(mResourceUses, rhs.mResourceUses);
@@ -234,6 +224,14 @@ void ResourceUseList::releaseResourceUsesAndUpdateSerials(Serial serial)
     }
 
     mResourceUses.clear();
+}
+
+void ResourceUseList::clearCommandBuffer(CommandBufferID commandBufferID)
+{
+    for (SharedResourceUse &use : mResourceUses)
+    {
+        use.clearCommandBuffer(commandBufferID);
+    }
 }
 }  // namespace vk
 }  // namespace rx

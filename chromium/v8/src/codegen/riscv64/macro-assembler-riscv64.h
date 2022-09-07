@@ -729,10 +729,10 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   void InsertLowWordF64(FPURegister dst, Register src_low);
 
   void LoadFPRImmediate(FPURegister dst, float imm) {
-    LoadFPRImmediate(dst, bit_cast<uint32_t>(imm));
+    LoadFPRImmediate(dst, base::bit_cast<uint32_t>(imm));
   }
   void LoadFPRImmediate(FPURegister dst, double imm) {
-    LoadFPRImmediate(dst, bit_cast<uint64_t>(imm));
+    LoadFPRImmediate(dst, base::bit_cast<uint64_t>(imm));
   }
   void LoadFPRImmediate(FPURegister dst, uint32_t src);
   void LoadFPRImmediate(FPURegister dst, uint64_t src);
@@ -867,7 +867,7 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
   // Smi utilities.
 
   void SmiTag(Register dst, Register src) {
-    STATIC_ASSERT(kSmiTag == 0);
+    static_assert(kSmiTag == 0);
     if (SmiValuesAre32Bits()) {
       // Smi goes to upper 32
       slli(dst, src, 32);
@@ -1022,11 +1022,11 @@ class V8_EXPORT_PRIVATE TurboAssembler : public TurboAssemblerBase {
 
   template <typename F_TYPE>
   void RoundHelper(FPURegister dst, FPURegister src, FPURegister fpu_scratch,
-                   RoundingMode mode);
+                   FPURoundingMode mode);
 
   template <typename F>
   void RoundHelper(VRegister dst, VRegister src, Register scratch,
-                   VRegister v_scratch, RoundingMode frm);
+                   VRegister v_scratch, FPURoundingMode frm);
 
   template <typename TruncFunc>
   void RoundFloatingPointToInteger(Register rd, FPURegister fs, Register result,
@@ -1274,6 +1274,9 @@ class V8_EXPORT_PRIVATE MacroAssembler : public TurboAssembler {
                                        ArgumentsCountType type,
                                        ArgumentsCountMode mode,
                                        Register scratch = no_reg);
+  void JumpIfCodeTIsMarkedForDeoptimization(
+      Register codet, Register scratch, Label* if_marked_for_deoptimization);
+  Operand ClearedValue() const;
 
   // Jump if the register contains a non-smi.
   void JumpIfNotSmi(Register value, Label* not_smi_label);
@@ -1354,6 +1357,12 @@ void TurboAssembler::GenerateSwitchTable(Register index, size_t case_count,
     dd(GetLabelFunction(index));
   }
 }
+
+struct MoveCycleState {
+  // Whether a move in the cycle needs the scratch or double scratch register.
+  bool pending_scratch_register_use = false;
+  bool pending_double_scratch_register_use = false;
+};
 
 #define ACCESS_MASM(masm) masm->
 

@@ -1071,7 +1071,7 @@ constexpr uint8_t kCollationWeightsL3[256] = {
     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  0,
 };
 constexpr int kCollationWeightsLength = arraysize(kCollationWeightsL1);
-STATIC_ASSERT(kCollationWeightsLength == arraysize(kCollationWeightsL3));
+static_assert(kCollationWeightsLength == arraysize(kCollationWeightsL3));
 // clang-format on
 
 // Normalize a comparison delta (usually `lhs - rhs`) to UCollationResult
@@ -2861,18 +2861,16 @@ std::string Intl::TimeZoneIdFromIndex(int32_t index) {
   return id;
 }
 
-Maybe<bool> Intl::GetTimeZoneIndex(Isolate* isolate, Handle<String> identifier,
-                                   int32_t* index) {
+int32_t Intl::GetTimeZoneIndex(Isolate* isolate, Handle<String> identifier) {
   if (identifier->Equals(*isolate->factory()->UTC_string())) {
-    *index = 0;
-    return Just(true);
+    return 0;
   }
 
   std::string identifier_str(identifier->ToCString().get());
   std::unique_ptr<icu::TimeZone> tz(
       icu::TimeZone::createTimeZone(identifier_str.c_str()));
   if (!IsValidTimeZoneName(*tz)) {
-    return Just(false);
+    return -1;
   }
 
   std::unique_ptr<icu::StringEnumeration> enumeration(
@@ -2883,11 +2881,10 @@ Maybe<bool> Intl::GetTimeZoneIndex(Isolate* isolate, Handle<String> identifier,
   UErrorCode status = U_ZERO_ERROR;
   while (U_SUCCESS(status) &&
          (id = enumeration->next(nullptr, status)) != nullptr) {
-    if (identifier_str == id) {
-      *index = curr + 1;
-      return Just(true);
-    }
     curr++;
+    if (identifier_str == id) {
+      return curr;
+    }
   }
   CHECK(U_SUCCESS(status));
   // We should not reach here, the !IsValidTimeZoneName should return earlier

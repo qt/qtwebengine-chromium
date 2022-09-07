@@ -107,7 +107,6 @@ AllocationResult HeapAllocator::AllocateRawWithRetryOrFailSlowPath(
       AllocateRawWithLightRetrySlowPath(size, allocation, origin, alignment);
   if (!result.IsFailure()) return result;
 
-  heap_->isolate()->counters()->gc_last_resort_from_handles()->Increment();
   if (IsSharedAllocationType(allocation)) {
     heap_->CollectSharedGarbage(GarbageCollectionReason::kLastResort);
 
@@ -128,8 +127,8 @@ AllocationResult HeapAllocator::AllocateRawWithRetryOrFailSlowPath(
     return result;
   }
 
-  v8::internal::V8::FatalProcessOutOfMemory(heap_->isolate(),
-                                            "CALL_AND_RETRY_LAST", true);
+  V8::FatalProcessOutOfMemory(heap_->isolate(), "CALL_AND_RETRY_LAST",
+                              V8::kHeapOOM);
 }
 
 #ifdef DEBUG

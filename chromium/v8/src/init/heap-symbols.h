@@ -43,7 +43,6 @@
   V(_, format_string, "format")                                     \
   V(_, fraction_string, "fraction")                                 \
   V(_, fractionalSecond_string, "fractionalSecond")                 \
-  V(_, fractionalSecondDigits_string, "fractionalSecondDigits")     \
   V(_, full_string, "full")                                         \
   V(_, granularity_string, "granularity")                           \
   V(_, grapheme_string, "grapheme")                                 \
@@ -239,6 +238,7 @@
   V(_, flags_string, "flags")                                         \
   V(_, Float32Array_string, "Float32Array")                           \
   V(_, Float64Array_string, "Float64Array")                           \
+  V(_, fractionalSecondDigits_string, "fractionalSecondDigits")       \
   V(_, from_string, "from")                                           \
   V(_, Function_string, "Function")                                   \
   V(_, function_native_code_string, "function () { [native code] }")  \
@@ -535,12 +535,16 @@
   F(MARK_COMPACTOR)                                  \
   TOP_MC_SCOPES(F)                                   \
   F(MC_CLEAR_DEPENDENT_CODE)                         \
+  F(MC_CLEAR_EXTERNAL_STRING_TABLE)                  \
+  F(MC_CLEAR_STRING_FORWARDING_TABLE)                \
   F(MC_CLEAR_FLUSHABLE_BYTECODE)                     \
   F(MC_CLEAR_FLUSHED_JS_FUNCTIONS)                   \
+  F(MC_CLEAR_JOIN_JOB)                               \
   F(MC_CLEAR_MAPS)                                   \
   F(MC_CLEAR_SLOTS_BUFFER)                           \
   F(MC_CLEAR_STRING_TABLE)                           \
   F(MC_CLEAR_WEAK_COLLECTIONS)                       \
+  F(MC_CLEAR_WEAK_GLOBAL_HANDLES)                    \
   F(MC_CLEAR_WEAK_LISTS)                             \
   F(MC_CLEAR_WEAK_REFERENCES)                        \
   F(MC_SWEEP_EXTERNAL_POINTER_TABLE)                 \
@@ -559,22 +563,22 @@
   F(MC_EVACUATE_UPDATE_POINTERS_SLOTS_MAIN)          \
   F(MC_EVACUATE_UPDATE_POINTERS_TO_NEW_ROOTS)        \
   F(MC_EVACUATE_UPDATE_POINTERS_WEAK)                \
+  F(MC_FINISH_SWEEP_NEW_LO)                          \
   F(MC_FINISH_SWEEP_ARRAY_BUFFERS)                   \
   F(MC_MARK_CLIENT_HEAPS)                            \
   F(MC_MARK_EMBEDDER_PROLOGUE)                       \
   F(MC_MARK_EMBEDDER_TRACING)                        \
-  F(MC_MARK_EMBEDDER_TRACING_CLOSURE)                \
   F(MC_MARK_FINISH_INCREMENTAL)                      \
-  F(MC_MARK_MAIN)                                    \
+  F(MC_MARK_FULL_CLOSURE_PARALLEL)                   \
+  F(MC_MARK_FULL_CLOSURE_PARALLEL_JOIN)              \
+  F(MC_MARK_RETAIN_MAPS)                             \
   F(MC_MARK_ROOTS)                                   \
-  F(MC_MARK_WEAK_CLOSURE)                            \
-  F(MC_MARK_WEAK_CLOSURE_EPHEMERON)                  \
+  F(MC_MARK_FULL_CLOSURE)                            \
   F(MC_MARK_WEAK_CLOSURE_EPHEMERON_MARKING)          \
   F(MC_MARK_WEAK_CLOSURE_EPHEMERON_LINEAR)           \
-  F(MC_MARK_WEAK_CLOSURE_WEAK_HANDLES)               \
-  F(MC_MARK_WEAK_CLOSURE_WEAK_ROOTS)                 \
-  F(MC_MARK_WEAK_CLOSURE_HARMONY)                    \
   F(MC_SWEEP_CODE)                                   \
+  F(MC_SWEEP_CODE_LO)                                \
+  F(MC_SWEEP_LO)                                     \
   F(MC_SWEEP_MAP)                                    \
   F(MC_SWEEP_OLD)                                    \
   F(MINOR_MARK_COMPACTOR)                            \
@@ -603,7 +607,6 @@
   F(MINOR_MC_MARK_WEAK)                              \
   F(MINOR_MC_MARKING_DEQUE)                          \
   F(MINOR_MC_RESET_LIVENESS)                         \
-  F(MINOR_MC_SWEEPING)                               \
   F(SAFEPOINT)                                       \
   F(SCAVENGER)                                       \
   F(SCAVENGER_COMPLETE_SWEEP_ARRAY_BUFFERS)          \

@@ -27,7 +27,8 @@ public:
                                              VkFormat format,
                                              uint32_t mipLevels,
                                              GrProtected,
-                                             GrMipmapStatus);
+                                             GrMipmapStatus,
+                                             std::string_view label);
 
     static sk_sp<GrVkTexture> MakeWrappedTexture(GrVkGpu*,
                                                  SkISize dimensions,
@@ -92,6 +93,8 @@ private:
                 GrIOType,
                 bool isExternal,
                 std::string_view label);
+
+    void onSetLabel() override{}
 
     sk_sp<GrVkImage> fTexture;
 

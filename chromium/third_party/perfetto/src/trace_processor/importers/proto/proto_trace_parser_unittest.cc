@@ -22,6 +22,7 @@
 #include "perfetto/trace_processor/trace_blob.h"
 #include "src/trace_processor/importers/additional_modules.h"
 #include "src/trace_processor/importers/common/args_tracker.h"
+#include "src/trace_processor/importers/common/args_translation_table.h"
 #include "src/trace_processor/importers/common/clock_tracker.h"
 #include "src/trace_processor/importers/common/event_tracker.h"
 #include "src/trace_processor/importers/common/flow_tracker.h"
@@ -227,6 +228,7 @@ class ProtoTraceParserTest : public ::testing::Test {
     context_.global_stack_profile_tracker.reset(
         new GlobalStackProfileTracker());
     context_.args_tracker.reset(new ArgsTracker(&context_));
+    context_.args_translation_table.reset(new ArgsTranslationTable(storage_));
     context_.metadata_tracker.reset(new MetadataTracker(&context_));
     event_ = new MockEventTracker(&context_);
     context_.event_tracker.reset(event_);
@@ -236,6 +238,7 @@ class ProtoTraceParserTest : public ::testing::Test {
     context_.process_tracker.reset(process_);
     slice_ = new MockSliceTracker(&context_);
     context_.slice_tracker.reset(slice_);
+    context_.slice_translation_table.reset(new SliceTranslationTable(storage_));
     clock_ = new ClockTracker(&context_);
     context_.clock_tracker.reset(clock_);
     context_.flow_tracker.reset(new FlowTracker(&context_));

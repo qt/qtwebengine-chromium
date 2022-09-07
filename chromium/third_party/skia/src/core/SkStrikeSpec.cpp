@@ -13,10 +13,10 @@
 #include "src/core/SkStrikeCache.h"
 #include "src/core/SkTLazy.h"
 
-#if SK_SUPPORT_GPU
-#include "src/gpu/ganesh/text/GrSDFMaskFilter.h"
-#include "src/gpu/ganesh/text/GrSDFTControl.h"
-#include "src/gpu/ganesh/text/GrStrikeCache.h"
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+#include "src/text/gpu/SDFMaskFilter.h"
+#include "src/text/gpu/SDFTControl.h"
+#include "src/text/gpu/StrikeCache.h"
 #endif
 
 SkStrikeSpec::SkStrikeSpec(const SkDescriptor& descriptor, sk_sp<SkTypeface> typeface)
@@ -170,14 +170,14 @@ SkStrikeSpec SkStrikeSpec::MakePDFVector(const SkTypeface& typeface, int* size) 
                         SkMatrix::I());
 }
 
-#if SK_SUPPORT_GPU
-std::tuple<SkStrikeSpec, SkScalar, GrSDFTMatrixRange>
+#if SK_SUPPORT_GPU || defined(SK_GRAPHITE_ENABLED)
+std::tuple<SkStrikeSpec, SkScalar, sktext::gpu::SDFTMatrixRange>
 SkStrikeSpec::MakeSDFT(const SkFont& font, const SkPaint& paint,
                        const SkSurfaceProps& surfaceProps, const SkMatrix& deviceMatrix,
-                       const GrSDFTControl& control) {
+                       const sktext::gpu::SDFTControl& control) {
     // Add filter to the paint which creates the SDFT data for A8 masks.
     SkPaint dfPaint{paint};
-    dfPaint.setMaskFilter(GrSDFMaskFilter::Make());
+    dfPaint.setMaskFilter(sktext::gpu::SDFMaskFilter::Make());
 
     auto [dfFont, strikeToSourceScale, matrixRange] = control.getSDFFont(font, deviceMatrix);
 
@@ -189,7 +189,8 @@ SkStrikeSpec::MakeSDFT(const SkFont& font, const SkPaint& paint,
     return std::make_tuple(std::move(strikeSpec), strikeToSourceScale, matrixRange);
 }
 
-sk_sp<GrTextStrike> SkStrikeSpec::findOrCreateGrStrike(GrStrikeCache* cache) const {
+sk_sp<sktext::gpu::TextStrike> SkStrikeSpec::findOrCreateTextStrike(
+            sktext::gpu::StrikeCache* cache) const {
     return cache->findOrCreateStrike(*this);
 }
 #endif

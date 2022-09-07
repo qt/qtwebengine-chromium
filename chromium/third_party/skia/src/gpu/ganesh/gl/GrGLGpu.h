@@ -184,7 +184,7 @@ public:
 
     GrFence SK_WARN_UNUSED_RESULT insertFence() override;
     bool waitFence(GrFence) override;
-    void deleteFence(GrFence) const override;
+    void deleteFence(GrFence) override;
 
     std::unique_ptr<GrSemaphore> SK_WARN_UNUSED_RESULT makeSemaphore(bool isOwned) override;
     std::unique_ptr<GrSemaphore> wrapBackendSemaphore(const GrBackendSemaphore&,
@@ -203,12 +203,10 @@ public:
 
     std::unique_ptr<GrSemaphore> prepareTextureForCrossContextUsage(GrTexture*) override;
 
-    void deleteSync(GrGLsync) const;
+    void deleteSync(GrGLsync);
 
     void bindFramebuffer(GrGLenum fboTarget, GrGLuint fboid);
     void deleteFramebuffer(GrGLuint fboid);
-
-    void insertManualFramebufferBarrier() override;
 
     void flushProgram(sk_sp<GrGLProgram>);
 
@@ -252,7 +250,8 @@ private:
                                      SkBudgeted,
                                      GrProtected,
                                      int mipLevelCount,
-                                     uint32_t levelClearMask) override;
+                                     uint32_t levelClearMask,
+                                     std::string_view label) override;
     sk_sp<GrTexture> onCreateCompressedTexture(SkISize dimensions,
                                                const GrBackendFormat&,
                                                SkBudgeted,
@@ -260,8 +259,7 @@ private:
                                                GrProtected,
                                                const void* data, size_t dataSize) override;
 
-    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType intendedType, GrAccessPattern,
-                                      const void* data) override;
+    sk_sp<GrGpuBuffer> onCreateBuffer(size_t size, GrGpuBufferType, GrAccessPattern) override;
 
     sk_sp<GrTexture> onWrapBackendTexture(const GrBackendTexture&,
                                           GrWrapOwnership,
@@ -363,8 +361,7 @@ private:
     // binds texture unit in GL
     void setTextureUnit(int unitIdx);
 
-    void flushBlendAndColorWrite(const GrXferProcessor::BlendInfo& blendInfo,
-                                 const skgpu::Swizzle&);
+    void flushBlendAndColorWrite(const skgpu::BlendInfo&, const skgpu::Swizzle&);
 
     void addFinishedProc(GrGpuFinishedProc finishedProc,
                          GrGpuFinishedContext finishedContext) override;
@@ -422,8 +419,6 @@ private:
         SkLRUCache<GrProgramDesc, std::unique_ptr<Entry>, DescHash> fMap;
     };
 
-    void flushPatchVertexCount(uint8_t count);
-
     void flushColorWrite(bool writeColor);
     void flushClearColor(std::array<float, 4>);
 
@@ -440,7 +435,7 @@ private:
     void flushWindowRectangles(const GrWindowRectsState&, const GrGLRenderTarget*, GrSurfaceOrigin);
     void disableWindowRectangles();
 
-    int numTextureUnits() const { return this->caps()->shaderCaps()->maxFragmentSamplers(); }
+    int numTextureUnits() const { return this->caps()->shaderCaps()->fMaxFragmentSamplers; }
 
     // Binds a texture to a target on the "scratch" texture unit to use for texture operations
     // other than usual draw flow (i.e. a GrGLProgram derived from a GrPipeline used to draw). It
@@ -673,8 +668,6 @@ private:
         // This is used when we're using a core profile.
         GrGLVertexArray*     fCoreProfileVertexArray;
     } fHWVertexArrayState;
-
-    uint8_t fHWPatchVertexCount;
 
     struct {
         GrGLenum                fGLTarget;

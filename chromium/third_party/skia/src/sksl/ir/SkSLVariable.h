@@ -8,15 +8,22 @@
 #ifndef SKSL_VARIABLE
 #define SKSL_VARIABLE
 
+#include "include/core/SkTypes.h"
 #include "include/private/SkSLModifiers.h"
+#include "include/private/SkSLStatement.h"
 #include "include/private/SkSLSymbol.h"
-#include "src/sksl/ir/SkSLExpression.h"
+#include "include/sksl/SkSLPosition.h"
 #include "src/sksl/ir/SkSLType.h"
-#include "src/sksl/ir/SkSLVariableReference.h"
+
+#include <memory>
+#include <string>
+#include <string_view>
 
 namespace SkSL {
 
+class Context;
 class Expression;
+class SymbolTable;
 class VarDeclaration;
 
 namespace dsl {
@@ -54,8 +61,8 @@ public:
 
     static std::unique_ptr<Variable> Convert(const Context& context, Position pos,
             Position modifiersPos, const Modifiers& modifiers, const Type* baseType,
-            std::string_view name, bool isArray, std::unique_ptr<Expression> arraySize,
-            Variable::Storage storage);
+            Position namePos, std::string_view name, bool isArray,
+            std::unique_ptr<Expression> arraySize, Variable::Storage storage);
 
     static std::unique_ptr<Variable> Make(const Context& context, Position pos,
             Position modifiersPos, const Modifiers& modifiers, const Type* baseType,

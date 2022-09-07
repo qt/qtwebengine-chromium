@@ -6,16 +6,21 @@
 #ifdef DRV_AMDGPU
 #include <amdgpu.h>
 #include <amdgpu_drm.h>
+#include <assert.h>
+#include <drm_fourcc.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <unistd.h>
 #include <xf86drm.h>
+#include <xf86drmMode.h>
 
 #include "dri.h"
+#include "drv_helpers.h"
 #include "drv_priv.h"
-#include "helpers.h"
 #include "util.h"
 
 // clang-format off
@@ -23,8 +28,10 @@
 // clang-format on
 
 #define TILE_TYPE_LINEAR 0
+/* We decide a modifier and then use DRI to manage allocation */
+#define TILE_TYPE_DRI_MODIFIER 1
 /* DRI backend decides tiling in this case. */
-#define TILE_TYPE_DRI 1
+#define TILE_TYPE_DRI 2
 
 /* Height alignement for Encoder/Decoder buffers */
 #define CHROME_HEIGHT_ALIGN 16
@@ -305,6 +312,39 @@ unmap_src:
 	return ret;
 }
 
+static bool is_modifier_scanout_capable(struct amdgpu_priv *priv, uint32_t format,
+					uint64_t modifier)
+{
+	unsigned bytes_per_pixel = drv_stride_from_format(format, 1, 0);
+
+	if (modifier == DRM_FORMAT_MOD_LINEAR)
+		return true;
+
+	if ((modifier >> 56) != DRM_FORMAT_MOD_VENDOR_AMD)
+		return false;
+
+	unsigned swizzle = AMD_FMT_MOD_GET(TILE, modifier);
+	if (priv->dev_info.family >= AMDGPU_FAMILY_RV) { /* DCN based GPUs */
+		/* D swizzle only supported for 64 bpp */
+		if ((swizzle & 3) == 2 && bytes_per_pixel != 8)
+			return false;
+
+		/* S swizzle not supported for 64 bpp */
+		if ((swizzle & 3) == 1 && bytes_per_pixel == 8)
+			return false;
+	} else { /* DCE based GPUs with GFX9 based modifier swizzling. */
+		assert(priv->dev_info.family == AMDGPU_FAMILY_AI);
+		/* Only D swizzles are allowed for display */
+		if ((swizzle & 3) != 2)
+			return false;
+	}
+
+	if (AMD_FMT_MOD_GET(DCC, modifier) &&
+	    (AMD_FMT_MOD_GET(DCC_PIPE_ALIGN, modifier) || !AMD_FMT_MOD_GET(DCC_RETILE, modifier)))
+		return false;
+	return true;
+}
+
 static int amdgpu_init(struct driver *drv)
 {
 	struct amdgpu_priv *priv;
@@ -370,6 +410,7 @@ static int amdgpu_init(struct driver *drv)
 	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ABGR8888, &metadata, BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_XBGR8888, &metadata, BO_USE_SCANOUT);
+	drv_modify_combination(drv, DRM_FORMAT_RGB565, &metadata, BO_USE_SCANOUT);
 
 	drv_modify_combination(drv, DRM_FORMAT_ABGR2101010, &metadata, BO_USE_SCANOUT);
 	drv_modify_combination(drv, DRM_FORMAT_ARGB2101010, &metadata, BO_USE_SCANOUT);
@@ -400,22 +441,54 @@ static int amdgpu_init(struct driver *drv)
 #endif
 	use_flags &= ~BO_USE_LINEAR;
 
-	metadata.tiling = TILE_TYPE_DRI;
 	metadata.priority = 2;
 
-	drv_add_combinations(drv, render_target_formats, ARRAY_SIZE(render_target_formats),
-			     &metadata, use_flags);
+	for (unsigned f = 0; f < ARRAY_SIZE(render_target_formats); ++f) {
+		uint32_t format = render_target_formats[f];
+		int mod_cnt;
+		if (dri_query_modifiers(drv, format, 0, NULL, &mod_cnt) && mod_cnt) {
+			uint64_t *modifiers = calloc(mod_cnt, sizeof(uint64_t));
+			dri_query_modifiers(drv, format, mod_cnt, modifiers, &mod_cnt);
+			metadata.tiling = TILE_TYPE_DRI_MODIFIER;
+			for (int i = 0; i < mod_cnt; ++i) {
+				bool scanout =
+				    is_modifier_scanout_capable(drv->priv, format, modifiers[i]);
 
-	/* Potentially tiled formats supported by display. */
-	drv_modify_combination(drv, DRM_FORMAT_ARGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_XRGB8888, &metadata, BO_USE_CURSOR | BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_ABGR8888, &metadata, BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_XBGR8888, &metadata, BO_USE_SCANOUT);
+				/* LINEAR will be handled using the LINEAR metadata. */
+				if (modifiers[i] == DRM_FORMAT_MOD_LINEAR)
+					continue;
 
-	drv_modify_combination(drv, DRM_FORMAT_ABGR2101010, &metadata, BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_ARGB2101010, &metadata, BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_XBGR2101010, &metadata, BO_USE_SCANOUT);
-	drv_modify_combination(drv, DRM_FORMAT_XRGB2101010, &metadata, BO_USE_SCANOUT);
+				/* The virtgpu minigbm can't handle auxiliary planes in the host. */
+				if (dri_num_planes_from_modifier(drv, format, modifiers[i]) !=
+				    drv_num_planes_from_format(format))
+					continue;
+
+				metadata.modifier = modifiers[i];
+				drv_add_combination(drv, format, &metadata,
+						    use_flags | (scanout ? BO_USE_SCANOUT : 0));
+			}
+			free(modifiers);
+		} else {
+			bool scanout = false;
+			switch (format) {
+			case DRM_FORMAT_ARGB8888:
+			case DRM_FORMAT_XRGB8888:
+			case DRM_FORMAT_ABGR8888:
+			case DRM_FORMAT_XBGR8888:
+			case DRM_FORMAT_ABGR2101010:
+			case DRM_FORMAT_ARGB2101010:
+			case DRM_FORMAT_XBGR2101010:
+			case DRM_FORMAT_XRGB2101010:
+				scanout = true;
+				break;
+			default:
+				break;
+			}
+			metadata.tiling = TILE_TYPE_DRI;
+			drv_add_combination(drv, format, &metadata,
+					    use_flags | (scanout ? BO_USE_SCANOUT : 0));
+		}
+	}
 	return 0;
 }
 
@@ -443,9 +516,11 @@ static int amdgpu_create_bo_linear(struct bo *bo, uint32_t width, uint32_t heigh
 	 * For multiplane formats, align the stride to 512 to ensure that subsample strides are 256
 	 * aligned. This uses more memory than necessary since the first plane only needs to be
 	 * 256 aligned, but it's acceptable for a short-term fix. It's probably safe for other gpu
-	 * families, but let's restrict it to Raven for now (b/171013552).
+	 * families, but let's restrict it to Raven and Stoney for now (b/171013552, b/190484589).
 	 * */
-	if (priv->dev_info.family == AMDGPU_FAMILY_RV && num_planes > 1)
+	if (num_planes > 1 &&
+	    (priv->dev_info.family == AMDGPU_FAMILY_RV ||
+	     (priv->dev_info.family == AMDGPU_FAMILY_CZ && !(use_flags & BO_USE_HW_VIDEO_ENCODER))))
 		stride = ALIGN(stride, 512);
 	else
 		stride = ALIGN(stride, 256);
@@ -514,6 +589,9 @@ static int amdgpu_create_bo(struct bo *bo, uint32_t width, uint32_t height, uint
 		}
 
 		return dri_bo_create(bo, width, height, format, use_flags);
+	} else if (combo->metadata.tiling == TILE_TYPE_DRI_MODIFIER) {
+		return dri_bo_create_with_modifiers(bo, width, height, format,
+						    &combo->metadata.modifier, 1);
 	}
 
 	return amdgpu_create_bo_linear(bo, width, height, format, use_flags);
@@ -544,13 +622,24 @@ static int amdgpu_import_bo(struct bo *bo, struct drv_import_fd_data *data)
 		if (!combo)
 			return -EINVAL;
 
-		dri_tiling = combo->metadata.tiling == TILE_TYPE_DRI;
+		dri_tiling = combo->metadata.tiling != TILE_TYPE_LINEAR;
 	}
+
+	bo->meta.num_planes = dri_num_planes_from_modifier(bo->drv, data->format,
+		data->format_modifier);
 
 	if (dri_tiling)
 		return dri_bo_import(bo, data);
 	else
 		return drv_prime_bo_import(bo, data);
+}
+
+static int amdgpu_release_bo(struct bo *bo)
+{
+	if (bo->priv)
+		return dri_bo_release(bo);
+
+	return 0;
 }
 
 static int amdgpu_destroy_bo(struct bo *bo)
@@ -702,12 +791,13 @@ const struct backend backend_amdgpu = {
 	.close = amdgpu_close,
 	.bo_create = amdgpu_create_bo,
 	.bo_create_with_modifiers = amdgpu_create_bo_with_modifiers,
+	.bo_release = amdgpu_release_bo,
 	.bo_destroy = amdgpu_destroy_bo,
 	.bo_import = amdgpu_import_bo,
 	.bo_map = amdgpu_map_bo,
 	.bo_unmap = amdgpu_unmap_bo,
 	.bo_invalidate = amdgpu_bo_invalidate,
-	.resolve_format = drv_resolve_format_helper,
+	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
 	.num_planes_from_modifier = dri_num_planes_from_modifier,
 };
 

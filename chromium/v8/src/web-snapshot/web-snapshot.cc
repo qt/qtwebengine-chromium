@@ -23,6 +23,7 @@ namespace v8 {
 namespace internal {
 
 constexpr uint8_t WebSnapshotSerializerDeserializer::kMagicNumber[4];
+constexpr int WebSnapshotSerializerDeserializer::kBuiltinObjectCount;
 
 // When encountering an error during deserializing, we note down the error but
 // don't bail out from processing the snapshot further. This is to speed up
@@ -47,6 +48,67 @@ void WebSnapshotSerializerDeserializer::Throw(const char* message) {
   }
 }
 
+void WebSnapshotSerializerDeserializer::IterateBuiltinObjects(
+    std::function<void(Handle<String>, Handle<HeapObject>)> func) {
+  // TODO(v8:11525): Add more builtins.
+  auto roots = ReadOnlyRoots(isolate_);
+
+  func(handle(roots.Error_string(), isolate_),
+       handle(isolate_->context().error_function(), isolate_));
+
+  func(factory()->NewStringFromAsciiChecked("Error.prototype"),
+       handle(isolate_->context().error_function().instance_prototype(),
+              isolate_));
+
+  func(handle(roots.Object_string(), isolate_),
+       handle(isolate_->context().object_function(), isolate_));
+
+  func(factory()->NewStringFromAsciiChecked("Object.prototype"),
+       handle(isolate_->context().initial_object_prototype(), isolate_));
+
+  func(handle(roots.Function_string(), isolate_),
+       handle(isolate_->context().function_function(), isolate_));
+
+  func(factory()->NewStringFromAsciiChecked("Function.prototype"),
+       handle(isolate_->context().function_prototype(), isolate_));
+
+  // TODO(v8:11525): There are no obvious names for these, since AsyncFunction
+  // etc are not properties of the global object.
+
+  func(factory()->NewStringFromAsciiChecked("AsyncFunction"),
+       handle(isolate_->context().async_function_constructor(), isolate_));
+
+  func(
+      factory()->NewStringFromAsciiChecked("AsyncFunction"),
+      handle(
+          isolate_->context().async_function_constructor().instance_prototype(),
+          isolate_));
+
+  auto generator_function =
+      handle(JSFunction::cast(isolate_->context()
+                                  .generator_function_map()
+                                  .constructor_or_back_pointer()),
+             isolate_);
+  func(factory()->NewStringFromAsciiChecked("GeneratorFunction"),
+       generator_function);
+
+  func(factory()->NewStringFromAsciiChecked("GeneratorFunction.prototype"),
+       handle(generator_function->instance_prototype(), isolate_));
+
+  auto async_generator_function =
+      handle(JSFunction::cast(isolate_->context()
+                                  .async_generator_function_map()
+                                  .constructor_or_back_pointer()),
+             isolate_);
+  func(factory()->NewStringFromAsciiChecked("AsyncGeneratorFunction"),
+       async_generator_function);
+
+  func(factory()->NewStringFromAsciiChecked("AsyncGeneratorFunction.prototype"),
+       handle(async_generator_function->instance_prototype(), isolate_));
+
+  static_assert(kBuiltinObjectCount == 12);
+}
+
 uint32_t WebSnapshotSerializerDeserializer::FunctionKindToFunctionFlags(
     FunctionKind kind) {
   // TODO(v8:11525): Support more function kinds.
@@ -59,6 +121,8 @@ uint32_t WebSnapshotSerializerDeserializer::FunctionKindToFunctionFlags(
     case FunctionKind::kAsyncGeneratorFunction:
     case FunctionKind::kBaseConstructor:
     case FunctionKind::kDefaultBaseConstructor:
+    case FunctionKind::kDerivedConstructor:
+    case FunctionKind::kDefaultDerivedConstructor:
     case FunctionKind::kConciseMethod:
     case FunctionKind::kAsyncConciseMethod:
       break;
@@ -197,30 +261,36 @@ WebSnapshotSerializer::WebSnapshotSerializer(v8::Isolate* isolate)
 WebSnapshotSerializer::WebSnapshotSerializer(Isolate* isolate)
     : WebSnapshotSerializerDeserializer(isolate),
       string_serializer_(isolate_, nullptr),
+      symbol_serializer_(isolate_, nullptr),
       map_serializer_(isolate_, nullptr),
+      builtin_object_serializer_(isolate_, nullptr),
       context_serializer_(isolate_, nullptr),
       function_serializer_(isolate_, nullptr),
       class_serializer_(isolate_, nullptr),
       array_serializer_(isolate_, nullptr),
       object_serializer_(isolate_, nullptr),
       export_serializer_(isolate_, nullptr),
-      external_objects_ids_(isolate_->heap()),
+      external_object_ids_(isolate_->heap()),
       string_ids_(isolate_->heap()),
+      symbol_ids_(isolate_->heap()),
       map_ids_(isolate_->heap()),
       context_ids_(isolate_->heap()),
       function_ids_(isolate_->heap()),
       class_ids_(isolate_->heap()),
       array_ids_(isolate_->heap()),
       object_ids_(isolate_->heap()),
+      builtin_object_to_name_(isolate_->heap()),
+      builtin_object_ids_(isolate_->heap()),
       all_strings_(isolate_->heap()) {
   auto empty_array_list = factory()->empty_array_list();
+  strings_ = empty_array_list;
+  symbols_ = empty_array_list;
+  maps_ = empty_array_list;
   contexts_ = empty_array_list;
   functions_ = empty_array_list;
   classes_ = empty_array_list;
   arrays_ = empty_array_list;
   objects_ = empty_array_list;
-  strings_ = empty_array_list;
-  maps_ = empty_array_list;
 }
 
 WebSnapshotSerializer::~WebSnapshotSerializer() {}
@@ -235,6 +305,10 @@ bool WebSnapshotSerializer::TakeSnapshot(
   if (!maybe_externals.is_null()) {
     ShallowDiscoverExternals(*maybe_externals.ToHandleChecked());
   }
+
+  v8::Local<v8::Context> context =
+      reinterpret_cast<v8::Isolate*>(isolate_)->GetCurrentContext();
+  ShallowDiscoverBuiltinObjects(context);
 
   if (object->IsHeapObject()) Discover(Handle<HeapObject>::cast(object));
 
@@ -262,8 +336,10 @@ bool WebSnapshotSerializer::TakeSnapshot(v8::Local<v8::Context> context,
   }
   v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
 
-  std::unique_ptr<Handle<JSObject>[]> export_objects(
-      new Handle<JSObject>[exports->Length()]);
+  ShallowDiscoverBuiltinObjects(context);
+
+  Handle<FixedArray> export_objects =
+      isolate_->factory()->NewFixedArray(exports->Length());
   for (int i = 0, length = exports->Length(); i < length; ++i) {
     v8::Local<v8::String> str =
         exports->Get(v8_isolate, i)->ToString(context).ToLocalChecked();
@@ -282,8 +358,15 @@ bool WebSnapshotSerializer::TakeSnapshot(v8::Local<v8::Context> context,
       Throw("Exported object not found");
       return false;
     }
-    export_objects[i] = Handle<JSObject>::cast(Utils::OpenHandle(*v8_object));
-    Discover(export_objects[i]);
+    auto object = Handle<JSObject>::cast(Utils::OpenHandle(*v8_object));
+    export_objects->set(i, *object);
+    Discover(object);
+    // The error messages will be confusing if we continue running code when
+    // already in the error state.
+    if (has_error()) {
+      isolate_->ReportPendingMessages();
+      return false;
+    }
   }
 
   ConstructSource();
@@ -294,7 +377,7 @@ bool WebSnapshotSerializer::TakeSnapshot(v8::Local<v8::Context> context,
     if (str->Length() == 0) {
       continue;
     }
-    SerializeExport(export_objects[i],
+    SerializeExport(handle(export_objects->get(i), isolate_),
                     Handle<String>::cast(Utils::OpenHandle(*str)));
   }
 
@@ -316,19 +399,28 @@ void WebSnapshotSerializer::SerializePendingItems() {
     SerializeString(string, string_serializer_);
   }
 
+  for (int i = 0; i < symbols_->Length(); ++i) {
+    Handle<Symbol> symbol = handle(Symbol::cast(symbols_->Get(i)), isolate_);
+    SerializeSymbol(symbol);
+  }
+
   for (int i = 0; i < maps_->Length(); ++i) {
     Handle<Map> map = handle(Map::cast(maps_->Get(i)), isolate_);
     SerializeMap(map);
   }
+  for (auto name_id : builtin_objects_) {
+    SerializeBuiltinObject(name_id);
+  }
 
-  // Serialize the items in the reverse order. The items at the end of the
-  // contexts_ etc get lower IDs and vice versa. IDs which items use for
-  // referring to each other are reversed by Get<item>Id functions().
-  for (int i = contexts_->Length() - 1; i >= 0; --i) {
+  for (int i = 0; i < contexts_->Length(); ++i) {
     Handle<Context> context =
         handle(Context::cast(contexts_->Get(i)), isolate_);
-    SerializeContext(context);
+    SerializeContext(context, static_cast<uint32_t>(i));
   }
+
+  // Serialize the items in the reverse order. The items at the end of the
+  // functions_ etc get lower IDs and vice versa. IDs which items use for
+  // referring to each other are reversed by Get<item>Id() functions.
   for (int i = functions_->Length() - 1; i >= 0; --i) {
     Handle<JSFunction> function =
         handle(JSFunction::cast(functions_->Get(i)), isolate_);
@@ -355,6 +447,12 @@ void WebSnapshotSerializer::SerializePendingItems() {
 // - String count
 // - For each string:
 //   - Serialized string
+// - Symbol count
+// - For each symbol:
+//   - Serialized symbol
+// - Builtin object count
+// - For each builtin object:
+//   - Id of the builtin object name string
 // - Shape count
 // - For each shape:
 //   - Serialized shape
@@ -380,10 +478,12 @@ void WebSnapshotSerializer::WriteSnapshot(uint8_t*& buffer,
   ValueSerializer total_serializer(isolate_, nullptr);
   size_t needed_size =
       sizeof(kMagicNumber) + string_serializer_.buffer_size_ +
-      map_serializer_.buffer_size_ + context_serializer_.buffer_size_ +
-      function_serializer_.buffer_size_ + class_serializer_.buffer_size_ +
-      array_serializer_.buffer_size_ + object_serializer_.buffer_size_ +
-      export_serializer_.buffer_size_ + 8 * sizeof(uint32_t);
+      symbol_serializer_.buffer_size_ +
+      builtin_object_serializer_.buffer_size_ + map_serializer_.buffer_size_ +
+      context_serializer_.buffer_size_ + function_serializer_.buffer_size_ +
+      class_serializer_.buffer_size_ + array_serializer_.buffer_size_ +
+      object_serializer_.buffer_size_ + export_serializer_.buffer_size_ +
+      10 * sizeof(uint32_t);
   if (total_serializer.ExpandBuffer(needed_size).IsNothing()) {
     Throw("Out of memory");
     return;
@@ -391,6 +491,9 @@ void WebSnapshotSerializer::WriteSnapshot(uint8_t*& buffer,
 
   total_serializer.WriteRawBytes(kMagicNumber, 4);
   WriteObjects(total_serializer, string_count(), string_serializer_, "strings");
+  WriteObjects(total_serializer, symbol_count(), symbol_serializer_, "symbols");
+  WriteObjects(total_serializer, builtin_object_count(),
+               builtin_object_serializer_, "builtin_objects");
   WriteObjects(total_serializer, map_count(), map_serializer_, "maps");
   WriteObjects(total_serializer, context_count(), context_serializer_,
                "contexts");
@@ -425,9 +528,6 @@ bool WebSnapshotSerializer::InsertIntoIndexMap(ObjectCacheIndexMap& map,
                                                uint32_t& id) {
   DisallowGarbageCollection no_gc;
   int index_out;
-  if (external_objects_ids_.Lookup(heap_object, &index_out)) {
-    return true;
-  }
   bool found = map.LookupOrInsert(heap_object, &index_out);
   id = static_cast<uint32_t>(index_out);
   return found;
@@ -458,32 +558,61 @@ void WebSnapshotSerializer::SerializeString(Handle<String> string,
   }
 }
 
+// Format (serialized symbol):
+// - 0 if the symbol is non-global and there's no description, 1 if the symbol
+// is non-global and there is a description, 2 if the symbol is global (there
+// must be a description).
+void WebSnapshotSerializer::SerializeSymbol(Handle<Symbol> symbol) {
+  if (symbol->description().IsUndefined()) {
+    CHECK(!symbol->is_in_public_symbol_table());
+    symbol_serializer_.WriteUint32(SymbolType::kNonGlobalNoDesription);
+  } else {
+    symbol_serializer_.WriteUint32(symbol->is_in_public_symbol_table()
+                                       ? SymbolType::kGlobal
+                                       : SymbolType::kNonGlobal);
+    WriteStringId(handle(String::cast(symbol->description()), isolate_),
+                  symbol_serializer_);
+  }
+}
+
+bool WebSnapshotSerializer::ShouldBeSerialized(Handle<Name> key) {
+  // Don't serialize class_positions_symbol property in Class.
+  if (key->Equals(*factory()->class_positions_symbol())) {
+    return false;
+  }
+  return true;
+}
+
 // Format (serialized shape):
 // - PropertyAttributesType
-// - 0 if the __proto__ is Object.prototype, 1 + object id for the __proto__
-//   otherwise
 // - Property count
 // - For each property
-//   - String id (name)
+//   - Name: STRING_ID + String id or SYMBOL_ID + Symbol id or in-place string
 //   - If the PropertyAttributesType is CUSTOM: attributes
+// - __proto__: Serialized value
 void WebSnapshotSerializer::SerializeMap(Handle<Map> map) {
+  DCHECK(!map->is_dictionary_map());
   int first_custom_index = -1;
-  std::vector<Handle<String>> keys;
+  std::vector<Handle<Name>> keys;
   std::vector<uint32_t> attributes;
   keys.reserve(map->NumberOfOwnDescriptors());
   attributes.reserve(map->NumberOfOwnDescriptors());
   for (InternalIndex i : map->IterateOwnDescriptors()) {
-    Handle<Name> key(map->instance_descriptors(kRelaxedLoad).GetKey(i),
-                     isolate_);
-    keys.push_back(Handle<String>::cast(key));
-
     PropertyDetails details =
         map->instance_descriptors(kRelaxedLoad).GetDetails(i);
 
+    // If there are non-field properties in a map that doesn't allow them, i.e.,
+    // a non-function map, DiscoverMap has already thrown.
     if (details.location() != PropertyLocation::kField) {
-      Throw("Properties which are not fields not supported");
-      return;
+      continue;
     }
+
+    Handle<Name> key(map->instance_descriptors(kRelaxedLoad).GetKey(i),
+                     isolate_);
+    if (!ShouldBeSerialized(key)) {
+      continue;
+    }
+    keys.push_back(key);
     if (first_custom_index >= 0 || details.IsReadOnly() ||
         !details.IsConfigurable() || details.IsDontEnum()) {
       if (first_custom_index == -1) first_custom_index = i.as_int();
@@ -495,24 +624,19 @@ void WebSnapshotSerializer::SerializeMap(Handle<Map> map) {
                                   ? PropertyAttributesType::DEFAULT
                                   : PropertyAttributesType::CUSTOM);
 
-  if (map->prototype() ==
-      isolate_->native_context()->initial_object_prototype()) {
-    map_serializer_.WriteUint32(0);
-  } else {
-    // TODO(v8:11525): Support non-JSObject prototypes, at least null. Recognize
-    // well-known objects to that we don't end up encoding them in the snapshot.
-    if (!map->prototype().IsJSObject()) {
-      Throw("Non-JSObject __proto__s not supported");
-      return;
-    }
-    uint32_t prototype_id = GetObjectId(JSObject::cast(map->prototype()));
-    map_serializer_.WriteUint32(prototype_id + 1);
-  }
-
   map_serializer_.WriteUint32(static_cast<uint32_t>(keys.size()));
 
   uint32_t default_flags = GetDefaultAttributeFlags();
   for (size_t i = 0; i < keys.size(); ++i) {
+    if (keys[i]->IsString()) {
+      WriteStringMaybeInPlace(Handle<String>::cast(keys[i]), map_serializer_);
+    } else if (keys[i]->IsSymbol()) {
+      map_serializer_.WriteUint32(ValueType::SYMBOL_ID);
+      map_serializer_.WriteUint32(GetSymbolId(Symbol::cast(*keys[i])));
+    } else {
+      // This error should've been recognized in the discovery phase.
+      CHECK(false);
+    }
     if (first_custom_index >= 0) {
       if (static_cast<int>(i) < first_custom_index) {
         map_serializer_.WriteUint32(default_flags);
@@ -520,8 +644,13 @@ void WebSnapshotSerializer::SerializeMap(Handle<Map> map) {
         map_serializer_.WriteUint32(attributes[i - first_custom_index]);
       }
     }
-    WriteStringId(keys[i], map_serializer_);
   }
+
+  WriteValue(handle(map->prototype(), isolate_), map_serializer_);
+}
+
+void WebSnapshotSerializer::SerializeBuiltinObject(uint32_t name_id) {
+  builtin_object_serializer_.WriteUint32(name_id);
 }
 
 // Construct the minimal source string to be included in the snapshot. Maintain
@@ -575,8 +704,35 @@ void WebSnapshotSerializer::ConstructSource() {
   DCHECK(!in_place);
 }
 
-void WebSnapshotSerializer::SerializeFunctionInfo(ValueSerializer* serializer,
-                                                  Handle<JSFunction> function) {
+void WebSnapshotSerializer::SerializeFunctionProperties(
+    Handle<JSFunction> function, ValueSerializer& serializer) {
+  Handle<Map> map(function->map(), isolate_);
+  if (function->map() ==
+      isolate_->context().get(function->shared().function_map_index())) {
+    serializer.WriteUint32(0);
+    return;
+  } else {
+    serializer.WriteUint32(GetMapId(function->map()) + 1);
+  }
+  for (InternalIndex i : map->IterateOwnDescriptors()) {
+    PropertyDetails details =
+        map->instance_descriptors(kRelaxedLoad).GetDetails(i);
+    if (details.location() == PropertyLocation::kDescriptor) {
+      continue;
+    }
+    if (!ShouldBeSerialized(
+            handle(map->instance_descriptors().GetKey(i), isolate_))) {
+      continue;
+    }
+    FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+    Handle<Object> value = JSObject::FastPropertyAt(
+        isolate_, function, details.representation(), field_index);
+    WriteValue(value, serializer);
+  }
+}
+
+void WebSnapshotSerializer::SerializeFunctionInfo(Handle<JSFunction> function,
+                                                  ValueSerializer& serializer) {
   if (!function->shared().HasSourceCode()) {
     Throw("Function without source code");
     return;
@@ -586,32 +742,37 @@ void WebSnapshotSerializer::SerializeFunctionInfo(ValueSerializer* serializer,
     DisallowGarbageCollection no_gc;
     Context context = function->context();
     if (context.IsNativeContext() || context.IsScriptContext()) {
-      serializer->WriteUint32(0);
+      serializer.WriteUint32(0);
     } else {
       DCHECK(context.IsFunctionContext() || context.IsBlockContext());
       uint32_t context_id = GetContextId(context);
-      serializer->WriteUint32(context_id + 1);
+      serializer.WriteUint32(context_id + 1);
     }
   }
 
-  serializer->WriteUint32(source_id_);
+  serializer.WriteUint32(source_id_);
+  Handle<Script> script =
+      handle(Script::cast(function->shared().script()), isolate_);
   int start = function->shared().StartPosition();
   int end = function->shared().EndPosition();
-  serializer->WriteUint32(source_offset_to_compacted_source_offset_[start]);
-  serializer->WriteUint32(end - start);
+  int final_offset =
+      source_offset_to_compacted_source_offset_[script_offsets_[script->id()] +
+                                                start];
+  serializer.WriteUint32(final_offset);
+  serializer.WriteUint32(end - start);
 
-  serializer->WriteUint32(
+  serializer.WriteUint32(
       function->shared().internal_formal_parameter_count_without_receiver());
-  serializer->WriteUint32(
+  serializer.WriteUint32(
       FunctionKindToFunctionFlags(function->shared().kind()));
 
   if (function->has_prototype_slot() && function->has_instance_prototype()) {
     DisallowGarbageCollection no_gc;
     JSObject prototype = JSObject::cast(function->instance_prototype());
     uint32_t prototype_id = GetObjectId(prototype);
-    serializer->WriteUint32(prototype_id + 1);
+    serializer.WriteUint32(prototype_id + 1);
   } else {
-    serializer->WriteUint32(0);
+    serializer.WriteUint32(0);
   }
 }
 
@@ -621,9 +782,30 @@ void WebSnapshotSerializer::ShallowDiscoverExternals(FixedArray externals) {
     Object object = externals.get(i);
     if (!object.IsHeapObject()) continue;
     uint32_t unused_id = 0;
-    InsertIntoIndexMap(external_objects_ids_, HeapObject::cast(object),
+    InsertIntoIndexMap(external_object_ids_, HeapObject::cast(object),
                        unused_id);
   }
+}
+
+void WebSnapshotSerializer::ShallowDiscoverBuiltinObjects(
+    v8::Local<v8::Context> context) {
+  // Fill in builtin_object_to_name_. Don't discover them or their
+  // names, so that they won't be included in the snapshot unless needed.
+
+  builtin_object_name_strings_ =
+      isolate_->factory()->NewFixedArray(kBuiltinObjectCount);
+
+  int i = 0;
+  IterateBuiltinObjects([&](Handle<String> name, Handle<HeapObject> object) {
+    builtin_object_name_strings_->set(i, *name);
+    uint32_t id;
+    bool already_exists =
+        InsertIntoIndexMap(builtin_object_to_name_, *object, id);
+    CHECK(!already_exists);
+    CHECK_EQ(static_cast<int>(id), i);
+    ++i;
+  });
+  DCHECK_EQ(i, kBuiltinObjectCount);
 }
 
 void WebSnapshotSerializer::Discover(Handle<HeapObject> start_object) {
@@ -644,10 +826,14 @@ void WebSnapshotSerializer::Discover(Handle<HeapObject> start_object) {
         DiscoverClass(Handle<JSFunction>::cast(object));
         break;
       case JS_OBJECT_TYPE:
+      case JS_OBJECT_PROTOTYPE_TYPE:
         DiscoverObject(Handle<JSObject>::cast(object));
         break;
       case JS_ARRAY_TYPE:
         DiscoverArray(Handle<JSArray>::cast(object));
+        break;
+      case SYMBOL_TYPE:
+        DiscoverSymbol(Handle<Symbol>::cast(object));
         break;
       case ODDBALL_TYPE:
       case HEAP_NUMBER_TYPE:
@@ -677,9 +863,9 @@ void WebSnapshotSerializer::Discover(Handle<HeapObject> start_object) {
           // strings.
           DiscoverString(Handle<String>::cast(object), AllowInPlace::Yes);
           break;
-        } else if (external_objects_ids_.size() > 0) {
+        } else if (external_object_ids_.size() > 0) {
           int unused_id;
-          external_objects_ids_.LookupOrInsert(*object, &unused_id);
+          external_object_ids_.LookupOrInsert(*object, &unused_id);
         } else {
           Throw("Unsupported object");
         }
@@ -688,7 +874,24 @@ void WebSnapshotSerializer::Discover(Handle<HeapObject> start_object) {
   }
 }
 
-void WebSnapshotSerializer::DiscoverMap(Handle<Map> map) {
+void WebSnapshotSerializer::DiscoverPropertyKey(Handle<Name> key) {
+  if (key->IsString()) {
+    DiscoverString(Handle<String>::cast(key), AllowInPlace::Yes);
+  } else if (key->IsSymbol()) {
+    DiscoverSymbol(Handle<Symbol>::cast(key));
+  } else {
+    Throw("Property key is not a String / Symbol");
+    return;
+  }
+}
+
+void WebSnapshotSerializer::DiscoverMap(Handle<Map> map,
+                                        bool allow_property_in_descriptor) {
+  // Dictionary map object names get discovered in DiscoverObject.
+  if (map->is_dictionary_map()) {
+    return;
+  }
+
   uint32_t id;
   if (InsertIntoIndexMap(map_ids_, *map, id)) {
     return;
@@ -696,13 +899,21 @@ void WebSnapshotSerializer::DiscoverMap(Handle<Map> map) {
   DCHECK_EQ(id, maps_->Length());
   maps_ = ArrayList::Add(isolate_, maps_, map);
   for (InternalIndex i : map->IterateOwnDescriptors()) {
+    PropertyDetails details =
+        map->instance_descriptors(kRelaxedLoad).GetDetails(i);
+    if (details.location() != PropertyLocation::kField) {
+      if (!allow_property_in_descriptor) {
+        Throw("Properties which are not fields not supported");
+        return;
+      } else {
+        continue;
+      }
+    }
     Handle<Name> key(map->instance_descriptors(kRelaxedLoad).GetKey(i),
                      isolate_);
-    if (!key->IsString()) {
-      Throw("Key is not a string");
-      return;
+    if (ShouldBeSerialized(key)) {
+      DiscoverPropertyKey(key);
     }
-    DiscoverString(Handle<String>::cast(key));
   }
 }
 
@@ -732,7 +943,47 @@ void WebSnapshotSerializer::DiscoverString(Handle<String> string,
   strings_ = ArrayList::Add(isolate_, strings_, string);
 }
 
+void WebSnapshotSerializer::DiscoverMapForFunction(
+    Handle<JSFunction> function) {
+  JSObject::MigrateSlowToFast(function, 0, "Web snapshot");
+  // TODO(v8:11525): Support functions with so many properties that they can't
+  // be in fast mode.
+  if (!function->HasFastProperties()) {
+    Throw("Unsupported function with dictionary map");
+    return;
+  }
+  if (function->map() !=
+      isolate_->context().get(function->shared().function_map_index())) {
+    Handle<Map> map(function->map(), isolate_);
+    // We only serialize properties which are fields in function. And properties
+    // which are descriptors will be setup in CreateJSFunction.
+    DiscoverMap(map, true);
+    discovery_queue_.push(handle(map->prototype(), isolate_));
+    // Discover property values.
+    for (InternalIndex i : map->IterateOwnDescriptors()) {
+      PropertyDetails details =
+          map->instance_descriptors(kRelaxedLoad).GetDetails(i);
+      if (details.location() == PropertyLocation::kDescriptor) {
+        continue;
+      }
+      if (!ShouldBeSerialized(
+              handle(map->instance_descriptors().GetKey(i), isolate_))) {
+        continue;
+      }
+      FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+      Handle<Object> value = JSObject::FastPropertyAt(
+          isolate_, function, details.representation(), field_index);
+      if (!value->IsHeapObject()) continue;
+      discovery_queue_.push(Handle<HeapObject>::cast(value));
+    }
+  }
+}
+
 void WebSnapshotSerializer::DiscoverFunction(Handle<JSFunction> function) {
+  if (DiscoverIfBuiltinObject(function)) {
+    return;
+  }
+
   uint32_t id;
   if (InsertIntoIndexMap(function_ids_, *function, id)) {
     return;
@@ -740,8 +991,10 @@ void WebSnapshotSerializer::DiscoverFunction(Handle<JSFunction> function) {
 
   DCHECK_EQ(id, functions_->Length());
   functions_ = ArrayList::Add(isolate_, functions_, function);
+
   DiscoverContextAndPrototype(function);
-  // TODO(v8:11525): Support properties in functions.
+
+  DiscoverMapForFunction(function);
   DiscoverSource(function);
 }
 
@@ -755,7 +1008,8 @@ void WebSnapshotSerializer::DiscoverClass(Handle<JSFunction> function) {
   classes_ = ArrayList::Add(isolate_, classes_, function);
 
   DiscoverContextAndPrototype(function);
-  // TODO(v8:11525): Support properties in classes.
+
+  DiscoverMapForFunction(function);
   // TODO(v8:11525): Support class members.
   DiscoverSource(function);
 }
@@ -778,9 +1032,18 @@ void WebSnapshotSerializer::DiscoverContextAndPrototype(
         handle(function->instance_prototype(), isolate_));
     discovery_queue_.push(prototype);
   }
+
+  discovery_queue_.push(handle(function->map().prototype(), isolate_));
 }
 
 void WebSnapshotSerializer::DiscoverContext(Handle<Context> context) {
+  // Make sure the parent context (if any), gets a smaller ID. This ensures the
+  // parent context references in the snapshot are not deferred.
+  if (!context->previous().IsNativeContext() &&
+      !context->previous().IsScriptContext()) {
+    DiscoverContext(handle(context->previous(), isolate_));
+  }
+
   uint32_t id;
   if (InsertIntoIndexMap(context_ids_, *context, id)) return;
 
@@ -788,14 +1051,10 @@ void WebSnapshotSerializer::DiscoverContext(Handle<Context> context) {
   contexts_ = ArrayList::Add(isolate_, contexts_, context);
 
   Handle<ScopeInfo> scope_info = handle(context->scope_info(), isolate_);
-  int count = scope_info->ContextLocalCount();
-
-  for (int i = 0; i < count; ++i) {
-    // TODO(v8:11525): support parameters
-    // TODO(v8:11525): distinguish variable modes
-    Handle<String> name(scope_info->context_local_names(i), isolate_);
-    DiscoverString(name);
-    Object value = context->get(scope_info->ContextHeaderLength() + i);
+  for (auto it : ScopeInfo::IterateLocalNames(scope_info)) {
+    DiscoverString(handle(it->name(), isolate_));
+    Object value =
+        context->get(scope_info->ContextHeaderLength() + it->index());
     if (!value.IsHeapObject()) continue;
     discovery_queue_.push(handle(HeapObject::cast(value), isolate_));
   }
@@ -807,16 +1066,50 @@ void WebSnapshotSerializer::DiscoverContext(Handle<Context> context) {
 }
 
 void WebSnapshotSerializer::DiscoverSource(Handle<JSFunction> function) {
-  source_intervals_.emplace(function->shared().StartPosition(),
-                            function->shared().EndPosition());
-  Handle<String> function_script_source =
-      handle(String::cast(Script::cast(function->shared().script()).source()),
-             isolate_);
-  if (full_source_.is_null()) {
-    full_source_ = function_script_source;
-  } else if (!full_source_->Equals(*function_script_source)) {
-    Throw("Cannot include functions from multiple scripts");
+  // Function may not have source code, e.g. we discover source for a builtin
+  // function. In SerializeFunctionInfo, we also check if the function has
+  // source code, and we throw the same error here if the function doesn't
+  // have source code to be consistent with SerializeFunctionInfo.
+  if (!function->shared().HasSourceCode()) {
+    Throw("Function without source code");
+    return;
   }
+  // There might be multiple scripts where functions are coming from. Construct
+  // a combined source code for them by simply concatenating the sources (and
+  // keep track which script source is where); the source code will be later
+  // optimized by ConstructSource.
+  Handle<Script> script =
+      handle(Script::cast(function->shared().script()), isolate_);
+  Handle<String> function_script_source =
+      handle(String::cast(script->source()), isolate_);
+  int script_offset_int;
+  if (full_source_.is_null()) {
+    // This is the first script.
+    script_offset_int = 0;
+    full_source_ = function_script_source;
+    script_offsets_.insert({script->id(), script_offset_int});
+  } else {
+    auto it = script_offsets_.find(script->id());
+    if (it == script_offsets_.end()) {
+      // This script hasn't been encountered yet and its source code has to be
+      // added to full_source_.
+      DCHECK(!full_source_.is_null());
+      script_offset_int = full_source_->length();
+      script_offsets_.insert({script->id(), script_offset_int});
+      if (!factory()
+               ->NewConsString(full_source_, function_script_source)
+               .ToHandle(&full_source_)) {
+        Throw("Can't construct source");
+        return;
+      }
+    } else {
+      // The script source is already somewhere in full_source_.
+      script_offset_int = it->second;
+    }
+  }
+  source_intervals_.emplace(
+      script_offset_int + function->shared().StartPosition(),
+      script_offset_int + function->shared().EndPosition());
 }
 
 void WebSnapshotSerializer::DiscoverArray(Handle<JSArray> array) {
@@ -827,63 +1120,183 @@ void WebSnapshotSerializer::DiscoverArray(Handle<JSArray> array) {
   DCHECK_EQ(id, arrays_->Length());
   arrays_ = ArrayList::Add(isolate_, arrays_, array);
 
-  auto elements_kind = array->GetElementsKind();
-  if (elements_kind != PACKED_SMI_ELEMENTS &&
-      elements_kind != PACKED_ELEMENTS) {
-    Throw("Unsupported array");
-    return;
-  }
-  // TODO(v8:11525): Support sparse arrays & arrays with holes.
+  DiscoverElements(array);
+}
+
+void WebSnapshotSerializer::DiscoverElements(Handle<JSObject> object) {
+  auto elements_kind = object->GetElementsKind();
+
   DisallowGarbageCollection no_gc;
-  FixedArray elements = FixedArray::cast(array->elements());
-  for (int i = 0; i < elements.length(); ++i) {
-    Object object = elements.get(i);
-    if (!object.IsHeapObject()) continue;
-    discovery_queue_.push(handle(HeapObject::cast(object), isolate_));
+
+  // TODO(v8:11525): Handle sealed & frozen elements correctly. (Also: handle
+  // sealed & frozen objects.)
+  switch (elements_kind) {
+    case PACKED_SMI_ELEMENTS:
+    case PACKED_ELEMENTS:
+    case HOLEY_SMI_ELEMENTS:
+    case HOLEY_ELEMENTS:
+    case PACKED_SEALED_ELEMENTS:
+    case PACKED_FROZEN_ELEMENTS:
+    case HOLEY_SEALED_ELEMENTS:
+    case HOLEY_FROZEN_ELEMENTS: {
+      FixedArray elements = FixedArray::cast(object->elements());
+      for (int i = 0; i < elements.length(); ++i) {
+        Object object = elements.get(i);
+        if (!object.IsHeapObject()) continue;
+        discovery_queue_.push(handle(HeapObject::cast(object), isolate_));
+      }
+      break;
+    }
+    case DICTIONARY_ELEMENTS: {
+      Handle<NumberDictionary> dict(object->element_dictionary(), isolate_);
+      ReadOnlyRoots roots(isolate_);
+      for (InternalIndex index : dict->IterateEntries()) {
+        Handle<Object> key = handle(dict->KeyAt(index), isolate_);
+        if (!dict->IsKey(roots, *key)) {
+          continue;
+        }
+        DCHECK(key->IsNumber());
+        if (key->Number() > std::numeric_limits<uint32_t>::max()) {
+          // TODO(v8:11525): Support large element indices.
+          Throw("Large element indices not supported");
+          return;
+        }
+        Handle<Object> object = handle(dict->ValueAt(index), isolate_);
+        if (!object->IsHeapObject()) continue;
+        discovery_queue_.push(Handle<HeapObject>::cast(object));
+      }
+      break;
+    }
+    case PACKED_DOUBLE_ELEMENTS:
+    case HOLEY_DOUBLE_ELEMENTS: {
+      break;
+    }
+    default: {
+      Throw("Unsupported elements");
+      return;
+    }
+  }
+}
+
+template <typename T>
+void WebSnapshotSerializer::DiscoverObjectPropertiesWithDictionaryMap(T dict) {
+  DisallowGarbageCollection no_gc;
+
+  ReadOnlyRoots roots(isolate_);
+  for (InternalIndex index : dict->IterateEntries()) {
+    Handle<Object> key = handle(dict->KeyAt(index), isolate_);
+    if (!dict->IsKey(roots, *key)) {
+      // Ignore deleted entries.
+      continue;
+    }
+    DiscoverPropertyKey(Handle<Name>::cast(key));
+    Handle<Object> value = handle(dict->ValueAt(index), isolate_);
+    if (!value->IsHeapObject()) {
+      continue;
+    } else {
+      discovery_queue_.push(Handle<HeapObject>::cast(value));
+    }
   }
 }
 
 void WebSnapshotSerializer::DiscoverObject(Handle<JSObject> object) {
+  if (GetExternalId(*object)) {
+    return;
+  }
+  if (DiscoverIfBuiltinObject(object)) {
+    return;
+  }
+
   uint32_t id;
   if (InsertIntoIndexMap(object_ids_, *object, id)) return;
 
   DCHECK_EQ(id, objects_->Length());
   objects_ = ArrayList::Add(isolate_, objects_, object);
 
-  // TODO(v8:11525): Support objects with so many properties that they can't be
-  // in fast mode.
+  // TODO(v8:11525): After we allow "non-map" objects which are small
+  // enough to have a fast map, we should remove this. Although we support
+  // objects with dictionary map now, we still check the property count is
+  // bigger than kMaxNumberOfDescriptors when deserializing dictionary map and
+  // then removing this will break deserializing prototype objects having a
+  // dictionary map with few properties.
   JSObject::MigrateSlowToFast(object, 0, "Web snapshot");
-  if (!object->HasFastProperties()) {
-    Throw("Dictionary mode objects not supported");
-  }
 
   Handle<Map> map(object->map(), isolate_);
   DiscoverMap(map);
 
   // Discover __proto__.
-  if (map->prototype() !=
-      isolate_->native_context()->initial_object_prototype()) {
-    discovery_queue_.push(handle(map->prototype(), isolate_));
+  discovery_queue_.push(handle(map->prototype(), isolate_));
+
+  if (object->HasFastProperties()) {
+    // Discover property values.
+    for (InternalIndex i : map->IterateOwnDescriptors()) {
+      PropertyDetails details =
+          map->instance_descriptors(kRelaxedLoad).GetDetails(i);
+      FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+      Handle<Object> value = JSObject::FastPropertyAt(
+          isolate_, object, details.representation(), field_index);
+      if (!value->IsHeapObject()) continue;
+      discovery_queue_.push(Handle<HeapObject>::cast(value));
+    }
+  } else {
+    ReadOnlyRoots roots(isolate_);
+    if (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
+      Handle<SwissNameDictionary> swiss_dictionary =
+          handle(object->property_dictionary_swiss(), isolate_);
+      DiscoverObjectPropertiesWithDictionaryMap(swiss_dictionary);
+    } else {
+      Handle<NameDictionary> dictionary =
+          handle(object->property_dictionary(), isolate_);
+      DiscoverObjectPropertiesWithDictionaryMap(dictionary);
+    }
   }
 
-  // Discover property values.
-  for (InternalIndex i : map->IterateOwnDescriptors()) {
-    PropertyDetails details =
-        map->instance_descriptors(kRelaxedLoad).GetDetails(i);
-    FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
-    Handle<Object> value = JSObject::FastPropertyAt(
-        isolate_, object, details.representation(), field_index);
-    if (!value->IsHeapObject()) continue;
-    discovery_queue_.push(Handle<HeapObject>::cast(value));
-  }
+  DiscoverElements(object);
+}
 
-  // Discover elements.
-  Handle<FixedArray> elements =
-      handle(FixedArray::cast(object->elements()), isolate_);
-  for (int i = 0; i < elements->length(); ++i) {
-    Object object = elements->get(i);
-    if (!object.IsHeapObject()) continue;
-    discovery_queue_.push(handle(HeapObject::cast(object), isolate_));
+bool WebSnapshotSerializer::DiscoverIfBuiltinObject(Handle<HeapObject> object) {
+  // TODO(v8:11525): Consider speccing a set of fixed builtins (such as
+  // Object.prototype) for objects which are almost always included in the
+  // snapshot.
+  uint32_t name_index;
+  if (!GetBuiltinObjectNameIndex(*object, name_index)) {
+    return false;
+  }
+  CHECK_LT(name_index, builtin_object_name_strings_->length());
+  Handle<String> name_string = handle(
+      String::cast(builtin_object_name_strings_->get(name_index)), isolate_);
+  DiscoverString(name_string, AllowInPlace::No);
+
+  // Ensure the builtin object reference gets included in the snapshot.
+  uint32_t id;
+  if (InsertIntoIndexMap(builtin_object_ids_, *object, id)) {
+    // The builtin object is already referred to by something else.
+    return true;
+  }
+  DCHECK_EQ(id, builtin_objects_.size());
+
+  bool in_place = false;
+  uint32_t name_id = GetStringId(name_string, in_place);
+  DCHECK(!in_place);
+  USE(in_place);
+  builtin_objects_.push_back(name_id);
+  return true;
+}
+
+void WebSnapshotSerializer::DiscoverSymbol(Handle<Symbol> symbol) {
+  if (symbol->is_well_known_symbol()) {
+    // TODO(v8:11525): Support well-known Symbols.
+    Throw("Well known Symbols aren't supported");
+    return;
+  }
+  uint32_t id;
+  if (InsertIntoIndexMap(symbol_ids_, *symbol, id)) return;
+
+  DCHECK_EQ(id, symbols_->Length());
+  symbols_ = ArrayList::Add(isolate_, symbols_, symbol);
+
+  if (!symbol->description().IsUndefined()) {
+    DiscoverString(handle(String::cast(symbol->description()), isolate_));
   }
 }
 
@@ -894,12 +1307,16 @@ void WebSnapshotSerializer::DiscoverObject(Handle<JSObject> object) {
 // - Length in the source snippet
 // - Formal parameter count
 // - Flags (see FunctionFlags)
-// - 0 if there's no function prototype, 1 + object id for the function
-// prototype otherwise
+// - 0 if there's no map, 1 + map id otherwise
+// - For each function property
+//   - Serialized value
+// - Function prototype
 // TODO(v8:11525): Investigate whether the length is really needed.
 void WebSnapshotSerializer::SerializeFunction(Handle<JSFunction> function) {
-  SerializeFunctionInfo(&function_serializer_, function);
-  // TODO(v8:11525): Support properties in functions.
+  SerializeFunctionInfo(function, function_serializer_);
+  SerializeFunctionProperties(function, function_serializer_);
+  WriteValue(handle(function->map().prototype(), isolate_),
+             function_serializer_);
 }
 
 // Format (serialized class):
@@ -909,10 +1326,14 @@ void WebSnapshotSerializer::SerializeFunction(Handle<JSFunction> function) {
 // - Length in the source snippet
 // - Formal parameter count
 // - Flags (see FunctionFlags)
-// - 1 + object id for the function prototype
+// - 0 if there's no map, 1 + map id otherwise
+// - For each function property
+//   - Serialized value
+// - Function prototype
 void WebSnapshotSerializer::SerializeClass(Handle<JSFunction> function) {
-  SerializeFunctionInfo(&class_serializer_, function);
-  // TODO(v8:11525): Support properties in classes.
+  SerializeFunctionInfo(function, class_serializer_);
+  SerializeFunctionProperties(function, class_serializer_);
+  WriteValue(handle(function->map().prototype(), isolate_), class_serializer_);
   // TODO(v8:11525): Support class members.
 }
 
@@ -921,12 +1342,16 @@ void WebSnapshotSerializer::SerializeClass(Handle<JSFunction> function) {
 // - Variable count
 // - For each variable:
 //   - String id (name)
+// - For each variable:
 //   - Serialized value
-void WebSnapshotSerializer::SerializeContext(Handle<Context> context) {
+void WebSnapshotSerializer::SerializeContext(Handle<Context> context,
+                                             uint32_t id) {
   uint32_t parent_context_id = 0;
   if (!context->previous().IsNativeContext() &&
       !context->previous().IsScriptContext()) {
-    parent_context_id = GetContextId(context->previous()) + 1;
+    parent_context_id = GetContextId(context->previous());
+    DCHECK_LT(parent_context_id, id);
+    ++parent_context_id;  // 0 is reserved for "no parent context".
   }
 
   // TODO(v8:11525): Use less space for encoding the context type.
@@ -945,88 +1370,206 @@ void WebSnapshotSerializer::SerializeContext(Handle<Context> context) {
   int count = scope_info->ContextLocalCount();
   context_serializer_.WriteUint32(count);
 
-  for (int i = 0; i < count; ++i) {
+  for (auto it : ScopeInfo::IterateLocalNames(scope_info)) {
     // TODO(v8:11525): support parameters
     // TODO(v8:11525): distinguish variable modes
-    Handle<String> name(scope_info->context_local_names(i), isolate_);
-    WriteStringId(name, context_serializer_);
-    Handle<Object> value(context->get(scope_info->ContextHeaderLength() + i),
-                         isolate_);
+    WriteStringId(handle(it->name(), isolate_), context_serializer_);
+  }
+  for (auto it : ScopeInfo::IterateLocalNames(scope_info)) {
+    Handle<Object> value(
+        context->get(scope_info->ContextHeaderLength() + it->index()),
+        isolate_);
     WriteValue(value, context_serializer_);
   }
 }
 
-// Format (serialized object):
-// - Shape id
-// - For each property:
-//   - Serialized value
-// - Max element index + 1 (or 0 if there are no elements)
-// - For each element:
-//   - Index
-//   - Serialized value
-// TODO(v8:11525): Support packed elements with a denser format.
-void WebSnapshotSerializer::SerializeObject(Handle<JSObject> object) {
-  Handle<Map> map(object->map(), isolate_);
-  uint32_t map_id = GetMapId(*map);
-  object_serializer_.WriteUint32(map_id);
+template <typename T>
+void WebSnapshotSerializer::SerializeObjectPropertiesWithDictionaryMap(T dict) {
+  DisallowGarbageCollection no_gc;
 
-  // Properties.
-  for (InternalIndex i : map->IterateOwnDescriptors()) {
-    PropertyDetails details =
-        map->instance_descriptors(kRelaxedLoad).GetDetails(i);
-    FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
-    Handle<Object> value = JSObject::FastPropertyAt(
-        isolate_, object, details.representation(), field_index);
-    WriteValue(value, object_serializer_);
-  }
+  std::vector<uint32_t> attributes;
+  attributes.reserve(dict->NumberOfElements());
+  HandleScope scope(isolate_);
+  int first_custom_index = -1;
 
-  // Elements.
   ReadOnlyRoots roots(isolate_);
-  Handle<FixedArray> elements =
-      handle(FixedArray::cast(object->elements()), isolate_);
-  uint32_t max_element_index = 0;
-  for (int i = 0; i < elements->length(); ++i) {
-    DisallowGarbageCollection no_gc;
-    Object value = elements->get(i);
-    if (value != roots.the_hole_value()) {
-      if (i > static_cast<int>(max_element_index)) {
-        max_element_index = i;
-      }
+  for (InternalIndex index : dict->IterateEntries()) {
+    if (!dict->IsKey(roots, dict->KeyAt(index))) {
+      continue;
+    }
+    PropertyDetails details = dict->DetailsAt(index);
+    if (first_custom_index >= 0 || details.IsReadOnly() ||
+        !details.IsConfigurable() || details.IsDontEnum()) {
+      if (first_custom_index == -1) first_custom_index = index.as_int();
+      attributes.push_back(AttributesToFlags(details));
     }
   }
-  if (max_element_index == 0) {
-    object_serializer_.WriteUint32(0);
-  } else {
-    object_serializer_.WriteUint32(max_element_index + 1);
-  }
-  for (int i = 0; i < elements->length(); ++i) {
-    Handle<Object> value = handle(elements->get(i), isolate_);
-    if (*value != roots.the_hole_value()) {
-      DCHECK_LE(i, max_element_index);
-      object_serializer_.WriteUint32(i);
-      WriteValue(value, object_serializer_);
+  object_serializer_.WriteUint32(first_custom_index == -1
+                                     ? PropertyAttributesType::DEFAULT
+                                     : PropertyAttributesType::CUSTOM);
+  object_serializer_.WriteUint32(dict->NumberOfElements());
+
+  uint32_t default_flags = GetDefaultAttributeFlags();
+  for (InternalIndex index : dict->IterateEntries()) {
+    Object key = dict->KeyAt(index);
+    if (!dict->IsKey(roots, key)) {
+      continue;
+    }
+    WriteValue(handle(key, isolate_), object_serializer_);
+    WriteValue(handle(dict->ValueAt(index), isolate_), object_serializer_);
+    if (first_custom_index >= 0) {
+      if (index.as_int() < first_custom_index) {
+        object_serializer_.WriteUint32(default_flags);
+      } else {
+        object_serializer_.WriteUint32(
+            attributes[index.as_int() - first_custom_index]);
+      }
     }
   }
 }
 
-// Format (serialized array):
-// - Length
-// - For each element:
-//   - Serialized value
-void WebSnapshotSerializer::SerializeArray(Handle<JSArray> array) {
-  auto elements_kind = array->GetElementsKind();
-  if (elements_kind != PACKED_SMI_ELEMENTS &&
-      elements_kind != PACKED_ELEMENTS) {
-    Throw("Unsupported array");
-    return;
+// Format (serialized object):
+// - 0 if there's no shape (dictionary map), 1 + shape id otherwise
+// If has shape
+//   - For each property:
+//     - Serialized value
+// Else (dictionary map)
+//   - PropertyAttributesType
+//   - Property count
+//   - For each property
+//     - Name: STRING_ID + String id or SYMBOL_ID + Symbol id or in-place string
+//     - Serialized value
+//     - If the PropertyAttributesType is CUSTOM: attributes
+//   - __proto__: serialized value
+// - Elements (see serialized array)
+// TODO(v8:11525): Support packed elements with a denser format.
+void WebSnapshotSerializer::SerializeObject(Handle<JSObject> object) {
+  Handle<Map> map(object->map(), isolate_);
+  if (map->is_dictionary_map()) {
+    object_serializer_.WriteUint32(0);
+  } else {
+    uint32_t map_id = GetMapId(*map);
+    object_serializer_.WriteUint32(map_id + 1);
   }
-  // TODO(v8:11525): Support sparse arrays & arrays with holes.
-  uint32_t length = static_cast<uint32_t>(array->length().ToSmi().value());
-  array_serializer_.WriteUint32(length);
-  Handle<FixedArray> elements =
-      handle(FixedArray::cast(array->elements()), isolate_);
-  for (uint32_t i = 0; i < length; ++i) {
-    WriteValue(handle(elements->get(i), isolate_), array_serializer_);
+
+  if (object->HasFastProperties()) {
+    // Properties.
+    for (InternalIndex i : map->IterateOwnDescriptors()) {
+      PropertyDetails details =
+          map->instance_descriptors(kRelaxedLoad).GetDetails(i);
+      FieldIndex field_index = FieldIndex::ForDescriptor(*map, i);
+      Handle<Object> value = JSObject::FastPropertyAt(
+          isolate_, object, details.representation(), field_index);
+      WriteValue(value, object_serializer_);
+    }
+  } else {
+    if (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
+      Handle<SwissNameDictionary> swiss_dictionary =
+          handle(object->property_dictionary_swiss(), isolate_);
+      SerializeObjectPropertiesWithDictionaryMap(swiss_dictionary);
+    } else {
+      Handle<NameDictionary> dictionary =
+          handle(object->property_dictionary(), isolate_);
+      SerializeObjectPropertiesWithDictionaryMap(dictionary);
+    }
+    WriteValue(handle(map->prototype(), isolate_), object_serializer_);
+  }
+
+  // Elements.
+  SerializeElements(object, object_serializer_);
+}
+
+// Format (serialized array):
+// - Elements type (dense or sparse)
+// - Length
+// If dense array
+//   - For each element:
+//     - Serialized value
+// If sparse array
+//   - For each element:
+//     - Element index
+//     - Serialized value
+void WebSnapshotSerializer::SerializeArray(Handle<JSArray> array) {
+  SerializeElements(array, array_serializer_);
+}
+
+void WebSnapshotSerializer::SerializeElements(Handle<JSObject> object,
+                                              ValueSerializer& serializer) {
+  // TODO(v8:11525): Handle sealed & frozen elements correctly. (Also: handle
+  // sealed & frozen objects.)
+
+  // TODO(v8:11525): Sometimes it would make sense to serialize dictionary
+  // mode elements as dense (the number of elements is large but the array is
+  // densely filled).
+
+  // TODO(v8:11525): Sometimes it would make sense to serialize packed mode
+  // elements as sparse (if there are a considerable amount of holes in it).
+  ReadOnlyRoots roots(isolate_);
+  auto elements_kind = object->GetElementsKind();
+  switch (elements_kind) {
+    case PACKED_SMI_ELEMENTS:
+    case PACKED_ELEMENTS:
+    case HOLEY_SMI_ELEMENTS:
+    case HOLEY_ELEMENTS:
+    case PACKED_FROZEN_ELEMENTS:
+    case PACKED_SEALED_ELEMENTS:
+    case HOLEY_FROZEN_ELEMENTS:
+    case HOLEY_SEALED_ELEMENTS: {
+      serializer.WriteUint32(ElementsType::kDense);
+      Handle<FixedArray> elements =
+          handle(FixedArray::cast(object->elements()), isolate_);
+      uint32_t length = static_cast<uint32_t>(elements->length());
+      serializer.WriteUint32(length);
+      for (uint32_t i = 0; i < length; ++i) {
+        WriteValue(handle(elements->get(i), isolate_), serializer);
+      }
+      break;
+    }
+    case PACKED_DOUBLE_ELEMENTS:
+    case HOLEY_DOUBLE_ELEMENTS: {
+      serializer.WriteUint32(ElementsType::kDense);
+      Handle<FixedDoubleArray> elements =
+          handle(FixedDoubleArray::cast(object->elements()), isolate_);
+      uint32_t length = static_cast<uint32_t>(elements->length());
+      serializer.WriteUint32(length);
+      for (uint32_t i = 0; i < length; ++i) {
+        if (!elements->is_the_hole(i)) {
+          double double_value = elements->get_scalar(i);
+          Handle<Object> element_value =
+              isolate_->factory()->NewNumber(double_value);
+          WriteValue(element_value, serializer);
+        } else {
+          WriteValue(handle(roots.the_hole_value(), isolate_), serializer);
+        }
+      }
+      break;
+    }
+    case DICTIONARY_ELEMENTS: {
+      DisallowGarbageCollection no_gc;
+      serializer.WriteUint32(ElementsType::kSparse);
+
+      auto dict = object->element_dictionary();
+      serializer.WriteUint32(dict.NumberOfElements());
+
+      for (InternalIndex index : dict.IterateEntries()) {
+        Object key = dict.KeyAt(index);
+        if (!dict.IsKey(roots, key)) {
+          continue;
+        }
+        CHECK(key.IsNumber());
+        // This case is checked by DiscoverElements.
+        // TODO(v8:11525): Support large element indices.
+        CHECK_LE(key.Number(), std::numeric_limits<uint32_t>::max());
+        uint32_t element_index = static_cast<uint32_t>(key.Number());
+        serializer.WriteUint32(element_index);
+        WriteValue(handle(dict.ValueAt(index), isolate_), serializer);
+      }
+      break;
+    }
+    default: {
+      Throw("Unsupported elements");
+      return;
+    }
   }
 }
 
@@ -1058,10 +1601,16 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
     return;
   }
 
-  int external_id;
-  if (external_objects_ids_.Lookup(HeapObject::cast(*object), &external_id)) {
+  uint32_t id;
+  if (GetExternalId(HeapObject::cast(*object), &id)) {
     serializer.WriteUint32(ValueType::EXTERNAL_ID);
-    serializer.WriteUint32(static_cast<uint32_t>(external_id));
+    serializer.WriteUint32(id);
+    return;
+  }
+
+  if (GetBuiltinObjectId(HeapObject::cast(*object), id)) {
+    serializer.WriteUint32(ValueType::BUILTIN_OBJECT_ID);
+    serializer.WriteUint32(id);
     return;
   }
 
@@ -1081,6 +1630,9 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
           return;
         case Oddball::kUndefined:
           serializer.WriteUint32(ValueType::UNDEFINED_CONSTANT);
+          return;
+        case Oddball::kTheHole:
+          serializer.WriteUint32(ValueType::NO_ELEMENT_CONSTANT);
           return;
         default:
           UNREACHABLE();
@@ -1105,6 +1657,10 @@ void WebSnapshotSerializer::WriteValue(Handle<Object> object,
     case JS_ARRAY_TYPE:
       serializer.WriteUint32(ValueType::ARRAY_ID);
       serializer.WriteUint32(GetArrayId(JSArray::cast(*heap_object)));
+      break;
+    case SYMBOL_TYPE:
+      serializer.WriteUint32(ValueType::SYMBOL_ID);
+      serializer.WriteUint32(GetSymbolId(Symbol::cast(*heap_object)));
       break;
     case JS_REG_EXP_TYPE: {
       Handle<JSRegExp> regexp = Handle<JSRegExp>::cast(heap_object);
@@ -1169,6 +1725,14 @@ uint32_t WebSnapshotSerializer::GetStringId(Handle<String> string,
   return static_cast<uint32_t>(id);
 }
 
+uint32_t WebSnapshotSerializer::GetSymbolId(Symbol symbol) {
+  int id;
+  bool return_value = symbol_ids_.Lookup(symbol, &id);
+  DCHECK(return_value);
+  USE(return_value);
+  return static_cast<uint32_t>(id);
+}
+
 uint32_t WebSnapshotSerializer::GetMapId(Map map) {
   int id;
   bool return_value = map_ids_.Lookup(map, &id);
@@ -1198,7 +1762,7 @@ uint32_t WebSnapshotSerializer::GetContextId(Context context) {
   bool return_value = context_ids_.Lookup(context, &id);
   DCHECK(return_value);
   USE(return_value);
-  return static_cast<uint32_t>(context_ids_.size() - 1 - id);
+  return static_cast<uint32_t>(id);
 }
 
 uint32_t WebSnapshotSerializer::GetArrayId(JSArray array) {
@@ -1217,16 +1781,33 @@ uint32_t WebSnapshotSerializer::GetObjectId(JSObject object) {
   return static_cast<uint32_t>(object_ids_.size() - 1 - id);
 }
 
-uint32_t WebSnapshotSerializer::GetExternalId(HeapObject object) {
-  int id;
-  bool return_value = external_objects_ids_.Lookup(object, &id);
-  DCHECK(return_value);
-  USE(return_value);
-  return static_cast<uint32_t>(id);
+bool WebSnapshotSerializer::GetExternalId(HeapObject object, uint32_t* id) {
+  int id_int;
+  bool return_value = external_object_ids_.Lookup(object, &id_int);
+  if (id != nullptr) {
+    *id = static_cast<uint32_t>(id_int);
+  }
+  return return_value;
+}
+
+bool WebSnapshotSerializer::GetBuiltinObjectNameIndex(HeapObject object,
+                                                      uint32_t& index) {
+  int index_int = 0;
+  bool return_value = builtin_object_to_name_.Lookup(object, &index_int);
+  index = static_cast<uint32_t>(index_int);
+  return return_value;
+}
+
+bool WebSnapshotSerializer::GetBuiltinObjectId(HeapObject object,
+                                               uint32_t& id) {
+  int id_int;
+  bool return_value = builtin_object_ids_.Lookup(object, &id_int);
+  id = static_cast<uint32_t>(id_int);
+  return return_value;
 }
 
 Handle<FixedArray> WebSnapshotSerializer::GetExternals() {
-  return external_objects_ids_.Values(isolate_);
+  return external_object_ids_.Values(isolate_);
 }
 
 WebSnapshotDeserializer::WebSnapshotDeserializer(v8::Isolate* isolate,
@@ -1237,19 +1818,29 @@ WebSnapshotDeserializer::WebSnapshotDeserializer(v8::Isolate* isolate,
 
 WebSnapshotDeserializer::WebSnapshotDeserializer(
     Isolate* isolate, Handle<Script> snapshot_as_script)
-    : WebSnapshotDeserializer(
-          isolate, handle(snapshot_as_script->name(), isolate),
-          ExtractScriptBuffer(isolate, snapshot_as_script)) {}
+    : WebSnapshotSerializerDeserializer(isolate),
+      script_name_(handle(snapshot_as_script->name(), isolate_)),
+      roots_(isolate) {
+  auto [data, buffer_size, buffer_owned] =
+      ExtractScriptBuffer(isolate, snapshot_as_script);
+  deserializer_.reset(new ValueDeserializer(isolate_, data, buffer_size));
+  if (buffer_owned) {
+    owned_data_.reset(data);
+  }
+}
 
 WebSnapshotDeserializer::WebSnapshotDeserializer(
     Isolate* isolate, Handle<Object> script_name,
     base::Vector<const uint8_t> buffer)
     : WebSnapshotSerializerDeserializer(isolate),
       script_name_(script_name),
-      deserializer_(isolate_, buffer.data(), buffer.length()),
+      deserializer_(
+          new ValueDeserializer(isolate_, buffer.data(), buffer.length())),
       roots_(isolate) {
   Handle<FixedArray> empty_array = factory()->empty_fixed_array();
   strings_handle_ = empty_array;
+  symbols_handle_ = empty_array;
+  builtin_objects_handle_ = empty_array;
   maps_handle_ = empty_array;
   contexts_handle_ = empty_array;
   functions_handle_ = empty_array;
@@ -1267,6 +1858,8 @@ WebSnapshotDeserializer::~WebSnapshotDeserializer() {
 
 void WebSnapshotDeserializer::UpdatePointers() {
   strings_ = *strings_handle_;
+  symbols_ = *symbols_handle_;
+  builtin_objects_ = *builtin_objects_handle_;
   maps_ = *maps_handle_;
   contexts_ = *contexts_handle_;
   functions_ = *functions_handle_;
@@ -1277,15 +1870,16 @@ void WebSnapshotDeserializer::UpdatePointers() {
 }
 
 // static
-base::Vector<const uint8_t> WebSnapshotDeserializer::ExtractScriptBuffer(
+std::tuple<const uint8_t*, uint32_t, bool>
+WebSnapshotDeserializer::ExtractScriptBuffer(
     Isolate* isolate, Handle<Script> snapshot_as_script) {
   Handle<String> source =
       handle(String::cast(snapshot_as_script->source()), isolate);
   if (source->IsExternalOneByteString()) {
     const v8::String::ExternalOneByteStringResource* resource =
         ExternalOneByteString::cast(*source).resource();
-    return {reinterpret_cast<const uint8_t*>(resource->data()),
-            resource->length()};
+    return std::make_tuple(reinterpret_cast<const uint8_t*>(resource->data()),
+                           resource->length(), false);
   } else if (source->IsSeqOneByteString()) {
     SeqOneByteString source_as_seq = SeqOneByteString::cast(*source);
     size_t length = source_as_seq.length();
@@ -1295,7 +1889,7 @@ base::Vector<const uint8_t> WebSnapshotDeserializer::ExtractScriptBuffer(
       uint8_t* data = source_as_seq.GetChars(no_gc);
       memcpy(data_copy.get(), data, length);
     }
-    return {data_copy.get(), length};
+    return std::make_tuple(data_copy.release(), length, true);
   } else if (source->IsExternalTwoByteString()) {
     // TODO(v8:11525): Implement end-to-end snapshot processing which gets rid
     // of the need to copy the data here.
@@ -1311,7 +1905,7 @@ base::Vector<const uint8_t> WebSnapshotDeserializer::ExtractScriptBuffer(
         data_copy_ptr[i] = static_cast<uint8_t>(data[i]);
       }
     }
-    return {data_copy.get(), length};
+    return std::make_tuple(data_copy.release(), length, true);
   } else if (source->IsSeqTwoByteString()) {
     SeqTwoByteString source_as_seq = SeqTwoByteString::cast(*source);
     size_t length = source_as_seq.length();
@@ -1324,14 +1918,16 @@ base::Vector<const uint8_t> WebSnapshotDeserializer::ExtractScriptBuffer(
         data_copy_ptr[i] = static_cast<uint8_t>(data[i]);
       }
     }
-    return {data_copy.get(), length};
+    return std::make_tuple(data_copy.release(), length, true);
   }
   UNREACHABLE();
 }
 
 void WebSnapshotDeserializer::Throw(const char* message) {
   string_count_ = 0;
+  symbol_count_ = 0;
   map_count_ = 0;
+  builtin_object_count_ = 0;
   context_count_ = 0;
   class_count_ = 0;
   function_count_ = 0;
@@ -1339,7 +1935,7 @@ void WebSnapshotDeserializer::Throw(const char* message) {
   deferred_references_->SetLength(0);
 
   // Make sure we don't read any more data
-  deserializer_.position_ = deserializer_.end_;
+  deserializer_->position_ = deserializer_->end_;
 
   WebSnapshotSerializerDeserializer::Throw(message);
 }
@@ -1358,7 +1954,7 @@ bool WebSnapshotDeserializer::Deserialize(
     return false;
   }
   deserialized_ = true;
-  auto buffer_size = deserializer_.end_ - deserializer_.position_;
+  auto buffer_size = deserializer_->end_ - deserializer_->position_;
 
   base::ElapsedTimer timer;
   if (FLAG_trace_web_snapshot) {
@@ -1380,16 +1976,20 @@ bool WebSnapshotDeserializer::Deserialize(
 }
 
 bool WebSnapshotDeserializer::DeserializeSnapshot(bool skip_exports) {
+  CollectBuiltinObjects();
+
   deferred_references_ = ArrayList::New(isolate_, 30);
 
   const void* magic_bytes;
-  if (!deserializer_.ReadRawBytes(sizeof(kMagicNumber), &magic_bytes) ||
+  if (!deserializer_->ReadRawBytes(sizeof(kMagicNumber), &magic_bytes) ||
       memcmp(magic_bytes, kMagicNumber, sizeof(kMagicNumber)) != 0) {
     Throw("Invalid magic number");
     return false;
   }
 
   DeserializeStrings();
+  DeserializeSymbols();
+  DeserializeBuiltinObjects();
   DeserializeMaps();
   DeserializeContexts();
   DeserializeFunctions();
@@ -1403,15 +2003,36 @@ bool WebSnapshotDeserializer::DeserializeSnapshot(bool skip_exports) {
   return !has_error();
 }
 
+void WebSnapshotDeserializer::CollectBuiltinObjects() {
+  // TODO(v8:11525): Look up the builtin objects from the global object.
+  builtin_object_name_to_object_ =
+      ObjectHashTable::New(isolate_, kBuiltinObjectCount);
+#if DEBUG
+  int i = 0;
+#endif
+  IterateBuiltinObjects([&](Handle<String> name, Handle<HeapObject> object) {
+    auto new_builtin_object_name_to_object =
+        ObjectHashTable::Put(builtin_object_name_to_object_, name, object);
+    USE(new_builtin_object_name_to_object);
+    // We preallocated the correct size, so the hash table doesn't grow.
+    DCHECK_EQ(*new_builtin_object_name_to_object,
+              *builtin_object_name_to_object_);
+#if DEBUG
+    ++i;
+#endif
+  });
+  DCHECK_EQ(i, kBuiltinObjectCount);
+}
+
 bool WebSnapshotDeserializer::DeserializeScript() {
   // If there is more data, treat it as normal JavaScript.
-  DCHECK_LE(deserializer_.position_, deserializer_.end_);
-  auto remaining_bytes = deserializer_.end_ - deserializer_.position_;
+  DCHECK_LE(deserializer_->position_, deserializer_->end_);
+  auto remaining_bytes = deserializer_->end_ - deserializer_->position_;
   if (remaining_bytes > 0 && remaining_bytes < v8::String::kMaxLength) {
     v8::Isolate* v8_isolate = reinterpret_cast<v8::Isolate*>(isolate_);
     v8::Local<v8::String> source =
         v8::String::NewFromUtf8(
-            v8_isolate, reinterpret_cast<const char*>(deserializer_.position_),
+            v8_isolate, reinterpret_cast<const char*>(deserializer_->position_),
             NewStringType::kNormal, static_cast<int>(remaining_bytes))
             .ToLocalChecked();
 
@@ -1441,17 +2062,17 @@ bool WebSnapshotDeserializer::DeserializeScript() {
 
 void WebSnapshotDeserializer::DeserializeStrings() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Strings);
-  if (!deserializer_.ReadUint32(&string_count_) ||
+  if (!deserializer_->ReadUint32(&string_count_) ||
       string_count_ > kMaxItemCount) {
     Throw("Malformed string table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
   strings_handle_ = factory()->NewFixedArray(string_count_);
   strings_ = *strings_handle_;
   for (uint32_t i = 0; i < string_count_; ++i) {
     MaybeHandle<String> maybe_string =
-        deserializer_.ReadUtf8String(AllocationType::kOld);
+        deserializer_->ReadUtf8String(AllocationType::kOld);
     Handle<String> string;
     if (!maybe_string.ToHandle(&string)) {
       Throw("Malformed string");
@@ -1461,109 +2082,146 @@ void WebSnapshotDeserializer::DeserializeStrings() {
   }
 }
 
-String WebSnapshotDeserializer::ReadString(bool internalize) {
+String WebSnapshotDeserializer::ReadString(
+    InternalizeStrings internalize_strings) {
   DCHECK(!strings_handle_->is_null());
   uint32_t string_id;
-  if (!deserializer_.ReadUint32(&string_id) || string_id >= string_count_) {
+  if (!deserializer_->ReadUint32(&string_id) || string_id >= string_count_) {
     Throw("malformed string id\n");
     return roots_.empty_string();
   }
   String string = String::cast(strings_.get(string_id));
-  if (internalize && !string.IsInternalizedString(isolate_)) {
+  if (internalize_strings == InternalizeStrings::kYes &&
+      !string.IsInternalizedString(isolate_)) {
     string = *factory()->InternalizeString(handle(string, isolate_));
     strings_.set(string_id, string);
   }
   return string;
 }
 
-String WebSnapshotDeserializer::ReadInPlaceString(bool internalize) {
+String WebSnapshotDeserializer::ReadInPlaceString(
+    InternalizeStrings internalize_strings) {
   MaybeHandle<String> maybe_string =
-      deserializer_.ReadUtf8String(AllocationType::kOld);
+      deserializer_->ReadUtf8String(AllocationType::kOld);
   Handle<String> string;
   if (!maybe_string.ToHandle(&string)) {
     Throw("Malformed string");
     return roots_.empty_string();
   }
-  if (internalize) {
+  if (internalize_strings == InternalizeStrings::kYes) {
     string = factory()->InternalizeString(string);
   }
   return *string;
 }
 
+Object WebSnapshotDeserializer::ReadSymbol() {
+  DCHECK(!strings_handle_->is_null());
+  uint32_t symbol_id;
+  if (!deserializer_->ReadUint32(&symbol_id) || symbol_id >= symbol_count_) {
+    Throw("malformed symbol id\n");
+    return roots_.undefined_value();
+  }
+  return symbols_.get(symbol_id);
+}
+
+void WebSnapshotDeserializer::DeserializeSymbols() {
+  RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Symbols);
+  if (!deserializer_->ReadUint32(&symbol_count_) ||
+      symbol_count_ > kMaxItemCount) {
+    Throw("Malformed symbol table");
+    return;
+  }
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
+  symbols_handle_ = factory()->NewFixedArray(symbol_count_);
+  symbols_ = *symbols_handle_;
+  for (uint32_t i = 0; i < symbol_count_; ++i) {
+    uint32_t symbol_type;
+    if (!deserializer_->ReadUint32(&symbol_type) || symbol_type > 2) {
+      Throw("malformed symbol\n");
+    }
+
+    Handle<Symbol> symbol;
+    if (symbol_type == SymbolType::kNonGlobalNoDesription) {
+      symbol = factory()->NewSymbol();
+    } else {  // Symbol with description
+      uint32_t string_id;
+      if (!deserializer_->ReadUint32(&string_id) ||
+          string_id >= string_count_) {
+        Throw("malformed string id\n");
+      }
+      if (symbol_type == SymbolType::kNonGlobal) {
+        symbol = factory()->NewSymbol();
+        symbol->set_description(String::cast(strings_.get(string_id)));
+      } else {
+        DCHECK_EQ(SymbolType::kGlobal, symbol_type);
+        symbol = isolate_->SymbolFor(
+            RootIndex::kPublicSymbolTable,
+            handle(String::cast(strings_.get(string_id)), isolate_), false);
+      }
+    }
+    symbols_.set(i, *symbol);
+  }
+}
+
 void WebSnapshotDeserializer::DeserializeMaps() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Maps);
-  if (!deserializer_.ReadUint32(&map_count_) || map_count_ > kMaxItemCount) {
+  if (!deserializer_->ReadUint32(&map_count_) || map_count_ > kMaxItemCount) {
     Throw("Malformed shape table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
   maps_handle_ = factory()->NewFixedArray(map_count_);
   maps_ = *maps_handle_;
   for (uint32_t i = 0; i < map_count_; ++i) {
-    uint32_t map_type;
-    if (!deserializer_.ReadUint32(&map_type)) {
-      Throw("Malformed shape");
-      return;
-    }
-    bool has_custom_property_attributes;
-    switch (map_type) {
-      case PropertyAttributesType::DEFAULT:
-        has_custom_property_attributes = false;
-        break;
-      case PropertyAttributesType::CUSTOM:
-        has_custom_property_attributes = true;
-        break;
-      default:
-        Throw("Unsupported map type");
-        return;
-    }
-
-    uint32_t prototype_id;
-    if (!deserializer_.ReadUint32(&prototype_id) ||
-        prototype_id > kMaxItemCount) {
-      Throw("Malformed shape");
-      return;
-    }
+    bool has_custom_property_attributes = ReadMapType();
 
     uint32_t property_count;
-    if (!deserializer_.ReadUint32(&property_count)) {
+    if (!deserializer_->ReadUint32(&property_count)) {
       Throw("Malformed shape");
       return;
     }
     // TODO(v8:11525): Consider passing the upper bound as a param and
     // systematically enforcing it on the ValueSerializer side.
+    // TODO(v8:11525): Allow "objects with map" which need to be turned to
+    // dictionary mode objects.
+    // TODO(v8:11525): Create map trees.
     if (property_count > kMaxNumberOfDescriptors) {
       Throw("Malformed shape: too many properties");
       return;
     }
 
     if (property_count == 0) {
-      DisallowGarbageCollection no_gc;
-      Map empty_map =
-          isolate_->native_context()->object_function().initial_map();
-      maps_.set(i, empty_map);
+      Handle<Map> map = DeserializeObjectPrototypeAndCreateEmptyMap();
+      maps_.set(i, *map);
       continue;
     }
 
     Handle<DescriptorArray> descriptors =
         factory()->NewDescriptorArray(property_count, 0);
     for (InternalIndex i : InternalIndex::Range(property_count)) {
+      // No deferred references here, since strings and symbols have already
+      // been deserialized.
+      Object key = std::get<0>(
+          ReadValue(Handle<HeapObject>(), 0, InternalizeStrings::kYes));
+      DisallowGarbageCollection no_gc;
+      if (!key.IsName()) {
+        Throw("Invalid map key");
+        return;
+      }
       PropertyAttributes attributes = PropertyAttributes::NONE;
       if (has_custom_property_attributes) {
         uint32_t flags;
-        if (!deserializer_.ReadUint32(&flags)) {
-          Throw("Malformed shape");
+        if (!deserializer_->ReadUint32(&flags)) {
+          Throw("Malformed property attributes");
           return;
         }
         attributes = FlagsToAttributes(flags);
       }
-
-      Handle<String> key(ReadString(true), isolate_);
-
       // Use the "none" representation until we see the first object having this
       // map. At that point, modify the representation.
-      Descriptor desc = Descriptor::DataField(
-          isolate_, key, i.as_int(), attributes, Representation::None());
+      Descriptor desc =
+          Descriptor::DataField(isolate_, handle(Name::cast(key), isolate_),
+                                i.as_int(), attributes, Representation::None());
       descriptors->Set(i, &desc);
     }
     DCHECK_EQ(descriptors->number_of_descriptors(), property_count);
@@ -1573,39 +2231,42 @@ void WebSnapshotDeserializer::DeserializeMaps() {
                                         HOLEY_ELEMENTS, 0);
     map->InitializeDescriptors(isolate_, *descriptors);
     // TODO(v8:11525): Set 'constructor'.
-
-    if (prototype_id == 0) {
-      // Use Object.prototype as the prototype.
-      map->set_prototype(isolate_->native_context()->initial_object_prototype(),
-                         UPDATE_WRITE_BARRIER);
-    } else {
-      // TODO(v8::11525): Implement stricter checks, e.g., disallow cycles.
-      --prototype_id;
-      if (prototype_id < current_object_count_) {
-        map->set_prototype(HeapObject::cast(objects_.get(prototype_id)),
-                           UPDATE_WRITE_BARRIER);
-      } else {
-        // The object hasn't been deserialized yet.
-        AddDeferredReference(map, 0, OBJECT_ID, prototype_id);
-      }
-    }
+    DeserializeObjectPrototype(map);
     maps_.set(i, *map);
+  }
+}
+
+void WebSnapshotDeserializer::DeserializeBuiltinObjects() {
+  RCS_SCOPE(isolate_,
+            RuntimeCallCounterId::kWebSnapshotDeserialize_BuiltinObjects);
+  if (!deserializer_->ReadUint32(&builtin_object_count_) ||
+      builtin_object_count_ > kMaxItemCount) {
+    Throw("Malformed builtin object table");
+    return;
+  }
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
+  builtin_objects_handle_ = factory()->NewFixedArray(builtin_object_count_);
+  builtin_objects_ = *builtin_objects_handle_;
+  for (uint32_t i = 0; i < builtin_object_count_; ++i) {
+    Handle<String> name = handle(ReadString(), isolate_);
+    builtin_objects_.set(static_cast<int>(i),
+                         builtin_object_name_to_object_->Lookup(name));
   }
 }
 
 void WebSnapshotDeserializer::DeserializeContexts() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Contexts);
-  if (!deserializer_.ReadUint32(&context_count_) ||
+  if (!deserializer_->ReadUint32(&context_count_) ||
       context_count_ > kMaxItemCount) {
     Throw("Malformed context table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
   contexts_handle_ = factory()->NewFixedArray(context_count_);
   contexts_ = *contexts_handle_;
   for (uint32_t i = 0; i < context_count_; ++i) {
     uint32_t context_type;
-    if (!deserializer_.ReadUint32(&context_type)) {
+    if (!deserializer_->ReadUint32(&context_type)) {
       Throw("Malformed context type");
       return;
     }
@@ -1613,21 +2274,23 @@ void WebSnapshotDeserializer::DeserializeContexts() {
     uint32_t parent_context_id;
     // Parent context is serialized before child context. Note: not >= on
     // purpose, we're going to subtract 1 later.
-    if (!deserializer_.ReadUint32(&parent_context_id) ||
+    if (!deserializer_->ReadUint32(&parent_context_id) ||
         parent_context_id > i) {
       Throw("Malformed context");
       return;
     }
 
     uint32_t variable_count;
-    if (!deserializer_.ReadUint32(&variable_count)) {
+    if (!deserializer_->ReadUint32(&variable_count)) {
       Throw("Malformed context");
       return;
     }
+    const bool has_inlined_local_names =
+        variable_count < kScopeInfoMaxInlinedLocalNamesSize;
     // TODO(v8:11525): Enforce upper limit for variable count.
-    Handle<ScopeInfo> scope_info =
-        CreateScopeInfo(variable_count, parent_context_id > 0,
-                        static_cast<ContextType>(context_type));
+    Handle<ScopeInfo> scope_info = CreateScopeInfo(
+        variable_count, parent_context_id > 0,
+        static_cast<ContextType>(context_type), has_inlined_local_names);
 
     Handle<Context> parent_context;
     if (parent_context_id > 0) {
@@ -1638,15 +2301,31 @@ void WebSnapshotDeserializer::DeserializeContexts() {
       parent_context = handle(isolate_->context(), isolate_);
     }
 
+    const int local_names_container_size =
+        has_inlined_local_names ? variable_count : 1;
     const int context_local_base = ScopeInfo::kVariablePartIndex;
-    const int context_local_info_base = context_local_base + variable_count;
+    const int context_local_info_base =
+        context_local_base + local_names_container_size;
+
     for (int variable_index = 0;
          variable_index < static_cast<int>(variable_count); ++variable_index) {
       {
-        String name = ReadString(true);
-        scope_info->set(context_local_base + variable_index, name);
-      }
+        String name = ReadString(InternalizeStrings::kYes);
+        if (has_inlined_local_names) {
+          scope_info->set(context_local_base + variable_index, name);
+        } else {
+          Handle<NameToIndexHashTable> local_names_hashtable(
+              scope_info->context_local_names_hashtable(), isolate_);
 
+          Handle<NameToIndexHashTable> new_table =
+              NameToIndexHashTable::Add(isolate_, local_names_hashtable,
+                                        handle(name, isolate_), variable_index);
+          // The hash table didn't grow, since it was preallocated to
+          // be large enough in CreateScopeInfo.
+          DCHECK_EQ(*new_table, *local_names_hashtable);
+          USE(new_table);
+        }
+      }
       // TODO(v8:11525): Support variable modes etc.
       uint32_t info =
           ScopeInfo::VariableModeBits::encode(VariableMode::kLet) |
@@ -1675,11 +2354,10 @@ void WebSnapshotDeserializer::DeserializeContexts() {
         Throw("Unsupported context type");
         return;
     }
-    int context_header_length = scope_info->ContextHeaderLength();
     for (int variable_index = 0;
          variable_index < static_cast<int>(variable_count); ++variable_index) {
-      int context_index = context_header_length + variable_index;
-      Object value = ReadValue(context, context_index);
+      int context_index = scope_info->ContextHeaderLength() + variable_index;
+      Object value = std::get<0>(ReadValue(context, context_index));
       context->set(context_index, value);
     }
     contexts_.set(i, *context);
@@ -1687,7 +2365,8 @@ void WebSnapshotDeserializer::DeserializeContexts() {
 }
 
 Handle<ScopeInfo> WebSnapshotDeserializer::CreateScopeInfo(
-    uint32_t variable_count, bool has_parent, ContextType context_type) {
+    uint32_t variable_count, bool has_parent, ContextType context_type,
+    bool has_inlined_local_names) {
   // TODO(v8:11525): Decide how to handle language modes. (The code below sets
   // the language mode as strict.)
   // TODO(v8:11525): Support (context-allocating) receiver.
@@ -1732,12 +2411,16 @@ Handle<ScopeInfo> WebSnapshotDeserializer::CreateScopeInfo(
       Throw("Unsupported context type");
   }
   flags |= ScopeInfo::ScopeTypeBits::encode(scope_type);
+  const int local_names_container_size =
+      has_inlined_local_names ? variable_count : 1;
   const int length = ScopeInfo::kVariablePartIndex +
                      (ScopeInfo::NeedsPositionInfo(scope_type)
                           ? ScopeInfo::kPositionInfoEntries
                           : 0) +
-                     (has_parent ? 1 : 0) + 2 * variable_count;
+                     (has_parent ? 1 : 0) + local_names_container_size +
+                     variable_count;
   Handle<ScopeInfo> scope_info = factory()->NewScopeInfo(length);
+  Handle<NameToIndexHashTable> local_names_hashtable;
   {
     DisallowGarbageCollection no_gc;
     ScopeInfo raw = *scope_info;
@@ -1751,6 +2434,11 @@ Handle<ScopeInfo> WebSnapshotDeserializer::CreateScopeInfo(
     if (raw.HasPositionInfo()) {
       raw.SetPositionInfo(0, 0);
     }
+  }
+  if (!has_inlined_local_names) {
+    local_names_hashtable = NameToIndexHashTable::New(isolate_, variable_count,
+                                                      AllocationType::kOld);
+    scope_info->set_context_local_names_hashtable(*local_names_hashtable);
   }
   return scope_info;
 }
@@ -1802,14 +2490,65 @@ Handle<JSFunction> WebSnapshotDeserializer::CreateJSFunction(
   return function;
 }
 
+void WebSnapshotDeserializer::DeserializeFunctionProperties(
+    Handle<JSFunction> function) {
+  uint32_t map_id;
+  if (!deserializer_->ReadUint32(&map_id) || map_id >= map_count_ + 1) {
+    Throw("Malformed function");
+    return;
+  }
+
+  if (map_id > 0) {
+    map_id--;  // Subtract 1 to get the real map_id.
+    Handle<Map> map(Map::cast(maps_.get(map_id)), isolate_);
+    int no_properties = map->NumberOfOwnDescriptors();
+    Handle<DescriptorArray> descriptors =
+        handle(map->instance_descriptors(kRelaxedLoad), isolate_);
+    Handle<PropertyArray> property_array =
+        DeserializePropertyArray(descriptors, no_properties);
+    // This function map was already deserialized completely and can be
+    // directly used.
+    auto iter = deserialized_function_maps_.find(map_id);
+    if (iter != deserialized_function_maps_.end()) {
+      function->set_map(*iter->second, kReleaseStore);
+      function->set_raw_properties_or_hash(*property_array);
+    } else {
+      // TODO(v8:11525): In-object properties.
+      Handle<Map> function_map = Map::Copy(
+          isolate_, handle(function->map(), isolate_), "Web Snapshot");
+      Map::EnsureDescriptorSlack(isolate_, function_map,
+                                 descriptors->number_of_descriptors());
+      {
+        for (InternalIndex i : map->IterateOwnDescriptors()) {
+          Descriptor d = Descriptor::DataField(
+              isolate_, handle(descriptors->GetKey(i), isolate_),
+              descriptors->GetDetails(i).field_index(),
+              descriptors->GetDetails(i).attributes(),
+              descriptors->GetDetails(i).representation());
+          function_map->instance_descriptors().Append(&d);
+          if (d.GetKey()->IsInterestingSymbol()) {
+            function_map->set_may_have_interesting_symbols(true);
+          }
+        }
+        function_map->SetNumberOfOwnDescriptors(
+            function_map->NumberOfOwnDescriptors() +
+            descriptors->number_of_descriptors());
+        function->set_map(*function_map, kReleaseStore);
+        function->set_raw_properties_or_hash(*property_array);
+      }
+      deserialized_function_maps_.insert(std::make_pair(map_id, function_map));
+    }
+  }
+}
+
 void WebSnapshotDeserializer::DeserializeFunctions() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Functions);
-  if (!deserializer_.ReadUint32(&function_count_) ||
+  if (!deserializer_->ReadUint32(&function_count_) ||
       function_count_ > kMaxItemCount) {
     Throw("Malformed function table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount + 1 <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount + 1 <= FixedArray::kMaxLength);
   functions_handle_ = factory()->NewFixedArray(function_count_);
   functions_ = *functions_handle_;
 
@@ -1832,12 +2571,13 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
   for (; current_function_count_ < function_count_; ++current_function_count_) {
     uint32_t context_id;
     // Note: > (not >= on purpose, we will subtract 1).
-    if (!deserializer_.ReadUint32(&context_id) || context_id > context_count_) {
+    if (!deserializer_->ReadUint32(&context_id) ||
+        context_id > context_count_) {
       Throw("Malformed function");
       return;
     }
     {
-      String source = ReadString(false);
+      String source = ReadString();
       DisallowGarbageCollection no_gc;
       if (current_function_count_ == 0) {
         script_->set_source(source);
@@ -1851,10 +2591,10 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
     uint32_t length;
     uint32_t parameter_count;
     uint32_t flags;
-    if (!deserializer_.ReadUint32(&start_position) ||
-        !deserializer_.ReadUint32(&length) ||
-        !deserializer_.ReadUint32(&parameter_count) ||
-        !deserializer_.ReadUint32(&flags)) {
+    if (!deserializer_->ReadUint32(&start_position) ||
+        !deserializer_->ReadUint32(&length) ||
+        !deserializer_->ReadUint32(&parameter_count) ||
+        !deserializer_->ReadUint32(&flags)) {
       Throw("Malformed function");
       return;
     }
@@ -1867,17 +2607,19 @@ void WebSnapshotDeserializer::DeserializeFunctions() {
     functions_.set(current_function_count_, *function);
 
     ReadFunctionPrototype(function);
+    DeserializeFunctionProperties(function);
+    DeserializeObjectPrototypeForFunction(function);
   }
 }
 
 void WebSnapshotDeserializer::DeserializeClasses() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Classes);
-  if (!deserializer_.ReadUint32(&class_count_) ||
+  if (!deserializer_->ReadUint32(&class_count_) ||
       class_count_ > kMaxItemCount) {
     Throw("Malformed class table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount + 1 <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount + 1 <= FixedArray::kMaxLength);
   classes_handle_ = factory()->NewFixedArray(class_count_);
   classes_ = *classes_handle_;
 
@@ -1891,13 +2633,14 @@ void WebSnapshotDeserializer::DeserializeClasses() {
   for (; current_class_count_ < class_count_; ++current_class_count_) {
     uint32_t context_id;
     // Note: > (not >= on purpose, we will subtract 1).
-    if (!deserializer_.ReadUint32(&context_id) || context_id > context_count_) {
+    if (!deserializer_->ReadUint32(&context_id) ||
+        context_id > context_count_) {
       Throw("Malformed class");
       return;
     }
 
     {
-      String source = ReadString(false);
+      String source = ReadString();
       if (current_function_count_ + current_class_count_ == 0) {
         script_->set_source(source);
       } else {
@@ -1910,10 +2653,10 @@ void WebSnapshotDeserializer::DeserializeClasses() {
     uint32_t length;
     uint32_t parameter_count;
     uint32_t flags;
-    if (!deserializer_.ReadUint32(&start_position) ||
-        !deserializer_.ReadUint32(&length) ||
-        !deserializer_.ReadUint32(&parameter_count) ||
-        !deserializer_.ReadUint32(&flags)) {
+    if (!deserializer_->ReadUint32(&start_position) ||
+        !deserializer_->ReadUint32(&length) ||
+        !deserializer_->ReadUint32(&parameter_count) ||
+        !deserializer_->ReadUint32(&flags)) {
       Throw("Malformed class");
       return;
     }
@@ -1923,120 +2666,417 @@ void WebSnapshotDeserializer::DeserializeClasses() {
     Handle<JSFunction> function = CreateJSFunction(
         function_count_ + current_class_count_ + 1, start_position, length,
         parameter_count, flags, context_id);
-    classes_.set(current_class_count_, *function);
 
     ReadFunctionPrototype(function);
+    // TODO(v8:11525): Use serialized start_position and length to add
+    // ClassPositions property to class.
+    DeserializeFunctionProperties(function);
+    DeserializeObjectPrototypeForFunction(function);
+    classes_.set(current_class_count_, *function);
   }
+}
+
+void WebSnapshotDeserializer::DeserializeObjectPrototype(Handle<Map> map) {
+  auto result = ReadValue(map, 0, InternalizeStrings::kNo);
+  Object prototype = std::get<0>(result);
+  bool was_deferred = std::get<1>(result);
+  if (!was_deferred) {
+    SetPrototype(map, handle(prototype, isolate_));
+  }
+}
+
+bool WebSnapshotDeserializer::IsInitialFunctionPrototype(Object prototype) {
+  return prototype == isolate_->context().function_prototype() ||
+         // Asyncfunction prototype.
+         prototype == isolate_->context()
+                          .async_function_constructor()
+                          .instance_prototype() ||
+         // GeneratorFunction prototype.
+         prototype == JSFunction::cast(isolate_->context()
+                                           .generator_function_map()
+                                           .constructor_or_back_pointer())
+                          .instance_prototype() ||
+         // AsyncGeneratorFunction prototype
+         prototype == JSFunction::cast(isolate_->context()
+                                           .async_generator_function_map()
+                                           .constructor_or_back_pointer())
+                          .instance_prototype();
+}
+
+void WebSnapshotDeserializer::DeserializeObjectPrototypeForFunction(
+    Handle<JSFunction> function) {
+  Handle<Map> map(function->map(), isolate_);
+  // If the function prototype is not the initial function prototype, then the
+  // map must not be the canonical maps because we already copy the map when
+  // deserializaing the map for the function. And so we don't need to copy the
+  // map.
+  // TODO(v8:11525): Ensure we create the same map tree as for non-websnapshot
+  // functions + add a test.
+  auto result = ReadValue(map, 0, InternalizeStrings::kNo);
+  Object prototype = std::get<0>(result);
+  bool was_deferred = std::get<1>(result);
+  // If we got a deferred reference, the prototype cannot be a builtin; those
+  // references aren't deferred.
+  // TODO(v8:11525): if the object order is relaxed, it's possible to have a
+  // deferred reference to Function.prototype, and we'll need to recognize and
+  // handle that case.
+  if (IsInitialFunctionPrototype(prototype)) {
+    DCHECK(IsInitialFunctionPrototype(function->map().prototype()));
+    return;
+  }
+  if (!was_deferred) {
+    SetPrototype(map, handle(prototype, isolate_));
+  }
+}
+
+Handle<Map>
+WebSnapshotDeserializer::DeserializeObjectPrototypeAndCreateEmptyMap() {
+  Handle<Map> map = factory()->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize,
+                                      HOLEY_ELEMENTS, 0);
+  auto result = ReadValue(map, 0, InternalizeStrings::kNo);
+  Object prototype = std::get<0>(result);
+  bool was_deferred = std::get<1>(result);
+  // If we got a deferred reference, the prototype cannot be a builtin; those
+  // references aren't deferred.
+  // TODO(v8:11525): if the object order is relaxed, it's possible to have a
+  // deferred reference to Object.prototype, and we'll need to recognize and
+  // handle that case.
+  if (prototype == isolate_->context().initial_object_prototype()) {
+    // TODO(v8:11525): Avoid map creation (above) in this case.
+    // TODO(v8:11525): Should the __proto__ be a property of the map or a
+    // property of the object? Investigate which solution is better for the
+    // other JS engines.
+    return handle(isolate_->native_context()->object_function().initial_map(),
+                  isolate_);
+  }
+  if (!was_deferred) {
+    SetPrototype(map, handle(prototype, isolate_));
+  }
+  return map;
+}
+
+void WebSnapshotDeserializer::SetPrototype(Handle<Map> map,
+                                           Handle<Object> prototype) {
+  if (prototype->IsJSObject()) {
+    HeapObject::cast(*prototype).map().set_is_prototype_map(true);
+    Map::SetPrototype(isolate_, map, Handle<JSObject>::cast(prototype));
+  } else if (prototype->IsNull(isolate_)) {
+    map->set_prototype(HeapObject::cast(*prototype));
+  } else {
+    Throw("Invalid prototype");
+  }
+}
+
+template <typename T>
+void WebSnapshotDeserializer::DeserializeObjectPropertiesWithDictionaryMap(
+    T dict, uint32_t property_count, bool has_custom_property_attributes) {
+  for (uint32_t i = 0; i < property_count; i++) {
+    Handle<Object> key(std::get<0>(ReadValue(Handle<HeapObject>(), 0,
+                                             InternalizeStrings::kYes)),
+                       isolate_);
+    if (!key->IsName()) {
+      Throw("Invalid map key");
+      return;
+    }
+    Handle<Object> value(std::get<0>(ReadValue()), isolate_);
+    PropertyAttributes attributes = PropertyAttributes::NONE;
+    if (has_custom_property_attributes) {
+      uint32_t flags;
+      if (!deserializer_->ReadUint32(&flags)) {
+        Throw("Malformed property attributes");
+        return;
+      }
+      attributes = FlagsToAttributes(flags);
+    }
+
+    PropertyDetails details(PropertyKind::kData, attributes,
+                            PropertyDetails::kConstIfDictConstnessTracking);
+    auto new_dict =
+        dict->Add(isolate_, dict, Handle<Name>::cast(key), value, details);
+    // The dictionary didn't grow, since it was preallocated to be large enough
+    // in DeserializeObjects.
+    DCHECK_EQ(*new_dict, *dict);
+    USE(new_dict);
+  }
+}
+
+bool WebSnapshotDeserializer::ReadMapType() {
+  uint32_t map_type;
+  if (!deserializer_->ReadUint32(&map_type)) {
+    Throw("Malformed shape");
+    return false;
+  }
+
+  switch (map_type) {
+    case PropertyAttributesType::DEFAULT:
+      return false;
+    case PropertyAttributesType::CUSTOM:
+      return true;
+    default:
+      Throw("Unsupported map type");
+      return false;
+  }
+}
+
+Handle<PropertyArray> WebSnapshotDeserializer::DeserializePropertyArray(
+    Handle<DescriptorArray> descriptors, int no_properties) {
+  Handle<PropertyArray> property_array =
+      factory()->NewPropertyArray(no_properties);
+  for (int i = 0; i < no_properties; ++i) {
+    Object value = std::get<0>(ReadValue(property_array, i));
+    DisallowGarbageCollection no_gc;
+    // Read the representation from the map.
+    DescriptorArray raw_descriptors = *descriptors;
+    PropertyDetails details = raw_descriptors.GetDetails(InternalIndex(i));
+    CHECK_EQ(details.location(), PropertyLocation::kField);
+    CHECK_EQ(PropertyKind::kData, details.kind());
+    Representation r = details.representation();
+    if (r.IsNone()) {
+      // Switch over to wanted_representation.
+      details = details.CopyWithRepresentation(Representation::Tagged());
+      raw_descriptors.SetDetails(InternalIndex(i), details);
+    } else if (!r.Equals(Representation::Tagged())) {
+      // TODO(v8:11525): Support this case too.
+      UNREACHABLE();
+    }
+    property_array->set(i, value);
+  }
+  return property_array;
 }
 
 void WebSnapshotDeserializer::DeserializeObjects() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Objects);
-  if (!deserializer_.ReadUint32(&object_count_) ||
+  if (!deserializer_->ReadUint32(&object_count_) ||
       object_count_ > kMaxItemCount) {
     Throw("Malformed objects table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
   objects_handle_ = factory()->NewFixedArray(object_count_);
   objects_ = *objects_handle_;
+  bool map_from_snapshot = false;
   for (; current_object_count_ < object_count_; ++current_object_count_) {
     uint32_t map_id;
-    if (!deserializer_.ReadUint32(&map_id) || map_id >= map_count_) {
+    if (!deserializer_->ReadUint32(&map_id) || map_id >= map_count_ + 1) {
       Throw("Malformed object");
       return;
     }
-    Map raw_map = Map::cast(maps_.get(map_id));
-    Handle<DescriptorArray> descriptors =
-        handle(raw_map.instance_descriptors(kRelaxedLoad), isolate_);
-    int no_properties = raw_map.NumberOfOwnDescriptors();
-    // TODO(v8:11525): In-object properties.
-    Handle<Map> map(raw_map, isolate_);
-    Handle<PropertyArray> property_array =
-        factory()->NewPropertyArray(no_properties);
-    for (int i = 0; i < no_properties; ++i) {
-      Object value = ReadValue(property_array, i);
-      DisallowGarbageCollection no_gc;
-      // Read the representation from the map.
-      DescriptorArray raw_descriptors = *descriptors;
-      PropertyDetails details = raw_descriptors.GetDetails(InternalIndex(i));
-      CHECK_EQ(details.location(), PropertyLocation::kField);
-      CHECK_EQ(PropertyKind::kData, details.kind());
-      Representation r = details.representation();
-      if (r.IsNone()) {
-        // Switch over to wanted_representation.
-        details = details.CopyWithRepresentation(Representation::Tagged());
-        raw_descriptors.SetDetails(InternalIndex(i), details);
-      } else if (!r.Equals(Representation::Tagged())) {
-        // TODO(v8:11525): Support this case too.
-        UNREACHABLE();
-      }
-      property_array->set(i, value);
-    }
-    Handle<JSObject> object = factory()->NewJSObjectFromMap(map);
-    object->set_raw_properties_or_hash(*property_array, kRelaxedStore);
+    Handle<JSObject> object;
+    if (map_id > 0) {
+      map_id--;  // Subtract 1 to get the real map_id.
+      Map raw_map = Map::cast(maps_.get(map_id));
+      map_from_snapshot = true;
+      Handle<DescriptorArray> descriptors =
+          handle(raw_map.instance_descriptors(kRelaxedLoad), isolate_);
+      int no_properties = raw_map.NumberOfOwnDescriptors();
+      // TODO(v8:11525): In-object properties.
+      Handle<Map> map(raw_map, isolate_);
+      Handle<PropertyArray> property_array =
+          DeserializePropertyArray(descriptors, no_properties);
+      object = factory()->NewJSObjectFromMap(map);
+      object->set_raw_properties_or_hash(*property_array, kRelaxedStore);
+    } else {
+      Handle<Map> map = factory()->NewMap(JS_OBJECT_TYPE, JSObject::kHeaderSize,
+                                          HOLEY_ELEMENTS, 0);
+      map->set_may_have_interesting_symbols(true);
+      map->set_is_dictionary_map(true);
 
-    uint32_t max_element_index = 0;
-    if (!deserializer_.ReadUint32(&max_element_index) ||
-        max_element_index > kMaxItemCount + 1) {
-      Throw("Malformed object");
-      return;
-    }
-    if (max_element_index > 0) {
-      --max_element_index;  // Subtract 1 to get the real max_element_index.
-      Handle<FixedArray> elements =
-          factory()->NewFixedArray(max_element_index + 1);
-      // Read (index, value) pairs until we encounter one where index ==
-      // max_element_index.
-      while (true) {
-        uint32_t index;
-        if (!deserializer_.ReadUint32(&index) || index > max_element_index) {
-          Throw("Malformed object");
-          return;
-        }
-        Object value = ReadValue(elements, index);
-        elements->set(index, value);
-        if (index == max_element_index) {
-          break;
-        }
+      bool has_custom_property_attributes = ReadMapType();
+
+      uint32_t property_count;
+      if (!deserializer_->ReadUint32(&property_count)) {
+        Throw("Malformed object");
+        return;
       }
-      object->set_elements(*elements);
-      // Objects always get HOLEY_ELEMENTS.
-      DCHECK(!IsSmiElementsKind(object->map().elements_kind()));
-      DCHECK(!IsDoubleElementsKind(object->map().elements_kind()));
-      DCHECK(IsHoleyElementsKind(object->map().elements_kind()));
+      // TODO(v8:11525): Allow "non-map" objects which are small enough to have
+      // a fast map.
+      if (property_count <= kMaxNumberOfDescriptors) {
+        Throw("Malformed object: too few properties for 'no map' object");
+        return;
+      }
+
+      if (V8_ENABLE_SWISS_NAME_DICTIONARY_BOOL) {
+        Handle<SwissNameDictionary> swiss_dictionary =
+            isolate_->factory()->NewSwissNameDictionary(property_count);
+        DeserializeObjectPropertiesWithDictionaryMap(
+            swiss_dictionary, property_count, has_custom_property_attributes);
+        object = factory()->NewJSObjectFromMap(map);
+        object->SetProperties(*swiss_dictionary);
+      } else {
+        Handle<NameDictionary> dictionary =
+            isolate_->factory()->NewNameDictionary(property_count);
+        DeserializeObjectPropertiesWithDictionaryMap(
+            dictionary, property_count, has_custom_property_attributes);
+        object = factory()->NewJSObjectFromMap(map);
+        object->SetProperties(*dictionary);
+      }
+      DeserializeObjectPrototype(map);
     }
+    DCHECK(!object->is_null());
+
+    DeserializeObjectElements(object, map_from_snapshot);
     objects_.set(static_cast<int>(current_object_count_), *object);
   }
 }
 
+void WebSnapshotDeserializer::DeserializeObjectElements(
+    Handle<JSObject> object, bool map_from_snapshot) {
+  auto [elements, elements_kind, length] = DeserializeElements();
+  USE(length);
+  // Ensure objects always get HOLEY_ELEMENTS or DICTIONARY_ELEMENTS: don't
+  // change the elements kind if it's holey.
+  DCHECK(object->HasHoleyElements());
+  if (IsDictionaryElementsKind(elements_kind)) {
+    DCHECK_GT(length, 0);
+    Handle<Map> map(object->map(), isolate_);
+    if (map_from_snapshot) {
+      // Copy the map so that we don't end up modifying the maps coming from
+      // the web snapshot, since they might get reused.
+      // TODO(v8:11525): Is it reasonable to encode the elements kind to the
+      // map? Investigate what other JS engines do.
+      // TODO(v8:11525): Add a test where two objects share the map but have
+      // different elements kinds.
+      map = Map::Copy(isolate_, map, "Web Snapshot");
+      object->set_map(*map, kReleaseStore);
+    }
+    map->set_elements_kind(elements_kind);
+  }
+  object->set_elements(*elements);
+  DCHECK(object->HasHoleyElements() || object->HasDictionaryElements());
+}
+
+WebSnapshotDeserializer::ElementsType
+WebSnapshotDeserializer::ReadElementsType() {
+  uint32_t elements_type;
+  if (!deserializer_->ReadUint32(&elements_type)) {
+    Throw("Malformed elements type");
+    return ElementsType::kDense;
+  }
+  if (elements_type != ElementsType::kDense &&
+      elements_type != ElementsType::kSparse) {
+    Throw("Unknown elements type");
+    return ElementsType::kDense;
+  }
+  return static_cast<ElementsType>(elements_type);
+}
+
+std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t>
+WebSnapshotDeserializer::DeserializeElements() {
+  uint32_t length;
+  ElementsType elements_type = ReadElementsType();
+  if (!deserializer_->ReadUint32(&length) || length > kMaxItemCount) {
+    Throw("Malformed elements");
+    return std::make_tuple(factory()->NewFixedArray(0), PACKED_SMI_ELEMENTS, 0);
+  }
+  if (elements_type == ElementsType::kDense) {
+    // TODO(v8:11525): we need to convert the elements to dictionary mode if
+    // there are too many elements for packed elements.
+    return ReadDenseElements(length);
+  } else {
+    // TODO(v8:11525): we need to convert sparse elements to packed elements
+    // (including double elements) if the elements fit into packed elements
+    // kind.
+    return ReadSparseElements(length);
+  }
+}
+
+std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t>
+WebSnapshotDeserializer::ReadDenseElements(uint32_t length) {
+  Handle<FixedArray> elements = factory()->NewFixedArray(length);
+  ElementsKind elements_kind = PACKED_SMI_ELEMENTS;
+  bool has_hole = false;
+  bool has_non_number = false;
+  for (uint32_t i = 0; i < length; ++i) {
+    Object value = std::get<0>(ReadValue(elements, i));
+    DisallowGarbageCollection no_gc;
+    if (!value.IsSmi()) {
+      elements_kind = PACKED_ELEMENTS;
+    }
+    if (!value.IsNumber()) {
+      has_non_number = true;
+    }
+    if (value.IsTheHole()) {
+      has_hole = true;
+    }
+    elements->set(static_cast<int>(i), value);
+  }
+  if (has_hole) {
+    elements_kind =
+        elements_kind == PACKED_ELEMENTS ? HOLEY_ELEMENTS : HOLEY_SMI_ELEMENTS;
+  }
+  // If all elements are number and not all elements are smi, we could convert
+  // the array to double array.
+  if (!has_non_number && !IsSmiElementsKind(elements_kind)) {
+    DCHECK(IsObjectElementsKind(elements_kind));
+    ElementsKind new_elements_kind =
+        has_hole ? HOLEY_DOUBLE_ELEMENTS : PACKED_DOUBLE_ELEMENTS;
+    Handle<FixedArrayBase> new_elements =
+        isolate_->factory()->NewFixedDoubleArray(length);
+    ElementsAccessor* element_accessor =
+        ElementsAccessor::ForKind(new_elements_kind);
+    element_accessor->CopyElements(isolate_, elements, elements_kind,
+                                   new_elements, length);
+    return std::make_tuple(new_elements, new_elements_kind, length);
+  }
+  return std::make_tuple(elements, elements_kind, length);
+}
+
+std::tuple<Handle<FixedArrayBase>, ElementsKind, uint32_t>
+WebSnapshotDeserializer::ReadSparseElements(uint32_t length) {
+  Handle<NumberDictionary> dict = NumberDictionary::New(isolate_, length);
+  uint32_t max_element_index = 0;
+  for (uint32_t i = 0; i < length; ++i) {
+    uint32_t element_index;
+    if (!deserializer_->ReadUint32(&element_index)) {
+      Throw("Malformed element index in sparse elements");
+      return std::make_tuple(dict, DICTIONARY_ELEMENTS, 0);
+    }
+    Object value = std::get<0>(ReadValue(dict, element_index));
+    Handle<NumberDictionary> new_dict =
+        dict->Set(isolate_, dict, element_index, handle(value, isolate_));
+    // The number dictionary didn't grow, since it was preallocated to be
+    // large enough before.
+    DCHECK_EQ(*new_dict, *dict);
+    USE(new_dict);
+    if (element_index > max_element_index) {
+      max_element_index = element_index;
+    }
+  }
+  // Bypasses JSObject::RequireSlowElements which is fine when we're setting up
+  // objects from the web snapshot.
+  dict->UpdateMaxNumberKey(max_element_index, Handle<JSObject>());
+  return std::make_tuple(dict, DICTIONARY_ELEMENTS, max_element_index + 1);
+}
+
 void WebSnapshotDeserializer::DeserializeArrays() {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Arrays);
-  if (!deserializer_.ReadUint32(&array_count_) ||
+  if (!deserializer_->ReadUint32(&array_count_) ||
       object_count_ > kMaxItemCount) {
     Throw("Malformed array table");
     return;
   }
-  STATIC_ASSERT(kMaxItemCount <= FixedArray::kMaxLength);
+  static_assert(kMaxItemCount <= FixedArray::kMaxLength);
   arrays_handle_ = factory()->NewFixedArray(array_count_);
   arrays_ = *arrays_handle_;
   for (; current_array_count_ < array_count_; ++current_array_count_) {
-    uint32_t length;
-    if (!deserializer_.ReadUint32(&length) || length > kMaxItemCount) {
-      Throw("Malformed array");
-      return;
+    auto [elements, elements_kind, length] = DeserializeElements();
+    Handle<JSArray> array;
+
+    if (IsDictionaryElementsKind(elements_kind)) {
+      array = isolate_->factory()->NewJSArray(0);
+
+      Handle<Object> array_length =
+          isolate_->factory()->NewNumberFromUint(length);
+      Handle<Map> map =
+          JSObject::GetElementsTransitionMap(array, DICTIONARY_ELEMENTS);
+      array->set_length(*array_length);
+      array->set_elements(*elements);
+      array->set_map(*map, kReleaseStore);
+    } else {
+      array =
+          factory()->NewJSArrayWithElements(elements, elements_kind, length);
     }
-    Handle<FixedArray> elements = factory()->NewFixedArray(length);
-    ElementsKind elements_kind = PACKED_SMI_ELEMENTS;
-    for (uint32_t i = 0; i < length; ++i) {
-      Object value = ReadValue(elements, i);
-      DisallowGarbageCollection no_gc;
-      if (!value.IsSmi()) {
-        elements_kind = PACKED_ELEMENTS;
-      }
-      elements->set(static_cast<int>(i), value);
-    }
-    Handle<JSArray> array =
-        factory()->NewJSArrayWithElements(elements, elements_kind, length);
+    DCHECK(!array->is_null());
     arrays_.set(static_cast<int>(current_array_count_), *array);
   }
 }
@@ -2044,7 +3084,7 @@ void WebSnapshotDeserializer::DeserializeArrays() {
 void WebSnapshotDeserializer::DeserializeExports(bool skip_exports) {
   RCS_SCOPE(isolate_, RuntimeCallCounterId::kWebSnapshotDeserialize_Exports);
   uint32_t count;
-  if (!deserializer_.ReadUint32(&count) || count > kMaxItemCount) {
+  if (!deserializer_->ReadUint32(&count) || count > kMaxItemCount) {
     Throw("Malformed export table");
     return;
   }
@@ -2054,10 +3094,11 @@ void WebSnapshotDeserializer::DeserializeExports(bool skip_exports) {
     // them. This is useful for stress testing; otherwise the GlobalDictionary
     // handling below dominates.
     for (uint32_t i = 0; i < count; ++i) {
-      Handle<String> export_name(ReadString(true), isolate_);
+      Handle<String> export_name(ReadString(InternalizeStrings::kYes),
+                                 isolate_);
       // No deferred references should occur at this point, since all objects
       // have been deserialized.
-      Object export_value = ReadValue();
+      Object export_value = std::get<0>(ReadValue());
       USE(export_name);
       USE(export_value);
     }
@@ -2080,10 +3121,10 @@ void WebSnapshotDeserializer::DeserializeExports(bool skip_exports) {
   // LookupIterator::ExtendingNonExtensible.
   InternalIndex entry = InternalIndex::NotFound();
   for (uint32_t i = 0; i < count; ++i) {
-    Handle<String> export_name(ReadString(true), isolate_);
+    Handle<String> export_name(ReadString(InternalizeStrings::kYes), isolate_);
     // No deferred references should occur at this point, since all objects have
     // been deserialized.
-    Object export_value = ReadValue();
+    Object export_value = std::get<0>(ReadValue());
 
     if (export_name->length() == 0 && i == 0) {
       // Hack: treat the first empty-string-named export value as a return value
@@ -2119,31 +3160,34 @@ void WebSnapshotDeserializer::DeserializeExports(bool skip_exports) {
   JSObject::InvalidatePrototypeChains(global->map(isolate_));
 }
 
-Object WebSnapshotDeserializer::ReadValue(Handle<HeapObject> container,
-                                          uint32_t container_index) {
+std::tuple<Object, bool> WebSnapshotDeserializer::ReadValue(
+    Handle<HeapObject> container, uint32_t container_index,
+    InternalizeStrings internalize_strings) {
   uint32_t value_type;
   // TODO(v8:11525): Consider adding a ReadByte.
-  if (!deserializer_.ReadUint32(&value_type)) {
+  if (!deserializer_->ReadUint32(&value_type)) {
     Throw("Malformed variable");
-    // Set "value" here so that the "keep on trucking" error handling won't fail
-    // when dereferencing the handle.
-    return Smi::zero();
+    // Return a placeholder "value" so that the "keep on trucking" error
+    // handling won't fail.
+    return std::make_tuple(Smi::zero(), false);
   }
   switch (value_type) {
     case ValueType::FALSE_CONSTANT:
-      return roots_.false_value();
+      return std::make_tuple(roots_.false_value(), false);
     case ValueType::TRUE_CONSTANT:
-      return roots_.true_value();
+      return std::make_tuple(roots_.true_value(), false);
     case ValueType::NULL_CONSTANT:
-      return roots_.null_value();
+      return std::make_tuple(roots_.null_value(), false);
     case ValueType::UNDEFINED_CONSTANT:
-      return roots_.undefined_value();
+      return std::make_tuple(roots_.undefined_value(), false);
+    case ValueType::NO_ELEMENT_CONSTANT:
+      return std::make_tuple(roots_.the_hole_value(), false);
     case ValueType::INTEGER:
-      return ReadInteger();
+      return std::make_tuple(ReadInteger(), false);
     case ValueType::DOUBLE:
-      return ReadNumber();
+      return std::make_tuple(ReadNumber(), false);
     case ValueType::STRING_ID:
-      return ReadString(false);
+      return std::make_tuple(ReadString(internalize_strings), false);
     case ValueType::ARRAY_ID:
       return ReadArray(container, container_index);
     case ValueType::OBJECT_ID:
@@ -2153,20 +3197,24 @@ Object WebSnapshotDeserializer::ReadValue(Handle<HeapObject> container,
     case ValueType::CLASS_ID:
       return ReadClass(container, container_index);
     case ValueType::REGEXP:
-      return ReadRegexp();
+      return std::make_tuple(ReadRegexp(), false);
+    case ValueType::SYMBOL_ID:
+      return std::make_tuple(ReadSymbol(), false);
     case ValueType::EXTERNAL_ID:
-      return ReadExternalReference();
+      return std::make_tuple(ReadExternalReference(), false);
+    case ValueType::BUILTIN_OBJECT_ID:
+      return std::make_tuple(ReadBuiltinObjectReference(), false);
     case ValueType::IN_PLACE_STRING_ID:
-      return ReadInPlaceString(false);
+      return std::make_tuple(ReadInPlaceString(internalize_strings), false);
     default:
       // TODO(v8:11525): Handle other value types.
       Throw("Unsupported value type");
-      return Smi::zero();
+      return std::make_tuple(Smi::zero(), false);
   }
 }
 
 Object WebSnapshotDeserializer::ReadInteger() {
-  Maybe<int32_t> number = deserializer_.ReadZigZag<int32_t>();
+  Maybe<int32_t> number = deserializer_->ReadZigZag<int32_t>();
   if (number.IsNothing()) {
     Throw("Malformed integer");
     return Smi::zero();
@@ -2176,73 +3224,76 @@ Object WebSnapshotDeserializer::ReadInteger() {
 
 Object WebSnapshotDeserializer::ReadNumber() {
   double number;
-  if (!deserializer_.ReadDouble(&number)) {
+  if (!deserializer_->ReadDouble(&number)) {
     Throw("Malformed double");
     return Smi::zero();
   }
   return *factory()->NewNumber(number);
 }
 
-Object WebSnapshotDeserializer::ReadArray(Handle<HeapObject> container,
-                                          uint32_t index) {
+std::tuple<Object, bool> WebSnapshotDeserializer::ReadArray(
+    Handle<HeapObject> container, uint32_t index) {
   uint32_t array_id;
-  if (!deserializer_.ReadUint32(&array_id) || array_id >= kMaxItemCount) {
+  if (!deserializer_->ReadUint32(&array_id) || array_id >= kMaxItemCount) {
     Throw("Malformed variable");
-    return Smi::zero();
+    return std::make_tuple(Smi::zero(), false);
   }
   if (array_id < current_array_count_) {
-    return arrays_.get(array_id);
+    return std::make_tuple(arrays_.get(array_id), false);
   }
   // The array hasn't been deserialized yet.
-  return AddDeferredReference(container, index, ARRAY_ID, array_id);
+  return std::make_tuple(
+      AddDeferredReference(container, index, ARRAY_ID, array_id), true);
 }
 
-Object WebSnapshotDeserializer::ReadObject(Handle<HeapObject> container,
-                                           uint32_t index) {
+std::tuple<Object, bool> WebSnapshotDeserializer::ReadObject(
+    Handle<HeapObject> container, uint32_t index) {
   uint32_t object_id;
-  if (!deserializer_.ReadUint32(&object_id) || object_id > kMaxItemCount) {
+  if (!deserializer_->ReadUint32(&object_id) || object_id > kMaxItemCount) {
     Throw("Malformed variable");
-    return Smi::zero();
+    return std::make_tuple(Smi::zero(), false);
   }
   if (object_id < current_object_count_) {
-    return objects_.get(object_id);
+    return std::make_tuple(objects_.get(object_id), false);
   }
   // The object hasn't been deserialized yet.
-  return AddDeferredReference(container, index, OBJECT_ID, object_id);
+  return std::make_tuple(
+      AddDeferredReference(container, index, OBJECT_ID, object_id), true);
 }
 
-Object WebSnapshotDeserializer::ReadFunction(Handle<HeapObject> container,
-                                             uint32_t index) {
+std::tuple<Object, bool> WebSnapshotDeserializer::ReadFunction(
+    Handle<HeapObject> container, uint32_t index) {
   uint32_t function_id;
-  if (!deserializer_.ReadUint32(&function_id) ||
-      function_id >= function_count_) {
+  if (!deserializer_->ReadUint32(&function_id)) {
     Throw("Malformed object property");
-    return Smi::zero();
+    return std::make_tuple(Smi::zero(), false);
   }
   if (function_id < current_function_count_) {
-    return functions_.get(function_id);
+    return std::make_tuple(functions_.get(function_id), false);
   }
   // The function hasn't been deserialized yet.
-  return AddDeferredReference(container, index, FUNCTION_ID, function_id);
+  return std::make_tuple(
+      AddDeferredReference(container, index, FUNCTION_ID, function_id), true);
 }
 
-Object WebSnapshotDeserializer::ReadClass(Handle<HeapObject> container,
-                                          uint32_t index) {
+std::tuple<Object, bool> WebSnapshotDeserializer::ReadClass(
+    Handle<HeapObject> container, uint32_t index) {
   uint32_t class_id;
-  if (!deserializer_.ReadUint32(&class_id) || class_id >= kMaxItemCount) {
+  if (!deserializer_->ReadUint32(&class_id) || class_id >= kMaxItemCount) {
     Throw("Malformed object property");
-    return Smi::zero();
+    return std::make_tuple(Smi::zero(), false);
   }
   if (class_id < current_class_count_) {
-    return classes_.get(class_id);
+    return std::make_tuple(classes_.get(class_id), false);
   }
   // The class hasn't been deserialized yet.
-  return AddDeferredReference(container, index, CLASS_ID, class_id);
+  return std::make_tuple(
+      AddDeferredReference(container, index, CLASS_ID, class_id), true);
 }
 
 Object WebSnapshotDeserializer::ReadRegexp() {
-  Handle<String> pattern(ReadString(false), isolate_);
-  Handle<String> flags_string(ReadString(false), isolate_);
+  Handle<String> pattern(ReadString(), isolate_);
+  Handle<String> flags_string(ReadString(), isolate_);
   base::Optional<JSRegExp::Flags> flags =
       JSRegExp::FlagsFromString(isolate_, flags_string);
   if (!flags.has_value()) {
@@ -2261,7 +3312,7 @@ Object WebSnapshotDeserializer::ReadRegexp() {
 
 Object WebSnapshotDeserializer::ReadExternalReference() {
   uint32_t ref_id;
-  if (!deserializer_.ReadUint32(&ref_id) ||
+  if (!deserializer_->ReadUint32(&ref_id) ||
       ref_id >= static_cast<uint32_t>(external_references_.length())) {
     Throw("Invalid external reference");
     return Smi::zero();
@@ -2269,11 +3320,21 @@ Object WebSnapshotDeserializer::ReadExternalReference() {
   return external_references_.get(ref_id);
 }
 
+Object WebSnapshotDeserializer::ReadBuiltinObjectReference() {
+  uint32_t ref_id;
+  if (!deserializer_->ReadUint32(&ref_id) ||
+      ref_id >= static_cast<uint32_t>(builtin_objects_.length())) {
+    Throw("Invalid builtin object reference");
+    return Smi::zero();
+  }
+  return builtin_objects_.get(ref_id);
+}
+
 void WebSnapshotDeserializer::ReadFunctionPrototype(
     Handle<JSFunction> function) {
   uint32_t object_id;
 
-  if (!deserializer_.ReadUint32(&object_id) || object_id > kMaxItemCount + 1) {
+  if (!deserializer_->ReadUint32(&object_id) || object_id > kMaxItemCount + 1) {
     Throw("Malformed class / function");
     return;
   }
@@ -2402,6 +3463,19 @@ void WebSnapshotDeserializer::ProcessDeferredReferences() {
       PropertyArray::cast(container).set(index, target);
     } else if (InstanceTypeChecker::IsContext(instance_type)) {
       Context::cast(container).set(index, target);
+    } else if (InstanceTypeChecker::IsNumberDictionary(instance_type)) {
+      // NumberDictionary::Set may need create HeapNumber for index.
+      AllowGarbageCollection allow_gc;
+      Handle<NumberDictionary> new_container = NumberDictionary::Set(
+          isolate_, handle(NumberDictionary::cast(container), isolate_), index,
+          handle(target, isolate_));
+      // The number dictionary didn't grow, since it was preallocated to be
+      // large enough in DeserializeArrays.
+      DCHECK_EQ(*new_container, container);
+      USE(new_container);
+      // We also need to reload raw_deferred_references because
+      // NumberDictionary::Set may allocate.
+      raw_deferred_references = *deferred_references_;
     } else if (InstanceTypeChecker::IsFixedArray(instance_type)) {
       FixedArray::cast(container).set(index, target);
     } else if (InstanceTypeChecker::IsJSFunction(instance_type)) {
@@ -2419,8 +3493,10 @@ void WebSnapshotDeserializer::ProcessDeferredReferences() {
       // The only deferred reference allowed for a Map is the __proto__.
       DCHECK_EQ(index, 0);
       DCHECK(target.IsJSReceiver());
-      Map::cast(container).set_prototype(HeapObject::cast(target),
-                                         UPDATE_WRITE_BARRIER);
+      AllowGarbageCollection allow_gc;
+      SetPrototype(handle(Map::cast(container), isolate_),
+                   handle(target, isolate_));
+      raw_deferred_references = *deferred_references_;
     } else {
       UNREACHABLE();
     }

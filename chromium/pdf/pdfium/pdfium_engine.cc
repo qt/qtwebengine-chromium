@@ -24,6 +24,7 @@
 #include "base/feature_list.h"
 #include "base/location.h"
 #include "base/notreached.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -62,7 +63,6 @@
 #include "third_party/pdfium/public/cpp/fpdf_scopers.h"
 #include "third_party/pdfium/public/fpdf_annot.h"
 #include "third_party/pdfium/public/fpdf_attachment.h"
-#include "third_party/pdfium/public/fpdf_catalog.h"
 #include "third_party/pdfium/public/fpdf_ext.h"
 #include "third_party/pdfium/public/fpdf_fwlevent.h"
 #include "third_party/pdfium/public/fpdf_ppo.h"
@@ -2498,7 +2498,7 @@ absl::optional<PDFEngine::NamedDestination> PDFiumEngine::GetNamedDestination(
     return {};
 
   int page = FPDFDest_GetDestPageIndex(doc(), dest);
-  if (page < 0)
+  if (!PageIndexInBounds(page))
     return {};
 
   PDFEngine::NamedDestination result;
@@ -4074,7 +4074,6 @@ void PDFiumEngine::LoadDocumentMetadata() {
   doc_metadata_.page_count = pages_.size();
   doc_metadata_.linearized = IsLinearized();
   doc_metadata_.has_attachments = !doc_attachment_info_list_.empty();
-  doc_metadata_.tagged = FPDFCatalog_IsTagged(doc());
   doc_metadata_.form_type = static_cast<FormType>(FPDF_GetFormType(doc()));
 
   // Document information dictionary entries

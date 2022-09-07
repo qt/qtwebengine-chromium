@@ -7,12 +7,10 @@
 
 #include "src/gpu/ganesh/ops/TessellationPathRenderer.h"
 
-#include "include/private/SkVx.h"
 #include "src/core/SkPathPriv.h"
 #include "src/gpu/ganesh/GrClip.h"
 #include "src/gpu/ganesh/GrMemoryPool.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
-#include "src/gpu/ganesh/GrVx.h"
 #include "src/gpu/ganesh/effects/GrDisableColorXP.h"
 #include "src/gpu/ganesh/geometry/GrStyledShape.h"
 #include "src/gpu/ganesh/ops/PathInnerTriangulateOp.h"
@@ -24,6 +22,8 @@
 #include "src/gpu/tessellate/WangsFormula.h"
 
 namespace {
+
+using namespace skgpu::tess;
 
 GrOp::Owner make_non_convex_fill_op(GrRecordingContext* rContext,
                                     SkArenaAlloc* arena,
@@ -129,10 +129,10 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
     args.fShape->asPath(&path);
 
     const SkRect pathDevBounds = args.fViewMatrix->mapRect(args.fShape->bounds());
-    float n4 = wangs_formula::worst_case_cubic_pow4(kTessellationPrecision,
-                                                    pathDevBounds.width(),
-                                                    pathDevBounds.height());
-    if (n4 > pow4(kMaxTessellationSegmentsPerCurve)) {
+    float n4 = wangs_formula::worst_case_cubic_p4(tess::kPrecision,
+                                                  pathDevBounds.width(),
+                                                  pathDevBounds.height());
+    if (n4 > tess::kMaxSegmentsPerCurve_p4) {
         // The path is extremely large. Pre-chop its curves to keep the number of tessellation
         // segments tractable. This will also flatten curves that fall completely outside the
         // viewport.
@@ -152,7 +152,7 @@ bool TessellationPathRenderer::onDrawPath(const DrawPathArgs& args) {
             }
             viewport.outset(inflationRadius, inflationRadius);
         }
-        path = PreChopPathCurves(kTessellationPrecision, path, *args.fViewMatrix, viewport);
+        path = PreChopPathCurves(tess::kPrecision, path, *args.fViewMatrix, viewport);
     }
 
     // Handle strokes first.
@@ -221,12 +221,12 @@ void TessellationPathRenderer::onStencilPath(const StencilPathArgs& args) {
     SkPath path;
     args.fShape->asPath(&path);
 
-    float n4 = wangs_formula::worst_case_cubic_pow4(kTessellationPrecision,
-                                                    pathDevBounds.width(),
-                                                    pathDevBounds.height());
-    if (n4 > pow4(kMaxTessellationSegmentsPerCurve)) {
+    float n4 = wangs_formula::worst_case_cubic_p4(tess::kPrecision,
+                                                  pathDevBounds.width(),
+                                                  pathDevBounds.height());
+    if (n4 > tess::kMaxSegmentsPerCurve_p4) {
         SkRect viewport = SkRect::Make(*args.fClipConservativeBounds);
-        path = PreChopPathCurves(kTessellationPrecision, path, *args.fViewMatrix, viewport);
+        path = PreChopPathCurves(tess::kPrecision, path, *args.fViewMatrix, viewport);
     }
 
     // Make sure to check 'path' for convexity since it may have been pre-chopped, not 'fShape'.

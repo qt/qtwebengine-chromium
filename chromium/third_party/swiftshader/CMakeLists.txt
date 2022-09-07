@@ -102,6 +102,27 @@ if(CCACHE_FOUND)
 endif()
 
 ###########################################################
+# Install Gerrit commit hook
+###########################################################
+
+if(NOT EXISTS ${CMAKE_SOURCE_DIR}/.git/hooks/commit-msg)
+    message(WARNING "
+        .git/hooks/commit-msg was not found.
+        Downloading from https://gerrit-review.googlesource.com/tools/hooks/commit-msg...
+    ")
+
+    file(DOWNLOAD https://gerrit-review.googlesource.com/tools/hooks/commit-msg ${CMAKE_SOURCE_DIR}/commit-msg)
+
+    file(COPY ${CMAKE_SOURCE_DIR}/commit-msg
+         DESTINATION ${CMAKE_SOURCE_DIR}/.git/hooks/
+         FILE_PERMISSIONS
+           OWNER_READ OWNER_WRITE OWNER_EXECUTE
+           GROUP_READ GROUP_WRITE GROUP_EXECUTE
+           WORLD_READ WORLD_EXECUTE)
+    file(REMOVE ${CMAKE_SOURCE_DIR}/commit-msg)
+endif()
+
+###########################################################
 # Host libraries
 ###########################################################
 
@@ -111,16 +132,20 @@ if(LINUX)
     check_symbol_exists(mallinfo2 malloc.h HAVE_MALLINFO2)
 
     include(CheckIncludeFiles)
+
     CHECK_INCLUDE_FILES("xcb/xcb.h;xcb/shm.h" HAVE_XCB_H)
     if(NOT HAVE_XCB_H)
         message(WARNING "xcb/xcb.h or xcb/shm.h was not found. Install the libx11-xcb-dev and "
                         "libxcb-shm0-dev packages to build with WSI support for XCB surfaces.")
     endif()
+
+    CHECK_INCLUDE_FILES("wayland-client.h" HAVE_WAYLAND_CLIENT_H)
+    if(NOT HAVE_WAYLAND_CLIENT_H)
+        message(WARNING "wayland-client.h was not found. Install the libwayland-dev "
+                        "package to build with WSI support for Wayland surfaces.")
+    endif()
 endif()
 
-if(SWIFTSHADER_BUILD_WSI_WAYLAND)
-    find_library(WAYLAND wayland-client)
-endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
 if(SWIFTSHADER_BUILD_WSI_DIRECTFB)
     find_library(DIRECTFB directfb)
     find_path(DIRECTFB_INCLUDE_DIR directfb/directfb.h)
@@ -173,8 +198,6 @@ option_if_not_defined(REACTOR_EMIT_PRINT_LOCATION "Emit printing of location inf
 option_if_not_defined(REACTOR_EMIT_ASM_FILE "Emit asm files for JIT functions" FALSE)
 option_if_not_defined(REACTOR_ENABLE_PRINT "Enable RR_PRINT macros" FALSE)
 option_if_not_defined(REACTOR_VERIFY_LLVM_IR "Check reactor-generated LLVM IR is valid even in release builds" FALSE)
-# TODO(b/155148722): Remove when unconditionally instrumenting for all build systems.
-option_if_not_defined(REACTOR_ENABLE_MEMORY_SANITIZER_INSTRUMENTATION "Include JIT in MSAN instrumentation (LLVM backend)" TRUE)
 option_if_not_defined(SWIFTSHADER_LESS_DEBUG_INFO "Generate less debug info to reduce file size" FALSE)
 option_if_not_defined(SWIFTSHADER_ENABLE_VULKAN_DEBUGGER "Enable Vulkan debugger support" FALSE)
 option_if_not_defined(SWIFTSHADER_ENABLE_ASTC "Enable ASTC compressed textures support" TRUE)  # TODO(b/150130101)
@@ -404,6 +427,7 @@ if(MSVC)
         "/wd4838" # conversion from 'type_1' to 'type_2' requires a narrowing conversion
         "/wd5030" # attribute 'attribute' is not recognized
         "/wd5038" # data member 'member1' will be initialized after data member 'member2' data member 'member' will be initialized after base class 'base_class'
+        "/wd4146" # unary minus operator applied to unsigned type, result still unsigned
     )
 
     # Treat specific warnings as errors
@@ -801,11 +825,9 @@ elseif(LINUX)
     if(HAVE_XCB_H)
         target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_XCB_KHR")
     endif()
-    if(SWIFTSHADER_BUILD_WSI_WAYLAND)
-        if(WAYLAND)
-            target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WAYLAND_KHR")
-        endif()
-    endif(SWIFTSHADER_BUILD_WSI_WAYLAND)
+    if(HAVE_WAYLAND_CLIENT_H)
+        target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_WAYLAND_KHR")
+    endif()
     if(SWIFTSHADER_BUILD_WSI_DIRECTFB)
         if(DIRECTFB AND DIRECTFB_INCLUDE_DIR)
             target_compile_definitions(vk_base INTERFACE "VK_USE_PLATFORM_DIRECTFB_EXT")
@@ -856,10 +878,7 @@ if(SWIFTSHADER_BUILD_PVR)
     endif()
 
     set(PVR_BUILD_EXAMPLES TRUE CACHE BOOL "Build the PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES_EXAMPLES FALSE CACHE BOOL "Build the OpenGLES PowerVR SDK Examples" FORCE)
     set(PVR_BUILD_VULKAN_EXAMPLES TRUE CACHE BOOL "Build the Vulkan PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENCL_EXAMPLES FALSE CACHE BOOL "Build the OpenCL PowerVR SDK Examples" FORCE)
-    set(PVR_BUILD_OPENGLES2_EXAMPLES FALSE CACHE BOOL "Only build OpenGL ES 2.0 examples" FORCE)
     add_subdirectory(${THIRD_PARTY_DIR}/PowerVR_Examples)
 
     # Samples known to work well

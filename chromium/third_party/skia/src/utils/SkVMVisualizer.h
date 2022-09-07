@@ -6,17 +6,19 @@
  */
 #ifndef SkVMVisualizer_DEFINED
 #define SkVMVisualizer_DEFINED
-#include <unordered_map>
-#include <vector>
-#include "include/core/SkSpan.h"
-#include "include/core/SkStream.h"
+
 #include "include/core/SkString.h"
-#include "include/private/SkBitmaskEnum.h"
-#include "include/private/SkChecksum.h"
+#include "include/core/SkTypes.h"
+#include "include/private/SkTArray.h"
 #include "include/private/SkTHash.h"
-#include "src/core/SkOpts.h"
-#include "src/sksl/SkSLOutputStream.h"
-#include "src/sksl/tracing/SkVMDebugTrace.h"
+#include "src/core/SkVM.h"
+
+#include <cstddef>
+#include <type_traits>
+#include <vector>
+
+class SkWStream;
+namespace SkSL { class SkVMDebugTrace; }
 
 namespace skvm::viz {
     enum InstructionFlags : uint8_t {
@@ -51,8 +53,7 @@ namespace skvm::viz {
 
     class Visualizer {
     public:
-        explicit Visualizer(SkSL::SkVMDebugTrace* debugInfo)
-                : fDebugInfo(debugInfo), fOutput(nullptr) {}
+        explicit Visualizer(SkSL::SkVMDebugTrace* debugInfo);
         ~Visualizer() = default;
         void dump(SkWStream* output, const char* code);
         void markAsDeadCode(std::vector<bool>& live, const std::vector<int>& newIds);
@@ -86,8 +87,9 @@ namespace skvm::viz {
         void formatA_VC(int id, const char* op,  int v, int imm) const;
 
         void writeText(const char* format, ...) const SK_PRINTF_LIKE(2, 3);
-
+#if defined(SK_ENABLE_SKSL)
         SkSL::SkVMDebugTrace* fDebugInfo;
+#endif
         SkTHashMap<Instruction, size_t, InstructionHash> fIndex;
         SkTArray<Instruction> fInstructions;
         SkWStream* fOutput;
@@ -100,6 +102,7 @@ namespace skvm::viz {
 } // namespace skvm::viz
 
 namespace sknonstd {
+template <typename T> struct is_bitmask_enum;
 template <> struct is_bitmask_enum<skvm::viz::InstructionFlags> : std::true_type {};
 }  // namespace sknonstd
 

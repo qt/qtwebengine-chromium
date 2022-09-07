@@ -279,7 +279,7 @@ Reduction JSIntrinsicLowering::ReduceIsJSReceiver(Node* node) {
 }
 
 Reduction JSIntrinsicLowering::ReduceTurbofanStaticAssert(Node* node) {
-  if (FLAG_always_opt) {
+  if (FLAG_always_turbofan) {
     // Ignore static asserts, as we most likely won't have enough information
     RelaxEffectsAndControls(node);
   } else {
@@ -336,7 +336,7 @@ Reduction JSIntrinsicLowering::ReduceCall(Node* node) {
   int const arity =
       static_cast<int>(CallRuntimeParametersOf(node->op()).arity());
   static constexpr int kTargetAndReceiver = 2;
-  STATIC_ASSERT(JSCallNode::kFeedbackVectorIsLastInput);
+  static_assert(JSCallNode::kFeedbackVectorIsLastInput);
   Node* feedback = jsgraph()->UndefinedConstant();
   node->InsertInput(graph()->zone(), arity, feedback);
   NodeProperties::ChangeOp(

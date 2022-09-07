@@ -54,6 +54,10 @@ const char kGetU2fFlags[] = "GetU2fFlags";
 const char kSetSchedulerConfiguration[] = "SetSchedulerConfiguration";
 const char kSetSchedulerConfigurationV2[] = "SetSchedulerConfigurationV2";
 const char kSwapSetParameter[] = "SwapSetParameter";
+const char kSwapZramEnableWriteback[] = "SwapZramEnableWriteback";
+const char kSwapZramMarkIdle[] = "SwapZramMarkIdle";
+const char kSwapZramSetWritebackLimit[] = "SwapZramSetWritebackLimit";
+const char kSwapZramWriteback[] = "SwapZramWriteback";
 const char kBackupArcBugReport[] = "BackupArcBugReport";
 const char kDeleteArcBugReportBackup[] = "DeleteArcBugReportBackup";
 const char kKernelFeatureList[] = "KernelFeatureList";
@@ -67,6 +71,14 @@ const char kPacketCaptureStopSignal[] = "PacketCaptureStop";
 
 // Properties.
 const char kCrashSenderTestMode[] = "CrashSenderTestMode";
+
+// ZramWritebackMode contains the allowed modes of operation
+// for zram writeback.
+enum ZramWritebackMode {
+  WRITEBACK_IDLE = 0x001,
+  WRITEBACK_HUGE = 0x002,
+  WRITEBACK_HUGE_IDLE = 0x004,
+};
 
 // Values.
 enum DevFeatureFlag {

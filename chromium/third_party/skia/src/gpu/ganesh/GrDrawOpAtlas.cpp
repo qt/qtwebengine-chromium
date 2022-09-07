@@ -21,6 +21,15 @@
 #include "src/gpu/ganesh/GrTexture.h"
 #include "src/gpu/ganesh/GrTracing.h"
 
+using AtlasLocator = skgpu::AtlasLocator;
+using DrawToken = skgpu::DrawToken;
+using EvictionCallback = skgpu::PlotEvictionCallback;
+using GenerationCounter = skgpu::AtlasGenerationCounter;
+using MaskFormat = skgpu::MaskFormat;
+using Plot = skgpu::Plot;
+using PlotList = skgpu::PlotList;
+using PlotLocator = skgpu::PlotLocator;
+
 #ifdef DUMP_ATLAS_DATA
 static bool gDumpAtlasData = false;
 #endif
@@ -56,19 +65,20 @@ void GrDrawOpAtlas::instantiate(GrOnFlushResourceProvider* onFlushResourceProvid
 
 std::unique_ptr<GrDrawOpAtlas> GrDrawOpAtlas::Make(GrProxyProvider* proxyProvider,
                                                    const GrBackendFormat& format,
-                                                   GrColorType colorType, int width,
+                                                   SkColorType colorType, size_t bpp, int width,
                                                    int height, int plotWidth, int plotHeight,
                                                    GenerationCounter* generationCounter,
                                                    AllowMultitexturing allowMultitexturing,
-                                                   EvictionCallback* evictor) {
+                                                   EvictionCallback* evictor,
+                                                   std::string_view label) {
     if (!format.isValid()) {
         return nullptr;
     }
 
-    std::unique_ptr<GrDrawOpAtlas> atlas(new GrDrawOpAtlas(proxyProvider, format, colorType,
+    std::unique_ptr<GrDrawOpAtlas> atlas(new GrDrawOpAtlas(proxyProvider, format, colorType, bpp,
                                                            width, height, plotWidth, plotHeight,
                                                            generationCounter,
-                                                           allowMultitexturing));
+                                                           allowMultitexturing, label));
     if (!atlas->getViews()[0].proxy()) {
         return nullptr;
     }
@@ -79,151 +89,30 @@ std::unique_ptr<GrDrawOpAtlas> GrDrawOpAtlas::Make(GrProxyProvider* proxyProvide
     return atlas;
 }
 
-////////////////////////////////////////////////////////////////////////////////
-GrDrawOpAtlas::Plot::Plot(int pageIndex, int plotIndex, GenerationCounter* generationCounter,
-        int offX, int offY, int width, int height, GrColorType colorType)
-        : fLastUpload(GrDeferredUploadToken::AlreadyFlushedToken())
-        , fLastUse(GrDeferredUploadToken::AlreadyFlushedToken())
-        , fFlushesSinceLastUse(0)
-        , fPageIndex(pageIndex)
-        , fPlotIndex(plotIndex)
-        , fGenerationCounter(generationCounter)
-        , fGenID(fGenerationCounter->next())
-        , fPlotLocator(fPageIndex, fPlotIndex, fGenID)
-        , fData(nullptr)
-        , fWidth(width)
-        , fHeight(height)
-        , fX(offX)
-        , fY(offY)
-        , fRectanizer(width, height)
-        , fOffset(SkIPoint16::Make(fX * fWidth, fY * fHeight))
-        , fColorType(colorType)
-        , fBytesPerPixel(GrColorTypeBytesPerPixel(colorType))
-#ifdef SK_DEBUG
-        , fDirty(false)
-#endif
-{
-    // We expect the allocated dimensions to be a multiple of 4 bytes
-    SkASSERT(((width*fBytesPerPixel) & 0x3) == 0);
-    // The padding for faster uploads only works for 1, 2 and 4 byte texels
-    SkASSERT(fBytesPerPixel != 3 && fBytesPerPixel <= 4);
-    fDirtyRect.setEmpty();
-}
-
-GrDrawOpAtlas::Plot::~Plot() {
-    sk_free(fData);
-}
-
-bool GrDrawOpAtlas::Plot::addSubImage(
-        int width, int height, const void* image, AtlasLocator* atlasLocator) {
-    SkASSERT(width <= fWidth && height <= fHeight);
-
-    SkIPoint16 loc;
-    if (!fRectanizer.addRect(width, height, &loc)) {
-        return false;
-    }
-
-    GrIRect16 rect = GrIRect16::MakeXYWH(loc.fX, loc.fY, width, height);
-
-    if (!fData) {
-        fData = reinterpret_cast<unsigned char*>(
-                sk_calloc_throw(fBytesPerPixel * fWidth * fHeight));
-    }
-    size_t rowBytes = width * fBytesPerPixel;
-    const unsigned char* imagePtr = (const unsigned char*)image;
-    // point ourselves at the right starting spot
-    unsigned char* dataPtr = fData;
-    dataPtr += fBytesPerPixel * fWidth * rect.fTop;
-    dataPtr += fBytesPerPixel * rect.fLeft;
-    // copy into the data buffer, swizzling as we go if this is ARGB data
-    constexpr bool kBGRAIsNative = kN32_SkColorType == kBGRA_8888_SkColorType;
-    if (4 == fBytesPerPixel && kBGRAIsNative) {
-        for (int i = 0; i < height; ++i) {
-            SkOpts::RGBA_to_BGRA((uint32_t*)dataPtr, (const uint32_t*)imagePtr, width);
-            dataPtr += fBytesPerPixel * fWidth;
-            imagePtr += rowBytes;
-        }
-    } else {
-        for (int i = 0; i < height; ++i) {
-            memcpy(dataPtr, imagePtr, rowBytes);
-            dataPtr += fBytesPerPixel * fWidth;
-            imagePtr += rowBytes;
-        }
-    }
-
-    fDirtyRect.join({rect.fLeft, rect.fTop, rect.fRight, rect.fBottom});
-
-    rect.offset(fOffset.fX, fOffset.fY);
-    atlasLocator->updateRect(rect);
-    SkDEBUGCODE(fDirty = true;)
-
-    return true;
-}
-
-void GrDrawOpAtlas::Plot::uploadToTexture(GrDeferredTextureUploadWritePixelsFn& writePixels,
-                                          GrTextureProxy* proxy) {
-    // We should only be issuing uploads if we are in fact dirty
-    SkASSERT(fDirty && fData && proxy && proxy->peekTexture());
-    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
-    size_t rowBytes = fBytesPerPixel * fWidth;
-    const unsigned char* dataPtr = fData;
-    // Clamp to 4-byte aligned boundaries
-    unsigned int clearBits = 0x3 / fBytesPerPixel;
-    fDirtyRect.fLeft &= ~clearBits;
-    fDirtyRect.fRight += clearBits;
-    fDirtyRect.fRight &= ~clearBits;
-    SkASSERT(fDirtyRect.fRight <= fWidth);
-    // Set up dataPtr
-    dataPtr += rowBytes * fDirtyRect.fTop;
-    dataPtr += fBytesPerPixel * fDirtyRect.fLeft;
-
-    writePixels(proxy,
-                fDirtyRect.makeOffset(fOffset.fX, fOffset.fY),
-                fColorType,
-                dataPtr,
-                rowBytes);
-    fDirtyRect.setEmpty();
-    SkDEBUGCODE(fDirty = false;)
-}
-
-void GrDrawOpAtlas::Plot::resetRects() {
-    fRectanizer.reset();
-
-    fGenID = fGenerationCounter->next();
-    fPlotLocator = PlotLocator(fPageIndex, fPlotIndex, fGenID);
-    fLastUpload = GrDeferredUploadToken::AlreadyFlushedToken();
-    fLastUse = GrDeferredUploadToken::AlreadyFlushedToken();
-
-    // zero out the plot
-    if (fData) {
-        sk_bzero(fData, fBytesPerPixel * fWidth * fHeight);
-    }
-
-    fDirtyRect.setEmpty();
-    SkDEBUGCODE(fDirty = false;)
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 GrDrawOpAtlas::GrDrawOpAtlas(GrProxyProvider* proxyProvider, const GrBackendFormat& format,
-                             GrColorType colorType, int width, int height,
+                             SkColorType colorType, size_t bpp, int width, int height,
                              int plotWidth, int plotHeight, GenerationCounter* generationCounter,
-                             AllowMultitexturing allowMultitexturing)
+                             AllowMultitexturing allowMultitexturing, std::string_view label)
         : fFormat(format)
         , fColorType(colorType)
+        , fBytesPerPixel(bpp)
         , fTextureWidth(width)
         , fTextureHeight(height)
         , fPlotWidth(plotWidth)
         , fPlotHeight(plotHeight)
+        , fLabel(label)
         , fGenerationCounter(generationCounter)
         , fAtlasGeneration(fGenerationCounter->next())
-        , fPrevFlushToken(GrDeferredUploadToken::AlreadyFlushedToken())
+        , fPrevFlushToken(DrawToken::AlreadyFlushedToken())
         , fFlushesSinceLastUse(0)
-        , fMaxPages(AllowMultitexturing::kYes == allowMultitexturing ? kMaxMultitexturePages : 1)
+        , fMaxPages(AllowMultitexturing::kYes == allowMultitexturing ?
+                            PlotLocator::kMaxMultitexturePages : 1)
         , fNumActivePages(0) {
     int numPlotsX = width/plotWidth;
     int numPlotsY = height/plotHeight;
-    SkASSERT(numPlotsX * numPlotsY <= GrDrawOpAtlas::kMaxPlots);
+    SkASSERT(numPlotsX * numPlotsY <= PlotLocator::kMaxPlots);
     SkASSERT(fPlotWidth * numPlotsX == fTextureWidth);
     SkASSERT(fPlotHeight * numPlotsY == fTextureHeight);
 
@@ -238,6 +127,23 @@ inline void GrDrawOpAtlas::processEviction(PlotLocator plotLocator) {
     }
 
     fAtlasGeneration = fGenerationCounter->next();
+}
+
+void GrDrawOpAtlas::uploadPlotToTexture(GrDeferredTextureUploadWritePixelsFn& writePixels,
+                                        GrTextureProxy* proxy,
+                                        Plot* plot) {
+    SkASSERT(proxy && proxy->peekTexture());
+    TRACE_EVENT0("skia.gpu", TRACE_FUNC);
+
+    const void* dataPtr;
+    SkIRect rect;
+    std::tie(dataPtr, rect) = plot->prepareForUpload();
+
+    writePixels(proxy,
+                rect,
+                SkColorTypeToGrColorType(fColorType),
+                dataPtr,
+                fBytesPerPixel*fPlotWidth);
 }
 
 inline bool GrDrawOpAtlas::updatePlot(GrDeferredUploadTarget* target,
@@ -255,9 +161,9 @@ inline bool GrDrawOpAtlas::updatePlot(GrDeferredUploadTarget* target,
         GrTextureProxy* proxy = fViews[pageIdx].asTextureProxy();
         SkASSERT(proxy && proxy->isInstantiated());  // This is occurring at flush time
 
-        GrDeferredUploadToken lastUploadToken = target->addASAPUpload(
-                [plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
-                    plotsp->uploadToTexture(writePixels, proxy);
+        DrawToken lastUploadToken = target->addASAPUpload(
+                [this, plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
+                    this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
                 });
         plot->setLastUploadToken(lastUploadToken);
     }
@@ -376,7 +282,7 @@ GrDrawOpAtlas::ErrorCode GrDrawOpAtlas::addToAtlas(GrResourceProvider* resourceP
     int pageIdx = plot->pageIndex();
     fPages[pageIdx].fPlotList.remove(plot);
     sk_sp<Plot>& newPlot = fPages[pageIdx].fPlotArray[plot->plotIndex()];
-    newPlot.reset(plot->clone());
+    newPlot = plot->clone();
 
     fPages[pageIdx].fPlotList.addToHead(newPlot.get());
     SkASSERT(GrBackendFormatBytesPerPixel(fViews[pageIdx].proxy()->backendFormat()) ==
@@ -392,9 +298,9 @@ GrDrawOpAtlas::ErrorCode GrDrawOpAtlas::addToAtlas(GrResourceProvider* resourceP
     GrTextureProxy* proxy = fViews[pageIdx].asTextureProxy();
     SkASSERT(proxy && proxy->isInstantiated());
 
-    GrDeferredUploadToken lastUploadToken = target->addInlineUpload(
-            [plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
-                plotsp->uploadToTexture(writePixels, proxy);
+    DrawToken lastUploadToken = target->addInlineUpload(
+            [this, plotsp, proxy](GrDeferredTextureUploadWritePixelsFn& writePixels) {
+                this->uploadPlotToTexture(writePixels, proxy, plotsp.get());
             });
     newPlot->setLastUploadToken(lastUploadToken);
 
@@ -404,7 +310,7 @@ GrDrawOpAtlas::ErrorCode GrDrawOpAtlas::addToAtlas(GrResourceProvider* resourceP
     return ErrorCode::kSucceeded;
 }
 
-void GrDrawOpAtlas::compact(GrDeferredUploadToken startTokenForNextFlush) {
+void GrDrawOpAtlas::compact(DrawToken startTokenForNextFlush) {
     if (fNumActivePages < 1) {
         fPrevFlushToken = startTokenForNextFlush;
         return;
@@ -502,7 +408,7 @@ void GrDrawOpAtlas::compact(GrDeferredUploadToken startTokenForNextFlush) {
             // If this plot was used recently
             if (plot->flushesSinceLastUsed() <= kPlotRecentlyUsedCount) {
                 usedPlots++;
-            } else if (plot->lastUseToken() != GrDeferredUploadToken::AlreadyFlushedToken()) {
+            } else if (plot->lastUseToken() != DrawToken::AlreadyFlushedToken()) {
                 // otherwise if aged out just evict it.
                 this->processEvictionAndResetRects(plot);
             }
@@ -564,15 +470,24 @@ bool GrDrawOpAtlas::createPages(
     int numPlotsX = fTextureWidth/fPlotWidth;
     int numPlotsY = fTextureHeight/fPlotHeight;
 
+    GrColorType grColorType = SkColorTypeToGrColorType(fColorType);
+
     for (uint32_t i = 0; i < this->maxPages(); ++i) {
-        skgpu::Swizzle swizzle = proxyProvider->caps()->getReadSwizzle(fFormat, fColorType);
-        if (GrColorTypeIsAlphaOnly(fColorType)) {
+        skgpu::Swizzle swizzle = proxyProvider->caps()->getReadSwizzle(fFormat, grColorType);
+        if (GrColorTypeIsAlphaOnly(grColorType)) {
             swizzle = skgpu::Swizzle::Concat(swizzle, skgpu::Swizzle("aaaa"));
         }
-        sk_sp<GrSurfaceProxy> proxy = proxyProvider->createProxy(
-                fFormat, dims, GrRenderable::kNo, 1, GrMipmapped::kNo, SkBackingFit::kExact,
-                SkBudgeted::kYes, GrProtected::kNo, GrInternalSurfaceFlags::kNone,
-                GrSurfaceProxy::UseAllocator::kNo);
+        sk_sp<GrSurfaceProxy> proxy = proxyProvider->createProxy(fFormat,
+                                                                 dims,
+                                                                 GrRenderable::kNo,
+                                                                 1,
+                                                                 GrMipmapped::kNo,
+                                                                 SkBackingFit::kExact,
+                                                                 SkBudgeted::kYes,
+                                                                 GrProtected::kNo,
+                                                                 fLabel,
+                                                                 GrInternalSurfaceFlags::kNone,
+                                                                 GrSurfaceProxy::UseAllocator::kNo);
         if (!proxy) {
             return false;
         }
@@ -586,7 +501,8 @@ bool GrDrawOpAtlas::createPages(
             for (int x = numPlotsX - 1, c = 0; x >= 0; --x, ++c) {
                 uint32_t plotIndex = r * numPlotsX + c;
                 currPlot->reset(new Plot(
-                    i, plotIndex, generationCounter, x, y, fPlotWidth, fPlotHeight, fColorType));
+                    i, plotIndex, generationCounter, x, y, fPlotWidth, fPlotHeight, fColorType,
+                    fBytesPerPixel));
 
                 // build LRU list
                 fPages[i].fPlotList.addToHead(currPlot->get());
@@ -616,7 +532,6 @@ bool GrDrawOpAtlas::activateNewPage(GrResourceProvider* resourceProvider) {
     return true;
 }
 
-
 inline void GrDrawOpAtlas::deactivateLastPage() {
     SkASSERT(fNumActivePages);
 
@@ -635,8 +550,7 @@ inline void GrDrawOpAtlas::deactivateLastPage() {
             currPlot->resetFlushesSinceLastUsed();
 
             // rebuild the LRU list
-            SkDEBUGCODE(currPlot->fPrev = currPlot->fNext = nullptr);
-            SkDEBUGCODE(currPlot->fList = nullptr);
+            SkDEBUGCODE(currPlot->resetListPtrs());
             fPages[lastPageIndex].fPlotList.addToHead(currPlot);
         }
     }
@@ -670,8 +584,8 @@ GrDrawOpAtlasConfig::GrDrawOpAtlasConfig(int maxTextureSize, size_t maxBytes) {
     fMaxTextureSize = std::min<int>(maxTextureSize, kMaxAtlasDim);
 }
 
-SkISize GrDrawOpAtlasConfig::atlasDimensions(GrMaskFormat type) const {
-    if (kA8_GrMaskFormat == type) {
+SkISize GrDrawOpAtlasConfig::atlasDimensions(MaskFormat type) const {
+    if (MaskFormat::kA8 == type) {
         // A8 is always 2x the ARGB dimensions, clamped to the max allowed texture size
         return { std::min<int>(2 * fARGBDimensions.width(), fMaxTextureSize),
                  std::min<int>(2 * fARGBDimensions.height(), fMaxTextureSize) };
@@ -680,8 +594,8 @@ SkISize GrDrawOpAtlasConfig::atlasDimensions(GrMaskFormat type) const {
     }
 }
 
-SkISize GrDrawOpAtlasConfig::plotDimensions(GrMaskFormat type) const {
-    if (kA8_GrMaskFormat == type) {
+SkISize GrDrawOpAtlasConfig::plotDimensions(MaskFormat type) const {
+    if (MaskFormat::kA8 == type) {
         SkISize atlasDimensions = this->atlasDimensions(type);
         // For A8 we want to grow the plots at larger texture sizes to accept more of the
         // larger SDF glyphs. Since the largest SDF glyph can be 170x170 with padding, this

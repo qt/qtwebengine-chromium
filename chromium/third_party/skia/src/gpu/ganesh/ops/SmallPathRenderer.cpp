@@ -32,6 +32,8 @@
 #include "src/gpu/ganesh/ops/SmallPathShapeData.h"
 #include "src/gpu/ganesh/v1/SurfaceDrawContext_v1.h"
 
+using MaskFormat = skgpu::MaskFormat;
+
 namespace skgpu::v1 {
 
 namespace {
@@ -200,7 +202,7 @@ private:
             flushInfo.fGeometryProcessor = GrBitmapTextGeoProc::Make(
                     target->allocator(), *target->caps().shaderCaps(), this->color(), fWideColor,
                     views, numActiveProxies, GrSamplerState::Filter::kNearest,
-                    kA8_GrMaskFormat, invert, false);
+                    MaskFormat::kA8, invert, false);
         }
 
         // allocate vertices
@@ -660,7 +662,7 @@ private:
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 PathRenderer::CanDrawPath SmallPathRenderer::onCanDrawPath(const CanDrawPathArgs& args) const {
-    if (!args.fCaps->shaderCaps()->shaderDerivativeSupport()) {
+    if (!args.fCaps->shaderCaps()->fShaderDerivativeSupport) {
         return CanDrawPath::kNo;
     }
     // If the shape has no key then we won't get any reuse.

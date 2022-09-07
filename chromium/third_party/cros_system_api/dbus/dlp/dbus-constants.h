@@ -15,6 +15,7 @@ constexpr char kSetDlpFilesPolicyMethod[] = "SetDlpFilesPolicy";
 constexpr char kAddFileMethod[] = "AddFile";
 constexpr char kRequestFileAccessMethod[] = "RequestFileAccess";
 constexpr char kGetFilesSourcesMethod[] = "GetFilesSources";
+constexpr char kCheckFilesTransferMethod[] = "CheckFilesTransfer";
 
 // Errors returned by DLP Daemon mathods:
 constexpr char kErrorFailedToCreatePipe[] = "FailedToCreatePipe";
@@ -31,6 +32,8 @@ constexpr char kDlpFilesPolicyServiceInterface[] =
 constexpr char kDlpFilesPolicyServiceIsRestrictedMethod[] = "IsRestricted";
 constexpr char kDlpFilesPolicyServiceIsDlpPolicyMatchedMethod[] =
     "IsDlpPolicyMatched";
+constexpr char kDlpFilesPolicyServiceIsFilesTransferRestrictedMethod[] =
+    "IsFilesTransferRestricted";
 
 }  // namespace dlp
 #endif  // SYSTEM_API_DBUS_DLP_DBUS_CONSTANTS_H_

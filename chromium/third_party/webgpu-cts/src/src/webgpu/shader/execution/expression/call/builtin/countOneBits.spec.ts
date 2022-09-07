@@ -1,29 +1,28 @@
 export const description = `
-Execution Tests for the 'countOneBits' builtin function
+Execution tests for the 'countOneBits' builtin function
+
+S is i32 or u32
+T is S or vecN<S>
+@const fn countOneBits(e: T ) -> T
+The number of 1 bits in the representation of e.
+Also known as "population count".
+Component-wise when T is a vector.
 `;
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
 import { TypeU32, u32Bits, u32, TypeI32, i32Bits, i32 } from '../../../../../util/conversion.js';
-import { Config, run } from '../../expression.js';
+import { allInputSources, Config, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
 
 g.test('u32')
-  .uniqueId('xxxxxxxxxxxxxxxx')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#integer-builtin-functions')
-  .desc(
-    `
-count 1 bits:
-T is i32, u32, vecN<i32>, or vecN<u32> countOneBits(e: T ) -> T The number of 1 bits in the representation of e. Also known as "population count". Component-wise when T is a vector. (SPIR-V OpBitCount)
-`
-  )
+  .specURL('https://www.w3.org/TR/WGSL/#integer-builtin-functions')
+  .desc(`u32 tests`)
   .params(u =>
-    u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
-      .combine('vectorize', [undefined, 2, 3, 4] as const)
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
     const cfg: Config = t.params;
@@ -135,18 +134,10 @@ T is i32, u32, vecN<i32>, or vecN<u32> countOneBits(e: T ) -> T The number of 1 
   });
 
 g.test('i32')
-  .uniqueId('xxxxxxxxxxxxxxxx')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#integer-builtin-functions')
-  .desc(
-    `
-count 1 bits:
-T is i32, u32, vecN<i32>, or vecN<u32> countOneBits(e: T ) -> T The number of 1 bits in the representation of e. Also known as "population count". Component-wise when T is a vector. (SPIR-V OpBitCount)
-`
-  )
+  .specURL('https://www.w3.org/TR/WGSL/#integer-builtin-functions')
+  .desc(`i32 tests`)
   .params(u =>
-    u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
-      .combine('vectorize', [undefined, 2, 3, 4] as const)
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
     const cfg: Config = t.params;

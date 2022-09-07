@@ -95,9 +95,8 @@ static const struct {
     { "angle_gl_es3_msaa4",    "gpu", "api=angle_gl_es3,samples=4" },
     { "angle_gl_es3_msaa8",    "gpu", "api=angle_gl_es3,samples=8" },
     { "angle_gl_es3_dmsaa",    "gpu", "api=angle_gl_es3,dmsaa=true" },
-    { "cmdbuffer_es2",         "gpu", "api=cmdbuffer_es2" },
-    { "cmdbuffer_es2_dmsaa",   "gpu", "api=cmdbuffer_es2,dmsaa=true" },
-    { "cmdbuffer_es3",         "gpu", "api=cmdbuffer_es3" },
+    { "angle_mtl_es2",         "gpu", "api=angle_mtl_es2" },
+    { "angle_mtl_es3",         "gpu", "api=angle_mtl_es3" },
     { "mock",                  "gpu", "api=mock" },
 #ifdef SK_DAWN
     { "dawn",                  "gpu", "api=dawn" },
@@ -137,7 +136,7 @@ static const struct {
     { "grd3d",                 "graphite", "api=direct3d" },
 #endif
 #ifdef SK_METAL
-    { "grmtl",                 "graphite", "api=metal,testPrecompile=true" },
+    { "grmtl",                 "graphite", "api=metal" },
 #endif
 #ifdef SK_VULKAN
     { "grvk",                  "graphite", "api=vulkan" },
@@ -178,7 +177,6 @@ static const char configExtendedHelp[] =
         "\t\tangle_d3d11_es3\t\tUse OpenGL ES3 on the ANGLE Direct3D11 backend.\n"
         "\t\tangle_gl_es2\t\tUse OpenGL ES2 on the ANGLE OpenGL backend.\n"
         "\t\tangle_gl_es3\t\tUse OpenGL ES3 on the ANGLE OpenGL backend.\n"
-        "\t\tcommandbuffer\t\tUse command buffer.\n"
         "\t\tmock\t\t\tUse mock context.\n"
 #ifdef SK_VULKAN
         "\t\tvulkan\t\t\tUse Vulkan.\n"
@@ -318,12 +316,12 @@ static bool parse_option_gpu_api(const SkString&                      value,
         *outContextType = GrContextFactory::kANGLE_GL_ES3_ContextType;
         return true;
     }
-    if (value.equals("cmdbuffer_es2")) {
-        *outContextType = GrContextFactory::kCommandBuffer_ES2_ContextType;
+    if (value.equals("angle_mtl_es2")) {
+        *outContextType = GrContextFactory::kANGLE_Metal_ES2_ContextType;
         return true;
     }
-    if (value.equals("cmdbuffer_es3")) {
-        *outContextType = GrContextFactory::kCommandBuffer_ES3_ContextType;
+    if (value.equals("angle_mtl_es3")) {
+        *outContextType = GrContextFactory::kANGLE_Metal_ES3_ContextType;
         return true;
     }
     if (value.equals("mock")) {
@@ -646,7 +644,6 @@ SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& 
     ContextType contextType = ContextType::kMetal;
     SkColorType colorType = kRGBA_8888_SkColorType;
     SkAlphaType alphaType = kPremul_SkAlphaType;
-    bool testPrecompile = false;
 
     bool parseSucceeded = false;
     ExtendedOptions extendedOptions(options, &parseSucceeded);
@@ -655,8 +652,7 @@ SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& 
     }
 
     bool validOptions = extendedOptions.get_option_graphite_api("api", &contextType) &&
-                        extendedOptions.get_option_gpu_color("color", &colorType, &alphaType) &&
-                        extendedOptions.get_option_bool("testPrecompile", &testPrecompile);
+                        extendedOptions.get_option_gpu_color("color", &colorType, &alphaType);
     if (!validOptions) {
         return nullptr;
     }
@@ -665,8 +661,7 @@ SkCommandLineConfigGraphite* parse_command_line_config_graphite(const SkString& 
                                            vias,
                                            contextType,
                                            colorType,
-                                           alphaType,
-                                           testPrecompile);
+                                           alphaType);
 }
 
 #endif

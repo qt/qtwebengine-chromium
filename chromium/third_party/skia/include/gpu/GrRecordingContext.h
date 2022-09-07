@@ -26,12 +26,16 @@ class GrProgramDesc;
 class GrProgramInfo;
 class GrProxyProvider;
 class GrRecordingContextPriv;
-class GrSubRunAllocator;
 class GrSurfaceProxy;
-class GrTextBlobRedrawCoordinator;
 class GrThreadSafeCache;
 class SkArenaAlloc;
+class SkCapabilities;
 class SkJSONWriter;
+
+namespace sktext::gpu {
+class SubRunAllocator;
+class TextBlobRedrawCoordinator;
+}
 
 #if GR_TEST_UTILS
 class SkString;
@@ -94,6 +98,8 @@ public:
         return INHERITED::maxSurfaceSampleCountForColorType(colorType);
     }
 
+    SK_API sk_sp<const SkCapabilities> skCapabilities() const;
+
     // Provides access to functions that aren't part of the public API.
     GrRecordingContextPriv priv();
     const GrRecordingContextPriv priv() const;  // NOLINT(readability-const-return-type)
@@ -102,17 +108,19 @@ public:
     // GrRecordingContext. Arenas does not maintain ownership of the pools it groups together.
     class Arenas {
     public:
-        Arenas(SkArenaAlloc*, GrSubRunAllocator*);
+        Arenas(SkArenaAlloc*, sktext::gpu::SubRunAllocator*);
 
         // For storing pipelines and other complex data as-needed by ops
         SkArenaAlloc* recordTimeAllocator() { return fRecordTimeAllocator; }
 
         // For storing GrTextBlob SubRuns
-        GrSubRunAllocator* recordTimeSubRunAllocator() { return fRecordTimeSubRunAllocator; }
+        sktext::gpu::SubRunAllocator* recordTimeSubRunAllocator() {
+            return fRecordTimeSubRunAllocator;
+        }
 
     private:
         SkArenaAlloc* fRecordTimeAllocator;
-        GrSubRunAllocator* fRecordTimeSubRunAllocator;
+        sktext::gpu::SubRunAllocator* fRecordTimeSubRunAllocator;
     };
 
 protected:
@@ -133,7 +141,7 @@ protected:
     private:
         bool fDDLRecording;
         std::unique_ptr<SkArenaAlloc> fRecordTimeAllocator;
-        std::unique_ptr<GrSubRunAllocator> fRecordTimeSubRunAllocator;
+        std::unique_ptr<sktext::gpu::SubRunAllocator> fRecordTimeSubRunAllocator;
     };
 
     GrRecordingContext(sk_sp<GrContextThreadSafeProxy>, bool ddlRecording);
@@ -184,8 +192,8 @@ protected:
     // same lifetime at the DDL itself.
     virtual void detachProgramData(SkTArray<ProgramData>*) {}
 
-    GrTextBlobRedrawCoordinator* getTextBlobRedrawCoordinator();
-    const GrTextBlobRedrawCoordinator* getTextBlobRedrawCoordinator() const;
+    sktext::gpu::TextBlobRedrawCoordinator* getTextBlobRedrawCoordinator();
+    const sktext::gpu::TextBlobRedrawCoordinator* getTextBlobRedrawCoordinator() const;
 
     GrThreadSafeCache* threadSafeCache();
     const GrThreadSafeCache* threadSafeCache() const;

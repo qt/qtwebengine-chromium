@@ -153,9 +153,6 @@ static VkPrimitiveTopology gr_primitive_type_to_vk_topology(GrPrimitiveType prim
             return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
         case GrPrimitiveType::kLineStrip:
             return VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-        case GrPrimitiveType::kPatches:
-        case GrPrimitiveType::kPath:
-            SK_ABORT("Unsupported primitive type");
     }
     SkUNREACHABLE;
 }
@@ -380,7 +377,7 @@ static VkBlendOp blend_equation_to_vk_blend_op(skgpu::BlendEquation equation) {
     return gTable[(int)equation];
 }
 
-static void setup_color_blend_state(const GrXferProcessor::BlendInfo& blendInfo,
+static void setup_color_blend_state(const skgpu::BlendInfo& blendInfo,
                                     VkPipelineColorBlendStateCreateInfo* colorBlendInfo,
                                     VkPipelineColorBlendAttachmentState* attachmentState) {
     skgpu::BlendEquation equation = blendInfo.fEquation;
@@ -399,7 +396,7 @@ static void setup_color_blend_state(const GrXferProcessor::BlendInfo& blendInfo,
         attachmentState->alphaBlendOp = blend_equation_to_vk_blend_op(equation);
     }
 
-    if (!blendInfo.fWriteColor) {
+    if (!blendInfo.fWritesColor) {
         attachmentState->colorWriteMask = 0;
     } else {
         attachmentState->colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
@@ -470,7 +467,7 @@ sk_sp<GrVkPipeline> GrVkPipeline::Make(GrVkGpu* gpu,
                                    const GrStencilSettings& stencilSettings,
                                    int numSamples,
                                    bool isHWAntialiasState,
-                                   const GrXferProcessor::BlendInfo& blendInfo,
+                                   const skgpu::BlendInfo& blendInfo,
                                    bool isWireframe,
                                    bool useConservativeRaster,
                                    uint32_t subpass,
@@ -546,7 +543,7 @@ sk_sp<GrVkPipeline> GrVkPipeline::Make(GrVkGpu* gpu,
     VkPipeline vkPipeline;
     VkResult err;
     {
-        TRACE_EVENT0("skia.shaders", "CreateGraphicsPipeline");
+        TRACE_EVENT0_ALWAYS("skia.shaders", "CreateGraphicsPipeline");
 #if defined(SK_ENABLE_SCOPED_LSAN_SUPPRESSIONS)
         // skia:8712
         __lsan::ScopedDisabler lsanDisabler;
@@ -647,7 +644,7 @@ void GrVkPipeline::SetDynamicBlendConstantState(GrVkGpu* gpu,
                                                 GrVkCommandBuffer* cmdBuffer,
                                                 const skgpu::Swizzle& swizzle,
                                                 const GrXferProcessor& xferProcessor) {
-    const GrXferProcessor::BlendInfo& blendInfo = xferProcessor.getBlendInfo();
+    const skgpu::BlendInfo& blendInfo = xferProcessor.getBlendInfo();
     skgpu::BlendCoeff srcCoeff = blendInfo.fSrcBlend;
     skgpu::BlendCoeff dstCoeff = blendInfo.fDstBlend;
     float floatColors[4];

@@ -50,7 +50,6 @@ function appendPrefix(p1: string, p2: string): string {
   return `${p1}.${p2}`;
 }
 
-
 // During building the table, sometimes we want to add an extra cell to the
 // table. It might be either an index of array element (represented as number),
 // a special indentation cell to ensure minimum column width when indenting
@@ -114,7 +113,7 @@ class TableBuilder {
         indentLevel: row[0],
         extraCell: row[1],
         contents: {kind: 'TableHeader', header: prefix},
-        tooltip: completePrefix
+        tooltip: completePrefix,
       });
 
       for (let i = 0; i < record.length; i++) {
@@ -146,7 +145,7 @@ class TableBuilder {
             indentLevel: row[0],
             extraCell: row[1],
             contents: {kind: 'TableHeader', header: prefix},
-            tooltip: completePrefix
+            tooltip: completePrefix,
           });
           this.stack.push('whitespace');
         }
@@ -164,7 +163,7 @@ class TableBuilder {
         indentLevel: row[0],
         extraCell: row[1],
         contents: {kind: 'KVPair', key: prefix, value: record},
-        tooltip: completePrefix
+        tooltip: completePrefix,
       });
     }
   }
@@ -175,45 +174,54 @@ export class ChromeSliceDetailsPanel extends SlicePanel {
     const sliceInfo = globals.sliceDetails;
     if (sliceInfo.ts !== undefined && sliceInfo.dur !== undefined &&
         sliceInfo.name !== undefined) {
-      const builder = new TableBuilder();
-      builder.add('Name', sliceInfo.name);
-      builder.add(
+      const defaultBuilder = new TableBuilder();
+      defaultBuilder.add('Name', sliceInfo.name);
+      defaultBuilder.add(
           'Category',
           !sliceInfo.category || sliceInfo.category === '[NULL]' ?
               'N/A' :
               sliceInfo.category);
-      builder.add('Start time', timeToCode(sliceInfo.ts));
-      builder.add(
+      defaultBuilder.add('Start time', timeToCode(sliceInfo.ts));
+      if (sliceInfo.absTime !== undefined) {
+        defaultBuilder.add('Absolute Time', sliceInfo.absTime);
+      }
+      defaultBuilder.add(
           'Duration', this.computeDuration(sliceInfo.ts, sliceInfo.dur));
-      if (sliceInfo.thread_ts !== undefined &&
-          sliceInfo.thread_dur !== undefined) {
+      if (sliceInfo.threadTs !== undefined &&
+          sliceInfo.threadDur !== undefined) {
         // If we have valid thread duration, also display a percentage of
-        // |thread_dur| compared to |dur|.
-        const threadDurFractionSuffix = sliceInfo.thread_dur === -1 ?
+        // |threadDur| compared to |dur|.
+        const threadDurFractionSuffix = sliceInfo.threadDur === -1 ?
             '' :
-            ` (${(sliceInfo.thread_dur / sliceInfo.dur * 100).toFixed(2)}%)`;
-        builder.add(
+            ` (${(sliceInfo.threadDur / sliceInfo.dur * 100).toFixed(2)}%)`;
+        defaultBuilder.add(
             'Thread duration',
-            this.computeDuration(sliceInfo.thread_ts, sliceInfo.thread_dur) +
+            this.computeDuration(sliceInfo.threadTs, sliceInfo.threadDur) +
                 threadDurFractionSuffix);
       }
 
       for (const [key, value] of this.getProcessThreadDetails(sliceInfo)) {
         if (value !== undefined) {
-          builder.add(key, value);
+          defaultBuilder.add(key, value);
         }
       }
 
-      builder.add(
+      defaultBuilder.add(
           'Slice ID', sliceInfo.id ? sliceInfo.id.toString() : 'Unknown');
       if (sliceInfo.description) {
-        this.fillDescription(sliceInfo.description, builder);
+        for (const [key, value] of sliceInfo.description) {
+          defaultBuilder.add(key, value);
+        }
       }
-      this.fillArgs(sliceInfo, builder);
+      const argsBuilder = new TableBuilder();
+      this.fillArgs(sliceInfo, argsBuilder);
       return m(
           '.details-panel',
           m('.details-panel-heading', m('h2', `Slice Details`)),
-          m('.details-table', this.renderTable(builder)));
+          m('.details-table-multicolumn', [
+            m('table', this.renderTable(defaultBuilder)),
+            m('table', [m('h3', 'Arguments'), this.renderTable(argsBuilder)]),
+          ]));
     } else {
       return m(
           '.details-panel',
@@ -297,7 +305,7 @@ export class ChromeSliceDetailsPanel extends SlicePanel {
                       // scrolling to ts.
                       verticalScrollToTrack(trackId, true);
                     },
-                    title: 'Go to destination slice'
+                    title: 'Go to destination slice',
                   },
                   'call_made')));
         }
@@ -307,11 +315,5 @@ export class ChromeSliceDetailsPanel extends SlicePanel {
     }
 
     return m('table.half-width.auto-layout', rows);
-  }
-
-  fillDescription(description: Map<string, string>, builder: TableBuilder) {
-    for (const [key, value] of description) {
-      builder.add(key, value);
-    }
   }
 }

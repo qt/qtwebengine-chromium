@@ -31,25 +31,24 @@ Tests setPipeline should generate an error iff using an 'invalid' pipeline.
 g.test('pipeline,device_mismatch')
   .desc('Tests setPipeline cannot be called with a render pipeline created from another device')
   .paramsSubcasesOnly(kRenderEncodeTypeParams.combine('mismatched', [true, false]))
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
   .fn(async t => {
     const { encoderType, mismatched } = t.params;
-
-    if (mismatched) {
-      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
-    }
-
     const device = mismatched ? t.mismatchedDevice : t.device;
 
     const pipeline = device.createRenderPipeline({
+      layout: 'auto',
       vertex: {
         module: device.createShaderModule({
-          code: `@stage(vertex) fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(); }`,
+          code: `@vertex fn main() -> @builtin(position) vec4<f32> { return vec4<f32>(); }`,
         }),
         entryPoint: 'main',
       },
       fragment: {
         module: device.createShaderModule({
-          code: '@stage(fragment) fn main() {}',
+          code: '@fragment fn main() {}',
         }),
         entryPoint: 'main',
         targets: [{ format: 'rgba8unorm', writeMask: 0 }],

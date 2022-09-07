@@ -17,6 +17,8 @@ constexpr int kDefaultStartupListenerPort = 7777;
 constexpr int kTremplinListenerPort = 7778;
 constexpr int kCrashListenerPort = 7779;
 
+constexpr int kLmkdKillDecisionPort = 7781;
+
 // All ports above this value are reserved for seneschal servers.
 constexpr uint32_t kFirstSeneschalServerPort = 16384;
 

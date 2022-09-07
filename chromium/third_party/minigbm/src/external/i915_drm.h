@@ -359,7 +359,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_I915_QUERY			0x39
 #define DRM_I915_GEM_VM_CREATE		0x3a
 #define DRM_I915_GEM_VM_DESTROY		0x3b
-#define DRM_I915_PXP_OPS		0x3c
+#define DRM_I915_GEM_CREATE_EXT		0x3c
 /* Must be kept compact -- no holes */
 
 #define DRM_IOCTL_I915_INIT		DRM_IOW( DRM_COMMAND_BASE + DRM_I915_INIT, drm_i915_init_t)
@@ -392,7 +392,7 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_GEM_ENTERVT	DRM_IO(DRM_COMMAND_BASE + DRM_I915_GEM_ENTERVT)
 #define DRM_IOCTL_I915_GEM_LEAVEVT	DRM_IO(DRM_COMMAND_BASE + DRM_I915_GEM_LEAVEVT)
 #define DRM_IOCTL_I915_GEM_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_CREATE, struct drm_i915_gem_create)
-#define DRM_IOCTL_I915_GEM_CREATE_EXT   DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_CREATE, struct drm_i915_gem_create_ext)
+#define DRM_IOCTL_I915_GEM_CREATE_EXT	DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_CREATE_EXT, struct drm_i915_gem_create_ext)
 #define DRM_IOCTL_I915_GEM_PREAD	DRM_IOW (DRM_COMMAND_BASE + DRM_I915_GEM_PREAD, struct drm_i915_gem_pread)
 #define DRM_IOCTL_I915_GEM_PWRITE	DRM_IOW (DRM_COMMAND_BASE + DRM_I915_GEM_PWRITE, struct drm_i915_gem_pwrite)
 #define DRM_IOCTL_I915_GEM_MMAP		DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_MMAP, struct drm_i915_gem_mmap)
@@ -424,7 +424,6 @@ typedef struct _drm_i915_sarea {
 #define DRM_IOCTL_I915_QUERY			DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_QUERY, struct drm_i915_query)
 #define DRM_IOCTL_I915_GEM_VM_CREATE	DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_GEM_VM_CREATE, struct drm_i915_gem_vm_control)
 #define DRM_IOCTL_I915_GEM_VM_DESTROY	DRM_IOW (DRM_COMMAND_BASE + DRM_I915_GEM_VM_DESTROY, struct drm_i915_gem_vm_control)
-#define DRM_IOCTL_I915_PXP_OPS		DRM_IOWR(DRM_COMMAND_BASE + DRM_I915_PXP_OPS, struct drm_i915_pxp_ops)
 
 /* Allow drivers to submit batchbuffers directly to hardware, relying
  * on the security mechanisms provided by hardware.
@@ -723,27 +722,6 @@ struct drm_i915_gem_create {
 	 */
 	__u32 handle;
 	__u32 pad;
-};
-
-struct drm_i915_gem_create_ext {
-	/**
-	 * Requested size for the object.
-	 *
-	 * The (page-aligned) allocated size for the object will be returned.
-	 */
-	__u64 size;
-	/**
-	 * Returned handle for the object.
-	 *
-	 * Object handles are nonzero.
-	 */
-	__u32 handle;
-	__u32 pad;
-#define I915_GEM_CREATE_EXT_SETPARAM (1u << 0)
-#define I915_GEM_CREATE_EXT_FLAGS_UNKNOWN \
-	(-(I915_GEM_CREATE_EXT_SETPARAM << 1))
-	__u64 extensions;
-
 };
 
 struct drm_i915_gem_pread {
@@ -1645,51 +1623,28 @@ struct drm_i915_gem_context_param {
 #define I915_CONTEXT_PARAM_PERSISTENCE	0xb
 
 /*
- * I915_CONTEXT_PARAM_PROTECTED_CONTENT:
+ * I915_CONTEXT_PARAM_RINGSIZE:
  *
- * If set to true (1) PAVP content protection is enabled.
- * When enabled, the context is marked unrecoverable and may
- * become invalid due to PAVP teardown event or other error.
+ * Sets the size of the CS ringbuffer to use for logical ring contexts. This
+ * applies a limit of how many batches can be queued to HW before the caller
+ * is blocked due to lack of space for more commands.
+ *
+ * Only reliably possible to be set prior to first use, i.e. during
+ * construction. At any later point, the current execution must be flushed as
+ * the ring can only be changed while the context is idle. Note, the ringsize
+ * can be specified as a constructor property, see
+ * I915_CONTEXT_CREATE_EXT_SETPARAM, but can also be set later if required.
+ *
+ * Only applies to the current set of engine and lost when those engines
+ * are replaced by a new mapping (see I915_CONTEXT_PARAM_ENGINES).
+ *
+ * Must be between 4 - 512 KiB, in intervals of page size [4 KiB].
+ * Default is 16 KiB.
  */
-#define I915_CONTEXT_PARAM_PROTECTED_CONTENT    0xd
+#define I915_CONTEXT_PARAM_RINGSIZE	0xc
 /* Must be kept compact -- no holes and well documented */
 
 	__u64 value;
-};
-
-struct drm_i915_gem_object_param {
-	/* Object handle (0 for I915_GEM_CREATE_EXT_SETPARAM) */
-	__u32 handle;
-
-	/* Data pointer size */
-	__u32 size;
-
-/*
- * I915_OBJECT_PARAM:
- *
- * Select object namespace for the param.
- */
-#define I915_OBJECT_PARAM  (1ull<<32)
-
-/*
- * I915_PARAM_PROTECTED_CONTENT:
- *
- * If set to true (1) buffer contents is expected to be protected by
- * PAVP encryption and requires decryption for scan out and processing.
- * Protected buffers can only be used in PAVP protected contexts.
- * A protected buffer may become invalid as a result of PAVP teardown.
- */
-#define I915_PARAM_PROTECTED_CONTENT  0x1
-
-	__u64 param;
-
-	/* Data value or pointer */
-	__u64 data;
-};
-
-struct drm_i915_gem_create_ext_setparam {
-	struct i915_user_extension base;
-	struct drm_i915_gem_object_param param;
 };
 
 /**
@@ -1892,76 +1847,6 @@ struct drm_i915_gem_vm_control {
 	__u32 vm_id;
 };
 
-/*
- * struct pxp_sm_query_pxp_tag - Params to query the PXP tag of specified
- * session id and whether the session is alive from PXP state machine.
- */
-struct pxp_sm_query_pxp_tag {
-	__u32 session_is_alive;
-	__u32 pxp_tag; /* in  - Session ID, out pxp tag */
-};
-
-/*
- * struct pxp_set_session_status_params - Params to reserved, set or destroy
- * the session from the PXP state machine.
- */
-struct pxp_set_session_status_params {
-	__u32 pxp_tag; /* in [optional], for Arbitrator session, out pxp tag */
-	__u32 session_type; /* in, session type */
-	__u32 session_mode; /* in, session mode */
-	__u32 req_session_state; /* in, new session state */
-};
-
-/*
- * struct pxp_tee_io_message_params - Params to send/receive message to/from TEE.
- */
-struct pxp_tee_io_message_params {
-	__u8 *msg_in; /* in - message input */
-	__u32 msg_in_size; /* in - message input size */
-	__u8 *msg_out; /* in - message output buffer */
-	__u32 msg_out_size; /* out- message output size from TEE */
-	__u32 msg_out_buf_size; /* in - message output buffer size */
-};
-
-/*
- * struct pxp_info - Params for PXP operation.
- */
-struct pxp_info {
-	__u32 action; /* in - specified action of this operation */
-	__u32 sm_status; /* out - status output for this operation */
-
-	union {
-		/* in - action params to query PXP tag */
-		struct pxp_sm_query_pxp_tag query_pxp_tag;
-		/* in - action params to set the PXP session state */
-		struct pxp_set_session_status_params set_session_status;
-		/* in - action params to send TEE commands */
-		struct pxp_tee_io_message_params tee_io_message;
-
-		/* in - action params to set user space context */
-		__u32 set_user_ctx;
-	};
-} __attribute__((packed));
-
-/*
- * DRM_I915_PXP_OPS -
- *
- * PXP is an i915 componment, that helps user space to establish the hardware
- * protected session and manage the status of each alive software session,
- * as well as the life cycle of each session.
- *
- * This ioctl is to allow user space driver to create, set, and destroy each
- * session. It also provides the communication chanel to TEE (Trusted
- * Execution Environment) for the protected hardware session creation.
- */
-struct drm_i915_pxp_ops {
-	/* in - user space pointer to struct pxp_info */
-	struct pxp_info *info_ptr;
-
-	/* in - memory size that info_ptr points to */
-	__u32 info_size;
-};
-
 struct drm_i915_reg_read {
 	/*
 	 * Register offset.
@@ -2085,6 +1970,17 @@ enum drm_i915_perf_property_id {
 	 * This property is available in perf revision 3.
 	 */
 	DRM_I915_PERF_PROP_HOLD_PREEMPTION,
+
+	/**
+	 * Specifying this pins all contexts to the specified SSEU power
+	 * configuration for the duration of the recording.
+	 *
+	 * This parameter's value is a pointer to a struct
+	 * drm_i915_gem_context_param_sseu.
+	 *
+	 * This property is available in perf revision 4.
+	 */
+	DRM_I915_PERF_PROP_GLOBAL_SSEU,
 
 	DRM_I915_PERF_PROP_MAX /* non-ABI */
 };
@@ -2414,6 +2310,77 @@ struct drm_i915_query_perf_config {
 	 */
 	__u8 data[];
 };
+
+/**
+ * struct drm_i915_gem_create_ext - Existing gem_create behaviour, with added
+ * extension support using struct i915_user_extension.
+ *
+ * Note that in the future we want to have our buffer flags here, at least for
+ * the stuff that is immutable. Previously we would have two ioctls, one to
+ * create the object with gem_create, and another to apply various parameters,
+ * however this creates some ambiguity for the params which are considered
+ * immutable. Also in general we're phasing out the various SET/GET ioctls.
+ */
+struct drm_i915_gem_create_ext {
+	/**
+	 * @size: Requested size for the object.
+	 *
+	 * The (page-aligned) allocated size for the object will be returned.
+	 *
+	 */
+	__u64 size;
+	/**
+	 * @handle: Returned handle for the object.
+	 *
+	 * Object handles are nonzero.
+	 */
+	__u32 handle;
+	/** @flags: MBZ */
+	__u32 flags;
+	/**
+	 * @extensions: The chain of extensions to apply to this object.
+	 *
+	 * This will be useful in the future when we need to support several
+	 * different extensions, and we need to apply more than one when
+	 * creating the object. See struct i915_user_extension.
+	 *
+	 * If we don't supply any extensions then we get the same old gem_create
+	 * behaviour.
+	 *
+	 * For I915_GEM_CREATE_EXT_PROTECTED_CONTENT usage see
+	 * struct drm_i915_gem_create_ext_protected_content.
+	 */
+#define I915_GEM_CREATE_EXT_PROTECTED_CONTENT 1
+	__u64 extensions;
+};
+
+/**
+ * struct drm_i915_gem_create_ext_protected_content - The
+ * I915_OBJECT_PARAM_PROTECTED_CONTENT extension.
+ *
+ * If this extension is provided, buffer contents are expected to be protected
+ * by PXP encryption and require decryption for scan out and processing. This
+ * is only possible on platforms that have PXP enabled, on all other scenarios
+ * using this extension will cause the ioctl to fail and return -ENODEV. The
+ * flags parameter is reserved for future expansion and must currently be set
+ * to zero.
+ *
+ * The buffer contents are considered invalid after a PXP session teardown.
+ *
+ * The encryption is guaranteed to be processed correctly only if the object
+ * is submitted with a context created using the
+ * I915_CONTEXT_PARAM_PROTECTED_CONTENT flag. This will also enable extra checks
+ * at submission time on the validity of the objects involved.
+ */
+struct drm_i915_gem_create_ext_protected_content {
+	/** @base: Extension link. See struct i915_user_extension. */
+	struct i915_user_extension base;
+	/** @flags: reserved for future usage, currently MBZ */
+	__u32 flags;
+};
+
+/* ID of the protected content session managed by i915 when PXP is active */
+#define I915_PROTECTED_CONTENT_DEFAULT_SESSION 0xf
 
 #if defined(__cplusplus)
 }

@@ -9,10 +9,10 @@
 #include <sys/mman.h>
 #include <xf86drm.h>
 
+#include "drv_helpers.h"
 #include "drv_priv.h"
 #include "external/virtgpu_cross_domain_protocol.h"
 #include "external/virtgpu_drm.h"
-#include "helpers.h"
 #include "util.h"
 #include "virtgpu.h"
 
@@ -36,6 +36,7 @@ struct cross_domain_private {
 	uint32_t ring_handle;
 	void *ring_addr;
 	struct drv_array *metadata_cache;
+	pthread_mutex_t metadata_cache_lock;
 };
 
 static void cross_domain_release_private(struct driver *drv)
@@ -57,7 +58,11 @@ static void cross_domain_release_private(struct driver *drv)
 		}
 	}
 
-	drv_array_destroy(priv->metadata_cache);
+	if (priv->metadata_cache)
+		drv_array_destroy(priv->metadata_cache);
+
+	pthread_mutex_destroy(&priv->metadata_cache_lock);
+
 	free(priv);
 }
 
@@ -107,7 +112,7 @@ static int cross_domain_submit_cmd(struct driver *drv, uint32_t *cmd, uint32_t c
 	exec.command = (uint64_t)&cmd[0];
 	exec.size = cmd_size;
 	if (wait) {
-		exec.flags = VIRTGPU_EXECBUF_FENCE_CONTEXT;
+		exec.flags = VIRTGPU_EXECBUF_RING_IDX;
 		exec.bo_handles = (uint64_t)&priv->ring_handle;
 		exec.num_bo_handles = 1;
 	}
@@ -150,7 +155,7 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	uint32_t plane, remaining_size;
 
 	memset(&cmd_get_reqs, 0, sizeof(cmd_get_reqs));
-	pthread_mutex_lock(&drv->driver_lock);
+	pthread_mutex_lock(&priv->metadata_cache_lock);
 	for (uint32_t i = 0; i < drv_array_size(priv->metadata_cache); i++) {
 		cached_data = (struct bo_metadata *)drv_array_at_idx(priv->metadata_cache, i);
 		if (!metadata_equal(metadata, cached_data))
@@ -185,11 +190,11 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	memcpy(&metadata->offsets, &addr[4], 4 * sizeof(uint32_t));
 	memcpy(&metadata->format_modifier, &addr[8], sizeof(uint64_t));
 	memcpy(&metadata->total_size, &addr[10], sizeof(uint64_t));
-	memcpy(&metadata->blob_id, &addr[12], sizeof(uint64_t));
+	memcpy(&metadata->blob_id, &addr[12], sizeof(uint32_t));
 
-	metadata->map_info = addr[14];
-	metadata->memory_idx = addr[16];
-	metadata->physical_device_idx = addr[17];
+	metadata->map_info = addr[13];
+	metadata->memory_idx = addr[14];
+	metadata->physical_device_idx = addr[15];
 
 	remaining_size = metadata->total_size;
 	for (plane = 0; plane < metadata->num_planes; plane++) {
@@ -203,7 +208,7 @@ static int cross_domain_metadata_query(struct driver *drv, struct bo_metadata *m
 	drv_array_append(priv->metadata_cache, metadata);
 
 out_unlock:
-	pthread_mutex_unlock(&drv->driver_lock);
+	pthread_mutex_unlock(&priv->metadata_cache_lock);
 	return ret;
 }
 
@@ -243,7 +248,21 @@ static int cross_domain_init(struct driver *drv)
 		return -ENOTSUP;
 
 	priv = calloc(1, sizeof(*priv));
+	if (!priv)
+		return -ENOMEM;
+
+	ret = pthread_mutex_init(&priv->metadata_cache_lock, NULL);
+	if (ret) {
+		free(priv);
+		return ret;
+	}
+
 	priv->metadata_cache = drv_array_init(sizeof(struct bo_metadata));
+	if (!priv->metadata_cache) {
+		ret = -ENOMEM;
+		goto free_private;
+	}
+
 	priv->ring_addr = MAP_FAILED;
 	drv->priv = priv;
 
@@ -269,7 +288,7 @@ static int cross_domain_init(struct driver *drv)
 	// queries.
 	ctx_set_params[0].param = VIRTGPU_CONTEXT_PARAM_CAPSET_ID;
 	ctx_set_params[0].value = CAPSET_CROSS_DOMAIN;
-	ctx_set_params[1].param = VIRTGPU_CONTEXT_PARAM_NUM_FENCE_CONTEXTS;
+	ctx_set_params[1].param = VIRTGPU_CONTEXT_PARAM_NUM_RINGS;
 	ctx_set_params[1].value = 1;
 
 	init.ctx_set_params = (unsigned long long)&ctx_set_params[0];
@@ -363,7 +382,7 @@ static int cross_domain_bo_create(struct bo *bo, uint32_t width, uint32_t height
 
 	drm_rc_blob.size = bo->meta.total_size;
 	drm_rc_blob.blob_flags = blob_flags;
-	drm_rc_blob.blob_id = bo->meta.blob_id;
+	drm_rc_blob.blob_id = (uint64_t)bo->meta.blob_id;
 
 	ret = drmIoctl(bo->drv->fd, DRM_IOCTL_VIRTGPU_RESOURCE_CREATE_BLOB, &drm_rc_blob);
 	if (ret < 0) {
@@ -403,5 +422,5 @@ const struct backend virtgpu_cross_domain = {
 	.bo_destroy = drv_gem_bo_destroy,
 	.bo_map = cross_domain_bo_map,
 	.bo_unmap = drv_bo_munmap,
-	.resolve_format = drv_resolve_format_helper,
+	.resolve_format_and_use_flags = drv_resolve_format_and_use_flags_helper,
 };

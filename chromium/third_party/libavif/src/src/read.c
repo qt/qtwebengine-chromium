@@ -170,7 +170,7 @@ typedef struct avifDecoderItem
     uint32_t premByID;             // if non-zero, this item is premultiplied by Item #{premByID}
     avifBool hasUnsupportedEssentialProperty; // If true, this item cites a property flagged as 'essential' that libavif doesn't support (yet). Ignore the item, if so.
     avifBool ipmaSeen;    // if true, this item already received a property association
-    avifBool progressive; // if true, this item has progressive layers (a1lx), but does not select a specific layer (lsel)
+    avifBool progressive; // if true, this item has progressive layers (a1lx), but does not select a specific layer (the layer_id value in lsel is set to 0xFFFF)
 } avifDecoderItem;
 AVIF_ARRAY_DECLARE(avifDecoderItemArray, avifDecoderItem, item);
 
@@ -535,8 +535,13 @@ static avifBool avifCodecDecodeInputFillFromDecoderItem(avifCodecDecodeInput * d
     }
 
     const avifProperty * lselProp = avifPropertyArrayFind(&item->properties, "lsel");
-    item->progressive = (a1lxProp && !lselProp); // Progressive images offer layers via the a1lxProp, but don't specify a layer selection with lsel.
-    if (lselProp) {
+    // Progressive images offer layers via the a1lxProp, but don't specify a layer selection with lsel.
+    //
+    // For backward compatibility with earlier drafts of AVIF spec v1.1.0, treat an absent lsel as
+    // equivalent to layer_id == 0xFFFF during the transitional period. Remove !lselProp when the test
+    // images have been updated to the v1.1.0 spec.
+    item->progressive = (a1lxProp && (!lselProp || (lselProp->u.lsel.layerID == 0xFFFF)));
+    if (lselProp && (lselProp->u.lsel.layerID != 0xFFFF)) {
         // Layer selection. This requires that the underlying AV1 codec decodes all layers,
         // and then only returns the requested layer as a single frame. To the user of libavif,
         // this appears to be a single frame.
@@ -1297,8 +1302,7 @@ static avifBool avifDecoderDataFillImageGrid(avifDecoderData * data,
             (tile->image->yuvRange != firstTile->image->yuvRange) || (uvPresent != firstTileUVPresent) ||
             (tile->image->colorPrimaries != firstTile->image->colorPrimaries) ||
             (tile->image->transferCharacteristics != firstTile->image->transferCharacteristics) ||
-            (tile->image->matrixCoefficients != firstTile->image->matrixCoefficients) ||
-            (tile->image->alphaRange != firstTile->image->alphaRange)) {
+            (tile->image->matrixCoefficients != firstTile->image->matrixCoefficients)) {
             avifDiagnosticsPrintf(data->diag, "Grid image contains mismatched tiles");
             return AVIF_FALSE;
         }
@@ -1357,9 +1361,6 @@ static avifBool avifDecoderDataFillImageGrid(avifDecoderData * data,
             dstImage->transferCharacteristics = firstTile->image->transferCharacteristics;
             dstImage->matrixCoefficients = firstTile->image->matrixCoefficients;
         }
-    }
-    if (alpha) {
-        dstImage->alphaRange = firstTile->image->alphaRange;
     }
 
     avifImageAllocatePlanes(dstImage, alpha ? AVIF_PLANES_A : AVIF_PLANES_YUV);
@@ -1870,7 +1871,7 @@ static avifBool avifParseLayerSelectorProperty(avifProperty * prop, const uint8_
 
     avifLayerSelectorProperty * lsel = &prop->u.lsel;
     CHECK(avifROStreamReadU16(&s, &lsel->layerID));
-    if (lsel->layerID >= MAX_AV1_LAYER_COUNT) {
+    if ((lsel->layerID != 0xFFFF) && (lsel->layerID >= MAX_AV1_LAYER_COUNT)) {
         avifDiagnosticsPrintf(diag, "Box[lsel] contains an unsupported layer [%u]", lsel->layerID);
         return AVIF_FALSE;
     }
@@ -3730,6 +3731,45 @@ static avifResult avifDecoderPrepareTiles(avifDecoder * decoder,
     return AVIF_RESULT_OK;
 }
 
+static avifResult avifImageLimitedToFullAlpha(avifImage * image)
+{
+    if (image->imageOwnsAlphaPlane) {
+        return AVIF_RESULT_NOT_IMPLEMENTED;
+    }
+
+    uint8_t * alphaPlane = image->alphaPlane;
+    const uint32_t alphaRowBytes = image->alphaRowBytes;
+
+    // We cannot do the range conversion in place since it will modify the
+    // codec's internal frame buffers. Allocate memory for the conversion.
+    image->alphaPlane = NULL;
+    image->alphaRowBytes = 0;
+    avifImageAllocatePlanes(image, AVIF_PLANES_A);
+
+    if (image->depth > 8) {
+        for (uint32_t j = 0; j < image->height; ++j) {
+            uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
+            uint8_t * dstRow = &image->alphaPlane[j * image->alphaRowBytes];
+            for (uint32_t i = 0; i < image->width; ++i) {
+                int srcAlpha = *((uint16_t *)&srcRow[i * 2]);
+                int dstAlpha = avifLimitedToFullY(image->depth, srcAlpha);
+                *((uint16_t *)&dstRow[i * 2]) = (uint16_t)dstAlpha;
+            }
+        }
+    } else {
+        for (uint32_t j = 0; j < image->height; ++j) {
+            uint8_t * srcRow = &alphaPlane[j * alphaRowBytes];
+            uint8_t * dstRow = &image->alphaPlane[j * image->alphaRowBytes];
+            for (uint32_t i = 0; i < image->width; ++i) {
+                int srcAlpha = srcRow[i];
+                int dstAlpha = avifLimitedToFullY(image->depth, srcAlpha);
+                dstRow[i] = (uint8_t)dstAlpha;
+            }
+        }
+    }
+    return AVIF_RESULT_OK;
+}
+
 static avifResult avifDecoderDecodeTiles(avifDecoder * decoder,
                                          uint32_t nextImageIndex,
                                          unsigned int firstTileIndex,
@@ -3741,15 +3781,28 @@ static avifResult avifDecoderDecodeTiles(avifDecoder * decoder,
         avifTile * tile = &decoder->data->tiles.tile[firstTileIndex + tileIndex];
 
         const avifDecodeSample * sample = &tile->input->samples.sample[nextImageIndex];
-        if (!sample->data.data) {
+        if (sample->data.size < sample->size) {
             assert(decoder->allowIncremental);
             // Data is missing but there is no error yet. Output available pixel rows.
             return AVIF_RESULT_OK;
         }
 
-        if (!tile->codec->getNextImage(tile->codec, decoder, sample, tile->input->alpha, tile->image)) {
+        avifBool isLimitedRangeAlpha = AVIF_FALSE;
+        if (!tile->codec->getNextImage(tile->codec, decoder, sample, tile->input->alpha, &isLimitedRangeAlpha, tile->image)) {
             avifDiagnosticsPrintf(&decoder->diag, "tile->codec->getNextImage() failed");
             return tile->input->alpha ? AVIF_RESULT_DECODE_ALPHA_FAILED : AVIF_RESULT_DECODE_COLOR_FAILED;
+        }
+
+        // Alpha plane with limited range is not allowed by the latest revision
+        // of the specification. However, it was allowed in version 1.0.0 of the
+        // specification. To allow such files, simply convert the alpha plane to
+        // full range.
+        if (tile->input->alpha && isLimitedRangeAlpha) {
+            avifResult result = avifImageLimitedToFullAlpha(tile->image);
+            if (result != AVIF_RESULT_OK) {
+                avifDiagnosticsPrintf(&decoder->diag, "avifImageLimitedToFullAlpha failed");
+                return result;
+            }
         }
 
         // Scale the decoded image so that it corresponds to this tile's output dimensions
@@ -3889,7 +3942,6 @@ avifResult avifDecoderNextImage(avifDecoder * decoder)
             }
 
             avifImageStealPlanes(decoder->image, srcAlpha, AVIF_PLANES_A);
-            decoder->image->alphaRange = srcAlpha->alphaRange;
         }
     }
 

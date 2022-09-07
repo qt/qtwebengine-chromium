@@ -55,7 +55,8 @@ message StartArcMiniContainerRequest {
 
   // Option to disable by hiding default apps shipped on the system image.
   // To be used locally in development that involves overriding these apps.
-  optional bool disable_system_default_app = 8 [default = false];
+  optional bool disable_system_default_app = 8
+      [default = false, deprecated = true];
 
   // Optional mode for dalvik memory profile.
   optional DalvikMemoryProfile dalvik_memory_profile = 9
@@ -77,7 +78,13 @@ message StartArcMiniContainerRequest {
   // Enables use of new notifications ui.
   optional bool enable_notifications_refresh = 13 [default = false];
 
-  // Next ID to use: 14
+  // Option to enable TTS caching
+  optional bool enable_tts_caching = 14 [default = false];
+
+  // Option to enable disable consumer auto update toggle.
+  optional bool enable_consumer_auto_update_toggle = 15 [default = false];
+
+  // Next ID to use: 16
 }
 
 // ARC upgrade options sent from Chrome to session manager. This message is used
@@ -157,5 +164,8 @@ message UpgradeArcContainerRequest {
   // Option to enable Arc Nearby Share.
   optional bool enable_arc_nearby_share = 17 [default = false];
 
-  // Next ID to use: 18
+  // Option to skip pregenerated TTS cache setup.
+  optional bool skip_tts_cache = 18 [default = false];
+
+  // Next ID to use: 19
 }

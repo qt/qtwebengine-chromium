@@ -151,16 +151,16 @@ export function getQueryType(tree: CodeMirror.Tree, pos: number, doc: CodeMirror
   }
   if (node.name === '(') {
     // map.get(<auto-complete>
-    if (parent.name === 'ArgList' && parent.parent.name === 'CallExpression') {
+    if (parent?.name === 'ArgList' && parent?.parent?.name === 'CallExpression') {
       // map.get
-      const callReceiver = parent.parent.firstChild;
-      if (callReceiver.name === 'MemberExpression') {
+      const callReceiver = parent?.parent?.firstChild;
+      if (callReceiver?.name === 'MemberExpression') {
         // get
-        const propertyExpression = callReceiver.lastChild;
-        if (doc.sliceString(propertyExpression.from, propertyExpression.to) === 'get') {
+        const propertyExpression = callReceiver?.lastChild;
+        if (propertyExpression && doc.sliceString(propertyExpression.from, propertyExpression.to) === 'get') {
           // map
-          const potentiallyMapObject = callReceiver.firstChild;
-          return {type: QueryType.PotentiallyRetrievingFromMap, relatedNode: potentiallyMapObject};
+          const potentiallyMapObject = callReceiver?.firstChild;
+          return {type: QueryType.PotentiallyRetrievingFromMap, relatedNode: potentiallyMapObject || undefined};
         }
       }
     }
@@ -212,12 +212,12 @@ export async function javascriptCompletionSource(cx: CodeMirror.CompletionContex
   return {
     from: query.from ?? cx.pos,
     options: result.completions,
-    span: !quote ? SPAN_IDENT : quote === '\'' ? SPAN_SINGLE_QUOTE : SPAN_DOUBLE_QUOTE,
+    validFor: !quote ? SPAN_IDENT : quote === '\'' ? SPAN_SINGLE_QUOTE : SPAN_DOUBLE_QUOTE,
   };
 }
 
-const SPAN_IDENT = /^#?[\w\P{ASCII}]*$/u, SPAN_SINGLE_QUOTE = /^\'(\\.|[^\\'\n])*'?$/,
-      SPAN_DOUBLE_QUOTE = /^"(\\.|[^\\"\n])*"?$/;
+const SPAN_IDENT = /^#?(?:[$_\p{ID_Start}])(?:[$_\u200C\u200D\p{ID_Continue}])*$/u,
+      SPAN_SINGLE_QUOTE = /^\'(\\.|[^\\'\n])*'?$/, SPAN_DOUBLE_QUOTE = /^"(\\.|[^\\"\n])*"?$/;
 
 function getExecutionContext(): SDK.RuntimeModel.ExecutionContext|null {
   return UI.Context.Context.instance().flavor(SDK.RuntimeModel.ExecutionContext);
@@ -340,8 +340,6 @@ async function completeProperties(
   return result;
 }
 
-const prototypePropertyPenalty = -80;
-
 async function completePropertiesInner(
     expression: string,
     context: SDK.RuntimeModel.ExecutionContext,
@@ -382,17 +380,10 @@ async function completePropertiesInner(
           (!prop.private || expression === 'this') && (quoted || SPAN_IDENT.test(prop.name))) {
         const label =
             quoted ? quoted + prop.name.replaceAll('\\', '\\\\').replaceAll(quoted, '\\' + quoted) + quoted : prop.name;
-        const completion: CodeMirror.Completion = {
-          label,
-          type: prop.value?.type === 'function' ? functionType : otherType,
-        };
-        if (quoted && !hasBracket) {
-          completion.apply = label + ']';
-        }
-        if (!prop.isOwn) {
-          completion.boost = prototypePropertyPenalty;
-        }
-        result.add(completion);
+        const apply = (quoted && !hasBracket) ? `${label}]` : undefined;
+        const boost = 2 * Number(prop.isOwn) + 1 * Number(prop.enumerable);
+        const type = prop.value?.type === 'function' ? functionType : otherType;
+        result.add({apply, label, type, boost});
       }
     }
   }
@@ -517,22 +508,20 @@ async function getArgumentsForExpression(
   if (!context) {
     return null;
   }
-  try {
-    const expression = doc.sliceString(callee.from, callee.to);
-    const result = await evaluateExpression(context, expression, 'argumentsHint');
-    if (!result || result.type !== 'function') {
+  const expression = doc.sliceString(callee.from, callee.to);
+  const result = await evaluateExpression(context, expression, 'argumentsHint');
+  if (!result || result.type !== 'function') {
+    return null;
+  }
+  const objGetter = async(): Promise<SDK.RemoteObject.RemoteObject|null> => {
+    const first = callee.firstChild;
+    if (!first || callee.name !== 'MemberExpression') {
       return null;
     }
-    return getArgumentsForFunctionValue(result, async () => {
-      const first = callee.firstChild;
-      if (!first || callee.name !== 'MemberExpression') {
-        return null;
-      }
-      return evaluateExpression(context, doc.sliceString(first.from, first.to), 'argumentsHint');
-    }, expression);
-  } finally {
-    context.runtimeModel.releaseObjectGroup('argumentsHint');
-  }
+    return evaluateExpression(context, doc.sliceString(first.from, first.to), 'argumentsHint');
+  };
+  return getArgumentsForFunctionValue(result, objGetter, expression)
+      .finally(() => context.runtimeModel.releaseObjectGroup('argumentsHint'));
 }
 
 async function getArgumentsForFunctionValue(

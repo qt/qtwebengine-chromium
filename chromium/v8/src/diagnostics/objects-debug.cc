@@ -18,6 +18,7 @@
 #include "src/objects/bigint.h"
 #include "src/objects/call-site-info-inl.h"
 #include "src/objects/cell-inl.h"
+#include "src/objects/code-inl.h"
 #include "src/objects/data-handler-inl.h"
 #include "src/objects/debug-objects-inl.h"
 #include "src/objects/elements.h"
@@ -32,6 +33,7 @@
 #include "src/objects/instance-type.h"
 #include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-array-inl.h"
+#include "src/objects/js-atomics-synchronization-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/objects.h"
 #include "src/objects/turbofan-types-inl.h"
@@ -54,7 +56,7 @@
 #endif  // V8_INTL_SUPPORT
 #include "src/objects/js-regexp-inl.h"
 #include "src/objects/js-regexp-string-iterator-inl.h"
-#include "src/objects/js-shadow-realms-inl.h"
+#include "src/objects/js-shadow-realm-inl.h"
 #ifdef V8_INTL_SUPPORT
 #include "src/objects/js-relative-time-format-inl.h"
 #include "src/objects/js-segment-iterator-inl.h"
@@ -335,8 +337,10 @@ void HeapObject::VerifyCodePointer(Isolate* isolate, Object p) {
 
 void Symbol::SymbolVerify(Isolate* isolate) {
   TorqueGeneratedClassVerifiers::SymbolVerify(*this, isolate);
-  CHECK(HasHashCode());
-  CHECK_GT(hash(), 0);
+  uint32_t hash;
+  const bool has_hash = TryGetHash(&hash);
+  CHECK(has_hash);
+  CHECK_GT(hash, 0);
   CHECK(description().IsUndefined(isolate) || description().IsString());
   CHECK_IMPLIES(IsPrivateName(), IsPrivate());
   CHECK_IMPLIES(IsPrivateBrand(), IsPrivateName());
@@ -631,7 +635,7 @@ void FixedDoubleArray::FixedDoubleArrayVerify(Isolate* isolate) {
     if (!is_the_hole(i)) {
       uint64_t value = get_representation(i);
       uint64_t unexpected =
-          bit_cast<uint64_t>(std::numeric_limits<double>::quiet_NaN()) &
+          base::bit_cast<uint64_t>(std::numeric_limits<double>::quiet_NaN()) &
           uint64_t{0x7FF8000000000000};
       // Create implementation specific sNaN by inverting relevant bit.
       unexpected ^= uint64_t{0x0008000000000000};
@@ -665,7 +669,7 @@ void FeedbackMetadata::FeedbackMetadataVerify(Isolate* isolate) {
       iter.Next();
       FeedbackSlotKind kind = iter.kind();
       CHECK_NE(FeedbackSlotKind::kInvalid, kind);
-      CHECK_GT(FeedbackSlotKind::kKindsNumber, kind);
+      CHECK_GT(kFeedbackSlotKindCount, kind);
     }
   }
 }
@@ -876,7 +880,7 @@ void JSFunction::JSFunctionVerify(Isolate* isolate) {
 
   // This assertion exists to encourage updating this verification function if
   // new fields are added in the Torque class layout definition.
-  STATIC_ASSERT(JSFunction::TorqueGeneratedClass::kHeaderSize ==
+  static_assert(JSFunction::TorqueGeneratedClass::kHeaderSize ==
                 8 * kTaggedSize);
 
   JSFunctionOrBoundFunctionOrWrappedFunctionVerify(isolate);
@@ -1085,9 +1089,11 @@ void CodeDataContainer::CodeDataContainerVerify(Isolate* isolate) {
           // So, do a reverse Code object lookup via code_entry_point value to
           // ensure it corresponds to the same Code object associated with this
           // CodeDataContainer.
-          Code the_code = isolate->heap()->GcSafeFindCodeForInnerPointer(
-              code_entry_point());
-          CHECK_EQ(the_code, code());
+          CodeLookupResult lookup_result =
+              isolate->heap()->GcSafeFindCodeForInnerPointer(
+                  code_entry_point());
+          CHECK(lookup_result.IsFound());
+          CHECK_EQ(lookup_result.ToCode(), code());
         }
       } else {
         CHECK_EQ(code().InstructionStart(), code_entry_point());
@@ -1235,6 +1241,17 @@ void JSSharedStruct::JSSharedStructVerify(Isolate* isolate) {
     CHECK(
         RawFastPropertyAt(FieldIndex::ForDescriptor(struct_map, i)).IsShared());
   }
+}
+
+void JSAtomicsMutex::JSAtomicsMutexVerify(Isolate* isolate) {
+  CHECK(IsJSAtomicsMutex());
+  CHECK(InSharedHeap());
+  JSObjectVerify(isolate);
+  Map mutex_map = map();
+  CHECK(mutex_map.InSharedHeap());
+  CHECK(mutex_map.GetBackPointer().IsUndefined(isolate));
+  CHECK(!mutex_map.is_extensible());
+  CHECK(!mutex_map.is_prototype_map());
 }
 
 void WeakCell::WeakCellVerify(Isolate* isolate) {
@@ -1795,7 +1812,7 @@ void DataHandler::DataHandlerVerify(Isolate* isolate) {
 
   // This assertion exists to encourage updating this verification function if
   // new fields are added in the Torque class layout definition.
-  STATIC_ASSERT(DataHandler::kHeaderSize == 6 * kTaggedSize);
+  static_assert(DataHandler::kHeaderSize == 6 * kTaggedSize);
 
   StructVerify(isolate);
   CHECK(IsDataHandler());
@@ -1946,7 +1963,7 @@ class StringTableVerifier : public RootVisitor {
 
 void StringTable::VerifyIfOwnedBy(Isolate* isolate) {
   DCHECK_EQ(isolate->string_table(), this);
-  if (!isolate->OwnsStringTable()) return;
+  if (!isolate->OwnsStringTables()) return;
   StringTableVerifier verifier(isolate);
   IterateElements(&verifier);
 }
@@ -2075,13 +2092,14 @@ bool DescriptorArray::IsSortedNoDuplicates() {
   uint32_t current = 0;
   for (int i = 0; i < number_of_descriptors(); i++) {
     Name key = GetSortedKey(i);
-    CHECK(key.HasHashCode());
+    uint32_t hash;
+    const bool has_hash = key.TryGetHash(&hash);
+    CHECK(has_hash);
     if (key == current_key) {
       Print();
       return false;
     }
     current_key = key;
-    uint32_t hash = key.hash();
     if (hash < current) {
       Print();
       return false;
@@ -2099,8 +2117,9 @@ bool TransitionArray::IsSortedNoDuplicates() {
 
   for (int i = 0; i < number_of_transitions(); i++) {
     Name key = GetSortedKey(i);
-    CHECK(key.HasHashCode());
-    uint32_t hash = key.hash();
+    uint32_t hash;
+    const bool has_hash = key.TryGetHash(&hash);
+    CHECK(has_hash);
     PropertyKind kind = PropertyKind::kData;
     PropertyAttributes attributes = NONE;
     if (!TransitionsAccessor::IsSpecialTransition(key.GetReadOnlyRoots(),

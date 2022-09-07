@@ -43,8 +43,8 @@ namespace internal {
 // object can't overlap with the lower 32 bits of cleared weak reference value
 // and therefore it's enough to compare only the lower 32 bits of a MaybeObject
 // in order to figure out if it's a cleared weak reference or not.
-STATIC_ASSERT(kClearedWeakHeapObjectLower32 > 0);
-STATIC_ASSERT(kClearedWeakHeapObjectLower32 < Page::kHeaderSize);
+static_assert(kClearedWeakHeapObjectLower32 > 0);
+static_assert(kClearedWeakHeapObjectLower32 < Page::kHeaderSize);
 
 // static
 constexpr Page::MainThreadFlags Page::kCopyOnFlipFlagsMask;
@@ -157,8 +157,7 @@ size_t Page::ShrinkToHighWaterMark() {
     }
     heap()->CreateFillerObjectAt(
         filler.address(),
-        static_cast<int>(area_end() - filler.address() - unused),
-        ClearRecordedSlots::kNo);
+        static_cast<int>(area_end() - filler.address() - unused));
     heap()->memory_allocator()->PartialFreeMemory(
         this, address() + size() - unused, unused, area_end() - unused);
     if (filler.address() != area_end()) {
@@ -309,8 +308,7 @@ void LocalAllocationBuffer::MakeIterable() {
   if (IsValid()) {
     heap_->CreateFillerObjectAtBackground(
         allocation_info_.top(),
-        static_cast<int>(allocation_info_.limit() - allocation_info_.top()),
-        ClearFreedMemoryMode::kDontClearFreedMemory);
+        static_cast<int>(allocation_info_.limit() - allocation_info_.top()));
   }
 }
 
@@ -418,8 +416,7 @@ void SpaceWithLinearArea::InvokeAllocationObservers(
       heap()->UnprotectAndRegisterMemoryChunk(
           chunk, UnprotectMemoryOrigin::kMainThread);
     }
-    heap_->CreateFillerObjectAt(soon_object, static_cast<int>(size_in_bytes),
-                                ClearRecordedSlots::kNo);
+    heap_->CreateFillerObjectAt(soon_object, static_cast<int>(size_in_bytes));
 
 #if DEBUG
     // Ensure that allocation_info_ isn't modified during one of the

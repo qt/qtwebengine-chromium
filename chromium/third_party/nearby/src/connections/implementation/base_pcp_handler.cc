@@ -14,11 +14,14 @@
 
 #include "connections/implementation/base_pcp_handler.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cinttypes>
 #include <cstdlib>
 #include <limits>
 #include <memory>
+#include <utility>
+#include <string>
 
 #include "securegcm/d2d_connection_context_v1.h"
 #include "securegcm/ukey2_handshake.h"
@@ -27,17 +30,14 @@
 #include "absl/types/span.h"
 #include "connections/implementation/mediums/utils.h"
 #include "connections/implementation/offline_frames.h"
-#include "connections/implementation/pcp_handler.h"
 #include "internal/platform/base64_utils.h"
 #include "internal/platform/bluetooth_utils.h"
 #include "internal/platform/logging.h"
-#include "internal/platform/system_clock.h"
 
 namespace location {
 namespace nearby {
 namespace connections {
 
-using ::location::nearby::proto::connections::Medium;
 using ::securegcm::UKey2Handshake;
 
 constexpr absl::Duration BasePcpHandler::kConnectionRequestReadTimeout;
@@ -171,6 +171,9 @@ void BasePcpHandler::OptionsAllowed(const BooleanMediumSelector& allowed,
   if (allowed.wifi_lan) {
     result << proto::connections::Medium_Name(Medium::WIFI_LAN) << " ";
   }
+  if (allowed.wifi_hotspot) {
+    result << proto::connections::Medium_Name(Medium::WIFI_HOTSPOT) << " ";
+  }
   result << "}";
 }
 
@@ -213,11 +216,12 @@ BooleanMediumSelector BasePcpHandler::ComputeIntersectionOfSupportedMediums(
 
   // Not using designated initializers here since the VS C++ compiler errors
   // out indicating that MediumSelector<bool> is not an aggregate
-  MediumSelector<bool> mediumSelector{};
+  BooleanMediumSelector mediumSelector{};
   mediumSelector.bluetooth = intersection.contains(Medium::BLUETOOTH);
   mediumSelector.ble = intersection.contains(Medium::BLE);
   mediumSelector.web_rtc = intersection.contains(Medium::WEB_RTC);
   mediumSelector.wifi_lan = intersection.contains(Medium::WIFI_LAN);
+  mediumSelector.wifi_hotspot = intersection.contains(Medium::WIFI_HOTSPOT);
   return mediumSelector;
 }
 
@@ -544,11 +548,31 @@ Status BasePcpHandler::RequestConnection(
         // Generate the nonce to use for this connection.
         std::int32_t nonce = prng_.NextInt32();
 
+        bool is_supports_5_ghz = false;
+        std::string bssid = "";
+        std::int32_t ap_frequency = -1;
+        std::string ip_address = "";
+        if (mediums_->GetWifi().IsAvailable()) {
+          is_supports_5_ghz =
+              mediums_->GetWifi().GetCapability().supports_5_ghz;
+
+          api::WifiInformation& wifi_info =
+              mediums_->GetWifi().GetInformation();
+          bssid = wifi_info.bssid;
+          ap_frequency = wifi_info.ap_frequency;
+          ip_address = wifi_info.ip_address_4_bytes;
+          NEARBY_LOGS(INFO) << "Query for WIFI information: is_supports_5_ghz="
+                            << is_supports_5_ghz << "; bssid=" << bssid
+                            << "; ap_frequency=" << ap_frequency
+                            << "Mhz; ip_address in bytes format=" << ip_address;
+        }
+
         // The first message we have to send, after connecting, is to tell the
         // endpoint about ourselves.
         Exception write_exception = WriteConnectionRequestFrame(
             channel.get(), client->GetLocalEndpointId(), info.endpoint_info,
-            nonce, GetSupportedConnectionMediumsByPriority(connection_options),
+            nonce, is_supports_5_ghz, bssid, ap_frequency, ip_address,
+            GetSupportedConnectionMediumsByPriority(connection_options),
             connection_options.keep_alive_interval_millis,
             connection_options.keep_alive_timeout_millis);
         if (!write_exception.Ok()) {
@@ -606,8 +630,8 @@ Status BasePcpHandler::RequestConnection(
 
 bool BasePcpHandler::MediumSupportedByClientOptions(
     const proto::connections::Medium& medium,
-    const ConnectionOptions& client_options) const {
-  for (auto supported_medium : client_options.GetMediums()) {
+    const ConnectionOptions& connection_options) const {
+  for (auto supported_medium : connection_options.GetMediums()) {
     if (medium == supported_medium) {
       return true;
     }
@@ -706,12 +730,14 @@ bool BasePcpHandler::CanReceiveIncomingConnection(ClientProxy* client) const {
 Exception BasePcpHandler::WriteConnectionRequestFrame(
     EndpointChannel* endpoint_channel, const std::string& local_endpoint_id,
     const ByteArray& local_endpoint_info, std::int32_t nonce,
+    bool supports_5_ghz, const std::string& bssid, std::int32_t ap_frequency,
+    const std::string& ip_address,
     const std::vector<proto::connections::Medium>& supported_mediums,
     std::int32_t keep_alive_interval_millis,
     std::int32_t keep_alive_timeout_millis) {
   return endpoint_channel->Write(parser::ForConnectionRequest(
-      local_endpoint_id, local_endpoint_info, nonce, /*supports_5_ghz =*/false,
-      /*bssid=*/std::string{}, supported_mediums, keep_alive_interval_millis,
+      local_endpoint_id, local_endpoint_info, nonce, supports_5_ghz, bssid,
+      ap_frequency, ip_address, supported_mediums, keep_alive_interval_millis,
       keep_alive_timeout_millis));
 }
 
@@ -929,6 +955,7 @@ void BasePcpHandler::OnIncomingFrame(OfflineFrame& frame,
 }
 
 void BasePcpHandler::OnEndpointDisconnect(ClientProxy* client,
+                                          const std::string& service_id,
                                           const std::string& endpoint_id,
                                           CountDownLatch barrier) {
   if (stop_.Get()) {
@@ -941,7 +968,7 @@ void BasePcpHandler::OnEndpointDisconnect(ClientProxy* client,
                               auto item = pending_alarms_.find(endpoint_id);
                               if (item != pending_alarms_.end()) {
                                 auto& alarm = item->second;
-                                alarm.Cancel();
+                                alarm->Cancel();
                                 pending_alarms_.erase(item);
                               }
                               ProcessPreConnectionResultFailure(client,
@@ -1418,7 +1445,7 @@ void BasePcpHandler::EvaluateConnectionResult(ClientProxy* client,
     } else {
       pending_alarms_.emplace(
           endpoint_id,
-          CancelableAlarm(
+          std::make_unique<CancelableAlarm>(
               "BasePcpHandler.evaluateConnectionResult() delayed close",
               [this, client, endpoint_id]() {
                 endpoint_manager_->DiscardEndpoint(client, endpoint_id);

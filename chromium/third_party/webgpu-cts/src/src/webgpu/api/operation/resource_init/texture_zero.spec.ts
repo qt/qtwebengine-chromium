@@ -27,7 +27,7 @@ import {
   kTextureDimensions,
 } from '../../../capability_info.js';
 import { GPUConst } from '../../../constants.js';
-import { GPUTest } from '../../../gpu_test.js';
+import { GPUTest, GPUTestSubcaseBatchState } from '../../../gpu_test.js';
 import { virtualMipSize } from '../../../util/texture/base.js';
 import { createTextureUploadBuffer } from '../../../util/texture/layout.js';
 import { BeginEndRange, SubresourceRange } from '../../../util/texture/subresource.js';
@@ -184,8 +184,8 @@ export class TextureZeroInitTest extends GPUTest {
   readonly stateToTexelComponents: { [k in InitializedState]: PerTexelComponent<number> };
 
   private p: TextureZeroParams;
-  constructor(rec: TestCaseRecorder, params: TestParams) {
-    super(rec, params);
+  constructor(sharedState: GPUTestSubcaseBatchState, rec: TestCaseRecorder, params: TestParams) {
+    super(sharedState, rec, params);
     this.p = params as TextureZeroParams;
 
     const stateToTexelComponents = (state: InitializedState) => {
@@ -301,7 +301,7 @@ export class TextureZeroInitTest extends GPUTest {
     commandEncoder.pushDebugGroup('initializeWithStoreOp');
 
     for (const viewDescriptor of this.generateTextureViewDescriptorsForRendering(
-      this.p.aspect,
+      'all',
       subresourceRange
     )) {
       if (kTextureFormatInfo[this.p.format].color) {
@@ -321,12 +321,12 @@ export class TextureZeroInitTest extends GPUTest {
         const depthStencilAttachment: GPURenderPassDepthStencilAttachment = {
           view: texture.createView(viewDescriptor),
         };
-        if (kTextureFormatInfo[this.p.format].depth && this.p.aspect !== 'stencil-only') {
+        if (kTextureFormatInfo[this.p.format].depth) {
           depthStencilAttachment.depthClearValue = initializedStateAsDepth[state];
           depthStencilAttachment.depthLoadOp = 'clear';
           depthStencilAttachment.depthStoreOp = 'store';
         }
-        if (kTextureFormatInfo[this.p.format].stencil && this.p.aspect !== 'depth-only') {
+        if (kTextureFormatInfo[this.p.format].stencil) {
           depthStencilAttachment.stencilClearValue = initializedStateAsStencil[state];
           depthStencilAttachment.stencilLoadOp = 'clear';
           depthStencilAttachment.stencilStoreOp = 'store';
@@ -413,10 +413,7 @@ export class TextureZeroInitTest extends GPUTest {
     const commandEncoder = this.device.createCommandEncoder();
     commandEncoder.pushDebugGroup('discardTexture');
 
-    for (const desc of this.generateTextureViewDescriptorsForRendering(
-      this.p.aspect,
-      subresourceRange
-    )) {
+    for (const desc of this.generateTextureViewDescriptorsForRendering('all', subresourceRange)) {
       if (kTextureFormatInfo[this.p.format].color) {
         commandEncoder
           .beginRenderPass({
@@ -433,11 +430,11 @@ export class TextureZeroInitTest extends GPUTest {
         const depthStencilAttachment: GPURenderPassDepthStencilAttachment = {
           view: texture.createView(desc),
         };
-        if (kTextureFormatInfo[this.p.format].depth && this.p.aspect !== 'stencil-only') {
+        if (kTextureFormatInfo[this.p.format].depth) {
           depthStencilAttachment.depthLoadOp = 'load';
           depthStencilAttachment.depthStoreOp = 'discard';
         }
-        if (kTextureFormatInfo[this.p.format].stencil && this.p.aspect !== 'depth-only') {
+        if (kTextureFormatInfo[this.p.format].stencil) {
           depthStencilAttachment.stencilLoadOp = 'load';
           depthStencilAttachment.stencilStoreOp = 'discard';
         }
@@ -577,9 +574,10 @@ export const g = makeTestGroup(TextureZeroInitTest);
 
 g.test('uninitialized_texture_is_zero')
   .params(kTestParams)
+  .beforeAllSubcases(t => {
+    t.selectDeviceOrSkipTestCase(kTextureFormatInfo[t.params.format].feature);
+  })
   .fn(async t => {
-    await t.selectDeviceOrSkipTestCase(kTextureFormatInfo[t.params.format].feature);
-
     const usage = getRequiredTextureUsage(
       t.params.format,
       t.params.sampleCount,

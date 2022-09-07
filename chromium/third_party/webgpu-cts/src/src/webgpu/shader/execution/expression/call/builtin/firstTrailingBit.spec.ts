@@ -1,37 +1,29 @@
 export const description = `
-Execution Tests for the 'firstTrailingBit' builtin function
+Execution tests for the 'firstTrailingBit' builtin function
+
+S is i32, u32
+T is S or vecN<S>
+@const fn firstTrailingBit(e: T ) -> T
+For scalar T, the result is: T(-1) if e is zero.
+Otherwise the position of the least significant 1 bit in e.
+Component-wise when T is a vector.
+
 `;
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { GPUTest } from '../../../../../gpu_test.js';
 import { i32, i32Bits, TypeI32, u32, TypeU32, u32Bits } from '../../../../../util/conversion.js';
-import { Config, run } from '../../expression.js';
+import { allInputSources, Config, run } from '../../expression.js';
 
 import { builtin } from './builtin.js';
 
 export const g = makeTestGroup(GPUTest);
 
 g.test('u32')
-  .uniqueId('xxxxxxxxxxxxxxxx')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#integer-builtin-functions')
-  .desc(
-    `
-firstTrailingBit:
-T is i32, u32, vecN<i32>, or vecN<u32> firstTrailingBit(e: T) -> T
-
-For scalar T, the result is:
-* T(-1) if e is zero.
-* Otherwise the position of the least significant 1 bit in e.
-Component-wise when T is a vector.
-
-Please read the following guidelines before contributing:
-https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
-`
-  )
+  .specURL('https://www.w3.org/TR/WGSL/#integer-builtin-functions')
+  .desc(`u32 tests`)
   .params(u =>
-    u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
-      .combine('vectorize', [undefined, 2, 3, 4] as const)
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
     const cfg: Config = t.params;
@@ -143,26 +135,10 @@ https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
   });
 
 g.test('i32')
-  .uniqueId('xxxxxxxxxxxxxxxx')
-  .specURL('https://www.w3.org/TR/2021/WD-WGSL-20210929/#integer-builtin-functions')
-  .desc(
-    `
-firstTrailingBit:
-T is i32, u32, vecN<i32>, or vecN<u32> firstTrailingBit(e: T) -> T
-
-For scalar T, the result is:
-* T(-1) if e is zero.
-* Otherwise the position of the least significant 1 bit in e.
-Component-wise when T is a vector.
-
-Please read the following guidelines before contributing:
-https://github.com/gpuweb/cts/blob/main/docs/plan_autogen.md
-`
-  )
+  .specURL('https://www.w3.org/TR/WGSL/#integer-builtin-functions')
+  .desc(`i32 tests`)
   .params(u =>
-    u
-      .combine('storageClass', ['uniform', 'storage_r', 'storage_rw'] as const)
-      .combine('vectorize', [undefined, 2, 3, 4] as const)
+    u.combine('inputSource', allInputSources).combine('vectorize', [undefined, 2, 3, 4] as const)
   )
   .fn(async t => {
     const cfg: Config = t.params;

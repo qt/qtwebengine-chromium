@@ -282,13 +282,13 @@ struct loader_instance {
     struct loader_extension_list ext_list;  // icds and loaders extensions
     struct loader_instance_extension_enables enabled_known_extensions;
 
+    // Stores debug callbacks - used in the log
     VkLayerDbgFunctionNode *DbgFunctionHead;
-    uint32_t num_tmp_report_callbacks;
-    VkDebugReportCallbackCreateInfoEXT *tmp_report_create_infos;
-    VkDebugReportCallbackEXT *tmp_report_callbacks;
-    uint32_t num_tmp_messengers;
-    VkDebugUtilsMessengerCreateInfoEXT *tmp_messenger_create_infos;
-    VkDebugUtilsMessengerEXT *tmp_messengers;
+
+    // Stores the debug callbacks set during instance creation
+    // These are kept separate because they aren't to be used outside of instance creation and destruction
+    // So they are swapped out at the end of instance creation and swapped in at instance destruction
+    VkLayerDbgFunctionNode *InstanceCreationDeletionDebugFunctionHead;
 
     VkAllocationCallbacks alloc_callbacks;
 
@@ -427,8 +427,6 @@ struct loader_scanned_icd {
 #if defined(VK_USE_PLATFORM_WIN32_KHR)
     PFN_vk_icdEnumerateAdapterPhysicalDevices EnumerateAdapterPhysicalDevices;
 #endif
-    // whether the device is a portability driver
-    bool portability_driver;
 };
 
 enum loader_data_files_type {

@@ -229,7 +229,8 @@ InputHandlerProxy::InputHandlerProxy(cc::InputHandler& input_handler,
   UpdateElasticOverscroll();
   compositor_event_queue_ = std::make_unique<CompositorThreadEventQueue>();
   scroll_predictor_ =
-      base::FeatureList::IsEnabled(blink::features::kResamplingScrollEvents)
+      (base::FeatureList::IsEnabled(blink::features::kResamplingScrollEvents) &&
+       client->AllowsScrollResampling())
           ? std::make_unique<ScrollPredictor>()
           : nullptr;
 
@@ -1064,7 +1065,7 @@ InputHandlerProxy::EventDisposition
 InputHandlerProxy::HandleGestureScrollUpdate(
     const WebGestureEvent& gesture_event,
     const WebInputEventAttribution& original_attribution,
-    const cc::EventMetrics* original_metrics) {
+    cc::EventMetrics* metrics) {
   TRACE_EVENT2("input", "InputHandlerProxy::HandleGestureScrollUpdate", "dx",
                -gesture_event.data.scroll_update.delta_x, "dy",
                -gesture_event.data.scroll_update.delta_y);
@@ -1098,7 +1099,7 @@ InputHandlerProxy::HandleGestureScrollUpdate(
     handling_gesture_on_impl_thread_ = false;
     currently_active_gesture_device_ = absl::nullopt;
     client_->GenerateScrollBeginAndSendToMainThread(
-        gesture_event, original_attribution, original_metrics);
+        gesture_event, original_attribution, metrics);
 
     // TODO(bokan): |!gesture_pinch_in_progress_| was put here by
     // https://crrev.com/2720903005 but it's not clear to me how this is
@@ -1120,6 +1121,9 @@ InputHandlerProxy::HandleGestureScrollUpdate(
 
   if (elastic_overscroll_controller_)
     HandleScrollElasticityOverscroll(gesture_event, scroll_result);
+
+  if (metrics && scroll_result.needs_main_thread_repaint)
+    metrics->set_requires_main_thread_update();
 
   return scroll_result.did_scroll ? DID_HANDLE : DROP_EVENT;
 }
@@ -1662,6 +1666,11 @@ const cc::InputHandlerPointerResult InputHandlerProxy::HandlePointerUp(
     }
   }
   return pointer_result;
+}
+
+void InputHandlerProxy::SetDeferBeginMainFrame(
+    bool defer_begin_main_frame) const {
+  input_handler_->SetDeferBeginMainFrame(defer_begin_main_frame);
 }
 
 }  // namespace blink

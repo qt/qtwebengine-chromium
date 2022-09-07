@@ -177,13 +177,14 @@ export declare class Browser extends EventEmitter {
     /**
      * @internal
      */
-    static create(connection: Connection, contextIds: string[], ignoreHTTPSErrors: boolean, defaultViewport?: Viewport | null, process?: ChildProcess, closeCallback?: BrowserCloseCallback, targetFilterCallback?: TargetFilterCallback): Promise<Browser>;
+    static create(connection: Connection, contextIds: string[], ignoreHTTPSErrors: boolean, defaultViewport?: Viewport | null, process?: ChildProcess, closeCallback?: BrowserCloseCallback, targetFilterCallback?: TargetFilterCallback, isPageTargetCallback?: IsPageTargetCallback): Promise<Browser>;
     private _ignoreHTTPSErrors;
     private _defaultViewport?;
     private _process?;
     private _connection;
     private _closeCallback;
     private _targetFilterCallback;
+    private _isPageTargetCallback;
     private _defaultContext;
     private _contexts;
     private _screenshotTaskQueue;
@@ -196,12 +197,16 @@ export declare class Browser extends EventEmitter {
     /**
      * @internal
      */
-    constructor(connection: Connection, contextIds: string[], ignoreHTTPSErrors: boolean, defaultViewport?: Viewport | null, process?: ChildProcess, closeCallback?: BrowserCloseCallback, targetFilterCallback?: TargetFilterCallback);
+    constructor(connection: Connection, contextIds: string[], ignoreHTTPSErrors: boolean, defaultViewport?: Viewport | null, process?: ChildProcess, closeCallback?: BrowserCloseCallback, targetFilterCallback?: TargetFilterCallback, isPageTargetCallback?: IsPageTargetCallback);
     /**
      * The spawned browser process. Returns `null` if the browser instance was created with
      * {@link Puppeteer.connect}.
      */
     process(): ChildProcess | null;
+    /**
+     * @internal
+     */
+    _setIsPageTargetCallback(isPageTargetCallback?: IsPageTargetCallback): void;
     /**
      * Creates a new incognito browser context. This won't share cookies/cache with other
      * browser contexts.
@@ -362,6 +367,10 @@ export declare interface BrowserConnectOptions {
      * Callback to decide if Puppeteer should connect to a given target or not.
      */
     targetFilter?: TargetFilterCallback;
+    /**
+     * @internal
+     */
+    isPageTarget?: IsPageTargetCallback;
 }
 
 /**
@@ -699,7 +708,7 @@ export declare interface BrowserLaunchArgumentOptions {
      * Whether to run the browser in headless mode.
      * @defaultValue true
      */
-    headless?: boolean;
+    headless?: boolean | 'chrome';
     /**
      * Path to a user data directory.
      * {@link https://chromium.googlesource.com/chromium/src/+/refs/heads/main/docs/user_data_dir.md | see the Chromium docs}
@@ -840,7 +849,7 @@ export declare interface ClickOptions {
     /**
      * @defaultValue 'left'
      */
-    button?: 'left' | 'right' | 'middle';
+    button?: MouseButton;
     /**
      * @defaultValue 1
      */
@@ -1540,6 +1549,61 @@ export declare class ElementHandle<ElementType extends Element = Element> extend
         hidden?: boolean;
         timeout?: number;
     }): Promise<ElementHandle | null>;
+    /**
+     * Wait for the `xpath` within the element. If at the moment of calling the
+     * method the `xpath` already exists, the method will return immediately. If
+     * the `xpath` doesn't appear after the `timeout` milliseconds of waiting, the
+     * function will throw.
+     *
+     * If `xpath` starts with `//` instead of `.//`, the dot will be appended automatically.
+     *
+     * This method works across navigation
+     * ```js
+     * const puppeteer = require('puppeteer');
+     * (async () => {
+     * const browser = await puppeteer.launch();
+     * const page = await browser.newPage();
+     * let currentURL;
+     * page
+     * .waitForXPath('//img')
+     * .then(() => console.log('First URL with image: ' + currentURL));
+     * for (currentURL of [
+     * 'https://example.com',
+     * 'https://google.com',
+     * 'https://bbc.com',
+     * ]) {
+     * await page.goto(currentURL);
+     * }
+     * await browser.close();
+     * })();
+     * ```
+     * @param xpath - A
+     * {@link https://developer.mozilla.org/en-US/docs/Web/XPath | xpath} of an
+     * element to wait for
+     * @param options - Optional waiting parameters
+     * @returns Promise which resolves when element specified by xpath string is
+     * added to DOM. Resolves to `null` if waiting for `hidden: true` and xpath is
+     * not found in DOM.
+     * @remarks
+     * The optional Argument `options` have properties:
+     *
+     * - `visible`: A boolean to wait for element to be present in DOM and to be
+     * visible, i.e. to not have `display: none` or `visibility: hidden` CSS
+     * properties. Defaults to `false`.
+     *
+     * - `hidden`: A boolean wait for element to not be found in the DOM or to be
+     * hidden, i.e. have `display: none` or `visibility: hidden` CSS properties.
+     * Defaults to `false`.
+     *
+     * - `timeout`: A number which is maximum time to wait for in milliseconds.
+     * Defaults to `30000` (30 seconds). Pass `0` to disable timeout. The default
+     * value can be changed by using the {@link Page.setDefaultTimeout} method.
+     */
+    waitForXPath(xpath: string, options?: {
+        visible?: boolean;
+        hidden?: boolean;
+        timeout?: number;
+    }): Promise<ElementHandle | null>;
     asElement(): ElementHandle<ElementType> | null;
     /**
      * Resolves to the content frame for element handles referencing
@@ -2146,6 +2210,10 @@ export declare class Frame {
     /**
      * @internal
      */
+    _hasStartedLoading: boolean;
+    /**
+     * @internal
+     */
     _lifecycleEvents: Set<string>;
     /**
      * @internal
@@ -2308,7 +2376,7 @@ export declare class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     $eval<ReturnType>(selector: string, pageFunction: (element: Element, ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
     /**
@@ -2328,7 +2396,7 @@ export declare class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     $$eval<ReturnType>(selector: string, pageFunction: (elements: Element[], ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
     /**
@@ -2668,6 +2736,10 @@ export declare class Frame {
     /**
      * @internal
      */
+    _onLoadingStarted(): void;
+    /**
+     * @internal
+     */
     _detach(): void;
 }
 
@@ -2745,6 +2817,7 @@ export declare class FrameManager extends EventEmitter {
     private _onAttachedToTarget;
     private _onDetachedFromTarget;
     _onLifecycleEvent(event: Protocol.Page.LifecycleEventEvent): void;
+    _onFrameStartedLoading(frameId: string): void;
     _onFrameStoppedLoading(frameId: string): void;
     _handleFrameTree(session: CDPSession, frameTree: Protocol.Page.FrameTree): void;
     page(): Page;
@@ -2931,11 +3004,11 @@ export declare class HTTPRequest {
      * @returns The `ResponseForRequest` that gets used if the
      * interception is allowed to respond (ie, `abort()` is not called).
      */
-    responseForRequest(): Partial<ResponseForRequest>;
+    responseForRequest(): Partial<ResponseForRequest> | null;
     /**
      * @returns the most recent reason for aborting the request
      */
-    abortErrorReason(): Protocol.Network.ErrorReason;
+    abortErrorReason(): Protocol.Network.ErrorReason | null;
     /**
      * @returns An InterceptResolutionState object describing the current resolution
      *  action and priority.
@@ -2956,7 +3029,7 @@ export declare class HTTPRequest {
     /**
      * Adds an async request handler to the processing queue.
      * Deferred handlers are not guaranteed to execute in any particular order,
-     * but they are guarnateed to resolve before the request interception
+     * but they are guaranteed to resolve before the request interception
      * is finalized.
      */
     enqueueInterceptAction(pendingHandler: () => void | PromiseLike<unknown>): void;
@@ -3046,7 +3119,7 @@ export declare class HTTPRequest {
      *
      * @returns `null` unless the request failed. If the request fails this can
      * return an object with `errorText` containing a human-readable error
-     * message, e.g. `net::ERR_FAILED`. It is not guaranteeded that there will be
+     * message, e.g. `net::ERR_FAILED`. It is not guaranteed that there will be
      * failure text if the request fails.
      */
     failure(): {
@@ -3282,6 +3355,11 @@ export declare class HTTPResponse {
         queryAll?: (element: ElementHandle, selector: string) => Promise<ElementHandle[]>;
         queryAllArray?: (element: ElementHandle, selector: string) => Promise<JSHandle>;
     }
+
+    /**
+     * @internal
+     */
+    export declare type IsPageTargetCallback = (target: Protocol.Target.TargetInfo) => boolean;
 
     /**
      * @public
@@ -3785,6 +3863,8 @@ export declare class HTTPResponse {
         dispose(): void;
     }
 
+    declare type LowerCasePaperFormat = 'letter' | 'legal' | 'tabloid' | 'ledger' | 'a0' | 'a1' | 'a2' | 'a3' | 'a4' | 'a5' | 'a6';
+
     /**
      * @public
      */
@@ -3968,7 +4048,7 @@ export declare class HTTPResponse {
     /**
      * @public
      */
-    export declare type MouseButton = 'left' | 'right' | 'middle';
+    export declare type MouseButton = 'left' | 'right' | 'middle' | 'back' | 'forward';
 
     /**
      * @public
@@ -4029,6 +4109,7 @@ export declare class HTTPResponse {
         forgetRequest(networkRequestId: NetworkRequestId): void;
         getQueuedEventGroup(networkRequestId: NetworkRequestId): QueuedEventGroup | undefined;
         queueEventGroup(networkRequestId: NetworkRequestId, event: QueuedEventGroup): void;
+        forgetQueuedEventGroup(networkRequestId: NetworkRequestId): void;
     }
 
     /**
@@ -4073,6 +4154,7 @@ export declare class HTTPResponse {
          *
          */
         _onRequestPaused(event: Protocol.Fetch.RequestPausedEvent): void;
+        _patchRequestEventHeaders(requestWillBeSentEvent: Protocol.Network.RequestWillBeSentEvent, requestPausedEvent: Protocol.Fetch.RequestPausedEvent): void;
         _onRequest(event: Protocol.Network.RequestWillBeSentEvent, fetchRequestId?: FetchRequestId): void;
         _onRequestServedFromCache(event: Protocol.Network.RequestServedFromCacheEvent): void;
         _handleRequestRedirect(request: HTTPRequest, responsePayload: Protocol.Network.Response, extraInfo: Protocol.Network.ResponseReceivedExtraInfoEvent): void;
@@ -5447,7 +5529,7 @@ export declare class HTTPResponse {
         screenshot(options?: ScreenshotOptions): Promise<Buffer | string>;
         private _screenshotTask;
         /**
-         * Generatees a PDF of the page with the `print` CSS media type.
+         * Generates a PDF of the page with the `print` CSS media type.
          * @remarks
          *
          * NOTE: PDF generation is only supported in Chrome headless mode.
@@ -6047,7 +6129,7 @@ export declare class HTTPResponse {
      *
      * @public
      */
-    export declare type PaperFormat = 'letter' | 'legal' | 'tabloid' | 'ledger' | 'a0' | 'a1' | 'a2' | 'a3' | 'a4' | 'a5' | 'a6';
+    export declare type PaperFormat = Uppercase<LowerCasePaperFormat> | Capitalize<LowerCasePaperFormat> | LowerCasePaperFormat;
 
     /**
      * @internal
@@ -6060,7 +6142,7 @@ export declare class HTTPResponse {
     /**
      * @internal
      */
-    export declare const paperFormats: Record<PaperFormat, PaperFormatDimensions>;
+    export declare const paperFormats: Record<LowerCasePaperFormat, PaperFormatDimensions>;
 
     /**
      * Copyright 2020 Google Inc. All rights reserved.
@@ -6192,7 +6274,7 @@ export declare class HTTPResponse {
      * Supported platforms.
      * @public
      */
-    export declare type Platform = 'linux' | 'mac' | 'win32' | 'win64';
+    export declare type Platform = 'linux' | 'mac' | 'mac_arm' | 'win32' | 'win64';
 
     /**
      * @public
@@ -6577,8 +6659,8 @@ export declare class HTTPResponse {
      * @public
      */
     export declare interface RemoteAddress {
-        ip: string;
-        port: number;
+        ip?: string;
+        port?: number;
     }
 
     /**
@@ -6841,7 +6923,11 @@ export declare class HTTPResponse {
              /**
               * @internal
               */
-             constructor(targetInfo: Protocol.Target.TargetInfo, browserContext: BrowserContext, sessionFactory: () => Promise<CDPSession>, ignoreHTTPSErrors: boolean, defaultViewport: Viewport | null, screenshotTaskQueue: TaskQueue);
+             _isPageTargetCallback: IsPageTargetCallback;
+             /**
+              * @internal
+              */
+             constructor(targetInfo: Protocol.Target.TargetInfo, browserContext: BrowserContext, sessionFactory: () => Promise<CDPSession>, ignoreHTTPSErrors: boolean, defaultViewport: Viewport | null, screenshotTaskQueue: TaskQueue, isPageTargetCallback: IsPageTargetCallback);
              /**
               * Creates a Chrome Devtools Protocol session attached to the target.
               */

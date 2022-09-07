@@ -31,6 +31,7 @@ namespace euicc {
 const char kInstallProfileFromActivationCode[] =
     "InstallProfileFromActivationCode";
 const char kInstallPendingProfile[] = "InstallPendingProfile";
+const char kRefreshInstalledProfiles[] = "RefreshInstalledProfiles";
 const char kRequestPendingProfiles[] = "RequestPendingProfiles";
 const char kRequestInstalledProfiles[] = "RequestInstalledProfiles";
 const char kUninstallProfile[] = "UninstallProfile";

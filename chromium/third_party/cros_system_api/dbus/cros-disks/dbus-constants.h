@@ -109,9 +109,23 @@ enum MountErrorType {
   MOUNT_ERROR_INVALID_MOUNT_OPTIONS = 8,
   MOUNT_ERROR_INVALID_UNMOUNT_OPTIONS = 9,
   MOUNT_ERROR_INSUFFICIENT_PERMISSIONS = 10,
+
+  // The FUSE mounter cannot be found.
   MOUNT_ERROR_MOUNT_PROGRAM_NOT_FOUND = 11,
+
+  // The FUSE mounter finished with an error.
   MOUNT_ERROR_MOUNT_PROGRAM_FAILED = 12,
+
+  // Either the FUSE mounter needs a password, or the provided password is
+  // incorrect.
   MOUNT_ERROR_NEED_PASSWORD = 13,
+
+  // The FUSE mounter is currently launching, and it hasn't daemonized yet.
+  MOUNT_ERROR_IN_PROGRESS = 14,
+
+  // The FUSE mounter was cancelled (killed) while it was launching.
+  MOUNT_ERROR_CANCELLED = 15,
+
   MOUNT_ERROR_INVALID_DEVICE_PATH = 100,
   MOUNT_ERROR_UNKNOWN_FILESYSTEM = 101,
   MOUNT_ERROR_UNSUPPORTED_FILESYSTEM = 102,

@@ -72,6 +72,8 @@ message FeatureConfig {
     ConsecutiveResultsFilterConfig consecutive_results_filter_config = 2;
     AverageFilterConfig average_filter_config = 3;
   }
+  // Enable raw inference result reporting. Disabled by default.
+  bool report_raw_results = 4;
 }
 
 // Represent the result from Hps Daemon to other client.
@@ -83,5 +85,12 @@ enum HpsResult {
 }
 
 message HpsResultProto {
+  // Processed feature detection result.
   HpsResult value = 1;
+
+  // Raw (unfiltered) inference score in the range [-128, 128). Used for testing
+  // model performance. Only included if `report_raw_results` is set in the
+  // config.
+  int32 inference_result = 2;
+  bool inference_result_valid = 3;
 }

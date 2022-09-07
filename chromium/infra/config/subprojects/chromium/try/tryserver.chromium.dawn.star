@@ -48,6 +48,9 @@ try_.builder(
             ".+/[+]/ui/gl/features.gni",
         ],
     ),
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
@@ -74,6 +77,9 @@ try_.builder(
             ".+/[+]/tools/clang/scripts/update.py",
             ".+/[+]/ui/gl/features.gni",
         ],
+    ),
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
     ),
 )
 
@@ -102,6 +108,9 @@ try_.builder(
             ".+/[+]/ui/gl/features.gni",
         ],
     ),
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
@@ -129,6 +138,9 @@ try_.builder(
             ".+/[+]/ui/gl/features.gni",
         ],
     ),
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
@@ -146,6 +158,9 @@ try_.builder(
 try_.builder(
     name = "mac-dawn-rel",
     os = os.MAC_ANY,
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
@@ -153,6 +168,9 @@ try_.builder(
     builderless = True,
     os = os.MAC_ANY,
     pool = "luci.chromium.gpu.mac.retina.amd.try",
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
@@ -160,19 +178,31 @@ try_.builder(
     builderless = True,
     os = os.MAC_ANY,
     pool = "luci.chromium.gpu.mac.mini.intel.try",
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
     name = "win-dawn-rel",
     os = os.WINDOWS_ANY,
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
     name = "dawn-try-win10-x86-rel",
     os = os.WINDOWS_ANY,
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )
 
 try_.builder(
     name = "dawn-try-win10-x64-asan-rel",
     os = os.WINDOWS_ANY,
+    test_presentation = resultdb.test_presentation(
+        grouping_keys = ["status", "v.test_suite", "v.gpu"],
+    ),
 )

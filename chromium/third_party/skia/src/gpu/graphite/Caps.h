@@ -8,8 +8,10 @@
 #ifndef skgpu_graphite_Caps_DEFINED
 #define skgpu_graphite_Caps_DEFINED
 
+#include "include/core/SkCapabilities.h"
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkRefCnt.h"
+#include "src/core/SkEnumBitMask.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/Swizzle.h"
 #include "src/gpu/graphite/ResourceTypes.h"
@@ -25,7 +27,7 @@ class GraphiteResourceKey;
 struct RenderPassDesc;
 class TextureInfo;
 
-class Caps : public SkRefCnt {
+class Caps : public SkCapabilities {
 public:
     ~Caps() override;
 
@@ -36,11 +38,9 @@ public:
                                                      Protected,
                                                      Renderable) const = 0;
 
-    virtual TextureInfo getDefaultMSAATextureInfo(SkColorType,
-                                                  uint32_t sampleCount,
-                                                  Protected) const = 0;
+    virtual TextureInfo getDefaultMSAATextureInfo(const TextureInfo& singleSampledInfo) const = 0;
 
-    virtual TextureInfo getDefaultDepthStencilTextureInfo(Mask<DepthStencilFlags>,
+    virtual TextureInfo getDefaultDepthStencilTextureInfo(SkEnumBitMask<DepthStencilFlags>,
                                                           uint32_t sampleCount,
                                                           Protected) const = 0;
 
@@ -80,6 +80,13 @@ public:
 
 protected:
     Caps();
+
+    // Subclasses must call this at the end of their init method in order to do final processing on
+    // the caps.
+    void finishInitialization();
+
+    // TODO: This value should be set by some context option. For now just making it 4.
+    uint32_t defaultMSAASamples() const { return 4; }
 
     // ColorTypeInfo for a specific format.
     // Used in format tables.

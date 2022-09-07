@@ -604,6 +604,8 @@ Maybe<bool> ValueSerializer::WriteJSReceiver(Handle<JSReceiver> receiver) {
       return WriteJSError(Handle<JSObject>::cast(receiver));
     case JS_SHARED_STRUCT_TYPE:
       return WriteJSSharedStruct(Handle<JSSharedStruct>::cast(receiver));
+    case JS_ATOMICS_MUTEX_TYPE:
+      return WriteSharedObject(receiver);
 #if V8_ENABLE_WEBASSEMBLY
     case WASM_MODULE_OBJECT_TYPE:
       return WriteWasmModule(Handle<WasmModuleObject>::cast(receiver));
@@ -674,7 +676,7 @@ Maybe<bool> ValueSerializer::WriteJSObjectSlow(Handle<JSObject> object) {
   WriteTag(SerializationTag::kBeginJSObject);
   Handle<FixedArray> keys;
   uint32_t properties_written = 0;
-  if (!KeyAccumulator::GetKeys(object, KeyCollectionMode::kOwnOnly,
+  if (!KeyAccumulator::GetKeys(isolate_, object, KeyCollectionMode::kOwnOnly,
                                ENUMERABLE_STRINGS)
            .ToHandle(&keys) ||
       !WriteJSObjectPropertiesSlow(object, keys).To(&properties_written)) {
@@ -767,7 +769,7 @@ Maybe<bool> ValueSerializer::WriteJSArray(Handle<JSArray> array) {
     }
 
     Handle<FixedArray> keys;
-    if (!KeyAccumulator::GetKeys(array, KeyCollectionMode::kOwnOnly,
+    if (!KeyAccumulator::GetKeys(isolate_, array, KeyCollectionMode::kOwnOnly,
                                  ENUMERABLE_STRINGS,
                                  GetKeysConversion::kKeepNumbers, false, true)
              .ToHandle(&keys)) {
@@ -786,7 +788,7 @@ Maybe<bool> ValueSerializer::WriteJSArray(Handle<JSArray> array) {
     WriteVarint<uint32_t>(length);
     Handle<FixedArray> keys;
     uint32_t properties_written = 0;
-    if (!KeyAccumulator::GetKeys(array, KeyCollectionMode::kOwnOnly,
+    if (!KeyAccumulator::GetKeys(isolate_, array, KeyCollectionMode::kOwnOnly,
                                  ENUMERABLE_STRINGS)
              .ToHandle(&keys) ||
         !WriteJSObjectPropertiesSlow(array, keys).To(&properties_written)) {

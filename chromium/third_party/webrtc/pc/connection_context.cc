@@ -43,18 +43,6 @@ rtc::Thread* MaybeStartNetworkThread(
   return thread_holder.get();
 }
 
-rtc::Thread* MaybeStartWorkerThread(
-    rtc::Thread* old_thread,
-    std::unique_ptr<rtc::Thread>& thread_holder) {
-  if (old_thread) {
-    return old_thread;
-  }
-  thread_holder = rtc::Thread::Create();
-  thread_holder->SetName("pc_worker_thread", nullptr);
-  thread_holder->Start();
-  return thread_holder.get();
-}
-
 rtc::Thread* MaybeWrapThread(rtc::Thread* signaling_thread,
                              bool& wraps_current_thread) {
   wraps_current_thread = false;
@@ -99,12 +87,18 @@ ConnectionContext::ConnectionContext(
     : network_thread_(MaybeStartNetworkThread(dependencies->network_thread,
                                               owned_socket_factory_,
                                               owned_network_thread_)),
-      worker_thread_(MaybeStartWorkerThread(dependencies->worker_thread,
-                                            owned_worker_thread_)),
+      worker_thread_(dependencies->worker_thread,
+                     []() {
+                       auto thread_holder = rtc::Thread::Create();
+                       thread_holder->SetName("pc_worker_thread", nullptr);
+                       thread_holder->Start();
+                       return thread_holder;
+                     }),
       signaling_thread_(MaybeWrapThread(dependencies->signaling_thread,
                                         wraps_current_thread_)),
       trials_(dependencies->trials ? std::move(dependencies->trials)
                                    : std::make_unique<FieldTrialBasedConfig>()),
+      media_engine_(std::move(dependencies->media_engine)),
       network_monitor_factory_(
           std::move(dependencies->network_monitor_factory)),
       call_factory_(std::move(dependencies->call_factory)),
@@ -112,7 +106,7 @@ ConnectionContext::ConnectionContext(
           MaybeCreateSctpFactory(std::move(dependencies->sctp_factory),
                                  network_thread(),
                                  *trials_.get())) {
-  signaling_thread_->AllowInvokesToThread(worker_thread_);
+  signaling_thread_->AllowInvokesToThread(worker_thread());
   signaling_thread_->AllowInvokesToThread(network_thread_);
   worker_thread_->AllowInvokesToThread(network_thread_);
   if (network_thread_->IsCurrent()) {
@@ -145,14 +139,10 @@ ConnectionContext::ConnectionContext(
   // If network_monitor_factory_ is non-null, it will be used to create a
   // network monitor while on the network thread.
   default_network_manager_ = std::make_unique<rtc::BasicNetworkManager>(
-      network_monitor_factory_.get(), socket_factory, &trials());
+      network_monitor_factory_.get(), socket_factory, &field_trials());
 
   default_socket_factory_ =
       std::make_unique<rtc::BasicPacketSocketFactory>(socket_factory);
-
-  channel_manager_ = cricket::ChannelManager::Create(
-      std::move(dependencies->media_engine),
-      /*enable_rtx=*/true, worker_thread(), network_thread());
 
   // Set warning levels on the threads, to give warnings when response
   // may be slower than is expected of the thread.
@@ -162,11 +152,25 @@ ConnectionContext::ConnectionContext(
   signaling_thread_->SetDispatchWarningMs(100);
   worker_thread_->SetDispatchWarningMs(30);
   network_thread_->SetDispatchWarningMs(10);
+
+  if (media_engine_) {
+    // TODO(tommi): Change VoiceEngine to do ctor time initialization so that
+    // this isn't necessary.
+    worker_thread_->Invoke<void>(RTC_FROM_HERE, [&] { media_engine_->Init(); });
+  }
 }
 
 ConnectionContext::~ConnectionContext() {
   RTC_DCHECK_RUN_ON(signaling_thread_);
-  channel_manager_.reset(nullptr);
+  worker_thread_->Invoke<void>(RTC_FROM_HERE, [&] {
+    RTC_DCHECK_RUN_ON(worker_thread());
+    // While `media_engine_` is const throughout the ConnectionContext's
+    // lifetime, it requires destruction to happen on the worker thread. Instead
+    // of marking the pointer as non-const, we live with this const_cast<> in
+    // the destructor.
+    const_cast<std::unique_ptr<cricket::MediaEngineInterface>&>(media_engine_)
+        .reset();
+  });
 
   // Make sure `worker_thread()` and `signaling_thread()` outlive
   // `default_socket_factory_` and `default_network_manager_`.
@@ -175,10 +179,6 @@ ConnectionContext::~ConnectionContext() {
 
   if (wraps_current_thread_)
     rtc::ThreadManager::Instance()->UnwrapCurrentThread();
-}
-
-cricket::ChannelManager* ConnectionContext::channel_manager() const {
-  return channel_manager_.get();
 }
 
 }  // namespace webrtc

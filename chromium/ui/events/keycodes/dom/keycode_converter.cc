@@ -338,7 +338,7 @@ DomKey KeycodeConverter::KeyStringToDomKey(base::StringPiece key) {
   // the key value is that character.
   const auto key_length = static_cast<int32_t>(key.length());
   int32_t char_index = 0;
-  uint32_t character;
+  base_icu::UChar32 character;
   if (base::ReadUnicodeCharacter(key.data(), key_length, &char_index,
                                  &character) &&
       ++char_index == key_length) {

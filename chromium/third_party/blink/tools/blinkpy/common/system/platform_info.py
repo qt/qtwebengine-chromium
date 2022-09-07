@@ -192,7 +192,7 @@ class PlatformInfo(object):
         major_release = int(mac_version_string.split('.')[0])
         minor_release = int(mac_version_string.split('.')[1])
         if major_release == 10:
-            assert 10 <= minor_release <= 16, 'Unsupported mac OS version: %s' % mac_version_string
+            assert 13 <= minor_release <= 16, 'Unsupported mac OS version: %s' % mac_version_string
             return 'mac{major_release}.{minor_release}'.format(
                 major_release=major_release,
                 minor_release=minor_release,
@@ -206,12 +206,11 @@ class PlatformInfo(object):
 
     def _determine_win_version(self, win_version_tuple):
         if win_version_tuple[:2] == (10, 0):
-            # came across instances where build number was 15063.
-            # Treat those as 1909.
-            if win_version_tuple[2] > 19000:
-                return '10.20h2'
+            # For win11 platform.win32_ver() returns (10, 0, 22000)
+            if win_version_tuple[2] >= 22000:
+                return '11'
             else:
-                return '10.1909'
+                return '10.20h2'
         if win_version_tuple[:2] == (6, 3):
             return '8.1'
         if win_version_tuple[:2] == (6, 2):

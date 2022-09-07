@@ -187,7 +187,12 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                         bool fixedSampleLocations) override;
 
     angle::Result initializeContents(const gl::Context *context,
+                                     GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
+
+    angle::Result initializeContentsWithBlack(const gl::Context *context,
+                                              GLenum binding,
+                                              const gl::ImageIndex &imageIndex);
 
     const vk::ImageHelper &getImage() const
     {
@@ -201,10 +206,12 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
         return *mImage;
     }
 
-    void retainBufferViews(vk::ResourceUseList *resourceUseList)
+    void retainBufferViews(vk::CommandBufferHelperCommon *commandBufferHelper)
     {
-        mBufferViews.retain(resourceUseList);
+        commandBufferHelper->retainResource(&mBufferViews);
     }
+
+    bool imageValid() const { return (mImage && mImage->valid()); }
 
     void releaseOwnershipOfImage(const gl::Context *context);
 
@@ -239,8 +246,25 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     angle::Result ensureImageInitialized(ContextVk *contextVk, ImageMipLevels mipLevels);
 
     vk::ImageOrBufferViewSubresourceSerial getImageViewSubresourceSerial(
-        const gl::SamplerState &samplerState) const;
+        const gl::SamplerState &samplerState) const
+    {
+        if (samplerState.getSRGBDecode() == GL_DECODE_EXT)
+        {
+            ASSERT(getImageViewSubresourceSerialImpl(GL_DECODE_EXT) ==
+                   mCachedImageViewSubresourceSerialSRGBDecode);
+            return mCachedImageViewSubresourceSerialSRGBDecode;
+        }
+        else
+        {
+            ASSERT(getImageViewSubresourceSerialImpl(GL_SKIP_DECODE_EXT) ==
+                   mCachedImageViewSubresourceSerialSkipDecode);
+            return mCachedImageViewSubresourceSerialSkipDecode;
+        }
+    }
+
     vk::ImageOrBufferViewSubresourceSerial getBufferViewSerial() const;
+    vk::ImageOrBufferViewSubresourceSerial getStorageImageViewSerial(
+        const gl::ImageUnit &binding) const;
 
     GLenum getColorReadFormat(const gl::Context *context) override;
     GLenum getColorReadType(const gl::Context *context) override;
@@ -281,6 +305,8 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
         mImmutableSamplerDirty = false;
         return isDirty;
     }
+
+    angle::Result onLabelUpdate(const gl::Context *context) override;
 
   private:
     // Transform an image index from the frontend into one that can be used on the backing
@@ -438,11 +464,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     angle::Result reinitImageAsRenderable(ContextVk *contextVk,
                                           const vk::Format &format,
                                           gl::TexLevelMask skipLevelsMask);
-    angle::Result initImageViews(ContextVk *contextVk,
-                                 const angle::Format &format,
-                                 const bool sized,
-                                 uint32_t levelCount,
-                                 uint32_t layerCount);
+    angle::Result initImageViews(ContextVk *contextVk, uint32_t levelCount);
     void initSingleLayerRenderTargets(ContextVk *contextVk,
                                       GLuint layerCount,
                                       gl::LevelIndex levelIndexGL,
@@ -492,7 +514,9 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     }
 
     angle::Result refreshImageViews(ContextVk *contextVk);
-    bool shouldDecodeSRGB(vk::Context *context, GLenum srgbDecode, bool texelFetchStaticUse) const;
+    bool shouldDecodeSRGB(vk::Context *contextVk,
+                          GLenum srgbDecode,
+                          bool texelFetchStaticUse) const;
     void initImageUsageFlags(ContextVk *contextVk, angle::FormatID actualFormatID);
     void handleImmutableSamplerTransition(const vk::ImageHelper *previousImage,
                                           const vk::ImageHelper *nextImage);
@@ -501,6 +525,11 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     bool imageHasActualImageFormat(angle::FormatID actualFormatID) const;
 
     void stageSelfAsSubresourceUpdates(ContextVk *contextVk);
+
+    vk::ImageOrBufferViewSubresourceSerial getImageViewSubresourceSerialImpl(
+        GLenum srgbDecode) const;
+
+    void updateCachedImageViewSerials();
 
     bool mOwnsImage;
     bool mRequiresMutableStorage;
@@ -584,6 +613,10 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     // Saved between updates.
     gl::LevelIndex mCurrentBaseLevel;
     gl::LevelIndex mCurrentMaxLevel;
+
+    // Cached subresource indexes.
+    vk::ImageOrBufferViewSubresourceSerial mCachedImageViewSubresourceSerialSRGBDecode;
+    vk::ImageOrBufferViewSubresourceSerial mCachedImageViewSubresourceSerialSkipDecode;
 };
 
 }  // namespace rx

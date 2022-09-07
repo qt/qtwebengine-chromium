@@ -43,9 +43,7 @@ message MakeCredentialRequest {
   // MakeCredential should fail if any excluded credential belongs to this
   // device.
   repeated bytes excluded_credential_id = 5;
-  // Id used to idenfity the window that initiated the request. Will be
-  // deprecated by request_id_str.
-  uint64 request_id = 6;
+  reserved 6;  // uint64 request_id = 6 [deprecated = true];
   // User display name for listing credentials to the user.
   string user_display_name = 7;
   // The appIdExclude extension. If set, values in |excluded_credential_id|
@@ -106,9 +104,7 @@ message GetAssertionRequest {
   bytes client_data_hash = 3;
   // Currently must not be empty; resident credentials not implemented yet.
   repeated bytes allowed_credential_id = 4;
-  // Id used to identify the window that initiated the request. Will be
-  // deprecated by request_id_str.
-  uint64 request_id = 5;
+  reserved 5;  // uint64 request_id = 5 [deprecated = true];
   // App id extension. Used in place of rp id for legacy u2f credentials.
   string app_id = 6;
   // Id used to idenfity the window that initiated the request.
@@ -177,9 +173,7 @@ message HasCredentialsResponse {
 
 // Dismiss user verification UI and abort the operation.
 message CancelWebAuthnFlowRequest {
-  // Id used to identify the window that initiated the request. Will be
-  // deprecated by request_id_str.
-  uint64 request_id = 1;
+  reserved 1;  // uint64 request_id = 1 [deprecated = true];
   // Id used to idenfity the window that initiated the request.
   string request_id_str = 2;
 }
@@ -257,4 +251,11 @@ message GetAlgorithmsResponse {
 
   GetAlgorithmsStatus status = 1;
   repeated int32 algorithm = 2;
+}
+
+message GetSupportedFeaturesRequest {}
+
+message GetSupportedFeaturesResponse {
+  // Whether the WebAuthn APIs are supported on lacros.
+  bool support_lacros = 1;
 }

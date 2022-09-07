@@ -12,9 +12,10 @@
 #include "include/core/SkSpan.h"
 #include "include/private/SkColorData.h"
 #include "include/private/SkTDArray.h"
+#include "include/private/SkVx.h"
 #include "src/core/SkSLTypeShared.h"
-#include "src/gpu/graphite/geom/VectorTypes.h"
 
+class SkM44;
 struct SkPoint;
 struct SkRect;
 class SkUniform;
@@ -47,6 +48,7 @@ public:
 #endif
 
     // TODO: do we need to add a 'makeArray' parameter to these?
+    void write(const SkM44&);
     void write(const SkColor4f*, int count);
     void write(const SkPMColor4f*, int count);
     void write(const SkPMColor4f& color) { this->write(&color, 1); }
@@ -55,7 +57,8 @@ public:
     void write(const float*, int count);
     void write(float f) { this->write(&f, 1); }
     void write(int);
-    void write(float2);
+    void write(skvx::float2);
+    void write(skvx::float4);
 
 private:
     SkSLType getUniformTypeForLayout(SkSLType type);

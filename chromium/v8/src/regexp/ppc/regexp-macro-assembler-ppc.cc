@@ -760,21 +760,21 @@ Handle<HeapObject> RegExpMacroAssemblerPPC::GetCode(Handle<String> source) {
     // from generated code.
     __ addi(frame_pointer(), sp, Operand(8 * kSystemPointerSize));
 
-    STATIC_ASSERT(kSuccessfulCaptures == kInputString - kSystemPointerSize);
+    static_assert(kSuccessfulCaptures == kInputString - kSystemPointerSize);
     __ li(r3, Operand::Zero());
     __ push(r3);  // Make room for success counter and initialize it to 0.
-    STATIC_ASSERT(kStringStartMinusOne ==
+    static_assert(kStringStartMinusOne ==
                   kSuccessfulCaptures - kSystemPointerSize);
     __ push(r3);  // Make room for "string start - 1" constant.
-    STATIC_ASSERT(kBacktrackCount == kStringStartMinusOne - kSystemPointerSize);
+    static_assert(kBacktrackCount == kStringStartMinusOne - kSystemPointerSize);
     __ push(r3);  // The backtrack counter.
-    STATIC_ASSERT(kRegExpStackBasePointer ==
+    static_assert(kRegExpStackBasePointer ==
                   kBacktrackCount - kSystemPointerSize);
     __ push(r3);  // The regexp stack base ptr.
 
     // Initialize backtrack stack pointer. It must not be clobbered from here
     // on. Note the backtrack_stackpointer is callee-saved.
-    STATIC_ASSERT(backtrack_stackpointer() == r29);
+    static_assert(backtrack_stackpointer() == r29);
     LoadRegExpStackPointerFromMemory(backtrack_stackpointer());
 
     // Store the regexp base pointer - we'll later restore it / write it to
@@ -1139,7 +1139,7 @@ void RegExpMacroAssemblerPPC::WriteStackPointerToRegister(int reg) {
   __ mov(r4, Operand(ref));
   __ LoadU64(r4, MemOperand(r4));
   __ SubS64(r3, backtrack_stackpointer(), r4);
-  __ StoreU64(r3, register_location(reg));
+  __ StoreU64(r3, register_location(reg), r0);
 }
 
 void RegExpMacroAssemblerPPC::ReadStackPointerFromRegister(int reg) {
@@ -1147,7 +1147,7 @@ void RegExpMacroAssemblerPPC::ReadStackPointerFromRegister(int reg) {
       ExternalReference::address_of_regexp_stack_memory_top_address(isolate());
   __ mov(r3, Operand(ref));
   __ LoadU64(r3, MemOperand(r3));
-  __ LoadU64(backtrack_stackpointer(), register_location(reg));
+  __ LoadU64(backtrack_stackpointer(), register_location(reg), r0);
   __ AddS64(backtrack_stackpointer(), backtrack_stackpointer(), r3);
 }
 

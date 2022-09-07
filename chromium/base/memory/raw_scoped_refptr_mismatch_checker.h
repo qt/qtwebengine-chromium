@@ -28,16 +28,16 @@ struct IsRefCountedType : std::false_type {};
 
 template <typename T>
 struct IsRefCountedType<T,
-                        void_t<decltype(std::declval<T*>()->AddRef()),
-                               decltype(std::declval<T*>()->Release())>>
+                        std::void_t<decltype(std::declval<T*>()->AddRef()),
+                                    decltype(std::declval<T*>()->Release())>>
     : std::true_type {};
 
 // Human readable translation: you needed to be a scoped_refptr if you are a raw
 // pointer type and are convertible to a RefCounted(Base|ThreadSafeBase) type.
 template <typename T>
 struct NeedsScopedRefptrButGetsRawPtr
-    : conjunction<base::IsPointer<T>,
-                  IsRefCountedType<base::RemovePointerT<T>>> {
+    : std::conjunction<base::IsPointer<T>,
+                       IsRefCountedType<base::RemovePointerT<T>>> {
   static_assert(!std::is_reference<T>::value,
                 "NeedsScopedRefptrButGetsRawPtr requires non-reference type.");
 };

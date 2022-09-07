@@ -18,7 +18,7 @@ DawnJSONGenerator(
     RESULT_VARIABLE "DAWN_WIRE_GEN_SOURCES"
 )
 
-add_library(dawn_wire ${DAWN_DUMMY_FILE})
+add_library(dawn_wire ${DAWN_PLACEHOLDER_FILE})
 common_compile_options(dawn_wire)
 
 target_compile_definitions(dawn_wire PRIVATE "DAWN_WIRE_IMPLEMENTATION")
@@ -62,11 +62,17 @@ target_sources(dawn_wire PRIVATE
     "client/LimitsAndFeatures.cpp"
     "client/LimitsAndFeatures.h"
     "client/ObjectAllocator.h"
+    "client/ObjectBase.cpp"
+    "client/ObjectBase.h"
+    "client/QuerySet.cpp"
+    "client/QuerySet.h"
     "client/Queue.cpp"
     "client/Queue.h"
     "client/RequestTracker.h"
     "client/ShaderModule.cpp"
     "client/ShaderModule.h"
+    "client/Texture.cpp"
+    "client/Texture.h"
     "server/ObjectStorage.h"
     "server/Server.cpp"
     "server/Server.h"

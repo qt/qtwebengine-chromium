@@ -40,6 +40,7 @@
 #define SK_VERTEXID_BUILTIN               42
 #define SK_INSTANCEID_BUILTIN             43
 #define SK_POSITION_BUILTIN                0
+#define SK_POINTSIZE_BUILTIN               1
 
 class SkSLCompileBench;
 
@@ -235,8 +236,10 @@ private:
     const ParsedModule& loadGPUModule();
     const ParsedModule& loadFragmentModule();
     const ParsedModule& loadVertexModule();
+    const ParsedModule& loadGraphiteFragmentModule();
+    const ParsedModule& loadGraphiteVertexModule();
     const ParsedModule& loadPublicModule();
-    const ParsedModule& loadRuntimeShaderModule();
+    const ParsedModule& loadPrivateRTShaderModule();
 
     std::shared_ptr<SymbolTable> makeRootSymbolTable() const;
     std::shared_ptr<SymbolTable> makeGLSLRootSymbolTable() const;
@@ -248,8 +251,11 @@ private:
     /** Performs final checks to confirm that a fully-assembled/optimized is valid. */
     bool finalize(Program& program);
 
-    /** Optimize the module. */
-    bool optimize(LoadedModule& module);
+    /** Optimize a module in preparation for dehydration. */
+    bool optimizeModuleForDehydration(LoadedModule& module, const ParsedModule& base);
+
+    /** Optimize a module after rehydrating it. */
+    bool optimizeRehydratedModule(LoadedModule& module, const ParsedModule& base);
 
     /** Flattens out function calls when it is safe to do so. */
     bool runInliner(const std::vector<std::unique_ptr<ProgramElement>>& elements,
@@ -265,6 +271,8 @@ private:
     ParsedModule fGPUModule;                 // [Private] + GPU intrinsics, helper functions
     ParsedModule fVertexModule;              // [GPU] + Vertex stage decls
     ParsedModule fFragmentModule;            // [GPU] + Fragment stage decls
+    ParsedModule fGraphiteVertexModule;      // [Vert] + Graphite vertex helpers
+    ParsedModule fGraphiteFragmentModule;    // [Frag] + Graphite fragment helpers
 
     ParsedModule fPublicModule;              // [Root] + Public features
     ParsedModule fRuntimeShaderModule;       // [Public] + Runtime shader decls

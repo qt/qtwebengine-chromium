@@ -317,6 +317,8 @@ message FinishCertificateRequestReply {
   optional bytes certificate = 2;
   // The public key (X.509/DER SubjectPublicKeyInfo).
   optional bytes public_key = 3;
+  // The tpm key blob that the key can be loaded to TPM with.
+  optional bytes key_blob = 4;
 }
 
 // Goes through the entire cert process, including creating cert, sending the
@@ -355,6 +357,8 @@ message GetCertificateReply {
   optional bytes certificate = 2;
   // The public key (X.509/DER SubjectPublicKeyInfo).
   optional bytes public_key = 3;
+  // The tpm key blob that the key can be loaded to TPM with.
+  optional bytes key_blob = 4;
 }
 
 // Sign a challenge for an enterprise device / user.  This challenge is
@@ -386,7 +390,12 @@ message SignEnterpriseChallengeRequest {
   // for SignedPublicKeyAndChallenge.
   optional string key_name_for_spkac = 8;
   // Device Trust Signals
-  optional DeviceTrustSignals device_trust_signals = 9;
+  // Deprecated due to signals collection change to store signals in a
+  // dictionary and converting them to a JSON string. Use
+  // `device_trust_signals_json` instead.
+  optional DeviceTrustSignals device_trust_signals = 9 [deprecated = true];
+  // Device Trust Signals
+  optional string device_trust_signals_json = 10;
 }
 
 message SignEnterpriseChallengeReply {

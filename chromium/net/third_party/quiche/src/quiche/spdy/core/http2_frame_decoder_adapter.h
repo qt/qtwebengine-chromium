@@ -59,16 +59,16 @@ class QUICHE_EXPORT_PRIVATE Http2DecoderAdapter
   // Framer error codes.
   enum SpdyFramerError {
     SPDY_NO_ERROR,
-    SPDY_INVALID_STREAM_ID,            // Stream ID is invalid
-    SPDY_INVALID_CONTROL_FRAME,        // Control frame is mal-formatted.
-    SPDY_CONTROL_PAYLOAD_TOO_LARGE,    // Control frame payload was too large.
-    SPDY_DECOMPRESS_FAILURE,           // There was an error decompressing.
-    SPDY_INVALID_PADDING,              // HEADERS or DATA frame padding invalid
-    SPDY_INVALID_DATA_FRAME_FLAGS,     // Data frame has invalid flags.
-    SPDY_UNEXPECTED_FRAME,             // Frame received out of order.
-    SPDY_INTERNAL_FRAMER_ERROR,        // SpdyFramer was used incorrectly.
-    SPDY_INVALID_CONTROL_FRAME_SIZE,   // Control frame not sized to spec
-    SPDY_OVERSIZED_PAYLOAD,            // Payload size was too large
+    SPDY_INVALID_STREAM_ID,           // Stream ID is invalid
+    SPDY_INVALID_CONTROL_FRAME,       // Control frame is mal-formatted.
+    SPDY_CONTROL_PAYLOAD_TOO_LARGE,   // Control frame payload was too large.
+    SPDY_DECOMPRESS_FAILURE,          // There was an error decompressing.
+    SPDY_INVALID_PADDING,             // HEADERS or DATA frame padding invalid
+    SPDY_INVALID_DATA_FRAME_FLAGS,    // Data frame has invalid flags.
+    SPDY_UNEXPECTED_FRAME,            // Frame received out of order.
+    SPDY_INTERNAL_FRAMER_ERROR,       // SpdyFramer was used incorrectly.
+    SPDY_INVALID_CONTROL_FRAME_SIZE,  // Control frame not sized to spec
+    SPDY_OVERSIZED_PAYLOAD,           // Payload size was too large
 
     // HttpDecoder or HttpDecoderAdapter error.
     // See HpackDecodingError for description of each error code.
@@ -201,8 +201,7 @@ class QUICHE_EXPORT_PRIVATE Http2DecoderAdapter
   void OnGoAwayEnd() override;
   void OnWindowUpdate(const Http2FrameHeader& header,
                       uint32_t increment) override;
-  void OnAltSvcStart(const Http2FrameHeader& header,
-                     size_t origin_length,
+  void OnAltSvcStart(const Http2FrameHeader& header, size_t origin_length,
                      size_t value_length) override;
   void OnAltSvcOriginData(const char* data, size_t len) override;
   void OnAltSvcValueData(const char* data, size_t len) override;
@@ -374,24 +373,23 @@ class QUICHE_EXPORT_PRIVATE SpdyFramerVisitorInterface {
 
   // Called when the common header for a frame is received. Validating the
   // common header occurs in later processing.
-  virtual void OnCommonHeader(SpdyStreamId /*stream_id*/,
-                              size_t /*length*/,
-                              uint8_t /*type*/,
-                              uint8_t /*flags*/) {}
+  virtual void OnCommonHeader(SpdyStreamId /*stream_id*/, size_t /*length*/,
+                              uint8_t /*type*/, uint8_t /*flags*/) {}
 
-  // Called when a data frame header is received. The frame's data
-  // payload will be provided via subsequent calls to
-  // OnStreamFrameData().
-  virtual void OnDataFrameHeader(SpdyStreamId stream_id,
-                                 size_t length,
+  // Called when a data frame header is received. The frame's data payload will
+  // be provided via subsequent calls to OnStreamFrameData().
+  // |stream_id| The stream receiving data.
+  // |length| The length of the payload in this DATA frame. Includes the length
+  //     of the data itself and potential padding.
+  // |fin| Whether the END_STREAM flag is set in the frame header.
+  virtual void OnDataFrameHeader(SpdyStreamId stream_id, size_t length,
                                  bool fin) = 0;
 
   // Called when data is received.
   // |stream_id| The stream receiving data.
   // |data| A buffer containing the data received.
   // |len| The length of the data buffer.
-  virtual void OnStreamFrameData(SpdyStreamId stream_id,
-                                 const char* data,
+  virtual void OnStreamFrameData(SpdyStreamId stream_id, const char* data,
                                  size_t len) = 0;
 
   // Called when the other side has finished sending data on this stream.
@@ -449,6 +447,8 @@ class QUICHE_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   // Called when a HEADERS frame is received.
   // Note that header block data is not included. See OnHeaderFrameStart().
   // |stream_id| The stream receiving the header.
+  // |payload_length| The length of the payload in this HEADERS frame. Includes
+  //     the length of the encoded header block and potential padding.
   // |has_priority| Whether or not the headers frame included a priority value,
   //     and stream dependency info.
   // |weight| If |has_priority| is true, then weight (in the range [1, 256])
@@ -457,16 +457,13 @@ class QUICHE_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   //     receiving stream, else 0.
   // |exclusive| If |has_priority| is true the exclusivity of dependence on the
   //     parent stream, else false.
-  // |fin| Whether FIN flag is set in frame headers.
+  // |fin| Whether the END_STREAM flag is set in the frame header.
   // |end| False if HEADERs frame is to be followed by a CONTINUATION frame,
   //     or true if not.
-  virtual void OnHeaders(SpdyStreamId stream_id,
-                         bool has_priority,
-                         int weight,
-                         SpdyStreamId parent_stream_id,
-                         bool exclusive,
-                         bool fin,
-                         bool end) = 0;
+  virtual void OnHeaders(SpdyStreamId stream_id, size_t payload_length,
+                         bool has_priority, int weight,
+                         SpdyStreamId parent_stream_id, bool exclusive,
+                         bool fin, bool end) = 0;
 
   // Called when a WINDOW_UPDATE frame has been parsed.
   virtual void OnWindowUpdate(SpdyStreamId stream_id,
@@ -484,17 +481,20 @@ class QUICHE_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   // Called when a PUSH_PROMISE frame is received.
   // Note that header block data is not included. See OnHeaderFrameStart().
   virtual void OnPushPromise(SpdyStreamId stream_id,
-                             SpdyStreamId promised_stream_id,
-                             bool end) = 0;
+                             SpdyStreamId promised_stream_id, bool end) = 0;
 
   // Called when a CONTINUATION frame is received.
   // Note that header block data is not included. See OnHeaderFrameStart().
-  virtual void OnContinuation(SpdyStreamId stream_id, bool end) = 0;
+  // |stream_id| The stream receiving the CONTINUATION.
+  // |payload_length| The length of the payload in this CONTINUATION frame.
+  // |end| True if this CONTINUATION frame will not be followed by another
+  //     CONTINUATION frame.
+  virtual void OnContinuation(SpdyStreamId stream_id, size_t payload_length,
+                              bool end) = 0;
 
   // Called when an ALTSVC frame has been parsed.
   virtual void OnAltSvc(
-      SpdyStreamId /*stream_id*/,
-      absl::string_view /*origin*/,
+      SpdyStreamId /*stream_id*/, absl::string_view /*origin*/,
       const SpdyAltSvcWireFormat::AlternativeServiceVector& /*altsvc_vector*/) {
   }
 
@@ -504,10 +504,8 @@ class QUICHE_EXPORT_PRIVATE SpdyFramerVisitorInterface {
   // |weight| Stream weight, in the range [1, 256].
   // |exclusive| Whether |stream_id| should be an only child of
   //     |parent_stream_id|.
-  virtual void OnPriority(SpdyStreamId stream_id,
-                          SpdyStreamId parent_stream_id,
-                          int weight,
-                          bool exclusive) = 0;
+  virtual void OnPriority(SpdyStreamId stream_id, SpdyStreamId parent_stream_id,
+                          int weight, bool exclusive) = 0;
 
   // Called when a PRIORITY_UPDATE frame is received on stream 0.
   // |prioritized_stream_id| is the Prioritized Stream ID and
@@ -531,10 +529,8 @@ class QUICHE_EXPORT_PRIVATE ExtensionVisitorInterface {
   virtual void OnSetting(SpdySettingsId id, uint32_t value) = 0;
 
   // Called when non-standard frames are received.
-  virtual bool OnFrameHeader(SpdyStreamId stream_id,
-                             size_t length,
-                             uint8_t type,
-                             uint8_t flags) = 0;
+  virtual bool OnFrameHeader(SpdyStreamId stream_id, size_t length,
+                             uint8_t type, uint8_t flags) = 0;
 
   // The payload for a single frame may be delivered as multiple calls to
   // OnFramePayload. Since the length field is passed in OnFrameHeader, there is

@@ -310,7 +310,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   // A cache is used for Latin1 codes.
   Handle<String> LookupSingleCharacterStringFromCode(uint16_t code);
 
-  // Create or lookup a single characters tring made up of a utf16 surrogate
+  // Create or lookup a single character string made up of a utf16 surrogate
   // pair.
   Handle<String> NewSurrogatePairString(uint16_t lead, uint16_t trail);
 
@@ -524,7 +524,10 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
   // points to the site.
   // JS objects are pretenured when allocated by the bootstrapper and
   // runtime.
-  Handle<JSObject> NewJSObjectFromMap(
+  inline Handle<JSObject> NewJSObjectFromMap(
+      Handle<Map> map, AllocationType allocation = AllocationType::kYoung,
+      Handle<AllocationSite> allocation_site = Handle<AllocationSite>::null());
+  inline Handle<JSObject> NewSystemPointerAlignedJSObjectFromMap(
       Handle<Map> map, AllocationType allocation = AllocationType::kYoung,
       Handle<AllocationSite> allocation_site = Handle<AllocationSite>::null());
   // Like NewJSObjectFromMap, but includes allocating a properties dictionary.
@@ -916,6 +919,12 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
       return *this;
     }
 
+    CodeBuilder& set_osr_offset(BytecodeOffset offset) {
+      DCHECK_IMPLIES(!offset.IsNone(), CodeKindCanOSR(kind_));
+      osr_offset_ = offset;
+      return *this;
+    }
+
     CodeBuilder& set_source_position_table(Handle<ByteArray> table) {
       DCHECK_NE(kind_, CodeKind::BASELINE);
       DCHECK(!table.is_null());
@@ -993,6 +1002,7 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
     MaybeHandle<Object> self_reference_;
     Builtin builtin_ = Builtin::kNoBuiltinId;
     uint32_t inlined_bytecode_size_ = 0;
+    BytecodeOffset osr_offset_ = BytecodeOffset::None();
     int32_t kind_specific_flags_ = 0;
     // Either source_position_table for non-baseline code
     // or bytecode_offset_table for baseline code.
@@ -1044,7 +1054,12 @@ class V8_EXPORT_PRIVATE Factory : public FactoryBase<Factory> {
 
   HeapObject AllocateRawWithAllocationSite(
       Handle<Map> map, AllocationType allocation,
-      Handle<AllocationSite> allocation_site);
+      Handle<AllocationSite> allocation_site,
+      AllocationAlignment alignment = kTaggedAligned);
+
+  Handle<JSObject> NewJSObjectFromMapInternal(
+      Handle<Map> map, AllocationType allocation,
+      Handle<AllocationSite> allocation_site, AllocationAlignment alignment);
 
   Handle<JSArrayBufferView> NewJSArrayBufferView(
       Handle<Map> map, Handle<FixedArrayBase> elements,

@@ -64,7 +64,7 @@ const kTestTypes = [
 
 g.test('stage_inout')
   .desc(
-    `Test that each @builtin]] attribute is validated against the required stage and in/out usage for that built-in variable.`
+    `Test that each @builtin attribute is validated against the required stage and in/out usage for that built-in variable.`
   )
   .params(u =>
     u
@@ -96,7 +96,7 @@ g.test('stage_inout')
 
 g.test('type')
   .desc(
-    `Test that each @builtin]] attribute is validated against the required type of that built-in variable.`
+    `Test that each @builtin attribute is validated against the required type of that built-in variable.`
   )
   .params(u =>
     u
@@ -209,7 +209,7 @@ g.test('duplicates')
       ${ra} a : u32,
       ${rb} b : u32,
     };
-    @stage(fragment)
+    @fragment
     fn main(${p1} p1 : u32,
             ${p2} p2 : u32,
             s1 : S1,
@@ -241,7 +241,7 @@ g.test('missing_vertex_position')
       ${t.params.attribute} value : vec4<f32>
     };
 
-    @stage(vertex)
+    @vertex
     fn main() -> ${t.params.use_struct ? 'S' : `${t.params.attribute} vec4<f32>`} {
       return ${t.params.use_struct ? 'S' : 'vec4<f32>'}();
     }

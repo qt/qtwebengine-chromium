@@ -232,7 +232,7 @@ class TextureUsageTracking extends ValidationTest {
 
   issueDrawOrDispatch(pass: GPURenderPassEncoder | GPUComputePassEncoder, compute: boolean) {
     if (compute) {
-      (pass as GPUComputePassEncoder).dispatch(1);
+      (pass as GPUComputePassEncoder).dispatchWorkgroups(1);
     } else {
       (pass as GPURenderPassEncoder).draw(3, 1, 0, 0);
     }
@@ -241,7 +241,7 @@ class TextureUsageTracking extends ValidationTest {
   setComputePipelineAndCallDispatch(pass: GPUComputePassEncoder, layout?: GPUPipelineLayout) {
     const pipeline = this.createNoOpComputePipeline(layout);
     pass.setPipeline(pipeline);
-    pass.dispatch(1);
+    pass.dispatchWorkgroups(1);
   }
 }
 
@@ -618,7 +618,20 @@ g.test('subresources_and_binding_types_combination_for_aspect')
           // 'render-target'
           p.compute && (p.binding0InBundle || p.binding1InBundle || p.type1 === 'render-target')
       )
+      .unless(
+        p =>
+          // Depth-stencil attachment views must encompass all aspects of the texture. Invalid
+          // cases are for depth-stencil textures when the aspect is not 'all'.
+          p.type1 === 'render-target' &&
+          kTextureFormatInfo[p.format].depth &&
+          kTextureFormatInfo[p.format].stencil &&
+          p.aspect1 !== 'all'
+      )
   )
+  .beforeAllSubcases(t => {
+    const { format } = t.params;
+    t.selectDeviceOrSkipTestCase(kTextureFormatInfo[format].feature);
+  })
   .fn(async t => {
     const {
       compute,
@@ -634,7 +647,6 @@ g.test('subresources_and_binding_types_combination_for_aspect')
       _resourceSuccess,
       _usageSuccess,
     } = t.params;
-    await t.selectDeviceOrSkipTestCase(kTextureFormatInfo[format].feature);
 
     const texture = t.createTexture({
       arrayLayerCount: TOTAL_LAYERS,
@@ -643,6 +655,7 @@ g.test('subresources_and_binding_types_combination_for_aspect')
     });
 
     const view0 = texture.createView({
+      dimension: '2d',
       baseMipLevel: BASE_LEVEL,
       mipLevelCount: 1,
       baseArrayLayer: BASE_LAYER,
@@ -651,6 +664,7 @@ g.test('subresources_and_binding_types_combination_for_aspect')
     });
 
     const view1 = texture.createView({
+      dimension: '2d',
       baseMipLevel: baseLevel,
       mipLevelCount: 1,
       baseArrayLayer: baseLayer,
@@ -875,7 +889,7 @@ g.test('replaced_binding')
     // gets programmatically defined in capability_info, use it here, instead of this logic, for clarity.
     let success = entry.storageTexture?.access !== 'write-only';
     // Replaced bindings should not be validated in compute pass, because validation only occurs
-    // inside dispatch() which only looks at the current resource usages.
+    // inside dispatchWorkgroups() which only looks at the current resource usages.
     success ||= compute;
 
     t.expectValidationError(() => {
@@ -942,9 +956,13 @@ g.test('bindings_in_bundle')
     } = t.params;
 
     // Two bindings are attached to the same texture view.
+    const usage =
+      _sampleCount === 4
+        ? GPUTextureUsage[_usage0] | GPUTextureUsage[_usage1] | GPUTextureUsage.RENDER_ATTACHMENT
+        : GPUTextureUsage[_usage0] | GPUTextureUsage[_usage1];
     const view = t
       .createTexture({
-        usage: GPUTextureUsage[_usage0] | GPUTextureUsage[_usage1],
+        usage,
         sampleCount: _sampleCount,
       })
       .createView();
@@ -1040,7 +1058,7 @@ g.test('unused_bindings_in_pipeline')
       format: 'rgba8unorm',
     });
 
-    const wgslVertex = `@stage(vertex) fn main() -> @builtin(position) vec4<f32> {
+    const wgslVertex = `@vertex fn main() -> @builtin(position) vec4<f32> {
   return vec4<f32>();
 }`;
     const wgslFragment = pp`
@@ -1050,7 +1068,7 @@ g.test('unused_bindings_in_pipeline')
       ${pp._if(useBindGroup1)}
       @group(1) @binding(0) var image1 : texture_storage_2d<rgba8unorm, write>;
       ${pp._endif}
-      @stage(fragment) fn main() {}
+      @fragment fn main() {}
     `;
 
     const wgslCompute = pp`
@@ -1060,11 +1078,12 @@ g.test('unused_bindings_in_pipeline')
       ${pp._if(useBindGroup1)}
       @group(1) @binding(0) var image1 : texture_storage_2d<rgba8unorm, write>;
       ${pp._endif}
-      @stage(compute) @workgroup_size(1) fn main() {}
+      @compute @workgroup_size(1) fn main() {}
     `;
 
     const pipeline = compute
       ? t.device.createComputePipeline({
+          layout: 'auto',
           compute: {
             module: t.device.createShaderModule({
               code: wgslCompute,
@@ -1073,6 +1092,7 @@ g.test('unused_bindings_in_pipeline')
           },
         })
       : t.device.createRenderPipeline({
+          layout: 'auto',
           vertex: {
             module: t.device.createShaderModule({
               code: wgslVertex,

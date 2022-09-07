@@ -74,6 +74,7 @@ class OffscreenSurfaceVk : public SurfaceVk
     EGLint getSwapBehavior() const override;
 
     angle::Result initializeContents(const gl::Context *context,
+                                     GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
 
     vk::ImageHelper *getColorAttachmentImage();
@@ -247,6 +248,7 @@ class WindowSurfaceVk : public SurfaceVk
     EGLint getSwapBehavior() const override;
 
     angle::Result initializeContents(const gl::Context *context,
+                                     GLenum binding,
                                      const gl::ImageIndex &imageIndex) override;
 
     vk::Framebuffer &chooseFramebuffer(const SwapchainResolveMode swapchainResolveMode);
@@ -274,7 +276,7 @@ class WindowSurfaceVk : public SurfaceVk
 
     bool isSharedPresentMode() const
     {
-        return (mSwapchainPresentMode == VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR);
+        return (mSwapchainPresentMode == vk::PresentMode::SharedDemandRefreshKHR);
     }
 
     egl::Error lockSurface(const egl::Display *display,
@@ -341,12 +343,14 @@ class WindowSurfaceVk : public SurfaceVk
 
     bool isMultiSampled() const;
 
-    std::vector<VkPresentModeKHR> mPresentModes;
+    bool supportsPresentMode(vk::PresentMode presentMode) const;
+
+    std::vector<vk::PresentMode> mPresentModes;
 
     VkSwapchainKHR mSwapchain;
     // Cached information used to recreate swapchains.
-    VkPresentModeKHR mSwapchainPresentMode;         // Current swapchain mode
-    VkPresentModeKHR mDesiredSwapchainPresentMode;  // Desired mode set through setSwapInterval()
+    vk::PresentMode mSwapchainPresentMode;         // Current swapchain mode
+    vk::PresentMode mDesiredSwapchainPresentMode;  // Desired mode set through setSwapInterval()
     uint32_t mMinImageCount;
     VkSurfaceTransformFlagBitsKHR mPreTransform;
     VkSurfaceTransformFlagBitsKHR mEmulatedPreTransform;

@@ -150,10 +150,6 @@ class Symbol;
   V(Map, shared_string_map, SharedStringMap)                                   \
   V(Map, shared_thin_one_byte_string_map, SharedThinOneByteStringMap)          \
   V(Map, shared_thin_string_map, SharedThinStringMap)                          \
-  V(Map, seq_string_migration_sentinel_map,                                    \
-    TwoByteSeqStringMigrationSentinelMap)                                      \
-  V(Map, one_byte_seq_string_migration_sentinel_map,                           \
-    OneByteSeqStringMigrationSentinelMap)                                      \
   /* Oddball maps */                                                           \
   V(Map, undefined_map, UndefinedMap)                                          \
   V(Map, the_hole_map, TheHoleMap)                                             \
@@ -292,7 +288,13 @@ class Symbol;
     PromiseThrowerFinallySharedFun)                                            \
   V(SharedFunctionInfo, promise_value_thunk_finally_shared_fun,                \
     PromiseValueThunkFinallySharedFun)                                         \
-  V(SharedFunctionInfo, proxy_revoke_shared_fun, ProxyRevokeSharedFun)
+  V(SharedFunctionInfo, proxy_revoke_shared_fun, ProxyRevokeSharedFun)         \
+  V(SharedFunctionInfo, shadow_realm_import_value_fulfilled_sfi,               \
+    ShadowRealmImportValueFulfilledSFI)                                        \
+  V(SharedFunctionInfo, source_text_module_execute_async_module_fulfilled_sfi, \
+    SourceTextModuleExecuteAsyncModuleFulfilledSFI)                            \
+  V(SharedFunctionInfo, source_text_module_execute_async_module_rejected_sfi,  \
+    SourceTextModuleExecuteAsyncModuleRejectedSFI)
 
 // These root references can be updated by the mutator.
 #define STRONG_MUTABLE_MOVABLE_ROOT_LIST(V)                                 \
@@ -475,7 +477,7 @@ class RootsTable {
   // initialization.
   // Generated code can treat direct references to these roots as constants.
   static constexpr bool IsImmortalImmovable(RootIndex root_index) {
-    STATIC_ASSERT(static_cast<int>(RootIndex::kFirstImmortalImmovableRoot) ==
+    static_assert(static_cast<int>(RootIndex::kFirstImmortalImmovableRoot) ==
                   0);
     return static_cast<unsigned>(root_index) <=
            static_cast<unsigned>(RootIndex::kLastImmortalImmovableRoot);
@@ -492,7 +494,7 @@ class RootsTable {
 
   // Used for iterating over all of the read-only and mutable strong roots.
   FullObjectSlot strong_or_read_only_roots_begin() const {
-    STATIC_ASSERT(static_cast<size_t>(RootIndex::kLastReadOnlyRoot) ==
+    static_assert(static_cast<size_t>(RootIndex::kLastReadOnlyRoot) ==
                   static_cast<size_t>(RootIndex::kFirstStrongRoot) - 1);
     return FullObjectSlot(
         &roots_[static_cast<size_t>(RootIndex::kFirstStrongOrReadOnlyRoot)]);

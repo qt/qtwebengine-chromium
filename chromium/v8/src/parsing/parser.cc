@@ -247,6 +247,16 @@ bool Parser::CollapseNaryExpression(Expression** x, Expression* y,
   return true;
 }
 
+const AstRawString* Parser::GetBigIntAsSymbol() {
+  base::Vector<const uint8_t> literal = scanner()->BigIntLiteral();
+  if (literal[0] != '0' || literal.length() == 1) {
+    return ast_value_factory()->GetOneByteString(literal);
+  }
+  std::unique_ptr<char[]> decimal =
+      BigIntLiteralToDecimal(local_isolate_, literal);
+  return ast_value_factory()->GetOneByteString(decimal.get());
+}
+
 Expression* Parser::BuildUnaryExpression(Expression* expression,
                                          Token::Value op, int pos) {
   DCHECK_NOT_NULL(expression);
@@ -425,10 +435,11 @@ Expression* Parser::NewV8RuntimeFunctionForFuzzing(
 
 Parser::Parser(LocalIsolate* local_isolate, ParseInfo* info,
                Handle<Script> script)
-    : ParserBase<Parser>(
-          info->zone(), &scanner_, info->stack_limit(),
-          info->ast_value_factory(), info->pending_error_handler(),
-          info->runtime_call_stats(), info->logger(), info->flags(), true),
+    : ParserBase<Parser>(info->zone(), &scanner_, info->stack_limit(),
+                         info->ast_value_factory(),
+                         info->pending_error_handler(),
+                         info->runtime_call_stats(), info->v8_file_logger(),
+                         info->flags(), true),
       local_isolate_(local_isolate),
       info_(info),
       script_(script),
@@ -2694,10 +2705,10 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
       can_preparse && info()->dispatcher() &&
       scanner()->stream()->can_be_cloned_for_parallel_access();
 
-  // If parallel compile tasks are enabled, enable parallel compile for the
-  // subset of functions as defined by flags.
+  // If parallel compile tasks are enabled, and this isn't a re-parse, enable
+  // parallel compile for the subset of functions as defined by flags.
   bool should_post_parallel_task =
-      can_post_parallel_task &&
+      can_post_parallel_task && !flags().is_reparse() &&
       ((is_eager_top_level_function &&
         flags().post_parallel_compile_tasks_for_eager_toplevel()) ||
        (is_lazy && flags().post_parallel_compile_tasks_for_lazy()));
@@ -2761,7 +2772,7 @@ FunctionLiteral* Parser::ParseFunctionLiteral(
         should_preparse
             ? (is_top_level ? "preparse-no-resolution" : "preparse-resolution")
             : "full-parse";
-    logger_->FunctionEvent(
+    v8_file_logger_->FunctionEvent(
         event_name, flags().script_id(), ms, scope->start_position(),
         scope->end_position(),
         reinterpret_cast<const char*>(function_name->raw_data()),
@@ -3375,8 +3386,6 @@ void Parser::UpdateStatistics(Isolate* isolate, Handle<Script> script) {
       isolate->CountUsage(v8::Isolate::kHtmlCommentInExternalScript);
     }
   }
-  isolate->counters()->total_preparse_skipped()->Increment(
-      total_preparse_skipped_);
 }
 
 void Parser::UpdateStatistics(

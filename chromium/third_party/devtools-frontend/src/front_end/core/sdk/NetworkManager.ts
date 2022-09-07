@@ -41,7 +41,9 @@ import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 
 import {Cookie} from './Cookie.js';
-import type {BlockedCookieWithReason, ContentData, ExtraRequestInfo, ExtraResponseInfo, MIME_TYPE, NameValue, WebBundleInfo, WebBundleInnerRequestInfo} from './NetworkRequest.js';
+import type {
+  BlockedCookieWithReason, ContentData, ExtraRequestInfo, ExtraResponseInfo, MIME_TYPE, NameValue, WebBundleInfo,
+  WebBundleInnerRequestInfo} from './NetworkRequest.js';
 import {Events as NetworkRequestEvents, NetworkRequest} from './NetworkRequest.js';
 import type {Target} from './Target.js';
 import {Capability} from './Target.js';
@@ -251,6 +253,10 @@ export class NetworkManager extends SDKModel<EventTypes> {
 
   requestForURL(url: Platform.DevToolsPath.UrlString): NetworkRequest|null {
     return this.dispatcher.requestForURL(url);
+  }
+
+  requestforId(id: string): NetworkRequest|null {
+    return this.dispatcher.requestForId(id);
   }
 
   private cacheDisabledSettingChanged({data: enabled}: Common.EventTarget.EventTargetEvent<boolean>): void {
@@ -518,8 +524,8 @@ export class NetworkDispatcher implements ProtocolProxyApi.NetworkDispatcher {
     }
   }
 
-  requestForId(url: string): NetworkRequest|null {
-    return this.#requestsById.get(url) || null;
+  requestForId(id: string): NetworkRequest|null {
+    return this.#requestsById.get(id) || null;
   }
 
   requestForURL(url: Platform.DevToolsPath.UrlString): NetworkRequest|null {
@@ -1099,7 +1105,7 @@ export class MultitargetNetworkManager extends Common.ObjectWrapper.ObjectWrappe
   #updatingInterceptionPatternsPromise: Promise<void>|null;
   readonly #blockingEnabledSetting: Common.Settings.Setting<boolean>;
   readonly #blockedPatternsSetting: Common.Settings.Setting<BlockedPattern[]>;
-  #effectiveBlockedURLs: Platform.DevToolsPath.UrlString[];
+  #effectiveBlockedURLs: string[];
   readonly #urlsForRequestInterceptor:
       Platform.MapUtilities.Multimap<(arg0: InterceptedRequest) => Promise<void>, InterceptionPattern>;
   #extraHeaders?: Protocol.Network.Headers;
@@ -1535,8 +1541,7 @@ export class InterceptedRequest {
       Promise<void> {
     this.#hasRespondedInternal = true;
     const body = encoded ? await contentBlob.text() : await blobToBase64(contentBlob);
-    void this.#fetchAgent.invoke_fulfillRequest(
-        {requestId: this.requestId, responseCode: this.responseStatusCode || 200, body, responseHeaders});
+    void this.#fetchAgent.invoke_fulfillRequest({requestId: this.requestId, responseCode: 200, body, responseHeaders});
 
     async function blobToBase64(blob: Blob): Promise<string> {
       const reader = new FileReader();
@@ -1714,7 +1719,7 @@ export interface Conditions {
 }
 
 export interface BlockedPattern {
-  url: Platform.DevToolsPath.UrlString;
+  url: string;
   enabled: boolean;
 }
 

@@ -7,6 +7,7 @@
 
 #include "src/gpu/graphite/RecorderPriv.h"
 
+#include "src/gpu/graphite/Caps.h"
 #include "src/gpu/graphite/Device.h"
 #include "src/gpu/graphite/Gpu.h"
 #include "src/gpu/graphite/TaskGraph.h"
@@ -31,8 +32,16 @@ const Caps* RecorderPriv::caps() const {
     return fRecorder->fGpu->caps();
 }
 
+sk_sp<const Caps> RecorderPriv::refCaps() const {
+    return fRecorder->fGpu->refCaps();
+}
+
 DrawBufferManager* RecorderPriv::drawBufferManager() const {
     return fRecorder->fDrawBufferManager.get();
+}
+
+UploadBufferManager* RecorderPriv::uploadBufferManager() const {
+    return fRecorder->fUploadBufferManager.get();
 }
 
 void RecorderPriv::add(sk_sp<Task> task) {

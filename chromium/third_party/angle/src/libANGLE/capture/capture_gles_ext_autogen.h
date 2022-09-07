@@ -981,6 +981,33 @@ angle::CallCapture CaptureEGLImageTargetTextureStorageEXT(const State &glState,
 
 // GL_EXT_YUV_target
 
+// GL_EXT_base_instance
+angle::CallCapture CaptureDrawArraysInstancedBaseInstanceEXT(const State &glState,
+                                                             bool isCallValid,
+                                                             PrimitiveMode modePacked,
+                                                             GLint first,
+                                                             GLsizei count,
+                                                             GLsizei instancecount,
+                                                             GLuint baseinstance);
+angle::CallCapture CaptureDrawElementsInstancedBaseInstanceEXT(const State &glState,
+                                                               bool isCallValid,
+                                                               GLenum mode,
+                                                               GLsizei count,
+                                                               GLenum type,
+                                                               const void *indices,
+                                                               GLsizei instancecount,
+                                                               GLuint baseinstance);
+angle::CallCapture CaptureDrawElementsInstancedBaseVertexBaseInstanceEXT(
+    const State &glState,
+    bool isCallValid,
+    PrimitiveMode modePacked,
+    GLsizei count,
+    DrawElementsType typePacked,
+    const void *indices,
+    GLsizei instancecount,
+    GLint basevertex,
+    GLuint baseinstance);
+
 // GL_EXT_blend_func_extended
 angle::CallCapture CaptureBindFragDataLocationEXT(const State &glState,
                                                   bool isCallValid,
@@ -2608,6 +2635,9 @@ angle::CallCapture CaptureFramebufferTextureMultiviewOVR(const State &glState,
 
 // GL_OVR_multiview2
 
+// GL_QCOM_shading_rate
+angle::CallCapture CaptureShadingRateQCOM(const State &glState, bool isCallValid, GLenum rate);
+
 // Parameter Captures
 
 void CaptureDeletePerfMonitorsAMD_monitors(const State &glState,
@@ -4094,6 +4124,26 @@ void CaptureEGLImageTargetTextureStorageEXT_attrib_list(const State &glState,
                                                         GLeglImageOES image,
                                                         const GLint *attrib_list,
                                                         angle::ParamCapture *paramCapture);
+void CaptureDrawElementsInstancedBaseInstanceEXT_indices(const State &glState,
+                                                         bool isCallValid,
+                                                         GLenum mode,
+                                                         GLsizei count,
+                                                         GLenum type,
+                                                         const void *indices,
+                                                         GLsizei instancecount,
+                                                         GLuint baseinstance,
+                                                         angle::ParamCapture *paramCapture);
+void CaptureDrawElementsInstancedBaseVertexBaseInstanceEXT_indices(
+    const State &glState,
+    bool isCallValid,
+    PrimitiveMode modePacked,
+    GLsizei count,
+    DrawElementsType typePacked,
+    const void *indices,
+    GLsizei instancecount,
+    GLint basevertex,
+    GLuint baseinstance,
+    angle::ParamCapture *paramCapture);
 void CaptureBindFragDataLocationEXT_name(const State &glState,
                                          bool isCallValid,
                                          ShaderProgramID programPacked,

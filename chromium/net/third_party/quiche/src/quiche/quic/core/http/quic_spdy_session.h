@@ -31,7 +31,6 @@
 #include "quiche/quic/core/quic_time.h"
 #include "quiche/quic/core/quic_types.h"
 #include "quiche/quic/core/quic_versions.h"
-#include "quiche/quic/platform/api/quic_containers.h"
 #include "quiche/quic/platform/api/quic_export.h"
 #include "quiche/common/quiche_circular_deque.h"
 #include "quiche/spdy/core/http2_frame_decoder_adapter.h"
@@ -81,8 +80,6 @@ class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
   // Incoming HTTP/3 frames on the control stream.
   virtual void OnSettingsFrameReceived(const SettingsFrame& /*frame*/) = 0;
   virtual void OnGoAwayFrameReceived(const GoAwayFrame& /*frame*/) {}
-  // TODO(b/171463363): Remove.
-  virtual void OnMaxPushIdFrameReceived(const MaxPushIdFrame& /*frame*/) {}
   virtual void OnPriorityUpdateFrameReceived(
       const PriorityUpdateFrame& /*frame*/) {}
   virtual void OnAcceptChFrameReceived(const AcceptChFrame& /*frame*/) {}
@@ -121,10 +118,10 @@ class QUIC_EXPORT_PRIVATE Http3DebugVisitor {
 // Whether draft-ietf-masque-h3-datagram is supported on this session and if so
 // which draft is currently in use.
 enum class HttpDatagramSupport : uint8_t {
-  kNone = 0,  // HTTP Datagrams are not supported for this session.
-  kDraft00 = 1,
-  kDraft04 = 2,
-  kDraft00And04 = 3,  // only used locally, we only negotiate one draft.
+  kNone,  // HTTP Datagrams are not supported for this session.
+  kDraft04,
+  kDraft09,
+  kDraft04And09,  // Only used locally for sending, we only negotiate one draft.
 };
 
 QUIC_EXPORT_PRIVATE std::string HttpDatagramSupportToString(
@@ -322,14 +319,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // those streams are not initialized yet.
   void OnCanCreateNewOutgoingStream(bool unidirectional) override;
 
-  // Sets |max_push_id_|.
-  // This method must only be called if protocol is IETF QUIC and perspective is
-  // server.  It must only be called if a MAX_PUSH_ID frame is received.
-  // Returns whether |max_push_id| is greater than or equal to current
-  // |max_push_id_|.
-  // TODO(b/171463363): Remove.
-  bool OnMaxPushIdFrame(PushId max_push_id);
-
   int32_t destruction_indicator() const { return destruction_indicator_; }
 
   void set_debug_visitor(Http3DebugVisitor* debug_visitor) {
@@ -389,19 +378,11 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   }
 
   // This must not be used except by QuicSpdyStream::SendHttp3Datagram.
-  MessageStatus SendHttp3Datagram(
-      QuicDatagramStreamId stream_id,
-      absl::optional<QuicDatagramContextId> context_id,
-      absl::string_view payload);
+  MessageStatus SendHttp3Datagram(QuicStreamId stream_id,
+                                  absl::string_view payload);
   // This must not be used except by QuicSpdyStream::SetMaxDatagramTimeInQueue.
   void SetMaxDatagramTimeInQueueForStreamId(QuicStreamId stream_id,
                                             QuicTime::Delta max_time_in_queue);
-  // This must not be used except by
-  // QuicSpdyStream::MaybeProcessReceivedWebTransportHeaders.
-  void RegisterHttp3DatagramFlowId(QuicDatagramStreamId flow_id,
-                                   QuicStreamId stream_id);
-  // This must not be used except by QuicSpdyStream::OnClose.
-  void UnregisterHttp3DatagramFlowId(QuicDatagramStreamId flow_id);
 
   // Override from QuicSession to support HTTP/3 datagrams.
   void OnMessageReceived(absl::string_view message) override;
@@ -461,10 +442,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
       WebTransportHttp3* session);
 
   QuicSpdyStream* GetOrCreateSpdyDataStream(const QuicStreamId stream_id);
-
-  // Indicates whether we will try to negotiate datagram contexts on newly
-  // created WebTransport sessions over HTTP/3.
-  virtual bool ShouldNegotiateDatagramContexts();
 
   // Indicates whether the client should check that the
   // `Sec-Webtransport-Http3-Draft` header is valid.
@@ -538,6 +515,12 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   // in settings and accept remote settings for.
   virtual HttpDatagramSupport LocalHttpDatagramSupport();
 
+  // Sends any data which should be sent at the start of a connection, including
+  // the initial SETTINGS frame.  When using 0-RTT, this method is called twice:
+  // once when encryption is established, and again when 1-RTT keys are
+  // available.
+  void SendInitialData();
+
  private:
   friend class test::QuicSpdySessionPeer;
 
@@ -571,13 +554,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   void CloseConnectionOnDuplicateHttp3UnidirectionalStreams(
       absl::string_view type);
-
-  // Sends any data which should be sent at the start of a connection, including
-  // the initial SETTINGS frame, and (when IETF QUIC is used) also a MAX_PUSH_ID
-  // frame if SetMaxPushId() had been called before encryption was established.
-  // When using 0-RTT, this method is called twice: once when encryption is
-  // established, and again when 1-RTT keys are available.
-  void SendInitialData();
 
   void FillSettingsFrame();
 
@@ -637,20 +613,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
   http2::Http2DecoderAdapter h2_deframer_;
   std::unique_ptr<SpdyFramerVisitor> spdy_framer_visitor_;
 
-  // Used in IETF QUIC only.
-  // For a server:
-  //   the push ID in the most recently received MAX_PUSH_ID frame,
-  //   or unset if no MAX_PUSH_ID frame has been received.
-  // For a client:
-  //   unset until SetMaxPushId() is called;
-  //   before encryption is established, the push ID to be sent in the initial
-  //   MAX_PUSH_ID frame;
-  //   after encryption is established, the push ID in the most recently sent
-  //   MAX_PUSH_ID frame.
-  // Once set, never goes back to unset.
-  // TODO(b/171463363): Remove.
-  absl::optional<PushId> max_push_id_;
-
   // Not owned by the session.
   Http3DebugVisitor* debug_visitor_;
 
@@ -676,12 +638,6 @@ class QUIC_EXPORT_PRIVATE QuicSpdySession
 
   // Whether the peer has indicated WebTransport support.
   bool peer_supports_webtransport_ = false;
-
-  // This maps from draft-ietf-masque-h3-datagram-00 flow IDs to stream IDs.
-  // TODO(b/181256914) remove this when we deprecate support for that draft in
-  // favor of more recent ones.
-  absl::flat_hash_map<uint64_t, QuicStreamId>
-      h3_datagram_flow_id_to_stream_id_map_;
 
   // Whether any settings have been received, either from the peer or from a
   // session ticket.

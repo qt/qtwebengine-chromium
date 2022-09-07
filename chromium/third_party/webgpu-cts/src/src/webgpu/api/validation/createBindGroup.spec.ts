@@ -153,15 +153,19 @@ g.test('texture_binding_must_have_correct_usage')
       entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, ...entry }],
     });
 
+    // The `RENDER_ATTACHMENT` usage must be specified if sampleCount > 1 according to WebGPU SPEC.
+    const appliedUsage =
+      info.resource === 'sampledTexMS' ? usage | GPUConst.TextureUsage.RENDER_ATTACHMENT : usage;
+
     const descriptor = {
       size: { width: 16, height: 16, depthOrArrayLayers: 1 },
       format: 'rgba8unorm' as const,
-      usage,
+      usage: appliedUsage,
       sampleCount: info.resource === 'sampledTexMS' ? 4 : 1,
     };
     const resource = t.device.createTexture(descriptor).createView();
 
-    const shouldError = usage !== info.usage;
+    const shouldError = (usage & info.usage) === 0;
     t.expectValidationError(() => {
       t.device.createBindGroup({
         entries: [{ binding: 0, resource }],
@@ -469,8 +473,12 @@ g.test('texture,resource_state')
       ],
     });
 
+    // The `RENDER_ATTACHMENT` usage must be specified if sampleCount > 1 according to WebGPU SPEC.
+    const usage = entry.texture?.multisampled
+      ? info.usage | GPUConst.TextureUsage.RENDER_ATTACHMENT
+      : info.usage;
     const texture = t.createTextureWithState(state, {
-      usage: info.usage,
+      usage,
       size: [1, 1],
       format: 'rgba8unorm',
       sampleCount: entry.texture?.multisampled ? 4 : 1,
@@ -499,12 +507,11 @@ g.test('bind_group_layout,device_mismatch')
     'Tests createBindGroup cannot be called with a bind group layout created from another device'
   )
   .paramsSubcasesOnly(u => u.combine('mismatched', [true, false]))
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
   .fn(async t => {
     const mismatched = t.params.mismatched;
-
-    if (mismatched) {
-      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
-    }
 
     const device = mismatched ? t.mismatchedDevice : t.device;
 
@@ -557,12 +564,11 @@ g.test('binding_resources,device_mismatch')
         { resource0Mismatched: false, resource1Mismatched: true },
       ])
   )
+  .beforeAllSubcases(t => {
+    t.selectMismatchedDeviceOrSkipTestCase(undefined);
+  })
   .fn(async t => {
     const { entry, resource0Mismatched, resource1Mismatched } = t.params;
-
-    if (resource0Mismatched || resource1Mismatched) {
-      await t.selectMismatchedDeviceOrSkipTestCase(undefined);
-    }
 
     const info = bindingTypeInfo(entry);
 

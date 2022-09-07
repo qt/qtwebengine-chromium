@@ -153,10 +153,10 @@ export class ParsedURL {
     return null;
   }
 
-  private static preEncodeSpecialCharactersInPath(path: string): string {
+  static preEncodeSpecialCharactersInPath(path: string): string {
     // Based on net::FilePathToFileURL. Ideally we would handle
     // '\\' as well on non-Windows file systems.
-    for (const specialChar of ['%', ';', '#', '?']) {
+    for (const specialChar of ['%', ';', '#', '?', ' ']) {
       (path as string) = path.replaceAll(specialChar, encodeURIComponent(specialChar));
     }
     return path;
@@ -185,7 +185,7 @@ export class ParsedURL {
    */
   static urlFromParentUrlAndName(parentUrl: Platform.DevToolsPath.UrlString, name: string):
       Platform.DevToolsPath.UrlString {
-    return ParsedURL.concatenate(parentUrl, '/', encodeURIComponent(name));
+    return ParsedURL.concatenate(parentUrl, '/', ParsedURL.preEncodeSpecialCharactersInPath(name));
   }
 
   static encodedPathToRawPathString(encPath: Platform.DevToolsPath.EncodedPathString):
@@ -264,13 +264,17 @@ export class ParsedURL {
     return devToolsPaths.join(separator) as DevToolsPathType;
   }
 
-  static split<DevToolsPathType extends BrandedPathString>(devToolsPath: DevToolsPathType, separator: string|RegExp):
-      DevToolsPathType[] {
-    return devToolsPath.split(separator) as DevToolsPathType[];
+  static split<DevToolsPathType extends BrandedPathString>(
+      devToolsPath: DevToolsPathType, separator: string|RegExp, limit?: number): DevToolsPathType[] {
+    return devToolsPath.split(separator, limit) as DevToolsPathType[];
   }
 
   static toLowerCase<DevToolsPathType extends BrandedPathString>(devToolsPath: DevToolsPathType): DevToolsPathType {
     return devToolsPath.toLowerCase() as DevToolsPathType;
+  }
+
+  static isValidUrlString(str: string): str is Platform.DevToolsPath.UrlString {
+    return new ParsedURL(str).isValid;
   }
 
   static urlWithoutHash(url: string): string {
@@ -308,14 +312,14 @@ export class ParsedURL {
     return ParsedURL.urlRegexInstance;
   }
 
-  static extractPath(url: string): Platform.DevToolsPath.EncodedPathString {
+  static extractPath(url: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.EncodedPathString {
     const parsedURL = this.fromString(url);
     return (parsedURL ? parsedURL.path : '') as Platform.DevToolsPath.EncodedPathString;
   }
 
-  static extractOrigin(url: string): string {
+  static extractOrigin(url: Platform.DevToolsPath.UrlString): Platform.DevToolsPath.UrlString {
     const parsedURL = this.fromString(url);
-    return parsedURL ? parsedURL.securityOrigin() : '';
+    return parsedURL ? parsedURL.securityOrigin() : Platform.DevToolsPath.EmptyUrlString;
   }
 
   static extractExtension(url: string): string {
@@ -466,8 +470,16 @@ export class ParsedURL {
     return ParsedURL.substring(url as Platform.DevToolsPath.UrlString, 0, wasmFunctionIndex);
   }
 
+  private static beginsWithWindowsDriveLetter(url: string): boolean {
+    return /^[A-Za-z]:/.test(url);
+  }
+
+  private static beginsWithScheme(url: string): boolean {
+    return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(url);
+  }
+
   static isRelativeURL(url: string): boolean {
-    return !(/^[A-Za-z][A-Za-z0-9+.-]*:/.test(url));
+    return !this.beginsWithScheme(url) || this.beginsWithWindowsDriveLetter(url);
   }
 
   get displayName(): string {

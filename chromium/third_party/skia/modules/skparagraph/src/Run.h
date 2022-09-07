@@ -150,6 +150,9 @@ public:
     SkSpan<const SkPoint> positions() const {
         return SkSpan<const SkPoint>(fPositions.begin(), fPositions.size());
     }
+    SkSpan<const SkPoint> offsets() const {
+        return SkSpan<const SkPoint>(fOffsets.begin(), fOffsets.size());
+    }
     SkSpan<const uint32_t> clusterIndexes() const {
         return SkSpan<const uint32_t>(fClusterIndexes.begin(), fClusterIndexes.size());
     }
@@ -183,11 +186,13 @@ private:
     struct GlyphData {
         SkSTArray<64, SkGlyphID, true> glyphs;
         SkSTArray<64, SkPoint, true> positions;
+        SkSTArray<64, SkPoint, true> offsets;
         SkSTArray<64, uint32_t, true> clusterIndexes;
     };
     std::shared_ptr<GlyphData> fGlyphData;
     SkSTArray<64, SkGlyphID, true>& fGlyphs;
     SkSTArray<64, SkPoint, true>& fPositions;
+    SkSTArray<64, SkPoint, true>& fOffsets;
     SkSTArray<64, uint32_t, true>& fClusterIndexes;
 
     SkSTArray<64, SkPoint, true> fJustificationShifts; // For justification (current and prev shifts)
@@ -401,7 +406,6 @@ public:
         if (fForceStrut) {
             return;
         }
-
         fAscent = std::min(fAscent, run->correctAscent());
         fDescent = std::max(fDescent, run->correctDescent());
         fLeading = std::max(fLeading, run->correctLeading());
@@ -463,6 +467,11 @@ public:
         fLeading = l;
     }
 
+    void updateRawData(SkScalar ra, SkScalar rd) {
+        fRawAscent = ra;
+        fRawDescent = rd;
+    }
+
     SkScalar alphabeticBaseline() const { return fLeading / 2 - fAscent; }
     SkScalar ideographicBaseline() const { return fDescent - fAscent + fLeading; }
     SkScalar deltaBaselines() const { return fLeading / 2 + fDescent; }
@@ -477,6 +486,7 @@ public:
 
 private:
 
+    friend class ParagraphImpl;
     friend class TextWrapper;
     friend class TextLine;
 

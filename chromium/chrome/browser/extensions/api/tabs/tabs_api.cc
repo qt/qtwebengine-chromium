@@ -15,12 +15,14 @@
 #include "base/bind.h"
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/containers/contains.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
+#include "base/strings/escape.h"
 #include "base/strings/pattern.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -100,7 +102,6 @@
 #include "extensions/common/mojom/host_id.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/user_script.h"
-#include "net/base/escape.h"
 #include "skia/ext/image_operations.h"
 #include "skia/ext/platform_canvas.h"
 #include "third_party/abseil-cpp/absl/types/optional.h"
@@ -122,7 +123,7 @@
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/clipboard_buffer.h"
 #include "ui/platform_window/extensions/pinned_mode_extension.h"
-#include "ui/views/widget/desktop_aura/desktop_window_tree_host_linux.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_lacros.h"
 #endif
 
 using content::BrowserThread;
@@ -410,7 +411,7 @@ void SetLockedFullscreenState(Browser* browser, bool pinned) {
                              : chromeos::WindowPinType::kNone);
 
   auto* pinned_mode_extension =
-      views::DesktopWindowTreeHostLinux::From(window->GetHost())
+      views::DesktopWindowTreeHostLacros::From(window->GetHost())
           ->GetPinnedModeExtension();
   if (pinned) {
     pinned_mode_extension->Pin(/*trusted=*/true);
@@ -555,7 +556,7 @@ ExtensionFunction::ResponseAction WindowsGetAllFunction::Run() {
   EXTENSION_FUNCTION_VALIDATE(params.get());
 
   ApiParameterExtractor<windows::GetAll::Params> extractor(params.get());
-  std::unique_ptr<base::ListValue> window_list(new base::ListValue());
+  base::Value::List window_list;
   ExtensionTabUtil::PopulateTabBehavior populate_tab_behavior =
       extractor.populate_tabs() ? ExtensionTabUtil::kPopulateTabs
                                 : ExtensionTabUtil::kDontPopulateTabs;
@@ -565,63 +566,13 @@ ExtensionFunction::ResponseAction WindowsGetAllFunction::Run() {
                                           extractor.type_filters())) {
       continue;
     }
-    window_list->Append(base::Value::FromUniquePtrValue(
+    window_list.Append(base::Value::FromUniquePtrValue(
         ExtensionTabUtil::CreateWindowValueForExtension(
             *controller->GetBrowser(), extension(), populate_tab_behavior,
             source_context_type())));
   }
 
-  return RespondNow(
-      OneArgument(base::Value::FromUniquePtrValue(std::move(window_list))));
-}
-
-bool WindowsCreateFunction::ShouldOpenIncognitoWindow(
-    const windows::Create::Params::CreateData* create_data,
-    std::vector<GURL>* urls,
-    std::string* error) {
-  Profile* profile = Profile::FromBrowserContext(browser_context());
-  const IncognitoModePrefs::Availability incognito_availability =
-      IncognitoModePrefs::GetAvailability(profile->GetPrefs());
-  bool incognito = false;
-  if (create_data && create_data->incognito) {
-    incognito = *create_data->incognito;
-    if (incognito &&
-        incognito_availability == IncognitoModePrefs::Availability::kDisabled) {
-      *error = tabs_constants::kIncognitoModeIsDisabled;
-      return false;
-    }
-    if (!incognito &&
-        incognito_availability == IncognitoModePrefs::Availability::kForced) {
-      *error = tabs_constants::kIncognitoModeIsForced;
-      return false;
-    }
-  } else if (incognito_availability ==
-             IncognitoModePrefs::Availability::kForced) {
-    // If incognito argument is not specified explicitly, we default to
-    // incognito when forced so by policy.
-    incognito = true;
-  }
-
-  // Remove all URLs that are not allowed in an incognito session. Note that a
-  // ChromeOS guest session is not considered incognito in this case.
-  if (incognito && !profile->IsGuestSession()) {
-    std::string first_url_erased;
-    for (size_t i = 0; i < urls->size();) {
-      if (IsURLAllowedInIncognito((*urls)[i], profile)) {
-        i++;
-      } else {
-        if (first_url_erased.empty())
-          first_url_erased = (*urls)[i].spec();
-        urls->erase(urls->begin() + i);
-      }
-    }
-    if (urls->empty() && !first_url_erased.empty()) {
-      *error = ErrorUtils::FormatErrorMessage(
-          tabs_constants::kURLsNotAllowedInIncognitoError, first_url_erased);
-      return false;
-    }
-  }
-  return incognito;
+  return RespondNow(OneArgument(base::Value(std::move(window_list))));
 }
 
 ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
@@ -659,14 +610,19 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
 
   // Decide whether we are opening a normal window or an incognito window.
   std::string error;
-  bool open_incognito_window =
-      ShouldOpenIncognitoWindow(create_data, &urls, &error);
-  if (!error.empty())
+  Profile* calling_profile = Profile::FromBrowserContext(browser_context());
+  windows_util::IncognitoResult incognito_result =
+      windows_util::ShouldOpenIncognitoWindow(
+          calling_profile,
+          create_data && create_data->incognito
+              ? absl::optional<bool>(*create_data->incognito)
+              : absl::nullopt,
+          &urls, &error);
+  if (incognito_result == windows_util::IncognitoResult::kError)
     return RespondNow(Error(std::move(error)));
 
-  Profile* calling_profile = Profile::FromBrowserContext(browser_context());
   Profile* window_profile =
-      open_incognito_window
+      incognito_result == windows_util::IncognitoResult::kIncognito
           ? calling_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true)
           : calling_profile;
 
@@ -725,28 +681,39 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
     WindowSizer::GetBrowserWindowBoundsAndShowState(
         gfx::Rect(), nullptr, &window_bounds, &ignored_show_state);
 
-    // Update the window bounds if the bounds from the create parameters
-    // intersect the displays.
-    bool set_window_bounds = false;
+    // Update the window bounds based on the create parameters.
+    bool set_window_position = false;
+    bool set_window_size = false;
     if (create_data->left) {
       window_bounds.set_x(*create_data->left);
-      set_window_bounds = true;
+      set_window_position = true;
     }
     if (create_data->top) {
       window_bounds.set_y(*create_data->top);
-      set_window_bounds = true;
+      set_window_position = true;
     }
     if (create_data->width) {
       window_bounds.set_width(*create_data->width);
-      set_window_bounds = true;
+      set_window_size = true;
     }
     if (create_data->height) {
       window_bounds.set_height(*create_data->height);
-      set_window_bounds = true;
+      set_window_size = true;
     }
 
-    if (set_window_bounds && !WindowBoundsIntersectDisplays(window_bounds))
+    // If the extension specified the window size but no position, adjust the
+    // window to fit in the display.
+    if (!set_window_position && set_window_size) {
+      const display::Display& display =
+          display::Screen::GetScreen()->GetDisplayMatching(window_bounds);
+      window_bounds.AdjustToFit(display.bounds());
+    }
+
+    // Immediately fail if the window bounds don't intersect the displays.
+    if ((set_window_position || set_window_size) &&
+        !WindowBoundsIntersectDisplays(window_bounds)) {
       return RespondNow(Error(tabs_constants::kInvalidWindowBoundsError));
+    }
 
     if (create_data->focused)
       focused = *create_data->focused;
@@ -835,10 +802,30 @@ ExtensionFunction::ResponseAction WindowsCreateFunction::Run() {
   }
   chrome::SelectNumberedTab(new_window, 0, {TabStripModel::GestureType::kNone});
 
-  if (focused)
+  if (focused) {
     new_window->window()->Show();
-  else
+  } else {
+    // The new window isn't supposed to be focused. Here, instead of showing an
+    // unfocused window on top (possible on some operating systems), we show
+    // the window and then bring the old focused window back on top.
+    // We still use ShowInactive() (instead of doing a Show() followed
+    // immediately by Deactivate()) because the process of showing the window is
+    // somewhat asynchronous. This causes the immediate Deactivate() call to not
+    // work.
+    BrowserList* const browser_list = BrowserList::GetInstance();
+    Browser* active_browser = browser_list->GetLastActive();
+    bool reset_active = false;
+    // Check if there's a currently-active window that should re-take focus.
+    // NOTE: This browser *may* be from another profile. We don't access any
+    // data from it.
+    if (active_browser && active_browser->window()->IsActive())
+      reset_active = true;
     new_window->window()->ShowInactive();
+    // NOTE: It's possible that showing the new browser synchronously caused
+    // the old one to close. Ensure it's still valid before activating it.
+    if (reset_active && base::Contains(*browser_list, active_browser))
+      active_browser->window()->Activate();
+  }
 
   // Lock the window fullscreen only after the new tab has been created
   // (otherwise the tabstrip is empty), and window()->show() has been called
@@ -1126,7 +1113,7 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
   if (params->query_info.window_type != tabs::WINDOW_TYPE_NONE)
     window_type = tabs::ToString(params->query_info.window_type);
 
-  std::unique_ptr<base::ListValue> result(new base::ListValue());
+  base::Value::List result;
   Profile* profile = Profile::FromBrowserContext(browser_context());
   Browser* last_active_browser =
       chrome::FindAnyBrowser(profile, include_incognito_information());
@@ -1268,15 +1255,14 @@ ExtensionFunction::ResponseAction TabsQueryFunction::Run() {
         continue;
       }
 
-      result->Append(base::Value::FromUniquePtrValue(
+      result.Append(base::Value::FromUniquePtrValue(
           CreateTabObjectHelper(web_contents, extension(),
                                 source_context_type(), tab_strip, i)
               ->ToValue()));
     }
   }
 
-  return RespondNow(
-      OneArgument(base::Value::FromUniquePtrValue(std::move(result))));
+  return RespondNow(OneArgument(base::Value(std::move(result))));
 }
 
 ExtensionFunction::ResponseAction TabsCreateFunction::Run() {

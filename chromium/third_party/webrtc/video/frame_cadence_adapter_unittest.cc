@@ -169,7 +169,6 @@ TEST(FrameCadenceAdapterTest,
 
 TEST(FrameCadenceAdapterTest, FrameRateFollowsMaxFpsWhenZeroHertzActivated) {
   ZeroHertzFieldTrialEnabler enabler;
-  MockCallback callback;
   GlobalSimulatedTimeController time_controller(Timestamp::Millis(0));
   auto adapter = CreateAdapter(enabler, time_controller.GetClock());
   adapter->Initialize(nullptr);
@@ -186,7 +185,6 @@ TEST(FrameCadenceAdapterTest, FrameRateFollowsMaxFpsWhenZeroHertzActivated) {
 TEST(FrameCadenceAdapterTest,
      FrameRateFollowsRateStatisticsAfterZeroHertzDeactivated) {
   ZeroHertzFieldTrialEnabler enabler;
-  MockCallback callback;
   GlobalSimulatedTimeController time_controller(Timestamp::Millis(0));
   auto adapter = CreateAdapter(enabler, time_controller.GetClock());
   adapter->Initialize(nullptr);
@@ -372,8 +370,8 @@ TEST(FrameCadenceAdapterTest, RequestsRefreshFrameOnKeyFrameRequestWhenNew) {
   adapter->SetZeroHertzModeEnabled(
       FrameCadenceAdapterInterface::ZeroHertzModeParams{});
   adapter->OnConstraintsChanged(VideoTrackSourceConstraints{0, 10});
-  time_controller.AdvanceTime(TimeDelta::Zero());
   EXPECT_CALL(callback, RequestRefreshFrame);
+  time_controller.AdvanceTime(TimeDelta::Zero());
   adapter->ProcessKeyFrameRequest();
 }
 
@@ -390,6 +388,28 @@ TEST(FrameCadenceAdapterTest, IgnoresKeyFrameRequestShortlyAfterFrame) {
   time_controller.AdvanceTime(TimeDelta::Zero());
   EXPECT_CALL(callback, RequestRefreshFrame).Times(0);
   adapter->ProcessKeyFrameRequest();
+}
+
+TEST(FrameCadenceAdapterTest, RequestsRefreshFramesUntilArrival) {
+  ZeroHertzFieldTrialEnabler enabler;
+  MockCallback callback;
+  GlobalSimulatedTimeController time_controller(Timestamp::Millis(0));
+  auto adapter = CreateAdapter(enabler, time_controller.GetClock());
+  adapter->Initialize(&callback);
+  adapter->SetZeroHertzModeEnabled(
+      FrameCadenceAdapterInterface::ZeroHertzModeParams{});
+  constexpr int kMaxFps = 10;
+  adapter->OnConstraintsChanged(VideoTrackSourceConstraints{0, kMaxFps});
+
+  // We should see max_fps + 1 refresh frame requests during the one second we
+  // wait until we send a single frame, after which refresh frame requests
+  // should cease (we should see no such requests during a second).
+  EXPECT_CALL(callback, RequestRefreshFrame).Times(kMaxFps + 1);
+  time_controller.AdvanceTime(TimeDelta::Seconds(1));
+  Mock::VerifyAndClearExpectations(&callback);
+  adapter->OnFrame(CreateFrame());
+  EXPECT_CALL(callback, RequestRefreshFrame).Times(0);
+  time_controller.AdvanceTime(TimeDelta::Seconds(1));
 }
 
 class FrameCadenceAdapterSimulcastLayersParamTest
@@ -900,6 +920,22 @@ TEST_F(FrameCadenceAdapterMetricsTest, RecordsMinLtMaxConstraintIfSetOnFrame) {
       metrics::Samples(
           "WebRTC.Screenshare.FrameRateConstraints.60MinPlusMaxMinusOne"),
       ElementsAre(Pair(60 * 4.0 + 5.0 - 1, 1)));
+}
+
+TEST_F(FrameCadenceAdapterMetricsTest, RecordsTimeUntilFirstFrame) {
+  MockCallback callback;
+  test::ScopedKeyValueConfig no_field_trials;
+  auto adapter = CreateAdapter(no_field_trials, time_controller_.GetClock());
+  adapter->Initialize(&callback);
+  adapter->SetZeroHertzModeEnabled(
+      FrameCadenceAdapterInterface::ZeroHertzModeParams{});
+  adapter->OnConstraintsChanged(VideoTrackSourceConstraints{0, 5.0});
+  time_controller_.AdvanceTime(TimeDelta::Millis(666));
+  adapter->OnFrame(CreateFrame());
+  DepleteTaskQueues();
+  EXPECT_THAT(
+      metrics::Samples("WebRTC.Screenshare.ZeroHz.TimeUntilFirstFrameMs"),
+      ElementsAre(Pair(666, 1)));
 }
 
 TEST(FrameCadenceAdapterRealTimeTest, TimestampsDoNotDrift) {

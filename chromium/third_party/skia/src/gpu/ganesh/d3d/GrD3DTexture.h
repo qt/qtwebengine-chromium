@@ -21,7 +21,8 @@ public:
                                               SkISize dimensions,
                                               const D3D12_RESOURCE_DESC&,
                                               GrProtected,
-                                              GrMipmapStatus);
+                                              GrMipmapStatus,
+                                              std::string_view label);
 
     static sk_sp<GrD3DTexture> MakeWrappedTexture(GrD3DGpu*,
                                                   SkISize dimensions,
@@ -82,6 +83,8 @@ private:
         // Forward the release proc on to GrSurfaceResource
         this->setResourceRelease(std::move(releaseHelper));
     }
+
+    void onSetLabel() override{}
 
     struct SamplerHash {
         uint32_t operator()(GrSamplerState state) const {

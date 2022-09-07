@@ -98,6 +98,7 @@ export const generatedProperties = [
     ]
   },
   {'name': 'all'},
+  {'name': 'anchor-name', 'keywords': ['none']},
   {
     'longhands': [
       'animation-duration', 'animation-timing-function', 'animation-delay', 'animation-iteration-count',
@@ -330,7 +331,7 @@ export const generatedProperties = [
   {'name': 'contain-intrinsic-inline-size'},
   {'longhands': ['contain-intrinsic-width', 'contain-intrinsic-height'], 'name': 'contain-intrinsic-size'},
   {'name': 'contain-intrinsic-width', 'keywords': ['auto', 'none']},
-  {'longhands': ['container-type', 'container-name'], 'name': 'container'},
+  {'longhands': ['container-name', 'container-type'], 'name': 'container'},
   {'name': 'container-name', 'keywords': ['none']},
   {'name': 'container-type', 'keywords': ['none', 'inline-size', 'size']},
   {'name': 'content'},
@@ -486,11 +487,11 @@ export const generatedProperties = [
   {'name': 'forced-color-adjust', 'inherited': true, 'keywords': ['auto', 'none', 'preserve-parent-color']},
   {'longhands': ['row-gap', 'column-gap'], 'name': 'gap'},
   {
-    'name': 'grid',
     'longhands': [
       'grid-template-rows', 'grid-template-columns', 'grid-template-areas', 'grid-auto-flow', 'grid-auto-rows',
       'grid-auto-columns'
-    ]
+    ],
+    'name': 'grid'
   },
   {'longhands': ['grid-row-start', 'grid-column-start', 'grid-row-end', 'grid-column-end'], 'name': 'grid-area'},
   {'name': 'grid-auto-columns', 'keywords': ['auto', 'min-content', 'max-content']},
@@ -505,7 +506,7 @@ export const generatedProperties = [
   {'name': 'grid-row-end', 'keywords': ['auto']},
   {'longhands': ['row-gap'], 'name': 'grid-row-gap'},
   {'name': 'grid-row-start', 'keywords': ['auto']},
-  {'name': 'grid-template', 'longhands': ['grid-template-rows', 'grid-template-columns', 'grid-template-areas']},
+  {'longhands': ['grid-template-rows', 'grid-template-columns', 'grid-template-areas'], 'name': 'grid-template'},
   {'keywords': ['none'], 'name': 'grid-template-areas'},
   {'name': 'grid-template-columns', 'keywords': ['none']},
   {'name': 'grid-template-rows', 'keywords': ['none']},
@@ -570,9 +571,9 @@ export const generatedProperties = [
   {'name': 'math-depth', 'inherited': true},
   {'name': 'math-shift', 'inherited': true, 'keywords': ['normal', 'compact']},
   {'name': 'math-style', 'inherited': true, 'keywords': ['normal', 'compact']},
-  {'keywords': ['none'], 'name': 'max-block-size'},
+  {'name': 'max-block-size', 'keywords': ['none']},
   {'name': 'max-height', 'keywords': ['none']},
-  {'keywords': ['none'], 'name': 'max-inline-size'},
+  {'name': 'max-inline-size', 'keywords': ['none']},
   {'name': 'max-width', 'keywords': ['none']},
   {'name': 'max-zoom'},
   {'name': 'min-block-size'},
@@ -589,7 +590,6 @@ export const generatedProperties = [
   },
   {'name': 'negative'},
   {'name': 'object-fit', 'keywords': ['fill', 'contain', 'cover', 'none', 'scale-down']},
-  {'name': 'object-overflow', 'keywords': ['clip', 'visible']},
   {'name': 'object-position'},
   {'name': 'object-view-box', 'keywords': ['none']},
   {
@@ -617,7 +617,7 @@ export const generatedProperties = [
   {'longhands': ['overflow-x', 'overflow-y'], 'name': 'overflow'},
   {'name': 'overflow-anchor', 'inherited': false, 'keywords': ['visible', 'none', 'auto']},
   {'name': 'overflow-block'},
-  {'name': 'overflow-clip-margin'},
+  {'name': 'overflow-clip-margin', 'keywords': ['border-box', 'content-box', 'padding-box']},
   {'name': 'overflow-inline'},
   {'name': 'overflow-wrap', 'inherited': true, 'keywords': ['normal', 'break-word', 'anywhere']},
   {'name': 'overflow-x', 'keywords': ['visible', 'hidden', 'scroll', 'auto', 'overlay', 'clip']},
@@ -661,6 +661,7 @@ export const generatedProperties = [
     ]
   },
   {'name': 'position', 'keywords': ['static', 'relative', 'absolute', 'fixed', 'sticky']},
+  {'name': 'position-fallback', 'keywords': ['none']},
   {'name': 'prefix'},
   {'name': 'quotes', 'inherited': true, 'keywords': ['auto', 'none']},
   {'name': 'r'},
@@ -791,6 +792,10 @@ export const generatedProperties = [
   },
   {'name': 'text-underline-offset', 'inherited': true, 'keywords': ['auto']},
   {'name': 'text-underline-position', 'inherited': true, 'keywords': ['auto', 'from-font', 'under', 'left', 'right']},
+  {'longhands': ['toggle-root', 'toggle-trigger'], 'name': 'toggle'},
+  {'name': 'toggle-group', 'keywords': ['none']},
+  {'name': 'toggle-root', 'keywords': ['none']},
+  {'name': 'toggle-trigger', 'keywords': ['none']},
   {'name': 'top', 'keywords': ['auto']},
   {
     'name': 'touch-action',
@@ -863,6 +868,7 @@ export const generatedPropertyValues = {
       'text-before-edge', 'after-edge', 'text-after-edge', 'hanging'
     ]
   },
+  'anchor-name': {'values': ['none']},
   'animation-direction': {'values': ['normal', 'reverse', 'alternate', 'alternate-reverse']},
   'animation-fill-mode': {'values': ['none', 'forwards', 'backwards', 'both']},
   'animation-iteration-count': {'values': ['infinite']},
@@ -1097,7 +1103,6 @@ export const generatedPropertyValues = {
     ]
   },
   'object-fit': {'values': ['fill', 'contain', 'cover', 'none', 'scale-down']},
-  'object-overflow': {'values': ['clip', 'visible']},
   'object-view-box': {'values': ['none']},
   'offset-anchor': {'values': ['auto']},
   'offset-path': {'values': ['none']},
@@ -1109,6 +1114,7 @@ export const generatedPropertyValues = {
       {'values': ['none', 'hidden', 'inset', 'groove', 'outset', 'ridge', 'dotted', 'dashed', 'solid', 'double']},
   'outline-width': {'values': ['thin', 'medium', 'thick']},
   'overflow-anchor': {'values': ['visible', 'none', 'auto']},
+  'overflow-clip-margin': {'values': ['border-box', 'content-box', 'padding-box']},
   'overflow-wrap': {'values': ['normal', 'break-word', 'anywhere']},
   'overflow-x': {'values': ['visible', 'hidden', 'scroll', 'auto', 'overlay', 'clip']},
   'overflow-y': {'values': ['visible', 'hidden', 'scroll', 'auto', 'overlay', 'clip']},
@@ -1125,6 +1131,7 @@ export const generatedPropertyValues = {
     ]
   },
   'position': {'values': ['static', 'relative', 'absolute', 'fixed', 'sticky']},
+  'position-fallback': {'values': ['none']},
   'quotes': {'values': ['auto', 'none']},
   'resize': {'values': ['none', 'both', 'horizontal', 'vertical', 'block', 'inline']},
   'right': {'values': ['auto']},
@@ -1176,6 +1183,9 @@ export const generatedPropertyValues = {
   'text-transform': {'values': ['capitalize', 'uppercase', 'lowercase', 'none', 'math-auto']},
   'text-underline-offset': {'values': ['auto']},
   'text-underline-position': {'values': ['auto', 'from-font', 'under', 'left', 'right']},
+  'toggle-group': {'values': ['none']},
+  'toggle-root': {'values': ['none']},
+  'toggle-trigger': {'values': ['none']},
   'top': {'values': ['auto']},
   'touch-action': {
     'values':

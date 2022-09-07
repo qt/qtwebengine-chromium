@@ -7,6 +7,7 @@
 
 #include "include/gpu/GrRecordingContext.h"
 
+#include "include/core/SkCapabilities.h"
 #include "include/gpu/GrContextThreadSafeProxy.h"
 #include "src/core/SkArenaAlloc.h"
 #include "src/gpu/ganesh/GrAuditTrail.h"
@@ -20,12 +21,14 @@
 #include "src/gpu/ganesh/SkGr.h"
 #include "src/gpu/ganesh/SurfaceContext.h"
 #include "src/gpu/ganesh/effects/GrSkSLFP.h"
-#include "src/gpu/ganesh/text/GrTextBlob.h"
-#include "src/gpu/ganesh/text/GrTextBlobRedrawCoordinator.h"
+#include "src/text/gpu/TextBlob.h"
+#include "src/text/gpu/TextBlobRedrawCoordinator.h"
 
 #if SK_GPU_V1
 #include "src/gpu/ganesh/ops/AtlasTextOp.h"
 #endif
+
+using TextBlobRedrawCoordinator = sktext::gpu::TextBlobRedrawCoordinator;
 
 GrRecordingContext::ProgramData::ProgramData(std::unique_ptr<const GrProgramDesc> desc,
                                              const GrProgramInfo* info)
@@ -101,7 +104,7 @@ void GrRecordingContext::destroyDrawingManager() {
 }
 
 GrRecordingContext::Arenas::Arenas(SkArenaAlloc* recordTimeAllocator,
-                                   GrSubRunAllocator* subRunAllocator)
+                                   sktext::gpu::SubRunAllocator* subRunAllocator)
         : fRecordTimeAllocator(recordTimeAllocator)
         , fRecordTimeSubRunAllocator(subRunAllocator) {
     // OwnedArenas should instantiate these before passing the bare pointer off to this struct.
@@ -127,7 +130,7 @@ GrRecordingContext::Arenas GrRecordingContext::OwnedArenas::get() {
     }
 
     if (!fRecordTimeSubRunAllocator) {
-        fRecordTimeSubRunAllocator = std::make_unique<GrSubRunAllocator>();
+        fRecordTimeSubRunAllocator = std::make_unique<sktext::gpu::SubRunAllocator>();
     }
 
     return {fRecordTimeAllocator.get(), fRecordTimeSubRunAllocator.get()};
@@ -137,11 +140,11 @@ GrRecordingContext::OwnedArenas&& GrRecordingContext::detachArenas() {
     return std::move(fArenas);
 }
 
-GrTextBlobRedrawCoordinator* GrRecordingContext::getTextBlobRedrawCoordinator() {
+TextBlobRedrawCoordinator* GrRecordingContext::getTextBlobRedrawCoordinator() {
     return fThreadSafeProxy->priv().getTextBlobRedrawCoordinator();
 }
 
-const GrTextBlobRedrawCoordinator* GrRecordingContext::getTextBlobRedrawCoordinator() const {
+const TextBlobRedrawCoordinator* GrRecordingContext::getTextBlobRedrawCoordinator() const {
     return fThreadSafeProxy->priv().getTextBlobRedrawCoordinator();
 }
 
@@ -158,6 +161,10 @@ void GrRecordingContext::addOnFlushCallbackObject(GrOnFlushCallbackObject* onFlu
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+
+sk_sp<const SkCapabilities> GrRecordingContext::skCapabilities() const {
+    return this->refCaps();
+}
 
 int GrRecordingContext::maxTextureSize() const { return this->caps()->maxTextureSize(); }
 

@@ -14,103 +14,112 @@
 
 #include "dawn/common/Log.h"
 
+#include <cstdio>
+#include <string>
+
 #include "dawn/common/Assert.h"
 #include "dawn/common/Platform.h"
 
-#include <cstdio>
-
-#if defined(DAWN_PLATFORM_ANDROID)
-#    include <android/log.h>
+#if DAWN_PLATFORM_IS(ANDROID)
+#include <android/log.h>
 #endif
 
 namespace dawn {
 
-    namespace {
+namespace {
 
-        const char* SeverityName(LogSeverity severity) {
-            switch (severity) {
-                case LogSeverity::Debug:
-                    return "Debug";
-                case LogSeverity::Info:
-                    return "Info";
-                case LogSeverity::Warning:
-                    return "Warning";
-                case LogSeverity::Error:
-                    return "Error";
-                default:
-                    UNREACHABLE();
-                    return "";
-            }
-        }
+const char* SeverityName(LogSeverity severity) {
+    switch (severity) {
+        case LogSeverity::Debug:
+            return "Debug";
+        case LogSeverity::Info:
+            return "Info";
+        case LogSeverity::Warning:
+            return "Warning";
+        case LogSeverity::Error:
+            return "Error";
+        default:
+            UNREACHABLE();
+            return "";
+    }
+}
 
-#if defined(DAWN_PLATFORM_ANDROID)
-        android_LogPriority AndroidLogPriority(LogSeverity severity) {
-            switch (severity) {
-                case LogSeverity::Debug:
-                    return ANDROID_LOG_INFO;
-                case LogSeverity::Info:
-                    return ANDROID_LOG_INFO;
-                case LogSeverity::Warning:
-                    return ANDROID_LOG_WARN;
-                case LogSeverity::Error:
-                    return ANDROID_LOG_ERROR;
-                default:
-                    UNREACHABLE();
-                    return ANDROID_LOG_ERROR;
-            }
-        }
-#endif  // defined(DAWN_PLATFORM_ANDROID)
+#if DAWN_PLATFORM_IS(ANDROID)
+android_LogPriority AndroidLogPriority(LogSeverity severity) {
+    switch (severity) {
+        case LogSeverity::Debug:
+            return ANDROID_LOG_INFO;
+        case LogSeverity::Info:
+            return ANDROID_LOG_INFO;
+        case LogSeverity::Warning:
+            return ANDROID_LOG_WARN;
+        case LogSeverity::Error:
+            return ANDROID_LOG_ERROR;
+        default:
+            UNREACHABLE();
+            return ANDROID_LOG_ERROR;
+    }
+}
+#endif  // DAWN_PLATFORM_IS(ANDROID)
 
-    }  // anonymous namespace
+}  // anonymous namespace
 
-    LogMessage::LogMessage(LogSeverity severity) : mSeverity(severity) {
+LogMessage::LogMessage(LogSeverity severity) : mSeverity(severity) {}
+
+LogMessage::LogMessage(LogMessage&& other) = default;
+
+LogMessage& LogMessage::operator=(LogMessage&& other) = default;
+
+LogMessage::~LogMessage() {
+#if defined(DAWN_DISABLE_LOGGING)
+    // Don't print logs to make fuzzing more efficient. Implemented as
+    // an early return to avoid warnings about unused member variables.
+    return;
+#endif
+    std::string fullMessage = mStream.str();
+
+    // If this message has been moved, its stream is empty.
+    if (fullMessage.empty()) {
+        return;
     }
 
-    LogMessage::~LogMessage() {
-        std::string fullMessage = mStream.str();
+    const char* severityName = SeverityName(mSeverity);
 
-        // If this message has been moved, its stream is empty.
-        if (fullMessage.empty()) {
-            return;
-        }
-
-        const char* severityName = SeverityName(mSeverity);
-
-#if defined(DAWN_PLATFORM_ANDROID)
-        android_LogPriority androidPriority = AndroidLogPriority(mSeverity);
-        __android_log_print(androidPriority, "Dawn", "%s: %s\n", severityName, fullMessage.c_str());
-#else   // defined(DAWN_PLATFORM_ANDROID)
-        FILE* outputStream = stdout;
-        if (mSeverity == LogSeverity::Warning || mSeverity == LogSeverity::Error) {
-            outputStream = stderr;
-        }
-
-        // Note: we use fprintf because <iostream> includes static initializers.
-        fprintf(outputStream, "%s: %s\n", severityName, fullMessage.c_str());
-        fflush(outputStream);
-#endif  // defined(DAWN_PLATFORM_ANDROID)
+#if DAWN_PLATFORM_IS(ANDROID)
+    android_LogPriority androidPriority = AndroidLogPriority(mSeverity);
+    __android_log_print(androidPriority, "Dawn", "%s: %s\n", severityName, fullMessage.c_str());
+#else   // DAWN_PLATFORM_IS(ANDROID)
+    FILE* outputStream = stdout;
+    if (mSeverity == LogSeverity::Warning || mSeverity == LogSeverity::Error) {
+        outputStream = stderr;
     }
 
-    LogMessage DebugLog() {
-        return {LogSeverity::Debug};
-    }
+    // Note: we use fprintf because <iostream> includes static initializers.
+    fprintf(outputStream, "%s: %s\n", severityName, fullMessage.c_str());
+    fflush(outputStream);
+#endif  // DAWN_PLATFORM_IS(ANDROID)
+}
 
-    LogMessage InfoLog() {
-        return {LogSeverity::Info};
-    }
+LogMessage DebugLog() {
+    return LogMessage(LogSeverity::Debug);
+}
 
-    LogMessage WarningLog() {
-        return {LogSeverity::Warning};
-    }
+LogMessage InfoLog() {
+    return LogMessage(LogSeverity::Info);
+}
 
-    LogMessage ErrorLog() {
-        return {LogSeverity::Error};
-    }
+LogMessage WarningLog() {
+    return LogMessage(LogSeverity::Warning);
+}
 
-    LogMessage DebugLog(const char* file, const char* function, int line) {
-        LogMessage message = DebugLog();
-        message << file << ":" << line << "(" << function << ")";
-        return message;
-    }
+LogMessage ErrorLog() {
+    return LogMessage(LogSeverity::Error);
+}
+
+LogMessage DebugLog(const char* file, const char* function, int line) {
+    LogMessage message = DebugLog();
+    message << file << ":" << line << "(" << function << ")";
+    return message;
+}
 
 }  // namespace dawn

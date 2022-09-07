@@ -186,6 +186,9 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     bool hasBuildAccelerationStructureCmd;
     bool hasDispatchCmd;
     bool unprotected;  // can't be used for protected memory
+    bool hasRenderPassInstance;
+    bool suspendsRenderPassInstance;
+    bool resumesRenderPassInstance;
 
     CB_STATE state;         // Track cmd buffer update state
     uint64_t commandCount;  // Number of commands recorded. Currently only used with VK_KHR_performance_query
@@ -202,6 +205,10 @@ class CMD_BUFFER_STATE : public REFCOUNTED_NODE {
     //  each individual CMD_NODE referencing its own "lastBound" state
     // Store last bound state for Gfx & Compute pipeline bind points
     std::array<LAST_BOUND_STATE, BindPoint_Count> lastBound;  // index is LvlBindPoint.
+
+    // Use the casting boilerplate from BASE_NODE to implement the derived shared_from_this
+    std::shared_ptr<const CMD_BUFFER_STATE> shared_from_this() const { return SharedFromThisImpl(this); }
+    std::shared_ptr<CMD_BUFFER_STATE> shared_from_this() { return SharedFromThisImpl(this); }
 
     struct CmdDrawDispatchInfo {
         CMD_TYPE cmd_type;

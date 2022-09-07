@@ -143,8 +143,11 @@ class MemoryChunk : public BasicMemoryChunk {
   template <RememberedSetType type>
   void ReleaseInvalidatedSlots();
   template <RememberedSetType type>
-  V8_EXPORT_PRIVATE void RegisterObjectWithInvalidatedSlots(HeapObject object);
-  void InvalidateRecordedSlots(HeapObject object);
+  V8_EXPORT_PRIVATE void RegisterObjectWithInvalidatedSlots(HeapObject object,
+                                                            int new_size);
+  template <RememberedSetType type>
+  V8_EXPORT_PRIVATE void UpdateInvalidatedObjectSize(HeapObject object,
+                                                     int new_size);
   template <RememberedSetType type>
   bool RegisteredObjectWithInvalidatedSlots(HeapObject object);
   template <RememberedSetType type>
@@ -188,8 +191,12 @@ class MemoryChunk : public BasicMemoryChunk {
   void InitializationMemoryFence();
 
   static PageAllocator::Permission GetCodeModificationPermission() {
-    return FLAG_write_code_using_rwx ? PageAllocator::kReadWriteExecute
-                                     : PageAllocator::kReadWrite;
+    DCHECK(!V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT);
+    // On MacOS on ARM64 RWX permissions are allowed to be set only when
+    // fast W^X is enabled (see V8_HEAP_USE_PTHREAD_JIT_WRITE_PROTECT).
+    return !V8_HAS_PTHREAD_JIT_WRITE_PROTECT && FLAG_write_code_using_rwx
+               ? PageAllocator::kReadWriteExecute
+               : PageAllocator::kReadWrite;
   }
 
   V8_EXPORT_PRIVATE void SetReadable();

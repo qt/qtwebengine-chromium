@@ -129,7 +129,7 @@ export class BrowserRunner {
     close() {
         if (this._closed)
             return Promise.resolve();
-        if (this._isTempUserDataDir && this._product !== 'firefox') {
+        if (this._isTempUserDataDir) {
             this.kill();
         }
         else if (this.connection) {
@@ -151,7 +151,14 @@ export class BrowserRunner {
         if (this.proc && this.proc.pid && pidExists(this.proc.pid)) {
             try {
                 if (process.platform === 'win32') {
-                    childProcess.exec(`taskkill /pid ${this.proc.pid} /T /F`, () => { });
+                    childProcess.exec(`taskkill /pid ${this.proc.pid} /T /F`, (error) => {
+                        if (error) {
+                            // taskkill can fail to kill the process e.g. due to missing permissions.
+                            // Let's kill the process via Node API. This delays killing of all child
+                            // proccesses of `this.proc` until the main Node.js process dies.
+                            this.proc.kill();
+                        }
+                    });
                 }
                 else {
                     // on linux the process group can be killed with the group id prefixed with

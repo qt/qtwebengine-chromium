@@ -5,14 +5,14 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as EmulationModel from '../../models/emulation/emulation.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as Emulation from '../emulation/emulation.js';
 
-import type {AuditProgressChangedEvent, PageAuditabilityChangedEvent, PageWarningsChangedEvent} from './LighthouseController.js';
+import type {
+  AuditProgressChangedEvent, PageAuditabilityChangedEvent, PageWarningsChangedEvent} from './LighthouseController.js';
 import {Events, LighthouseController} from './LighthouseController.js';
 import lighthousePanelStyles from './lighthousePanel.css.js';
 import type {LighthouseRun} from './LighthouseProtocolService.js';
@@ -174,7 +174,7 @@ export class LighthousePanel extends UI.Panel.Panel {
       return;
     }
 
-    this.startView.updateStartButton();
+    this.startView.refresh();
 
     this.unauditableExplanation = evt.data.helpText;
     this.startView.setUnauditableExplanation(evt.data.helpText);
@@ -502,8 +502,7 @@ export class LighthousePanel extends UI.Panel.Panel {
     }
     // reload to reset the page state
     const inspectedURL = await this.controller.getInspectedURL();
-    // TODO(crbug.com/1253323): Cast to UrlString will be removed when migration to branded types is complete.
-    await resourceTreeModel.navigate(inspectedURL as Platform.DevToolsPath.UrlString);
+    await resourceTreeModel.navigate(inspectedURL);
   }
 
   wasShown(): void {

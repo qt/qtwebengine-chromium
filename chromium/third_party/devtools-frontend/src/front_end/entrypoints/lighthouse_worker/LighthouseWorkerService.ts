@@ -118,6 +118,12 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
     flags.channel = 'devtools';
     flags.locale = locale;
 
+    // TODO: Remove this filter once pubads is mode restricted
+    // https://github.com/googleads/publisher-ads-lighthouse-plugin/pull/339
+    if (action === 'startTimespan' || action === 'snapshot') {
+      args.categoryIDs = args.categoryIDs.filter((c: string) => c !== 'lighthouse-plugin-publisher-ads');
+    }
+
     // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
     const config = self.createConfig(args.categoryIDs, flags.emulatedFormFactor);
     const url = args.url;
@@ -137,10 +143,7 @@ async function invokeLH(action: string, args: any): Promise<unknown> {
     const {page} = puppeteerConnection;
     const configContext = {
       logLevel: flags.logLevel,
-      settingsOverrides: {
-        channel: flags.channel,
-        locale: flags.locale,
-      },
+      settingsOverrides: flags,
     };
 
     if (action === 'snapshot') {

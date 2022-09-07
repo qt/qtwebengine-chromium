@@ -149,7 +149,6 @@ const char kSavedIPConfigProperty[] = "SavedIPConfig";
 const char kSignalStrengthProperty[] = "Strength";
 const char kStateProperty[] = "State";
 const char kStaticIPConfigProperty[] = "StaticIPConfig";
-const char kTetheringProperty[] = "Tethering";
 const char kTrafficCounterResetTimeProperty[] = "TrafficCounterResetTime";
 const char kTypeProperty[] = "Type";
 const char kUIDataProperty[] = "UIData";
@@ -219,6 +218,7 @@ static constexpr char kWifiRandomMACPolicy[] = "WiFi.RandomMACPolicy";
 const char kWifiRekeyInProgressProperty[] = "WiFi.RekeyInProgress";
 const char kWifiRoamStateProperty[] = "WiFi.RoamState";
 const char kWifiVendorInformationProperty[] = "WiFi.VendorInformation";
+const char kWifiSignalStrengthRssiProperty[] = "WiFi.SignalStrengthRssi";
 
 // Base VPN Service property names.
 const char kHostProperty[] = "Host";
@@ -320,7 +320,6 @@ const char kWireGuardPeerAllowedIPs[] = "AllowedIPs";
 const char kWireGuardPeerPersistentKeepalive[] = "PersistentKeepalive";
 
 // IPConfig property names.
-const char kAcceptedHostnameProperty[] = "AcceptedHostname";
 // kAddressProperty: Defined below for Device.
 const char kBroadcastProperty[] = "Broadcast";
 const char kDomainNameProperty[] = "DomainName";
@@ -611,7 +610,11 @@ const char kSecurityNone[] = "none";
 const char kSecurityWep[] = "wep";
 const char kSecurityPsk[] = "psk";
 const char kSecurityWpa[] = "wpa";
+// Deprecated.  Use kSecurityWpa2 instead.
+// TODO(b/226138492) Remove this once references in Chrome and Shill are
+// removed.
 const char kSecurityRsn[] = "rsn";
+const char kSecurityWpa2[] = "wpa2";
 const char kSecurityWpa3[] = "wpa3";
 const char kSecurity8021x[] = "802_1x";
 
@@ -738,11 +741,6 @@ const char kErrorEapRemoteTlsFailed[] = "eap-remote-tls-failed";
 const char kEapSubjectAlternativeNameMatchTypeEmail[] = "EMAIL";
 const char kEapSubjectAlternativeNameMatchTypeDNS[] = "DNS";
 const char kEapSubjectAlternativeNameMatchTypeURI[] = "URI";
-
-// Service Tethering property values.
-const char kTetheringNotDetectedState[] = "NotDetected";
-const char kTetheringSuspectedState[] = "Suspected";
-const char kTetheringConfirmedState[] = "Confirmed";
 
 // WiFi Device kLinkStatisticsProperty sub-property names.
 const char kAverageReceiveSignalDbmProperty[] = "AverageReceiveSignalDbm";

@@ -70,6 +70,7 @@ export declare class FrameManager extends EventEmitter {
     private _onAttachedToTarget;
     private _onDetachedFromTarget;
     _onLifecycleEvent(event: Protocol.Page.LifecycleEventEvent): void;
+    _onFrameStartedLoading(frameId: string): void;
     _onFrameStoppedLoading(frameId: string): void;
     _handleFrameTree(session: CDPSession, frameTree: Protocol.Page.FrameTree): void;
     page(): Page;
@@ -224,6 +225,10 @@ export declare class Frame {
      * @internal
      */
     _name?: string;
+    /**
+     * @internal
+     */
+    _hasStartedLoading: boolean;
     /**
      * @internal
      */
@@ -389,7 +394,7 @@ export declare class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     $eval<ReturnType>(selector: string, pageFunction: (element: Element, ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
     /**
@@ -409,7 +414,7 @@ export declare class Frame {
      *
      * @param selector - the selector to query for
      * @param pageFunction - the function to be evaluated in the frame's context
-     * @param args - additional arguments to pass to `pageFuncton`
+     * @param args - additional arguments to pass to `pageFunction`
      */
     $$eval<ReturnType>(selector: string, pageFunction: (elements: Element[], ...args: unknown[]) => ReturnType | Promise<ReturnType>, ...args: SerializableOrJSHandle[]): Promise<WrapElementHandle<ReturnType>>;
     /**
@@ -746,6 +751,10 @@ export declare class Frame {
      * @internal
      */
     _onLoadingStopped(): void;
+    /**
+     * @internal
+     */
+    _onLoadingStarted(): void;
     /**
      * @internal
      */

@@ -13,7 +13,7 @@
 #include "absl/strings/string_view.h"
 #include "quiche/quic/core/crypto/certificate_view.h"
 #include "quiche/quic/core/crypto/proof_source.h"
-#include "quiche/quic/platform/api/quic_containers.h"
+#include "quiche/quic/core/crypto/quic_crypto_proof.h"
 
 namespace quic {
 
@@ -43,8 +43,7 @@ class QUIC_EXPORT_PRIVATE ProofSourceX509 : public ProofSource {
       const QuicSocketAddress& client_address, const std::string& hostname,
       uint16_t signature_algorithm, absl::string_view in,
       std::unique_ptr<SignatureCallback> callback) override;
-  absl::InlinedVector<uint16_t, 8> SupportedTlsSignatureAlgorithms()
-      const override;
+  QuicSignatureAlgorithmVector SupportedTlsSignatureAlgorithms() const override;
   TicketCrypter* GetTicketCrypter() override;
 
   // Adds a certificate chain to the verifier.  Returns false if the chain is
@@ -54,9 +53,17 @@ class QUIC_EXPORT_PRIVATE ProofSourceX509 : public ProofSource {
       quiche::QuicheReferenceCountedPointer<Chain> chain,
       CertificatePrivateKey key);
 
- private:
-  ProofSourceX509() = default;
+ protected:
+  ProofSourceX509(quiche::QuicheReferenceCountedPointer<Chain> default_chain,
+                  CertificatePrivateKey default_key);
+  bool valid() const { return default_certificate_ != nullptr; }
 
+  // Gives an opportunity for the subclass proof source to provide SCTs for a
+  // given hostname.
+  virtual void MaybeAddSctsForHostname(absl::string_view /*hostname*/,
+                                       std::string& /*leaf_cert_scts*/) {}
+
+ private:
   struct QUIC_EXPORT_PRIVATE Certificate {
     quiche::QuicheReferenceCountedPointer<Chain> chain;
     CertificatePrivateKey key;
@@ -68,7 +75,7 @@ class QUIC_EXPORT_PRIVATE ProofSourceX509 : public ProofSource {
                               bool* cert_matched_sni) const;
 
   std::forward_list<Certificate> certificates_;
-  Certificate* default_certificate_;
+  Certificate* default_certificate_ = nullptr;
   absl::node_hash_map<std::string, Certificate*> certificate_map_;
 };
 

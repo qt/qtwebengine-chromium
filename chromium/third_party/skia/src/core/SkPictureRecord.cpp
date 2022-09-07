@@ -20,7 +20,7 @@
 #include "src/utils/SkPatchUtils.h"
 
 #if SK_SUPPORT_GPU
-#include "include/private/chromium/GrSlug.h"
+#include "include/private/chromium/Slug.h"
 #endif
 
 #define HEAP_BLOCK_SIZE 4096
@@ -523,7 +523,7 @@ void SkPictureRecord::onDrawPath(const SkPath& path, const SkPaint& paint) {
 void SkPictureRecord::onDrawImage2(const SkImage* image, SkScalar x, SkScalar y,
                                    const SkSamplingOptions& sampling, const SkPaint* paint) {
     // op + paint_index + image_index + x + y
-    size_t size = 3 * kUInt32Size + 2 * sizeof(SkScalar) + SkSamplingPriv::kFlatSize;
+    size_t size = 3 * kUInt32Size + 2 * sizeof(SkScalar) + SkSamplingPriv::FlatSize(sampling);
     size_t initialOffset = this->addDraw(DRAW_IMAGE2, &size);
     this->addPaintPtr(paint);
     this->addImage(image);
@@ -537,7 +537,8 @@ void SkPictureRecord::onDrawImageRect2(const SkImage* image, const SkRect& src, 
                                        const SkSamplingOptions& sampling, const SkPaint* paint,
                                        SrcRectConstraint constraint) {
     // id + paint_index + image_index + constraint
-    size_t size = 3 * kUInt32Size + 2 * sizeof(dst) + SkSamplingPriv::kFlatSize + kUInt32Size;
+    size_t size = 3 * kUInt32Size + 2 * sizeof(dst) + SkSamplingPriv::FlatSize(sampling) +
+                  kUInt32Size;
 
     size_t initialOffset = this->addDraw(DRAW_IMAGE_RECT2, &size);
     this->addPaintPtr(paint);
@@ -580,7 +581,7 @@ void SkPictureRecord::onDrawTextBlob(const SkTextBlob* blob, SkScalar x, SkScala
 }
 
 #if SK_SUPPORT_GPU
-void SkPictureRecord::onDrawSlug(const GrSlug* slug) {
+void SkPictureRecord::onDrawSlug(const sktext::gpu::Slug* slug) {
     // op + slug id
     size_t size = 2 * kUInt32Size;
     size_t initialOffset = this->addDraw(DRAW_SLUG, &size);
@@ -684,7 +685,7 @@ void SkPictureRecord::onDrawAtlas2(const SkImage* atlas, const SkRSXform xform[]
                                    const SkPaint* paint) {
     // [op + paint-index + atlas-index + flags + count] + [xform] + [tex] + [*colors + mode] + cull
     size_t size = 5 * kUInt32Size + count * sizeof(SkRSXform) + count * sizeof(SkRect);
-    size += SkSamplingPriv::kFlatSize;
+    size += SkSamplingPriv::FlatSize(sampling);
     uint32_t flags = 0;
     if (colors) {
         flags |= DRAW_ATLAS_HAS_COLORS;
@@ -780,7 +781,7 @@ void SkPictureRecord::onDrawEdgeAAImageSet2(const SkCanvas::ImageSetEntry set[],
     size_t size = 6 * kUInt32Size + sizeof(SkPoint) * totalDstClipCount +
                   kMatrixSize * totalMatrixCount +
                   (4 * kUInt32Size + 2 * sizeof(SkRect) + sizeof(SkScalar)) * count +
-                  SkSamplingPriv::kFlatSize;
+                  SkSamplingPriv::FlatSize(sampling);
     size_t initialOffset = this->addDraw(DRAW_EDGEAA_IMAGE_SET2, &size);
     this->addInt(count);
     this->addPaintPtr(paint);
@@ -935,7 +936,7 @@ void SkPictureRecord::addTextBlob(const SkTextBlob* blob) {
 }
 
 #if SK_SUPPORT_GPU
-void SkPictureRecord::addSlug(const GrSlug* slug) {
+void SkPictureRecord::addSlug(const sktext::gpu::Slug* slug) {
     // follow the convention of recording a 1-based index
     this->addInt(find_or_append(fSlugs, slug) + 1);
 }
