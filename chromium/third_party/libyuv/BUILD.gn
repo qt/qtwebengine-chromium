@@ -235,12 +235,18 @@ if (libyuv_use_neon) {
     deps = [ ":libyuv_internal" ]
 
     public_configs = [ ":libyuv_config" ]
+    cflags = []
 
     if (current_cpu == "arm64") {
       cflags = [ "-march=armv8-a+dotprod+i8mm" ]
     } else {
       configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-      cflags = [ "-mfpu=neon" ]
+      cflags += [ "-mfpu=neon" ]
+
+      # Remove default stack frames config and use -fomit-frame-pointer
+      # otherwise we run out of registry and will not compile for debug and neon
+      configs -= [ "//build/config/compiler:default_stack_frames" ]
+      cflags += [ "-fomit-frame-pointer" ]
     }
   }
 }
