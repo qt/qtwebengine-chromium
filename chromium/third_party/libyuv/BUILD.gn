@@ -235,6 +235,7 @@ if (libyuv_use_neon) {
     deps = [ ":libyuv_internal" ]
 
     public_configs = [ ":libyuv_config" ]
+    cflags = []
 
     # The -march arguments below are incompatible with libc++ modules.
     use_libcxx_modules = false
@@ -244,7 +245,12 @@ if (libyuv_use_neon) {
       }
     } else {
       configs -= [ "//build/config/compiler:compiler_arm_fpu" ]
-      cflags = [ "-mfpu=neon" ]
+      cflags += [ "-mfpu=neon" ]
+
+      # Remove default stack frames config and use -fomit-frame-pointer
+      # otherwise we run out of registry and will not compile for debug and neon
+      configs -= [ "//build/config/compiler:default_stack_frames" ]
+      cflags += [ "-fomit-frame-pointer" ]
     }
   }
 }
