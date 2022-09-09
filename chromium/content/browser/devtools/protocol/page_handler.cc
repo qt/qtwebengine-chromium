@@ -50,6 +50,8 @@
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "content/public/common/use_zoom_for_dsf_policy.h"
 #include "net/base/filename_util.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -186,11 +188,10 @@ bool CanExecuteGlobalCommands(
 PageHandler::PageHandler(EmulationHandler* emulation_handler,
                          BrowserHandler* browser_handler,
                          bool allow_unsafe_operations,
-                         bool may_capture_screenshots_not_from_surface)
+                         bool is_trusted)
     : DevToolsDomainHandler(Page::Metainfo::domainName),
       allow_unsafe_operations_(allow_unsafe_operations),
-      may_capture_screenshots_not_from_surface_(
-          may_capture_screenshots_not_from_surface),
+      is_trusted_(is_trusted),
       enabled_(false),
       screencast_enabled_(false),
       screencast_quality_(kDefaultScreenshotQuality),
@@ -458,6 +459,14 @@ void PageHandler::Navigate(const std::string& url,
     return;
   }
 
+  // chrome-untrusted:// WebUIs might perform high-priviledged actions on
+  // navigation, disallow navigation to them unless the client is trusted.
+  if (gurl.SchemeIs(kChromeUIUntrustedScheme) && !is_trusted_) {
+    callback->sendFailure(Response::ServerError(
+        "Navigating to a URL with a privileged scheme is not allowed"));
+    return;
+  }
+
   ui::PageTransition type;
   std::string transition_type =
       maybe_transition_type.fromMaybe(Page::TransitionTypeEnum::Typed);
@@ -716,7 +725,7 @@ void PageHandler::CaptureScreenshot(
 
   // We don't support clip/emulation when capturing from window, bail out.
   if (!from_surface.fromMaybe(true)) {
-    if (!may_capture_screenshots_not_from_surface_) {
+    if (!is_trusted_) {
       callback->sendFailure(
           Response::ServerError("Only screenshots from surface are allowed."));
       return;

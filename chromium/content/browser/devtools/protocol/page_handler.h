@@ -66,7 +66,7 @@ class PageHandler : public DevToolsDomainHandler,
   PageHandler(EmulationHandler* emulation_handler,
               BrowserHandler* browser_handler,
               bool allow_unsafe_operations,
-              bool may_capture_screenshots_not_from_surface);
+              bool is_trusted);
   ~PageHandler() override;
 
   static std::vector<PageHandler*> EnabledForWebContents(
@@ -214,7 +214,7 @@ class PageHandler : public DevToolsDomainHandler,
   void OnDownloadDestroyed(download::DownloadItem* item) override;
 
   const bool allow_unsafe_operations_;
-  const bool may_capture_screenshots_not_from_surface_;
+  const bool is_trusted_;
 
   bool enabled_;
 
