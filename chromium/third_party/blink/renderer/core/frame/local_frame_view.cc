@@ -757,6 +757,7 @@ void LocalFrameView::PerformLayout(bool in_subtree_layout) {
                              layout_subtree_root_list_.size());
       }
       for (auto& root : layout_subtree_root_list_.Ordered()) {
+        LayoutObject& root_layout_object = *root;
         if (!LayoutFromRootObject(*root))
           continue;
 
@@ -765,7 +766,7 @@ void LocalFrameView::PerformLayout(bool in_subtree_layout) {
         // We need to ensure that we mark up all layoutObjects up to the
         // LayoutView for paint invalidation. This simplifies our code as we
         // just always do a full tree walk.
-        if (LayoutObject* container = root->Container())
+        if (LayoutObject* container = root_layout_object.Container())
           container->SetShouldCheckForPaintInvalidation();
       }
       layout_subtree_root_list_.Clear();
