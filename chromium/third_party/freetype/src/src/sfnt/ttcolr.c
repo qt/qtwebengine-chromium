@@ -47,7 +47,11 @@
 #define LAYER_V1_LIST_NUM_LAYERS_SIZE     4U
 #define COLOR_STOP_SIZE                   6U
 #define LAYER_SIZE                        4U
-#define COLR_HEADER_SIZE                 14U
+/* https://docs.microsoft.com/en-us/typography/opentype/spec/colr#colr-header */
+/* 3 * uint16 + 2 * Offset32 */
+#define COLRV0_HEADER_SIZE               14U
+/* COLRV0_HEADER_SIZE + 5 * Offset32 */
+#define COLRV1_HEADER_SIZE               34U
 
 
   typedef enum  FT_PaintFormat_Internal_
@@ -149,7 +153,7 @@
     if ( error )
       goto NoColr;
 
-    if ( table_size < COLR_HEADER_SIZE )
+    if ( table_size < COLRV0_HEADER_SIZE )
       goto InvalidTable;
 
     if ( FT_FRAME_EXTRACT( table_size, table ) )
@@ -183,9 +187,12 @@
 
     if ( colr->version == 1 )
     {
+      if ( table_size < COLRV1_HEADER_SIZE )
+        goto InvalidTable;
+
       base_glyphs_offset_v1 = FT_NEXT_ULONG( p );
 
-      if ( base_glyphs_offset_v1 >= table_size )
+      if ( base_glyphs_offset_v1 + 4 >= table_size )
         goto InvalidTable;
 
       p1                 = (FT_Byte*)( table + base_glyphs_offset_v1 );
@@ -205,6 +212,9 @@
 
       if ( layer_offset_v1 )
       {
+        if ( layer_offset_v1 + 4 >= table_size )
+          goto InvalidTable;
+
         p1            = (FT_Byte*)( table + layer_offset_v1 );
         num_layers_v1 = FT_PEEK_ULONG( p1 );
 
