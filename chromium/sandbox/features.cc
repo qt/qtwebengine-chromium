@@ -15,7 +15,11 @@ bool IsAppContainerSandboxSupported() {
   // 15063). In addition, it is not possible to apply process mitigations to an
   // app container process until RS5. Place a check here in a central place.
   static const bool supported =
+#ifndef TOOLKIT_QT
       base::win::GetVersion() >= base::win::Version::WIN10_RS5;
+#else
+      false;
+#endif
   return supported;
 }
 #endif
