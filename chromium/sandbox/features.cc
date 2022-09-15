@@ -10,7 +10,11 @@ bool IsAppContainerSandboxSupported() {
   // Since some APIs used for LPAC are unsupported below Windows 10 RS2 (1703
   // build 15063) so place a check here in a central place.
   static const bool supported =
+#ifndef TOOLKIT_QT
       base::win::GetVersion() >= base::win::Version::WIN10_RS2;
+#else
+      false;
+#endif
   return supported;
 }
 #endif
