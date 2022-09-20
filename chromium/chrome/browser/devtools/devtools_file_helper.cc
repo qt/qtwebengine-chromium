@@ -19,9 +19,13 @@
 #include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/browser_process.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/devtools/devtools_file_watcher.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/download/download_prefs.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
@@ -38,6 +42,15 @@
 #include "ui/shell_dialogs/selected_file_info.h"
 #include "url/gurl.h"
 #include "url/origin.h"
+
+#if BUILDFLAG(IS_QTWEBENGINE)
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/download_manager_delegate.h"
+#include "ui/shell_dialogs/select_file_policy.h"
+namespace content {
+extern ContentClient* GetContentClient();
+}
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 using content::BrowserThread;
 using std::set;
@@ -189,9 +202,17 @@ void DevToolsFileHelper::Save(const std::string& url,
       initial_path =
           GetLastSavePath().DirName().AppendASCII(suggested_file_name);
     } else {
+#if !BUILDFLAG(IS_QTWEBENGINE)
       base::FilePath download_path =
           DownloadPrefs::FromDownloadManager(profile_->GetDownloadManager())
               ->DownloadPath();
+#else
+      base::FilePath download_path;
+      base::FilePath website_save_directory;  // Unused
+      profile_->GetDownloadManagerDelegate()->GetSaveDir(
+          profile_, &website_save_directory,
+          &download_path);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
       initial_path = download_path.AppendASCII(suggested_file_name);
     }
   }
@@ -421,6 +442,7 @@ void DevToolsFileHelper::InnerAddFileSystem(
     RemoveFileSystem(file_system_path);
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   std::string path_display_name = path.AsEndingWithSeparator().AsUTF8Unsafe();
   std::u16string message =
       l10n_util::GetStringFUTF16(IDS_DEV_TOOLS_CONFIRM_ADD_FILE_SYSTEM_MESSAGE,
@@ -429,6 +451,9 @@ void DevToolsFileHelper::InnerAddFileSystem(
       file_system_path, message,
       BindOnce(&DevToolsFileHelper::AddUserConfirmedFileSystem,
                weak_factory_.GetWeakPtr(), type, path));
+#else
+  AddUserConfirmedFileSystem(type, path, /* allowed */ true);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsFileHelper::AddUserConfirmedFileSystem(const std::string& type,
@@ -504,6 +529,7 @@ bool DevToolsFileHelper::IsFileSystemAdded(
   return file_system_paths_.contains(file_system_path);
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 void DevToolsFileHelper::OnOpenItemComplete(
     const base::FilePath& path,
     platform_util::OpenOperationResult result) {
@@ -524,6 +550,7 @@ void DevToolsFileHelper::ShowItemInFolder(const std::string& file_system_path) {
       base::BindOnce(&DevToolsFileHelper::OnOpenItemComplete,
                      weak_factory_.GetWeakPtr(), path));
 }
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 
 void DevToolsFileHelper::UpdateFileSystemPathsOnUI() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);

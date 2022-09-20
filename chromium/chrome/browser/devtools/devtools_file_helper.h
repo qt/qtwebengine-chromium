@@ -16,8 +16,11 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/uuid.h"
+#include "build/build_config.h"
 #include "chrome/browser/devtools/devtools_file_watcher.h"
+#if !BUILDFLAG(IS_QTWEBENGINE)
 #include "chrome/browser/platform_util.h"
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 #include "components/prefs/pref_change_registrar.h"
 
 class GURL;
@@ -174,11 +177,15 @@ class DevToolsFileHelper {
   bool IsFileSystemAdded(const std::string& file_system_path);
 
   // Opens and reveals file in OS's default file manager.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void ShowItemInFolder(const std::string& file_system_path);
 
+#endif  // !BUILDFLAG(IS_QTWEBENGINE))
  private:
+#if !BUILDFLAG(IS_QTWEBENGINE)
   void OnOpenItemComplete(const base::FilePath& path,
                           platform_util::OpenOperationResult result);
+#endif  // !BUILDFLAG(IS_QTWEBENGINE))
   void SaveToFileSelected(const std::string& url,
                           const std::string& content,
                           bool is_base64,
