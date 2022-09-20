@@ -2414,7 +2414,11 @@ void DevToolsUIBindings::ReadyToCommitNavigation(
 }
 
 void DevToolsUIBindings::DocumentOnLoadCompletedInPrimaryMainFrame() {
+  // Rely on LoadCompleted event dispatched by the frontend rather than the
+  // 'onload' DOM event.
+#if !BUILDFLAG(IS_QTWEBENGINE)
   FrontendLoaded();
+#endif  // !BUILDFLAG(IS_QTWEBENGINE)
 }
 
 void DevToolsUIBindings::PrimaryPageChanged() {
