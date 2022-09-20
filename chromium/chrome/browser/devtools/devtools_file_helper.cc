@@ -16,11 +16,17 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/sequenced_task_runner_handle.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/browser_process.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "chrome/browser/devtools/devtools_file_watcher.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/download/download_prefs.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "chrome/browser/profiles/profile.h"
+#if !defined(TOOLKIT_QT)
 #include "chrome/browser/ui/chrome_select_file_policy.h"
+#endif  // !defined(TOOLKIT_QT)
 #include "chrome/common/pref_names.h"
 #include "chrome/grit/generated_resources.h"
 #include "components/prefs/pref_service.h"
@@ -44,6 +50,14 @@
 #include "url/gurl.h"
 #include "url/origin.h"
 
+#if defined(TOOLKIT_QT)
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/download_manager_delegate.h"
+#include "ui/shell_dialogs/select_file_policy.h"
+namespace content {
+extern ContentClient* GetContentClient();
+}
+#endif  // !defined(TOOLKIT_QT)
 using content::BrowserContext;
 using content::BrowserThread;
 using content::DownloadManager;
@@ -89,8 +103,13 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener {
 
   void MultiFilesSelected(const std::vector<base::FilePath>& files,
                           void* params) override {
+#if defined(TOOLKIT_QT)
+    std::move(selected_callback_).Run(files.front());
+#endif  // defined(TOOLKIT_QT)
     delete this;
+#if !defined(TOOLKIT_QT)
     NOTREACHED() << "Should not be able to select multiple files";
+#endif  // !defined(TOOLKIT_QT)
   }
 
   void FileSelectionCanceled(void* params) override {
@@ -110,8 +129,16 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener {
                   const base::FilePath& default_path) {
     selected_callback_ = std::move(selected_callback);
     canceled_callback_ = std::move(canceled_callback);
+#if !defined(TOOLKIT_QT)
     select_file_dialog_ = ui::SelectFileDialog::Create(
         this, std::make_unique<ChromeSelectFilePolicy>(web_contents));
+#else
+    select_file_dialog_ = ui::SelectFileDialog::Create(
+        this,
+        std::unique_ptr<ui::SelectFilePolicy>(
+            content::GetContentClient()->browser()->CreateSelectFilePolicy(
+                web_contents)));
+#endif  // !defined(TOOLKIT_QT)
     base::FilePath::StringType ext;
     ui::SelectFileDialog::FileTypeInfo file_type_info;
     if (type == ui::SelectFileDialog::SELECT_SAVEAS_FILE &&
@@ -122,7 +149,11 @@ class SelectFileDialog : public ui::SelectFileDialog::Listener {
     }
     select_file_dialog_->SelectFile(
         type, std::u16string(), default_path, &file_type_info, 0, ext,
+#if !defined(TOOLKIT_QT)
         platform_util::GetTopLevel(web_contents->GetNativeView()), nullptr);
+#else
+        nullptr, nullptr);
+#endif  // !defined(TOOLKIT_QT)
   }
 
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
@@ -272,9 +303,17 @@ void DevToolsFileHelper::Save(const std::string& url,
       initial_path = g_last_save_path.Pointer()->DirName().AppendASCII(
           suggested_file_name);
     } else {
+#if !defined(TOOLKIT_QT)
       base::FilePath download_path =
           DownloadPrefs::FromDownloadManager(profile_->GetDownloadManager())
               ->DownloadPath();
+#else
+      base::FilePath download_path;
+      base::FilePath website_save_directory;  // Unused
+      profile_->GetDownloadManagerDelegate()->GetSaveDir(
+          web_contents_->GetBrowserContext(), &website_save_directory,
+          &download_path);
+#endif  // !defined(TOOLKIT_QT)
       initial_path = download_path.AppendASCII(suggested_file_name);
     }
   }
@@ -353,6 +392,7 @@ void DevToolsFileHelper::InnerAddFileSystem(
   if (IsFileSystemAdded(file_system_path))
     RemoveFileSystem(file_system_path);
 
+#if !defined(TOOLKIT_QT)
   std::string path_display_name = path.AsEndingWithSeparator().AsUTF8Unsafe();
   std::u16string message =
       l10n_util::GetStringFUTF16(IDS_DEV_TOOLS_CONFIRM_ADD_FILE_SYSTEM_MESSAGE,
@@ -360,6 +400,9 @@ void DevToolsFileHelper::InnerAddFileSystem(
   show_info_bar_callback.Run(
       message, BindOnce(&DevToolsFileHelper::AddUserConfirmedFileSystem,
                         weak_factory_.GetWeakPtr(), type, path));
+#else
+  AddUserConfirmedFileSystem(type, path, true);
+#endif  // !defined(TOOLKIT_QT)
 }
 
 void DevToolsFileHelper::AddUserConfirmedFileSystem(const std::string& type,
@@ -440,6 +483,7 @@ bool DevToolsFileHelper::IsFileSystemAdded(
   return file_systems_paths_value->FindKey(file_system_path);
 }
 
+#if !defined(TOOLKIT_QT)
 void DevToolsFileHelper::OnOpenItemComplete(
     const base::FilePath& path,
     platform_util::OpenOperationResult result) {
@@ -458,6 +502,7 @@ void DevToolsFileHelper::ShowItemInFolder(const std::string& file_system_path) {
       base::BindOnce(&DevToolsFileHelper::OnOpenItemComplete,
                      weak_factory_.GetWeakPtr(), path));
 }
+#endif  // !defined(TOOLKIT_QT)
 
 void DevToolsFileHelper::FileSystemPathsSettingChangedOnUI() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
