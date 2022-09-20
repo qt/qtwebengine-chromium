@@ -41,7 +41,13 @@ DevToolsSelectFileDialog::DevToolsSelectFileDialog(
     CanceledCallback canceled_callback)
     : select_file_dialog_(ui::SelectFileDialog::Create(
           this,
+#if !BUILDFLAG(IS_QTWEBENGINE)
           std::make_unique<ChromeSelectFilePolicy>(web_contents))),
+#else
+          std::unique_ptr<ui::SelectFilePolicy>(
+              content::GetContentClient()->browser()->CreateSelectFilePolicy(
+                  web_contents)));
+#endif
       selected_callback_(std::move(selected_callback)),
       canceled_callback_(std::move(canceled_callback)) {}
 
@@ -62,5 +68,9 @@ void DevToolsSelectFileDialog::Show(content::WebContents* web_contents,
   }
   select_file_dialog_->SelectFile(
       type, std::u16string(), default_path, &file_type_info, 0, ext,
+#if !BUILDFLAG(IS_QTWEBENGINE)
       platform_util::GetTopLevel(web_contents->GetNativeView()));
+#else
+      nullptr);
+#endif
 }
