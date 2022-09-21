@@ -53,9 +53,10 @@ bool GzipCompress(base::span<const uint8_t> input, std::string* output) {
     return false;
   }
 
-  if (zlib_internal::GzipCompressHelper(compressed_data, &compressed_data_size,
-                                        bit_cast<const Bytef*>(input.data()),
-                                        input_size, nullptr, nullptr) != Z_OK) {
+  if (zlib_internal::GzipCompressHelper(
+          compressed_data, &compressed_data_size,
+          bit_cast<const Bytef*>(input.data()), input_size, nullptr,
+          nullptr) != Z_OK) {
     free(compressed_data);
     return false;
   }
@@ -76,13 +77,13 @@ bool GzipCompress(base::span<const uint8_t> input, std::string* output) {
 bool GzipUncompress(const std::string& input, std::string* output) {
   std::string uncompressed_output;
   uLongf uncompressed_size = static_cast<uLongf>(GetUncompressedSize(input));
-  if (uncompressed_size > uncompressed_output.max_size())
+  if (size_t{uncompressed_size} > uncompressed_output.max_size())
     return false;
 
   uncompressed_output.resize(uncompressed_size);
   if (zlib_internal::GzipUncompressHelper(
-          bit_cast<Bytef*>(uncompressed_output.data()), &uncompressed_size,
-          bit_cast<const Bytef*>(input.data()),
+          bit_cast<Bytef*>(uncompressed_output.data()),
+          &uncompressed_size, bit_cast<const Bytef*>(input.data()),
           static_cast<uLongf>(input.length())) == Z_OK) {
     output->swap(uncompressed_output);
     return true;
