@@ -128,7 +128,10 @@ IdentityManager::IdentityManager(IdentityManager::InitParameters&& parameters)
                         std::move(parameters.device_accounts_synchronizer)),
       diagnostics_provider_(std::move(parameters.diagnostics_provider)),
       account_consistency_(parameters.account_consistency) {
+
+#if !defined(TOOLKIT_QT)
   DCHECK(account_fetcher_service_);
+#endif
   DCHECK(diagnostics_provider_);
 
   primary_account_manager_observation_.Observe(primary_account_manager_.get());
@@ -414,8 +417,12 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
 }
 
 void IdentityManager::OnNetworkInitialized() {
+#if !defined(TOOLKIT_QT)
   gaia_cookie_manager_service_->InitCookieListener();
   account_fetcher_service_->OnNetworkInitialized();
+#else
+  DCHECK(false);  // we should never call network initialized
+#endif
 }
 
 #if BUILDFLAG(IS_CHROMEOS_ASH)
