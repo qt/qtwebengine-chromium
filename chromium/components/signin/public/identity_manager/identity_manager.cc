@@ -68,7 +68,9 @@ IdentityManager::IdentityManager(IdentityManager::InitParameters&& parameters)
           std::move(parameters.device_accounts_synchronizer))),
       diagnostics_provider_(std::move(parameters.diagnostics_provider)),
       weak_pointer_factory_(this) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK(account_fetcher_service_);
+#endif
   DCHECK(diagnostics_provider_);
   DCHECK(signin_client_);
 
@@ -456,6 +458,7 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
 }
 
 void IdentityManager::OnNetworkInitialized() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   gaia_cookie_manager_service_->InitCookieListener();
   account_fetcher_service_->OnNetworkInitialized();
   // Trigger ListAccounts once the network is initialized to ensure the accounts
@@ -464,6 +467,9 @@ void IdentityManager::OnNetworkInitialized() {
           switches::kAvoidAutoTriggerListAccountsOnStale)) {
     gaia_cookie_manager_service_->ListAccounts();
   }
+#else
+  DCHECK(false);  // we should never call network initialized
+#endif
 }
 
 CoreAccountId IdentityManager::PickAccountIdForAccount(

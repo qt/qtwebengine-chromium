@@ -69,6 +69,7 @@ std::unique_ptr<AccountsMutator> BuildAccountsMutator(
 #endif
 }
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
 std::unique_ptr<AccountFetcherService> BuildAccountFetcherService(
     SigninClient* signin_client,
     ProfileOAuth2TokenService* token_service,
@@ -81,6 +82,7 @@ std::unique_ptr<AccountFetcherService> BuildAccountFetcherService(
       std::move(image_decoder), std::move(account_fetcher_factory));
   return account_fetcher_service;
 }
+#endif
 
 }  // anonymous namespace
 
@@ -163,9 +165,11 @@ IdentityManager::InitParameters BuildIdentityManagerInitParameters(
   }
 #endif  // BULIDFLAG(IS_ANDROID)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   init_params.account_fetcher_service = BuildAccountFetcherService(
       params->signin_client, token_service.get(), account_tracker_service.get(),
       std::move(params->image_decoder), std::move(account_fetcher_factory));
+#endif
 
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
   init_params.device_accounts_synchronizer =
