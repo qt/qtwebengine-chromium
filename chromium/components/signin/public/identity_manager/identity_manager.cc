@@ -68,7 +68,9 @@ IdentityManager::IdentityManager(IdentityManager::InitParameters&& parameters)
       diagnostics_provider_(std::move(parameters.diagnostics_provider)),
       account_consistency_(parameters.account_consistency),
       weak_pointer_factory_(this) {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   DCHECK(account_fetcher_service_);
+#endif
   DCHECK(diagnostics_provider_);
   DCHECK(signin_client_);
 
@@ -405,8 +407,12 @@ void IdentityManager::RemoveDiagnosticsObserver(DiagnosticsObserver* observer) {
 }
 
 void IdentityManager::OnNetworkInitialized() {
+#if !BUILDFLAG(IS_QTWEBENGINE)
   gaia_cookie_manager_service_->InitCookieListener();
   account_fetcher_service_->OnNetworkInitialized();
+#else
+  DCHECK(false);  // we should never call network initialized
+#endif
 }
 
 CoreAccountId IdentityManager::PickAccountIdForAccount(

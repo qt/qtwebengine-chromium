@@ -169,9 +169,11 @@ IdentityManager::InitParameters BuildIdentityManagerInitParameters(
   }
 #endif  // BULIDFLAG(IS_ANDROID)
 
+#if !BUILDFLAG(IS_QTWEBENGINE)
   init_params.account_fetcher_service = BuildAccountFetcherService(
       params->signin_client, token_service.get(), account_tracker_service.get(),
       std::move(params->image_decoder), std::move(account_fetcher_factory));
+#endif
 
 #if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
   init_params.device_accounts_synchronizer =
